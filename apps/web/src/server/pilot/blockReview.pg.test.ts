@@ -89,6 +89,24 @@ const ENDS_ON = '2026-09-30';
 const INSIDE = '2026-08-15';
 const BEFORE = '2026-07-01';
 const AFTER = '2026-11-01';
+/* THE TWO INSTANTS THAT TELL THE GYM'S DAY FROM UTC'S, and the only fixtures
+   that can. A timestamptz reduced with a bare `::date` resolves in UTC, so:
+
+     LAST_EVENING  -- 8:30pm on the window's LAST day, gym time. Already the
+                      NEXT day in UTC, so a UTC cast drops it OUT of a window
+                      it belongs in.
+     EVE_OF_START  -- 8:30pm the night BEFORE the window opens, gym time.
+                      Already the FIRST day in UTC, so a UTC cast pulls it IN
+                      to a window it is not part of.
+
+   Written with an explicit zone rather than an offset, so they stay correct
+   either side of a daylight-saving change instead of being right only while
+   the offset in them happens to be the one in force. */
+const LAST_EVENING = '2026-09-30 20:30:00 America/New_York';
+const EVE_OF_START = '2026-07-31 20:30:00 America/New_York';
+/* An ordinary evening well inside the window, so the plain cases carry a real
+   time of day rather than a midnight that only ever meant "this date". */
+const INSIDE_EVENING = '2026-08-15 18:00:00 America/New_York';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -224,17 +242,27 @@ async function seedEvidence(client: Client) {
     [ORG_ID, COACH_ID],
   );
 
-  // Training attempts: one inside, one before, one for the other athlete.
+  /* Training attempts: one inside, one before, one for the other athlete --
+     and the two evening instants that separate the gym's day from UTC's.
+
+     attempted_at is a TIMESTAMPTZ, so these carry a time of day. They used to
+     be written as `$4::date`, which stores midnight and therefore only ever
+     meant "this date" -- a value no reduction can get wrong, and so a fixture
+     that could not tell a correct cast from a broken one. */
   for (const [attemptId, athleteId, when] of [
-    ['att-in', ATHLETE_ID, INSIDE],
-    ['att-before', ATHLETE_ID, BEFORE],
-    ['att-other', OTHER_ATHLETE_ID, INSIDE],
+    ['att-in', ATHLETE_ID, INSIDE_EVENING],
+    ['att-before', ATHLETE_ID, `${BEFORE} 18:00:00 America/New_York`],
+    ['att-other', OTHER_ATHLETE_ID, INSIDE_EVENING],
+    // 8:30pm on the last night of the block. Tomorrow, in UTC.
+    ['att-last-evening', ATHLETE_ID, LAST_EVENING],
+    // 8:30pm the night before it opened. The first day, in UTC.
+    ['att-eve-of-start', ATHLETE_ID, EVE_OF_START],
   ] as const) {
     await client.query(
       `insert into pilot.training_attempts
          (organization_id, attempt_id, athlete_id, context_type, metric_kind,
           achieved_value, attempted_at, recorded_by_account_id)
-       values ($1, $2, $3, 'session', 'reps', 8, $4::date, $5)
+       values ($1, $2, $3, 'session', 'reps', 8, $4::timestamptz, $5)
        on conflict do nothing`,
       [ORG_ID, attemptId, athleteId, when, COACH_ID],
     );
@@ -276,20 +304,34 @@ async function seedEvidence(client: Client) {
      the block, so a read windowed on when the ROW was written would count a
      test nobody has given as evidence that a plan was carried out: the most
      flattering possible way to be wrong about a child's training record. It
-     is neither in the window nor outside it -- no window can place it -- so
-     it is counted apart, as `undated`. */
-  for (const [assessmentId, administeredOn] of [
-    ['11111111-1111-1111-1111-111111111111', INSIDE],
-    ['22222222-2222-2222-2222-222222222222', BEFORE],
-    ['33333333-3333-3333-3333-333333333333', null],
+     is not evidence the plan was carried out, so it stays out of `recorded`.
+
+     WHERE IT GOES INSTEAD IS DECIDED BY due_on, not by created_at and not by
+     the window it happens to be read against. The three unadministered rows
+     below are the three cases:
+
+       due inside  -> counted as openInWindow: this window was meant to
+                      contain it and does not.
+       due after   -> counted nowhere here: it belongs to a later window, and
+                      putting it in this one is the per-athlete-total bug
+                      this read used to have.
+       due null    -> counted nowhere at all: nothing can place it, and a
+                      window chosen FOR it rather than BY it is the same
+                      defect in a smaller costume. */
+  for (const [assessmentId, administeredOn, dueOn] of [
+    ['11111111-1111-1111-1111-111111111111', INSIDE, null],
+    ['22222222-2222-2222-2222-222222222222', BEFORE, null],
+    ['33333333-3333-3333-3333-333333333333', null, INSIDE],
+    ['44444444-4444-4444-4444-444444444444', null, AFTER],
+    ['55555555-5555-5555-5555-555555555555', null, null],
   ] as const) {
     await client.query(
       `insert into pilot.assessments
          (organization_id, assessment_id, athlete_id, assessment_type,
-          administered_on, created_at, updated_at)
-       values ($1, $2::uuid, $3, 'movement_screen', $4::date, $5::date, $5::date)
+          administered_on, due_on, created_at, updated_at)
+       values ($1, $2::uuid, $3, 'movement_screen', $4::date, $5::date, $6::date, $6::date)
        on conflict do nothing`,
-      [ORG_ID, assessmentId, ATHLETE_ID, administeredOn, INSIDE],
+      [ORG_ID, assessmentId, ATHLETE_ID, administeredOn, dueOn, INSIDE],
     );
   }
 
@@ -310,20 +352,27 @@ async function seedEvidence(client: Client) {
      on conflict do nothing`,
     [ORG_ID, COACH_ID],
   );
-  for (const [executionId, actualStart] of [
-    ['exec-in', INSIDE],
-    ['exec-before', BEFORE],
-    ['exec-unstarted', null],
+  for (const [executionId, actualStart, plannedStart] of [
+    ['exec-in', INSIDE_EVENING, null],
+    ['exec-before', `${BEFORE} 18:00:00 America/New_York`, null],
+    // Started at 8:30pm on the last night of the block -- tomorrow, in UTC.
+    ['exec-last-evening', LAST_EVENING, null],
+    // Planned inside, never started: what this window was meant to contain.
+    ['exec-unstarted', null, INSIDE_EVENING],
+    // Planned for a later window: not this window's to report.
+    ['exec-planned-after', null, `${AFTER} 18:00:00 America/New_York`],
+    // Neither date. Nothing can place it, so nothing does.
+    ['exec-unplaceable', null, null],
   ] as const) {
     await client.query(
       `insert into pilot.intervention_executions
          (organization_id, execution_id, lineage_id, athlete_id, protocol_id,
           protocol_version, recorded_by_account_id, adherence, actual_start,
-          created_at, updated_at)
-       values ($1, $2, $2, $3, 'prot-1', 1, $4, 'delivered_as_planned', $5::date,
-               $6::date, $6::date)
+          planned_start, created_at, updated_at)
+       values ($1, $2, $2, $3, 'prot-1', 1, $4, 'delivered_as_planned',
+               $5::timestamptz, $6::timestamptz, $7::date, $7::date)
        on conflict do nothing`,
-      [ORG_ID, executionId, ATHLETE_ID, COACH_ID, actualStart, INSIDE],
+      [ORG_ID, executionId, ATHLETE_ID, COACH_ID, actualStart, plannedStart, INSIDE],
     );
   }
 
@@ -641,16 +690,25 @@ describe('the evidence read: what was actually recorded', () => {
          to have found its ONE seeded row -- not merely to have not thrown. */
       expect(by.sessions.recorded).toBe(1);
       expect(by.sessions.recent[0]).toMatchObject({ when: INSIDE, detail: 'Tuesday Technical' });
-      expect(by.training_attempts.recorded).toBe(1);
-      expect(by.training_attempts.recent[0]).toMatchObject({ when: INSIDE, detail: 'session' });
+      /* TWO, and the second one is the gym-time case. att-in is an ordinary
+         evening well inside the window; att-last-evening is 8:30pm on the
+         block's last night, which is already tomorrow in UTC and fell out of
+         a window it belongs in while the cast was a bare ::date. */
+      expect(by.training_attempts.recorded).toBe(2);
+      expect(by.training_attempts.recent.map((entry) => entry.when))
+        .toEqual([ENDS_ON, INSIDE]);
+      expect(by.training_attempts.recent[1]).toMatchObject({ when: INSIDE, detail: 'session' });
       expect(by.activity_log.recorded).toBe(1);
       expect(by.activity_log.recent[0]).toMatchObject({ when: INSIDE, detail: 'Guard recovery' });
       expect(by.assessments.recorded).toBe(1);
       expect(by.assessments.recent[0]).toMatchObject({ when: INSIDE, detail: 'movement_screen' });
       expect(by.coach_reviews.recorded).toBe(1);
       expect(by.coach_reviews.recent[0]).toMatchObject({ when: INSIDE, detail: 'approved' });
-      expect(by.intervention_executions.recorded).toBe(1);
-      expect(by.intervention_executions.recent[0])
+      // Same pair, same reason: one ordinary evening, one on the last night.
+      expect(by.intervention_executions.recorded).toBe(2);
+      expect(by.intervention_executions.recent.map((entry) => entry.when))
+        .toEqual([ENDS_ON, INSIDE]);
+      expect(by.intervention_executions.recent[1])
         .toMatchObject({ when: INSIDE, detail: 'delivered_as_planned' });
     } finally {
       await client.end();
@@ -670,14 +728,19 @@ describe('the evidence read: what was actually recorded', () => {
          after the window AND a schoolwork entry inside it, an assessment and
          an intervention execution before it, and a delivered session that was
          never linked to this block. A read that dropped its filters would
-         show 2 or 3 here. */
-      expect(by.training_attempts.recorded).toBe(1);
+         show more than these. */
+      /* TWO in, and the decoys stay out. The sharpest decoy here is
+         att-eve-of-start: 8:30pm the night BEFORE the block opened, which is
+         already the block's first day in UTC. A bare ::date pulled it in --
+         evidence for a window it is not part of -- so this 2 is a 3 the
+         moment the gym-time reduction goes. */
+      expect(by.training_attempts.recorded).toBe(2);
       /* One, not two. The schoolwork entry sits inside the window, for this
          athlete, and is not evidence about a training plan -- the same rule
          CT-13's reconciled view applies at rank 1, for the same reason. */
       expect(by.activity_log.recorded).toBe(1);
       expect(by.assessments.recorded).toBe(1);
-      expect(by.intervention_executions.recorded).toBe(1);
+      expect(by.intervention_executions.recorded).toBe(2);
       // The unlinked run is the sessions decoy: this source is scoped by the
       // coach's LINK, not by the date, so a date-scoped read would return 2.
       expect(by.sessions.recorded).toBe(1);
@@ -686,9 +749,9 @@ describe('the evidence read: what was actually recorded', () => {
       const elsewhere = await blockEvidence(OTHER_ORG_ID, ATHLETE_ID, 'blk-1', STARTS_ON, ENDS_ON);
       for (const source of elsewhere) {
         expect([source.key, source.recorded]).toEqual([source.key, 0]);
-        // The undated counts are org-scoped too. They carry no date to filter
-        // on, so their tenancy predicate is the only thing holding them.
-        expect([source.key, source.undated]).toEqual([source.key, 0]);
+        // The openInWindow counts are org-scoped too, and their window
+        // predicate is not what holds them here -- the tenancy one is.
+        expect([source.key, source.openInWindow]).toEqual([source.key, 0]);
       }
     } finally {
       await client.end();
@@ -711,8 +774,12 @@ describe('the evidence read: what was actually recorded', () => {
           `insert into pilot.training_attempts
              (organization_id, attempt_id, athlete_id, context_type, metric_kind,
               achieved_value, attempted_at, recorded_by_account_id)
-           values ($1, $2, $3, 'session', 'reps', 8, $4::date, $5)`,
-          [ORG_ID, `att-${index}`, ATHLETE_ID, `2026-09-0${index}`, COACH_ID],
+           values ($1, $2, $3, 'session', 'reps', 8, $4::timestamptz, $5)`,
+          // A real time of day, in the gym's zone. Written as a bare date
+          // these were midnight UTC, which is the evening BEFORE in the gym
+          // -- so every `when` below came back a day early.
+          [ORG_ID, `att-${index}`, ATHLETE_ID,
+           `2026-09-0${index} 18:00:00 America/New_York`, COACH_ID],
         );
       }
 
@@ -738,7 +805,7 @@ describe('the evidence read: what was actually recorded', () => {
       expect(sources).toHaveLength(6);
       for (const source of sources) {
         expect([source.key, source.recorded]).toEqual([source.key, 0]);
-        expect([source.key, source.undated]).toEqual([source.key, 0]);
+        expect([source.key, source.openInWindow]).toEqual([source.key, 0]);
         expect(source.recent).toEqual([]);
         // The label says "recorded" on every source. A zero means nobody
         // recorded anything -- never that the athlete did not train.
@@ -760,23 +827,57 @@ describe('the evidence read: what was actually recorded', () => {
       /* THE THIRD STATE. pilot.assessments.administered_on is null for a test
          that was scheduled and never given, and
          pilot.intervention_executions.actual_start is null for a plan that
-         has not begun. Both fixtures were CREATED inside the window, so a
-         read windowed on created_at would count them -- reporting work that
-         has not happened as evidence that a plan was carried out.
+         has not begun. All of these fixtures were CREATED inside the window,
+         so a read windowed on created_at would count them -- reporting work
+         that has not happened as evidence that a plan was carried out.
 
          They are also not nothing: the rows exist and a coach looking for
-         them should see them. So neither count absorbs the other. */
+         them should see them. So neither count absorbs the other.
+
+         AND WHICH WINDOW THEY BELONG TO IS DECIDED BY THEIR OWN PLANNED DATE.
+         Each source is seeded with three unstarted rows -- one due or planned
+         INSIDE this window, one for a LATER window, and one with no planned
+         date at all. Only the first is this window's to report. Counted
+         without a window, as this read once did, all three would land here
+         and every block for this athlete would show the same number. */
       expect(by.assessments.recorded).toBe(1);
-      expect(by.assessments.undated).toBe(1);
-      expect(by.intervention_executions.recorded).toBe(1);
-      expect(by.intervention_executions.undated).toBe(1);
+      expect(by.assessments.openInWindow).toBe(1);
+      expect(by.intervention_executions.recorded).toBe(2);
+      expect(by.intervention_executions.openInWindow).toBe(1);
+
+      /* The two that must NOT be here, read back from the database so this
+         asserts against rows that exist rather than against a fixture I
+         remember writing. Three unadministered assessments are seeded; one is
+         counted. */
+      const unadministered = await client.query(
+        `select count(*)::int as n from pilot.assessments
+         where organization_id = $1 and athlete_id = $2 and administered_on is null`,
+        [ORG_ID, ATHLETE_ID],
+      );
+      expect(unadministered.rows[0].n).toBe(3);
+
+      const unstarted = await client.query(
+        `select count(*)::int as n from pilot.intervention_executions
+         where organization_id = $1 and athlete_id = $2 and actual_start is null`,
+        [ORG_ID, ATHLETE_ID],
+      );
+      expect(unstarted.rows[0].n).toBe(3);
+
+      /* A LATER WINDOW REPORTS ITS OWN. The row due in November is this
+         read's proof that the count is per-window rather than per-athlete:
+         windowed, it moves; unwindowed, both windows say the same thing. */
+      const later = await blockEvidence(ORG_ID, ATHLETE_ID, 'blk-1', '2026-10-01', '2026-12-31');
+      const byLater = Object.fromEntries(later.map((item) => [item.key, item]));
+      expect(byLater.assessments.openInWindow).toBe(1);
+      expect(byLater.assessments.recorded).toBe(0);
+      expect(byLater.intervention_executions.openInWindow).toBe(1);
 
       // The four sources whose event date is NOT NULL can never have one.
       for (const key of ['sessions', 'training_attempts', 'activity_log', 'coach_reviews']) {
-        expect([key, by[key].undated]).toEqual([key, 0]);
+        expect([key, by[key].openInWindow]).toEqual([key, 0]);
       }
 
-      // And an undated row is never shown as a dated entry.
+      // And an openInWindow row is never shown as a dated entry.
       expect(by.assessments.recent.every((entry) => entry.when)).toBe(true);
     } finally {
       await client.end();

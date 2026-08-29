@@ -1104,10 +1104,10 @@ test.describe('Coach journey', () => {
             },
           ],
           evidence: [
-            { key: 'sessions', label: 'Sessions linked to this block', recorded: 3, undated: 0, recent: [{ when: '2026-09-08', detail: 'Tuesday Technical' }] },
-            { key: 'training_attempts', label: 'Training attempts recorded', recorded: 12, undated: 0, recent: [] },
-            { key: 'activity_log', label: 'Training activity entries recorded', recorded: 0, undated: 0, recent: [] },
-            { key: 'assessments', label: 'Assessments administered', recorded: 2, undated: 3, recent: [] },
+            { key: 'sessions', label: 'Sessions linked to this block', recorded: 3, openInWindow: 0, recent: [{ when: '2026-09-08', detail: 'Tuesday Technical' }] },
+            { key: 'training_attempts', label: 'Training attempts recorded', recorded: 12, openInWindow: 0, recent: [] },
+            { key: 'activity_log', label: 'Training activity entries recorded', recorded: 0, openInWindow: 0, recent: [] },
+            { key: 'assessments', label: 'Assessments administered', recorded: 2, openInWindow: 3, recent: [] },
           ],
         },
       },
@@ -1132,7 +1132,11 @@ test.describe('Coach journey', () => {
        claim a test happened, and dropping it would hide records a coach is
        looking for. */
     await expect(page.getByText('Assessments administered: 2 recorded')).toBeVisible();
-    await expect(page.getByText(/3 more on record with no date/i)).toBeVisible();
+    // Rows due or planned inside this window that nothing was recorded
+    // against. It used to read "3 more on record with no date, which this
+    // window cannot place" -- and these rows do carry a due_on, which the
+    // window now places them by.
+    await expect(page.getByText(/3 due or planned in this window/i)).toBeVisible();
 
     // The human's judgement, in the human's words.
     await expect(page.getByText('Deviations: Two weeks lost to a hall closure.')).toBeVisible();

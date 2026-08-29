@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { GYM_TIME_ZONE } from '../../lib/gymTime';
 import { query, queryOne } from './db';
 import { ValidationError } from './errors';
 
@@ -49,11 +50,44 @@ import { ValidationError } from './errors';
 // count a scheduled-and-never-administered assessment as evidence that a plan
 // was carried out, which is the most flattering possible way to be wrong.
 //
-// SO A THIRD STATE EXISTS AND IS KEPT SEPARATE. A row with no event date is
-// not "in the window" and not "outside" it: no window can place it. Every
-// source carries `undated` beside `recorded` for that reason, and the
-// surfaces show both. Folding them together in either direction is a lie --
-// one way invents activity, the other hides records that exist.
+// SO A THIRD STATE EXISTS AND IS KEPT SEPARATE. A row with no EVENT date is
+// not evidence the plan was carried out -- but it is not nothing either, and
+// it is not unplaceable: an assessment carries due_on and an execution
+// carries planned_start, so it can be placed in the window it was MEANT for.
+// Every source carries `openInWindow` beside `recorded` for that reason, and
+// the surfaces show both. Folding them together in either direction is a lie
+// -- one way invents activity, the other hides records that exist.
+//
+// `openInWindow` WAS ONCE A PER-ATHLETE TOTAL, counted without a window on
+// the stated grounds that these rows had no date to scope them by. They do.
+// Every block for one athlete reported the same two numbers, an assessment
+// due next month appeared under a block that closed last year, and the
+// figures moved when unrelated work was scheduled -- a per-athlete total
+// wearing a per-block label, on the surface whose whole claim is that its
+// counts are about THIS window. A row with neither date is now excluded
+// rather than counted: no window can place it, and it must not make an empty
+// window look active.
+
+
+/**
+ * A timestamptz reduced to the GYM'S calendar day.
+ *
+ * A bare `::date` resolves a timestamptz in UTC, which is the wrong day for
+ * half the evening: an 8:30pm attempt on a block's last day is already
+ * tomorrow in UTC. The window these are compared against is a pair of
+ * calendar days a coach typed, so the instants have to be reduced in the zone
+ * those days mean.
+ *
+ * Built from GYM_TIME_ZONE rather than a literal, so the zone this SQL uses
+ * and the zone gymDayIso() uses are ONE value -- not two that happen to
+ * agree. The same reduction the attendance-precedence view performs.
+ *
+ * The column name is interpolated, never a caller's value: every call below
+ * passes a literal written in this file.
+ */
+function gymDay(column: string): string {
+  return `(${column} at time zone '${GYM_TIME_ZONE}')::date`;
+}
 
 export const ADHERENCE_STATES = [
   'delivered_as_planned',
@@ -101,14 +135,20 @@ export interface EvidenceSource {
   recorded: number;
   /**
    * Rows this source holds for this athlete that carry NO event date, so no
-   * window can place them -- a scheduled assessment nobody has administered,
-   * an intervention that has not started. Always 0 for the four sources whose
-   * event date is NOT NULL.
+   * window says it was MEANT for -- an assessment due inside it that nobody
+   * administered, an intervention planned inside it that never started.
+   * Always 0 for the four sources whose event date is NOT NULL.
+   *
+   * It is scoped to this window by that planned date, so two blocks for one
+   * athlete report different numbers, which is what a per-block figure has to
+   * do. A row carrying neither an event date nor a planned one is excluded
+   * altogether: nothing can place it, and counting it here would put it in a
+   * window chosen for it rather than by it.
    *
    * Kept separate rather than added to `recorded` (which would claim activity
    * that has not happened) or dropped (which would hide records that exist).
    */
-  undated: number;
+  openInWindow: number;
   /** The most recent few, so a coach reads entries rather than a number. */
   recent: { when: string; detail: string }[];
 }
@@ -241,7 +281,7 @@ export async function blockEvidence(
      infers a union and loses which is which. */
   const [
     [sessions, attempts, activity, assessments, executions, reviews],
-    [undatedAssessments, undatedExecutions],
+    [openAssessments, openExecutions],
   ] = await Promise.all([
     Promise.all([
       /* The coach's own statement of which delivered sessions served this
@@ -259,12 +299,19 @@ export async function blockEvidence(
          order by r.delivered_on desc, r.run_id`,
         [organizationId, blockId],
       ),
+      /* THE GYM'S DAY, NOT UTC'S. attempted_at is a timestamptz, and a bare
+         ::date resolves it in UTC: an 8:30pm attempt on the block's last day
+         is already tomorrow in UTC and fell out of the window, while the
+         evening before the first day fell in. The window is a pair of
+         calendar days a coach typed, so the instants have to be reduced to
+         calendar days in the same zone those days mean -- which is the idiom
+         the attendance-precedence view already uses for exactly this. */
       query<{ when: string; detail: string }>(
-        `select a.attempted_at::date::text as when,
+        `select ${gymDay('a.attempted_at')}::text as when,
                 coalesce(nullif(a.context_type, ''), 'attempt') as detail
          from pilot.training_attempts a
          where a.organization_id = $1 and a.athlete_id = $2
-           and a.attempted_at::date between $3::date and $4::date
+           and ${gymDay('a.attempted_at')} between $3::date and $4::date
          order by a.attempted_at desc`,
         window,
       ),
@@ -309,10 +356,10 @@ export async function blockEvidence(
          has none, and its created_at would place a plan inside the window as
          though it had been delivered. */
       query<{ when: string; detail: string }>(
-        `select e.actual_start::date::text as when, e.adherence as detail
+        `select ${gymDay('e.actual_start')}::text as when, e.adherence as detail
          from pilot.intervention_executions e
          where e.organization_id = $1 and e.athlete_id = $2
-           and e.actual_start::date between $3::date and $4::date
+           and ${gymDay('e.actual_start')} between $3::date and $4::date
          order by e.actual_start desc`,
         window,
       ),
@@ -331,21 +378,49 @@ export async function blockEvidence(
         window,
       ),
     ]),
-    /* The two undated counts. Deliberately NOT window-scoped: there is no
+    /* THE TWO UNDATED COUNTS ARE WINDOWED, AND THIS COMMENT USED TO SAY THEY
+       COULD NOT BE. It read: "Deliberately NOT window-scoped: there is no
        date to scope them by, which is the entire reason they are counted
-       apart from the six above. */
+       apart from the six above." The premise was false. Each source has a
+       window-relevant date beside the one that is null:
+
+         pilot.assessments.due_on -- and the assessment_protocols migration
+         indexes (organization_id, due_on) WHERE administered_on is null,
+         an index built precisely for the case counted here.
+
+         pilot.intervention_executions.planned_start -- sitting directly
+         beside the actual_start this tests for null.
+
+       Unwindowed, these were PER-ATHLETE TOTALS wearing a per-block label.
+       Every block for one athlete reported the same two numbers; an
+       assessment due next month appeared under a block that closed last year,
+       and the figures moved whenever unrelated work was scheduled. On the one
+       surface in this lane whose whole claim is that its counts are about
+       THIS window, and beside the word "more", which asserts they are
+       additional to what the window already counted.
+
+       A ROW WITH BOTH DATES NULL IS EXCLUDED, not counted. No window can
+       place it, so attributing it to this one would be the same defect in a
+       smaller costume -- and it must not make an empty window look active.
+       `between` over a null yields null, so the exclusion is the predicate's
+       own behaviour rather than a second clause that could drift from it.
+
+       planned_start is a timestamptz and gets the gym-day reduction for the
+       same reason actual_start does above. due_on is already a date. */
     Promise.all([
-      queryOne<{ undated: string }>(
-        `select count(*)::text as undated from pilot.assessments a
+      queryOne<{ open_in_window: string }>(
+        `select count(*)::text as open_in_window from pilot.assessments a
          where a.organization_id = $1 and a.athlete_id = $2
-           and a.administered_on is null`,
-        [organizationId, athleteId],
+           and a.administered_on is null
+           and a.due_on between $3::date and $4::date`,
+        window,
       ),
-      queryOne<{ undated: string }>(
-        `select count(*)::text as undated from pilot.intervention_executions e
+      queryOne<{ open_in_window: string }>(
+        `select count(*)::text as open_in_window from pilot.intervention_executions e
          where e.organization_id = $1 and e.athlete_id = $2
-           and e.actual_start is null`,
-        [organizationId, athleteId],
+           and e.actual_start is null
+           and ${gymDay('e.planned_start')} between $3::date and $4::date`,
+        window,
       ),
     ]),
   ]);
@@ -354,12 +429,12 @@ export async function blockEvidence(
     key: string,
     label: string,
     rows: { when: string; detail: string }[],
-    undated = 0,
+    openInWindow = 0,
   ): EvidenceSource => ({
     key,
     label,
     recorded: rows.length,
-    undated,
+    openInWindow,
     recent: rows.slice(0, RECENT_LIMIT),
   });
 
@@ -369,8 +444,8 @@ export async function blockEvidence(
     build('activity_log', 'Training activity entries recorded', activity),
     build('coach_reviews', 'Coach reviews of sessions', reviews),
     build('assessments', 'Assessments administered', assessments,
-      Number(undatedAssessments?.undated ?? 0)),
+      Number(openAssessments?.open_in_window ?? 0)),
     build('intervention_executions', 'Intervention executions recorded', executions,
-      Number(undatedExecutions?.undated ?? 0)),
+      Number(openExecutions?.open_in_window ?? 0)),
   ];
 }
