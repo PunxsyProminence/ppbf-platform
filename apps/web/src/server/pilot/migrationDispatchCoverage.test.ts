@@ -314,6 +314,20 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     for (const prerequisite of ['multidiscipline', 'competence-cohorts']) {
       expect(at('cohort-definitions-discipline-fk')).toBeGreaterThan(at(prerequisite));
     }
+    // discipline-fk-validation issues `validate constraint` against all three of
+    // the keys above, so all three must already be installed. Applied earlier it
+    // would find nothing, skip all three by design -- the guard SKIPS a missing
+    // constraint rather than raising, because raising would take down an `all`
+    // dispatch on an environment lacking the keys -- and report success while
+    // achieving nothing. That is a silent no-op rather than a failure, which is
+    // exactly the class of defect no other check here would catch.
+    for (const prerequisite of [
+      'session-scripts-discipline-fk',
+      'drill-library-discipline-fk',
+      'cohort-definitions-discipline-fk',
+    ]) {
+      expect(at('discipline-fk-validation')).toBeGreaterThan(at(prerequisite));
+    }
     // drill-library-check-drop is the only migration here that REMOVES a
     // constraint, and its ordering carries more than the usual "the table must
     // exist first".
