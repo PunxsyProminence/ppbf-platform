@@ -74,11 +74,20 @@ export function requireAnnotator(principal: PilotPrincipal): void {
  * vocabulary is enforced by both auditEventTypes.ts and a database CHECK, so a
  * new value would need a migration; the distinct `entity_type` carries the
  * meaning instead.
+ *
+ * `entityType` IS THE HALF THAT GROWS. It is `text not null` in the schema --
+ * no CHECK, no enum, no foreign key -- so a new calibration entity costs a
+ * union member here and nothing in the database. 'calibration_adjudication'
+ * was added when the adjudication write surface landed; the vocabulary that
+ * would have needed a migration, `event_type`, was not touched.
  */
 export async function writeCalibrationAuditEvent(input: {
   eventType: Extract<AuditEventType, 'create' | 'update'>;
   principal: PilotPrincipal;
-  entityType: 'calibration_annotation_set' | 'calibration_annotation_event';
+  entityType:
+    | 'calibration_annotation_set'
+    | 'calibration_annotation_event'
+    | 'calibration_adjudication';
   entityId: string;
   details: Record<string, unknown>;
 }): Promise<void> {

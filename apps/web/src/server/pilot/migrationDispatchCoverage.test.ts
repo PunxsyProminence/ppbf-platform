@@ -81,10 +81,85 @@ const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
   scripts: Record<string, string>;
 };
 
-const allList = workflow.match(/for m in ([a-z0-9 -]+); do/)?.[1].split(' ').filter(Boolean) ?? [];
-const allowList = workflow.match(/case " ([a-z0-9 -]+) " in/)?.[1].split(' ').filter(Boolean) ?? [];
+const allMatches = [...workflow.matchAll(/for m in ([a-z0-9 -]+); do/g)];
+const allowMatches = [...workflow.matchAll(/case " ([a-z0-9 -]+) " in/g)];
+const allList = allMatches[0]?.[1].split(' ').filter(Boolean) ?? [];
+const allowList = allowMatches[0]?.[1].split(' ').filter(Boolean) ?? [];
+
+/**
+ * Every `run: |` block in the workflow, dedented, ready for `bash -n`.
+ *
+ * Parsed by indentation rather than with a YAML library on purpose: this has to
+ * hand the shell exactly the text a runner would run, and a YAML round-trip is
+ * one more thing standing between the file and that claim.
+ */
+function shellSteps(): { line: number; script: string }[] {
+  const lines = workflow.split('\n');
+  const steps: { line: number; script: string }[] = [];
+  lines.forEach((line, index) => {
+    if (!/\brun: \|\s*$/.test(line)) return;
+    const openIndent = line.length - line.trimStart().length;
+    const body: string[] = [];
+    for (const candidate of lines.slice(index + 1)) {
+      if (candidate.trim() === '') {
+        body.push('');
+        continue;
+      }
+      if (candidate.length - candidate.trimStart().length <= openIndent) break;
+      body.push(candidate);
+    }
+    const bodyIndent = Math.min(
+      ...body.filter((l) => l.trim() !== '').map((l) => l.length - l.trimStart().length),
+    );
+    steps.push({
+      line: index + 1,
+      script: body.map((l) => (l.trim() === '' ? '' : l.slice(bodyIndent))).join('\n'),
+    });
+  });
+  return steps;
+}
 
 describe('every migration is dispatchable and in the rebuild path', () => {
+  test('the workflow declares exactly one apply order and one allowlist', () => {
+    /*
+     * Three of each landed on main at once. Three lanes each appended their
+     * migration to these two lines, and the merge kept all three copies of both
+     * instead of merging them. Every reader -- the two `match()` calls above and
+     * scripts/migration-apply-order.mjs -- took the FIRST match, so the whole
+     * guard family reported the other lanes' migrations as merely unregistered.
+     *
+     * The file was in a far worse state than that. Three consecutive
+     * `for m in ...; do` share one `done`, and three `case ... in` share one
+     * `esac`, so the apply step was a bash SYNTAX ERROR: no migration was
+     * dispatchable by any path, `all` and single-slug dispatch alike, including
+     * the two waiver migrations already waiting on a production run.
+     *
+     * A first-match parser cannot see a second list, so it names the wrong
+     * defect with complete confidence. This counts them.
+     */
+    expect(allMatches).toHaveLength(1);
+    expect(allowMatches).toHaveLength(1);
+  });
+
+  test('every run step in the workflow is parseable shell', () => {
+    // The check that would have caught the above in one line, and catches the
+    // general form of it: a workflow can be valid YAML, pass every content
+    // assertion in this file, and still be a step no shell can parse.
+    const steps = shellSteps();
+    expect(steps.length).toBeGreaterThan(0);
+    for (const { line, script } of steps) {
+      let error = '';
+      try {
+        execFileSync('bash', ['-n'], { input: script, stdio: ['pipe', 'pipe', 'pipe'] });
+      } catch (cause) {
+        error = String((cause as { stderr?: Buffer }).stderr ?? cause);
+      }
+      expect(`apply-migrations.yml run block at line ${line}: ${error}`).toBe(
+        `apply-migrations.yml run block at line ${line}: `,
+      );
+    }
+  });
+
   test('the migration set is non-empty and the workflow lists parsed', () => {
     // Guards the guard: a regex that silently stopped matching would make every
     // assertion below vacuous.
@@ -179,22 +254,58 @@ describe('every migration is dispatchable and in the rebuild path', () => {
       .toBeGreaterThan(at('external-competition'));
     expect(at('athlete-development-block-competition-target'))
       .toBeGreaterThan(at('wrestling-league'));
+    /* coach-development hangs both of its tables off
+       pilot.organization_memberships with a composite FK, and multiorg is the
+       migration that creates that table. Applied before it, a rebuild dies on
+       the foreign key -- and this ordering is easy to get wrong precisely
+       because the base schema ALSO declares organization_memberships, so a
+       reader checking pilot_slice_postgres.sql would conclude no dependency
+       exists. The `all` loop is applied to environments that already have the
+       base schema, and multiorg is where that table's current shape comes
+       from. */
+    expect(at('coach-development')).toBeGreaterThan(at('multiorg'));
+    /* session-block-link joins pilot.session_script_runs to
+       pilot.athlete_development_blocks with a composite FK into each, so both
+       have to exist first. The session-scripts dependency is the one a reader
+       is likeliest to miss: this migration's name says "block", and nothing in
+       it mentions scripts. */
+    expect(at('session-block-link')).toBeGreaterThan(at('session-scripts'));
+    expect(at('session-block-link')).toBeGreaterThan(at('athlete-development-blocks'));
+    /* session-objective-link's two composite FKs point at the objectives table
+       and at session-block-link's own table, so BOTH have to exist first. It
+       also adds a unique index to pilot.athlete_development_block_objectives,
+       which is a second reason that migration cannot come later. */
+    expect(at('session-objective-link'))
+      .toBeGreaterThan(at('athlete-development-block-objectives'));
+    expect(at('session-objective-link')).toBeGreaterThan(at('session-block-link'));
+    /* block-review's composite FK points at pilot.athlete_development_blocks,
+       so that table has to exist first. Its READS reach further -- training
+       attempts, the activity log, assessments, intervention executions,
+       coach reviews -- but reads are a runtime concern and every one of those
+       is already in `all`; only the foreign key constrains the ORDER. */
+    expect(at('block-review')).toBeGreaterThan(at('athlete-development-blocks'));
     // session-scripts-discipline-fk points pilot.session_scripts at
     // pilot.disciplines. It needs BOTH: multidiscipline creates the registry it
     // references, session-scripts creates the table it constrains. Applied
     // before either, a rebuild dies on ALTER against a missing table -- and
     // this is the ordering a fresh environment depends on, because
-    // multidiscipline sits at 62 while the table it constrains was created at
-    // 63 and the drill library it does NOT constrain at 49.
+    // multidiscipline sits LATER in the list than the drill library it does
+    // not constrain, and adjacent to the table it does.
+    //
+    // Deliberately no absolute indices here. This comment carried three
+    // (62 / 63 / 49) and every one of them was wrong within days: each is
+    // pushed down by any migration inserted ahead of it, and this list gains
+    // entries continually. The assertion below is the durable statement; a
+    // number in a comment is a claim nothing re-checks.
     for (const prerequisite of ['multidiscipline', 'session-scripts']) {
       expect(at('session-scripts-discipline-fk')).toBeGreaterThan(at(prerequisite));
     }
     // drill-library-discipline-fk is the same shape and the ordering is LESS
     // obvious, which is exactly why it is asserted: drill-library-v3 creates
-    // the table at 49, and the registry it must now reference is not created
-    // until 62. Anyone grouping this migration next to the table it constrains
-    // would place it thirteen entries too early, and a rebuild would die on
-    // ALTER against a pilot.disciplines that does not exist yet.
+    // the table well before multidiscipline creates the registry it must now
+    // reference. Anyone grouping this migration next to the table it
+    // constrains would place it many entries too early, and a rebuild would
+    // die on ALTER against a pilot.disciplines that does not exist yet.
     for (const prerequisite of ['multidiscipline', 'drill-library-v3']) {
       expect(at('drill-library-discipline-fk')).toBeGreaterThan(at(prerequisite));
     }
@@ -202,6 +313,20 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // creates the table it constrains; multidiscipline creates the registry.
     for (const prerequisite of ['multidiscipline', 'competence-cohorts']) {
       expect(at('cohort-definitions-discipline-fk')).toBeGreaterThan(at(prerequisite));
+    }
+    // discipline-fk-validation issues `validate constraint` against all three of
+    // the keys above, so all three must already be installed. Applied earlier it
+    // would find nothing, skip all three by design -- the guard SKIPS a missing
+    // constraint rather than raising, because raising would take down an `all`
+    // dispatch on an environment lacking the keys -- and report success while
+    // achieving nothing. That is a silent no-op rather than a failure, which is
+    // exactly the class of defect no other check here would catch.
+    for (const prerequisite of [
+      'session-scripts-discipline-fk',
+      'drill-library-discipline-fk',
+      'cohort-definitions-discipline-fk',
+    ]) {
+      expect(at('discipline-fk-validation')).toBeGreaterThan(at(prerequisite));
     }
     // drill-library-check-drop is the only migration here that REMOVES a
     // constraint, and its ordering carries more than the usual "the table must

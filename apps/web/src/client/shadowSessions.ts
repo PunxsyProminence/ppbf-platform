@@ -366,6 +366,83 @@ export async function fetchOwnShadowDataExport(
   };
 }
 
+export type OwnShadowDeletionStatus = 'pending' | 'approved' | 'completed' | 'denied';
+
+export interface OwnShadowDeletionRequest {
+  readonly requestId: string;
+  readonly status: OwnShadowDeletionStatus;
+  readonly requestedAt: string;
+  readonly completedAt: string | null;
+}
+
+function parseDeletionRequest(value: unknown): OwnShadowDeletionRequest | null {
+  if (!isRecord(value)) return null;
+  const status = value.status;
+  if (
+    typeof value.requestId !== 'string'
+    || typeof value.requestedAt !== 'string'
+    || (status !== 'pending' && status !== 'approved' && status !== 'completed' && status !== 'denied')
+  ) {
+    throw new ShadowSessionsRequestError(502, 'SHADOW returned a malformed deletion request.');
+  }
+  return {
+    requestId: value.requestId,
+    status,
+    requestedAt: value.requestedAt,
+    completedAt: typeof value.completedAt === 'string' ? value.completedAt : null,
+  };
+}
+
+/**
+ * Where the caller's own deletion request stands, or null if they have none.
+ *
+ * Null and "could not read" are NOT the same and this never conflates them: a
+ * failed read throws. A person told "you have no request" when the server
+ * could not be asked would file a second one, which is exactly what the
+ * route's idempotency check exists to absorb and exactly the confusion it
+ * cannot undo.
+ */
+export async function fetchOwnShadowDeletionRequest(
+  apiBaseUrl: string,
+  signal?: AbortSignal,
+  fetchImpl: ShadowSessionsFetch = fetch,
+): Promise<OwnShadowDeletionRequest | null> {
+  const response = await fetchImpl(
+    `${normalizedBaseUrl(apiBaseUrl)}/api/pilot/shadow/data/deletion-request`,
+    { method: 'GET', credentials: 'include', signal },
+  );
+  const payload = await parseJsonResponse(
+    response,
+    'SHADOW could not check your deletion request.',
+  );
+  if (payload.ok !== true) {
+    throw new ShadowSessionsRequestError(502, 'SHADOW could not check your deletion request.');
+  }
+  return payload.request === null || payload.request === undefined
+    ? null
+    : parseDeletionRequest(payload.request);
+}
+
+/** File a request to have SHADOW conversation history cleared. Idempotent
+ *  server-side: a repeat while one is pending returns the same request. */
+export async function requestOwnShadowDeletion(
+  apiBaseUrl: string,
+  fetchImpl: ShadowSessionsFetch = fetch,
+): Promise<{ requestId: string }> {
+  const response = await fetchImpl(
+    `${normalizedBaseUrl(apiBaseUrl)}/api/pilot/shadow/data`,
+    { method: 'POST', credentials: 'include' },
+  );
+  const payload = await parseJsonResponse(
+    response,
+    'SHADOW could not file your request.',
+  );
+  if (payload.success !== true || typeof payload.requestId !== 'string') {
+    throw new ShadowSessionsRequestError(502, 'SHADOW could not file your request.');
+  }
+  return { requestId: payload.requestId };
+}
+
 export async function deleteOwnedShadowSession(
   apiBaseUrl: string,
   conversationId: string,

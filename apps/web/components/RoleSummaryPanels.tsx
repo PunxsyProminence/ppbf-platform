@@ -35,10 +35,31 @@ interface CoachSummaryPanelProps {
    * survives below the row, in a voice that fits it.
    */
   sessionStatus: string | null;
+  /**
+   * How many athletes are on this coach's roster.
+   *
+   * The ROSTER, deliberately, not an attendance-derived count. This used to
+   * be the number of athletes whose attendance was anything other than
+   * 'Unknown' -- and loadAthletes hardcodes 'Unknown' for every athlete
+   * because no attendance feed exists, so it was ALWAYS zero. Every coach,
+   * always, was told "Nobody is assigned to you yet" directly above their
+   * real roster. A claim derived from a column the platform never feeds is
+   * not a measurement; it is a sentence that happens to be false.
+   */
   activeAthletes: number;
-  injuryFlags: number;
-  reviewsNeeded: number;
-  assignmentsDue: number;
+  /*
+   * null on each count means "no feed answered this" and renders as a
+   * disclosure rather than a number -- the contract ParentSummaryPanel below
+   * already documents and the one place it had not been applied.
+   *
+   * The distinction matters most AT ZERO. "Injuries 0" is the good news a
+   * coach came to check; the same 0 standing in for a feed that does not
+   * exist (injuryFlag is null for every athlete) or a queue that failed to
+   * load tells them nothing is wrong when nobody knows.
+   */
+  injuryFlags: number | null;
+  reviewsNeeded: number | null;
+  assignmentsDue: number | null;
 }
 
 interface ParentSummaryPanelProps {
@@ -179,14 +200,28 @@ export function CoachSummaryPanel({
   reviewsNeeded,
   assignmentsDue
 }: Readonly<CoachSummaryPanelProps>) {
-  const injuriesFlagged = injuryFlags > 0;
+  const injuriesFlagged = injuryFlags !== null && injuryFlags > 0;
+
+  /* One renderer for all three counts, so a later edit cannot restore the
+     bare number on one tile and leave the other two honest. */
+  const count = (value: number | null) => (value === null
+    ? <span className="text-[color:var(--bone-400)]">Unavailable</span>
+    : value);
 
   /* A zero is worth reading only once there is somebody it could have counted.
      "Injuries 0" across a real roster is the good news a coach came to check;
      the same 0 with nobody assigned is arithmetic on an empty set, and four
      tiles of it read as a working dashboard with nothing in it rather than as
      an empty floor. So the counts appear when the roster does, and the empty
-     floor says it is empty in one line. */
+     floor says it is empty in one line.
+
+     WHAT THIS BRANCH IS NOW KEYED ON, AND WHY IT MOVED. `activeAthletes` is
+     the ROSTER SIZE. It used to be the number of athletes whose attendance
+     read anything but 'Unknown', and since no attendance feed exists that was
+     always zero -- so this branch fired for every coach, always, printing
+     "Nobody is assigned to you yet" a few hundred pixels above the roster
+     itself. An empty floor is a real state and still gets this line; it is
+     just no longer the only state. */
   if (activeAthletes === 0) {
     return (
       <div className="mb-[var(--s6)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] mat-leather p-[var(--s5)]">
@@ -217,20 +252,20 @@ export function CoachSummaryPanel({
         <p className="t-label">Injuries</p>
         <p className={KPI_VALUE}>
           {injuriesFlagged ? <span aria-hidden="true">✕ </span> : null}
-          <span>{injuryFlags}</span>
+          <span>{count(injuryFlags)}</span>
         </p>
       </div>
 
       {/* Reviews */}
       <div className={STAT_TILE}>
         <p className="stat-label">Reviews</p>
-        <p className="stat-val">{reviewsNeeded}</p>
+        <p className="stat-val">{count(reviewsNeeded)}</p>
       </div>
 
       {/* Assignments */}
       <div className={STAT_TILE}>
         <p className="stat-label">Due</p>
-        <p className="stat-val">{assignmentsDue}</p>
+        <p className="stat-val">{count(assignmentsDue)}</p>
       </div>
     </div>
 

@@ -278,9 +278,43 @@ export async function getCoachDisplayName(
   organizationId: string,
   accountId: string,
 ): Promise<string> {
+  /* HOMED HERE, *OR* ACTIVELY A MEMBER HERE.
+   *
+   * pilot.accounts holds ONE row per account with ONE home organization_id, so
+   * filtering on it alone answers "is this the account's home gym" -- which is
+   * not the question. A coach whose home gym is elsewhere can hold an active
+   * membership here and author perfectly ordinary records: that is the case
+   * hasBlockWriteMembership exists for, and athleteDevelopmentBlocks.pg.test.ts
+   * has a case named for it ("a coach whose home organization is elsewhere may
+   * still author here, if their membership is active").
+   *
+   * With the home-org filter alone that coach resolved to NO ROW, and every
+   * surface fell back to the phrase "Your coach" -- silently, and precisely
+   * for the multi-gym coaches the membership model exists to support. It hit
+   * all five callers: recognitions, behavior standards, the One Percent Club
+   * and both development-block surfaces, including the family page, where
+   * naming the coach is the entire point.
+   *
+   * TENANCY IS NOT WIDENED BY THIS. The membership must be in the ASKING
+   * organization and must be ACTIVE, so a caller can still only name people
+   * who are actually in their gym. An account with neither claim on this
+   * organization returns no row and still falls back to the phrase -- which
+   * is the right answer, not a bug: you should not be able to name a stranger
+   * by holding their account id.
+   */
   const row = await queryOne<{ login_email: string | null }>(
-    `select login_email from pilot.accounts
-     where organization_id = $1 and account_id = $2`,
+    `select a.login_email
+     from pilot.accounts a
+     where a.account_id = $2
+       and (
+         a.organization_id = $1
+         or exists (
+           select 1 from pilot.organization_memberships om
+           where om.account_id = a.account_id
+             and om.organization_id = $1
+             and om.active_flag = true
+         )
+       )`,
     [organizationId, accountId],
   );
 

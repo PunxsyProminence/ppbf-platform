@@ -29,6 +29,8 @@ const OTHER_CLIP = 'clip-2';
 const A = 'acct-a';
 const B = 'acct-b';
 const C = 'acct-c';
+/** Someone who annotated nothing -- the third party adjudication assumes. */
+const ADJUDICATOR = 'acct-adjudicator';
 
 function setOf(
   annotatorAccountId: string,
@@ -294,7 +296,7 @@ describe('resolveAdjudicationEligibility', () => {
 
   test('an organization admin may adjudicate once every set is submitted', () => {
     expect(
-      resolveAdjudicationEligibility({ actorRole: 'organization_admin', sets: bothSubmitted }),
+      resolveAdjudicationEligibility({ actorRole: 'organization_admin', actorAccountId: ADJUDICATOR, sets: bothSubmitted }),
     ).toEqual({ outcome: 'eligible', submittedSetCount: 2 });
   });
 
@@ -304,14 +306,14 @@ describe('resolveAdjudicationEligibility', () => {
     // the review surface while looking correct in a test seeded only with the
     // new spelling.
     expect(
-      resolveAdjudicationEligibility({ actorRole: 'admin', sets: bothSubmitted }),
+      resolveAdjudicationEligibility({ actorRole: 'admin', actorAccountId: ADJUDICATOR, sets: bothSubmitted }),
     ).toEqual({ outcome: 'eligible', submittedSetCount: 2 });
   });
 
   test('nobody else may adjudicate, however finished the clip is', () => {
     for (const role of ['coach', 'athlete', 'parent', 'board', 'staff', 'volunteer'] as const) {
       expect(
-        resolveAdjudicationEligibility({ actorRole: role, sets: bothSubmitted }),
+        resolveAdjudicationEligibility({ actorRole: role, actorAccountId: ADJUDICATOR, sets: bothSubmitted }),
       ).toEqual({ outcome: 'refused', reason: 'role_not_permitted' });
     }
   });
@@ -322,7 +324,7 @@ describe('resolveAdjudicationEligibility', () => {
     // not a party to that, and admitting it here would be this file inventing
     // a reach into tenant research data that nobody ratified.
     expect(
-      resolveAdjudicationEligibility({ actorRole: 'platform_owner', sets: bothSubmitted }),
+      resolveAdjudicationEligibility({ actorRole: 'platform_owner', actorAccountId: ADJUDICATOR, sets: bothSubmitted }),
     ).toEqual({ outcome: 'refused', reason: 'role_not_permitted' });
   });
 
@@ -330,6 +332,7 @@ describe('resolveAdjudicationEligibility', () => {
     expect(
       resolveAdjudicationEligibility({
         actorRole: 'organization_admin',
+        actorAccountId: ADJUDICATOR,
         sets: [setOf(A, 'submitted'), setOf(B, 'in_progress')],
       }),
     ).toEqual({ outcome: 'refused', reason: 'annotation_in_progress' });
@@ -339,6 +342,7 @@ describe('resolveAdjudicationEligibility', () => {
     expect(
       resolveAdjudicationEligibility({
         actorRole: 'coach',
+        actorAccountId: ADJUDICATOR,
         sets: [setOf(A, 'submitted'), setOf(B, 'in_progress')],
       }),
     ).toEqual({ outcome: 'refused', reason: 'role_not_permitted' });
@@ -346,7 +350,7 @@ describe('resolveAdjudicationEligibility', () => {
 
   test('a clip nobody has annotated is not adjudicable', () => {
     expect(
-      resolveAdjudicationEligibility({ actorRole: 'organization_admin', sets: [] }),
+      resolveAdjudicationEligibility({ actorRole: 'organization_admin', actorAccountId: ADJUDICATOR, sets: [] }),
     ).toEqual({ outcome: 'refused', reason: 'no_sets_on_clip' });
   });
 
@@ -354,8 +358,112 @@ describe('resolveAdjudicationEligibility', () => {
     expect(
       resolveAdjudicationEligibility({
         actorRole: 'organization_admin',
+        actorAccountId: ADJUDICATOR,
         sets: [setOf(A, 'submitted'), setOf(B, 'archived')],
       }),
     ).toEqual({ outcome: 'refused', reason: 'annotation_in_progress' });
+  });
+
+  test('a single submitted set is not a pair, and is refused', () => {
+    // The regression this exists for. `every` is true of a one-element list,
+    // so this returned { eligible, submittedSetCount: 1 } -- promising a
+    // caller two raw readings and handing it one. The zero case beside it was
+    // already guarded for exactly this reason; one set is the same mistake a
+    // step along.
+    expect(
+      resolveAdjudicationEligibility({
+        actorRole: 'organization_admin',
+        actorAccountId: ADJUDICATOR,
+        sets: [setOf(A, 'submitted')],
+      }),
+    ).toEqual({ outcome: 'refused', reason: 'insufficient_sets_for_comparison' });
+  });
+
+  test('a single UNFINISHED set is reported as progress, not as a missing pair', () => {
+    // Both refusals would be literally true here, and the order is deliberate:
+    // a second reading may still arrive, so the useful thing to tell an
+    // adjudicator is that the work is unfinished -- not that the pair is
+    // structurally impossible.
+    expect(
+      resolveAdjudicationEligibility({
+        actorRole: 'organization_admin',
+        actorAccountId: ADJUDICATOR,
+        sets: [setOf(A, 'in_progress')],
+      }),
+    ).toEqual({ outcome: 'refused', reason: 'annotation_in_progress' });
+  });
+
+  test('the role is still checked first, so a coach on a one-set clip learns nothing', () => {
+    expect(
+      resolveAdjudicationEligibility({
+        actorRole: 'coach',
+        actorAccountId: ADJUDICATOR,
+        sets: [setOf(A, 'submitted')],
+      }),
+    ).toEqual({ outcome: 'refused', reason: 'role_not_permitted' });
+  });
+
+  test('three submitted sets stay eligible here -- the pair is the caller to choose', () => {
+    // This function establishes that there is more than one reading to
+    // compare. WHICH pair a study means when there are three is not settled
+    // anywhere in the codebase, and inventing an answer here would decide it
+    // silently for every caller. The comparison route refuses that case on
+    // its own terms and says so in as many words.
+    expect(
+      resolveAdjudicationEligibility({
+        actorRole: 'organization_admin',
+        actorAccountId: ADJUDICATOR,
+        sets: [setOf(A, 'submitted'), setOf(B, 'submitted'), setOf(C, 'submitted')],
+      }),
+    ).toEqual({ outcome: 'eligible', submittedSetCount: 3 });
+  });
+
+  test('an adjudicator who annotated the clip is refused', () => {
+    // OD-2026-08-29-002. A party to the disagreement cannot settle it.
+    expect(
+      resolveAdjudicationEligibility({
+        actorRole: 'organization_admin',
+        actorAccountId: A,
+        sets: bothSubmitted,
+      }),
+    ).toEqual({ outcome: 'refused', reason: 'adjudicator_annotated_this_clip' });
+  });
+
+  test('either annotator is refused, not just the first', () => {
+    // `some` over every set, not a comparison against sets[0].
+    expect(
+      resolveAdjudicationEligibility({
+        actorRole: 'organization_admin',
+        actorAccountId: B,
+        sets: bothSubmitted,
+      }),
+    ).toEqual({ outcome: 'refused', reason: 'adjudicator_annotated_this_clip' });
+  });
+
+  test('identity is checked BEFORE state, so an annotator learns nothing about progress', () => {
+    // Both refusals are true of this clip: the actor annotated it, AND the
+    // other reading is unfinished. The order decides which one is returned,
+    // and returning annotation_in_progress here would tell an annotator --
+    // by the timing of their own refusal -- how far their counterpart has
+    // got. That is the same reason the role check comes first.
+    expect(
+      resolveAdjudicationEligibility({
+        actorRole: 'organization_admin',
+        actorAccountId: A,
+        sets: [setOf(A, 'submitted'), setOf(B, 'in_progress')],
+      }),
+    ).toEqual({ outcome: 'refused', reason: 'adjudicator_annotated_this_clip' });
+  });
+
+  test('a third party is still admitted -- the refusal is about identity, not about admins', () => {
+    // Positive control. Without this, every assertion above would still pass
+    // against a function that refused every administrator outright.
+    expect(
+      resolveAdjudicationEligibility({
+        actorRole: 'organization_admin',
+        actorAccountId: ADJUDICATOR,
+        sets: bothSubmitted,
+      }),
+    ).toEqual({ outcome: 'eligible', submittedSetCount: 2 });
   });
 });

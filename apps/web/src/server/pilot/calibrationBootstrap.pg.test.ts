@@ -15,6 +15,11 @@
 //   * the source video row is not touched by being annotated against
 //   * the rows the bootstrap creates are the rows the existing read paths
 //     behind /coach/calibration return
+//   * each creation writes an audit row carrying the creator's REAL role, read
+//     from their account row -- a mock would only prove the argument was passed
+//   * a refused creation writes none, and a refused AUDIT write leaves the rows
+//     it could not record behind and says so, because the two cannot share a
+//     transaction
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -41,6 +46,10 @@ const TEST_DB_NAME = 'ppbf_test_calibration_bootstrap';
 const ORG_ID = 'org-boot';
 const OTHER_ORG_ID = 'org-boot-other';
 const COACH_ID = 'acct-boot-coach';
+/** Live, in THIS organization, and NOT a coach -- so actor_role has something
+ * to be wrong about. A hardcoded 'coach' passes every test that only ever
+ * bootstraps as one. */
+const ADMIN_ID = 'acct-boot-admin';
 const OTHER_ORG_COACH_ID = 'acct-boot-other-coach';
 /** In THIS organization, but switched off: active_flag = false. */
 const INACTIVE_COACH_ID = 'acct-boot-inactive-coach';
@@ -117,6 +126,11 @@ async function seedTenancy(client: Client): Promise<void> {
      values ($1, 'coach', $2, 'microsoft') on conflict do nothing`,
     [OTHER_ORG_COACH_ID, OTHER_ORG_ID],
   );
+  await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+     values ($1, 'organization_admin', $2, 'microsoft') on conflict do nothing`,
+    [ADMIN_ID, ORG_ID],
+  );
 
   // Both of these are in ORG_ID, so organization membership alone accepts
   // them. Only liveness does not.
@@ -191,6 +205,94 @@ function request(
 
 async function projectCount(): Promise<number> {
   return (await calibration.listCalibrationProjects(ORG_ID)).length;
+}
+
+interface AuditRow {
+  event_type: string;
+  actor_account_id: string | null;
+  actor_role: string | null;
+  organization_id: string | null;
+  entity_type: string;
+  entity_id: string;
+  details: Record<string, unknown>;
+}
+
+/** Every audit row naming one entity, read straight from the table.
+ *
+ * Not through a read model: the point of these cases is what was WRITTEN, and
+ * a reader with its own allow-list (api/pilot/audit/get has one) would hide a
+ * row that exists or invent scoping that is not the subject here.
+ */
+async function auditRowsFor(entityId: string): Promise<AuditRow[]> {
+  const client = await freshClient();
+  try {
+    const result = await client.query<AuditRow>(
+      `select event_type, actor_account_id, actor_role, organization_id,
+              entity_type, entity_id, details
+         from pilot.audit_events
+        where entity_id = $1
+        order by audit_id asc`,
+      [entityId],
+    );
+    return result.rows;
+  } finally {
+    await client.end();
+  }
+}
+
+async function countOf(table: string): Promise<number> {
+  const client = await freshClient();
+  try {
+    const result = await client.query<{ n: number }>(`select count(*)::int as n from ${table}`);
+    return result.rows[0].n;
+  } finally {
+    await client.end();
+  }
+}
+
+/** Makes the audit INSERT for one entity_type fail, for the duration of one fn.
+ *
+ * A REAL DATABASE REFUSAL, not a jest mock of the audit module. The behaviour
+ * under test is what survives when the audit write fails AFTER the row it
+ * describes has already committed on a different pooled connection -- which is
+ * a fact about two connections and no transaction, and a mock cannot produce
+ * it. The trigger is dropped in a finally so one failing case cannot leave
+ * every later one refusing to audit.
+ */
+async function withAuditWritesRefusedFor<T>(
+  entityType: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const client = await freshClient();
+  try {
+    await client.query(
+      `create or replace function pilot_test_refuse_audit() returns trigger
+         language plpgsql as $$
+         begin
+           raise exception 'AUDIT_WRITE_REFUSED_BY_TEST';
+         end $$`,
+    );
+    await client.query(
+      `create trigger pilot_test_refuse_audit_trg
+         before insert on pilot.audit_events
+         for each row when (new.entity_type = '${entityType}')
+         execute function pilot_test_refuse_audit()`,
+    );
+  } finally {
+    await client.end();
+  }
+
+  try {
+    return await run();
+  } finally {
+    const cleanup = await freshClient();
+    try {
+      await cleanup.query('drop trigger if exists pilot_test_refuse_audit_trg on pilot.audit_events');
+      await cleanup.query('drop function if exists pilot_test_refuse_audit()');
+    } finally {
+      await cleanup.end();
+    }
+  }
 }
 
 beforeAll(async () => {
@@ -399,8 +501,9 @@ describe('a source the platform will not open is refused, and leaves nothing beh
   test('REFUSES a creator account from another organization', async () => {
     // created_by_account_id references pilot.accounts(account_id) alone, so
     // the database would accept a coach from another gym as the person who
-    // chose these clips. Calibration writes no audit event, so that column is
-    // the only record there is.
+    // chose these clips. The audit row this module now writes names the same
+    // account, so a bad value is recorded twice rather than caught -- which is
+    // why the gate, not the record, is what refuses it.
     const before = await projectCount();
 
     await expect(
@@ -502,5 +605,166 @@ describe('re-running the bootstrap', () => {
     // satisfied by a dropped connection or a typo in the fixture.
     await expect(bootstrap.bootstrapCalibrationClip(fixed))
       .rejects.toThrow(/pilot_calibration_projects_name_uq/);
+  });
+});
+
+describe('the creation is recorded, not only stamped on the row', () => {
+  test('writes one audit row for the study and one for the clip, naming the actor and the entities', async () => {
+    const { project, clip } = await bootstrap.bootstrapCalibrationClip(request({ clipCode: 'C-08' }));
+
+    const [projectRow, ...extraProjectRows] = await auditRowsFor(project.calibration_project_id);
+    // Exactly one. A second row for the same creation would be a duplicate an
+    // agreement count could later divide by.
+    expect(extraProjectRows).toEqual([]);
+    // 'create' is the closed vocabulary's own value and the entity_type is what
+    // carries the meaning -- the convention annotatorGate.ts set for
+    // calibration, and the reason this slice needs no migration.
+    expect(projectRow.event_type).toBe('create');
+    expect(projectRow.entity_type).toBe('calibration_project');
+    expect(projectRow.entity_id).toBe(project.calibration_project_id);
+    expect(projectRow.actor_account_id).toBe(COACH_ID);
+    expect(projectRow.actor_role).toBe('coach');
+    expect(projectRow.organization_id).toBe(ORG_ID);
+    expect(projectRow.details).toEqual({
+      name: project.name,
+      ontology_version: ontology.BOXING_ONTOLOGY_VERSION,
+      status: 'draft',
+    });
+
+    const [clipRow, ...extraClipRows] = await auditRowsFor(clip.calibration_clip_id);
+    expect(extraClipRows).toEqual([]);
+    expect(clipRow.event_type).toBe('create');
+    expect(clipRow.entity_type).toBe('calibration_clip');
+    expect(clipRow.entity_id).toBe(clip.calibration_clip_id);
+    expect(clipRow.actor_account_id).toBe(COACH_ID);
+    expect(clipRow.actor_role).toBe('coach');
+    expect(clipRow.organization_id).toBe(ORG_ID);
+    // toEqual, not toMatchObject: the absence of athlete_id is deliberate and
+    // is the half a later reader would otherwise add back without noticing.
+    // The clip row already records the attribution; copying a minor's
+    // identifier into a second table buys nothing.
+    expect(clipRow.details).toEqual({
+      calibration_project_id: project.calibration_project_id,
+      video_session_id: READY_VIDEO_ID,
+      clip_code: 'C-08',
+      start_ms: 91_337,
+      end_ms: 97_004,
+      primary_sampling_reason: 'simultaneous_exchange',
+    });
+  });
+
+  test('records the creator’s REAL role, read from their account, not a constant', async () => {
+    // The case a coach-only fixture cannot fail. actor_role is free text in the
+    // schema, so 'coach' hardcoded at the call site is accepted by the database
+    // and by every other test in this file.
+    const { project, clip } = await bootstrap.bootstrapCalibrationClip(
+      request({ createdByAccountId: ADMIN_ID, clipCode: 'C-09' }),
+    );
+
+    const [projectRow] = await auditRowsFor(project.calibration_project_id);
+    const [clipRow] = await auditRowsFor(clip.calibration_clip_id);
+
+    expect(projectRow.actor_account_id).toBe(ADMIN_ID);
+    expect(projectRow.actor_role).toBe('organization_admin');
+    expect(clipRow.actor_account_id).toBe(ADMIN_ID);
+    expect(clipRow.actor_role).toBe('organization_admin');
+  });
+
+  test('does NOT mirror the creation into SHADOW', async () => {
+    // writePilotAuditEvent fans out to pilot.shadow_events unless shadow_mirror
+    // is exactly false, and pilot.shadow_events exists in this schema -- so a
+    // missing flag writes a real row here rather than erroring. Calibration
+    // measures where trained humans disagree; a disagreement corpus that
+    // silently became model input would make the measurement unrepeatable.
+    const before = await countOf('pilot.shadow_events');
+
+    await bootstrap.bootstrapCalibrationClip(request({ clipCode: 'C-10' }));
+
+    expect(await countOf('pilot.shadow_events')).toBe(before);
+  });
+
+  test('a REFUSED creation writes no audit row at all', async () => {
+    // The audit stream must not claim a study was opened when none was. Both
+    // refusals happen before any row exists: the source gate, and the creator
+    // gate that #822 gave its liveness predicates.
+    const before = await countOf('pilot.audit_events');
+
+    await expect(
+      bootstrap.bootstrapCalibrationClip(request({ videoSessionId: QUARANTINED_VIDEO_ID })),
+    ).rejects.toThrow(/not available for calibration/);
+    await expect(
+      bootstrap.bootstrapCalibrationClip(request({ createdByAccountId: INACTIVE_COACH_ID })),
+    ).rejects.toThrow(/Not found: no such account in this organization/);
+
+    expect(await countOf('pilot.audit_events')).toBe(before);
+  });
+});
+
+describe('when the audit write itself fails', () => {
+  test('the study is NOT rolled back, the failure is NOT swallowed, and the refusal names the survivor', async () => {
+    // THE DECISION THIS ASSERTS. The audit write cannot share a transaction
+    // with the insert it describes -- writePilotAuditEvent, like both creators,
+    // takes its own pooled connection, and giving them a client parameter is a
+    // change to projects.ts and a different slice. So one of two things has to
+    // happen when it fails, and swallowing it is the wrong one: the operator
+    // would be told PASS and would then believe an audit trail existed. It
+    // throws, and the message names what was left behind, exactly as the
+    // stranded-study refusal does.
+    const before = await projectCount();
+    const name = 'Round three, audit refused';
+
+    const error = await withAuditWritesRefusedFor('calibration_project', () =>
+      bootstrap
+        .bootstrapCalibrationClip(request({ projectName: name, clipCode: 'C-11' }))
+        .then(() => null, (thrown: unknown) => thrown as Error));
+
+    expect(error).not.toBeNull();
+    expect(error?.message).toMatch(/AUDIT_WRITE_REFUSED_BY_TEST/);
+    expect(error?.message).toMatch(/created before its audit record could be written/);
+    expect(error?.message).toContain(name);
+
+    // The study committed on its own connection and is still there. Nothing in
+    // this module can undo that, so the refusal admits it.
+    expect(await projectCount()).toBe(before + 1);
+    const [survivor] = (await calibration.listCalibrationProjects(ORG_ID))
+      .filter((row) => row.name === name);
+    expect(survivor).toBeDefined();
+    expect(await auditRowsFor(survivor.calibration_project_id)).toEqual([]);
+
+    // AND THE CLIP WAS NEVER ATTEMPTED. This is what separates "throws" from
+    // "logs and carries on": a swallowing implementation reaches the clip
+    // insert and returns a result.
+    expect(await calibration.listCalibrationClips(ORG_ID, survivor.calibration_project_id))
+      .toEqual([]);
+  });
+
+  test('a failure on the CLIP audit row does not report itself as a refused clip', async () => {
+    // The clip audit write sits OUTSIDE the stranded-study catch on purpose.
+    // Folded inside it, this failure would be reported as "created before the
+    // clip was refused" -- and the clip was created, not refused, so an
+    // operator would go looking for a clip problem that does not exist.
+    const before = await projectCount();
+    const name = 'Round four, clip audit refused';
+
+    const error = await withAuditWritesRefusedFor('calibration_clip', () =>
+      bootstrap
+        .bootstrapCalibrationClip(request({ projectName: name, clipCode: 'C-12' }))
+        .then(() => null, (thrown: unknown) => thrown as Error));
+
+    expect(error).not.toBeNull();
+    expect(error?.message).toMatch(/AUDIT_WRITE_REFUSED_BY_TEST/);
+    expect(error?.message).toMatch(/created before the audit record for the clip could be written/);
+    expect(error?.message).not.toMatch(/the clip was refused/);
+
+    // Both rows exist. The study's audit row was written before the clip's was
+    // refused, so the record is partial rather than absent -- and the message
+    // above is what tells the operator which half is missing.
+    expect(await projectCount()).toBe(before + 1);
+    const [survivor] = (await calibration.listCalibrationProjects(ORG_ID))
+      .filter((row) => row.name === name);
+    const clips = await calibration.listCalibrationClips(ORG_ID, survivor.calibration_project_id);
+    expect(clips).toHaveLength(1);
+    expect(await auditRowsFor(survivor.calibration_project_id)).toHaveLength(1);
+    expect(await auditRowsFor(clips[0].calibration_clip_id)).toEqual([]);
   });
 });

@@ -100,12 +100,93 @@ interface Stubs {
   objectives?: Array<Record<string, unknown>>;
   objectiveWriteOk?: boolean;
   objectiveWriteError?: string;
+  runOptionsOk?: boolean;
+  runOptions?: Array<Record<string, unknown>>;
+  linkedSessionsOk?: boolean;
+  linkedSessions?: Array<Record<string, unknown>>;
+  linkOk?: boolean;
+  linkError?: string;
+  linkCreated?: boolean;
+  /* objectivesOk / objectives / objectiveWriteOk / objectiveWriteError are
+     declared once above -- both lanes added the same four and the merge kept
+     both sets with no conflict marker. objectiveLinks is the only field
+     unique to this set, so it is the only one that survives here. */
+  objectiveLinks?: Array<Record<string, unknown>>;
+  reviewReadOk?: boolean;
+  reviews?: Array<Record<string, unknown>>;
+  evidence?: Array<Record<string, unknown>>;
+  reviewWriteOk?: boolean;
+  reviewWriteError?: string;
+  /* The session-objective-links GET, failed INDEPENDENTLY of the
+     development-block-objectives GET. Two different routes feed two different
+     loaders that share one data map, and `objectivesOk` drove both -- so no
+     test could put one loader's failure beside the other's success, which is
+     the only arrangement in which the bug below is visible. */
+  sessionObjectivesOk?: boolean;
   /** Delays the write response, so a second click lands while the first is in
       flight. Without this a double-submit test proves nothing. */
   holdWrite?: () => Promise<void>;
 }
 
-const writes: Array<{ method: string; body: Record<string, unknown> }> = [];
+function sessionRow(overrides: Record<string, unknown> = {}) {
+  return {
+    run_id: 'run-1',
+    script_id: 'scr-1',
+    script_name: 'Tuesday Technical',
+    delivered_on: '2026-09-08',
+    delivered_by_account_id: 'acct-coach-a',
+    run_state: 'completed',
+    athletes_present: 9,
+    blocks_completed: 4,
+    deviation_note: '',
+    what_worked: '',
+    what_did_not: '',
+    linked_by_account_id: 'acct-coach-a',
+    linked_at: '2026-09-08T20:00:00.000Z',
+    ...overrides,
+  };
+}
+
+
+function evidenceRow(overrides: Record<string, unknown> = {}) {
+  return {
+    key: 'training_attempts',
+    label: 'Training attempts recorded',
+    recorded: 0,
+    openInWindow: 0,
+    recent: [],
+    ...overrides,
+  };
+}
+
+function reviewRow(overrides: Record<string, unknown> = {}) {
+  return {
+    review_id: 'rev-1',
+    block_id: 'blk-1',
+    adherence_state: 'under_delivered',
+    deviations: '',
+    reason: '',
+    what_worked: '',
+    what_did_not: '',
+    next_adjustment: '',
+    reviewed_by_account_id: 'acct-coach-a',
+    created_at: '2026-10-14T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function runOptionRow(overrides: Record<string, unknown> = {}) {
+  return {
+    run_id: 'run-1',
+    script_id: 'scr-1',
+    script_name: 'Tuesday Technical',
+    delivered_on: '2026-09-08',
+    run_state: 'completed',
+    ...overrides,
+  };
+}
+
+const writes: Array<{ method: string; url: string; body: Record<string, unknown> }> = [];
 
 function installFetch(stubs: Stubs = {}): jest.Mock {
   writes.length = 0;
@@ -138,7 +219,7 @@ function installFetch(stubs: Stubs = {}): jest.Mock {
           json: async () => ({ ok: true, objectives: stubs.objectives ?? [] }),
         } as Response;
       }
-      writes.push({ method, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
+      writes.push({ method, url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
       return {
         ok: stubs.objectiveWriteOk ?? true,
         status: stubs.objectiveWriteOk === false ? 400 : 200,
@@ -166,7 +247,7 @@ function installFetch(stubs: Stubs = {}): jest.Mock {
           json: async () => ({ ok: true, blocks: stubs.blocks ?? [] }),
         } as Response;
       }
-      writes.push({ method, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
+      writes.push({ method, url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
       if (stubs.holdWrite) {
         await stubs.holdWrite();
       }
@@ -176,6 +257,81 @@ function installFetch(stubs: Stubs = {}): jest.Mock {
         json: async () => (stubs.writeOk === false
           ? { error: stubs.writeError ?? 'refused' }
           : { ok: true, block: blockRow() }),
+      } as Response;
+    }
+    if (url.includes('/api/pilot/coach/block-review')) {
+      const method = init?.method ?? 'GET';
+      if (method === 'GET') {
+        return {
+          ok: stubs.reviewReadOk ?? true,
+          status: stubs.reviewReadOk === false ? 503 : 200,
+          json: async () => ({
+            ok: true,
+            reviews: stubs.reviews ?? [],
+            evidence: stubs.evidence ?? [],
+          }),
+        } as Response;
+      }
+      writes.push({ method, url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
+      return {
+        ok: stubs.reviewWriteOk ?? true,
+        status: stubs.reviewWriteOk === false ? 400 : 201,
+        json: async () => (stubs.reviewWriteOk === false
+          ? { error: stubs.reviewWriteError ?? 'refused' }
+          : { ok: true, review: reviewRow() }),
+      } as Response;
+    }
+    if (url.includes('/api/pilot/coach/session-objective-links')) {
+      const method = init?.method ?? 'GET';
+      if (method === 'GET') {
+        const ok = stubs.sessionObjectivesOk ?? stubs.objectivesOk ?? true;
+        return {
+          ok,
+          status: ok ? 200 : 503,
+          json: async () => ({
+            ok: true,
+            objectives: stubs.objectives ?? [],
+            links: stubs.objectiveLinks ?? [],
+          }),
+        } as Response;
+      }
+      writes.push({ method, url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
+      return {
+        ok: stubs.objectiveWriteOk ?? true,
+        status: stubs.objectiveWriteOk === false ? 400 : 200,
+        json: async () => (stubs.objectiveWriteOk === false
+          ? { error: stubs.objectiveWriteError ?? 'refused' }
+          : { ok: true, created: true }),
+      } as Response;
+    }
+    if (url.includes('/api/pilot/coach/session-block-links')) {
+      const method = init?.method ?? 'GET';
+      // The picker branch, matched before the per-block read exactly as the
+      // route tells them apart.
+      if (method === 'GET' && url.includes('runs=options')) {
+        return {
+          ok: stubs.runOptionsOk ?? true,
+          status: stubs.runOptionsOk === false ? 503 : 200,
+          json: async () => ({ ok: true, runs: stubs.runOptions ?? [runOptionRow()] }),
+        } as Response;
+      }
+      if (method === 'GET') {
+        return {
+          ok: stubs.linkedSessionsOk ?? true,
+          status: stubs.linkedSessionsOk === false ? 503 : 200,
+          json: async () => ({ ok: true, sessions: stubs.linkedSessions ?? [] }),
+        } as Response;
+      }
+      writes.push({ method, url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
+      if (stubs.holdWrite) {
+        await stubs.holdWrite();
+      }
+      return {
+        ok: stubs.linkOk ?? true,
+        status: stubs.linkOk === false ? 400 : 200,
+        json: async () => (stubs.linkOk === false
+          ? { error: stubs.linkError ?? 'refused' }
+          : { ok: true, created: stubs.linkCreated ?? true }),
       } as Response;
     }
     throw new Error(`Unexpected fetch: ${url}`);
@@ -195,6 +351,22 @@ async function renderPage(stubs: Stubs = {}) {
 async function pickAthlete(id: string) {
   await act(async () => {
     fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: id } });
+  });
+}
+
+/* The sessions and plan-vs-actual panels load when a coach opens them, the
+   same way the objectives panel does -- a dozen blocks must not mean a dozen
+   extra reads. Tests that assert on their contents open them first, which is
+   also what a coach does. */
+async function openSessions() {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Sessions' }));
+  });
+}
+
+async function openReview() {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Plan vs actual' }));
   });
 }
 
@@ -737,7 +909,7 @@ describe('a block list never lands under the wrong athlete', () => {
           } as Response);
         });
       }
-      writes.push({ method: init?.method ?? 'GET', body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
+      writes.push({ method: init?.method ?? 'GET', url, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
       return { ok: true, status: 200, json: async () => ({ ok: true, block: blockRow() }) } as Response;
     });
     global.fetch = fetchMock as unknown as typeof fetch;
@@ -824,6 +996,19 @@ describe('a block list never lands under the wrong athlete', () => {
 });
 
 describe('objectives: what a block is trying to move', () => {
+
+/* The sessions panel renders inline here and behind a toggle once #843 makes
+   the block panels lazy. Both are correct; a test that reaches the session
+   card has to work either way, so it opens the panel when there is one to
+   open and does nothing when the card is already on screen. */
+async function openSessionsPanel() {
+  const toggle = screen.queryByRole('button', { name: 'Sessions' });
+  if (!toggle) return;
+  await act(async () => {
+    fireEvent.click(toggle);
+  });
+}
+
   async function openObjectives(stubs: Stubs = {}) {
     const fetchMock = await renderPage({ blocks: [blockRow()], ...stubs });
     await pickAthlete('ath-1');
@@ -841,7 +1026,24 @@ describe('objectives: what a block is trying to move', () => {
     await pickAthlete('ath-1');
 
     const before = fetchMock.mock.calls.map((call) => String(call[0]));
-    expect(before.some((url) => url.includes('block_id=blk-1'))).toBe(false);
+    /* Scoped to the OBJECTIVES endpoint, which is what this test is about.
+       It matched any url carrying `block_id=blk-1`, which was unambiguous
+       when objectives were the only per-block read; the session-block-link
+       panel added by the plan-to-session slice is a second one, and it loads
+       with the card rather than behind a button, so the broad matcher caught
+       an endpoint this test was never asserting about.
+
+       The property itself is unchanged and still holds: opening a block does
+       not read its objectives until a coach asks for them.
+
+       NOTE THE TENSION THIS EXPOSES, because it is real and is not resolved
+       here: the comment above says a dozen blocks must not mean a dozen extra
+       reads, and the sessions panel currently does exactly that -- one read
+       per block, eagerly, on every roster load. Objectives avoid it by
+       sitting behind a toggle; sessions render inline, so making them lazy is
+       a UI change rather than a loader change. Worth doing, and worth doing
+       deliberately rather than inside a merge. */
+    expect(before.some((url) => url.includes('development-block-objectives?block_id=blk-1'))).toBe(false);
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Objectives' }));
@@ -863,6 +1065,98 @@ describe('objectives: what a block is trying to move', () => {
 
     expect(screen.getByText(/Nothing recorded yet/i)).toBeTruthy();
     expect(screen.queryByText(/could not be loaded/i)).toBeNull();
+  });
+
+  /* ONE LOADER'S FAILURE MUST NOT DELETE ANOTHER LOADER'S SUCCESS.
+     
+     Two loaders share objectivesByBlock and track two different status maps:
+     loadObjectives (/development-block-objectives, objectivesState) and
+     loadObjectivesForBlock (/session-objective-links, objectivesStateByBlock).
+     The second used to clear objectivesByBlock in its catch -- the right
+     instinct ("a failed read is not 'this block has no objectives'") applied
+     to the wrong map.
+     
+     So a 503 on the session-objective-links read emptied a list the OTHER
+     read had successfully filled, while that panel still saw its own status
+     as 'loaded'. The block's objectives panel then rendered "Nothing recorded
+     yet" for a block with three objectives: a failed read on one surface
+     reported as a fact about the plan on another. */
+  test('a failed read-back does not empty the objectives panel beside it', async () => {
+    /* THE SEQUENCE IS A COACH DOING THEIR JOB, and it ends in the panel
+       reporting a plan that is there as absent -- immediately after a write
+       that SUCCEEDED, which is the worst possible moment to be told there is
+       nothing recorded.
+
+         1. open the Objectives panel. loadObjectives succeeds and fills
+            objectivesByBlock with three objectives.
+         2. mark one on a session. The write succeeds.
+         3. loadObjectivesForBlock runs as the read-back and 503s.
+         4. its catch used to clear objectivesByBlock -- the map belonging to
+            step 1's successful read -- while that panel's own status map
+            still said 'loaded'.
+         5. the panel renders "Nothing recorded yet" for a block with three
+            objectives.
+
+       The stubs object is mutated between steps rather than fixed at render,
+       because the two reads have to disagree and they cannot do that while
+       one flag drives both. */
+    const stubs: Stubs = {
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' })],
+      objectives: [
+        objectiveRow({ objective_id: 'obj-a', objective: 'Stop drifting to the ropes.' }),
+        objectiveRow({ objective_id: 'obj-b', domain: 'mental', objective: 'Settle after a clean shot.' }),
+        objectiveRow({ objective_id: 'obj-c', domain: 'nutrition_body_composition', objective: 'Eat before the session.' }),
+      ],
+      objectiveLinks: [],
+    };
+    await renderPage(stubs);
+    await pickAthlete('ath-1');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Objectives' }));
+    });
+
+    // Step 1 landed: the panel has the plan.
+    expect(document.body.textContent ?? '').toContain('Settle after a clean shot.');
+
+    // The session card carries the marking controls. Its read succeeds here.
+    await openSessionsPanel();
+
+    // From here the read-back fails. The write itself still succeeds.
+    stubs.sessionObjectivesOk = false;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Not marked: Stop drifting to the ropes.' }));
+    });
+
+    /* All three still on screen. Under the shipped catch the panel is empty
+       here and says the block has nothing recorded. */
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('Stop drifting to the ropes.');
+    expect(body).toContain('Settle after a clean shot.');
+    expect(body).toContain('Eat before the session.');
+    expect(screen.queryByText(/Nothing recorded yet/i)).toBeNull();
+  });
+
+  test('and the surface that DID fail still says so', async () => {
+    /* Rendered from the SESSION side, because that is the surface whose read
+       failed. It needs a linked session to have a card to say it in. */
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' })],
+      objectives: [objectiveRow({ objective_id: 'obj-a', objective: 'Stop drifting to the ropes.' })],
+      objectivesOk: true,
+      sessionObjectivesOk: false,
+    });
+    await pickAthlete('ath-1');
+    await openSessionsPanel();
+
+    /* The other half of the same rule. Keeping the data is only honest while
+       the surface whose read failed still reports that nobody could look --
+       otherwise this becomes stale data rendered as fresh, which is the
+       failure the clearing was reaching for. */
+    expect(screen.getByText(/objectives could not be read/i)).toBeTruthy();
+    // And no marking control, since there is nothing established to mark.
+    expect(screen.queryByRole('button', { name: /^Not marked:/ })).toBeNull();
   });
 
   test('the coach\'s sentence is read back exactly as written', async () => {
@@ -1053,5 +1347,651 @@ describe('attribution names a person', () => {
     await pickAthlete('ath-1');
 
     expect(screen.getByText(/Written by acct-coach-a/)).toBeTruthy();
+  });
+});
+
+/*
+ * PLAN -> SESSION: which delivered sessions a coach says worked this block.
+ *
+ * Two properties are worth a test here and the rest belongs to the route:
+ *
+ *   1. nothing is counted. The build order's NEXT slice is plan-versus-actual,
+ *      and the moment sessions are countable against a plan a "4 of 12" or a
+ *      coverage bar is one aggregate away -- a figure about a coach's work
+ *      with a child, assembled out of links nobody validated. Asserting its
+ *      absence is how it stays absent.
+ *   2. a failed read is never rendered as "no session worked this block". A
+ *      coach who believes that re-links sessions that are already linked, or
+ *      concludes the plan was never delivered against.
+ */
+describe('the sessions panel counts nothing', () => {
+  test('linked sessions show what the run recorded, and no total or coverage figure', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [
+        sessionRow({ run_id: 'run-1', what_worked: 'Guard held up in round three.' }),
+        sessionRow({ run_id: 'run-2', delivered_on: '2026-09-15', what_did_not: 'Body work faded.' }),
+      ],
+    });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    // Both sessions render, with the run's own words carried through.
+    expect(screen.getByText('What worked: Guard held up in round three.')).toBeTruthy();
+    expect(screen.getByText('What did not: Body work faded.')).toBeTruthy();
+
+    const body = document.body.textContent ?? '';
+    // No count of them, and no figure derived from them.
+    expect(body).not.toMatch(/\d+\s*of\s*\d+/);
+    expect(body).not.toMatch(/\d+\s*%/);
+    expect(body).not.toMatch(/coverage|adherence|compliance|on track|behind/i);
+    expect(document.querySelectorAll('progress')).toHaveLength(0);
+    expect(document.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
+  });
+
+  test('a run field the coach left blank shows no heading at all', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ what_worked: '', what_did_not: '', deviation_note: '' })],
+    });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    // The session is there...
+    expect(screen.getByText('Tuesday Technical')).toBeTruthy();
+    // ...and an empty heading over nothing would suggest the session had no
+    // account of itself rather than that the field was left blank.
+    const body = document.body.textContent ?? '';
+    expect(body).not.toContain('What worked:');
+    expect(body).not.toContain('What did not:');
+    expect(body).not.toContain('Deviation:');
+    expect(body).not.toContain('null');
+    expect(body).not.toContain('undefined');
+  });
+
+  test('a failed session read is not rendered as "no session worked this block"', async () => {
+    await renderPage({ blocks: [blockRow()], linkedSessionsOk: false });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    expect(screen.getByText(/linked sessions could not be read/i)).toBeTruthy();
+    expect(screen.queryByText(/No session has been linked to this block yet/i)).toBeNull();
+  });
+
+  test('a genuinely empty list says so, and is not the same message', async () => {
+    await renderPage({ blocks: [blockRow()], linkedSessions: [] });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    expect(screen.getByText(/No session has been linked to this block yet/i)).toBeTruthy();
+    expect(screen.queryByText(/linked sessions could not be read/i)).toBeNull();
+  });
+
+  test('a failed picker read is not rendered as "no sessions have been delivered"', async () => {
+    await renderPage({ blocks: [blockRow()], runOptionsOk: false });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    expect(screen.getByText(/list of delivered sessions could not be read/i)).toBeTruthy();
+    expect(screen.queryByText(/No session has been delivered and finished/i)).toBeNull();
+  });
+});
+
+describe('linking a session to a block', () => {
+  test('the submitted run is looked up, not parsed out of the select value', async () => {
+    // A run id containing the separator the label uses. A build that split the
+    // option's text would send a truncated id, and this is the fixture that
+    // catches it.
+    await renderPage({
+      blocks: [blockRow()],
+      runOptions: [runOptionRow({ run_id: 'run — with — dashes' })],
+    });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Link a session'), {
+        target: { value: 'run — with — dashes' },
+      });
+    });
+
+    const link = writes.find((entry) => entry.method === 'POST' && 'run_id' in entry.body);
+    expect(link?.body).toEqual({ run_id: 'run — with — dashes', block_id: 'blk-1' });
+  });
+
+  test('the block id comes from the card, and no athlete or organization is sent', async () => {
+    await renderPage({ blocks: [blockRow({ block_id: 'blk-9' })] });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Link a session'), { target: { value: 'run-1' } });
+    });
+
+    const link = writes.find((entry) => entry.method === 'POST' && 'run_id' in entry.body);
+    expect(link?.body.block_id).toBe('blk-9');
+    // The session decides both, and the route reads neither from the body.
+    expect(link?.body).not.toHaveProperty('athlete_id');
+    expect(link?.body).not.toHaveProperty('organization_id');
+  });
+
+  test('linking something already linked says so rather than claiming a new link', async () => {
+    await renderPage({ blocks: [blockRow()], linkCreated: false });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Link a session'), { target: { value: 'run-1' } });
+    });
+
+    expect(screen.getByText('Already linked.')).toBeTruthy();
+    expect(screen.queryByText('Session linked.')).toBeNull();
+  });
+
+  test('a refused link shows the server\'s own reason', async () => {
+    await renderPage({
+      blocks: [blockRow()], linkOk: false, linkError: 'Session not found.',
+    });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Link a session'), { target: { value: 'run-1' } });
+    });
+
+    expect(screen.getByText('Session not found.')).toBeTruthy();
+  });
+
+  test('unlinking sends both ids and removes the statement, not the session', async () => {
+    await renderPage({ blocks: [blockRow()], linkedSessions: [sessionRow()] });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Unlink' }));
+    });
+
+    /* Both ids, asserted from the URL rather than from "a DELETE happened":
+       an unlink that sent the wrong run, or dropped the block id, would pass
+       the weaker check while removing somebody else's link. */
+    const removal = writes.find((entry) => entry.method === 'DELETE');
+    expect(removal?.url).toContain('run_id=run-1');
+    expect(removal?.url).toContain('block_id=blk-1');
+
+    // The session record itself is never touched -- only the claim that it
+    // belonged to this plan.
+    expect(writes.some((entry) => entry.url.includes('/session-scripts'))).toBe(false);
+  });
+});
+
+/*
+ * WHICH OBJECTIVES A SESSION ADDRESSED — the build order's second bullet, and
+ * the last piece of PR F.
+ *
+ * Two properties, and the first is the one this whole slice is shaped around:
+ *
+ *   1. nothing is counted. Objectives carry a DOMAIN, so a tally here is one
+ *      step from a per-domain coverage chart about a child's training, and a
+ *      step further from an objective completed because enough sessions
+ *      pointed at it. An objective with no mark means nobody recorded one --
+ *      never that the domain was neglected.
+ *   2. an unmarked objective is still shown. A coach has to see what the class
+ *      did NOT touch in order to mark it, and a list of only the marked ones
+ *      would be a summary of itself.
+ */
+describe('marking the objectives a session addressed', () => {
+  test('every objective is listed, marked and unmarked alike, with no count', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' })],
+      objectives: [
+        objectiveRow({ objective_id: 'obj-a', objective: 'Stop drifting to the ropes.' }),
+        objectiveRow({ objective_id: 'obj-b', domain: 'mental', objective: 'Settle after a clean shot.' }),
+        objectiveRow({ objective_id: 'obj-c', domain: 'nutrition_body_composition', objective: 'Eat before the session.' }),
+      ],
+      objectiveLinks: [{ run_id: 'run-1', objective_id: 'obj-a', linked_by_account_id: 'acct-coach-a' }],
+    });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    // The marked one and the two unmarked ones all render.
+    expect(screen.getByRole('button', { name: 'Addressed: Stop drifting to the ropes.' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Not marked: Settle after a clean shot.' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Not marked: Eat before the session.' })).toBeTruthy();
+
+    const body = document.body.textContent ?? '';
+    // No tally of any kind. "1 of 3" and a nutrition domain reading zero are
+    // the two shapes this refuses.
+    expect(body).not.toMatch(/\d+\s*of\s*\d+/);
+    expect(body).not.toMatch(/\d+\s*%/);
+    expect(body).not.toMatch(/coverage|adherence|tally|neglect/i);
+    expect(document.querySelectorAll('progress')).toHaveLength(0);
+  });
+
+  test('the marked state is the stored link, not a local guess', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' }), sessionRow({ run_id: 'run-2', delivered_on: '2026-09-15' })],
+      objectives: [objectiveRow({ objective_id: 'obj-a', objective: 'Stop drifting to the ropes.' })],
+      // Marked on run-1 only.
+      objectiveLinks: [{ run_id: 'run-1', objective_id: 'obj-a', linked_by_account_id: 'acct-coach-a' }],
+    });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    // The same objective under two sessions: addressed in one, not the other.
+    // A build that keyed the mark by objective alone would show both.
+    const pressed = screen.getAllByRole('button', { name: /Stop drifting to the ropes\./ });
+    expect(pressed).toHaveLength(2);
+    const states = pressed.map((node) => node.getAttribute('aria-pressed'));
+    expect(states.sort()).toEqual(['false', 'true']);
+  });
+
+  test('marking one sends the run, the objective AND the block', async () => {
+    await renderPage({
+      blocks: [blockRow({ block_id: 'blk-9' })],
+      linkedSessions: [sessionRow({ run_id: 'run-7' })],
+      objectives: [objectiveRow({ objective_id: 'obj-a', block_id: 'blk-9', objective: 'Stop drifting to the ropes.' })],
+      objectiveLinks: [],
+    });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Not marked: Stop drifting/ }));
+    });
+
+    const write = writes.find((entry) => entry.method === 'POST' && 'objective_id' in entry.body);
+    /* The block id travels with every write because the route gates on it: a
+       group session serves several children's blocks, and a run-wide write
+       would be a write about a child this coach may not have. */
+    expect(write?.body).toEqual({
+      run_id: 'run-7', objective_id: 'obj-a', block_id: 'blk-9',
+    });
+  });
+
+  test('unmarking sends all three ids on the query string', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' })],
+      objectives: [objectiveRow({ objective_id: 'obj-a', objective: 'Stop drifting to the ropes.' })],
+      objectiveLinks: [{ run_id: 'run-1', objective_id: 'obj-a', linked_by_account_id: 'acct-coach-a' }],
+    });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Addressed: Stop drifting/ }));
+    });
+
+    const removal = writes.find((entry) => entry.method === 'DELETE' && entry.url.includes('objective_id'));
+    expect(removal?.url).toContain('run_id=run-1');
+    expect(removal?.url).toContain('objective_id=obj-a');
+    expect(removal?.url).toContain('block_id=blk-1');
+  });
+
+  test('a refused mark shows the server\'s own reason', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' })],
+      objectives: [objectiveRow({ objective: 'Stop drifting to the ropes.' })],
+      objectiveWriteOk: false,
+      objectiveWriteError: 'That objective is not on a block this session supports.',
+    });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Not marked: Stop drifting/ }));
+    });
+
+    expect(screen.getByText('That objective is not on a block this session supports.')).toBeTruthy();
+  });
+
+  test('a failed objective read is not rendered as "this block has no objectives"', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' })],
+      objectivesOk: false,
+    });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    expect(screen.getByText(/objectives could not be read/i)).toBeTruthy();
+    // And no control offering to mark something the page could not read.
+    expect(screen.queryByText('Objectives this session addressed')).toBeNull();
+  });
+
+  test('a block with no objectives shows no marking controls, and says nothing about domains', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' })],
+      objectives: [],
+    });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    expect(screen.queryByText('Objectives this session addressed')).toBeNull();
+    // Silence, not a finding. A block with no objectives recorded is not a
+    // block whose domains were neglected.
+    expect(document.body.textContent ?? '').not.toMatch(/no objectives|missing|gap|neglect/i);
+  });
+});
+
+/*
+ * PLAN VERSUS WHAT WAS ACTUALLY RECORDED.
+ *
+ * The slice the two panels above deliberately stopped short of, and the one
+ * place in this lane where a number could plausibly be assembled: a plan and a
+ * record of activity are on screen together for the first time. Four
+ * properties are worth asserting here and the rest belongs to the route and to
+ * Postgres:
+ *
+ *   1. counts are of RECORDS and never of a plan. "3 recorded" is a fact about
+ *      the database; "3 of 12 delivered" would be a fact about a coach, and
+ *      there is no denominator anywhere that could honestly produce one.
+ *   2. a zero renders as a zero and never as a finding. Nothing recorded means
+ *      nobody wrote anything down.
+ *   3. a failed read renders as a failure. This is the surface where that
+ *      matters most: six silent zeroes are indistinguishable from an athlete
+ *      with nothing logged.
+ *   4. the judgement is the coach's. No state is pre-selected from the counts,
+ *      nothing is drafted for them, and reviews accumulate rather than being
+ *      edited.
+ */
+describe('plan versus what was recorded', () => {
+  test('each source is a count of records, with no figure derived from them', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      evidence: [
+        evidenceRow({ key: 'sessions', label: 'Sessions linked to this block', recorded: 3 }),
+        evidenceRow({ key: 'training_attempts', recorded: 12 }),
+      ],
+    });
+    await pickAthlete('ath-1');
+    await openReview();
+
+    expect(screen.getByText('Sessions linked to this block: 3 recorded')).toBeTruthy();
+    expect(screen.getByText('Training attempts recorded: 12 recorded')).toBeTruthy();
+
+    const body = document.body.textContent ?? '';
+    /* The two shapes this refuses, and the reason each is refused. "3 of 12"
+       needs a denominator nothing here has; a percentage would be a machine's
+       verdict on a coach's work with a child, believed precisely because it
+       looked measured. */
+    expect(body).not.toMatch(/\d+\s*of\s*\d+/);
+    expect(body).not.toMatch(/\d+\s*%/);
+    expect(body).not.toMatch(/on track|behind schedule|compliance/i);
+    /* And the positive half, which is the one that would silently rot: every
+       number this panel shows carries the word saying what it is a count OF.
+       A bare "3" beside "Sessions linked to this block" reads as three
+       sessions' worth of a plan; "3 recorded" reads as three rows. */
+    for (const count of ['3 recorded', '12 recorded']) {
+      expect(body).toContain(count);
+    }
+    expect(document.querySelectorAll('progress')).toHaveLength(0);
+    expect(document.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
+  });
+
+  test('what this window was meant to contain is shown apart from what it did', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      evidence: [
+        evidenceRow({ key: 'assessments', label: 'Assessments administered', recorded: 2, openInWindow: 3 }),
+        evidenceRow({ key: 'sessions', label: 'Sessions linked to this block', recorded: 1, openInWindow: 0 }),
+      ],
+    });
+    await pickAthlete('ath-1');
+    await openReview();
+
+    /* An assessment due inside this window and never administered is not
+       evidence the plan was carried out, so counting it would claim a test
+       happened; dropping it would hide three records a coach is looking for.
+       Two counts, said separately.
+
+       The sentence used to read "3 more on record with no date, which this
+       window cannot place". Both halves were wrong -- these rows carry a
+       due_on, and the window places them by it -- so the old wording is
+       asserted ABSENT as well as the new one present. */
+    expect(screen.getByText('Assessments administered: 2 recorded')).toBeTruthy();
+    expect(screen.getByText(/3 due or planned in this window/i)).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toMatch(/no date/i);
+    expect(document.body.textContent ?? '').not.toMatch(/cannot place/i);
+    // And a source with none says nothing, rather than "0 due or planned".
+    expect(document.body.textContent ?? '').not.toMatch(/0 due or planned/);
+  });
+
+  test('a zero is shown as a zero, with the reading it does NOT support said out loud', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      evidence: [evidenceRow({ key: 'activity_log', label: 'Activity entries recorded', recorded: 0 })],
+    });
+    await pickAthlete('ath-1');
+    await openReview();
+
+    // The source is still on screen saying zero. Dropping empty sources would
+    // turn "nobody recorded anything" into a source that does not exist.
+    expect(screen.getByText('Activity entries recorded: 0 recorded')).toBeTruthy();
+    /* The zero is stated AND the reading it does not support is stated with
+       it. The denial has to be on screen rather than in a comment: a coach
+       looking at a column of zeroes will draw a conclusion, and the only
+       place to stop the wrong one is next to the zeroes. */
+    expect(screen.getByText(/nobody wrote anything down/i)).toBeTruthy();
+    expect(screen.getByText(/not a statement that the athlete did not train/i)).toBeTruthy();
+    // And no word that would turn the zero into a finding on its own.
+    expect(document.body.textContent ?? '').not.toMatch(/\bgap\b|\bmissing\b|\bneglect/i);
+  });
+
+  test('a failed read is not rendered as an athlete who recorded nothing', async () => {
+    await renderPage({ blocks: [blockRow()], reviewReadOk: false });
+    await pickAthlete('ath-1');
+    await openReview();
+
+    /* THE HONESTY RULE at the surface where breaking it looks most like
+       insight: six zeroes from a failed read and six zeroes from an empty
+       record are the same picture, and only one of them is true. */
+    expect(screen.getByText(/record for this block could not be read/i)).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toMatch(/0 recorded/);
+  });
+
+  test('the form opens undecided and nothing pre-selects a state from the counts', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      evidence: [evidenceRow({ key: 'sessions', label: 'Sessions linked to this block', recorded: 0 })],
+    });
+    await pickAthlete('ath-1');
+    await openReview();
+
+    /* Zero sessions recorded and the state still reads 'unknown'. A page that
+       read the counts and chose 'not_delivered' would be the machine making
+       the judgement the order reserves for a human -- and it would be wrong
+       whenever the real cause was that nobody filled the log in. */
+    const select = screen.getByLabelText('How did it go') as HTMLSelectElement;
+    expect(select.value).toBe('unknown');
+    // And no drafted words anywhere in the fields the coach must write.
+    for (const label of ['What departed from the plan', 'Why', 'What worked', 'What did not', 'What you will adjust']) {
+      expect((screen.getByLabelText(label) as HTMLTextAreaElement).value).toBe('');
+    }
+  });
+
+  test('the coach\'s chosen state and words are what gets sent', async () => {
+    await renderPage({ blocks: [blockRow()] });
+    await pickAthlete('ath-1');
+    await openReview();
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('How did it go'), {
+        target: { value: 'delivered_with_deviations' },
+      });
+      fireEvent.change(screen.getByLabelText('What departed from the plan'), {
+        target: { value: 'Two weeks lost to a hall closure.' },
+      });
+      fireEvent.change(screen.getByLabelText('What you will adjust'), {
+        target: { value: 'Move the southpaw work forward.' },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Record review' }));
+    });
+
+    const write = writes.find((entry) => entry.url.includes('block-review'));
+    expect(write?.body).toMatchObject({
+      block_id: 'blk-1',
+      adherence_state: 'delivered_with_deviations',
+      deviations: 'Two weeks lost to a hall closure.',
+      next_adjustment: 'Move the southpaw work forward.',
+    });
+    expect(screen.getByText('Review recorded.')).toBeTruthy();
+  });
+
+  test('the server\'s own refusal is what the coach reads', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      reviewWriteOk: false,
+      reviewWriteError: 'Recording "delivered with deviations" means saying what the deviations were.',
+    });
+    await pickAthlete('ath-1');
+    await openReview();
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('How did it go'), {
+        target: { value: 'delivered_with_deviations' },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Record review' }));
+    });
+
+    // The reason, not "something went wrong" -- a coach who cannot see which
+    // rule they broke cannot fix it.
+    expect(screen.getByText(/means saying what the deviations were/i)).toBeTruthy();
+  });
+
+  test('every review is shown, not just the latest, and none of them is edited', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      reviews: [
+        reviewRow({
+          review_id: 'rev-2',
+          adherence_state: 'delivered_with_deviations',
+          deviations: 'Two weeks lost to a hall closure.',
+          created_at: '2026-10-14T00:00:00.000Z',
+        }),
+        reviewRow({
+          review_id: 'rev-1',
+          adherence_state: 'under_delivered',
+          reason: 'Hall closed.',
+          created_at: '2026-09-20T00:00:00.000Z',
+        }),
+      ],
+    });
+    await pickAthlete('ath-1');
+    await openReview();
+
+    /* Both readings, in the coach's chosen words. An earlier review saying the
+       block was off track and a later one saying it recovered are both true,
+       and showing only the second erases the more useful half. */
+    /* getAllByText, because the picker's options carry the same five words --
+       deliberately: the vocabulary a coach chooses from and the vocabulary a
+       recorded review reads back in are ONE vocabulary, and a second spelling
+       for the review card would be a second answer to one question. What this
+       asserts is that each state is also rendered as a recorded review, not
+       only as an option nobody has picked. */
+    const recorded = (label: string) => screen.getAllByText(label)
+      .some((element) => element.tagName === 'P');
+    expect(recorded('Delivered with deviations')).toBe(true);
+    expect(recorded('Under-delivered')).toBe(true);
+    expect(screen.getByText('Deviations: Two weeks lost to a hall closure.')).toBeTruthy();
+    expect(screen.getByText('Reason: Hall closed.')).toBeTruthy();
+
+    // No edit path: a judgement recorded at the time is a fact about that time.
+    expect(screen.queryByRole('button', { name: /edit review/i })).toBeNull();
+    expect(screen.getByText(/Reviews are not edited/i)).toBeTruthy();
+  });
+
+  test('a review carries who made it, because that is the point of the record', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      reviews: [reviewRow({ reviewed_by_account_id: 'acct-coach-b' })],
+    });
+    await pickAthlete('ath-1');
+    await openReview();
+
+    expect(screen.getByText(/Reviewed by acct-coach-b/)).toBeTruthy();
+  });
+
+  test('nothing on this page consults SHADOW or offers a generated reading', async () => {
+    const fetchMock = await renderPage({
+      blocks: [blockRow()],
+      evidence: [evidenceRow({ key: 'sessions', label: 'Sessions linked to this block', recorded: 4 })],
+    });
+    await pickAthlete('ath-1');
+    await openReview();
+
+    /* The order permits a SHADOW summary and does not require one: "SHADOW may
+       summarize evidence, but must not silently become the final evaluator."
+       An automated reading of a child's training record needs its own evidence
+       and safety contract rather than arriving as a side effect of a review
+       panel, so nothing here asks for one. */
+    for (const call of fetchMock.mock.calls) {
+      expect(String(call[0])).not.toMatch(/shadow/i);
+    }
+    expect(document.body.textContent ?? '').not.toMatch(/suggest|recommend|SHADOW|AI |generated/i);
+  });
+});
+
+/*
+ * A DOZEN BLOCKS MUST NOT MEAN A DOZEN EXTRA READS.
+ *
+ * The objectives panel has always loaded on open, and its test says why in
+ * exactly those words. The sessions, objective-mark and plan-vs-actual panels
+ * did not: all three fired for every block on every roster load, so a coach
+ * with a dozen blocks issued thirty-six requests -- each a separate
+ * authorization decision at its route -- for panels they had not asked to see.
+ *
+ * This is the test that holds the page to one interaction model.
+ */
+describe('nothing about a block is read until a coach asks for it', () => {
+  const threeBlocks = [
+    blockRow({ block_id: 'blk-1' }),
+    blockRow({ block_id: 'blk-2' }),
+    blockRow({ block_id: 'blk-3' }),
+  ];
+
+  test('choosing an athlete reads the blocks and nothing per block', async () => {
+    const fetchMock = await renderPage({ blocks: threeBlocks });
+    await pickAthlete('ath-1');
+
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    for (const perBlock of ['session-block-links?block_id=', 'session-objective-links?block_id=',
+                            'block-review?block_id=', 'development-block-objectives?block_id=']) {
+      expect([perBlock, urls.some((url) => url.includes(perBlock))]).toEqual([perBlock, false]);
+    }
+  });
+
+  test('opening one block\'s sessions reads that block only', async () => {
+    const fetchMock = await renderPage({ blocks: threeBlocks });
+    await pickAthlete('ath-1');
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Sessions' })[0]);
+    });
+
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+    const asked = urls.filter((url) => url.includes('session-block-links?block_id='));
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain('block_id=blk-1');
+    // The other two blocks were not read.
+    expect(urls.some((url) => url.includes('block_id=blk-2'))).toBe(false);
+    expect(urls.some((url) => url.includes('block_id=blk-3'))).toBe(false);
+  });
+
+  test('opening the plan-vs-actual panel reads the review, and only on request', async () => {
+    const fetchMock = await renderPage({ blocks: [blockRow()] });
+    await pickAthlete('ath-1');
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes('block-review'))).toBe(false);
+
+    await openReview();
+
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes('block-review'))).toBe(true);
   });
 });
