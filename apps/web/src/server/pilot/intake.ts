@@ -1209,7 +1209,17 @@ export const WAIVER_IDENTITY_COLUMNS = [
   'updated_at',
 ] as const;
 
-export const WAIVER_STAFF_COLUMNS = ['notes'] as const;
+/* `recorded_by_account_id` sits here, with the staff note, and not in the
+   identity list. It is a STAFF ACCOUNT IDENTIFIER -- on this platform an
+   account_id resolves to a login email -- so handing it to a guardian would
+   disclose which staff member typed their paperwork, and their address with
+   it. The guardian already gets everything the waiver IS, signed_by_name
+   included; who keyed it in is the gym's record, not theirs.
+
+   The same call, for the identically-named column, is already made a few
+   hundred lines down: READINESS_STAFF_COLUMNS is exactly
+   ['recorded_by_account_id'], for exactly this reason. */
+export const WAIVER_STAFF_COLUMNS = ['notes', 'recorded_by_account_id'] as const;
 
 export function waiverColumnsForReader(role: PilotRole): string[] {
   if (isOrganizationAdminRole(role) || role === 'coach') {

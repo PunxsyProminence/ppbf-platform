@@ -621,14 +621,28 @@ describe('the whole domain-get body', () => {
       covers_video: true,
       public_use_allowed: false,
     });
+    // Every staff column, not just the note: the response is what a guardian
+    // actually receives, and it is the only place a mis-filed column shows up
+    // as a disclosure rather than as a list entry.
+    for (const column of WAIVER_STAFF_COLUMNS) {
+      expect(Object.keys(waiver ?? {})).not.toContain(column);
+    }
+    /* Named, as well as looped, and the loop above is why. It reads the same
+       list an edit would move a column OUT of, so it cannot see a column that
+       has been promoted into the guardian's own set -- the exact direction
+       that is a disclosure. These two are the assertions that survive an edit
+       to either list. */
     expect(Object.keys(waiver ?? {})).not.toContain('notes');
+    expect(Object.keys(waiver ?? {})).not.toContain('recorded_by_account_id');
   });
 
   it('gives the athlete the same waiver without the note', async () => {
     const body = await readDomainGet(AS.athlete());
 
     expect(body.waivers).toHaveLength(1);
-    expect(Object.keys(body.waivers?.[0] ?? {})).not.toContain('notes');
+    for (const column of WAIVER_STAFF_COLUMNS) {
+      expect(Object.keys(body.waivers?.[0] ?? {})).not.toContain(column);
+    }
   });
 
   /* THE MEDICAL INTAKE, and the reader who makes it different: this route
@@ -770,9 +784,24 @@ describe('the waiver allowlist covers the whole table', () => {
     expect(declared).toEqual(liveColumns);
   });
 
-  it('keeps the staff note out of the identity set', () => {
-    expect(WAIVER_IDENTITY_COLUMNS).not.toContain('notes');
+  it('keeps every staff column out of the identity set', () => {
+    /* Written per-column against 'notes', which meant it watched the one
+       column somebody thought of. It did not watch DIRECTION: when
+       recorded_by_account_id was added, moving it into the guardian-visible
+       list passed all 41 tests here. The coverage test above only asks that a
+       column be listed SOMEWHERE, so the two together said nothing about
+       which side of the line a new column landed on.
+
+       Driven off WAIVER_STAFF_COLUMNS now, so it covers whatever is added to
+       it next rather than only what was named the day it was written. */
+    expect(WAIVER_STAFF_COLUMNS.length).toBeGreaterThan(0);
+    for (const column of WAIVER_STAFF_COLUMNS) {
+      expect(WAIVER_IDENTITY_COLUMNS).not.toContain(column);
+    }
     expect(WAIVER_STAFF_COLUMNS).toContain('notes');
+    // A staff account_id resolves to a login email on this platform, so this
+    // one is a staff member's address, not just an opaque key.
+    expect(WAIVER_STAFF_COLUMNS).toContain('recorded_by_account_id');
   });
 });
 
