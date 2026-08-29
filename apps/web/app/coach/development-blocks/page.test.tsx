@@ -112,6 +112,12 @@ interface Stubs {
      both sets with no conflict marker. objectiveLinks is the only field
      unique to this set, so it is the only one that survives here. */
   objectiveLinks?: Array<Record<string, unknown>>;
+  /* The session-objective-links GET, failed INDEPENDENTLY of the
+     development-block-objectives GET. Two different routes feed two different
+     loaders that share one data map, and `objectivesOk` drove both -- so no
+     test could put one loader's failure beside the other's success, which is
+     the only arrangement in which the bug below is visible. */
+  sessionObjectivesOk?: boolean;
   /** Delays the write response, so a second click lands while the first is in
       flight. Without this a double-submit test proves nothing. */
   holdWrite?: () => Promise<void>;
@@ -224,9 +230,10 @@ function installFetch(stubs: Stubs = {}): jest.Mock {
     if (url.includes('/api/pilot/coach/session-objective-links')) {
       const method = init?.method ?? 'GET';
       if (method === 'GET') {
+        const ok = stubs.sessionObjectivesOk ?? stubs.objectivesOk ?? true;
         return {
-          ok: stubs.objectivesOk ?? true,
-          status: stubs.objectivesOk === false ? 503 : 200,
+          ok,
+          status: ok ? 200 : 503,
           json: async () => ({
             ok: true,
             objectives: stubs.objectives ?? [],
@@ -975,6 +982,94 @@ describe('objectives: what a block is trying to move', () => {
 
     expect(screen.getByText(/Nothing recorded yet/i)).toBeTruthy();
     expect(screen.queryByText(/could not be loaded/i)).toBeNull();
+  });
+
+  /* ONE LOADER'S FAILURE MUST NOT DELETE ANOTHER LOADER'S SUCCESS.
+     
+     Two loaders share objectivesByBlock and track two different status maps:
+     loadObjectives (/development-block-objectives, objectivesState) and
+     loadObjectivesForBlock (/session-objective-links, objectivesStateByBlock).
+     The second used to clear objectivesByBlock in its catch -- the right
+     instinct ("a failed read is not 'this block has no objectives'") applied
+     to the wrong map.
+     
+     So a 503 on the session-objective-links read emptied a list the OTHER
+     read had successfully filled, while that panel still saw its own status
+     as 'loaded'. The block's objectives panel then rendered "Nothing recorded
+     yet" for a block with three objectives: a failed read on one surface
+     reported as a fact about the plan on another. */
+  test('a failed read-back does not empty the objectives panel beside it', async () => {
+    /* THE SEQUENCE IS A COACH DOING THEIR JOB, and it ends in the panel
+       reporting a plan that is there as absent -- immediately after a write
+       that SUCCEEDED, which is the worst possible moment to be told there is
+       nothing recorded.
+
+         1. open the Objectives panel. loadObjectives succeeds and fills
+            objectivesByBlock with three objectives.
+         2. mark one on a session. The write succeeds.
+         3. loadObjectivesForBlock runs as the read-back and 503s.
+         4. its catch used to clear objectivesByBlock -- the map belonging to
+            step 1's successful read -- while that panel's own status map
+            still said 'loaded'.
+         5. the panel renders "Nothing recorded yet" for a block with three
+            objectives.
+
+       The stubs object is mutated between steps rather than fixed at render,
+       because the two reads have to disagree and they cannot do that while
+       one flag drives both. */
+    const stubs: Stubs = {
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' })],
+      objectives: [
+        objectiveRow({ objective_id: 'obj-a', objective: 'Stop drifting to the ropes.' }),
+        objectiveRow({ objective_id: 'obj-b', domain: 'mental', objective: 'Settle after a clean shot.' }),
+        objectiveRow({ objective_id: 'obj-c', domain: 'nutrition_body_composition', objective: 'Eat before the session.' }),
+      ],
+      objectiveLinks: [],
+    };
+    await renderPage(stubs);
+    await pickAthlete('ath-1');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Objectives' }));
+    });
+
+    // Step 1 landed: the panel has the plan.
+    expect(document.body.textContent ?? '').toContain('Settle after a clean shot.');
+
+    // From here the read-back fails. The write itself still succeeds.
+    stubs.sessionObjectivesOk = false;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Not marked: Stop drifting to the ropes.' }));
+    });
+
+    /* All three still on screen. Under the shipped catch the panel is empty
+       here and says the block has nothing recorded. */
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('Stop drifting to the ropes.');
+    expect(body).toContain('Settle after a clean shot.');
+    expect(body).toContain('Eat before the session.');
+    expect(screen.queryByText(/Nothing recorded yet/i)).toBeNull();
+  });
+
+  test('and the surface that DID fail still says so', async () => {
+    /* Rendered from the SESSION side, because that is the surface whose read
+       failed. It needs a linked session to have a card to say it in. */
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [sessionRow({ run_id: 'run-1' })],
+      objectives: [objectiveRow({ objective_id: 'obj-a', objective: 'Stop drifting to the ropes.' })],
+      objectivesOk: true,
+      sessionObjectivesOk: false,
+    });
+    await pickAthlete('ath-1');
+
+    /* The other half of the same rule. Keeping the data is only honest while
+       the surface whose read failed still reports that nobody could look --
+       otherwise this becomes stale data rendered as fresh, which is the
+       failure the clearing was reaching for. */
+    expect(screen.getByText(/objectives could not be read/i)).toBeTruthy();
+    // And no marking control, since there is nothing established to mark.
+    expect(screen.queryByRole('button', { name: /^Not marked:/ })).toBeNull();
   });
 
   test('the coach\'s sentence is read back exactly as written', async () => {
