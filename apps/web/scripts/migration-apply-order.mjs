@@ -103,12 +103,29 @@ export function slugFor(sqlFileName) {
  * migrations" is the vacuous gate described above.
  */
 export function parseAllList(workflowText) {
-  const match = /for m in ([a-z0-9 -]+); do/.exec(String(workflowText ?? ''));
+  const matches = [...String(workflowText ?? '').matchAll(/for m in ([a-z0-9 -]+); do/g)];
+  const match = matches[0];
   if (!match) {
     throw new Error(
       'migration-apply-order: could not find the `all` list in apply-migrations.yml. '
       + 'Expected a line of the form `for m in <slug> <slug> ...; do` in the `all` arm of '
       + 'the `case "$MIGRATION"` block. Refusing to guess an apply order.',
+    );
+  }
+
+  // More than one is not a richer answer, it is an ambiguous one. Three pull
+  // requests each appended their slugs to this line and git merged them as
+  // adjacent insertions, leaving three `for m in ...; do` lines holding three
+  // different subsets -- 120, 117 and 115 slugs of a 120-slug union. Taking the
+  // first and ignoring the rest is what this function used to do, so the
+  // expected schema was computed from an incomplete order while still reporting
+  // green, which is precisely the vacuous gate the docblock above warns about.
+  if (matches.length > 1) {
+    throw new Error(
+      `migration-apply-order: found ${matches.length} \`all\` lists in apply-migrations.yml, `
+      + 'expected exactly one. Several `for m in <slug> ...; do` lines means an edit was '
+      + 'merged as a parallel copy rather than into the existing list, and the copies do '
+      + 'not agree. Refusing to guess an apply order.',
     );
   }
 

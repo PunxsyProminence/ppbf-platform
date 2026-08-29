@@ -237,6 +237,18 @@ describe('a parse it cannot trust is refused, never degraded', () => {
       .toMatch(/could not find the `all` list/);
   });
 
+  test('more than one `all` list throws instead of silently taking the first', () => {
+    // The failure this reproduces actually happened. Three pull requests each
+    // appended to the `all` line and git merged them as adjacent insertions
+    // with no conflict, so the workflow carried three lists holding different
+    // subsets of the migrations. The parser took the first, and everything
+    // downstream -- including the pre-deploy schema expectation -- was built
+    // from a list missing four migrations, while still reporting green.
+    expect(thrownMessage(
+      'return parseAllList("for m in alpha beta; do\\nfor m in alpha gamma; do");',
+    )).toMatch(/found 2 `all` lists|expected exactly one/);
+  });
+
   test('a name in `all` with no SQL file throws', () => {
     const fx = fixture(
       {
