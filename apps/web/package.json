@@ -32,6 +32,7 @@
     "pilot:check-shadow-filter-rate": "node scripts/pilot-check-shadow-filter-rate.mjs",
     "pilot:check-medical-clearance-coverage": "node scripts/pilot-check-medical-clearance-coverage.mjs",
     "pilot:check-discipline-values": "node scripts/pilot-check-discipline-values.mjs",
+    "pilot:check-video-readiness": "node scripts/pilot-check-video-readiness.mjs",
     "pilot:apply-shadow-runtime": "node scripts/pilot-apply-shadow-runtime-migration.mjs",
     "pilot:apply-research-triage-view": "node scripts/pilot-apply-research-triage-view-migration.mjs",
     "pilot:apply-magic-link": "node scripts/pilot-apply-magic-link-migration.mjs",
