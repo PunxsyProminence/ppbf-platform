@@ -205,6 +205,9 @@ export const BUILDING: readonly Door[] = [
      to one organization settling a disagreement between its own two
      annotators. Advertising it to a role the API will refuse is what the
      header above warns this list not to do. */
+  { href: '/admin/calibration/adjudicate', label: 'Calibration Adjudication', room: 'office', roles: ['admin'],
+    keywords: 'calibration adjudication settle disagreement annotation coaches decision clip review blinding unresolvable gold',
+    hint: 'Record what a disagreement between two coaches actually was. Neither reading is changed.' },
   { href: '/admin/calibration/review', label: 'Calibration Review', room: 'office', roles: ['admin'],
     keywords: 'calibration comparison disagreement annotation coaches agreement study adjudication clip review blinding',
     hint: 'Where two coaches disagreed on a study clip, side by side. Read-only, and no score.' },
