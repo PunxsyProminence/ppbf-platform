@@ -421,12 +421,12 @@ describe('nothing is settled before both readings are finished', () => {
     expect(mockRecord).not.toHaveBeenCalled();
   });
 
-  test('THREE submitted readings are refused, which states the open question rather than answering it', async () => {
-    /* Nothing caps annotators per clip and compareAnnotationSets takes exactly
-     * two. Which pair of three -- or every pair -- a study means is unanswered
-     * anywhere in this codebase, so the route refuses rather than settling a
-     * disagreement between whichever two rows a query happened to return
-     * first. OWNER DECISION, flagged in the pull request body. */
+  test('THREE submitted readings: a write without a named pair is refused', async () => {
+    /* OD-2026-08-29-003 replaced the blanket refusal that used to be here.
+     * A WRITE still cannot proceed on an unanswered question -- the GET hands
+     * the surface its candidates, and arriving here without a pair means the
+     * choice was never made. Picking one on the caller's behalf is the
+     * row-order default the ruling replaced with a person. */
     mockPrincipal.mockResolvedValue(ADMIN);
     bothSubmitted([
       SET_A,
@@ -438,10 +438,49 @@ describe('nothing is settled before both readings are finished', () => {
     const body = await response.json();
 
     expect(response.status).toBe(403);
-    expect(body.error).toMatch(/3 submitted annotation sets/);
-    expect(body.error).toMatch(/pairwise/);
-    expect(body.error).toMatch(/not a question this build answers/);
-    expect(mockListEvents).not.toHaveBeenCalled();
+    expect(body.error).toMatch(/3 submitted readings and no pair was named/);
+    expect(mockRecord).not.toHaveBeenCalled();
+  });
+
+  test('THREE submitted readings: a named pair is settled, and it is the named one', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted([
+      SET_A,
+      SET_B,
+      setOf({ annotation_set_id: 'set-c', annotator_account_id: 'coach-c' }),
+    ]);
+
+    const response = await POST(post({
+      ...DECISION,
+      annotation_set_id_a: 'set-a',
+      annotation_set_id_b: 'set-c',
+    }));
+
+    expect(response.status).toBe(200);
+    const input = mockRecord.mock.calls[0][0];
+    expect(input.annotationSetIdA).toBe('set-a');
+    expect(input.annotationSetIdB).toBe('set-c');
+  });
+
+  test('a named reading that is not on the clip is refused, and nothing is written', async () => {
+    // The caller says WHICH, never WHAT: the pair is validated against what
+    // the gate returned, so a reading from another clip cannot be pulled in.
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted([
+      SET_A,
+      SET_B,
+      setOf({ annotation_set_id: 'set-c', annotator_account_id: 'coach-c' }),
+    ]);
+
+    const response = await POST(post({
+      ...DECISION,
+      annotation_set_id_a: 'set-a',
+      annotation_set_id_b: 'set-from-another-clip',
+    }));
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error).toMatch(/not among this clip's submitted readings/);
     expect(mockRecord).not.toHaveBeenCalled();
   });
 
@@ -746,27 +785,49 @@ describe('what a recorded decision leaves behind', () => {
     expect(response.headers.get('Cache-Control')).toBe('private, no-store, max-age=0');
   });
 
-  test('an administrator who is also one of the two annotators is NOT refused today', async () => {
-    /* PINNING AN UNSETTLED POSTURE, NOT RATIFYING IT.
+  test('an administrator who is one of the two annotators is refused, and nothing is written', async () => {
+    /* OD-2026-08-29-002, ratified 2026-08-29.
      *
      * ANNOTATOR_ROLES admits 'organization_admin', so the same person can
-     * annotate a clip and then adjudicate their own reading against the other
-     * coach's. blinding.ts takes no view: resolveAdjudicationEligibility
-     * checks role and state and never compares the adjudicator to the two
-     * annotator ids. Whether self-adjudication is acceptable in a study
-     * measuring where two independent readers disagree is an OWNER DECISION,
-     * flagged in the pull request body and deliberately not answered by
-     * inventing a refusal here.
+     * annotate a clip and then settle their own reading against the other
+     * coach's. The ruling: a person who produced one of the two readings
+     * cannot settle the disagreement between them -- the whole point of two
+     * blind readings is that a third party resolves them.
      *
-     * This case exists so the answer, whichever it is, cannot arrive
-     * silently. */
+     * This case replaces one that pinned the opposite while the question was
+     * open, which is what let the answer arrive here rather than silently.
+     *
+     * The assertion is on the WRITE, not only the status. `blinding.ts` and
+     * the route's own role gate both admit an organization_admin, so a status
+     * check alone would not distinguish this refusal from a role refusal --
+     * what makes it this one is that recordAdjudication is never reached. */
     mockPrincipal.mockResolvedValue({ ...ADMIN, accountId: 'coach-a', role: 'organization_admin' });
     bothSubmitted();
 
     const response = await POST(post(DECISION));
+    const body = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(mockRecord.mock.calls[0][0].adjudicatorAccountId).toBe('coach-a');
+    expect(response.status).toBe(403);
+    expect(body.error).toMatch(/you annotated this clip/i);
+    expect(mockRecord).not.toHaveBeenCalled();
+  });
+
+  test('and is refused the working set too, so the read half agrees with the write', async () => {
+    /* The refusal lives in resolveAdjudicationEligibility, which both surfaces
+     * reach through listAnnotationSetsForAdjudication. Implementing it only in
+     * the write route would have left an annotator able to READ the diff of
+     * their own clip while being refused the settlement -- narrower than the
+     * ruling, and the asymmetry would have been invisible without this case. */
+    mockPrincipal.mockResolvedValue({ ...ADMIN, accountId: 'coach-b', role: 'organization_admin' });
+    bothSubmitted();
+
+    const response = await GET(get());
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error).toMatch(/you annotated this clip/i);
+    expect(body.sets).toBeUndefined();
+    expect(body.events).toBeUndefined();
   });
 });
 

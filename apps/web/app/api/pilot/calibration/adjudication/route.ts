@@ -22,7 +22,10 @@ import {
   listAnnotationEventsForAdjudication,
   listAnnotationSetsForAdjudication,
 } from '@/src/server/pilot/calibration/blinding';
-import { DISAGREEMENT_CATEGORIES } from '@/src/server/pilot/calibration/comparison';
+import {
+  DISAGREEMENT_CATEGORIES,
+  resolveComparisonPair,
+} from '@/src/server/pilot/calibration/comparison';
 import type { CalibrationClipRow } from '@/src/server/pilot/calibration/projects';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -172,12 +175,15 @@ interface AdjudicableClip {
 async function loadAdjudicableClip(
   principal: PilotPrincipal,
   calibrationClipId: string,
-): Promise<AdjudicableClip> {
+  requestedSetA: string | null = null,
+  requestedSetB: string | null = null,
+): Promise<AdjudicableClip | { readonly pairSelectionRequired: true; readonly candidates: readonly AnnotationSetRow[]; readonly clip: CalibrationClipRow }> {
   const clip = await loadPlayableClip(principal.organizationId, calibrationClipId);
 
   const context = {
     organizationId: principal.organizationId,
     actorRole: principal.role,
+    actorAccountId: principal.accountId,
   };
 
   const sets = await listAnnotationSetsForAdjudication(context, calibrationClipId);
@@ -206,16 +212,16 @@ async function loadAdjudicableClip(
    * administrator asking about their own organization's clip, and the call
    * above has already established that every set on it is submitted.
    */
-  if (sets.length !== 2) {
-    throw new Error(
-      `Forbidden: this clip has ${sets.length} submitted annotation `
-      + `${sets.length === 1 ? 'set' : 'sets'}, and adjudication is pairwise -- it settles a `
-      + 'disagreement between exactly two independent readings of one clip. Which pair of '
-      + 'three or more a study means is not a question this build answers.',
-    );
+  /* OD-2026-08-29-003. The adjudicator names which two readings; the
+   * selection is validated against what the gate returned, never looked up.
+   * Two readings still pair themselves. */
+  const chosen = resolveComparisonPair(sets, requestedSetA, requestedSetB);
+
+  if (chosen.outcome === 'selection_required') {
+    return { pairSelectionRequired: true, candidates: chosen.candidates, clip };
   }
 
-  const [setA, setB] = sets;
+  const { a: setA, b: setB } = chosen;
 
   /* ONE VOCABULARY, OR NO DECISION.
    *
@@ -300,7 +306,26 @@ export async function GET(request: NextRequest) {
       throw new Error('Missing calibration_clip_id');
     }
 
-    const subject = await loadAdjudicableClip(principal, clipId);
+    const subject = await loadAdjudicableClip(
+      principal,
+      clipId,
+      searchParams.get('set_a'),
+      searchParams.get('set_b'),
+    );
+
+    /* OD-2026-08-29-003. Three or more readings and no choice yet: the
+     * surface is told what it may choose from, and is NOT given the
+     * readings. There is no decision to make until a pair exists, and
+     * shipping every reading's events early would disclose more than the
+     * question needs. */
+    if ('pairSelectionRequired' in subject) {
+      return NextResponse.json({
+        ok: true,
+        clip: subject.clip,
+        pair_selection_required: true,
+        candidate_sets: subject.candidates,
+      }, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } });
+    }
 
     const recorded = await listAdjudicationsForClip(principal.organizationId, clipId);
     const adjudications = await Promise.all(
@@ -341,6 +366,21 @@ interface AdjudicatedFieldBody {
 
 interface AdjudicationBody {
   calibration_clip_id?: unknown;
+  /* WHICH TWO READINGS, AND ONLY WHICH.
+   *
+   * This route was built refusing set ids from the body outright, because a
+   * caller who supplies them decides what a decision is ABOUT. That constraint
+   * is narrowed here rather than dropped: under OD-2026-08-29-003 the caller
+   * may name which two of the clip's submitted readings to settle, and
+   * resolveComparisonPair validates both against what the blinding gate
+   * returned. An id that is not among them is refused, not fetched -- so the
+   * caller still cannot reach a reading on another clip, in another
+   * organization, or one not yet submitted.
+   *
+   * Ignored entirely when the clip has exactly two readings: there is one pair
+   * to make, and it is made from the gate's own list either way. */
+  annotation_set_id_a?: unknown;
+  annotation_set_id_b?: unknown;
   source_event_id_a?: unknown;
   source_event_id_b?: unknown;
   resolution_type?: unknown;
@@ -449,7 +489,26 @@ export async function POST(request: NextRequest) {
 
     // THE GATE. Nothing below this line may run for a clip it refuses, and
     // nothing above it has written anything.
-    const { clip, setA, setB, eventsA, eventsB } = await loadAdjudicableClip(principal, clipId);
+    const subject = await loadAdjudicableClip(
+      principal,
+      clipId,
+      typeof body.annotation_set_id_a === 'string' ? body.annotation_set_id_a : null,
+      typeof body.annotation_set_id_b === 'string' ? body.annotation_set_id_b : null,
+    );
+
+    /* A write cannot proceed on an unanswered question. The GET above
+     * hands the surface its candidates; arriving here without a pair means
+     * the choice was never made, and picking one on the caller's behalf is
+     * the row-order default OD-2026-08-29-003 replaced with a person. */
+    if ('pairSelectionRequired' in subject) {
+      throw new Error(
+        `Forbidden: this clip has ${subject.candidates.length} submitted readings and no `
+        + 'pair was named. Adjudication settles a disagreement between exactly two, and '
+        + 'which two is a choice this build asks for rather than makes.',
+      );
+    }
+
+    const { clip, setA, setB, eventsA, eventsB } = subject;
 
     const sourceEventIdA = optionalEventId(body.source_event_id_a);
     const sourceEventIdB = optionalEventId(body.source_event_id_b);

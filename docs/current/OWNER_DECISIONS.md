@@ -89,7 +89,7 @@ and should not try to.
 
 ---
 
-## OD-2026-08-29-006 -- A nomination is deleted with the athlete it names
+## OD-2026-08-29-007 -- A nomination is deleted with the athlete it names
 
 **Provenance: PRIMARY.** The decision was put to the owner as a choice between
 two options, and he selected one by label. The label is recorded verbatim
@@ -131,7 +131,7 @@ this entry no migration implements it, and the purge still reports the block.
 
 ---
 
-## OD-2026-08-29-005 -- `pilot.waivers.status` is measured before it is constrained
+## OD-2026-08-29-008 -- `pilot.waivers.status` is measured before it is constrained
 
 **Provenance: PRIMARY.** Put to the owner as a choice of options; he selected
 one by label, recorded verbatim:
@@ -184,6 +184,115 @@ with a non-exact row once counted: normalising rows, widening the vocabulary,
 admitting case and padding inside the constraint, or leaving the column
 unconstrained are four different answers and **all four remain OWNER DECISION
 REQUIRED.**
+
+---
+
+## OD-2026-08-29-006 -- The build lane merges its own green work and drives staging; production stays the owner's
+
+**Provenance:** PRIMARY. Owner, 2026-08-29: **"its all on you to get to
+production with me, i closed the other work flows"**, then, asked how far that
+runs without asking, he chose the option reading:
+
+> **Merge + staging freely; production needs your word** -- "I merge my own
+> green PRs and dispatch staging deploys and staging migrations on my own.
+> Production deploys and production migrations I prepare, verify, and then ask."
+
+Declined: **"Everything, including production"** and **"Merge only; deploys stay
+with you"**.
+
+**What was asked.** `AGENT_KERNEL.md` assigned `main`, migrations, staging and
+production to a release-control lane, and forbade the build lane from merging or
+dispatching any of them. The owner has since closed the other workflows, so that
+lane is not staffed; on 2026-08-29 five green pull requests sat unmergeable for
+roughly three and a half hours with no build work possible behind them.
+
+**The decision.** A build lane MAY merge its own pull requests to `main` once CI
+is green and they are mergeable, and MAY dispatch `deploy-staging` and staging
+migrations. `deploy-production` and production migrations stay with the owner:
+prepared and verified by the lane, dispatched only on his word.
+
+**Why the split is where it is.** An applied migration is not undone by
+re-running a workflow. The calibration tables this thread built against have
+never been applied in any environment -- no lane here has ever reached a
+database -- so the first production apply is genuinely unproven, and its
+recovery would be manual database work rather than a redeploy. Staging is where
+that gets found out.
+
+`AGENT_KERNEL.md` is amended in the same commit. Recording the ruling without
+amending it would leave the kernel stating a boundary that no longer describes
+practice, which is the drift this file exists to stop.
+
+**What this does NOT settle.**
+
+- **Whether a lane may merge ANOTHER lane's pull request.** This says "its own".
+  Not asked, not answered.
+- **What happens when CI is green but the change is contested.** Green CI is
+  still a precondition, not an authorization to override a review.
+- **Who applies the calibration migrations first.** They remain unapplied
+  everywhere, and the first apply is a production question this entry routes to
+  the owner rather than answers.
+
+**Evidence this rests on.** `AGENT_KERNEL.md` lines 408-411 at `31ea99c1`; the
+2026-08-29 queue, where #890, #894, #897, #900 and #901 were green and
+unmergeable from roughly 06:00 to 12:29 UTC.
+
+---
+
+## OD-2026-08-29-005 -- A superseded adjudication is marked by a revision integer, and a collision is explained rather than dumped
+
+**Provenance:** PRIMARY. Owner, 2026-08-29, choosing among three shapes put to
+him after he asked whether the error could explain itself. The option he
+selected read:
+
+> **Revision + unique constraint + translated error** -- "Same column, no lock;
+> a unique index on (pair, revision) catches the collision, and the route
+> translates Postgres 23505 into a sentence like *'someone corrected this while
+> you were deciding -- reload and look at their answer before replacing it.'*
+> GOOD: no locking, and arguably the RIGHT message: the second person genuinely
+> should see the first correction before overwriting it. BAD: it is an error
+> path, so it only reads well if I write and test that translation --
+> untranslated it surfaces as a raw duplicate-key dump."
+
+Declined: **"Revision + row lock, so there is no error"** (prevents the
+collision with `SELECT ... FOR UPDATE`, but a forgotten lock in a future code
+path silently reopens the hole) and **"is_current boolean + partial unique
+index"** (the database refuses two current answers, but a reader who forgets to
+filter silently sees history as current -- a quiet wrong answer rather than a
+loud one).
+
+**This supersedes the open question in OD-2026-08-29-004**, which ruled that a
+second adjudication of the same pair is a correction and left the schema shape
+undecided. It does not change that ruling; it answers what -004 deferred.
+
+**The decision.** `pilot.calibration_adjudications` gains a revision integer
+scoped to the pair. The highest revision is the current answer. A unique
+constraint on the pair plus revision catches two writers computing the same next
+value, and the route translates that collision into a sentence naming what
+happened and what to do about it.
+
+**The translated error is part of the decision, not a nicety.** The owner asked
+for it specifically. Untranslated, a 23505 reaches an administrator as a
+duplicate-key dump naming a constraint. The message he accepted says a person
+corrected this while you were deciding and tells them to read that correction
+before replacing it -- which is the right instruction, because the second
+adjudicator genuinely should see the first answer before overwriting it. **A
+lane implementing this owes the translation a test**; without one the failure
+mode is exactly the raw dump the choice was made to avoid.
+
+**What this does NOT settle.**
+
+- **Who may supersede.** Whether only the original adjudicator may correct their
+  own decision, or any organization admin may, is still open.
+- **What the surfaces show.** Whether an adjudicator sees only the current
+  revision or the whole chain is a surface question, unasked.
+- **Retention.** Nothing rules on whether superseded revisions are ever removed.
+
+**Evidence this rests on.** `infra/azure/pilot_slice_postgres_calibration_
+adjudication_migration.sql` at `31ea99c1` -- no superseding column of any kind,
+primary key `(organization_id, adjudication_id)`, so a second row for one pair
+already inserts cleanly and is already indistinguishable from the first.
+`adjudication.ts`, which exposes `recordAdjudication` and `getAdjudication` and
+no update path.
 
 ---
 

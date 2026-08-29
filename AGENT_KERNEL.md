@@ -406,10 +406,21 @@ It is the only lane that merges or deploys.
 A build lane MAY: create branches, write code and tests, open pull requests,
 investigate and report findings.
 
-A build lane MAY NOT: merge to `main`; dispatch `apply-migrations`,
-`deploy-staging` or `deploy-production`; decide product scope; remove or
+A build lane MAY ALSO, per OD-2026-08-29-006: merge its OWN pull requests to
+`main` once CI is green and they are mergeable, and dispatch `deploy-staging`
+and staging migrations. This replaced an earlier prohibition after the owner
+closed the other workflows -- on 2026-08-29 five green pull requests sat
+unmergeable for about three and a half hours with no build work possible
+behind them.
+
+A build lane MAY NOT: merge ANOTHER lane's pull request; dispatch
+`deploy-production` or production migrations; decide product scope; remove or
 disable a feature because it looks out of scope; fix unrelated defects inside
 its PR; or act on a scoping question as though it were a decision.
+
+Production is where the split is, and for a reason: an applied migration is not
+undone by re-running a workflow. Green CI remains a precondition, never an
+authorization to merge over a review.
 
 ### A question is not an instruction
 

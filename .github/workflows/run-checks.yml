@@ -96,6 +96,7 @@ on:
           - contested-overlap
           - orphan-chat-audit
           - multiorg-orphans
+          - membership-orphans
           - stranded-guardians
           - duplicate-guardians
           - activation-pin-exposure
@@ -107,6 +108,7 @@ on:
           - medical-clearance-coverage
           - deletion-preflight
           - discipline-values
+          - waiver-statuses
           - video-readiness
 
 permissions:
@@ -449,6 +451,7 @@ jobs:
               # deployed app rather than about the database.
               run_one orphan-chat-audit   pilot:check-orphan-chat-audit
               run_one multiorg-orphans    pilot:check-multiorg-orphans
+              run_one membership-orphans  pilot:check-membership-orphans
               run_one stranded-guardians  pilot:check-stranded-guardians
               run_one duplicate-guardians pilot:check-duplicate-guardians
               run_one activation-pin-exposure pilot:check-activation-pin-exposure
@@ -460,10 +463,12 @@ jobs:
               run_one medical-clearance-coverage pilot:check-medical-clearance-coverage
               run_one deletion-preflight  pilot:check-deletion-preflight
               run_one discipline-values   pilot:check-discipline-values
+              run_one waiver-statuses     pilot:check-waiver-statuses
               run_one video-readiness     pilot:check-video-readiness
               ;;
             orphan-chat-audit)  run_one orphan-chat-audit   pilot:check-orphan-chat-audit ;;
             multiorg-orphans)   run_one multiorg-orphans    pilot:check-multiorg-orphans ;;
+            membership-orphans) run_one membership-orphans  pilot:check-membership-orphans ;;
             stranded-guardians) run_one stranded-guardians  pilot:check-stranded-guardians ;;
             duplicate-guardians) run_one duplicate-guardians pilot:check-duplicate-guardians ;;
             activation-pin-exposure) run_one activation-pin-exposure pilot:check-activation-pin-exposure ;;
@@ -475,6 +480,7 @@ jobs:
             shadow-filter-rate) run_one shadow-filter-rate  pilot:check-shadow-filter-rate ;;
             medical-clearance-coverage) run_one medical-clearance-coverage pilot:check-medical-clearance-coverage ;;
             discipline-values)  run_one discipline-values   pilot:check-discipline-values ;;
+            waiver-statuses)    run_one waiver-statuses     pilot:check-waiver-statuses ;;
             video-readiness)    run_one video-readiness     pilot:check-video-readiness ;;
             *)
               echo "::error::Unknown check '$CHECK'."
