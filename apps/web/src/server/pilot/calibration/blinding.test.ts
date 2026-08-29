@@ -358,4 +358,54 @@ describe('resolveAdjudicationEligibility', () => {
       }),
     ).toEqual({ outcome: 'refused', reason: 'annotation_in_progress' });
   });
+
+  test('a single submitted set is not a pair, and is refused', () => {
+    // The regression this exists for. `every` is true of a one-element list,
+    // so this returned { eligible, submittedSetCount: 1 } -- promising a
+    // caller two raw readings and handing it one. The zero case beside it was
+    // already guarded for exactly this reason; one set is the same mistake a
+    // step along.
+    expect(
+      resolveAdjudicationEligibility({
+        actorRole: 'organization_admin',
+        sets: [setOf(A, 'submitted')],
+      }),
+    ).toEqual({ outcome: 'refused', reason: 'insufficient_sets_for_comparison' });
+  });
+
+  test('a single UNFINISHED set is reported as progress, not as a missing pair', () => {
+    // Both refusals would be literally true here, and the order is deliberate:
+    // a second reading may still arrive, so the useful thing to tell an
+    // adjudicator is that the work is unfinished -- not that the pair is
+    // structurally impossible.
+    expect(
+      resolveAdjudicationEligibility({
+        actorRole: 'organization_admin',
+        sets: [setOf(A, 'in_progress')],
+      }),
+    ).toEqual({ outcome: 'refused', reason: 'annotation_in_progress' });
+  });
+
+  test('the role is still checked first, so a coach on a one-set clip learns nothing', () => {
+    expect(
+      resolveAdjudicationEligibility({
+        actorRole: 'coach',
+        sets: [setOf(A, 'submitted')],
+      }),
+    ).toEqual({ outcome: 'refused', reason: 'role_not_permitted' });
+  });
+
+  test('three submitted sets stay eligible here -- the pair is the caller to choose', () => {
+    // This function establishes that there is more than one reading to
+    // compare. WHICH pair a study means when there are three is not settled
+    // anywhere in the codebase, and inventing an answer here would decide it
+    // silently for every caller. The comparison route refuses that case on
+    // its own terms and says so in as many words.
+    expect(
+      resolveAdjudicationEligibility({
+        actorRole: 'organization_admin',
+        sets: [setOf(A, 'submitted'), setOf(B, 'submitted'), setOf(C, 'submitted')],
+      }),
+    ).toEqual({ outcome: 'eligible', submittedSetCount: 3 });
+  });
 });

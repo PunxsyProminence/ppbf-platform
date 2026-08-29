@@ -199,6 +199,18 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/shadow-reviews', label: 'SHADOW Human Review', room: 'office', roles: ADMIN_GATE,
     keywords: 'shadow chat safety boundary escalation critical chest pain fainting review queue safeguarding',
     hint: 'Chats the safety boundary refused to answer. Critical tickets first.' },
+  /* roles is ['admin'] and NOT ADMIN_GATE, deliberately. ADMIN_GATE carries
+     platform_owner, and the route behind this door refuses platform_owner by
+     name -- blinding.ts's position is that a platform-wide role is not a party
+     to one organization settling a disagreement between its own two
+     annotators. Advertising it to a role the API will refuse is what the
+     header above warns this list not to do. */
+  { href: '/admin/calibration/adjudicate', label: 'Calibration Adjudication', room: 'office', roles: ['admin'],
+    keywords: 'calibration adjudication settle disagreement annotation coaches decision clip review blinding unresolvable gold',
+    hint: 'Record what a disagreement between two coaches actually was. Neither reading is changed.' },
+  { href: '/admin/calibration/review', label: 'Calibration Review', room: 'office', roles: ['admin'],
+    keywords: 'calibration comparison disagreement annotation coaches agreement study adjudication clip review blinding',
+    hint: 'Where two coaches disagreed on a study clip, side by side. Read-only, and no score.' },
   { href: '/admin/platform', label: 'Platform', room: 'office', roles: OPEN,
     keywords: 'system settings internals' },
   { href: '/print', label: 'Print', room: 'office', roles: ['athlete', 'parent', 'coach', 'admin', 'platform_owner', 'staff'],
@@ -367,6 +379,16 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/transfer-check', label: 'Transfer Check', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'transfer false progress practice live sparring holds breaks honesty',
     hint: 'Does what holds in practice hold live? Flags with raw counts, never a verdict.' },
+  /* roles: ['coach', 'admin'], NOT ADMIN_GATE. Same reasoning as the Floor
+     Hours Ledger above: a row here must never advertise a door the page then
+     bounces you off. /api/pilot/coach/athlete-intelligence runs a role check
+     and then assertActorCanAccessAthlete, which REFUSES platform_owner and
+     board by name -- so neither is listed, however broadly they are trusted
+     elsewhere. Distinct from 'The Morning Read' above: that is the digest
+     across all of a coach's athletes, this is the computed values for ONE. */
+  { href: '/coach/athlete-intelligence', label: 'Athlete Intelligence', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'formula outputs computed values shadow engine confidence completeness validation provenance sparring deep track evidence one athlete',
+    hint: 'What the formula engine computed for one athlete, and what qualifies it. Read-only \u2014 nothing scores or ranks.' },
   { href: '/coach/intervention-protocols', label: 'Intervention Protocols', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'intervention protocol hypothesis intent exposure supersede retire',
     hint: 'What we intend to do about a problem, written down before we do it.' },
