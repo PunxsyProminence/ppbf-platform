@@ -74,10 +74,31 @@ export function hasRequiredClaims(payload: JWTPayload, allowedClientIds: Readonl
   return roles.includes('Research.Export') && allowedClientIds.has(callingClientId);
 }
 
-export async function requireResearchBridgeAccess(
+/**
+ * THE ENVIRONMENT FENCE, on its own -- may this deployment produce a research
+ * bridge payload at all, whoever is asking.
+ *
+ * Lifted out of requireResearchBridgeAccess below, unchanged, because a SECOND
+ * route serves the same payload: the session-authenticated export at
+ * app/api/pilot/shadow/research-bridge/session-export. That route held none of
+ * these conditions, so the export whose own classification field reads
+ * 'sanitized-staging-only' was served by every deployment, production
+ * included, to any session that satisfied its role branches.
+ *
+ * One function rather than a second copy, so the two routes cannot come to
+ * disagree about where this payload may exist. This is NOT an authorization
+ * gate and answers nothing about the caller -- it is asked BEFORE the caller
+ * is identified, and both routes still hold their own, different, gate after
+ * it.
+ *
+ * Throws rather than returning a boolean so the answer cannot be read and
+ * discarded, and 404 rather than 403 so a fenced deployment is indistinguishable
+ * from one where the route was never deployed.
+ */
+export function assertResearchBridgeExportEnvironment(
   request: NextRequest,
   environment: ResearchBridgeEnvironment = process.env,
-): Promise<{ organizationId: string }> {
+): void {
   const requestHost = resolveResearchBridgeRequestHost(
     request.url,
     request.headers.get('x-forwarded-host'),
@@ -86,6 +107,13 @@ export async function requireResearchBridgeAccess(
   if (!isResearchBridgeExportActive(environment, requestHost)) {
     throw new ResearchBridgeAccessError(404, 'Research bridge export is unavailable');
   }
+}
+
+export async function requireResearchBridgeAccess(
+  request: NextRequest,
+  environment: ResearchBridgeEnvironment = process.env,
+): Promise<{ organizationId: string }> {
+  assertResearchBridgeExportEnvironment(request, environment);
 
   const tenantId = environment.AZURE_TENANT_ID?.trim();
   const audience = environment.RESEARCH_BRIDGE_EXPORT_AUDIENCE?.trim();

@@ -570,7 +570,11 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
       + 'holding master SHADOW access exports across organizations; an '
       + 'organization admin exports their own; everyone else falls through to a '
       + 'Forbidden. Structured as allow-branches with the refusal last, which '
-      + 'is why no single if-statement reads as the gate.',
+      + 'is why no single if-statement reads as the gate. Ahead of all of it '
+      + 'sits assertResearchBridgeExportEnvironment (researchBridgeAuth.ts), '
+      + 'the same environment fence the Azure-AD sibling at ../export holds -- '
+      + 'not an authorization gate and no opinion about the caller, but it is '
+      + 'what stops this payload existing outside staging at all.',
   ],
   [
     'app/api/pilot/shadow/video-analysis/route.ts#GET',

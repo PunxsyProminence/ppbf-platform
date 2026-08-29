@@ -6,6 +6,7 @@ import {
 } from './shadowLibrary';
 import {
   listShadowResearchRequirements,
+  subjectAthleteIdOf,
   type ShadowResearchRequirementRow,
 } from './shadowResearch';
 
@@ -57,14 +58,48 @@ function opaqueId(prefix: 'need' | 'evidence', organizationId: string, internalI
   return `${prefix}_${digest}`;
 }
 
+/**
+ * The person-naming metadata keys this filter has always refused, kept
+ * alongside the canonical subject resolution rather than replaced by it.
+ *
+ * subject_id and athlete_id overlap with what subjectAthleteIdOf reads;
+ * account_id, parent_id and guardian_id do not -- they name an account or a
+ * guardian rather than the athlete a row is ABOUT, so the canonical resolver
+ * has no opinion on them and correctly returns null. They still must not
+ * leave the platform, so both checks run and a row is excluded if either
+ * finds somebody.
+ */
 function hasSubjectLink(metadata: Record<string, unknown>): boolean {
   return ['subject_id', 'athlete_id', 'account_id', 'parent_id', 'guardian_id']
     .some((key) => typeof metadata[key] === 'string' && Boolean((metadata[key] as string).trim()));
 }
 
+/**
+ * Is this requirement about NO child, and therefore exportable?
+ *
+ * WHICH ATHLETE A ROW NAMES is shadowResearch's question, and
+ * subjectAthleteIdOf is its answer: the dedicated subject_id COLUMN first,
+ * then the metadata fallbacks, in the priority order every other reader uses
+ * (shadowResearch.ts -- "subject_id is the authority"). This filter used to
+ * ask a private metadata-only helper instead, so the column that
+ * pilot_slice_postgres_research_requirement_subject_migration.sql added
+ * precisely to record "which child is this row about" was selected, carried on
+ * the row, and never read here.
+ *
+ * The gap was reachable, not theoretical. POST
+ * /api/pilot/shadow/research-requirements passes source_entity_type straight
+ * from the request body, so a row written with subject_id set, metadata {} and
+ * an allowlisted source_entity_type read as subject-less and was exported --
+ * a research requirement about one named child, with its free-text
+ * research_requirement and knowledge_gap, leaving the platform through a
+ * payload whose whole claim is that it carries none.
+ *
+ * Deliberately additive: the metadata keys hasSubjectLink already refused are
+ * still refused, so this widens what is excluded and narrows nothing.
+ */
 function isEligibleResearchNeed(row: ShadowResearchRequirementRow): boolean {
   const metadata = row.metadata ?? {};
-  if (hasSubjectLink(metadata)) {
+  if (subjectAthleteIdOf(row) !== null || hasSubjectLink(metadata)) {
     return false;
   }
   if (row.source_entity_type === 'shadow_library_capability_map') {
