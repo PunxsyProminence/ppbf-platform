@@ -367,6 +367,16 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/transfer-check', label: 'Transfer Check', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'transfer false progress practice live sparring holds breaks honesty',
     hint: 'Does what holds in practice hold live? Flags with raw counts, never a verdict.' },
+  /* roles: ['coach', 'admin'], NOT ADMIN_GATE. Same reasoning as the Floor
+     Hours Ledger above: a row here must never advertise a door the page then
+     bounces you off. /api/pilot/coach/athlete-intelligence runs a role check
+     and then assertActorCanAccessAthlete, which REFUSES platform_owner and
+     board by name -- so neither is listed, however broadly they are trusted
+     elsewhere. Distinct from 'The Morning Read' above: that is the digest
+     across all of a coach's athletes, this is the computed values for ONE. */
+  { href: '/coach/athlete-intelligence', label: 'Athlete Intelligence', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'formula outputs computed values shadow engine confidence completeness validation provenance sparring deep track evidence one athlete',
+    hint: 'What the formula engine computed for one athlete, and what qualifies it. Read-only \u2014 nothing scores or ranks.' },
   { href: '/coach/intervention-protocols', label: 'Intervention Protocols', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'intervention protocol hypothesis intent exposure supersede retire',
     hint: 'What we intend to do about a problem, written down before we do it.' },
