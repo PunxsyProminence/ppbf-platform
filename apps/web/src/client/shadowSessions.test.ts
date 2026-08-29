@@ -1,6 +1,7 @@
 import {
   buildShadowChatRequest,
   deleteOwnedShadowSession,
+  fetchOwnShadowDataExport,
   listOwnedShadowSessions,
   loadOwnedShadowSessionMessages,
   mapStoredShadowMessage,
@@ -285,5 +286,79 @@ describe('session rename and delete', () => {
     ['delete', () => deleteOwnedShadowSession('', CONVERSATION_ID, jest.fn().mockResolvedValue(jsonResponse({ ok: 1 })))],
   ])('a malformed %s response is an error, not a silent success', async (_label, run) => {
     await expect(run()).rejects.toBeInstanceOf(ShadowSessionsRequestError);
+  });
+});
+
+describe('the self-service export', () => {
+  const COMPLETE = {
+    exportedAt: '2026-08-28T12:00:00.000Z',
+    exportScope: 'conversation_history_only',
+    completeAccountExport: false,
+    conversationLimit: 100,
+    conversationsStored: 4,
+    conversationsIncluded: 4,
+    sessions: [],
+    messages: [],
+    corrections: [],
+  };
+
+  test('asks for the caller\'s own data with credentials and reads the counts back', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(jsonResponse({ success: true, data: COMPLETE }));
+
+    const result = await fetchOwnShadowDataExport('https://example.test/', undefined, fetchImpl);
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://example.test/api/pilot/shadow/data',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(result.conversationsIncluded).toBe(4);
+    expect(result.conversationsStored).toBe(4);
+    expect(result.conversationLimit).toBe(100);
+    // The raw payload is passed through unread -- it is what gets written to
+    // the file, and re-shaping it here would hand somebody a version of their
+    // history that this module invented.
+    expect(result.payload).toEqual(COMPLETE);
+  });
+
+  test.each([
+    ['conversationLimit', 'conversation limit'],
+    ['conversationsStored', 'stored conversation count'],
+    ['conversationsIncluded', 'included conversation count'],
+  ])('an export missing %s is an error, never a zero', async (field, label) => {
+    // Reading an absent count as 0 would render "0 of 0 conversations" over a
+    // file full of them -- a false reassurance in one direction or a false
+    // alarm in the other, depending which count went missing.
+    const data: Record<string, unknown> = { ...COMPLETE };
+    delete data[field];
+    const fetchImpl = jest.fn().mockResolvedValue(jsonResponse({ success: true, data }));
+
+    await expect(fetchOwnShadowDataExport('', undefined, fetchImpl))
+      .rejects.toThrow(new RegExp(label));
+  });
+
+  test('treats a missing completeAccountExport as NOT complete', async () => {
+    // The safe reading of a server that did not say whether this is everything
+    // is that it is not.
+    const data: Record<string, unknown> = { ...COMPLETE };
+    delete data.completeAccountExport;
+    const fetchImpl = jest.fn().mockResolvedValue(jsonResponse({ success: true, data }));
+
+    const result = await fetchOwnShadowDataExport('', undefined, fetchImpl);
+
+    expect(result.completeAccountExport).toBe(false);
+  });
+
+  test('a refusal is surfaced with its status rather than an empty file', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(jsonResponse({ error: 'Forbidden' }, 403));
+
+    await expect(fetchOwnShadowDataExport('', undefined, fetchImpl))
+      .rejects.toMatchObject({ status: 403 });
+  });
+
+  test('a success flag with no data is malformed, not an empty history', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(jsonResponse({ success: true }));
+
+    await expect(fetchOwnShadowDataExport('', undefined, fetchImpl))
+      .rejects.toBeInstanceOf(ShadowSessionsRequestError);
   });
 });

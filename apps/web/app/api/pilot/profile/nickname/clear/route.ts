@@ -32,6 +32,24 @@ export const runtime = 'nodejs';
  * they are the person most likely to recognise that a name is a problem, and
  * making them wait for a coach to be free is making them wait for something
  * they should not have to wait for.
+ *
+ * WHERE THE DOORS ARE, AND WHERE ONE IS STILL MISSING (2026-08-28).
+ *
+ * This route shipped with the ring-name slice and, until this change, nothing
+ * on any screen called it. profileIdentity.ts's case for not running a
+ * wordlist over children's names rests on three legs, and the third one --
+ * "the adults who know the child can clear it outright, immediately" -- was a
+ * route with no caller. It is reachable now from the coach roster in
+ * CoachWorkspace.tsx, on an athlete the coach has selected, gated on the same
+ * coach_of_subject standing this route requires.
+ *
+ * The GUARDIAN door is not built. ParentHub.tsx does not display a ring name
+ * anywhere, and a control that clears a string it never showed is a control a
+ * parent cannot use responsibly -- so surfacing the name to guardians comes
+ * first, and it is a visibility change with its own decision to make rather
+ * than a button to add. The permission below is correct and stays; the honest
+ * statement of today's state is that a guardian must ask a coach or an
+ * organization admin. Nothing here silently narrows to match the UI.
  */
 export async function POST(request: NextRequest) {
   try {

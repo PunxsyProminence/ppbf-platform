@@ -706,9 +706,36 @@ export async function softDeleteConversation(
   return Boolean(rows[0]);
 }
 
+/**
+ * How many conversations one export carries.
+ *
+ * Named rather than left as a literal argument because the export now has to
+ * REPORT it. listConversations caps at 100 (boundedLimit), and an export that
+ * silently returned the most recent hundred of somebody's hundred and fifty
+ * conversations would be a partial answer wearing the label of a complete one
+ * -- the person who asked for their data would have no way to know a fifty
+ * was missing.
+ */
+export const SHADOW_EXPORT_CONVERSATION_LIMIT = 100;
+
 export async function exportOwnShadowData(actor: ActorIdentity) {
   requireTenantOwner(actor);
-  const sessions = await listConversations(actor, 100);
+  const sessions = await listConversations(actor, SHADOW_EXPORT_CONVERSATION_LIMIT);
+  /* What the account actually holds, counted rather than inferred.
+     `sessions.length === limit` looks like the same signal and is not: it
+     reports a truncation for somebody with exactly a hundred conversations and
+     nothing missing, and it cannot see the OTHER reason a row is absent --
+     listConversations drops any athlete-bearing conversation the actor can no
+     longer reach (assertActorCanAccessAthlete). Two numbers say the true thing
+     without either of them having to guess which reason applied. */
+  const storedRows = await query<{ conversations: number }>(
+    `select count(*)::int as conversations
+     from pilot.shadow_chat_sessions
+     where organization_id = $1
+       and account_id = $2
+       and deleted_at is null`,
+    [actor.organizationId, actor.accountId],
+  );
   const allowedConversationIds = sessions.map((session) => session.conversationId);
   const messages = await query<{
     message_id: string;
@@ -739,6 +766,13 @@ export async function exportOwnShadowData(actor: ActorIdentity) {
     exportedAt: new Date().toISOString(),
     exportScope: 'conversation_history_only' as const,
     completeAccountExport: false,
+    /* The three numbers that let a reader tell a whole export from a partial
+       one. conversationsIncluded < conversationsStored means something was
+       left out; WHICH reason is deliberately not asserted here, because both
+       can apply at once and this function cannot tell them apart. */
+    conversationLimit: SHADOW_EXPORT_CONVERSATION_LIMIT,
+    conversationsStored: storedRows[0]?.conversations ?? sessions.length,
+    conversationsIncluded: sessions.length,
     sessions,
     messages: messages.map((row) => ({
       ...row,
