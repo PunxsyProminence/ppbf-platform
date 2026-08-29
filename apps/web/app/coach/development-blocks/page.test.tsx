@@ -147,7 +147,7 @@ function evidenceRow(overrides: Record<string, unknown> = {}) {
     key: 'training_attempts',
     label: 'Training attempts recorded',
     recorded: 0,
-    undated: 0,
+    openInWindow: 0,
     recent: [],
     ...overrides,
   };
@@ -1587,24 +1587,31 @@ describe('plan versus what was recorded', () => {
     expect(document.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
   });
 
-  test('rows no window can place are shown apart from the count, not folded into it', async () => {
+  test('what this window was meant to contain is shown apart from what it did', async () => {
     await renderPage({
       blocks: [blockRow()],
       evidence: [
-        evidenceRow({ key: 'assessments', label: 'Assessments administered', recorded: 2, undated: 3 }),
-        evidenceRow({ key: 'sessions', label: 'Sessions linked to this block', recorded: 1, undated: 0 }),
+        evidenceRow({ key: 'assessments', label: 'Assessments administered', recorded: 2, openInWindow: 3 }),
+        evidenceRow({ key: 'sessions', label: 'Sessions linked to this block', recorded: 1, openInWindow: 0 }),
       ],
     });
     await pickAthlete('ath-1');
 
-    /* An assessment scheduled and never administered has no date, so no
-       window contains it. Counting it would claim a test happened; dropping
-       it would hide three records a coach is looking for. Two counts, said
-       separately. */
+    /* An assessment due inside this window and never administered is not
+       evidence the plan was carried out, so counting it would claim a test
+       happened; dropping it would hide three records a coach is looking for.
+       Two counts, said separately.
+
+       The sentence used to read "3 more on record with no date, which this
+       window cannot place". Both halves were wrong -- these rows carry a
+       due_on, and the window places them by it -- so the old wording is
+       asserted ABSENT as well as the new one present. */
     expect(screen.getByText('Assessments administered: 2 recorded')).toBeTruthy();
-    expect(screen.getByText(/3 more on record with no date/i)).toBeTruthy();
-    // And a source with none says nothing, rather than "0 more on record".
-    expect(document.body.textContent ?? '').not.toMatch(/0 more on record/);
+    expect(screen.getByText(/3 due or planned in this window/i)).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toMatch(/no date/i);
+    expect(document.body.textContent ?? '').not.toMatch(/cannot place/i);
+    // And a source with none says nothing, rather than "0 due or planned".
+    expect(document.body.textContent ?? '').not.toMatch(/0 due or planned/);
   });
 
   test('a zero is shown as a zero, with the reading it does NOT support said out loud', async () => {

@@ -119,8 +119,8 @@ function review(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function source(key: string, recorded: number, undated = 0) {
-  return { key, label: `${key} recorded`, recorded, undated, recent: [] };
+function source(key: string, recorded: number, openInWindow = 0) {
+  return { key, label: `${key} recorded`, recorded, openInWindow, recent: [] };
 }
 
 function getRequest(qs: string) {

@@ -148,17 +148,18 @@ interface BlockReview {
  * exist, never how much of the plan happened -- those are different claims and
  * only the first one has evidence. A zero means nobody wrote anything down.
  *
- * `undated` is rows this athlete has that carry NO event date -- an assessment
- * scheduled and never administered, an intervention that has not started. No
- * window can place them, so they are shown apart from the count rather than
- * folded into it (which would claim work that has not happened) or dropped
- * (which would hide records that exist).
+ * `openInWindow` is rows DUE OR PLANNED INSIDE THIS WINDOW that carry no event
+ * date -- an assessment nobody administered, an intervention that never
+ * started. They are evidence of what was meant to happen, never of what did,
+ * so they are shown apart from the count rather than folded into it (which
+ * would claim work that has not happened) or dropped (which would hide
+ * records that exist).
  */
 interface EvidenceSource {
   key: string;
   label: string;
   recorded: number;
-  undated: number;
+  openInWindow: number;
   recent: { when: string; detail: string }[];
 }
 
@@ -1479,15 +1480,23 @@ export default function CoachDevelopmentBlocksPage() {
                               <p className="t-body m-0">
                                 {item.label}: {item.recorded} recorded
                               </p>
-                              {/* The rows no window can place, said out loud
-                                  and kept apart from the count. Folding them
-                                  in would claim work that has not happened;
-                                  dropping them would hide records that
-                                  exist. */}
-                              {item.undated > 0 ? (
+                              {/* What this window was MEANT to contain and
+                                  does not, kept apart from the count. Folding
+                                  it in would claim work that has not
+                                  happened; dropping it would hide records
+                                  that exist.
+
+                                  The sentence used to read "more on record
+                                  with no date, which this window cannot
+                                  place". Both halves were wrong: these rows
+                                  carry a due or planned date, and the window
+                                  places them by it. What they have no date
+                                  for is the EVENT -- because it has not
+                                  happened. */}
+                              {item.openInWindow > 0 ? (
                                 <p className="t-muted m-0">
-                                  {item.undated} more on record with no date, which this window
-                                  cannot place.
+                                  {item.openInWindow} due or planned in this window with nothing
+                                  recorded against them yet.
                                 </p>
                               ) : null}
                               {/* The entries themselves, so a coach reads
