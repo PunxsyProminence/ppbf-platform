@@ -622,8 +622,8 @@ export async function upsertMedicalIntake(params: {
  * the transactional writer cannot drift into inserting different shapes.
  */
 const WAIVER_INSERT_SQL = `insert into pilot.waivers
-     (organization_id, waiver_id, athlete_id, waiver_type, signed_by_name, signed_by_role, signed_at, consent_version, status, notes, parent_id, covers_video, public_use_allowed)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`;
+     (organization_id, waiver_id, athlete_id, waiver_type, signed_by_name, signed_by_role, signed_at, consent_version, status, notes, parent_id, covers_video, public_use_allowed, recorded_by_account_id)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`;
 
 function waiverInsertValues(waiverId: string, params: UpsertWaiverParams): unknown[] {
   return [
@@ -640,6 +640,7 @@ function waiverInsertValues(waiverId: string, params: UpsertWaiverParams): unkno
     params.parentId ?? null,
     params.coversVideo ?? true,
     params.publicUseAllowed ?? false,
+    params.recordedByAccountId,
   ];
 }
 
@@ -659,6 +660,23 @@ export interface UpsertWaiverParams {
   parentId?: string | null;
   coversVideo?: boolean;
   publicUseAllowed?: boolean;
+  /**
+   * The signed-in account PUTTING THIS ROW ON FILE -- not the signer.
+   *
+   * REQUIRED, not optional, and that is the whole point. Optional would let a
+   * caller keep writing waivers with no provenance, which is the state this
+   * ends; every existing call site has a principal in scope, so there is
+   * nothing to accommodate. The same argument
+   * pilot_slice_postgres_observation_author_role_migration.sql makes for
+   * author_role.
+   *
+   * Who SIGNED stays in signedByName. For intake-entered waivers the signer is
+   * often a guardian with no account here at all -- data entry from paper --
+   * so a column claiming to identify them would either block honest intake or
+   * invite staff to attach the nearest account to somebody else's signature.
+   * This says who is answerable for the record, which is knowable.
+   */
+  recordedByAccountId: string;
 }
 
 export async function upsertWaiver(params: UpsertWaiverParams): Promise<string> {
@@ -1191,7 +1209,17 @@ export const WAIVER_IDENTITY_COLUMNS = [
   'updated_at',
 ] as const;
 
-export const WAIVER_STAFF_COLUMNS = ['notes'] as const;
+/* `recorded_by_account_id` sits here, with the staff note, and not in the
+   identity list. It is a STAFF ACCOUNT IDENTIFIER -- on this platform an
+   account_id resolves to a login email -- so handing it to a guardian would
+   disclose which staff member typed their paperwork, and their address with
+   it. The guardian already gets everything the waiver IS, signed_by_name
+   included; who keyed it in is the gym's record, not theirs.
+
+   The same call, for the identically-named column, is already made a few
+   hundred lines down: READINESS_STAFF_COLUMNS is exactly
+   ['recorded_by_account_id'], for exactly this reason. */
+export const WAIVER_STAFF_COLUMNS = ['notes', 'recorded_by_account_id'] as const;
 
 export function waiverColumnsForReader(role: PilotRole): string[] {
   if (isOrganizationAdminRole(role) || role === 'coach') {
