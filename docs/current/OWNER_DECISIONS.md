@@ -89,6 +89,104 @@ and should not try to.
 
 ---
 
+## OD-2026-08-29-007 -- A nomination is deleted with the athlete it names
+
+**Provenance: PRIMARY.** The decision was put to the owner as a choice between
+two options, and he selected one by label. The label is recorded verbatim
+because the words alone are what he chose:
+
+> Delete it with the athlete (Recommended)
+
+The alternative offered was to keep the nomination and detach it from the
+athlete, matching OD-2026-08-29-005's treatment of a barrier report.
+
+**What was asked.** `pilot_one_percent_nominations_athlete_fk` does not
+cascade from `pilot.athletes`. The retention purge hard-deletes an athlete two
+years after withdrawal, and a restricting foreign key aborts that delete. The
+question was what should happen to a One Percent Club nomination naming a
+child whose family has fully withdrawn.
+
+**What is true today, measured.** The retention purge was proved
+non-functional and then repaired in #862 (`apps/web/scripts/pilot-cleanup-deleted-data.mjs`),
+which now isolates each athlete behind a savepoint and REPORTS what blocked it
+rather than failing the whole sweep. `one_percent_nominations` is named in
+that report as a blocker. So this is not a hypothetical: the purge already
+tells an operator this row is in the way.
+
+**The decision.** The nomination row is deleted with the athlete. A nomination
+is a claim about a child who trains here; once the family has withdrawn and
+the two-year retention window has closed, there is no child for it to be about.
+
+**What a lane must NOT infer.** This says nothing about the retention
+treatment of any other One Percent Club table, and nothing about nominations
+whose athlete is still enrolled.
+
+**IMPLEMENTATION IS NOT THIS LANE'S.** `pilot.one_percent_nominations` is a
+coach-facing One Percent Club table. The parent/guardian lane established the
+defect while repairing the purge, put the question to the owner, and recorded
+the answer here -- it did not build the migration, and deliberately did not,
+because a build lane fixing an unrelated table inside its own PR is the drive-by
+`AGENT_KERNEL.md` forbids. **The One Percent Club lane owns the change.** As of
+this entry no migration implements it, and the purge still reports the block.
+
+---
+
+## OD-2026-08-29-008 -- `pilot.waivers.status` is measured before it is constrained
+
+**Provenance: PRIMARY.** Put to the owner as a choice of options; he selected
+one by label, recorded verbatim:
+
+> Measure production first (Recommended)
+
+The alternatives offered were to add a CHECK constraint over the reader
+vocabulary now, and to leave the column unconstrained and close the question.
+
+**What was asked.** Whether `pilot.waivers.status` should get a CHECK
+constraint.
+
+**What is true today, measured against the code, not the database.**
+
+- The column is `status text not null` with **no CHECK constraint** -- checked
+  across every `.sql` file in `infra/azure`, which is the whole of this
+  repository's schema.
+- Two of its four writers store a literal: `grantMediaConsent` writes
+  `'signed'`, `withdrawMediaConsent` writes `'withdrawn'`
+  (`apps/web/src/server/pilot/guardianConsent.ts`).
+- The other two do not. `POST /api/pilot/intake/domain-upsert` stores
+  `asString(body.payload.status, 'signed')` -- any string a caller sends --
+  and `POST /api/pilot/intake/review-action` stores whatever the promoted
+  intake case payload carried.
+- Every reader already fails CLOSED on a value it does not understand:
+  `normalizeWaiverStatus` maps an unrecognised value to `'missing'`;
+  `guardianConsent` tests `=== 'signed'`; `GET /api/pilot/video/[videoId]`
+  refuses with 409 on a guardian-scoped row outside `{signed, withdrawn}`.
+
+**So what is in production is a fact about production, and nothing in this
+repository records it.** That is why the question could not be answered here.
+
+**The decision.** Measure first. No CHECK constraint is proposed until the
+values production actually holds have been counted.
+
+**What the measurement is.** `apps/web/scripts/pilot-check-waiver-statuses.mjs`
+(`npm run pilot:check-waiver-statuses`). Strictly read-only -- every statement
+is a SELECT inside an explicit `BEGIN TRANSACTION READ ONLY`, and a test drives
+it through a recording client to prove there is no write path. It reports the
+number that decides this: **the rows a byte-exact CHECK over the reader
+vocabulary would refuse.** The interesting population is `' Signed '` -- a row
+every reader ACCEPTS and a byte-exact constraint REFUSES. **It has not been run
+against production. Until it is, the count is UNVERIFIED.**
+
+**What a lane must NOT infer.** Not that the column is safe to constrain, and
+not that it is unsafe. Not that any odd value is a live incident -- every
+reader fails closed on one today, which is a different harm (a family's signed
+paperwork reported as missing) and not a leak. And not what should be done
+with a non-exact row once counted: normalising rows, widening the vocabulary,
+admitting case and padding inside the constraint, or leaving the column
+unconstrained are four different answers and **all four remain OWNER DECISION
+REQUIRED.**
+
+---
+
 ## OD-2026-08-29-006 -- The build lane merges its own green work and drives staging; production stays the owner's
 
 **Provenance:** PRIMARY. Owner, 2026-08-29: **"its all on you to get to

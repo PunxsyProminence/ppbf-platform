@@ -108,6 +108,7 @@ on:
           - medical-clearance-coverage
           - deletion-preflight
           - discipline-values
+          - waiver-statuses
           - video-readiness
 
 permissions:
@@ -462,6 +463,7 @@ jobs:
               run_one medical-clearance-coverage pilot:check-medical-clearance-coverage
               run_one deletion-preflight  pilot:check-deletion-preflight
               run_one discipline-values   pilot:check-discipline-values
+              run_one waiver-statuses     pilot:check-waiver-statuses
               run_one video-readiness     pilot:check-video-readiness
               ;;
             orphan-chat-audit)  run_one orphan-chat-audit   pilot:check-orphan-chat-audit ;;
@@ -478,6 +480,7 @@ jobs:
             shadow-filter-rate) run_one shadow-filter-rate  pilot:check-shadow-filter-rate ;;
             medical-clearance-coverage) run_one medical-clearance-coverage pilot:check-medical-clearance-coverage ;;
             discipline-values)  run_one discipline-values   pilot:check-discipline-values ;;
+            waiver-statuses)    run_one waiver-statuses     pilot:check-waiver-statuses ;;
             video-readiness)    run_one video-readiness     pilot:check-video-readiness ;;
             *)
               echo "::error::Unknown check '$CHECK'."
