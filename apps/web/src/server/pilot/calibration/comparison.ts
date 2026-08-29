@@ -162,6 +162,96 @@ export class ComparisonNotEligibleError extends Error {
   }
 }
 
+/**
+ * WHICH TWO READINGS, WHEN THERE ARE MORE THAN TWO.
+ *
+ * OD-2026-08-29-003. Nothing caps annotators per clip and compareAnnotationSets
+ * takes exactly two, so a clip with three submitted readings has no pair until
+ * someone names one. Both surfaces used to refuse that clip outright, which was
+ * correct as a way of not inventing a study rule and is now superseded: the
+ * adjudicator picks the pair, and the choice is a person's rather than an
+ * artefact of row order.
+ *
+ * WHAT THIS REFUSES TO DO. It does not choose for the caller. Two submitted
+ * readings still pair themselves, because there is only one pair to make and
+ * asking would be ceremony. Three or more never auto-pairs, not even by
+ * created_at: picking the two earliest would let submission order -- which is
+ * incidental to the study -- decide which readings count, in a table a gold
+ * dataset is later built from.
+ *
+ * THE SELECTION IS VALIDATED, NEVER TRUSTED. `sets` is what the blinding gate
+ * returned for this clip and this organization. A requested id that is not in
+ * it is refused rather than looked up, so a caller cannot name a set from
+ * another clip, another organization, or an unsubmitted reading and have it
+ * fetched on their behalf. This is the same posture the routes already take
+ * with adjudicator identity and set ids: the caller may say WHICH, never WHAT.
+ *
+ * ORDER IS CANONICAL, NOT AS ASKED. The returned pair follows the order in
+ * `sets`, so two adjudicators who pick the same two readings produce the same
+ * a/b assignment. Taking the caller's order would make
+ * annotation_set_id_a/_b depend on which box a person filled first, and two
+ * records of the same decision would then differ in a column a later reader
+ * would reasonably treat as meaningful.
+ */
+export type PairResolution<T> =
+  | { readonly outcome: 'pair'; readonly a: T; readonly b: T }
+  /** Three or more readings and no choice made yet. Not an error: the surface
+   *  is expected to offer these and ask. */
+  | { readonly outcome: 'selection_required'; readonly candidates: readonly T[] };
+
+export function resolveComparisonPair<T extends { readonly annotation_set_id: string }>(
+  sets: readonly T[],
+  requestedA: string | null,
+  requestedB: string | null,
+): PairResolution<T> {
+  const wanted = [requestedA, requestedB].filter((id): id is string => Boolean(id && id.trim()));
+
+  if (wanted.length === 1) {
+    throw new ComparisonNotEligibleError(
+      'INCOMPLETE_PAIR_SELECTION',
+      'Forbidden: a pair needs two annotation set ids and one was given. Naming one reading '
+      + 'and letting the build choose the other would be the row-order default this asks a '
+      + 'person to replace.',
+    );
+  }
+
+  if (wanted.length === 2) {
+    if (wanted[0] === wanted[1]) {
+      throw new ComparisonNotEligibleError(
+        'PAIR_IS_ONE_READING',
+        'Forbidden: the two annotation set ids are the same reading. A comparison of a '
+        + 'reading with itself has no disagreement to find.',
+      );
+    }
+    const chosen = wanted.map((id) => sets.find((set) => set.annotation_set_id === id));
+    const missing = wanted.filter((_, i) => chosen[i] === undefined);
+    if (missing.length > 0) {
+      throw new ComparisonNotEligibleError(
+        'PAIR_NOT_ON_THIS_CLIP',
+        `Forbidden: ${missing.length === 1 ? 'annotation set' : 'annotation sets'} `
+        + `${missing.join(' and ')} ${missing.length === 1 ? 'is' : 'are'} not among this `
+        + "clip's submitted readings. A pair is chosen from what the clip has, not supplied.",
+      );
+    }
+    // Canonical order, per the docblock -- not the order asked for.
+    const inOrder = sets.filter((set) => wanted.includes(set.annotation_set_id));
+    return { outcome: 'pair', a: inOrder[0], b: inOrder[1] };
+  }
+
+  if (sets.length === 2) return { outcome: 'pair', a: sets[0], b: sets[1] };
+  if (sets.length > 2) return { outcome: 'selection_required', candidates: sets };
+
+  // Fewer than two with nothing requested. resolveAdjudicationEligibility
+  // refuses zero and one before a caller reaches here, so this is defensive:
+  // a route whose correctness depends on a refusal one module away breaks
+  // silently the day that module is widened.
+  throw new ComparisonNotEligibleError(
+    'NOT_ENOUGH_READINGS',
+    `Forbidden: this clip has ${sets.length} submitted annotation `
+    + `${sets.length === 1 ? 'reading' : 'readings'}, and a comparison needs two.`,
+  );
+}
+
 function widenedOverlaps(
   a: AnnotationEventRow,
   b: AnnotationEventRow,
