@@ -407,7 +407,11 @@ describe('what a row shows when a field was never recorded', () => {
     expect(body).toContain('Watched the Tuesday class');
     // The whole detail line, asserted as a whole: a partial match would pass
     // while a stray separator or the word null sat next to it.
-    expect(screen.getByText('2026-03-12')).toBeTruthy();
+    // Read back as words, not as the ISO day the column stores. formatGymDay
+    // formats a date-only value in UTC on purpose, so 2026-03-12 cannot
+    // display as March 11 for a coach west of it.
+    expect(screen.getByText('March 12, 2026')).toBeTruthy();
+    expect(body).not.toContain('2026-03-12');
     expect(body).not.toContain('null');
     expect(body).not.toContain('undefined');
     expect(body).not.toContain('· ·');
@@ -421,7 +425,7 @@ describe('what a row shows when a field was never recorded', () => {
     });
 
     expect(screen.getByText(
-      '2026-03-12 · USA Boxing · 3h 00m · Toward: Corner work under pressure',
+      'March 12, 2026 · USA Boxing · 3h 00m · Toward: Corner work under pressure',
     )).toBeTruthy();
   });
 });
@@ -564,5 +568,124 @@ describe('a coach can correct a goal instead of duplicating it', () => {
     expect(screen.getByText(/needs a title/i)).toBeTruthy();
     // Still open, so the coach can fix it rather than retype from scratch.
     expect(screen.getByRole('button', { name: 'Save correction' })).toBeTruthy();
+  });
+});
+
+/*
+ * DATES READ AS DAYS, AND A STATE THIS BUILD DOES NOT KNOW READS AS ITSELF.
+ *
+ * Both properties used to be split across three private copies of one
+ * vocabulary -- this page, the coach hub and the server module each declared
+ * the four statuses -- so a fifth state added server-side compiled clean here
+ * and rendered wrong. The union has one home now
+ * (src/shared/coachDevelopment.ts); these hold the two renderings that depend
+ * on it.
+ */
+describe('a goal target date is a day, not a column value', () => {
+  test('the stored ISO day is written out', async () => {
+    await renderPage({ goals: [goalRow({ target_on: '2026-12-01' })], activities: [] });
+
+    expect(screen.getByText('Target date December 1, 2026')).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toContain('2026-12-01');
+  });
+
+  /* formatGymDay formats a date-only value in UTC deliberately: 'YYYY-MM-DD'
+     parses as UTC midnight, so converting it into a western zone can only
+     land on the day before. A target date of January 1 must not display as
+     December 31. */
+  test('the first of a month does not slip to the last of the one before', async () => {
+    await renderPage({ goals: [goalRow({ target_on: '2026-01-01' })], activities: [] });
+
+    expect(screen.getByText('Target date January 1, 2026')).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toContain('December 31, 2025');
+  });
+
+  /* Scoped to the rendered record, not the body: the activity form carries a
+     "Target date (optional)" LABEL, which is the page asking for one rather
+     than the page claiming one. */
+  test('a goal with no target date still shows no date line at all', async () => {
+    await renderPage({ goals: [goalRow({ target_on: null })], activities: [] });
+
+    expect(recordText()).not.toContain('Target date');
+    expect(document.body.textContent ?? '').not.toContain('null');
+  });
+});
+
+describe('a goal state this build does not recognise', () => {
+  /* Read off the BADGE, not the card: the card also carries a button for
+     every state the goal is not, so all four known labels are legitimately
+     present as actions. What must not name a known state is the badge, which
+     is the page's claim about what this goal IS. */
+  test('is shown as the word it arrived as, and never as a state we do know', async () => {
+    await renderPage({ goals: [goalRow({ status: 'paused' })], activities: [] });
+
+    const badge = document.querySelector('.badge') as HTMLElement;
+    expect(badge).not.toBeNull();
+    expect(badge.textContent ?? '').toContain('paused');
+    for (const known of ['Draft', 'Working on it', 'Completed', 'Cancelled']) {
+      expect([known, (badge.textContent ?? '').includes(known)]).toEqual([known, false]);
+    }
+  });
+
+  test('the goal itself still renders rather than taking the page down', async () => {
+    await renderPage({ goals: [goalRow({ status: 'paused' })], activities: [] });
+
+    // More than once on purpose: the title is both a heading and an option in
+    // the activity form's "toward which goal" select.
+    expect(screen.getAllByText('Corner work under pressure').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/could not be read/i)).toBeNull();
+  });
+
+  test('the badge is a real badge, not one classed on an undefined value', async () => {
+    await renderPage({ goals: [goalRow({ status: 'paused' })], activities: [] });
+
+    const badge = document.querySelector('.badge') as HTMLElement;
+    expect(badge).not.toBeNull();
+    expect(badge.className).toContain('badge--filed');
+    expect(badge.className).not.toContain('undefined');
+    expect(document.querySelectorAll('[class*="badge--undefined"]')).toHaveLength(0);
+  });
+
+  test('a known state is unaffected and reads in the shared wording', async () => {
+    await renderPage({ goals: [goalRow({ status: 'active' })], activities: [] });
+
+    const badge = document.querySelector('.badge') as HTMLElement;
+    expect(badge.textContent ?? '').toContain('Working on it');
+  });
+});
+
+/*
+ * THE ROOM. buildingMap is advisory -- it decides chrome and where the
+ * corridor lists a door, never access -- so this is an information-architecture
+ * assertion, not a safety one.
+ *
+ * The door for this page was filed under 'office' while every other /coach/*
+ * door, /coach/credentials included, is 'floor'. Credentials is the page this
+ * one's own door text sends a coach to next ("Not your certifications -- those
+ * live on your credentials page"), so the two were being offered from two
+ * different rooms. What is held here is that pairing, rather than the literal
+ * word 'floor': if the coach surfaces move rooms together some day, this stays
+ * true and stays meaningful.
+ */
+describe('this page is offered from the same room as the record it cross-links to', () => {
+  function roomFor(href: string): string {
+    const map = readFileSync(
+      resolve(__dirname, '../../../components/buildingMap.ts'),
+      'utf8',
+    );
+    const entry = new RegExp(`\\{ href: '${href}',[\\s\\S]*?\\},`).exec(map)?.[0] ?? '';
+    expect([href, entry === '']).toEqual([href, false]);
+    return /room: '([a-z]+)'/.exec(entry)?.[1] ?? '';
+  }
+
+  test('development and credentials are filed under one room', () => {
+    const development = roomFor('/coach/development');
+    expect(development).not.toBe('');
+    expect([development, roomFor('/coach/credentials')]).toEqual([development, development]);
+  });
+
+  test('the page paints the room its door files it under', () => {
+    const page = readFileSync(resolve(__dirname, 'page.tsx'), 'utf8');
+    expect(page).toContain(`room="${roomFor('/coach/development')}"`);
   });
 });
