@@ -145,6 +145,92 @@ export interface FloorHoursAdminRow {
   last_recorded: string;
 }
 
+export interface ActivityLedgerRow {
+  organization_id: string;
+  activity_id: string;
+  person_account_id: string;
+  athlete_id: string | null;
+  activity_domain: string;
+  activity_type: string;
+  occurred_on: string;
+  recorded_minutes: number;
+  adjustment_minutes: number;
+  effective_minutes: number;
+}
+
+/** How many activity rows one read returns. */
+export const ACTIVITY_LEDGER_LIMIT = 200;
+
+/**
+ * The rows behind a person's total, each with the activity_id a correction
+ * needs.
+ *
+ * THE REASON THIS EXISTS. recordActivityAdjustment above takes an
+ * `activity_id`. Every read this module offered returned AGGREGATES --
+ * per-person-per-domain-per-quarter totals with no activity identifier
+ * anywhere in them. So the correction path could not be driven from
+ * anything: an operator looking at "340 hours, boxing, Q3" had no way to
+ * discover which row was wrong or what to name in the adjustment. The
+ * append-only ledger was reachable in principle and unusable in practice.
+ *
+ * pilot.v_activity_effective_minutes is the view the migration already built
+ * for exactly this, and it is what both aggregate views are computed from --
+ * so this reads the same numbers the public clock does, one row at a time,
+ * rather than a second definition of them.
+ *
+ * PER-PERSON, and the parameter is REQUIRED for that reason. This module's
+ * header warns against adding a per-person query a public page could
+ * accidentally call. Making the account id mandatory means there is no
+ * call shape that returns the whole gym's ledger -- a caller must already
+ * know whose detail it is asking for, and the route above it is admin-gated
+ * exactly as getFloorHoursAdmin's is.
+ *
+ * Bounded, and the caller is told when the bound bit: a correction console
+ * that silently showed the newest 200 of somebody's 400 sessions would hide
+ * the older half, which is where a stale mistake is most likely to be
+ * sitting.
+ */
+export async function listPersonActivities(
+  organizationId: string,
+  personAccountId: string,
+  filter: { activityDomain?: string } = {},
+): Promise<{ rows: ActivityLedgerRow[]; total: number; limit: number }> {
+  if (!personAccountId.trim()) {
+    throw new Error('Missing person_account_id');
+  }
+
+  const rows = await query<ActivityLedgerRow>(
+    `select organization_id, activity_id, person_account_id, athlete_id, activity_domain,
+            activity_type, occurred_on, recorded_minutes, adjustment_minutes, effective_minutes
+     from pilot.v_activity_effective_minutes
+     where organization_id = $1
+       and person_account_id = $2
+       and ($3::text is null or activity_domain = $3)
+     order by occurred_on desc, activity_id
+     limit $4`,
+    [organizationId, personAccountId, filter.activityDomain ?? null, ACTIVITY_LEDGER_LIMIT],
+  );
+
+  /* Counted, not inferred from rows.length === limit. That comparison
+     reports a truncation for somebody with exactly 200 sessions and nothing
+     missing -- the same proxy-for-the-property mistake the SHADOW export
+     carried until it was made to count. */
+  const counted = await queryOne<{ total: number }>(
+    `select count(*)::int as total
+     from pilot.v_activity_effective_minutes
+     where organization_id = $1
+       and person_account_id = $2
+       and ($3::text is null or activity_domain = $3)`,
+    [organizationId, personAccountId, filter.activityDomain ?? null],
+  );
+
+  return {
+    rows,
+    total: counted?.total ?? rows.length,
+    limit: ACTIVITY_LEDGER_LIMIT,
+  };
+}
+
 /**
  * Per-person detail, including the adjustment trail. Gate this behind
  * admin authorization at the route -- the view itself carries no access
