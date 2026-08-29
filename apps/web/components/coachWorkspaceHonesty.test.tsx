@@ -276,12 +276,20 @@ function classToday(overrides: Record<string, unknown> = {}): Record<string, unk
   // and the very same code failed at 23:07 NY, with nothing changed in between
   // but the clock.
   //
-  // Zero is the only offset that cannot cross the boundary -- any positive one
-  // crosses at 23:59, any negative one at 00:01. Cases that need a different
-  // day override start_at outright, the way "a class on another day" does.
+  // Any FIXED offset from now can cross the boundary -- a positive one at
+  // 23:59, a negative one at 00:01 -- so the offset has to be computed from
+  // where in the gym's day we actually are. gymMiddayToday() does that,
+  // landing twelve hours from either edge. Cases that need a different day
+  // override start_at outright, the way "a class on another day" does.
+  //
+  // TWO LANES FIXED THIS FLAKE AT ONCE and a merge kept both of their `start`
+  // lines, which is what took main red on TS2451 immediately after it had
+  // just been taken green. The other line was `const start = now`: correct on
+  // its own -- a zero offset cannot cross either -- and dropped rather than
+  // merged because keeping it would leave gymMiddayToday() defined,
+  // documented and uncalled. Midday keeps the wider margin of the two.
   const now = new Date();
   const start = gymMiddayToday();
-  const start = now;
   const end = new Date(start.getTime() + 60 * 60 * 1000);
   return {
     class_id: 'cls_1',
