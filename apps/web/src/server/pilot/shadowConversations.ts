@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { assertActorCanAccessAthlete, type ActorIdentity } from './access';
+import { assertActorCanAccessAthlete, isOrganizationAdminRole, type ActorIdentity } from './access';
 import { query, withTransaction } from './db';
 
 export type ShadowConversationSessionType =
@@ -804,6 +804,246 @@ export async function requestOwnShadowDataDeletion(
     [requestId, actor.organizationId, actor.accountId],
   );
   return requestId;
+}
+
+/* ---------------------------------------------------------------------------
+ * THE ADMIN SIDE OF A DELETION REQUEST.
+ *
+ * requestOwnShadowDataDeletion above has written into
+ * pilot.shadow_data_deletion_requests since the SHADOW runtime slice shipped,
+ * and until now the ONLY read of that table anywhere in this repository was
+ * its own idempotency check three lines up. No queue, no fulfilment, no status
+ * route. The route that writes it answers `fulfillment:
+ * 'manual_review_required'` -- a review nothing surfaced to anyone who could
+ * perform it.
+ *
+ * The table already anticipated this: status carries 'approved', 'completed'
+ * and 'denied' alongside 'pending', and there are completed_at and processed_by
+ * columns. Nothing ever wrote them.
+ *
+ * WHAT COMPLETING ONE ACTUALLY DOES, and why it is not a checkbox. An admin
+ * marking a row 'completed' without anything being deleted would launder
+ * inaction into a green tick on a data-deletion request -- worse than the dead
+ * letter it replaces, because a dead letter at least does not claim to have
+ * been answered. So completion PERFORMS the deletion and records what it did.
+ *
+ * SOFT, matching the delete control a person already has beside each of their
+ * own conversations (softDeleteConversation). deleted_at is what every read
+ * path filters on, so the history stops existing for every reader immediately;
+ * purgeExpiredShadowChatData removes the rows for good once the retention
+ * window passes. Nothing here needs new destructive code, and on a platform
+ * where a chat may turn out to be a safeguarding record, the deletion a child
+ * asks for should not outrun the retention policy the gym agreed to.
+ *
+ * SCOPE IS CONVERSATION HISTORY, AND IT SAYS SO. Memory corrections
+ * (pilot.shadow_chat_memory_corrections) are NOT cleared. They are a person's
+ * submitted "SHADOW has this wrong about me" records, they carry their own
+ * review workflow, and folding them into a bulk clear would destroy the record
+ * of a correction somebody asked for. What matters is that nothing calls this
+ * a complete erasure: the request is named for conversation history, the admin
+ * is told the same, and the count returned is of conversations.
+ * ------------------------------------------------------------------------- */
+
+export type ShadowDataDeletionRequestStatus = 'pending' | 'approved' | 'completed' | 'denied';
+
+export interface ShadowDataDeletionRequest {
+  requestId: string;
+  accountId: string;
+  status: ShadowDataDeletionRequestStatus;
+  requestedAt: string;
+  completedAt: string | null;
+  processedBy: string | null;
+  /** How many conversations the request would clear, counted at read time. */
+  conversationsPending: number;
+}
+
+function requireOrganizationAdmin(actor: ActorIdentity): void {
+  requireTenantOwner(actor);
+  if (!isOrganizationAdminRole(actor.role)) {
+    throw new Error('Forbidden: SHADOW deletion requests are organization admin only');
+  }
+}
+
+/**
+ * The queue, for one organization.
+ *
+ * conversationsPending is counted per row rather than stored, because it is
+ * the number an admin is about to act on and it changes while the request
+ * sits: the person can delete conversations themselves in the meantime, and
+ * they can start new ones. A count frozen at request time would tell an admin
+ * they were clearing eleven when the row now holds three.
+ */
+export async function listShadowDataDeletionRequests(
+  actor: ActorIdentity,
+  status?: ShadowDataDeletionRequestStatus,
+): Promise<ShadowDataDeletionRequest[]> {
+  requireOrganizationAdmin(actor);
+  const rows = await query<{
+    request_id: string;
+    account_id: string;
+    status: ShadowDataDeletionRequestStatus;
+    requested_at: Date;
+    completed_at: Date | null;
+    processed_by: string | null;
+    conversations_pending: number;
+  }>(
+    `select r.request_id,
+            r.account_id,
+            r.status,
+            r.requested_at,
+            r.completed_at,
+            r.processed_by,
+            (
+              select count(*)::int
+              from pilot.shadow_chat_sessions s
+              where s.organization_id = r.organization_id
+                and s.account_id = r.account_id
+                and s.deleted_at is null
+            ) as conversations_pending
+       from pilot.shadow_data_deletion_requests r
+      where r.organization_id = $1
+        and ($2::text is null or r.status = $2)
+      order by r.requested_at desc
+      limit 200`,
+    [actor.organizationId, status ?? null],
+  );
+  return rows.map((row) => ({
+    requestId: row.request_id,
+    accountId: row.account_id,
+    status: row.status,
+    requestedAt: row.requested_at.toISOString(),
+    completedAt: row.completed_at ? row.completed_at.toISOString() : null,
+    processedBy: row.processed_by,
+    conversationsPending: row.conversations_pending,
+  }));
+}
+
+export interface ShadowDataDeletionOutcome {
+  requestId: string;
+  status: ShadowDataDeletionRequestStatus;
+  /** Conversations actually soft-deleted by this call. Zero is a real answer. */
+  conversationsCleared: number;
+}
+
+/**
+ * Fulfil a request: clear the conversations, then record that it happened.
+ *
+ * In that order, in one transaction. Marking the row first and deleting after
+ * would leave a 'completed' request standing over conversations that are still
+ * there if the second statement fails -- and a data-deletion record that is
+ * wrong in that direction is the one that matters.
+ *
+ * The status guard is part of the UPDATE, not a read-then-write: two admins
+ * working the same queue would otherwise both pass a check and both clear,
+ * and the second would report a second deletion that did not happen.
+ */
+export async function completeShadowDataDeletionRequest(
+  actor: ActorIdentity,
+  requestId: string,
+): Promise<ShadowDataDeletionOutcome> {
+  requireOrganizationAdmin(actor);
+
+  return withTransaction(async (client) => {
+    const claimed = await client.query<{ account_id: string }>(
+      `update pilot.shadow_data_deletion_requests
+          set status = 'completed',
+              completed_at = now(),
+              processed_by = $3
+        where request_id = $1
+          and organization_id = $2
+          and status in ('pending', 'approved')
+      returning account_id`,
+      [requestId, actor.organizationId, actor.accountId],
+    );
+    const accountId = claimed.rows[0]?.account_id;
+    if (!accountId) throw new Error('SHADOW_DELETION_REQUEST_NOT_ACTIONABLE');
+
+    const cleared = await client.query<{ conversation_id: string }>(
+      `update pilot.shadow_chat_sessions
+          set deleted_at = now(), updated_at = now()
+        where organization_id = $1
+          and account_id = $2
+          and deleted_at is null
+      returning conversation_id`,
+      [actor.organizationId, accountId],
+    );
+
+    return {
+      requestId,
+      status: 'completed' as const,
+      conversationsCleared: cleared.rows.length,
+    };
+  });
+}
+
+/**
+ * Refuse a request, on the record.
+ *
+ * Denying is a real outcome and needs the same processed_by the completion
+ * gets: "nobody ever looked at it" and "an admin considered it and said no"
+ * are different facts about a child's data request, and a queue that can only
+ * complete quietly turns the second into the first.
+ */
+export async function denyShadowDataDeletionRequest(
+  actor: ActorIdentity,
+  requestId: string,
+): Promise<ShadowDataDeletionOutcome> {
+  requireOrganizationAdmin(actor);
+  const rows = await query<{ request_id: string }>(
+    `update pilot.shadow_data_deletion_requests
+        set status = 'denied',
+            completed_at = now(),
+            processed_by = $3
+      where request_id = $1
+        and organization_id = $2
+        and status in ('pending', 'approved')
+    returning request_id`,
+    [requestId, actor.organizationId, actor.accountId],
+  );
+  if (!rows[0]) throw new Error('SHADOW_DELETION_REQUEST_NOT_ACTIONABLE');
+  return { requestId, status: 'denied', conversationsCleared: 0 };
+}
+
+/**
+ * The requester's own view of where their request stands.
+ *
+ * Without this a person clicks "request deletion", reloads the page, and has
+ * no way to tell whether they ever asked. Self-scoped: it reads the caller's
+ * own rows and takes no account id.
+ */
+export async function getOwnShadowDataDeletionRequest(
+  actor: ActorIdentity,
+): Promise<ShadowDataDeletionRequest | null> {
+  requireTenantOwner(actor);
+  const rows = await query<{
+    request_id: string;
+    account_id: string;
+    status: ShadowDataDeletionRequestStatus;
+    requested_at: Date;
+    completed_at: Date | null;
+  }>(
+    `select request_id, account_id, status, requested_at, completed_at
+       from pilot.shadow_data_deletion_requests
+      where organization_id = $1 and account_id = $2
+      order by requested_at desc
+      limit 1`,
+    [actor.organizationId, actor.accountId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    requestId: row.request_id,
+    accountId: row.account_id,
+    status: row.status,
+    requestedAt: row.requested_at.toISOString(),
+    completedAt: row.completed_at ? row.completed_at.toISOString() : null,
+    /* Deliberately withheld from the requester. processed_by names the admin
+       who handled it, and which member of staff read a child's deletion
+       request is not the child's business to be told -- the fact that a person
+       handled it is, and the status carries that. */
+    processedBy: null,
+    conversationsPending: 0,
+  };
 }
 
 export async function submitMemoryCorrection(input: {

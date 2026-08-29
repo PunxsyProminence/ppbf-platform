@@ -89,6 +89,69 @@ and should not try to.
 
 ---
 
+## OD-2026-08-29-001 -- `Admin@punxsyprominence.org` is the primary owner email
+
+**Provenance:** PRIMARY. Owner's words, 2026-08-29:
+**"Admin@punxsyprominence.org is primarily owner email, stripe is not
+registered yet and I approve/accept"**, answering a question put to him as an
+OWNER_DECISION in PR #837.
+
+**What was asked.** `PPBF_PRIMARY_OWNER_EMAIL` is deployed by production
+(`secretref:ppbf-primary-owner-email`) and is NOT set by staging, so the two
+environments resolve platform ownership by different routes. The 2026-07-31
+platform audit recorded this and left it open: *"Staging is missing
+PPBF_PRIMARY_OWNER_EMAIL, which production sets, so staging does not validate
+the owner identity production enforces"*
+(`docs/PLATFORM_AUDIT_2026-07-31_OWNER_DECISIONS.md`, under findings still
+awaiting a decision). W19-S1 re-verified it as still open and refused to pick a
+value, on the grounds that it decides who may hold platform ownership.
+
+**The decision.** The authoritative platform-owner identity is
+`Admin@punxsyprominence.org`.
+
+**What that resolves, and it is more than it looks.** `getPrimaryOwnerEmail()`
+in `apps/web/src/server/pilot/auth.ts` reads:
+
+    return (process.env.PPBF_PRIMARY_OWNER_EMAIL?.trim()
+            || 'admin@punxsyprominence.org').toLowerCase();
+
+The hardcoded fallback is the same address, and the whole expression is
+lowercased, so the owner's capitalisation and the code's are one identity. An
+environment that does not set the variable therefore resolves to the address
+just ratified rather than to some other one. Staging is such an environment.
+The audit finding's premise -- that staging validates a *different* identity --
+is narrower than it read: staging reaches the right identity by code default
+instead of by secret.
+
+**What this does NOT settle, stated so nobody reads it as settled.**
+
+- **Whether production's secret actually holds this address.** `ppbf-primary-
+  owner-email` is a Container App secret. No lane can read it from the
+  repository, and nothing here is a claim about its contents. If it holds any
+  other address, bootstrap and sign-in in production pin an owner this entry
+  does not name, and that is a finding to raise -- not something to correct by
+  editing code.
+- **Whether staging should set the variable explicitly.** Not asked, not
+  answered. The argument for setting it is that staging would then exercise the
+  same mechanism production uses rather than a fallback; the argument against is
+  that the resolved identity is already correct. A lane wanting to change
+  `deploy-staging.yml` on this point needs its own decision.
+
+**Evidence this rests on.** `auth.ts` `getPrimaryOwnerEmail()` at the SHA this
+entry merges against; the `--set-env-vars` blocks of
+`.github/workflows/deploy-production.yml` (sets it) and `deploy-staging.yml`
+(does not); `docs/PLATFORM_AUDIT_2026-07-31_OWNER_DECISIONS.md`; PR #837, which
+raised it and deliberately left it unchanged.
+
+**Not recorded here: the Stripe half of the same message.** *"stripe is not
+registered yet"* confirms an environment state, not a decision, and
+`docs/current/ACTIVE_WORK.md` already carries it in the BLOCKED table with the
+three variable names and the unblocking condition. This file's own scope note
+sends work-queue state there. A second copy is how the deploy-status block
+drifted, and one record is the point.
+
+---
+
 ## OD-2026-08-28-009 -- `active` stays a browse filter; the write path is not narrowed to match
 
 **Provenance:** PRIMARY. Owner's words: **"go with your recommendation"**,

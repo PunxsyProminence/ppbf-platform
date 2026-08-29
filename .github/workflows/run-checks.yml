@@ -79,6 +79,7 @@ on:
         options:
           - all
           - list-check
+          - contested-overlap
           - orphan-chat-audit
           - multiorg-orphans
           - stranded-guardians
@@ -180,6 +181,49 @@ jobs:
 
           test "$missing" -eq 0
           echo "Every pilot-check script has an npm script, a dropdown option, an 'all' entry and a case arm."
+
+  # Asks GitHub which files every OPEN pull request touches, and grades each
+  # one's CONTESTED declaration against the answer. Like list-check, this is
+  # deliberately NOT the `check` job: it needs no database, and carrying
+  # `environment:` would park a question about this repository on a production
+  # protection rule. `target` is ignored -- the answer is the same for every
+  # environment.
+  #
+  # WHY IT IS DISPATCHED RATHER THAN RUN ON EVERY PULL REQUEST. Its answer
+  # depends on what OTHER branches are open, so as a required check it would be
+  # non-deterministic with respect to the commit: a green pull request would
+  # turn red because somebody else opened one, with no push of its own. It also
+  # would have turned five open branches red the day it landed, for a condition
+  # none of their authors controls. The moment to dispatch it is when the
+  # release lane is sequencing a window, which is the moment the declaration is
+  # actually read.
+  #
+  # It is a GATE in this workflow's sense: a red run is a finding, not a broken
+  # workflow.
+  contested-overlap:
+    if: ${{ inputs.check == 'contested-overlap' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Narrower than the workflow default on purpose: this job needs to read
+    # pull requests and nothing else. No id-token, because it never logs in to
+    # Azure.
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Check CONTESTED declarations against the open pull requests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/check-contested-overlap.mjs
 
   check:
     if: ${{ inputs.check != 'list-check' }}

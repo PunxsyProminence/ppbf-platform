@@ -262,8 +262,26 @@ function gymMiddayToday(): Date {
  * this suite pass on one day and fail on the next.
  */
 function classToday(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  // Anchored to NOW. It used to be now + 1h, and that made the suite depend on
+  // what time of day it ran.
+  //
+  // CoachWorkspace keeps only classes whose gym-date equals today's -- it
+  // filters on formatGymDateNumeric, and GYM_TIME_ZONE is America/New_York.
+  // A class an hour in the future is TOMORROW's class during the last hour
+  // before gym midnight, so the panel correctly rendered "No class is
+  // scheduled for you today" and these assertions failed -- every night
+  // between 23:00 and 00:00 New York, and passed the other twenty-three hours.
+  //
+  // That is what turned main red on 2026-08-29: 74d81b0 went green at 22:58 NY
+  // and the very same code failed at 23:07 NY, with nothing changed in between
+  // but the clock.
+  //
+  // Zero is the only offset that cannot cross the boundary -- any positive one
+  // crosses at 23:59, any negative one at 00:01. Cases that need a different
+  // day override start_at outright, the way "a class on another day" does.
   const now = new Date();
   const start = gymMiddayToday();
+  const start = now;
   const end = new Date(start.getTime() + 60 * 60 * 1000);
   return {
     class_id: 'cls_1',

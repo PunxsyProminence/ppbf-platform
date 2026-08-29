@@ -450,6 +450,7 @@ describe('the consent write takes the lock the readers take', () => {
         athleteId: ATHLETE_ID,
         parentId: PARENT_ID,
         signedByName: 'Race Guardian',
+        recordedByAccountId: GUARDIAN_ACCOUNT_ID,
       });
       observedBlocked = await someBackendIsWaitingOnALock();
     });
@@ -473,6 +474,7 @@ describe('the consent write takes the lock the readers take', () => {
         athleteId: ATHLETE_ID,
         parentId: PARENT_ID,
         signedByName: 'Race Guardian',
+        recordedByAccountId: GUARDIAN_ACCOUNT_ID,
         coversVideo: true,
         publicUseAllowed: false,
       });
@@ -495,6 +497,7 @@ describe('the consent write takes the lock the readers take', () => {
       athleteId: ATHLETE_ID,
       parentId: PARENT_ID,
       signedByName: 'Race Guardian',
+      recordedByAccountId: GUARDIAN_ACCOUNT_ID,
     });
 
     expect(Date.now() - before).toBeLessThan(2000);

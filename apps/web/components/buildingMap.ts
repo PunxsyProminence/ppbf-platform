@@ -152,6 +152,14 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/community-service', label: 'Community Service', room: 'office', roles: ['coach', 'admin'],
     keywords: 'community service hours verified volunteer school court scholarship',
     hint: 'Service hours per person \u2014 verified and unverified kept apart, never summed.' },
+  /* roles: ['admin'], NOT ADMIN_GATE. This file's header says a row must never
+     be a door the corridor advertises and the page then bounces you off, and
+     /api/pilot/admin/floor-hours admits organization_admin and admin only --
+     platform_owner is refused there, so it is absent here. Same audience as
+     the Compliance Center. */
+  { href: '/admin/floor-hours', label: 'Floor Hours Ledger', room: 'office', roles: ['admin'],
+    keywords: 'floor hours ledger activity minutes correction adjustment audit public clock',
+    hint: 'The per-person rows behind the public clock \u2014 recorded and corrected kept apart, and corrections appended, never overwritten.' },
   { href: '/admin/customize', label: 'Customize the Gym', room: 'office', roles: ADMIN_GATE,
     keywords: 'photos photographs wall pictures upload building frames banners boards chalk customization appearance',
     hint: 'Photographs, boards, and notices — the gym’s look and voice, one desk.' },
