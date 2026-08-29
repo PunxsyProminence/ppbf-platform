@@ -879,10 +879,10 @@ test.describe('Coach journey', () => {
     ).toBeVisible();
 
     // Each activity carries its own duration...
-    await expect(page.getByText('2026-03-12 · USA Boxing · 1h 00m')).toBeVisible();
+    await expect(page.getByText('March 12, 2026 · USA Boxing · 1h 00m')).toBeVisible();
     // ...and one with no provider recorded renders a clean line, not a
     // dangling separator or the word null.
-    await expect(page.getByText('2026-02-02 · 2h 00m')).toBeVisible();
+    await expect(page.getByText('February 2, 2026 · 2h 00m')).toBeVisible();
 
     const body = (await page.locator('body').innerText()).toLowerCase();
 
