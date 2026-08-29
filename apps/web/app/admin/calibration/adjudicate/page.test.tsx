@@ -363,3 +363,57 @@ describe('what the desk sends', () => {
     });
   });
 });
+
+describe('which two readings, when there are more than two', () => {
+  const THREE = {
+    ok: true,
+    clip: DESK.clip,
+    pair_selection_required: true,
+    candidate_sets: [
+      { annotation_set_id: 'set-a', annotator_account_id: 'coach-a' },
+      { annotation_set_id: 'set-b', annotator_account_id: 'coach-b' },
+      { annotation_set_id: 'set-c', annotator_account_id: 'coach-c' },
+    ],
+  };
+
+  test('the desk asks, offers every pair, and shows no readings', async () => {
+    /* OD-2026-08-29-003. This clip used to be refused outright. Every pair is
+     * offered and none is defaulted -- a "first two" shortcut is how row order
+     * quietly becomes the study's answer. */
+    fetchMock.mockImplementation(() => respondWith(THREE));
+
+    render(<CalibrationAdjudicationPage />);
+
+    const panel = await screen.findByTestId('pair-selection');
+    const links = within(panel).getAllByRole('link');
+    expect(links).toHaveLength(3);
+
+    const hrefs = links.map((a) => a.getAttribute('href') ?? '');
+    expect(hrefs.some((h) => h.includes('set_a=set-a') && h.includes('set_b=set-b'))).toBe(true);
+    expect(hrefs.some((h) => h.includes('set_a=set-a') && h.includes('set_b=set-c'))).toBe(true);
+    expect(hrefs.some((h) => h.includes('set_a=set-b') && h.includes('set_b=set-c'))).toBe(true);
+    hrefs.forEach((h) => expect(h).toContain('calibration_clip_id=clip-1'));
+
+    // No reading is on the page: the gate hands none over until a pair exists.
+    expect(within(panel).queryByRole('table')).toBeNull();
+  });
+
+  test('asking does not spend the safeguarding red', async () => {
+    fetchMock.mockImplementation(() => respondWith(THREE));
+
+    render(<CalibrationAdjudicationPage />);
+
+    const panel = await screen.findByTestId('pair-selection');
+    expect(panel.querySelector('.alert--warning')).not.toBeNull();
+    expect(panel.querySelector('.alert--critical')).toBeNull();
+  });
+
+  test('two readings: no chooser, because there is nothing to choose', async () => {
+    fetchMock.mockImplementation(() => respondWith(DESK));
+
+    render(<CalibrationAdjudicationPage />);
+
+    await screen.findByText('Coach A marked');
+    expect(screen.queryByTestId('pair-selection')).not.toBeInTheDocument();
+  });
+});
