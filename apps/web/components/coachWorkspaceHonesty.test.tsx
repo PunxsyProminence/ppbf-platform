@@ -4,6 +4,8 @@
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import { GYM_TIME_ZONE, formatGymDateNumeric } from '@/src/lib/gymTime';
+
 import type { AnnouncementItem } from './AnnouncementBanner';
 import CoachWorkspace from './CoachWorkspace';
 
@@ -24,6 +26,7 @@ interface RouteResponses {
   liveRun?: () => Promise<Response> | Response;
   scheduler?: () => Promise<Response> | Response;
   credentials?: () => Promise<Response> | Response;
+  development?: () => Promise<Response> | Response;
 }
 
 function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementItem {
@@ -72,6 +75,15 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
     }
     if (url.includes('/api/pilot/coach/credentials')) {
       return routes.credentials ? routes.credentials() : jsonResponse({ ok: true, items: [] });
+    }
+    // Default: a HEALTHY read of a coach who has written nothing down yet.
+    // That matters for the same reason the live-run default does -- it makes
+    // an 'unavailable' rendering in these tests a real signal rather than an
+    // unstubbed-fetch artefact.
+    if (url.includes('/api/pilot/coach/development')) {
+      return routes.development
+        ? routes.development()
+        : jsonResponse({ ok: true, goals: [], activities: [] });
     }
     if (url.includes('/api/pilot/coach/readiness-board')) {
       // Default: a healthy feed with no fresh check-ins -- everyone UNKNOWN.
@@ -215,7 +227,34 @@ function liveRunRow(overrides: Record<string, unknown> = {}): Record<string, unk
 }
 
 /**
- * A scheduled class starting `hour`:00 on TODAY at the gym, as
+ * Midday at the gym, on whatever day it is there right now.
+ *
+ * `now + 1 hour` -- what this fixture used -- is the gym's TOMORROW for the
+ * last hour of every gym day. The dashboard filters classes to the gym's own
+ * calendar day, so between 11pm and midnight Eastern the "class scheduled
+ * today" was scheduled for tomorrow and the two tests below failed. Not a
+ * flake and not a race: a one-hour window, every day, in which the suite is
+ * red for a reason that has nothing to do with the code under test.
+ *
+ * Anchoring to midday keeps the fixture RELATIVE -- which is the reason it
+ * was built from the clock in the first place, and still right, since a
+ * frozen literal would drift out of "today" tomorrow -- while putting it
+ * twelve hours from either boundary. The shift is computed in the gym's zone
+ * from the same constant gymDayIso() uses, so the fixture and the filter
+ * cannot disagree about which day it is.
+ */
+function gymMiddayToday(): Date {
+  const now = new Date();
+  const gymHour = Number(new Intl.DateTimeFormat('en-US', {
+    timeZone: GYM_TIME_ZONE,
+    hour: 'numeric',
+    hour12: false,
+  }).format(now));
+  return new Date(now.getTime() + (12 - gymHour) * 60 * 60 * 1000);
+}
+
+/**
+ * A scheduled class starting around midday TODAY at the gym, as
  * GET /api/pilot/scheduler returns it in `classes`.
  *
  * Built from the current instant rather than a frozen literal because the
@@ -241,6 +280,7 @@ function classToday(overrides: Record<string, unknown> = {}): Record<string, unk
   // crosses at 23:59, any negative one at 00:01. Cases that need a different
   // day override start_at outright, the way "a class on another day" does.
   const now = new Date();
+  const start = gymMiddayToday();
   const start = now;
   const end = new Date(start.getTime() + 60 * 60 * 1000);
   return {
@@ -271,6 +311,15 @@ function classToday(overrides: Record<string, unknown> = {}): Record<string, unk
  *    certifications yet"                        /api/pilot/coach/credentials
  *   "Video Upload: FRONT-END PLACEHOLDER"       /api/pilot/video/* +
  *                                               /coach/video-analysis
+ *
+ * Two more were added to that list when coach self-development shipped, and
+ * they are the same defect one more time:
+ *
+ *   "There is no backend feed for coach         pilot.coach_development_goals +
+ *    goals yet, so this section is always       /api/pilot/coach/development
+ *    empty."
+ *   "There is no backend store for              pilot.coach_development_activities
+ *    completion yet"                            + the same route
  *
  * A denial is the same defect as a fabrication, pointed the other way. The
  * coach acts on the sentence either way: told the platform cannot hold a
@@ -338,6 +387,41 @@ describe('the hub does not deny a capability the platform has', () => {
 
     expect(screen.queryByText('No session in progress.')).not.toBeNull();
     expect(screen.queryAllByText(/could not be checked/i)).toHaveLength(0);
+  });
+});
+
+/*
+ * THE FIXTURE ITSELF, TESTED, because it is the thing that was wrong.
+ *
+ * The two tests below assert that a class scheduled today is drawn under
+ * today's heading. They can only do that if the fixture really does schedule
+ * one for today -- and for the last hour of every gym day, `now + 1 hour`
+ * did not. The suite went red at 11pm Eastern and green again at midnight,
+ * for a reason with nothing to do with the code under test.
+ *
+ * So the fixture is checked at the boundary hours rather than at whatever
+ * hour the suite happens to run. `formatGymDateNumeric` is the component's
+ * own filter (CoachWorkspace's loadTodayClasses compares exactly these two
+ * values), so this asserts against the real comparison and not a restatement
+ * of it.
+ */
+describe('the "class scheduled today" fixture is scheduled today, at every hour', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test.each([
+    ['the last hour of the gym\'s day', '2026-08-29T03:30:00Z'],
+    ['the first hour of the next one', '2026-08-29T04:30:00Z'],
+    ['the middle of the gym\'s afternoon', '2026-08-29T18:00:00Z'],
+    ['the small hours', '2026-08-29T07:00:00Z'],
+    ['a winter instant, when the offset is an hour different', '2026-01-15T04:30:00Z'],
+  ])('holds at %s', (_label, instant) => {
+    jest.useFakeTimers().setSystemTime(new Date(instant));
+
+    const scheduled = classToday().start_at as string;
+    expect([instant, formatGymDateNumeric(scheduled)])
+      .toEqual([instant, formatGymDateNumeric(new Date())]);
   });
 });
 
@@ -438,7 +522,10 @@ describe("the Development tab shows the coach's real credential record", () => {
     await renderWorkspace({ credentials: () => jsonResponse({}, { ok: false, status: 503 }) });
     openTab('Development');
 
-    expect(screen.queryByText(/could not be read/i)).not.toBeNull();
+    // Named specifically. The development panel beside this one has its own
+    // "could not be read" box, and a bare /could not be read/ match would go
+    // green whichever of the two failed -- including when this one did not.
+    expect(screen.queryByText(/credential record could not be read/i)).not.toBeNull();
     expect(screen.queryByText(/no active clearance types/i)).toBeNull();
   });
 
@@ -456,11 +543,16 @@ describe("the Development tab shows the coach's real credential record", () => {
     expect(documentLinks).toHaveLength(0);
   });
 
-  test('Development topics are a reference list, not controls that save nothing', async () => {
+  test('Development topics are a reference list, not a checklist', async () => {
     await renderWorkspace();
     openTab('Development');
 
-    expect(screen.queryByText('Injury Prevention Basics')).not.toBeNull();
+    // Still named, and still nothing to tick. Ticking one off would need this
+    // platform to decide what "completed Adaptive Coaching" means, which is
+    // coaching curriculum it does not possess -- so a topic a coach worked
+    // through is recorded as work they did, in their own words.
+    expect(screen.queryByText(/Injury Prevention Basics/)).not.toBeNull();
+    expect(screen.queryByText(/reference list, not a syllabus and not a checklist/i)).not.toBeNull();
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
   });
 });
@@ -1636,5 +1728,347 @@ describe('the review picker does not invent an RPE for a session nobody rated', 
 
   test('an ordinary reading is unaffected', async () => {
     expect(await sessionOptionLabel(sessionRow('session_1', { rpe: 6 }))).toContain('RPE 6');
+  });
+});
+
+/*
+ * COACH SELF-DEVELOPMENT: the hub's last two "not built" claims.
+ *
+ * The Goals tab said "There is no backend feed for coach goals yet, so this
+ * section is always empty", and the Development tab said "There is no backend
+ * store for completion yet". Both were true when written. Both stopped being
+ * true when /api/pilot/coach/development shipped, and a coach reading either
+ * one keeps their development in a notebook.
+ *
+ * The other half of this is a fabrication rather than a denial, and it is the
+ * more dangerous of the two: the Goals tab shipped with three hardcoded goals
+ * carrying progress bars -- "68%", "45%" -- rendered identically for every
+ * coach who logged in. The goals were deleted; the BAR AND THE PERCENTAGE
+ * STAYED, dead code over an always-empty list, waiting for somebody to point a
+ * real feed at them. That is exactly what this slice does, so the shape is
+ * asserted gone rather than assumed gone.
+ */
+function developmentGoalRow(overrides: Record<string, unknown> = {}) {
+  return {
+    goal_id: 'goal-1',
+    title: 'Corner work under pressure',
+    development_focus: 'Keep the anxious kids in the room during hard rounds.',
+    target_on: '2026-12-01',
+    status: 'draft',
+    ...overrides,
+  };
+}
+
+function developmentActivityRow(overrides: Record<string, unknown> = {}) {
+  return {
+    activity_id: 'act-1',
+    title: 'Youth coaching clinic',
+    provider: 'USA Boxing',
+    occurred_on: '2026-03-12',
+    duration_minutes: 180,
+    ...overrides,
+  };
+}
+
+describe("the hub reads the coach's own development record", () => {
+  test('the Goals tab no longer denies that a coach-goal backend exists', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({ ok: true, goals: [developmentGoalRow()], activities: [] }),
+    });
+    openTab('Goals');
+
+    expect(screen.queryByText(/no backend feed for coach goals/i)).toBeNull();
+    expect(screen.queryByText(/Planned — Not Yet Implemented/)).toBeNull();
+    expect(screen.queryByText('Corner work under pressure')).not.toBeNull();
+    expect(screen.queryByText(/Keep the anxious kids in the room/)).not.toBeNull();
+    expect(screen.getByRole('link', { name: 'Write or change a goal' }).getAttribute('href'))
+      .toBe('/coach/development');
+  });
+
+  test('the Development tab no longer denies that recorded work can be stored', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({
+        ok: true, goals: [], activities: [developmentActivityRow()],
+      }),
+    });
+    openTab('Development');
+
+    expect(screen.queryByText(/no backend store for completion/i)).toBeNull();
+    expect(screen.queryByText('Youth coaching clinic')).not.toBeNull();
+    expect(screen.queryByText('March 12, 2026 · USA Boxing')).not.toBeNull();
+  });
+
+  test('the hub actually reads the development route rather than assuming an answer', async () => {
+    const fetchMock = await renderWorkspace();
+    const called = fetchMock.mock.calls.some(([url]) =>
+      String(url).includes('/api/pilot/coach/development'));
+    expect(called).toBe(true);
+  });
+
+  test('NO PROGRESS BAR AND NO PERCENTAGE survives against a real goal', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({
+        ok: true,
+        goals: [
+          developmentGoalRow(),
+          developmentGoalRow({ goal_id: 'goal-2', title: 'Read the room', status: 'active' }),
+        ],
+        activities: [],
+      }),
+    });
+    openTab('Goals');
+
+    /* The dead bar this slice removed rendered `{goal.progress}%` inside the
+       goal's own card, above a div whose width was set from it. Both shapes
+       are asserted absent -- the word, and the element that would draw one
+       without it.
+
+       Scoped to the card, because an unscoped /Progress/i match hits the
+       dashboard's "No session in progress" line, which renders whatever tab is
+       open and has nothing to do with this.
+
+       `.mat-leather`, not `div`: the first version of this said
+       `.closest('div')`, which lands on the flex row holding the title and the
+       badge -- NOT the card. A mutation adding a progress bar below that row
+       survived it. The card is the mat-leather panel, and that is what has to
+       be free of one. */
+    const card = screen.getByText('Corner work under pressure').closest('.mat-leather') as HTMLElement;
+    expect(card.textContent ?? '').not.toMatch(/progress/i);
+    expect(card.textContent ?? '').not.toMatch(/\d+\s*%/);
+    expect(card.querySelectorAll('[style*="width"]')).toHaveLength(0);
+    expect(document.querySelectorAll('progress')).toHaveLength(0);
+    expect(document.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
+
+    // Guards the guard: both goals really did render.
+    expect(screen.queryByText('Read the room')).not.toBeNull();
+  });
+
+  test('a goal with no target date shows no date line rather than an empty "Due:"', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({
+        ok: true, goals: [developmentGoalRow({ target_on: null })], activities: [],
+      }),
+    });
+    openTab('Goals');
+
+    expect(screen.queryByText('Corner work under pressure')).not.toBeNull();
+    expect(screen.queryByText(/Target date/)).toBeNull();
+    expect(document.body.textContent ?? '').not.toContain('Due:');
+    expect(document.body.textContent ?? '').not.toContain('null');
+  });
+
+  test('a failed development read is UNAVAILABLE, not "you have written nothing down"', async () => {
+    await renderWorkspace({ development: () => jsonResponse({}, { ok: false, status: 503 }) });
+    openTab('Goals');
+
+    expect(screen.queryByText(/goals could not be read/i)).not.toBeNull();
+    // The claim this must never collapse into. A coach who reads it writes
+    // down a goal they already had.
+    expect(screen.queryByText(/have not written down a development goal/i)).toBeNull();
+  });
+
+  test('a failed development read does not blank the credential panel beside it', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({}, { ok: false, status: 503 }),
+      credentials: () => jsonResponse({ ok: true, items: [credentialRow()] }),
+    });
+    openTab('Development');
+
+    // Two records of very different standing on one tab. One read failing
+    // must not take the other down with it -- the credential panel is the
+    // verified one, and it answered.
+    expect(screen.queryByText('SafeSport Training')).not.toBeNull();
+    expect(screen.queryByText('Current')).not.toBeNull();
+    expect(screen.queryByText(/development record could not be read/i)).not.toBeNull();
+  });
+
+  test('recorded work is never presented as a verified credential', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({
+        ok: true,
+        goals: [],
+        activities: [developmentActivityRow({
+          title: 'SafeSport refresher', provider: 'US Center for SafeSport',
+        })],
+      }),
+    });
+    openTab('Development');
+
+    // A coach may well log this. What must never appear with it is a band, an
+    // expiry or the word verified -- that record lives in
+    // pilot.person_clearances and an administrator confirms it.
+    expect(screen.queryByText('SafeSport refresher')).not.toBeNull();
+    // The panel says plainly which record is the verified one, rather than
+    // leaving a coach to work out that this list is not it.
+    expect(screen.queryByText(/Self-entered/i)).not.toBeNull();
+    /* Scoped to the ROW, not the panel: the panel's own sentence contains the
+       word "verified" on purpose, and asserting over the whole panel would
+       force that sentence to be deleted to make a test pass. What must carry
+       no verification language is the entry itself. */
+    const row = screen.getByText('SafeSport refresher').closest('li') as HTMLElement;
+    expect(row.textContent ?? '').not.toMatch(/verified|expires|awaiting review|current/i);
+    expect(row.querySelectorAll('.badge')).toHaveLength(0);
+  });
+});
+
+/*
+ * A GOAL STATE THIS BUILD DOES NOT KNOW.
+ *
+ * The status union was written down three times -- server, hub, standalone
+ * page -- so a fifth state added server-side compiled clean everywhere and
+ * failed only once a coach had one. The union now has one home
+ * (src/shared/coachDevelopment.ts) and both surfaces read it, but a client is
+ * always some deploys behind a server, so an unknown state still has to
+ * render, and it has to render honestly.
+ */
+describe('a goal state the hub does not recognise', () => {
+  const unknownStatusGoal = () => jsonResponse({
+    ok: true,
+    goals: [developmentGoalRow({ status: 'paused' })],
+    activities: [],
+  });
+
+  test('the card survives, rather than taking the tab down with it', async () => {
+    await renderWorkspace({ development: unknownStatusGoal });
+    openTab('Goals');
+
+    expect(screen.queryByText('Corner work under pressure')).not.toBeNull();
+    expect(screen.queryByText(/goals could not be read/i)).toBeNull();
+  });
+
+  test('the state is shown as the word it arrived as, never as a state we do know', async () => {
+    await renderWorkspace({ development: unknownStatusGoal });
+    openTab('Goals');
+
+    const card = screen.getByText('Corner work under pressure').closest('.mat-leather') as HTMLElement;
+    expect(card.textContent ?? '').toContain('paused');
+    for (const known of ['Draft', 'Working on it', 'Completed', 'Cancelled']) {
+      expect([known, (card.textContent ?? '').includes(known)]).toEqual([known, false]);
+    }
+  });
+
+  /* THE FALLBACK'S SHAPE, which nothing checked. It supplied a `className`
+     while this render reads `badge.tone`, so an unknown status produced
+     `class="badge badge--undefined"` and no glyph -- a badge that renders as
+     an unstyled word. TypeScript could not see it: Record<K, V> indexing is
+     typed non-nullable, so `?? fallback` narrows to the left operand and the
+     fallback is checked against nothing at all. */
+  test('the badge is a real neutral badge, not an undefined one', async () => {
+    await renderWorkspace({ development: unknownStatusGoal });
+    openTab('Goals');
+
+    const card = screen.getByText('Corner work under pressure').closest('.mat-leather') as HTMLElement;
+    const badge = card.querySelector('.badge') as HTMLElement;
+    expect(badge).not.toBeNull();
+    expect(badge.className).toContain('badge--filed');
+    expect(badge.className).not.toContain('undefined');
+    expect(document.querySelectorAll('[class*="badge--undefined"]')).toHaveLength(0);
+    // 'neutral' renders the open circle. No glyph at all is what the broken
+    // shape produced.
+    expect(badge.textContent ?? '').toContain('◌');
+  });
+
+  test('a known state is unaffected and still reads in the shared wording', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({
+        ok: true, goals: [developmentGoalRow({ status: 'active' })], activities: [],
+      }),
+    });
+    openTab('Goals');
+
+    const card = screen.getByText('Corner work under pressure').closest('.mat-leather') as HTMLElement;
+    expect(card.textContent ?? '').toContain('Working on it');
+  });
+});
+
+/*
+ * DATES READ AS DAYS, NOT AS COLUMNS. These are calendar days a coach typed,
+ * and 'YYYY-MM-DD' is the storage spelling, not a rendering. formatGymDay
+ * formats a date-only value in UTC deliberately -- it was parsed as UTC
+ * midnight, so any other zone can only move it backwards a day.
+ */
+describe("the hub's development dates are days", () => {
+  test('a goal target date is written out', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({
+        ok: true, goals: [developmentGoalRow({ target_on: '2026-12-01' })], activities: [],
+      }),
+    });
+    openTab('Goals');
+
+    expect(screen.queryByText('Target date December 1, 2026')).not.toBeNull();
+    expect(document.body.textContent ?? '').not.toContain('2026-12-01');
+  });
+
+  test('a date on the first of a month does not slip to the last of the one before', async () => {
+    await renderWorkspace({
+      development: () => jsonResponse({
+        ok: true, goals: [developmentGoalRow({ target_on: '2026-01-01' })], activities: [],
+      }),
+    });
+    openTab('Goals');
+
+    expect(screen.queryByText('Target date January 1, 2026')).not.toBeNull();
+    expect(document.body.textContent ?? '').not.toContain('December 31, 2025');
+  });
+});
+
+/*
+ * ONE ATHLETE'S SESSIONS UNDER ANOTHER ATHLETE'S NAME.
+ *
+ * loadReviewSessions checked `reviewAthleteRef.current !== athleteId` once,
+ * straight after `await fetch`. Reading the body is a SECOND suspension
+ * point, and a coach who changed athlete during it landed the previous
+ * athlete's session list under the new athlete's name -- one athlete's
+ * training record attributed to another, with nothing on screen saying so.
+ *
+ * The existing "switching athletes clears the panel" test above cannot see
+ * this: it switches between two loads that have already finished.
+ */
+describe('a slow session read that lands after the coach moved on', () => {
+  function deferredBody(body: unknown): { response: Response; release: () => void } {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const response = {
+      ok: true,
+      status: 200,
+      json: async () => { await gate; return body; },
+    } as unknown as Response;
+    return { response, release };
+  }
+
+  test("the stale athlete's sessions never replace the athlete the coach is on", async () => {
+    const stale = deferredBody({ items: [sessionRow('session_stale', { date: '2026-01-01' })] });
+
+    await renderWorkspace({
+      athletesList: () =>
+        jsonResponse({
+          items: [
+            { athlete_id: 'ath_1', full_name: 'Jordan P.' },
+            { athlete_id: 'ath_2', full_name: 'Sam R.' },
+          ],
+        }),
+      sessionsList: (athleteId: string) =>
+        athleteId === 'ath_1'
+          ? stale.response
+          : jsonResponse({ items: [sessionRow('session_fresh', { date: '2026-08-10' })] }),
+    });
+
+    openTab('Athlete Reviews');
+    // Parks inside `await response.json()` -- the fetch has resolved and the
+    // first guard has already passed.
+    await pickReviewAthlete('ath_1');
+    // The coach moves on. This load completes.
+    await pickReviewAthlete('ath_2');
+
+    const optionValues = () =>
+      screen.queryAllByRole('option').map((element) => (element as HTMLOptionElement).value);
+    expect(optionValues()).toContain('session_fresh');
+
+    // Now the abandoned read finishes.
+    await act(async () => { stale.release(); });
+
+    expect(optionValues()).toContain('session_fresh');
+    expect(optionValues()).not.toContain('session_stale');
   });
 });
