@@ -143,6 +143,7 @@
     "test:migrations:athlete-development-blocks": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteDevelopmentBlocks.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-development-block-competition-target": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteDevelopmentBlockCompetitionTarget.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-development-block-objectives": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteDevelopmentBlockObjectives.pg.test.ts --testTimeout=180000",
+    "test:migrations:coach-display-name": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/coachDisplayName.pg.test.ts --testTimeout=180000",
     "test:migrations:calibration-blinding": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/calibrationBlinding.pg.test.ts --testTimeout=180000",
     "test:migrations:calibration-bootstrap": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/calibrationBootstrap.pg.test.ts --testTimeout=180000",
     "test:migrations:discipline-census": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/disciplineValueCensus.pg.test.ts --testTimeout=180000",
