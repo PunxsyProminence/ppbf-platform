@@ -726,11 +726,11 @@ describe('the module (real database)', () => {
         organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', linkedByAccountId: COACH_ID,
       });
 
-      expect(await unlinkSessionFromObjective(ORG_ID, 'run-1', 'obj-a')).toBe(true);
+      expect(await unlinkSessionFromObjective(ORG_ID, 'run-1', 'obj-a', 'blk-a')).toBe(true);
       // Removing what is not there is false, not an error -- and another
       // gym's link reads the same way.
-      expect(await unlinkSessionFromObjective(ORG_ID, 'run-1', 'obj-a')).toBe(false);
-      expect(await unlinkSessionFromObjective(OTHER_ORG_ID, 'run-1', 'obj-a')).toBe(false);
+      expect(await unlinkSessionFromObjective(ORG_ID, 'run-1', 'obj-a', 'blk-a')).toBe(false);
+      expect(await unlinkSessionFromObjective(OTHER_ORG_ID, 'run-1', 'obj-a', 'blk-a')).toBe(false);
 
       // The block link, the objective and the session all survive.
       for (const [table, expected] of [
@@ -741,6 +741,47 @@ describe('the module (real database)', () => {
         const rows = await client.query(`select count(*)::int as n from pilot.${table}`);
         expect([table, rows.rows[0].n]).toEqual([table, expected]);
       }
+    } finally {
+      await client.end();
+    }
+  });
+
+  /* THE BLOCK THE CALLER CLEARED IS THE BLOCK THE DELETE IS SCOPED TO.
+     
+     This shipped without the block predicate. The route required block_id and
+     authorized it through getDevelopmentBlock, then deleted on
+     (organization_id, run_id, objective_id) alone -- so authorization proved
+     about one block was spent on whichever block the objective actually
+     belonged to. The fixture below is the exact shape that made it reachable:
+     obj-a and obj-b hang off the same run and belong to TWO DIFFERENT
+     CHILDREN, and run ids come from a deliberately un-gated picker.
+
+     Whole-gym roster visibility is not athlete-record authorization, so a
+     coach cleared for blk-a must not be able to remove a statement about
+     blk-b's child by naming blk-a at the door. */
+  test('a block the caller cleared cannot be spent on another block\'s objective', async () => {
+    const client = await seededDatabase('sol_mod_unlink_block_scope');
+    try {
+      await linkBlock(client, 'run-1', 'blk-a');
+      await linkBlock(client, 'run-1', 'blk-b');
+      await linkSessionToObjective({
+        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-b', linkedByAccountId: COACH_ID,
+      });
+
+      // blk-a is the block the caller cleared. obj-b is the other child's.
+      expect(await unlinkSessionFromObjective(ORG_ID, 'run-1', 'obj-b', 'blk-a')).toBe(false);
+
+      // And it is still there -- the refusal is a refusal, not a silent pass.
+      const survived = await client.query(
+        `select count(*)::int as n from pilot.session_run_block_objective_links
+         where organization_id = $1 and run_id = $2 and objective_id = $3`,
+        [ORG_ID, 'run-1', 'obj-b'],
+      );
+      expect(survived.rows[0].n).toBe(1);
+
+      // Naming the objective's own block removes it, so the predicate is
+      // scoping the delete rather than breaking it.
+      expect(await unlinkSessionFromObjective(ORG_ID, 'run-1', 'obj-b', 'blk-b')).toBe(true);
     } finally {
       await client.end();
     }

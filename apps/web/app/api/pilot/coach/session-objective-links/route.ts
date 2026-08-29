@@ -184,10 +184,14 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Block not found.' }, { status: 404 });
     }
 
+    /* blockId is passed, not just checked. The block cleared two lines above
+       is the block the delete is scoped to; without it the authorization was
+       proved about one block and spent on another. */
     const removed = await unlinkSessionFromObjective(
       principal.organizationId,
       runId,
       objectiveId,
+      blockId,
     );
     // `removed: false` means there was nothing to remove, which is the state
     // the caller asked for either way. Not an error.

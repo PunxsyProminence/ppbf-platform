@@ -376,7 +376,35 @@ describe('unlinking', () => {
 
     expect(response.status).toBe(200);
     expect(mockGetBlock).toHaveBeenCalledWith(actor, 'blk-a');
-    expect(mockUnlink).toHaveBeenCalledWith('org-1', 'run-1', 'obj-a');
+    /* THE CLEARED BLOCK REACHES THE WRITE, and this assertion is the one that
+       used to pin the bug: it asserted three arguments, so a delete scoped to
+       (organization, run, objective) alone read as correct. Authorization was
+       proved about blk-a and then spent on whatever block obj-a belonged to.
+
+       Unlike the link path above -- where block_id is deliberately NOT passed
+       because linkSessionToObjective re-derives the block in SQL and would
+       reject a mismatch -- the delete has no such derivation, so the block it
+       was cleared for has to be carried into the statement. */
+    expect(mockUnlink).toHaveBeenCalledWith('org-1', 'run-1', 'obj-a', 'blk-a');
+  });
+
+  /* The delete path names the block; the link path deliberately does not.
+     Held together so the asymmetry reads as a decision rather than as one of
+     them having been forgotten -- which is how it got here. */
+  test('the block reaching the write is the block the gate cleared, not the one asked for', async () => {
+    const actor = principal();
+    mockRequirePrincipal.mockResolvedValue(actor);
+    mockGetBlock.mockResolvedValue(block());
+    mockUnlink.mockResolvedValue(true);
+
+    await DELETE(deleteRequest('?run_id=run-1&objective_id=obj-a&block_id=blk-a'));
+
+    const [, , , blockArg] = mockUnlink.mock.calls[0];
+    expect(blockArg).toBe('blk-a');
+    // Not the run and not the objective: a delete scoped by either of those
+    // instead would be the same hole wearing a different argument.
+    expect(blockArg).not.toBe('run-1');
+    expect(blockArg).not.toBe('obj-a');
   });
 
   test('removing a link that is not there is not an error', async () => {
