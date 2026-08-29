@@ -56,6 +56,7 @@ jest.mock('./db', () => ({
   }),
 }));
 
+import { ForbiddenError } from './errors';
 import {
   linkSessionToObjective,
   listObjectiveLinksForBlock,
@@ -93,6 +94,16 @@ const OTHER_COACH_ID = 'acct-obj-other-coach';
 const ATHLETE_ID = 'ath-obj-1';
 const SECOND_ATHLETE_ID = 'ath-obj-2';
 const OTHER_ATHLETE_ID = 'ath-obj-other';
+/* THE DEMOTED COACH. pilot.accounts.role says 'coach' -- the HOME role, which
+   is what the route's requireRole compares -- while the membership row for
+   THIS organization says 'parent'. It is still named as athletes.coach_id, so
+   the athlete-access check passes for it too. Both gates said yes. */
+const DEMOTED_COACH_ID = 'acct-obj-demoted';
+/* A second coach IN THIS GYM. OTHER_COACH_ID is in the other gym and was
+   standing in for "a colleague" -- fine while nothing asked what role an
+   account held here, and not fine once something did. Two colleagues marking
+   the same objective is the case this suite means. */
+const SECOND_COACH_ID = 'acct-obj-coach-2';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -164,16 +175,20 @@ async function seededDatabase(name: string): Promise<Client> {
 
   await client.query(
     `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
-     values ($1, 'coach', $3, 'microsoft'), ($2, 'coach', $4, 'microsoft')
+     values ($1, 'coach', $3, 'microsoft'), ($2, 'coach', $4, 'microsoft'),
+            ($5, 'coach', $3, 'microsoft'), ($6, 'coach', $3, 'microsoft')
      on conflict do nothing`,
-    [COACH_ID, OTHER_COACH_ID, ORG_ID, OTHER_ORG_ID],
+    [COACH_ID, OTHER_COACH_ID, ORG_ID, OTHER_ORG_ID, DEMOTED_COACH_ID, SECOND_COACH_ID],
   );
 
+  // The demoted account's HOME role above is 'coach'. Its membership here is
+  // not -- that is the whole fixture.
   await client.query(
     `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
-     values ($1, $3, 'coach', true), ($2, $4, 'coach', true)
+     values ($1, $3, 'coach', true), ($2, $4, 'coach', true),
+            ($5, $3, 'parent', true), ($6, $3, 'coach', true)
      on conflict do nothing`,
-    [COACH_ID, OTHER_COACH_ID, ORG_ID, OTHER_ORG_ID],
+    [COACH_ID, OTHER_COACH_ID, ORG_ID, OTHER_ORG_ID, DEMOTED_COACH_ID, SECOND_COACH_ID],
   );
 
   for (const [org, athleteId, coachId] of [
@@ -588,7 +603,7 @@ describe('the module (real database)', () => {
 
       const second = await linkSessionToObjective({
         organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a',
-        linkedByAccountId: OTHER_COACH_ID,
+        linkedByAccountId: SECOND_COACH_ID,
       });
       expect(second).toMatchObject({ created: false });
       // Still whoever said it first.
@@ -726,11 +741,15 @@ describe('the module (real database)', () => {
         organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', linkedByAccountId: COACH_ID,
       });
 
-      expect(await unlinkSessionFromObjective(ORG_ID, 'run-1', 'obj-a')).toBe(true);
-      // Removing what is not there is false, not an error -- and another
-      // gym's link reads the same way.
-      expect(await unlinkSessionFromObjective(ORG_ID, 'run-1', 'obj-a')).toBe(false);
-      expect(await unlinkSessionFromObjective(OTHER_ORG_ID, 'run-1', 'obj-a')).toBe(false);
+      expect(await unlinkSessionFromObjective(ORG_ID, 'run-1', 'obj-a', 'blk-a', COACH_ID)).toBe(true);
+      // Removing what is not there is false, not an error.
+      expect(await unlinkSessionFromObjective(ORG_ID, 'run-1', 'obj-a', 'blk-a', COACH_ID)).toBe(false);
+      /* Another gym is a REFUSAL rather than a false now: this account holds
+         no membership there, so it may not write there, and the answer says
+         so before any row is looked at. It still discloses nothing about
+         whether the link exists -- the refusal is identical either way. */
+      await expect(unlinkSessionFromObjective(OTHER_ORG_ID, 'run-1', 'obj-a', 'blk-a', COACH_ID))
+        .rejects.toBeInstanceOf(ForbiddenError);
 
       // The block link, the objective and the session all survive.
       for (const [table, expected] of [
@@ -744,6 +763,140 @@ describe('the module (real database)', () => {
     } finally {
       await client.end();
     }
+  });
+
+  /* THE BLOCK THE CALLER CLEARED IS THE BLOCK THE DELETE IS SCOPED TO.
+     
+     This shipped without the block predicate. The route required block_id and
+     authorized it through getDevelopmentBlock, then deleted on
+     (organization_id, run_id, objective_id) alone -- so authorization proved
+     about one block was spent on whichever block the objective actually
+     belonged to. The fixture below is the exact shape that made it reachable:
+     obj-a and obj-b hang off the same run and belong to TWO DIFFERENT
+     CHILDREN, and run ids come from a deliberately un-gated picker.
+
+     Whole-gym roster visibility is not athlete-record authorization, so a
+     coach cleared for blk-a must not be able to remove a statement about
+     blk-b's child by naming blk-a at the door. */
+  test('a block the caller cleared cannot be spent on another block\'s objective', async () => {
+    const client = await seededDatabase('sol_mod_unlink_block_scope');
+    try {
+      await linkBlock(client, 'run-1', 'blk-a');
+      await linkBlock(client, 'run-1', 'blk-b');
+      await linkSessionToObjective({
+        organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-b', linkedByAccountId: COACH_ID,
+      });
+
+      // blk-a is the block the caller cleared. obj-b is the other child's.
+      expect(await unlinkSessionFromObjective(ORG_ID, 'run-1', 'obj-b', 'blk-a', COACH_ID)).toBe(false);
+
+      // And it is still there -- the refusal is a refusal, not a silent pass.
+      const survived = await client.query(
+        `select count(*)::int as n from pilot.session_run_block_objective_links
+         where organization_id = $1 and run_id = $2 and objective_id = $3`,
+        [ORG_ID, 'run-1', 'obj-b'],
+      );
+      expect(survived.rows[0].n).toBe(1);
+
+      // Naming the objective's own block removes it, so the predicate is
+      // scoping the delete rather than breaking it.
+      expect(await unlinkSessionFromObjective(ORG_ID, 'run-1', 'obj-b', 'blk-b', COACH_ID)).toBe(true);
+    } finally {
+      await client.end();
+    }
+  });
+
+  /* THE ROLE THAT GOVERNS A WRITE IS THE ONE ON THE MEMBERSHIP ROW HERE, and
+     the route's requireRole was answering a different question -- it compares
+     principal.role, which resolvePrincipal reads from pilot.accounts.role, the
+     account's HOME role. A demotion in this gym did not reach it, and did not
+     clear athletes.coach_id either, so the athlete gate passed too. */
+  describe('an account whose membership HERE may not write', () => {
+    test('cannot mark an objective, however its home role reads', async () => {
+      const client = await seededDatabase('sol_mod_demoted_link');
+      try {
+        await linkBlock(client, 'run-1', 'blk-a');
+
+        await expect(linkSessionToObjective({
+          organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a',
+          linkedByAccountId: DEMOTED_COACH_ID,
+        })).rejects.toBeInstanceOf(ForbiddenError);
+
+        // And nothing was written. A refusal that left the row behind would be
+        // the same defect with a louder error.
+        const rows = await client.query(
+          `select count(*)::int as n from pilot.session_run_block_objective_links`,
+        );
+        expect(rows.rows[0].n).toBe(0);
+      } finally {
+        await client.end();
+      }
+    });
+
+    test('cannot remove a mark a real coach made', async () => {
+      const client = await seededDatabase('sol_mod_demoted_unlink');
+      try {
+        await linkBlock(client, 'run-1', 'blk-a');
+        await linkSessionToObjective({
+          organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', linkedByAccountId: COACH_ID,
+        });
+
+        await expect(
+          unlinkSessionFromObjective(ORG_ID, 'run-1', 'obj-a', 'blk-a', DEMOTED_COACH_ID),
+        ).rejects.toBeInstanceOf(ForbiddenError);
+
+        const rows = await client.query(
+          `select count(*)::int as n from pilot.session_run_block_objective_links`,
+        );
+        expect(rows.rows[0].n).toBe(1);
+      } finally {
+        await client.end();
+      }
+    });
+
+    /* The control. Without it the two above pass against a module that refuses
+       everybody, which would be a different defect wearing this one's test. */
+    test('a coaching membership in the same gym still marks and still removes', async () => {
+      const client = await seededDatabase('sol_mod_demoted_control');
+      try {
+        await linkBlock(client, 'run-1', 'blk-a');
+
+        const linked = await linkSessionToObjective({
+          organizationId: ORG_ID, runId: 'run-1', objectiveId: 'obj-a', linkedByAccountId: COACH_ID,
+        });
+        expect(linked?.created).toBe(true);
+        expect(
+          await unlinkSessionFromObjective(ORG_ID, 'run-1', 'obj-a', 'blk-a', COACH_ID),
+        ).toBe(true);
+      } finally {
+        await client.end();
+      }
+    });
+
+    /* The demotion is about the ROLE, not about the membership existing: the
+       account holds an ACTIVE row here. A check that only asked "is there a
+       membership" -- the shape this codebase has shipped wrong before -- would
+       pass it. */
+    test('the refusal is about the role, not about having no membership at all', async () => {
+      const client = await seededDatabase('sol_mod_demoted_active');
+      try {
+        const membership = await client.query(
+          `select role, active_flag from pilot.organization_memberships
+           where account_id = $1 and organization_id = $2`,
+          [DEMOTED_COACH_ID, ORG_ID],
+        );
+        expect(membership.rows[0]).toMatchObject({ role: 'parent', active_flag: true });
+
+        const home = await client.query(
+          `select role from pilot.accounts where account_id = $1`,
+          [DEMOTED_COACH_ID],
+        );
+        // The home role the route's requireRole would have accepted.
+        expect(home.rows[0].role).toBe('coach');
+      } finally {
+        await client.end();
+      }
+    });
   });
 });
 
