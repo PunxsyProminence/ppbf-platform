@@ -4,7 +4,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import { formatGymDateNumeric } from '@/src/lib/gymTime';
+import { GYM_TIME_ZONE, formatGymDateNumeric } from '@/src/lib/gymTime';
 
 import type { AnnouncementItem } from './AnnouncementBanner';
 import CoachWorkspace from './CoachWorkspace';
@@ -227,6 +227,33 @@ function liveRunRow(overrides: Record<string, unknown> = {}): Record<string, unk
 }
 
 /**
+ * Midday at the gym, on whatever day it is there right now.
+ *
+ * `now + 1 hour` -- what this fixture used -- is the gym's TOMORROW for the
+ * last hour of every gym day. The dashboard filters classes to the gym's own
+ * calendar day, so between 11pm and midnight Eastern the "class scheduled
+ * today" was scheduled for tomorrow and the two tests below failed. Not a
+ * flake and not a race: a one-hour window, every day, in which the suite is
+ * red for a reason that has nothing to do with the code under test.
+ *
+ * Anchoring to midday keeps the fixture RELATIVE -- which is the reason it
+ * was built from the clock in the first place, and still right, since a
+ * frozen literal would drift out of "today" tomorrow -- while putting it
+ * twelve hours from either boundary. The shift is computed in the gym's zone
+ * from the same constant gymDayIso() uses, so the fixture and the filter
+ * cannot disagree about which day it is.
+ */
+function gymMiddayToday(): Date {
+  const now = new Date();
+  const gymHour = Number(new Intl.DateTimeFormat('en-US', {
+    timeZone: GYM_TIME_ZONE,
+    hour: 'numeric',
+    hour12: false,
+  }).format(now));
+  return new Date(now.getTime() + (12 - gymHour) * 60 * 60 * 1000);
+}
+
+/**
  * A scheduled class starting around midday TODAY at the gym, as
  * GET /api/pilot/scheduler returns it in `classes`.
  *
@@ -249,11 +276,20 @@ function classToday(overrides: Record<string, unknown> = {}): Record<string, unk
   // and the very same code failed at 23:07 NY, with nothing changed in between
   // but the clock.
   //
-  // Zero is the only offset that cannot cross the boundary -- any positive one
-  // crosses at 23:59, any negative one at 00:01. Cases that need a different
-  // day override start_at outright, the way "a class on another day" does.
+  // Any FIXED offset from now can cross the boundary -- a positive one at
+  // 23:59, a negative one at 00:01 -- so the offset has to be computed from
+  // where in the gym's day we actually are. gymMiddayToday() does that,
+  // landing twelve hours from either edge. Cases that need a different day
+  // override start_at outright, the way "a class on another day" does.
+  //
+  // TWO LANES FIXED THIS FLAKE AT ONCE and a merge kept both of their `start`
+  // lines, which is what took main red on TS2451 immediately after it had
+  // just been taken green. The other line was `const start = now`: correct on
+  // its own -- a zero offset cannot cross either -- and dropped rather than
+  // merged because keeping it would leave gymMiddayToday() defined,
+  // documented and uncalled. Midday keeps the wider margin of the two.
   const now = new Date();
-  const start = now;
+  const start = gymMiddayToday();
   const end = new Date(start.getTime() + 60 * 60 * 1000);
   return {
     class_id: 'cls_1',
