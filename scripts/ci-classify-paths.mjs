@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
 
 const startsWithAny = (file, prefixes) =>
   prefixes.some((prefix) => file.startsWith(prefix));
@@ -9,6 +10,15 @@ const directComponentName = (file) => {
   const name = file.slice(prefix.length);
   return name.includes('/') ? '' : name;
 };
+
+/* Documentation, by the exact rule `docsOnly` below has always used, lifted
+   into a named predicate so the unclassified-path list cannot drift from it.
+   The list needs it: a diff of forty documentation files plus one server
+   module should report the ONE module as unrecognised code, not all
+   forty-one. Commit 814a5263 on `main` is precisely that shape -- 47 files
+   under docs/capabilities/modules/ and a single .test.ts. */
+const isDocumentationPath = (file) =>
+  file.startsWith('docs/') || file.endsWith('.md');
 
 const isMigrationPath = (file) =>
   startsWithAny(file, [
@@ -285,9 +295,7 @@ const isActivationE2ePath = (file) =>
 
 export function classifyPaths(paths) {
   const files = paths.map((file) => file.trim()).filter(Boolean);
-  const docsOnly =
-    files.length > 0 &&
-    files.every((file) => file.startsWith('docs/') || file.endsWith('.md'));
+  const docsOnly = files.length > 0 && files.every(isDocumentationPath);
   const migrations = files.some(isMigrationPath);
   const boardE2e = files.some(isBoardE2ePath);
   const homepageE2e = files.some(isHomepageE2ePath);
@@ -308,6 +316,23 @@ export function classifyPaths(paths) {
     !goldenEraE2e &&
     !activationE2e;
 
+  /* WHICH files were unrecognised, not merely whether any were. The boolean
+     alone cannot be reported usefully: "this diff touched code no predicate
+     recognises" is only actionable if it names the code, because widening a
+     predicate requires knowing the path that missed it.
+
+     Populated only when `unknownCode` is true, so the list and the boolean
+     always agree. `unknownCode` is a whole-diff verdict -- it is true only
+     when NO file matched ANY predicate -- so when it fires, every
+     non-documentation file in the diff is unrecognised, and that is the list.
+
+     It is never empty when `unknownCode` is true: `unknownCode` requires
+     `!docsOnly`, and `docsOnly` is false exactly when some file is not
+     documentation. The self-test pins both directions. */
+  const unclassifiedPaths = unknownCode
+    ? files.filter((file) => !isDocumentationPath(file))
+    : [];
+
   return {
     docsOnly,
     migrations,
@@ -319,6 +344,7 @@ export function classifyPaths(paths) {
     goldenEraE2e,
     activationE2e,
     unknownCode,
+    unclassifiedPaths,
   };
 }
 
@@ -356,6 +382,16 @@ if (
 
   if (process.env.GITHUB_OUTPUT) {
     fs.appendFileSync(process.env.GITHUB_OUTPUT, `${lines}\n`);
+
+    /* The path list is multi-line, so it needs GITHUB_OUTPUT's heredoc form
+       rather than key=value. The delimiter is randomised per run because a
+       predictable one is how a crafted filename would close the block early
+       and inject an output of its own. */
+    const delimiter = `PPBF_UNCLASSIFIED_${randomUUID()}`;
+    fs.appendFileSync(
+      process.env.GITHUB_OUTPUT,
+      `unclassified_paths<<${delimiter}\n${result.unclassifiedPaths.join('\n')}\n${delimiter}\n`,
+    );
   }
 
   if (process.env.GITHUB_STEP_SUMMARY) {
