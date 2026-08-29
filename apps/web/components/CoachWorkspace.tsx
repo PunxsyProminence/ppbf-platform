@@ -23,9 +23,18 @@ import { NICKNAME_LOCK_HOURS } from '@/src/server/pilot/profileIdentity';
 import {
   formatGymDateNumeric,
   formatGymDateTimeShort,
+  formatGymDay,
   formatGymStamp,
   formatGymTimeOfDay,
 } from '@/src/lib/gymTime';
+import {
+  COACH_DEVELOPMENT_GOAL_STATUS_LABEL,
+  COACH_DEVELOPMENT_TOPIC_PROMPTS,
+  coachDevelopmentGoalStatusLabel,
+  type CoachDevelopmentActivityRow,
+  type CoachDevelopmentGoalRow,
+  type CoachDevelopmentGoalStatus,
+} from '@/src/shared/coachDevelopment';
 
 type TabID = 'dashboard' | 'floor' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
@@ -151,13 +160,50 @@ interface CoachTask {
   relatedAthlete?: string;
 }
 
-interface CoachGoal {
-  id: string;
-  title: string;
-  category: string;
-  progress: number;
-  dueDate: string;
-}
+/**
+ * One of this coach's own development goals, as GET /api/pilot/coach/development
+ * returns it. Mirrors CoachDevelopmentGoalRow in src/server/pilot/coachDevelopment.ts.
+ *
+ * WHAT THIS TYPE NO LONGER HAS IS THE POINT. It used to carry `progress:
+ * number`, `category` and `dueDate`, and the tab rendered a bar and a "68%"
+ * from them -- for three hardcoded goals shown identically to every coach who
+ * logged in. There is no progress column in the table this now reads, so
+ * there is nothing to render a bar from: the fake figure was removed at the
+ * schema, not just at the surface.
+ */
+type CoachDevelopmentGoal = Pick<
+  CoachDevelopmentGoalRow,
+  'goal_id' | 'title' | 'development_focus' | 'target_on' | 'status'
+>;
+
+/**
+ * Development work this coach recorded doing. SELF-ENTERED AND UNVERIFIED --
+ * it is not a credential, and the panel that shows it says so. The verified
+ * record is pilot.person_clearances, which the Current Certifications panel
+ * above reads.
+ */
+type CoachDevelopmentActivity = Pick<
+  CoachDevelopmentActivityRow,
+  'activity_id' | 'title' | 'provider' | 'occurred_on' | 'duration_minutes'
+>;
+
+/** The TONE for each development-goal state. A personal planning state, never
+ *  a safety one: nothing here wears a saturated safety rung. The words come
+ *  from the shared vocabulary so this hub and /coach/development call each
+ *  state the same thing. */
+const GOAL_STATUS_TONE: Record<CoachDevelopmentGoalStatus, BadgeTone> = {
+  draft: 'neutral',
+  active: 'cleared',
+  completed: 'monitor',
+  cancelled: 'neutral',
+};
+
+const GOAL_STATUS_BADGE: Record<CoachDevelopmentGoalStatus, { readonly tone: BadgeTone; readonly label: string }> = {
+  draft: { tone: GOAL_STATUS_TONE.draft, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.draft },
+  active: { tone: GOAL_STATUS_TONE.active, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.active },
+  completed: { tone: GOAL_STATUS_TONE.completed, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.completed },
+  cancelled: { tone: GOAL_STATUS_TONE.cancelled, label: COACH_DEVELOPMENT_GOAL_STATUS_LABEL.cancelled },
+};
 
 /**
  * The coach's own session in progress, as GET /api/pilot/session-scripts/runs
@@ -789,11 +835,22 @@ export default function CoachWorkspace() {
     ];
   }, [sessionMode]);
 
-  // There is no backend feed for coach development goals yet. This used to
-  // be 3 hardcoded goals with fake progress percentages shown identically to
-  // every coach regardless of who was logged in -- removed rather than left
-  // as fake personal data.
-  const [coachGoals] = useState<CoachGoal[]>([]);
+  /* This coach's own development record: what they said they are working on,
+     and what they did about it.
+
+     This used to be `useState<CoachGoal[]>([])` with a comment reading "there
+     is no backend feed for coach development goals yet" -- true when it was
+     written, and it stopped being true when /api/pilot/coach/development
+     shipped. Before that it was three hardcoded goals with invented progress
+     percentages, identical for every coach. The list is now the coach's own
+     rows and the percentages have nowhere to come from.
+
+     Self-scoped like the credential read beside it: the route takes no
+     account id and answers for the caller, so nothing here can widen to a
+     colleague's goals. */
+  const [coachGoals, setCoachGoals] = useState<CoachDevelopmentGoal[]>([]);
+  const [coachActivities, setCoachActivities] = useState<CoachDevelopmentActivity[]>([]);
+  const [developmentState, setDevelopmentState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
 
   /* One sentence under the KPI row saying whether a session is running.
      Said as a sentence rather than as a tile because a tile is the shape of a
@@ -1040,6 +1097,34 @@ export default function CoachWorkspace() {
     }
   }, []);
 
+  /* This coach's own development goals and recorded work. Self-scoped in the
+     same way as the credential read above -- the route takes no account id. */
+  const loadDevelopment = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/development`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('development');
+      }
+      const payload = (await response.json()) as {
+        goals?: CoachDevelopmentGoal[];
+        activities?: CoachDevelopmentActivity[];
+      };
+      setCoachGoals(payload.goals ?? []);
+      setCoachActivities(payload.activities ?? []);
+      setDevelopmentState('loaded');
+    } catch {
+      // "You have written nothing down" is a claim about the coach; this is a
+      // failure to read. A coach who believed the first would re-write a goal
+      // they already had.
+      setCoachGoals([]);
+      setCoachActivities([]);
+      setDevelopmentState('unavailable');
+    }
+  }, []);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadPainReports();
@@ -1047,7 +1132,8 @@ export default function CoachWorkspace() {
     void loadLiveRun();
     void loadTodayClasses();
     void loadCredentials();
-  }, [loadPainReports, loadBarrierReports, loadLiveRun, loadTodayClasses, loadCredentials]);
+    void loadDevelopment();
+  }, [loadPainReports, loadBarrierReports, loadLiveRun, loadTodayClasses, loadCredentials, loadDevelopment]);
 
   useEffect(() => {
     void (async () => {
@@ -1493,18 +1579,31 @@ export default function CoachWorkspace() {
         `${apiBase()}/api/pilot/sessions/list?athlete_id=${encodeURIComponent(athleteId)}`,
         { method: 'GET', credentials: 'include' },
       );
+      /* THE CHECK IS REPEATED AFTER EVERY await, NOT ONLY AFTER THE FETCH.
+         Reading the body is a second suspension point, and a coach who
+         changes athlete during it used to get the previous athlete's session
+         list rendered under the new athlete's name -- one athlete's training
+         record attributed to another, which is the failure this guard exists
+         to prevent and the one it did not cover. Every state-setting branch
+         below is now downstream of a check that no await follows. */
       if (reviewAthleteRef.current !== athleteId) {
         return;
       }
 
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        if (reviewAthleteRef.current !== athleteId) {
+          return;
+        }
         setReviewSessionsError(payload.error || 'Sessions could not be loaded.');
         setReviewSessionsState('unavailable');
         return;
       }
 
       const payload = (await response.json()) as { items?: unknown[] };
+      if (reviewAthleteRef.current !== athleteId) {
+        return;
+      }
       // The list route orders by date alone, which cannot separate two
       // sessions on the same day; the athlete workspace re-orders the same
       // read on created_at for the same reason.
@@ -1543,6 +1642,11 @@ export default function CoachWorkspace() {
         return;
       }
       const payload = (await response.json()) as { items?: unknown[] };
+      // Same second suspension point, same re-check: reviews written about
+      // one session must not appear under another.
+      if (reviewSessionRef.current !== sessionId) {
+        return;
+      }
       setSessionReviews(
         (payload.items ?? [])
           .map(normalizeSessionReview)
@@ -2784,26 +2888,102 @@ export default function CoachWorkspace() {
                   </Link>
                 </div>
 
+                {/* WHAT THIS PANEL USED TO SAY. "There is no backend store for
+                    completion yet, so progress through these topics cannot be
+                    recorded here." That was true when it was written and is no
+                    longer: /api/pilot/coach/development stores what a coach
+                    did, and this shows it back.
+
+                    SELF-ENTERED, AND SAID SO. What a coach records about their
+                    own learning is not verified by anyone, and it sits on the
+                    same tab as the credential list, which IS verified by an
+                    administrator. Two records of very different standing, one
+                    screen: the difference is stated rather than left to be
+                    inferred.
+
+                    NO COMPLETION MARKS ON THE TOPIC LIST. The five topics are
+                    a reference list and stay one. Ticking them off would need
+                    this platform to decide what "completed Adaptive Coaching"
+                    means, which is coaching curriculum it does not possess --
+                    so a topic a coach worked through is recorded as work they
+                    did, in their own words, and shows up in the list below
+                    like any other. */}
                 <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
-                  <h3 className="t-eyebrow">Development Topics</h3>
-                  <p><span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span></p>
-                  <p className="t-body text-[color:var(--bone-400)]">
-                    Reference list of the coach development curriculum. There is no backend store for
-                    completion yet, so progress through these topics cannot be recorded here.
+                  <h3 className="t-eyebrow">Your Development Work</h3>
+
+                  {developmentState === 'loading' && (
+                    <p className="t-muted">Loading your development record...</p>
+                  )}
+
+                  {developmentState === 'unavailable' && (
+                    <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                      <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                        Your development record could not be read. This does not mean nothing is
+                        recorded — nobody could look. Open your development page to check.
+                      </p>
+                    </div>
+                  )}
+
+                  {developmentState === 'loaded' && coachActivities.length === 0 && (
+                    <p className="t-body text-[color:var(--bone-400)]">
+                      You have not recorded any development work yet.
+                    </p>
+                  )}
+
+                  {developmentState === 'loaded' && coachActivities.length > 0 && (
+                    <>
+                      <p className="t-body text-[color:var(--bone-400)]">
+                        What you recorded doing, most recent first. Self-entered: this is your own note
+                        that you did it, and it confirms nothing — the verified record is the
+                        certifications panel beside this one.
+                      </p>
+                      {/* SAYING THE LIST IS PARTIAL, because the heading above
+                          presents it as the record. A coach with forty entries
+                          saw five and had nothing on screen telling them so --
+                          the same wrong inference the failed-read copy three
+                          lines up works to prevent. */}
+                      {coachActivities.length > 5 && (
+                        <p className="t-muted m-0">
+                          Showing the 5 most recent of {coachActivities.length}. The full record is
+                          on your development page.
+                        </p>
+                      )}
+                      <ul className="space-y-[var(--s3)]">
+                        {coachActivities.slice(0, 5).map((item) => (
+                          <li
+                            key={item.activity_id}
+                            className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]"
+                          >
+                            <p className="t-body font-semibold">{item.title}</p>
+                            {/* Every optional part appears only when it was
+                                recorded, so a row with no provider renders one
+                                clean line rather than a dangling separator. */}
+                            <p className="t-muted">
+                              {[
+                                formatGymDay(item.occurred_on) ?? item.occurred_on,
+                                item.provider || null,
+                              ].filter(Boolean).join(' · ')}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+                  {/* Read from the shared list rather than recited. The same
+                      five topics were hand-typed here as prose, so the
+                      development page could gain or lose one and this hub
+                      would go on naming the old set -- two copies of a list
+                      that is explicitly "not a syllabus" is how one of them
+                      quietly becomes the authoritative one. */}
+                  <p className="t-muted">
+                    Topics some coaches work through: {COACH_DEVELOPMENT_TOPIC_PROMPTS.join(', ')}.
+                    A reference list, not a syllabus and not a checklist.
                   </p>
-                  <ul className="space-y-[var(--s3)]">
-                    {[
-                      'Boxing Technique Instruction',
-                      'Youth Development Psychology',
-                      'Injury Prevention Basics',
-                      'Class Management Skills',
-                      'Adaptive Coaching'
-                    ].map((topic) => (
-                      <li key={topic} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-sm)]">
-                        {topic}
-                      </li>
-                    ))}
-                  </ul>
+
+                  <Link href="/coach/development" className="btn">
+                    Your development
+                  </Link>
                 </div>
               </div>
             </div>
@@ -2812,49 +2992,92 @@ export default function CoachWorkspace() {
           {/* GOALS */}
           {activeTab === 'goals' && (
             <div className="space-y-6 animate-fadeIn">
+              {/* THE HELP PANEL CHANGED WITH THE FEATURE. It used to promise
+                  "SMART framework", "specific, measurable goals" and "track
+                  progress monthly" -- guidance for a surface that measured
+                  things. Nothing here measures anything, so guidance telling a
+                  coach to make their goals measurable would be describing a
+                  product that does not exist. */}
               <HelpPanel
                 title="Coach Goals"
-                description="Set and track your coaching development goals using SMART framework."
+                description="What you are trying to get better at, in your own words. The platform stores it and reads it back; it does not score it or move it along."
                 usage={[
-                  'Create specific, measurable goals',
-                  'Link to certification or skill development',
-                  'Track progress monthly',
-                  'Reflect on achievements'
+                  'Write down what you are working on',
+                  'Say what it is for, in your own words',
+                  'Move a goal along yourself when you decide it has moved',
+                  'Record the courses, clinics and topics you worked through'
                 ]}
                 mistakes={[
-                  'Vague goals without metrics',
-                  'Unrealistic timeframes',
-                  'Not reviewing progress regularly'
+                  'Neglecting your own development',
+                  'Waiting until renewal deadlines',
+                  'Treating a recorded course as a certification -- it is not, and only an administrator verifies those'
                 ]}
               />
 
-              <p>
-                <span className="stamp stamp--brass stamp--flat">Planned — Not Yet Implemented</span>
-              </p>
-              <p className="t-muted">
-                There is no backend feed for coach goals yet, so this section is always empty.
-              </p>
+              {developmentState === 'loading' && (
+                <p className="t-muted">Loading your development record...</p>
+              )}
 
+              {developmentState === 'unavailable' && (
+                <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                  <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                    Your goals could not be read. This is not a statement that you have none — nobody
+                    could look. Reload before writing anything down twice.
+                  </p>
+                </div>
+              )}
+
+              {developmentState === 'loaded' && coachGoals.length === 0 && (
+                <p className="t-body text-[color:var(--bone-400)]">
+                  You have not written down a development goal yet.
+                </p>
+              )}
+
+              {/* NO PROGRESS BAR AND NO PERCENTAGE, and their absence is the
+                  reason this block was rewritten rather than pointed at a new
+                  feed. What stood here rendered `{goal.progress}%` and a bar
+                  sized by it, over three hardcoded goals that showed every
+                  coach the same figures. There is no progress column in
+                  pilot.coach_development_goals for it to read, so the shape
+                  cannot come back by accident. */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {coachGoals.map(goal => (
-                  <div key={goal.id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
-                    <div className="flex justify-between items-start gap-[var(--s3)]">
-                      <h4 className="font-semibold">{goal.title}</h4>
-                      <span className="plaque">{goal.category}</span>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-[length:var(--t-xs)] mb-[var(--s2)]">
-                        <span className="text-[color:var(--bone-400)]">Progress</span>
-                        <span className="t-data">{goal.progress}%</span>
+                {developmentState === 'loaded' && coachGoals.map(goal => {
+                  /* Unguarded, this took the whole surface down rather than one
+                     row: an unrecognised status yields undefined and the next
+                     property read throws during render. An unknown state is
+                     shown as the word it arrived as, which is the honest
+                     rendering of a value this build does not understand.
+
+                     THE FALLBACK USED TO BE THE WRONG SHAPE -- it supplied a
+                     `className`, and this render reads `badge.tone`. Nothing
+                     caught it: `Record<K, V>` indexing is typed non-nullable,
+                     so `?? fallback` narrows to the left operand and the
+                     fallback's shape is checked against nothing. Indexing
+                     through a Partial is what makes the `??` real to the type
+                     checker, and therefore what makes the fallback's shape
+                     checked at all. */
+    const badge = (GOAL_STATUS_BADGE as Partial<Record<string, { readonly tone: BadgeTone; readonly label: string }>>)[goal.status]
+      ?? { tone: 'neutral' as BadgeTone, label: coachDevelopmentGoalStatusLabel(goal.status) };
+                  return (
+                    <div key={goal.goal_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
+                      <div className="flex justify-between items-start gap-[var(--s3)]">
+                        <h4 className="font-semibold">{goal.title}</h4>
+                        <StatusBadge tone={badge.tone} label={badge.label} />
                       </div>
-                      <div className="w-full rounded-[var(--r-sm)] bg-[rgba(0,0,0,.4)] h-2">
-                        <div className="rounded-[var(--r-sm)] bg-[var(--brass-500)] h-2" style={{width: `${goal.progress}%`}}></div>
-                      </div>
+                      <p className="t-body text-[color:var(--bone-300)]">{goal.development_focus}</p>
+                      {/* Only when there is one. A goal with no deadline shows
+                          no date line, rather than an empty "Due:" label. */}
+                      {goal.target_on ? (
+                        <p className="t-muted">Target date {formatGymDay(goal.target_on) ?? goal.target_on}</p>
+                      ) : null}
                     </div>
-                    <p className="t-muted">Due: {goal.dueDate}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
+
+              <Link href="/coach/development" className="btn">
+                Write or change a goal
+              </Link>
             </div>
           )}
 
