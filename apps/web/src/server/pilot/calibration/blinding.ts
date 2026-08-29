@@ -216,7 +216,20 @@ export type AdjudicationRefusalReason =
    *  otherwise report an empty clip as ready for review. */
   | 'no_sets_on_clip'
   /** At least one set on the clip is unfinished. */
-  | 'annotation_in_progress';
+  | 'annotation_in_progress'
+  /** Exactly one set on the clip, and it is submitted.
+   *
+   *  The zero case above is guarded because "every set is submitted" is
+   *  vacuously true of an empty list. One set is the same mistake one step
+   *  along: the predicate genuinely holds, but the premise this function
+   *  exists to establish -- that there are TWO independent readings to put
+   *  side by side -- does not. Reporting that as eligible promises a caller
+   *  a pair and hands it a single reading.
+   *
+   *  Kept distinct from the two refusals above rather than folded into
+   *  either, because both would be false statements about this clip. It is
+   *  not empty, and nothing on it is unfinished. */
+  | 'insufficient_sets_for_comparison';
 
 export type AdjudicationEligibility =
   | { readonly outcome: 'eligible'; readonly submittedSetCount: number }
@@ -248,10 +261,14 @@ export interface AdjudicationEligibilityInput {
  * adding it here would be this file inventing a reach into tenant research
  * data that nobody ratified.
  *
- * STATE. Every set on the clip submitted. Partial eligibility is not a
+ * STATE. Two sets on the clip, both submitted. Partial eligibility is not a
  * concept: an adjudicator who could read A while B is still working is a
  * channel from A into B by way of a conversation, which is the same leak the
  * annotator surface refuses, just routed through a third person.
+ *
+ * The count is part of the state condition, not a caller's problem. Zero
+ * sets and one set both satisfy "every set is submitted" without there
+ * being a pair to read, and this function promises its caller a pair.
  */
 export function resolveAdjudicationEligibility(
   input: AdjudicationEligibilityInput,
@@ -266,6 +283,13 @@ export function resolveAdjudicationEligibility(
 
   if (!input.sets.every(isSubmitted)) {
     return { outcome: 'refused', reason: 'annotation_in_progress' };
+  }
+
+  // Submission is checked before the count so that a lone UNSUBMITTED set is
+  // reported as work in progress, which is both true and the more useful
+  // thing to tell an adjudicator: a second reading may yet arrive.
+  if (input.sets.length < 2) {
+    return { outcome: 'refused', reason: 'insufficient_sets_for_comparison' };
   }
 
   return { outcome: 'eligible', submittedSetCount: input.sets.length };
@@ -288,7 +312,10 @@ export class AdjudicationNotPermittedError extends Error {
         ? 'Forbidden: adjudication is limited to organization administrators'
         : reason === 'no_sets_on_clip'
           ? 'Not found: no annotation sets on this clip'
-          : 'Forbidden: this clip is not ready for adjudication -- an annotation set on it has not been submitted',
+          : reason === 'annotation_in_progress'
+            ? 'Forbidden: this clip is not ready for adjudication -- an annotation set on it has not been submitted'
+            : 'Forbidden: this clip has 1 submitted annotation set, and adjudication is '
+              + 'pairwise -- it puts exactly two independent readings side by side',
     );
     this.name = 'AdjudicationNotPermittedError';
     this.reason = reason;
