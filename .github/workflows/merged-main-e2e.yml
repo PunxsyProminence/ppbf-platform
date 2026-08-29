@@ -1,0 +1,401 @@
+# ─────────────────────────────────────────────────────────────────────
+# Merged-`main` E2E gate -- the seven Playwright suites run against the state
+# `main` is actually in, rather than against one pull request's own diff.
+#
+# WHY THIS EXISTS
+#   ci.yml gates each of the seven Playwright suites behind a per-suite flag
+#   from scripts/ci-classify-paths.mjs. Every one of those steps is opt-in and
+#   there is no catch-all, so SKIPPING IS THE DEFAULT. That is deliberate and
+#   correct for a pull request -- a PR that moves no coach surface should not
+#   pay for the coach journey -- and this workflow does not touch it.
+#
+#   The gap is the other one: nothing runs the E2E suites against the MERGED
+#   state of `main`. Grepping all 19 workflow files for `playwright` and
+#   `test:e2e`, case-insensitive, returns ci.yml and nothing else. Two PRs can
+#   each be green on their own diff and red in combination, and no per-PR check
+#   can see that by construction.
+#
+#   MEASURED against origin/main @ 87f7df23, by sweeping every file
+#   individually through classifyPaths:
+#     * of 139 `page.tsx` files under apps/web/app/, 66 trigger at least one
+#       E2E suite and 73 trigger none;
+#     * of 251 `route.ts` files under apps/web/app/api/pilot/, 107 trigger at
+#       least one and 144 trigger none;
+#     * replaying the classifier over the last 60 commits on `main`, 25 would
+#       have run at least one suite and 35 would have run none.
+#
+#   Per-suite, over those same 60 commits: coach 12, guardian 10, athlete 7,
+#   golden-era 6, board 1, homepage 0, activation 0. Two of the seven suites
+#   did not execute against `main` even once in that window.
+#
+#   The failure mode is not theoretical, though the honest version of it is
+#   narrower than "an E2E suite was missed". On 2026-08-28 `main` was red for
+#   63 minutes: #817 merged as d08ca4dd at 15:21:22 -0400 and 58c36fad ("Fix
+#   red main", #831) landed at 16:24:43. The suite that broke was
+#   routeGateDeclaration.convention.test.ts, a jest suite, and what hid it was
+#   the docs-only fast path rather than an E2E flag -- 58c36fad's own message
+#   says so: "It went unnoticed because the last several pushes to main were
+#   documentation-only and path classification skipped the suite." Nothing
+#   reported it until an unrelated PR inherited the failure.
+#
+#   So that incident is this gap's SHAPE, not this gap's instance. It is quoted
+#   here because the E2E family is the most exposed part of the same shape: it
+#   is the only family in ci.yml behind seven independent opt-in flags, with
+#   the docs-only fast path on top of them.
+#
+# THE PRECEDENT THIS MIRRORS
+#   pre-release-migrations.yml exists for exactly this class of gap and says so
+#   in its own header: "That is per-PR coverage of a PR's own diff. Nothing
+#   verifies the migration suites against the *merged* state of `main` ... This
+#   workflow closes that second gap, and only that one." Its trigger shape, its
+#   concurrency key, its all-failures-not-first-failure loop and its refusal to
+#   report a clean gate while running the wrong set are all reused below rather
+#   than re-decided. Where this file departs from it, the departure is argued
+#   at the point it happens.
+#
+# ── DESIGN DECISION 1: TRIGGER ───────────────────────────────────────
+#   `workflow_dispatch` + a daily `schedule`, matching pre-release-migrations.yml.
+#
+#   Push-to-`main` was considered and rejected on a number, measured rather
+#   than assumed. 70 commits landed on `main` on 2026-08-28 alone, between
+#   13:20:09Z and 21:35:02Z -- 8.5 an hour across that span, with 44 of them
+#   arriving within four minutes of the one before and 42 within one minute.
+#   This job installs a Chromium and then starts seven Next dev servers in
+#   series, so a per-push trigger means ~70 long runs a day competing for
+#   hosted runners with ci.yml's `validate` -- which is the REQUIRED check. The
+#   safety net would be bought by slowing the gate that actually blocks merges,
+#   and most of those runs would be verifying a commit that a newer one had
+#   already superseded before the run reached its third suite.
+#
+#   THE COST BEING ACCEPTED, stated plainly: detection latency is up to about
+#   24 hours instead of minutes. A nightly would not have shortened the
+#   2026-08-28 window; it would have caught that break at 05:53 the following
+#   morning had it survived that long. What a nightly does buy is that a break
+#   cannot live in `main` indefinitely and be discovered by whoever happens to
+#   open a PR that touches the right surface -- which is how the 08-28 one was
+#   found. `workflow_dispatch` is the escape hatch for anyone who wants the
+#   answer now, and is the same reason pre-release-migrations.yml carries it.
+#
+#   The cron minute is 53 and the hour is 05 UTC = 01:53 America/New_York in
+#   EDT, 00:53 in EST. Offset from :00 for the reason pre-release-migrations.yml
+#   records -- jobs scheduled at :00 queue behind GitHub's hourly spike. The
+#   hour is chosen so a full-budget run finishes before this repository's three
+#   other scheduled jobs start: backup.yml at 07:10, pre-release-migrations.yml
+#   at 07:17, retention-cleanup.yml at 07:40. That also puts the E2E verdict on
+#   the board ahead of the migration gate, which is the order a release
+#   operator reads them in.
+#
+# ── DESIGN DECISION 2: CONCURRENCY ───────────────────────────────────
+#   `group: merged-main-e2e-${{ github.sha }}`, `cancel-in-progress: false`.
+#   The same key pre-release-migrations.yml uses, and the OPPOSITE of
+#   deploy-staging.yml's constant -- deliberately, because the two files are
+#   answering different questions.
+#
+#   The lesson on the record (ci.yml's own concurrency comment, #736 / #739):
+#   GitHub holds at most one PENDING run per group, so when one run is
+#   executing and a second is queued, a THIRD arrival evicts the second.
+#   `cancel-in-progress: false` does not prevent that -- it governs in-flight
+#   runs, not the queue. Keying every push to a shared ref put 30 main pushes
+#   in one bucket and 16 of them lost their required check to eviction, and a
+#   cancelled check reads as "never validated" rather than as a failure.
+#
+#   Keying by `github.sha` means a run can only ever evict another run
+#   VERIFYING THE SAME COMMIT, whose verdict is by definition the one already
+#   being computed. Runs on different commits cannot touch each other, so no
+#   commit's verdict can be deleted by a later one.
+#
+#   deploy-staging.yml's constant group is right THERE and wrong here, and the
+#   difference is what the runs share. That job pushes one image to one
+#   registry, repoints one named Container App, and mints a PIN for one shared
+#   fixture account, so concurrency is itself the safety property and eviction
+#   is the cheap outcome. This job shares nothing: it holds no credential,
+#   touches no database, reaches no Azure resource, and every dev server it
+#   starts is local to its own runner. There is no resource for two runs to
+#   corrupt, so serializing across commits would buy nothing and cost verdicts.
+#
+#   `cancel-in-progress: false` is load-bearing for the same reason it is in
+#   ci.yml for pushes to `main`: a cancelled verification is indistinguishable
+#   in the run list from one that never ran.
+#
+# ── DESIGN DECISION 3: WHAT HAPPENS WHEN IT FAILS ────────────────────
+#   It goes red, writes every failing suite to $GITHUB_STEP_SUMMARY with the
+#   commit it failed on, and emits one `::error` annotation per failing suite.
+#   It notifies nobody, because THIS REPOSITORY HAS NO NOTIFICATION MECHANISM
+#   TO CALL. Grepping all 19 workflows for slack/webhook/issue-creation finds
+#   one `actions/github-script` in branch-cleanup.yml, used to delete branches.
+#   Inventing a notifier here would mean inventing a destination, a secret and
+#   an on-call convention that no one has agreed to, which is a policy decision
+#   and not this file's to make.
+#
+#   The one delivery path that already exists is GitHub's own: a failed
+#   SCHEDULED run notifies the user who last edited the workflow's cron. That
+#   is a GitHub product behaviour rather than anything this repository
+#   configured, it points at whoever most recently touched this file rather
+#   than at whoever broke `main`, and it is named here so a reader knows the
+#   mechanism is thin -- not so anyone relies on it.
+#
+#   So the summary is written for the person who DOES look, and is what this
+#   workflow can honestly do about being seen. It states the commit, because a
+#   failure here belongs to merged `main` and to no single pull request, and
+#   the first question a reader has is which commit to start bisecting from.
+#   It states the ref alongside it because a `schedule` only ever fires on the
+#   default branch but a `workflow_dispatch` can be aimed at any ref, and a
+#   summary that said "merged main" over a run on a feature branch would be a
+#   claim wider than the check that produced it.
+#
+# ── DESIGN DECISION 4: WHICH SUITES ──────────────────────────────────
+#   All seven. A subset would re-create the gap this file exists to close, one
+#   predicate further down, and the measurement above says which suites a
+#   plausible subset would drop: homepage and activation ran against `main` on
+#   0 of the last 60 commits, so "the ones that mostly run anyway" would cut
+#   exactly the two with no merged-main coverage at all.
+#
+#   The suite names are LISTED here rather than discovered, which is the one
+#   place this file deliberately departs from pre-release-migrations.yml. That
+#   workflow discovers because 105 suite scripts cannot be enumerated in a
+#   reviewable list, and it pays for discovery with a floor check and a pinning
+#   test after #722 silently emptied its parser. Seven can be enumerated, and
+#   enumeration is safer here for a specific reason: apps/web/package.json also
+#   declares `test:e2e:board:update`, which passes --update-snapshots. A naive
+#   `test:e2e:*` discovery would run it, and a gate that rewrites the baselines
+#   it is checking cannot fail.
+#
+#   The cost of a list is that it can drift from ci.yml, so the step below
+#   asserts set equality against the manifest and refuses to run on any
+#   difference in either direction. A new suite cannot join unmeasured, and a
+#   renamed one cannot silently stop being run.
+#
+# SAFETY PROPERTIES
+#   Mirroring pre-release-migrations.yml's framing, for the same reason it
+#   mirrors apply-migrations.yml's:
+#     * This job holds NO credentials. It requests no `id-token` permission,
+#       declares no `environment:`, reads no secret, and names no Azure
+#       resource. It cannot reach staging or production even by accident.
+#     * The five journey suites stub the pilot API at the network boundary and
+#       need no database -- ci.yml says so where it runs them, and this job
+#       adds no service either. One golden-era proof (`.ge-locker` on
+#       /athlete/dashboard) is server-guarded and skips itself with a stated
+#       reason where no database is present, which includes this job, exactly
+#       as it does in ci.yml.
+#     * The only server it starts is the Next dev server playwright.config.ts
+#       brings up on localhost:3100 and tears down again.
+#     * It is therefore safe to run unattended on a schedule.
+#
+# RELATIONSHIP TO ci.yml
+#   Additive. This file changes NOTHING about per-PR selectivity: not
+#   scripts/ci-classify-paths.mjs, not ci.yml's per-suite `if:` conditions, not
+#   the docs-only fast path. A PR that moves no coach surface still does not
+#   run the coach journey, and should not.
+#
+#   A green run here means: at this commit, on merged `main`, all seven suites
+#   pass. It does NOT mean every PR merged since the last green run was
+#   individually sound, and it says nothing about what is deployed -- these
+#   suites drive a dev server on the runner, never staging and never
+#   production.
+# ─────────────────────────────────────────────────────────────────────
+
+name: merged-main-e2e
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 05:53 UTC. See DESIGN DECISION 1 above for the hour, the offset minute,
+    # and the three other scheduled jobs this is placed ahead of.
+    - cron: '53 5 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  # Keyed by COMMIT, so a run can only evict another run verifying the same
+  # commit. See DESIGN DECISION 2 above for why this is the opposite of
+  # deploy-staging.yml's constant group and the same as ci.yml's key for
+  # pushes to main.
+  group: merged-main-e2e-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    # A BUDGET, not a measurement, and the difference is worth stating.
+    # MEASURED: all seven suites, 94 tests, pass in 127s wall clock on a
+    # developer machine -- but that run reused a single warm dev server and let
+    # Playwright pick its own worker count. This job sets CI=true, which
+    # playwright.config.ts reads to force `workers: 1`, `retries: 2` and
+    # `reuseExistingServer: false`, so each suite starts and compiles its own
+    # Next dev server in series. Add `npm ci` and a Chromium download on a
+    # hosted runner and the real figure is expected in the 15-25 minute range.
+    # 60 minutes leaves room for that to be wrong in the slow direction, and
+    # for the retries a flaky run will spend, without letting a hung dev server
+    # sit for an hour past the point of usefulness.
+    timeout-minutes: 60
+    env:
+      # Load-bearing, not decoration. playwright.config.ts branches on CI for
+      # forbidOnly, retries, workers and reuseExistingServer, so this is what
+      # makes the suites run the way ci.yml runs them. Without it this gate
+      # would be testing a different configuration than the one it is standing
+      # in for.
+      CI: true
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          # 22, from the root package.json `engines.node`. Not a free choice:
+          # scripts/runtime-parity.mjs holds every workflow that declares a
+          # node-version to the web deployable's contract unless it is
+          # explicitly reassigned, and runtimeParityContract.test.ts proves
+          # that default catches a brand-new workflow on the wrong major.
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        # The same invocation ci.yml uses. Chromium only -- playwright.config.ts
+        # declares exactly two projects, desktop-chromium and mobile-chromium,
+        # and both are Chromium device descriptors.
+        run: npx --workspace web playwright install --with-deps chromium
+
+      - name: Resolve and verify the E2E suite list
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # The seven suites, in the order ci.yml runs them. Listed rather than
+          # discovered -- DESIGN DECISION 4 above argues why, and the check
+          # below is the price of listing them: the list and the manifest must
+          # be the same set, in both directions, or this step refuses to run.
+          #
+          # The failure this guards against is pre-release-migrations.yml's own
+          # (#722): a suite list that quietly stopped describing what runs, in
+          # a step whose failure is easy to read as infrastructure noise. There
+          # it was a parser that matched nothing; here it would be a suite
+          # added to ci.yml and not to this file. Same outcome -- a gate that
+          # reports clean while covering less than it claims -- so it is
+          # refused explicitly rather than trusted.
+          node --input-type=module <<'NODE' > suites.txt
+          import fs from 'node:fs';
+
+          const EXPECTED = [
+            'test:e2e:board',
+            'test:e2e:homepage',
+            'test:e2e:coach',
+            'test:e2e:athlete',
+            'test:e2e:guardian',
+            'test:e2e:activation',
+            'test:e2e:golden-era',
+          ];
+
+          const { scripts } = JSON.parse(
+            fs.readFileSync('apps/web/package.json', 'utf8'),
+          );
+
+          // Every e2e script the manifest declares, minus the snapshot
+          // updaters. `test:e2e:board:update` passes --update-snapshots:
+          // running it rewrites the baselines it would otherwise be checking,
+          // so it is a maintenance command and can never be a gate.
+          const declared = Object.keys(scripts ?? {})
+            .filter((name) => name.startsWith('test:e2e:') && !name.endsWith(':update'))
+            .sort();
+
+          const missing = EXPECTED.filter((name) => !declared.includes(name));
+          const unlisted = declared.filter((name) => !EXPECTED.includes(name));
+
+          if (missing.length > 0) {
+            throw new Error(
+              `apps/web/package.json declares no ${missing.join(', ')}. This workflow ` +
+                'names a suite script that no longer exists, so it would run less than it ' +
+                'claims. Fix the name here, or remove the suite from this list on purpose.',
+            );
+          }
+
+          if (unlisted.length > 0) {
+            throw new Error(
+              `apps/web/package.json declares ${unlisted.join(', ')}, which this workflow ` +
+                'does not run. A new E2E suite must be added to this list as well as to ' +
+                'ci.yml, or merged main is never checked against it. Refusing to report a ' +
+                'clean gate while skipping a suite that exists.',
+            );
+          }
+
+          process.stdout.write(`${EXPECTED.join('\n')}\n`);
+          NODE
+
+          echo "Verified $(wc -l < suites.txt) E2E suites against apps/web/package.json."
+
+      - name: Run every E2E suite (report all failures)
+        shell: bash
+        run: |
+          # Each suite runs independently and the job fails ONCE at the end
+          # with the complete list -- pre-release-migrations.yml's shape, for
+          # its reason. An `&&` chain reports the first failure and hides every
+          # later one, so somebody fixes it, re-runs a long job, and discovers
+          # the next. An after-the-fact gate on merged `main` exists precisely
+          # to hand over the whole failure list at once.
+          #
+          # The suites are independent in the way that matters here: each
+          # `playwright test` invocation stands up and tears down its own dev
+          # server, and none of them shares state with another.
+          #
+          # No `set -e`: a failing suite must not abort the loop.
+          set -uo pipefail
+
+          passed=0
+          failed=()
+
+          while read -r suite; do
+            [[ -n "$suite" ]] || continue
+            echo "::group::${suite}"
+            # `< /dev/null` because the loop is reading suites.txt on stdin: a
+            # child that touched stdin would swallow the remaining suite names.
+            if npm --workspace web run "$suite" < /dev/null; then
+              passed=$((passed + 1))
+            else
+              failed+=("$suite")
+              echo "::error title=E2E suite failed on merged main::${suite}"
+            fi
+            echo "::endgroup::"
+          done < suites.txt
+
+          {
+            echo "### Merged-\`main\` E2E gate"
+            echo ""
+            # The ref as well as the commit. A `schedule` only ever fires on
+            # the default branch, but `workflow_dispatch` can be aimed at any
+            # ref, and a summary that said "merged main" over a run on a
+            # feature branch would be a claim wider than the check -- which is
+            # the exact failure AGENT_KERNEL.md's reporting section is about.
+            echo "- ref: \`${GITHUB_REF_NAME}\`"
+            echo "- commit: \`${GITHUB_SHA}\`"
+            echo "- passed: ${passed}"
+            echo "- failed: ${#failed[@]}"
+            if [[ ${#failed[@]} -gt 0 ]]; then
+              echo ""
+              echo "Failing suites:"
+              echo ""
+              for suite in "${failed[@]}"; do
+                echo "- \`npm --workspace web run ${suite}\`"
+              done
+              echo ""
+              echo "This is a failure of \`${GITHUB_REF_NAME}\` at \`${GITHUB_SHA}\` as merged,"
+              echo "not of any one pull request. Each suite above either passed on its own"
+              echo "PR's diff or was never selected to run there, so start from this commit"
+              echo "rather than from the branch that last touched the surface."
+            fi
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ ${#failed[@]} -gt 0 ]]; then
+            echo ""
+            echo "${#failed[@]} E2E suite(s) failed against ${GITHUB_REF_NAME} at ${GITHUB_SHA}:"
+            printf '  %s\n' "${failed[@]}"
+            exit 1
+          fi
+
+          echo ""
+          echo "All ${passed} E2E suites passed against ${GITHUB_REF_NAME} at ${GITHUB_SHA}."
