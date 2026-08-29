@@ -2044,3 +2044,115 @@ describe('a slow session read that lands after the coach moved on', () => {
     expect(optionValues()).not.toContain('session_stale');
   });
 });
+
+/*
+ * THE SUMMARY ROW AT THE TOP OF THE COACH'S OWN SCREEN.
+ *
+ * Four tiles and one empty-floor line, and every one of them was making a
+ * claim from something the platform does not actually read. This is the
+ * highest-traffic surface in the building -- it is what a coach sees before
+ * anything else -- and it is the last place in the room where the null
+ * contract ParentSummaryPanel documents had not been applied.
+ */
+describe('the coach summary row claims only what was actually read', () => {
+  const roster = () => jsonResponse({
+    items: [
+      { athlete_id: 'ath_1', full_name: 'Jordan P.' },
+      { athlete_id: 'ath_2', full_name: 'Rosa D.' },
+    ],
+  });
+
+  test('a coach with a roster is not told nobody is assigned to them', async () => {
+    /* THE ONE THAT WAS WRONG FOR EVERY COACH, ALWAYS. The empty-floor branch
+       keyed off athletes whose attendance was not 'Unknown', and loadAthletes
+       hardcodes 'Unknown' for all of them because no attendance feed exists.
+       So the count was permanently 0 and this sentence printed above every
+       real roster in the gym. */
+    await renderWorkspace({ athletesList: roster });
+
+    expect(screen.queryByText(/Nobody is assigned to you yet/i)).toBeNull();
+  });
+
+  test('a coach who genuinely has nobody is still told so', async () => {
+    // The other direction. An empty floor is a real state and keeps its line;
+    // it is just no longer the only state the panel can reach.
+    await renderWorkspace({ athletesList: () => jsonResponse({ items: [] }) });
+
+    expect(screen.queryByText(/Nobody is assigned to you yet/i)).not.toBeNull();
+  });
+
+  /* Read ONE named tile's value, by walking from its label to the tile.
+     A bare queryAllByText('Unavailable') is not good enough here and proved
+     it: the word appears elsewhere on this screen, so that assertion passed
+     against a panel still printing 0 on every tile. The mutation survived
+     until this helper replaced it. */
+  function tileValue(label: string): string {
+    const labels = Array.from(document.querySelectorAll('.stat-label, .t-label'))
+      .filter((node) => node.textContent?.trim() === label);
+    expect(labels).toHaveLength(1);
+    const tile = labels[0].parentElement;
+    // The label itself is stripped so only the value remains to assert on.
+    return (tile?.textContent ?? '').replace(label, '').trim();
+  }
+
+  test('the summary tiles say Unavailable rather than 0 when nothing answered', async () => {
+    /* coachTasks is empty whenever the review queue read failed, so both
+       counts derived from it were 0 -- a confident "nothing waiting for you"
+       over a queue nobody could look at. And injuryFlag is null for every
+       athlete, because no injury feed exists at all. */
+    await renderWorkspace({
+      athletesList: roster,
+      reviewProjection: async () => jsonResponse({}, { ok: false, status: 503 }),
+    });
+
+    for (const label of ['Injuries', 'Reviews', 'Due']) {
+      expect([label, tileValue(label)]).toEqual([label, 'Unavailable']);
+    }
+  });
+
+  test('a real count still renders as a number, including a real zero', async () => {
+    /* The other direction, and the one that keeps the fix honest: a panel
+       that printed "Unavailable" unconditionally would satisfy the test above
+       while telling a coach nothing. A queue that WAS read and holds nothing
+       is the good news they came for. */
+    await renderWorkspace({ athletesList: roster });
+
+    expect(tileValue('Reviews')).toBe('0');
+    expect(tileValue('Due')).toBe('0');
+    // Injuries has no feed at all, so it is Unavailable even on a good read.
+    expect(tileValue('Injuries')).toBe('Unavailable');
+  });
+
+  test('the Open Reviews tile says the queue could not be read, not "0"', async () => {
+    /* Its two siblings in the same section already guarded this exact case
+       and said so out loud. This tile alone rendered the bare count. */
+    await renderWorkspace({
+      athletesList: roster,
+      reviewProjection: async () => jsonResponse({}, { ok: false, status: 503 }),
+    });
+
+    expect(
+      screen.queryByText(/The review queue could not be read -- do not read this as "no reviews"/i),
+    ).not.toBeNull();
+  });
+
+  test('a healthy queue still shows its real counts, including a real zero', async () => {
+    /* Without this, a panel that rendered "Unavailable" unconditionally would
+       pass every test above. A genuine 0 from a queue that WAS read is the
+       good news a coach came for, and it must survive. */
+    await renderWorkspace({ athletesList: roster });
+
+    expect(
+      screen.queryByText(/The review queue could not be read/i),
+    ).toBeNull();
+    expect(screen.queryByText(/Resolve queue items this session/i)).not.toBeNull();
+  });
+
+  test('the dashboard injury tile still says the feed does not exist', async () => {
+    // The pre-existing guard on the dashboard tile, asserted here so the
+    // summary-row change above cannot be mistaken for the whole story.
+    await renderWorkspace({ athletesList: roster });
+
+    expect(screen.queryByText(/do not read this as "no injuries"/i)).not.toBeNull();
+  });
+});

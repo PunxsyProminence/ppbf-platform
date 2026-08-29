@@ -889,8 +889,16 @@ export default function CoachWorkspace() {
      delivery, so the roster-derived count has no reader left. It is not
      re-added as an unused aggregate: the roster's attendance column is still
      'Unknown' for everyone (see loadAthletes), and a second count over it
-     would only be another way to render nothing. */
-  const activeAthletes = athletes.filter(a => a.attendance !== 'Absent' && a.attendance !== 'Unknown').length;
+     would only be another way to render nothing.
+
+     activeAthletes followed it, for the same reason and one step later. It
+     counted the roster minus Absent and Unknown -- but attendance is 'Unknown'
+     for everyone until a register is wired up, so it counted nobody and the
+     panel read "no athletes are assigned to you" to a coach with a full
+     roster. The panel now takes athletes.length, which is a number this
+     component actually knows. Deleted rather than left for a future reader:
+     lint caught it the moment its last caller moved, and an unused aggregate
+     over data we do not have is what produced the wrong sentence. */
   const injuryFlags = athletes.filter(a => a.injuryFlag).length;
   const injuryTrackingAvailable = athletes.some(a => a.injuryFlag !== null);
   const redReadinessCount = athletes.filter((athlete) => athlete.readiness === 'RED').length;
@@ -2106,10 +2114,21 @@ export default function CoachWorkspace() {
         {/* ROLE SUMMARY PANEL */}
         <CoachSummaryPanel
           sessionStatus={sessionStatus}
-          activeAthletes={activeAthletes}
-          injuryFlags={injuryFlags}
-          reviewsNeeded={reviewsNeeded}
-          assignmentsDue={assignmentsDue}
+          /* THE ROSTER, not the attendance-derived count. activeAthletes
+             below is athletes whose attendance is not 'Unknown', and
+             loadAthletes hardcodes 'Unknown' for everyone because there is no
+             attendance feed -- so it is always 0, and the panel's empty-floor
+             branch fired for every coach, always. */
+          activeAthletes={athletes.length}
+          /* null where no feed answered, which the panel renders as a
+             disclosure instead of a number. injuryFlag is null for every
+             athlete (no feed), and the two queue counts are derived from
+             coachTasks, which is empty whenever the review queue could not be
+             read -- a 0 there tells a coach their queue is clear when nobody
+             could look. */
+          injuryFlags={injuryTrackingAvailable ? injuryFlags : null}
+          reviewsNeeded={shadowQueueUnavailable ? null : reviewsNeeded}
+          assignmentsDue={shadowQueueUnavailable ? null : assignmentsDue}
         />
 
         {/* MODE TOGGLE */}
@@ -2287,8 +2306,23 @@ export default function CoachWorkspace() {
                 </article>
                 <article className="mat-leather--raised rounded-[var(--r-lg)] px-[var(--s4)] py-[var(--s3)]">
                   <p className="t-eyebrow">Open Reviews</p>
-                  <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{reviewsNeeded}</p>
-                  <p className="t-muted">Resolve queue items this session</p>
+                  {/* Its two siblings above both guard this exact case and
+                      both say so out loud ("do not read this as zero flags",
+                      "do not read this as no injuries"). This tile alone
+                      rendered the bare count, and coachTasks is empty whenever
+                      the queue could not be read -- so it printed a confident
+                      0 over an unread queue. */}
+                  {shadowQueueUnavailable ? (
+                    <>
+                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-400)]">Unavailable</p>
+                      <p className="t-muted">The review queue could not be read -- do not read this as &quot;no reviews&quot;</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{reviewsNeeded}</p>
+                      <p className="t-muted">Resolve queue items this session</p>
+                    </>
+                  )}
                 </article>
               </section>
 
