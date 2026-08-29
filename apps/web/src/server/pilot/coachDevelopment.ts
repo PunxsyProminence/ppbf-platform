@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
 import { gymDayIso } from '../../lib/gymTime';
+import {
+  COACH_DEVELOPMENT_GOAL_STATUSES,
+  type CoachDevelopmentActivityRow,
+  type CoachDevelopmentGoalRow,
+  type CoachDevelopmentGoalStatus,
+} from '../../shared/coachDevelopment';
 import { query, queryOne } from './db';
 import { STAFF_CREDENTIAL_ROLES } from './clearanceRegister';
 import { ForbiddenError, ValidationError } from './errors';
@@ -43,39 +49,18 @@ export const COACH_DEVELOPMENT_WRITE_ROLES = STAFF_CREDENTIAL_ROLES;
 // development is a real product question and deliberately not answered by
 // building the read first.
 
-export const COACH_DEVELOPMENT_GOAL_STATUSES = ['draft', 'active', 'completed', 'cancelled'] as const;
-
-export type CoachDevelopmentGoalStatus = (typeof COACH_DEVELOPMENT_GOAL_STATUSES)[number];
-
-export interface CoachDevelopmentGoalRow {
-  organization_id: string;
-  goal_id: string;
-  coach_account_id: string;
-  title: string;
-  development_focus: string;
-  /** Null is the ordinary case: plenty of real development has no deadline. */
-  target_on: string | null;
-  status: CoachDevelopmentGoalStatus;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CoachDevelopmentActivityRow {
-  organization_id: string;
-  activity_id: string;
-  coach_account_id: string;
-  /** The goal this served, or null -- which is the ordinary case. */
-  goal_id: string | null;
-  title: string;
-  /** Empty means nobody recorded a provider. Never a provider named ''. */
-  provider: string;
-  occurred_on: string;
-  /** Minutes for this one activity, or null. NOTHING SUMS THIS. */
-  duration_minutes: number | null;
-  notes: string;
-  created_at: string;
-  updated_at: string;
-}
+/*
+ * The status vocabulary and the two row shapes live in
+ * src/shared/coachDevelopment.ts and are re-exported here, so every existing
+ * `from './coachDevelopment'` import keeps working. They moved because the
+ * client surfaces had each grown their own private copy; see that file.
+ */
+export {
+  COACH_DEVELOPMENT_GOAL_STATUSES,
+  type CoachDevelopmentActivityRow,
+  type CoachDevelopmentGoalRow,
+  type CoachDevelopmentGoalStatus,
+};
 
 // Dates come back as text, not as a driver Date: these are calendar days the
 // coach typed, and routing them through a JS Date would re-interpret them in
@@ -274,11 +259,18 @@ export async function createCoachDevelopmentGoal(input: CoachDevelopmentGoalInpu
   }
 
   const goalId = randomUUID();
-  await queryOne(
+  /* THE INSERT RETURNS THE ROW. It used to return only goal_id and then select
+     the row back, which was a second round trip for a row the first statement
+     already had in hand -- and a window: between the two, the value read back
+     was not provably the value written. `returning` closes both. It also
+     removes the COACH_DEVELOPMENT_GOAL_VANISHED throw this function used to
+     carry for the case where the follow-up select found nothing, a case that
+     only existed because the select existed. */
+  const created = await queryOne<CoachDevelopmentGoalRow>(
     `insert into pilot.coach_development_goals
        (organization_id, goal_id, coach_account_id, title, development_focus, target_on, status)
      values ($1, $2, $3, $4, $5, $6::date, $7)
-     returning goal_id`,
+     returning ${GOAL_FIELDS}`,
     [
       input.organizationId,
       goalId,
@@ -289,12 +281,11 @@ export async function createCoachDevelopmentGoal(input: CoachDevelopmentGoalInpu
       input.status ?? 'draft',
     ],
   );
-
-  const created = await getCoachDevelopmentGoal(input.organizationId, input.coachAccountId, goalId);
   if (!created) {
-    // Unreachable through the insert above; thrown rather than returning a
-    // null the caller would have to invent a meaning for.
-    throw new Error('COACH_DEVELOPMENT_GOAL_VANISHED');
+    // An insert that reports no row is a driver-level failure, not a
+    // not-found: it is raised rather than returned as a null the caller would
+    // have to invent a meaning for.
+    throw new Error('COACH_DEVELOPMENT_GOAL_NOT_RETURNED');
   }
   return created;
 }
@@ -375,7 +366,11 @@ export async function updateCoachDevelopmentGoal(
 
   const targetOn = merged.targetOn?.trim() ? merged.targetOn.trim() : null;
 
-  await queryOne(
+  /* The corrected row comes back from the update itself, not from a select
+     after it. The re-read that stood here could observe a LATER correction
+     than the one it had just made -- two tabs, or a double submit -- and hand
+     the caller back a row it had not written. */
+  return queryOne<CoachDevelopmentGoalRow>(
     `update pilot.coach_development_goals
      set title = $4,
          development_focus = $5,
@@ -383,7 +378,7 @@ export async function updateCoachDevelopmentGoal(
          status = $7,
          updated_at = now()
      where organization_id = $1 and coach_account_id = $2 and goal_id = $3
-     returning goal_id`,
+     returning ${GOAL_FIELDS}`,
     [
       organizationId,
       coachAccountId,
@@ -394,8 +389,6 @@ export async function updateCoachDevelopmentGoal(
       merged.status ?? existing.status,
     ],
   );
-
-  return getCoachDevelopmentGoal(organizationId, coachAccountId, goalId);
 }
 
 /**
@@ -436,12 +429,15 @@ export async function createCoachDevelopmentActivity(input: CoachDevelopmentActi
   }
 
   const activityId = randomUUID();
-  await queryOne(
+  /* One statement, for the same reason as the goal insert above: the row this
+     writes is the row it returns, rather than whatever a second select found
+     afterwards. */
+  return queryOne<CoachDevelopmentActivityRow>(
     `insert into pilot.coach_development_activities
        (organization_id, activity_id, coach_account_id, goal_id, title,
         provider, occurred_on, duration_minutes, notes)
      values ($1, $2, $3, $4, $5, $6, $7::date, $8, $9)
-     returning activity_id`,
+     returning ${ACTIVITY_FIELDS}`,
     [
       input.organizationId,
       activityId,
@@ -453,12 +449,6 @@ export async function createCoachDevelopmentActivity(input: CoachDevelopmentActi
       input.durationMinutes ?? null,
       optionalText(input.notes),
     ],
-  );
-
-  return queryOne<CoachDevelopmentActivityRow>(
-    `select ${ACTIVITY_FIELDS} from pilot.coach_development_activities
-     where organization_id = $1 and coach_account_id = $2 and activity_id = $3`,
-    [input.organizationId, input.coachAccountId, activityId],
   );
 }
 
