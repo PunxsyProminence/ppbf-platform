@@ -18,6 +18,7 @@ import { revokeShadowSession } from '@/client/shadowLogout';
 import {
   buildShadowChatRequest,
   deleteOwnedShadowSession,
+  fetchOwnShadowDataExport,
   listOwnedShadowSessions,
   loadOwnedShadowSessionMessages,
   mapStoredShadowMessage,
@@ -349,6 +350,12 @@ function ShadowChatPageContent() {
   const [unlockHints, setUnlockHints] = useState<ShadowUnlockHint[]>([]);
   const [modelStatus, setModelStatus] = useState<Record<string, { displayName: string; available: boolean; tier: string }>>({});
   const [savedSessions, setSavedSessions] = useState<OwnedShadowConversation[]>([]);
+  /* The self-service export. GET /api/pilot/shadow/data has existed since the
+     SHADOW runtime slice and nothing called it, so the only way anyone got
+     their own conversation history out of this platform was to ask an admin
+     to run a query. One flag, not a busy id: there is one export and it is
+     the whole account's. */
+  const [exportBusy, setExportBusy] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [restoringSessionId, setRestoringSessionId] = useState<string>();
   const [sessionNotice, setSessionNotice] = useState<string>();
@@ -775,6 +782,65 @@ function ShadowChatPageContent() {
     }
   }
 
+  /**
+   * Hand the person their own SHADOW history as a file.
+   *
+   * Two things this deliberately does NOT do. It does not call itself "export
+   * my data": the server answers exportScope 'conversation_history_only' with
+   * completeAccountExport false, and a button promising everything the
+   * platform holds would be a bigger claim than the payload. And it does not
+   * round the counts away -- an export that left conversations behind says how
+   * many, in the notice and in the file, because the person asking for their
+   * history is exactly the person with no other way to check.
+   */
+  async function handleExportOwnData() {
+    if (exportBusy) return;
+    setExportBusy(true);
+    setSessionNotice(undefined);
+    try {
+      const result = await fetchOwnShadowDataExport(apiBase());
+      const blob = new Blob([JSON.stringify(result.payload, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `shadow-history-${result.exportedAt.slice(0, 10)}.json`;
+      anchor.click();
+      // Revoked immediately: the click has already handed the blob to the
+      // browser, and leaving the URL alive keeps the whole conversation
+      // history resident in the tab for as long as it stays open.
+      URL.revokeObjectURL(url);
+
+      const partial = result.conversationsIncluded < result.conversationsStored;
+      setSessionNotice(
+        partial
+          ? `Downloaded ${result.conversationsIncluded} of your ${result.conversationsStored} conversations `
+            + `(one file carries at most ${result.conversationLimit}, and any conversation about an athlete `
+            + 'you no longer coach is left out). This is your SHADOW chat history and memory corrections, '
+            + 'not everything the gym holds about you.'
+          : `Downloaded all ${result.conversationsIncluded} of your conversations. This is your SHADOW chat `
+            + 'history and memory corrections, not everything the gym holds about you.',
+      );
+    } catch (error) {
+      if (
+        error instanceof ShadowSessionsRequestError
+        && isSessionDeathStatus(error.status)
+      ) {
+        clearRoleSession();
+        router.replace('/login');
+        return;
+      }
+      setSessionNotice(
+        error instanceof ShadowSessionsRequestError
+          ? error.message
+          : 'SHADOW could not put your history together. Nothing was downloaded.',
+      );
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
   async function handleLogout() {
     try {
       await revokeShadowSession(apiBase());
@@ -1198,14 +1264,29 @@ function ShadowChatPageContent() {
                 Your server-stored conversation history. Chat content is not stored in this browser.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={handleNewChat}
-              disabled={isLoading}
-              className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              New chat
-            </button>
+            <div className="flex flex-wrap gap-[var(--s2)]">
+              {/* "Download my history", not "Export my data". The payload is
+                  SHADOW conversations and memory corrections, and the server
+                  says so itself (completeAccountExport: false). A door labelled
+                  with the bigger claim would be the more useful-sounding one
+                  and the false one. */}
+              <button
+                type="button"
+                onClick={() => void handleExportOwnData()}
+                disabled={exportBusy || isLoading}
+                className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {exportBusy ? 'Preparing…' : 'Download my history'}
+              </button>
+              <button
+                type="button"
+                onClick={handleNewChat}
+                disabled={isLoading}
+                className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                New chat
+              </button>
+            </div>
           </div>
 
           {sessionNotice ? (
