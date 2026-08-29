@@ -746,27 +746,49 @@ describe('what a recorded decision leaves behind', () => {
     expect(response.headers.get('Cache-Control')).toBe('private, no-store, max-age=0');
   });
 
-  test('an administrator who is also one of the two annotators is NOT refused today', async () => {
-    /* PINNING AN UNSETTLED POSTURE, NOT RATIFYING IT.
+  test('an administrator who is one of the two annotators is refused, and nothing is written', async () => {
+    /* OD-2026-08-29-002, ratified 2026-08-29.
      *
      * ANNOTATOR_ROLES admits 'organization_admin', so the same person can
-     * annotate a clip and then adjudicate their own reading against the other
-     * coach's. blinding.ts takes no view: resolveAdjudicationEligibility
-     * checks role and state and never compares the adjudicator to the two
-     * annotator ids. Whether self-adjudication is acceptable in a study
-     * measuring where two independent readers disagree is an OWNER DECISION,
-     * flagged in the pull request body and deliberately not answered by
-     * inventing a refusal here.
+     * annotate a clip and then settle their own reading against the other
+     * coach's. The ruling: a person who produced one of the two readings
+     * cannot settle the disagreement between them -- the whole point of two
+     * blind readings is that a third party resolves them.
      *
-     * This case exists so the answer, whichever it is, cannot arrive
-     * silently. */
+     * This case replaces one that pinned the opposite while the question was
+     * open, which is what let the answer arrive here rather than silently.
+     *
+     * The assertion is on the WRITE, not only the status. `blinding.ts` and
+     * the route's own role gate both admit an organization_admin, so a status
+     * check alone would not distinguish this refusal from a role refusal --
+     * what makes it this one is that recordAdjudication is never reached. */
     mockPrincipal.mockResolvedValue({ ...ADMIN, accountId: 'coach-a', role: 'organization_admin' });
     bothSubmitted();
 
     const response = await POST(post(DECISION));
+    const body = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(mockRecord.mock.calls[0][0].adjudicatorAccountId).toBe('coach-a');
+    expect(response.status).toBe(403);
+    expect(body.error).toMatch(/you annotated this clip/i);
+    expect(mockRecord).not.toHaveBeenCalled();
+  });
+
+  test('and is refused the working set too, so the read half agrees with the write', async () => {
+    /* The refusal lives in resolveAdjudicationEligibility, which both surfaces
+     * reach through listAnnotationSetsForAdjudication. Implementing it only in
+     * the write route would have left an annotator able to READ the diff of
+     * their own clip while being refused the settlement -- narrower than the
+     * ruling, and the asymmetry would have been invisible without this case. */
+    mockPrincipal.mockResolvedValue({ ...ADMIN, accountId: 'coach-b', role: 'organization_admin' });
+    bothSubmitted();
+
+    const response = await GET(get());
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error).toMatch(/you annotated this clip/i);
+    expect(body.sets).toBeUndefined();
+    expect(body.events).toBeUndefined();
   });
 });
 

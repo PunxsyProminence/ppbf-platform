@@ -95,6 +95,7 @@ export async function GET(request: NextRequest) {
     const context = {
       organizationId: principal.organizationId,
       actorRole: principal.role,
+      actorAccountId: principal.accountId,
     };
 
     const sets = await listAnnotationSetsForAdjudication(context, clipId);

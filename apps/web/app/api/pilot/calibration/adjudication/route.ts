@@ -178,6 +178,7 @@ async function loadAdjudicableClip(
   const context = {
     organizationId: principal.organizationId,
     actorRole: principal.role,
+    actorAccountId: principal.accountId,
   };
 
   const sets = await listAnnotationSetsForAdjudication(context, calibrationClipId);
