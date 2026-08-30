@@ -107,7 +107,22 @@ interface Athlete {
   // leaves everyone UNKNOWN.
   readiness: 'GREEN' | 'YELLOW' | 'RED' | 'UNKNOWN';
   injuryFlag: boolean | null;
-  attendance: 'Present' | 'Late' | 'Excused' | 'Absent' | 'Unknown';
+  /* THREE THINGS THIS UNION SAYS, AND THEY ARE NOT INTERCHANGEABLE.
+     'Present' | 'Absent' | 'Excused' are marks that exist on record.
+     'Unknown' means the platform looked and this athlete has no mark today --
+     which, before the register is taken, is everyone.
+     'Unavailable' means nobody could look. A read that failed must never
+     settle into 'Unknown' beside athletes who genuinely have no mark yet.
+     'NotCovered' means nobody asked. This roster lists every athlete in the
+     organization; the register is only read for the ones the access contract
+     clears this coach for, so the rest were never part of the question. A
+     third kind of not-knowing, and it must not wear the second's words.
+
+     'Late' IS GONE, deliberately. pilot.attendance_reconciled normalises a
+     late arrival to 'present' on the way out -- a late arrival is a day
+     attended -- so nothing can ever produce it. A value in a union that no
+     feed can emit is an invitation to make one emit it. */
+  attendance: 'Present' | 'Absent' | 'Excused' | 'Unknown' | 'Unavailable' | 'NotCovered';
 
   /* Identity, from /api/pilot/profile/roster. Optional because the roster
      renders correctly without it -- the profile read is a second request and a
@@ -885,20 +900,25 @@ export default function CoachWorkspace() {
   // A bare 0 here would read as "confirmed zero injuries," which is false.
   /* trackedAttendanceCount stood here and fed the old "Today's Session"
      panel's Athletes Present row. That row now reads athletes_present off the
-     live run, which is a number a coach actually entered when they started the
-     delivery, so the roster-derived count has no reader left. It is not
-     re-added as an unused aggregate: the roster's attendance column is still
-     'Unknown' for everyone (see loadAthletes), and a second count over it
-     would only be another way to render nothing.
+     live run, which is a number a coach actually entered when they started
+     the delivery, so the roster-derived count has no reader left.
 
-     activeAthletes followed it, for the same reason and one step later. It
-     counted the roster minus Absent and Unknown -- but attendance is 'Unknown'
-     for everyone until a register is wired up, so it counted nobody and the
-     panel read "no athletes are assigned to you" to a coach with a full
-     roster. The panel now takes athletes.length, which is a number this
-     component actually knows. Deleted rather than left for a future reader:
-     lint caught it the moment its last caller moved, and an unused aggregate
-     over data we do not have is what produced the wrong sentence. */
+     A count over the attendance column stood here after it too, and is gone
+     with this change rather than repointed at the real feed. It had no
+     reader: the summary panel takes the roster size. Now that today's marks
+     ARE loaded, such a count would be a NEW claim on the dashboard -- "how
+     many of your athletes are in today" -- and one whose denominator invites
+     the percentage this lane keeps refusing. The per-athlete mark on each
+     roster row is the feature; a gym-wide tally is a decision somebody should
+     make deliberately, not a side effect of wiring a feed.
+
+     activeAthletes went the same way and one step earlier, which #898
+     recorded: it counted the roster minus Absent and Unknown, over a column
+     that was 'Unknown' for everyone, so it counted nobody and told a coach
+     with a full roster that none were assigned to them. The panel takes
+     athletes.length instead. That reasoning survives this PR; the sentence
+     explaining it does not, because it turned on the column having no feed
+     and this is the change that gives it one. */
   const injuryFlags = athletes.filter(a => a.injuryFlag).length;
   const injuryTrackingAvailable = athletes.some(a => a.injuryFlag !== null);
   const redReadinessCount = athletes.filter((athlete) => athlete.readiness === 'RED').length;
@@ -1105,6 +1125,58 @@ export default function CoachWorkspace() {
     }
   }, []);
 
+  /* TODAY'S MARKS, from pilot.attendance_reconciled by way of its own route.
+
+     A SEPARATE READ FROM THE ROSTER, deliberately. The two fail differently
+     and a coach needs the roster whether or not the register loaded: folding
+     this into the athletes call would mean one broken query costs both, and
+     the athlete list is the more important half. It also means the failure
+     state is per-concern, which is what lets the row say "attendance
+     unavailable" against a name it can still show.
+
+     A MARK ARRIVES OR IT DOES NOT. Athletes with no row keep 'Unknown',
+     which before the register is taken is everyone -- that is the ordinary
+     state of a gym at 4pm, not a finding. Only a FAILED read moves anyone to
+     'Unavailable', and it moves everyone, because what failed was the
+     question and not any one answer. */
+  const loadAttendanceToday = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/attendance-today`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('attendance');
+      const payload = (await response.json()) as {
+        covered?: string[];
+        marks?: Array<{ athlete_id: string; status: 'present' | 'absent' | 'excused' }>;
+      };
+      const byAthlete = new Map(
+        (payload.marks ?? []).map((mark) => [mark.athlete_id, mark.status] as const),
+      );
+      const covered = new Set(payload.covered ?? []);
+      const LABEL = { present: 'Present', absent: 'Absent', excused: 'Excused' } as const;
+      setAthletes((prior) => prior.map((athlete) => {
+        const mark = byAthlete.get(athlete.id);
+        if (mark) return { ...athlete, attendance: LABEL[mark] };
+        /* An athlete the register did not cover was never asked about. This
+           roster lists the whole organization; the register is scoped to the
+           athletes this coach is cleared for, so for the others there is no
+           answer rather than an empty one. */
+        if (!covered.has(athlete.id)) return { ...athlete, attendance: 'NotCovered' as const };
+        // Covered and unmarked is 'Unknown', never 'Absent'. The register may
+        // simply not have been taken yet, and a child who did not train and a
+        // child nobody has ticked off look identical from here.
+        return { ...athlete, attendance: 'Unknown' as const };
+      }));
+    } catch {
+      /* Everyone, not just the ones without a mark: the read that failed
+         covered the whole roster, so no athlete's attendance on this screen
+         rests on anything. Leaving stale marks up would be worse than saying
+         so -- a coach would read yesterday's register as today's. */
+      setAthletes((prior) => prior.map((athlete) => ({ ...athlete, attendance: 'Unavailable' })));
+    }
+  }, []);
+
   /* This coach's own development goals and recorded work. Self-scoped in the
      same way as the credential read above -- the route takes no account id. */
   const loadDevelopment = useCallback(async () => {
@@ -1171,17 +1243,20 @@ export default function CoachWorkspace() {
       const data = (await response.json()) as { items?: Array<{ athlete_id: string; full_name?: string; gym_status?: string }> };
       const items = data.items || [];
 
-      // Convert PilotAthlete to Athlete format. Readiness, injury flag, and
-      // attendance have no backend source yet -- do not fabricate them (see
-      // the Athlete interface comment). Do not truncate the roster either; a
-      // silent slice(0, 3) here would hide real athletes from the coach with
-      // no indication anything was cut.
+      // Convert PilotAthlete to Athlete format. Readiness and injury flag have
+      // no backend source yet -- do not fabricate them (see the Athlete
+      // interface comment). Attendance now HAS one, read separately below, so
+      // it starts Unknown and is filled in from the marks that exist. Do not
+      // truncate the roster either; a silent slice(0, 3) here would hide real
+      // athletes from the coach with no indication anything was cut.
       const athleteList: Athlete[] = items.map((item) => ({
         id: item.athlete_id,
         name: item.full_name || 'Unknown',
         track: item.gym_status || 'Foundations',
         readiness: 'UNKNOWN',
         injuryFlag: null,
+        // Today's mark arrives from its own read, below. 'Unknown' is the
+        // correct starting value and stays correct for anyone with no mark.
         attendance: 'Unknown'
       }));
 
@@ -1289,6 +1364,12 @@ export default function CoachWorkspace() {
 
       setAthletes(athleteList);
       setSelectedAthleteId((current) => current || athleteList[0]?.id || current);
+      /* Today's marks, after the roster is in state. Sequenced rather than
+         fired alongside because it maps over the athletes that were just set;
+         started here rather than in its own effect so a roster REFRESH
+         re-reads the register too -- otherwise the retry button would leave
+         yesterday's marks standing beside today's names. */
+      void loadAttendanceToday();
     } catch (error) {
       setAthletesError(error instanceof Error ? error.message : 'Failed to load athletes');
       // Fallback: set empty list but don't block UI
@@ -1296,7 +1377,7 @@ export default function CoachWorkspace() {
     } finally {
       setAthletesLoading(false);
     }
-  }, []);
+  }, [loadAttendanceToday]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -2114,11 +2195,12 @@ export default function CoachWorkspace() {
         {/* ROLE SUMMARY PANEL */}
         <CoachSummaryPanel
           sessionStatus={sessionStatus}
-          /* THE ROSTER, not the attendance-derived count. activeAthletes
-             below is athletes whose attendance is not 'Unknown', and
-             loadAthletes hardcodes 'Unknown' for everyone because there is no
-             attendance feed -- so it is always 0, and the panel's empty-floor
-             branch fired for every coach, always. */
+          /* THE ROSTER SIZE. This was the attendance-derived count, which
+             was permanently 0 because nothing fed the attendance column, so
+             the panel's empty-floor branch fired for every coach, always. A
+             feed exists now -- but the roster is still the right source for
+             "is anybody assigned to you", because an empty floor and a floor
+             nobody has marked in yet are different questions. */
           activeAthletes={athletes.length}
           /* null where no feed answered, which the panel renders as a
              disclosure instead of a number. injuryFlag is null for every
@@ -2573,7 +2655,37 @@ export default function CoachWorkspace() {
                               className={`w-2 h-2 rounded-full ${readinessDotClass(athlete.readiness)}`}
                               title={athlete.readiness === 'UNKNOWN' ? 'Readiness not tracked' : `Readiness: ${athlete.readiness}`}
                             ></span>
-                            <span className="t-muted">{athlete.attendance}</span>
+                            {/* TODAY'S MARK, and the three readings it can
+                                carry are worded so they cannot be confused.
+                                A mark that exists shows as itself. 'No mark
+                                yet' is what an unregistered athlete looks
+                                like before class and is not a claim about
+                                whether they came. 'Unavailable' means the
+                                register could not be read at all -- said
+                                plainly, in the restricted ink, because a
+                                coach glancing down this column would
+                                otherwise read a quiet word as a quiet
+                                answer. */}
+                            <span
+                              className={athlete.attendance === 'Unavailable'
+                                ? 't-muted text-[var(--restricted-ink)]'
+                                : 't-muted'}
+                              title={athlete.attendance === 'Unavailable'
+                                ? 'Today\u2019s register could not be read \u2014 this is not a statement that they were absent'
+                                : athlete.attendance === 'NotCovered'
+                                  ? 'The register is only read for athletes you are cleared for, so nobody asked about this one -- not a statement about whether they trained'
+                                  : athlete.attendance === 'Unknown'
+                                    ? 'No attendance mark recorded for today yet'
+                                    : `Marked ${athlete.attendance.toLowerCase()} today`}
+                            >
+                              {athlete.attendance === 'Unknown'
+                                ? 'No mark yet'
+                                : athlete.attendance === 'Unavailable'
+                                  ? 'Register unavailable'
+                                  : athlete.attendance === 'NotCovered'
+                                    ? 'Not your athlete'
+                                    : athlete.attendance}
+                            </span>
                           </span>
                         </div>
                         {athlete.injuryFlag && (

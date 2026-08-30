@@ -52,6 +52,24 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
   specifier: string,
 ) => Promise<Record<string, unknown>>;
 
+/* Routes the MODULE's own db calls at whichever embedded database the test
+   just built. The rest of this file drives raw SQL against the view; the
+   roster read below is a module function, and the point of testing it is
+   that ITS SQL is right -- so it has to run, not be re-typed here. */
+let activeClient: Client | null = null;
+jest.mock('./db', () => ({
+  query: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    return (await activeClient.query(text, params)).rows;
+  }),
+  queryOne: jest.fn(async (text: string, params: unknown[] = []) => {
+    if (!activeClient) throw new Error('test bug: no active embedded client');
+    return (await activeClient.query(text, params)).rows[0] ?? null;
+  }),
+}));
+
+import { attendanceOnDay } from './attendancePrecedence';
+
 const ORG_ID = 'org-attend';
 const ADMIN_ID = 'acct-attend-admin';
 const COACH_ID = 'acct-attend-coach';
@@ -175,6 +193,13 @@ async function addActivityLog(
   occurredOn: string,
   status: 'present' | 'absent' | 'excused',
   domain = 'boxing_training',
+  /* Whose hours these are. Defaults to COACH_ID so every existing call in
+     this file is unchanged -- but pilot_activity_log_one_per_occurrence is
+     unique on (organization_id, PERSON_ACCOUNT_ID, occurred_on,
+     activity_domain, ...), so two athletes logged on the same day need two
+     different people. That constraint is right and the fixture was simply
+     never asked to seed two athletes on one day before. */
+  personAccountId = COACH_ID,
 ): Promise<void> {
   await client.query(
     `insert into pilot.activity_log
@@ -183,7 +208,7 @@ async function addActivityLog(
         recorded_by_role, recorded_by_account_id)
      values ($1, $2, $3, $4, $5, 'technical_session', $6::date, 60, $7, 'coach_override',
              'coach', $3)`,
-    [ORG_ID, `al-${athleteId}-${occurredOn}-${domain}`, COACH_ID, athleteId, domain, occurredOn, status],
+    [ORG_ID, `al-${athleteId}-${occurredOn}-${domain}`, personAccountId, athleteId, domain, occurredOn, status],
   );
 }
 
@@ -567,6 +592,131 @@ describe('attendance precedence runner readiness assertion', () => {
       // the second pass has to survive its own first pass.
       await applyMigrationTransaction(client, migrationSql);
     } finally {
+      await client.end();
+    }
+  });
+});
+
+/*
+ * THE ROSTER READ: one day, a named set of athletes.
+ *
+ * The coach workspace's register. Every other read in this module answers a
+ * history question for one athlete; this one answers "who is marked in today"
+ * for a whole roster, and it is the read a coach looks at while deciding who
+ * is on the floor. What has to hold is that it honours the same three
+ * boundaries as everything else here -- the day, the athlete set, and the
+ * organization -- and that it invents nothing for the athletes it finds
+ * nothing for.
+ */
+describe('the roster read for one day', () => {
+  test('returns a mark per marked athlete, and nothing at all for the rest', async () => {
+    const client = await freshDatabase('attend_roster_day');
+    activeClient = client;
+    try {
+      await addActivityLog(client, ATHLETE_ID, '2026-03-10', 'present');
+      // ATHLETE_TWO is on the roster and has no mark on that day.
+
+      const marks = await attendanceOnDay(ORG_ID, [ATHLETE_ID, ATHLETE_TWO], '2026-03-10');
+
+      /* One row, not two, and no synthesised 'absent' for the silent athlete.
+         Before the register is taken every athlete looks like ATHLETE_TWO,
+         and a row invented here would report a child missed training because
+         nobody had ticked them off yet. */
+      expect(marks).toEqual([
+        { athlete_id: ATHLETE_ID, status: 'present', source: 'activity_log' },
+      ]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('the day is a day: yesterday and tomorrow are not today', async () => {
+    const client = await freshDatabase('attend_roster_window');
+    activeClient = client;
+    try {
+      await addActivityLog(client, ATHLETE_ID, '2026-03-09', 'present');
+      await addActivityLog(client, ATHLETE_ID, '2026-03-10', 'absent');
+      await addActivityLog(client, ATHLETE_ID, '2026-03-11', 'present');
+
+      const marks = await attendanceOnDay(ORG_ID, [ATHLETE_ID], '2026-03-10');
+
+      // The adjacent days are the decoys. A read that dropped its date filter
+      // would return three rows and the roster would show a stale mark.
+      expect(marks).toEqual([
+        { athlete_id: ATHLETE_ID, status: 'absent', source: 'activity_log' },
+      ]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('an athlete off the list is not returned, however marked they are', async () => {
+    const client = await freshDatabase('attend_roster_scope');
+    activeClient = client;
+    try {
+      await addActivityLog(client, ATHLETE_ID, '2026-03-10', 'present');
+      await addActivityLog(client, ATHLETE_TWO, '2026-03-10', 'present', 'boxing_training', ADMIN_ID);
+
+      /* The caller cleared ONE athlete through the access contract. The other
+         is a real athlete with a real mark in the same gym on the same day,
+         and returning them would hand a coach a child they were not cleared
+         for -- which is the whole reason this function takes ids rather than
+         offering an "everyone" mode. */
+      const marks = await attendanceOnDay(ORG_ID, [ATHLETE_ID], '2026-03-10');
+
+      expect(marks.map((mark) => mark.athlete_id)).toEqual([ATHLETE_ID]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('another organization\'s marks are not this organization\'s', async () => {
+    const client = await freshDatabase('attend_roster_tenancy');
+    activeClient = client;
+    try {
+      await addActivityLog(client, ATHLETE_ID, '2026-03-10', 'present');
+
+      // Same athlete id, wrong organization. The id alone is not a key.
+      const marks = await attendanceOnDay('org-somewhere-else', [ATHLETE_ID], '2026-03-10');
+
+      expect(marks).toEqual([]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('an empty roster is answered without asking the database', async () => {
+    /* No client is assigned, so the mocked db would THROW if this touched it.
+       That is the assertion: the short-circuit is real, not incidental. */
+    activeClient = null;
+
+    await expect(attendanceOnDay(ORG_ID, [], '2026-03-10')).resolves.toEqual([]);
+  });
+
+  test('the precedence contract still holds through this read', async () => {
+    const client = await freshDatabase('attend_roster_precedence');
+    activeClient = client;
+    try {
+      /* Two sources speak about the same athlete-day and disagree. CT-13 says
+         the highest available source wins OUTRIGHT and sources are never
+         summed -- so this must be ONE row saying 'present', not two rows and
+         not a merged verdict. Asserted here because the roster read is a new
+         door onto the view, and a new door is where that guarantee would be
+         quietly lost. */
+      await addActivityLog(client, ATHLETE_ID, '2026-03-10', 'present');
+      await addLegacyAttendance(client, ATHLETE_ID, '2026-03-10', 'absent');
+
+      const marks = await attendanceOnDay(ORG_ID, [ATHLETE_ID], '2026-03-10');
+
+      expect(marks).toEqual([
+        { athlete_id: ATHLETE_ID, status: 'present', source: 'activity_log' },
+      ]);
+    } finally {
+      activeClient = null;
       await client.end();
     }
   });

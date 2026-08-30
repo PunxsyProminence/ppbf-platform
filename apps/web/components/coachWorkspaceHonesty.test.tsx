@@ -27,6 +27,7 @@ interface RouteResponses {
   scheduler?: () => Promise<Response> | Response;
   credentials?: () => Promise<Response> | Response;
   development?: () => Promise<Response> | Response;
+  attendanceToday?: () => Promise<Response> | Response;
 }
 
 function announcement(overrides: Partial<AnnouncementItem> = {}): AnnouncementItem {
@@ -80,6 +81,14 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
     // That matters for the same reason the live-run default does -- it makes
     // an 'unavailable' rendering in these tests a real signal rather than an
     // unstubbed-fetch artefact.
+    if (url.includes('/api/pilot/coach/attendance-today')) {
+      // Default is a HEALTHY read that found no marks -- an unregistered gym,
+      // which is the ordinary state before class. That makes an 'Unavailable'
+      // rendering in these tests a real signal rather than a mock artefact.
+      return routes.attendanceToday
+        ? routes.attendanceToday()
+        : jsonResponse({ ok: true, day: '2026-08-28', covered: ['ath_1', 'ath_2'], marks: [] });
+    }
     if (url.includes('/api/pilot/coach/development')) {
       return routes.development
         ? routes.development()
@@ -2190,5 +2199,174 @@ describe('the coach summary row claims only what was actually read', () => {
     await renderWorkspace({ athletesList: roster });
 
     expect(screen.queryByText(/do not read this as "no injuries"/i)).not.toBeNull();
+  });
+});
+
+/*
+ * TODAY'S REGISTER ON THE ROSTER.
+ *
+ * This column read "Unknown" for every athlete since the workspace was built,
+ * because `attendance` was hardcoded with no feed behind it. Wiring a real one
+ * introduces the failure this whole file exists to prevent: a register that
+ * did not load looks exactly like a register in which nobody is marked, and
+ * "Absent" next to a child's name is a claim the platform has to have earned.
+ */
+describe('the roster shows today\'s marks, and says which ones it does not have', () => {
+  const roster = () => jsonResponse({
+    items: [
+      { athlete_id: 'ath_1', full_name: 'Jordan P.' },
+      { athlete_id: 'ath_2', full_name: 'Rosa D.' },
+    ],
+  });
+
+  test('a recorded mark is shown as itself', async () => {
+    await renderWorkspace({
+      athletesList: roster,
+      attendanceToday: () => jsonResponse({
+        ok: true,
+        day: '2026-08-28',
+        covered: ['ath_1', 'ath_2'],
+        marks: [{ athlete_id: 'ath_1', status: 'present', source: 'activity_log' }],
+      }),
+    });
+
+    expect(screen.queryByText('Present')).not.toBeNull();
+  });
+
+  test('an athlete nobody has marked reads "No mark yet", never "Absent"', async () => {
+    /* THE ONE THAT MATTERS MOST. Before the register is taken every athlete
+       is in this state. Rendering it as Absent would report a child missed
+       training because a coach had not got to the tablet yet. */
+    await renderWorkspace({
+      athletesList: roster,
+      attendanceToday: () => jsonResponse({
+        ok: true,
+        day: '2026-08-28',
+        covered: ['ath_1', 'ath_2'],
+        marks: [{ athlete_id: 'ath_1', status: 'present', source: 'activity_log' }],
+      }),
+    });
+
+    expect(screen.queryByText('No mark yet')).not.toBeNull();
+    expect(screen.queryByText('Absent')).toBeNull();
+  });
+
+  test('a register that could not be read says so, for everyone', async () => {
+    await renderWorkspace({
+      athletesList: roster,
+      attendanceToday: () => jsonResponse({}, { ok: false, status: 503 }),
+    });
+
+    /* Everyone, not just the unmarked: the read that failed covered the whole
+       roster, so no athlete's attendance on this screen rests on anything. */
+    expect(screen.queryAllByText('Register unavailable')).toHaveLength(2);
+    expect(screen.queryByText('No mark yet')).toBeNull();
+    expect(screen.queryByText('Absent')).toBeNull();
+  });
+
+  test('a failed register does not take the roster down with it', async () => {
+    // The reason this is a separate read from the athlete list at all: the
+    // names are the more important half and must survive.
+    await renderWorkspace({
+      athletesList: roster,
+      attendanceToday: () => jsonResponse({}, { ok: false, status: 503 }),
+    });
+
+    expect(screen.queryByText('Jordan P.')).not.toBeNull();
+    expect(screen.queryByText('Rosa D.')).not.toBeNull();
+  });
+
+  test('a genuinely absent athlete is still shown as absent', async () => {
+    /* The other direction. A feed that rendered everything as "No mark yet"
+       would satisfy every test above while telling a coach nothing -- a
+       recorded absence is a real mark and must survive. */
+    await renderWorkspace({
+      athletesList: roster,
+      attendanceToday: () => jsonResponse({
+        ok: true,
+        day: '2026-08-28',
+        covered: ['ath_1', 'ath_2'],
+        marks: [
+          { athlete_id: 'ath_1', status: 'absent', source: 'scheduler_attendance' },
+          { athlete_id: 'ath_2', status: 'excused', source: 'attendance' },
+        ],
+      }),
+    });
+
+    expect(screen.queryByText('Absent')).not.toBeNull();
+    expect(screen.queryByText('Excused')).not.toBeNull();
+    expect(screen.queryByText('Register unavailable')).toBeNull();
+  });
+});
+
+/*
+ * THE ROSTER IS WIDER THAN THE REGISTER, AND THE GAP IS A THIRD STATE.
+ *
+ * /api/pilot/athletes/list returns EVERY athlete in the organization to a
+ * coach -- it is a display projection and redacts fields rather than rows.
+ * The register is read through the access contract instead, so it is
+ * deliberately narrower. An athlete on screen but outside it was never asked
+ * about, and the first version of this feature rendered them "No mark yet":
+ * the platform claiming it looked, about a child it never looked at.
+ *
+ * Found by a review bot on the pull request, verified against the roster
+ * query, and fixed here rather than argued with.
+ */
+describe('an athlete the register did not cover is not an athlete with no mark', () => {
+  const wholeOrgRoster = () => jsonResponse({
+    items: [
+      { athlete_id: 'ath_1', full_name: 'Jordan P.' },
+      { athlete_id: 'ath_2', full_name: 'Rosa D.' },
+      // On the roster, outside this coach's authorized set.
+      { athlete_id: 'ath_other', full_name: 'Sam K.' },
+    ],
+  });
+
+  test('an athlete outside the covered set reads "Not your athlete", never "No mark yet"', async () => {
+    await renderWorkspace({
+      athletesList: wholeOrgRoster,
+      attendanceToday: () => jsonResponse({
+        ok: true,
+        day: '2026-08-28',
+        covered: ['ath_1', 'ath_2'],
+        marks: [{ athlete_id: 'ath_1', status: 'present', source: 'activity_log' }],
+      }),
+    });
+
+    expect(screen.queryByText('Not your athlete')).not.toBeNull();
+    // ath_2 IS covered and unmarked, so exactly one "No mark yet" -- the
+    // uncovered athlete must not have joined it.
+    expect(screen.queryAllByText('No mark yet')).toHaveLength(1);
+  });
+
+  test('a covered athlete with no mark still reads "No mark yet"', async () => {
+    /* The other direction. A build that rendered everything unmarked as
+       "Not your athlete" would satisfy the test above while telling a coach
+       their own athletes are somebody else's. */
+    await renderWorkspace({
+      athletesList: wholeOrgRoster,
+      attendanceToday: () => jsonResponse({
+        ok: true,
+        day: '2026-08-28',
+        covered: ['ath_1', 'ath_2', 'ath_other'],
+        marks: [],
+      }),
+    });
+
+    expect(screen.queryAllByText('No mark yet')).toHaveLength(3);
+    expect(screen.queryByText('Not your athlete')).toBeNull();
+  });
+
+  test('a failed register still covers everyone, uncovered athletes included', async () => {
+    // The read failed, so nothing on this column rests on anything -- the
+    // covered/uncovered distinction is not knowable either.
+    await renderWorkspace({
+      athletesList: wholeOrgRoster,
+      attendanceToday: () => jsonResponse({}, { ok: false, status: 503 }),
+    });
+
+    expect(screen.queryAllByText('Register unavailable')).toHaveLength(3);
+    expect(screen.queryByText('Not your athlete')).toBeNull();
+    expect(screen.queryByText('No mark yet')).toBeNull();
   });
 });
