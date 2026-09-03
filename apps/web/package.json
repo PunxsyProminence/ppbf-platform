@@ -378,7 +378,7 @@
     "embedded-postgres": "18.4.0-beta.17",
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
-    "jest": "^30.4.2",
+    "jest": "^30.5.0",
     "jest-environment-jsdom": "^30.4.1",
     "tailwindcss": "^4.3.3",
     "ts-jest": "^29.4.12",
