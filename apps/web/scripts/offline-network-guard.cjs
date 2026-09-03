@@ -1,6 +1,7 @@
 /* Loaded only by `npm run offline`. Refuses every non-loopback connection. */
 'use strict';
 
+/* eslint-disable @typescript-eslint/no-require-imports */
 const net = require('node:net');
 const http = require('node:http');
 const https = require('node:https');
