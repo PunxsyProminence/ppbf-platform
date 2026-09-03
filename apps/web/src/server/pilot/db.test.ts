@@ -139,6 +139,51 @@ describe('resolveSslConfig', () => {
     expect(resolveSslConfig({ nodeEnv: 'test', disableSslFlag: 'true' })).toBe(false);
   });
 
+  test('the offline launcher marker disables TLS only in development', () => {
+    expect(resolveSslConfig({ nodeEnv: 'development', offlineRuntimeFlag: 'true', connectionString: 'postgres://offline:offline@127.0.0.1:5432/postgres' })).toBe(false);
+  });
+
+  test.each([
+    'postgres://offline:offline@127.0.0.1:5432/postgres',
+    'postgresql://offline:offline@127.1.2.3:5432/postgres',
+    'postgres://offline:offline@localhost:5432/postgres',
+    'postgres://offline:offline@[::1]:5432/postgres',
+  ])('offline development disables TLS only for loopback Postgres target %s', (connectionString) => {
+    expect(resolveSslConfig({
+      nodeEnv: 'development',
+      offlineRuntimeFlag: 'true',
+      connectionString,
+    })).toBe(false);
+  });
+
+  test.each([
+    'postgres://offline:offline@example.com:5432/postgres',
+    'postgres://offline:offline@8.8.8.8:5432/postgres',
+    'postgres://offline:offline@127.example.com:5432/postgres',
+    'https://127.0.0.1/postgres',
+    'not-a-postgres-url',
+  ])('offline marker cannot disable TLS for non-loopback or invalid target %s', (connectionString) => {
+    expect(resolveSslConfig({
+      nodeEnv: 'development',
+      offlineRuntimeFlag: 'true',
+      connectionString,
+    })).toEqual({ rejectUnauthorized: true });
+  });
+
+  test('offline marker without a database target cannot disable TLS', () => {
+    expect(resolveSslConfig({
+      nodeEnv: 'development',
+      offlineRuntimeFlag: 'true',
+      connectionString: undefined,
+    })).toEqual({ rejectUnauthorized: true });
+  });
+  test.each(['production', 'staging', 'test'])(
+    'NODE_ENV=%s ignores the offline launcher marker -- TLS stays on',
+    (nodeEnv) => {
+      expect(resolveSslConfig({ nodeEnv, offlineRuntimeFlag: 'true' })).toEqual({ rejectUnauthorized: true });
+    },
+  );
+
   test.each(['production', 'staging'])(
     'NODE_ENV=%s ignores the disable flag even if present -- production/staging can never downgrade TLS',
     (nodeEnv) => {

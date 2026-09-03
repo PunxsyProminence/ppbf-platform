@@ -54,6 +54,20 @@ let helper: {
   listMigrationFiles: (infraDir?: string) => Promise<string[]>;
 };
 
+// BASE-02 diagnostic-only addition: keeps serverProcess.stdout actively
+// drained for the whole fixture run instead of leaving it unconsumed after
+// readiness (see beforeAll). Bounded so this cannot grow memory without
+// limit. Not otherwise inspected by this run -- draining is the variable
+// under test, not the buffer's contents.
+const SERVER_LOG_RING_BUFFER_MAX_LINES = 4_000;
+const serverLogRingBuffer: string[] = [];
+function pushServerLogLine(line: string) {
+  serverLogRingBuffer.push(line);
+  if (serverLogRingBuffer.length > SERVER_LOG_RING_BUFFER_MAX_LINES) {
+    serverLogRingBuffer.shift();
+  }
+}
+
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
 }
@@ -98,19 +112,26 @@ beforeAll(async () => {
     stderrOutput += chunk.toString();
   });
 
+  // BASE-02 diagnostic: this readline interface is deliberately never
+  // closed (previously: rl.close() on the ready line), so serverProcess.stdout
+  // stays actively drained for the entire fixture run instead of sitting
+  // unconsumed after readiness. Everything else -- readiness detection,
+  // the timeout guard, the exit rejection -- is unchanged.
+  const rl = readline.createInterface({ input: serverProcess.stdout });
+  rl.on('line', pushServerLogLine);
+
   await new Promise<void>((resolve, reject) => {
-    const rl = readline.createInterface({ input: serverProcess.stdout });
     const timeout = setTimeout(() => {
-      rl.close();
       reject(new Error(`Embedded Postgres did not become ready in time. stderr:\n${stderrOutput}`));
     }, 120_000);
-    rl.on('line', (line) => {
+    const readyListener = (line: string) => {
       if (line.includes('EMBEDDED_PG_READY')) {
         clearTimeout(timeout);
-        rl.close();
+        rl.off('line', readyListener);
         resolve();
       }
-    });
+    };
+    rl.on('line', readyListener);
     serverProcess.once('exit', (code) => {
       clearTimeout(timeout);
       reject(new Error(`Embedded Postgres exited early (code ${code}). stderr:\n${stderrOutput}`));
@@ -204,6 +225,97 @@ describe('the schema production runs can be built from this repository', () => {
         .rejects.toThrow(/deliberately_broken/);
     } finally {
       await fs.rm(brokenDir, { recursive: true, force: true });
+      await client.end();
+    }
+  });
+});
+
+describe('offline reused database schema evolution', () => {
+  test('requires an explicit baseline for a reused database without migration history', async () => {
+    const client = await freshEmptyDatabase('offline_reuse_requires_baseline');
+    const evolutionDir = path.join(os.tmpdir(), `ppbf-offline-evolution-empty-${Date.now()}`);
+    const evolutionPath = path.resolve(__dirname, '../../../scripts/lib/offline-db-evolution.mjs');
+    const evolution = await nativeDynamicImport(pathToFileURL(evolutionPath).href) as unknown as {
+      applyPendingMigrations: (client: Client, opts: { infraDir: string }) => Promise<{ applied: string[]; rounds: number }>;
+    };
+
+    try {
+      await fs.mkdir(evolutionDir, { recursive: true });
+      await fs.writeFile(
+        path.join(evolutionDir, '001_existing.sql'),
+        'create schema if not exists pilot;\ncreate table pilot.base02_reuse_fixture (id text primary key);\n',
+      );
+      await client.query('create schema pilot');
+      await client.query('create table pilot.base02_reuse_fixture (id text primary key)');
+
+      await expect(
+        evolution.applyPendingMigrations(client, { infraDir: evolutionDir }),
+      ).rejects.toThrow(/Explicit baseline is required/);
+    } finally {
+      await fs.rm(evolutionDir, { recursive: true, force: true });
+      await client.end();
+    }
+  });
+
+  test('applies only new migrations, preserves existing rows, and is idempotent', async () => {
+    const client = await freshEmptyDatabase('offline_reuse_evolution');
+    const evolutionDir = path.join(os.tmpdir(), `ppbf-offline-evolution-${Date.now()}`);
+    const evolutionPath = path.resolve(__dirname, '../../../scripts/lib/offline-db-evolution.mjs');
+    const evolution = await nativeDynamicImport(pathToFileURL(evolutionPath).href) as unknown as {
+      baselineMigrationHistory: (client: Client, opts: { infraDir: string }) => Promise<{ recorded: number; total: number }>;
+      applyPendingMigrations: (client: Client, opts: { infraDir: string }) => Promise<{ applied: string[]; rounds: number }>;
+    };
+
+    const firstMigration = [
+      'create schema if not exists pilot;',
+      'create table pilot.base02_reuse_fixture (id text primary key, value text not null);',
+    ].join('\n');
+
+    try {
+      await fs.mkdir(evolutionDir, { recursive: true });
+      await fs.writeFile(path.join(evolutionDir, '001_existing.sql'), firstMigration);
+      await client.query(firstMigration);
+      await client.query(
+        "insert into pilot.base02_reuse_fixture (id, value) values ('sentinel', 'preserve-me')",
+      );
+
+      const baseline = await evolution.baselineMigrationHistory(client, { infraDir: evolutionDir });
+      expect(baseline.recorded).toBe(1);
+
+      await fs.writeFile(
+        path.join(evolutionDir, '002_new.sql'),
+        [
+          'alter table pilot.base02_reuse_fixture add column evolved text;',
+          "update pilot.base02_reuse_fixture set evolved = 'applied' where id = 'sentinel';",
+        ].join('\n'),
+      );
+
+      const first = await evolution.applyPendingMigrations(client, { infraDir: evolutionDir });
+      expect(first.applied).toEqual(['002_new.sql']);
+
+      const preserved = await client.query<{ id: string; value: string; evolved: string }>(
+        "select id, value, evolved from pilot.base02_reuse_fixture where id = 'sentinel'",
+      );
+      expect(preserved.rows).toEqual([{
+        id: 'sentinel',
+        value: 'preserve-me',
+        evolved: 'applied',
+      }]);
+
+      const second = await evolution.applyPendingMigrations(client, { infraDir: evolutionDir });
+      expect(second.applied).toEqual([]);
+      expect(second.rounds).toBe(0);
+
+      await fs.writeFile(
+        path.join(evolutionDir, '001_existing.sql'),
+        firstMigration + '\n-- changed after baseline\n',
+      );
+
+      await expect(
+        evolution.applyPendingMigrations(client, { infraDir: evolutionDir }),
+      ).rejects.toThrow(/changed after it was recorded/);
+    } finally {
+      await fs.rm(evolutionDir, { recursive: true, force: true });
       await client.end();
     }
   });

@@ -45,6 +45,9 @@ const pg = new EmbeddedPostgres({
   password: 'postgres',
   port,
   persistent: true, // this script owns cleanup of dataDir, not embedded-postgres
+  // Windows otherwise inherits CP-1252; repository migrations are UTF-8.
+  // Matches offline-runtime.mjs's existing initdbFlags for the same reason.
+  initdbFlags: ['--encoding=UTF8'],
 });
 
 async function shutdown(exitCode) {

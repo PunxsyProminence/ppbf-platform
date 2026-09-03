@@ -23,7 +23,10 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
-import { Client } from 'pg';
+import { Client, type PoolClient } from 'pg';
+
+import { seedDefaultClearanceTypes } from './clearanceTypeSeeds';
+import { seedDefaultSafetyGates } from './safetyGateSeeds';
 
 jest.setTimeout(180_000);
 
@@ -91,6 +94,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let seedsSql: string;
 let baseSchemaSql: string;
 let clearanceRegisterSql: string;
+let safetyGateMatrixSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 
 function connectionStringFor(database: string): string {
@@ -114,7 +118,11 @@ async function findFreePort(): Promise<number> {
   });
 }
 
-async function freshDatabase(name: string, withClearanceRegister = true): Promise<Client> {
+async function freshDatabase(
+  name: string,
+  withClearanceRegister = true,
+  withSafetyGateMatrix = false,
+): Promise<Client> {
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
   await admin.connect();
   await admin.query(`drop database if exists ${name}`);
@@ -126,6 +134,9 @@ async function freshDatabase(name: string, withClearanceRegister = true): Promis
   await client.query(baseSchemaSql);
   if (withClearanceRegister) {
     await client.query(clearanceRegisterSql);
+  }
+  if (withSafetyGateMatrix) {
+    await client.query(safetyGateMatrixSql);
   }
   for (const organizationId of [ORG_A, ORG_B]) {
     await client.query(
@@ -191,6 +202,8 @@ beforeAll(async () => {
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   clearanceRegisterSql = await fs.readFile(
     path.join(INFRA_DIR, 'pilot_slice_postgres_clearance_register_migration.sql'), 'utf8');
+  safetyGateMatrixSql = await fs.readFile(
+    path.join(INFRA_DIR, 'pilot_slice_postgres_safety_gate_matrix_migration.sql'), 'utf8');
   seedsSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
@@ -401,6 +414,100 @@ describe('clearance type seeds against real Postgres', () => {
          where pc.clearance_id = 'clr-seeded'`,
       );
       expect(rows).toEqual([{ name: 'SafeSport Training' }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // The other half of the fix: a gym created through the application gets its
+  // clearance types at creation, not at the next migration run.
+  test('seeding a newly created organization gives it all four defaults, scoped to itself', async () => {
+    const client = await freshDatabase('ppbf_test_ct_seeds_new_org');
+    try {
+      await applyMigrationTransaction(client, seedsSql);
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status)
+         values ('org-brand-new', 'Brand New Gym', 'active')`,
+      );
+      expect(await typesFor(client, 'org-brand-new')).toHaveLength(0);
+
+      await seedDefaultClearanceTypes('org-brand-new', client as unknown as PoolClient);
+
+      const newOrgRows = await typesFor(client, 'org-brand-new');
+      expect(newOrgRows).toHaveLength(DEFAULT_TYPES.length);
+      expect(newOrgRows.map((row) => row.name).sort()).toEqual(
+        DEFAULT_TYPES.map((type) => type.name).sort(),
+      );
+
+      // Organization-scoped: seeding the new org must not touch the two
+      // organizations the migration already seeded.
+      const orgARows = await typesFor(client, ORG_A);
+      expect(orgARows).toHaveLength(DEFAULT_TYPES.length);
+      expect(orgARows.every((row) => row.clearance_type_id.endsWith(`_${ORG_A}`))).toBe(true);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('repeat provisioning of a newly created organization does not duplicate', async () => {
+    const client = await freshDatabase('ppbf_test_ct_seeds_new_org_idempotent');
+    try {
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status)
+         values ('org-brand-new-2', 'Brand New Gym Two', 'active')`,
+      );
+
+      await seedDefaultClearanceTypes('org-brand-new-2', client as unknown as PoolClient);
+      await seedDefaultClearanceTypes('org-brand-new-2', client as unknown as PoolClient);
+      await seedDefaultClearanceTypes('org-brand-new-2', client as unknown as PoolClient);
+
+      expect(await typesFor(client, 'org-brand-new-2')).toHaveLength(DEFAULT_TYPES.length);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // createOrganization() calls seedDefaultSafetyGates and
+  // seedDefaultClearanceTypes with the SAME client, inside the SAME
+  // transaction (auth.ts). This exercises that exact pairing against a real
+  // Postgres transaction to prove the new call does not disturb the existing
+  // safety-gate provisioning it now runs alongside.
+  //
+  // TRANSACTION_ATOMICITY_PROOF: SOURCE_PROVEN, not TESTED end-to-end. This
+  // proves both calls succeed together inside one real transaction and both
+  // commit. It does not force a mid-transaction failure and assert a
+  // rollback -- no existing project pattern injects a runtime failure into
+  // withTransaction without production-only test hooks, and adding one was
+  // out of scope for this bounded change. Atomicity on the failure path
+  // rests on seedDefaultClearanceTypes receiving and using
+  // createOrganization's own transaction client exactly like
+  // seedDefaultSafetyGates and seedDefaultComplianceRules already do --
+  // visible directly in auth.ts and unchanged by this diff. Compliance-rule
+  // provisioning is not re-exercised in this file: it already has its own
+  // dedicated regression coverage in complianceRuleSeeds.pg.test.ts, and
+  // createOrganization's call to it was not touched by this change.
+  test('a newly created organization gets its clearance types alongside its existing safety-gate defaults, in one transaction', async () => {
+    const client = await freshDatabase('ppbf_test_ct_seeds_with_safety_gates', true, true);
+    try {
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status)
+         values ('org-brand-new-3', 'Brand New Gym Three', 'active')`,
+      );
+
+      await client.query('BEGIN');
+      await seedDefaultSafetyGates('org-brand-new-3', client as unknown as PoolClient);
+      await seedDefaultClearanceTypes('org-brand-new-3', client as unknown as PoolClient);
+      await client.query('COMMIT');
+
+      expect(await typesFor(client, 'org-brand-new-3')).toHaveLength(DEFAULT_TYPES.length);
+      const { rows: gateRows } = await client.query(
+        `select gate_key from pilot.safety_gates where organization_id = $1 order by gate_key`,
+        ['org-brand-new-3'],
+      );
+      expect(gateRows.map((row: { gate_key: string }) => row.gate_key)).toEqual([
+        'contact_medical_clearance',
+        'training_hold',
+      ]);
     } finally {
       await client.end();
     }

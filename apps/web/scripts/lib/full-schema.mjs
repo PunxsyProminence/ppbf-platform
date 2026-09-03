@@ -64,7 +64,24 @@ export async function listMigrationFiles(infraDir = DEFAULT_INFRA_DIR) {
  * silence about it would defeat the point of this file.
  */
 export async function applyFullSchema(client, { infraDir = DEFAULT_INFRA_DIR } = {}) {
-  await client.query(await fs.readFile(path.join(infraDir, BASE_SCHEMA_FILE), 'utf8'));
+  const trace = process.env.PPBF_FULL_SCHEMA_TRACE === '1';
+  const statementTimeoutMs = Number(process.env.PPBF_FULL_SCHEMA_STATEMENT_TIMEOUT_MS ?? 0);
+  if (!Number.isInteger(statementTimeoutMs) || statementTimeoutMs < 0) {
+    throw new Error('PPBF_FULL_SCHEMA_STATEMENT_TIMEOUT_MS must be a non-negative integer.');
+  }
+  // BASE02_BASE_SCHEMA_DIAGNOSTIC: env-gated diagnostic only.
+  if (statementTimeoutMs > 0) {
+    await client.query(`SET statement_timeout = ${statementTimeoutMs}`);
+  }
+  if (trace) console.error(`[full-schema] base-attempt file=${BASE_SCHEMA_FILE}`);
+  try {
+    await client.query(await fs.readFile(path.join(infraDir, BASE_SCHEMA_FILE), 'utf8'));
+    if (trace) console.error(`[full-schema] base-applied file=${BASE_SCHEMA_FILE}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message.split('\n')[0] : String(error);
+    if (trace) console.error(`[full-schema] base-failed file=${BASE_SCHEMA_FILE} error=${message}`);
+    throw error;
+  }
 
   const files = await listMigrationFiles(infraDir);
   const sql = new Map();
@@ -83,15 +100,22 @@ export async function applyFullSchema(client, { infraDir = DEFAULT_INFRA_DIR } =
     let placedThisRound = 0;
 
     for (const file of pending) {
+      if (trace) console.error(`[full-schema] attempt round=${rounds} migration=${file}`);
       try {
         await client.query('BEGIN');
+        if (statementTimeoutMs > 0) {
+          await client.query(`SET LOCAL statement_timeout = ${statementTimeoutMs}`);
+        }
         await client.query(sql.get(file));
         await client.query('COMMIT');
+        if (trace) console.error(`[full-schema] applied round=${rounds} migration=${file}`);
         order.push(file);
         placedThisRound += 1;
       } catch (error) {
         await client.query('ROLLBACK').catch(() => {});
-        lastError.set(file, error instanceof Error ? error.message.split('\n')[0] : String(error));
+        const message = error instanceof Error ? error.message.split('\n')[0] : String(error);
+        lastError.set(file, message);
+        if (trace) console.error(`[full-schema] failed round=${rounds} migration=${file} error=${message}`);
         stillPending.push(file);
       }
     }
