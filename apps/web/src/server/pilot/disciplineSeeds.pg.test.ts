@@ -54,6 +54,7 @@ const MIGRATIONS = [
   // migrationDispatchCoverage.test.ts exists to catch.
   'pilot_slice_postgres_activity_log_migration.sql',
   'pilot_slice_postgres_drill_library_v3_migration.sql',
+  'pilot_slice_postgres_clearance_register_migration.sql',
   'pilot_slice_postgres_multidiscipline_migration.sql',
   'pilot_slice_postgres_session_scripts_migration.sql',
   'pilot_slice_postgres_competence_cohorts_migration.sql',
