@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -46,10 +47,59 @@ describe('offline runtime environment boundary', () => {
       GRAPH_CLIENT_SECRET: 'real-graph-secret',
       AZURE_AI_ENDPOINT: 'https://example.openai.azure.com',
       PAYMENT_PLATFORM_SECRET_KEY: 'real-payment-secret',
+      // F1: a browser-facing value, not a credential, but the same escape
+      // shape -- an external NEXT_PUBLIC_API_BASE inherited here would route
+      // offline browser traffic to that origin.
+      NEXT_PUBLIC_API_BASE: 'https://app-ppbf-production.example.invalid',
     })})`);
 
     for (const key of keys) {
       expect(env).toHaveProperty(key, '');
+    }
+
+    // Explicit beyond the generic loop above: this is the exact property F1
+    // depends on, named directly so a future reader does not have to infer
+    // it from BLOCKED_EXTERNAL_ENV_KEYS's contents.
+    expect(env).toHaveProperty('NEXT_PUBLIC_API_BASE', '');
+  });
+
+  test('a real .env.local cannot repopulate NEXT_PUBLIC_API_BASE once the offline child environment blanks it', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-offline-env-f1-'));
+    try {
+      fs.writeFileSync(
+        path.join(tempDir, '.env.local'),
+        'NEXT_PUBLIC_API_BASE=https://app-ppbf-production.example.invalid\n',
+      );
+
+      const script = `
+        import { buildOfflineChildEnv } from ${JSON.stringify(helperUrl)};
+        import nextEnv from '@next/env';
+        const { loadEnvConfig } = nextEnv;
+
+        // Exactly what the offline child receives at spawn: buildOfflineChildEnv's
+        // output becomes this process's own process.env, the same way Node's
+        // child_process.spawn({ env }) replaces a child's entire environment.
+        const childEnv = buildOfflineChildEnv({ PATH: process.env.PATH });
+        for (const [key, value] of Object.entries(childEnv)) {
+          process.env[key] = value;
+        }
+
+        loadEnvConfig(${JSON.stringify(tempDir)}, true, console, true);
+        process.stdout.write(JSON.stringify({ finalValue: process.env.NEXT_PUBLIC_API_BASE }));
+      `;
+
+      const result = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+        encoding: 'utf8',
+        maxBuffer: 8 * 1024 * 1024,
+      }));
+
+      // The real, installed @next/env loader read the disposable .env.local
+      // above and still could not adopt its value: NEXT_PUBLIC_API_BASE was
+      // already present (blank) in process.env before loadEnvConfig ran, and
+      // @next/env's own precedence rule never overrides an already-defined key.
+      expect(result.finalValue).toBe('');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
 

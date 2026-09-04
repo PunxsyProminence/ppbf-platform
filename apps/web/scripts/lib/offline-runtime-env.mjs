@@ -72,6 +72,15 @@ export const BLOCKED_EXTERNAL_ENV_KEYS = Object.freeze([
   'PAYMENT_PLATFORM_WEBHOOK_SECRET',
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
+
+  // Not a credential, but the same escape shape: apiBase() (src/lib/apiBase.ts)
+  // reads this unvalidated at browser-bundle time, so a value adopted from a
+  // developer's own .env.local here would route offline browser traffic to
+  // that external origin. Blank it for the same reason as the keys above --
+  // so Next's own .env loading cannot repopulate it -- and no earlier than
+  // this array, because a key already present when Next loads is the one
+  // thing its precedence rules cannot override.
+  'NEXT_PUBLIC_API_BASE',
 ]);
 
 export function buildOfflineChildEnv(baseEnv = {}) {
