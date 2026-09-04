@@ -73,4 +73,43 @@ http.get = guardRequest(http.get);
 https.request = guardRequest(https.request);
 https.get = guardRequest(https.get);
 
+/**
+ * Node's global fetch (backed internally by Undici) is the only fetch-shaped
+ * API this codebase actually uses -- no direct Undici import exists anywhere
+ * in the tracked source, so wrapping this one global is the complete guard.
+ *
+ * Unlike http.request/https.request, fetch's own contract is always a
+ * Promise -- a blocked call must reject, not throw synchronously, or an
+ * ordinary `fetch(url).catch(...)` caller would never observe the failure.
+ */
+function extractFetchHost(input) {
+  if (typeof input === 'string') {
+    try {
+      return new URL(input).hostname;
+    } catch {
+      return undefined;
+    }
+  }
+  if (input instanceof URL) {
+    return input.hostname;
+  }
+  if (input && typeof input === 'object' && typeof input.url === 'string') {
+    try {
+      return new URL(input.url).hostname;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+if (typeof globalThis.fetch === 'function') {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = function guardedFetch(input, init) {
+    const host = extractFetchHost(input);
+    if (!isLoopback(host)) return Promise.reject(refused(host));
+    return originalFetch.call(this, input, init);
+  };
+}
+
 module.exports = { isLoopback, isLiteralIpv4 };

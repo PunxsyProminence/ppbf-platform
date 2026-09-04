@@ -41,6 +41,33 @@ function requestOutcome(target: string) {
   }));
 }
 
+function fetchOutcome(target: string) {
+  const script = `
+    (async () => {
+      let callCount = 0;
+      globalThis.fetch = async function fakeFetch() {
+        callCount += 1;
+        return { ok: true, marker: 'delegate-response' };
+      };
+      require(${JSON.stringify(guardPath)});
+      const result = {};
+      try {
+        result.value = await globalThis.fetch(${JSON.stringify(target)});
+        result.outcome = 'resolved';
+      } catch (error) {
+        result.outcome = 'rejected';
+        result.code = error && error.code;
+      }
+      result.callCount = callCount;
+      process.stdout.write(JSON.stringify(result));
+    })();
+  `;
+  return JSON.parse(execFileSync(process.execPath, ['-e', script], {
+    encoding: 'utf8',
+    maxBuffer: 8 * 1024 * 1024,
+  }));
+}
+
 describe('offline network guard loopback', () => {
   test('localhost, ::1, and literal 127.0.0.0/8 addresses are allowed', () => {
     expect(evaluateGuard("m.isLoopback('localhost')")).toBe(true);
@@ -78,5 +105,25 @@ describe('offline network guard loopback', () => {
       https: 'blocked',
       socket: 'blocked',
     });
+  });
+});
+
+describe('offline network guard fetch', () => {
+  // The fake fetch is installed BEFORE the guard is required, so the guard
+  // captures the fake -- never a real network-capable implementation -- as
+  // its delegate. No DNS lookup or real connection is reachable from either
+  // case below, regardless of the target string's syntactic shape.
+  test('a non-loopback fetch is rejected before the original fetch delegate is ever called', () => {
+    const result = fetchOutcome('http://example.com/');
+    expect(result.outcome).toBe('rejected');
+    expect(result.code).toBe('PPBF_OFFLINE_NETWORK_BLOCKED');
+    expect(result.callCount).toBe(0);
+  });
+
+  test('a loopback fetch delegates to the original fetch exactly once, with its result passed through', () => {
+    const result = fetchOutcome('http://127.0.0.1:1/');
+    expect(result.outcome).toBe('resolved');
+    expect(result.value).toEqual({ ok: true, marker: 'delegate-response' });
+    expect(result.callCount).toBe(1);
   });
 });
