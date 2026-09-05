@@ -27,10 +27,38 @@ npm --workspace web run offline -- restart --port 3111
 It cannot be combined with `stop` or `status`.
 
 The launcher writes `.ppbf-offline/runtime-state.json` with the worktree path
-and process ids. `stop` kills those processes, then on Windows also sweeps
-processes whose command line both contains this checkout path and an offline
-runtime marker (`offline-runtime.mjs`, `.ppbf-offline`, `.next-offline`, or
-`embedded-postgres`). It does not match a hardcoded machine path.
+and process ids. `stop` never signals a process on the strength of a recorded
+process id alone. For every candidate it first reads that process's current
+metadata and requires the command line or executable to contain both this
+checkout path and an offline runtime marker (`offline-runtime.mjs`,
+`.ppbf-offline`, `.next-offline`, `embedded-postgres`, or `node_modules/next/`).
+It does not match a hardcoded machine path. How that metadata is read differs by
+platform — a process query on Windows, `ps` elsewhere — but the ownership rule
+itself is the same everywhere, and a lookup that fails, times out, returns
+nothing, or returns too little leaves ownership unproven. Unproven is never
+treated as owned. Force termination repeats the check immediately beforehand, so
+a process id recycled during the shutdown window is not killed.
+
+On Windows, `stop` additionally discovers whatever process is listening on the
+recorded app port and applies the same ownership rule to it.
+
+The launcher itself is usually stopped indirectly: it runs `node
+scripts/offline-runtime.mjs`, whose command line carries no checkout path, so it
+cannot be proven owned and is never signalled. Stopping its Next child triggers
+the launcher's own exit path, which stops PostgreSQL, restores generated files,
+removes the runtime state and exits.
+
+If a process id recorded in runtime state is still alive once that has settled,
+and PPBF could not prove it belongs to this checkout, `stop` fails, the state
+file is preserved, and `start` and `restart` are blocked. PPBF cannot tell an
+unprovable PPBF process apart from an unrelated process that has inherited the
+same id, so it refuses to guess in either direction. Recover in one of two ways:
+end the process yourself if it is this checkout's offline runtime and rerun the
+command; or, only after positively checking the live process and confirming it
+is unrelated to this checkout, delete `.ppbf-offline/runtime-state.json` by hand.
+Being unable to prove ownership is not the same as having shown the process is
+unrelated, so do not delete the state file merely because the situation is
+unclear — that is the one record of which processes this checkout started.
 
 ## Safety boundary
 

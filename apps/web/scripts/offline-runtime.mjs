@@ -68,10 +68,30 @@ async function hashPin(pin) {
 
 async function stopThisCheckoutRuntime() {
   const state = await readRuntimeState(stateFile, repoDir);
-  const remaining = await stopRecordedProcesses(state, databaseDir, { repoDir });
+  const { unstopped, ambiguous } = await stopRecordedProcesses(state, databaseDir, { repoDir });
+  const problems = [];
 
-  if (remaining.length) {
-    throw new Error(`PPBF offline runtime could not stop owned process(es): ${remaining.join(', ')}. Runtime state was preserved.`);
+  if (unstopped.length) {
+    problems.push(`PPBF proved these processes belong to this checkout but could not stop them: ${unstopped.join(', ')}.`);
+  }
+
+  // Ownership was never proven for these, so they were never signalled. Not
+  // proven owned is not the same as proven unrelated, and the difference is
+  // exactly what stops this message from recommending a blind state delete.
+  if (ambiguous.length) {
+    problems.push(
+      `PPBF did not signal recorded process(es) ${ambiguous.join(', ')}: it could not prove they belong to this checkout. `
+      + 'That is a limit of what PPBF can observe, not a finding that they are unrelated. '
+      + "To recover, either end such a process yourself if it is this checkout's offline runtime and rerun this command, "
+      + 'or, only after independently verifying that a live process is unrelated to this checkout, remove the preserved state file by hand.',
+    );
+  }
+
+  if (problems.length) {
+    throw new Error(
+      `PPBF offline runtime stop did not complete, so start and restart are blocked. ${problems.join(' ')} `
+      + `Runtime state was preserved. State file: ${stateFile}`,
+    );
   }
 
   await removeRuntimeState(stateFile);

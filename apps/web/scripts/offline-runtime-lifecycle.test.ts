@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -424,6 +425,264 @@ describe('recorded PID ownership on Windows', () => {
   });
 });
 
+describe('recorded PID ownership on POSIX', () => {
+  const posixWorktree = '/home/dev/ppbf-platform';
+  const otherPosixCheckout = '/home/dev/ppbf-other';
+
+  const ownedNext = {
+    pid: 4242,
+    commandLine: `node ${posixWorktree}/node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3111`,
+    executablePath: '',
+  };
+  const otherCheckoutNext = {
+    pid: 4242,
+    commandLine: `node ${otherPosixCheckout}/node_modules/next/dist/bin/next dev`,
+    executablePath: '',
+  };
+  const ownedPostgres = {
+    pid: 4242,
+    commandLine: `/opt/pg/bin/postgres -D ${posixWorktree}/.ppbf-offline/postgres -p 5432`,
+    executablePath: '',
+  };
+  const foreignPostgres = {
+    pid: 4242,
+    commandLine: '/usr/lib/postgresql/16/bin/postgres -D /var/lib/postgresql/16/main -p 5432',
+    executablePath: '',
+  };
+  const unrelated = { pid: 4242, commandLine: '/usr/sbin/cron -f', executablePath: '' };
+  // The real launcher argv: npm runs `node scripts/offline-runtime.mjs` from
+  // apps/web, so it carries the runtime marker but never the checkout path.
+  const launcherAsActuallyLaunched = {
+    pid: 4242,
+    commandLine: 'node scripts/offline-runtime.mjs',
+    executablePath: '',
+  };
+
+  function posixStop(options: {
+    launcherPid?: number | null;
+    nextPid?: number | null;
+    postgresPid?: number | null;
+    lookups?: Record<string, unknown>;
+    secondLookups?: Record<string, unknown>;
+    throwOnLookup?: number[];
+    survivors?: number[];
+    alivePids?: number[];
+  }) {
+    const {
+      launcherPid = null, nextPid = null, postgresPid = null,
+      lookups = {}, secondLookups = {}, throwOnLookup = [], survivors = [], alivePids = [],
+    } = options;
+
+    return evaluateScript(`
+      const signaled = [];
+      const lookupCounts = {};
+      const first = ${JSON.stringify(lookups)};
+      const second = ${JSON.stringify(secondLookups)};
+      const throwOn = ${JSON.stringify(throwOnLookup)};
+      const survivors = ${JSON.stringify(survivors)};
+      const alivePids = ${JSON.stringify(alivePids)};
+
+      const result = await m.stopRecordedProcesses({
+        version: 1,
+        repoDir: ${JSON.stringify(posixWorktree)},
+        appPort: 3111,
+        databasePort: 5432,
+        launcherPid: ${JSON.stringify(launcherPid)},
+        nextPid: ${JSON.stringify(nextPid)},
+        postgresPid: ${JSON.stringify(postgresPid)},
+      }, null, {
+        platform: 'linux',
+        lookupProcess: async (pid) => {
+          if (throwOn.includes(pid)) throw new Error('ps exited non-zero');
+          lookupCounts[pid] = (lookupCounts[pid] ?? 0) + 1;
+          const key = String(pid);
+          if (lookupCounts[pid] > 1 && Object.prototype.hasOwnProperty.call(second, key)) return second[key];
+          return Object.prototype.hasOwnProperty.call(first, key) ? first[key] : null;
+        },
+        signalProcess: (pid, signal) => signaled.push({ pid, signal: signal ?? null }),
+        waitUntilDead: async (pids) => pids.filter((pid) => survivors.includes(pid)),
+        isProcessAlive: (pid) => alivePids.includes(pid),
+      });
+
+      process.stdout.write(JSON.stringify({ signaled, result, lookupCounts }));
+    `);
+  }
+
+  test('a Next process for this checkout is proven and signalled', () => {
+    const out = posixStop({ nextPid: 4242, lookups: { 4242: ownedNext } });
+    expect(out.signaled).toEqual([{ pid: 4242, signal: null }]);
+    expect(out.result).toEqual({ unstopped: [], ambiguous: [] });
+  });
+
+  test('a postgres for this data directory is proven; a foreign postgres is not', () => {
+    expect(posixStop({ postgresPid: 4242, lookups: { 4242: ownedPostgres } }).signaled)
+      .toEqual([{ pid: 4242, signal: null }]);
+    expect(posixStop({ postgresPid: 4242, lookups: { 4242: foreignPostgres } }).signaled)
+      .toEqual([]);
+  });
+
+  test('a process from another checkout is rejected', () => {
+    expect(posixStop({ nextPid: 4242, lookups: { 4242: otherCheckoutNext } }).signaled).toEqual([]);
+  });
+
+  test('a failed, empty, or uninformative lookup never authorizes a signal', () => {
+    expect(posixStop({ nextPid: 4242, throwOnLookup: [4242] }).signaled).toEqual([]);
+    expect(posixStop({ nextPid: 4242, lookups: { 4242: null } }).signaled).toEqual([]);
+    expect(posixStop({
+      nextPid: 4242,
+      lookups: { 4242: { pid: 4242, commandLine: '', executablePath: '' } },
+    }).signaled).toEqual([]);
+  });
+
+  test('a live but unproven recorded PID is never signalled and blocks the lifecycle', () => {
+    const out = posixStop({
+      launcherPid: 4242,
+      lookups: { 4242: unrelated },
+      alivePids: [4242],
+      survivors: [4242],
+    });
+
+    expect(out.signaled).toEqual([]);
+    expect(out.result.ambiguous).toEqual([4242]);
+    expect(out.result.unstopped).toEqual([]);
+  });
+
+  test('the launcher as it is really launched is unproven, so it is never signalled', () => {
+    const out = posixStop({
+      launcherPid: 4242,
+      lookups: { 4242: launcherAsActuallyLaunched },
+      alivePids: [4242],
+      survivors: [4242],
+    });
+
+    expect(out.signaled).toEqual([]);
+    expect(out.result.ambiguous).toEqual([4242]);
+  });
+
+  test('an unproven recorded PID that exits during the bounded wait stops blocking', () => {
+    const out = posixStop({
+      launcherPid: 4242,
+      lookups: { 4242: launcherAsActuallyLaunched },
+      alivePids: [4242],
+      survivors: [],
+    });
+
+    expect(out.signaled).toEqual([]);
+    expect(out.result).toEqual({ unstopped: [], ambiguous: [] });
+  });
+
+  test('force termination requires a second fresh proof, and a survivor still blocks', () => {
+    const out = posixStop({ nextPid: 4242, lookups: { 4242: ownedNext }, survivors: [4242] });
+
+    expect(out.signaled).toEqual([
+      { pid: 4242, signal: null },
+      { pid: 4242, signal: 'SIGKILL' },
+    ]);
+    expect(out.lookupCounts['4242']).toBe(2);
+    expect(out.result.unstopped).toEqual([4242]);
+  });
+
+  test('a PID reused between the two proofs is not force-killed', () => {
+    const out = posixStop({
+      nextPid: 4242,
+      lookups: { 4242: ownedNext },
+      secondLookups: { 4242: unrelated },
+      survivors: [4242],
+    });
+
+    expect(out.signaled).toEqual([{ pid: 4242, signal: null }]);
+    expect(out.lookupCounts['4242']).toBe(2);
+    expect(out.result.unstopped).toEqual([]);
+  });
+
+  test('an unproven discovered postmaster PID is never signalled and never blocks', () => {
+    const databaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-f6-postmaster-'));
+    try {
+      fs.writeFileSync(path.join(databaseDir, 'postmaster.pid'), '4242\n');
+      const out = evaluateScript(`
+        const signaled = [];
+        const result = await m.stopRecordedProcesses({
+          version: 1,
+          repoDir: ${JSON.stringify(posixWorktree)},
+          appPort: 3111,
+          databasePort: 5432,
+          launcherPid: null,
+          nextPid: null,
+          postgresPid: null,
+        }, ${JSON.stringify(databaseDir)}, {
+          platform: 'linux',
+          lookupProcess: async () => (${JSON.stringify(unrelated)}),
+          signalProcess: (pid, signal) => signaled.push({ pid, signal: signal ?? null }),
+          waitUntilDead: async (pids) => [...pids],
+          isProcessAlive: () => true,
+        });
+        process.stdout.write(JSON.stringify({ signaled, result }));
+      `);
+
+      expect(out.signaled).toEqual([]);
+      expect(out.result).toEqual({ unstopped: [], ambiguous: [] });
+    } finally {
+      fs.rmSync(databaseDir, { recursive: true, force: true });
+    }
+  });
+
+  test('a proven-owned discovered PID that survives termination still blocks', () => {
+    const databaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-f6-owned-pg-'));
+    try {
+      fs.writeFileSync(path.join(databaseDir, 'postmaster.pid'), '4242\n');
+      const out = evaluateScript(`
+        const signaled = [];
+        const result = await m.stopRecordedProcesses({
+          version: 1,
+          repoDir: ${JSON.stringify(posixWorktree)},
+          appPort: 3111,
+          databasePort: 5432,
+          launcherPid: null,
+          nextPid: null,
+          postgresPid: null,
+        }, ${JSON.stringify(databaseDir)}, {
+          platform: 'linux',
+          lookupProcess: async () => (${JSON.stringify(ownedPostgres)}),
+          signalProcess: (pid, signal) => signaled.push({ pid, signal: signal ?? null }),
+          waitUntilDead: async (pids) => [...pids],
+          isProcessAlive: () => true,
+        });
+        process.stdout.write(JSON.stringify({ signaled, result }));
+      `);
+
+      expect(out.signaled).toEqual([
+        { pid: 4242, signal: null },
+        { pid: 4242, signal: 'SIGKILL' },
+      ]);
+      expect(out.result.unstopped).toEqual([4242]);
+    } finally {
+      fs.rmSync(databaseDir, { recursive: true, force: true });
+    }
+  });
+
+  test('POSIX process metadata parsing is fail-closed, and truncation cannot prove ownership', () => {
+    const args = `node ${posixWorktree}/node_modules/next/dist/bin/next dev`;
+    expect(evaluate(`m.parsePosixProcessQuery(4242, ${JSON.stringify(`${args}\n`)})`)).toEqual({
+      pid: 4242,
+      commandLine: args,
+      executablePath: '',
+    });
+
+    expect(evaluate('m.parsePosixProcessQuery(4242, "")')).toBe(null);
+    expect(evaluate('m.parsePosixProcessQuery(4242, "   ")')).toBe(null);
+    expect(evaluate(`m.parsePosixProcessQuery(4242, ${JSON.stringify('one\ntwo')})`)).toBe(null);
+    expect(evaluate('m.parsePosixProcessQuery(0, "node x")')).toBe(null);
+
+    // A command line clipped before the checkout path loses evidence; it can
+    // never gain any, so truncation is a false negative and never a false
+    // positive.
+    expect(evaluate(`m.belongsToOfflineRuntime(${JSON.stringify({
+      commandLine: 'node /home/dev/ppbf-pla',
+      repoDir: posixWorktree,
+    })})`)).toBe(false);
+  });
+});
+
 describe('owned app listener cleanup', () => {
   test('Windows listener PID parsing is fail-closed on ambiguity', () => {
     expect(evaluate('m.parseWindowsListenerPid("5001")')).toBe(5001);
@@ -492,8 +751,32 @@ describe('owned app listener cleanup', () => {
 
   test('launcher preserves runtime state when an owned process remains after stop', () => {
     const launcher = fs.readFileSync(path.resolve(__dirname, 'offline-runtime.mjs'), 'utf8');
-    expect(launcher).toContain('const remaining = await stopRecordedProcesses(state, databaseDir, { repoDir });');
+    expect(launcher).toContain('const { unstopped, ambiguous } = await stopRecordedProcesses(state, databaseDir, { repoDir });');
     expect(launcher).toContain('Runtime state was preserved.');
+  });
+
+  test('the launcher only clears runtime state when nothing is left blocking', () => {
+    const launcher = fs.readFileSync(path.resolve(__dirname, 'offline-runtime.mjs'), 'utf8');
+
+    // removeRuntimeState must sit after the throw, so a non-empty blocking set
+    // preserves the file rather than deleting it.
+    const throwIndex = launcher.indexOf('if (problems.length) {');
+    const clearIndex = launcher.indexOf('await removeRuntimeState(stateFile);');
+    expect(throwIndex).toBeGreaterThan(-1);
+    expect(clearIndex).toBeGreaterThan(throwIndex);
+
+    // start and restart both route through the same gate, so the throw blocks them.
+    expect(launcher).toContain('await stopThisCheckoutRuntime();');
+    expect(launcher).toContain('start and restart are blocked');
+  });
+
+  test('the blocking message never tells the operator to delete state when ownership is merely unproven', () => {
+    const launcher = fs.readFileSync(path.resolve(__dirname, 'offline-runtime.mjs'), 'utf8');
+
+    expect(launcher).toContain('could not prove they belong to this checkout');
+    expect(launcher).toContain('not a finding that they are unrelated');
+    expect(launcher).toContain('only after independently verifying');
+    expect(launcher).not.toMatch(/--force|--clear-state|--forget-runtime/);
   });
 });
 

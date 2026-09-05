@@ -139,6 +139,23 @@ export function parseWindowsProcessQuery(stdout) {
   }
 }
 
+/**
+ * POSIX counterpart to parseWindowsProcessQuery. `ps -o args=` prints one line
+ * per process and no header, so anything other than exactly one non-empty line
+ * is ambiguous and proves nothing. Truncation can only drop characters, never
+ * invent a checkout path or a runtime marker, so a clipped command line fails
+ * the ownership test rather than passing it falsely.
+ */
+export function parsePosixProcessQuery(pid, stdout) {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  const lines = String(stdout ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length !== 1) return null;
+  return { pid, commandLine: lines[0], executablePath: '' };
+}
+
 export function windowsListenerPidQueryCommand(port) {
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     throw new Error('windowsListenerPidQueryCommand requires a valid port');
@@ -170,12 +187,21 @@ export function isOwnedOfflineProcess(processInfo, repoDir) {
 }
 
 async function defaultLookupProcess(pid) {
-  if (process.platform !== 'win32') {
-    return isProcessAlive(pid) ? { pid, commandLine: '', executablePath: '' } : null;
-  }
   const { execFile } = await import('node:child_process');
   const { promisify } = await import('node:util');
   const execFileAsync = promisify(execFile);
+
+  if (process.platform !== 'win32') {
+    try {
+      const { stdout } = await execFileAsync('ps', ['-ww', '-p', String(pid), '-o', 'args='], {
+        timeout: 5000,
+      });
+      return parsePosixProcessQuery(pid, stdout);
+    } catch {
+      return null;
+    }
+  }
+
   try {
     const { stdout } = await execFileAsync('powershell', [
       '-NoProfile',
@@ -299,7 +325,15 @@ export async function waitUntilDead(pids, timeoutMs = 8000) {
   return tracked.filter((pid) => isProcessAlive(pid));
 }
 
-async function proveWindowsOwnership(pid, repoDir, lookupProcess) {
+/**
+ * The single ownership gate, used on every platform and at every point a signal
+ * could be sent. Windows and POSIX differ only in how the metadata is acquired;
+ * the decision itself is shared. Anything that is not a positive proof -- a
+ * missing process, a failed or timed-out query, unreadable or ambiguous output,
+ * an absent repoDir -- leaves ownership unproven, and unproven never authorizes
+ * a signal.
+ */
+async function proveOwnership(pid, repoDir, lookupProcess) {
   if (!repoDir) return false;
   let info = null;
   try {
@@ -316,6 +350,7 @@ export async function stopRecordedProcesses(state, databaseDir, options = {}) {
   const lookupProcess = options.lookupProcess ?? defaultLookupProcess;
   const signalProcess = options.signalProcess ?? defaultSignalProcess;
   const wait = options.waitUntilDead ?? waitUntilDead;
+  const alive = options.isProcessAlive ?? isProcessAlive;
   const lookupListenerPid = options.lookupListenerPid
     ?? (options.platform === undefined ? defaultLookupListenerPid : async () => null);
 
@@ -330,58 +365,50 @@ export async function stopRecordedProcesses(state, databaseDir, options = {}) {
     }
   }
 
-  const pids = uniquePids([
-    state?.launcherPid,
-    state?.nextPid,
-    state?.postgresPid,
-    postmasterPid,
-    listenerPid,
-  ]);
+  // A recorded PID was written by this launcher into runtime state and exists
+  // nowhere else, so an unresolved one has to block: deleting the state file
+  // would lose it permanently. A discovered PID is re-read from postmaster.pid
+  // or the listening port on every call, so passing over one loses nothing.
+  const recorded = uniquePids([state?.launcherPid, state?.nextPid, state?.postgresPid]);
+  const isRecorded = new Set(recorded);
+  const discovered = uniquePids([postmasterPid, listenerPid]).filter((pid) => !isRecorded.has(pid));
 
   const owned = [];
+  const unproven = [];
 
-  for (const pid of pids) {
-    if (platform === 'win32') {
-      if (!repoDir) continue;
-      let info = null;
-      try {
-        info = await lookupProcess(pid);
-      } catch {
-        info = null;
-      }
-      if (!isOwnedOfflineProcess(info, repoDir)) continue;
+  for (const pid of [...recorded, ...discovered]) {
+    if (await proveOwnership(pid, repoDir, lookupProcess)) {
       owned.push(pid);
       continue;
     }
-
-    if (isProcessAlive(pid)) owned.push(pid);
+    // Liveness cannot prove ownership, but its absence does prove there is
+    // nothing left to resolve.
+    if (isRecorded.has(pid) && alive(pid)) unproven.push(pid);
   }
 
   for (const pid of owned) {
     try { signalProcess(pid); } catch { /* already gone */ }
   }
 
-  const remaining = await wait(owned);
+  const survivors = await wait(owned);
   const forceEligible = [];
 
-  for (const pid of remaining) {
-    if (platform === 'win32') {
-      let info = null;
-      try {
-        info = await lookupProcess(pid);
-      } catch {
-        info = null;
-      }
-      if (!isOwnedOfflineProcess(info, repoDir)) continue;
-    }
-    forceEligible.push(pid);
+  for (const pid of survivors) {
+    if (await proveOwnership(pid, repoDir, lookupProcess)) forceEligible.push(pid);
   }
 
   for (const pid of forceEligible) {
     try { signalProcess(pid, 'SIGKILL'); } catch { /* already gone */ }
   }
 
-  return uniquePids(await wait(forceEligible, 2000));
+  const unstopped = uniquePids(await wait(forceEligible, 2000));
+
+  // Stopping a proven Next lets the launcher run its own exit path, so give any
+  // unproven recorded PID the same bounded chance to disappear before the
+  // lifecycle refuses to continue. Nothing here is ever signalled.
+  const ambiguous = unproven.length ? uniquePids(await wait(unproven, 2000)) : [];
+
+  return { unstopped, ambiguous };
 }
 
 export function inspectRuntime(state) {
