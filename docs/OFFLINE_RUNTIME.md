@@ -23,8 +23,20 @@ npm --workspace web run offline -- stop
 npm --workspace web run offline -- restart --port 3111
 ```
 
-`--reset` deletes and recreates only this checkout's `.ppbf-offline/` directory.
-It cannot be combined with `stop` or `status`.
+`--reset` deletes and recreates only this checkout's `.ppbf-offline/` directory,
+including its database. It cannot be combined with `stop` or `status`, and it is
+the only operation that discards an existing offline database.
+
+An ordinary start reuses an existing cluster and never deletes one. Before
+touching anything, start classifies the database directory: a genuine "not
+found" means a first cluster is initialized; a directory holding the expected
+`PG_VERSION`, `base` and `global` entries is reused as-is; anything else —
+missing entries, or a directory that cannot be inspected because of a
+permission or I/O failure — is treated as unverified. An unverified directory is
+left exactly as it is and start fails with an error naming the path. Being
+unable to verify a cluster is not the same as finding it damaged, so PPBF
+neither deletes it nor initializes over it; recreating it is a deliberate choice
+you make by rerunning with `--reset`.
 
 The launcher writes `.ppbf-offline/runtime-state.json` with the worktree path
 and process ids. `stop` never signals a process on the strength of a recorded

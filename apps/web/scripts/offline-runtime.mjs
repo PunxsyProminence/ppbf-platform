@@ -102,16 +102,49 @@ async function printStatus() {
   console.log(formatStatus(state, inspectRuntime(state)));
 }
 
-async function hasValidEmbeddedPostgresCluster(dir) {
+/**
+ * Classify this checkout's database directory before anything can act on it.
+ *
+ * Only a genuine "no such entry" proves the directory is absent. Every other
+ * failure means PPBF could not look, which is not the same as nothing being
+ * there -- treating the two alike is how an unreadable directory would end up
+ * initialised over. Anything short of a positive proof lands on UNUSABLE, and
+ * UNUSABLE never authorizes destruction.
+ *
+ * `deps` exists so the inspection-failure cases can be proven deterministically
+ * without manipulating real filesystem permissions.
+ */
+export async function classifyDatabaseDirectory(dir, deps = {}) {
+  const access = deps.access ?? ((target) => fs.access(target));
+  const readdir = deps.readdir ?? ((target) => fs.readdir(target));
+
   try {
-    await fs.access(dir);
-    const entries = await fs.readdir(dir);
-    if (!entries.length) return false;
-    const required = ['PG_VERSION', 'base', 'global'];
-    return required.every((entry) => entries.includes(entry));
-  } catch {
-    return false;
+    await access(dir);
+  } catch (error) {
+    return error && error.code === 'ENOENT' ? 'absent' : 'unusable';
   }
+
+  try {
+    const entries = await readdir(dir);
+    const required = ['PG_VERSION', 'base', 'global'];
+    return required.every((entry) => entries.includes(entry)) ? 'valid' : 'unusable';
+  } catch {
+    return 'unusable';
+  }
+}
+
+/**
+ * The only place a destructive or initialising action is chosen. Every branch
+ * is named, so `initialise` is reachable from an explicit reset or a positively
+ * absent directory and from nothing else -- never from the negation of a
+ * boolean that several different situations can produce. An unrecognised state
+ * refuses.
+ */
+export function databaseStartAction(state, reset) {
+  if (reset) return 'reset-and-initialise';
+  if (state === 'absent') return 'initialise';
+  if (state === 'valid') return 'reuse';
+  return 'refuse';
 }
 
 async function seedSyntheticData(client) {
@@ -203,12 +236,19 @@ async function startRuntime({ reset, port }) {
   }
   await fs.mkdir(runtimeDir, { recursive: true });
 
-  const hasExistingDatabaseDir = await fs.access(databaseDir).then(() => true).catch(() => false);
-  const hasValidCluster = hasExistingDatabaseDir && await hasValidEmbeddedPostgresCluster(databaseDir);
+  const databaseState = await classifyDatabaseDirectory(databaseDir);
+  const databaseAction = databaseStartAction(databaseState, reset);
 
-  if (hasExistingDatabaseDir && !hasValidCluster && !reset) {
-    await fs.rm(databaseDir, { recursive: true, force: true });
-    console.log('Reinitializing stale PPBF offline Postgres data directory.');
+  if (databaseAction === 'refuse') {
+    throw new Error(
+      `PPBF offline start stopped without touching the database directory at ${databaseDir}. `
+      + 'It could not be verified as a reusable embedded PostgreSQL cluster, so PPBF did not '
+      + 'delete or reinitialize it and your data is preserved exactly as it was. Being unable '
+      + 'to verify it is not the same as finding it damaged. Ordinary start never replaces an '
+      + 'existing database. If you intend to discard this checkout\'s offline data and build a '
+      + 'new cluster, rerun with --reset, which deletes this checkout\'s .ppbf-offline/ '
+      + 'directory.',
+    );
   }
 
   await removeStaleLockFileIfNeeded(databaseDir);
@@ -224,7 +264,7 @@ async function startRuntime({ reset, port }) {
     initdbFlags: ['--encoding=UTF8'],
   });
 
-  if (reset || !hasValidCluster) {
+  if (databaseAction === 'reset-and-initialise' || databaseAction === 'initialise') {
     await postgres.initialise();
   }
 

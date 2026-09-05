@@ -780,6 +780,114 @@ describe('owned app listener cleanup', () => {
   });
 });
 
+describe('database directory safety', () => {
+  const runtimeUrl = pathToFileURL(path.resolve(__dirname, 'offline-runtime.mjs')).href;
+
+  // offline-runtime.mjs guards execution with invokedDirectly, so importing it
+  // for these checks never runs main(), starts a runtime, or touches Postgres.
+  function evaluateRuntime(expression: string) {
+    const script = `
+      import * as r from ${JSON.stringify(runtimeUrl)};
+      const value = await (${expression});
+      process.stdout.write(JSON.stringify(value ?? null));
+    `;
+    return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+      encoding: 'utf8',
+      maxBuffer: 8 * 1024 * 1024,
+    }));
+  }
+
+  function withTempDir(entries: string[], run: (dir: string) => void) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-f7-'));
+    try {
+      for (const entry of entries) fs.mkdirSync(path.join(dir, entry), { recursive: true });
+      run(dir);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  const throwing = (code: string) => `{ access: async () => { const e = new Error(${JSON.stringify(code)}); e.code = ${JSON.stringify(code)}; throw e; } }`;
+
+  test('a directory holding the expected cluster markers is valid and is reused', () => {
+    withTempDir(['PG_VERSION', 'base', 'global'], (dir) => {
+      expect(evaluateRuntime(`r.classifyDatabaseDirectory(${JSON.stringify(dir)})`)).toBe('valid');
+    });
+    expect(evaluateRuntime("r.databaseStartAction('valid', false)")).toBe('reuse');
+  });
+
+  test('an existing directory missing a cluster marker is unusable and refuses', () => {
+    withTempDir(['base', 'global'], (dir) => {
+      expect(evaluateRuntime(`r.classifyDatabaseDirectory(${JSON.stringify(dir)})`)).toBe('unusable');
+    });
+    withTempDir([], (dir) => {
+      expect(evaluateRuntime(`r.classifyDatabaseDirectory(${JSON.stringify(dir)})`)).toBe('unusable');
+    });
+    expect(evaluateRuntime("r.databaseStartAction('unusable', false)")).toBe('refuse');
+  });
+
+  test('a directory that cannot be inspected is unusable, never valid', () => {
+    withTempDir(['PG_VERSION', 'base', 'global'], (dir) => {
+      const deps = '{ readdir: async () => { const e = new Error("EIO"); e.code = "EIO"; throw e; } }';
+      expect(evaluateRuntime(`r.classifyDatabaseDirectory(${JSON.stringify(dir)}, ${deps})`)).toBe('unusable');
+    });
+  });
+
+  test('only a genuine ENOENT proves absence, so a first start still initialises', () => {
+    const missing = path.join(os.tmpdir(), 'ppbf-f7-definitely-not-here');
+    expect(evaluateRuntime(`r.classifyDatabaseDirectory(${JSON.stringify(missing)})`)).toBe('absent');
+    expect(evaluateRuntime(`r.classifyDatabaseDirectory('/x', ${throwing('ENOENT')})`)).toBe('absent');
+    expect(evaluateRuntime("r.databaseStartAction('absent', false)")).toBe('initialise');
+  });
+
+  test('a permission or I/O failure on the existence check is never read as absence', () => {
+    for (const code of ['EACCES', 'EPERM', 'EIO', 'EBUSY']) {
+      expect(evaluateRuntime(`r.classifyDatabaseDirectory('/x', ${throwing(code)})`)).toBe('unusable');
+    }
+    expect(evaluateRuntime("r.databaseStartAction('unusable', false)")).toBe('refuse');
+  });
+
+  test('an unrecognised state refuses rather than falling through to a destructive action', () => {
+    expect(evaluateRuntime("r.databaseStartAction('something-new', false)")).toBe('refuse');
+    expect(evaluateRuntime('r.databaseStartAction(undefined, false)')).toBe('refuse');
+  });
+
+  test('explicit reset remains the one destructive authority, whatever the directory holds', () => {
+    for (const state of ['absent', 'valid', 'unusable', 'something-new']) {
+      expect(evaluateRuntime(`r.databaseStartAction(${JSON.stringify(state)}, true)`)).toBe('reset-and-initialise');
+    }
+  });
+
+  test('a refusal happens before any lock, port, or Postgres work, and the auto-delete is gone', () => {
+    const launcher = fs.readFileSync(path.resolve(__dirname, 'offline-runtime.mjs'), 'utf8');
+
+    // The non-reset auto-recovery deletion of the database directory is removed
+    // outright, not relocated.
+    expect(launcher).not.toContain('fs.rm(databaseDir');
+    expect(launcher).not.toContain('Reinitializing stale PPBF offline Postgres data directory.');
+
+    // Explicit reset keeps its documented destructive removal.
+    expect(launcher).toContain('await fs.rm(runtimeDir, { recursive: true, force: true });');
+
+    const refuseIndex = launcher.indexOf("if (databaseAction === 'refuse')");
+    expect(refuseIndex).toBeGreaterThan(-1);
+    for (const later of [
+      'await removeStaleLockFileIfNeeded(databaseDir);',
+      'await findPort();',
+      'new EmbeddedPostgres({',
+      'await postgres.initialise();',
+      'await postgres.start();',
+      'await prepareDatabase(connectionString);',
+    ]) {
+      expect(launcher.indexOf(later)).toBeGreaterThan(refuseIndex);
+    }
+
+    // initialise is authorised by the named actions only, never by a broad negative.
+    expect(launcher).toContain("if (databaseAction === 'reset-and-initialise' || databaseAction === 'initialise') {");
+    expect(launcher).not.toContain('!hasValidCluster');
+  });
+});
+
 describe('runtime status', () => {
   test('no state is stopped', () => {
     expect(evaluate("m.formatStatus(null, m.inspectRuntime(null))")).toBe('PPBF offline runtime: stopped');
