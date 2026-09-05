@@ -145,3 +145,76 @@ export function usesPin(subject: CredentialSubject): boolean {
 export function usesMicrosoft(subject: CredentialSubject): boolean {
   return requiredCredentialFor(subject) === 'microsoft';
 }
+
+/**
+ * Roles the BASE-03 offline exception may admit, and no others.
+ *
+ * These are exactly the two base roles whose production credential depends on
+ * a service the offline runtime cannot reach: organization_admin needs Entra,
+ * coach needs a magic link delivered by Graph mail. The offline network guard
+ * refuses both, so on a local machine those two accounts have no door at all --
+ * the offline launcher already seeds them with a PIN, and the production policy
+ * below correctly refuses it.
+ *
+ * Athlete is deliberately absent: athletes already sign in with a PIN under the
+ * ordinary policy, so an exception would be a second answer to a settled
+ * question. Every other role is absent because BASE-03's scope is these three
+ * roles and nothing else.
+ */
+export const OFFLINE_LOCAL_PIN_ROLES = [
+  'organization_admin',
+  'coach',
+] as const satisfies readonly PilotRole[];
+
+/** Runtime facts the offline exception is fenced on. Injected in tests. */
+export interface RuntimeCredentialEnvironment {
+  nodeEnv?: string;
+  offlineRuntimeFlag?: string;
+}
+
+/**
+ * Whether this person may authenticate with an account ID and PIN *in the
+ * current runtime*.
+ *
+ * This is deliberately a SEPARATE question from requiredCredentialFor, which
+ * remains the production credential policy and is not environment-aware. A
+ * person is admitted here when either
+ *
+ *   - the ordinary policy already says they use a PIN (athletes), or
+ *   - the narrow BASE-03 offline exception applies.
+ *
+ * The exception opens only when NODE_ENV is exactly 'development' AND
+ * PPBF_OFFLINE_RUNTIME is exactly 'true' -- the same two-condition fence
+ * db.ts's resolveSslConfig uses for the loopback TLS opt-out, and for the same
+ * reason: the offline flag alone must never be able to weaken a real deploy,
+ * which never runs with NODE_ENV=development. Staging and production therefore
+ * cannot reach this branch even if the flag leaks into their environment.
+ *
+ * A board-seat holder is refused outright. Their production credential is
+ * Microsoft because they hold an office with a mailbox, and an offline
+ * convenience must not quietly downgrade a governance identity.
+ *
+ * Accepts an injected environment so the policy matrix is directly unit
+ * testable without mutating global process.env.
+ */
+export function pinLoginPermitted(
+  subject: CredentialSubject,
+  environment: RuntimeCredentialEnvironment = {},
+): boolean {
+  if (usesPin(subject)) {
+    return true;
+  }
+
+  if (seatRequiresMicrosoft(subject.boardSeats)) {
+    return false;
+  }
+
+  const nodeEnv = environment.nodeEnv ?? process.env.NODE_ENV;
+  const offlineRuntimeFlag = environment.offlineRuntimeFlag ?? process.env.PPBF_OFFLINE_RUNTIME;
+
+  if (nodeEnv !== 'development' || offlineRuntimeFlag !== 'true') {
+    return false;
+  }
+
+  return (OFFLINE_LOCAL_PIN_ROLES as readonly string[]).includes(subject.role);
+}

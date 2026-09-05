@@ -7,7 +7,7 @@ import { seedDefaultComplianceRules } from './complianceRuleSeeds';
 import { seedDefaultDisciplines } from './disciplineSeeds';
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
-import { usesPin } from './credentialPolicy';
+import { pinLoginPermitted, usesPin } from './credentialPolicy';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { isPlatformLibraryOrganization } from './platformLibraryScope';
 import { seedDefaultSafetyGates } from './safetyGateSeeds';
@@ -163,7 +163,7 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
   // Asks credentialPolicy rather than testing the role here. This check and the
   // login page's default tab used to state the rule separately, and the page
   // had it wrong -- it offered a PIN form to everyone.
-  if (!usesPin({ role: data.role })) {
+  if (!pinLoginPermitted({ role: data.role })) {
     console.warn('pilot-auth login rejected', { accountId, reason: 'role_not_pin_eligible' });
     return null;
   }
@@ -317,7 +317,7 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
   // production on 2026-08-07 inert rather than exploitable: every one was
   // ppbf_local with a non-athlete role, so no session they held could survive
   // this branch.
-  if (row.auth_provider === 'ppbf_local' && !usesPin({ role: row.role })) {
+  if (row.auth_provider === 'ppbf_local' && !pinLoginPermitted({ role: row.role })) {
     await query(
       'update pilot.session_tokens set revoked_at = now() where token_hash = $1 and revoked_at is null',
       [tokenHash],
