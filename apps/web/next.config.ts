@@ -52,6 +52,9 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
 	output: staticExportEnabled ? "export" : "standalone",
+	// A local replica must not contend with an already-running normal `next dev`
+	// process (or reuse its build artifacts). Production keeps Next's default.
+	...(process.env.PPBF_OFFLINE_RUNTIME === "true" ? { distDir: ".next-offline" } : {}),
 	poweredByHeader: false,
 	turbopack: {
 		root: repoRoot,

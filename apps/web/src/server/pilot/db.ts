@@ -15,18 +15,58 @@ let pool: Pool | null = null;
 export interface SslOverride {
   nodeEnv?: string;
   disableSslFlag?: string;
+  offlineRuntimeFlag?: string;
+  connectionString?: string;
+}
+
+export function isLoopbackPostgresConnectionString(value: string | undefined): boolean {
+  if (!value) return false;
+
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') {
+      return false;
+    }
+
+    const host = url.hostname
+      .replace(/^\[/, '')
+      .replace(/\]$/, '')
+      .toLowerCase();
+
+    if (host === 'localhost' || host === '::1' || host === '0:0:0:0:0:0:0:1') {
+      return true;
+    }
+
+    const parts = host.split('.');
+    if (parts.length !== 4) return false;
+
+    if (!parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) >= 0 && Number(part) <= 255)) {
+      return false;
+    }
+
+    return Number(parts[0]) === 127;
+  } catch {
+    return false;
+  }
 }
 
 // Azure Postgres always requires TLS in production and staging. The only
-// opt-out is this exact combination -- NODE_ENV must be the unmistakable
-// 'test' value, AND the explicit disable flag must be set -- so a stray or
-// accidental PPBF_POSTGRES_DISABLE_SSL=true can never downgrade a real
-// deploy environment, which never runs with NODE_ENV=test. Accepts an
-// injected override so this is directly unit-testable without mutating
-// global process.env.
+// opt-outs are: (1) NODE_ENV=test AND the explicit disable flag, so a stray
+// PPBF_POSTGRES_DISABLE_SSL=true can never downgrade a real deploy, which
+// never runs with NODE_ENV=test; (2) the local offline launcher, which is
+// NODE_ENV=development AND PPBF_OFFLINE_RUNTIME=true and owns a loopback
+// embedded database. The offline flag alone cannot disable TLS in
+// production or staging. Accepts an injected override so this is directly
+// unit-testable without mutating global process.env.
 export function resolveSslConfig(override: SslOverride = {}): { rejectUnauthorized: boolean } | false {
   const nodeEnv = override.nodeEnv ?? process.env.NODE_ENV;
   const disableSslFlag = override.disableSslFlag ?? process.env.PPBF_POSTGRES_DISABLE_SSL;
+  const offlineRuntimeFlag = override.offlineRuntimeFlag ?? process.env.PPBF_OFFLINE_RUNTIME;
+  const connectionString = override.connectionString ?? process.env.AZURE_POSTGRES_CONNECTION_STRING;
+
+  if (offlineRuntimeFlag === 'true' && nodeEnv === 'development' && isLoopbackPostgresConnectionString(connectionString)) {
+    return false;
+  }
 
   if (nodeEnv === 'test' && disableSslFlag === 'true') {
     return false;
@@ -64,9 +104,10 @@ export function sanitizedPoolErrorLog(error: unknown): { event: string; code?: s
 
 function getPool(): Pool {
   if (!pool) {
+    const connectionString = getAzurePostgresConnectionString();
     pool = new Pool({
-      connectionString: getAzurePostgresConnectionString(),
-      ssl: resolveSslConfig(),
+      connectionString,
+      ssl: resolveSslConfig({ connectionString }),
       max: 10,
     });
     // pg's Pool re-emits errors from idle clients (e.g. the server closing a

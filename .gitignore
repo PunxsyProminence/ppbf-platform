@@ -1,4 +1,6 @@
 node_modules/
+.ppbf-offline/
+apps/web/.next-offline/
 .next/
 out/
 .env

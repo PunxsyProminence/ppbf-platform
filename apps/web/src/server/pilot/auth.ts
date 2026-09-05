@@ -11,6 +11,7 @@ import { usesPin } from './credentialPolicy';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { isPlatformLibraryOrganization } from './platformLibraryScope';
 import { seedDefaultSafetyGates } from './safetyGateSeeds';
+import { seedDefaultClearanceTypes } from './clearanceTypeSeeds';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
 import { query, queryOne, withTransaction } from './db';
@@ -973,6 +974,7 @@ export async function createOrganization(organizationId: string, organizationNam
     await seedDefaultComplianceRules(organizationId, client);
     await seedDefaultSafetyGates(organizationId, client);
     await seedDefaultDisciplines(organizationId, client);
+    await seedDefaultClearanceTypes(organizationId, client);
   });
 }
 
