@@ -34,6 +34,15 @@ const MIGRATION_SQL_PATH = path.resolve(
   __dirname,
   '../../../../../infra/azure/pilot_slice_postgres_session_expiry_migration.sql',
 );
+// The base schema does not create pilot.board_seats; a separate increment does.
+// Only the block that runs real application code needs it, because
+// resolvePrincipal and loginWithAccountIdAndPin ask that table whether the
+// account holds a board seat before honouring a ppbf_local session. The other
+// blocks here exercise migration SQL rather than the app, and are unaffected.
+const BOARD_SEATS_SQL_PATH = path.resolve(
+  __dirname,
+  '../../../../../infra/azure/pilot_slice_postgres_board_seats_migration.sql',
+);
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -482,6 +491,7 @@ describe('session revocation regressions (real database, real application code)'
   beforeAll(async () => {
     const migrateClient = await newTestDatabase(TEST_DB_NAME);
     await migrateClient.query(await readSql(SCHEMA_SQL_PATH));
+    await migrateClient.query(await readSql(BOARD_SEATS_SQL_PATH));
     await migrateClient.end();
 
     process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(TEST_DB_NAME);
