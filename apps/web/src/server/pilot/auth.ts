@@ -77,6 +77,8 @@ interface AccountRow {
   active_flag: boolean;
   has_master_shadow_access: boolean;
   organization_status: string | null;
+  /** Whether this account holds any seat on its organization's board. */
+  holds_board_seat: boolean;
 }
 
 interface FederatedAccountRow {
@@ -128,7 +130,20 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
        a.must_change_pin,
        a.active_flag,
        a.has_master_shadow_access,
-       o.status as organization_status
+       o.status as organization_status,
+       -- A scalar subselect, not a join: a person may hold more than one seat,
+       -- so joining pilot.board_seats would multiply this account row and
+       -- change what queryOne returns. exists answers the only question the
+       -- credential policy asks -- any seat at all -- and returns one row.
+       -- No is_primary filter: sharing a seat is still holding one. No active
+       -- or revoked filter: the table has no such column, and a seat is given
+       -- up by deleting the row.
+       exists (
+         select 1
+         from pilot.board_seats bs
+         where bs.organization_id = a.organization_id
+           and bs.account_id = a.account_id
+       ) as holds_board_seat
      from pilot.accounts a
      left join pilot.organizations o on o.organization_id = a.organization_id
      where a.account_id = $1
@@ -180,7 +195,10 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
   // Asks credentialPolicy rather than testing the role here. This check and the
   // login page's default tab used to state the rule separately, and the page
   // had it wrong -- it offered a PIN form to everyone.
-  if (!pinLoginPermitted({ role: data.role }, { databaseIsLoopback: usingLoopbackDatabase() })) {
+  if (!pinLoginPermitted(
+    { role: data.role },
+    { databaseIsLoopback: usingLoopbackDatabase(), holdsBoardSeat: data.holds_board_seat },
+  )) {
     console.warn('pilot-auth login rejected', { accountId, reason: 'role_not_pin_eligible' });
     return null;
   }
@@ -297,6 +315,8 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
     has_master_shadow_access: boolean;
     must_change_pin: boolean;
     organization_status: string | null;
+    /** Whether this account holds a seat on the SESSION organization's board. */
+    holds_board_seat: boolean;
   }>(
     `select
        a.account_id,
@@ -308,7 +328,18 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
        a.active_flag,
        a.has_master_shadow_access,
        a.must_change_pin,
-       o.status as organization_status
+       o.status as organization_status,
+       -- Scoped to the SESSION's organization, the same expression the
+       -- organization join above uses. A session carrying an explicit
+       -- organization must be judged against seats on that board, not on the
+       -- account's home one. Scalar subselect for the same reason as the login
+       -- query: a join would multiply the session row.
+       exists (
+         select 1
+         from pilot.board_seats bs
+         where bs.organization_id = coalesce(st.organization_id, a.organization_id)
+           and bs.account_id = a.account_id
+       ) as holds_board_seat
      from pilot.session_tokens st
      join pilot.accounts a on a.account_id = st.account_id
      left join pilot.organizations o on o.organization_id = coalesce(st.organization_id, a.organization_id)
@@ -336,7 +367,10 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
   // this branch.
   if (
     row.auth_provider === 'ppbf_local'
-    && !pinLoginPermitted({ role: row.role }, { databaseIsLoopback: usingLoopbackDatabase() })
+    && !pinLoginPermitted(
+      { role: row.role },
+      { databaseIsLoopback: usingLoopbackDatabase(), holdsBoardSeat: row.holds_board_seat },
+    )
   ) {
     await query(
       'update pilot.session_tokens set revoked_at = now() where token_hash = $1 and revoked_at is null',

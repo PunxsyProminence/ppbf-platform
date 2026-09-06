@@ -121,11 +121,20 @@ describe('credential policy', () => {
 // credential policy above, and these assert both halves: that the exception
 // opens only inside its exact fence, and that the production mappings it sits
 // beside are untouched by it.
-const OFFLINE = { nodeEnv: 'development', offlineRuntimeFlag: 'true', databaseIsLoopback: true } as const;
+const OFFLINE = {
+  nodeEnv: 'development',
+  offlineRuntimeFlag: 'true',
+  databaseIsLoopback: true,
+  holdsBoardSeat: false,
+} as const;
 
 // P1. The same fence with the one condition that says what this process is
 // actually connected to, rather than what it calls itself.
 const OFFLINE_REMOTE_DATABASE = { ...OFFLINE, databaseIsLoopback: false } as const;
+
+// P2. The same fence again, with the seat state a caller loaded from
+// pilot.board_seats rather than one the subject carried.
+const OFFLINE_SEAT_HOLDER = { ...OFFLINE, holdsBoardSeat: true } as const;
 
 describe('offline local PIN exception (BASE-03)', () => {
   test('the production credential policy is unchanged by the exception', () => {
@@ -144,7 +153,7 @@ describe('offline local PIN exception (BASE-03)', () => {
   test('an athlete is permitted with no offline flags at all', () => {
     expect(pinLoginPermitted(
       { role: 'athlete' },
-      { nodeEnv: 'production', offlineRuntimeFlag: undefined, databaseIsLoopback: false },
+      { nodeEnv: 'production', offlineRuntimeFlag: undefined, databaseIsLoopback: false, holdsBoardSeat: false },
     )).toBe(true);
     expect(pinLoginPermitted({ role: 'athlete' }, OFFLINE)).toBe(true);
     // P1 must not narrow the ordinary athlete path: an athlete's PIN is their
@@ -155,7 +164,7 @@ describe('offline local PIN exception (BASE-03)', () => {
   test.each(OFFLINE_LOCAL_PIN_ROLES)('%s is refused with no offline flags', (role) => {
     expect(pinLoginPermitted(
       { role },
-      { nodeEnv: undefined, offlineRuntimeFlag: undefined, databaseIsLoopback: false },
+      { nodeEnv: undefined, offlineRuntimeFlag: undefined, databaseIsLoopback: false, holdsBoardSeat: false },
     )).toBe(false);
   });
 
@@ -170,6 +179,13 @@ describe('offline local PIN exception (BASE-03)', () => {
     expect(pinLoginPermitted({ role }, OFFLINE_REMOTE_DATABASE)).toBe(false);
   });
 
+  // P2. The seat guard below asserts the same rule from a subject-supplied
+  // list. This asserts it from the loaded fact, which is the half the runtime
+  // callers can actually supply -- and the half that was missing.
+  test.each(OFFLINE_LOCAL_PIN_ROLES)('%s is refused when the loaded seat state says they hold one', (role) => {
+    expect(pinLoginPermitted({ role }, OFFLINE_SEAT_HOLDER)).toBe(false);
+  });
+
   // Each half of the fence alone must not open it. The flag leaking into a real
   // deploy is the case that matters: a deploy never runs NODE_ENV=development.
   test.each([
@@ -180,6 +196,8 @@ describe('offline local PIN exception (BASE-03)', () => {
     ['test with the flag set', { ...OFFLINE, nodeEnv: 'test' }],
     // P1: the third condition, failing alone while the other two are satisfied.
     ['development and the flag, but a remote database', OFFLINE_REMOTE_DATABASE],
+    // P2: the fourth, likewise alone.
+    ['the whole fence, but the account holds a board seat', OFFLINE_SEAT_HOLDER],
   ])('the exception stays shut: %s', (_label, environment) => {
     for (const role of OFFLINE_LOCAL_PIN_ROLES) {
       expect(pinLoginPermitted({ role }, environment)).toBe(false);

@@ -176,7 +176,13 @@ function localAccountRow(accountId: string, role: string) {
     active_flag: true,
     has_master_shadow_access: false,
     organization_status: 'active',
+    holds_board_seat: false,
   };
+}
+
+/** The same account, holding a seat on this organization's board. */
+function seatHoldingAccountRow(accountId: string, role: string) {
+  return { ...localAccountRow(accountId, role), holds_board_seat: true };
 }
 
 function requestWithSession() {
@@ -350,5 +356,87 @@ describe('BASE-03 P1: the offline exception is bound to a loopback database', ()
 
     expect(result).not.toBeNull();
     expect(mockQuery.mock.calls[0][0]).toContain('insert into pilot.session_tokens');
+  });
+});
+
+// P2. The policy has always said a board-seat holder stays on Microsoft: a seat
+// is an office with a mailbox, and an offline convenience must not downgrade a
+// governance identity. Until now neither auth path loaded seat state, so the
+// guard could not fire and the claim was unenforceable.
+//
+// Every case below runs with the P1 fence fully satisfied -- development, the
+// offline flag, and a LOOPBACK database -- so a denial here can only be the
+// seat. A case that denied for P1's reason would prove nothing about P2.
+describe('BASE-03 P2: a board seat refuses the offline PIN exception', () => {
+  test.each([
+    ['organization_admin', 'admin-1'],
+    ['coach', 'coach-1'],
+  ])('%s holding a board seat is refused at login, before any session write', async (role, accountId) => {
+    mockQueryOne.mockResolvedValueOnce(seatHoldingAccountRow(accountId, role));
+
+    const result = await withOfflineRuntime(
+      () => loginWithAccountIdAndPin(accountId, '482913'),
+      LOOPBACK_DATABASE_URL,
+    );
+
+    expect(result).toBeNull();
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['organization_admin', 'admin-1'],
+    ['coach', 'coach-1'],
+  ])('a ppbf_local %s session is revoked once the holder has a board seat', async (role, accountId) => {
+    mockQueryOne.mockResolvedValueOnce(seatHoldingAccountRow(accountId, role));
+    mockQuery.mockResolvedValueOnce([]);
+
+    const principal = await withOfflineRuntime(
+      () => resolvePrincipal(requestWithSession()),
+      LOOPBACK_DATABASE_URL,
+    );
+
+    expect(principal).toBeNull();
+    expect(mockQuery.mock.calls[0][0]).toContain('update pilot.session_tokens set revoked_at');
+  });
+
+  // The positive control for both cases above: identical in every respect
+  // except the seat. Without it a harness that refused everything would read as
+  // a repair.
+  test.each([
+    ['organization_admin', 'admin-1'],
+    ['coach', 'coach-1'],
+  ])('%s without a board seat is still admitted on the same fence', async (role, accountId) => {
+    mockQueryOne.mockResolvedValueOnce(localAccountRow(accountId, role));
+    mockQuery.mockResolvedValueOnce([]);
+
+    const result = await withOfflineRuntime(
+      () => loginWithAccountIdAndPin(accountId, '482913'),
+      LOOPBACK_DATABASE_URL,
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.principal.role).toBe(role);
+    expect(mockQuery.mock.calls[0][0]).toContain('insert into pilot.session_tokens');
+  });
+
+  test('both auth queries ask pilot.board_seats for the fact themselves', async () => {
+    mockQueryOne.mockResolvedValueOnce(localAccountRow('coach-1', 'coach'));
+    mockQuery.mockResolvedValueOnce([]);
+
+    await withOfflineRuntime(() => loginWithAccountIdAndPin('coach-1', '482913'), LOOPBACK_DATABASE_URL);
+
+    // The row is mocked, so nothing else proves the production query actually
+    // carries the seat lookup rather than reading a field only the test sets.
+    const [loginSql] = mockQueryOne.mock.calls[0];
+    expect(loginSql).toContain('pilot.board_seats');
+    expect(loginSql).toContain('holds_board_seat');
+
+    jest.clearAllMocks();
+    mockQueryOne.mockResolvedValueOnce(localAccountRow('coach-1', 'coach'));
+    await withOfflineRuntime(() => resolvePrincipal(requestWithSession()), LOOPBACK_DATABASE_URL);
+
+    const [sessionSql] = mockQueryOne.mock.calls[0];
+    expect(sessionSql).toContain('pilot.board_seats');
+    expect(sessionSql).toContain('holds_board_seat');
   });
 });

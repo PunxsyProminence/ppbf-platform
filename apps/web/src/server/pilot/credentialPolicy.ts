@@ -176,12 +176,19 @@ export const OFFLINE_LOCAL_PIN_ROLES = [
  * connection string itself -- the fact has to arrive from a server-only caller,
  * and the type is the only thing that can insist it does.
  *
+ * holdsBoardSeat is required for the same reason and carries the same warning.
+ * It is the authoritative answer to "does this account hold a seat on the board
+ * of the organization being authenticated", loaded from pilot.board_seats by
+ * the caller. An optional flag would default to "no seat", which is exactly the
+ * silent answer that made the guard below unenforceable in the first place.
+ *
  * nodeEnv and offlineRuntimeFlag stay optional because they fall back to
  * process.env, which is correct in every runtime; they are injectable so the
  * policy matrix is testable without mutating global state.
  */
 export interface RuntimeCredentialEnvironment {
   databaseIsLoopback: boolean;
+  holdsBoardSeat: boolean;
   nodeEnv?: string;
   offlineRuntimeFlag?: string;
 }
@@ -212,7 +219,11 @@ export interface RuntimeCredentialEnvironment {
  *
  * A board-seat holder is refused outright. Their production credential is
  * Microsoft because they hold an office with a mailbox, and an offline
- * convenience must not quietly downgrade a governance identity.
+ * convenience must not quietly downgrade a governance identity. The seat is
+ * asked about two ways because there are two kinds of caller: a subject that
+ * carries its own seat list, and a runtime that loaded the fact from
+ * pilot.board_seats. Either answering yes refuses the exception. Neither
+ * defines what a seat is -- the table does.
  *
  * Accepts an injected environment so the policy matrix is directly unit
  * testable without mutating global process.env.
@@ -225,7 +236,7 @@ export function pinLoginPermitted(
     return true;
   }
 
-  if (seatRequiresMicrosoft(subject.boardSeats)) {
+  if (seatRequiresMicrosoft(subject.boardSeats) || environment.holdsBoardSeat) {
     return false;
   }
 
