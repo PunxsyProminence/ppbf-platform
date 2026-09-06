@@ -121,7 +121,11 @@ describe('credential policy', () => {
 // credential policy above, and these assert both halves: that the exception
 // opens only inside its exact fence, and that the production mappings it sits
 // beside are untouched by it.
-const OFFLINE = { nodeEnv: 'development', offlineRuntimeFlag: 'true' } as const;
+const OFFLINE = { nodeEnv: 'development', offlineRuntimeFlag: 'true', databaseIsLoopback: true } as const;
+
+// P1. The same fence with the one condition that says what this process is
+// actually connected to, rather than what it calls itself.
+const OFFLINE_REMOTE_DATABASE = { ...OFFLINE, databaseIsLoopback: false } as const;
 
 describe('offline local PIN exception (BASE-03)', () => {
   test('the production credential policy is unchanged by the exception', () => {
@@ -138,26 +142,44 @@ describe('offline local PIN exception (BASE-03)', () => {
   });
 
   test('an athlete is permitted with no offline flags at all', () => {
-    expect(pinLoginPermitted({ role: 'athlete' }, { nodeEnv: 'production', offlineRuntimeFlag: undefined })).toBe(true);
+    expect(pinLoginPermitted(
+      { role: 'athlete' },
+      { nodeEnv: 'production', offlineRuntimeFlag: undefined, databaseIsLoopback: false },
+    )).toBe(true);
     expect(pinLoginPermitted({ role: 'athlete' }, OFFLINE)).toBe(true);
+    // P1 must not narrow the ordinary athlete path: an athlete's PIN is their
+    // production credential, so the database boundary has nothing to say about it.
+    expect(pinLoginPermitted({ role: 'athlete' }, OFFLINE_REMOTE_DATABASE)).toBe(true);
   });
 
   test.each(OFFLINE_LOCAL_PIN_ROLES)('%s is refused with no offline flags', (role) => {
-    expect(pinLoginPermitted({ role }, { nodeEnv: undefined, offlineRuntimeFlag: undefined })).toBe(false);
+    expect(pinLoginPermitted(
+      { role },
+      { nodeEnv: undefined, offlineRuntimeFlag: undefined, databaseIsLoopback: false },
+    )).toBe(false);
   });
 
   test.each(OFFLINE_LOCAL_PIN_ROLES)('%s is permitted only inside the exact development + offline fence', (role) => {
     expect(pinLoginPermitted({ role }, OFFLINE)).toBe(true);
   });
 
+  // P1. Stated as its own case rather than folded into the shut-fence table so
+  // the defect this repair closes has a test that names it: two of three
+  // conditions is not the fence.
+  test.each(OFFLINE_LOCAL_PIN_ROLES)('%s is refused when the database is not loopback', (role) => {
+    expect(pinLoginPermitted({ role }, OFFLINE_REMOTE_DATABASE)).toBe(false);
+  });
+
   // Each half of the fence alone must not open it. The flag leaking into a real
   // deploy is the case that matters: a deploy never runs NODE_ENV=development.
   test.each([
-    ['flag set but not development', { nodeEnv: 'production', offlineRuntimeFlag: 'true' }],
-    ['development but no flag', { nodeEnv: 'development', offlineRuntimeFlag: undefined }],
-    ['development but flag not exactly true', { nodeEnv: 'development', offlineRuntimeFlag: 'TRUE' }],
-    ['staging with the flag set', { nodeEnv: 'staging', offlineRuntimeFlag: 'true' }],
-    ['test with the flag set', { nodeEnv: 'test', offlineRuntimeFlag: 'true' }],
+    ['flag set but not development', { ...OFFLINE, nodeEnv: 'production' }],
+    ['development but no flag', { ...OFFLINE, offlineRuntimeFlag: undefined }],
+    ['development but flag not exactly true', { ...OFFLINE, offlineRuntimeFlag: 'TRUE' }],
+    ['staging with the flag set', { ...OFFLINE, nodeEnv: 'staging' }],
+    ['test with the flag set', { ...OFFLINE, nodeEnv: 'test' }],
+    // P1: the third condition, failing alone while the other two are satisfied.
+    ['development and the flag, but a remote database', OFFLINE_REMOTE_DATABASE],
   ])('the exception stays shut: %s', (_label, environment) => {
     for (const role of OFFLINE_LOCAL_PIN_ROLES) {
       expect(pinLoginPermitted({ role }, environment)).toBe(false);

@@ -14,7 +14,7 @@ import { seedDefaultSafetyGates } from './safetyGateSeeds';
 import { seedDefaultClearanceTypes } from './clearanceTypeSeeds';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
-import { query, queryOne, withTransaction } from './db';
+import { isLoopbackPostgresConnectionString, query, queryOne, withTransaction } from './db';
 import { DEFAULT_FIRST_LOGIN_PIN, assertChosenPinAllowed, validatePinPolicy } from './pinPolicy';
 
 /**
@@ -26,6 +26,23 @@ import { DEFAULT_FIRST_LOGIN_PIN, assertChosenPinAllowed, validatePinPolicy } fr
  */
 export function getPrimaryOwnerEmail(): string {
   return (process.env.PPBF_PRIMARY_OWNER_EMAIL?.trim() || 'admin@punxsyprominence.org').toLowerCase();
+}
+
+/**
+ * Whether this server process is talking to a loopback database -- the third
+ * condition on the BASE-03 offline PIN exception.
+ *
+ * Read here rather than in credentialPolicy because that module is imported by
+ * client components and must stay free of server-only dependencies. It is
+ * computed from AZURE_POSTGRES_CONNECTION_STRING directly, which is the same
+ * variable db.ts's pool and resolveSslConfig read, so the fence and the
+ * connection cannot disagree about which database this is. Not through
+ * getAzurePostgresConnectionString: that throws when the variable is unset, and
+ * an authorization check must answer, not raise. Unset is not loopback, which
+ * is the right answer anyway.
+ */
+function usingLoopbackDatabase(): boolean {
+  return isLoopbackPostgresConnectionString(process.env.AZURE_POSTGRES_CONNECTION_STRING);
 }
 
 export interface PilotPrincipal {
@@ -163,7 +180,7 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
   // Asks credentialPolicy rather than testing the role here. This check and the
   // login page's default tab used to state the rule separately, and the page
   // had it wrong -- it offered a PIN form to everyone.
-  if (!pinLoginPermitted({ role: data.role })) {
+  if (!pinLoginPermitted({ role: data.role }, { databaseIsLoopback: usingLoopbackDatabase() })) {
     console.warn('pilot-auth login rejected', { accountId, reason: 'role_not_pin_eligible' });
     return null;
   }
@@ -317,7 +334,10 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
   // production on 2026-08-07 inert rather than exploitable: every one was
   // ppbf_local with a non-athlete role, so no session they held could survive
   // this branch.
-  if (row.auth_provider === 'ppbf_local' && !pinLoginPermitted({ role: row.role })) {
+  if (
+    row.auth_provider === 'ppbf_local'
+    && !pinLoginPermitted({ role: row.role }, { databaseIsLoopback: usingLoopbackDatabase() })
+  ) {
     await query(
       'update pilot.session_tokens set revoked_at = now() where token_hash = $1 and revoked_at is null',
       [tokenHash],

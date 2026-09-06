@@ -1,6 +1,11 @@
 jest.mock('./db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
+  // Deliberately the REAL predicate, not a stub. The point of the loopback
+  // cases below is that auth.ts asks the canonical check about the connection
+  // string it is actually configured with; a stub would only prove auth.ts
+  // calls something.
+  isLoopbackPostgresConnectionString: jest.requireActual('./db').isLoopbackPostgresConnectionString,
 }));
 
 jest.mock('./security', () => ({
@@ -123,14 +128,26 @@ describe('new sessions store expires_at', () => {
 // environment afterwards.
 const mutableEnv = process.env as Record<string, string | undefined>;
 
-async function withOfflineRuntime<T>(run: () => Promise<T>): Promise<T> {
+// The isolated offline runtime owns a loopback embedded cluster, so that is the
+// default a fence-open case runs under. The remote string is what a developer
+// gets by exporting the offline flag while still pointed at a real database --
+// the case the third condition exists for.
+const LOOPBACK_DATABASE_URL = 'postgres://ppbf:secret@127.0.0.1:5433/ppbf_offline';
+const REMOTE_DATABASE_URL = 'postgres://ppbf:secret@ppbf.postgres.database.azure.com:5432/ppbf';
+
+async function withOfflineRuntime<T>(
+  run: () => Promise<T>,
+  databaseUrl: string = LOOPBACK_DATABASE_URL,
+): Promise<T> {
   const previousNodeEnv = process.env.NODE_ENV;
   const previousFlag = process.env.PPBF_OFFLINE_RUNTIME;
+  const previousDatabaseUrl = process.env.AZURE_POSTGRES_CONNECTION_STRING;
   // Plain assignment, not Object.defineProperty: process.env is a proxy whose
   // setter is the only thing that actually writes, so defineProperty silently
   // leaves NODE_ENV as 'test' and the fence never opens.
   mutableEnv.NODE_ENV = 'development';
   process.env.PPBF_OFFLINE_RUNTIME = 'true';
+  process.env.AZURE_POSTGRES_CONNECTION_STRING = databaseUrl;
   try {
     // Awaited inside the try, not returned from it: returning the promise
     // would restore the environment before auth.ts ever reads it, and every
@@ -141,6 +158,8 @@ async function withOfflineRuntime<T>(run: () => Promise<T>): Promise<T> {
     mutableEnv.NODE_ENV = previousNodeEnv;
     if (previousFlag === undefined) delete process.env.PPBF_OFFLINE_RUNTIME;
     else process.env.PPBF_OFFLINE_RUNTIME = previousFlag;
+    if (previousDatabaseUrl === undefined) delete process.env.AZURE_POSTGRES_CONNECTION_STRING;
+    else process.env.AZURE_POSTGRES_CONNECTION_STRING = previousDatabaseUrl;
   }
 }
 
@@ -236,5 +255,100 @@ describe('BASE-03 offline local PIN wiring', () => {
 
     expect(principal).toBeNull();
     expect(mockQuery.mock.calls[0][0]).toContain('update pilot.session_tokens set revoked_at');
+  });
+});
+
+// P1. The two environment strings above say what a process CALLS itself; they
+// do not say what it is connected to. A developer who exports the offline flag
+// -- next.config.ts reads it to move distDir off .next, so there is an ordinary
+// reason to -- while still pointed at a real database would otherwise open
+// admin and coach PIN login against that database, using a PIN published in
+// this repository.
+//
+// These live here rather than in credentialPolicy.test.ts on purpose: the
+// policy could be correct in isolation while auth.ts passes it a constant.
+// Only an entry-point test can tell those apart.
+describe('BASE-03 P1: the offline exception is bound to a loopback database', () => {
+  test.each([
+    ['organization_admin', 'admin-1'],
+    ['coach', 'coach-1'],
+  ])('%s PIN login is refused inside the fence when the database is not loopback', async (role, accountId) => {
+    mockQueryOne.mockResolvedValueOnce(localAccountRow(accountId, role));
+
+    const result = await withOfflineRuntime(
+      () => loginWithAccountIdAndPin(accountId, '482913'),
+      REMOTE_DATABASE_URL,
+    );
+
+    expect(result).toBeNull();
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['organization_admin', 'admin-1'],
+    ['coach', 'coach-1'],
+  ])('a ppbf_local %s session is revoked inside the fence when the database is not loopback', async (role, accountId) => {
+    mockQueryOne.mockResolvedValueOnce(localAccountRow(accountId, role));
+    mockQuery.mockResolvedValueOnce([]);
+
+    const principal = await withOfflineRuntime(
+      () => resolvePrincipal(requestWithSession()),
+      REMOTE_DATABASE_URL,
+    );
+
+    expect(principal).toBeNull();
+    expect(mockQuery.mock.calls[0][0]).toContain('update pilot.session_tokens set revoked_at');
+  });
+
+  test('an unset connection string is not loopback, so the exception stays shut', async () => {
+    mockQueryOne.mockResolvedValueOnce(localAccountRow('coach-1', 'coach'));
+    const previous = process.env.AZURE_POSTGRES_CONNECTION_STRING;
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousFlag = process.env.PPBF_OFFLINE_RUNTIME;
+    mutableEnv.NODE_ENV = 'development';
+    process.env.PPBF_OFFLINE_RUNTIME = 'true';
+    delete process.env.AZURE_POSTGRES_CONNECTION_STRING;
+    try {
+      const result = await loginWithAccountIdAndPin('coach-1', '482913');
+      expect(result).toBeNull();
+      expect(mockQuery).not.toHaveBeenCalled();
+    } finally {
+      mutableEnv.NODE_ENV = previousNodeEnv;
+      if (previousFlag === undefined) delete process.env.PPBF_OFFLINE_RUNTIME;
+      else process.env.PPBF_OFFLINE_RUNTIME = previousFlag;
+      if (previous !== undefined) process.env.AZURE_POSTGRES_CONNECTION_STRING = previous;
+    }
+  });
+
+  // The positive control for the two cases above: the same roles, the same
+  // fence, a loopback connection. Without this a broken harness would look
+  // like a passing repair.
+  test.each([
+    ['organization_admin', 'admin-1'],
+    ['coach', 'coach-1'],
+  ])('%s PIN login still reaches session creation on a loopback database', async (role, accountId) => {
+    mockQueryOne.mockResolvedValueOnce(localAccountRow(accountId, role));
+    mockQuery.mockResolvedValueOnce([]);
+
+    const result = await withOfflineRuntime(
+      () => loginWithAccountIdAndPin(accountId, '482913'),
+      LOOPBACK_DATABASE_URL,
+    );
+
+    expect(result).not.toBeNull();
+    expect(mockQuery.mock.calls[0][0]).toContain('insert into pilot.session_tokens');
+  });
+
+  test('the athlete PIN path is unaffected by the database boundary', async () => {
+    mockQueryOne.mockResolvedValueOnce({ ...localAccountRow('ath-1', 'athlete'), athlete_id: 'a-1' });
+    mockQuery.mockResolvedValueOnce([]);
+
+    const result = await withOfflineRuntime(
+      () => loginWithAccountIdAndPin('ath-1', '482913'),
+      REMOTE_DATABASE_URL,
+    );
+
+    expect(result).not.toBeNull();
+    expect(mockQuery.mock.calls[0][0]).toContain('insert into pilot.session_tokens');
   });
 });

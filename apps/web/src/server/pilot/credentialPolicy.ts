@@ -166,8 +166,22 @@ export const OFFLINE_LOCAL_PIN_ROLES = [
   'coach',
 ] as const satisfies readonly PilotRole[];
 
-/** Runtime facts the offline exception is fenced on. Injected in tests. */
+/**
+ * Runtime facts the offline exception is fenced on.
+ *
+ * databaseIsLoopback is REQUIRED rather than optional, and deliberately so. An
+ * optional boolean defaults to "not loopback" only if every caller remembers to
+ * think about it; a required one is a compile error at any call site that does
+ * not. This module is imported by client components, so it cannot read a
+ * connection string itself -- the fact has to arrive from a server-only caller,
+ * and the type is the only thing that can insist it does.
+ *
+ * nodeEnv and offlineRuntimeFlag stay optional because they fall back to
+ * process.env, which is correct in every runtime; they are injectable so the
+ * policy matrix is testable without mutating global state.
+ */
 export interface RuntimeCredentialEnvironment {
+  databaseIsLoopback: boolean;
   nodeEnv?: string;
   offlineRuntimeFlag?: string;
 }
@@ -183,12 +197,18 @@ export interface RuntimeCredentialEnvironment {
  *   - the ordinary policy already says they use a PIN (athletes), or
  *   - the narrow BASE-03 offline exception applies.
  *
- * The exception opens only when NODE_ENV is exactly 'development' AND
- * PPBF_OFFLINE_RUNTIME is exactly 'true' -- the same two-condition fence
- * db.ts's resolveSslConfig uses for the loopback TLS opt-out, and for the same
- * reason: the offline flag alone must never be able to weaken a real deploy,
- * which never runs with NODE_ENV=development. Staging and production therefore
- * cannot reach this branch even if the flag leaks into their environment.
+ * The exception opens only when all three of these hold: NODE_ENV is exactly
+ * 'development', PPBF_OFFLINE_RUNTIME is exactly 'true', and this process's
+ * PostgreSQL connection is loopback. That is the same three-condition fence
+ * db.ts's resolveSslConfig requires for the loopback TLS opt-out, and for the
+ * same reasons. NODE_ENV keeps the flag from weakening a real deploy, which
+ * never runs with NODE_ENV=development, so staging and production cannot reach
+ * this branch even if the flag leaks into their environment. The loopback
+ * condition covers the case NODE_ENV cannot: a developer who exports the flag
+ * -- next.config.ts reads it to move distDir off .next, so there is an ordinary
+ * reason to -- while still pointed at a real database. The two environment
+ * strings say what a process calls itself; only the connection says what it is
+ * connected to, and the PIN this exception admits is a published constant.
  *
  * A board-seat holder is refused outright. Their production credential is
  * Microsoft because they hold an office with a mailbox, and an offline
@@ -199,7 +219,7 @@ export interface RuntimeCredentialEnvironment {
  */
 export function pinLoginPermitted(
   subject: CredentialSubject,
-  environment: RuntimeCredentialEnvironment = {},
+  environment: RuntimeCredentialEnvironment,
 ): boolean {
   if (usesPin(subject)) {
     return true;
@@ -212,7 +232,7 @@ export function pinLoginPermitted(
   const nodeEnv = environment.nodeEnv ?? process.env.NODE_ENV;
   const offlineRuntimeFlag = environment.offlineRuntimeFlag ?? process.env.PPBF_OFFLINE_RUNTIME;
 
-  if (nodeEnv !== 'development' || offlineRuntimeFlag !== 'true') {
+  if (nodeEnv !== 'development' || offlineRuntimeFlag !== 'true' || !environment.databaseIsLoopback) {
     return false;
   }
 
