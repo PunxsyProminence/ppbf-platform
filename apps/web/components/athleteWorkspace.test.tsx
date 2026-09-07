@@ -231,6 +231,10 @@ beforeEach(() => {
     if (url.includes('/api/pilot/shadow/observation-projection')) {
       return jsonResponse({ items: [] });
     }
+    // BASE-05: the athlete's own attempt log reads the canonical ledger.
+    if (url.includes('/api/pilot/training-attempts')) {
+      return jsonResponse({ items: [] });
+    }
     if (url.includes('/api/pilot/goals')) {
       // Held open so a second click lands while the first request is in flight.
       return new Promise((resolve) => {
@@ -259,6 +263,7 @@ const GROUP_FOR_SURFACE: Record<string, string> = {
   Dashboard: 'Today',
   Floor: 'Today',
   Goals: 'Development',
+  Attempts: 'Development',
   Drills: 'Learn',
   'Rabbit Holes': 'Learn',
   Schedule: 'Schedule',
@@ -321,6 +326,19 @@ describe('athlete workspace honesty', () => {
     expect(screen.queryByRole('button', { name: 'Book' })).toBeNull();
     expect(screen.queryByText(/Mon-Thu 4:00 PM Youth Class/)).toBeNull();
     expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
+  });
+
+  // BASE-05 Slice 1: the athlete's own record, filed under Development beside
+  // Goals. Reached through the two-level nav like every other surface, and it
+  // reads the canonical training-attempts ledger for the session's athlete.
+  test('the Attempts surface sits under Development and reads the athlete\'s own ledger', async () => {
+    await renderWorkspace();
+    openTab('Attempts');
+
+    await screen.findByText(/No attempts recorded yet/);
+    expect(screen.getByRole('button', { name: 'Record attempt' })).toBeTruthy();
+    const asked = fetchCalls.find((call) => call.url.includes('/api/pilot/training-attempts'));
+    expect(asked?.url).toContain('athlete_id=ath_test');
   });
 
   test('the Schedule tab no longer apologises for itself over the working link', async () => {
