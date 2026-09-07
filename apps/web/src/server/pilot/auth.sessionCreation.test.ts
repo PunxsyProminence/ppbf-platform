@@ -271,6 +271,32 @@ describe('BASE-03 offline local PIN wiring', () => {
     expect(principal?.pinAuthPermitted).toBe(true);
   });
 
+  // The production PIN path: an athlete needs no fence, and the attestation
+  // must still be true, because the client now requires it for every local
+  // session -- this is the assertion that keeps real athletes signed in.
+  test('a surviving athlete ppbf_local principal is attested with no fence at all', async () => {
+    mockQueryOne.mockResolvedValueOnce({ ...localAccountRow('ath-1', 'athlete'), athlete_id: 'a-1' });
+
+    const principal = await resolvePrincipal(requestWithSession());
+
+    expect(principal).not.toBeNull();
+    expect(principal?.pinAuthPermitted).toBe(true);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('a microsoft principal is never attested for PIN', async () => {
+    mockQueryOne.mockResolvedValueOnce({
+      ...localAccountRow('admin-ms', 'organization_admin'),
+      auth_provider: 'microsoft',
+      pin_hash: null,
+    });
+
+    const principal = await resolvePrincipal(requestWithSession());
+
+    expect(principal).not.toBeNull();
+    expect(principal?.pinAuthPermitted).toBe(false);
+  });
+
   test('a ppbf_local parent session is still revoked even inside the offline fence', async () => {
     mockQueryOne.mockResolvedValueOnce(localAccountRow('parent-1', 'parent'));
     mockQuery.mockResolvedValueOnce([]);

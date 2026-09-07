@@ -121,10 +121,21 @@ Response when authenticated:
   "authenticated": true,
   "account_id": "string",
   "role": "string",
+  "organization_id": "string",
   "athlete_id": "string | null",
-  "pin_auth_permitted": "boolean | undefined"
+  "auth_provider": "microsoft | ppbf_local",
+  "must_change_pin": "boolean",
+  "pin_auth_permitted": "boolean",
+  "board_seat": "string | null   -- board role only, otherwise absent",
+  "board_seats": "array          -- board role only, otherwise absent"
 }
 ```
+
+`pin_auth_permitted` is always a boolean on the wire: `true` for a `ppbf_local`
+session the server admitted, `false` for every other provider. The
+`PilotPrincipal` field is typed optional only so hand-built test fixtures need
+not restate it; `resolvePrincipal`, the sole source of this response, always
+sets it.
 
 `pin_auth_permitted` is the server's ATTESTATION of its own PIN-policy verdict,
 not an authorization the client makes. `resolvePrincipal` reaches its return for

@@ -335,13 +335,25 @@ describe('authoritative server role resolution', () => {
     })).toMatchObject({ ok: true, session: { role: 'coach' } });
   });
 
-  test('an athlete local session still needs no attestation', () => {
+  // The client has no athlete carve-out any more: an athlete's local session is
+  // admitted on the same server attestation as every other local session, and
+  // refused without it. In production every athlete session carries it, because
+  // resolvePrincipal attests every ppbf_local principal it returns.
+  test('an athlete local session is admitted on the attestation like any other local session', () => {
     expect(resolveAuthoritativeRoleSession({
       authenticated: true,
       role: 'athlete',
       auth_provider: 'ppbf_local',
       pin_auth_permitted: true,
-    })).toMatchObject({ ok: true, session: { role: 'athlete' } });
+    })).toMatchObject({ ok: true, session: { role: 'athlete' }, destination: '/athlete/dashboard' });
+  });
+
+  test('an athlete local session without the attestation is refused, not carved out', () => {
+    expect(resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'athlete',
+      auth_provider: 'ppbf_local',
+    })).toEqual({ ok: false, reason: 'privileged_auth_required' });
   });
 
   test('server truth replaces a mismatched local role instead of inheriting it', () => {

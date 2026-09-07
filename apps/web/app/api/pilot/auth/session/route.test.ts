@@ -25,6 +25,10 @@ function boardPrincipal(overrides: Record<string, unknown> = {}) {
     sessionToken: 'opaque-token',
     authProvider: 'microsoft',
     hasMasterShadowAccess: false,
+    // resolvePrincipal sets this on every principal it returns: true for a
+    // ppbf_local session it admitted, false for every other provider. A
+    // fixture that omits it models a principal the server never produces.
+    pinAuthPermitted: false,
     ...overrides,
   } as never;
 }
@@ -55,6 +59,7 @@ describe('POST /api/pilot/auth/session', () => {
       sessionToken: 'opaque-token',
       authProvider: 'ppbf_local',
       hasMasterShadowAccess: false,
+      pinAuthPermitted: true,
     });
 
     const response = await POST(new NextRequest('https://ppbf.example/api/pilot/auth/session', {
@@ -69,6 +74,7 @@ describe('POST /api/pilot/auth/session', () => {
       organization_id: 'org-1',
       athlete_id: 'athlete-1',
       auth_provider: 'ppbf_local',
+      pin_auth_permitted: true,
     });
   });
 
@@ -120,6 +126,7 @@ describe('POST /api/pilot/auth/session', () => {
       sessionToken: 'opaque-token',
       authProvider: 'microsoft',
       hasMasterShadowAccess: false,
+      pinAuthPermitted: false,
     });
 
     const response = await POST(new NextRequest('https://ppbf.example/api/pilot/auth/session', {
@@ -127,6 +134,7 @@ describe('POST /api/pilot/auth/session', () => {
     }));
     const payload = await response.json() as Record<string, unknown>;
 
+    expect(payload.pin_auth_permitted).toBe(false);
     expect(mockListSeatsForAccount).not.toHaveBeenCalled();
     expect(Object.keys(payload)).not.toContain('board_seat');
     expect(Object.keys(payload)).not.toContain('board_seats');
