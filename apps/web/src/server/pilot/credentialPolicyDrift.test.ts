@@ -41,6 +41,12 @@ const AUTH_SURFACE = [
      exists there today because nothing does anything there at all. */
   path.join(COMPONENTS_DIR, 'SignInPanel.tsx'),
   path.join(APP_DIR, 'athlete', 'sign-in', 'page.tsx'),
+  /* components/roleSession.ts is the client's authoritative session resolver:
+     every gate and every header asks it whether a session may proceed. It was
+     missing from this list, and it was the one file still restating the
+     athlete-only PIN rule -- the guard was pointed at every door except the one
+     that was still deciding for itself. Added with BASE-04. */
+  path.join(COMPONENTS_DIR, 'roleSession.ts'),
   path.join(APP_DIR, 'api', 'pilot', 'auth', 'login', 'route.ts'),
   path.join(APP_DIR, 'api', 'pilot', 'auth', 'session', 'route.ts'),
   path.join(APP_DIR, 'api', 'pilot', 'auth', 'activate', 'route.ts'),
@@ -52,7 +58,7 @@ const AUTH_SURFACE = [
  * roles all over the codebase, so this looks only for the authentication
  * question -- an equality test against the athlete literal.
  */
-const ATHLETE_ROLE_COMPARISON = /\brole\s*(?:!==|===|!=|==)\s*['"]athlete['"]|['"]athlete['"]\s*(?:!==|===|!=|==)\s*\w*[Rr]ole\b/;
+const ATHLETE_ROLE_COMPARISON = /\brole\s*(?:!==|===|!=|==)\s*['"]athlete['"]|['"]athlete['"]\s*(?:!==|===|!=|==)\s*\w*[Rr]ole\b|\[\s*['"]athlete['"]\s*\]\s*\.includes\(|\bcase\s+['"]athlete['"]\s*:/;
 
 /**
  * Files permitted to compare a role against 'athlete'.
@@ -79,7 +85,7 @@ describe('the credential policy is the only place that decides how someone signs
       expect(fs.existsSync(file)).toBe(true);
       expect(fs.readFileSync(file, 'utf8').length).toBeGreaterThan(0);
     }
-    expect(AUTH_SURFACE.length).toBeGreaterThanOrEqual(7);
+    expect(AUTH_SURFACE.length).toBeGreaterThanOrEqual(8);
   });
 
   test('the guard would catch a violation if one existed', () => {
@@ -87,9 +93,18 @@ describe('the credential policy is the only place that decides how someone signs
     // suite means "no violations" rather than "the pattern never matches".
     expect(ATHLETE_ROLE_COMPARISON.test("if (data.role !== 'athlete') {")).toBe(true);
     expect(ATHLETE_ROLE_COMPARISON.test("row.role === 'athlete'")).toBe(true);
-    // And that it does not fire on ordinary authorization code.
+    // The same rule in the two other syntaxes a rewrite would reach for. A
+    // guard that read only `===` was defeated by a membership test, and BASE-04
+    // put exactly that shape into a newly guarded file.
+    expect(ATHLETE_ROLE_COMPARISON.test("if (!['athlete'].includes(role) && provider !== 'microsoft')")).toBe(true);
+    expect(ATHLETE_ROLE_COMPARISON.test("switch (role) { case 'athlete': return true;")).toBe(true);
+    // And that it does not fire on ordinary authorization code: a role list
+    // being asked whether it contains athlete, or a role-NAME registry being
+    // asked whether it holds a variable. Only a ONE-element athlete array is a
+    // disguised equality.
     expect(ATHLETE_ROLE_COMPARISON.test("if (role === 'coach') return true;")).toBe(false);
     expect(ATHLETE_ROLE_COMPARISON.test("roles.includes('athlete')")).toBe(false);
+    expect(ATHLETE_ROLE_COMPARISON.test("PASSTHROUGH_CLUB_ROLES.includes(role as ClubRole)")).toBe(false);
   });
 
   test('nothing on the authentication surface restates the athlete-only PIN rule', () => {

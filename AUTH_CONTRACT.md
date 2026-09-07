@@ -121,9 +121,35 @@ Response when authenticated:
   "authenticated": true,
   "account_id": "string",
   "role": "string",
-  "athlete_id": "string | null"
+  "organization_id": "string",
+  "athlete_id": "string | null",
+  "auth_provider": "microsoft | ppbf_local | magic_link",
+  "must_change_pin": "boolean",
+  "pin_auth_permitted": "boolean",
+  "board_seat": "string | null   -- board role only, otherwise absent",
+  "board_seats": "array          -- board role only, otherwise absent"
 }
 ```
+
+`pin_auth_permitted` is always a boolean on the wire: `true` for a `ppbf_local`
+session the server admitted, `false` for every other provider. The
+`PilotPrincipal` field is typed optional only so hand-built test fixtures need
+not restate it; `resolvePrincipal`, the sole source of this response, always
+sets it.
+
+`pin_auth_permitted` is the server's ATTESTATION of its own PIN-policy verdict,
+not an authorization the client makes. `resolvePrincipal` reaches its return for
+a `ppbf_local` session only because `pinLoginPermitted` already admitted it, so
+this field reports that decision. The inputs stay on the server — `NODE_ENV`,
+the offline runtime flag, whether the database connection is loopback, and
+board-seat state — because the browser must not see them and could not obtain
+three of them.
+
+`components/roleSession.ts` reads it and never recomputes it: a `ppbf_local`
+session proceeds only on `pin_auth_permitted === true`, and one arriving without
+it stays `privileged_auth_required`. Absence is not consent. Before this the
+client decided from the role instead, and refused sessions the server had just
+admitted.
 
 Response when unauthenticated:
 

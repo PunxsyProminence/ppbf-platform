@@ -68,6 +68,12 @@ export async function POST(request: NextRequest) {
       // as signed out and bounce it to /login, which is the one place that
       // cannot resolve the situation.
       must_change_pin: principal.mustChangePin,
+      // The server's PIN-policy verdict, reported so the client session
+      // resolver does not restate a rule it cannot evaluate. Only the verdict
+      // travels: NODE_ENV, the offline flag, the database address and the
+      // board-seat lookup all stay on this side. Absent for a principal that
+      // does not carry it, so no session acquires the attestation by omission.
+      pin_auth_permitted: principal.pinAuthPermitted,
       // board_seat is the one seat this session lands on; board_seats is every
       // seat held, because a small board doubles up. Absent for every other
       // role, so no non-board session can present a seat.

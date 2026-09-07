@@ -257,16 +257,124 @@ describe('authoritative server role resolution', () => {
     expect(adminOnly.includes(omega)).toBe(false);
   });
 
-  test('accepts athlete local auth but requires Microsoft for every privileged role', () => {
+  // Amended by BASE-04. This read "accepts athlete local auth but requires
+  // Microsoft for every privileged role" and asserted the rule by ROLE, which
+  // is the copy of credentialPolicy.ts this file should never have held. The
+  // subject it actually guards -- a local session proceeds only when the server
+  // says so -- is unchanged and is asserted below, now by attestation. Every
+  // real local session carries one: resolvePrincipal sets it for every
+  // ppbf_local principal it returns.
+  test('accepts a server-attested local session and refuses an unattested one', () => {
     expect(resolveAuthoritativeRoleSession({
       authenticated: true,
       role: 'athlete',
       auth_provider: 'ppbf_local',
+      pin_auth_permitted: true,
     })).toMatchObject({ ok: true, session: { role: 'athlete' } });
 
     expect(resolveAuthoritativeRoleSession({
       authenticated: true,
       role: 'coach',
+      auth_provider: 'ppbf_local',
+    })).toEqual({ ok: false, reason: 'privileged_auth_required' });
+  });
+
+  // BASE-04. This file used to answer "may this person use a PIN" by reading
+  // the role, which is a second copy of a rule credentialPolicy.ts owns and
+  // which the client cannot evaluate correctly -- the real rule reads NODE_ENV,
+  // the offline flag, the database address and board-seat state, none of which
+  // belong in a browser. The server already decided; the client now reads the
+  // decision. Absence is not consent: only an explicit true opens the door.
+  test('a local privileged session the server attested is accepted and routed', () => {
+    expect(resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'coach',
+      auth_provider: 'ppbf_local',
+      pin_auth_permitted: true,
+    })).toMatchObject({
+      ok: true,
+      session: { role: 'coach' },
+      destination: '/coach/environment/intake-router',
+    });
+  });
+
+  test.each([
+    ['no attestation at all', undefined],
+    ['an explicit false', false],
+    ['a truthy non-boolean', 'true'],
+  ])('a local privileged session with %s stays refused', (_label, attestation) => {
+    expect(resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'coach',
+      auth_provider: 'ppbf_local',
+      pin_auth_permitted: attestation,
+    })).toEqual({ ok: false, reason: 'privileged_auth_required' });
+  });
+
+  test('the attestation cannot rescue an unknown provider or an unroutable role', () => {
+    expect(resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'coach',
+      auth_provider: 'saml',
+      pin_auth_permitted: true,
+    })).toEqual({ ok: false, reason: 'unauthenticated' });
+
+    expect(resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'sponsor',
+      auth_provider: 'ppbf_local',
+      pin_auth_permitted: true,
+    })).toEqual({ ok: false, reason: 'unsupported_role' });
+  });
+
+  test('Microsoft privileged sessions are unaffected by the attestation', () => {
+    expect(resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'coach',
+      auth_provider: 'microsoft',
+    })).toMatchObject({ ok: true, session: { role: 'coach' } });
+
+    // The exact shape the route emits for every Microsoft session: the server
+    // attests false, because it never put a Microsoft session to the PIN
+    // policy. The gate must not read that false as a refusal.
+    expect(resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'coach',
+      auth_provider: 'microsoft',
+      pin_auth_permitted: false,
+    })).toMatchObject({ ok: true, session: { role: 'coach' } });
+  });
+
+  // Ordering between the two refusal gates, in the direction that depends on
+  // it. An unattested local session still on the bootstrap PIN must be refused
+  // as privileged_auth_required -- the attestation gate runs first -- not sent
+  // to /change-pin, which would route an unverified session to a real page.
+  test('an unattested local session on the bootstrap PIN is refused before the PIN-change branch', () => {
+    expect(resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'athlete',
+      auth_provider: 'ppbf_local',
+      must_change_pin: true,
+    })).toEqual({ ok: false, reason: 'privileged_auth_required' });
+  });
+
+  // The client has no athlete carve-out any more: an athlete's local session is
+  // admitted on the same server attestation as every other local session, and
+  // refused without it. In production every athlete session carries it, because
+  // resolvePrincipal attests every ppbf_local principal it returns.
+  test('an athlete local session is admitted on the attestation like any other local session', () => {
+    expect(resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'athlete',
+      auth_provider: 'ppbf_local',
+      pin_auth_permitted: true,
+    })).toMatchObject({ ok: true, session: { role: 'athlete' }, destination: '/athlete/dashboard' });
+  });
+
+  test('an athlete local session without the attestation is refused, not carved out', () => {
+    expect(resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'athlete',
       auth_provider: 'ppbf_local',
     })).toEqual({ ok: false, reason: 'privileged_auth_required' });
   });
@@ -280,6 +388,9 @@ describe('authoritative server role resolution', () => {
       authenticated: true,
       role: 'athlete',
       auth_provider: 'ppbf_local',
+      // Carried because every real local session carries it; this test's
+      // subject is server-role-wins-over-stored-role, not the PIN policy.
+      pin_auth_permitted: true,
     });
 
     expect(readRoleSession()?.role).toBe('admin');

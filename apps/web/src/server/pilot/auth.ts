@@ -63,6 +63,25 @@ export interface PilotPrincipal {
    * populate it, and the underlying column is `not null default false`.
    */
   mustChangePin?: boolean;
+  /**
+   * The server's answer to "may this session authenticate with a PIN", carried
+   * so the browser does not have to re-derive it.
+   *
+   * It cannot re-derive it. `pinLoginPermitted` reads NODE_ENV, the offline
+   * runtime flag, whether this process's database connection is loopback, and
+   * whether the account holds a board seat -- four facts that must not cross to
+   * a client, and three of which a client could not obtain at all. Before
+   * BASE-04 the client guessed from the role instead, which is how a session
+   * the server had just admitted was refused one layer later.
+   *
+   * This is an ATTESTATION, not an authorization: it reports a decision already
+   * made above, and no client may widen it. Optional only so the many hand-built
+   * principal fixtures need not restate it. resolvePrincipal always populates
+   * it, and resolvePrincipal is the only source of the session route this fact
+   * is read from; the two login paths return principals without it, and no
+   * consumer reads it off those.
+   */
+  pinAuthPermitted?: boolean;
 }
 
 interface AccountRow {
@@ -393,6 +412,12 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
     authProvider: row.auth_provider,
     hasMasterShadowAccess: row.has_master_shadow_access,
     mustChangePin: row.must_change_pin,
+    // Reaching this line with a ppbf_local session means the branch above
+    // already put it to pinLoginPermitted and was answered yes -- an unpermitted
+    // one had its token revoked and returned null. So this reports that
+    // decision; it does not make a second, weaker one. A microsoft session was
+    // never asked the question and does not need the answer.
+    pinAuthPermitted: row.auth_provider === 'ppbf_local',
   };
 }
 

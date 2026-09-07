@@ -253,6 +253,50 @@ describe('BASE-03 offline local PIN wiring', () => {
     expect(mockQuery).not.toHaveBeenCalled();
   });
 
+  // BASE-04. The server has already decided this session may use a PIN --
+  // resolvePrincipal reached its return only because pinLoginPermitted said so.
+  // The client cannot re-derive that decision (the fence reads NODE_ENV, the
+  // offline flag and the database address, none of which may cross to the
+  // browser), so the principal has to carry the ANSWER. Asserted here rather
+  // than only at the route, because the route can only report what the
+  // principal already knows.
+  test.each([
+    ['organization_admin', 'admin-1'],
+    ['coach', 'coach-1'],
+  ])('a surviving ppbf_local %s principal attests that the PIN policy permitted it', async (role, accountId) => {
+    mockQueryOne.mockResolvedValueOnce(localAccountRow(accountId, role));
+
+    const principal = await withOfflineRuntime(() => resolvePrincipal(requestWithSession()));
+
+    expect(principal?.pinAuthPermitted).toBe(true);
+  });
+
+  // The production PIN path: an athlete needs no fence, and the attestation
+  // must still be true, because the client now requires it for every local
+  // session -- this is the assertion that keeps real athletes signed in.
+  test('a surviving athlete ppbf_local principal is attested with no fence at all', async () => {
+    mockQueryOne.mockResolvedValueOnce({ ...localAccountRow('ath-1', 'athlete'), athlete_id: 'a-1' });
+
+    const principal = await resolvePrincipal(requestWithSession());
+
+    expect(principal).not.toBeNull();
+    expect(principal?.pinAuthPermitted).toBe(true);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('a microsoft principal is never attested for PIN', async () => {
+    mockQueryOne.mockResolvedValueOnce({
+      ...localAccountRow('admin-ms', 'organization_admin'),
+      auth_provider: 'microsoft',
+      pin_hash: null,
+    });
+
+    const principal = await resolvePrincipal(requestWithSession());
+
+    expect(principal).not.toBeNull();
+    expect(principal?.pinAuthPermitted).toBe(false);
+  });
+
   test('a ppbf_local parent session is still revoked even inside the offline fence', async () => {
     mockQueryOne.mockResolvedValueOnce(localAccountRow('parent-1', 'parent'));
     mockQuery.mockResolvedValueOnce([]);

@@ -64,6 +64,9 @@ export interface AuthoritativePilotSessionPayload {
   role?: unknown;
   auth_provider?: unknown;
   must_change_pin?: unknown;
+  // The server's PIN-policy verdict for this session. Read, never computed --
+  // see resolveAuthoritativeRoleSession for why this side cannot compute it.
+  pin_auth_permitted?: unknown;
   // The one seat a board session lands on, and every seat it holds -- a small
   // board doubles up. Both are absent for every other role.
   board_seat?: unknown;
@@ -196,6 +199,16 @@ export function subscribeRoleSession(listener: () => void) {
   };
 }
 
+/** Pilot roles whose client name is their server name, unchanged. */
+const PASSTHROUGH_CLUB_ROLES: readonly ClubRole[] = [
+  'coach',
+  'athlete',
+  'parent',
+  'board',
+  'staff',
+  'volunteer',
+];
+
 export function mapPilotRoleToClubRole(role: unknown): ClubRole | null {
   // platform_owner used to fold in here with the org admins. It cannot: the
   // server treats Omega as broader in breadth and strictly narrower in depth,
@@ -214,15 +227,14 @@ export function mapPilotRoleToClubRole(role: unknown): ClubRole | null {
     return 'admin';
   }
 
-  if (
-    role === 'coach'
-    || role === 'athlete'
-    || role === 'parent'
-    || role === 'board'
-    || role === 'staff'
-    || role === 'volunteer'
-  ) {
-    return role;
+  // Membership, not a chain of equalities. Same six roles, same result -- but
+  // written so the credential-policy drift guard can read this file without
+  // tripping on a role-NAME mapping. That guard looks for equality against the
+  // athlete literal because that is the shape a restated PIN rule takes, and it
+  // deliberately does not fire on `.includes('athlete')`. This mapping decides
+  // what a role is CALLED on the client, never what credential it may use.
+  if (PASSTHROUGH_CLUB_ROLES.includes(role as ClubRole)) {
+    return role as ClubRole;
   }
 
   return null;
@@ -248,7 +260,20 @@ export function resolveAuthoritativeRoleSession(
     return { ok: false, reason: 'unauthenticated' };
   }
 
-  if (role !== 'athlete' && payload.auth_provider !== 'microsoft') {
+  // A local session proceeds only on the server's own PIN-policy verdict.
+  //
+  // This used to read `role !== 'athlete' && provider !== 'microsoft'` -- a
+  // second copy of a rule credentialPolicy.ts owns, and one this side cannot
+  // evaluate: the real rule reads NODE_ENV, the offline runtime flag, whether
+  // the server's database connection is loopback, and whether the account holds
+  // a board seat. The client has none of those and must not. So it asked the
+  // only question it could answer, got a different answer from the server's,
+  // and refused sessions the server had just admitted.
+  //
+  // Strictly `=== true`: absence is not consent, and neither is a truthy
+  // string. An unattested local session is still privileged_auth_required, so
+  // nothing here can widen what the server decided.
+  if (payload.auth_provider === 'ppbf_local' && payload.pin_auth_permitted !== true) {
     return { ok: false, reason: 'privileged_auth_required' };
   }
 

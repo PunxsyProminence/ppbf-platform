@@ -111,8 +111,24 @@ export const SERVER_GUARDED_ROUTES = [
 ] as const;
 
 function defaultAuthProvider(role: JourneyRole): AuthProvider {
-  // credentialPolicy.usesPin: athletes, and only athletes, hold a PIN.
+  // credentialPolicy.usesPin: in production, athletes and only athletes hold a
+  // PIN. The BASE-03 offline exception also admits organization_admin and coach
+  // locally, but a journey wanting that must ask for it explicitly.
   return role === 'athlete' ? 'ppbf_local' : 'microsoft';
+}
+
+/** Roles the server can ever attest for a ppbf_local session: athletes under
+    the ordinary policy, plus the two BASE-03 offline-exception roles. A stub
+    for any other local role would describe a session the server cannot mint,
+    so it is refused here rather than silently admitted. */
+const PIN_ATTESTABLE_ROLES: ReadonlySet<string> = new Set(['athlete', 'organization_admin', 'coach']);
+
+function pinAuthAttestation(role: JourneyRole, provider: AuthProvider): boolean {
+  if (provider !== 'ppbf_local') return false;
+  if (!PIN_ATTESTABLE_ROLES.has(role)) {
+    throw new Error(`sessionPayload: the server never attests a ppbf_local session for role "${role}"`);
+  }
+  return true;
 }
 
 /** The body /api/pilot/auth/session returns for a live session, in the shape
@@ -123,6 +139,11 @@ export function sessionPayload(session: PilotSessionStub) {
     role: session.role,
     auth_provider: session.authProvider ?? defaultAuthProvider(session.role),
     must_change_pin: session.mustChangePin ?? false,
+    // The server attests its own PIN-policy verdict for every local session,
+    // and roleSession.ts refuses a ppbf_local session that arrives without it.
+    // Mirrored here so a stubbed journey sees the same shape a real one does --
+    // and only for roles the server can actually attest.
+    pin_auth_permitted: pinAuthAttestation(session.role, session.authProvider ?? defaultAuthProvider(session.role)),
     ...(session.boardSeat ? { board_seat: session.boardSeat } : {}),
     ...(session.athleteId ? { athlete_id: session.athleteId } : {}),
   };
