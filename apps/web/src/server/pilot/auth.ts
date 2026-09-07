@@ -76,8 +76,10 @@ export interface PilotPrincipal {
    *
    * This is an ATTESTATION, not an authorization: it reports a decision already
    * made above, and no client may widen it. Optional only so the many hand-built
-   * principal fixtures need not restate it; both login paths and resolvePrincipal
-   * always populate it.
+   * principal fixtures need not restate it. resolvePrincipal always populates
+   * it, and resolvePrincipal is the only source of the session route this fact
+   * is read from; the two login paths return principals without it, and no
+   * consumer reads it off those.
    */
   pinAuthPermitted?: boolean;
 }
