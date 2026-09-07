@@ -123,7 +123,7 @@ Response when authenticated:
   "role": "string",
   "organization_id": "string",
   "athlete_id": "string | null",
-  "auth_provider": "microsoft | ppbf_local",
+  "auth_provider": "microsoft | ppbf_local | magic_link",
   "must_change_pin": "boolean",
   "pin_auth_permitted": "boolean",
   "board_seat": "string | null   -- board role only, otherwise absent",
