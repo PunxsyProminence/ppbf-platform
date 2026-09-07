@@ -333,6 +333,29 @@ describe('authoritative server role resolution', () => {
       role: 'coach',
       auth_provider: 'microsoft',
     })).toMatchObject({ ok: true, session: { role: 'coach' } });
+
+    // The exact shape the route emits for every Microsoft session: the server
+    // attests false, because it never put a Microsoft session to the PIN
+    // policy. The gate must not read that false as a refusal.
+    expect(resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'coach',
+      auth_provider: 'microsoft',
+      pin_auth_permitted: false,
+    })).toMatchObject({ ok: true, session: { role: 'coach' } });
+  });
+
+  // Ordering between the two refusal gates, in the direction that depends on
+  // it. An unattested local session still on the bootstrap PIN must be refused
+  // as privileged_auth_required -- the attestation gate runs first -- not sent
+  // to /change-pin, which would route an unverified session to a real page.
+  test('an unattested local session on the bootstrap PIN is refused before the PIN-change branch', () => {
+    expect(resolveAuthoritativeRoleSession({
+      authenticated: true,
+      role: 'athlete',
+      auth_provider: 'ppbf_local',
+      must_change_pin: true,
+    })).toEqual({ ok: false, reason: 'privileged_auth_required' });
   });
 
   // The client has no athlete carve-out any more: an athlete's local session is
