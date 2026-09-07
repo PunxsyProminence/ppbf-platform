@@ -52,6 +52,23 @@ export async function requireMicrosoftAuthenticatedPrincipal(request: NextReques
   return principal;
 }
 
+// Credential gate for privileged reads the offline base model must also
+// reach. Admits a Microsoft session, or a local PIN session the server itself
+// attested: resolvePrincipal sets pinAuthPermitted only after pinLoginPermitted
+// admitted the session, so this reads that decision and never re-derives it.
+// Strict `=== true` -- absence, false and a truthy string all refuse. This is
+// credential only; the caller still applies its own role gate.
+export async function requireMicrosoftOrAttestedLocalPinPrincipal(request: NextRequest): Promise<PilotPrincipal> {
+  const principal = await requirePrincipal(request);
+  if (principal.authProvider === 'microsoft') {
+    return principal;
+  }
+  if (principal.authProvider === 'ppbf_local' && principal.pinAuthPermitted === true) {
+    return principal;
+  }
+  throw new Error('Forbidden: Microsoft-authenticated or server-attested local PIN session required');
+}
+
 export function requireRole(principal: PilotPrincipal, allowedRoles: PilotRole[]): void {
   if (!allowedRoles.includes(principal.role)) {
     throw new Error('Forbidden');

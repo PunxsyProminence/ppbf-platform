@@ -2,7 +2,10 @@ import { NextRequest } from 'next/server';
 
 import { GET } from './route';
 import { query } from '@/src/server/pilot/db';
-import { requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
+import {
+  requireMicrosoftAuthenticatedPrincipal,
+  requireMicrosoftOrAttestedLocalPinPrincipal,
+} from '@/src/server/pilot/http';
 
 jest.mock('@/src/server/pilot/db', () => ({
   query: jest.fn(),
@@ -10,6 +13,7 @@ jest.mock('@/src/server/pilot/db', () => ({
 
 jest.mock('@/src/server/pilot/http', () => ({
   requireMicrosoftAuthenticatedPrincipal: jest.fn(),
+  requireMicrosoftOrAttestedLocalPinPrincipal: jest.fn(),
   jsonError: (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     if (message.startsWith('Unauthorized')) return new Response(JSON.stringify({ error: message }), { status: 401 });
@@ -18,10 +22,15 @@ jest.mock('@/src/server/pilot/http', () => ({
   },
 }));
 
-const mockRequirePrincipal = requireMicrosoftAuthenticatedPrincipal as jest.Mock;
+// BASE04-D004: this read sits behind the credential gate that admits a
+// Microsoft session or a server-attested local PIN session. The existing
+// cases model what that gate returned; the Microsoft-only gate is kept only
+// to prove the route no longer calls it.
+const mockRequirePrincipal = requireMicrosoftOrAttestedLocalPinPrincipal as jest.Mock;
+const mockRequireMicrosoft = requireMicrosoftAuthenticatedPrincipal as jest.Mock;
 const mockQuery = query as jest.Mock;
 
-function principal(role: string) {
+function principal(role: string, overrides: Record<string, unknown> = {}) {
   return {
     accountId: 'acct-1',
     role,
@@ -29,7 +38,12 @@ function principal(role: string) {
     athleteId: null,
     sessionToken: 'token',
     authProvider: 'microsoft' as const,
+    ...overrides,
   };
+}
+
+function attestedLocal(role: string) {
+  return principal(role, { authProvider: 'ppbf_local', pinAuthPermitted: true });
 }
 
 function request() {
@@ -55,7 +69,39 @@ describe('GET /api/pilot/admin/athlete-pin-directory', () => {
     expect(response.status).toBe(200);
     const [, params] = mockQuery.mock.calls[0];
     expect(params).toEqual(['org-1']);
+    expect(mockRequireMicrosoft).not.toHaveBeenCalled();
   });
+
+  test('admits a server-attested local organization admin the Microsoft-only gate would refuse', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(attestedLocal('organization_admin'));
+    mockRequireMicrosoft.mockRejectedValueOnce(new Error('Forbidden: Microsoft-authenticated session required'));
+    mockQuery.mockResolvedValueOnce([]);
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(200);
+    const [, params] = mockQuery.mock.calls[0];
+    expect(params).toEqual(['org-1']);
+    expect(mockRequirePrincipal).toHaveBeenCalledTimes(1);
+    expect(mockRequireMicrosoft).not.toHaveBeenCalled();
+  });
+
+  // Credential admission is not authorization. An attested local coach or
+  // athlete clears the credential gate and is stopped by the same role gate
+  // that stops them today, before a single row is read.
+  test.each(['coach', 'athlete'])(
+    'an attested local %s passes the credential gate and is refused by the role gate',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValueOnce(attestedLocal(role));
+
+      const response = await GET(request());
+      const payload = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(payload.error).toBe('Forbidden: role not allowed');
+      expect(mockQuery).not.toHaveBeenCalled();
+    },
+  );
 
   test('the platform owner is refused, and no roster is read', async () => {
     // Athlete credentials sit outside the platform-owner tier, the same
