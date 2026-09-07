@@ -8,7 +8,10 @@ import {
   listOrganizationMembers,
   removeGuardianLink,
 } from '@/src/server/pilot/staffProvisioning';
-import { requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
+import {
+  requireMicrosoftAuthenticatedPrincipal,
+  requireMicrosoftOrAttestedLocalPinPrincipal,
+} from '@/src/server/pilot/http';
 
 // requireGuardianLinkForParentInvite and the role vocabulary stay real: the
 // refusal of an unlinked parent invite is the behaviour under test, and a
@@ -24,6 +27,7 @@ jest.mock('@/src/server/pilot/staffProvisioning', () => ({
 
 jest.mock('@/src/server/pilot/http', () => ({
   requireMicrosoftAuthenticatedPrincipal: jest.fn(),
+  requireMicrosoftOrAttestedLocalPinPrincipal: jest.fn(),
   jsonError: (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     const status = message.startsWith('Unauthorized')
@@ -47,13 +51,14 @@ jest.mock('@/src/server/pilot/audit', () => ({
 }));
 
 const mockRequireMicrosoft = jest.mocked(requireMicrosoftAuthenticatedPrincipal);
+const mockRequireAttested = jest.mocked(requireMicrosoftOrAttestedLocalPinPrincipal);
 const mockProvision = jest.mocked(createOrUpdateMicrosoftStaffAccount);
 const mockListMembers = jest.mocked(listOrganizationMembers);
 const mockListGuardianLinks = jest.mocked(listOrganizationGuardianLinks);
 const mockRemoveLink = jest.mocked(removeGuardianLink);
 const mockAudit = jest.mocked(writePilotAuditEvent);
 
-function principal(role = 'organization_admin') {
+function principal(role = 'organization_admin', overrides: Record<string, unknown> = {}) {
   return {
     accountId: 'admin-1',
     role,
@@ -61,8 +66,17 @@ function principal(role = 'organization_admin') {
     athleteId: null,
     sessionToken: 'token',
     authProvider: 'microsoft',
+    ...overrides,
   } as never;
 }
+
+// What resolvePrincipal emits for an offline organization admin the server
+// admitted by PIN: the provider is local and the attestation is a real true.
+function attestedLocal(role = 'organization_admin') {
+  return principal(role, { authProvider: 'ppbf_local', pinAuthPermitted: true });
+}
+
+const MICROSOFT_ONLY = new Error('Forbidden: Microsoft-authenticated session required');
 
 function jsonRequest(method: string, body: Record<string, unknown>): NextRequest {
   return new NextRequest('https://ppbf.example/api/pilot/admin/staff', {
@@ -75,11 +89,40 @@ function jsonRequest(method: string, body: Record<string, unknown>): NextRequest
 beforeEach(() => {
   jest.clearAllMocks();
   mockRequireMicrosoft.mockResolvedValue(principal());
+  mockRequireAttested.mockResolvedValue(principal());
   mockListMembers.mockResolvedValue([]);
   mockListGuardianLinks.mockResolvedValue([]);
 });
 
 describe('GET', () => {
+  // BASE04-D004. The read behind /admin/people admits a session the server
+  // attested by PIN as well as a Microsoft one; the writes below do not.
+  test('admits a server-attested local organization admin the Microsoft-only gate would refuse', async () => {
+    mockRequireAttested.mockResolvedValue(attestedLocal());
+    mockRequireMicrosoft.mockRejectedValue(MICROSOFT_ONLY);
+
+    const response = await GET(new NextRequest('https://ppbf.example/api/pilot/admin/staff'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.organization_id).toBe('org-1');
+    expect(mockListMembers).toHaveBeenCalledWith('org-1');
+    expect(mockRequireAttested).toHaveBeenCalledTimes(1);
+    expect(mockRequireMicrosoft).not.toHaveBeenCalled();
+  });
+
+  test('an attested local coach passes the credential gate and is refused by the role gate', async () => {
+    mockRequireAttested.mockResolvedValue(attestedLocal('coach'));
+
+    const response = await GET(new NextRequest('https://ppbf.example/api/pilot/admin/staff'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(payload.error).toBe('Forbidden: role not allowed');
+    expect(mockListMembers).not.toHaveBeenCalled();
+    expect(mockListGuardianLinks).not.toHaveBeenCalled();
+  });
+
   test('returns guardian links alongside the members', async () => {
     mockListGuardianLinks.mockResolvedValue([
       {
@@ -99,15 +142,43 @@ describe('GET', () => {
     // Both reads are scoped to the session's organization, never a parameter.
     expect(mockListGuardianLinks).toHaveBeenCalledWith('org-1');
     expect(mockListMembers).toHaveBeenCalledWith('org-1');
+    // The Microsoft organization admin still arrives through the credential
+    // gate; the Microsoft-only gate is no longer on this read at all.
+    expect(mockRequireAttested).toHaveBeenCalledTimes(1);
+    expect(mockRequireMicrosoft).not.toHaveBeenCalled();
   });
 
   test('refuses a caller who is not an organization admin', async () => {
-    mockRequireMicrosoft.mockResolvedValue(principal('coach'));
+    mockRequireAttested.mockResolvedValue(principal('coach'));
 
     const response = await GET(new NextRequest('https://ppbf.example/api/pilot/admin/staff'));
 
     expect(response.status).toBe(403);
     expect(mockListGuardianLinks).not.toHaveBeenCalled();
+  });
+});
+
+// Invariant, not a D004 feature: provisioning and link removal stay behind
+// the Microsoft-only gate. An attested local admin who can read the roster
+// still cannot write it, and the new credential gate is never consulted.
+describe('writes stay Microsoft-only', () => {
+  test.each([
+    ['POST', () => POST(jsonRequest('POST', { login_email: 'coach@example.com', role: 'coach' }))],
+    ['DELETE', () => DELETE(jsonRequest('DELETE', { account_id: 'dana@example.com', athlete_id: 'ath-2' }))],
+  ])('%s refuses an attested local organization admin at the credential gate', async (_method, call) => {
+    mockRequireAttested.mockResolvedValue(attestedLocal());
+    mockRequireMicrosoft.mockRejectedValue(MICROSOFT_ONLY);
+
+    const response = await call();
+    const payload = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(payload.error).toMatch(/Microsoft-authenticated session required/);
+    expect(mockRequireMicrosoft).toHaveBeenCalledTimes(1);
+    expect(mockRequireAttested).not.toHaveBeenCalled();
+    expect(mockProvision).not.toHaveBeenCalled();
+    expect(mockRemoveLink).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 });
 

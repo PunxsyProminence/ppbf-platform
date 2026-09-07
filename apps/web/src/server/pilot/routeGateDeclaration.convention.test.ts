@@ -68,15 +68,17 @@ const API_ROOT = path.join(WEB_ROOT, 'app', 'api');
 const HTTP_METHODS = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'HEAD', 'OPTIONS'] as const;
 
 /**
- * Gates that answer "who is the caller". All four are in http.ts / auth.ts;
- * the last three are the deliberate exceptions requirePrincipal's own header
- * names -- the PIN-change route, the session-read route, and the Microsoft-only
- * tier for privileged operations.
+ * Gates that answer "who is the caller". All five are in http.ts / auth.ts;
+ * the last four are the deliberate exceptions requirePrincipal's own header
+ * names -- the PIN-change route, the session-read route, the Microsoft-only
+ * tier for privileged operations, and (BASE04-D004) the credential tier that
+ * also admits a local PIN session the server itself attested.
  */
 const SESSION_GATES = new Set([
   'requirePrincipal',
   'requirePrincipalAllowingPinChange',
   'requireMicrosoftAuthenticatedPrincipal',
+  'requireMicrosoftOrAttestedLocalPinPrincipal',
   'resolvePrincipal',
 ]);
 
@@ -345,7 +347,8 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
   ],
   [
     'app/api/pilot/admin/staff/route.ts#GET',
-    'INLINE. requireMicrosoftAuthenticatedPrincipal then an '
+    'INLINE. requireMicrosoftOrAttestedLocalPinPrincipal (Microsoft, or a '
+      + 'local PIN session the server attested -- BASE04-D004) then an '
       + 'isOrganizationAdminRole refusal. The organization is taken from the '
       + 'session and never from the request, so an org admin cannot read '
       + 'another organization\'s roster by changing a parameter.',

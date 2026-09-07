@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { query } from '@/src/server/pilot/db';
-import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
+import { jsonError, requireMicrosoftOrAttestedLocalPinPrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
@@ -17,7 +17,7 @@ interface AthletePinDirectoryRow {
 
 export async function GET(request: NextRequest) {
   try {
-    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
+    const principal = await requireMicrosoftOrAttestedLocalPinPrincipal(request);
     // Athlete credentials sit outside the platform-owner tier, the same
     // boundary session revocation and PIN reset hold: Omega gathers data and
     // supports organization admins rather than holding the keys to a child's

@@ -2,7 +2,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { isOrganizationAdminRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
+import {
+  jsonError,
+  requireMicrosoftAuthenticatedPrincipal,
+  requireMicrosoftOrAttestedLocalPinPrincipal,
+} from '@/src/server/pilot/http';
 import {
   ORG_ADMIN_INVITABLE_ROLES,
   createOrUpdateMicrosoftStaffAccount,
@@ -33,7 +37,7 @@ function assertOrgAdminInvitableRole(role: string): asserts role is InvitableSta
 // not the links would show a stranded guardian as healthy.
 export async function GET(request: NextRequest) {
   try {
-    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
+    const principal = await requireMicrosoftOrAttestedLocalPinPrincipal(request);
     if (!isOrganizationAdminRole(principal.role)) {
       throw new Error('Forbidden: role not allowed');
     }
