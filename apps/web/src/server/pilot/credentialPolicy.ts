@@ -145,3 +145,107 @@ export function usesPin(subject: CredentialSubject): boolean {
 export function usesMicrosoft(subject: CredentialSubject): boolean {
   return requiredCredentialFor(subject) === 'microsoft';
 }
+
+/**
+ * Roles the BASE-03 offline exception may admit, and no others.
+ *
+ * These are exactly the two base roles whose production credential depends on
+ * a service the offline runtime cannot reach: organization_admin needs Entra,
+ * coach needs a magic link delivered by Graph mail. The offline network guard
+ * refuses both, so on a local machine those two accounts have no door at all --
+ * the offline launcher already seeds them with a PIN, and the production policy
+ * below correctly refuses it.
+ *
+ * Athlete is deliberately absent: athletes already sign in with a PIN under the
+ * ordinary policy, so an exception would be a second answer to a settled
+ * question. Every other role is absent because BASE-03's scope is these three
+ * roles and nothing else.
+ */
+export const OFFLINE_LOCAL_PIN_ROLES = [
+  'organization_admin',
+  'coach',
+] as const satisfies readonly PilotRole[];
+
+/**
+ * Runtime facts the offline exception is fenced on.
+ *
+ * databaseIsLoopback is REQUIRED rather than optional, and deliberately so. An
+ * optional boolean defaults to "not loopback" only if every caller remembers to
+ * think about it; a required one is a compile error at any call site that does
+ * not. This module is imported by client components, so it cannot read a
+ * connection string itself -- the fact has to arrive from a server-only caller,
+ * and the type is the only thing that can insist it does.
+ *
+ * holdsBoardSeat is required for the same reason and carries the same warning.
+ * It is the authoritative answer to "does this account hold a seat on the board
+ * of the organization being authenticated", loaded from pilot.board_seats by
+ * the caller. An optional flag would default to "no seat", which is exactly the
+ * silent answer that made the guard below unenforceable in the first place.
+ *
+ * nodeEnv and offlineRuntimeFlag stay optional because they fall back to
+ * process.env, which is correct in every runtime; they are injectable so the
+ * policy matrix is testable without mutating global state.
+ */
+export interface RuntimeCredentialEnvironment {
+  databaseIsLoopback: boolean;
+  holdsBoardSeat: boolean;
+  nodeEnv?: string;
+  offlineRuntimeFlag?: string;
+}
+
+/**
+ * Whether this person may authenticate with an account ID and PIN *in the
+ * current runtime*.
+ *
+ * This is deliberately a SEPARATE question from requiredCredentialFor, which
+ * remains the production credential policy and is not environment-aware. A
+ * person is admitted here when either
+ *
+ *   - the ordinary policy already says they use a PIN (athletes), or
+ *   - the narrow BASE-03 offline exception applies.
+ *
+ * The exception opens only when all three of these hold: NODE_ENV is exactly
+ * 'development', PPBF_OFFLINE_RUNTIME is exactly 'true', and this process's
+ * PostgreSQL connection is loopback. That is the same three-condition fence
+ * db.ts's resolveSslConfig requires for the loopback TLS opt-out, and for the
+ * same reasons. NODE_ENV keeps the flag from weakening a real deploy, which
+ * never runs with NODE_ENV=development, so staging and production cannot reach
+ * this branch even if the flag leaks into their environment. The loopback
+ * condition covers the case NODE_ENV cannot: a developer who exports the flag
+ * -- next.config.ts reads it to move distDir off .next, so there is an ordinary
+ * reason to -- while still pointed at a real database. The two environment
+ * strings say what a process calls itself; only the connection says what it is
+ * connected to, and the PIN this exception admits is a published constant.
+ *
+ * A board-seat holder is refused outright. Their production credential is
+ * Microsoft because they hold an office with a mailbox, and an offline
+ * convenience must not quietly downgrade a governance identity. The seat is
+ * asked about two ways because there are two kinds of caller: a subject that
+ * carries its own seat list, and a runtime that loaded the fact from
+ * pilot.board_seats. Either answering yes refuses the exception. Neither
+ * defines what a seat is -- the table does.
+ *
+ * Accepts an injected environment so the policy matrix is directly unit
+ * testable without mutating global process.env.
+ */
+export function pinLoginPermitted(
+  subject: CredentialSubject,
+  environment: RuntimeCredentialEnvironment,
+): boolean {
+  if (usesPin(subject)) {
+    return true;
+  }
+
+  if (seatRequiresMicrosoft(subject.boardSeats) || environment.holdsBoardSeat) {
+    return false;
+  }
+
+  const nodeEnv = environment.nodeEnv ?? process.env.NODE_ENV;
+  const offlineRuntimeFlag = environment.offlineRuntimeFlag ?? process.env.PPBF_OFFLINE_RUNTIME;
+
+  if (nodeEnv !== 'development' || offlineRuntimeFlag !== 'true' || !environment.databaseIsLoopback) {
+    return false;
+  }
+
+  return (OFFLINE_LOCAL_PIN_ROLES as readonly string[]).includes(subject.role);
+}

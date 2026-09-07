@@ -7,14 +7,14 @@ import { seedDefaultComplianceRules } from './complianceRuleSeeds';
 import { seedDefaultDisciplines } from './disciplineSeeds';
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
-import { usesPin } from './credentialPolicy';
+import { pinLoginPermitted, usesPin } from './credentialPolicy';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { isPlatformLibraryOrganization } from './platformLibraryScope';
 import { seedDefaultSafetyGates } from './safetyGateSeeds';
 import { seedDefaultClearanceTypes } from './clearanceTypeSeeds';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
-import { query, queryOne, withTransaction } from './db';
+import { isLoopbackPostgresConnectionString, query, queryOne, withTransaction } from './db';
 import { DEFAULT_FIRST_LOGIN_PIN, assertChosenPinAllowed, validatePinPolicy } from './pinPolicy';
 
 /**
@@ -26,6 +26,23 @@ import { DEFAULT_FIRST_LOGIN_PIN, assertChosenPinAllowed, validatePinPolicy } fr
  */
 export function getPrimaryOwnerEmail(): string {
   return (process.env.PPBF_PRIMARY_OWNER_EMAIL?.trim() || 'admin@punxsyprominence.org').toLowerCase();
+}
+
+/**
+ * Whether this server process is talking to a loopback database -- the third
+ * condition on the BASE-03 offline PIN exception.
+ *
+ * Read here rather than in credentialPolicy because that module is imported by
+ * client components and must stay free of server-only dependencies. It is
+ * computed from AZURE_POSTGRES_CONNECTION_STRING directly, which is the same
+ * variable db.ts's pool and resolveSslConfig read, so the fence and the
+ * connection cannot disagree about which database this is. Not through
+ * getAzurePostgresConnectionString: that throws when the variable is unset, and
+ * an authorization check must answer, not raise. Unset is not loopback, which
+ * is the right answer anyway.
+ */
+function usingLoopbackDatabase(): boolean {
+  return isLoopbackPostgresConnectionString(process.env.AZURE_POSTGRES_CONNECTION_STRING);
 }
 
 export interface PilotPrincipal {
@@ -60,6 +77,8 @@ interface AccountRow {
   active_flag: boolean;
   has_master_shadow_access: boolean;
   organization_status: string | null;
+  /** Whether this account holds any seat on its organization's board. */
+  holds_board_seat: boolean;
 }
 
 interface FederatedAccountRow {
@@ -111,7 +130,20 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
        a.must_change_pin,
        a.active_flag,
        a.has_master_shadow_access,
-       o.status as organization_status
+       o.status as organization_status,
+       -- A scalar subselect, not a join: a person may hold more than one seat,
+       -- so joining pilot.board_seats would multiply this account row and
+       -- change what queryOne returns. exists answers the only question the
+       -- credential policy asks -- any seat at all -- and returns one row.
+       -- No is_primary filter: sharing a seat is still holding one. No active
+       -- or revoked filter: the table has no such column, and a seat is given
+       -- up by deleting the row.
+       exists (
+         select 1
+         from pilot.board_seats bs
+         where bs.organization_id = a.organization_id
+           and bs.account_id = a.account_id
+       ) as holds_board_seat
      from pilot.accounts a
      left join pilot.organizations o on o.organization_id = a.organization_id
      where a.account_id = $1
@@ -163,7 +195,10 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
   // Asks credentialPolicy rather than testing the role here. This check and the
   // login page's default tab used to state the rule separately, and the page
   // had it wrong -- it offered a PIN form to everyone.
-  if (!usesPin({ role: data.role })) {
+  if (!pinLoginPermitted(
+    { role: data.role },
+    { databaseIsLoopback: usingLoopbackDatabase(), holdsBoardSeat: data.holds_board_seat },
+  )) {
     console.warn('pilot-auth login rejected', { accountId, reason: 'role_not_pin_eligible' });
     return null;
   }
@@ -280,6 +315,8 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
     has_master_shadow_access: boolean;
     must_change_pin: boolean;
     organization_status: string | null;
+    /** Whether this account holds a seat on the SESSION organization's board. */
+    holds_board_seat: boolean;
   }>(
     `select
        a.account_id,
@@ -291,7 +328,18 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
        a.active_flag,
        a.has_master_shadow_access,
        a.must_change_pin,
-       o.status as organization_status
+       o.status as organization_status,
+       -- Scoped to the SESSION's organization, the same expression the
+       -- organization join above uses. A session carrying an explicit
+       -- organization must be judged against seats on that board, not on the
+       -- account's home one. Scalar subselect for the same reason as the login
+       -- query: a join would multiply the session row.
+       exists (
+         select 1
+         from pilot.board_seats bs
+         where bs.organization_id = coalesce(st.organization_id, a.organization_id)
+           and bs.account_id = a.account_id
+       ) as holds_board_seat
      from pilot.session_tokens st
      join pilot.accounts a on a.account_id = st.account_id
      left join pilot.organizations o on o.organization_id = coalesce(st.organization_id, a.organization_id)
@@ -317,7 +365,13 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
   // production on 2026-08-07 inert rather than exploitable: every one was
   // ppbf_local with a non-athlete role, so no session they held could survive
   // this branch.
-  if (row.auth_provider === 'ppbf_local' && !usesPin({ role: row.role })) {
+  if (
+    row.auth_provider === 'ppbf_local'
+    && !pinLoginPermitted(
+      { role: row.role },
+      { databaseIsLoopback: usingLoopbackDatabase(), holdsBoardSeat: row.holds_board_seat },
+    )
+  ) {
     await query(
       'update pilot.session_tokens set revoked_at = now() where token_hash = $1 and revoked_at is null',
       [tokenHash],

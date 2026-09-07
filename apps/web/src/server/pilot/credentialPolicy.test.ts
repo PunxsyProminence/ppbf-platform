@@ -2,6 +2,8 @@ import type { PilotRole } from './contracts';
 import {
   MAGIC_LINK_ROLES,
   MICROSOFT_ROLES,
+  OFFLINE_LOCAL_PIN_ROLES,
+  pinLoginPermitted,
   requiredCredentialFor,
   usesMicrosoft,
   usesPin,
@@ -112,5 +114,109 @@ describe('credential policy', () => {
   test('an unclassified role is refused rather than given the weakest credential', () => {
     expect(() => requiredCredentialFor({ role: 'sponsor' as PilotRole }))
       .toThrow('UNCLASSIFIED_ROLE:sponsor');
+  });
+});
+
+// BASE-03. The offline exception is a SEPARATE question from the production
+// credential policy above, and these assert both halves: that the exception
+// opens only inside its exact fence, and that the production mappings it sits
+// beside are untouched by it.
+const OFFLINE = {
+  nodeEnv: 'development',
+  offlineRuntimeFlag: 'true',
+  databaseIsLoopback: true,
+  holdsBoardSeat: false,
+} as const;
+
+// P1. The same fence with the one condition that says what this process is
+// actually connected to, rather than what it calls itself.
+const OFFLINE_REMOTE_DATABASE = { ...OFFLINE, databaseIsLoopback: false } as const;
+
+// P2. The same fence again, with the seat state a caller loaded from
+// pilot.board_seats rather than one the subject carried.
+const OFFLINE_SEAT_HOLDER = { ...OFFLINE, holdsBoardSeat: true } as const;
+
+describe('offline local PIN exception (BASE-03)', () => {
+  test('the production credential policy is unchanged by the exception', () => {
+    expect(requiredCredentialFor({ role: 'organization_admin' })).toBe('microsoft');
+    expect(requiredCredentialFor({ role: 'coach' })).toBe('magic_link');
+    expect(requiredCredentialFor({ role: 'athlete' })).toBe('pin');
+    expect(requiredCredentialFor({ role: 'coach', boardSeats: ['treasurer'] })).toBe('microsoft');
+  });
+
+  test('usesPin keeps its production semantics: athlete only, whatever the runtime', () => {
+    for (const role of EVERY_ROLE) {
+      expect(usesPin({ role })).toBe(role === 'athlete');
+    }
+  });
+
+  test('an athlete is permitted with no offline flags at all', () => {
+    expect(pinLoginPermitted(
+      { role: 'athlete' },
+      { nodeEnv: 'production', offlineRuntimeFlag: undefined, databaseIsLoopback: false, holdsBoardSeat: false },
+    )).toBe(true);
+    expect(pinLoginPermitted({ role: 'athlete' }, OFFLINE)).toBe(true);
+    // P1 must not narrow the ordinary athlete path: an athlete's PIN is their
+    // production credential, so the database boundary has nothing to say about it.
+    expect(pinLoginPermitted({ role: 'athlete' }, OFFLINE_REMOTE_DATABASE)).toBe(true);
+  });
+
+  test.each(OFFLINE_LOCAL_PIN_ROLES)('%s is refused with no offline flags', (role) => {
+    expect(pinLoginPermitted(
+      { role },
+      { nodeEnv: undefined, offlineRuntimeFlag: undefined, databaseIsLoopback: false, holdsBoardSeat: false },
+    )).toBe(false);
+  });
+
+  test.each(OFFLINE_LOCAL_PIN_ROLES)('%s is permitted only inside the exact development + offline fence', (role) => {
+    expect(pinLoginPermitted({ role }, OFFLINE)).toBe(true);
+  });
+
+  // P1. Stated as its own case rather than folded into the shut-fence table so
+  // the defect this repair closes has a test that names it: two of three
+  // conditions is not the fence.
+  test.each(OFFLINE_LOCAL_PIN_ROLES)('%s is refused when the database is not loopback', (role) => {
+    expect(pinLoginPermitted({ role }, OFFLINE_REMOTE_DATABASE)).toBe(false);
+  });
+
+  // P2. The seat guard below asserts the same rule from a subject-supplied
+  // list. This asserts it from the loaded fact, which is the half the runtime
+  // callers can actually supply -- and the half that was missing.
+  test.each(OFFLINE_LOCAL_PIN_ROLES)('%s is refused when the loaded seat state says they hold one', (role) => {
+    expect(pinLoginPermitted({ role }, OFFLINE_SEAT_HOLDER)).toBe(false);
+  });
+
+  // Each half of the fence alone must not open it. The flag leaking into a real
+  // deploy is the case that matters: a deploy never runs NODE_ENV=development.
+  test.each([
+    ['flag set but not development', { ...OFFLINE, nodeEnv: 'production' }],
+    ['development but no flag', { ...OFFLINE, offlineRuntimeFlag: undefined }],
+    ['development but flag not exactly true', { ...OFFLINE, offlineRuntimeFlag: 'TRUE' }],
+    ['staging with the flag set', { ...OFFLINE, nodeEnv: 'staging' }],
+    ['test with the flag set', { ...OFFLINE, nodeEnv: 'test' }],
+    // P1: the third condition, failing alone while the other two are satisfied.
+    ['development and the flag, but a remote database', OFFLINE_REMOTE_DATABASE],
+    // P2: the fourth, likewise alone.
+    ['the whole fence, but the account holds a board seat', OFFLINE_SEAT_HOLDER],
+  ])('the exception stays shut: %s', (_label, environment) => {
+    for (const role of OFFLINE_LOCAL_PIN_ROLES) {
+      expect(pinLoginPermitted({ role }, environment)).toBe(false);
+    }
+  });
+
+  test('no role outside the two named ones gains an exception, even inside the fence', () => {
+    const excepted = new Set<PilotRole>(OFFLINE_LOCAL_PIN_ROLES);
+    for (const role of EVERY_ROLE) {
+      if (excepted.has(role) || role === 'athlete') continue;
+      expect(pinLoginPermitted({ role }, OFFLINE)).toBe(false);
+    }
+  });
+
+  // A board seat is an office with a mailbox, so its holder already has a
+  // Microsoft identity. An offline convenience must not downgrade that.
+  test('a board seat refuses the exception even for an otherwise eligible role', () => {
+    for (const role of OFFLINE_LOCAL_PIN_ROLES) {
+      expect(pinLoginPermitted({ role, boardSeats: ['president'] }, OFFLINE)).toBe(false);
+    }
   });
 });

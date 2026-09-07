@@ -3,6 +3,13 @@ import { NextRequest } from 'next/server';
 jest.mock('./db', () => ({
   query: jest.fn(),
   queryOne: jest.fn(),
+  // resolvePrincipal asks db.ts whether this process is on a loopback database
+  // before it will honour a ppbf_local session. A factory that lists only the
+  // two query functions hands auth.ts an undefined for the third export, and
+  // every case below dies on a TypeError before reaching its assertion. The
+  // real predicate, not a stub: it is pure, and a stub would only prove
+  // auth.ts calls something.
+  isLoopbackPostgresConnectionString: jest.requireActual('./db').isLoopbackPostgresConnectionString,
 }));
 
 import { resolvePrincipal } from './auth';
