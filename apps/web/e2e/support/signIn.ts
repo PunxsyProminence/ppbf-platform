@@ -123,6 +123,10 @@ export function sessionPayload(session: PilotSessionStub) {
     role: session.role,
     auth_provider: session.authProvider ?? defaultAuthProvider(session.role),
     must_change_pin: session.mustChangePin ?? false,
+    // The server attests its own PIN-policy verdict for every local session,
+    // and roleSession.ts refuses a ppbf_local session that arrives without it.
+    // Mirrored here so a stubbed journey sees the same shape a real one does.
+    pin_auth_permitted: (session.authProvider ?? defaultAuthProvider(session.role)) === 'ppbf_local',
     ...(session.boardSeat ? { board_seat: session.boardSeat } : {}),
     ...(session.athleteId ? { athlete_id: session.athleteId } : {}),
   };

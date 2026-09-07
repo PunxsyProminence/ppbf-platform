@@ -253,6 +253,24 @@ describe('BASE-03 offline local PIN wiring', () => {
     expect(mockQuery).not.toHaveBeenCalled();
   });
 
+  // BASE-04. The server has already decided this session may use a PIN --
+  // resolvePrincipal reached its return only because pinLoginPermitted said so.
+  // The client cannot re-derive that decision (the fence reads NODE_ENV, the
+  // offline flag and the database address, none of which may cross to the
+  // browser), so the principal has to carry the ANSWER. Asserted here rather
+  // than only at the route, because the route can only report what the
+  // principal already knows.
+  test.each([
+    ['organization_admin', 'admin-1'],
+    ['coach', 'coach-1'],
+  ])('a surviving ppbf_local %s principal attests that the PIN policy permitted it', async (role, accountId) => {
+    mockQueryOne.mockResolvedValueOnce(localAccountRow(accountId, role));
+
+    const principal = await withOfflineRuntime(() => resolvePrincipal(requestWithSession()));
+
+    expect(principal?.pinAuthPermitted).toBe(true);
+  });
+
   test('a ppbf_local parent session is still revoked even inside the offline fence', async () => {
     mockQueryOne.mockResolvedValueOnce(localAccountRow('parent-1', 'parent'));
     mockQuery.mockResolvedValueOnce([]);

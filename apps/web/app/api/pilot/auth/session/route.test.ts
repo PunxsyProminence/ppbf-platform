@@ -72,6 +72,34 @@ describe('POST /api/pilot/auth/session', () => {
     });
   });
 
+  // BASE-04. The client cannot evaluate the offline PIN fence -- it reads
+  // NODE_ENV, the offline flag and the database address, none of which may
+  // reach the browser. So the route reports the server's ANSWER, and only the
+  // answer. Absent for a principal that does not carry it, so no session can
+  // acquire the attestation by omission.
+  test('carries the server PIN-policy attestation for a local privileged session', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(boardPrincipal({
+      accountId: 'coach-account',
+      role: 'coach',
+      authProvider: 'ppbf_local',
+      pinAuthPermitted: true,
+    }));
+
+    const response = await POST(new NextRequest('https://ppbf.example/api/pilot/auth/session', {
+      method: 'POST',
+    }));
+
+    await expect(response.json()).resolves.toEqual({
+      authenticated: true,
+      account_id: 'coach-account',
+      role: 'coach',
+      organization_id: 'org-1',
+      athlete_id: null,
+      auth_provider: 'ppbf_local',
+      pin_auth_permitted: true,
+    });
+  });
+
   test('keeps server failures non-cacheable', async () => {
     mockResolvePrincipal.mockRejectedValueOnce(new Error('database unavailable'));
 

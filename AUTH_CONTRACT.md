@@ -121,9 +121,24 @@ Response when authenticated:
   "authenticated": true,
   "account_id": "string",
   "role": "string",
-  "athlete_id": "string | null"
+  "athlete_id": "string | null",
+  "pin_auth_permitted": "boolean | undefined"
 }
 ```
+
+`pin_auth_permitted` is the server's ATTESTATION of its own PIN-policy verdict,
+not an authorization the client makes. `resolvePrincipal` reaches its return for
+a `ppbf_local` session only because `pinLoginPermitted` already admitted it, so
+this field reports that decision. The inputs stay on the server — `NODE_ENV`,
+the offline runtime flag, whether the database connection is loopback, and
+board-seat state — because the browser must not see them and could not obtain
+three of them.
+
+`components/roleSession.ts` reads it and never recomputes it: a `ppbf_local`
+session proceeds only on `pin_auth_permitted === true`, and one arriving without
+it stays `privileged_auth_required`. Absence is not consent. Before this the
+client decided from the role instead, and refused sessions the server had just
+admitted.
 
 Response when unauthenticated:
 

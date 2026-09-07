@@ -137,6 +137,10 @@ describe('client-side session routing', () => {
       role: 'athlete',
       auth_provider: 'ppbf_local',
       must_change_pin: true,
+      // The server attests every local session it returns, including one still
+      // on the bootstrap PIN. Without it the resolver refuses earlier, for a
+      // different and stricter reason, which is not what this block measures.
+      pin_auth_permitted: true,
     });
 
     expect(resolution).toEqual({ ok: false, reason: 'pin_change_required' });
@@ -150,6 +154,10 @@ describe('client-side session routing', () => {
       role: 'athlete',
       auth_provider: 'ppbf_local',
       must_change_pin: true,
+      // The server attests every local session it returns, including one still
+      // on the bootstrap PIN. Without it the resolver refuses earlier, for a
+      // different and stricter reason, which is not what this block measures.
+      pin_auth_permitted: true,
     });
 
     expect(resolution.ok).toBe(false);
@@ -162,6 +170,10 @@ describe('client-side session routing', () => {
       role: 'athlete',
       auth_provider: 'ppbf_local',
       must_change_pin: false,
+      // Every ppbf_local session the server returns carries this; a local
+      // session without it is refused, which is a different subject from the
+      // bootstrap-PIN routing this block covers.
+      pin_auth_permitted: true,
     });
 
     expect(resolution.ok).toBe(true);
