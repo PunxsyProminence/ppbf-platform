@@ -20,6 +20,9 @@ let fetchCalls: Call[] = [];
 let storedAttempts: Array<Record<string, unknown>> = [];
 let listFails = false;
 let recordFails = false;
+// When set, the list read waits on it: the initial GET stays unresolved
+// until the test releases it.
+let listGate: Promise<void> | null = null;
 
 function parseBody(init?: RequestInit): Record<string, unknown> | null {
   if (!init?.body || typeof init.body !== 'string') return null;
@@ -62,6 +65,7 @@ beforeEach(() => {
   storedAttempts = [];
   listFails = false;
   recordFails = false;
+  listGate = null;
 
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -87,6 +91,7 @@ beforeEach(() => {
       storedAttempts = [row, ...storedAttempts];
       return jsonResponse({ item: row });
     }
+    if (listGate) await listGate;
     if (listFails) return jsonResponse({ error: 'Internal server error' }, false);
     return jsonResponse({ items: storedAttempts });
   }) as unknown as typeof fetch;
@@ -219,5 +224,40 @@ describe('AthleteAttemptLog', () => {
     await screen.findByText(/not linked to an athlete record/i);
     expect(fetchCalls).toHaveLength(0);
     expect((screen.getByRole('button', { name: /record attempt/i }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  // D003: the fixed context this surface records in (open_floor) is visible
+  // product meaning, not a hidden tag. The athlete can tell what it is for.
+  test('tells the athlete this surface records open-floor attempts', async () => {
+    render(<AthleteAttemptLog athleteId="ath_test" />);
+
+    await screen.findByText(/No attempts recorded yet/);
+    expect(screen.getByText(/open-floor attempts/i)).toBeTruthy();
+  });
+
+  // D004: while the initial canonical read is still unresolved, recording is
+  // not offered. Otherwise a save's re-read and the delayed mount read race,
+  // and whichever lands last is what the athlete sees.
+  test('while the initial list read is unresolved, recording is unavailable and no POST can be sent', async () => {
+    let releaseList: () => void = () => {};
+    listGate = new Promise<void>((resolve) => { releaseList = resolve; });
+
+    render(<AthleteAttemptLog athleteId="ath_test" />);
+
+    await screen.findByText(/Loading your attempts/);
+    expect(listCalls()).toHaveLength(1);
+    const button = screen.getByRole('button', { name: /record attempt/i }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect((screen.getByLabelText(/what you got/i) as HTMLInputElement).disabled).toBe(true);
+    fireEvent.click(button);
+    expect(postCalls()).toHaveLength(0);
+
+    releaseList();
+    await screen.findByText(/No attempts recorded yet/);
+    await waitFor(() => expect(button.disabled).toBe(false));
+
+    await recordOne({ achieved: '8', target: '10' });
+    await waitFor(() => expect(postCalls()).toHaveLength(1));
+    expect(postCalls()[0].body?.context_type).toBe('open_floor');
   });
 });

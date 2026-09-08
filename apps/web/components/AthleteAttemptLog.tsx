@@ -179,14 +179,14 @@ export default function AthleteAttemptLog({ athleteId }: Props) {
     }
   }, [achieved, athleteId, load, metricKind, note, saving, target]);
 
-  const canRecord = Boolean(athleteId) && !saving;
+  const canRecord = Boolean(athleteId) && !saving && !loading;
 
   return (
     <section className="space-y-[var(--s5)]" aria-labelledby="athlete-attempt-log-heading">
       <div className="space-y-[var(--s2)]">
         <h3 id="athlete-attempt-log-heading" className="t-label">Attempt Log</h3>
         <p className="t-muted text-[length:var(--t-sm)]">
-          Every attempt, made or missed — the misses are the point. Write down what you went for and what you got.
+          Open-floor attempts you record yourself. Every attempt, made or missed — the misses are the point. Write down what you went for and what you got.
         </p>
       </div>
 
