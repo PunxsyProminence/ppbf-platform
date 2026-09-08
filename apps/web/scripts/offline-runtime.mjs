@@ -156,6 +156,12 @@ async function seedSyntheticData(client) {
     ['offline-program-admin', 'admin', null], ['offline-volunteer', 'volunteer', null], ['offline-staff', 'staff', null],
     ['offline-coach', 'coach', null], ['offline-athlete', 'athlete', 'offline-athlete-record'],
     ['offline-parent', 'parent', null],
+    // BASE-06 denied-review fixture: a SECOND athlete with a SECOND coach, so
+    // offline-coach is genuinely not assigned to (and holds no coverage on)
+    // offline-athlete-record-2. It exists only to make the denied coach-review
+    // path physically provable in the local runtime; it uses the same offline
+    // PIN account mechanism as every other seed account and changes no auth.
+    ['offline-coach-2', 'coach', null], ['offline-athlete-2', 'athlete', 'offline-athlete-record-2'],
   ];
   const pinHash = await hashPin('246810');
   await client.query('begin');
@@ -172,6 +178,12 @@ async function seedSyntheticData(client) {
     await client.query(
       `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
        values ($1, 'offline-athlete-record', 'Demo Athlete', '2011-06-15', 'demo', 'active', 'Synthetic emergency contact — do not use', true, 'offline-coach', now(), now())`, [org],
+    );
+    // The second athlete belongs to offline-coach-2, NOT offline-coach -- the
+    // BASE-06 denied coach-review fixture. Same synthetic shape as above.
+    await client.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, 'offline-athlete-record-2', 'Demo Athlete Two', '2011-09-20', 'demo', 'active', 'Synthetic emergency contact — do not use', true, 'offline-coach-2', now(), now())`, [org],
     );
     await client.query(`insert into pilot.goals (organization_id, goal_id, athlete_id, title, target_date, metric, status, created_at, updated_at)
       values ($1, 'offline-goal-1', 'offline-athlete-record', 'Complete synthetic demo check-in', current_date + 30, 'participation', 'active', now(), now())`, [org]);
@@ -315,7 +327,7 @@ async function startRuntime({ reset, port }) {
   });
   console.log(`PPBF offline replica: http://127.0.0.1:${port}`);
   console.log(`Checkout: ${repoDir}`);
-  console.log('Synthetic accounts: offline-owner, offline-admin, offline-program-admin, offline-coach, offline-athlete, offline-parent, offline-volunteer, offline-staff');
+  console.log('Synthetic accounts: offline-owner, offline-admin, offline-program-admin, offline-coach, offline-athlete, offline-parent, offline-volunteer, offline-staff, offline-coach-2, offline-athlete-2');
   console.log('Shared synthetic PIN: 246810');
 }
 

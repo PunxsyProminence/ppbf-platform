@@ -90,6 +90,10 @@ const COACH_REPORTED_SQL = 'pilot_slice_postgres_film_study_coach_reported_migra
 const REVISIONS_SQL = 'pilot_slice_postgres_film_study_revisions_migration.sql';
 const TRAINING_ATTEMPTS_SQL = 'pilot_slice_postgres_training_attempts_migration.sql';
 const SPARRING_CONTEXTS_SQL = 'pilot_slice_postgres_sparring_attempt_contexts_migration.sql';
+// BASE-06: listAttempts and getTransferReadout now read
+// pilot.v_training_attempts_effective, which this migration creates on top of
+// the training-attempts ledger, so the fixture must apply it too.
+const ATTEMPT_REVIEWS_SQL = 'pilot_slice_postgres_training_attempt_reviews_migration.sql';
 
 async function seedTenancy(client: Client): Promise<void> {
   for (const organizationId of [ORG_ID, OTHER_ORG_ID]) {
@@ -191,8 +195,13 @@ async function truncateAll(): Promise<void> {
   await client.connect();
   try {
     await client.query(
-      `truncate pilot.film_study_proposal_revisions, pilot.shadow_film_study_proposals,
-                pilot.shadow_formula_results, pilot.training_attempts`,
+      // training_attempt_reviews is listed before training_attempts it
+      // references (BASE-06): a table referenced by a foreign key cannot be
+      // truncated unless the referencing table is truncated too, the same
+      // reason the film-study revisions sit before their proposals here.
+      `truncate pilot.training_attempt_reviews, pilot.film_study_proposal_revisions,
+                pilot.shadow_film_study_proposals, pilot.shadow_formula_results,
+                pilot.training_attempts`,
     );
   } finally {
     await client.end();
@@ -246,6 +255,7 @@ beforeAll(async () => {
   await migrateClient.query(await readMigration(REVISIONS_SQL));
   await migrateClient.query(await readMigration(TRAINING_ATTEMPTS_SQL));
   await migrateClient.query(await readMigration(SPARRING_CONTEXTS_SQL));
+  await migrateClient.query(await readMigration(ATTEMPT_REVIEWS_SQL));
   await seedTenancy(migrateClient);
   await migrateClient.end();
 

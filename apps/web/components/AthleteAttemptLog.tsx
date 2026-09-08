@@ -47,6 +47,15 @@ export interface AthleteAttemptRecord {
   made: boolean | null;
   note: string;
   attempted_at: string;
+  // BASE-06: the coach's current review of this attempt, read-only here. The
+  // athlete sees what a coach said about their attempt but has no review
+  // controls -- reviewing is a coaching action, and the fields below are just
+  // the current disposition the server computed.
+  review_state?: 'confirmed' | 'corrected' | 'disputed' | null;
+  corrected_target_value?: string | null;
+  corrected_achieved_value?: string | null;
+  corrected_made?: boolean | null;
+  review_reason?: string | null;
 }
 
 interface Props {
@@ -76,6 +85,34 @@ function formatWhen(iso: string): string {
 async function readError(response: Response, fallback: string): Promise<string> {
   const payload = (await response.json().catch(() => null)) as { error?: unknown } | null;
   return typeof payload?.error === 'string' && payload.error.trim() !== '' ? payload.error : fallback;
+}
+
+// The coach's current review, shown to the athlete read-only. A correction
+// never hides the athlete's own numbers -- those stay on the row above; this
+// only adds what the coach said. A dispute shows the disagreement, not a
+// verdict, because a disputed attempt has no effective verdict.
+function CoachReviewNote({ item }: { item: AthleteAttemptRecord }) {
+  const state = item.review_state ?? null;
+  if (!state) return null;
+  if (state === 'confirmed') {
+    return (
+      <p className="t-muted text-[length:var(--t-xs)]" role="status">Coach confirmed this attempt.</p>
+    );
+  }
+  if (state === 'corrected') {
+    const target = item.corrected_target_value;
+    return (
+      <p className="t-muted text-[length:var(--t-xs)]" role="status">
+        Coach correction: {item.corrected_achieved_value}{target !== null && target !== undefined ? ` / ${target}` : ''} {metricUnit(item.metric_kind)} · {resultLabel(item.corrected_made ?? null)}
+        {item.review_reason ? ` — ${item.review_reason}` : ''}
+      </p>
+    );
+  }
+  return (
+    <p className="alert-title text-[length:var(--t-xs)]" role="status">
+      Coach disputed this attempt{item.review_reason ? ` — ${item.review_reason}` : ''}
+    </p>
+  );
 }
 
 export default function AthleteAttemptLog({ athleteId }: Props) {
@@ -292,6 +329,7 @@ export default function AthleteAttemptLog({ athleteId }: Props) {
                   <span>{formatWhen(item.attempted_at)}</span>
                   {item.note !== '' && <span> · {item.note}</span>}
                 </div>
+                <CoachReviewNote item={item} />
               </li>
             ))}
           </ul>

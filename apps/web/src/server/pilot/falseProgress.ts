@@ -84,14 +84,21 @@ export async function getTransferReadout(
     live_makes: string;
     live_misses: string;
   }>(
+    // BASE-06: read the EFFECTIVE interpretation, not the raw attempt. A
+    // coach correction changes effective_made; a current dispute makes it NULL
+    // and `effective_made is not null` drops the attempt from both sides --
+    // disputed is abstention, counted as neither a make nor a miss, while the
+    // attempt still exists as an event. Unreviewed and confirmed attempts keep
+    // the source verdict unchanged. Context class, window and thresholds are
+    // untouched.
     `select metric_kind,
-       count(*) filter (where context_type = any($4) and made) as controlled_makes,
-       count(*) filter (where context_type = any($4) and not made) as controlled_misses,
-       count(*) filter (where context_type = any($5) and made) as live_makes,
-       count(*) filter (where context_type = any($5) and not made) as live_misses
-     from pilot.training_attempts
+       count(*) filter (where context_type = any($4) and effective_made) as controlled_makes,
+       count(*) filter (where context_type = any($4) and not effective_made) as controlled_misses,
+       count(*) filter (where context_type = any($5) and effective_made) as live_makes,
+       count(*) filter (where context_type = any($5) and not effective_made) as live_misses
+     from pilot.v_training_attempts_effective
      where organization_id = $1 and athlete_id = $2
-       and made is not null
+       and effective_made is not null
        and attempted_at >= now() - make_interval(days => $3)
      group by metric_kind
      order by metric_kind`,
