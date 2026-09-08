@@ -119,6 +119,7 @@ export default function AthleteAttemptLog({ athleteId }: Props) {
   }, [athleteId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 
