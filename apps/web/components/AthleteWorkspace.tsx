@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
+import AthleteAttemptLog from './AthleteAttemptLog';
 import AthleteCheckInPanel, { type AthleteCheckInRecord } from './AthleteCheckInPanel';
 import Chalkboard from './Chalkboard';
 import GymWallModule from './GymWallModule';
@@ -23,7 +24,7 @@ import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
 import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
 
-type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
+type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'attempt-log' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'messages' | 'shadow';
 
 /**
@@ -91,6 +92,8 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
     label: 'Development',
     tabs: [
       { id: 'smart-goals', label: 'Goals' },
+      // BASE-05: the athlete's own attempt log over the training-attempts ledger.
+      { id: 'attempt-log', label: 'Attempts' },
     ],
   },
   {
@@ -2727,6 +2730,13 @@ export default function AthleteWorkspace() {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* ATTEMPTS - BASE-05: the athlete's own log over the training-attempts ledger. */}
+          {activeTab === 'attempt-log' && (
+            <div className={`${PANEL} space-y-[var(--s4)] panel-settle`}>
+              <AthleteAttemptLog athleteId={backendAthleteId} />
             </div>
           )}
 

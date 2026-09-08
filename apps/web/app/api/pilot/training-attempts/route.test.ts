@@ -71,6 +71,33 @@ test('the athlete-access check runs before any read or write', async () => {
   expect(mockRecord).not.toHaveBeenCalled();
 });
 
+// BASE-05: the athlete's own log. An athlete principal reads and records for
+// its own athlete_id through the same gate staff use; the standing access
+// check (mocked here, real in access.ts) is what admits self and refuses
+// everyone else -- the test above already pins that it runs first.
+test('an athlete reads and records their own attempts', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'ath-1' }));
+  mockAccess.mockResolvedValue(undefined);
+  mockList.mockResolvedValue([]);
+  mockRecord.mockResolvedValue({ attempt_id: 'att-1' });
+
+  expect((await GET(getRequest('athlete_id=ath-1'))).status).toBe(200);
+  expect(mockAccess).toHaveBeenCalledWith(expect.objectContaining({ role: 'athlete', athleteId: 'ath-1' }), 'ath-1');
+  expect(mockList).toHaveBeenCalledWith('org-1', 'ath-1', {});
+
+  const response = await POST(postRequest({ athlete_id: 'ath-1', metric_kind: 'reps', achieved_value: 8, target_value: 10 }));
+
+  expect(response.status).toBe(200);
+  expect(mockRecord).toHaveBeenCalledWith(expect.objectContaining({
+    organizationId: 'org-1',
+    athleteId: 'ath-1',
+    metricKind: 'reps',
+    achievedValue: 8,
+    targetValue: 10,
+    recordedByAccountId: 'acct-1',
+  }));
+});
+
 test('a coach records for their athlete with the verdict left to the module', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({}));
   mockAccess.mockResolvedValue(undefined);
