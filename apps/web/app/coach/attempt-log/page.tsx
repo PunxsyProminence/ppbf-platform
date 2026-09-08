@@ -143,10 +143,22 @@ function AttemptCard({ attempt, canReview, onReviewed }: { attempt: AttemptRow; 
       setError('A correction needs a reason of at least 10 characters.');
       return;
     }
+    // A blank target is an intentional target-less measurement. A non-blank
+    // target must parse to a finite number above 0 (the server's own target
+    // rule) BEFORE it is sent -- relying on JSON to turn NaN into null would
+    // silently drop a mistyped target and make the correction a measurement.
+    let correctedTargetValue: number | null = null;
+    if (correctedTarget.trim() !== '') {
+      correctedTargetValue = Number(correctedTarget);
+      if (!Number.isFinite(correctedTargetValue) || correctedTargetValue <= 0) {
+        setError('Corrected target must be a number above 0, or leave it blank for a measurement.');
+        return;
+      }
+    }
     void submit({
       review_state: 'corrected',
       corrected_achieved_value: achieved,
-      corrected_target_value: correctedTarget.trim() === '' ? null : Number(correctedTarget),
+      corrected_target_value: correctedTargetValue,
       reason: reason.trim(),
     });
   };

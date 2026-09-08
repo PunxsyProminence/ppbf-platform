@@ -400,6 +400,24 @@ describe('dispute resolution keeps history', () => {
   });
 });
 
+describe('data minimization: reviewer identity is coach-only', () => {
+  test('listAttempts (the athlete-visible projection) omits reviewed_by_account_id, listReviews keeps it', async () => {
+    const attemptId = await recordControlledMiss();
+    await attempts.recordReview({ organizationId: ORG_ID, attemptId, reviewState: 'confirmed', reviewedByAccountId: COACH_ID });
+
+    const [row] = await attempts.listAttempts(ORG_ID, ATHLETE_ID);
+    expect(row.review_state).toBe('confirmed');
+    // The general attempt DTO an athlete receives must not carry the coach's
+    // internal account id. review_reason/corrected values may show; the
+    // reviewer account id may not.
+    expect(row).not.toHaveProperty('reviewed_by_account_id');
+
+    // Coach-only review history keeps reviewer provenance.
+    const history = await attempts.listReviews(ORG_ID, attemptId);
+    expect(history[0].reviewed_by_account_id).toBe(COACH_ID);
+  });
+});
+
 describe('database invariants', () => {
   test('a review row cannot be edited in place (append-only trigger)', async () => {
     const attemptId = await recordControlledMiss();

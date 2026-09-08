@@ -87,7 +87,10 @@ export interface TrainingAttemptRow {
   corrected_achieved_value: string | null;
   corrected_made: boolean | null;
   review_reason: string | null;
-  reviewed_by_account_id: string | null;
+  // The reviewer's account id is deliberately NOT on this shared projection:
+  // an athlete reads their own attempts through this DTO, and an internal
+  // staff account id must not cross to them. Reviewer provenance lives on the
+  // coach-only review history (listReviews / AttemptReviewRow).
   reviewed_at: string | null;
   // The one interpretation downstream reads: source unless corrected; NULL
   // (abstention) while the current disposition is disputed.
@@ -118,7 +121,7 @@ const FIELDS = `v.organization_id, v.attempt_id, v.athlete_id, v.athlete_name,
   v.current_review_id, v.review_state,
   v.corrected_target_value::text as corrected_target_value,
   v.corrected_achieved_value::text as corrected_achieved_value,
-  v.corrected_made, v.review_reason, v.reviewed_by_account_id, v.reviewed_at,
+  v.corrected_made, v.review_reason, v.reviewed_at,
   v.effective_target_value::text as effective_target_value,
   v.effective_achieved_value::text as effective_achieved_value,
   v.effective_made`;

@@ -243,6 +243,71 @@ test('a correction posts corrected numbers and a reason, never a verdict', async
   expect(capture.reviews[0]).not.toHaveProperty('corrected_made');
 });
 
+// BASE06-D003 / P2-B: a nonempty corrected target must parse to a finite
+// positive number before the correction posts; a nonnumeric value must NOT
+// silently serialize to null. Blank stays a valid target-less measurement.
+async function openCorrect() {
+  await pickAthlete();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Correct' })); });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Corrected achieved'), { target: { value: '10' } });
+    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'miscount confirmed on film' } });
+  });
+}
+
+test('a nonnumeric corrected target is rejected client-side and no review posts', async () => {
+  const capture = { reviews: [] as Array<Record<string, unknown>> };
+  global.fetch = mockReviewFetch(capture, { ...MISSED_ATTEMPT, review_state: null });
+
+  await openCorrect();
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Corrected target (optional)'), { target: { value: 'abc' } });
+  });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save correction' })); });
+
+  expect(capture.reviews).toHaveLength(0);
+  expect(screen.getByText(/must be a number above 0/i)).toBeTruthy();
+});
+
+test('a non-positive corrected target is rejected client-side and no review posts', async () => {
+  const capture = { reviews: [] as Array<Record<string, unknown>> };
+  global.fetch = mockReviewFetch(capture, { ...MISSED_ATTEMPT, review_state: null });
+
+  await openCorrect();
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Corrected target (optional)'), { target: { value: '0' } });
+  });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save correction' })); });
+
+  expect(capture.reviews).toHaveLength(0);
+});
+
+test('a blank corrected target posts as a target-less measurement (null)', async () => {
+  const capture = { reviews: [] as Array<Record<string, unknown>> };
+  global.fetch = mockReviewFetch(capture, { ...MISSED_ATTEMPT, review_state: null });
+
+  await openCorrect();
+  // target left blank
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save correction' })); });
+
+  expect(capture.reviews).toHaveLength(1);
+  expect(capture.reviews[0]).toMatchObject({ review_state: 'corrected', corrected_target_value: null, corrected_achieved_value: 10 });
+});
+
+test('a valid positive corrected target posts unchanged as a number', async () => {
+  const capture = { reviews: [] as Array<Record<string, unknown>> };
+  global.fetch = mockReviewFetch(capture, { ...MISSED_ATTEMPT, review_state: null });
+
+  await openCorrect();
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Corrected target (optional)'), { target: { value: '12' } });
+  });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save correction' })); });
+
+  expect(capture.reviews).toHaveLength(1);
+  expect(capture.reviews[0]).toMatchObject({ corrected_target_value: 12, corrected_achieved_value: 10 });
+});
+
 test('a dispute will not post without a reason', async () => {
   const capture = { reviews: [] as Array<Record<string, unknown>> };
   global.fetch = mockReviewFetch(capture, { ...MISSED_ATTEMPT, review_state: null });
