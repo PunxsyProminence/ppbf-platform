@@ -238,6 +238,38 @@ describe('AthleteAttemptLog', () => {
   // D004: while the initial canonical read is still unresolved, recording is
   // not offered. Otherwise a save's re-read and the delayed mount read race,
   // and whichever lands last is what the athlete sees.
+  // BASE-06: the coach's review is shown to the athlete read-only -- the
+  // athlete has no review controls, and a correction never hides their own
+  // numbers.
+  test('a coach correction is shown beside the athlete\'s own numbers, not over them', async () => {
+    storedAttempts = [attempt({
+      made: false,
+      review_state: 'corrected',
+      corrected_target_value: '10',
+      corrected_achieved_value: '10',
+      corrected_made: true,
+      review_reason: 'miscount confirmed on film',
+    })];
+
+    render(<AthleteAttemptLog athleteId="ath_test" />);
+
+    await screen.findByText(/Coach correction:/);
+    // The athlete's source row (8 / 10, Missed) is still there.
+    expect(screen.getByText(/8 \/ 10 reps/)).toBeTruthy();
+    expect(screen.getByText('Missed')).toBeTruthy();
+    // No review control is offered to the athlete.
+    expect(screen.queryByRole('button', { name: /confirm|correct|dispute/i })).toBeNull();
+  });
+
+  test('a coach dispute is shown to the athlete as a dispute, not a verdict', async () => {
+    storedAttempts = [attempt({ review_state: 'disputed', review_reason: 'logged against the wrong athlete' })];
+
+    render(<AthleteAttemptLog athleteId="ath_test" />);
+
+    await screen.findByText(/Coach disputed this attempt/);
+    expect(screen.getByText(/logged against the wrong athlete/)).toBeTruthy();
+  });
+
   test('while the initial list read is unresolved, recording is unavailable and no POST can be sent', async () => {
     let releaseList: () => void = () => {};
     listGate = new Promise<void>((resolve) => { releaseList = resolve; });
