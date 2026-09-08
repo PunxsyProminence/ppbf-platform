@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
 
 // The attempt log (owner decision 2026-08-16): quick entry for every
@@ -94,7 +95,7 @@ function recorderLabel(role: string | null): string {
 // One attempt: its athlete-source facts, the coach's current review beside
 // them (never over them), the confirm/correct/dispute controls, and the
 // review history so disagreement stays visible.
-function AttemptCard({ attempt, onReviewed }: { attempt: AttemptRow; onReviewed: () => Promise<void> }) {
+function AttemptCard({ attempt, canReview, onReviewed }: { attempt: AttemptRow; canReview: boolean; onReviewed: () => Promise<void> }) {
   const [mode, setMode] = useState<'idle' | 'correct' | 'dispute'>('idle');
   const [reason, setReason] = useState('');
   const [correctedAchieved, setCorrectedAchieved] = useState('');
@@ -217,8 +218,14 @@ function AttemptCard({ attempt, onReviewed }: { attempt: AttemptRow; onReviewed:
 
       {error && <p className="alert-title mt-[var(--s2)]" role="alert">{error}</p>}
 
-      {/* CONTROLS */}
-      {mode === 'idle' && (
+      {/* CONTROLS. The whole review surface -- confirm/correct/dispute AND the
+          history read -- is coach-only at the server (the review route requires
+          the coach role for both its POST and its GET), so none of it is
+          offered to a role that cannot use it. An admin keeps read-only access
+          to the attempt and its current disposition, which render above
+          regardless of role. Client hiding is not the security boundary -- the
+          coach-only review route is. */}
+      {mode === 'idle' && canReview && (
         <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s2)]">
           <button type="button" className="btn btn--ghost" disabled={busy} onClick={confirm}>Confirm</button>
           <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => { setError(null); setMode('correct'); }}>Correct</button>
@@ -297,6 +304,13 @@ export default function AttemptLogPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ metric_kind: 'reps', context_type: 'open_floor', target_value: '', achieved_value: '', note: '' });
+
+  // The authoritative normalized role for the signed-in actor, from the same
+  // session store the admin pages read. BASE-06 authorizes the review mutation
+  // for a coach only, so only a coach is offered the mutation controls; an
+  // admin keeps read-only access to attempts and review state.
+  const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
+  const canReview = session?.role === 'coach';
 
   useEffect(() => {
     const controller = new AbortController();
@@ -483,6 +497,7 @@ export default function AttemptLogPage() {
                   <AttemptCard
                     key={attempt.attempt_id}
                     attempt={attempt}
+                    canReview={canReview}
                     onReviewed={() => reloadAttempts(athleteId)}
                   />
                 ))}

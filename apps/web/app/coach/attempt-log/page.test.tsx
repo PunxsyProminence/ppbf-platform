@@ -16,6 +16,25 @@ jest.mock('@/components/RoleSessionGate', () => ({
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+// The page reads the current normalized role from the authoritative session
+// store (the same getRoleSessionSnapshot/subscribeRoleSession pair the admin
+// pages use) to decide whether the review mutation controls are the current
+// actor's capability. getSnapshot must return a stable reference across
+// renders, so the mock caches the snapshot and rebuilds it only when the test
+// changes the role.
+let mockedSnapshot: { role: string } | null = { role: 'coach' };
+function setMockedRole(role: string | null) {
+  mockedSnapshot = role ? { role } : null;
+}
+jest.mock('@/components/roleSession', () => ({
+  getRoleSessionSnapshot: () => mockedSnapshot,
+  subscribeRoleSession: () => () => {},
+}));
+
+beforeEach(() => {
+  setMockedRole('coach');
+});
+
 const MISSED_ATTEMPT = {
   attempt_id: 'att-1',
   athlete_name: 'Jordan P.',
@@ -252,4 +271,40 @@ test('a corrected attempt shows the coach correction beside the athlete source, 
   expect(screen.getByText(/Coach correction:/)).toBeTruthy();
   expect(screen.getByText(/miscount confirmed on film/)).toBeTruthy();
   expect(screen.getByText(/Recorded by athlete/)).toBeTruthy();
+});
+
+// BASE06-D001: only an actor BASE-06 authorizes to mutate reviews (coach) may
+// see the confirm/correct/dispute controls. An admin retains read-only page
+// access -- source attempts and review state stay visible -- but the mutation
+// controls are not offered, matching the server's coach-only route.
+test('an admin sees the attempt and its review state but no review mutation controls', async () => {
+  setMockedRole('admin');
+  const capture = { reviews: [] as Array<Record<string, unknown>> };
+  global.fetch = mockReviewFetch(capture, REVIEWED_ATTEMPT);
+
+  await act(async () => { render(<AttemptLogPage />); });
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+  });
+
+  // Read-only visibility is preserved: the source attempt and the coach review
+  // both render for an admin.
+  expect(await screen.findByText('missed')).toBeTruthy();
+  expect(screen.getByText(/Coach correction:/)).toBeTruthy();
+  // But the mutation controls are not this actor's capability.
+  expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Correct' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Dispute' })).toBeNull();
+});
+
+test('a coach does see the review mutation controls', async () => {
+  setMockedRole('coach');
+  const capture = { reviews: [] as Array<Record<string, unknown>> };
+  global.fetch = mockReviewFetch(capture, { ...MISSED_ATTEMPT, review_state: null });
+
+  await pickAthlete();
+
+  expect(screen.getByRole('button', { name: 'Confirm' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Correct' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Dispute' })).toBeTruthy();
 });
