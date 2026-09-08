@@ -3,6 +3,7 @@
 import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDateTime } from '@/src/lib/gymTime';
 
 /*
  * BASE-05 Slice 1: the athlete's own attempt log.
@@ -66,9 +67,10 @@ function resultLabel(made: boolean | null): string {
   return made ? 'Made' : 'Missed';
 }
 
+// Gym time, never the viewer's: an attempt happened on the gym floor, and the
+// day it happened must not move for a device set to another timezone.
 function formatWhen(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+  return formatGymDateTime(iso) ?? iso;
 }
 
 async function readError(response: Response, fallback: string): Promise<string> {
