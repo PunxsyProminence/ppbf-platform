@@ -261,7 +261,11 @@ test('R1 -- the athlete renders their attempt and the coach disposition, with no
   await attemptsTab.click();
 
   // R1.2 the synthetic attempt is rendered, R1.3 with the coach's disposition.
-  await expect(page.getByText('/ target 10', { exact: false }).first(),
+  // The athlete row is not worded like the coach card. AthleteAttemptLog renders
+  // `{achieved}{" / " + target} {unit}` -- "8 / 10 reps" -- where the coach card
+  // renders "8reps / target 10reps". Asserting the coach wording here is what
+  // failed the previous run against a surface that was rendering correctly.
+  await expect(page.getByText('8 / 10 reps', { exact: false }).first(),
     'R1.2 the attempt is rendered').toBeVisible({ timeout: 20000 });
   await expect(page.getByText(/film review shows twelve clean reps/i).first(),
     'R1.3 the current coach disposition is rendered').toBeVisible({ timeout: 20000 });
