@@ -79,15 +79,47 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Verify This Is The Accepted Base-C Commit
+        # A pull_request run checks out GitHub's EPHEMERAL MERGE COMMIT, so
+        # `git rev-parse HEAD` is never the accepted SHA and comparing it fails
+        # closed on a correct basis -- which is exactly what happened on the
+        # first run (checked out d00cfdd6, a merge of this branch into
+        # c2416709). `git merge-base` cannot rescue it either: checkout is
+        # shallow and origin/main is not in the runner's clone, and deepening
+        # the fetch would only preserve the wrong question.
+        #
+        # The pull_request EVENT already states the basis authoritatively, so
+        # that is what gets checked. Every field is pinned, so this cannot pass
+        # for a different PR, a different base, a different branch, or a fork.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.number }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
-          ACTUAL="$(git rev-parse HEAD)"
-          BASE="$(git merge-base HEAD "origin/main" 2>/dev/null || echo '')"
-          echo "checked out: $ACTUAL"
-          echo "accepted:    $ACCEPTED_SHA"
-          if [ "$ACTUAL" != "$ACCEPTED_SHA" ] && [ "$BASE" != "$ACCEPTED_SHA" ]; then
-            echo "::error::This harness is pinned to $ACCEPTED_SHA. Refusing to run against $ACTUAL."
-            exit 1
-          fi
+          echo "event:      $EVENT_NAME"
+          echo "PR:         $PR_NUMBER"
+          echo "base ref:   $PR_BASE_REF"
+          echo "base SHA:   $PR_BASE_SHA"
+          echo "head ref:   $PR_HEAD_REF"
+          echo "head repo:  $PR_HEAD_REPO"
+          echo "accepted:   $ACCEPTED_SHA"
+
+          fail() { echo "::error::$1"; exit 1; }
+
+          [ "$EVENT_NAME" = "pull_request" ] \
+            || fail "This harness runs only as a pull_request event; got '$EVENT_NAME'."
+          [ "$PR_NUMBER" = "922" ] \
+            || fail "This harness is pinned to PR 922; got '$PR_NUMBER'."
+          [ "$PR_BASE_SHA" = "$ACCEPTED_SHA" ] \
+            || fail "SOURCE/VERSION BASIS CHANGED -- PR base SHA is '$PR_BASE_SHA', expected $ACCEPTED_SHA."
+          [ "$PR_BASE_REF" = "main" ] \
+            || fail "PR base ref is '$PR_BASE_REF', expected main."
+          [ "$PR_HEAD_REF" = "local/basec-staging-rendered-closure-ci" ] \
+            || fail "PR head ref is '$PR_HEAD_REF', expected local/basec-staging-rendered-closure-ci."
+          [ "$PR_HEAD_REPO" = "PunxsyProminence/ppbf-platform" ] \
+            || fail "PR head repo is '$PR_HEAD_REPO'; forked heads are refused."
 
       - name: Verify Remote Main Has Not Moved
         run: |
