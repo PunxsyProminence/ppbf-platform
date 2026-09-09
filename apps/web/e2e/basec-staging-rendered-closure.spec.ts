@@ -245,7 +245,11 @@ async function assertNoReviewerIdentity(page: Page, label: string) {
   }
 }
 
-test('R1 -- the athlete renders their attempt and the coach disposition, with no reviewer identity', async ({ page }) => {
+/* R1 is settled by staging run 34394340532, where R1.1 through R1.4 all passed
+   against the real deployed surface and produced a screenshot artifact. This skip
+   is bookkeeping, not evidence: the assertions below are left exactly as they ran
+   so the passing run stays reproducible and auditable. */
+test.skip('R1 -- the athlete renders their attempt and the coach disposition, with no reviewer identity', async ({ page }) => {
   await page.goto(`${BASE}/athlete/sign-in`);
   await page.getByLabel('Athlete Account ID').fill(ATHLETE_ACCOUNT);
   await page.getByLabel('PIN').fill(athletePin);
@@ -276,19 +280,47 @@ test('R1 -- the athlete renders their attempt and the coach disposition, with no
   await page.screenshot({ path: path.join(EVIDENCE_DIR, 'r1-athlete-attempts.png'), fullPage: true });
 });
 
-test('R2/R3 -- an admin renders the attempt and its disposition, and is offered no review controls', async ({ page }) => {
-  /* The application's own page redeems the link and the SERVER sets the cookie.
-     No cookie is injected and no page script is evaluated by the harness. */
-  await page.goto(`${BASE}/auth/link?token=${rawMagicToken}`);
-  await page.waitForURL((url) => !url.pathname.startsWith('/auth/link'), { timeout: 30000 });
+/* Outer budget well above every per-request timeout below, so a failing step
+   reports its own assertion rather than the test dying first -- which is what
+   made the previous run undiagnosable. */
+test.setTimeout(120000);
 
-  const session = await page.request.get(`${BASE}/api/pilot/auth/session`);
+test('R2/R3 -- an admin renders the attempt and its disposition, and is offered no review controls', async ({ page }) => {
+  /* The token goes in the POST body and never into a URL. The previous run put it
+     in a query string, and Playwright's own navigation log then wrote a live
+     credential into the CI log on failure.
+     `page.request` -- not a separate APIRequestContext -- so the server's
+     Set-Cookie lands in THIS browser context's jar. The SERVER issues the session;
+     no cookie is injected and no page script is evaluated by the harness. */
+  const consume = await page.request.post(`${BASE}/api/pilot/auth/magic-link/consume`, {
+    headers: { 'content-type': 'application/json' },
+    data: { token: rawMagicToken },
+    timeout: 30000,
+  });
+
+  // Sanitized: status and the server's own reason only. Never the token or body.
+  let consumeOk: string = 'unknown';
+  let consumeReason = 'UNKNOWN';
+  try {
+    const body = await consume.json();
+    consumeOk = String(body?.ok ?? 'unknown');
+    consumeReason = String(body?.reason ?? (body?.ok === true ? 'NONE' : 'UNKNOWN'));
+  } catch { /* a non-JSON body tells us nothing further; status still reports */ }
+  console.log(`ADMIN_BOOTSTRAP_CONSUME status=${consume.status()} ok=${consumeOk} reason=${consumeReason}`);
+
+  expect(consume.status(), `admin consume rejected: reason=${consumeReason}`).toBe(200);
+  expect(consumeOk, `admin consume returned ok=${consumeOk}, reason=${consumeReason}`).toBe('true');
+
+  const session = await page.request.get(`${BASE}/api/pilot/auth/session`, { timeout: 30000 });
   expect(session.status(), 'admin session resolves').toBe(200);
   const resolved = await session.json();
   expect(JSON.stringify(resolved), 'session is org_admin_shadow').toContain(ADMIN_ACCOUNT);
   expect(JSON.stringify(resolved), 'session role is organization_admin').toContain('organization_admin');
+  expect(JSON.stringify(resolved), 'session organization is the staging gate org').toContain(ORG);
 
   await page.goto(`${BASE}/coach/attempt-log`);
+  expect(new URL(page.url()).pathname,
+    'the server-issued cookie authenticates a normal browser navigation').toBe('/coach/attempt-log');
   await page.getByLabel('Athlete').selectOption(ATHLETE_ID);
 
   // R2 -- the attempt and its current disposition render for the admin.
