@@ -15,16 +15,23 @@
  * dispute sequence, no freeze-trigger probe, no cross-organization fixture, no
  * admin POST refusal. One attempt, one disposition, three renders, then cleanup.
  *
- * ADMIN AUTHENTICATION IS A TEST-HARNESS BOOTSTRAP, NOT A PRODUCT CLAIM.
+ * ADMIN AUTHENTICATION IS A SYNTHETIC GATE-SESSION BOOTSTRAP, NOT A PRODUCT CLAIM.
  * org_admin_shadow is a Microsoft-provider account on an @ppbf.invalid address
  * that can never receive mail and has no PIN, so no interactive path can sign it
- * in. The spec writes one short-lived magic-link row (hash only) and lets the
- * application's own /auth/link page redeem it, so the SERVER sets the httpOnly
- * cookie through the real consume route. Nothing here proves Microsoft SSO works.
+ * in. An earlier version of this spec tried a magic link and the server refused
+ * it with ACCOUNT_NOT_MAGIC_LINK -- correctly, because requiredCredentialFor keys
+ * on ROLE and organization_admin is a Microsoft role, so no account holding that
+ * role may ever redeem a link. That refusal is a security property, not an
+ * obstacle to route around.
+ *
+ * So the admin session comes from the repository's own gate-session helper, whose
+ * stated purpose is exactly this: minting a short-lived session for a
+ * pre-provisioned fixture account without adding a privileged auth endpoint. It
+ * re-verifies role, active flag, membership and organization status before it
+ * mints. Nothing here proves Microsoft SSO, Entra, or production authentication.
  */
 import { test, expect, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { Client } from 'pg';
@@ -49,10 +56,6 @@ function required(name: string): string {
   return value;
 }
 
-function sha256(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
-
 /* Mirrors the PIN policy deploy-staging.yml mints against, so the provisioned
    credential satisfies the same rules the real login path enforces. */
 function mintPin(): string {
@@ -73,8 +76,6 @@ function mintPin(): string {
 
 let client: Client;
 let athletePin = '';
-let rawMagicToken = '';
-let magicTokenHash = '';
 let originalCoachId: string | null = null;
 let attemptId = '';
 let startedAt = '';
@@ -166,18 +167,6 @@ test.beforeAll(async () => {
   });
   expect(reviewed.status, 'disposition creation').toBe(200);
 
-  const account = await client.query<{ login_email: string; organization_id: string }>(
-    'select login_email, organization_id from pilot.accounts where account_id = $1',
-    [ADMIN_ACCOUNT],
-  );
-  rawMagicToken = randomBytes(32).toString('hex');
-  magicTokenHash = sha256(rawMagicToken);
-  await client.query(
-    `insert into pilot.magic_link_tokens
-       (token_hash, account_id, organization_id, sent_to_email, expires_at)
-     values ($1, $2, $3, $4, now() + interval '20 minutes')`,
-    [magicTokenHash, ADMIN_ACCOUNT, account.rows[0].organization_id, account.rows[0].login_email],
-  );
 });
 
 test.afterAll(async () => {
@@ -204,10 +193,6 @@ test.afterAll(async () => {
       return `-> ${originalCoachId} (1 row)`;
     });
   }
-  if (magicTokenHash) {
-    await step('closure magic-link row removed', async () =>
-      `${(await client.query('delete from pilot.magic_link_tokens where token_hash = $1', [magicTokenHash])).rowCount} row(s)`);
-  }
   // Scoped to this run only -- no historical sweep of fixture sessions.
   await step('closure sessions revoked', async () =>
     `${(await client.query('delete from pilot.session_tokens where account_id in ($1,$2,$3) and created_at >= $4', [ATHLETE_ACCOUNT, COACH_ACCOUNT, ADMIN_ACCOUNT, startedAt])).rowCount} row(s)`);
@@ -224,9 +209,8 @@ test.afterAll(async () => {
        (select active_flag from pilot.accounts where account_id = $3) as athlete_active,
        (select pin_hash is not null from pilot.accounts where account_id = $3) as athlete_has_pin,
        (select count(*)::int from pilot.session_tokens
-          where account_id in ($3,$4,$5) and created_at >= $6) as closure_sessions,
-       (select count(*)::int from pilot.magic_link_tokens where token_hash = $7) as closure_magic_rows`,
-    [attemptId || 'none', ATHLETE_ID, ATHLETE_ACCOUNT, COACH_ACCOUNT, ADMIN_ACCOUNT, startedAt, magicTokenHash || 'none'],
+          where account_id in ($3,$4,$5) and created_at >= $6) as closure_sessions`,
+    [attemptId || 'none', ATHLETE_ID, ATHLETE_ACCOUNT, COACH_ACCOUNT, ADMIN_ACCOUNT, startedAt],
   );
 
   console.log('\n--- CLOSURE CLEANUP ---');
@@ -286,62 +270,72 @@ test.skip('R1 -- the athlete renders their attempt and the coach disposition, wi
 test.setTimeout(120000);
 
 test('R2/R3 -- an admin renders the attempt and its disposition, and is offered no review controls', async ({ page }) => {
-  /* The token goes in the POST body and never into a URL. The previous run put it
-     in a query string, and Playwright's own navigation log then wrote a live
-     credential into the CI log on failure.
-     `page.request` -- not a separate APIRequestContext -- so the server's
-     Set-Cookie lands in THIS browser context's jar. The SERVER issues the session;
-     no cookie is injected and no page script is evaluated by the harness. */
-  const consume = await page.request.post(`${BASE}/api/pilot/auth/magic-link/consume`, {
-    headers: { 'content-type': 'application/json' },
-    data: { token: rawMagicToken },
-    timeout: 30000,
+  /* SYNTHETIC GATE-SESSION BOOTSTRAP.
+     mintGateSession is the repository's own helper and it does the verifying:
+     the account must exist, hold organization_admin, be active, hold
+     an active membership in an active organization, and not be a privileged
+     ppbf_local account. If any of that is untrue it throws rather than minting,
+     so a bad fixture stops here instead of producing misleading renders. */
+  const { mintGateSession } = await import('../scripts/lib/gate-session.mjs');
+  const admin = await mintGateSession({
+    connectionString: CONN,
+    accountId: ADMIN_ACCOUNT,
+    expectedRole: 'organization_admin',
+    ttlMinutes: 10,
   });
+  console.log(`ADMIN_BOOTSTRAP_GATE_SESSION role=${admin.role} organization=${admin.organizationId}`);
 
-  // Sanitized: status and the server's own reason only. Never the token or body.
-  let consumeOk: string = 'unknown';
-  let consumeReason = 'UNKNOWN';
   try {
-    const body = await consume.json();
-    consumeOk = String(body?.ok ?? 'unknown');
-    consumeReason = String(body?.reason ?? (body?.ok === true ? 'NONE' : 'UNKNOWN'));
-  } catch { /* a non-JSON body tells us nothing further; status still reports */ }
-  console.log(`ADMIN_BOOTSTRAP_CONSUME status=${consume.status()} ok=${consumeOk} reason=${consumeReason}`);
+    /* Playwright's BROWSER-CONTEXT cookie API -- not page JavaScript, and not a
+       manual Cookie header. The attributes mirror the application's own contract
+       from app/api/pilot/auth/login/route.ts. The token value itself is never
+       printed, asserted on, or placed in a URL. */
+    await page.context().addCookies([{
+      name: 'ppbf_pilot_session',
+      value: admin.token,
+      domain: new URL(BASE).hostname,
+      path: '/',
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax',
+    }]);
 
-  expect(consume.status(), `admin consume rejected: reason=${consumeReason}`).toBe(200);
-  expect(consumeOk, `admin consume returned ok=${consumeOk}, reason=${consumeReason}`).toBe('true');
+    const session = await page.request.get(`${BASE}/api/pilot/auth/session`, { timeout: 30000 });
+    expect(session.status(), 'admin session resolves').toBe(200);
+    const resolved = await session.json();
+    expect(JSON.stringify(resolved), 'session is org_admin_shadow').toContain(ADMIN_ACCOUNT);
+    expect(JSON.stringify(resolved), 'session role is organization_admin').toContain('organization_admin');
+    expect(JSON.stringify(resolved), 'session organization is the staging gate org').toContain(ORG);
 
-  const session = await page.request.get(`${BASE}/api/pilot/auth/session`, { timeout: 30000 });
-  expect(session.status(), 'admin session resolves').toBe(200);
-  const resolved = await session.json();
-  expect(JSON.stringify(resolved), 'session is org_admin_shadow').toContain(ADMIN_ACCOUNT);
-  expect(JSON.stringify(resolved), 'session role is organization_admin').toContain('organization_admin');
-  expect(JSON.stringify(resolved), 'session organization is the staging gate org').toContain(ORG);
+    await page.goto(`${BASE}/coach/attempt-log`);
+    expect(new URL(page.url()).pathname,
+      'the session cookie authenticates a normal browser navigation').toBe('/coach/attempt-log');
+    await page.getByLabel('Athlete').selectOption(ATHLETE_ID);
 
-  await page.goto(`${BASE}/coach/attempt-log`);
-  expect(new URL(page.url()).pathname,
-    'the server-issued cookie authenticates a normal browser navigation').toBe('/coach/attempt-log');
-  await page.getByLabel('Athlete').selectOption(ATHLETE_ID);
+    // R2 -- the attempt and its current disposition render for the admin.
+    await expect(page.getByText('/ target 10', { exact: false }).first(),
+      'R2.1 the attempt is rendered for the admin').toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(/film review shows twelve clean reps/i).first(),
+      'R2.2 the current disposition is rendered for the admin').toBeVisible({ timeout: 20000 });
 
-  // R2 -- the attempt and its current disposition render for the admin.
-  await expect(page.getByText('/ target 10', { exact: false }).first(),
-    'R2.1 the attempt is rendered for the admin').toBeVisible({ timeout: 20000 });
-  await expect(page.getByText(/film review shows twelve clean reps/i).first(),
-    'R2.2 the current disposition is rendered for the admin').toBeVisible({ timeout: 20000 });
+    await page.screenshot({ path: path.join(EVIDENCE_DIR, 'r2-admin-read.png'), fullPage: true });
 
-  await page.screenshot({ path: path.join(EVIDENCE_DIR, 'r2-admin-read.png'), fullPage: true });
+    // R3 -- the review controls are not offered. Counted, not merely "not visible",
+    // so a control rendered off-screen would still fail this.
+    await expect(page.getByRole('button', { name: 'Confirm', exact: true }),
+      'R3.1 Confirm is not rendered for an admin').toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Correct', exact: true }),
+      'R3.2 Correct is not rendered for an admin').toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Dispute', exact: true }),
+      'R3.3 Dispute is not rendered for an admin').toHaveCount(0);
 
-  // R3 -- the review controls are not offered. Counted, not merely "not visible",
-  // so a control rendered off-screen would still fail this.
-  await expect(page.getByRole('button', { name: 'Confirm', exact: true }),
-    'R3.1 Confirm is not rendered for an admin').toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Correct', exact: true }),
-    'R3.2 Correct is not rendered for an admin').toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Dispute', exact: true }),
-    'R3.3 Dispute is not rendered for an admin').toHaveCount(0);
+    const historyCount = await page.getByRole('button', { name: 'History', exact: true }).count();
+    console.log(`R3 note -- History controls rendered for the admin: ${historyCount}`);
 
-  const historyCount = await page.getByRole('button', { name: 'History', exact: true }).count();
-  console.log(`R3 note -- History controls rendered for the admin: ${historyCount}`);
-
-  await page.screenshot({ path: path.join(EVIDENCE_DIR, 'r3-admin-no-controls.png'), fullPage: true });
+    await page.screenshot({ path: path.join(EVIDENCE_DIR, 'r3-admin-no-controls.png'), fullPage: true });
+  } finally {
+    // The helper's own revoke, always, so a failed run leaves no live session.
+    // The run-scoped sweep in afterAll stays as defence in depth.
+    await admin.revoke();
+  }
 });
