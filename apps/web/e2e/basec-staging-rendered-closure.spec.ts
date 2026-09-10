@@ -300,12 +300,21 @@ test('R2/R3 -- an admin renders the attempt and its disposition, and is offered 
       sameSite: 'Lax',
     }]);
 
-    const session = await page.request.get(`${BASE}/api/pilot/auth/session`, { timeout: 30000 });
+    /* POST, not GET: the route exports only POST and answers 405 to anything else.
+       It takes no body -- it resolves identity from the session cookie already in
+       this browser context. Same call the repository's own gate makes. */
+    const session = await page.request.post(`${BASE}/api/pilot/auth/session`, { timeout: 30000 });
     expect(session.status(), 'admin session resolves').toBe(200);
     const resolved = await session.json();
-    expect(JSON.stringify(resolved), 'session is org_admin_shadow').toContain(ADMIN_ACCOUNT);
-    expect(JSON.stringify(resolved), 'session role is organization_admin').toContain('organization_admin');
-    expect(JSON.stringify(resolved), 'session organization is the staging gate org').toContain(ORG);
+
+    /* Exact fields, not a substring search of the serialized body. The route
+       answers 200 with `authenticated: false` for an unauthenticated caller, so a
+       stringify-and-contains check could pass on a body that proves nothing;
+       asserting `authenticated === true` is what makes this a real gate. */
+    expect(resolved.authenticated, 'the session is authenticated').toBe(true);
+    expect(resolved.account_id, 'session account_id').toBe(ADMIN_ACCOUNT);
+    expect(resolved.role, 'session role').toBe('organization_admin');
+    expect(resolved.organization_id, 'session organization_id').toBe(ORG);
 
     await page.goto(`${BASE}/coach/attempt-log`);
     expect(new URL(page.url()).pathname,
