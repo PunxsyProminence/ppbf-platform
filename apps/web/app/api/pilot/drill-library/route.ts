@@ -8,10 +8,17 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 export const runtime = 'nodejs';
 
 // Read-only browse over pilot.drill_library. GET without drill_id lists
-// (filterable by discipline/category/difficulty/skill_id); GET with
-// drill_id returns one drill's detail, which getDrillWithDetail already
-// assembles with all three A/B/C scale levels TOGETHER -- the coach
+// (filterable by discipline/category/difficulty/skill_id/related_skill_id);
+// GET with drill_id returns one drill's detail, which getDrillWithDetail
+// already assembles with all three A/B/C scale levels TOGETHER -- the coach
 // picks a level at delivery time, this route never picks one for them.
+//
+// skill_id AND related_skill_id ARE NOT THE SAME QUESTION, and the older one
+// did not change meaning when the newer one arrived. skill_id still matches the
+// PRIMARY owner alone; related_skill_id matches the primary owner or any
+// secondary skill relationship. Widening skill_id in place would have been the
+// smaller diff and the wrong one: every existing caller asking who owns a drill
+// would have started receiving drills it does not own, without being edited.
 //
 // WHO MAY BROWSE was an open question this route used to answer alone, with
 // "any authenticated role can browse the library; it carries no athlete data".
@@ -42,6 +49,7 @@ export async function GET(request: NextRequest) {
       category: searchParams.get('category') ?? undefined,
       difficulty: searchParams.get('difficulty') ?? undefined,
       skillId: searchParams.get('skill_id') ?? undefined,
+      relatedSkillId: searchParams.get('related_skill_id') ?? undefined,
     });
     return NextResponse.json({ drills });
   } catch (error) {

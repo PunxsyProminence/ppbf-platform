@@ -85,10 +85,26 @@ export interface DrillCueRow {
   source_ref: string | null;
 }
 
+/**
+ * A secondary skill relationship, owned by
+ * infra/azure/pilot_slice_postgres_drill_secondary_skills_migration.sql.
+ *
+ * Three columns and no more: the relation IS its own key, so there is no
+ * surrogate id, and every row means the same thing, so there is no type
+ * discriminator. drill_library.skill_id remains the single PRIMARY owner and
+ * never appears here.
+ */
+export interface DrillSecondarySkillRow {
+  organization_id: string;
+  drill_id: string;
+  skill_id: string;
+}
+
 export interface DrillWithDetail extends DrillLibraryRow {
   scale_levels: DrillScaleLevelRow[];
   stop_rules: DrillStopRuleRow[];
   cues: DrillCueRow[];
+  secondary_skills: DrillSecondarySkillRow[];
 }
 
 const DRILL_FIELDS =
@@ -106,32 +122,83 @@ const STOP_RULE_FIELDS = 'organization_id, stop_rule_id, drill_id, ordinal, cond
 
 const CUE_FIELDS = 'organization_id, cue_id, drill_id, cue_text, cue_family, focus_type, evidence_note, source_ref';
 
+const SECONDARY_SKILL_FIELDS = 'organization_id, drill_id, skill_id';
+
 /**
  * The coach-facing browse list: active drills only, filterable by the axes a
  * coach actually plans around. difficulty here is the authoring-time
  * prerequisite band (see the migration's two-axes note) -- it is NOT a scale
  * filter. Scale level is a per-running choice, not a library-browse filter,
  * so it has no parameter here.
+ *
+ * TWO SKILL FILTERS, AND THE DIFFERENCE BETWEEN THEM IS THE POINT.
+ *
+ *   skillId        matches the PRIMARY owner only -- drill_library.skill_id.
+ *                  Its meaning is UNCHANGED, deliberately. A caller already
+ *                  asking this question is asking who OWNS the drill, and
+ *                  widening it in place would silently convert every existing
+ *                  primary-owner query into a related-to query without one of
+ *                  them being edited.
+ *   relatedSkillId matches the primary owner OR any secondary relationship.
+ *                  This is the path that discovers a drill THROUGH a secondary
+ *                  skill without that skill becoming its owner.
+ *
+ * The secondary half is an EXISTS subquery and not a join, because a join to
+ * pilot.drill_secondary_skills returns one parent row per matching relation --
+ * so a drill carrying two secondaries would appear twice in a list OF DRILLS.
+ * EXISTS answers the same question and cannot duplicate the parent.
  */
 export async function listDrillLibrary(
   organizationId: string,
-  filter: { discipline?: string; category?: string; difficulty?: string; skillId?: string } = {},
+  filter: {
+    discipline?: string;
+    category?: string;
+    difficulty?: string;
+    skillId?: string;
+    relatedSkillId?: string;
+  } = {},
 ): Promise<DrillLibraryRow[]> {
   return query<DrillLibraryRow>(
     `select ${DRILL_FIELDS}
-     from pilot.drill_library
-     where organization_id = $1
-       and active
-       and ($2::text is null or discipline = $2)
-       and ($3::text is null or category = $3)
-       and ($4::text is null or difficulty = $4)
-       and ($5::text is null or skill_id = $5)
-     order by discipline, category, name`,
-    [organizationId, filter.discipline ?? null, filter.category ?? null, filter.difficulty ?? null, filter.skillId ?? null],
+     from pilot.drill_library d
+     where d.organization_id = $1
+       and d.active
+       and ($2::text is null or d.discipline = $2)
+       and ($3::text is null or d.category = $3)
+       and ($4::text is null or d.difficulty = $4)
+       and ($5::text is null or d.skill_id = $5)
+       and (
+         $6::text is null
+         or d.skill_id = $6
+         or exists (
+           select 1
+           from pilot.drill_secondary_skills s
+           where s.organization_id = d.organization_id
+             and s.drill_id = d.drill_id
+             and s.skill_id = $6
+         )
+       )
+     order by d.discipline, d.category, d.name`,
+    [
+      organizationId,
+      filter.discipline ?? null,
+      filter.category ?? null,
+      filter.difficulty ?? null,
+      filter.skillId ?? null,
+      filter.relatedSkillId ?? null,
+    ],
   );
 }
 
-/** One drill plus its A/B/C scale rows, stop rules, and cues -- the full detail a coach needs to run it. */
+/**
+ * One drill plus its A/B/C scale rows, stop rules, cues, and secondary skill
+ * relationships -- the full detail a coach needs to run it.
+ *
+ * secondary_skills is PURELY ADDITIVE. drill.skill_id is returned exactly as it
+ * was and is still the primary owner; a drill with no secondary relationships
+ * returns an empty array, so the shape every existing consumer reads is
+ * unchanged.
+ */
 export async function getDrillWithDetail(organizationId: string, drillId: string): Promise<DrillWithDetail | null> {
   const drill = await queryOne<DrillLibraryRow>(
     `select ${DRILL_FIELDS} from pilot.drill_library where organization_id = $1 and drill_id = $2`,
@@ -141,7 +208,7 @@ export async function getDrillWithDetail(organizationId: string, drillId: string
     return null;
   }
 
-  const [scaleLevels, stopRules, cues] = await Promise.all([
+  const [scaleLevels, stopRules, cues, secondarySkills] = await Promise.all([
     query<DrillScaleLevelRow>(
       `select ${SCALE_FIELDS} from pilot.drill_scale_levels
        where organization_id = $1 and drill_id = $2
@@ -158,9 +225,21 @@ export async function getDrillWithDetail(organizationId: string, drillId: string
       `select ${CUE_FIELDS} from pilot.drill_cues where organization_id = $1 and drill_id = $2`,
       [organizationId, drillId],
     ),
+    query<DrillSecondarySkillRow>(
+      `select ${SECONDARY_SKILL_FIELDS} from pilot.drill_secondary_skills
+       where organization_id = $1 and drill_id = $2
+       order by skill_id`,
+      [organizationId, drillId],
+    ),
   ]);
 
-  return { ...drill, scale_levels: scaleLevels, stop_rules: stopRules, cues };
+  return {
+    ...drill,
+    scale_levels: scaleLevels,
+    stop_rules: stopRules,
+    cues,
+    secondary_skills: secondarySkills,
+  };
 }
 
 /** Every version of one drill lineage, oldest first -- mirrors drillVersioning.ts's getDrillLineage. */
