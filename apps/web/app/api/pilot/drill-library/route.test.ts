@@ -207,6 +207,38 @@ describe('the reads it performs are organization-scoped', () => {
       category: 'defense',
       difficulty: undefined,
       skillId: undefined,
+      relatedSkillId: undefined,
+    });
+  });
+
+  it('passes related_skill_id separately from skill_id, so the primary-owner filter keeps its meaning', async () => {
+    // The two parameters are different questions and the route must not merge
+    // them. skill_id asks who OWNS the drill; related_skill_id asks which drills
+    // TRAIN the skill, owner or not. A route that fed one value into both, or
+    // widened skill_id in place, would pass a laxer assertion than this one
+    // while silently changing what every existing skill_id caller receives.
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockList.mockResolvedValue([]);
+
+    await GET(getRequest('related_skill_id=SK-STANCE-01'));
+
+    expect(mockList).toHaveBeenCalledWith('org-1', {
+      discipline: undefined,
+      category: undefined,
+      difficulty: undefined,
+      skillId: undefined,
+      relatedSkillId: 'SK-STANCE-01',
+    });
+
+    mockList.mockClear();
+    await GET(getRequest('skill_id=SK-COMBO-03'));
+
+    expect(mockList).toHaveBeenCalledWith('org-1', {
+      discipline: undefined,
+      category: undefined,
+      difficulty: undefined,
+      skillId: 'SK-COMBO-03',
+      relatedSkillId: undefined,
     });
   });
 

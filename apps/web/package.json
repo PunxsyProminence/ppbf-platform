@@ -263,6 +263,7 @@
     "pilot:apply-session-scripts-discipline-fk": "node scripts/pilot-apply-session-scripts-discipline-fk-migration.mjs",
     "pilot:apply-drill-library-discipline-fk": "node scripts/pilot-apply-drill-library-discipline-fk-migration.mjs",
     "pilot:apply-drill-library-check-drop": "node scripts/pilot-apply-drill-library-check-drop-migration.mjs",
+    "pilot:apply-drill-secondary-skills": "node scripts/pilot-apply-drill-secondary-skills-migration.mjs",
     "pilot:apply-cohort-definitions-discipline-fk": "node scripts/pilot-apply-cohort-definitions-discipline-fk-migration.mjs",
     "pilot:apply-discipline-fk-validation": "node scripts/pilot-apply-discipline-fk-validation-migration.mjs",
     "pilot:apply-athlete-check-in-measures": "node scripts/pilot-apply-athlete-check-in-measures-migration.mjs",

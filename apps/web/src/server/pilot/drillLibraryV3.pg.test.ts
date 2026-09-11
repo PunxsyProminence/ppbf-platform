@@ -70,7 +70,24 @@ const MIGRATION_RUNNER_PATH = path.resolve(
 const SEED_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/seed-drill-library.mjs');
 const SEED_DIR = path.resolve(__dirname, '../../../seed-data/drill-library');
 
+// The secondary-skill relation is a SEPARATE migration, and every test that
+// reaches drillLibraryV3.ts's read functions now needs it applied.
+//
+// Not a stylistic choice: getDrillWithDetail selects from
+// pilot.drill_secondary_skills, and listDrillLibrary names it inside an EXISTS
+// subquery. PostgreSQL resolves table references when it PARSES a statement,
+// not when it evaluates one -- so the subquery's table must exist even on the
+// calls that pass a null filter and can never execute it. A fixture that
+// applied only the v3 migration would fail with "relation does not exist" on a
+// query that was asking about nothing.
+const SECONDARY_MIGRATION_FILE = 'pilot_slice_postgres_drill_secondary_skills_migration.sql';
+const SECONDARY_RUNNER_PATH = path.resolve(
+  __dirname,
+  '../../../scripts/pilot-apply-drill-secondary-skills-migration.mjs',
+);
+
 const ORG_A = 'org-drilllib-a';
+const ORG_B = 'org-drilllib-b';
 
 const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
   specifier: string,
@@ -80,8 +97,10 @@ let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
 let vocabularyWideningSql: string;
+let secondarySkillsSql: string;
 let baseSchemaSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
+let applySecondarySkillsMigration: (client: Client, sql: string) => Promise<void>;
 let seedAll: (
   client: Client,
   seedDir: string,
@@ -218,9 +237,21 @@ beforeAll(async () => {
   vocabularyWideningSql = await fs.readFile(
     path.join(INFRA_DIR, 'pilot_slice_postgres_drill_vocabulary_widening_migration.sql'), 'utf8',
   );
+  secondarySkillsSql = await fs.readFile(path.join(INFRA_DIR, SECONDARY_MIGRATION_FILE), 'utf8');
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
+    client: Client,
+    sql: string,
+  ) => Promise<void>;
+
+  // Applied through its OWN runner rather than as raw DDL, so the runner's
+  // readiness query is exercised by every test below instead of being a file
+  // nothing ever executes until a live dispatch.
+  const secondaryRunnerModule = await nativeDynamicImport(
+    pathToFileURL(SECONDARY_RUNNER_PATH).href,
+  );
+  applySecondarySkillsMigration = secondaryRunnerModule.applyMigrationTransaction as (
     client: Client,
     sql: string,
   ) => Promise<void>;
@@ -425,6 +456,7 @@ describe('drillLibraryV3.ts against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_drilllib_detail');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      await applySecondarySkillsMigration(client, secondarySkillsSql);
       await insertDrill(client, { drillId: 'drill-detail', name: 'Detail Drill' });
       await insertScaleLevel(client, {
         scaleId: 'scale-detail-b', drillId: 'drill-detail', scaleLevel: 'B', isStartingPoint: true,
@@ -468,6 +500,7 @@ describe('drillLibraryV3.ts against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_drilllib_list_filter');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      await applySecondarySkillsMigration(client, secondarySkillsSql);
       await insertDrill(client, { drillId: 'drill-box', name: 'Boxing Drill', discipline: 'boxing' });
       await insertDrill(client, { drillId: 'drill-wr', name: 'Wrestling Drill', discipline: 'wrestling' });
       await insertDrill(client, { drillId: 'drill-inactive', name: 'Inactive Drill', discipline: 'boxing', active: false });
@@ -477,6 +510,244 @@ describe('drillLibraryV3.ts against real Postgres', () => {
 
       const all = await listDrillLibrary(ORG_A);
       expect(all.map((row) => row.drill_id).sort()).toEqual(['drill-box', 'drill-wr']);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Secondary skill relationships (owner decision: ONE primary owner, ZERO-TO-MANY
+// secondaries). The representation only -- no content mappings are asserted
+// here, and none exist in the repository.
+//
+// The property every one of these guards is the same one: a secondary
+// relationship ADDS to what a drill says about itself and never reassigns it.
+// pilot.drill_library.skill_id is read back explicitly in the first case rather
+// than being assumed, because "the primary owner did not move" is the claim the
+// whole design rests on and it is the one a careless join would break silently.
+// ---------------------------------------------------------------------------
+describe('drill secondary skill relationships against real Postgres', () => {
+  async function freshWithSecondaries(name: string): Promise<Client> {
+    const client = await freshDatabase(name);
+    await applyMigrationTransaction(client, migrationSql);
+    await applySecondarySkillsMigration(client, secondarySkillsSql);
+    return client;
+  }
+
+  /** insertDrill() leaves skill_id null; these cases are about skill_id, so they set it. */
+  async function insertDrillWithPrimary(
+    client: Client,
+    opts: { organizationId?: string; drillId: string; name: string; primarySkillId: string | null },
+  ): Promise<void> {
+    await client.query(
+      `insert into pilot.drill_library
+         (organization_id, drill_id, lineage_id, name, discipline, category, difficulty, skill_id,
+          target_behavior, purpose, standard_setup, execution, what_good_looks_like, what_bad_looks_like, active)
+       values ($1,$2,$2,$3,'boxing','technical','advanced',$4,'T.','P.','S.','E.','G.','B.',true)`,
+      [opts.organizationId ?? ORG_A, opts.drillId, opts.name, opts.primarySkillId],
+    );
+  }
+
+  async function relate(
+    client: Client,
+    drillId: string,
+    skillId: string,
+    organizationId: string = ORG_A,
+  ): Promise<void> {
+    await client.query(
+      `insert into pilot.drill_secondary_skills (organization_id, drill_id, skill_id)
+       values ($1,$2,$3)`,
+      [organizationId, drillId, skillId],
+    );
+  }
+
+  test('a secondary skill does not move the primary owner', async () => {
+    const client = await freshWithSecondaries('ppbf_test_drillsec_primary_intact');
+    try {
+      await insertDrillWithPrimary(client, {
+        drillId: 'drill-primary', name: 'Primary Owner Drill', primarySkillId: 'SK-COMBO-03',
+      });
+      await relate(client, 'drill-primary', 'SK-STANCE-01');
+
+      const detail = await getDrillWithDetail(ORG_A, 'drill-primary');
+      expect(detail?.skill_id).toBe('SK-COMBO-03');
+      expect(detail?.secondary_skills.map((row) => row.skill_id)).toEqual(['SK-STANCE-01']);
+
+      // Read the stored column back directly: the assertion above goes through
+      // the same function that assembles the collection, so on its own it could
+      // not tell "primary unchanged" apart from "primary recomputed to the same
+      // value".
+      const stored = await client.query(
+        `select skill_id from pilot.drill_library where organization_id = $1 and drill_id = $2`,
+        [ORG_A, 'drill-primary'],
+      );
+      expect(stored.rows[0].skill_id).toBe('SK-COMBO-03');
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('a drill with no secondary relationships returns an empty collection', async () => {
+    const client = await freshWithSecondaries('ppbf_test_drillsec_zero');
+    try {
+      await insertDrillWithPrimary(client, {
+        drillId: 'drill-none', name: 'No Secondaries', primarySkillId: 'SK-JAB-01',
+      });
+
+      const detail = await getDrillWithDetail(ORG_A, 'drill-none');
+      expect(detail?.secondary_skills).toEqual([]);
+      expect(detail?.skill_id).toBe('SK-JAB-01');
+      // Everything that was returned before is still returned.
+      expect(detail?.scale_levels).toEqual([]);
+      expect(detail?.stop_rules).toEqual([]);
+      expect(detail?.cues).toEqual([]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('one drill carries several secondaries and still appears once in a list', async () => {
+    const client = await freshWithSecondaries('ppbf_test_drillsec_multiple');
+    try {
+      await insertDrillWithPrimary(client, {
+        drillId: 'drill-multi', name: 'Multi Secondary', primarySkillId: 'SK-COMBO-03',
+      });
+      await relate(client, 'drill-multi', 'SK-STANCE-01');
+      await relate(client, 'drill-multi', 'SK-GUARD-01');
+
+      const detail = await getDrillWithDetail(ORG_A, 'drill-multi');
+      expect(detail?.secondary_skills.map((row) => row.skill_id)).toEqual(['SK-GUARD-01', 'SK-STANCE-01']);
+
+      // The duplication trap. A join instead of EXISTS would return this drill
+      // once per matching relation, so a two-secondary drill would appear twice
+      // in a list OF DRILLS. Asserted on the unfiltered list too, because that
+      // path must be unaffected entirely.
+      const byRelated = await listDrillLibrary(ORG_A, { relatedSkillId: 'SK-STANCE-01' });
+      expect(byRelated.map((row) => row.drill_id)).toEqual(['drill-multi']);
+
+      const all = await listDrillLibrary(ORG_A);
+      expect(all.map((row) => row.drill_id)).toEqual(['drill-multi']);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('the same relation cannot be recorded twice', async () => {
+    const client = await freshWithSecondaries('ppbf_test_drillsec_duplicate');
+    try {
+      await insertDrillWithPrimary(client, {
+        drillId: 'drill-dup', name: 'Duplicate Relation', primarySkillId: 'SK-FW-01',
+      });
+      await relate(client, 'drill-dup', 'SK-STANCE-01');
+
+      // The primary key IS the uniqueness guarantee -- there is no separate
+      // unique constraint to drift away from it.
+      await expect(relate(client, 'drill-dup', 'SK-STANCE-01')).rejects.toMatchObject({
+        code: '23505',
+      });
+
+      const { rows } = await client.query(
+        `select count(*)::int as n from pilot.drill_secondary_skills
+         where organization_id = $1 and drill_id = $2`,
+        [ORG_A, 'drill-dup'],
+      );
+      expect(rows[0].n).toBe(1);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('secondary relationships are organization-scoped', async () => {
+    const client = await freshWithSecondaries('ppbf_test_drillsec_org_isolation');
+    try {
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status)
+         values ($1, $1, 'active') on conflict do nothing`,
+        [ORG_B],
+      );
+      await insertDrillWithPrimary(client, {
+        drillId: 'drill-shared-id', name: 'Org A Drill', primarySkillId: 'SK-COMBO-03',
+      });
+      await insertDrillWithPrimary(client, {
+        organizationId: ORG_B,
+        drillId: 'drill-shared-id',
+        name: 'Org B Drill',
+        primarySkillId: 'SK-COMBO-03',
+      });
+      await relate(client, 'drill-shared-id', 'SK-STANCE-01', ORG_A);
+      await relate(client, 'drill-shared-id', 'SK-GUARD-01', ORG_B);
+
+      // Same drill_id in both gyms on purpose: the key is composite, so a
+      // relation that leaked would leak into a row that otherwise looks right.
+      const detailA = await getDrillWithDetail(ORG_A, 'drill-shared-id');
+      expect(detailA?.secondary_skills.map((row) => row.skill_id)).toEqual(['SK-STANCE-01']);
+
+      const detailB = await getDrillWithDetail(ORG_B, 'drill-shared-id');
+      expect(detailB?.secondary_skills.map((row) => row.skill_id)).toEqual(['SK-GUARD-01']);
+
+      // Org A must not be discoverable through Org B's relation.
+      const crossed = await listDrillLibrary(ORG_A, { relatedSkillId: 'SK-GUARD-01' });
+      expect(crossed).toEqual([]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('deleting a drill removes its secondary relationships', async () => {
+    const client = await freshWithSecondaries('ppbf_test_drillsec_cascade');
+    try {
+      await insertDrillWithPrimary(client, {
+        drillId: 'drill-cascade', name: 'Cascade Drill', primarySkillId: 'SK-FW-05',
+      });
+      await relate(client, 'drill-cascade', 'SK-STANCE-01');
+      await relate(client, 'drill-cascade', 'SK-GUARD-01');
+
+      await client.query(
+        `delete from pilot.drill_library where organization_id = $1 and drill_id = $2`,
+        [ORG_A, 'drill-cascade'],
+      );
+
+      const { rows } = await client.query(
+        `select count(*)::int as n from pilot.drill_secondary_skills where organization_id = $1`,
+        [ORG_A],
+      );
+      expect(rows[0].n).toBe(0);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('relatedSkillId discovers a drill through a secondary relationship, and skillId does not', async () => {
+    const client = await freshWithSecondaries('ppbf_test_drillsec_discovery');
+    try {
+      await insertDrillWithPrimary(client, {
+        drillId: 'drill-owned', name: 'Owned By Stance', primarySkillId: 'SK-STANCE-01',
+      });
+      await insertDrillWithPrimary(client, {
+        drillId: 'drill-related', name: 'Related To Stance', primarySkillId: 'SK-COMBO-03',
+      });
+      await relate(client, 'drill-related', 'SK-STANCE-01');
+
+      // THE PRODUCT REQUIREMENT: a drill is discoverable through a secondary
+      // relationship without that skill becoming its owner.
+      const related = await listDrillLibrary(ORG_A, { relatedSkillId: 'SK-STANCE-01' });
+      expect(related.map((row) => row.drill_id).sort()).toEqual(['drill-owned', 'drill-related']);
+      expect(related.find((row) => row.drill_id === 'drill-related')?.skill_id).toBe('SK-COMBO-03');
+
+      // BACKWARD COMPATIBILITY: the pre-existing filter still means PRIMARY
+      // OWNER and nothing else. If this ever returns drill-related, every
+      // existing caller asking who owns a drill has started receiving drills it
+      // does not own.
+      const owned = await listDrillLibrary(ORG_A, { skillId: 'SK-STANCE-01' });
+      expect(owned.map((row) => row.drill_id)).toEqual(['drill-owned']);
     } finally {
       activeClient = null;
       await client.end();
