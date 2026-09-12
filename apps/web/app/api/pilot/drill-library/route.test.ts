@@ -4,6 +4,7 @@ import path from 'node:path';
 import { NextRequest } from 'next/server';
 
 import { GET } from './route';
+import { ValidationError } from '@/src/server/pilot/errors';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { getDrillWithDetail, listDrillLibrary } from '@/src/server/pilot/drillLibraryV3';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -208,6 +209,7 @@ describe('the reads it performs are organization-scoped', () => {
       difficulty: undefined,
       skillId: undefined,
       relatedSkillId: undefined,
+      familyId: undefined,
     });
   });
 
@@ -228,6 +230,7 @@ describe('the reads it performs are organization-scoped', () => {
       difficulty: undefined,
       skillId: undefined,
       relatedSkillId: 'SK-STANCE-01',
+      familyId: undefined,
     });
 
     mockList.mockClear();
@@ -239,6 +242,52 @@ describe('the reads it performs are organization-scoped', () => {
       difficulty: undefined,
       skillId: 'SK-COMBO-03',
       relatedSkillId: undefined,
+      familyId: undefined,
+    });
+  });
+
+  it('passes family_id as its own parameter, at a different taxonomy level from both skill filters', async () => {
+    // Three parameters, three questions. family_id carries a FAMILY id
+    // (SKILL-01), not a skill code, and the route must keep it separate from
+    // the two code-level filters rather than folding it into either. A route
+    // that fed SKILL-01 into relatedSkillId would satisfy a looser assertion
+    // than this while comparing a family id directly against a skill column --
+    // the exact level-mixing the design forbids.
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockList.mockResolvedValue([]);
+
+    await GET(getRequest('family_id=SKILL-01'));
+
+    expect(mockList).toHaveBeenCalledWith('org-1', {
+      discipline: undefined,
+      category: undefined,
+      difficulty: undefined,
+      skillId: undefined,
+      relatedSkillId: undefined,
+      familyId: 'SKILL-01',
+    });
+  });
+
+  it('surfaces an unreconciled family as a 400, not an empty list', async () => {
+    // The refusal has to survive the trip through the route. If jsonError did
+    // not recognise the typed error, this would arrive as a 500 with the reason
+    // stripped; if the data layer had expanded the family to nothing instead of
+    // throwing, it would arrive as a 200 with an empty array -- which reads as
+    // "SKILL-07 has no drills" and is false.
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockList.mockImplementation(() => {
+      throw new ValidationError(
+        'Skill family SKILL-07 (Footwork / Ringcraft) has no approved code crosswalk yet.',
+        'SKILL_FAMILY_NOT_RECONCILED',
+      );
+    });
+
+    const response = await GET(getRequest('family_id=SKILL-07'));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'Skill family SKILL-07 (Footwork / Ringcraft) has no approved code crosswalk yet.',
+      code: 'SKILL_FAMILY_NOT_RECONCILED',
     });
   });
 

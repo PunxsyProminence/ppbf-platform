@@ -8,10 +8,11 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 export const runtime = 'nodejs';
 
 // Read-only browse over pilot.drill_library. GET without drill_id lists
-// (filterable by discipline/category/difficulty/skill_id/related_skill_id);
-// GET with drill_id returns one drill's detail, which getDrillWithDetail
-// already assembles with all three A/B/C scale levels TOGETHER -- the coach
-// picks a level at delivery time, this route never picks one for them.
+// (filterable by discipline/category/difficulty/skill_id/related_skill_id/
+// family_id); GET with drill_id returns one drill's detail, which
+// getDrillWithDetail already assembles with all three A/B/C scale levels
+// TOGETHER -- the coach picks a level at delivery time, this route never picks
+// one for them.
 //
 // skill_id AND related_skill_id ARE NOT THE SAME QUESTION, and the older one
 // did not change meaning when the newer one arrived. skill_id still matches the
@@ -19,6 +20,14 @@ export const runtime = 'nodejs';
 // secondary skill relationship. Widening skill_id in place would have been the
 // smaller diff and the wrong one: every existing caller asking who owns a drill
 // would have started receiving drills it does not own, without being edited.
+//
+// family_id IS A THIRD QUESTION AT A DIFFERENT LEVEL, and it arrived the same
+// way for the same reason. It takes a promoted family -- SKILL-01..SKILL-12 --
+// not a skill code, and the family is expanded to its member codes before any
+// comparison reaches a skill column. Both existing parameters keep their exact
+// meaning. A family with no approved crosswalk is refused with a 400 rather
+// than answered with an empty list, because an empty list would read as "this
+// family has no drills" and that is not what happened.
 //
 // WHO MAY BROWSE was an open question this route used to answer alone, with
 // "any authenticated role can browse the library; it carries no athlete data".
@@ -50,6 +59,7 @@ export async function GET(request: NextRequest) {
       difficulty: searchParams.get('difficulty') ?? undefined,
       skillId: searchParams.get('skill_id') ?? undefined,
       relatedSkillId: searchParams.get('related_skill_id') ?? undefined,
+      familyId: searchParams.get('family_id') ?? undefined,
     });
     return NextResponse.json({ drills });
   } catch (error) {

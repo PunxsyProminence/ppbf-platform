@@ -753,6 +753,125 @@ describe('drill secondary skill relationships against real Postgres', () => {
       await client.end();
     }
   });
+
+  test('familyId finds a family through primary AND secondary, across more than one member code, within one organization', async () => {
+    const client = await freshWithSecondaries('ppbf_test_drillsec_family');
+    try {
+      // Three drills, three different routes into SKILL-01, so a partial
+      // implementation cannot pass: one owned by a member code, one owned by a
+      // DIFFERENT member code (a single-code expansion would miss it), and one
+      // owned outside the family that only a secondary relationship connects.
+      await insertDrillWithPrimary(client, {
+        drillId: 'fam-stance', name: 'Owned By Stance Code', primarySkillId: 'SK-STANCE-01',
+      });
+      await insertDrillWithPrimary(client, {
+        drillId: 'fam-guard', name: 'Owned By Guard Code', primarySkillId: 'SK-GUARD-02',
+      });
+      await insertDrillWithPrimary(client, {
+        drillId: 'fam-secondary', name: 'Related By Secondary', primarySkillId: 'SK-CROSS-01',
+      });
+      await relate(client, 'fam-secondary', 'SK-GUARD-02');
+      await insertDrillWithPrimary(client, {
+        drillId: 'fam-outside', name: 'Outside The Family', primarySkillId: 'SK-RET-01',
+      });
+
+      // A second gym holding drills that match the family on BOTH routes --
+      // one by primary member code, one only by a secondary relation. Family
+      // expansion widens what a single query parameter matches, so it is
+      // exactly the kind of change that can reach across organizations if the
+      // new EXISTS loses a correlation. Neither of these may appear for ORG_A.
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status)
+         values ($1, $1, 'active') on conflict do nothing`,
+        [ORG_B],
+      );
+      await insertDrillWithPrimary(client, {
+        organizationId: ORG_B,
+        drillId: 'fam-stance',
+        name: 'Org B Owned By Stance Code',
+        primarySkillId: 'SK-STANCE-01',
+      });
+      await insertDrillWithPrimary(client, {
+        organizationId: ORG_B,
+        drillId: 'fam-b-secondary',
+        name: 'Org B Related By Secondary',
+        primarySkillId: 'SK-CROSS-01',
+      });
+      await relate(client, 'fam-b-secondary', 'SK-GUARD-02', ORG_B);
+
+      const family = await listDrillLibrary(ORG_A, { familyId: 'SKILL-01' });
+      expect(family.map((row) => row.drill_id).sort()).toEqual([
+        'fam-guard', 'fam-secondary', 'fam-stance',
+      ]);
+
+      // 'fam-stance' exists in BOTH gyms on purpose -- drill_id alone cannot
+      // distinguish them, so a leak would arrive looking like a legitimate row
+      // rather than an obviously foreign one. Name is what separates them.
+      expect(family.find((row) => row.drill_id === 'fam-stance')?.name)
+        .toBe('Owned By Stance Code');
+      expect(family.map((row) => row.drill_id)).not.toContain('fam-b-secondary');
+
+      // And the isolation holds in the other direction: ORG_B sees its own two
+      // and none of ORG_A's four. A query that returned nothing here would pass
+      // the assertions above while proving only that the filter is broken.
+      const familyB = await listDrillLibrary(ORG_B, { familyId: 'SKILL-01' });
+      expect(familyB.map((row) => row.drill_id).sort()).toEqual([
+        'fam-b-secondary', 'fam-stance',
+      ]);
+      expect(familyB.find((row) => row.drill_id === 'fam-stance')?.name)
+        .toBe('Org B Owned By Stance Code');
+
+      // SK-RET-01 carries the word "reset" and is deliberately NOT in SKILL-01.
+      // If it ever appears here the crosswalk has been widened by accident.
+      expect(family.map((row) => row.drill_id)).not.toContain('fam-outside');
+
+      // The primary is untouched by family discovery -- fam-secondary is
+      // reachable through SKILL-01 while still being owned by SK-CROSS-01.
+      expect(family.find((row) => row.drill_id === 'fam-secondary')?.skill_id).toBe('SK-CROSS-01');
+
+      // And the code-level filters still mean exactly what they meant: neither
+      // widened to accept a family, and neither started matching the family's
+      // other members.
+      const byCode = await listDrillLibrary(ORG_A, { skillId: 'SK-STANCE-01' });
+      expect(byCode.map((row) => row.drill_id)).toEqual(['fam-stance']);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('an unreconciled family refuses instead of returning a false empty result', async () => {
+    const client = await freshWithSecondaries('ppbf_test_drillsec_family_refuse');
+    try {
+      await insertDrillWithPrimary(client, {
+        drillId: 'fam-any', name: 'Any Drill', primarySkillId: 'SK-FW-03',
+      });
+
+      // SKILL-07 is a real promoted family with no approved crosswalk. The
+      // wrong implementation returns [] here and the caller reads it as
+      // "Footwork / Ringcraft has no drills".
+      //
+      // This case proves the REFUSAL, not its ordering relative to the query:
+      // a client is connected here, so it cannot distinguish "refused before
+      // touching the database" from "refused after". That ordering is proved
+      // by skillFamilies.test.ts, which throws with no database in the process
+      // at all.
+      await expect(listDrillLibrary(ORG_A, { familyId: 'SKILL-07' }))
+        .rejects.toThrow(/no approved code crosswalk yet/);
+
+      await expect(listDrillLibrary(ORG_A, { familyId: 'SK-STANCE-01' }))
+        .rejects.toThrow(/Unknown skill family/);
+
+      // A family id must never be compared against a skill column. Passing one
+      // through the code-level filter finds nothing, which is what proves the
+      // two namespaces stayed apart.
+      const asCode = await listDrillLibrary(ORG_A, { relatedSkillId: 'SKILL-01' });
+      expect(asCode).toEqual([]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
 });
 
 describe('seed-drill-library.mjs against real Postgres', () => {
