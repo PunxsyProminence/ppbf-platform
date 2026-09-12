@@ -68,6 +68,10 @@ const MIGRATION_RUNNER_PATH = path.resolve(
   '../../../scripts/pilot-apply-drill-library-v3-migration.mjs',
 );
 const SEED_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/seed-drill-library.mjs');
+const SECONDARY_SEED_SCRIPT_PATH = path.resolve(
+  __dirname,
+  '../../../scripts/seed-drill-secondary-skills.mjs',
+);
 const SEED_DIR = path.resolve(__dirname, '../../../seed-data/drill-library');
 
 // The secondary-skill relation is a SEPARATE migration, and every test that
@@ -107,6 +111,15 @@ let seedAll: (
   placeholders: { organizationId: string; seedAccountId: string },
   opts?: { dryRun?: boolean },
 ) => Promise<void>;
+// The relationship loader takes no seeder account -- pilot.drill_secondary_skills
+// has no created_by column -- so its placeholder shape is deliberately narrower
+// than seedAll's above.
+let seedSecondarySkills: (
+  client: Client,
+  seedDir: string,
+  placeholders: { organizationId: string },
+  opts?: { dryRun?: boolean },
+) => Promise<{ inserted: number; alreadyPresent: number; rejected: number }>;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -258,6 +271,11 @@ beforeAll(async () => {
 
   const seedModule = await nativeDynamicImport(pathToFileURL(SEED_SCRIPT_PATH).href);
   seedAll = seedModule.seedAll as typeof seedAll;
+
+  const secondarySeedModule = await nativeDynamicImport(
+    pathToFileURL(SECONDARY_SEED_SCRIPT_PATH).href,
+  );
+  seedSecondarySkills = secondarySeedModule.seedAll as typeof seedSecondarySkills;
 });
 
 afterAll(async () => {
@@ -968,6 +986,321 @@ describe('seed-drill-library.mjs against real Postgres', () => {
 
       const { rows } = await client.query(`select count(*)::int as n from pilot.drill_library where organization_id = $1`, [SEED_ORG]);
       expect(rows[0].n).toBe(119);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
+/*
+  seed-drill-secondary-skills.mjs -- the ONLY write path into
+  pilot.drill_secondary_skills.
+
+  A row here says "this drill also trains that skill". Getting one wrong does
+  not crash anything: it silently widens what a coach's related-skill search
+  returns, and the drill still looks correct in every other view. So the
+  loader's refusals matter more than its insert, and most of what follows
+  exercises the refusals against a real database rather than the happy path.
+
+  The shipped CSV carries exactly one owner-approved relation --
+  drl_3df01682e604dd (Cross Return to Guard), primary SK-CROSS-01, secondary
+  SK-GUARD-02 -- so these cases use the REAL file, not a fixture, wherever the
+  approved row is the subject. A synthetic CSV would prove the loader works on
+  input nobody ships.
+*/
+describe('seed-drill-secondary-skills.mjs against real Postgres', () => {
+  const SEED_ORG = 'ppbf-default-org';
+  const APPROVED_DRILL = 'drl_3df01682e604dd';
+
+  async function freshWithLibrary(name: string, org: string = SEED_ORG): Promise<Client> {
+    const client = await freshDatabase(name);
+    await applyMigrationTransaction(client, migrationSql);
+    await applySecondarySkillsMigration(client, secondarySkillsSql);
+    await client.query(
+      `insert into pilot.organizations (organization_id, organization_name, status)
+       values ($1, $1, 'active') on conflict do nothing`,
+      [org],
+    );
+    return client;
+  }
+
+  async function insertDrill(
+    client: Client,
+    opts: { organizationId?: string; drillId: string; name: string; primarySkillId: string | null },
+  ): Promise<void> {
+    await client.query(
+      `insert into pilot.drill_library
+         (organization_id, drill_id, lineage_id, name, discipline, category, difficulty, skill_id,
+          target_behavior, purpose, standard_setup, execution, what_good_looks_like, what_bad_looks_like, active)
+       values ($1,$2,$2,$3,'boxing','technical','intermediate',$4,'T.','P.','S.','E.','G.','B.',true)`,
+      [opts.organizationId ?? SEED_ORG, opts.drillId, opts.name, opts.primarySkillId],
+    );
+  }
+
+  /** A throwaway seed directory holding a crafted relationship CSV. */
+  async function craftedSeedDir(dataRows: string[]): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ppbf-secskill-seed-'));
+    await fs.writeFile(
+      path.join(dir, 'seed_drill_secondary_skills.csv'),
+      ['organization_id,drill_id,skill_id', ...dataRows].join('\n') + '\n',
+      'utf8',
+    );
+    return dir;
+  }
+
+  async function relationCount(client: Client, org: string = SEED_ORG): Promise<number> {
+    const { rows } = await client.query(
+      `select count(*)::int as n from pilot.drill_secondary_skills where organization_id = $1`,
+      [org],
+    );
+    return rows[0].n;
+  }
+
+  test('--dry-run validates and inserts nothing', async () => {
+    const client = await freshWithLibrary('ppbf_test_secskill_dry_run');
+    try {
+      await insertDrill(client, {
+        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: 'SK-CROSS-01',
+      });
+
+      const summary = await seedSecondarySkills(
+        client, SEED_DIR, { organizationId: SEED_ORG }, { dryRun: true },
+      );
+
+      // The insert really ran -- it reports one -- and the rollback removed it.
+      // A dry-run that skipped the insert would report the same summary while
+      // proving nothing about whether the row fits the live schema.
+      expect(summary).toEqual({ inserted: 1, alreadyPresent: 0, rejected: 0 });
+      expect(await relationCount(client)).toBe(0);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('the approved row inserts exactly once, and a second run is idempotent', async () => {
+    const client = await freshWithLibrary('ppbf_test_secskill_idempotent');
+    try {
+      await insertDrill(client, {
+        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: 'SK-CROSS-01',
+      });
+
+      const first = await seedSecondarySkills(client, SEED_DIR, { organizationId: SEED_ORG });
+      expect(first).toEqual({ inserted: 1, alreadyPresent: 0, rejected: 0 });
+      expect(await relationCount(client)).toBe(1);
+
+      const second = await seedSecondarySkills(client, SEED_DIR, { organizationId: SEED_ORG });
+      expect(second).toEqual({ inserted: 0, alreadyPresent: 1, rejected: 0 });
+      expect(await relationCount(client)).toBe(1);
+
+      // The stored row is the approved one, read back from the table rather
+      // than inferred from the counts.
+      const { rows } = await client.query(
+        `select drill_id, skill_id from pilot.drill_secondary_skills where organization_id = $1`,
+        [SEED_ORG],
+      );
+      expect(rows).toEqual([{ drill_id: APPROVED_DRILL, skill_id: 'SK-GUARD-02' }]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('the primary owner is untouched, and the three filters then behave as designed', async () => {
+    const client = await freshWithLibrary('ppbf_test_secskill_discovery');
+    try {
+      await insertDrill(client, {
+        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: 'SK-CROSS-01',
+      });
+      // A drill that owns SK-GUARD-02 outright, so the skillId case below
+      // distinguishes "returns nothing" from "returns only owners".
+      await insertDrill(client, {
+        drillId: 'guard-owner', name: 'Guard Recovery After Extension', primarySkillId: 'SK-GUARD-02',
+      });
+
+      await seedSecondarySkills(client, SEED_DIR, { organizationId: SEED_ORG });
+
+      // C. The primary is read straight out of the column: seeding a secondary
+      // must not move it.
+      const stored = await client.query(
+        `select skill_id from pilot.drill_library where organization_id = $1 and drill_id = $2`,
+        [SEED_ORG, APPROVED_DRILL],
+      );
+      expect(stored.rows[0].skill_id).toBe('SK-CROSS-01');
+
+      // D. skillId means PRIMARY OWNER and still does. If Cross Return to Guard
+      // appears here, every existing caller asking who owns a drill has started
+      // receiving drills it does not own.
+      const owned = await listDrillLibrary(SEED_ORG, { skillId: 'SK-GUARD-02' });
+      expect(owned.map((row) => row.drill_id)).toEqual(['guard-owner']);
+
+      // E. related_skill_id finds it THROUGH the relationship.
+      const related = await listDrillLibrary(SEED_ORG, { relatedSkillId: 'SK-GUARD-02' });
+      expect(related.map((row) => row.drill_id).sort()).toEqual([APPROVED_DRILL, 'guard-owner']);
+
+      // F. THE POINT OF THE WHOLE SLICE. SK-GUARD-02 is a SKILL-01 member code,
+      // so family discovery reaches this drill through the secondary relation
+      // even though its primary (SK-CROSS-01) is outside SKILL-01 entirely.
+      // This is the secondary half of family expansion, which no amount of
+      // primary-side data can exercise.
+      const family = await listDrillLibrary(SEED_ORG, { familyId: 'SKILL-01' });
+      expect(family.map((row) => row.drill_id).sort()).toEqual([APPROVED_DRILL, 'guard-owner']);
+      expect(family.find((row) => row.drill_id === APPROVED_DRILL)?.skill_id).toBe('SK-CROSS-01');
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('a SKILL-* family id is refused, and nothing is written', async () => {
+    const client = await freshWithLibrary('ppbf_test_secskill_reject_family');
+    try {
+      await insertDrill(client, {
+        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: 'SK-CROSS-01',
+      });
+
+      // 'SKILL-01' also starts with 'SK', so a naive prefix check would admit
+      // exactly the value the two-namespace rule exists to keep out.
+      const dir = await craftedSeedDir([`{{PPBF_ORG_ID}},${APPROVED_DRILL},SKILL-01`]);
+      await expect(seedSecondarySkills(client, dir, { organizationId: SEED_ORG }))
+        .rejects.toThrow(/SECONDARY_SKILL_IS_FAMILY_ID/);
+
+      expect(await relationCount(client)).toBe(0);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('a secondary equal to the primary is refused as redundant', async () => {
+    const client = await freshWithLibrary('ppbf_test_secskill_reject_same');
+    try {
+      await insertDrill(client, {
+        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: 'SK-CROSS-01',
+      });
+
+      const dir = await craftedSeedDir([`{{PPBF_ORG_ID}},${APPROVED_DRILL},SK-CROSS-01`]);
+      await expect(seedSecondarySkills(client, dir, { organizationId: SEED_ORG }))
+        .rejects.toThrow(/SECONDARY_SKILL_EQUALS_PRIMARY/);
+
+      expect(await relationCount(client)).toBe(0);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('a drill whose stored primary differs from the pinned one stops the run', async () => {
+    const client = await freshWithLibrary('ppbf_test_secskill_primary_mismatch');
+    try {
+      // The approval for this relationship assumed primary SK-CROSS-01. If the
+      // database says otherwise, the decision no longer applies -- the loader
+      // must stop rather than reinterpret or repair it.
+      await insertDrill(client, {
+        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: 'SK-JAB-01',
+      });
+
+      await expect(seedSecondarySkills(client, SEED_DIR, { organizationId: SEED_ORG }))
+        .rejects.toThrow(/SECONDARY_SKILL_PRIMARY_MISMATCH/);
+
+      expect(await relationCount(client)).toBe(0);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('a drill with no primary owner cannot take a secondary', async () => {
+    const client = await freshWithLibrary('ppbf_test_secskill_no_primary');
+    try {
+      await insertDrill(client, {
+        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: null,
+      });
+
+      await expect(seedSecondarySkills(client, SEED_DIR, { organizationId: SEED_ORG }))
+        .rejects.toThrow(/SECONDARY_SKILL_DRILL_HAS_NO_PRIMARY/);
+
+      expect(await relationCount(client)).toBe(0);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('a rejected row rolls back the rows that validated before it', async () => {
+    const client = await freshWithLibrary('ppbf_test_secskill_atomicity');
+    try {
+      await insertDrill(client, {
+        drillId: 'atomic-ok', name: 'Valid Row Drill', primarySkillId: 'SK-JAB-01',
+      });
+      await insertDrill(client, {
+        drillId: 'atomic-bad', name: 'Invalid Row Drill', primarySkillId: 'SK-JAB-02',
+      });
+
+      // TWO ROWS, AND THE ORDER IS THE WHOLE TEST. Row 1 validates and inserts
+      // for real; row 2 fails a JavaScript validation rule.
+      //
+      // Every other rejection case in this file uses a single row that fails
+      // BEFORE any insert, so a zero count there proves only that nothing was
+      // ever attempted -- not that anything was undone. This is the first case
+      // where a successful insert precedes the failure, which is the only shape
+      // that can tell COMMIT-on-throw apart from correct rollback.
+      //
+      // A loader validation error is a JavaScript exception, not a PostgreSQL
+      // one, so the transaction is NOT left aborted and a COMMIT reached
+      // through `finally` would succeed and persist row 1.
+      const dir = await craftedSeedDir([
+        '{{PPBF_ORG_ID}},atomic-ok,SK-GUARD-02',
+        '{{PPBF_ORG_ID}},atomic-bad,SKILL-01',
+      ]);
+
+      await expect(seedSecondarySkills(client, dir, { organizationId: SEED_ORG }))
+        .rejects.toThrow(/SECONDARY_SKILL_IS_FAMILY_ID/);
+
+      // All-or-nothing. Not "the bad row was skipped" -- the good one must be
+      // gone too, or a partial dataset is committed under a failed run and the
+      // operator is told the run failed.
+      expect(await relationCount(client)).toBe(0);
+
+      const { rows } = await client.query(
+        `select drill_id from pilot.drill_secondary_skills where organization_id = $1`,
+        [SEED_ORG],
+      );
+      expect(rows).toEqual([]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('organization isolation: a drill in another gym is not a match', async () => {
+    const client = await freshWithLibrary('ppbf_test_secskill_org_isolation');
+    try {
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status)
+         values ($1, $1, 'active') on conflict do nothing`,
+        [ORG_B],
+      );
+      // The drill exists -- but in SEED_ORG only. Seeding for ORG_B must not
+      // reach across, and must say why rather than surfacing a raw FK error.
+      await insertDrill(client, {
+        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: 'SK-CROSS-01',
+      });
+
+      await expect(seedSecondarySkills(client, SEED_DIR, { organizationId: ORG_B }))
+        .rejects.toThrow(/SECONDARY_SKILL_DRILL_NOT_FOUND_IN_ORG/);
+
+      expect(await relationCount(client, ORG_B)).toBe(0);
+      expect(await relationCount(client, SEED_ORG)).toBe(0);
+
+      // And the other direction: a relation seeded for SEED_ORG stays there.
+      await seedSecondarySkills(client, SEED_DIR, { organizationId: SEED_ORG });
+      expect(await relationCount(client, SEED_ORG)).toBe(1);
+      expect(await relationCount(client, ORG_B)).toBe(0);
+
+      const crossed = await listDrillLibrary(ORG_B, { relatedSkillId: 'SK-GUARD-02' });
+      expect(crossed).toEqual([]);
     } finally {
       activeClient = null;
       await client.end();

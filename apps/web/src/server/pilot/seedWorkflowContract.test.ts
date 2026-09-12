@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-// seed-reference-data.yml dispatches four reference-data loaders. The
+// seed-reference-data.yml dispatches five reference-data loaders. The
 // operator types an organization_id into the workflow form; the loader reads an
 // environment variable. Nothing tied those two names together, and they drifted:
 // the workflow exported PPBF_ORG_ID / SEED_ACCOUNT_ID while the loaders read
@@ -233,7 +233,19 @@ describe('seed-reference-data workflow contract', () => {
     //
     // Reordering these is therefore a schema question. If this assertion fails,
     // the fix is not to re-sort the list.
-    const steps = ['Seed Disciplines', 'Seed Drill Library', 'Seed Competence Cohorts', 'Seed Session Scripts'];
+    //
+    // SEED DRILL SECONDARY SKILLS SITS AFTER SEED DRILL LIBRARY for the same
+    // class of reason: pilot.drill_secondary_skills carries a composite
+    // foreign key to (organization_id, drill_id) in pilot.drill_library, so a
+    // relationship seeded into an empty library fails on the key. Its position
+    // is a schema fact too, and it has its own named assertion below.
+    const steps = [
+      'Seed Disciplines',
+      'Seed Drill Library',
+      'Seed Drill Secondary Skills',
+      'Seed Competence Cohorts',
+      'Seed Session Scripts',
+    ];
     const positions = steps.map((s) => workflow.indexOf(`- name: ${s}`));
     expect(positions.every((p) => p > -1)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
@@ -257,6 +269,74 @@ describe('seed-reference-data workflow contract', () => {
     for (const dependent of ['Seed Drill Library', 'Seed Session Scripts', 'Seed Competence Cohorts']) {
       expect(at(dependent)).toBeGreaterThan(at('Seed Disciplines'));
     }
+  });
+
+  it('fills the drill library before seeding any relationship that points into it', () => {
+    // The positional array above is order-sensitive but not self-explaining --
+    // someone re-sorting it to silence a failure would satisfy it again and
+    // reintroduce the defect. This one names the constraint instead: the
+    // relationship table's composite FK targets pilot.drill_library, so the
+    // library must be populated first. It cannot be satisfied by re-sorting.
+    const at = (step: string) => workflow.indexOf(`- name: ${step}`);
+
+    expect(at('Seed Drill Library')).toBeGreaterThan(-1);
+    expect(at('Seed Drill Secondary Skills')).toBeGreaterThan(at('Seed Drill Library'));
+  });
+
+  it('does not demand a seeder account for the relationship dataset', () => {
+    // pilot.drill_secondary_skills has NO created_by/seeder column, so
+    // seed-drill-secondary-skills.mjs never reads PPBF_SEED_ACCOUNT_ID. Its
+    // absence from the guard is therefore correct, and asserting that keeps a
+    // future edit from "fixing" the gap by demanding an account the loader has
+    // no use for -- which would block a legitimate single-dataset dispatch.
+    const guard = workflow.slice(workflow.indexOf('SEED_ACCOUNT'));
+    const guardCondition = guard.slice(0, guard.indexOf('fi'));
+    expect(guardCondition).not.toMatch(/drill-secondary-skills/);
+
+    // Asserted through seedVarsRequiredBy rather than as a raw string search:
+    // the loader's header NAMES PPBF_SEED_ACCOUNT_ID in order to record why it
+    // does not use one, and a substring check cannot tell an explanation from a
+    // dependency. This reads what the loader actually consumes.
+    expect(seedVarsRequiredBy('seed-drill-secondary-skills.mjs')).toEqual(['PPBF_SEED_ORG_ID']);
+  });
+
+  it('never lets a family id reach a skill column through the relationship loader', () => {
+    // The loader is the one write path into pilot.drill_secondary_skills, and
+    // SKILL-01..12 are derived through skillFamilies.ts rather than stored. A
+    // seed CSV is the easiest place for a family id to slip in, so the guard
+    // lives in the loader and is pinned here.
+    //
+    // Checked as source text rather than behaviour on purpose: the behavioural
+    // proof is in drillLibraryV3.pg.test.ts against real Postgres. This asserts
+    // the check has not been DELETED, which a passing behavioural test on a
+    // different input would not notice.
+    const loader = fs.readFileSync(
+      path.join(SCRIPTS_DIR, 'seed-drill-secondary-skills.mjs'),
+      'utf8',
+    );
+    expect(loader).toContain('SECONDARY_SKILL_IS_FAMILY_ID');
+    expect(loader).toContain('SECONDARY_SKILL_EQUALS_PRIMARY');
+    expect(loader).toContain('SECONDARY_SKILL_PRIMARY_MISMATCH');
+    expect(loader).toContain('SECONDARY_SKILL_DRILL_HAS_NO_PRIMARY');
+    expect(loader).toContain('SECONDARY_SKILL_DRILL_NOT_FOUND_IN_ORG');
+  });
+
+  it('seeds exactly the one approved relationship and no other', () => {
+    // NO GAP FILLING. The CSV is the canonical dataset and one owner decision
+    // approved exactly one row. A second row appearing here without a decision
+    // is the failure this guards -- it would be invisible in a diff review of
+    // a large seed file and silently widen coach-facing search results.
+    const csv = fs
+      .readFileSync(
+        path.resolve(PILOT_DIR, '../../../seed-data/drill-library/seed_drill_secondary_skills.csv'),
+        'utf8',
+      )
+      .replace(/\r\n/g, '\n')
+      .trim()
+      .split('\n');
+
+    expect(csv[0]).toBe('organization_id,drill_id,skill_id');
+    expect(csv.slice(1)).toEqual(['{{PPBF_ORG_ID}},drl_3df01682e604dd,SK-GUARD-02']);
   });
 
   it('"all" still demands the seeder account drill-library and session-scripts need', () => {

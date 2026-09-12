@@ -82,6 +82,7 @@ on:
         options:
           - all
           - drill-library
+          - drill-secondary-skills
           - disciplines
           - competence-cohorts
           - session-scripts
@@ -297,6 +298,25 @@ jobs:
         if: inputs.dataset == 'drill-library' || inputs.dataset == 'all'
         working-directory: apps/web
         run: npm run seed:drill-library ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
+
+      # AFTER Seed Drill Library, and that is a foreign key rather than a
+      # preference: pilot.drill_secondary_skills carries a composite FK to
+      # (organization_id, drill_id) in pilot.drill_library, so seeding a
+      # relationship into an empty library fails on the key.
+      #
+      # It is also the only loader here that needs NO seeder account -- the
+      # table has no created_by column -- which is why it is absent from the
+      # SEED_ACCOUNT guard above. Absence there is deliberate, not an oversight.
+      #
+      # The loader validates every row against the destination database before
+      # inserting (drill exists in this org, has a primary, secondary is an
+      # SK-* code and not a SKILL-* family id, secondary differs from primary,
+      # and the pinned primary matches). A disagreement stops the run instead
+      # of writing a relationship whose approval assumed something else.
+      - name: Seed Drill Secondary Skills
+        if: inputs.dataset == 'drill-secondary-skills' || inputs.dataset == 'all'
+        working-directory: apps/web
+        run: npm run seed:drill-secondary-skills ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
 
       - name: Seed Competence Cohorts
         if: inputs.dataset == 'competence-cohorts' || inputs.dataset == 'all'
