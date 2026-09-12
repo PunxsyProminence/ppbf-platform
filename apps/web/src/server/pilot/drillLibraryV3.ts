@@ -1,4 +1,5 @@
 import { query, queryOne } from './db';
+import { memberCodesForFamily } from './skillFamilies';
 
 // pilot.drill_library, pilot.drill_scale_levels, pilot.drill_stop_rules and
 // pilot.drill_cues are owned by
@@ -142,11 +143,30 @@ const SECONDARY_SKILL_FIELDS = 'organization_id, drill_id, skill_id';
  *   relatedSkillId matches the primary owner OR any secondary relationship.
  *                  This is the path that discovers a drill THROUGH a secondary
  *                  skill without that skill becoming its owner.
+ *   familyId       matches at the FAMILY level -- SKILL-01..SKILL-12 -- by
+ *                  expanding the family to the SK-* codes it owns and matching
+ *                  the primary owner OR any secondary relationship against
+ *                  that set. See below for why it is a third parameter.
  *
  * The secondary half is an EXISTS subquery and not a join, because a join to
  * pilot.drill_secondary_skills returns one parent row per matching relation --
  * so a drill carrying two secondaries would appear twice in a list OF DRILLS.
  * EXISTS answers the same question and cannot duplicate the parent.
+ *
+ * WHY familyId IS A THIRD PARAMETER AND NOT A WIDER relatedSkillId.
+ *
+ * The same reasoning that kept skillId intact when relatedSkillId arrived. A
+ * family id is a DIFFERENT KIND OF VALUE from a skill code (owner decision
+ * D2-B): SKILL-01 names a family, SK-STANCE-01 names one of the six codes
+ * inside it. Letting relatedSkillId accept either would make one parameter
+ * answer two questions, and every existing caller passing a code would be
+ * indistinguishable from a caller passing a family. So SKILL-01 is never
+ * compared against a skill column -- it is expanded first, here, and only
+ * codes reach the query.
+ *
+ * memberCodesForFamily throws for a family with no approved crosswalk rather
+ * than expanding to an empty set, so an unreconciled family surfaces as a
+ * refusal instead of an empty drill list that reads as "no such drills".
  */
 export async function listDrillLibrary(
   organizationId: string,
@@ -156,8 +176,13 @@ export async function listDrillLibrary(
     difficulty?: string;
     skillId?: string;
     relatedSkillId?: string;
+    familyId?: string;
   } = {},
 ): Promise<DrillLibraryRow[]> {
+  // Expanded BEFORE the query runs: a refusal for an unreconciled family must
+  // not depend on the database being reachable.
+  const familyCodes = filter.familyId ? [...memberCodesForFamily(filter.familyId)] : null;
+
   return query<DrillLibraryRow>(
     `select ${DRILL_FIELDS}
      from pilot.drill_library d
@@ -178,6 +203,17 @@ export async function listDrillLibrary(
              and s.skill_id = $6
          )
        )
+       and (
+         $7::text[] is null
+         or d.skill_id = any($7::text[])
+         or exists (
+           select 1
+           from pilot.drill_secondary_skills s
+           where s.organization_id = d.organization_id
+             and s.drill_id = d.drill_id
+             and s.skill_id = any($7::text[])
+         )
+       )
      order by d.discipline, d.category, d.name`,
     [
       organizationId,
@@ -186,6 +222,7 @@ export async function listDrillLibrary(
       filter.difficulty ?? null,
       filter.skillId ?? null,
       filter.relatedSkillId ?? null,
+      familyCodes,
     ],
   );
 }
