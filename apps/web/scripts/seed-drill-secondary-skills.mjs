@@ -293,8 +293,35 @@ async function seedSecondarySkills(client, records, { dryRun }) {
   return { inserted, alreadyPresent, rejected };
 }
 
+/*
+  TRANSACTION CONTROL, AND WHY IT IS NOT A `finally` BLOCK.
+
+  This was written with the BEGIN/try/finally shape the sibling loaders use,
+  with a comment asserting that a rejected row "throws out of the try, so this
+  COMMIT is only reached when every row validated". That was wrong, and a
+  two-row regression test in drillLibraryV3.pg.test.ts proves it: `finally`
+  runs on the throwing path too, so the COMMIT executed anyway.
+
+  It committed. A loader validation failure is a JavaScript exception, not a
+  PostgreSQL error, so the transaction was never put into an aborted state --
+  PostgreSQL had no reason to refuse the COMMIT. The observed result was one
+  valid row persisted by a run that reported failure: the worst combination,
+  because the operator is told nothing was written.
+
+  Depending on the database to be aborted was the mistake. Correctness here has
+  to come from control flow that cannot fall through:
+
+    success + apply   -> COMMIT
+    success + dry-run -> ROLLBACK
+    any error         -> ROLLBACK, then rethrow the ORIGINAL error
+
+  The rollback on the error path is itself wrapped, because a connection that
+  died mid-run makes ROLLBACK throw too -- and that secondary failure must not
+  replace the validation message that explains what actually went wrong.
+*/
 export async function seedAll(client, seedDir, placeholders, { dryRun = false } = {}) {
   await client.query('BEGIN');
+
   let summary;
   try {
     const records = await loadCsvRecords(
@@ -302,17 +329,22 @@ export async function seedAll(client, seedDir, placeholders, { dryRun = false } 
       placeholders,
     );
     summary = await seedSecondarySkills(client, records, { dryRun });
-  } finally {
-    if (dryRun) {
+  } catch (error) {
+    try {
       await client.query('ROLLBACK');
-      console.log('[dry-run] Rolled back. Nothing was written.');
-    } else {
-      // A rejected row throws out of the try, so this COMMIT is only reached
-      // when every row validated. The rollback on failure is PostgreSQL's:
-      // the aborted transaction cannot commit.
-      await client.query('COMMIT');
+    } catch {
+      // Deliberately swallowed. The original error is the one worth reporting.
     }
+    throw error;
   }
+
+  if (dryRun) {
+    await client.query('ROLLBACK');
+    console.log('[dry-run] Rolled back. Nothing was written.');
+  } else {
+    await client.query('COMMIT');
+  }
+
   return summary;
 }
 

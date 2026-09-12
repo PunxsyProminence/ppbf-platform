@@ -1228,6 +1228,52 @@ describe('seed-drill-secondary-skills.mjs against real Postgres', () => {
     }
   });
 
+  test('a rejected row rolls back the rows that validated before it', async () => {
+    const client = await freshWithLibrary('ppbf_test_secskill_atomicity');
+    try {
+      await insertDrill(client, {
+        drillId: 'atomic-ok', name: 'Valid Row Drill', primarySkillId: 'SK-JAB-01',
+      });
+      await insertDrill(client, {
+        drillId: 'atomic-bad', name: 'Invalid Row Drill', primarySkillId: 'SK-JAB-02',
+      });
+
+      // TWO ROWS, AND THE ORDER IS THE WHOLE TEST. Row 1 validates and inserts
+      // for real; row 2 fails a JavaScript validation rule.
+      //
+      // Every other rejection case in this file uses a single row that fails
+      // BEFORE any insert, so a zero count there proves only that nothing was
+      // ever attempted -- not that anything was undone. This is the first case
+      // where a successful insert precedes the failure, which is the only shape
+      // that can tell COMMIT-on-throw apart from correct rollback.
+      //
+      // A loader validation error is a JavaScript exception, not a PostgreSQL
+      // one, so the transaction is NOT left aborted and a COMMIT reached
+      // through `finally` would succeed and persist row 1.
+      const dir = await craftedSeedDir([
+        '{{PPBF_ORG_ID}},atomic-ok,SK-GUARD-02',
+        '{{PPBF_ORG_ID}},atomic-bad,SKILL-01',
+      ]);
+
+      await expect(seedSecondarySkills(client, dir, { organizationId: SEED_ORG }))
+        .rejects.toThrow(/SECONDARY_SKILL_IS_FAMILY_ID/);
+
+      // All-or-nothing. Not "the bad row was skipped" -- the good one must be
+      // gone too, or a partial dataset is committed under a failed run and the
+      // operator is told the run failed.
+      expect(await relationCount(client)).toBe(0);
+
+      const { rows } = await client.query(
+        `select drill_id from pilot.drill_secondary_skills where organization_id = $1`,
+        [SEED_ORG],
+      );
+      expect(rows).toEqual([]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
   test('organization isolation: a drill in another gym is not a match', async () => {
     const client = await freshWithLibrary('ppbf_test_secskill_org_isolation');
     try {
