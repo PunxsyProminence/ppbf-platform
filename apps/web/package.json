@@ -106,6 +106,7 @@
     "rehearse:shadow:research": "node scripts/rehearse-shadow-research-import.mjs",
     "seed:drill-library": "node scripts/seed-drill-library.mjs",
     "seed:drill-library:dry": "node scripts/seed-drill-library.mjs --dry-run",
+    "seed:drill-secondary-skills": "node scripts/seed-drill-secondary-skills.mjs",
     "gate:pilot": "node scripts/pilot-gate.mjs",
     "gate:pilot:multiorg": "node scripts/pilot-multiorg-gate.mjs",
     "test": "jest --runInBand --testPathIgnorePatterns=\\.pg\\.test\\.ts$",
