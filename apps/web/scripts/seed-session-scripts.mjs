@@ -295,8 +295,22 @@ async function seedRenderings(client, records, { dryRun }) {
   return { inserted, skipped };
 }
 
+/*
+  The success-path COMMIT is deliberately NOT in a `finally`. It used to be, and
+  a regression in sessionScriptsTransfer.pg.test.ts measured what that cost: the
+  three CSVs are read one at a time with a write after each, so when the second
+  fs.readFile rejects with ENOENT the session_scripts rows are already inserted.
+  That rejection is a JavaScript filesystem error which never reaches the server,
+  so the transaction stayed valid, `finally` ran the COMMIT anyway, and three rows
+  persisted out of a call that rejected -- measured as Expected: 0, Received: 3.
+
+  A PostgreSQL error would not have shown this: it aborts the transaction, so
+  those writes are discarded whether or not a COMMIT is issued afterwards. The
+  failures that need explicit handling are the ones the database never sees.
+*/
 export async function seedAll(client, seedDir, placeholders, { dryRun = false } = {}) {
   await client.query('BEGIN');
+
   try {
     const scriptRecords = await loadCsvRecords(path.join(seedDir, 'seed_session_scripts.csv'), placeholders);
     await seedScripts(client, scriptRecords, { dryRun });
@@ -306,13 +320,21 @@ export async function seedAll(client, seedDir, placeholders, { dryRun = false } 
 
     const renderingRecords = await loadCsvRecords(path.join(seedDir, 'seed_session_script_renderings.csv'), placeholders);
     await seedRenderings(client, renderingRecords, { dryRun });
-  } finally {
-    if (dryRun) {
+  } catch (error) {
+    try {
       await client.query('ROLLBACK');
-      console.log('[dry-run] Rolled back. Nothing was written.');
-    } else {
-      await client.query('COMMIT');
+    } catch {
+      // Swallowed on purpose: a connection that died mid-run makes ROLLBACK throw
+      // too, and that must not replace the error that explains what went wrong.
     }
+    throw error;
+  }
+
+  if (dryRun) {
+    await client.query('ROLLBACK');
+    console.log('[dry-run] Rolled back. Nothing was written.');
+  } else {
+    await client.query('COMMIT');
   }
 }
 

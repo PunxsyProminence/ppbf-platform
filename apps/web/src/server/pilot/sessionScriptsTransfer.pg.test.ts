@@ -429,6 +429,52 @@ describe('seed-session-scripts.mjs against real Postgres', () => {
       await client.end();
     }
   });
+
+  // The test above, and every other test that touches this loader, exercises a path where
+  // seedAll either succeeds outright or fails on a PostgreSQL constraint. Neither can tell
+  // a correct rollback apart from a COMMIT that ran anyway: a PostgreSQL error aborts the
+  // transaction, so the rows are gone either way and a zero count proves nothing about the
+  // loader's control flow.
+  //
+  // This is the first case where a SUCCESSFUL WRITE PRECEDES THE FAILURE and the failure is
+  // NOT a database error. seedAll reads three CSVs and writes after each one. Copying only
+  // the first means the three session_scripts rows are already inserted when the second
+  // fs.readFile rejects with ENOENT -- a JavaScript filesystem error that never reaches
+  // PostgreSQL, so the transaction stays valid and committable.
+  //
+  // APPLY mode on purpose: no options object is passed, so dryRun defaults to false. A
+  // dry-run rolls back regardless of outcome and would pass against either implementation.
+  test('a failure after scripts are inserted rolls back the rows already written', async () => {
+    const client = await freshDatabase('ppbf_test_session_scripts_seed_atomicity');
+    try {
+      await applySessionScriptsMigration(client, sessionScriptsMigrationSql);
+
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ppbf-session-scripts-atomicity-'));
+
+      // The REAL shipped first file, not a synthesised stand-in: its rows have to insert
+      // successfully for this test to be measuring what it claims to measure.
+      await fs.copyFile(
+        path.join(SESSION_SCRIPTS_SEED_DIR, 'seed_session_scripts.csv'),
+        path.join(dir, 'seed_session_scripts.csv'),
+      );
+      // seed_session_script_blocks.csv is deliberately absent. That is the induced failure.
+
+      await expect(
+        seedSessionScripts(client, dir, { organizationId: ORG_A, seedAccountId: COACH_A }),
+      ).rejects.toThrow();
+
+      // All three write targets, because the loader writes all three and a repair must not
+      // leave any of them behind.
+      const scripts = await client.query(`select count(*)::int as n from pilot.session_scripts where organization_id = $1`, [ORG_A]);
+      const blocks = await client.query(`select count(*)::int as n from pilot.session_script_blocks where organization_id = $1`, [ORG_A]);
+      const renderings = await client.query(`select count(*)::int as n from pilot.session_script_renderings where organization_id = $1`, [ORG_A]);
+      expect(scripts.rows[0].n).toBe(0);
+      expect(blocks.rows[0].n).toBe(0);
+      expect(renderings.rows[0].n).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
 });
 
 // Reads only the drill_id column out of the real, already-shipped seed_drill_library.csv and
