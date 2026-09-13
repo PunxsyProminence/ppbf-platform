@@ -495,4 +495,55 @@ describe('seed-competence-cohorts.mjs against real Postgres', () => {
       await client.end();
     }
   });
+
+  test('a failure after the first file rolls back the rows the first file already wrote', async () => {
+    const client = await freshDatabase('ppbf_test_competence_cohorts_seed_atomicity');
+    try {
+      await applyCohortsMigration(client, cohortsMigrationSql);
+
+      // TWO FILES, AND THE ORDER IS THE WHOLE TEST.
+      //
+      // seedAll loads seed_competence_levels.csv and inserts 6 rows, THEN loads
+      // seed_cohort_definitions.csv. A seed directory holding only the first
+      // file therefore fails with a filesystem ENOENT from fs.readFile, AFTER
+      // six successful inserts.
+      //
+      // That ordering is the point. Every other case in this describe block
+      // either succeeds outright or rolls back a dry-run, so none of them can
+      // distinguish correct rollback from a COMMIT that ran anyway. An ENOENT
+      // is a JavaScript throw, not a PostgreSQL error, so it does NOT put the
+      // transaction into an aborted state and PostgreSQL has no reason to
+      // refuse a COMMIT reached through `finally`.
+      //
+      // The first file is the REAL shipped CSV, copied rather than synthesised,
+      // so the six rows that must disappear are genuine seed content.
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ppbf-competence-atomicity-'));
+      await fs.copyFile(
+        path.join(SEED_DIR, 'seed_competence_levels.csv'),
+        path.join(dir, 'seed_competence_levels.csv'),
+      );
+      // seed_cohort_definitions.csv is deliberately NOT created.
+
+      // APPLY mode, not dry-run: a dry-run rolls back on the success path too
+      // and would pass against the defect.
+      await expect(seedAll(client, dir, { organizationId: ORG_A })).rejects.toThrow();
+
+      // All-or-nothing. Not "the cohort file was skipped" -- the competence
+      // levels must be gone too, or a partial dataset survives a run that
+      // exited non-zero, and the operator has no way to know six rows landed.
+      const levels = await client.query(
+        `select count(*)::int as n from pilot.competence_levels where organization_id = $1`,
+        [ORG_A],
+      );
+      expect(levels.rows[0].n).toBe(0);
+
+      const cohorts = await client.query(
+        `select count(*)::int as n from pilot.cohort_definitions where organization_id = $1`,
+        [ORG_A],
+      );
+      expect(cohorts.rows[0].n).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
 });

@@ -242,21 +242,68 @@ async function seedCohortDefinitions(client, records, { dryRun }) {
   return { inserted, skipped };
 }
 
+/*
+  TRANSACTION CONTROL, AND WHY IT IS NOT A `finally` BLOCK.
+
+  This used to put the COMMIT in a `finally`. That is wrong, and a two-file
+  regression in competenceCohorts.pg.test.ts proves it: `finally` runs on the
+  throwing path too, so the COMMIT executed anyway.
+
+  It also SUCCEEDED. This loader reads two CSVs, and the second read happens
+  AFTER six competence-level rows have already been inserted. A missing or
+  unreadable second file throws ENOENT from fs.readFile -- a JavaScript
+  filesystem error, not a PostgreSQL one -- so the transaction was never put
+  into an aborted state and PostgreSQL had no reason to refuse the commit. The
+  measured result was six rows persisted by a run that exited non-zero with
+  PILOT COMPETENCE COHORTS SEED FAIL. The operator is not told "nothing was
+  written" -- that line is dry-run only -- they are told the run FAILED, which
+  is worse than useless when six rows survived it.
+
+  A PostgreSQL statement error would have aborted the transaction and made the
+  COMMIT fail on its own. That is exactly why the old shape looked safe and was
+  not: the danger is the failure that ISN'T a database error. In this loader
+  that is fs.readFile on the second CSV -- parseCsv itself contains no throw,
+  so a malformed file surfaces later as a PostgreSQL insert error, which is the
+  self-aborting category. One non-database failure mode, not two, and one is
+  enough.
+
+  Depending on the database to be aborted was the mistake. Correctness has to
+  come from control flow that cannot fall through:
+
+    success + apply   -> COMMIT
+    success + dry-run -> ROLLBACK
+    any error RAISED BY THE LOAD/WRITE BLOCK -> ROLLBACK, then rethrow the
+      ORIGINAL error. BEGIN, the success-path COMMIT and the dry-run ROLLBACK
+      sit outside that block deliberately: a failed BEGIN leaves nothing open,
+      and PostgreSQL aborts the transaction itself when a COMMIT fails.
+
+  The rollback on the error path is itself wrapped, because a connection that
+  died mid-run makes ROLLBACK throw too -- and that secondary failure must not
+  replace the error that explains what actually went wrong.
+*/
 export async function seedAll(client, seedDir, placeholders, { dryRun = false } = {}) {
   await client.query('BEGIN');
+
   try {
     const levelRecords = await loadCsvRecords(path.join(seedDir, 'seed_competence_levels.csv'), placeholders);
     await seedCompetenceLevels(client, levelRecords, { dryRun });
 
     const cohortRecords = await loadCsvRecords(path.join(seedDir, 'seed_cohort_definitions.csv'), placeholders);
     await seedCohortDefinitions(client, cohortRecords, { dryRun });
-  } finally {
-    if (dryRun) {
+  } catch (error) {
+    try {
       await client.query('ROLLBACK');
-      console.log('[dry-run] Rolled back. Nothing was written.');
-    } else {
-      await client.query('COMMIT');
+    } catch {
+      // Deliberately swallowed. The original error is the one worth reporting.
     }
+    throw error;
+  }
+
+  if (dryRun) {
+    await client.query('ROLLBACK');
+    console.log('[dry-run] Rolled back. Nothing was written.');
+  } else {
+    await client.query('COMMIT');
   }
 }
 
