@@ -263,6 +263,10 @@ describe('every rate names its denominator, and they are not the same one', () =
         source_event_id_b: 'clip-0-evt-b',
         resolution_type: 'unresolvable',
         missed_event_verdict: null,
+        // Required on AdjudicationRow since OD-2026-08-29-005. This suite counts
+        // rates over adjudications and does not read the revision; the value is
+        // here to satisfy the row shape, not to assert anything about it.
+        revision: 1,
         adjudicator_account_id: 'acct-reviewer',
         adjudicated_at: '2026-08-27T02:00:00.000Z',
         ontology_version: ONTOLOGY,

@@ -5,6 +5,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import {
+  ADJUDICATION_PAIR_REVISION_CONSTRAINT,
   ADJUDICATION_RESOLUTION_TYPES,
   MISSED_EVENT_VERDICTS,
   RESOLVED_FROM_SOURCES,
@@ -27,11 +28,46 @@ import {
   resolveComparisonPair,
 } from '@/src/server/pilot/calibration/comparison';
 import type { CalibrationClipRow } from '@/src/server/pilot/calibration/projects';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 import { blankToNull, loadPlayableClip, writeCalibrationAuditEvent } from '../annotatorGate';
 
 export const runtime = 'nodejs';
+
+/* THE ONE COLLISION OD-2026-08-29-005 CHOSE TO EXPLAIN.
+ *
+ * That decision assigns a revision per pair with NO row lock, so two
+ * administrators deciding the same disagreement at the same time both compute
+ * the same next revision and the unique constraint refuses the second. Left
+ * untranslated the loser gets a raw duplicate-key dump naming a constraint --
+ * which is the outcome the decision was made to avoid, and which reads as a bug
+ * rather than as "somebody answered before you".
+ *
+ * MATCHED ON BOTH SQLSTATE AND THE CONSTRAINT NAME, never on 23505 alone. This
+ * table has other unique constraints -- the primary key, and the provenance key
+ * the gold migration added -- and the adjudicated-fields table has its own. A
+ * bare 23505 branch would tell an administrator that somebody corrected their
+ * adjudication when what actually happened was a duplicate adjudication_id or a
+ * repeated field decision. Every other error, including every other 23505, is
+ * rethrown untouched for jsonError to handle as it already does.
+ *
+ * `constraint` is the pg driver's own field, not a substring search of the
+ * message: matching the message would break the first time Postgres reworded it.
+ */
+function asConcurrentCorrectionConflict(error: unknown): never {
+  const constraint = (error as { constraint?: unknown } | null)?.constraint;
+  const code = (error as { code?: unknown } | null)?.code;
+
+  if (code === '23505' && constraint === ADJUDICATION_PAIR_REVISION_CONSTRAINT) {
+    throw new ConflictError(
+      'Someone corrected this adjudication while you were deciding. Reload and review their answer before replacing it.',
+      'CALIBRATION_ADJUDICATION_SUPERSEDED',
+    );
+  }
+
+  throw error;
+}
 
 /**
  * HOW EACH DISAGREEMENT WAS SETTLED. The write half.
@@ -548,7 +584,7 @@ export async function POST(request: NextRequest) {
         ? body.notes.trim()
         : null,
       fields,
-    } as unknown as RecordAdjudicationInput);
+    } as unknown as RecordAdjudicationInput).catch(asConcurrentCorrectionConflict);
 
     /* AN AUDIT ROW, AND THE VOCABULARY WAS CHECKED RATHER THAN ASSUMED.
      *

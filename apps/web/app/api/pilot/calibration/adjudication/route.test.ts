@@ -201,12 +201,26 @@ const WRITTEN = {
   source_event_id_b: 'evt-b1',
   resolution_type: 'accept_a',
   missed_event_verdict: null,
+  revision: 1,
   adjudicator_account_id: 'admin-1',
   adjudicated_at: '2026-08-29T00:00:00.000Z',
   ontology_version: 'boxing-ontology-0.1',
   notes: null,
   created_at: '2026-08-29T00:00:00.000Z',
 };
+
+/** The error Postgres raises when two administrators computed the same revision
+ * for one pair -- the race OD-2026-08-29-005 chose to allow and explain rather
+ * than lock out. Shaped as the pg driver delivers it: a `code` and a
+ * `constraint`, not a parseable message. */
+function pairRevisionCollision(): Error & { code: string; constraint: string } {
+  const error = new Error(
+    'duplicate key value violates unique constraint "pilot_calibration_adjudications_pair_revision_uq"',
+  ) as Error & { code: string; constraint: string };
+  error.code = '23505';
+  error.constraint = 'pilot_calibration_adjudications_pair_revision_uq';
+  return error;
+}
 
 function post(body: unknown): NextRequest {
   return new Request('http://localhost/api/pilot/calibration/adjudication', {
@@ -994,5 +1008,76 @@ describe('the door in front of this route', () => {
 
     const door = BUILDING.find((entry) => entry.href === '/admin/calibration/adjudicate');
     expect([...guarded].sort()).toEqual([...(door?.roles as readonly string[])].sort());
+  });
+});
+
+/* OD-2026-08-29-005 translated the ONE collision it chose to allow.
+ *
+ * The decision assigns a revision per pair with no row lock, so two
+ * administrators deciding at once is an expected outcome, not a fault. What the
+ * ruling bought is the explanation: the loser must be told somebody answered
+ * while they were deciding and sent to read it. Untranslated they get a
+ * duplicate-key dump naming a constraint, which reads as a bug in the product.
+ *
+ * The second case is the one that makes the first worth having. This table
+ * carries other unique constraints -- its primary key, and the provenance key
+ * the gold migration added -- so a branch on SQLSTATE 23505 alone would report a
+ * duplicate adjudication_id as somebody else's correction and send an
+ * administrator to look for an answer that does not exist. */
+describe('two administrators deciding the same disagreement at once', () => {
+  test('the loser is told to read the answer that landed, not shown a duplicate-key error', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+    mockRecord.mockRejectedValue(pairRevisionCollision());
+
+    const response = await POST(post(DECISION));
+    expect(response.status).toBe(409);
+
+    const body = await response.json();
+    expect(body.error).toBe(
+      'Someone corrected this adjudication while you were deciding. Reload and review their answer before replacing it.',
+    );
+    expect(body.code).toBe('CALIBRATION_ADJUDICATION_SUPERSEDED');
+
+    // The raw database error must not reach the administrator. Asserted over the
+    // whole serialised body, because a leak could arrive in any field.
+    const serialised = JSON.stringify(body);
+    expect(serialised).not.toContain('duplicate key');
+    expect(serialised).not.toContain('pilot_calibration_adjudications_pair_revision_uq');
+    expect(serialised).not.toContain('23505');
+
+    // A refused write is not an event. Writing an audit row here would record a
+    // decision that does not exist.
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('an unrelated 23505 is NOT reported as a concurrent correction', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+
+    const otherCollision = new Error(
+      'duplicate key value violates unique constraint "pilot_calibration_adjudications_pkey"',
+    ) as Error & { code: string; constraint: string };
+    otherCollision.code = '23505';
+    otherCollision.constraint = 'pilot_calibration_adjudications_pkey';
+    mockRecord.mockRejectedValue(otherCollision);
+
+    const response = await POST(post(DECISION));
+    expect(response.status).not.toBe(409);
+
+    const body = await response.json();
+    expect(body.code).not.toBe('CALIBRATION_ADJUDICATION_SUPERSEDED');
+    expect(JSON.stringify(body)).not.toContain('while you were deciding');
+  });
+
+  test('a successful decision carries its revision back to the caller', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+
+    const response = await POST(post(DECISION));
+    expect(response.status).toBe(200);
+
+    const body = await response.json();
+    expect(body.adjudication.revision).toBe(1);
   });
 });

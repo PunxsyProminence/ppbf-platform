@@ -268,6 +268,7 @@
     "pilot:apply-cohort-definitions-discipline-fk": "node scripts/pilot-apply-cohort-definitions-discipline-fk-migration.mjs",
     "pilot:apply-discipline-fk-validation": "node scripts/pilot-apply-discipline-fk-validation-migration.mjs",
     "pilot:apply-athlete-check-in-measures": "node scripts/pilot-apply-athlete-check-in-measures-migration.mjs",
+    "pilot:apply-calibration-adjudication-revisions": "node scripts/pilot-apply-calibration-adjudication-revisions-migration.mjs",
     "pilot:apply-calibration-gold": "node scripts/pilot-apply-calibration-gold-migration.mjs",
     "pilot:apply-athlete-development-blocks": "node scripts/pilot-apply-athlete-development-blocks-migration.mjs",
     "pilot:apply-athlete-development-block-competition-target": "node scripts/pilot-apply-athlete-development-block-competition-target-migration.mjs",
