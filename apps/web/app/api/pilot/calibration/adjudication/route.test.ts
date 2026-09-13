@@ -8,6 +8,7 @@ import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access'
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import {
+  currentPairRevision,
   listAdjudicatedFields,
   listAdjudicationsForClip,
   recordAdjudication,
@@ -80,6 +81,7 @@ jest.mock('@/src/server/pilot/calibration/adjudication', () => {
     recordAdjudication: jest.fn(),
     listAdjudicationsForClip: jest.fn(),
     listAdjudicatedFields: jest.fn(),
+    currentPairRevision: jest.fn(),
   };
 });
 
@@ -101,6 +103,7 @@ const mockClippable = assertVideoClippable as jest.Mock;
 const mockRecord = recordAdjudication as jest.Mock;
 const mockListAdjudications = listAdjudicationsForClip as jest.Mock;
 const mockListFields = listAdjudicatedFields as jest.Mock;
+const mockCurrentPairRevision = currentPairRevision as jest.Mock;
 
 const ORG = 'org-1';
 
@@ -242,6 +245,9 @@ const DECISION = {
   source_event_id_a: 'evt-a1',
   source_event_id_b: 'evt-b1',
   resolution_type: 'accept_a',
+  /* OD-2026-08-29-005. What the administrator reviewed, carried from the GET.
+     0 here because these fixtures settle a pair nobody has adjudicated. */
+  expected_current_revision: 0,
 };
 
 /** A clip whose footage is fine and whose two readings are both finished. */
@@ -254,6 +260,7 @@ function bothSubmitted(sets = [SET_A, SET_B]) {
   mockRecord.mockResolvedValue({ adjudication: WRITTEN, fields: [] });
   mockListAdjudications.mockResolvedValue([]);
   mockListFields.mockResolvedValue([]);
+  mockCurrentPairRevision.mockResolvedValue(0);
 }
 
 beforeEach(() => {
@@ -652,6 +659,7 @@ describe('what the caller may and may not supply', () => {
       source_event_id_b: '',
       resolution_type: 'accept_a',
       missed_event_verdict: '',
+      expected_current_revision: 0,
     }));
 
     expect(response.status).toBe(200);
@@ -1079,5 +1087,93 @@ describe('two administrators deciding the same disagreement at once', () => {
 
     const body = await response.json();
     expect(body.adjudication.revision).toBe(1);
+  });
+});
+
+/* OD-2026-08-29-005. The expectation is INPUT, and a bad one is the caller's
+ * defect -- not a story about a second administrator.
+ *
+ * This distinction is the whole reason the check lives in validation rather than
+ * in the conflict branch. A stale page build, a script, or a hand-rolled request
+ * that omits the field has not lost a race with anybody. Answering it with
+ * "someone corrected this while you were deciding" would invent a colleague who
+ * does not exist and send the caller looking for an answer nobody wrote. */
+describe('the reviewed-revision claim is validated, not raced', () => {
+  test.each([
+    ['missing', undefined],
+    ['a string', '1'],
+    ['fractional', 1.5],
+    ['negative', -1],
+    ['null', null],
+  ])('%s expected_current_revision is a 400, not a concurrency conflict', async (_label, value) => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+
+    const body: Record<string, unknown> = { ...DECISION };
+    if (value === undefined) delete body.expected_current_revision;
+    else body.expected_current_revision = value;
+
+    const response = await POST(post(body));
+    expect(response.status).toBe(400);
+
+    const answer = await response.json();
+    expect(answer.code).not.toBe('CALIBRATION_ADJUDICATION_SUPERSEDED');
+    expect(JSON.stringify(answer)).not.toContain('while you were deciding');
+
+    // And nothing was attempted. A malformed claim must not reach the write.
+    expect(mockRecord).not.toHaveBeenCalled();
+  });
+
+  test('0 is accepted -- it is what an unadjudicated pair reports', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+
+    const response = await POST(post({ ...DECISION, expected_current_revision: 0 }));
+    expect(response.status).toBe(200);
+    expect(mockRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedCurrentRevision: 0 }),
+    );
+  });
+
+  test('the value reaches recordAdjudication unchanged, and the caller cannot pick the new revision',
+    async () => {
+      mockPrincipal.mockResolvedValue(ADMIN);
+      bothSubmitted();
+
+      const response = await POST(post({
+        ...DECISION,
+        expected_current_revision: 7,
+        // Ignored: the server computes the revision it writes. A caller that
+        // could name it could overwrite any answer by choosing a high number.
+        revision: 99,
+      }));
+      expect(response.status).toBe(200);
+
+      const passed = mockRecord.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(passed.expectedCurrentRevision).toBe(7);
+      expect(passed).not.toHaveProperty('revision');
+    });
+});
+
+describe('the desk is told which revision it is looking at', () => {
+  test('GET reports the current revision for the pair', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+    mockCurrentPairRevision.mockResolvedValue(4);
+
+    const response = await GET(get());
+    expect(response.status).toBe(200);
+
+    const body = await response.json();
+    expect(body.current_pair_revision).toBe(4);
+  });
+
+  test('GET reports 0 for a pair nobody has settled', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+    mockCurrentPairRevision.mockResolvedValue(0);
+
+    const body = await (await GET(get())).json();
+    expect(body.current_pair_revision).toBe(0);
   });
 });

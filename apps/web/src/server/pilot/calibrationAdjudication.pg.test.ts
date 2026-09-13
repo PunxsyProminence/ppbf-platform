@@ -308,6 +308,7 @@ describe('an adjudication records a decision without altering the readings', () 
       resolutionType: 'accept_a',
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
       fields: [
         {
           adjudicatedFieldId: crypto.randomUUID(),
@@ -342,6 +343,7 @@ describe('an adjudication records a decision without altering the readings', () 
       resolutionType: 'new_adjudicated_value',
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
       notes: 'Neither reading matched the frames.',
       fields: [
         {
@@ -412,6 +414,7 @@ describe('the adjudication and its fields are one transaction', () => {
         resolutionType: 'new_adjudicated_value',
         adjudicatorAccountId: ADJUDICATOR,
         ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
         fields: [
           {
             adjudicatedFieldId: crypto.randomUUID(),
@@ -451,6 +454,7 @@ describe('the adjudication and its fields are one transaction', () => {
         resolutionType: 'new_adjudicated_value',
         adjudicatorAccountId: ADJUDICATOR,
         ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
         fields: [],
       }),
     ).rejects.toThrow(/must record the value the adjudicator supplied/);
@@ -473,6 +477,7 @@ describe('the adjudication and its fields are one transaction', () => {
         resolutionType: 'new_adjudicated_value',
         adjudicatorAccountId: ADJUDICATOR,
         ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
         fields: [
           {
             adjudicatedFieldId: crypto.randomUUID(),
@@ -547,6 +552,7 @@ describe('a verdict must be answerable from the events present', () => {
         missedEventVerdict: 'neither_valid',
         adjudicatorAccountId: ADJUDICATOR,
         ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
       }),
     ).rejects.toThrow(/only applies where one annotator recorded no event/);
   });
@@ -568,6 +574,7 @@ describe('a verdict must be answerable from the events present', () => {
       missedEventVerdict: 'both_distinct',
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
     });
     expect(row.missed_event_verdict).toBe('both_distinct');
   });
@@ -582,6 +589,7 @@ describe('a verdict must be answerable from the events present', () => {
       sourceEventIdA: staged.eventA,
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
     };
 
     await expect(
@@ -660,6 +668,7 @@ describe('an adjudication cannot misattribute a reading', () => {
       resolutionType: 'accept_a',
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
     });
 
     expect(await adjudication.getAdjudication(OTHER_ORG_ID, row.adjudication_id)).toBeNull();
@@ -691,6 +700,7 @@ describe('an adjudication never blocks a deletion request', () => {
         resolutionType: 'accept_a',
         adjudicatorAccountId: ADJUDICATOR,
         ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
         fields: [
           {
             adjudicatedFieldId: crypto.randomUUID(),
@@ -768,6 +778,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
       resolutionType: 'accept_a',
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
     });
     expect(first.adjudication.revision).toBe(1);
 
@@ -782,6 +793,9 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
       resolutionType: 'accept_b',
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      // This reviewer HAS seen revision 1 -- an ordinary supersession, not a
+      // stale one. Sending 0 here would be refused, and correctly so.
+      expectedCurrentRevision: 1,
     });
     expect(second.adjudication.revision).toBe(2);
 
@@ -835,6 +849,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
       resolutionType: 'accept_a',
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
     });
     expect(landed.adjudication.revision).toBe(1);
 
@@ -905,6 +920,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
       resolutionType: 'accept_a',
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
     });
     expect(first.adjudication.revision).toBe(1);
 
@@ -921,8 +937,147 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
       resolutionType: 'accept_a',
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
     });
     expect(swapped.adjudication.revision).toBe(1);
+  });
+});
+
+/* THE STALE DECISION, which the unique constraint alone does not catch.
+ *
+ * The pair+revision constraint protects two writers whose inserts overlap. It
+ * does NOTHING about the far more likely case: an administrator opens the desk
+ * at revision 1, thinks for ten minutes, somebody else records revision 2 in
+ * that gap, and the first one submits. A server that computes max+1 assigns
+ * revision 3, the insert succeeds, and a decision made without ever seeing
+ * revision 2 silently becomes the current answer.
+ *
+ * That is exactly the harm the 409 message describes -- "reload and review their
+ * answer before replacing it" -- so a server that only raises it when two inserts
+ * happen to collide is claiming a protection it does not provide.
+ *
+ * The fix is an expected-revision contract: the client carries back the revision
+ * state the administrator actually reviewed, and the server refuses when that no
+ * longer matches. The client never chooses the new revision. */
+describe('an administrator whose view went stale cannot overwrite the answer they never saw', () => {
+  test('a decision submitted against a superseded revision is refused, and writes nothing', async () => {
+    const staged = await stagedDisagreement(`ADJ-STALE-${crypto.randomUUID().slice(0, 8)}`);
+    const pair = {
+      organizationId: ORG_ID,
+      calibrationClipId: staged.clipId,
+      annotationSetIdA: staged.setA,
+      annotationSetIdB: staged.setB,
+      sourceEventIdA: staged.eventA,
+      sourceEventIdB: staged.eventB,
+      adjudicatorAccountId: ADJUDICATOR,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+    };
+
+    // 1. Administrator A opens the desk. Revision 1 is the current answer.
+    const first = await adjudication.recordAdjudication({
+      ...pair,
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_a',
+      expectedCurrentRevision: 0,
+    } as unknown as Parameters<typeof adjudication.recordAdjudication>[0]);
+    expect(first.adjudication.revision).toBe(1);
+
+    // 2. What A's page is holding while A thinks.
+    const whatAReviewed = first.adjudication.revision;
+    expect(whatAReviewed).toBe(1);
+
+    // 3. Administrator B answers in that gap.
+    const second = await adjudication.recordAdjudication({
+      ...pair,
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_b',
+      expectedCurrentRevision: 1,
+    } as unknown as Parameters<typeof adjudication.recordAdjudication>[0]);
+    expect(second.adjudication.revision).toBe(2);
+
+    // 4/5. A submits, still believing revision 1 is current. This must be
+    // refused -- not assigned revision 3.
+    //
+    // Cast because this asserts a contract the input type may not carry yet:
+    // the refusal has to be observed as BEHAVIOUR. Against a server that ignores
+    // the field, step 6 below is what goes red.
+    await expect(
+      adjudication.recordAdjudication({
+        ...pair,
+        adjudicationId: crypto.randomUUID(),
+        resolutionType: 'unresolvable',
+        expectedCurrentRevision: whatAReviewed,
+      } as unknown as Parameters<typeof adjudication.recordAdjudication>[0]),
+    ).rejects.toThrow(/while you were deciding/);
+
+    const client = await freshClient();
+    try {
+      const rows = await client.query<{ revision: number; resolution_type: string }>(
+        `select revision, resolution_type
+           from pilot.calibration_adjudications
+          where organization_id = $1 and calibration_clip_id = $2
+            and annotation_set_id_a = $3 and annotation_set_id_b = $4
+          order by revision asc`,
+        [ORG_ID, staged.clipId, staged.setA, staged.setB],
+      );
+
+      // 6. Revision 3 does not exist. This is the assertion that fails against a
+      // max+1 server: it writes revision 3 and reports success.
+      expect(rows.rows.map((row) => row.revision)).toEqual([1, 2]);
+      expect(rows.rows.some((row) => row.revision === 3)).toBe(false);
+
+      // 7. Both real answers survive untouched. A refusal must not be a rollback
+      // of somebody else's decision.
+      expect(rows.rows.map((row) => row.resolution_type)).toEqual(['accept_a', 'accept_b']);
+
+      // And the refusal wrote no field rows either -- it must refuse BEFORE the
+      // insert, not leave an orphaned decision behind.
+      const fields = await client.query<{ n: number }>(
+        `select count(*)::int as n
+           from pilot.calibration_adjudicated_fields f
+           join pilot.calibration_adjudications a
+             on a.organization_id = f.organization_id
+            and a.adjudication_id = f.adjudication_id
+          where a.organization_id = $1 and a.calibration_clip_id = $2
+            and a.revision = 3`,
+        [ORG_ID, staged.clipId],
+      );
+      expect(fields.rows[0]?.n).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a decision submitted against the current revision is accepted', async () => {
+    // The other half: the contract must not refuse the ordinary case. A guard
+    // that refuses everything would pass the test above and break the desk.
+    const staged = await stagedDisagreement(`ADJ-FRESH-${crypto.randomUUID().slice(0, 8)}`);
+    const pair = {
+      organizationId: ORG_ID,
+      calibrationClipId: staged.clipId,
+      annotationSetIdA: staged.setA,
+      annotationSetIdB: staged.setB,
+      sourceEventIdA: staged.eventA,
+      sourceEventIdB: staged.eventB,
+      adjudicatorAccountId: ADJUDICATOR,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+    };
+
+    const first = await adjudication.recordAdjudication({
+      ...pair,
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_a',
+      expectedCurrentRevision: 0,
+    } as unknown as Parameters<typeof adjudication.recordAdjudication>[0]);
+    expect(first.adjudication.revision).toBe(1);
+
+    const onTime = await adjudication.recordAdjudication({
+      ...pair,
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_b',
+      expectedCurrentRevision: 1,
+    } as unknown as Parameters<typeof adjudication.recordAdjudication>[0]);
+    expect(onTime.adjudication.revision).toBe(2);
   });
 });
 

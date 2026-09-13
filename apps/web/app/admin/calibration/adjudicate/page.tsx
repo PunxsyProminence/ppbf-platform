@@ -133,6 +133,13 @@ interface DeskResponse {
    *  choose, and it is handed no reading until a pair exists. */
   pair_selection_required?: boolean;
   candidate_sets?: CandidateSet[];
+  /** OD-2026-08-29-005. The revision standing for this pair at the moment this
+   *  page read it, or 0 on a pair nobody has settled. Submitted back unchanged
+   *  so the server can tell a decision made on current information from one made
+   *  on a view that went stale. Held only here, inside the loaded response --
+   *  never in form state, never rendered as an input, so there is nothing for a
+   *  user to edit and nothing to drift from what was actually reviewed. */
+  current_pair_revision?: number;
 }
 
 interface CandidateSet {
@@ -303,6 +310,20 @@ function AdjudicationDesk() {
     setSubmitError(null);
     setRecordedId(null);
     try {
+      /* The revision this administrator actually reviewed, taken from the loaded
+       * response rather than from form state.
+       *
+       * Refused here rather than defaulted. Sending 0 because the page does not
+       * know would assert "I reviewed a pair nobody had settled" -- an
+       * expectation this reviewer never held, and on an already-adjudicated pair
+       * the server would then refuse it with a story about a second
+       * administrator. A page that cannot say what it reviewed has to reload. */
+      const reviewedRevision = payload?.current_pair_revision;
+      if (typeof reviewedRevision !== 'number') {
+        setSubmitError('Reload this clip before recording a decision.');
+        return;
+      }
+
       const response = await fetch(`${apiBase()}/api/pilot/calibration/adjudication`, {
         method: 'POST',
         credentials: 'include',
@@ -324,6 +345,10 @@ function AdjudicationDesk() {
             : {}),
           source_event_id_a: sourceEventIdA,
           source_event_id_b: sourceEventIdB,
+          /* Carried straight from the GET, unchanged. This is a claim about WHAT
+             WAS REVIEWED, not a choice: the server compares it and computes the
+             revision it writes itself. */
+          expected_current_revision: reviewedRevision,
           resolution_type: resolutionType,
           missed_event_verdict: missedEventVerdict,
           notes,

@@ -1,4 +1,5 @@
 import { query, queryOne, withTransaction } from '../db';
+import { ConflictError } from '../errors';
 import { DISAGREEMENT_CATEGORIES, type DisagreementCategory } from './comparison';
 import { isInVocabulary } from './ontology';
 
@@ -111,6 +112,41 @@ const ADJUDICATION_COLUMNS = `
 export const ADJUDICATION_PAIR_REVISION_CONSTRAINT =
   'pilot_calibration_adjudications_pair_revision_uq';
 
+/** One refusal, one wording, two detection points.
+ *
+ * A stale expected revision and a lost insert race are the SAME event as far as
+ * the administrator is concerned -- somebody answered while they were deciding --
+ * so they must read identically. They are detected differently: the expected
+ * check catches the common case before any write, the unique constraint catches
+ * the narrow case where two requests both pass that check before either commits.
+ * Defined once here so the two cannot drift into two different explanations of
+ * one situation. */
+export const ADJUDICATION_SUPERSEDED_CODE = 'CALIBRATION_ADJUDICATION_SUPERSEDED';
+export const ADJUDICATION_SUPERSEDED_MESSAGE =
+  'Someone corrected this adjudication while you were deciding. Reload and review their answer before replacing it.';
+
+/**
+ * The revision currently standing for a pair, or 0 when nobody has adjudicated
+ * it yet. What the GET hands the desk, and what the desk hands back.
+ */
+export async function currentPairRevision(
+  organizationId: string,
+  calibrationClipId: string,
+  annotationSetIdA: string,
+  annotationSetIdB: string,
+): Promise<number> {
+  const row = await queryOne<{ current_revision: number }>(
+    `select coalesce(max(revision), 0) as current_revision
+       from pilot.calibration_adjudications
+      where organization_id = $1
+        and calibration_clip_id = $2
+        and annotation_set_id_a = $3
+        and annotation_set_id_b = $4`,
+    [organizationId, calibrationClipId, annotationSetIdA, annotationSetIdB],
+  );
+  return row?.current_revision ?? 0;
+}
+
 const FIELD_COLUMNS = `
   organization_id, adjudicated_field_id, adjudication_id, field_name,
   disagreement_category, resolved_from, resolved_value, unresolved, created_at
@@ -139,6 +175,12 @@ export interface RecordAdjudicationInput {
   ontologyVersion: string;
   notes?: string | null;
   fields?: readonly AdjudicatedFieldInput[];
+  /** The revision the adjudicator actually reviewed, or 0 if they were looking
+   * at an unadjudicated pair. Carried from the GET, never edited, and never the
+   * new revision -- the server computes that. Required, with no default: a
+   * caller that omitted it would get the stale-overwrite behaviour back, and a
+   * default of 0 would refuse every second decision instead. */
+  expectedCurrentRevision: number;
 }
 
 function requireNonEmpty(value: unknown, field: string): string {
@@ -243,8 +285,8 @@ export async function recordAdjudication(
      * revision if any row for the pair were ever removed, and the FKs on this
      * table cascade from clips and annotation sets.
      */
-    const nextRevisionResult = await client.query<{ next_revision: number }>(
-      `select coalesce(max(revision), 0) + 1 as next_revision
+    const actualResult = await client.query<{ actual_revision: number }>(
+      `select coalesce(max(revision), 0) as actual_revision
          from pilot.calibration_adjudications
         where organization_id = $1
           and calibration_clip_id = $2
@@ -253,10 +295,33 @@ export async function recordAdjudication(
       [input.organizationId, calibrationClipId, annotationSetIdA, annotationSetIdB],
     );
 
-    const nextRevision = nextRevisionResult.rows[0]?.next_revision;
-    if (typeof nextRevision !== 'number' || !Number.isInteger(nextRevision) || nextRevision < 1) {
+    const actualRevision = actualResult.rows[0]?.actual_revision;
+    if (typeof actualRevision !== 'number' || !Number.isInteger(actualRevision) || actualRevision < 0) {
       throw new Error('CALIBRATION_ADJUDICATION_REVISION_UNRESOLVED');
     }
+
+    /* THE STALE DECISION, REFUSED BEFORE ANYTHING IS WRITTEN.
+     *
+     * The unique constraint alone does not cover this, and that gap was the
+     * defect. It catches two INSERTS that overlap; it says nothing about an
+     * administrator who opened the desk at revision 1, thought for ten minutes
+     * while somebody else recorded revision 2, and then submitted. max+1 would
+     * quietly assign revision 3 and make a decision current that was reached
+     * without ever seeing revision 2 -- which is precisely the harm the refusal
+     * message describes.
+     *
+     * Compared, never coerced. An expected revision that is merely BEHIND is not
+     * a lesser problem than one that is ahead: both mean the reviewer was looking
+     * at something other than what stands now.
+     *
+     * Still no lock (OD-2026-08-29-005). This check narrows the window to the
+     * gap between this SELECT and the INSERT below; the unique constraint closes
+     * that remainder, and both surface the same refusal. */
+    if (actualRevision !== input.expectedCurrentRevision) {
+      throw new ConflictError(ADJUDICATION_SUPERSEDED_MESSAGE, ADJUDICATION_SUPERSEDED_CODE);
+    }
+
+    const nextRevision = actualRevision + 1;
 
     const adjudicationResult = await client.query<AdjudicationRow>(
       `insert into pilot.calibration_adjudications

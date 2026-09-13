@@ -263,6 +263,8 @@ async function stage(options: StageOptions): Promise<Staged> {
     sourceEventIdA: events.a,
     sourceEventIdB: events.b,
     resolutionType: 'accept_a',
+    // First decision on this pair, so the reviewed revision is 0.
+    expectedCurrentRevision: 0,
     adjudicatorAccountId: adjudicator,
     ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
     fields: [
@@ -913,6 +915,8 @@ describe('a gold record retains where it came from', () => {
       sourceEventIdA: staged.eventB,
       sourceEventIdB: staged.eventA,
       resolutionType: 'unresolvable',
+      // The swapped orientation is a distinct pair, unadjudicated until now.
+      expectedCurrentRevision: 0,
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
     });

@@ -7,8 +7,11 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import {
   ADJUDICATION_PAIR_REVISION_CONSTRAINT,
   ADJUDICATION_RESOLUTION_TYPES,
+  ADJUDICATION_SUPERSEDED_CODE,
+  ADJUDICATION_SUPERSEDED_MESSAGE,
   MISSED_EVENT_VERDICTS,
   RESOLVED_FROM_SOURCES,
+  currentPairRevision,
   listAdjudicatedFields,
   listAdjudicationsForClip,
   recordAdjudication,
@@ -28,7 +31,7 @@ import {
   resolveComparisonPair,
 } from '@/src/server/pilot/calibration/comparison';
 import type { CalibrationClipRow } from '@/src/server/pilot/calibration/projects';
-import { ConflictError } from '@/src/server/pilot/errors';
+import { ConflictError, ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 import { blankToNull, loadPlayableClip, writeCalibrationAuditEvent } from '../annotatorGate';
@@ -60,10 +63,7 @@ function asConcurrentCorrectionConflict(error: unknown): never {
   const code = (error as { code?: unknown } | null)?.code;
 
   if (code === '23505' && constraint === ADJUDICATION_PAIR_REVISION_CONSTRAINT) {
-    throw new ConflictError(
-      'Someone corrected this adjudication while you were deciding. Reload and review their answer before replacing it.',
-      'CALIBRATION_ADJUDICATION_SUPERSEDED',
-    );
+    throw new ConflictError(ADJUDICATION_SUPERSEDED_MESSAGE, ADJUDICATION_SUPERSEDED_CODE);
   }
 
   throw error;
@@ -380,6 +380,21 @@ export async function GET(request: NextRequest) {
       sets: { a: subject.setA, b: subject.setB },
       events: { a: subject.eventsA, b: subject.eventsB },
       adjudications,
+      /* WHAT THE DESK MUST HAND BACK. The revision standing for THIS pair at the
+       * moment this reader looked, or 0 on a pair nobody has adjudicated. The
+       * page returns it unchanged as expected_current_revision, which is how the
+       * server can tell a decision made on current information from one made on
+       * a view that went stale while the administrator was thinking.
+       *
+       * Scoped to the pair the blinding gate actually resolved, not to the clip:
+       * a clip can carry several pairs, and a clip-wide number would refuse a
+       * first decision on one pair because a different pair had been settled. */
+      current_pair_revision: await currentPairRevision(
+        principal.organizationId,
+        subject.clip.calibration_clip_id,
+        subject.setA.annotation_set_id,
+        subject.setB.annotation_set_id,
+      ),
       vocabularies: {
         resolution_types: ADJUDICATION_RESOLUTION_TYPES,
         missed_event_verdicts: MISSED_EVENT_VERDICTS,
@@ -555,6 +570,34 @@ export async function POST(request: NextRequest) {
     if (rawFields !== undefined && rawFields !== null && !Array.isArray(rawFields)) {
       throw new Error('Missing fields: the field decisions must be a list');
     }
+
+    /* THE REVISION THE ADMINISTRATOR ACTUALLY REVIEWED.
+     *
+     * Required, and validated as input rather than treated as a conflict. A
+     * missing or malformed value means the CALLER sent the wrong shape -- a stale
+     * page build, a script, a hand-rolled request -- and telling that caller
+     * "somebody corrected this while you were deciding" would be a fabricated
+     * story about a second administrator who does not exist. That is a 400.
+     *
+     * 0 is legitimate and load-bearing: it is what an unadjudicated pair reports,
+     * so `>= 0` rather than `> 0`. Integers only -- 1.5 or "1" would be a caller
+     * defect, and coercing either would invent an expectation the reviewer never
+     * held.
+     *
+     * The caller does NOT choose the new revision. This value is only ever
+     * compared; the server computes the revision it writes. */
+    const expectedRevisionRaw = (body as { expected_current_revision?: unknown })
+      .expected_current_revision;
+    if (
+      typeof expectedRevisionRaw !== 'number'
+      || !Number.isInteger(expectedRevisionRaw)
+      || expectedRevisionRaw < 0
+    ) {
+      throw new ValidationError(
+        'Missing expected_current_revision: the revision this decision was reviewed against must be a non-negative integer',
+        'CALIBRATION_ADJUDICATION_EXPECTED_REVISION_INVALID',
+      );
+    }
     const fields = ((Array.isArray(rawFields) ? rawFields : []) as AdjudicatedFieldBody[]).map(
       (field) => ({
         adjudicatedFieldId: randomUUID(),
@@ -584,6 +627,7 @@ export async function POST(request: NextRequest) {
         ? body.notes.trim()
         : null,
       fields,
+      expectedCurrentRevision: expectedRevisionRaw,
     } as unknown as RecordAdjudicationInput).catch(asConcurrentCorrectionConflict);
 
     /* AN AUDIT ROW, AND THE VOCABULARY WAS CHECKED RATHER THAN ASSUMED.
