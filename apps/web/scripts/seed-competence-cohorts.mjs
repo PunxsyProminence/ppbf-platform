@@ -250,32 +250,39 @@ async function seedCohortDefinitions(client, records, { dryRun }) {
   throwing path too, so the COMMIT executed anyway.
 
   It also SUCCEEDED. This loader reads two CSVs, and the second read happens
-  AFTER six competence-level rows have already been inserted. A missing or
-  unreadable second file throws ENOENT from fs.readFile -- a JavaScript
-  filesystem error, not a PostgreSQL one -- so the transaction was never put
-  into an aborted state and PostgreSQL had no reason to refuse the commit. The
-  measured result was six rows persisted by a run that exited non-zero with
-  PILOT COMPETENCE COHORTS SEED FAIL. The operator is not told "nothing was
-  written" -- that line is dry-run only -- they are told the run FAILED, which
-  is worse than useless when six rows survived it.
+  AFTER six competence-level rows have already been inserted. The regression
+  omits that second CSV, so fs.readFile throws ENOENT -- a JavaScript
+  filesystem error, not a PostgreSQL one -- and the transaction was therefore
+  never put into an aborted state. Measured against the old shape, calling
+  seedAll directly, that regression established two things: seedAll rejected,
+  and the six competence-level rows persisted anyway. It measures nothing about
+  process exit codes or operator-facing output, and no claim about those is made
+  here.
 
-  A PostgreSQL statement error would have aborted the transaction and made the
-  COMMIT fail on its own. That is exactly why the old shape looked safe and was
-  not: the danger is the failure that ISN'T a database error. In this loader
-  that is fs.readFile on the second CSV -- parseCsv itself contains no throw,
-  so a malformed file surfaces later as a PostgreSQL insert error, which is the
-  self-aborting category. One non-database failure mode, not two, and one is
-  enough.
+  ENOENT is the code for the missing file the proof uses. Other filesystem
+  failures carry other codes; the error path below does not distinguish them and
+  does not need to.
 
-  Depending on the database to be aborted was the mistake. Correctness has to
+  A PostgreSQL statement error is different in kind: it aborts the transaction,
+  and a COMMIT issued afterwards does not persist the earlier writes. It may
+  return a ROLLBACK result instead of throwing, so code that waits for a COMMIT
+  to fail learns nothing -- but either way those writes are gone. That is
+  exactly why the old shape looked safe and was not: it survived the failures
+  the database aborts for, and quietly committed the ones it does not.
+
+  Depending on the database to be aborted was the mistake, and no taxonomy of
+  which errors abort and which do not would have fixed it. Correctness has to
   come from control flow that cannot fall through:
 
     success + apply   -> COMMIT
     success + dry-run -> ROLLBACK
     any error RAISED BY THE LOAD/WRITE BLOCK -> ROLLBACK, then rethrow the
-      ORIGINAL error. BEGIN, the success-path COMMIT and the dry-run ROLLBACK
-      sit outside that block deliberately: a failed BEGIN leaves nothing open,
-      and PostgreSQL aborts the transaction itself when a COMMIT fails.
+      ORIGINAL error -- whatever its origin: the filesystem, parsing or other
+      application logic, PostgreSQL, or anything else inside that block. BEGIN,
+      the success-path COMMIT and the dry-run ROLLBACK sit outside the block
+      deliberately: a failed BEGIN leaves nothing open, and once a COMMIT has
+      been issued there is no partial transaction left for this code to roll
+      back.
 
   The rollback on the error path is itself wrapped, because a connection that
   died mid-run makes ROLLBACK throw too -- and that secondary failure must not
