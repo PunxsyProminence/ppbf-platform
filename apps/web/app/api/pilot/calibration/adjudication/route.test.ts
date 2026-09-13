@@ -8,7 +8,6 @@ import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access'
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import {
-  currentPairRevision,
   listAdjudicatedFields,
   listAdjudicationsForClip,
   recordAdjudication,
@@ -81,7 +80,6 @@ jest.mock('@/src/server/pilot/calibration/adjudication', () => {
     recordAdjudication: jest.fn(),
     listAdjudicationsForClip: jest.fn(),
     listAdjudicatedFields: jest.fn(),
-    currentPairRevision: jest.fn(),
   };
 });
 
@@ -103,7 +101,6 @@ const mockClippable = assertVideoClippable as jest.Mock;
 const mockRecord = recordAdjudication as jest.Mock;
 const mockListAdjudications = listAdjudicationsForClip as jest.Mock;
 const mockListFields = listAdjudicatedFields as jest.Mock;
-const mockCurrentPairRevision = currentPairRevision as jest.Mock;
 
 const ORG = 'org-1';
 
@@ -260,7 +257,6 @@ function bothSubmitted(sets = [SET_A, SET_B]) {
   mockRecord.mockResolvedValue({ adjudication: WRITTEN, fields: [] });
   mockListAdjudications.mockResolvedValue([]);
   mockListFields.mockResolvedValue([]);
-  mockCurrentPairRevision.mockResolvedValue(0);
 }
 
 beforeEach(() => {
@@ -1155,23 +1151,81 @@ describe('the reviewed-revision claim is validated, not raced', () => {
     });
 });
 
-describe('the desk is told which revision it is looking at', () => {
-  test('GET reports the current revision for the pair', async () => {
+/* THE TOKEN MUST NOT OUTRUN THE EVIDENCE.
+ *
+ * The GET hands back two things the administrator relies on together: the
+ * adjudications it displays, and the revision the page will send back as
+ * expected_current_revision. If those come from two separate reads there is no
+ * shared snapshot between them, and this schedule loses a decision:
+ *
+ *   revision 1 exists
+ *   the rows are read      -> sees revision 1
+ *   somebody commits revision 2
+ *   the token is read      -> sees revision 2
+ *   response: displays up to revision 1, token says 2
+ *   POST sends 2, the stale check passes, revision 3 is written
+ *
+ * No 23505 and no 409, and revision 2 is superseded by an administrator who
+ * never saw it -- the exact invariant the expected-revision contract exists to
+ * hold. A narrower window is not a fix; the token has to be DERIVED FROM the
+ * rows that were displayed, so the two cannot disagree by construction. */
+describe('the reviewed-revision token comes from the rows actually shown', () => {
+  function adjudicationRow(overrides: Record<string, unknown> = {}) {
+    return {
+      ...WRITTEN,
+      adjudication_id: `adj-${String(overrides.revision ?? 1)}`,
+      ...overrides,
+    };
+  }
+
+  test('a revision committed after the rows were read cannot advance the token', async () => {
     mockPrincipal.mockResolvedValue(ADMIN);
     bothSubmitted();
-    mockCurrentPairRevision.mockResolvedValue(4);
 
-    const response = await GET(get());
-    expect(response.status).toBe(200);
+    // What the response will display: this pair, newest revision 1.
+    mockListAdjudications.mockResolvedValue([
+      adjudicationRow({ revision: 1, annotation_set_id_a: 'set-a', annotation_set_id_b: 'set-b' }),
+    ]);
+    // What a LATER, separate read would see, because somebody committed in the
+    // gap. A token built from this read would be ahead of the evidence above.
 
-    const body = await response.json();
-    expect(body.current_pair_revision).toBe(4);
+    const body = await (await GET(get())).json();
+
+    expect(body.current_pair_revision).toBe(1);
   });
 
-  test('GET reports 0 for a pair nobody has settled', async () => {
+  test('the newest revision present for the pair is the token', async () => {
     mockPrincipal.mockResolvedValue(ADMIN);
     bothSubmitted();
-    mockCurrentPairRevision.mockResolvedValue(0);
+    mockListAdjudications.mockResolvedValue([
+      adjudicationRow({ revision: 1, annotation_set_id_a: 'set-a', annotation_set_id_b: 'set-b' }),
+      adjudicationRow({ revision: 2, annotation_set_id_a: 'set-a', annotation_set_id_b: 'set-b' }),
+    ]);
+
+    const body = await (await GET(get())).json();
+    expect(body.current_pair_revision).toBe(2);
+  });
+
+  test('another pair on the same clip does not contaminate the token', async () => {
+    // listAdjudicationsForClip is clip-wide. A max over all of it would hand this
+    // desk revision 9 and refuse its first decision on the pair it is settling.
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+    mockListAdjudications.mockResolvedValue([
+      adjudicationRow({ revision: 1, annotation_set_id_a: 'set-a', annotation_set_id_b: 'set-b' }),
+      adjudicationRow({ revision: 9, annotation_set_id_a: 'set-a', annotation_set_id_b: 'set-c' }),
+    ]);
+
+    const body = await (await GET(get())).json();
+    expect(body.current_pair_revision).toBe(1);
+  });
+
+  test('an unsettled pair reports 0', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+    mockListAdjudications.mockResolvedValue([
+      adjudicationRow({ revision: 4, annotation_set_id_a: 'set-x', annotation_set_id_b: 'set-y' }),
+    ]);
 
     const body = await (await GET(get())).json();
     expect(body.current_pair_revision).toBe(0);

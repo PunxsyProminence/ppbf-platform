@@ -11,7 +11,6 @@ import {
   ADJUDICATION_SUPERSEDED_MESSAGE,
   MISSED_EVENT_VERDICTS,
   RESOLVED_FROM_SOURCES,
-  currentPairRevision,
   listAdjudicatedFields,
   listAdjudicationsForClip,
   recordAdjudication,
@@ -380,20 +379,40 @@ export async function GET(request: NextRequest) {
       sets: { a: subject.setA, b: subject.setB },
       events: { a: subject.eventsA, b: subject.eventsB },
       adjudications,
-      /* WHAT THE DESK MUST HAND BACK. The revision standing for THIS pair at the
-       * moment this reader looked, or 0 on a pair nobody has adjudicated. The
-       * page returns it unchanged as expected_current_revision, which is how the
-       * server can tell a decision made on current information from one made on
-       * a view that went stale while the administrator was thinking.
+      /* WHAT THE DESK MUST HAND BACK, AND WHY IT IS NOT A SECOND QUERY.
        *
-       * Scoped to the pair the blinding gate actually resolved, not to the clip:
-       * a clip can carry several pairs, and a clip-wide number would refuse a
-       * first decision on one pair because a different pair had been settled. */
-      current_pair_revision: await currentPairRevision(
-        principal.organizationId,
-        subject.clip.calibration_clip_id,
-        subject.setA.annotation_set_id,
-        subject.setB.annotation_set_id,
+       * The revision the page returns unchanged as expected_current_revision,
+       * which is how the server tells a decision made on current information from
+       * one made on a view that went stale while the administrator was thinking.
+       *
+       * DERIVED FROM `recorded` -- the very rows this response displays -- and
+       * deliberately not from a fresh read. A separate query shares no snapshot
+       * with the rows above, and that gap loses a decision: read the rows at
+       * revision 1, somebody commits revision 2, read the token and get 2. The
+       * response then displays up to revision 1 while promising the server that
+       * revision 2 was reviewed. The POST's stale check passes, revision 3 is
+       * written, and revision 2 is superseded by an administrator who never saw
+       * it -- no 23505, no 409, exactly the invariant the expected-revision
+       * contract exists to hold.
+       *
+       * Taking the maximum from the displayed rows makes the token and the
+       * evidence the same snapshot by construction rather than by timing. A
+       * revision committed after that read is simply absent from the token, so
+       * the later POST is correctly detected as stale and the administrator is
+       * sent to reload and actually receive the newer answer before replacing it.
+       *
+       * Scoped to the pair the blinding gate resolved, not to the clip:
+       * listAdjudicationsForClip is clip-wide, and a max over all of it would
+       * hand this desk another pair's revision and refuse its first decision. */
+      current_pair_revision: recorded.reduce(
+        (highest, row) => (
+          row.annotation_set_id_a === subject.setA.annotation_set_id
+          && row.annotation_set_id_b === subject.setB.annotation_set_id
+          && row.revision > highest
+            ? row.revision
+            : highest
+        ),
+        0,
       ),
       vocabularies: {
         resolution_types: ADJUDICATION_RESOLUTION_TYPES,

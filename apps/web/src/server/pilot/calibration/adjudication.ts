@@ -125,28 +125,6 @@ export const ADJUDICATION_SUPERSEDED_CODE = 'CALIBRATION_ADJUDICATION_SUPERSEDED
 export const ADJUDICATION_SUPERSEDED_MESSAGE =
   'Someone corrected this adjudication while you were deciding. Reload and review their answer before replacing it.';
 
-/**
- * The revision currently standing for a pair, or 0 when nobody has adjudicated
- * it yet. What the GET hands the desk, and what the desk hands back.
- */
-export async function currentPairRevision(
-  organizationId: string,
-  calibrationClipId: string,
-  annotationSetIdA: string,
-  annotationSetIdB: string,
-): Promise<number> {
-  const row = await queryOne<{ current_revision: number }>(
-    `select coalesce(max(revision), 0) as current_revision
-       from pilot.calibration_adjudications
-      where organization_id = $1
-        and calibration_clip_id = $2
-        and annotation_set_id_a = $3
-        and annotation_set_id_b = $4`,
-    [organizationId, calibrationClipId, annotationSetIdA, annotationSetIdB],
-  );
-  return row?.current_revision ?? 0;
-}
-
 const FIELD_COLUMNS = `
   organization_id, adjudicated_field_id, adjudication_id, field_name,
   disagreement_category, resolved_from, resolved_value, unresolved, created_at
