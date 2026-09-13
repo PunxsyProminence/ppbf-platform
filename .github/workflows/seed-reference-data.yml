@@ -32,9 +32,14 @@
 # no drills -- so it runs
 # after the original three.
 #
-# TWO LOADERS ARE ABSENT from the choices below, for different reasons. This
-# note said "ONE" and named only transfer-claims, which made the second look
-# like an oversight nobody had noticed rather than a decision nobody has taken.
+# workout-templates joined the choices on owner authorization. It was never
+# broken -- workoutTemplates.pg.test.ts seeds it after the real drill library and
+# asserts 12 templates, 82 items and zero orphaned drill_id references -- it was
+# absent only because nobody had decided it should be seedable to a protected
+# environment. That decision has now been taken, and the note that recorded its
+# absence is gone rather than left to contradict the step below.
+#
+# ONE LOADER REMAINS ABSENT from the choices below:
 #
 #   * transfer-claims -- BROKEN against the shipped schema, and there is
 #     nothing to be gained by making it one click away: all 173 rows reference
@@ -43,20 +48,8 @@
 #     failure against the real 119-drill library rather than describing it.
 #     Add it here when the underlying data is fixed, not before.
 #
-#   * workout-templates -- NOT broken. It is proven against a real database:
-#     workoutTemplates.pg.test.ts seeds it after the real drill library and
-#     asserts 12 templates, 82 items, and zero orphaned drill_id references.
-#     It is absent because nobody has decided it should be seedable to a
-#     protected environment, which is a different thing from it not working.
-#     Adding it needs two edits, not one: a dataset choice and step ordered
-#     AFTER drill-library (its items carry a foreign key to pilot.drill_library),
-#     and the seeder-account guard below extended to include it, since
-#     seed-workout-templates.mjs requires PPBF_SEED_ACCOUNT_ID the same way
-#     drill-library and session-scripts do. Its owning-organization variable
-#     already fails closed, so nothing else is needed.
-#
-# Recording the reason each is absent, so the next reader does not have to
-# infer it from the gap.
+# Recording the reason it is absent, so the next reader does not have to infer
+# it from the gap.
 # ─────────────────────────────────────────────────────────────────────────
 
 name: seed-reference-data
@@ -83,6 +76,7 @@ on:
           - all
           - drill-library
           - drill-secondary-skills
+          - workout-templates
           - disciplines
           - competence-cohorts
           - session-scripts
@@ -158,11 +152,12 @@ jobs:
           if [ "$MODE" = "apply" ]; then
             test "$CONFIRM_SEED" = "SEED REFERENCE DATA"
           fi
-          # seed-drill-library.mjs and seed-session-scripts.mjs stamp a seeder
-          # onto every row they write and fail without one. Catching that here
-          # costs a second instead of an aborted transaction against a real
-          # database.
-          if [ "$DATASET" = "drill-library" ] || [ "$DATASET" = "session-scripts" ] || [ "$DATASET" = "all" ]; then
+          # seed-drill-library.mjs, seed-session-scripts.mjs and
+          # seed-workout-templates.mjs stamp a seeder onto every row they write
+          # and fail without one. Catching that here costs a second instead of
+          # an aborted transaction against a real database.
+          if [ "$DATASET" = "drill-library" ] || [ "$DATASET" = "session-scripts" ] ||
+            [ "$DATASET" = "workout-templates" ] || [ "$DATASET" = "all" ]; then
             test -n "$SEED_ACCOUNT"
           fi
 
@@ -317,6 +312,21 @@ jobs:
         if: inputs.dataset == 'drill-secondary-skills' || inputs.dataset == 'all'
         working-directory: apps/web
         run: npm run seed:drill-secondary-skills ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
+
+      # AFTER Seed Drill Library, and for the same reason as the loader above
+      # rather than a preference: pilot.workout_template_items carries a foreign
+      # key into pilot.drill_library, so seeding items into an empty library
+      # fails on the key. workoutTemplates.pg.test.ts proves the dependency the
+      # other way round -- it seeds against the real 119-drill library and
+      # asserts 12 templates, 82 items and ZERO orphaned drill_id references.
+      #
+      # It DOES need a seeder account, unlike the relationship loader above:
+      # seed-workout-templates.mjs calls required('PPBF_SEED_ACCOUNT_ID') with no
+      # fallback and substitutes it into every row, so the guard above names it.
+      - name: Seed Workout Templates
+        if: inputs.dataset == 'workout-templates' || inputs.dataset == 'all'
+        working-directory: apps/web
+        run: npm run seed:workout-templates ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
 
       - name: Seed Competence Cohorts
         if: inputs.dataset == 'competence-cohorts' || inputs.dataset == 'all'
