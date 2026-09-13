@@ -243,6 +243,7 @@ describe('seed-reference-data workflow contract', () => {
       'Seed Disciplines',
       'Seed Drill Library',
       'Seed Drill Secondary Skills',
+      'Seed Workout Templates',
       'Seed Competence Cohorts',
       'Seed Session Scripts',
     ];
@@ -281,6 +282,60 @@ describe('seed-reference-data workflow contract', () => {
 
     expect(at('Seed Drill Library')).toBeGreaterThan(-1);
     expect(at('Seed Drill Secondary Skills')).toBeGreaterThan(at('Seed Drill Library'));
+  });
+
+  it('fills the drill library before seeding the workout templates that reference it', () => {
+    // Same class of fact as the assertion above and asserted the same way, by
+    // naming the constraint rather than trusting the positional array:
+    // pilot.workout_template_items carries a foreign key into
+    // pilot.drill_library, so items seeded into an empty library fail on the
+    // key. workoutTemplates.pg.test.ts proves the dependency from the other
+    // side -- it seeds against the real 119-drill library and asserts zero
+    // orphaned drill_id references -- so this is the workflow half of a fact
+    // the database already enforces.
+    //
+    // Re-sorting the steps to silence a failure cannot satisfy this.
+    const at = (step: string) => workflow.indexOf(`- name: ${step}`);
+
+    expect(at('Seed Drill Library')).toBeGreaterThan(-1);
+    expect(at('Seed Workout Templates')).toBeGreaterThan(at('Seed Drill Library'));
+  });
+
+  it('demands a seeder account for the workout-template dataset, which its loader requires', () => {
+    // The positive counterpart to the relationship case below. Two halves,
+    // because either alone can go stale without the other noticing:
+    //
+    //   the GUARD must name workout-templates, so a single-dataset dispatch
+    //   refuses in a second instead of dying mid-seed against a real database;
+    //
+    //   and the LOADER must actually require the variable, so the guard is not
+    //   demanding an account nothing consumes -- which would block a legitimate
+    //   dispatch for no reason, the mirror of the defect the relationship
+    //   assertion guards against.
+    // Anchored on the shell condition itself, NOT on the first occurrence of
+    // 'SEED_ACCOUNT'. That string first appears in a job-level comment far above
+    // the guard, so slicing from there and cutting at the first 'fi' yields a
+    // slice of prose -- a window in which any assertion about the guard passes or
+    // fails for reasons unconnected to the guard.
+    const conditionStart = workflow.indexOf('if [ "$DATASET"');
+    expect(conditionStart).toBeGreaterThan(-1);
+    const guardCondition = workflow.slice(
+      conditionStart,
+      workflow.indexOf('then', conditionStart),
+    );
+    expect(guardCondition).toMatch(/workout-templates/);
+    // The window really is the guard and not something that merely contains the
+    // word: it names the datasets that need an account and nothing else.
+    expect(guardCondition).toMatch(/drill-library/);
+    expect(guardCondition).toMatch(/session-scripts/);
+
+    // Read through seedVarsRequiredBy rather than a substring search, for the
+    // reason its sibling records: a loader header can NAME a variable in order
+    // to explain that it does not use one, and a raw search cannot tell an
+    // explanation from a dependency.
+    expect(seedVarsRequiredBy('seed-workout-templates.mjs')).toEqual(
+      expect.arrayContaining(['PPBF_SEED_ORG_ID', 'PPBF_SEED_ACCOUNT_ID']),
+    );
   });
 
   it('does not demand a seeder account for the relationship dataset', () => {
@@ -339,7 +394,7 @@ describe('seed-reference-data workflow contract', () => {
     expect(csv.slice(1)).toEqual(['{{PPBF_ORG_ID}},drl_3df01682e604dd,SK-GUARD-02']);
   });
 
-  it('"all" still demands the seeder account drill-library and session-scripts need', () => {
+  it('"all" still demands the seeder account drill-library, session-scripts and workout-templates need', () => {
     // drill-library stamps a seeder onto every row and fails at the insert
     // without one. If `all` skipped that precondition, the run would clear the
     // gate and then die mid-seed against a real database.
@@ -349,6 +404,10 @@ describe('seed-reference-data workflow contract', () => {
     // (seed-session-scripts.mjs requires PPBF_SEED_ACCOUNT_ID), so its
     // single-dataset dispatch must clear the same precondition.
     expect(guard).toMatch(/DATASET"\s*=\s*"session-scripts"/);
+    // workout-templates stamps a seeder the same way
+    // (seed-workout-templates.mjs requires PPBF_SEED_ACCOUNT_ID), so its
+    // single-dataset dispatch must clear the same precondition.
+    expect(guard).toMatch(/DATASET"\s*=\s*"workout-templates"/);
   });
 
   // Discovery must not be able to pass vacuously: a truncated list would make
