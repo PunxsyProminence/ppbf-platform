@@ -422,6 +422,43 @@ Production is where the split is, and for a reason: an applied migration is not
 undone by re-running a workflow. Green CI remains a precondition, never an
 authorization to merge over a review.
 
+### Pull-request state is its own permission ladder
+
+The MAY/MAY NOT lists above, and the lane descriptions further up, enumerate
+branches, commits, pushes, merges, deploys and migrations. They say nothing
+about the other ways a pull request's state can be changed, so those were
+ambiguous until this subsection. Treat each as separately authorized:
+
+| Action | Who |
+|---|---|
+| read, review, report | any lane |
+| comment on a PR | the lane that owns the PR, or a reviewing lane reporting a finding |
+| request a reviewer | owner, or a lane he directs |
+| edit title, body or base | the lane that owns the PR |
+| open a PR (draft or ready) | the lane that owns the work |
+| mark draft ready for review | owner, or a lane he directs |
+| submit an APPROVED review | owner or a human delegate only — no AI lane |
+| merge | per the MAY/MAY ALSO lists above |
+| delete a branch | owner, or a lane he directs, and never while the branch is audit evidence |
+
+Authorization to review something is not authorization to change its state.
+Authorization for one mutation is not authorization for the next one in the
+sequence: opening a PR does not carry marking it ready, and marking it ready
+does not carry merging it.
+
+When a lane performs one of these because the owner told it to, it records the
+instruction as the authority for that specific action. A lane that cannot name
+the authority for a mutation it made has already found the defect.
+
+**Known audit limit, stated rather than implied.** Lanes act through the
+owner's GitHub account, so the `actor` on a timeline event is the account and
+not the lane. On 2026-09-13 the `ready_for_review` and `merged` events on PR
+#926 and the `ready_for_review` on #927 all record `actor=PunxsyProminence`,
+which cannot by itself distinguish Jason from a lane acting on his instruction.
+The API is therefore not sufficient to attribute a mutation to a lane; the
+authorizing instruction and the lane's own record are what attribute it. Do not
+cite a timeline actor as proof that a particular lane did or did not act.
+
 ### A question is not an instruction
 
 Asking what a change would involve is a request for a finding, not for the

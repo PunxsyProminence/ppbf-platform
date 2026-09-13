@@ -21,6 +21,46 @@ Before editing, check current `main`, `docs/current/ACTIVE_WORK.md`, and open PR
 
 No permanent Builder/Gatekeeper identity is required. An agent may build one change and review another. Independent review is useful for higher-risk work, but executable evidence outranks model agreement.
 
+## Reviewers are separate signals
+
+Several reviewers can attach to one PR — Claude Code Review, Codex, Copilot, a human, CI — and they fail and succeed independently. On 2026-09-13, PR #926 and #927 each carried a Claude check at `neutral` (its review body: credit balance too low, review skipped) *and* a completed Codex review. Either one read alone gives the wrong answer about the other.
+
+So report each surface you actually inspected, named, at the exact head SHA:
+
+- check runs
+- submitted PR reviews and their state
+- inline review threads
+- conversation comments
+- requested reviewers
+
+Never collapse them into "review passed" or "review failed". `AGENT_KERNEL.md`'s **Report the check, not the conclusion** already forbids a claim wider than its check; this is that rule applied to review surfaces, which is where several reviewers make it easy to breach by accident.
+
+### What each status means
+
+| Observed | Means | Does not mean |
+|---|---|---|
+| check conclusion `neutral`, body says review skipped / credits exhausted / quota | reviewer did not run — TOOL/ENVIRONMENT unavailable | not a pass, and not a fail |
+| Codex "Code Review ✅ Completed" | that reviewer finished executing on the named SHA | not a GitHub approval |
+| no inline comments, no review posted | no findings on the surfaces inspected | not a formal approval, and not proof the reviewer ran |
+| green CI | the suites that ran, passed | not a code review — see the Lane model |
+
+A formal approval exists only when a submitted review object has state `APPROVED`. As of 2026-09-13 none of PRs #920, #921, #922, #924, #925, #926 or #927 carried one, and `reviewDecision` was empty on all of them. If a report says "approved", name the review object.
+
+Absence of a reviewer's own success marker is not its success. Codex documents that it reacts 👍 when reviews finish with no findings; on #926 and #927 that reaction was absent, so "completed, nothing posted" is what the evidence supports and "clean" is not.
+
+### Four gates, kept apart
+
+1. **Executable evidence** — tests, CI, runtime proof.
+2. **Review evidence** — what a reviewer actually returned, per surface.
+3. **Control-plane technical verdict** — bounded independent review of source, diff and evidence.
+4. **Owner authorization** — Jason's explicit decision.
+
+None substitutes for another. A reviewer or an audit lane recommends; only Jason or a delegate he names supplies acceptance.
+
+### A reviewer that could not run is not a defect
+
+Credits, quota, an outage, permissions or a broken integration are TOOL/ENVIRONMENT. Such a result does not indicate a source defect, does not erase another reviewer's completed findings, and does not by itself require re-running qualification tests. Say which reviewer was unavailable and why, and leave the other evidence standing on its own.
+
 ## Normal path
 
 `request -> inspect current source/open PRs -> bounded branch -> implement -> targeted proof -> CI -> review if warranted -> merge`
