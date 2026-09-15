@@ -35,10 +35,17 @@
 # TWO KINDS OF CHECK, AND WHAT A RED RUN MEANS
 #   Most of these are GATES: they exit non-zero when a human still has to
 #   decide something, so a red run is a finding rather than a broken workflow.
-#   Three are REPORTS -- seed-identity, runtime-claims and video-readiness
-#   print their answer and exit zero whenever they managed to run at all, so
-#   the answer is in the log and a green run says only "it connected". Do not
-#   read a green `all` as "seed identity is correct"; read the group.
+#   Four are REPORTS -- seed-identity, runtime-claims, cue-source-provenance
+#   and video-readiness print their answer and exit zero whenever they managed
+#   to run at all, so the answer is in the log and a green run says only "it
+#   connected". Do not read a green `all` as "seed identity is correct"; read
+#   the group.
+#
+#   cue-source-provenance reports how many pilot.drill_cues rows carry each
+#   distinct source_ref, including one named target value. It is a report
+#   because a count is not a verdict: whether a cited source can be produced is
+#   recorded outside this repository and can change, so the check prints numbers
+#   and states no conclusion. Read its count, not its exit status.
 #
 # THE ONE CHECK THAT DOES NOT ASK THE DATABASE
 #   video-readiness answers "can a quarantined video promote here at all", and
@@ -109,6 +116,7 @@ on:
           - deletion-preflight
           - discipline-values
           - waiver-statuses
+          - cue-source-provenance
           - video-readiness
 
 permissions:
@@ -464,6 +472,7 @@ jobs:
               run_one deletion-preflight  pilot:check-deletion-preflight
               run_one discipline-values   pilot:check-discipline-values
               run_one waiver-statuses     pilot:check-waiver-statuses
+              run_one cue-source-provenance pilot:check-cue-source-provenance
               run_one video-readiness     pilot:check-video-readiness
               ;;
             orphan-chat-audit)  run_one orphan-chat-audit   pilot:check-orphan-chat-audit ;;
@@ -481,6 +490,7 @@ jobs:
             medical-clearance-coverage) run_one medical-clearance-coverage pilot:check-medical-clearance-coverage ;;
             discipline-values)  run_one discipline-values   pilot:check-discipline-values ;;
             waiver-statuses)    run_one waiver-statuses     pilot:check-waiver-statuses ;;
+            cue-source-provenance) run_one cue-source-provenance pilot:check-cue-source-provenance ;;
             video-readiness)    run_one video-readiness     pilot:check-video-readiness ;;
             *)
               echo "::error::Unknown check '$CHECK'."
