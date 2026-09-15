@@ -59,6 +59,9 @@ function eventOf(overrides: Record<string, unknown> = {}) {
 
 const DESK = {
   ok: true,
+  /* OD-2026-08-29-005. Deliberately NOT 0 or 1: a test asserting the POST carries
+     this value must fail if the page ever substitutes a default. */
+  current_pair_revision: 2,
   clip: {
     calibration_clip_id: 'clip-1',
     clip_code: 'C-01',
@@ -415,5 +418,77 @@ describe('which two readings, when there are more than two', () => {
 
     await screen.findByText('Coach A marked');
     expect(screen.queryByTestId('pair-selection')).not.toBeInTheDocument();
+  });
+});
+
+/* OD-2026-08-29-005, the desk's half of the optimistic-concurrency contract.
+ *
+ * The revision is the one thing in this body that is a claim about WHAT THE
+ * ADMINISTRATOR REVIEWED rather than what they decided, and the server cannot
+ * derive it -- only the client knows which answer was on screen while the person
+ * was thinking. So it is the one value the page must carry, and these two cases
+ * are what stop it being dropped or invented. */
+describe('the revision the administrator reviewed', () => {
+  test('is carried from the GET into the POST, unchanged', async () => {
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => (
+      init?.method === 'POST'
+        ? respondWith({ ok: true, adjudication: { adjudication_id: 'adj-new' }, fields: [] })
+        : respondWith(DESK)
+    ));
+
+    render(<CalibrationAdjudicationPage />);
+    await screen.findByText('Clip C-01');
+
+    fireEvent.change(screen.getByLabelText("Coach A's mark"), { target: { value: 'evt-a1' } });
+    fireEvent.change(screen.getByLabelText('What was concluded'), { target: { value: 'accept_a' } });
+    fireEvent.click(screen.getByText('Record this decision'));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true);
+    });
+
+    const postCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
+    const sent = JSON.parse((postCall?.[1] as RequestInit).body as string);
+
+    // The GET said 2. Not 0, not 3, not recomputed.
+    expect(sent.expected_current_revision).toBe(2);
+  });
+
+  test('is never an input the user can edit', async () => {
+    // A number the administrator could type would be a number they could get
+    // wrong, and the whole point is that it reports what the page actually
+    // loaded. It lives in the loaded response, not in form state.
+    fetchMock.mockImplementation(() => respondWith(DESK));
+
+    render(<CalibrationAdjudicationPage />);
+    await screen.findByText('Clip C-01');
+
+    expect(screen.queryByLabelText(/revision/i)).toBeNull();
+    for (const input of screen.queryAllByRole('spinbutton')) {
+      expect((input as HTMLInputElement).value).not.toBe('2');
+    }
+  });
+
+  test("the server's supersession refusal is shown to the administrator", async () => {
+    /* The refusal is only useful if it reaches the person. The page already
+     * surfaces the server's own words for other refusals; this proves the 409
+     * takes that same path rather than being swallowed into a house-style
+     * "could not be recorded". */
+    const refusal = 'Someone corrected this adjudication while you were deciding. '
+      + 'Reload and review their answer before replacing it.';
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => (
+      init?.method === 'POST'
+        ? respondWith({ error: refusal, code: 'CALIBRATION_ADJUDICATION_SUPERSEDED' }, false, 409)
+        : respondWith(DESK)
+    ));
+
+    render(<CalibrationAdjudicationPage />);
+    await screen.findByText('Clip C-01');
+
+    fireEvent.change(screen.getByLabelText("Coach A's mark"), { target: { value: 'evt-a1' } });
+    fireEvent.change(screen.getByLabelText('What was concluded'), { target: { value: 'accept_a' } });
+    fireEvent.click(screen.getByText('Record this decision'));
+
+    expect(await screen.findByText(refusal)).toBeInTheDocument();
   });
 });

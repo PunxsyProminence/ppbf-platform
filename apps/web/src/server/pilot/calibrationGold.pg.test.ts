@@ -53,6 +53,8 @@ const VIDEO_SESSIONS_SQL = 'pilot_slice_postgres_video_sessions_migration.sql';
 const PROJECTS_SQL = 'pilot_slice_postgres_calibration_projects_migration.sql';
 const ANNOTATIONS_SQL = 'pilot_slice_postgres_calibration_annotations_migration.sql';
 const ADJUDICATION_SQL = 'pilot_slice_postgres_calibration_adjudication_migration.sql';
+const ADJUDICATION_REVISIONS_SQL =
+  'pilot_slice_postgres_calibration_adjudication_revisions_migration.sql';
 const GOLD_SQL = 'pilot_slice_postgres_calibration_gold_migration.sql';
 
 const ORG_ID = 'org-gold';
@@ -261,6 +263,8 @@ async function stage(options: StageOptions): Promise<Staged> {
     sourceEventIdA: events.a,
     sourceEventIdB: events.b,
     resolutionType: 'accept_a',
+    // First decision on this pair, so the reviewed revision is 0.
+    expectedCurrentRevision: 0,
     adjudicatorAccountId: adjudicator,
     ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
     fields: [
@@ -360,6 +364,10 @@ beforeAll(async () => {
     PROJECTS_SQL,
     ANNOTATIONS_SQL,
     ADJUDICATION_SQL,
+    // This suite records real adjudications to promote from, and
+    // recordAdjudication writes `revision` as of OD-2026-08-29-005. Required
+    // compatibility, not a widening of what this suite covers.
+    ADJUDICATION_REVISIONS_SQL,
     GOLD_SQL,
   ]) {
     await migrateClient.query(await readMigration(file));
@@ -907,6 +915,8 @@ describe('a gold record retains where it came from', () => {
       sourceEventIdA: staged.eventB,
       sourceEventIdB: staged.eventA,
       resolutionType: 'unresolvable',
+      // The swapped orientation is a distinct pair, unadjudicated until now.
+      expectedCurrentRevision: 0,
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
     });

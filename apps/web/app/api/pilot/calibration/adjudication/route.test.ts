@@ -201,12 +201,26 @@ const WRITTEN = {
   source_event_id_b: 'evt-b1',
   resolution_type: 'accept_a',
   missed_event_verdict: null,
+  revision: 1,
   adjudicator_account_id: 'admin-1',
   adjudicated_at: '2026-08-29T00:00:00.000Z',
   ontology_version: 'boxing-ontology-0.1',
   notes: null,
   created_at: '2026-08-29T00:00:00.000Z',
 };
+
+/** The error Postgres raises when two administrators computed the same revision
+ * for one pair -- the race OD-2026-08-29-005 chose to allow and explain rather
+ * than lock out. Shaped as the pg driver delivers it: a `code` and a
+ * `constraint`, not a parseable message. */
+function pairRevisionCollision(): Error & { code: string; constraint: string } {
+  const error = new Error(
+    'duplicate key value violates unique constraint "pilot_calibration_adjudications_pair_revision_uq"',
+  ) as Error & { code: string; constraint: string };
+  error.code = '23505';
+  error.constraint = 'pilot_calibration_adjudications_pair_revision_uq';
+  return error;
+}
 
 function post(body: unknown): NextRequest {
   return new Request('http://localhost/api/pilot/calibration/adjudication', {
@@ -228,6 +242,9 @@ const DECISION = {
   source_event_id_a: 'evt-a1',
   source_event_id_b: 'evt-b1',
   resolution_type: 'accept_a',
+  /* OD-2026-08-29-005. What the administrator reviewed, carried from the GET.
+     0 here because these fixtures settle a pair nobody has adjudicated. */
+  expected_current_revision: 0,
 };
 
 /** A clip whose footage is fine and whose two readings are both finished. */
@@ -638,6 +655,7 @@ describe('what the caller may and may not supply', () => {
       source_event_id_b: '',
       resolution_type: 'accept_a',
       missed_event_verdict: '',
+      expected_current_revision: 0,
     }));
 
     expect(response.status).toBe(200);
@@ -994,5 +1012,222 @@ describe('the door in front of this route', () => {
 
     const door = BUILDING.find((entry) => entry.href === '/admin/calibration/adjudicate');
     expect([...guarded].sort()).toEqual([...(door?.roles as readonly string[])].sort());
+  });
+});
+
+/* OD-2026-08-29-005 translated the ONE collision it chose to allow.
+ *
+ * The decision assigns a revision per pair with no row lock, so two
+ * administrators deciding at once is an expected outcome, not a fault. What the
+ * ruling bought is the explanation: the loser must be told somebody answered
+ * while they were deciding and sent to read it. Untranslated they get a
+ * duplicate-key dump naming a constraint, which reads as a bug in the product.
+ *
+ * The second case is the one that makes the first worth having. This table
+ * carries other unique constraints -- its primary key, and the provenance key
+ * the gold migration added -- so a branch on SQLSTATE 23505 alone would report a
+ * duplicate adjudication_id as somebody else's correction and send an
+ * administrator to look for an answer that does not exist. */
+describe('two administrators deciding the same disagreement at once', () => {
+  test('the loser is told to read the answer that landed, not shown a duplicate-key error', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+    mockRecord.mockRejectedValue(pairRevisionCollision());
+
+    const response = await POST(post(DECISION));
+    expect(response.status).toBe(409);
+
+    const body = await response.json();
+    expect(body.error).toBe(
+      'Someone corrected this adjudication while you were deciding. Reload and review their answer before replacing it.',
+    );
+    expect(body.code).toBe('CALIBRATION_ADJUDICATION_SUPERSEDED');
+
+    // The raw database error must not reach the administrator. Asserted over the
+    // whole serialised body, because a leak could arrive in any field.
+    const serialised = JSON.stringify(body);
+    expect(serialised).not.toContain('duplicate key');
+    expect(serialised).not.toContain('pilot_calibration_adjudications_pair_revision_uq');
+    expect(serialised).not.toContain('23505');
+
+    // A refused write is not an event. Writing an audit row here would record a
+    // decision that does not exist.
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('an unrelated 23505 is NOT reported as a concurrent correction', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+
+    const otherCollision = new Error(
+      'duplicate key value violates unique constraint "pilot_calibration_adjudications_pkey"',
+    ) as Error & { code: string; constraint: string };
+    otherCollision.code = '23505';
+    otherCollision.constraint = 'pilot_calibration_adjudications_pkey';
+    mockRecord.mockRejectedValue(otherCollision);
+
+    const response = await POST(post(DECISION));
+    expect(response.status).not.toBe(409);
+
+    const body = await response.json();
+    expect(body.code).not.toBe('CALIBRATION_ADJUDICATION_SUPERSEDED');
+    expect(JSON.stringify(body)).not.toContain('while you were deciding');
+  });
+
+  test('a successful decision carries its revision back to the caller', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+
+    const response = await POST(post(DECISION));
+    expect(response.status).toBe(200);
+
+    const body = await response.json();
+    expect(body.adjudication.revision).toBe(1);
+  });
+});
+
+/* OD-2026-08-29-005. The expectation is INPUT, and a bad one is the caller's
+ * defect -- not a story about a second administrator.
+ *
+ * This distinction is the whole reason the check lives in validation rather than
+ * in the conflict branch. A stale page build, a script, or a hand-rolled request
+ * that omits the field has not lost a race with anybody. Answering it with
+ * "someone corrected this while you were deciding" would invent a colleague who
+ * does not exist and send the caller looking for an answer nobody wrote. */
+describe('the reviewed-revision claim is validated, not raced', () => {
+  test.each([
+    ['missing', undefined],
+    ['a string', '1'],
+    ['fractional', 1.5],
+    ['negative', -1],
+    ['null', null],
+  ])('%s expected_current_revision is a 400, not a concurrency conflict', async (_label, value) => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+
+    const body: Record<string, unknown> = { ...DECISION };
+    if (value === undefined) delete body.expected_current_revision;
+    else body.expected_current_revision = value;
+
+    const response = await POST(post(body));
+    expect(response.status).toBe(400);
+
+    const answer = await response.json();
+    expect(answer.code).not.toBe('CALIBRATION_ADJUDICATION_SUPERSEDED');
+    expect(JSON.stringify(answer)).not.toContain('while you were deciding');
+
+    // And nothing was attempted. A malformed claim must not reach the write.
+    expect(mockRecord).not.toHaveBeenCalled();
+  });
+
+  test('0 is accepted -- it is what an unadjudicated pair reports', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+
+    const response = await POST(post({ ...DECISION, expected_current_revision: 0 }));
+    expect(response.status).toBe(200);
+    expect(mockRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedCurrentRevision: 0 }),
+    );
+  });
+
+  test('the value reaches recordAdjudication unchanged, and the caller cannot pick the new revision',
+    async () => {
+      mockPrincipal.mockResolvedValue(ADMIN);
+      bothSubmitted();
+
+      const response = await POST(post({
+        ...DECISION,
+        expected_current_revision: 7,
+        // Ignored: the server computes the revision it writes. A caller that
+        // could name it could overwrite any answer by choosing a high number.
+        revision: 99,
+      }));
+      expect(response.status).toBe(200);
+
+      const passed = mockRecord.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(passed.expectedCurrentRevision).toBe(7);
+      expect(passed).not.toHaveProperty('revision');
+    });
+});
+
+/* THE TOKEN MUST NOT OUTRUN THE EVIDENCE.
+ *
+ * The GET hands back two things the administrator relies on together: the
+ * adjudications it displays, and the revision the page will send back as
+ * expected_current_revision. If those come from two separate reads there is no
+ * shared snapshot between them, and this schedule loses a decision:
+ *
+ *   revision 1 exists
+ *   the rows are read      -> sees revision 1
+ *   somebody commits revision 2
+ *   the token is read      -> sees revision 2
+ *   response: displays up to revision 1, token says 2
+ *   POST sends 2, the stale check passes, revision 3 is written
+ *
+ * No 23505 and no 409, and revision 2 is superseded by an administrator who
+ * never saw it -- the exact invariant the expected-revision contract exists to
+ * hold. A narrower window is not a fix; the token has to be DERIVED FROM the
+ * rows that were displayed, so the two cannot disagree by construction. */
+describe('the reviewed-revision token comes from the rows actually shown', () => {
+  function adjudicationRow(overrides: Record<string, unknown> = {}) {
+    return {
+      ...WRITTEN,
+      adjudication_id: `adj-${String(overrides.revision ?? 1)}`,
+      ...overrides,
+    };
+  }
+
+  test('a revision committed after the rows were read cannot advance the token', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+
+    // What the response will display: this pair, newest revision 1.
+    mockListAdjudications.mockResolvedValue([
+      adjudicationRow({ revision: 1, annotation_set_id_a: 'set-a', annotation_set_id_b: 'set-b' }),
+    ]);
+    // What a LATER, separate read would see, because somebody committed in the
+    // gap. A token built from this read would be ahead of the evidence above.
+
+    const body = await (await GET(get())).json();
+
+    expect(body.current_pair_revision).toBe(1);
+  });
+
+  test('the newest revision present for the pair is the token', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+    mockListAdjudications.mockResolvedValue([
+      adjudicationRow({ revision: 1, annotation_set_id_a: 'set-a', annotation_set_id_b: 'set-b' }),
+      adjudicationRow({ revision: 2, annotation_set_id_a: 'set-a', annotation_set_id_b: 'set-b' }),
+    ]);
+
+    const body = await (await GET(get())).json();
+    expect(body.current_pair_revision).toBe(2);
+  });
+
+  test('another pair on the same clip does not contaminate the token', async () => {
+    // listAdjudicationsForClip is clip-wide. A max over all of it would hand this
+    // desk revision 9 and refuse its first decision on the pair it is settling.
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+    mockListAdjudications.mockResolvedValue([
+      adjudicationRow({ revision: 1, annotation_set_id_a: 'set-a', annotation_set_id_b: 'set-b' }),
+      adjudicationRow({ revision: 9, annotation_set_id_a: 'set-a', annotation_set_id_b: 'set-c' }),
+    ]);
+
+    const body = await (await GET(get())).json();
+    expect(body.current_pair_revision).toBe(1);
+  });
+
+  test('an unsettled pair reports 0', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+    mockListAdjudications.mockResolvedValue([
+      adjudicationRow({ revision: 4, annotation_set_id_a: 'set-x', annotation_set_id_b: 'set-y' }),
+    ]);
+
+    const body = await (await GET(get())).json();
+    expect(body.current_pair_revision).toBe(0);
   });
 });

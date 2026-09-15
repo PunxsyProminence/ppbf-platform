@@ -5,7 +5,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import {
+  ADJUDICATION_PAIR_REVISION_CONSTRAINT,
   ADJUDICATION_RESOLUTION_TYPES,
+  ADJUDICATION_SUPERSEDED_CODE,
+  ADJUDICATION_SUPERSEDED_MESSAGE,
   MISSED_EVENT_VERDICTS,
   RESOLVED_FROM_SOURCES,
   listAdjudicatedFields,
@@ -27,11 +30,43 @@ import {
   resolveComparisonPair,
 } from '@/src/server/pilot/calibration/comparison';
 import type { CalibrationClipRow } from '@/src/server/pilot/calibration/projects';
+import { ConflictError, ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 import { blankToNull, loadPlayableClip, writeCalibrationAuditEvent } from '../annotatorGate';
 
 export const runtime = 'nodejs';
+
+/* THE ONE COLLISION OD-2026-08-29-005 CHOSE TO EXPLAIN.
+ *
+ * That decision assigns a revision per pair with NO row lock, so two
+ * administrators deciding the same disagreement at the same time both compute
+ * the same next revision and the unique constraint refuses the second. Left
+ * untranslated the loser gets a raw duplicate-key dump naming a constraint --
+ * which is the outcome the decision was made to avoid, and which reads as a bug
+ * rather than as "somebody answered before you".
+ *
+ * MATCHED ON BOTH SQLSTATE AND THE CONSTRAINT NAME, never on 23505 alone. This
+ * table has other unique constraints -- the primary key, and the provenance key
+ * the gold migration added -- and the adjudicated-fields table has its own. A
+ * bare 23505 branch would tell an administrator that somebody corrected their
+ * adjudication when what actually happened was a duplicate adjudication_id or a
+ * repeated field decision. Every other error, including every other 23505, is
+ * rethrown untouched for jsonError to handle as it already does.
+ *
+ * `constraint` is the pg driver's own field, not a substring search of the
+ * message: matching the message would break the first time Postgres reworded it.
+ */
+function asConcurrentCorrectionConflict(error: unknown): never {
+  const constraint = (error as { constraint?: unknown } | null)?.constraint;
+  const code = (error as { code?: unknown } | null)?.code;
+
+  if (code === '23505' && constraint === ADJUDICATION_PAIR_REVISION_CONSTRAINT) {
+    throw new ConflictError(ADJUDICATION_SUPERSEDED_MESSAGE, ADJUDICATION_SUPERSEDED_CODE);
+  }
+
+  throw error;
+}
 
 /**
  * HOW EACH DISAGREEMENT WAS SETTLED. The write half.
@@ -344,6 +379,41 @@ export async function GET(request: NextRequest) {
       sets: { a: subject.setA, b: subject.setB },
       events: { a: subject.eventsA, b: subject.eventsB },
       adjudications,
+      /* WHAT THE DESK MUST HAND BACK, AND WHY IT IS NOT A SECOND QUERY.
+       *
+       * The revision the page returns unchanged as expected_current_revision,
+       * which is how the server tells a decision made on current information from
+       * one made on a view that went stale while the administrator was thinking.
+       *
+       * DERIVED FROM `recorded` -- the very rows this response displays -- and
+       * deliberately not from a fresh read. A separate query shares no snapshot
+       * with the rows above, and that gap loses a decision: read the rows at
+       * revision 1, somebody commits revision 2, read the token and get 2. The
+       * response then displays up to revision 1 while promising the server that
+       * revision 2 was reviewed. The POST's stale check passes, revision 3 is
+       * written, and revision 2 is superseded by an administrator who never saw
+       * it -- no 23505, no 409, exactly the invariant the expected-revision
+       * contract exists to hold.
+       *
+       * Taking the maximum from the displayed rows makes the token and the
+       * evidence the same snapshot by construction rather than by timing. A
+       * revision committed after that read is simply absent from the token, so
+       * the later POST is correctly detected as stale and the administrator is
+       * sent to reload and actually receive the newer answer before replacing it.
+       *
+       * Scoped to the pair the blinding gate resolved, not to the clip:
+       * listAdjudicationsForClip is clip-wide, and a max over all of it would
+       * hand this desk another pair's revision and refuse its first decision. */
+      current_pair_revision: recorded.reduce(
+        (highest, row) => (
+          row.annotation_set_id_a === subject.setA.annotation_set_id
+          && row.annotation_set_id_b === subject.setB.annotation_set_id
+          && row.revision > highest
+            ? row.revision
+            : highest
+        ),
+        0,
+      ),
       vocabularies: {
         resolution_types: ADJUDICATION_RESOLUTION_TYPES,
         missed_event_verdicts: MISSED_EVENT_VERDICTS,
@@ -519,6 +589,34 @@ export async function POST(request: NextRequest) {
     if (rawFields !== undefined && rawFields !== null && !Array.isArray(rawFields)) {
       throw new Error('Missing fields: the field decisions must be a list');
     }
+
+    /* THE REVISION THE ADMINISTRATOR ACTUALLY REVIEWED.
+     *
+     * Required, and validated as input rather than treated as a conflict. A
+     * missing or malformed value means the CALLER sent the wrong shape -- a stale
+     * page build, a script, a hand-rolled request -- and telling that caller
+     * "somebody corrected this while you were deciding" would be a fabricated
+     * story about a second administrator who does not exist. That is a 400.
+     *
+     * 0 is legitimate and load-bearing: it is what an unadjudicated pair reports,
+     * so `>= 0` rather than `> 0`. Integers only -- 1.5 or "1" would be a caller
+     * defect, and coercing either would invent an expectation the reviewer never
+     * held.
+     *
+     * The caller does NOT choose the new revision. This value is only ever
+     * compared; the server computes the revision it writes. */
+    const expectedRevisionRaw = (body as { expected_current_revision?: unknown })
+      .expected_current_revision;
+    if (
+      typeof expectedRevisionRaw !== 'number'
+      || !Number.isInteger(expectedRevisionRaw)
+      || expectedRevisionRaw < 0
+    ) {
+      throw new ValidationError(
+        'Missing expected_current_revision: the revision this decision was reviewed against must be a non-negative integer',
+        'CALIBRATION_ADJUDICATION_EXPECTED_REVISION_INVALID',
+      );
+    }
     const fields = ((Array.isArray(rawFields) ? rawFields : []) as AdjudicatedFieldBody[]).map(
       (field) => ({
         adjudicatedFieldId: randomUUID(),
@@ -548,7 +646,8 @@ export async function POST(request: NextRequest) {
         ? body.notes.trim()
         : null,
       fields,
-    } as unknown as RecordAdjudicationInput);
+      expectedCurrentRevision: expectedRevisionRaw,
+    } as unknown as RecordAdjudicationInput).catch(asConcurrentCorrectionConflict);
 
     /* AN AUDIT ROW, AND THE VOCABULARY WAS CHECKED RATHER THAN ASSUMED.
      *
