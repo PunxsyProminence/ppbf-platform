@@ -185,13 +185,17 @@ without evidence that doing so would make the record more accurate. None of thos
 is supported today, so none is authorized.
 
 **Status: IN FORCE.** Recorded here, stated on `DrillCueRow.source_ref` in
-`apps/web/src/server/pilot/drillLibraryV3.ts`, and characterized by a behavioural
-test in `apps/web/src/server/pilot/drillLibraryV3.pg.test.ts` showing that
-`source_ref` may be omitted -- it reads back NULL -- without suppressing
-`evidence_note`. That test asserts no absence of constraints and does
-not require arbitrary values to be accepted, so a future compatible registry, FK,
-CHECK or validation leaves it green. No schema change and no data change were
-made; nullability was already legal, so nothing was required of Postgres.
+`apps/web/src/server/pilot/drillLibraryV3.ts`, and checked against the effective
+schema by a behavioural test in
+`apps/web/src/server/pilot/fullSchemaFixture.pg.test.ts`. That test first builds
+the schema from the current migration corpus with `applyFullSchema` -- every
+migration in `infra/azure`, not only the one that created the table -- then shows
+that `source_ref` may be omitted -- it reads back NULL -- without suppressing
+`evidence_note`. So a later migration making the column NOT NULL would fail it. It
+asserts no absence of constraints and does not require arbitrary values to be
+accepted, so a future compatible registry, FK, CHECK or validation leaves it green.
+No schema change and no data change were made; nullability was already legal, so
+nothing was required of Postgres.
 
 A sibling question is left explicitly OPEN:
 `pilot.drill_library.source_ref` (119 drills) carries the same column name under

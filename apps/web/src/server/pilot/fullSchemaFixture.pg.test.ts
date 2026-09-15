@@ -204,6 +204,62 @@ describe('the schema production runs can be built from this repository', () => {
     }
   });
 
+  test('OD-2026-09-15-001: drill_cues.source_ref may be omitted under the effective schema', async () => {
+    // Owner decision OD-2026-09-15-001 permits a NULL source_ref. It is checked HERE,
+    // against every migration in infra/azure applied together, and not against the
+    // migration that created the table: a later migration is the normal way a column
+    // gains NOT NULL, and a fixture built from the creating migration alone would stay
+    // green straight through that change.
+    //
+    // Deliberately narrow. It asserts only that NULL is permitted. It says nothing
+    // about constraints, registries or validation of non-null values, so a future
+    // nullable lineage registry, FK, CHECK or compatible validation can coexist with it.
+    const client = await freshEmptyDatabase('fullschema_cue_source_ref_nullable');
+    try {
+      await helper.applyFullSchema(client, { infraDir: INFRA_DIR });
+
+      // The smallest records the EFFECTIVE schema requires for one cue row. The
+      // discipline registry row is not optional: pilot_drill_library_discipline_fk
+      // refuses a drill whose (organization, discipline) is unregistered, and
+      // drill_library.discipline defaults to 'boxing'. A fixture built from the
+      // drill-library migration alone never needed it -- which is exactly why this
+      // contract is checked against the effective schema.
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status)
+         values ('org-cue-lineage', 'org-cue-lineage', 'active')`,
+      );
+      await client.query(
+        `insert into pilot.disciplines (organization_id, discipline, display_name, lane, exposure_model)
+         values ('org-cue-lineage', 'boxing', 'Boxing', 'striking', 'head_impact')`,
+      );
+      await client.query(
+        `insert into pilot.drill_library
+           (organization_id, drill_id, lineage_id, name, category, target_behavior, purpose,
+            standard_setup, execution, what_good_looks_like, what_bad_looks_like)
+         values ('org-cue-lineage', 'drill-cue-lineage', 'drill-cue-lineage', 'Lineage Drill', 'defense',
+                 'b', 'p', 's', 'e', 'g', 'bad')`,
+      );
+
+      // source_ref is omitted from the column list entirely.
+      await client.query(
+        `insert into pilot.drill_cues (organization_id, cue_id, drill_id, cue_text, evidence_note)
+         values ('org-cue-lineage', 'cue-no-lineage', 'drill-cue-lineage', 'Reset.',
+                 'Evidence attaches to the cue CLASS.')`,
+      );
+
+      const stored = await client.query<{ source_ref: string | null; evidence_note: string }>(
+        `select source_ref, evidence_note from pilot.drill_cues
+          where organization_id = 'org-cue-lineage' and cue_id = 'cue-no-lineage'`,
+      );
+      expect(stored.rows).toEqual([{
+        source_ref: null,
+        evidence_note: 'Evidence attaches to the cue CLASS.',
+      }]);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('a migration that cannot apply is reported by name, not swallowed', async () => {
     const client = await freshEmptyDatabase('fullschema_broken');
     const brokenDir = path.join(os.tmpdir(), `ppbf-broken-infra-${Date.now()}`);
