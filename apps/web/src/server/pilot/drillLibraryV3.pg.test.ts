@@ -344,6 +344,46 @@ describe('drill library v3 migration readiness against real Postgres', () => {
       await client.end();
     }
   });
+
+  test('drill_cues.source_ref may be omitted without suppressing evidence_note, per OD-2026-09-15-001', async () => {
+    // Exactly two things follow directly from the contract, and only these are
+    // asserted: source_ref is OPTIONAL -- a row inserts without it, and the stored
+    // source_ref is NULL -- and evidence_note remains populated on that same row.
+    //
+    // What the contract removes is an ARTIFACT RETRIEVABILITY requirement. It does NOT
+    // forbid validating a lineage identifier. So this test deliberately does not insert
+    // an arbitrary unregistered lineage string, does not claim such values must always
+    // be accepted, and asserts nothing about the absence of constraints -- a future
+    // nullable lineage registry, FK, CHECK or compatible validation leaves it green.
+    const client = await freshDatabase('ppbf_test_drilllib_cue_source_ref_optional');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      await insertDrill(client, { drillId: 'drill-cue-lineage', name: 'Lineage Drill' });
+
+      // source_ref is omitted from the column list entirely, which is the strongest
+      // form of "optional": the write does not mention it and is accepted.
+      await client.query(
+        `insert into pilot.drill_cues
+           (organization_id, cue_id, drill_id, cue_text, cue_family, focus_type, evidence_note)
+         values ($1,'cue-no-lineage','drill-cue-lineage','Reset.','footwork','external','Evidence attaches to the cue CLASS.')`,
+        [ORG_A],
+      );
+
+      const stored = await client.query(
+        `select cue_id, evidence_note, source_ref from pilot.drill_cues
+         where organization_id = $1 and cue_id = 'cue-no-lineage'`,
+        [ORG_A],
+      );
+      expect(stored.rows).toEqual([{
+        cue_id: 'cue-no-lineage',
+        evidence_note: 'Evidence attaches to the cue CLASS.',
+        source_ref: null,
+      }]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
 });
 
 describe('the two independent axes: difficulty and scale_level', () => {

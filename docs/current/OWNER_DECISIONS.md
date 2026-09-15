@@ -89,6 +89,117 @@ and should not try to.
 
 ---
 
+## OD-2026-09-15-001 -- `pilot.drill_cues.source_ref` is optional authoring lineage, not a wording citation
+
+**Provenance: PRIMARY.**
+
+Owner words, verbatim:
+
+> i approve
+
+**What was approved.** Those two words were the owner's response to a bounded
+correction instruction whose SEMANTIC BOUNDARY section set out the contract. That
+section is reproduced below verbatim. It is PROPOSAL TEXT, not owner wording, and
+is recorded here so the approval can be read without the surrounding
+conversation:
+
+> The intended ruling, once owner-authorized, establishes only these semantics:
+>
+> - pilot.drill_cues.source_ref is optional authoring-lineage/origin metadata
+> - it is not an exact cue-wording citation
+> - it is not the evidence authority for cue wording or cue class/focus
+> - NULL is permitted
+> - a historical artifact does not have to remain retrievable
+> - recorded lineage must be truthful
+
+The same instruction's PROHIBITED section forbade modifying `seed_drill_cues.csv`,
+the seed loader, staging, production, or any `source_ref` data, so no data change
+is authorized by this decision.
+
+Everything below this line is repository analysis. It is neither owner wording nor
+approved proposal text, and carries no authority of its own.
+
+**What the contract establishes.** The field records where a cue row, authoring
+batch, source library or manual originated. It makes no claim that the exact cue
+wording appears in the named source, and it is not the evidence authority for the
+wording or for the cue class/focus -- cue wording is coaching craft, and
+class/focus evidence belongs in `evidence_note` and the grounding model. NULL is
+permitted. A value need not identify a currently retrievable artifact. Recorded
+lineage must be truthful.
+
+**What it does NOT establish.** It does not forbid a CHECK, a foreign key, a
+lineage registry, or validation. What it removes is an ARTIFACT RETRIEVABILITY
+requirement -- not lineage-identifier validation. A future nullable registry could
+require the identifier itself to be registered while the historical artifact stays
+unretrievable, and would comply. Today's unconstrained column and pass-through
+loader are what main happens to do, NOT policy. It also does not declare the
+existing values correct, and does not overturn the separate provenance finding.
+
+**Why it had to be settled.** A provenance investigation established that
+`coach_cue_and_feedback_library.csv` -- cited by 238 of the 258 shipped cue rows
+and live in both staging and production -- could not be produced from any
+authoritative source investigated: not the repository, not any reachable Git
+tree, and not any of the three 2026-08-08 Proposed-Migrations archives, each of
+which was fetched, size-verified and fully enumerated. That is recorded
+separately, and REMAINS a separate finding, as provenance classification
+**D -- UNSUPPORTED SOURCE_REF**.
+
+The obvious next step would have been to repair the 238 rows. A contract audit
+found there was no contract to violate. The column is nullable with no CHECK, FK,
+registry or enum; the seed loader copies the value with a trim and validates
+nothing; and no test asserted anything about it.
+No identified in-repo decision logic or UI rendering currently depends on the
+field; external/API consumer dependency remains UNVERIFIED.
+The value does cross an HTTP boundary in
+`GET /api/pilot/drill-library?drill_id=…`, so a client outside this repository
+could read it. The only definition of the name anywhere in the schema sits on a
+sibling column, `pilot.drill_library.source_ref`, and is a three-way disjunction
+-- "provenance: source manual, lineage, or registry claim" -- which cannot settle
+what any individual value asserts.
+
+**The evidence that a missing file is not, by itself, a defect.** The migration's
+own comment above `pilot.drill_cues` already says cue wording is coaching craft
+and that evidence attaches to the cue CLASS, "never to the exact words". Both
+`evidence_note` variants in the seed data say the same. The informative case is
+the 20 rows citing `Punxsy_Drill_Library_Source_v3.docx`: that artifact IS
+retrievable, and those rows still say "Cue wording is coaching craft." So a
+resolvable `source_ref` was not being used as a wording citation either.
+
+**Disposition of the 238 rows: preserved, pending better evidence.** They are
+classified **C -- HISTORICAL LINEAGE PLAUSIBLE BUT UNVERIFIED**. Plausible
+because the authoring batch is corroborated by an artifact that is neither the
+rows nor the missing file: `seed-data/research-evidence/2026-08-07/` refers to a
+"cue library" as a PPBF deliverable sixteen times, and
+`cross_track_conflict_ledger.csv`'s CT-01 mitigation specifies that the "Cue
+library ships with focus_type tagged and a CONTESTED banner" -- which matches the
+shape the 238 rows have. Unverified because no artifact bearing that filename has
+been produced, and a specification for a deliverable is not proof of its name.
+
+**Current evidence is insufficient to justify replacing, normalizing, nulling or
+otherwise mutating the 238 values.** This is a statement about the evidence, not a
+finding that the values are correct. Replacing them with
+`Punxsy_Drill_Library_Source_v3.docx` would assert an origin that belongs to the
+other 20 rows. Normalising would require inventing a canonical identifier that no
+evidence supplies. Nulling would remove the current row-level lineage label
+without evidence that doing so would make the record more accurate. None of those
+is supported today, so none is authorized.
+
+**Status: IN FORCE.** Recorded here, stated on `DrillCueRow.source_ref` in
+`apps/web/src/server/pilot/drillLibraryV3.ts`, and characterized by a behavioural
+test in `apps/web/src/server/pilot/drillLibraryV3.pg.test.ts` showing that
+`source_ref` may be omitted -- it reads back NULL -- without suppressing
+`evidence_note`. That test asserts no absence of constraints and does
+not require arbitrary values to be accepted, so a future compatible registry, FK,
+CHECK or validation leaves it green. No schema change and no data change were
+made; nullability was already legal, so nothing was required of Postgres.
+
+A sibling question is left explicitly OPEN:
+`pilot.drill_library.source_ref` (119 drills) carries the same column name under
+the same disjunctive comment and has NOT been ruled on. It is recorded under
+Open questions rather than decided here by implication.
+
+---
+
 ## OD-2026-08-29-007 -- A nomination is deleted with the athlete it names
 
 **Provenance: PRIMARY.** The decision was put to the owner as a choice between
@@ -956,3 +1067,12 @@ them by building.
 - **A real `general` row, should one ever appear.** None exists in production
   or in any seed or fixture today. `general` is refused by the foreign key, so
   one could only arrive by a write that predates the key.
+
+- **What `pilot.drill_library.source_ref` means.** OD-2026-09-15-001 ruled on
+  `pilot.drill_cues.source_ref` and deliberately did not extend to the drill
+  column, which carries the same name across 119 drills under the migration's
+  three-way comment -- "provenance: source manual, lineage, or registry claim".
+  Until it is ruled, the same column name is documented two ways: precisely for
+  cues, disjunctively for drills. Do not assume the cue ruling governs it, and do
+  not change either the drill column or its comment on the strength of the cue
+  ruling alone.
