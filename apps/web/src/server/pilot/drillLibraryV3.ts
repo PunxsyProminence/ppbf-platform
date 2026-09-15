@@ -83,6 +83,26 @@ export interface DrillCueRow {
   cue_family: string;
   focus_type: string;
   evidence_note: string;
+  /**
+   * OPTIONAL AUTHORING-LINEAGE METADATA. Owner ruling OD-2026-09-15-001.
+   *
+   * It records where a cue row, authoring batch, source library or manual came
+   * from. It is NOT a claim that the exact cue wording appears in the named
+   * source, and it is NOT the evidence authority for the wording or for the cue
+   * class/focus -- cue wording is coaching craft, and the evidence for a cue's
+   * class lives in `evidence_note` and the grounding model. The migration says
+   * the same thing above the table: evidence attaches to the cue CLASS, "never
+   * to the exact words".
+   *
+   * NULL is permitted.
+   *
+   * The referenced artifact need not remain retrievable -- an authoring batch
+   * can be real and its artifact gone. What the value must be is truthful:
+   * lineage is never fabricated.
+   *
+   * This describes what the field MEANS, and nothing about how that meaning
+   * should be enforced.
+   */
   source_ref: string | null;
 }
 
