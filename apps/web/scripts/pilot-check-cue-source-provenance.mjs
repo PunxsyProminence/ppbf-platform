@@ -210,7 +210,19 @@ async function readSourceRefCounts(client) {
 }
 
 export async function checkCueSourceProvenance(client) {
-  await client.query('BEGIN TRANSACTION READ ONLY');
+  // REPEATABLE READ, not merely READ ONLY, and the difference matters: this census
+  // is several SELECTs, and under PostgreSQL's default READ COMMITTED each one takes
+  // its OWN snapshot. A seed transaction committing between the count and the
+  // grouped read would produce a report whose total disagreed with its own
+  // per-source records -- internally contradictory while every statement was still
+  // read-only. REPEATABLE READ gives the whole census one snapshot, so the numbers
+  // describe a single state of the database or the report does not exist.
+  // READ ONLY stays, and stays first: Postgres still refuses any write, and the
+  // literal `BEGIN TRANSACTION READ ONLY` that checkDispatchCoverage.test.ts asserts
+  // on every check script is preserved verbatim. Not SERIALIZABLE -- nothing here
+  // writes, so predicate locking and serialization failures would buy nothing and
+  // could make a read-only diagnostic fail against a busy database.
+  await client.query('BEGIN TRANSACTION READ ONLY, ISOLATION LEVEL REPEATABLE READ');
   try {
     const identity = await readSessionIdentity(client);
     const tablePresent = await readTablePresence(client);

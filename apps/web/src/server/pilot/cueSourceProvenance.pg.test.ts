@@ -298,6 +298,44 @@ function expectNoRawField(lines: string[], field: string) {
   expect(lines.filter((line) => rawField.test(line))).toEqual([]);
 }
 
+type Deferred = { promise: Promise<void>; resolve: () => void };
+
+function deferred(): Deferred {
+  let resolve!: () => void;
+  const promise = new Promise<void>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+/**
+ * The reader's client, wrapped so the census stops at one exact statement boundary.
+ *
+ * This is how the snapshot test stays deterministic without a sleep and without a
+ * hook in production code: the census calls `client.query`, so the pause lives in
+ * the client it was handed. It runs the real statement first, then -- only for the
+ * count query, matched on the `filter` clause unique to it -- announces that it has
+ * arrived and waits to be released. Every other statement passes straight through,
+ * so the census under test is the real one and its SQL is untouched.
+ *
+ * A timing sleep would make this test pass or fail on machine speed. A barrier makes
+ * the interleaving a fact.
+ */
+function clientPausingAfterCountQuery(real: Client, reached: Deferred, release: Deferred): Client {
+  const run = real.query.bind(real) as (...args: unknown[]) => Promise<unknown>;
+  return {
+    query: async (...args: unknown[]) => {
+      const result = await run(...args);
+      const text = typeof args[0] === 'string' ? args[0] : '';
+      if (text.includes('filter (where source_ref = $1)')) {
+        reached.resolve();
+        await release.promise;
+      }
+      return result;
+    },
+  } as unknown as Client;
+}
+
 beforeAll(async () => {
   PG_PORT = await findFreePort();
 
@@ -431,6 +469,77 @@ describe('cue source_ref census against a real database', () => {
       expect(lines).not.toContain('TOTAL_DRILL_CUES=n/a');
     } finally {
       await client.end().catch(() => {});
+    }
+  });
+
+  test('a commit between the two reads cannot split the report across two snapshots', async () => {
+    // The census is several SELECTs. Under READ COMMITTED each takes its own
+    // snapshot, so a seed transaction committing mid-census would put the old count
+    // in TARGET_SOURCE_REF_COUNT and the new one in the per-source record -- a report
+    // that contradicts itself while every statement is still read-only. This proves
+    // the whole census reads one snapshot.
+    const reader = await databaseWithParents('cue_census_snapshot');
+    const writer = new Client({ connectionString: connectionStringFor('cue_census_snapshot') });
+    const reached = deferred();
+    const release = deferred();
+
+    try {
+      await insertCueBlock(reader, 'target', 1, targetSourceRef);
+      await writer.connect();
+
+      // Started, not awaited: it will stop itself after the count query.
+      const censusPromise = census(clientPausingAfterCountQuery(reader, reached, release));
+      await reached.promise;
+
+      // The count SELECT has run; the grouped SELECT has not. Commit a second target
+      // row into that gap. A lone statement on this client autocommits, so it is
+      // durable and visible to any snapshot taken from here on.
+      await writer.query(
+        `insert into pilot.drill_cues (organization_id, cue_id, drill_id, cue_text, source_ref)
+         values ($1, 'snapshot-extra', $2, 'cue extra', $3)`,
+        [ORG, DRILL, targetSourceRef],
+      );
+      const midFlight = await writer.query(
+        'select count(*)::int as n from pilot.drill_cues where source_ref = $1',
+        [targetSourceRef],
+      );
+      // Guards the guard: if the write had not actually landed, everything below
+      // would pass for the wrong reason.
+      expect(midFlight.rows[0].n).toBe(2);
+
+      release.resolve();
+      const report = await censusPromise;
+
+      // One snapshot: both halves of the report describe the pre-commit state.
+      expect(report.tablePresent).toBe(true);
+      expect(report.targetCount).toBe(1);
+      expect(report.total).toBe(1);
+      const grouped = report.sourceRefs.find((row) => row.source_ref === targetSourceRef);
+      expect(grouped).toBeDefined();
+      expect(grouped!.row_count).toBe(1);
+      // Internally consistent: the grouped counts sum to the reported total.
+      expect(report.sourceRefs.reduce((sum, row) => sum + row.row_count, 0)).toBe(report.total);
+
+      // And the row really is in the database -- the census did not see it because of
+      // its snapshot, not because the write failed. Asked on an independent
+      // connection so neither the reader's nor the writer's session state can answer.
+      const independent = new Client({ connectionString: connectionStringFor('cue_census_snapshot') });
+      await independent.connect();
+      try {
+        const after = await independent.query(
+          'select count(*)::int as n from pilot.drill_cues where source_ref = $1',
+          [targetSourceRef],
+        );
+        expect(after.rows[0].n).toBe(2);
+      } finally {
+        await independent.end().catch(() => {});
+      }
+    } finally {
+      // Idempotent: releases a still-paused census if an assertion threw, so the
+      // suite cannot hang on a blocked promise.
+      release.resolve();
+      await writer.end().catch(() => {});
+      await reader.end().catch(() => {});
     }
   });
 
