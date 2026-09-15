@@ -36,6 +36,7 @@
     "pilot:check-discipline-values": "node scripts/pilot-check-discipline-values.mjs",
     "pilot:check-waiver-statuses": "node scripts/pilot-check-waiver-statuses.mjs",
     "pilot:check-video-readiness": "node scripts/pilot-check-video-readiness.mjs",
+    "pilot:check-cue-source-provenance": "node scripts/pilot-check-cue-source-provenance.mjs",
     "pilot:apply-shadow-runtime": "node scripts/pilot-apply-shadow-runtime-migration.mjs",
     "pilot:apply-research-triage-view": "node scripts/pilot-apply-research-triage-view-migration.mjs",
     "pilot:apply-magic-link": "node scripts/pilot-apply-magic-link-migration.mjs",
@@ -353,7 +354,8 @@
     "test:migrations:research-archive-gating": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/researchArchiveGating.pg.test.ts --testTimeout=180000",
     "test:migrations:medical-clearance-coverage": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/medicalClearanceCoverageCheck.pg.test.ts --testTimeout=180000",
     "test:migrations:readiness-gates": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/migrationReadinessGates.pg.test.ts --testTimeout=180000",
-    "test:migrations:unexercised-runners": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/unexercisedMigrationRunners.pg.test.ts --testTimeout=180000"
+    "test:migrations:unexercised-runners": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/unexercisedMigrationRunners.pg.test.ts --testTimeout=180000",
+    "test:migrations:cue-source-provenance": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/cueSourceProvenance.pg.test.ts --testTimeout=180000"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",
