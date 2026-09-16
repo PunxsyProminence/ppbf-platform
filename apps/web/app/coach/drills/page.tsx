@@ -44,6 +44,14 @@ function CoachDrillLibrary() {
   const [formError, setFormError] = useState('');
   const [saved, setSaved] = useState('');
 
+  // Promotion -- OD-2026-09-16-001. Held per reference drill so one card's
+  // in-flight state cannot disable the others, and mirrored in a ref because a
+  // second click lands before React has re-rendered the disabled button and a
+  // duplicate promotion is the thing the unique index exists to refuse.
+  const [promotingReferenceId, setPromotingReferenceId] = useState('');
+  const promotingRef = useRef(false);
+  const [promoteError, setPromoteError] = useState('');
+
   // No state is set before the first await: a synchronous setState inside an
   // effect cascades a render before the request has even left.
   const load = useCallback(async () => {
@@ -95,6 +103,46 @@ function CoachDrillLibrary() {
       await Promise.all([load(), loadReferenceLibrary()]);
     })();
   }, [load, loadReferenceLibrary]);
+
+  // Promoted state comes from the operational drills' own pointers, never from a
+  // name match: two drills can share a name for reasons that have nothing to do
+  // with promotion, and inferring provenance from one would be the false link
+  // reference_drill_id exists to replace.
+  const promotedReferenceIds = new Set(
+    drills.map((drill) => drill.reference_drill_id).filter((id): id is string => Boolean(id)),
+  );
+
+  async function promoteReference(referenceDrillId: string) {
+    if (promotingRef.current) return;
+
+    promotingRef.current = true;
+    setPromotingReferenceId(referenceDrillId);
+    setPromoteError('');
+
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/drills/promote`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reference_drill_id: referenceDrillId }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || 'The drill could not be promoted.');
+      }
+
+      // Reload rather than patching local state: the server decides what this
+      // gym has adopted, and "Already promoted" should be its answer, not this
+      // component's optimism.
+      await load();
+    } catch (error) {
+      setPromoteError(error instanceof Error ? error.message : 'The drill could not be promoted.');
+    } finally {
+      promotingRef.current = false;
+      setPromotingReferenceId('');
+    }
+  }
 
   async function createDrill() {
     // Held in a ref as well as state: a second click lands before React has
@@ -252,9 +300,19 @@ function CoachDrillLibrary() {
         <section className="mt-[var(--s6)]">
           <h2 className="t-command text-[length:var(--t-lg)]">Reference library</h2>
           <p className="t-body mt-[var(--s2)] max-w-3xl text-[color:var(--bone-300)]">
-            Seeded coaching material for planning and review. These reference drills are read-only;
-            assignments continue to use the gym-authored drills below.
+            Seeded coaching material for planning and review. The reference source stays read-only:
+            promoting a drill copies it into this gym&apos;s drills below, where assignments point.
+            Promoting does not assign the drill to any athlete.
           </p>
+
+          {promoteError && (
+            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">{promoteError}</p>
+              <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+                This is a failure to promote. The reference library below is unchanged.
+              </p>
+            </div>
+          )}
 
           {referenceLoading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading reference drills...</p>}
 
@@ -288,6 +346,20 @@ function CoachDrillLibrary() {
                     Coach authorization required
                   </p>
                 )}
+                <div className="mt-[var(--s4)]">
+                  {promotedReferenceIds.has(drill.drill_id) ? (
+                    <p className="t-label text-[color:var(--bone-300)]">Already promoted</p>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void promoteReference(drill.drill_id)}
+                      disabled={promotingReferenceId !== ''}
+                      className="btn btn--ghost"
+                    >
+                      {promotingReferenceId === drill.drill_id ? 'Promoting...' : 'Promote'}
+                    </button>
+                  )}
+                </div>
               </article>
             ))}
           </div>
