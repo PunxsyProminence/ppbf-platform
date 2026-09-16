@@ -121,6 +121,30 @@ beforeAll(async () => {
   await migrateClient.query(
     await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_drills_migration.sql'), 'utf8'),
   );
+  // drills.ts now reads and writes pilot.drills.reference_drill_id (promotion,
+  // per OD-2026-09-16-001), so the fixture has to carry the rest of that
+  // column's dependency chain in the same order the workflow's `all` list runs
+  // it: drill-versioning supplies supersedes_drill_id, which the provenance
+  // migration's root-scoped partial unique index predicates on;
+  // drill-library-v3 supplies pilot.drill_library, which its foreign key
+  // targets. Without these three, every statement in this file fails with
+  // `column "reference_drill_id" does not exist` -- not a smaller production,
+  // a schema nobody runs.
+  await migrateClient.query(
+    await fs.readFile(
+      path.join(INFRA_DIR, 'pilot_slice_postgres_drill_versioning_migration.sql'), 'utf8',
+    ),
+  );
+  await migrateClient.query(
+    await fs.readFile(
+      path.join(INFRA_DIR, 'pilot_slice_postgres_drill_library_v3_migration.sql'), 'utf8',
+    ),
+  );
+  await migrateClient.query(
+    await fs.readFile(
+      path.join(INFRA_DIR, 'pilot_slice_postgres_drill_reference_provenance_migration.sql'), 'utf8',
+    ),
+  );
 
   for (const organizationId of [ORG_A, ORG_B]) {
     await migrateClient.query(

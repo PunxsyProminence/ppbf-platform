@@ -117,6 +117,8 @@ const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const PROGRESSION_MIGRATION_FILE = 'pilot_slice_postgres_progression_migration.sql';
 const DRILLS_MIGRATION_FILE = 'pilot_slice_postgres_drills_migration.sql';
 const VERSIONING_MIGRATION_FILE = 'pilot_slice_postgres_drill_versioning_migration.sql';
+const DRILL_LIBRARY_MIGRATION_FILE = 'pilot_slice_postgres_drill_library_v3_migration.sql';
+const PROVENANCE_MIGRATION_FILE = 'pilot_slice_postgres_drill_reference_provenance_migration.sql';
 const MIGRATION_RUNNER_PATH = path.resolve(
   __dirname,
   '../../../scripts/pilot-apply-drill-versioning-migration.mjs',
@@ -137,6 +139,8 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let versioningMigrationSql: string;
+let drillLibraryMigrationSql: string;
+let provenanceMigrationSql: string;
 let baseSchemaSql: string;
 let progressionMigrationSql: string;
 let drillsMigrationSql: string;
@@ -203,6 +207,32 @@ async function freshDatabase(name: string): Promise<Client> {
 
   activeConnectionString = connectionStringFor(name);
   return client;
+}
+
+/**
+ * The drill-versioning migration plus the two migrations W-D1 made this module
+ * depend on, in the order the workflow's `all` list runs them:
+ * drills -> drill-versioning -> drill-library-v3 -> drill-reference-provenance.
+ *
+ * WHY THE FIXTURE GREW. Per OD-2026-09-16-001 a promoted drill's successor
+ * versions inherit its reference pointer, so DRILL_VERSION_FIELDS now selects
+ * pilot.drills.reference_drill_id. That column is added by the
+ * drill-reference-provenance migration, and its foreign key targets
+ * pilot.drill_library, which drill-library-v3 creates. A fixture that stops at
+ * drill-versioning is therefore no longer a smaller production -- it is a
+ * schema this module cannot run against at all, which is exactly how it failed:
+ * every case in the two behavioural describes below raised
+ * `column "reference_drill_id" does not exist`.
+ *
+ * Deliberately NOT folded into freshDatabase(), and deliberately not used by the
+ * readiness describe. Those cases exist to prove the VERSIONING runner refuses a
+ * database where only its own migration did or did not land, and pre-applying a
+ * later migration there would be asserting something else.
+ */
+async function applyVersioningStack(client: Client): Promise<void> {
+  await applyMigrationTransaction(client, versioningMigrationSql);
+  await client.query(drillLibraryMigrationSql);
+  await client.query(provenanceMigrationSql);
 }
 
 async function insertDrill(
@@ -284,6 +314,8 @@ beforeAll(async () => {
   progressionMigrationSql = await fs.readFile(path.join(INFRA_DIR, PROGRESSION_MIGRATION_FILE), 'utf8');
   drillsMigrationSql = await fs.readFile(path.join(INFRA_DIR, DRILLS_MIGRATION_FILE), 'utf8');
   versioningMigrationSql = await fs.readFile(path.join(INFRA_DIR, VERSIONING_MIGRATION_FILE), 'utf8');
+  drillLibraryMigrationSql = await fs.readFile(path.join(INFRA_DIR, DRILL_LIBRARY_MIGRATION_FILE), 'utf8');
+  provenanceMigrationSql = await fs.readFile(path.join(INFRA_DIR, PROVENANCE_MIGRATION_FILE), 'utf8');
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
@@ -417,7 +449,7 @@ describe('a fresh drill defaults its own lineage_id', () => {
   test('createDrill-style insert (no lineage_id named) becomes its own lineage v1', async () => {
     const client = await freshDatabase('ppbf_test_drillver_default_lineage');
     try {
-      await applyMigrationTransaction(client, versioningMigrationSql);
+      await applyVersioningStack(client);
 
       await client.query(
         `insert into pilot.drills (organization_id, drill_id, name, category, focus)
@@ -439,7 +471,7 @@ describe('the relaxed unique-name index', () => {
   test('still refuses two ACTIVE drills of the same name in one gym', async () => {
     const client = await freshDatabase('ppbf_test_drillver_active_name_conflict');
     try {
-      await applyMigrationTransaction(client, versioningMigrationSql);
+      await applyVersioningStack(client);
       await insertDrill(client, { drillId: 'drill-jab-1', name: 'Straight Jab Retraction Snap' });
 
       await expect(
@@ -453,7 +485,7 @@ describe('the relaxed unique-name index', () => {
   test('allows a superseded v1 and an active v2 to share a name', async () => {
     const client = await freshDatabase('ppbf_test_drillver_superseded_name_ok');
     try {
-      await applyMigrationTransaction(client, versioningMigrationSql);
+      await applyVersioningStack(client);
       await insertDrill(client, { drillId: 'drill-jab-v1', name: 'Straight Jab Retraction Snap', active: false });
       await insertDrill(client, {
         drillId: 'drill-jab-v2',
@@ -480,7 +512,7 @@ describe('the resulting_drill_id pairing CHECK constraint', () => {
   test('refuses resulting_drill_id on a proposal that is not adopted', async () => {
     const client = await freshDatabase('ppbf_test_drillver_pairing_check_a');
     try {
-      await applyMigrationTransaction(client, versioningMigrationSql);
+      await applyVersioningStack(client);
       await insertDrill(client, { drillId: 'drill-base', name: 'Base Drill' });
 
       await expect(
@@ -500,7 +532,7 @@ describe('the resulting_drill_id pairing CHECK constraint', () => {
   test('refuses an adopted proposal with no resulting_drill_id', async () => {
     const client = await freshDatabase('ppbf_test_drillver_pairing_check_b');
     try {
-      await applyMigrationTransaction(client, versioningMigrationSql);
+      await applyVersioningStack(client);
       await insertDrill(client, { drillId: 'drill-base', name: 'Base Drill' });
 
       await expect(
@@ -523,7 +555,7 @@ describe('drillVersioning.ts against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_drillver_adopt_happy');
     activeClient = client;
     try {
-      await applyMigrationTransaction(client, versioningMigrationSql);
+      await applyVersioningStack(client);
       await client.query(
         `insert into pilot.drills (organization_id, drill_id, name, category, focus, cues)
          values ($1, 'drill-jab', 'Straight Jab Retraction Snap', 'Striking', 'Quick fist return.', $2)`,
@@ -581,7 +613,7 @@ describe('drillVersioning.ts against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_drillver_role_gate');
     activeClient = client;
     try {
-      await applyMigrationTransaction(client, versioningMigrationSql);
+      await applyVersioningStack(client);
       await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
 
       const proposal = await proposeDrillChange({
@@ -626,7 +658,7 @@ describe('drillVersioning.ts against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_drillver_stale_base');
     activeClient = client;
     try {
-      await applyMigrationTransaction(client, versioningMigrationSql);
+      await applyVersioningStack(client);
       await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
 
       const proposalOne = await proposeDrillChange({
@@ -684,7 +716,7 @@ describe('drillVersioning.ts against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_drillver_real_race');
     activeClient = client;
     try {
-      await applyMigrationTransaction(client, versioningMigrationSql);
+      await applyVersioningStack(client);
       await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
 
       const proposalOne = await proposeDrillChange({
@@ -756,7 +788,7 @@ describe('drillVersioning.ts against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_drillver_rollback');
     activeClient = client;
     try {
-      await applyMigrationTransaction(client, versioningMigrationSql);
+      await applyVersioningStack(client);
       await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
 
       const proposal = await proposeDrillChange({
@@ -799,7 +831,7 @@ describe('drillVersioning.ts against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_drillver_decline');
     activeClient = client;
     try {
-      await applyMigrationTransaction(client, versioningMigrationSql);
+      await applyVersioningStack(client);
       await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
 
       const proposal = await proposeDrillChange({
@@ -850,7 +882,7 @@ describe('drillVersioning.ts against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_drillver_stale_visible');
     activeClient = client;
     try {
-      await applyMigrationTransaction(client, versioningMigrationSql);
+      await applyVersioningStack(client);
       await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
 
       const proposals = [];
@@ -902,7 +934,7 @@ describe('drillVersioning.ts against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_drillver_flag_predicts');
     activeClient = client;
     try {
-      await applyMigrationTransaction(client, versioningMigrationSql);
+      await applyVersioningStack(client);
       await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
 
       const first = await proposeDrillChange({
@@ -959,7 +991,7 @@ describe('drillVersioning.ts against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_drillver_stale_exit');
     activeClient = client;
     try {
-      await applyMigrationTransaction(client, versioningMigrationSql);
+      await applyVersioningStack(client);
       await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
 
       const first = await proposeDrillChange({
@@ -1006,7 +1038,7 @@ describe('drillVersioning.ts against real Postgres', () => {
     const client = await freshDatabase('ppbf_test_drillver_list_scope');
     activeClient = client;
     try {
-      await applyMigrationTransaction(client, versioningMigrationSql);
+      await applyVersioningStack(client);
       await insertDrill(client, { drillId: 'drill-jab', name: 'Straight Jab Retraction Snap' });
       await insertDrill(client, { organizationId: ORG_B, drillId: 'drill-b', name: 'Org B Drill' });
       await client.query(
