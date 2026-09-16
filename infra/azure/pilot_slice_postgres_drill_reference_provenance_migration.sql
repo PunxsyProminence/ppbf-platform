@@ -49,18 +49,32 @@
 --
 -- DUPLICATE PROTECTION IS AN INDEX, not application logic. Two coaches clicking
 -- Promote at the same moment each read no existing promotion and both write, so
--- only a unique index can hold "promote once per reference drill". It is
--- PARTIAL because NULL is not a duplicate: a gym may author any number of
--- unpromoted drills. pilot_drills_one_name_per_org, the existing partial unique
--- index on (organization_id, name) where active, does NOT cover this: a second
--- promotion under a different operational name satisfies it completely, and the
--- only thing that identifies the two rows as the same drill is this pointer.
+-- only a unique index can hold "promote once per reference drill".
+-- pilot_drills_one_name_per_org, the existing partial unique index on
+-- (organization_id, name) where active, does NOT cover this: a second promotion
+-- under a different operational name satisfies it completely, and the only thing
+-- that identifies the two rows as the same drill is this pointer.
+--
+-- IT PROTECTS LINEAGE ROOTS, NOT EVERY ROW, and that distinction is the whole
+-- design. pilot.drills is versioned: adopting a change proposal writes a
+-- SUCCESSOR row carrying supersedes_drill_id and the same lineage_id, and per
+-- this ruling the successor inherits the reference pointer unchanged -- a
+-- refinement changes what the gym's drill says, not which reference drill it came
+-- from. An all-row unique index would therefore refuse every refinement of a
+-- promoted drill with a 23505, or force the successor to drop its provenance.
+-- Restricting the index to rows with supersedes_drill_id is null keeps both
+-- guarantees at once:
+--   * one promoted ROOT per reference drill per gym -- a second independent
+--     promotion is refused
+--   * every successor version in that root's lineage may carry the same pointer
+-- The predicate is also why NULL needs no special case twice over: a
+-- hand-authored root has no pointer, and a hand-authored successor has neither.
 --
 -- Deliberately NOT partial on `active`, unlike the name index. A retired
--- promoted drill still occupies its reference: restoring it is the gym's
--- decision, and a second promotion of the same reference while the first is
--- merely retired would produce two operational identities for one reference
--- drill, which is what this index exists to prevent.
+-- promoted root still occupies its reference: restoring it is the gym's
+-- decision, and a second promotion while the first is merely retired would
+-- produce two operational identities for one reference drill, which is what this
+-- index exists to prevent.
 --
 -- PROMOTION PINS A VERSION. pilot.drill_library rows are per-version -- its
 -- primary key is (organization_id, drill_id) and pilot_drill_library_one_active_name
@@ -94,9 +108,30 @@ begin
 end
 $$;
 
+-- Recreated rather than left alone when an earlier all-row form of this index is
+-- present: the all-row shape refuses successor versions, so a database carrying
+-- it has the wrong invariant, not merely an older comment. Same drop-and-recreate
+-- under one name that drill_versioning_migration.sql used when it relaxed
+-- pilot_drills_one_name_per_org from total to partial.
+do $$
+begin
+  if exists (
+    select 1
+    from pg_index i
+    join pg_class c on c.oid = i.indexrelid
+    where i.indrelid = 'pilot.drills'::regclass
+      and c.relname = 'pilot_drills_one_reference_per_org'
+      and pg_get_expr(i.indpred, i.indrelid) not like '%supersedes_drill_id%'
+  ) then
+    drop index pilot.pilot_drills_one_reference_per_org;
+  end if;
+end
+$$;
+
 create unique index if not exists pilot_drills_one_reference_per_org
   on pilot.drills(organization_id, reference_drill_id)
-  where reference_drill_id is not null;
+  where reference_drill_id is not null
+    and supersedes_drill_id is null;
 
 comment on column pilot.drills.reference_drill_id is
   'The pilot.drill_library drill this operational drill was promoted from, per OD-2026-09-16-001. NULL for a drill the gym authored itself. Pins the exact reference VERSION promoted: reference supersession never changes this row, and adopting a newer version is an explicit coach action. The reference row stays canonical for instructional and safety content and is never written from the operational side.';

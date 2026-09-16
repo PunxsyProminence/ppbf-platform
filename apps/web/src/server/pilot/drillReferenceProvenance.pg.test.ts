@@ -299,6 +299,82 @@ describe('pilot.drills.reference_drill_id', () => {
     expect(survived.rowCount).toBe(1);
   });
 
+  test('a successor version of a promoted drill may retain the same reference pointer', async () => {
+    // OD-2026-09-16-001: promotion pins a reference VERSION, and refining the
+    // gym's own drill does not repoint it. So the successor legitimately carries
+    // the predecessor's value, and duplicate protection has to be scoped to
+    // lineage ROOTS rather than to every row.
+    await insertOperationalDrill(client, {
+      drillId: 'op-root',
+      name: 'Promoted root',
+      referenceDrillId: REFERENCE_DRILL_ID,
+    });
+
+    await client.query(
+      `insert into pilot.drills
+         (organization_id, drill_id, name, category, focus, version, lineage_id,
+          supersedes_drill_id, reference_drill_id)
+       values ($1, 'op-v2', 'Promoted root v2', 'technical', 'what it is for', 2, 'op-root',
+               'op-root', $2)`,
+      [ORG_ID, REFERENCE_DRILL_ID],
+    );
+
+    // And a third version, for the same reason.
+    await client.query(
+      `insert into pilot.drills
+         (organization_id, drill_id, name, category, focus, version, lineage_id,
+          supersedes_drill_id, reference_drill_id)
+       values ($1, 'op-v3', 'Promoted root v3', 'technical', 'what it is for', 3, 'op-root',
+               'op-v2', $2)`,
+      [ORG_ID, REFERENCE_DRILL_ID],
+    );
+
+    const lineage = await client.query<{ drill_id: string }>(
+      `select drill_id from pilot.drills
+        where organization_id = $1 and reference_drill_id = $2 order by version`,
+      [ORG_ID, REFERENCE_DRILL_ID],
+    );
+    expect(lineage.rows.map((row) => row.drill_id)).toEqual(['op-root', 'op-v2', 'op-v3']);
+  });
+
+  test('a second independent promotion is still refused once a lineage already holds the reference', async () => {
+    await insertOperationalDrill(client, {
+      drillId: 'op-root',
+      name: 'Promoted root',
+      referenceDrillId: REFERENCE_DRILL_ID,
+    });
+
+    // A root is a row with no predecessor. This is what a second Promote click
+    // would write, and it must not be allowed alongside the existing lineage.
+    await expect(
+      insertOperationalDrill(client, {
+        drillId: 'op-second-root',
+        name: 'Second root under another name',
+        referenceDrillId: REFERENCE_DRILL_ID,
+      }),
+    ).rejects.toMatchObject({ code: '23505', constraint: 'pilot_drills_one_reference_per_org' });
+  });
+
+  test('retiring a promoted lineage does not free its reference for a second promotion', async () => {
+    // The index is deliberately NOT partial on active: a retired promotion is
+    // still this gym's adoption of that reference drill, and restoring it is the
+    // gym's decision.
+    await insertOperationalDrill(client, {
+      drillId: 'op-root',
+      name: 'Promoted root',
+      referenceDrillId: REFERENCE_DRILL_ID,
+    });
+    await client.query(`update pilot.drills set active = false where drill_id = 'op-root'`);
+
+    await expect(
+      insertOperationalDrill(client, {
+        drillId: 'op-after-retire',
+        name: 'Promotion after retiring',
+        referenceDrillId: REFERENCE_DRILL_ID,
+      }),
+    ).rejects.toMatchObject({ code: '23505', constraint: 'pilot_drills_one_reference_per_org' });
+  });
+
   test('the same reference drill cannot be promoted twice in one gym, even under a different name', async () => {
     // The name index cannot catch this: the second row carries a different
     // name, and only the reference pointer says it is the same drill.
@@ -371,6 +447,29 @@ describe('the migration runner', () => {
   test('refuses a database where the migration never ran', async () => {
     const fresh = await freshDatabase('ppbf_test_drill_reference_provenance_unmigrated');
     try {
+      await expect(
+        runner.applyMigrationTransaction(fresh, 'select 1'),
+      ).rejects.toThrow('DRILL_REFERENCE_PROVENANCE_NOT_READY');
+    } finally {
+      await fresh.end();
+    }
+  });
+
+  test('readiness requires the ROOT predicate, not an all-row unique index', async () => {
+    // The index shape is the invariant. An all-row unique index satisfies a
+    // name-only lookup while refusing every successor version, which is the
+    // defect this repair fixes -- so readiness asserts the predicate names
+    // supersedes_drill_id.
+    const fresh = await freshDatabase('ppbf_test_drill_reference_provenance_wrong_predicate');
+    try {
+      await fresh.query(await fs.readFile(PROVENANCE_MIGRATION, 'utf8'));
+      await fresh.query('drop index pilot.pilot_drills_one_reference_per_org');
+      await fresh.query(`
+        create unique index pilot_drills_one_reference_per_org
+          on pilot.drills(organization_id, reference_drill_id)
+          where reference_drill_id is not null
+      `);
+
       await expect(
         runner.applyMigrationTransaction(fresh, 'select 1'),
       ).rejects.toThrow('DRILL_REFERENCE_PROVENANCE_NOT_READY');

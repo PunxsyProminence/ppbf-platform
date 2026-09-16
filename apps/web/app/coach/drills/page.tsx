@@ -51,6 +51,13 @@ function CoachDrillLibrary() {
   const [promotingReferenceId, setPromotingReferenceId] = useState('');
   const promotingRef = useRef(false);
   const [promoteError, setPromoteError] = useState('');
+  // Promotion state is held separately from the rendered list because the two
+  // answer different questions. The list shows what the gym teaches now; the
+  // reference is reserved by ANY promotion of it, including a retired one --
+  // pilot_drills_one_reference_per_org deliberately ignores `active`. Reading
+  // both from one active-only list would offer Promote on a reference whose
+  // every click must 409.
+  const [promotedReferenceIds, setPromotedReferenceIds] = useState<string[]>([]);
 
   // No state is set before the first await: a synchronous setState inside an
   // effect cascades a render before the request has even left.
@@ -78,6 +85,31 @@ function CoachDrillLibrary() {
     }
   }, []);
 
+  // The author-facing promotion census. Uses the drills route's existing
+  // include_retired capability rather than a new endpoint, and its rows are never
+  // rendered -- only their reference pointers are kept. A failure here leaves the
+  // set as it was rather than claiming nothing is promoted, because claiming that
+  // would re-offer Promote on a reserved reference.
+  const loadPromotionState = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/drills?include_retired=true`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) return;
+      const payload = (await response.json()) as Partial<DrillLibraryResponse>;
+      if (!Array.isArray(payload.items)) return;
+      setPromotedReferenceIds(
+        payload.items
+          .map((drill) => drill.reference_drill_id)
+          .filter((id): id is string => Boolean(id)),
+      );
+    } catch {
+      // Deliberately silent: promotion state is a refinement of the reference
+      // cards, not their content, and the reference list has its own error state.
+    }
+  }, []);
+
   const loadReferenceLibrary = useCallback(async () => {
     try {
       const response = await fetch(`${apiBase()}/api/pilot/drill-library`, {
@@ -100,17 +132,16 @@ function CoachDrillLibrary() {
   useEffect(() => {
     // Deferred behind an await so no state is set while the effect body runs.
     void (async () => {
-      await Promise.all([load(), loadReferenceLibrary()]);
+      await Promise.all([load(), loadReferenceLibrary(), loadPromotionState()]);
     })();
-  }, [load, loadReferenceLibrary]);
+  }, [load, loadReferenceLibrary, loadPromotionState]);
 
   // Promoted state comes from the operational drills' own pointers, never from a
   // name match: two drills can share a name for reasons that have nothing to do
   // with promotion, and inferring provenance from one would be the false link
-  // reference_drill_id exists to replace.
-  const promotedReferenceIds = new Set(
-    drills.map((drill) => drill.reference_drill_id).filter((id): id is string => Boolean(id)),
-  );
+  // reference_drill_id exists to replace. The census includes retired rows, which
+  // is why it is its own read.
+  const promotedReferences = new Set(promotedReferenceIds);
 
   async function promoteReference(referenceDrillId: string) {
     if (promotingRef.current) return;
@@ -134,8 +165,9 @@ function CoachDrillLibrary() {
 
       // Reload rather than patching local state: the server decides what this
       // gym has adopted, and "Already promoted" should be its answer, not this
-      // component's optimism.
-      await load();
+      // component's optimism. Both reads: the new drill belongs in the rendered
+      // list, and its pointer belongs in the census.
+      await Promise.all([load(), loadPromotionState()]);
     } catch (error) {
       setPromoteError(error instanceof Error ? error.message : 'The drill could not be promoted.');
     } finally {
@@ -347,7 +379,7 @@ function CoachDrillLibrary() {
                   </p>
                 )}
                 <div className="mt-[var(--s4)]">
-                  {promotedReferenceIds.has(drill.drill_id) ? (
+                  {promotedReferences.has(drill.drill_id) ? (
                     <p className="t-label text-[color:var(--bone-300)]">Already promoted</p>
                   ) : (
                     <button

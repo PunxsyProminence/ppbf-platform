@@ -54,13 +54,27 @@ export interface PilotDrillVersionRow {
   supersedes_drill_id: string | null;
   superseded_at: string | null;
   superseded_by_drill_id: string | null;
+  /**
+   * The reference drill this operational lineage was promoted from, or null for
+   * a lineage the gym authored itself -- OD-2026-09-16-001.
+   *
+   * INHERITED BY EVERY VERSION, never re-derived. A refinement changes what the
+   * gym's drill SAYS; it does not change which reference drill the lineage came
+   * from, and it must not silently re-point at a newer reference version. That
+   * is why adoption copies this value forward rather than looking it up again,
+   * and why pilot_drills_one_reference_per_org is scoped to lineage ROOTS: the
+   * successor legitimately carries the same value as the predecessor it
+   * supersedes.
+   */
+  reference_drill_id: string | null;
   created_at: string;
   updated_at: string;
 }
 
 const DRILL_VERSION_FIELDS =
   'organization_id, drill_id, name, category, focus, cues, difficulty, active, '
-  + 'version, lineage_id, supersedes_drill_id, superseded_at, superseded_by_drill_id, created_at, updated_at';
+  + 'version, lineage_id, supersedes_drill_id, superseded_at, superseded_by_drill_id, '
+  + 'reference_drill_id, created_at, updated_at';
 
 const PROPOSAL_FIELDS =
   'proposal_id, organization_id, lineage_id, based_on_drill_id, proposed_by_account_id, '
@@ -339,10 +353,14 @@ export async function adoptDrillChangeProposal(input: {
     let insertResult;
     try {
       insertResult = await client.query<PilotDrillVersionRow>(
+        // reference_drill_id is carried from `current` rather than taken from
+        // the proposal: it is not a content field, and EDITABLE_DRILL_FIELDS
+        // deliberately excludes it, so a proposed_change naming it is ignored
+        // exactly like one naming `version`.
         `insert into pilot.drills
            (organization_id, drill_id, name, category, focus, cues, difficulty, active,
-            version, lineage_id, supersedes_drill_id)
-         values ($1,$2,$3,$4,$5,$6::text[],$7,true,$8,$9,$10)
+            version, lineage_id, supersedes_drill_id, reference_drill_id)
+         values ($1,$2,$3,$4,$5,$6::text[],$7,true,$8,$9,$10,$11)
          returning ${DRILL_VERSION_FIELDS}`,
         [
           input.organizationId,
@@ -355,6 +373,7 @@ export async function adoptDrillChangeProposal(input: {
           current.version + 1,
           current.lineage_id,
           current.drill_id,
+          current.reference_drill_id,
         ],
       );
     } catch (error) {

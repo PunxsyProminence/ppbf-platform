@@ -204,6 +204,31 @@ it('shows a reference drill as already promoted when an operational drill points
   expect(screen.queryByRole('button', { name: 'Promote' })).not.toBeInTheDocument();
 });
 
+it('shows a retired promotion as already promoted, because the reference is still reserved', async () => {
+  // A retired promoted drill is omitted from the ordinary active read, but
+  // pilot_drills_one_reference_per_org still holds its reference: offering
+  // Promote there would guarantee a 409. Promotion state therefore comes from a
+  // read that includes retired rows.
+  const retired = { ...promoted, drill_id: 'authored-retired', active: false };
+  const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith('/drill-library')) return jsonResponse({ drills: [reference] });
+    if (url.includes('include_retired=true')) return jsonResponse({ items: [authored, retired] });
+    return jsonResponse({ items: [authored] });
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+
+  render(<CoachDrillLibraryPage />);
+
+  expect(await screen.findByText('Already promoted')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Promote' })).not.toBeInTheDocument();
+
+  // And the retired drill must not have been smuggled into the active list to
+  // get that answer: the gym-authored section still shows only the active drill.
+  expect(screen.getByText('Corner exit')).toBeInTheDocument();
+  expect(screen.queryAllByText('Seeded jab return')).toHaveLength(1);
+});
+
 it('does not treat a same-named gym-authored drill as a promotion', async () => {
   // Name equality is not provenance. Without the pointer this drill is just a
   // gym drill that happens to share a name, and the reference is unpromoted.

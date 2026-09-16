@@ -38,6 +38,7 @@ function drillRow(overrides: Record<string, unknown> = {}) {
     supersedes_drill_id: null,
     superseded_at: null,
     superseded_by_drill_id: null,
+    reference_drill_id: null,
     created_at: '2026-07-30T12:00:00.000Z',
     updated_at: '2026-07-30T12:00:00.000Z',
     ...overrides,
@@ -225,7 +226,99 @@ describe('adoptDrillChangeProposal', () => {
       current.version + 1,
       current.lineage_id,
       current.drill_id,
+      // Provenance travels with the lineage: a hand-authored drill carries null
+      // and keeps carrying it. See the promoted case below.
+      current.reference_drill_id,
     ]);
+  });
+
+  // OD-2026-09-16-001: a refinement is a new VERSION of the gym's own drill, and
+  // the reference drill it was promoted from does not change when a coach
+  // sharpens the wording. So the pointer is inherited, never re-derived and
+  // never re-pointed at a newer reference version.
+  test('a refinement of a promoted drill keeps the exact reference pointer it inherited', async () => {
+    const current = drillRow({ reference_drill_id: 'drl_reference_1' });
+    const newVersion = drillRow({
+      drill_id: 'drill-2',
+      version: 2,
+      supersedes_drill_id: 'drill-1',
+      reference_drill_id: 'drl_reference_1',
+    });
+    const client = fakeClient(
+      [proposalRow()],
+      [current],
+      [],
+      [newVersion],
+      [],
+      [proposalRow({ review_state: 'adopted', resulting_drill_id: 'drill-2' })],
+    );
+    mockWithTransaction.mockImplementationOnce((fn) => fn(client));
+
+    const result = await adoptDrillChangeProposal({
+      organizationId: 'org-1',
+      proposalId: 'propchg-1',
+      reviewedByAccountId: 'acct-admin-1',
+      reviewedByRole: 'organization_admin',
+    });
+
+    const insertCall = client.query.mock.calls[3];
+    expect(insertCall[1]).toContain('drl_reference_1');
+    expect(insertCall[1][insertCall[1].length - 1]).toBe('drl_reference_1');
+    expect(result.newDrillVersion.reference_drill_id).toBe('drl_reference_1');
+  });
+
+  test('a refinement of a hand-authored drill stays unpromoted', async () => {
+    const current = drillRow({ reference_drill_id: null });
+    const client = fakeClient(
+      [proposalRow()],
+      [current],
+      [],
+      [drillRow({ drill_id: 'drill-2', version: 2, supersedes_drill_id: 'drill-1' })],
+      [],
+      [proposalRow({ review_state: 'adopted', resulting_drill_id: 'drill-2' })],
+    );
+    mockWithTransaction.mockImplementationOnce((fn) => fn(client));
+
+    await adoptDrillChangeProposal({
+      organizationId: 'org-1',
+      proposalId: 'propchg-1',
+      reviewedByAccountId: 'acct-admin-1',
+      reviewedByRole: 'organization_admin',
+    });
+
+    const insertCall = client.query.mock.calls[3];
+    expect(insertCall[1][insertCall[1].length - 1]).toBeNull();
+  });
+
+  test('a proposed_change cannot rewrite provenance', async () => {
+    // reference_drill_id is not a content field. A proposal naming it is ignored
+    // the same way one naming `active` or `version` is: adoption may change what
+    // the drill SAYS, never which reference drill it came from.
+    const current = drillRow({ reference_drill_id: 'drl_reference_1' });
+    const client = fakeClient(
+      [
+        proposalRow({
+          proposed_change: { focus: 'Sharper return', reference_drill_id: 'drl_somebody_elses' },
+        }),
+      ],
+      [current],
+      [],
+      [drillRow({ drill_id: 'drill-2', version: 2, supersedes_drill_id: 'drill-1', reference_drill_id: 'drl_reference_1' })],
+      [],
+      [proposalRow({ review_state: 'adopted', resulting_drill_id: 'drill-2' })],
+    );
+    mockWithTransaction.mockImplementationOnce((fn) => fn(client));
+
+    await adoptDrillChangeProposal({
+      organizationId: 'org-1',
+      proposalId: 'propchg-1',
+      reviewedByAccountId: 'acct-admin-1',
+      reviewedByRole: 'organization_admin',
+    });
+
+    const insertCall = client.query.mock.calls[3];
+    expect(insertCall[1]).not.toContain('drl_somebody_elses');
+    expect(insertCall[1][insertCall[1].length - 1]).toBe('drl_reference_1');
   });
 
   test('refuses to adopt a proposal that no longer exists', async () => {

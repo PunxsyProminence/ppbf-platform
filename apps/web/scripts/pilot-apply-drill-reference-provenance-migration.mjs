@@ -68,9 +68,12 @@ function resolveSslConfig() {
 //   * the foreign key is composite, targets pilot.drill_library, and does NOT
 //     cascade -- a cascading key would delete assignable drills when reference
 //     content is removed
-//   * the duplicate-protection index exists, is UNIQUE, and is PARTIAL on
-//     "reference_drill_id is not null" -- a total unique index would refuse a
-//     second hand-authored drill, and a non-unique one would protect nothing
+//   * the duplicate-protection index exists, is UNIQUE, and carries the ROOT
+//     predicate -- it must name both reference_drill_id and supersedes_drill_id.
+//     A total unique index would refuse a second hand-authored drill; an all-row
+//     partial index on reference_drill_id alone would refuse every successor
+//     version of a promoted drill, which is the shape this migration replaces;
+//     and a non-unique index would protect nothing
 const READINESS_QUERY = `
   select
     to_regclass('pilot.drills') is not null as drills_table_ready,
@@ -100,8 +103,9 @@ const READINESS_QUERY = `
       where i.indrelid = to_regclass('pilot.drills')
         and c.relname = 'pilot_drills_one_reference_per_org'
         and i.indisunique
-        and pg_get_expr(i.indpred, i.indrelid) is not null
-    ) as one_reference_per_org_index_ready,
+        and pg_get_expr(i.indpred, i.indrelid) like '%reference_drill_id%'
+        and pg_get_expr(i.indpred, i.indrelid) like '%supersedes_drill_id%'
+    ) as one_reference_root_index_ready,
     -- The migration promises it does not touch the reference table. A dispatch
     -- that found pilot.drill_library.drill_id gone has applied something other
     -- than what this file says it applies.
