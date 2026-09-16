@@ -31,11 +31,19 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  *    invent nine with nothing behind them.
  *
  *    A visual pass is exactly when that kind of deletion happens quietly, so
- *    both halves are pinned: the five real fields and the two real actions must
- *    still be there and still be the only ones, and the mockup's captions must
- *    NOT appear. If the owner later decides the drill library really should
+ *    both halves are pinned: the five real fields and the three real actions
+ *    must still be there and still be the only ones, and the mockup's captions
+ *    must NOT appear. If the owner later decides the drill library really should
  *    gain search, filters or assignment, that is a feature with its own PR,
  *    its own API and its own tests — not a side effect of restyling.
+ *
+ *    THE THIRD ACTION ARRIVED THAT WAY, and is the illustration rather than the
+ *    exception: Promote is an owner-approved coach action under
+ *    OD-2026-09-16-001 (the hybrid reference / operational drill model), with its
+ *    own PR, its own POST /api/pilot/drills/promote route, its own schema and its
+ *    own tests. So the inventory below counts two buttons, and the Promote
+ *    control is asserted BY NAME — a count alone would let any second button
+ *    satisfy this proof, which is the failure mode this file exists to catch.
  *
  * MUTATION CHECK: set a `--brass-NNN` on the `.ge-drillcase` block back to its
  * legacy value (e.g. `--brass-500: #B8912F`), or drop the class from the page,
@@ -146,10 +154,15 @@ describe('the 004B mockup did not delete or invent drill-library controls', () =
     expect(PAGE).toContain(label);
   });
 
-  test('the two real actions still exist', () => {
+  test('the three real actions still exist', () => {
     expect(PAGE).toContain('Add drill');
     expect(PAGE).toContain('Back to Coach Workspace');
     expect(PAGE).toContain('href="/coach/environment/intake-router"');
+    // Promote, per OD-2026-09-16-001. Named, not merely counted: the control and
+    // the endpoint it calls are both pinned, so a restyle cannot drop the action
+    // and a stray button cannot stand in for it.
+    expect(PAGE).toContain('Promote');
+    expect(PAGE).toContain('/api/pilot/drills/promote');
   });
 
   test('the real difficulty vocabulary is unchanged', () => {
@@ -194,11 +207,16 @@ describe('the 004B mockup did not delete or invent drill-library controls', () =
 
   test('the control count is unchanged', () => {
     // Nothing added, nothing removed: two text inputs, two textareas, one
-    // select, one button, one link.
+    // select, two buttons, one link.
+    //
+    // Two buttons rather than one since OD-2026-09-16-001: Add drill, and the
+    // Promote control on each reference card. The name assertion in "the three
+    // real actions still exist" is what makes the second one specifically
+    // Promote; this case only holds the line against a THIRD appearing.
     expect(PAGE.match(/<input\b/g) ?? []).toHaveLength(2);
     expect(PAGE.match(/<textarea\b/g) ?? []).toHaveLength(2);
     expect(PAGE.match(/<select\b/g) ?? []).toHaveLength(1);
-    expect(PAGE.match(/<button\b/g) ?? []).toHaveLength(1);
+    expect(PAGE.match(/<button\b/g) ?? []).toHaveLength(2);
     expect(PAGE.match(/<Link\b/g) ?? []).toHaveLength(1);
   });
 });

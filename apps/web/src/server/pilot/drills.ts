@@ -31,6 +31,22 @@ export interface PilotDrill {
   active: boolean;
   created_at: string;
   updated_at: string;
+  /**
+   * The pilot.drill_library reference drill this operational drill was promoted
+   * from, per OD-2026-09-16-001. NULL for a drill the gym authored itself, which
+   * is most of them and stays legal.
+   *
+   * It pins the exact reference VERSION that was promoted, because a
+   * drill_library row IS a version. So reference supersession never changes this
+   * drill, and adopting a newer version is a separate coach action rather than
+   * something that happens underneath one.
+   *
+   * The reference row remains canonical for instructional and safety content --
+   * stop rules, scale levels, cue metadata and authorization all stay there and
+   * are never copied here. This column is the link back to them, not a copy of
+   * them.
+   */
+  reference_drill_id: string | null;
 }
 
 /**
@@ -52,7 +68,8 @@ export interface DrillLibraryResponse {
 }
 
 const DRILL_FIELDS =
-  'organization_id, drill_id, name, category, focus, cues, difficulty, active, created_at, updated_at';
+  'organization_id, drill_id, name, category, focus, cues, difficulty, active, created_at, '
+  + 'updated_at, reference_drill_id';
 
 // One name per gym is held by the unique index pilot_drills_one_name_per_org,
 // not by a read-then-write check here -- two concurrent creates each read no
@@ -69,6 +86,29 @@ export class DrillNameTakenError extends Error {
   }
 }
 
+/**
+ * A reference drill this gym has already promoted.
+ *
+ * Kept distinct from DrillNameTakenError because the two have different
+ * remedies: a name collision is resolved by choosing another name, and this one
+ * is resolved by using the operational drill that already exists. Collapsing
+ * them would tell a coach to rename their way out of a duplicate they should not
+ * create at all.
+ *
+ * Held by the partial unique index pilot_drills_one_reference_per_org rather
+ * than a read-then-write check, for the same reason as the name index: two
+ * concurrent promotions each read no existing row and both write.
+ */
+export class ReferenceDrillAlreadyPromotedError extends Error {
+  readonly referenceDrillId: string;
+
+  constructor(referenceDrillId: string) {
+    super('This reference drill has already been promoted into this gym.');
+    this.name = 'ReferenceDrillAlreadyPromotedError';
+    this.referenceDrillId = referenceDrillId;
+  }
+}
+
 const UNIQUE_VIOLATION = '23505';
 
 function isDrillNameCollision(error: unknown): boolean {
@@ -77,6 +117,14 @@ function isDrillNameCollision(error: unknown): boolean {
   }
   const { code, constraint } = error as { code?: unknown; constraint?: unknown };
   return code === UNIQUE_VIOLATION && constraint === 'pilot_drills_one_name_per_org';
+}
+
+function isReferencePromotionCollision(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const { code, constraint } = error as { code?: unknown; constraint?: unknown };
+  return code === UNIQUE_VIOLATION && constraint === 'pilot_drills_one_reference_per_org';
 }
 
 /**
@@ -141,6 +189,66 @@ export async function createDrill(params: {
 
     return rows[0];
   } catch (error) {
+    if (isDrillNameCollision(error)) {
+      throw new DrillNameTakenError(params.name);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Promotes a reference drill into this gym's operational library --
+ * OD-2026-09-16-001.
+ *
+ * ONE INSERT, and deliberately nothing else. It writes a NEW operational
+ * identity carrying the reference drill's id; it does not write to
+ * pilot.drill_library, does not assign the drill to anyone, and creates no
+ * completion or progression record. Promotion is adoption, not prescription.
+ *
+ * The caller supplies the mapped content rather than this function reading the
+ * reference drill, so the mapping decision (which reference field becomes
+ * `focus`, how many cues survive the operational ceiling) lives at the route
+ * boundary where it is validated and tested, and this stays the write.
+ *
+ * Two conflicts, two errors. The gym may already have a drill under that name
+ * (DrillNameTakenError), or may already have promoted this exact reference drill
+ * under any name (ReferenceDrillAlreadyPromotedError). Both are unique-index
+ * violations and each has its own remedy, so they are never merged.
+ */
+export async function promoteReferenceDrill(params: {
+  organizationId: string;
+  referenceDrillId: string;
+  name: string;
+  category: string;
+  focus: string;
+  cues?: string[];
+  difficulty?: DrillDifficulty;
+}): Promise<PilotDrill> {
+  const drillId = randomUUID();
+
+  try {
+    const rows = await query<PilotDrill>(
+      `insert into pilot.drills
+         (organization_id, drill_id, name, category, focus, cues, difficulty, reference_drill_id)
+       values ($1, $2, $3, $4, $5, $6::text[], $7, $8)
+       returning ${DRILL_FIELDS}`,
+      [
+        params.organizationId,
+        drillId,
+        params.name,
+        params.category,
+        params.focus,
+        params.cues ?? [],
+        params.difficulty ?? 'intermediate',
+        params.referenceDrillId,
+      ],
+    );
+
+    return rows[0];
+  } catch (error) {
+    if (isReferencePromotionCollision(error)) {
+      throw new ReferenceDrillAlreadyPromotedError(params.referenceDrillId);
+    }
     if (isDrillNameCollision(error)) {
       throw new DrillNameTakenError(params.name);
     }

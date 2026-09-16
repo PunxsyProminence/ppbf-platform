@@ -58,9 +58,28 @@ const PERMITTED_GATE_CONSTANTS: Record<string, string[]> = {
   'coach/cue-library/route.ts': [READER_POLICY],
   'session-scripts/route.ts': [READER_POLICY],
   'workout-templates/route.ts': [READER_POLICY],
+  'drills/promote/route.ts': ['DRILL_AUTHOR_ROLES'],
 };
 
-const GATED_READ_ROUTES = Object.keys(PERMITTED_GATE_CONSTANTS);
+/**
+ * Routes registered above that do NOT serve a read of this content class.
+ *
+ * drills/promote/route.ts is POST-only: it writes one operational drill from a
+ * reference drill under OD-2026-09-16-001. Listing it above is what subjects it
+ * to the role-list sweeps below, which is the point -- an author-only route not
+ * in that map is policed by nothing. But it must not be asserted to apply the
+ * READER policy, and forcing it to would be the weakening this file exists to
+ * prevent: it would put every reader role one edit away from promoting.
+ *
+ * So the reader-policy case iterates the read routes, and every other case
+ * iterates all of them.
+ */
+const AUTHOR_ONLY_ROUTES = ['drills/promote/route.ts'];
+
+const REGISTERED_ROUTES = Object.keys(PERMITTED_GATE_CONSTANTS);
+const GATED_READ_ROUTES = REGISTERED_ROUTES.filter(
+  (relative) => !AUTHOR_ONLY_ROUTES.includes(relative),
+);
 
 describe('the coaching-content read policy', () => {
   it('admits the platform owner and refuses the board', () => {
@@ -159,6 +178,23 @@ describe('every surface serving this content reaches the one policy', () => {
     }
   });
 
+  it('keeps the author list identical wherever it is declared, so promotion cannot drift from authoring', () => {
+    // DRILL_AUTHOR_ROLES is declared in two route files: the drills route that
+    // creates and edits a drill, and the promote route that creates one from a
+    // reference drill. Both are the same question -- who may put an assignable
+    // drill in this gym -- so the two literals are asserted equal here rather
+    // than left to drift into two different answers.
+    const authorList = /const DRILL_AUTHOR_ROLES = (\[[^\]]*\]) as const;/;
+
+    const declarations = Object.entries(PERMITTED_GATE_CONSTANTS)
+      .filter(([, permitted]) => permitted.includes('DRILL_AUTHOR_ROLES'))
+      .map(([relative]) => routeSource(relative).match(authorList)?.[1]);
+
+    expect(declarations).toHaveLength(2);
+    expect(new Set(declarations).size).toBe(1);
+    expect(declarations[0]).toBe("['coach', 'organization_admin', 'admin']");
+  });
+
   it('all five use the aliasing requireRole, so admin and organization_admin cannot diverge by route', () => {
     // There are two requireRole implementations. access.ts treats 'admin' and
     // 'organization_admin' as aliases of each other; http.ts does not. Both
@@ -171,7 +207,10 @@ describe('every surface serving this content reaches the one policy', () => {
     // both already imported `requirePrincipal` from http.ts, so `requireRole`
     // from the same module is the import an editor offers first and the one a
     // careless hand takes.
-    for (const relative of GATED_READ_ROUTES) {
+    // Every registered route, read or author-only: the promote route gates on
+    // the author list, and the same two implementations would diverge there for
+    // the same reason.
+    for (const relative of REGISTERED_ROUTES) {
       expect(routeSource(relative)).toMatch(
         /import \{ requireRole \} from '@\/src\/server\/pilot\/access'/,
       );
