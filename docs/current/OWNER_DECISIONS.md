@@ -89,6 +89,81 @@ and should not try to.
 
 ---
 
+## OD-2026-09-16-001 -- Hybrid reference / operational drill model
+
+**Provenance: PRIMARY.**
+
+Owner words, verbatim:
+
+> I approve the hybrid drill model ruling exactly as written above and authorize one documentation-only branch, commit, and PR recording it as OD-2026-09-16-001 in docs/current/OWNER_DECISIONS.md. No other file changes.
+
+**What was approved.** The owner's words above ratified the following proposal
+exactly as written. It is PROPOSAL TEXT, not owner wording, and is reproduced
+here so the decision can be read without the surrounding conversation:
+
+> PPBF — OWNER RULING — HYBRID REFERENCE / OPERATIONAL DRILL MODEL
+>
+> 1. ATHLETE LEARNING ACCESS
+> Athletes may read reference-drill instructional content only after that reference drill has been promoted/adopted by their gym.
+> Promotion is the gym-level validation/adoption gate.
+> Promotion alone does not assign the drill to any athlete and creates no completion or progression record.
+>
+> 2. REFERENCE VS OPERATIONAL
+> pilot.drill_library remains the canonical instructional/safety source for promoted reference drills.
+> pilot.drills is the gym's operational/assignment identity.
+> A promoted operational drill must retain a durable pointer to the exact reference drill version from which it was promoted.
+> Hand-authored operational drills may have no reference pointer.
+>
+> 3. REFERENCE PLANNING ARTIFACTS
+> Workout templates, session scripts and transfer/reference planning artifacts may continue to reference pilot.drill_library.
+> Before a drill becomes athlete-specific executable work, it must resolve to a promoted operational pilot.drills identity.
+>
+> 4. ATHLETE FIELD VISIBILITY
+> Athletes may see instructional and safety content needed to understand a promoted reference drill, including purpose, setup, execution, cues, scale guidance, stop rules, contact level and whether coach authorization is required.
+> Internal provenance, evidence, creator identity, authoring state and governance metadata are not athlete-visible.
+>
+> 5. SUPERSESSION
+> Promotion pins to an exact reference drill version.
+> Reference supersession does not silently change an existing operational drill.
+> A newer reference version requires explicit coach review/adoption.
+> Historical assignments remain attached to the operational drill/version used at the time.
+> If the linked reference is made inactive/retracted, new assignments are blocked pending coach review; historical records remain readable.
+>
+> 6. ASSIGNMENTS
+> New drill assignments must reference an operational pilot.drills drill_id.
+> The existing free-text assignment fallback may remain readable for legacy/history but must not be used to create new drill assignments.
+>
+> 7. PROVENANCE FIELD
+> Use a dedicated reference_drill_id-style field rather than source_ref.
+> The link must remain organization-scoped, non-cascading and duplicate-protected.
+>
+> No third drill model.
+> No automatic reference-to-operational synchronization.
+> No reference browsing may be presented as assignment, completion or progression.
+
+**Evidence this decision rested on.** Read-only architecture scoping at
+`main` `7616ae098dc19a8d70d2f5d2b37c6047284ba5cf` established that
+`pilot.drill_library` and `pilot.drills` are separate models; the athlete
+workspace reads operational `pilot.drills`; assignment references resolve to
+that operational table; workout templates, session scripts and transfer claims
+reference `pilot.drill_library`; and no existing promotion/adoption link or
+provenance field connects a reference drill to an operational drill. The same
+scoping found that reusing the current full drill-library DTO for athletes would
+expose governance/provenance fields the ruling now excludes.
+
+**Implementation boundary.** This ruling authorizes the product/data contract,
+not implementation by this documentation PR. The scoped implementation requires
+a dedicated nullable `reference_drill_id`-style pointer on `pilot.drills`,
+organization-scoped duplicate protection, a coach promotion path, a promoted-only
+athlete projection, version/retraction handling, and tightening new assignment
+creation to operational drill ids. Each implementation slice retains its normal
+source, migration, review and release gates.
+
+**MIGRATIONS: NONE.** This entry records the ratified decision only. No source,
+schema, seed, workflow, runtime or production change is authorized by this PR.
+
+---
+
 ## OD-2026-09-15-001 -- `pilot.drill_cues.source_ref` is optional authoring lineage, not a wording citation
 
 **Provenance: PRIMARY.**
