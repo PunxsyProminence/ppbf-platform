@@ -91,6 +91,8 @@ and should not try to.
 
 ## OD-2026-09-17-001 -- Athlete active-learning visibility for reference drills
 
+**Provenance: PRIMARY.**
+
 **Date:** 2026-09-17. **Governs:** who may read `pilot.drill_library`
 instructional content as an athlete, and when. **Extends, does not replace,**
 OD-2026-09-16-001, which remains in force.

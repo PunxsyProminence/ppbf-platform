@@ -1655,9 +1655,35 @@ describe('the athlete reference library against real Postgres', () => {
       const athleteCues = await listAthleteCueLibrary(ORG_A);
 
       expect(athleteCues.map((cue) => cue.cue_text)).toEqual(['Hand home first']);
+
+      /* AN EXACT ALLOW-LIST, NOT A DENY-LIST, AND THE DIFFERENCE IS THE WHOLE
+         POINT OF THIS ASSERTION.
+
+         This case previously named two forbidden fields -- evidence_note and
+         source_ref -- and a deny-list only ever catches what somebody thought
+         of. The cue path is the one athlete read with NO constructive
+         projection: listAthleteCueLibrary returns the query rows straight
+         through, so its entire athlete-safety guarantee is the SQL select list.
+         Adding d.content_class, created_by_role, organization_id or any other
+         column to that select list would have reached an athlete while both of
+         those deny assertions still passed.
+
+         The route test cannot cover this either: it asserts Object.keys against
+         MOCKED data, so it proves only that the route adds no key -- it can
+         never observe what the query actually SELECTS. This assertion runs
+         against real Postgres, so it is the only place the real column set is
+         ever checked. Widen the select list and this fails. */
+      const ATHLETE_CUE_KEYS = [
+        'cue_family',
+        'cue_id',
+        'cue_text',
+        'drill_id',
+        'drill_name',
+        'focus_type',
+      ];
+      expect(athleteCues).toHaveLength(1);
       for (const cue of athleteCues) {
-        expect(cue).not.toHaveProperty('evidence_note');
-        expect(cue).not.toHaveProperty('source_ref');
+        expect(Object.keys(cue).sort()).toEqual(ATHLETE_CUE_KEYS);
       }
 
       // The coach cue library is unchanged and still sees both, with the
