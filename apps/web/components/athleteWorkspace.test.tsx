@@ -1451,6 +1451,48 @@ describe('tabs with nothing behind them are not offered', () => {
 
       expect(await screen.findByText('Coach authorization required')).toBeTruthy();
     });
+
+    /**
+     * THE SCREEN MAY NOT PROMISE SAFETY CONTENT IT DOES NOT SHOW.
+     *
+     * The first cut of this panel told the athlete the library covered "when to
+     * stop" and instructed them to "Check the stop rules and the contact level".
+     * It renders neither: the browse cards consume AthleteDrillSummary, and stop
+     * rules live on AthleteDrillDetail, which this surface never requests. An
+     * athlete who followed that instruction would have concluded they had read
+     * the stop conditions for a drill whose stop conditions were never on screen
+     * -- the one class of false statement that matters most here, because stop
+     * rules are when to STOP.
+     *
+     * This is deliberately a BICONDITIONAL rather than a flat ban on the words.
+     * Banning the phrase would be satisfied by silence and would block the very
+     * change that fixes this properly -- rendering stop rules and then saying so.
+     * The rule enforced is: say it only if you show it.
+     */
+    test('it does not claim to show stop rules unless it actually renders them', async () => {
+      storedReferenceDrills = [adopted];
+      await renderWorkspace();
+      openTab('Drills');
+      await screen.findByText('Catch and Return');
+
+      // THE PANEL MUST BE EXPANDED FIRST. HelpPanel renders its description and
+      // usage list behind `{expanded && ...}`, so they are absent from the DOM
+      // while collapsed -- and a version of this test that skipped the click
+      // would find no claim and no rendering, and pass for the one reason that
+      // proves nothing. Written this way, restoring the old "when to stop" copy
+      // fails it.
+      fireEvent.click(screen.getByRole('button', { name: /HELP: Reference Library/i }));
+      expect(screen.getByText(/Reference material for the drills your gym has adopted/)).toBeTruthy();
+
+      const claimsStopRules = screen.queryAllByText(/stop rule|when to stop/i).length > 0;
+      const rendersStopRules = screen.queryAllByText(/Stop if|Stop when/i).length > 0
+        || screen.queryAllByText(/^Stop rules:?$/i).length > 0;
+
+      expect(claimsStopRules).toBe(rendersStopRules);
+      // And, for this head specifically: it shows none, so it claims none.
+      expect(rendersStopRules).toBe(false);
+      expect(claimsStopRules).toBe(false);
+    });
   });
 });
 

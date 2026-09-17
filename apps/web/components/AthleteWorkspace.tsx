@@ -224,14 +224,21 @@ interface StoredAthleteFloorPlan {
  * This is REFERENCE material, not the gym's operational drill list. Before W-D2
  * this panel read /api/pilot/drills -- the operational library -- which meant
  * an athlete's "Learn" surface was showing the same rows a coach assigns from,
- * and the instructional content behind them (setup, execution, stop rules,
- * scale guidance) was unreachable. It now reads the reference library itself,
- * already filtered by the server to what this gym has promoted and still runs,
- * and already stripped of authoring and provenance metadata.
+ * and the instructional content behind them was unreachable. It now reads the
+ * reference library itself, already filtered by the server to what this gym has
+ * promoted and still runs, and already stripped of authoring and provenance
+ * metadata.
  *
- * Fields are exactly the athlete-safe set in OD-2026-09-16-001: no category, no
- * difficulty band, no skill code -- those are planning taxonomy, and this
- * screen is for learning the drill, not for planning sessions.
+ * A BOUNDED BROWSE SUBSET of the athlete-safe set, not the whole of it. The
+ * owner rulings permit an athlete eight fields; this shape carries six of them
+ * plus the drill's identity. STOP RULES AND SCALE GUIDANCE ARE PERMITTED BUT
+ * NOT CARRIED HERE -- they live on AthleteDrillDetail, which this surface does
+ * not request, so nothing on this screen may claim to show them. That is a
+ * bound on the browse card, not a narrowing of the ruling.
+ *
+ * What is excluded outright is planning taxonomy -- no category, no difficulty
+ * band, no skill code -- because this screen is for learning the drill, not for
+ * planning sessions.
  */
 interface ReferenceDrill {
   id: string;
@@ -2867,10 +2874,20 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Reference Library"
-                description="Reference material for the drills your gym has adopted: what each drill is for, how it is set up and run, its coaching cues, and when to stop."
+                /* THE COPY MAY ONLY NAME WHAT THIS SCREEN ACTUALLY RENDERS.
+                   It said "and when to stop" and "Check the stop rules", and
+                   the browse cards render no stop rules -- they consume
+                   AthleteDrillSummary, which carries purpose, setup, execution,
+                   contact level, cues and the coach-authorization flag and
+                   nothing else. Stop rules exist on AthleteDrillDetail, which
+                   this surface does not call. Telling an athlete to check a
+                   safety instruction that is not on the screen is worse than
+                   staying silent about it: it invites them to believe they have
+                   read the stop conditions when they have not. */
+                description="Reference material for the drills your gym has adopted: what each drill is for, how it is set up and run, and its coaching cues."
                 usage={[
                   'Read a drill before or after you train it',
-                  'Check the stop rules and the contact level',
+                  'Check the contact level, and whether a coach has to be there',
                   'Bring a question to your coach about anything here'
                 ]}
                 mistakes={[
