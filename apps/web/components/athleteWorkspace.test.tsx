@@ -42,6 +42,12 @@ let storedFloorPlans: Array<Record<string, unknown>> = [];
 let floorPlanPatchFails = false;
 let floorPlanPostFails = false;
 let storedAssignments: Array<Record<string, unknown>> = [];
+/**
+ * W-D2: what /api/pilot/drill-library answers for an athlete -- the reference
+ * drills this gym has adopted, already filtered and projected by the server.
+ * The client never filters; there is nothing here for it to filter WITH.
+ */
+let storedReferenceDrills: Array<Record<string, unknown>> = [];
 let storedCheckIn: Record<string, unknown> | null;
 let checkInReadFails: boolean;
 let assignmentsFail = false;
@@ -150,6 +156,7 @@ beforeEach(() => {
   floorPlanPatchFails = false;
   floorPlanPostFails = false;
   storedAssignments = [];
+  storedReferenceDrills = [];
   assignmentsFail = false;
   // Checked in by default. The Floor is gated on today's check-in (owner
   // decision 2026-08-28), so a workspace that had NOT checked in would hide
@@ -227,6 +234,13 @@ beforeEach(() => {
         throw new Error('assignments offline');
       }
       return jsonResponse({ items: storedAssignments });
+    }
+    // W-D2: the Learn surface reads the reference library, not the operational
+    // drill list. Matched BEFORE any bare /api/pilot/drills branch would be,
+    // and answering under `drills` -- the key that route uses -- so a client
+    // reading `items` here renders empty instead of passing.
+    if (url.includes('/api/pilot/drill-library')) {
+      return jsonResponse({ drills: storedReferenceDrills });
     }
     if (url.includes('/api/pilot/shadow/observation-projection')) {
       return jsonResponse({ items: [] });
@@ -1314,7 +1328,7 @@ describe('tabs with nothing behind them are not offered', () => {
     expect((await screen.findAllByText(/Nothing on your floor yet/)).length).toBeGreaterThan(0);
 
     openTab('Drills');
-    expect(await screen.findByText(/have not added any drills yet/)).toBeTruthy();
+    expect(await screen.findByText(/have not added any reference drills/)).toBeTruthy();
 
     openTab('Schedule');
     expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
@@ -1354,6 +1368,131 @@ describe('tabs with nothing behind them are not offered', () => {
     openTab('Drills');
 
     expect(screen.queryByRole('button', { name: 'Mark Complete' })).toBeNull();
+  });
+
+  /**
+   * W-D2 -- the Learn surface is Reference, and it reads the reference library.
+   *
+   * Before this it read /api/pilot/drills, the OPERATIONAL list a coach assigns
+   * from, which meant the athlete's "Learn" tab showed the same rows as
+   * assigned training and could not reach the instructional content behind them
+   * at all.
+   */
+  describe('Learn -> Drills is the adopted reference library', () => {
+    const adopted = {
+      drill_id: 'drl-ref-1',
+      name: 'Catch and Return',
+      purpose: 'Catching the straight punch.',
+      setup: 'Partners at technical distance.',
+      execution: 'Partner leads; catch and return.',
+      contact_level: 'light',
+      requires_coach_authorization: false,
+      cues: ['Hand home first'],
+    };
+
+    test('it reads the reference library and not the operational drill list', async () => {
+      storedReferenceDrills = [adopted];
+      await renderWorkspace();
+      openTab('Drills');
+
+      expect(await screen.findByText('Catch and Return')).toBeTruthy();
+
+      const paths = fetchCalls.map((call) => call.url);
+      expect(paths.some((url) => url.includes('/api/pilot/drill-library'))).toBe(true);
+      // The operational list is what this surface used to read. If a future
+      // edit points it back, this fails -- the two libraries mean different
+      // things and an athlete's Learn tab must not be the assignment source.
+      expect(paths.some((url) => /\/api\/pilot\/drills(\?|$)/.test(url))).toBe(false);
+    });
+
+    test('it renders the instructional content, not planning taxonomy', async () => {
+      storedReferenceDrills = [adopted];
+      await renderWorkspace();
+      openTab('Drills');
+
+      await screen.findByText('Catch and Return');
+      expect(screen.getByText('Catching the straight punch.')).toBeTruthy();
+      expect(screen.getByText('Partners at technical distance.')).toBeTruthy();
+      expect(screen.getByText('Partner leads; catch and return.')).toBeTruthy();
+      expect(screen.getByText(/Hand home first/)).toBeTruthy();
+    });
+
+    test('it presents itself as Learning and says plainly that it is not assigned work', async () => {
+      storedReferenceDrills = [adopted];
+      await renderWorkspace();
+      openTab('Drills');
+
+      await screen.findByText('Catch and Return');
+      expect(screen.getByText('Reference · Learning')).toBeTruthy();
+      expect(screen.getByText(/not training your coach has given you/)).toBeTruthy();
+      expect(screen.getByText(/does not assign it to you, does not log it/)).toBeTruthy();
+    });
+
+    test('no completion, logging or progression action appears on the Learning surface', async () => {
+      // The structural half of "Learning is not Assigned Training": not merely
+      // that the old button is gone, but that nothing on this surface writes.
+      storedReferenceDrills = [adopted];
+      await renderWorkspace();
+      openTab('Drills');
+      await screen.findByText('Catch and Return');
+
+      for (const name of [/mark complete/i, /log/i, /complete/i, /assign/i, /start/i]) {
+        expect(screen.queryByRole('button', { name })).toBeNull();
+      }
+
+      const writes = fetchCalls.filter((call) => call.method !== 'GET');
+      expect(writes.some((call) => call.url.includes('/api/pilot/progression'))).toBe(false);
+    });
+
+    test('a coach-authorization requirement is shown, because it is a safety fact', async () => {
+      storedReferenceDrills = [{ ...adopted, requires_coach_authorization: true }];
+      await renderWorkspace();
+      openTab('Drills');
+
+      expect(await screen.findByText('Coach authorization required')).toBeTruthy();
+    });
+
+    /**
+     * THE SCREEN MAY NOT PROMISE SAFETY CONTENT IT DOES NOT SHOW.
+     *
+     * The first cut of this panel told the athlete the library covered "when to
+     * stop" and instructed them to "Check the stop rules and the contact level".
+     * It renders neither: the browse cards consume AthleteDrillSummary, and stop
+     * rules live on AthleteDrillDetail, which this surface never requests. An
+     * athlete who followed that instruction would have concluded they had read
+     * the stop conditions for a drill whose stop conditions were never on screen
+     * -- the one class of false statement that matters most here, because stop
+     * rules are when to STOP.
+     *
+     * This is deliberately a BICONDITIONAL rather than a flat ban on the words.
+     * Banning the phrase would be satisfied by silence and would block the very
+     * change that fixes this properly -- rendering stop rules and then saying so.
+     * The rule enforced is: say it only if you show it.
+     */
+    test('it does not claim to show stop rules unless it actually renders them', async () => {
+      storedReferenceDrills = [adopted];
+      await renderWorkspace();
+      openTab('Drills');
+      await screen.findByText('Catch and Return');
+
+      // THE PANEL MUST BE EXPANDED FIRST. HelpPanel renders its description and
+      // usage list behind `{expanded && ...}`, so they are absent from the DOM
+      // while collapsed -- and a version of this test that skipped the click
+      // would find no claim and no rendering, and pass for the one reason that
+      // proves nothing. Written this way, restoring the old "when to stop" copy
+      // fails it.
+      fireEvent.click(screen.getByRole('button', { name: /HELP: Reference Library/i }));
+      expect(screen.getByText(/Reference material for the drills your gym has adopted/)).toBeTruthy();
+
+      const claimsStopRules = screen.queryAllByText(/stop rule|when to stop/i).length > 0;
+      const rendersStopRules = screen.queryAllByText(/Stop if|Stop when/i).length > 0
+        || screen.queryAllByText(/^Stop rules:?$/i).length > 0;
+
+      expect(claimsStopRules).toBe(rendersStopRules);
+      // And, for this head specifically: it shows none, so it claims none.
+      expect(rendersStopRules).toBe(false);
+      expect(claimsStopRules).toBe(false);
+    });
   });
 });
 
@@ -1847,7 +1986,7 @@ describe('the wellness check-in', () => {
     // cheap half of this; Messages matters most, because a child who needs to
     // tell someone something must never have to fill in a form first.
     openTab('Drills');
-    expect(await screen.findByText(/have not added any drills yet/)).toBeTruthy();
+    expect(await screen.findByText(/have not added any reference drills/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Development' }));
     expect(screen.getByRole('button', { name: '+ New SMART Goal' })).toBeTruthy();

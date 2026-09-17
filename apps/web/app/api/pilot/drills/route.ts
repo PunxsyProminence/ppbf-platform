@@ -12,6 +12,7 @@ import {
   updateDrill,
   type DrillDifficulty,
   type DrillLibraryResponse,
+  type PilotDrill,
 } from '@/src/server/pilot/drills';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -33,6 +34,31 @@ export const runtime = 'nodejs';
 const DRILL_AUTHOR_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 
 const MAX_CUES = 12;
+
+/**
+ * One operational drill with its promotion pointer removed, for athlete reads.
+ *
+ * Built by naming the keys that stay rather than deleting the one that goes:
+ * a delete-list is a list somebody has to remember to extend, and the next
+ * provenance-shaped column added to PilotDrill would ship to athletes by
+ * default. This fails closed instead -- a new field reaches an athlete only
+ * when it is written here on purpose. Typed as Omit<PilotDrill, ...> so the
+ * compiler still checks every key against the real row shape.
+ */
+function withoutPromotionPointer(drill: PilotDrill): Omit<PilotDrill, 'reference_drill_id'> {
+  return {
+    organization_id: drill.organization_id,
+    drill_id: drill.drill_id,
+    name: drill.name,
+    category: drill.category,
+    focus: drill.focus,
+    cues: drill.cues,
+    difficulty: drill.difficulty,
+    active: drill.active,
+    created_at: drill.created_at,
+    updated_at: drill.updated_at,
+  };
+}
 
 function requireText(raw: unknown, field: string): string {
   if (typeof raw !== 'string' || !raw.trim()) {
@@ -99,8 +125,33 @@ export async function GET(request: NextRequest) {
 
     const items = await listDrills(principal.organizationId, { includeRetired });
 
-    // Typed against the shape both clients import, so renaming a key here is a
-    // compile error there rather than a library that silently renders empty.
+    // W-D2, owner rule of 2026-09-17. reference_drill_id is the promotion
+    // pointer: it names the exact pilot.drill_library row a coach adopted this
+    // drill from. That is internal provenance -- it is how the gym's library was
+    // assembled, not part of learning the drill -- so it does not go to an
+    // athlete.
+    //
+    // REDACTED, NOT NULLED. Writing null here would be a lie in the shape of an
+    // answer: null already means "a coach typed this drill from scratch", and an
+    // athlete client cannot tell a fabricated null from a real one. Omitting the
+    // key says nothing instead of saying something false.
+    //
+    // The athlete does not need it either, because since W-D2 the Learn surface
+    // reads /api/pilot/drill-library -- the reference library itself, already
+    // filtered to what the gym adopted -- rather than inferring promotion from
+    // a pointer on the operational list.
+    //
+    // Every authorized non-athlete reader keeps the field, and the coach library
+    // depends on it: /coach/drills derives its "Already promoted" state from
+    // exactly this pointer.
+    if (principal.role === 'athlete') {
+      return NextResponse.json({
+        ok: true,
+        organization_id: principal.organizationId,
+        items: items.map(withoutPromotionPointer),
+      });
+    }
+
     // Typed against the shape both clients import, so renaming a key here is a
     // compile error there rather than a library that silently renders empty.
     const body: DrillLibraryResponse = {

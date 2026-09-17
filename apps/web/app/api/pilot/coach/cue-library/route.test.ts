@@ -5,7 +5,7 @@ import { NextRequest } from 'next/server';
 
 import { GET } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { listCueLibrary } from '@/src/server/pilot/drillLibraryV3';
+import { listAthleteCueLibrary, listCueLibrary } from '@/src/server/pilot/drillLibraryV3';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 
@@ -16,11 +16,12 @@ jest.mock('@/src/server/pilot/http', () => {
 
 jest.mock('@/src/server/pilot/drillLibraryV3', () => {
   const actual = jest.requireActual('@/src/server/pilot/drillLibraryV3');
-  return { ...actual, listCueLibrary: jest.fn() };
+  return { ...actual, listCueLibrary: jest.fn(), listAthleteCueLibrary: jest.fn() };
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockList = listCueLibrary as jest.Mock;
+const mockAthleteList = listAthleteCueLibrary as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -175,11 +176,77 @@ describe('who may read the cue library', () => {
   it.each(ADMITTED_ROLES)('%s is admitted', async (role) => {
     mockRequirePrincipal.mockResolvedValue(principal({ role }));
     mockList.mockResolvedValue([]);
+    mockAthleteList.mockResolvedValue([]);
 
     const response = await GET(getRequest());
 
     expect(response.status).toBe(200);
-    expect(mockList).toHaveBeenCalledWith('org-1', expect.any(Object));
+
+    // Admission is unchanged by W-D2 -- the gate still admits all eight reader
+    // roles and still refuses the board. What changed is the CONTENT an athlete
+    // reaches: cues from adopted drills only, and no evidence_note or
+    // source_ref. See the athlete describe below.
+    if (role === 'athlete') {
+      expect(mockAthleteList).toHaveBeenCalledWith('org-1', expect.any(Object));
+      expect(mockList).not.toHaveBeenCalled();
+    } else {
+      expect(mockList).toHaveBeenCalledWith('org-1', expect.any(Object));
+      expect(mockAthleteList).not.toHaveBeenCalled();
+    }
+  });
+
+  describe('an athlete reads cues from adopted drills only, without the evidence model', () => {
+    it('routes to the promoted-only, athlete-safe cue read and keeps the filters', async () => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete' }));
+      mockAthleteList.mockResolvedValue([]);
+
+      const response = await GET(getRequest('focus_type=external&search=guard'));
+
+      expect(response.status).toBe(200);
+      expect(mockAthleteList).toHaveBeenCalledWith('org-1', { focusType: 'external', search: 'guard' });
+      expect(mockList).not.toHaveBeenCalled();
+    });
+
+    it('serves a cue shape carrying no evidence_note and no source_ref', async () => {
+      // The athlete read does not SELECT either column, so this asserts the
+      // contract at the route: whatever the athlete query returns is what ships,
+      // and it carries the cue's words and which adopted drill they belong to --
+      // never why the cue is believed, or which authoring batch produced it.
+      mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete' }));
+      mockAthleteList.mockResolvedValue([
+        {
+          cue_id: 'cue-1',
+          cue_text: 'Hand home first',
+          cue_family: 'guard',
+          focus_type: 'external',
+          drill_id: 'drl-9',
+          drill_name: 'Catch and Return',
+        },
+      ]);
+
+      const body = (await (await GET(getRequest())).json()) as { items: Array<Record<string, unknown>> };
+
+      expect(body.items).toHaveLength(1);
+      expect(Object.keys(body.items[0]).sort()).toEqual([
+        'cue_family',
+        'cue_id',
+        'cue_text',
+        'drill_id',
+        'drill_name',
+        'focus_type',
+      ]);
+      expect(body.items[0]).not.toHaveProperty('evidence_note');
+      expect(body.items[0]).not.toHaveProperty('source_ref');
+    });
+
+    it('takes the organization from the session, never from the request', async () => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete' }));
+      mockAthleteList.mockResolvedValue([]);
+
+      await GET(getRequest('org=org-victim&organization_id=org-victim&organizationId=org-victim'));
+
+      expect(mockAthleteList).toHaveBeenCalledWith('org-1', expect.any(Object));
+    });
   });
 
   it.each(DENIED_ROLES)('%s is refused, and the read never runs', async (role) => {
