@@ -53,7 +53,14 @@ jest.mock('./db', () => ({
   }),
 }));
 
-import { getDrillWithDetail, listDrillLibrary } from './drillLibraryV3';
+import {
+  getAthleteDrillDetail,
+  getDrillWithDetail,
+  listAthleteCueLibrary,
+  listAthleteDrillLibrary,
+  listCueLibrary,
+  listDrillLibrary,
+} from './drillLibraryV3';
 
 jest.setTimeout(180_000);
 
@@ -90,6 +97,31 @@ const SECONDARY_RUNNER_PATH = path.resolve(
   '../../../scripts/pilot-apply-drill-secondary-skills-migration.mjs',
 );
 
+/**
+ * W-D2 needs pilot.drills, not just pilot.drill_library, because the athlete
+ * reads ask a question that spans both: "has this gym adopted this reference
+ * drill, and is the adoption live?"
+ *
+ * These are EXISTING, ALREADY-SHIPPED migrations, applied here only to build
+ * the disposable local fixture. W-D2 adds no migration of its own -- the
+ * column, the composite foreign key and the partial unique index all arrived
+ * with W-D1's drill-reference-provenance migration, which is already applied in
+ * staging and production.
+ *
+ * All four are required and the order is the workflow's `all` order:
+ *   progression       creates pilot.drill_assignments, which the drills
+ *                     migration ALTERs
+ *   drills            creates pilot.drills
+ *   drill-versioning  adds supersedes_drill_id / lineage columns, which the
+ *                     provenance index predicates on
+ *   provenance        adds reference_drill_id and its composite FK to
+ *                     pilot.drill_library
+ */
+const PROGRESSION_MIGRATION_FILE = 'pilot_slice_postgres_progression_migration.sql';
+const DRILLS_MIGRATION_FILE = 'pilot_slice_postgres_drills_migration.sql';
+const DRILL_VERSIONING_MIGRATION_FILE = 'pilot_slice_postgres_drill_versioning_migration.sql';
+const PROVENANCE_MIGRATION_FILE = 'pilot_slice_postgres_drill_reference_provenance_migration.sql';
+
 const ORG_A = 'org-drilllib-a';
 const ORG_B = 'org-drilllib-b';
 
@@ -103,6 +135,7 @@ let migrationSql: string;
 let vocabularyWideningSql: string;
 let secondarySkillsSql: string;
 let baseSchemaSql: string;
+let operationalDrillSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let applySecondarySkillsMigration: (client: Client, sql: string) => Promise<void>;
 let seedAll: (
@@ -251,6 +284,16 @@ beforeAll(async () => {
     path.join(INFRA_DIR, 'pilot_slice_postgres_drill_vocabulary_widening_migration.sql'), 'utf8',
   );
   secondarySkillsSql = await fs.readFile(path.join(INFRA_DIR, SECONDARY_MIGRATION_FILE), 'utf8');
+
+  // Concatenated in dependency order and applied as one unit, because no test
+  // here cares about the seams between them -- they exist only so that
+  // pilot.drills.reference_drill_id is a real column in the fixture.
+  operationalDrillSql = (await Promise.all([
+    PROGRESSION_MIGRATION_FILE,
+    DRILLS_MIGRATION_FILE,
+    DRILL_VERSIONING_MIGRATION_FILE,
+    PROVENANCE_MIGRATION_FILE,
+  ].map((file) => fs.readFile(path.join(INFRA_DIR, file), 'utf8')))).join('\n');
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
@@ -1301,6 +1344,327 @@ describe('seed-drill-secondary-skills.mjs against real Postgres', () => {
 
       const crossed = await listDrillLibrary(ORG_B, { relatedSkillId: 'SK-GUARD-02' });
       expect(crossed).toEqual([]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
+/**
+ * W-D2 -- ATHLETE REFERENCE / LEARNING, against a real database.
+ *
+ * The owner rule of 2026-09-17 is a two-sided AND: an athlete may read a
+ * reference drill only while the reference itself is active AND this gym holds
+ * an active operational promotion pointing at that exact reference row.
+ *
+ * It is proven HERE rather than with mocks because every way it can go wrong is
+ * a SQL fact:
+ *   * a missing organization term in the EXISTS subquery leaks across gyms, and
+ *     there is no row-level security underneath to catch it -- a grep for
+ *     `create policy` across infra/azure returns nothing, so this predicate IS
+ *     the tenant boundary;
+ *   * a root-scoped predicate (`supersedes_drill_id is null`) silently hides a
+ *     drill the moment a coach refines it, because adopting a change proposal
+ *     deactivates the root and the live row becomes a successor;
+ *   * `active` on either side is one word, and dropping either one widens
+ *     access without changing a single line of application logic.
+ * A mocked query would assert the shape of a string. These assert the answer.
+ */
+describe('the athlete reference library against real Postgres', () => {
+  const REFERENCE_ID = 'drl-ref-1';
+  const OTHER_REFERENCE_ID = 'drl-ref-2';
+
+  /**
+   * The v3 library, its secondary-skill sibling, and the four already-shipped
+   * migrations that put pilot.drills.reference_drill_id in the fixture.
+   * ORG_B exists so cross-org isolation can be asked as a question rather than
+   * assumed from a single-tenant database.
+   */
+  async function athleteFixture(name: string): Promise<Client> {
+    const client = await freshDatabase(name);
+    await applyMigrationTransaction(client, migrationSql);
+    await applySecondarySkillsMigration(client, secondarySkillsSql);
+    await client.query(operationalDrillSql);
+    await client.query(
+      `insert into pilot.organizations (organization_id, organization_name, status)
+       values ($1, $1, 'active') on conflict do nothing`,
+      [ORG_B],
+    );
+    return client;
+  }
+
+  /** An operational drill, optionally pointing at a reference -- i.e. a promotion. */
+  async function insertOperationalDrill(
+    client: Client,
+    opts: {
+      organizationId?: string;
+      drillId: string;
+      name: string;
+      referenceDrillId?: string | null;
+      active?: boolean;
+      supersedesDrillId?: string | null;
+      lineageId?: string;
+      version?: number;
+    },
+  ): Promise<void> {
+    // `version` is explicit because pilot_drills_lineage_version_uq keys on
+    // (lineage_id, version): two rows in one lineage both defaulting to version
+    // 1 are refused, which is exactly the shape the successor case below builds.
+    await client.query(
+      `insert into pilot.drills
+         (organization_id, drill_id, name, category, focus, active, lineage_id,
+          supersedes_drill_id, reference_drill_id, version)
+       values ($1,$2,$3,'bagwork','Focus.',$4,$5,$6,$7,$8)`,
+      [
+        opts.organizationId ?? ORG_A,
+        opts.drillId,
+        opts.name,
+        opts.active ?? true,
+        opts.lineageId ?? opts.drillId,
+        opts.supersedesDrillId ?? null,
+        opts.referenceDrillId ?? null,
+        opts.version ?? 1,
+      ],
+    );
+  }
+
+  async function insertCue(client: Client, drillId: string, cueId: string, text: string): Promise<void> {
+    await client.query(
+      `insert into pilot.drill_cues
+         (organization_id, cue_id, drill_id, cue_text, cue_family, focus_type, evidence_note, source_ref)
+       values ($1,$2,$3,$4,'guard','external','Believed because of X.','batch-7')`,
+      [ORG_A, cueId, drillId, text],
+    );
+  }
+
+  test('a promoted, active reference is visible; an unpromoted one is not', async () => {
+    const client = await athleteFixture('ppbf_test_drilllib_athlete_promoted');
+    try {
+      await insertDrill(client, { drillId: REFERENCE_ID, name: 'Adopted Drill' });
+      await insertDrill(client, { drillId: OTHER_REFERENCE_ID, name: 'Never Adopted' });
+      await insertOperationalDrill(client, {
+        drillId: 'op-1',
+        name: 'Adopted Drill',
+        referenceDrillId: REFERENCE_ID,
+      });
+
+      const visible = await listAthleteDrillLibrary(ORG_A);
+
+      expect(visible.map((drill) => drill.drill_id)).toEqual([REFERENCE_ID]);
+      expect(await getAthleteDrillDetail(ORG_A, REFERENCE_ID)).not.toBeNull();
+      // The unpromoted reference is not merely absent from the list -- it is
+      // unreachable by id, which is the half a list assertion cannot prove.
+      expect(await getAthleteDrillDetail(ORG_A, OTHER_REFERENCE_ID)).toBeNull();
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('retiring the operational promotion withdraws current access', async () => {
+    const client = await athleteFixture('ppbf_test_drilllib_athlete_retired_promo');
+    try {
+      await insertDrill(client, { drillId: REFERENCE_ID, name: 'Adopted Drill' });
+      await insertOperationalDrill(client, {
+        drillId: 'op-1',
+        name: 'Adopted Drill',
+        referenceDrillId: REFERENCE_ID,
+        active: false,
+      });
+
+      expect(await listAthleteDrillLibrary(ORG_A)).toEqual([]);
+      expect(await getAthleteDrillDetail(ORG_A, REFERENCE_ID)).toBeNull();
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('an inactive/retracted reference is hidden even while the promotion is live', async () => {
+    const client = await athleteFixture('ppbf_test_drilllib_athlete_retracted_ref');
+    try {
+      await insertDrill(client, { drillId: REFERENCE_ID, name: 'Withdrawn Drill', active: false });
+      await insertOperationalDrill(client, {
+        drillId: 'op-1',
+        name: 'Withdrawn Drill',
+        referenceDrillId: REFERENCE_ID,
+      });
+
+      expect(await listAthleteDrillLibrary(ORG_A)).toEqual([]);
+      // The coach detail read deliberately has no active filter, so this is the
+      // case that proves the athlete path does not inherit it.
+      expect(await getAthleteDrillDetail(ORG_A, REFERENCE_ID)).toBeNull();
+      expect(await getDrillWithDetail(ORG_A, REFERENCE_ID)).not.toBeNull();
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('an active NON-ROOT successor keeps the reference visible, and yields one row not two', async () => {
+    // The case a root-scoped predicate would fail. Adopting a change proposal
+    // deactivates v1 (the lineage root) and inserts an active v2 carrying
+    // supersedes_drill_id and the same reference pointer. The gym still runs the
+    // drill, so the athlete must still be able to read it.
+    const client = await athleteFixture('ppbf_test_drilllib_athlete_successor');
+    try {
+      await insertDrill(client, { drillId: REFERENCE_ID, name: 'Adopted Drill' });
+      await insertOperationalDrill(client, {
+        drillId: 'op-v1',
+        name: 'Adopted Drill v1',
+        referenceDrillId: REFERENCE_ID,
+        active: false,
+      });
+      await insertOperationalDrill(client, {
+        drillId: 'op-v2',
+        name: 'Adopted Drill v2',
+        referenceDrillId: REFERENCE_ID,
+        active: true,
+        supersedesDrillId: 'op-v1',
+        lineageId: 'op-v1',
+        version: 2,
+      });
+
+      const visible = await listAthleteDrillLibrary(ORG_A);
+
+      // EXACTLY ONE. Two operational rows carry the same pointer; an EXISTS
+      // answers once, where a join would have returned the reference twice.
+      expect(visible.map((drill) => drill.drill_id)).toEqual([REFERENCE_ID]);
+      expect(await getAthleteDrillDetail(ORG_A, REFERENCE_ID)).not.toBeNull();
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('another gym promoting the same drill_id grants this gym nothing', async () => {
+    const client = await athleteFixture('ppbf_test_drilllib_athlete_cross_org');
+    try {
+      // The same drill_id in both gyms -- the key is (organization_id, drill_id),
+      // so this is legal and is exactly the shape that catches a missing
+      // organization term in the EXISTS subquery.
+      await insertDrill(client, { drillId: REFERENCE_ID, name: 'Shared Name A' });
+      await insertDrill(client, { organizationId: ORG_B, drillId: REFERENCE_ID, name: 'Shared Name B' });
+      await insertOperationalDrill(client, {
+        organizationId: ORG_B,
+        drillId: 'op-b',
+        name: 'Adopted By B',
+        referenceDrillId: REFERENCE_ID,
+      });
+
+      // ORG_B adopted it; ORG_A did not.
+      expect(await listAthleteDrillLibrary(ORG_A)).toEqual([]);
+      expect(await getAthleteDrillDetail(ORG_A, REFERENCE_ID)).toBeNull();
+
+      expect((await listAthleteDrillLibrary(ORG_B)).map((drill) => drill.drill_id)).toEqual([REFERENCE_ID]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('the athlete list and detail carry instructional content and no authoring metadata', async () => {
+    const client = await athleteFixture('ppbf_test_drilllib_athlete_projection');
+    try {
+      await insertDrill(client, { drillId: REFERENCE_ID, name: 'Adopted Drill' });
+      await insertScaleLevel(client, {
+        scaleId: 'scale-1',
+        drillId: REFERENCE_ID,
+        scaleLevel: 'B',
+        isStartingPoint: true,
+      });
+      await client.query(
+        `insert into pilot.drill_stop_rules
+           (organization_id, stop_rule_id, drill_id, ordinal, condition_text, scope, rule_kind)
+         values ($1,'stop-1',$2,1,'Stop if the guard drops.','universal','safety')`,
+        [ORG_A, REFERENCE_ID],
+      );
+      await insertCue(client, REFERENCE_ID, 'cue-1', 'Hand home first');
+      await insertOperationalDrill(client, {
+        drillId: 'op-1',
+        name: 'Adopted Drill',
+        referenceDrillId: REFERENCE_ID,
+      });
+
+      const [summary] = await listAthleteDrillLibrary(ORG_A);
+      const detail = await getAthleteDrillDetail(ORG_A, REFERENCE_ID);
+      if (!detail) throw new Error('test bug: the promoted drill should be readable');
+
+      // The instructional content IS there -- a projection that dropped
+      // everything would pass a deny-list check and be useless.
+      expect(summary).toEqual({
+        drill_id: REFERENCE_ID,
+        name: 'Adopted Drill',
+        purpose: 'Purpose.',
+        setup: 'Setup.',
+        execution: 'Execution.',
+        contact_level: expect.any(String),
+        requires_coach_authorization: expect.any(Boolean),
+        cues: ['Hand home first'],
+      });
+      expect(detail.stop_rules).toEqual([
+        { ordinal: 1, condition_text: 'Stop if the guard drops.', scope: 'universal', rule_kind: 'safety' },
+      ]);
+      expect(detail.scale_levels).toHaveLength(1);
+
+      // RECURSIVE deny. Serialising and walking every key at every depth is what
+      // makes a column added to pilot.drill_library tomorrow fail this test
+      // rather than ship to a minor's screen.
+      const FORBIDDEN = [
+        'source_ref', 'evidence_note', 'field_provenance', 'grounding_claim_ids', 'content_class',
+        'created_by_account_id', 'created_by_role', 'authoring_state', 'active', 'lineage_id',
+        'version', 'supersedes_drill_id', 'superseded_at', 'skill_id', 'target_behavior',
+        'secondary_skills', 'organization_id',
+      ];
+      const keysAtEveryDepth = (value: unknown): string[] => {
+        if (Array.isArray(value)) return value.flatMap(keysAtEveryDepth);
+        if (value && typeof value === 'object') {
+          return Object.entries(value as Record<string, unknown>)
+            .flatMap(([key, nested]) => [key, ...keysAtEveryDepth(nested)]);
+        }
+        return [];
+      };
+
+      for (const payload of [summary, detail]) {
+        const keys = keysAtEveryDepth(JSON.parse(JSON.stringify(payload)));
+        expect(keys.length).toBeGreaterThan(0);
+        for (const forbidden of FORBIDDEN) {
+          expect(keys).not.toContain(forbidden);
+        }
+      }
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('athlete cues come only from adopted drills and carry no evidence or lineage', async () => {
+    const client = await athleteFixture('ppbf_test_drilllib_athlete_cues');
+    try {
+      await insertDrill(client, { drillId: REFERENCE_ID, name: 'Adopted Drill' });
+      await insertDrill(client, { drillId: OTHER_REFERENCE_ID, name: 'Never Adopted' });
+      await insertCue(client, REFERENCE_ID, 'cue-adopted', 'Hand home first');
+      await insertCue(client, OTHER_REFERENCE_ID, 'cue-unadopted', 'Never visible');
+      await insertOperationalDrill(client, {
+        drillId: 'op-1',
+        name: 'Adopted Drill',
+        referenceDrillId: REFERENCE_ID,
+      });
+
+      const athleteCues = await listAthleteCueLibrary(ORG_A);
+
+      expect(athleteCues.map((cue) => cue.cue_text)).toEqual(['Hand home first']);
+      for (const cue of athleteCues) {
+        expect(cue).not.toHaveProperty('evidence_note');
+        expect(cue).not.toHaveProperty('source_ref');
+      }
+
+      // The coach cue library is unchanged and still sees both, with the
+      // evidence note attached -- the narrowing is the athlete's, not the table's.
+      const coachCues = await listCueLibrary(ORG_A);
+      expect(coachCues.map((cue) => cue.cue_text).sort()).toEqual(['Hand home first', 'Never visible']);
+      expect(coachCues[0]).toHaveProperty('evidence_note');
     } finally {
       activeClient = null;
       await client.end();

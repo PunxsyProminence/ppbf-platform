@@ -6,7 +6,12 @@ import { NextRequest } from 'next/server';
 import { GET } from './route';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { getDrillWithDetail, listDrillLibrary } from '@/src/server/pilot/drillLibraryV3';
+import {
+  getAthleteDrillDetail,
+  getDrillWithDetail,
+  listAthleteDrillLibrary,
+  listDrillLibrary,
+} from '@/src/server/pilot/drillLibraryV3';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 
@@ -38,12 +43,20 @@ jest.mock('@/src/server/pilot/http', () => {
 
 jest.mock('@/src/server/pilot/drillLibraryV3', () => {
   const actual = jest.requireActual('@/src/server/pilot/drillLibraryV3');
-  return { ...actual, listDrillLibrary: jest.fn(), getDrillWithDetail: jest.fn() };
+  return {
+    ...actual,
+    listDrillLibrary: jest.fn(),
+    getDrillWithDetail: jest.fn(),
+    listAthleteDrillLibrary: jest.fn(),
+    getAthleteDrillDetail: jest.fn(),
+  };
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockList = listDrillLibrary as jest.Mock;
 const mockDetail = getDrillWithDetail as jest.Mock;
+const mockAthleteList = listAthleteDrillLibrary as jest.Mock;
+const mockAthleteDetail = getAthleteDrillDetail as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -122,11 +135,26 @@ describe('who may read the v3 drill library', () => {
   it.each(ADMITTED_ROLES)('%s is admitted', async (role) => {
     mockRequirePrincipal.mockResolvedValue(principal(role));
     mockList.mockResolvedValue([]);
+    mockAthleteList.mockResolvedValue([]);
 
     const response = await GET(getRequest());
 
     expect(response.status).toBe(200);
-    expect(mockList).toHaveBeenCalledWith('org-1', expect.any(Object));
+
+    // ADMISSION IS UNCHANGED BY W-D2 AND THIS CASE STILL PROVES IT: all eight
+    // reader roles are still let through the gate, board is still refused
+    // below, and COACHING_CONTENT_READER_ROLES was not edited. What W-D2
+    // changed is which READ an admitted caller reaches -- an athlete gets the
+    // promoted-only, athlete-safe library; everyone else gets the corpus they
+    // always got. Asserting the branch here rather than only in the athlete
+    // cases keeps the two halves of the partition visible in one place.
+    if (role === 'athlete') {
+      expect(mockAthleteList).toHaveBeenCalledWith('org-1');
+      expect(mockList).not.toHaveBeenCalled();
+    } else {
+      expect(mockList).toHaveBeenCalledWith('org-1', expect.any(Object));
+      expect(mockAthleteList).not.toHaveBeenCalled();
+    }
   });
 
   it.each(DENIED_ROLES)('%s is refused, and the read never runs', async (role) => {
@@ -292,7 +320,13 @@ describe('the reads it performs are organization-scoped', () => {
   });
 
   it('reads one drill detail against the caller organization', async () => {
-    mockRequirePrincipal.mockResolvedValue(principal('athlete'));
+    // This case used to run as an ATHLETE and assert an unfiltered 200, which
+    // is precisely the exposure W-D2 closes: it was the automated record that
+    // any athlete session could read any reference drill by id, promoted or
+    // not. The organization-scoping claim it makes is still worth keeping, so
+    // it is re-pointed at a coach -- the role for which unfiltered detail is
+    // still correct -- and the athlete's behaviour is asserted separately below.
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
     mockDetail.mockResolvedValue({ drill_id: 'drl-9' });
 
     const response = await GET(getRequest('drill_id=drl-9'));
@@ -331,6 +365,95 @@ describe('the reads it performs are organization-scoped', () => {
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: 'DRILL_NOT_FOUND' });
+  });
+
+  /**
+   * W-D2. The athlete half of this route, under the owner rule of 2026-09-17.
+   *
+   * The rule is a two-sided AND evaluated in SQL -- active reference AND active
+   * same-org promotion -- so these cases prove the ROUTING and the SHAPE, and
+   * drillLibraryV3.pg.test.ts proves the predicate against a real database.
+   * Mocking the query here and asserting the filter "works" would be asserting
+   * the mock.
+   */
+  describe('an athlete reads the adopted library, not the corpus', () => {
+    it('lists through the promoted-only, athlete-safe read and answers under `drills`', async () => {
+      mockRequirePrincipal.mockResolvedValue(principal('athlete'));
+      mockAthleteList.mockResolvedValue([
+        {
+          drill_id: 'drl-9',
+          name: 'Catch and Return',
+          purpose: 'Catching the straight punch',
+          setup: 'none',
+          execution: 'Partner leads, you catch and return.',
+          contact_level: 'light',
+          requires_coach_authorization: false,
+          cues: ['Hand home first'],
+        },
+      ]);
+
+      const response = await GET(getRequest());
+
+      expect(response.status).toBe(200);
+      expect(mockAthleteList).toHaveBeenCalledWith('org-1');
+      expect(mockList).not.toHaveBeenCalled();
+      expect(await response.json()).toEqual({
+        drills: [expect.objectContaining({ drill_id: 'drl-9', setup: 'none' })],
+      });
+    });
+
+    it('does not let a planning filter reach the athlete read', async () => {
+      // The coach list takes discipline/category/difficulty and three skill
+      // parameters. None of those values appears in the athlete projection, so
+      // an athlete could not use them meaningfully; what matters here is the
+      // stronger claim that they cannot be used to WIDEN the read either --
+      // the athlete read takes the organization and nothing else.
+      mockRequirePrincipal.mockResolvedValue(principal('athlete'));
+      mockAthleteList.mockResolvedValue([]);
+
+      await GET(getRequest('discipline=boxing&category=defense&skill_id=SK-GUARD-02&family_id=SKILL-07'));
+
+      expect(mockAthleteList).toHaveBeenCalledWith('org-1');
+      expect(mockAthleteList).toHaveBeenCalledTimes(1);
+    });
+
+    it('reads detail through the promoted-only, athlete-safe read', async () => {
+      mockRequirePrincipal.mockResolvedValue(principal('athlete'));
+      mockAthleteDetail.mockResolvedValue({ drill_id: 'drl-9', name: 'Catch and Return' });
+
+      const response = await GET(getRequest('drill_id=drl-9'));
+
+      expect(response.status).toBe(200);
+      expect(mockAthleteDetail).toHaveBeenCalledWith('org-1', 'drl-9');
+      expect(mockDetail).not.toHaveBeenCalled();
+    });
+
+    it('answers a reference this gym has not adopted exactly like one that does not exist', async () => {
+      // getAthleteDrillDetail returns null for four different reasons -- not
+      // promoted, promotion retired, reference retracted, another gym's drill.
+      // They must be indistinguishable from here, or the 404 becomes an oracle
+      // for what exists in a corpus the athlete is not entitled to enumerate.
+      mockRequirePrincipal.mockResolvedValue(principal('athlete'));
+      mockAthleteDetail.mockResolvedValue(null);
+
+      const response = await GET(getRequest('drill_id=drl-unpromoted'));
+
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: 'DRILL_NOT_FOUND' });
+    });
+
+    it('takes the organization from the session, never from the request', async () => {
+      const hostile = 'org=org-victim&organization_id=org-victim&organizationId=org-victim';
+
+      mockRequirePrincipal.mockResolvedValue(principal('athlete'));
+      mockAthleteList.mockResolvedValue([]);
+      await GET(getRequest(hostile));
+      expect(mockAthleteList).toHaveBeenCalledWith('org-1');
+
+      mockAthleteDetail.mockResolvedValue({ drill_id: 'drl-9' });
+      await GET(getRequest(`drill_id=drl-9&${hostile}`));
+      expect(mockAthleteDetail).toHaveBeenCalledWith('org-1', 'drl-9');
+    });
   });
 
   it('refuses an unauthenticated caller', async () => {

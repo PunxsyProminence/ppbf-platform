@@ -89,6 +89,97 @@ and should not try to.
 
 ---
 
+## OD-2026-09-17-001 -- Athlete active-learning visibility for reference drills
+
+**Date:** 2026-09-17. **Governs:** who may read `pilot.drill_library`
+instructional content as an athlete, and when. **Extends, does not replace,**
+OD-2026-09-16-001, which remains in force.
+
+Owner words, verbatim:
+
+> I approve the W-D2 active-learning rule as follows:
+>
+> 1. Current athlete Reference/Learning visibility requires BOTH:
+>    - an ACTIVE operational pilot.drills row for the athlete's organization carrying reference_drill_id for that exact reference drill; and
+>    - the linked pilot.drill_library reference row itself remaining ACTIVE.
+> 2. If the operational promoted drill is retired, that reference is removed from the athlete's CURRENT Reference/Learning browse surface.
+> 3. If the linked reference becomes inactive/retracted, it is removed from the athlete's CURRENT Reference/Learning browse surface.
+> 4. Historical assignments, completions and records are not deleted, rewritten or detached by this rule.
+> 5. Reference supersession never silently updates athlete-visible content. A newer reference version becomes currently visible only after explicit coach review/adoption through the operational promotion model.
+> 6. Reference/Learning remains distinct from Assigned Training. Reading reference material creates no assignment, completion or progression state.
+> 7. This rule applies to ALL athlete-accessible reference-content paths, including:
+>    - /api/pilot/drill-library
+>    - /api/pilot/coach/cue-library
+>    - the athlete Learn -> Drills surface
+>
+>    This does NOT change COACHING_CONTENT_READER_ROLES. It requires athlete requests on those reference-content paths to receive:
+>    - organization-scoped promoted-only filtering; and
+>    - an athlete-safe projection.
+> 8. Athlete-safe responses may include only the already-approved instructional/safety material needed for learning:
+>    - purpose
+>    - setup
+>    - execution
+>    - cues
+>    - scale guidance
+>    - stop rules
+>    - contact level
+>    - coach-authorization requirement
+>
+>    Do not expose athlete-facing:
+>    - evidence_note
+>    - source_ref
+>    - field_provenance
+>    - grounding_claim_ids
+>    - creator identity
+>    - authoring state
+>    - governance/internal provenance metadata
+> 9. Do not root-scope the promotion predicate with supersedes_drill_id IS NULL.
+>    An active successor operational drill carrying the reference pointer remains a valid promotion.
+>    Use active organization-scoped existence semantics so versioned operational lineages do not disappear from Learning.
+> 10. Do not solve the future reference-supersession/name-collision coach workflow in W-D2.
+>     Record it as a latent follow-up only.
+
+**What this changed, and what it corrected.** OD-2026-09-16-001 said athletes
+read reference instructional content only after their gym promotes it. That was
+true of the athlete UI and FALSE of the API: `'athlete'` is the fifth entry in
+`COACHING_CONTENT_READER_ROLES`, and both `/api/pilot/drill-library` and
+`/api/pilot/coach/cue-library` gate on exactly that list with no promotion
+filter of any kind. An athlete session could therefore enumerate the gym's
+entire active reference corpus by URL -- including `source_ref`,
+`grounding_claim_ids`, `field_provenance`, `content_class`,
+`created_by_account_id` and `created_by_role`. That exposure PREDATES W-D1; it
+was not introduced by the promotion model, only revealed while scoping W-D2.
+Clause 7 closes it without touching the role list: admission is unchanged, and
+the narrowing is on content.
+
+**Why clause 9 is stated as a prohibition.** The scoping pass initially
+recommended root-scoping the promoted-only predicate with
+`supersedes_drill_id is null`, reasoning from
+`pilot_drills_one_reference_per_org`, whose predicate carries that term.
+Adopting a drill change proposal DEACTIVATES the lineage root and inserts an
+ACTIVE successor carrying `supersedes_drill_id` and the same
+`reference_drill_id`, so after any refinement the only live operational row is a
+non-root -- and a root-scoped predicate would match nothing, silently removing
+the drill from Learning the moment a coach improved it. Root scoping is what
+keeps promotion UNIQUE; it is the wrong shape for asking whether a promotion is
+LIVE. The owner ruled the correct semantics explicitly so the reasoning cannot
+be re-derived wrongly later.
+
+**What it does not decide.** Clause 10 leaves a known latent problem unsolved on
+purpose: when a reference is superseded it goes inactive, athletes lose it under
+clause 3, and the coach's remedy -- promote the newer version -- is blocked by
+`pilot_drills_one_name_per_org` while the old promoted drill is still active
+under the same name. No reference row has ever been superseded in any
+environment (all 119 shipped rows are version 1, active, `lineage_id =
+drill_id`), so this is latent rather than live. It needs its own slice.
+
+**Evidence.** Source inspected at `main` `d9493536`; the exposure confirmed by
+reading `coachingContentAccess.ts:93-102` and both route gates directly, and
+corroborated by the field lists observed from live staging and production
+`drill-library` responses during the W-D1 rollout gates.
+
+---
+
 ## OD-2026-09-16-001 -- Hybrid reference / operational drill model
 
 **Provenance: PRIMARY.**

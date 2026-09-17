@@ -350,3 +350,357 @@ export async function listCueLibrary(
     [organizationId, filter.focusType ?? null, filter.search?.trim() || null],
   );
 }
+
+// ---------------------------------------------------------------------------
+// ATHLETE REFERENCE / LEARNING (W-D2, owner rule of 2026-09-17 under
+// OD-2026-09-16-001).
+//
+// Everything above this line serves COACHES and the roles that plan alongside
+// them: the whole active reference corpus, every authored field, unfiltered.
+// Everything below serves ATHLETES, and it is narrower on two independent axes
+// at once. Both narrowings are required, and neither substitutes for the other:
+//
+//   WHICH DRILLS  an athlete may see only reference drills the gym has adopted.
+//   WHICH FIELDS  an athlete may see only instructional and safety material.
+//
+// These are separate functions rather than a `forAthlete` flag on the coach
+// reads for the reason the repo already learned from skill_id/relatedSkillId: a
+// flag makes one query answer two questions, and the day someone adds a column
+// to DRILL_FIELDS the athlete answer changes with it, silently. Here the athlete
+// select lists name their own columns, so a new column on pilot.drill_library
+// reaches an athlete only when somebody writes it into ATHLETE_* by hand.
+// ---------------------------------------------------------------------------
+
+/**
+ * "This gym has adopted this reference drill, and the adoption is live."
+ *
+ * Correlated on `d`, the reference row, so it composes into any query over
+ * pilot.drill_library.
+ *
+ * THREE TERMS, AND EACH ONE IS LOAD-BEARING:
+ *
+ *   od.organization_id = d.organization_id
+ *     There is NO row-level security in this database -- a grep for
+ *     `create policy` across infra/azure returns nothing. The organization
+ *     predicate IS the tenant boundary, and an EXISTS subquery that forgot it
+ *     would let one gym's promotion unlock another gym's reference row while
+ *     every surrounding query still looked correctly scoped.
+ *
+ *   od.reference_drill_id = d.drill_id
+ *     The pointer is to an exact reference VERSION, because pilot.drill_library
+ *     is keyed (organization_id, drill_id) per version. That is what makes
+ *     supersession unable to change what an athlete sees without a coach
+ *     acting: a newer version is a different drill_id and nothing points at it
+ *     yet.
+ *
+ *   od.active
+ *     Retiring the gym's operational drill withdraws current athlete access.
+ *
+ * AND ONE TERM THAT IS DELIBERATELY ABSENT: `od.supersedes_drill_id is null`.
+ * Adopting a change proposal DEACTIVATES the lineage root and inserts an active
+ * SUCCESSOR carrying supersedes_drill_id and the same reference_drill_id
+ * (drillVersioning.ts). So after any refinement the only active operational row
+ * is a non-root, and a root-scoped predicate would match nothing -- the drill
+ * would silently vanish from Learning the moment a coach improved it. Root
+ * scoping is what pilot_drills_one_reference_per_org needs to keep promotion
+ * unique; it is the wrong shape for asking whether a promotion is live.
+ *
+ * EXISTS rather than a join, for the same reason listDrillLibrary uses EXISTS
+ * for secondary skills: a join against a multi-version lineage returns one
+ * reference row per operational version, and this asks a yes/no question.
+ */
+const ATHLETE_PROMOTED_AND_LIVE = `
+       exists (
+         select 1
+         from pilot.drills od
+         where od.organization_id = d.organization_id
+           and od.reference_drill_id = d.drill_id
+           and od.active
+       )`;
+
+/**
+ * The athlete select list, written out rather than derived from DRILL_FIELDS.
+ *
+ * Nothing forbidden is even FETCHED. The projection functions below are the
+ * contract, but a select list that never loads source_ref, grounding_claim_ids,
+ * field_provenance, content_class, created_by_account_id, created_by_role,
+ * lineage_id, version, supersedes_drill_id, superseded_at, skill_id or
+ * target_behavior cannot leak them through a logging line, an error dump, or a
+ * future consumer that spreads the row.
+ *
+ * `active` is absent too, and that is not an oversight: it is authoring state,
+ * and the query already guarantees the answer is true.
+ */
+const ATHLETE_DRILL_FIELDS =
+  'd.drill_id, d.name, d.purpose, d.standard_setup, d.execution, d.contact_level, '
+  + 'd.requires_coach_authorization';
+
+interface AthleteDrillScalarRow {
+  drill_id: string;
+  name: string;
+  purpose: string;
+  standard_setup: string;
+  execution: string;
+  contact_level: string;
+  requires_coach_authorization: boolean;
+}
+
+interface AthleteCueTextRow {
+  drill_id: string;
+  cue_text: string;
+}
+
+interface AthleteScaleRow {
+  drill_id: string;
+  scale_level: DrillScaleLevel;
+  is_starting_point: boolean;
+  demand_description: string;
+  constraint_applied: string;
+  contact_level: string;
+  coach_watch_point: string;
+}
+
+interface AthleteStopRuleRow {
+  drill_id: string;
+  ordinal: number;
+  condition_text: string;
+  scope: 'universal' | 'drill_specific';
+  rule_kind: string;
+}
+
+/** Scale guidance as an athlete reads it: what the level demands, not who authored it. */
+export interface AthleteScaleGuidance {
+  scale_level: DrillScaleLevel;
+  is_starting_point: boolean;
+  demand_description: string;
+  constraint_applied: string;
+  contact_level: string;
+  coach_watch_point: string;
+}
+
+/** A stop rule as an athlete reads it: when to stop, and whether it is universal. */
+export interface AthleteStopRule {
+  ordinal: number;
+  condition_text: string;
+  scope: 'universal' | 'drill_specific';
+  rule_kind: string;
+}
+
+/**
+ * The browse shape. Carries cues because that is what the athlete's Learn
+ * surface has always shown, and a library of drill names with no coaching cues
+ * would be a worse surface than the one it replaces.
+ */
+export interface AthleteDrillSummary {
+  drill_id: string;
+  name: string;
+  purpose: string;
+  setup: string;
+  execution: string;
+  contact_level: string;
+  requires_coach_authorization: boolean;
+  cues: string[];
+}
+
+/** The detail shape: the browse shape plus the two child sets that only matter when running the drill. */
+export interface AthleteDrillDetail extends AthleteDrillSummary {
+  scale_levels: AthleteScaleGuidance[];
+  stop_rules: AthleteStopRule[];
+}
+
+/**
+ * The projections. PURE, EXPORTED, AND CONSTRUCTIVE.
+ *
+ * Constructive is the whole point: each returns a NEW object naming every key
+ * it emits, so a column added to pilot.drill_library tomorrow is absent from an
+ * athlete's screen by default. The alternative -- spread the row and delete the
+ * bad keys -- fails open, because the next forbidden column is one nobody
+ * remembers to add to the delete list. `standard_setup` is renamed to `setup`
+ * here and nowhere else, so the athlete vocabulary is decided in one place.
+ */
+export function toAthleteDrillSummary(row: AthleteDrillScalarRow, cues: string[]): AthleteDrillSummary {
+  return {
+    drill_id: row.drill_id,
+    name: row.name,
+    purpose: row.purpose,
+    setup: row.standard_setup,
+    execution: row.execution,
+    contact_level: row.contact_level,
+    requires_coach_authorization: row.requires_coach_authorization,
+    cues,
+  };
+}
+
+export function toAthleteScaleGuidance(row: AthleteScaleRow): AthleteScaleGuidance {
+  return {
+    scale_level: row.scale_level,
+    is_starting_point: row.is_starting_point,
+    demand_description: row.demand_description,
+    constraint_applied: row.constraint_applied,
+    contact_level: row.contact_level,
+    coach_watch_point: row.coach_watch_point,
+  };
+}
+
+export function toAthleteStopRule(row: AthleteStopRuleRow): AthleteStopRule {
+  return {
+    ordinal: row.ordinal,
+    condition_text: row.condition_text,
+    scope: row.scope,
+    rule_kind: row.rule_kind,
+  };
+}
+
+/**
+ * Every reference drill this gym has adopted and still runs, athlete-safe.
+ *
+ * Takes no filters. The coach browse filters on discipline, category,
+ * difficulty and the three skill axes -- every one of those is a planning axis
+ * expressed in internal taxonomy that the athlete projection deliberately does
+ * not carry, so offering them here would mean filtering by values the caller
+ * can never see. The promoted set is small by construction: it is what one gym
+ * adopted, not the 119-drill corpus.
+ */
+export async function listAthleteDrillLibrary(organizationId: string): Promise<AthleteDrillSummary[]> {
+  const drills = await query<AthleteDrillScalarRow>(
+    `select ${ATHLETE_DRILL_FIELDS}
+     from pilot.drill_library d
+     where d.organization_id = $1
+       and d.active
+       and${ATHLETE_PROMOTED_AND_LIVE}
+     order by d.name`,
+    [organizationId],
+  );
+
+  if (drills.length === 0) {
+    return [];
+  }
+
+  // One cue read for the whole page rather than one per drill. The same
+  // promoted-and-live predicate is repeated rather than passing the drill ids
+  // back in: the ids came from a trusted query here, but a predicate that
+  // travels with the data cannot be separated from it by a later refactor.
+  const cues = await query<AthleteCueTextRow>(
+    `select c.drill_id, c.cue_text
+     from pilot.drill_cues c
+     join pilot.drill_library d
+       on d.organization_id = c.organization_id and d.drill_id = c.drill_id
+     where c.organization_id = $1
+       and d.active
+       and${ATHLETE_PROMOTED_AND_LIVE}
+     order by c.cue_family asc, c.cue_text asc`,
+    [organizationId],
+  );
+
+  const cuesByDrill = new Map<string, string[]>();
+  for (const cue of cues) {
+    const existing = cuesByDrill.get(cue.drill_id);
+    if (existing) existing.push(cue.cue_text);
+    else cuesByDrill.set(cue.drill_id, [cue.cue_text]);
+  }
+
+  return drills.map((drill) => toAthleteDrillSummary(drill, cuesByDrill.get(drill.drill_id) ?? []));
+}
+
+/**
+ * One adopted reference drill in full, athlete-safe.
+ *
+ * Returns null for a reference this gym has not adopted, for one whose adoption
+ * is retired, for an inactive reference, and for a drill_id belonging to another
+ * gym -- all four answer the same way on purpose, so the caller has nothing to
+ * distinguish "not yours" from "not promoted" with.
+ *
+ * NOTE the `d.active` term: the coach detail read deliberately has no such
+ * filter, because a coach reviewing a retracted drill is a legitimate act. For
+ * an athlete it is not, so this path does not inherit that behaviour.
+ */
+export async function getAthleteDrillDetail(
+  organizationId: string,
+  drillId: string,
+): Promise<AthleteDrillDetail | null> {
+  const drill = await queryOne<AthleteDrillScalarRow>(
+    `select ${ATHLETE_DRILL_FIELDS}
+     from pilot.drill_library d
+     where d.organization_id = $1
+       and d.drill_id = $2
+       and d.active
+       and${ATHLETE_PROMOTED_AND_LIVE}`,
+    [organizationId, drillId],
+  );
+  if (!drill) {
+    return null;
+  }
+
+  const [scaleLevels, stopRules, cues] = await Promise.all([
+    query<AthleteScaleRow>(
+      `select drill_id, scale_level, is_starting_point, demand_description, constraint_applied,
+              contact_level, coach_watch_point
+       from pilot.drill_scale_levels
+       where organization_id = $1 and drill_id = $2
+       order by scale_level`,
+      [organizationId, drillId],
+    ),
+    query<AthleteStopRuleRow>(
+      `select drill_id, ordinal, condition_text, scope, rule_kind
+       from pilot.drill_stop_rules
+       where organization_id = $1 and drill_id = $2
+       order by ordinal`,
+      [organizationId, drillId],
+    ),
+    // ORDERED, unlike the coach cue read this mirrors. That read has no ORDER BY
+    // at all, so its row order is whatever Postgres returns; for a screen an
+    // athlete reads while training, cue order changing between loads is a
+    // defect, so this path pins it to the same ordering the cue library uses.
+    query<AthleteCueTextRow>(
+      `select drill_id, cue_text
+       from pilot.drill_cues
+       where organization_id = $1 and drill_id = $2
+       order by cue_family asc, cue_text asc`,
+      [organizationId, drillId],
+    ),
+  ]);
+
+  return {
+    ...toAthleteDrillSummary(drill, cues.map((cue) => cue.cue_text)),
+    scale_levels: scaleLevels.map(toAthleteScaleGuidance),
+    stop_rules: stopRules.map(toAthleteStopRule),
+  };
+}
+
+/** A cue as an athlete reads it: the words and where they came from, never why they are believed. */
+export interface AthleteCueRow {
+  cue_id: string;
+  cue_text: string;
+  cue_family: string;
+  focus_type: string;
+  drill_id: string;
+  drill_name: string;
+}
+
+/**
+ * The cue library, narrowed the same two ways.
+ *
+ * evidence_note and source_ref are absent from the select list entirely. They
+ * are the cue's grounding and authoring lineage -- the evidence model, not the
+ * coaching instruction -- and OD-2026-09-16-001 keeps both off an athlete's
+ * screen. discipline and category are dropped as well, to stay consistent with
+ * the drill projection, which carries no planning taxonomy either.
+ */
+export async function listAthleteCueLibrary(
+  organizationId: string,
+  filter: { focusType?: string; search?: string } = {},
+): Promise<AthleteCueRow[]> {
+  return query<AthleteCueRow>(
+    `select c.cue_id, c.cue_text, c.cue_family, c.focus_type, c.drill_id, d.name as drill_name
+     from pilot.drill_cues c
+     join pilot.drill_library d
+       on d.organization_id = c.organization_id and d.drill_id = c.drill_id
+     where c.organization_id = $1
+       and d.active
+       and${ATHLETE_PROMOTED_AND_LIVE}
+       and ($2::text is null or c.focus_type = $2)
+       and ($3::text is null or c.cue_text ilike '%' || $3 || '%' or c.cue_family ilike '%' || $3 || '%' or d.name ilike '%' || $3 || '%')
+     order by c.cue_family asc, c.cue_text asc`,
+    [organizationId, filter.focusType ?? null, filter.search?.trim() || null],
+  );
+}

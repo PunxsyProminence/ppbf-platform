@@ -53,6 +53,7 @@ function drill(overrides: Record<string, unknown> = {}) {
     cues: ['Elbow tucked'],
     difficulty: 'intermediate',
     active: true,
+    reference_drill_id: null,
     created_at: '2026-07-30T12:00:00.000Z',
     updated_at: '2026-07-30T12:00:00.000Z',
     ...overrides,
@@ -193,6 +194,74 @@ describe('GET /api/pilot/drills', () => {
     // The rows must not ALSO appear under the key the clients used to read, or
     // a client could be fixed back to the broken key and still pass.
     expect(body.drills).toBeUndefined();
+  });
+
+  /**
+   * W-D2, owner rule of 2026-09-17: the promotion pointer is internal
+   * provenance and does not go to an athlete.
+   *
+   * This is a redaction at the response, not a change to the read: listDrills
+   * still returns the column, the coach library still depends on it, and the
+   * athlete simply never receives it.
+   */
+  describe('the promotion pointer on an athlete response', () => {
+    const promoted = () => drill({ drill_id: 'drill-promoted', reference_drill_id: 'drl_3c2aad1eb8baa9' });
+
+    test('an athlete response omits reference_drill_id entirely', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+      mockListDrills.mockResolvedValueOnce([promoted()]);
+
+      const body = await (await GET(getRequest())).json();
+
+      expect(body.items).toHaveLength(1);
+      // OMITTED, not nulled. `null` is a real value on this column meaning "a
+      // coach typed this drill from scratch"; writing it here would tell the
+      // athlete client something false rather than telling it nothing.
+      expect(body.items[0]).not.toHaveProperty('reference_drill_id');
+      expect(Object.keys(body.items[0]).sort()).toEqual([
+        'active',
+        'category',
+        'created_at',
+        'cues',
+        'difficulty',
+        'drill_id',
+        'focus',
+        'name',
+        'organization_id',
+        'updated_at',
+      ]);
+    });
+
+    test('the rest of the athlete row is untouched', async () => {
+      // Redaction must remove one field and change nothing else -- an athlete
+      // still reads the gym's current operational library exactly as before.
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+      mockListDrills.mockResolvedValueOnce([promoted()]);
+
+      const body = await (await GET(getRequest())).json();
+      const expected: Record<string, unknown> = { ...promoted() };
+      delete expected.reference_drill_id;
+
+      expect(body.items[0]).toEqual(expected);
+      expect(body.ok).toBe(true);
+      expect(body.organization_id).toBe('org-1');
+    });
+
+    test.each(['coach', 'organization_admin', 'admin', 'platform_owner', 'parent', 'volunteer', 'staff'] as const)(
+      '%s keeps reference_drill_id',
+      async (role) => {
+        // The coach library derives its "Already promoted" state from exactly
+        // this pointer, so redacting it for everyone would have broken W-D1's
+        // promotion surface. Every non-athlete reader role is asserted, not
+        // just coach, because the redaction is keyed on athlete alone.
+        mockRequirePrincipal.mockResolvedValueOnce(principal({ role }));
+        mockListDrills.mockResolvedValueOnce([promoted()]);
+
+        const body = await (await GET(getRequest())).json();
+
+        expect(body.items[0].reference_drill_id).toBe('drl_3c2aad1eb8baa9');
+      },
+    );
   });
 });
 

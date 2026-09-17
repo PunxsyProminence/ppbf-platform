@@ -218,13 +218,30 @@ interface StoredAthleteFloorPlan {
   }>;
 }
 
-interface Drill {
+/**
+ * A reference drill the gym has adopted, as an athlete reads it.
+ *
+ * This is REFERENCE material, not the gym's operational drill list. Before W-D2
+ * this panel read /api/pilot/drills -- the operational library -- which meant
+ * an athlete's "Learn" surface was showing the same rows a coach assigns from,
+ * and the instructional content behind them (setup, execution, stop rules,
+ * scale guidance) was unreachable. It now reads the reference library itself,
+ * already filtered by the server to what this gym has promoted and still runs,
+ * and already stripped of authoring and provenance metadata.
+ *
+ * Fields are exactly the athlete-safe set in OD-2026-09-16-001: no category, no
+ * difficulty band, no skill code -- those are planning taxonomy, and this
+ * screen is for learning the drill, not for planning sessions.
+ */
+interface ReferenceDrill {
   id: string;
   name: string;
-  category: string;
-  focus: string;
+  purpose: string;
+  setup: string;
+  execution: string;
+  contactLevel: string;
+  requiresCoachAuthorization: boolean;
   cues: string[];
-  difficulty: string;
 }
 
 interface ShadowObservationItem {
@@ -681,7 +698,7 @@ export default function AthleteWorkspace() {
   const [assignedWorkError, setAssignedWorkError] = useState<string | null>(null);
 
   // The gym's own drill library, written by its coaches.
-  const [drills, setDrills] = useState<Drill[]>([]);
+  const [drills, setDrills] = useState<ReferenceDrill[]>([]);
   const [drillsLoading, setDrillsLoading] = useState(true);
   const [drillsError, setDrillsError] = useState<string | null>(null);
 
@@ -798,46 +815,54 @@ export default function AthleteWorkspace() {
     })();
   }, []);
 
-  // The drill library is gym-wide coaching content, so it loads once and does
-  // not depend on which athlete is signed in.
+  // The reference library is gym-wide coaching content, so it loads once and
+  // does not depend on which athlete is signed in. The SERVER decides what is
+  // in it: this request carries no promotion filter and no field list, because
+  // a filter the client applies is a filter the client can also drop.
   useEffect(() => {
     const controller = new AbortController();
 
     void (async () => {
       try {
-        const response = await fetch(`${apiBase()}/api/pilot/drills`, {
+        const response = await fetch(`${apiBase()}/api/pilot/drill-library`, {
           method: 'GET',
           credentials: 'include',
           signal: controller.signal,
         });
-        if (!response.ok) throw new Error('The drill library did not load.');
+        if (!response.ok) throw new Error('The reference library did not load.');
 
-        // `items`, not `drills` -- same seam defect as the coach library.
+        // `drills`, not `items` -- this route answers under a different key
+        // from /api/pilot/drills, and reading the wrong one renders an empty
+        // library instead of failing.
         const payload = (await response.json()) as {
-          items?: Array<{
+          drills?: Array<{
             drill_id: string;
             name: string;
-            category: string;
-            focus: string;
+            purpose: string;
+            setup: string;
+            execution: string;
+            contact_level: string;
+            requires_coach_authorization: boolean;
             cues: string[];
-            difficulty: string;
           }>;
         };
         if (controller.signal.aborted) return;
 
-        setDrills((payload.items ?? []).map((drill) => ({
+        setDrills((payload.drills ?? []).map((drill) => ({
           id: drill.drill_id,
           name: drill.name,
-          category: drill.category,
-          focus: drill.focus,
+          purpose: drill.purpose,
+          setup: drill.setup,
+          execution: drill.execution,
+          contactLevel: drill.contact_level,
+          requiresCoachAuthorization: drill.requires_coach_authorization,
           cues: drill.cues ?? [],
-          difficulty: drill.difficulty,
         })));
         setDrillsError(null);
       } catch (error) {
         if (controller.signal.aborted) return;
         setDrills([]);
-        setDrillsError(error instanceof Error ? error.message : 'The drill library did not load.');
+        setDrillsError(error instanceof Error ? error.message : 'The reference library did not load.');
       } finally {
         if (!controller.signal.aborted) setDrillsLoading(false);
       }
@@ -2841,39 +2866,53 @@ export default function AthleteWorkspace() {
           {activeTab === 'drill-library' && (
             <div className="space-y-6 panel-settle">
               <HelpPanel
-                title="Drill Library"
-                description="Physical lesson items and technical boxing drills organized by category with coaching cues."
+                title="Reference Library"
+                description="Reference material for the drills your gym has adopted: what each drill is for, how it is set up and run, its coaching cues, and when to stop."
                 usage={[
-                  'Search by drill name or category',
-                  'Review coaching cues before executing',
-                  'Log what you finished against the drills your coach assigned you',
-                  'Work up through the difficulty levels'
+                  'Read a drill before or after you train it',
+                  'Check the stop rules and the contact level',
+                  'Bring a question to your coach about anything here'
                 ]}
                 mistakes={[
-                  'Skipping coaching cues',
-                  'Attempting drills above your level'
+                  'Skipping the coaching cues',
+                  'Treating a drill you read here as work your coach has given you'
                 ]}
               />
 
+              <div className={PANEL}>
+                <p className="t-label">Reference · Learning</p>
+                <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+                  This is reading material, not training your coach has given you. Opening a drill here does not assign
+                  it to you, does not log it, and does not count toward anything. Your assigned work lives on the
+                  progression page.
+                </p>
+              </div>
+
               {drillsLoading && (
-                <span className="working">Loading the drill library...</span>
+                <span className="working">Loading the reference library...</span>
               )}
 
               {!drillsLoading && drillsError && (
                 <div className="alert alert--critical" role="alert">
                   <span className="alert-icon" aria-hidden="true">✕</span>
                   <div className="alert-body">
-                    <p className="alert-title">Could not load the drills</p>
+                    <p className="alert-title">Could not load the reference library</p>
                     <p className="alert-msg">{drillsError}</p>
-                    <p className="alert-msg mt-[var(--s2)]">The gym&apos;s drills are still there. This screen just could not reach them.</p>
+                    <p className="alert-msg mt-[var(--s2)]">The gym&apos;s reference material is still there. This screen just could not reach them.</p>
                   </div>
                 </div>
               )}
 
+              {/* An empty list here means something specific and narrow: the gym
+                  has not adopted any reference drills yet. It does NOT mean the
+                  reference corpus is empty -- the whole corpus exists, and a
+                  coach chooses which of it this gym teaches. Saying "your
+                  coaches have not added any drills yet" would describe the
+                  operational library this panel no longer reads. */}
               {!drillsLoading && !drillsError && drills.length === 0 && (
                 <div className={`${PANEL} text-center`}>
                   <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-                    Your coaches have not added any drills yet.
+                    Your coaches have not added any reference drills to this gym&apos;s library yet.
                   </p>
                 </div>
               )}
@@ -2882,32 +2921,47 @@ export default function AthleteWorkspace() {
                 {drills.map(drill => (
                   <div key={drill.id} className={`${PANEL_RAISED} space-y-[var(--s4)]`}>
                     <div className="flex justify-between items-start gap-[var(--s3)]">
-                      <div>
-                        <span className="t-label mb-[var(--s3)] inline-block rounded-[var(--r-sm)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)]">{drill.category}</span>
-                        <h4 className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{drill.name}</h4>
-                      </div>
-                      <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>{drill.difficulty}</span>
+                      <h4 className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{drill.name}</h4>
+                      {drill.requiresCoachAuthorization && (
+                        <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>Coach authorization required</span>
+                      )}
                     </div>
-                    <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{drill.focus}</p>
+                    <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{drill.purpose}</p>
                     <div className="space-y-[var(--s2)]">
-                      <p className="t-label">Coaching Cues:</p>
-                      <div className="flex flex-wrap gap-[var(--s2)]">
-                        {drill.cues.map((cue) => (
-                          <span key={`${drill.id}-${cue}`} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">⚡ {cue}</span>
-                        ))}
-                      </div>
+                      <p className="t-label">Setup:</p>
+                      <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{drill.setup}</p>
                     </div>
-                    {/* "Mark Complete" stood here and set a React flag. There
-                        is no row anywhere for "this athlete practised this
+                    <div className="space-y-[var(--s2)]">
+                      <p className="t-label">How it runs:</p>
+                      <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{drill.execution}</p>
+                    </div>
+                    <div className="space-y-[var(--s2)]">
+                      <p className="t-label">Contact level:</p>
+                      <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{drill.contactLevel}</p>
+                    </div>
+                    {drill.cues.length > 0 && (
+                      <div className="space-y-[var(--s2)]">
+                        <p className="t-label">Coaching Cues:</p>
+                        <div className="flex flex-wrap gap-[var(--s2)]">
+                          {drill.cues.map((cue) => (
+                            <span key={`${drill.id}-${cue}`} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">⚡ {cue}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* NO ACTION CONTROL HERE, AND THAT IS THE DESIGN.
+                        "Mark Complete" stood here once and set a React flag.
+                        There is no row anywhere for "this athlete practised this
                         library drill": pilot.assignment_completions is keyed on
                         an assignment_id, which only a coach's assignment
                         creates, and no table is keyed on (athlete, drill_id).
                         So the button recorded a completion that reloading
-                        erased -- the same defect as the floor checkbox, minus
-                        anything to fix it with. It is removed rather than
-                        wired: the completions that ARE stored are logged
-                        against assigned drills on the progression page, which
-                        Today now links to. This library is reference. */}
+                        erased. It was removed rather than wired, and W-D2 keeps
+                        it removed for a second and stronger reason: this panel
+                        is Reference, and the owner rule holds that reading
+                        reference material creates no assignment, completion or
+                        progression state. The completions that ARE stored are
+                        logged against ASSIGNED drills on the progression page. */}
                   </div>
                 ))}
               </div>
