@@ -145,15 +145,24 @@ export default function CoachProgressionIntelligencePage() {
     gap_description: '',
     severity: 'medium',
   });
+  // No drill_name or drill_description: since W-D3 (OD-2026-09-18-001) an
+  // assignment takes its wording from the drill it points at, so there is
+  // nothing for the coach to type. The drill IS the identity.
   const [assignForm, setAssignForm] = useState({
     gap_id: '',
     drill_id: '',
-    drill_name: '',
-    drill_description: '',
     drill_difficulty: 'intermediate',
     frequency_per_week: '',
     due_date: '',
   });
+  // Distinguishes "this gym has no drills" from "the drill list did not load",
+  // so the empty state below never tells a coach their gym is empty when the
+  // truth is that the request failed.
+  const [drillsLoadFailed, setDrillsLoadFailed] = useState(false);
+  // And from "the drill list has not answered yet". An empty array is also what
+  // the page holds BEFORE the read lands, so "this gym has no drills" may only
+  // be said once the read has actually succeeded.
+  const [drillsLoaded, setDrillsLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   // Deterministic gap suggestions (owner decision 2026-08-15): computed
   // server-side from transparent arithmetic rules, never stored, and shown to
@@ -180,9 +189,14 @@ export default function CoachProgressionIntelligencePage() {
         if (drillsRes.ok) {
           const data = (await drillsRes.json()) as { items?: DrillLibraryItem[] };
           setDrills((data.items ?? []).filter((d) => d.active !== false));
+          setDrillsLoaded(true);
+        } else {
+          setDrillsLoadFailed(true);
         }
       } catch {
-        // Non-fatal: free-text athlete ID still works.
+        // Non-fatal for the roster: a free-text athlete ID still works. It IS
+        // fatal for assigning, which now requires a drill, so say so.
+        setDrillsLoadFailed(true);
       }
     })();
   }, []);
@@ -413,20 +427,21 @@ export default function CoachProgressionIntelligencePage() {
   };
 
   const handleAssignDrill = async () => {
-    if (!selectedAthlete || !assignForm.gap_id || !assignForm.drill_name.trim()) {
-      setErrorMessage('Select a gap and provide a drill name');
+    if (!selectedAthlete || !assignForm.gap_id || !assignForm.drill_id) {
+      setErrorMessage('Select a gap and a drill from this gym\'s library');
       return;
     }
     setBusy(true);
     try {
+      // drill_id and nothing that names the drill in words -- the server
+      // snapshots the wording from the drill, and refuses a request that tries
+      // to supply it.
       const body: Record<string, unknown> = {
         gap_id: assignForm.gap_id,
         athlete_id: selectedAthlete,
-        drill_name: assignForm.drill_name.trim(),
-        drill_description: assignForm.drill_description.trim() || assignForm.drill_name.trim(),
+        drill_id: assignForm.drill_id,
         drill_difficulty: assignForm.drill_difficulty,
       };
-      if (assignForm.drill_id) body.drill_id = assignForm.drill_id;
       if (assignForm.frequency_per_week) body.frequency_per_week = Number(assignForm.frequency_per_week);
       if (assignForm.due_date) body.due_date = assignForm.due_date;
 
@@ -444,8 +459,6 @@ export default function CoachProgressionIntelligencePage() {
       setAssignForm({
         gap_id: '',
         drill_id: '',
-        drill_name: '',
-        drill_description: '',
         drill_difficulty: 'intermediate',
         frequency_per_week: '',
         due_date: '',
@@ -498,17 +511,19 @@ export default function CoachProgressionIntelligencePage() {
   const onLibraryPick = (drillId: string) => {
     const d = drills.find((x) => x.drill_id === drillId);
     if (!d) {
-      setAssignForm((prev) => ({ ...prev, drill_id: '', drill_name: '', drill_description: '' }));
+      setAssignForm((prev) => ({ ...prev, drill_id: '' }));
       return;
     }
     setAssignForm((prev) => ({
       ...prev,
       drill_id: d.drill_id,
-      drill_name: d.name,
-      drill_description: d.focus || '',
       drill_difficulty: d.difficulty || 'intermediate',
     }));
   };
+
+  // The drill the coach picked, so its wording can be SHOWN -- as what the
+  // athlete will read -- without being editable.
+  const pickedDrill = drills.find((d) => d.drill_id === assignForm.drill_id) ?? null;
 
   return (
     <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/progression-intelligence" allowedRoles={['coach']} room="floor" showShellHeader={false}>
@@ -717,7 +732,40 @@ export default function CoachProgressionIntelligencePage() {
                 </div>
               )}
 
-              {showAssignForm && (
+              {/* Since W-D3 an assignment requires a drill from this gym's
+                  library. So the form is only worth showing when there IS one
+                  to pick -- a form whose only submit can never succeed is a
+                  dead end dressed as a control. The two empty cases are told
+                  apart deliberately: "the list did not load" and "your gym has
+                  no drills" call for different actions, and conflating them
+                  would send a coach to add drills that already exist. */}
+              {showAssignForm && drillsLoadFailed && (
+                <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                  <p className="t-body text-[color:var(--bone-300)]">
+                    The gym&apos;s drill library did not load, so a drill cannot be assigned right now. This is a
+                    failure to load, not an empty library.
+                  </p>
+                </div>
+              )}
+
+              {/* Not answered yet: say only that. */}
+              {showAssignForm && !drillsLoaded && !drillsLoadFailed && (
+                <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                  <p className="t-body text-[color:var(--bone-300)]">Loading the gym&apos;s drills…</p>
+                </div>
+              )}
+
+              {showAssignForm && drillsLoaded && drills.length === 0 && (
+                <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s2)]">
+                  <p className="t-body text-[color:var(--bone-300)]">
+                    This gym has no drills to assign yet. Every assignment is built from a drill in the gym&apos;s own
+                    library -- add one there, or promote one from the reference library, and it will appear here.
+                  </p>
+                  <Link href="/coach/drills" className="t-label">Open the Drill Library</Link>
+                </div>
+              )}
+
+              {showAssignForm && !drillsLoadFailed && drills.length > 0 && (
                 <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
                   <div className="field">
                     <label htmlFor="assign-gap" className="t-label">Gap</label>
@@ -735,44 +783,35 @@ export default function CoachProgressionIntelligencePage() {
                       ))}
                     </select>
                   </div>
-                  {drills.length > 0 && (
+                  <div className="field">
+                    <label htmlFor="library-pick" className="t-label">Drill</label>
+                    <select
+                      id="library-pick"
+                      value={assignForm.drill_id}
+                      onChange={(e) => onLibraryPick(e.target.value)}
+                      className="select"
+                      required
+                    >
+                      <option value="">Select a drill…</option>
+                      {drills.map((d) => (
+                        <option key={d.drill_id} value={d.drill_id}>
+                          {d.name} ({d.difficulty})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {/* Read-only, and that is the point: this is the wording the
+                      athlete will see, taken from the drill. It used to be two
+                      editable fields whose typed text replaced the drill's own. */}
+                  {pickedDrill && (
                     <div className="field">
-                      <label htmlFor="library-pick" className="t-label">From library (optional)</label>
-                      <select
-                        id="library-pick"
-                        value={assignForm.drill_id}
-                        onChange={(e) => onLibraryPick(e.target.value)}
-                        className="select"
-                      >
-                        <option value="">Free-text or pick…</option>
-                        {drills.map((d) => (
-                          <option key={d.drill_id} value={d.drill_id}>
-                            {d.name} ({d.difficulty})
-                          </option>
-                        ))}
-                      </select>
+                      <p className="t-label">What the athlete will see</p>
+                      <p className="font-semibold text-[color:var(--bone-100)]">{pickedDrill.name}</p>
+                      {pickedDrill.focus && (
+                        <p className="t-body text-[color:var(--bone-300)]">{pickedDrill.focus}</p>
+                      )}
                     </div>
                   )}
-                  <div className="field">
-                    <label htmlFor="drill-name" className="t-label">Drill name</label>
-                    <input
-                      id="drill-name"
-                      className="input"
-                      value={assignForm.drill_name}
-                      onChange={(e) => setAssignForm((prev) => ({ ...prev, drill_name: e.target.value }))}
-                      placeholder="e.g. Jab-cross from southpaw"
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="drill-desc" className="t-label">Description / cues</label>
-                    <textarea
-                      id="drill-desc"
-                      className="textarea"
-                      rows={2}
-                      value={assignForm.drill_description}
-                      onChange={(e) => setAssignForm((prev) => ({ ...prev, drill_description: e.target.value }))}
-                    />
-                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-[var(--s3)]">
                     <div className="field">
                       <label htmlFor="drill-diff" className="t-label">Difficulty</label>

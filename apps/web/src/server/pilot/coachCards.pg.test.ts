@@ -19,7 +19,10 @@
 //     sharing one issuance_id, skipping members off the coach's roster and
 //     excluding lapsed/ended memberships entirely;
 //   * listCoachCards returns only gap-free rows, scoped to the issuer,
-//     with completion state aggregated per card.
+//     with completion state aggregated per card;
+//   * (W-D3, OD-2026-09-18-001) every writer builds its row FROM an active
+//     drill in the issuing gym and refuses any other drill_id with nothing
+//     written, while a legacy row with no anchor keeps reading unchanged.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -215,6 +218,32 @@ async function progressionOnlyDatabase(name: string): Promise<Client> {
   return client;
 }
 
+// The gym's operational drills. Since W-D3 (OD-2026-09-18-001) every new card
+// and assignment is built FROM one of these -- its drill_name and
+// drill_description are the drill's name and focus -- so the fixture carries
+// the gym's library the way a real gym does. 'drill-retired' exists and is
+// inactive; 'drill-elsewhere' belongs to the other gym.
+const DRILLS: Array<{ org: string; id: string; name: string; focus: string; difficulty: string; active: boolean }> = [
+  { org: ORG_ID, id: 'drill-guard', name: 'Guard discipline', focus: 'Three rounds mirror work', difficulty: 'intermediate', active: true },
+  { org: ORG_ID, id: 'drill-shadowbox', name: 'Shadowbox', focus: 'Three rounds before Friday', difficulty: 'intermediate', active: true },
+  { org: ORG_ID, id: 'drill-rope', name: 'Jump rope', focus: 'Ten minutes, no misses', difficulty: 'beginner', active: true },
+  { org: ORG_ID, id: 'drill-roadwork', name: 'Roadwork', focus: 'Two miles', difficulty: 'intermediate', active: true },
+  { org: ORG_ID, id: 'drill-pivot', name: 'Pivot drill', focus: 'Rounds on the line', difficulty: 'intermediate', active: true },
+  { org: ORG_ID, id: 'drill-bag', name: 'Bag work', focus: 'Four rounds', difficulty: 'advanced', active: true },
+  { org: ORG_ID, id: 'drill-retired', name: 'Old rope routine', focus: 'Retired from the library', difficulty: 'beginner', active: false },
+  { org: OTHER_ORG_ID, id: 'drill-elsewhere', name: 'Their drill', focus: 'Another gym', difficulty: 'beginner', active: true },
+];
+
+async function seedDrills(client: Client): Promise<void> {
+  for (const drill of DRILLS) {
+    await client.query(
+      `insert into pilot.drills (organization_id, drill_id, name, category, focus, difficulty, active)
+       values ($1, $2, $3, 'Fixture', $4, $5, $6)`,
+      [drill.org, drill.id, drill.name, drill.focus, drill.difficulty, drill.active],
+    );
+  }
+}
+
 /** The fully migrated state the module functions run against. */
 async function freshDatabase(name: string): Promise<Client> {
   const client = await progressionOnlyDatabase(name);
@@ -222,6 +251,7 @@ async function freshDatabase(name: string): Promise<Client> {
   await client.query(membershipsMigrationSql);
   await client.query(programsMigrationSql);
   await client.query(migrationSql);
+  await seedDrills(client);
   return client;
 }
 
@@ -403,16 +433,14 @@ describe('coach-cards migration', () => {
         gapId: 'gap-cards-1',
         athleteId: ATHLETES[0].id,
         assignedByAccountId: COACH_ID,
-        drillName: 'Guard discipline',
-        drillDescription: 'Three rounds mirror work',
+        drillId: 'drill-guard',
         drillDifficulty: 'intermediate',
       });
       const card = await issueCoachCard({
         organizationId: ORG_ID,
         athleteId: ATHLETES[0].id,
         assignedByAccountId: COACH_ID,
-        drillName: 'Shadowbox',
-        drillDescription: 'Three rounds before Friday',
+        drillId: 'drill-shadowbox',
         drillDifficulty: 'intermediate',
       });
       expect(card.gap_id).toBeNull();
@@ -449,8 +477,7 @@ describe('group issuance against real memberships and real authorization', () =>
       const result = await issueCoachCardToProgram({
         actor: coachActor,
         programId: PROGRAM_ID,
-        drillName: 'Jump rope',
-        drillDescription: 'Ten minutes, no misses',
+        drillId: 'drill-rope',
         drillDifficulty: 'beginner',
         frequencyPerWeek: 3,
       });
@@ -499,8 +526,7 @@ describe('group issuance against real memberships and real authorization', () =>
       const result = await issueCoachCardToProgram({
         actor: adminActor,
         programId: PROGRAM_ID,
-        drillName: 'Roadwork',
-        drillDescription: 'Two miles',
+        drillId: 'drill-roadwork',
         drillDifficulty: 'intermediate',
       });
 
@@ -521,15 +547,13 @@ describe('group issuance against real memberships and real authorization', () =>
       const crossOrg = await issueCoachCardToProgram({
         actor: coachActor,
         programId: PROGRAM_ID,
-        drillName: 'Jump rope',
-        drillDescription: 'Ten minutes',
+        drillId: 'drill-rope',
         drillDifficulty: 'beginner',
       });
       const unknown = await issueCoachCardToProgram({
         actor: coachActor,
         programId: 'prog-cards-never-existed',
-        drillName: 'Jump rope',
-        drillDescription: 'Ten minutes',
+        drillId: 'drill-rope',
         drillDifficulty: 'beginner',
       });
 
@@ -561,8 +585,7 @@ describe('the coach card list', () => {
         gapId: 'gap-cards-list',
         athleteId: ATHLETES[0].id,
         assignedByAccountId: COACH_ID,
-        drillName: 'Pivot drill',
-        drillDescription: 'Rounds on the line',
+        drillId: 'drill-pivot',
         drillDifficulty: 'intermediate',
       });
 
@@ -570,16 +593,14 @@ describe('the coach card list', () => {
         organizationId: ORG_ID,
         athleteId: ATHLETES[0].id,
         assignedByAccountId: COACH_ID,
-        drillName: 'Shadowbox',
-        drillDescription: 'Three rounds',
+        drillId: 'drill-shadowbox',
         drillDifficulty: 'intermediate',
       });
       const theirs = await issueCoachCard({
         organizationId: ORG_ID,
         athleteId: ATHLETES[1].id,
         assignedByAccountId: OTHER_COACH_ID,
-        drillName: 'Bag work',
-        drillDescription: 'Four rounds',
+        drillId: 'drill-bag',
         drillDifficulty: 'intermediate',
       });
 
@@ -626,8 +647,7 @@ describe('a card read is bounded by CURRENT access, not by who issued it', () =>
       organizationId: ORG_ID,
       athleteId,
       assignedByAccountId: COACH_ID,
-      drillName: 'Shadowbox',
-      drillDescription: 'Three rounds before Friday',
+      drillId: 'drill-shadowbox',
       drillDifficulty: 'intermediate',
     });
   }
@@ -715,8 +735,7 @@ describe('a card read is bounded by CURRENT access, not by who issued it', () =>
         organizationId: ORG_ID,
         athleteId: ATHLETES[0].id,
         assignedByAccountId: OTHER_COACH_ID,
-        drillName: 'Bag work',
-        drillDescription: 'Four rounds',
+        drillId: 'drill-bag',
         drillDifficulty: 'intermediate',
       });
 
@@ -759,8 +778,7 @@ describe('an archived program cannot receive new work', () => {
         issueCoachCardToProgram({
           actor: coachActor,
           programId: PROGRAM_ID,
-          drillName: 'Jump rope',
-          drillDescription: 'Ten minutes',
+          drillId: 'drill-rope',
           drillDifficulty: 'beginner',
         }),
       ).rejects.toThrow(/archived/i);
@@ -790,8 +808,7 @@ describe('an archived program cannot receive new work', () => {
       const result = await issueCoachCardToProgram({
         actor: coachActor,
         programId: PROGRAM_ID,
-        drillName: 'Jump rope',
-        drillDescription: 'Ten minutes',
+        drillId: 'drill-rope',
         drillDifficulty: 'beginner',
       });
       expect(result!.issued.map((entry) => entry.athlete_id)).toEqual([ATHLETES[0].id]);
@@ -823,6 +840,7 @@ describe('assignment reads that predate Coach Cards do not require its migration
     // Base schema + progression + drills, and deliberately NOT coach-cards.
     const client = await progressionOnlyDatabase('cards_predeploy');
     await client.query(drillsMigrationSql);
+    await seedDrills(client);
     activeClient = client;
     try {
       const columns = await client.query(
@@ -846,8 +864,7 @@ describe('assignment reads that predate Coach Cards do not require its migration
         gapId: 'gap-predeploy',
         athleteId: ATHLETES[0].id,
         assignedByAccountId: COACH_ID,
-        drillName: 'Pivot drill',
-        drillDescription: 'Rounds on the line',
+        drillId: 'drill-pivot',
         drillDifficulty: 'intermediate',
       });
       expect(assignment.assignment_id).toBeTruthy();
@@ -891,8 +908,7 @@ describe('the listing and the verification endpoint agree about current access',
         organizationId: ORG_ID,
         athleteId: ATHLETES[0].id,
         assignedByAccountId: COACH_ID,
-        drillName: 'Shadowbox',
-        drillDescription: 'Three rounds',
+        drillId: 'drill-shadowbox',
         drillDifficulty: 'intermediate',
       });
       const completion = await recordCompletion({
@@ -939,8 +955,7 @@ describe('the listing and the verification endpoint agree about current access',
         organizationId: ORG_ID,
         athleteId: ATHLETES[0].id,
         assignedByAccountId: COACH_ID,
-        drillName: 'Shadowbox',
-        drillDescription: 'Three rounds',
+        drillId: 'drill-shadowbox',
         drillDifficulty: 'intermediate',
       });
 
@@ -974,6 +989,221 @@ describe('the listing and the verification endpoint agree about current access',
       // Still pending in the gym that owns it -- the foreign attempt changed nothing.
       const [own] = await getAssignmentCompletions(ORG_ID, card.assignment_id);
       expect(own.verification_status).toBe('pending');
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
+// W-D3, OD-2026-09-18-001. Every NEW card and assignment is anchored to an
+// ACTIVE operational drill in the issuing gym, and its wording is the drill's
+// own, snapshotted by the INSERT itself. The routes check this first; these
+// cases pin that the WRITERS hold it on their own, against real rows, so a
+// direct call can never create a NULL-anchored, unknown, cross-org or retired
+// drill row.
+describe('every new card and assignment is built from an active drill in the gym', () => {
+  async function rowCount(client: Client): Promise<number> {
+    const result = await client.query<{ n: string }>(`select count(*)::text as n from pilot.drill_assignments`);
+    return Number(result.rows[0].n);
+  }
+
+  test("a single card is the drill's own wording, anchored to it; an explicit difficulty overrides", async () => {
+    const client = await freshDatabase('cards_wd3_snapshot');
+    activeClient = client;
+    try {
+      const card = await issueCoachCard({
+        organizationId: ORG_ID,
+        athleteId: ATHLETES[0].id,
+        assignedByAccountId: COACH_ID,
+        drillId: 'drill-bag',
+      });
+      expect(card.drill_id).toBe('drill-bag');
+      expect(card.drill_name).toBe('Bag work');
+      expect(card.drill_description).toBe('Four rounds');
+      // No difficulty supplied: the drill's own.
+      expect(card.drill_difficulty).toBe('advanced');
+      expect(card.gap_id).toBeNull();
+
+      const overridden = await issueCoachCard({
+        organizationId: ORG_ID,
+        athleteId: ATHLETES[0].id,
+        assignedByAccountId: COACH_ID,
+        drillId: 'drill-bag',
+        drillDifficulty: 'beginner',
+        repCount: 12,
+      });
+      expect(overridden.drill_difficulty).toBe('beginner');
+      expect(overridden.rep_count).toBe(12);
+
+      // And what is stored matches what came back.
+      const stored = await client.query(
+        `select drill_id, drill_name, drill_description from pilot.drill_assignments where assignment_id = $1`,
+        [card.assignment_id],
+      );
+      expect(stored.rows[0]).toEqual({ drill_id: 'drill-bag', drill_name: 'Bag work', drill_description: 'Four rounds' });
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('a program issuance writes the same drill, and its wording, onto every member row', async () => {
+    const client = await freshDatabase('cards_wd3_program');
+    activeClient = client;
+    try {
+      await insertProgramWithMembers(client, [
+        { athleteId: ATHLETES[0].id, status: 'active' },
+        { athleteId: ATHLETES[2].id, status: 'active' },
+      ]);
+
+      const result = await issueCoachCardToProgram({ actor: coachActor, programId: PROGRAM_ID, drillId: 'drill-rope' });
+      expect(result!.issued).toHaveLength(2);
+
+      const rows = await client.query(
+        `select drill_id, drill_name, drill_description, drill_difficulty
+         from pilot.drill_assignments where organization_id = $1 order by athlete_id`,
+        [ORG_ID],
+      );
+      expect(rows.rows).toEqual([
+        { drill_id: 'drill-rope', drill_name: 'Jump rope', drill_description: 'Ten minutes, no misses', drill_difficulty: 'beginner' },
+        { drill_id: 'drill-rope', drill_name: 'Jump rope', drill_description: 'Ten minutes, no misses', drill_difficulty: 'beginner' },
+      ]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  // [label, drillId, expected code]. 'drl_...' is shaped like a reference
+  // library id: pilot.drill_library is not operational, so it is simply not a
+  // drill here (drillsPersistence.pg.test.ts proves the same against a real
+  // pilot.drill_library row).
+  const REFUSED: Array<[string, unknown, string]> = [
+    ['a missing drill_id', undefined, 'DRILL_ID_REQUIRED'],
+    ['an empty drill_id', '', 'DRILL_ID_REQUIRED'],
+    ['an unknown drill_id', 'drill-never-existed', 'DRILL_NOT_ASSIGNABLE'],
+    ['a reference-library id', 'drl_3c2aad1eb8baa9', 'DRILL_NOT_ASSIGNABLE'],
+    ["another gym's drill", 'drill-elsewhere', 'DRILL_NOT_ASSIGNABLE'],
+    ['a retired drill', 'drill-retired', 'DRILL_NOT_ASSIGNABLE'],
+  ];
+
+  test('issueCoachCard refuses every drill that is not active in this gym, and writes nothing', async () => {
+    const client = await freshDatabase('cards_wd3_refuse_card');
+    activeClient = client;
+    try {
+      for (const [label, drillId, code] of REFUSED) {
+        await expect(
+          issueCoachCard({
+            organizationId: ORG_ID,
+            athleteId: ATHLETES[0].id,
+            assignedByAccountId: COACH_ID,
+            drillId: drillId as string,
+          }),
+        ).rejects.toMatchObject({ status: 400, code });
+        // The label rides along so a failure names the case.
+        expect([label, await rowCount(client)]).toEqual([label, 0]);
+      }
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('issueCoachCardToProgram refuses the same drills for the whole group, and writes nothing', async () => {
+    const client = await freshDatabase('cards_wd3_refuse_program');
+    activeClient = client;
+    try {
+      await insertProgramWithMembers(client, [
+        { athleteId: ATHLETES[0].id, status: 'active' },
+        { athleteId: ATHLETES[2].id, status: 'active' },
+      ]);
+      for (const [label, drillId, code] of REFUSED) {
+        await expect(
+          issueCoachCardToProgram({ actor: coachActor, programId: PROGRAM_ID, drillId: drillId as string }),
+        ).rejects.toMatchObject({ status: 400, code });
+        expect([label, await rowCount(client)]).toEqual([label, 0]);
+      }
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('assignDrill refuses the same drills, writes nothing, and leaves the gap as it was', async () => {
+    const client = await freshDatabase('cards_wd3_refuse_assign');
+    activeClient = client;
+    try {
+      await client.query(
+        `insert into pilot.progression_gaps
+           (gap_id, organization_id, athlete_id, coach_account_id, gap_type, gap_description, detected_from)
+         values ('gap-wd3', $1, $2, $3, 'technique', 'Drops the right hand', 'coach_observation')`,
+        [ORG_ID, ATHLETES[0].id, COACH_ID],
+      );
+      const gapStatus = async () =>
+        (await client.query<{ status: string }>(`select status from pilot.progression_gaps where gap_id = 'gap-wd3'`))
+          .rows[0].status;
+      const statusBefore = await gapStatus();
+
+      for (const [label, drillId, code] of REFUSED) {
+        await expect(
+          assignDrill({
+            organizationId: ORG_ID,
+            gapId: 'gap-wd3',
+            athleteId: ATHLETES[0].id,
+            assignedByAccountId: COACH_ID,
+            drillId: drillId as string,
+          }),
+        ).rejects.toMatchObject({ status: 400, code });
+        expect([label, await rowCount(client), await gapStatus()]).toEqual([label, 0, statusBefore]);
+      }
+
+      // The same gap takes a real drill, and only then moves on.
+      const assigned = await assignDrill({
+        organizationId: ORG_ID,
+        gapId: 'gap-wd3',
+        athleteId: ATHLETES[0].id,
+        assignedByAccountId: COACH_ID,
+        drillId: 'drill-guard',
+      });
+      expect(assigned.drill_name).toBe('Guard discipline');
+      expect(assigned.drill_description).toBe('Three rounds mirror work');
+      expect(await gapStatus()).toBe('assigned');
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  // No migration, no rewrite: drill_id stays NULLABLE, and a card issued
+  // before W-D3 with typed wording and no anchor keeps listing exactly as it
+  // was written. The writers can no longer create such a row, so it goes in
+  // raw -- exactly as the historical data sits.
+  test('a legacy card with no drill anchor still lists, with its own text, unchanged', async () => {
+    const client = await freshDatabase('cards_wd3_legacy');
+    activeClient = client;
+    try {
+      const nullable = await client.query<{ nullable: boolean }>(
+        `select (attnotnull = false) as nullable from pg_attribute
+         where attrelid = to_regclass('pilot.drill_assignments') and attname = 'drill_id' and not attisdropped`,
+      );
+      expect(nullable.rows[0].nullable).toBe(true);
+
+      await client.query(
+        `insert into pilot.drill_assignments
+           (assignment_id, organization_id, gap_id, athlete_id, assigned_by_account_id, drill_name, drill_description)
+         values ('asg-legacy-card', $1, null, $2, $3, 'Typed card from before', 'Whatever the coach wrote')`,
+        [ORG_ID, ATHLETES[0].id, COACH_ID],
+      );
+
+      const [legacy] = await listCoachCards(coachActor);
+      expect(legacy.assignment_id).toBe('asg-legacy-card');
+      expect(legacy.drill_id).toBeNull();
+      expect(legacy.drill_name).toBe('Typed card from before');
+      expect(legacy.drill_description).toBe('Whatever the coach wrote');
+
+      const athleteView = await getAthleteAssignments(ORG_ID, ATHLETES[0].id);
+      expect(athleteView.map((row) => row.drill_name)).toEqual(['Typed card from before']);
     } finally {
       activeClient = null;
       await client.end();

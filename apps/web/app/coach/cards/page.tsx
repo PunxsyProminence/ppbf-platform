@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import type { CoachRosterAthlete } from '@/src/server/pilot/contracts';
 import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills';
@@ -73,11 +74,12 @@ interface IssuanceReport {
   skipped: { athlete_id: string; athlete_name: string }[];
 }
 
+// No title or description: since W-D3 (OD-2026-09-18-001) a card takes its
+// wording from the drill it points at, so there is nothing for the coach to
+// type. The drill IS the identity.
 const EMPTY_FORM = {
   athlete_id: '',
   program_id: '',
-  title: '',
-  description: '',
   drill_id: '',
   drill_difficulty: 'intermediate',
   rep_count: '',
@@ -102,6 +104,11 @@ export default function CoachCardsPage() {
      hanging the empty state off it would turn a form slip into "your cards
      could not be read" -- a false claim in the other direction. */
   const [cardsUnreadable, setCardsUnreadable] = useState(false);
+  /* The same distinction for the drill list. A card now requires a drill, so an
+     empty drill list decides whether the form can be used at all -- and "this
+     gym has no drills" and "the list did not load" call for different actions.
+     A coach told to add drills that already exist has been sent the wrong way. */
+  const [drillsUnreadable, setDrillsUnreadable] = useState(false);
 
   // signal is optional so the verify/dispute path can refresh the list
   // without owning a controller; the mount effect passes its own.
@@ -129,6 +136,12 @@ export default function CoachCardsPage() {
     const { signal } = controller;
 
     void (async () => {
+      // Whether this load learned anything about the drill list: read it, or
+      // was refused it. A throw before that point -- a rejected fetch, a body
+      // that is not JSON -- leaves the drill list UNKNOWN, and the catch below
+      // must say so rather than let an empty array read as "this gym has no
+      // drills". A throw after it (the card list) says nothing about drills.
+      let drillStateKnown = false;
       try {
         setLoading(true);
         const [rosterRes, programsRes, drillsRes] = await Promise.all([
@@ -156,12 +169,16 @@ export default function CoachCardsPage() {
           const data = (await drillsRes.json()) as Partial<DrillLibraryResponse>;
           if (signal.aborted) return;
           setDrills((data.items || []).filter((drill) => drill.active));
+        } else {
+          setDrillsUnreadable(true);
         }
+        drillStateKnown = true;
         await loadCards(signal);
       } catch (error) {
         if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
           return;
         }
+        if (!drillStateKnown) setDrillsUnreadable(true);
         setCardsUnreadable(true);
         setErrorMessage(error instanceof Error ? error.message : 'Failed to load');
       } finally {
@@ -184,11 +201,13 @@ export default function CoachCardsPage() {
     setForm((prev) => ({
       ...prev,
       drill_id: drill.drill_id,
-      title: prev.title || drill.name,
-      description: prev.description || drill.focus,
       drill_difficulty: drill.difficulty || 'intermediate',
     }));
   };
+
+  // The picked drill, so its wording can be SHOWN as what the athlete will read
+  // without being editable.
+  const pickedDrill = drills.find((drill) => drill.drill_id === form.drill_id) ?? null;
 
   const handleIssue = async () => {
     setErrorMessage('');
@@ -200,20 +219,21 @@ export default function CoachCardsPage() {
       setErrorMessage('Pick a program.');
       return;
     }
-    if (!form.drill_id && (!form.title.trim() || !form.description.trim())) {
-      setErrorMessage('Give the card a title and description, or pick a drill.');
+    if (!form.drill_id) {
+      setErrorMessage('Pick a drill from this gym\'s library.');
       return;
     }
     setBusy(true);
     try {
+      // drill_id and nothing that names the drill in words -- the server
+      // snapshots the wording from the drill, and refuses a request that tries
+      // to supply it.
       const body: Record<string, unknown> = {
-        title: form.title.trim(),
-        description: form.description.trim(),
+        drill_id: form.drill_id,
         drill_difficulty: form.drill_difficulty,
       };
       if (mode === 'athlete') body.athlete_id = form.athlete_id;
       else body.program_id = form.program_id;
-      if (form.drill_id) body.drill_id = form.drill_id;
       if (form.rep_count.trim()) body.rep_count = Number(form.rep_count);
       if (form.duration_minutes.trim()) body.duration_minutes = Number(form.duration_minutes);
       if (form.frequency_per_week.trim()) body.frequency_per_week = Number(form.frequency_per_week);
@@ -295,6 +315,29 @@ export default function CoachCardsPage() {
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <h2 className="t-command text-[length:var(--t-lg)]">Issue a Card</h2>
 
+          {/* Since W-D3 a card requires a drill from this gym's library, so the
+              form is shown only when there is one to pick. A form whose submit
+              can never succeed is a dead end dressed as a control. These are
+              plain text rather than a second alert: the page's one critical
+              alert is reserved for write failures, and neither of these is. */}
+          {drillsUnreadable && (
+            <p className="t-body mt-[var(--s4)] text-[color:var(--bone-300)]">
+              The gym&apos;s drill library did not load, so a card cannot be issued right now. This is a failure to
+              load, not an empty library.
+            </p>
+          )}
+
+          {!drillsUnreadable && !loading && drills.length === 0 && (
+            <div className="mt-[var(--s4)] space-y-[var(--s2)]">
+              <p className="t-body text-[color:var(--bone-300)]">
+                This gym has no drills to issue yet. Every card is built from a drill in the gym&apos;s own library --
+                add one there, or promote one from the reference library, and it will appear here.
+              </p>
+              <Link href="/coach/drills" className="t-label">Open the Drill Library</Link>
+            </div>
+          )}
+
+          {!drillsUnreadable && drills.length > 0 && (<>
           <div className="mt-[var(--s4)] flex gap-[var(--s2)]" role="group" aria-label="Card target">
             <button
               type="button"
@@ -352,30 +395,19 @@ export default function CoachCardsPage() {
             )}
 
             <div className="field">
-              <label htmlFor="card-drill" className="t-label">From the drill library (optional)</label>
+              <label htmlFor="card-drill" className="t-label">Drill</label>
               <select
                 id="card-drill"
                 className="select"
                 value={form.drill_id}
                 onChange={(e) => onLibraryPick(e.target.value)}
+                required
               >
-                <option value="">Type it out instead…</option>
+                <option value="">Select a drill…</option>
                 {drills.map((drill) => (
                   <option key={drill.drill_id} value={drill.drill_id}>{drill.name}</option>
                 ))}
               </select>
-            </div>
-
-            <div className="field">
-              <label htmlFor="card-title" className="t-label">Title</label>
-              <input
-                id="card-title"
-                type="text"
-                className="input"
-                value={form.title}
-                onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
-                placeholder="Shadowbox: 3 rounds, southpaw looks"
-              />
             </div>
 
             <div className="field">
@@ -393,17 +425,19 @@ export default function CoachCardsPage() {
               </select>
             </div>
 
-            <div className="field md:col-span-2">
-              <label htmlFor="card-description" className="t-label">Description</label>
-              <textarea
-                id="card-description"
-                className="textarea"
-                rows={2}
-                value={form.description}
-                onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-                placeholder="What exactly to do, and what to focus on."
-              />
-            </div>
+            {/* Read-only, and that is the point: this is the wording the
+                athlete will see, taken from the drill. It used to be a title
+                and a description the coach typed, which replaced the drill's
+                own wording. */}
+            {pickedDrill && (
+              <div className="field md:col-span-2">
+                <p className="t-label">What the athlete will see</p>
+                <p className="font-semibold text-[color:var(--bone-100)]">{pickedDrill.name}</p>
+                {pickedDrill.focus && (
+                  <p className="t-body text-[color:var(--bone-300)]">{pickedDrill.focus}</p>
+                )}
+              </div>
+            )}
 
             <div className="field">
               <label htmlFor="card-reps" className="t-label">Reps (optional)</label>
@@ -463,6 +497,7 @@ export default function CoachCardsPage() {
               {busy ? 'Issuing…' : mode === 'program' ? 'Issue to program' : 'Issue card'}
             </button>
           </div>
+          </>)}
         </section>
 
         {/* Group issuance report, verbatim */}

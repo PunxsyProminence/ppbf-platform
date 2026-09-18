@@ -10,8 +10,20 @@ import {
 import { DRILL_DIFFICULTIES, getDrill, isDrillDifficulty } from '@/src/server/pilot/drills';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
+import { requireAssignableDrillId } from '@/src/server/pilot/progression';
 
 export const runtime = 'nodejs';
+
+/**
+ * True when a legacy identity field actually says something. Absent, null and
+ * empty-or-whitespace strings are silence and pass; anything else -- including
+ * a non-string -- is an attempt to supply card wording and is refused.
+ */
+function carriesText(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  return true;
+}
 
 // Coach Cards: a coach issues work straight onto the assignment spine --
 // to one athlete (individual card) or to a program's active members (group
@@ -21,9 +33,9 @@ export const runtime = 'nodejs';
 interface CardBody {
   athlete_id?: string;
   program_id?: string;
-  title?: string;
-  description?: string;
-  drill_id?: string;
+  title?: unknown;
+  description?: unknown;
+  drill_id?: unknown;
   drill_difficulty?: string;
   rep_count?: number;
   duration_minutes?: number;
@@ -46,14 +58,21 @@ export async function POST(request: NextRequest) {
       throw new ValidationError('Provide exactly one of athlete_id or program_id.');
     }
 
-    // Same content rule as the assignments route: a card either anchors to
-    // a library drill or carries typed title and description -- either way
-    // the athlete sees complete work, never an empty shell.
-    const drillId = body.drill_id?.trim() || null;
-    const typedTitle = body.title?.trim() || '';
-    const typedDescription = body.description?.trim() || '';
-    if (!drillId && (!typedTitle || !typedDescription)) {
-      throw new ValidationError('Missing required fields: drill_id, or title and description.');
+    // W-D3, OD-2026-09-18-001 -- the same rule as the assignments route, for
+    // both targets. A card is anchored to an active operational drill in this
+    // gym, and its wording is snapshotted from that drill by the writer; a card
+    // can no longer be typed out.
+    const drillId = requireAssignableDrillId(body.drill_id);
+
+    // The stale-client rule, verbatim from the assignments route: a request
+    // still carrying a typed title or description is refused rather than
+    // silently discarded, because discarding would answer 201 while throwing
+    // away what the coach wrote. Absent or empty fields are tolerated.
+    if (carriesText(body.title) || carriesText(body.description)) {
+      throw new ValidationError(
+        'title and description are no longer accepted: a Coach Card takes its wording from the drill.',
+        'DRILL_TEXT_NOT_ACCEPTED',
+      );
     }
 
     if (body.drill_difficulty !== undefined && !isDrillDifficulty(body.drill_difficulty)) {
@@ -61,23 +80,22 @@ export async function POST(request: NextRequest) {
     }
 
     // Another gym's drill_id must read as absent rather than as a drill the
-    // caller may not touch, and a retired drill is not silently revived --
-    // both verbatim from the assignments route.
-    const drill = drillId ? await getDrill(principal.organizationId, drillId) : null;
-    if (drillId && !drill) {
+    // caller may not touch, and a reference-library id is absent too, because
+    // getDrill reads pilot.drills only. A retired drill is not silently revived.
+    // Both writers re-check all of this inside the write itself.
+    const drill = await getDrill(principal.organizationId, drillId);
+    if (!drill) {
       return hiddenNotFound();
     }
-    if (drill && !drill.active) {
+    if (!drill.active) {
       throw new ValidationError('Unsupported drill_id: that drill is retired');
     }
 
     const content = {
       drillId,
-      // What the coach typed wins over the drill's own wording -- the typed
-      // text is the record of what was issued.
-      drillName: typedTitle || (drill ? drill.name : ''),
-      drillDescription: typedDescription || (drill ? drill.focus : ''),
-      drillDifficulty: body.drill_difficulty || (drill ? drill.difficulty : 'intermediate'),
+      // The one piece of drill wording a coach may still set: an explicit
+      // difficulty overrides the drill's own, exactly as before.
+      drillDifficulty: body.drill_difficulty,
       repCount: body.rep_count,
       durationMinutes: body.duration_minutes,
       frequencyPerWeek: body.frequency_per_week,

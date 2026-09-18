@@ -89,6 +89,149 @@ and should not try to.
 
 ---
 
+## OD-2026-09-18-001 -- Every new assignment and Coach Card is built from an active operational drill
+
+**Provenance: PRIMARY.**
+
+**Date:** 2026-09-18. **Governs:** what a NEW `pilot.drill_assignments` row
+may be created from, through `/api/pilot/progression/assignments`,
+`/api/pilot/coach/cards`, and the writers behind them (`assignDrill`,
+`issueCoachCard`, `issueCoachCardToProgram`). **Extends, does not replace,**
+OD-2026-09-16-001 and OD-2026-09-17-001, which remain in force.
+
+Owner ruling, verbatim (put to the owner after the W-D3 read-only reality
+check):
+
+> 1. NEW ASSIGNMENT IDENTITY
+>
+> Every new drill assignment and Coach Card must carry a real active operational
+> pilot.drills drill_id.
+>
+> Free-text-only creation is no longer permitted.
+>
+> Legacy drill_id-NULL assignments remain valid historical records and remain readable.
+> Do not rewrite or migrate them.
+>
+> 2. PRODUCTION ROLLOUT WITH ZERO OPERATIONAL DRILLS
+>
+> W-D3 implementation, review, merge and staging proof may proceed while
+> punxsy_prominence has zero operational drills.
+>
+> W-D3 MUST NOT be deployed to production while the operating organization has zero
+> active operational drills.
+>
+> Do not preserve free-text creation as a production fallback.
+>
+> Operational drill readiness is a separate product-data gate using the existing W-D1
+> operational/promotion model and requires separate explicit authorization before any
+> production data write.
+>
+> 3. TYPED TEXT ON ANCHORED ASSIGNMENTS
+>
+> For every NEW anchored assignment or Coach Card:
+>
+> - drill_name is snapshotted from the resolved operational drill;
+> - drill_description is snapshotted from the resolved operational drill;
+> - client-entered title/name/description does not override those canonical values.
+>
+> Historical snapshots are untouched.
+>
+> Do not add a replacement free-text notes/instructions field in W-D3.
+>
+> Structured assignment parameters such as reps, duration, frequency and due date remain
+> assignment-specific.
+>
+> Do not change drill_difficulty semantics in W-D3 unless implementation evidence proves
+> that is required.
+>
+> 4. ENFORCEMENT BOUNDARY
+>
+> Hold the new-write invariant at BOTH:
+>
+> - the API routes; and
+> - the assignment writer functions.
+>
+> New-write functions must no longer accept a nullable drillId.
+>
+> The database drill_id column remains nullable because historical legacy rows require it.
+> NO migration and NO historical rewrite.
+>
+> Tests that require historical drill_id-NULL rows must create them as legacy fixtures,
+> not through current new-write functions.
+>
+> 5. REFERENCE MODEL
+>
+> pilot.drill_library rows remain non-assignable.
+>
+> Only pilot.drills operational identities may anchor new assignments.
+>
+> 6. PARKED
+>
+> Do not touch:
+> - W-D1
+> - W-D2
+> - ATHLETE_OPERATIONAL_DTO_MINIMIZATION
+> - reference supersession/name-collision workflow
+> - #922
+> - #929
+> - final owner-wide PPBF design conformance
+
+The implementation authorization that followed fixed two points the ruling left
+open. Owner words, verbatim:
+
+> 6. Every new assignment snapshots:
+>    drill_name = resolved operational drill.name
+>    drill_description = resolved operational drill.focus
+>
+> 7. STRICT STALE-CLIENT RULE:
+>    Progression assignment request:
+>    - non-empty drill_name -> 400
+>    - non-empty drill_description -> 400
+>
+>    Coach Card request:
+>    - non-empty title -> 400
+>    - non-empty description -> 400
+>
+>    Absent or empty legacy properties may be tolerated.
+>
+>    Do NOT silently discard non-empty client identity text.
+>    Do NOT add a replacement notes/instructions field in W-D3.
+>
+> 8. drill_difficulty semantics remain unchanged:
+>    valid explicitly supplied difficulty may override the drill difficulty;
+>    otherwise use the operational drill difficulty.
+>
+> 9. rep_count, duration_minutes, frequency_per_week and due_date remain assignment-specific.
+
+**What this changed.** Before it, both write routes accepted a drill that was
+only typed words: `drill_id` was optional, and when it was absent the row was
+written with the coach's `drill_name`/`drill_description` and no anchor. When it
+was present, the typed words were still what the row stored. Now a new row is
+written FROM the drill -- one `INSERT ... SELECT` against `pilot.drills` scoped
+to the caller's organization and `active` -- so an unknown, cross-org,
+reference-library or retired `drill_id` selects nothing and writes nothing, and
+a drill retired between the route's check and the write cannot slip through.
+
+**Why a stale client gets a 400 rather than its text being ignored.** A client
+built before this change sends the coach's typed words. Accepting the drill and
+quietly dropping those words would record something different from what the
+coach believes they sent, with no signal. Clause 7 makes that a visible refusal
+instead.
+
+**What it does not decide.** It does not make `pilot.drill_library` rows
+assignable; a reference drill reaches an assignment only by being promoted under
+OD-2026-09-16-001. It does not touch existing rows: `drill_id` stays nullable and
+every legacy free-text assignment keeps reading exactly as written. It does not
+authorize creating operational drills anywhere; clause 2 makes that a separate
+gate, and production rollout of this change waits on it.
+
+**Evidence.** Reality check and implementation both at `main` `fa24732182e2`.
+The free-text-only path was observed in both route handlers and all three
+writer INSERTs at that SHA. The zero-operational-drills premise of clause 2 is
+the owner's, stated in the ruling.
+
+---
+
 ## OD-2026-09-17-001 -- Athlete active-learning visibility for reference drills
 
 **Provenance: PRIMARY.**
