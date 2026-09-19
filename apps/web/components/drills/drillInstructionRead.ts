@@ -6,7 +6,7 @@
 // server-side reaches the client bundle.
 
 import { apiBase } from '@/lib/apiBase';
-import type { AssignmentDrillInstruction } from '@/src/server/pilot/assignmentDrillInstruction';
+import type { AssignmentDrillInstruction, AthleteInstructionAccess } from '@/src/server/pilot/assignmentDrillInstruction';
 import type { DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
 import type { OperationalDrillLifecycle } from '@/src/server/pilot/drillVersioning';
 import { fromAthleteDrillDetail, fromCoachDrillDetail, type DrillDetailView } from './drillDetailView';
@@ -27,10 +27,10 @@ export interface OpenedInstruction {
    */
   operationalLifecycle: OperationalDrillLifecycle | null;
   /**
-   * Staff reads of an assignment only: whether the athlete can open this same
-   * instruction from the work. Null where the read does not say.
+   * Staff reads of an assignment only: which of an athlete's work on this drill
+   * opens this same instruction. Null where the read does not say.
    */
-  athleteCanOpen: boolean | null;
+  athleteAccess: AthleteInstructionAccess | null;
 }
 
 /** A read that did not answer. The message is for the log; the page decides what a person reads. */
@@ -52,7 +52,7 @@ export async function readAssignmentInstruction(assignmentId: string, signal: Ab
   const payload = (await response.json()) as AssignmentInstructionResponse;
 
   if (payload.state !== 'available') {
-    return { state: payload.state, view: null, assignedBy: payload.assigned_by ?? null, operationalLifecycle: null, athleteCanOpen: null };
+    return { state: payload.state, view: null, assignedBy: payload.assigned_by ?? null, operationalLifecycle: null, athleteAccess: null };
   }
   if (payload.audience === 'athlete') {
     return {
@@ -60,7 +60,7 @@ export async function readAssignmentInstruction(assignmentId: string, signal: Ab
       view: fromAthleteDrillDetail({ ...payload.drill, drill_id: `assignment-${payload.assignment_id}` }),
       assignedBy: payload.assigned_by ?? null,
       operationalLifecycle: null,
-      athleteCanOpen: null,
+      athleteAccess: null,
     };
   }
   return {
@@ -68,7 +68,7 @@ export async function readAssignmentInstruction(assignmentId: string, signal: Ab
     view: fromCoachDrillDetail(payload.drill),
     assignedBy: payload.assigned_by ?? null,
     operationalLifecycle: payload.operational_lifecycle,
-    athleteCanOpen: payload.athlete_can_open,
+    athleteAccess: payload.athlete_access,
   };
 }
 
@@ -83,7 +83,7 @@ export async function readReferenceInstruction(referenceDrillId: string, signal:
     { method: 'GET', credentials: 'include', signal },
   );
   if (response.status === 404) {
-    return { state: 'unavailable', view: null, assignedBy: null, operationalLifecycle: null, athleteCanOpen: null };
+    return { state: 'unavailable', view: null, assignedBy: null, operationalLifecycle: null, athleteAccess: null };
   }
   if (!response.ok) {
     throw new InstructionReadError(`drill-library read answered ${response.status}`);
@@ -92,5 +92,5 @@ export async function readReferenceInstruction(referenceDrillId: string, signal:
   if (!payload.drill) {
     throw new InstructionReadError('drill-library read carried no drill');
   }
-  return { state: 'available', view: fromCoachDrillDetail(payload.drill), assignedBy: null, operationalLifecycle: null, athleteCanOpen: null };
+  return { state: 'available', view: fromCoachDrillDetail(payload.drill), assignedBy: null, operationalLifecycle: null, athleteAccess: null };
 }

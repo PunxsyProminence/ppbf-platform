@@ -9,13 +9,19 @@ import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import { resolveAssignmentDrillInstruction } from '@/src/server/pilot/assignmentDrillInstruction';
 import { query, queryOne, withPoolClient, withTransaction } from '@/src/server/pilot/db';
-import { getAthleteDrillDetail, getDrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
+import {
+  getAthleteDrillDetail,
+  getAthleteDrillDetailForOpenWork,
+  getDrillWithDetail,
+} from '@/src/server/pilot/drillLibraryV3';
 import { getDrill } from '@/src/server/pilot/drills';
 import { getOperationalDrillLifecycle } from '@/src/server/pilot/drillVersioning';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { getDrillAssignmentById, recordCompletion } from '@/src/server/pilot/progression';
+import type { AthleteInstructionAccess } from '@/src/server/pilot/assignmentDrillInstruction';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import type { PilotRole } from '@/src/server/pilot/contracts';
+import type { DrillAssignment } from '@/src/server/pilot/progression';
 
 // W-D4B (OD-2026-09-19-001): opening a drill from a piece of assigned work.
 //
@@ -48,6 +54,17 @@ import type { PilotRole } from '@/src/server/pilot/contracts';
 //   No silent substitution        -- the resolver is handed the assignment row
 //                                    exactly as it was read; nothing in the
 //                                    request can name a different drill.
+//   Open work is the row's word   -- OD-2026-09-19-002 lets OPEN work (assigned
+//                                    or in progress) open a drill the gym has
+//                                    retired. The resolver judges "open" from
+//                                    the status on the row it is handed, so
+//                                    that status reaches it untouched, for
+//                                    every status the row can carry, and no
+//                                    parameter can claim closed work is open.
+//   The coach is told which work  -- athlete_access (all_work / open_work_only
+//   opens it, as resolved            / none) is the resolver's answer, and the
+//                                    route passes it through as it came, for
+//                                    work in any status.
 //
 // What the resolver decides for each state is assignmentDrillInstruction's own
 // business. Here it is mocked, so these cases prove the route's routing and
@@ -91,9 +108,18 @@ jest.mock('@/src/server/pilot/drills', () => {
   return { ...actual, getDrill: jest.fn() };
 });
 
+// Both athlete reads are mocked: the Learn read (promoted and live) and the
+// open-work read OD-2026-09-19-002 adds (the adoption term dropped). The real
+// resolver in the last describe chooses between them by the work's status, and
+// its staff path runs both; left real, either would run into the tripwire.
 jest.mock('@/src/server/pilot/drillLibraryV3', () => {
   const actual = jest.requireActual('@/src/server/pilot/drillLibraryV3');
-  return { ...actual, getAthleteDrillDetail: jest.fn(), getDrillWithDetail: jest.fn() };
+  return {
+    ...actual,
+    getAthleteDrillDetail: jest.fn(),
+    getAthleteDrillDetailForOpenWork: jest.fn(),
+    getDrillWithDetail: jest.fn(),
+  };
 });
 
 // Only reached by the real resolver's staff path in the last describe. Where the
@@ -128,6 +154,7 @@ const mockCoachName = getCoachDisplayName as jest.Mock;
 const mockResolve = resolveAssignmentDrillInstruction as jest.Mock;
 const mockGetDrill = getDrill as jest.Mock;
 const mockAthleteDetail = getAthleteDrillDetail as jest.Mock;
+const mockOpenWorkDetail = getAthleteDrillDetailForOpenWork as jest.Mock;
 const mockCoachDetail = getDrillWithDetail as jest.Mock;
 const mockLifecycle = getOperationalDrillLifecycle as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
@@ -192,6 +219,40 @@ const ISSUER_NAME = 'Coach Ramirez';
 /** The operational drill version this work was issued against. */
 const OPERATIONAL_DRILL_ID = 'drl-op-v1';
 
+type AssignmentStatus = DrillAssignment['status'];
+
+/**
+ * Every status a piece of work can carry, and whether OD-2026-09-19-002 counts
+ * it as OPEN -- "assigned / in progress", in the owner's words. Stated from the
+ * ruling, not asked of isOpenWork: a test that asks the resolver what is open
+ * cannot notice the resolver changing its mind. A Record over the status union,
+ * so `tsc --noEmit` refuses this file the day a status is added to
+ * DrillAssignment without a line here saying whether it is open.
+ */
+const STATUS_IS_OPEN: Record<AssignmentStatus, boolean> = {
+  assigned: true,
+  in_progress: true,
+  completed: false,
+  incomplete: false,
+  cancelled: false,
+};
+
+const ALL_STATUSES = Object.keys(STATUS_IS_OPEN) as AssignmentStatus[];
+
+/**
+ * Every answer the staff shape can give to "which work opens this for the
+ * athlete?", with what each one means. A Record for the same reason as above:
+ * an answer added to AthleteInstructionAccess is a type error here until a case
+ * covers it.
+ */
+const ATHLETE_ACCESS_MEANING: Record<AthleteInstructionAccess, string> = {
+  all_work: 'the gym runs the drill, so any work opens it',
+  open_work_only: 'the gym retired the drill, so only open work opens it',
+  none: 'the reference was withdrawn, so no work opens it',
+};
+
+const ALL_ATHLETE_ACCESS = Object.keys(ATHLETE_ACCESS_MEANING) as AthleteInstructionAccess[];
+
 function principal(overrides: Partial<PilotPrincipal>): PilotPrincipal {
   return {
     accountId: 'acct-1',
@@ -255,24 +316,29 @@ const athleteDrill = {
 const coachDrill = { drill_id: 'ref-v1', name: 'Catch and Return', stop_rules: [], scale_levels: [], cues: [] };
 
 /**
- * The staff 'available' answer. athlete_can_open is the resolver's own answer
- * to "can the athlete open this from the work?", and both values appear in the
- * fixtures below: `false` is the one a route that dropped, defaulted or
- * truthiness-filtered the field would lose.
+ * The staff 'available' answer. athlete_access is the resolver's own answer to
+ * "which of the athlete's work opens this?" (OD-2026-09-19-002), and every
+ * value of it appears in the fixtures below: a route that dropped, defaulted,
+ * collapsed it back to a yes/no, or narrowed it to the one card being read
+ * would lose at least one of them.
  */
-const coachInstruction = (lifecycle: 'current' | 'changed' | 'retired', athleteCanOpen: boolean) => ({
+const coachInstruction = (
+  lifecycle: 'current' | 'changed' | 'retired',
+  athleteAccess: AthleteInstructionAccess,
+) => ({
   state: 'available',
   audience: 'coach',
   drill: coachDrill,
   operational_lifecycle: lifecycle,
-  athlete_can_open: athleteCanOpen,
+  athlete_access: athleteAccess,
 });
 
 /** Every state the resolver can answer, keyed by a readable label. */
 const INSTRUCTION_STATES: Array<[string, Record<string, unknown>]> = [
   ['available (athlete)', { state: 'available', audience: 'athlete', drill: athleteDrill }],
-  ['available (coach, the athlete can open it)', coachInstruction('current', true)],
-  ['available (coach, the athlete cannot open it)', coachInstruction('changed', false)],
+  ['available (coach, any work opens it for the athlete)', coachInstruction('current', 'all_work')],
+  ['available (coach, only open work opens it for the athlete)', coachInstruction('retired', 'open_work_only')],
+  ['available (coach, no work opens it for the athlete)', coachInstruction('changed', 'none')],
   ['no_drill', { state: 'no_drill' }],
   ['gym_written', { state: 'gym_written' }],
   ['unavailable', { state: 'unavailable' }],
@@ -324,6 +390,7 @@ afterEach(() => {
     mockResolve,
     mockGetDrill,
     mockAthleteDetail,
+    mockOpenWorkDetail,
     mockCoachDetail,
     mockLifecycle,
   ]) {
@@ -577,7 +644,11 @@ describe('GET /api/pilot/progression/drill-instruction', () => {
         expect(mockAssertAccess).toHaveBeenCalledTimes(1);
         expect(mockAssertAccess).toHaveBeenCalledWith(expect.objectContaining({ role }), 'ath-1');
         expect(mockResolve).toHaveBeenCalledTimes(1);
-        expect(mockResolve).toHaveBeenCalledWith('org-1', expect.objectContaining({ assignment_id: 'asg-1' }), audience);
+        expect(mockResolve).toHaveBeenCalledWith(
+          'org-1',
+          expect.objectContaining({ assignment_id: 'asg-1', drill_id: OPERATIONAL_DRILL_ID, status: 'assigned' }),
+          audience,
+        );
       },
     );
 
@@ -628,6 +699,47 @@ describe('GET /api/pilot/progression/drill-instruction', () => {
       expect(passed).toBe(row);
       expect(passed.drill_id).toBe(OPERATIONAL_DRILL_ID);
     });
+
+    test.each(ALL_STATUSES.map((status) => [status, STATUS_IS_OPEN[status] ? 'open' : 'closed'] as const))(
+      'work that is %s (%s) reaches the resolver with its own status, and no parameter can claim otherwise',
+      async (status, openness) => {
+        // OD-2026-09-19-002: while work is OPEN the athlete keeps a retired
+        // drill's instruction, and the resolver decides "open" from the status
+        // on the assignment it is handed. So the status is part of what the
+        // route must pass through untouched. A route that handed over the
+        // drill id alone would read every piece of work as closed, and
+        // withhold safety and stop rules from work the athlete is still
+        // expected to do; one that took the status from the request, or pinned
+        // it, would let closed work open a drill the gym retired. The hostile
+        // parameters claim the opposite openness to the row's, in every
+        // obvious spelling, and every audience is checked: the staff answer
+        // must not be read against a different card than the one opened.
+        const claimed = openness === 'open' ? 'completed' : 'assigned';
+        const hostile = `status=${claimed}&assignment_status=${claimed}&open=${openness !== 'open'}`;
+        const roles: PilotRole[] = ['athlete', 'parent', 'coach'];
+
+        for (const role of roles) {
+          const row = assignmentRow({ status });
+          mockRequirePrincipal.mockResolvedValueOnce(principalFor(role));
+          mockGetAssignment.mockResolvedValueOnce(row);
+
+          const res = await GET(getRequest(`assignment_id=asg-1&${hostile}`));
+
+          expect(res.status).toBe(200);
+          const [organizationId, passed, audience] = mockResolve.mock.calls[mockResolve.mock.calls.length - 1];
+          expect(organizationId).toBe('org-1');
+          expect(audience).toBe(expectedAudience(role));
+          // The same object, and its status as read -- not a copy with the
+          // status rewritten, and not the row edited in place (row.status
+          // would move with it, so it is compared with the value the row was
+          // built from).
+          expect(passed).toBe(row);
+          expect(passed.status).toBe(status);
+          expect(passed.drill_id).toBe(OPERATIONAL_DRILL_ID);
+        }
+        expect(mockResolve).toHaveBeenCalledTimes(roles.length);
+      },
+    );
   });
 
   describe('the body', () => {
@@ -665,27 +777,38 @@ describe('GET /api/pilot/progression/drill-instruction', () => {
       },
     );
 
-    test.each(STAFF_AUDIENCE_ROLES.flatMap((role) => [true, false].map((canOpen) => [role, canOpen] as const)))(
-      'the %s role reads athlete_can_open: %p exactly as the resolver answered it',
-      async (role, canOpen) => {
-        // Whether the athlete can open the instruction is the resolver's answer
-        // (it runs the athlete's own read). The route decides nothing about it:
-        // it must not drop the field, default it, or turn `false` into a
-        // missing key -- a coach panel reads "missing" as "does not say" and
-        // stays silent exactly when the athlete is locked out. Every staff role,
-        // not just 'coach': all three get the staff shape.
-        const instruction = coachInstruction('current', canOpen);
-        mockRequirePrincipal.mockResolvedValueOnce(principalFor(role));
-        mockResolve.mockResolvedValueOnce(instruction);
+    test.each(STAFF_AUDIENCE_ROLES.flatMap((role) => ALL_ATHLETE_ACCESS.map((access) => [role, access] as const)))(
+      'the %s role reads athlete_access: %p exactly as the resolver answered it, from work in any status',
+      async (role, access) => {
+        // Which work opens the instruction for the athlete is the resolver's
+        // answer (it runs the athlete's own two reads). The route decides
+        // nothing about it: it must not drop the field, default it, collapse
+        // it back to a yes/no, or narrow it to the card being read. It is a
+        // property of the drill in this gym, the same for every card, so a
+        // coach reading completed work on a retired drill must still be told
+        // "open work only", not "none" -- and a coach reading open work must
+        // not be told "all work". Hence every status, on every staff role
+        // (all three get the staff shape), for every answer.
+        const instruction = coachInstruction('current', access);
 
-        const res = await GET(getRequest('assignment_id=asg-1'));
-        const body = await res.json();
+        for (const status of ALL_STATUSES) {
+          mockRequirePrincipal.mockResolvedValueOnce(principalFor(role));
+          mockGetAssignment.mockResolvedValueOnce(assignmentRow({ status }));
+          mockResolve.mockResolvedValueOnce(instruction);
 
-        expect(res.status).toBe(200);
-        expect(mockResolve).toHaveBeenCalledWith('org-1', expect.any(Object), 'coach');
-        expect(body).toHaveProperty('athlete_can_open');
-        expect(body.athlete_can_open).toBe(canOpen);
-        expect(body).toEqual({ assignment_id: 'asg-1', assigned_by: ISSUER_NAME, ...instruction });
+          const res = await GET(getRequest('assignment_id=asg-1'));
+          const body = await res.json();
+
+          expect(res.status).toBe(200);
+          expect(body).toHaveProperty('athlete_access', access);
+          // The yes/no it replaced is gone, not kept beside it.
+          expect(body).not.toHaveProperty('athlete_can_open');
+          expect(body).toEqual({ assignment_id: 'asg-1', assigned_by: ISSUER_NAME, ...instruction });
+        }
+        expect(mockResolve).toHaveBeenCalledTimes(ALL_STATUSES.length);
+        for (const call of mockResolve.mock.calls) {
+          expect(call[2]).toBe('coach');
+        }
       },
     );
   });
@@ -830,100 +953,208 @@ describe('GET /api/pilot/progression/drill-instruction', () => {
    *
    * Every case above mocks the resolver, which means the athlete body carries
    * no reference pointer only because the fixture has none. Here the resolver
-   * is real and the reference read hands back a detail WITH its drill_id -- the
-   * reference pointer, as getAthleteDrillDetail really returns it -- so the
-   * case fails if either the resolver stops removing it or the route adds it
-   * back.
+   * is real and each athlete read hands back a detail WITH its drill_id -- the
+   * reference pointer, as getAthleteDrillDetail and
+   * getAthleteDrillDetailForOpenWork really return it -- so the case fails if
+   * either the resolver stops removing it or the route adds it back.
+   *
+   * It is also where OD-2026-09-19-002 is proved end to end: the route hands
+   * over the row it read, the resolver reads that row's status, and open work
+   * on a retired drill opens while closed work does not. Neither half shows
+   * that alone -- the route's cases above mock the resolver, and the
+   * resolver's own suite is handed a status directly.
    */
   describe('through the real resolver', () => {
     const REFERENCE_ID = 'ref-v1-9c0e27';
 
+    /** The athlete detail as both athlete reads really return it: WITH the pointer. */
+    const withPointer = () => ({ drill_id: REFERENCE_ID, ...athleteDrill });
+
+    /** The staff reference detail as getDrillWithDetail returns it: the full row, WITH its drill_id. */
+    const referenceDetail = () => ({
+      drill_id: REFERENCE_ID,
+      name: 'Catch and Return',
+      stop_rules: [],
+      scale_levels: [],
+      cues: [],
+    });
+
+    /** The operational row the work was issued against. `active: false` is a drill the gym retired or replaced. */
+    const operationalRow = (active: boolean) => ({
+      organization_id: 'org-1',
+      drill_id: OPERATIONAL_DRILL_ID,
+      name: 'Catch and Return',
+      active,
+      reference_drill_id: REFERENCE_ID,
+    });
+
+    /**
+     * The athlete read work in this status is owed, and the one it is not
+     * (OD-2026-09-19-002): the open-work read while the work is open, the
+     * Learn read once it is closed.
+     */
+    const athleteReadsFor = (status: AssignmentStatus) =>
+      STATUS_IS_OPEN[status]
+        ? { used: mockOpenWorkDetail, unused: mockAthleteDetail }
+        : { used: mockAthleteDetail, unused: mockOpenWorkDetail };
+
+    /**
+     * What each athlete read finds, for each answer the staff shape can give.
+     * The open-work read only drops a term from the Learn read, so it finds
+     * everything the Learn read finds. A Record, so a new answer is a type
+     * error here until it has a case.
+     */
+    const READS_BEHIND_ACCESS: Record<AthleteInstructionAccess, { learn: boolean; openWork: boolean }> = {
+      all_work: { learn: true, openWork: true },
+      open_work_only: { learn: false, openWork: true },
+      none: { learn: false, openWork: false },
+    };
+
     beforeEach(() => {
       const actual = jest.requireActual('@/src/server/pilot/assignmentDrillInstruction');
       mockResolve.mockImplementation(actual.resolveAssignmentDrillInstruction);
-      mockGetDrill.mockResolvedValue({
-        organization_id: 'org-1',
-        drill_id: OPERATIONAL_DRILL_ID,
-        name: 'Catch and Return',
-        active: true,
-        reference_drill_id: REFERENCE_ID,
-      });
+      mockGetDrill.mockResolvedValue(operationalRow(true));
     });
 
-    test('an athlete gets the instruction, and the reference pointer appears nowhere in the body', async () => {
-      mockRequirePrincipal.mockResolvedValueOnce(principalFor('athlete'));
-      mockAthleteDetail.mockResolvedValueOnce({ drill_id: REFERENCE_ID, ...athleteDrill });
+    test.each(ALL_STATUSES)(
+      'an athlete opening %s work on a drill the gym runs gets the instruction, and the reference pointer appears nowhere in the body',
+      async (status) => {
+        mockRequirePrincipal.mockResolvedValueOnce(principalFor('athlete'));
+        mockGetAssignment.mockResolvedValueOnce(assignmentRow({ status }));
+        athleteReadsFor(status).used.mockResolvedValueOnce(withPointer());
 
-      const res = await GET(getRequest('assignment_id=asg-1'));
-      const text = await res.text();
+        const res = await GET(getRequest('assignment_id=asg-1'));
+        const text = await res.text();
 
-      expect(res.status).toBe(200);
-      expect(JSON.parse(text)).toEqual({
-        assignment_id: 'asg-1',
-        assigned_by: ISSUER_NAME,
-        state: 'available',
-        audience: 'athlete',
-        drill: athleteDrill,
-      });
-      expect(text).not.toContain(REFERENCE_ID);
-      expect(text).not.toContain('reference_drill_id');
-      expect(text).not.toContain(ISSUER_ACCOUNT_ID);
-      // A staff-only status line. The athlete is reading the instruction; being
-      // told whether they could is not theirs to receive.
-      expect(text).not.toContain('athlete_can_open');
-    });
+        expect(res.status).toBe(200);
+        expect(JSON.parse(text)).toEqual({
+          assignment_id: 'asg-1',
+          assigned_by: ISSUER_NAME,
+          state: 'available',
+          audience: 'athlete',
+          drill: athleteDrill,
+        });
+        expect(text).not.toContain(REFERENCE_ID);
+        expect(text).not.toContain('reference_drill_id');
+        expect(text).not.toContain(ISSUER_ACCOUNT_ID);
+        // Staff-only status lines. The athlete is reading the instruction;
+        // which work could open it, and where the drill stands in the gym's
+        // library, are not theirs to receive.
+        expect(text).not.toContain('athlete_access');
+        expect(text).not.toContain('athlete_can_open');
+        expect(text).not.toContain('operational_lifecycle');
+      },
+    );
 
-    test("the reference read follows the assignment's own operational row, once, and nothing else", async () => {
-      // The chain has no lookup along the way: assignment.drill_id -> that
-      // operational row -> ITS reference_drill_id. One read of each, by id.
-      // A route or resolver that went to a lineage head would need another
-      // read, or a different id, and fails here.
-      mockRequirePrincipal.mockResolvedValueOnce(principalFor('athlete'));
-      mockAthleteDetail.mockResolvedValueOnce({ drill_id: REFERENCE_ID, ...athleteDrill });
+    test.each(ALL_STATUSES)(
+      "%s work reads its reference through the assignment's own operational row, once, and only the athlete read its status calls for",
+      async (status) => {
+        // The chain has no lookup along the way: assignment.drill_id -> that
+        // operational row -> ITS reference_drill_id. One read of each, by id.
+        // A route or resolver that went to a lineage head would need another
+        // read, or a different id, and fails here. And ONE athlete read: the
+        // open-work read for open work, the Learn read for closed work
+        // (OD-2026-09-19-002). An athlete path that picked by anything but the
+        // row's status reaches the other one.
+        mockRequirePrincipal.mockResolvedValueOnce(principalFor('athlete'));
+        mockGetAssignment.mockResolvedValueOnce(assignmentRow({ status }));
+        const { used, unused } = athleteReadsFor(status);
+        used.mockResolvedValueOnce(withPointer());
 
-      await GET(getRequest('assignment_id=asg-1'));
+        await GET(getRequest('assignment_id=asg-1'));
 
-      expect(mockGetDrill).toHaveBeenCalledTimes(1);
-      expect(mockGetDrill).toHaveBeenCalledWith('org-1', OPERATIONAL_DRILL_ID);
-      expect(mockAthleteDetail).toHaveBeenCalledTimes(1);
-      expect(mockAthleteDetail).toHaveBeenCalledWith('org-1', REFERENCE_ID);
-      // The athlete never reaches the unfiltered staff read, or the staff-only
-      // lifecycle status.
-      expect(mockCoachDetail).not.toHaveBeenCalled();
-      expect(mockLifecycle).not.toHaveBeenCalled();
-      for (const call of dbCalls) {
-        expect(call).not.toHaveBeenCalled();
-      }
-    });
+        expect(mockGetDrill).toHaveBeenCalledTimes(1);
+        expect(mockGetDrill).toHaveBeenCalledWith('org-1', OPERATIONAL_DRILL_ID);
+        expect(used).toHaveBeenCalledTimes(1);
+        expect(used).toHaveBeenCalledWith('org-1', REFERENCE_ID);
+        expect(unused).not.toHaveBeenCalled();
+        // The athlete never reaches the unfiltered staff read, or the staff-only
+        // lifecycle status.
+        expect(mockCoachDetail).not.toHaveBeenCalled();
+        expect(mockLifecycle).not.toHaveBeenCalled();
+        for (const call of dbCalls) {
+          expect(call).not.toHaveBeenCalled();
+        }
+      },
+    );
 
-    test('a reference this gym no longer offers the athlete is "unavailable", with the assignment still answered', async () => {
-      mockRequirePrincipal.mockResolvedValueOnce(principalFor('parent'));
-      mockAthleteDetail.mockResolvedValueOnce(null);
+    test.each(ALL_STATUSES.map((status) => [status, STATUS_IS_OPEN[status] ? 'opens' : 'does not open'] as const))(
+      'on a drill the gym retired, %s work %s its instruction, for the athlete and the guardian alike',
+      async (status) => {
+        // OD-2026-09-19-002. The gym retired the operational drill, so the
+        // Learn read (promoted AND live) withholds the reference; the reference
+        // itself is still active, so the open-work read finds it. Which the
+        // athlete gets turns on nothing but the status on the row the route
+        // read. A route that dropped the status would shut open work out --
+        // the athlete still expected to do it, without its stop rules -- and
+        // one that pinned it open would let completed and cancelled work in.
+        const opens = STATUS_IS_OPEN[status];
+        mockGetDrill.mockResolvedValue(operationalRow(false));
+        mockAthleteDetail.mockResolvedValue(null);
+        mockOpenWorkDetail.mockResolvedValue(withPointer());
+        const roles: PilotRole[] = ['athlete', 'parent'];
 
-      const res = await GET(getRequest('assignment_id=asg-1'));
+        for (const role of roles) {
+          mockRequirePrincipal.mockResolvedValueOnce(principalFor(role));
+          mockGetAssignment.mockResolvedValueOnce(assignmentRow({ status }));
 
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ assignment_id: 'asg-1', assigned_by: ISSUER_NAME, state: 'unavailable' });
-      expect(mockCoachDetail).not.toHaveBeenCalled();
-    });
+          const res = await GET(getRequest('assignment_id=asg-1'));
+          const text = await res.text();
 
-    test('a coach gets the full reference detail, where the operational drill stands now, and whether the athlete can open it', async () => {
+          expect(res.status).toBe(200);
+          // Exact either way: open work gets the whole instruction, safety and
+          // stop rules included; closed work gets the one neutral word and
+          // nothing about why (a retired drill is the gym's business).
+          expect(JSON.parse(text)).toEqual(
+            opens
+              ? { assignment_id: 'asg-1', assigned_by: ISSUER_NAME, state: 'available', audience: 'athlete', drill: athleteDrill }
+              : { assignment_id: 'asg-1', assigned_by: ISSUER_NAME, state: 'unavailable' },
+          );
+          expect(text).not.toContain(REFERENCE_ID);
+        }
+        const { used, unused } = athleteReadsFor(status);
+        expect(used).toHaveBeenCalledTimes(roles.length);
+        expect(unused).not.toHaveBeenCalled();
+        expect(mockCoachDetail).not.toHaveBeenCalled();
+        expect(mockLifecycle).not.toHaveBeenCalled();
+        for (const call of dbCalls) {
+          expect(call).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    test.each(ALL_STATUSES)(
+      'a withdrawn reference is "unavailable" from %s work, with the assignment still answered',
+      async (status) => {
+        // OD-2026-09-19-002 keeps a retracted reference withheld from every
+        // athlete read, open work included: both reads require the reference
+        // row to be active, so both withhold it here.
+        mockRequirePrincipal.mockResolvedValueOnce(principalFor('parent'));
+        mockGetAssignment.mockResolvedValueOnce(assignmentRow({ status }));
+        mockAthleteDetail.mockResolvedValue(null);
+        mockOpenWorkDetail.mockResolvedValue(null);
+
+        const res = await GET(getRequest('assignment_id=asg-1'));
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ assignment_id: 'asg-1', assigned_by: ISSUER_NAME, state: 'unavailable' });
+        expect(athleteReadsFor(status).used).toHaveBeenCalledTimes(1);
+        expect(mockCoachDetail).not.toHaveBeenCalled();
+      },
+    );
+
+    test('a coach gets the full reference detail, where the operational drill stands now, and which work the athlete can open it from', async () => {
       // The version the work was issued against is inactive, but the gym
       // refined it and runs the successor: 'changed', not 'retired'. The
-      // instruction is still the one that version pinned.
+      // instruction is still the one that version pinned, and the promotion
+      // is live, so any of the athlete's work opens it.
       mockRequirePrincipal.mockResolvedValueOnce(principalFor('coach'));
-      mockGetDrill.mockResolvedValueOnce({
-        organization_id: 'org-1',
-        drill_id: OPERATIONAL_DRILL_ID,
-        name: 'Catch and Return',
-        active: false,
-        reference_drill_id: REFERENCE_ID,
-      });
+      mockGetDrill.mockResolvedValueOnce(operationalRow(false));
       mockLifecycle.mockResolvedValueOnce('changed');
-      const detail = { drill_id: REFERENCE_ID, name: 'Catch and Return', stop_rules: [], scale_levels: [], cues: [] };
+      const detail = referenceDetail();
       mockCoachDetail.mockResolvedValueOnce(detail);
-      // The athlete's own read still finds it: the promotion is live.
-      mockAthleteDetail.mockResolvedValueOnce({ drill_id: REFERENCE_ID, ...athleteDrill });
+      mockAthleteDetail.mockResolvedValueOnce(withPointer());
+      mockOpenWorkDetail.mockResolvedValueOnce(withPointer());
 
       const res = await GET(getRequest('assignment_id=asg-1'));
 
@@ -935,15 +1166,17 @@ describe('GET /api/pilot/progression/drill-instruction', () => {
         audience: 'coach',
         drill: detail,
         operational_lifecycle: 'changed',
-        athlete_can_open: true,
+        athlete_access: 'all_work',
       });
       expect(mockCoachDetail).toHaveBeenCalledWith('org-1', REFERENCE_ID);
       expect(mockLifecycle).toHaveBeenCalledWith('org-1', OPERATIONAL_DRILL_ID);
-      // The answer comes from running the athlete's read on the SAME reference
-      // version the staff detail came from -- once, by id -- not from a
-      // re-derived predicate or a lineage head.
+      // The answer comes from running both of the athlete's reads on the SAME
+      // reference version the staff detail came from -- once each, by id --
+      // not from a re-derived predicate or a lineage head.
       expect(mockAthleteDetail).toHaveBeenCalledTimes(1);
       expect(mockAthleteDetail).toHaveBeenCalledWith('org-1', REFERENCE_ID);
+      expect(mockOpenWorkDetail).toHaveBeenCalledTimes(1);
+      expect(mockOpenWorkDetail).toHaveBeenCalledWith('org-1', REFERENCE_ID);
       for (const call of dbCalls) {
         expect(call).not.toHaveBeenCalled();
       }
@@ -951,42 +1184,59 @@ describe('GET /api/pilot/progression/drill-instruction', () => {
 
     test.each(
       STAFF_AUDIENCE_ROLES.flatMap((role) =>
-        [
-          ['the athlete read finds it', true],
-          ['the athlete read withholds it', false],
-        ].map(([why, canOpen]) => [role, why as string, canOpen as boolean] as const),
+        ALL_ATHLETE_ACCESS.map((access) => [role, access, ATHLETE_ACCESS_MEANING[access]] as const),
       ),
-    )('the %s role, when %s, reads athlete_can_open: %p beside the full detail', async (role, _why, canOpen) => {
-      // The same reads, over both answers from the athlete's own read. The
-      // staff read is unfiltered, so the instruction stays 'available' to staff
-      // either way; only the boolean moves. The athlete read feeds that boolean
-      // and nothing else: none of the athlete projection reaches the staff body.
-      mockRequirePrincipal.mockResolvedValueOnce(principalFor(role));
-      mockLifecycle.mockResolvedValueOnce('current');
-      const detail = { drill_id: REFERENCE_ID, name: 'Catch and Return', stop_rules: [], scale_levels: [], cues: [] };
-      mockCoachDetail.mockResolvedValueOnce(detail);
-      mockAthleteDetail.mockResolvedValueOnce(canOpen ? { drill_id: REFERENCE_ID, ...athleteDrill } : null);
+    )(
+      'the %s role reads athlete_access: %p (%s) beside the full detail, from work in any status',
+      async (role, access) => {
+        // The same reads, over every combination the two athlete reads can
+        // give. The staff read is unfiltered, so the instruction stays
+        // 'available' to staff whatever the athlete reads find; only
+        // athlete_access moves. It is a property of the drill in this gym, not
+        // of the card, so it must come out the same from work in every status
+        // -- a coach reading completed work on a retired drill is still told
+        // open work opens it. The athlete reads feed that answer and nothing
+        // else: none of the athlete projection reaches the staff body.
+        const { learn, openWork } = READS_BEHIND_ACCESS[access];
+        const lifecycle = access === 'open_work_only' ? 'retired' : 'current';
+        mockGetDrill.mockResolvedValue(operationalRow(lifecycle === 'current'));
+        mockLifecycle.mockResolvedValue(lifecycle);
+        const detail = referenceDetail();
+        mockCoachDetail.mockResolvedValue(detail);
+        mockAthleteDetail.mockResolvedValue(learn ? withPointer() : null);
+        mockOpenWorkDetail.mockResolvedValue(openWork ? withPointer() : null);
 
-      const res = await GET(getRequest('assignment_id=asg-1'));
-      const text = await res.text();
+        for (const status of ALL_STATUSES) {
+          mockRequirePrincipal.mockResolvedValueOnce(principalFor(role));
+          mockGetAssignment.mockResolvedValueOnce(assignmentRow({ status }));
 
-      expect(res.status).toBe(200);
-      expect(JSON.parse(text)).toEqual({
-        assignment_id: 'asg-1',
-        assigned_by: ISSUER_NAME,
-        state: 'available',
-        audience: 'coach',
-        drill: detail,
-        operational_lifecycle: 'current',
-        athlete_can_open: canOpen,
-      });
-      expect(text).not.toContain(athleteDrill.what_good_looks_like);
-      expect(mockCoachDetail).toHaveBeenCalledWith('org-1', REFERENCE_ID);
-      expect(mockAthleteDetail).toHaveBeenCalledTimes(1);
-      expect(mockAthleteDetail).toHaveBeenCalledWith('org-1', REFERENCE_ID);
-      for (const call of dbCalls) {
-        expect(call).not.toHaveBeenCalled();
-      }
-    });
+          const res = await GET(getRequest('assignment_id=asg-1'));
+          const text = await res.text();
+
+          expect(res.status).toBe(200);
+          expect(JSON.parse(text)).toEqual({
+            assignment_id: 'asg-1',
+            assigned_by: ISSUER_NAME,
+            state: 'available',
+            audience: 'coach',
+            drill: detail,
+            operational_lifecycle: lifecycle,
+            athlete_access: access,
+          });
+          expect(text).not.toContain(athleteDrill.what_good_looks_like);
+        }
+
+        // Every read, on every card, by the same reference id.
+        for (const read of [mockCoachDetail, mockAthleteDetail, mockOpenWorkDetail]) {
+          expect(read).toHaveBeenCalledTimes(ALL_STATUSES.length);
+          for (const call of read.mock.calls) {
+            expect(call).toEqual(['org-1', REFERENCE_ID]);
+          }
+        }
+        for (const call of dbCalls) {
+          expect(call).not.toHaveBeenCalled();
+        }
+      },
+    );
   });
 });

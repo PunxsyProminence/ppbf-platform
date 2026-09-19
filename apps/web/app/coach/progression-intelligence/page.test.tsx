@@ -905,8 +905,9 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
   };
 
   // 'current': the operational drill the work was issued against is still the
-  // one the gym runs, and the athlete can open the same instruction from the
-  // work, so the panel owes the coach no note of any kind.
+  // one the gym runs, and any of the athlete's work opens the same instruction
+  // (athlete_access 'all_work', the Learn rule), so the panel owes the coach no
+  // note of any kind.
   const LINKED_INSTRUCTION: AssignmentInstructionResponse = {
     assignment_id: LINKED.assignment_id,
     assigned_by: 'Coach Danielle',
@@ -914,7 +915,7 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
     audience: 'coach',
     drill: REFERENCE,
     operational_lifecycle: 'current',
-    athlete_can_open: true,
+    athlete_access: 'all_work',
   };
 
   const HOOK_INSTRUCTION: AssignmentInstructionResponse = {
@@ -924,17 +925,38 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
     audience: 'coach',
     drill: REFERENCE_HOOK,
     operational_lifecycle: 'current',
-    athlete_can_open: true,
+    athlete_access: 'all_work',
   };
 
-  // The panel's three notes about where the work's drill stands now, word for
-  // word as the coach reads them.
+  // The panel's notes about where the work's drill stands now, and which of an
+  // athlete's work opens it, word for word as the coach reads them.
   const CHANGED_NOTE =
     'This gym has changed this drill since the work was issued, and another version of it is in use now. These are the reference instructions this work was issued against.';
   const RETIRED_NOTE =
     'This gym has retired this drill since the work was issued. These are the reference instructions it was issued against.';
-  const ATHLETE_CANNOT_OPEN_NOTE =
-    "Athletes cannot open these instructions from this work, because this gym no longer offers them to athletes.";
+  // athlete_access 'open_work_only' (OD-2026-09-19-002): the gym retired the
+  // drill, so open work keeps it and closed work does not.
+  const ATHLETE_OPEN_WORK_ONLY_NOTE =
+    'Athletes can still open these instructions from work that is assigned or in progress, but not from completed, cancelled or incomplete work.';
+  // athlete_access 'none': the reference itself was withdrawn.
+  const ATHLETE_WITHDRAWN_NOTE =
+    'Athletes cannot open these instructions from any work, because the reference drill has been withdrawn.';
+
+  /**
+   * Any athlete note the panel can write. The negative checks use it beside
+   * the two exact texts, so "no athlete note" cannot pass because a note was
+   * reworded. A test below holds the pattern to both texts, so it cannot drift
+   * into matching nothing.
+   */
+  const ANY_ATHLETE_NOTE = /^Athletes (can still|cannot) open these instructions from /;
+  const RESTRICTED_INK = 'text-[color:var(--restricted-ink)]';
+
+  /** No note about which of an athlete's work opens the drill, by pattern and by each exact text. */
+  function expectNoAthleteNote() {
+    expect(screen.queryAllByText(ANY_ATHLETE_NOTE)).toEqual([]);
+    expect(screen.queryByText(ATHLETE_OPEN_WORK_ONLY_NOTE)).toBeNull();
+    expect(screen.queryByText(ATHLETE_WITHDRAWN_NOTE)).toBeNull();
+  }
 
   interface Sent {
     path: string;
@@ -1171,8 +1193,8 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
       // A preview is not assigned work: there is no work for the athlete to
       // open it from, and no issued version for the gym to have moved away
       // from. The read does not say, and the panel must not read "does not
-      // say" as "cannot".
-      expect(screen.queryByText(/Athletes cannot open/)).toBeNull();
+      // say" as either "only open work" or "no work".
+      expectNoAthleteNote();
       expect(screen.queryByText(/This gym has (changed|retired) this drill/)).toBeNull();
     });
 
@@ -1350,11 +1372,11 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
       expect(opener.getAttribute('aria-expanded')).toBe('true');
       expect(opener.getAttribute('aria-label')).toBe('Hide instructions: Jab return');
 
-      // Still the drill the gym runs, and the athlete can open it too: no note
-      // of any kind, in the drill's header or anywhere else.
+      // Still the drill the gym runs, and any of the athlete's work opens it
+      // too: no note of any kind, in the drill's header or anywhere else.
       expect(screen.queryByText(/This gym has changed this drill/)).toBeNull();
       expect(screen.queryByText(/This gym has retired this drill/)).toBeNull();
-      expect(screen.queryByText(/Athletes cannot open/)).toBeNull();
+      expectNoAthleteNote();
       expectLiveRegionSaysOnlyOpened('Seeded jab return');
     });
 
@@ -1394,8 +1416,9 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
     // panel says it in words, in the drill's own header.
     //
     // Retired with no active successor is also the case where the athlete's
-    // read (promoted-and-live) no longer finds the reference, so the fixture
-    // carries the answer the server gives for it: athlete_can_open false.
+    // Learn read (promoted-and-live) no longer finds the reference, but the
+    // open-work read still does (OD-2026-09-19-002), so the fixture carries
+    // the answer the server gives for it: athlete_access 'open_work_only'.
     test('work issued against a drill the gym has since retired opens at the version it was issued against, and says so', async () => {
       const RETIRED: AssignmentInstructionResponse = {
         assignment_id: LINKED.assignment_id,
@@ -1404,7 +1427,7 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
         audience: 'coach',
         drill: { ...REFERENCE, superseded_at: '2026-09-18T00:00:00.000Z' },
         operational_lifecycle: 'retired',
-        athlete_can_open: false,
+        athlete_access: 'open_work_only',
       };
       await openBoard([], { instruction: () => ok(RETIRED) });
 
@@ -1412,9 +1435,18 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
 
       const article = await screen.findByRole('article', { name: 'Seeded jab return' });
       const retired = headerNote(article, RETIRED_NOTE);
-      const athlete = headerNote(article, ATHLETE_CANNOT_OPEN_NOTE);
-      // Where the drill stands first, then what that means for the athlete.
+      const athlete = headerNote(article, ATHLETE_OPEN_WORK_ONLY_NOTE);
+      // Where the drill stands first, then which of the athlete's work still
+      // opens it.
       expect(retired.compareDocumentPosition(athlete) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      // One athlete note, and it is the open-work one: a retired drill is not a
+      // withdrawn reference, and the coach must not be told no work opens it.
+      expect(screen.getAllByText(ANY_ATHLETE_NOTE)).toEqual([athlete]);
+      expect(screen.queryByText(ATHLETE_WITHDRAWN_NOTE)).toBeNull();
+      // Open work keeps the drill, so the athlete line is information, not a
+      // restriction: it is not in the restricted ink the retirement is.
+      expect(retired.className).toContain(RESTRICTED_INK);
+      expect(athlete.className).not.toContain(RESTRICTED_INK);
       expect(screen.queryByText(/This gym has changed this drill/)).toBeNull();
       // The version shown is the one the server named, labelled as superseded
       // -- not quietly swapped for whatever is current.
@@ -1423,8 +1455,8 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
     });
 
     // A refinement carries the reference pointer forward to an active
-    // successor, so the athlete's read still finds it: nothing to say about
-    // the athlete.
+    // successor, so the athlete's Learn read still finds it and any work opens
+    // it: nothing to say about the athlete.
     test('work issued against a drill the gym has since changed says it changed, not that it was retired', async () => {
       const CHANGED: AssignmentInstructionResponse = {
         assignment_id: LINKED.assignment_id,
@@ -1433,7 +1465,7 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
         audience: 'coach',
         drill: REFERENCE,
         operational_lifecycle: 'changed',
-        athlete_can_open: true,
+        athlete_access: 'all_work',
       };
       await openBoard([], { instruction: () => ok(CHANGED) });
 
@@ -1442,31 +1474,38 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
       const article = await screen.findByRole('article', { name: 'Seeded jab return' });
       headerNote(article, CHANGED_NOTE);
       expect(screen.queryByText(/This gym has retired this drill/)).toBeNull();
-      expect(screen.queryByText(/Athletes cannot open/)).toBeNull();
+      expectNoAthleteNote();
       expectLiveRegionSaysOnlyOpened('Seeded jab return');
     });
 
     // The coach read has no active filter, so a coach can still read a
-    // reference the library has withdrawn -- and the athlete, whose read is
-    // the promoted-and-live Learn read, cannot. The operational drill is still
-    // the one the gym runs, so this note is the only one: a coach reading it
-    // should not tell the athlete to go and read it.
-    test('work whose instructions the athlete can no longer open says so, even while the drill is still current', async () => {
+    // reference the library has withdrawn -- and the athlete cannot, from any
+    // work: both athlete reads keep the active term, and OD-2026-09-19-002's
+    // open-work exception does not reach a withdrawn reference. The operational
+    // drill is still the one the gym runs, so this note is the only one: a
+    // coach reading it should not send the athlete to go and read it.
+    test('work whose instructions the athlete can no longer open from any work says so, even while the drill is still current', async () => {
       const WITHDRAWN: AssignmentInstructionResponse = {
         ...LINKED_INSTRUCTION,
         drill: { ...REFERENCE, active: false },
         operational_lifecycle: 'current',
-        athlete_can_open: false,
+        athlete_access: 'none',
       };
       await openBoard([], { instruction: () => ok(WITHDRAWN) });
 
       await click(screen.getByRole('button', { name: 'View instructions: Jab return' }));
 
       const article = await screen.findByRole('article', { name: 'Seeded jab return' });
-      const note = headerNote(article, ATHLETE_CANNOT_OPEN_NOTE);
-      // Plain text in the header, not a second alert channel.
+      const note = headerNote(article, ATHLETE_WITHDRAWN_NOTE);
+      // Plain text in the header, not a second alert channel -- but in the
+      // restricted ink: no work of the athlete's opens it.
       expect(note.getAttribute('role')).toBeNull();
       expect(screen.queryByRole('alert')).toBeNull();
+      expect(note.className).toContain(RESTRICTED_INK);
+      // One athlete note, and it is not the open-work one: a withdrawn
+      // reference is withheld from open work too.
+      expect(screen.getAllByText(ANY_ATHLETE_NOTE)).toEqual([note]);
+      expect(screen.queryByText(ATHLETE_OPEN_WORK_ONLY_NOTE)).toBeNull();
       expect(screen.queryByText(/This gym has (changed|retired) this drill/)).toBeNull();
       expect(within(article).getByText(/Retracted\./)).toBeTruthy();
       // The full drill still opens for the coach: the note qualifies it, it
@@ -1475,6 +1514,36 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
         'Stop when the hand stops coming home.',
       );
       expectLiveRegionSaysOnlyOpened('Seeded jab return');
+    });
+
+    // Retired AND withdrawn: the withdrawal is the stronger fact for the
+    // athlete, so the server answers 'none' and the open-work exception is not
+    // offered. Both notes are said, the drill's standing first.
+    test('work on a retired drill whose reference was also withdrawn says both, and that no work opens it', async () => {
+      const RETIRED_AND_WITHDRAWN: AssignmentInstructionResponse = {
+        ...LINKED_INSTRUCTION,
+        drill: { ...REFERENCE, active: false },
+        operational_lifecycle: 'retired',
+        athlete_access: 'none',
+      };
+      await openBoard([], { instruction: () => ok(RETIRED_AND_WITHDRAWN) });
+
+      await click(screen.getByRole('button', { name: 'View instructions: Jab return' }));
+
+      const article = await screen.findByRole('article', { name: 'Seeded jab return' });
+      const retired = headerNote(article, RETIRED_NOTE);
+      const athlete = headerNote(article, ATHLETE_WITHDRAWN_NOTE);
+      expect(retired.compareDocumentPosition(athlete) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.getAllByText(ANY_ATHLETE_NOTE)).toEqual([athlete]);
+      expect(screen.queryByText(ATHLETE_OPEN_WORK_ONLY_NOTE)).toBeNull();
+      expectLiveRegionSaysOnlyOpened('Seeded jab return');
+    });
+
+    // The negative checks above lean on ANY_ATHLETE_NOTE. Held to both texts
+    // here, so a check that finds no athlete note is finding neither of them.
+    test('the any-athlete-note pattern matches both athlete notes the panel can write', () => {
+      expect(ATHLETE_OPEN_WORK_ONLY_NOTE).toMatch(ANY_ATHLETE_NOTE);
+      expect(ATHLETE_WITHDRAWN_NOTE).toMatch(ANY_ATHLETE_NOTE);
     });
 
     // The assigned-list twin of the slow-pick test: two drills that can both

@@ -87,10 +87,20 @@ function lifecycleNotes(opened: OpenedInstruction) {
       tone: 'restricted',
     });
   }
-  if (opened.athleteCanOpen === false) {
+  // Which of an athlete's work opens these instructions. Stated as a rule
+  // about the drill, not about one card, because a group preview is read
+  // through its first card and the rule holds for every card alike.
+  if (opened.athleteAccess === 'open_work_only') {
     notes.push({
       key: 'athlete',
-      text: "Athletes cannot open these instructions from this work, because this gym no longer offers them to athletes.",
+      text: 'Athletes can still open these instructions from work that is assigned or in progress, but not from completed, cancelled or incomplete work.',
+      tone: 'plain',
+    });
+  }
+  if (opened.athleteAccess === 'none') {
+    notes.push({
+      key: 'athlete',
+      text: 'Athletes cannot open these instructions from any work, because the reference drill has been withdrawn.',
       tone: 'restricted',
     });
   }

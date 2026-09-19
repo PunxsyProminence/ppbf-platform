@@ -23,15 +23,17 @@
 // the lineage stands -- getOperationalDrillLifecycle -- but that is a status
 // line, not a content source.)
 //
-// THE ATHLETE READ IS THE LEARN READ. getAthleteDrillDetail applies the
-// promoted-and-live predicate and the athlete-safe projection; OD-2026-09-17-001
-// clause 7 says every athlete-reachable path to reference content applies both,
-// so this path reuses that function rather than growing a second one. The
-// consequence is deliberate: a drill whose promotion this gym has since retired
-// (and not refined into an active successor), or whose reference was withdrawn,
-// is unavailable to the athlete here exactly as it is in Learn. The assignment
-// itself -- its snapshot wording, its completions -- is untouched and still
-// readable (clause 4); only the library instruction is withheld.
+// THE ATHLETE READ IS THE LEARN READ, EXCEPT FOR OPEN WORK. By default the
+// athlete path uses getAthleteDrillDetail -- the promoted-and-live predicate
+// and the athlete-safe projection -- because OD-2026-09-17-001 clause 7 applies
+// both to every athlete-reachable path to reference content. OD-2026-09-19-002
+// carves out one case: work that is still OPEN (assigned or in progress) keeps
+// the exact instruction it was issued against after the gym retires the drill,
+// because the athlete is still expected to do it, safety and stop rules
+// included. That case reads getAthleteDrillDetailForOpenWork, which drops only
+// the adoption term: a retracted (inactive) reference is still withheld, and so
+// is completed or cancelled work on a retired drill. The assignment itself --
+// its snapshot wording, its completions -- is untouched either way (clause 4).
 //
 // NOTHING ABOUT PROVENANCE REACHES AN ATHLETE. W-D2 removed reference_drill_id
 // from every athlete response as internal provenance, and the athlete detail's
@@ -45,6 +47,7 @@
 import { getDrill } from './drills';
 import {
   getAthleteDrillDetail,
+  getAthleteDrillDetailForOpenWork,
   getDrillWithDetail,
   type AthleteDrillDetail,
   type DrillWithDetail,
@@ -54,6 +57,18 @@ import { getOperationalDrillLifecycle, type OperationalDrillLifecycle } from './
 /** Who the instruction is shaped for. Decided by the route from the session role, never by the caller. */
 export type AssignmentInstructionAudience = 'athlete' | 'coach';
 
+/**
+ * Which of an athlete's work on this drill opens its instruction -- a property
+ * of the drill in this gym, not of one card, so it holds for every card of a
+ * group issuance alike:
+ *
+ *   all_work        the gym runs the drill: any work opens it (the Learn rule).
+ *   open_work_only  the gym retired it: only work still assigned or in
+ *                   progress opens it (OD-2026-09-19-002).
+ *   none            the reference itself is withdrawn: no work opens it.
+ */
+export type AthleteInstructionAccess = 'all_work' | 'open_work_only' | 'none';
+
 /** The athlete detail without its drill_id, which is the reference pointer. */
 export type AssignmentAthleteDrill = Omit<AthleteDrillDetail, 'drill_id'>;
 
@@ -62,16 +77,16 @@ export type AssignmentDrillInstruction =
   | { state: 'available'; audience: 'athlete'; drill: AssignmentAthleteDrill }
   /**
    * The linked reference instruction in full, for staff, with where the
-   * operational drill the work was issued against stands now, and whether the
-   * athlete can open this same instruction from the work -- a coach who is
-   * reading it should not tell an athlete to go and read it if they cannot.
+   * operational drill the work was issued against stands now, and which work
+   * an athlete can open this same instruction from -- a coach who is reading
+   * it should not send an athlete to read it if they cannot.
    */
   | {
       state: 'available';
       audience: 'coach';
       drill: DrillWithDetail;
       operational_lifecycle: OperationalDrillLifecycle;
-      athlete_can_open: boolean;
+      athlete_access: AthleteInstructionAccess;
     }
   /** Staff only: no operational drill is anchored -- a legacy row written before drills had identity (OD-2026-09-18-001 clause 1). */
   | { state: 'no_drill' }
@@ -102,7 +117,7 @@ export function withoutReferencePointer(detail: AthleteDrillDetail): AssignmentA
  */
 export async function resolveAssignmentDrillInstruction(
   organizationId: string,
-  assignment: { drill_id: string | null },
+  assignment: { drill_id: string | null; status: string },
   audience: AssignmentInstructionAudience,
 ): Promise<AssignmentDrillInstruction> {
   const instruction = await resolveLinkedInstruction(organizationId, assignment, audience);
@@ -114,7 +129,7 @@ export async function resolveAssignmentDrillInstruction(
 
 async function resolveLinkedInstruction(
   organizationId: string,
-  assignment: { drill_id: string | null },
+  assignment: { drill_id: string | null; status: string },
   audience: AssignmentInstructionAudience,
 ): Promise<AssignmentDrillInstruction> {
   if (!assignment.drill_id) {
@@ -134,7 +149,7 @@ async function resolveLinkedInstruction(
   }
 
   if (audience === 'athlete') {
-    const detail = await getAthleteDrillDetail(organizationId, operational.reference_drill_id);
+    const detail = await readAthleteInstruction(organizationId, operational.reference_drill_id, assignment.status);
     return detail
       ? { state: 'available', audience: 'athlete', drill: withoutReferencePointer(detail) }
       : { state: 'unavailable' };
@@ -143,13 +158,15 @@ async function resolveLinkedInstruction(
   // The coach read has no active filter by design: reviewing a retracted drill
   // is a legitimate coaching act, and the view says it is retracted.
   //
-  // Whether the athlete can open it is answered by running the athlete's own
-  // read, not by re-deriving the predicate here, so the two can never
-  // disagree: if the promoted-and-live rule changes, this answer changes with it.
-  const [detail, lifecycle, athleteDetail] = await Promise.all([
+  // Which work an athlete can open it from is answered by running the two
+  // reads the athlete path chooses between -- not by re-deriving either
+  // predicate here -- so the coach's answer and the athlete's can never
+  // disagree: if either rule changes, this answer changes with it.
+  const [detail, lifecycle, learnDetail, openWorkDetail] = await Promise.all([
     getDrillWithDetail(organizationId, operational.reference_drill_id),
     getOperationalDrillLifecycle(organizationId, operational.drill_id),
     getAthleteDrillDetail(organizationId, operational.reference_drill_id),
+    getAthleteDrillDetailForOpenWork(organizationId, operational.reference_drill_id),
   ]);
   if (!detail) {
     return { state: 'unavailable' };
@@ -161,6 +178,25 @@ async function resolveLinkedInstruction(
     // The row was just read, so a null here would mean it vanished between two
     // reads; its own active flag is then the most that can honestly be said.
     operational_lifecycle: lifecycle ?? (operational.active ? 'current' : 'retired'),
-    athlete_can_open: athleteDetail !== null,
+    athlete_access: learnDetail ? 'all_work' : openWorkDetail ? 'open_work_only' : 'none',
   };
+}
+
+/**
+ * Work the athlete is still expected to do (OD-2026-09-19-002: "assigned / in
+ * progress"). Completed, cancelled and incomplete work is not open.
+ */
+export function isOpenWork(status: string): boolean {
+  return status === 'assigned' || status === 'in_progress';
+}
+
+/**
+ * What the athlete may read for this work: the open-work read while the work
+ * is open, the Learn read otherwise. The coach's athlete_access runs the same
+ * two reads.
+ */
+function readAthleteInstruction(organizationId: string, referenceDrillId: string, status: string) {
+  return isOpenWork(status)
+    ? getAthleteDrillDetailForOpenWork(organizationId, referenceDrillId)
+    : getAthleteDrillDetail(organizationId, referenceDrillId);
 }

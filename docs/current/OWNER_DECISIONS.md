@@ -89,6 +89,64 @@ and should not try to.
 
 ---
 
+## OD-2026-09-19-002 -- Open assigned work keeps its drill instruction after the gym retires the drill
+
+**Provenance: PRIMARY.**
+
+**Date:** 2026-09-19. **Governs:** whether an athlete can open a drill's
+instruction from assigned work after the gym has retired that operational
+drill. **Narrows** OD-2026-09-17-001 clause 7 for this one case, and resolves
+the conflict between that clause and OD-2026-09-19-001's ASSIGNED ATHLETE
+clause that W-D4B surfaced (a P1 review thread on PR #938 raised it as an
+unrecorded policy choice). Everything else in both rulings stands.
+
+The question and the two options, as they were put to the owner:
+
+> When a gym retires a drill that an athlete still has OPEN work on (assigned / in progress), should
+> the athlete still be able to open that drill's instructions from the work?
+>
+> - **Open work keeps it (Recommended)** -- While the work is open, the athlete can read the exact
+>   pinned instructions, including safety and stop rules, even though the gym retired the drill. A
+>   retracted (withdrawn) reference stays withheld, and so does completed or cancelled work. Needs a
+>   small code change plus a review cycle, about 1-1.5h before merge. Reason: the athlete is still
+>   expected to do the work, and the coach can cancel it if the drill is unsafe.
+> - **Withhold, as built** -- Keep the current build (OD-17 clause 7 applied literally). The athlete
+>   sees 'no library instructions', and the coach preview says athletes can't open it. I record your
+>   ruling, resolve the Codex thread, and merge now.
+
+**Owner's choice:** "Open work keeps it (Recommended)".
+
+What that means as built:
+
+1. Work that is still open -- `assigned` or `in_progress` -- opens the exact
+   reference version its operational drill pinned, even after the gym retires
+   the drill.
+2. A retracted (inactive) reference stays withheld from every athlete read.
+3. Completed, cancelled and incomplete work get no such exception. They follow the
+   promoted-and-live rule, as Learn does.
+4. The drill stays out of Learn (clause 2 is unchanged). This is a read keyed
+   by the athlete's own open work, not a browse surface.
+
+**Correction to the option as put, same day.** The recommended option gave as
+its reason that "the coach can cancel it if the drill is unsafe". That is not
+true of the product today. No code path writes `cancelled` to
+`pilot.drill_assignments`; the only status writer is `touchAssignmentProgress`,
+which moves work toward `completed`. The W-D4B product review found this, and it
+was reported to the owner before merge.
+
+Asked whether the ruling stands knowing that, the owner answered, verbatim:
+
+> yes coach should be able to cancel work, also is there delete, undo, and edit available
+
+The ruling stands. A coach cancel capability for assigned work is owner-requested
+product direction. It is NOT built by W-D4B and needs its own bounded slice. The
+question about delete, undo and edit was answered in the session from the code:
+assigned work has none of the three today (no edit, no cancel, no delete, no
+undo; completion logs have only the coach's Verify / Dispute). Any of them would
+join the same follow-up slice.
+
+---
+
 ## OD-2026-09-19-001 -- Drills are progressive instructional objects (W-D4 product ruling)
 
 **Provenance: PRIMARY.**
@@ -271,24 +329,21 @@ owner's correction.
    (`assignment.drill_id` -> that row's `reference_drill_id`). Nothing follows a
    lineage to choose content. Staff are told where the lineage stands (see 6),
    but that is a status line, not a source of content.
-2. *The athlete read is the Learn read.* Opening a drill from an assignment uses
-   the same promoted-and-live predicate and athlete-safe projection as Learn
-   (OD-2026-09-17-001 clause 7). So if the gym has since retired the drill (and
-   not refined it into an active successor), or the reference was withdrawn, the
-   athlete is told there are no library instructions to open for it. The
-   assignment itself -- its snapshot wording and its completions -- is unchanged
-   and readable (clause 4). **Owner question:** retiring a drill does not cancel
-   work already issued against it, so an athlete can hold open, due work whose
-   instruction this rule withholds. Whether in-progress work should keep its
-   instruction after retirement is the owner's call; this build follows clause 7
-   as written.
+2. *The athlete read is the Learn read, except for open work.* Opening a drill
+   from an assignment uses the same promoted-and-live predicate and athlete-safe
+   projection as Learn (OD-2026-09-17-001 clause 7). The one exception is set by
+   OD-2026-09-19-002: open work (assigned or in progress) keeps its exact
+   instruction after the gym retires the drill. A withdrawn reference, and
+   completed or cancelled work on a retired drill, give the athlete the neutral
+   "no library instructions to open" line. The assignment itself -- its
+   snapshot wording and its completions -- is unchanged and readable (clause 4).
 3. *Provenance stays on the server.* The athlete response for an assignment
    carries the instruction but not the reference drill id, which W-D2 treats as
    internal provenance. Nor does it say why there is nothing to open: a drill
-   the gym wrote itself, a retired one, and work that predates drill links all
-   reach the athlete as one state and one neutral line, because each reason is
-   a fact about how the library is assembled and governed. Staff see the
-   reason.
+   the gym wrote itself, closed work on a retired one, a withdrawn reference,
+   and work that predates drill links all reach the athlete as one state and
+   one neutral line, because each reason is a fact about how the library is
+   assembled and governed. Staff see the reason.
 4. *"Coach" in the opened assignment is a derived name.* The new read names the
    assigning coach with the display name athletes already read on recognitions
    and development blocks (`getCoachDisplayName`), never an account id, and
@@ -308,10 +363,11 @@ owner's correction.
    work opens at the version it was issued against. The preview says when the
    operational drill has since changed into another version (adopting a
    refinement deactivates the version it replaces, which is not retirement) or
-   been retired, and nothing while it is still run. It also says when the
-   athlete can no longer open these instructions from the work, using the
-   athlete's own read to decide, so a coach does not send an athlete to read
-   something they cannot open.
+   been retired, and nothing while it is still run. It also says which work an
+   athlete can open these instructions from: any work, only open work (a
+   retired drill, per OD-2026-09-19-002), or none (a withdrawn reference). That
+   answer comes from running the athlete's own two reads, so a coach does not
+   send an athlete to read something they cannot open.
 
 ---
 

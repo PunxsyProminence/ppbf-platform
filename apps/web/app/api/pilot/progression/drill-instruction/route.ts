@@ -33,8 +33,9 @@ export const runtime = 'nodejs';
 // THE SHAPE FOLLOWS THE SESSION, NEVER THE REQUEST. Coaches and gym
 // administrators get the full reference detail. Everyone else who passes both
 // gates -- the athlete, and a guardian reading their athlete's work -- gets the
-// athlete-safe projection under the promoted-and-live rule. There is no
-// parameter that asks for the other shape.
+// athlete-safe projection: the Learn (promoted-and-live) read, except that open
+// work reads the OD-2026-09-19-002 open-work read. A retracted reference is
+// withheld either way. There is no parameter that asks for the other shape.
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);

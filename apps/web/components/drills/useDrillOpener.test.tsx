@@ -31,7 +31,7 @@ import { useDrillOpener } from './useDrillOpener';
 
 /** A distinct answer per drill; identity (toBe) is what the assertions compare. */
 function answer(assignedBy: string): OpenedInstruction {
-  return { state: 'available', view: null, assignedBy, operationalLifecycle: null, athleteCanOpen: null };
+  return { state: 'available', view: null, assignedBy, operationalLifecycle: null, athleteAccess: null };
 }
 
 /** Lets the hook's then/catch/finally chain run to the end, inside act. */

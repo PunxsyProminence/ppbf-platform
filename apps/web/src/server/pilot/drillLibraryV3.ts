@@ -679,13 +679,48 @@ export async function getAthleteDrillDetail(
   organizationId: string,
   drillId: string,
 ): Promise<AthleteDrillDetail | null> {
+  return readAthleteDrillDetail(organizationId, drillId, ATHLETE_PROMOTED_AND_LIVE);
+}
+
+/**
+ * The same athlete-safe detail for the one case OD-2026-09-19-002 carves out
+ * of the promoted-and-live rule: an athlete's OPEN assigned work (assigned or
+ * in progress) keeps the exact instruction it was issued against even after
+ * the gym retires the drill, because the athlete is still expected to do the
+ * work -- safety and stop rules included.
+ *
+ * ONLY the adoption term is dropped. The reference row must still be active
+ * (a retracted reference stays withheld, per the same ruling), the tenant
+ * boundary is unchanged, and the projection is the same constructive one.
+ *
+ * NOT A BROWSE READ. Its only caller is assignmentDrillInstruction.ts, which
+ * hands it a reference id resolved from an assignment the actor may see,
+ * through that assignment's own operational row. The athlete path uses it only
+ * when that work is open; the staff path also runs it, for any status, but
+ * only to answer which work an athlete could open -- its content never reaches
+ * an athlete from there. Nothing else may call it: handed an arbitrary id it
+ * would reveal any active reference in the gym, which is exactly what the
+ * Learn rule exists to stop.
+ */
+export async function getAthleteDrillDetailForOpenWork(
+  organizationId: string,
+  drillId: string,
+): Promise<AthleteDrillDetail | null> {
+  return readAthleteDrillDetail(organizationId, drillId, null);
+}
+
+async function readAthleteDrillDetail(
+  organizationId: string,
+  drillId: string,
+  adoptionPredicate: string | null,
+): Promise<AthleteDrillDetail | null> {
   const drill = await queryOne<AthleteDrillScalarRow & AthleteInstructionRow>(
     `select ${ATHLETE_DRILL_FIELDS}, ${ATHLETE_INSTRUCTION_FIELDS}
      from pilot.drill_library d
      where d.organization_id = $1
        and d.drill_id = $2
-       and d.active
-       and${ATHLETE_PROMOTED_AND_LIVE}`,
+       and d.active${adoptionPredicate ? `
+       and${adoptionPredicate}` : ''}`,
     [organizationId, drillId],
   );
   if (!drill) {
