@@ -4,13 +4,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
+import DrillDetail from '@/components/drills/DrillDetail';
+import { fromCoachDrillDetail, type DrillDetailView } from '@/components/drills/drillDetailView';
 import { apiBase } from '@/lib/apiBase';
-import type { DrillLibraryRow } from '@/src/server/pilot/drillLibraryV3';
+import { equipmentLabel, humanizeContactLevel } from '@/src/lib/drillPresentation';
+import type { DrillLibraryRow, DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
 import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills';
 
-// The gym's drill library, written by the coaches who teach it.
+// The gym's drill library: the reference drills it can adopt, and the
+// operational drills -- promoted from the reference library or written here --
+// that assignments point at.
 //
-// A drill written here is the thing an assignment points at, so the same drill
+// An operational drill is the thing an assignment points at, so the same drill
 // means the same thing across every athlete and every coach. Before this, an
 // assignment carried only the name a coach typed, and two coaches assigning the
 // same drill produced two unrelated strings.
@@ -24,6 +29,8 @@ type Drill = PilotDrill;
 type ReferenceDrill = DrillLibraryRow;
 
 const DIFFICULTIES = ['beginner', 'intermediate', 'advanced', 'elite'] as const;
+
+const REFERENCE_NOT_FOUND = "This reference drill is not in this gym's library.";
 
 function CoachDrillLibrary() {
   const [drills, setDrills] = useState<Drill[]>([]);
@@ -57,7 +64,24 @@ function CoachDrillLibrary() {
   // pilot_drills_one_reference_per_org deliberately ignores `active`. Reading
   // both from one active-only list would offer Promote on a reference whose
   // every click must 409.
-  const [promotedReferenceIds, setPromotedReferenceIds] = useState<string[]>([]);
+  // Keyed by reference drill id: true when an ACTIVE operational drill points at
+  // it, false when every promotion of it is retired. Retired promotions still
+  // reserve the reference, but "Already promoted" alone would tell a coach the
+  // drill is live when athletes cannot read it.
+  const [promotionState, setPromotionState] = useState<Record<string, boolean>>({});
+  const [promoteNotice, setPromoteNotice] = useState('');
+
+  // The informed decision surface (OD-2026-09-19-001). A reference drill is
+  // opened in full -- instruction, safety, scaling, source and version -- and
+  // Promote lives there, not on the one-line card: adoption is consequential,
+  // so it happens where the coach can see what they are adopting.
+  const [openReferenceId, setOpenReferenceId] = useState('');
+  const [openReference, setOpenReference] = useState<DrillDetailView | null>(null);
+  const [openReferenceLoading, setOpenReferenceLoading] = useState(false);
+  const [openReferenceError, setOpenReferenceError] = useState('');
+  const openRequestRef = useRef(0);
+  const referenceSectionRef = useRef<HTMLElement | null>(null);
+  const openerRef = useRef('');
 
   // No state is set before the first await: a synchronous setState inside an
   // effect cascades a render before the request has even left.
@@ -99,11 +123,12 @@ function CoachDrillLibrary() {
       if (!response.ok) return;
       const payload = (await response.json()) as Partial<DrillLibraryResponse>;
       if (!Array.isArray(payload.items)) return;
-      setPromotedReferenceIds(
-        payload.items
-          .map((drill) => drill.reference_drill_id)
-          .filter((id): id is string => Boolean(id)),
-      );
+      const state: Record<string, boolean> = {};
+      for (const drill of payload.items) {
+        if (!drill.reference_drill_id) continue;
+        state[drill.reference_drill_id] = Boolean(state[drill.reference_drill_id]) || drill.active !== false;
+      }
+      setPromotionState(state);
     } catch {
       // Deliberately silent: promotion state is a refinement of the reference
       // cards, not their content, and the reference list has its own error state.
@@ -141,7 +166,63 @@ function CoachDrillLibrary() {
   // with promotion, and inferring provenance from one would be the false link
   // reference_drill_id exists to replace. The census includes retired rows, which
   // is why it is its own read.
-  const promotedReferences = new Set(promotedReferenceIds);
+  const isPromoted = (referenceDrillId: string) => referenceDrillId in promotionState;
+  const promotionLabel = (referenceDrillId: string) =>
+    promotionState[referenceDrillId] ? 'Already promoted' : 'Promoted · retired';
+
+  // Reading only: the coach detail endpoint is a GET. A request counter keeps a
+  // slow answer for a drill the coach has already left from landing on the one
+  // they opened next.
+  async function openReferenceDrill(referenceDrillId: string, openerId: string) {
+    const request = openRequestRef.current + 1;
+    openRequestRef.current = request;
+    openerRef.current = openerId;
+    setPromoteNotice('');
+    setOpenReferenceId(referenceDrillId);
+    setOpenReference(null);
+    setOpenReferenceError('');
+    setOpenReferenceLoading(true);
+    setPromoteError('');
+    // The detail renders in the reference section; an operational card far
+    // below it opens it too, so bring the coach to where it appears.
+    referenceSectionRef.current?.scrollIntoView?.({ block: 'start' });
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/drill-library?drill_id=${encodeURIComponent(referenceDrillId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      // 404 is an answer, not a failure: the drill is not in this gym's library.
+      if (response.status === 404) throw new Error(REFERENCE_NOT_FOUND);
+      if (!response.ok) throw new Error('This reference drill could not be loaded.');
+      const payload = (await response.json()) as { drill?: DrillWithDetail };
+      if (!payload.drill) throw new Error('This reference drill could not be loaded.');
+      if (openRequestRef.current !== request) return;
+      setOpenReference(fromCoachDrillDetail(payload.drill));
+    } catch (error) {
+      if (openRequestRef.current !== request) return;
+      setOpenReferenceError(error instanceof Error ? error.message : 'This reference drill could not be loaded.');
+    } finally {
+      if (openRequestRef.current === request) setOpenReferenceLoading(false);
+    }
+  }
+
+  // Back returns focus -- and the page -- to the control that opened the
+  // drill, including an operational card far below the reference grid.
+  function closeReferenceDrill() {
+    openRequestRef.current += 1;
+    setOpenReferenceId('');
+    setOpenReference(null);
+    setOpenReferenceError('');
+    setOpenReferenceLoading(false);
+    const openerId = openerRef.current;
+    if (openerId && typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        const opener = document.getElementById(openerId);
+        opener?.scrollIntoView?.({ block: 'center' });
+        opener?.focus();
+      });
+    }
+  }
 
   async function promoteReference(referenceDrillId: string) {
     if (promotingRef.current) return;
@@ -149,6 +230,7 @@ function CoachDrillLibrary() {
     promotingRef.current = true;
     setPromotingReferenceId(referenceDrillId);
     setPromoteError('');
+    setPromoteNotice('');
 
     try {
       const response = await fetch(`${apiBase()}/api/pilot/drills/promote`, {
@@ -168,6 +250,7 @@ function CoachDrillLibrary() {
       // component's optimism. Both reads: the new drill belongs in the rendered
       // list, and its pointer belongs in the census.
       await Promise.all([load(), loadPromotionState()]);
+      setPromoteNotice('Promoted. It is now an operational drill: coaches can assign it, and athletes in this gym can read it in Learn.');
     } catch (error) {
       setPromoteError(error instanceof Error ? error.message : 'The drill could not be promoted.');
     } finally {
@@ -232,9 +315,14 @@ function CoachDrillLibrary() {
         <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Coach</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Drill Library</h1>
+          {/* Truthful since W-D2: athletes read a drill in Learn only when it was
+              promoted from the reference library. A drill written by hand here
+              is assignable, and its name and purpose reach the athlete on the
+              assignment, but it has no reference instructions to read. */}
           <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
-            Drills written here are what athletes see and what assignments point at. Writing one once
-            means the same drill means the same thing for every coach and every athlete.
+            Operational drills are what assignments point at, so the same drill means the same thing for
+            every coach and every athlete. Athletes can read a drill&apos;s full instructions once this gym
+            promotes it from the reference library.
           </p>
           <Link href="/coach/environment/intake-router" className="btn btn--ghost mt-[var(--s4)]">
             Back to Coach Workspace
@@ -329,13 +417,18 @@ function CoachDrillLibrary() {
           </button>
         </section>
 
-        <section className="mt-[var(--s6)]">
+        <section ref={referenceSectionRef} className="mt-[var(--s6)]">
           <h2 className="t-command text-[length:var(--t-lg)]">Reference library</h2>
           <p className="t-body mt-[var(--s2)] max-w-3xl text-[color:var(--bone-300)]">
-            Seeded coaching material for planning and review. The reference source stays read-only:
-            promoting a drill copies it into this gym&apos;s drills below, where assignments point.
-            Promoting does not assign the drill to any athlete.
+            Seeded coaching material for planning and review. The reference source stays read-only. Open a
+            drill to read all of it; promoting it from there adopts that exact version into this gym&apos;s
+            operational drills below, where assignments point. Once promoted, athletes in this gym can read
+            it in Learn. Promoting does not assign the drill to any athlete.
           </p>
+
+          {promoteNotice && (
+            <p role="status" className="t-body mt-[var(--s3)] text-[color:var(--bone-200)]">{promoteNotice}</p>
+          )}
 
           {promoteError && (
             <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
@@ -361,7 +454,45 @@ function CoachDrillLibrary() {
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">No reference drills are available.</p>
           )}
 
-          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
+          {/* LEVEL 2: the opened reference drill, with Promote on it. */}
+          {openReferenceId && (
+            <div className="mt-[var(--s4)] space-y-[var(--s4)]">
+              <button type="button" onClick={closeReferenceDrill} className="btn btn--ghost">
+                Back to the reference library
+              </button>
+              {openReferenceLoading && <p className="t-body text-[color:var(--bone-300)]">Loading the drill...</p>}
+              {!openReferenceLoading && openReferenceError && (
+                <p className="t-body text-[color:var(--bone-300)]">
+                  {openReferenceError}
+                  {openReferenceError !== REFERENCE_NOT_FOUND ? ' This is a failure to load, not a missing drill.' : ''}
+                </p>
+              )}
+              {!openReferenceLoading && openReference && (
+                <DrillDetail
+                  view={openReference}
+                  audience="coach"
+                  focusOnMount
+                  actions={isPromoted(openReference.id) ? (
+                    <p className="t-label text-[color:var(--bone-300)]">{promotionLabel(openReference.id)}</p>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void promoteReference(openReference.id)}
+                      disabled={promotingReferenceId !== ''}
+                      className="btn"
+                    >
+                      {promotingReferenceId === openReference.id ? 'Promoting...' : 'Promote'}
+                    </button>
+                  )}
+                />
+              )}
+            </div>
+          )}
+
+          {/* LEVEL 1: concise cards. Equipment is labelled as equipment -- it
+              used to be printed under "Setup:", which for most of the corpus
+              made an equipment word look like the setup instructions. */}
+          <div className={`mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2${openReferenceId ? ' hidden' : ''}`}>
             {referenceDrills.map((drill) => (
               <article key={drill.drill_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
                 <div className="flex items-baseline justify-between gap-[var(--s3)]">
@@ -371,25 +502,30 @@ function CoachDrillLibrary() {
                 <p className="t-label mt-[var(--s2)]">{drill.discipline} · {drill.category}</p>
                 <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{drill.purpose}</p>
                 <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-                  <span className="font-semibold text-[color:var(--bone-200)]">Setup:</span> {drill.standard_setup}
+                  <span className="font-semibold text-[color:var(--bone-200)]">Contact:</span> {humanizeContactLevel(drill.contact_level)}
                 </p>
+                {equipmentLabel(drill.equipment_needed) && (
+                  <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+                    <span className="font-semibold text-[color:var(--bone-200)]">Equipment:</span> {equipmentLabel(drill.equipment_needed)}
+                  </p>
+                )}
                 {drill.requires_coach_authorization && (
                   <p className="mt-[var(--s3)] text-[length:var(--t-xs)] font-semibold text-[var(--locked-ink)]">
                     Coach authorization required
                   </p>
                 )}
-                <div className="mt-[var(--s4)]">
-                  {promotedReferences.has(drill.drill_id) ? (
-                    <p className="t-label text-[color:var(--bone-300)]">Already promoted</p>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => void promoteReference(drill.drill_id)}
-                      disabled={promotingReferenceId !== ''}
-                      className="btn btn--ghost"
-                    >
-                      {promotingReferenceId === drill.drill_id ? 'Promoting...' : 'Promote'}
-                    </button>
+                <div className="mt-[var(--s4)] flex flex-wrap items-center gap-[var(--s3)]">
+                  <button
+                    type="button"
+                    id={`view-reference-${drill.drill_id}`}
+                    onClick={() => void openReferenceDrill(drill.drill_id, `view-reference-${drill.drill_id}`)}
+                    className="btn btn--ghost"
+                    aria-label={`View drill: ${drill.name}`}
+                  >
+                    View drill
+                  </button>
+                  {isPromoted(drill.drill_id) && (
+                    <p className="t-label text-[color:var(--bone-300)]">{promotionLabel(drill.drill_id)}</p>
                   )}
                 </div>
               </article>
@@ -398,7 +534,13 @@ function CoachDrillLibrary() {
         </section>
 
         <section className="mt-[var(--s6)]">
-          <h2 className="t-command text-[length:var(--t-lg)]">Gym-authored drills</h2>
+          {/* "Gym-authored" was false for every promoted drill (OD-2026-09-19-001).
+              These are the gym's operational drills -- promoted or written here --
+              and each one says which. */}
+          <h2 className="t-command text-[length:var(--t-lg)]">Operational drills</h2>
+          <p className="t-body mt-[var(--s2)] max-w-3xl text-[color:var(--bone-300)]">
+            The drills this gym runs and assigns: promoted from the reference library, or written here.
+          </p>
 
           {loading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>}
 
@@ -413,7 +555,8 @@ function CoachDrillLibrary() {
 
           {!loading && !loadError && drills.length === 0 && (
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-              Nothing yet. The first drill you add is the first one your athletes will see.
+              Nothing yet. Promote a drill from the reference library, or add one above; assignments can only
+              point at operational drills.
             </p>
           )}
 
@@ -425,9 +568,23 @@ function CoachDrillLibrary() {
                   <span className="plaque">{drill.difficulty}</span>
                 </div>
                 <p className="t-label mt-[var(--s2)]">
-                  {drill.category}
+                  {drill.category} · {drill.reference_drill_id ? 'From the reference library' : 'Written by this gym'}
                 </p>
                 <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{drill.focus}</p>
+                {/* A promoted drill's instructions live on its reference drill, so
+                    this opens that exact reference -- the pointer, never a name
+                    match. A hand-written drill has no reference to open. */}
+                {drill.reference_drill_id && (
+                  <button
+                    type="button"
+                    id={`view-instructions-${drill.drill_id}`}
+                    onClick={() => void openReferenceDrill(drill.reference_drill_id as string, `view-instructions-${drill.drill_id}`)}
+                    className="btn btn--ghost mt-[var(--s3)]"
+                    aria-label={`View instructions: ${drill.name}`}
+                  >
+                    View instructions
+                  </button>
+                )}
                 {drill.cues.length > 0 && (
                   <ul className="mt-[var(--s3)] flex flex-wrap gap-[var(--s2)]">
                     {drill.cues.map((cue) => (

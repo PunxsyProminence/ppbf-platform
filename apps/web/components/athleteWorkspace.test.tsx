@@ -48,6 +48,10 @@ let storedAssignments: Array<Record<string, unknown>> = [];
  * The client never filters; there is nothing here for it to filter WITH.
  */
 let storedReferenceDrills: Array<Record<string, unknown>> = [];
+/** W-D4A: the athlete detail for an opened drill, keyed by reference drill id. */
+let storedReferenceDrillDetails: Record<string, Record<string, unknown>> = {};
+/** W-D4A: make the detail read fail with a server error (not a 404). */
+let detailReadFails = false;
 let storedCheckIn: Record<string, unknown> | null;
 let checkInReadFails: boolean;
 let assignmentsFail = false;
@@ -157,6 +161,8 @@ beforeEach(() => {
   floorPlanPostFails = false;
   storedAssignments = [];
   storedReferenceDrills = [];
+  storedReferenceDrillDetails = {};
+  detailReadFails = false;
   assignmentsFail = false;
   // Checked in by default. The Floor is gated on today's check-in (owner
   // decision 2026-08-28), so a workspace that had NOT checked in would hide
@@ -239,6 +245,17 @@ beforeEach(() => {
     // drill list. Matched BEFORE any bare /api/pilot/drills branch would be,
     // and answering under `drills` -- the key that route uses -- so a client
     // reading `items` here renders empty instead of passing.
+    // W-D4A: an opened drill reads the athlete DETAIL, answered under `drill`.
+    // Matched first, on the query string, so a client that asked the list for a
+    // detail would get no drill and fail rather than pass.
+    if (url.includes('/api/pilot/drill-library?drill_id=')) {
+      const drillId = decodeURIComponent(url.split('drill_id=')[1] ?? '');
+      if (detailReadFails) return { ok: false, status: 500, json: async () => ({ error: 'Internal server error' }) } as unknown as Response;
+      const detail = storedReferenceDrillDetails[drillId];
+      return detail
+        ? jsonResponse({ drill: detail })
+        : ({ ok: false, status: 404, json: async () => ({ error: 'DRILL_NOT_FOUND' }) } as unknown as Response);
+    }
     if (url.includes('/api/pilot/drill-library')) {
       return jsonResponse({ drills: storedReferenceDrills });
     }
@@ -1385,10 +1402,41 @@ describe('tabs with nothing behind them are not offered', () => {
       purpose: 'Catching the straight punch.',
       setup: 'Partners at technical distance.',
       execution: 'Partner leads; catch and return.',
-      contact_level: 'light',
+      contact_level: 'light_technical',
       requires_coach_authorization: false,
       cues: ['Hand home first'],
     };
+
+    // The athlete DETAIL (getAthleteDrillDetail): the browse fields plus the
+    // practical instruction and the two child sets. Stop rules are one of each
+    // scope, so both groupings are exercised.
+    const adoptedDetail = {
+      ...adopted,
+      execution: 'Partner throws the jab.\n\nCatch it on the rear glove.\n\nReturn your own jab.',
+      what_good_looks_like: 'Glove meets the punch, not the face\nReturn comes straight back',
+      what_bad_looks_like: 'Reaching for the punch',
+      common_errors: 'Catching late',
+      corrections: 'Coach calls "catch" on the contact',
+      equipment_needed: 'gloves',
+      scale_levels: [
+        { scale_level: 'A', is_starting_point: false, demand_description: 'Partner throws at half speed.', constraint_applied: '', contact_level: 'light_technical', coach_watch_point: 'Is the athlete repeating it unprompted?' },
+        { scale_level: 'B', is_starting_point: true, demand_description: 'The drill as designed.', constraint_applied: '', contact_level: 'light_technical', coach_watch_point: 'Can the athlete respond to one cue?' },
+        { scale_level: 'C', is_starting_point: false, demand_description: 'Partner varies the rhythm.', constraint_applied: '', contact_level: 'light_technical', coach_watch_point: 'Does the lesson survive?' },
+      ],
+      stop_rules: [
+        { ordinal: 1, condition_text: 'Stop when fatigue breaks decision quality.', scope: 'universal', rule_kind: 'fatigue' },
+        { ordinal: 2, condition_text: 'Stop when the glove stops meeting the punch.', scope: 'drill_specific', rule_kind: 'technique_degradation' },
+      ],
+    };
+
+    async function openAdoptedDrill() {
+      storedReferenceDrills = [adopted];
+      storedReferenceDrillDetails = { [adopted.drill_id]: adoptedDetail };
+      await renderWorkspace();
+      openTab('Drills');
+      fireEvent.click(await screen.findByRole('button', { name: 'Open drill: Catch and Return' }));
+      return screen.findByRole('article', { name: 'Catch and Return' });
+    }
 
     test('it reads the reference library and not the operational drill list', async () => {
       storedReferenceDrills = [adopted];
@@ -1405,16 +1453,54 @@ describe('tabs with nothing behind them are not offered', () => {
       expect(paths.some((url) => /\/api\/pilot\/drills(\?|$)/.test(url))).toBe(false);
     });
 
-    test('it renders the instructional content, not planning taxonomy', async () => {
+    // LEVEL 1 (OD-2026-09-19-001): a concise card, not the whole drill.
+    test('the card is a concise summary: what it is for and its contact level, and a way in', async () => {
       storedReferenceDrills = [adopted];
       await renderWorkspace();
       openTab('Drills');
 
       await screen.findByText('Catch and Return');
       expect(screen.getByText('Catching the straight punch.')).toBeTruthy();
-      expect(screen.getByText('Partners at technical distance.')).toBeTruthy();
-      expect(screen.getByText('Partner leads; catch and return.')).toBeTruthy();
-      expect(screen.getByText(/Hand home first/)).toBeTruthy();
+      // Humanized, not the raw enum.
+      expect(screen.getByText('Light technical contact')).toBeTruthy();
+      expect(screen.queryByText('light_technical')).toBeNull();
+      // The full instructions are one click in, not dumped on the card.
+      expect(screen.queryByText('Partners at technical distance.')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Open drill: Catch and Return' })).toBeTruthy();
+    });
+
+    // LEVEL 2: the organized detail, safety first.
+    test('opening a drill shows its safety, ordered steps, practical instruction, scaling and cues', async () => {
+      const detail = await openAdoptedDrill();
+
+      expect(fetchCalls.some((call) => call.url.includes('/api/pilot/drill-library?drill_id=drl-ref-1'))).toBe(true);
+
+      const safety = within(detail).getByRole('region', { name: 'Safety' });
+      expect(within(safety).getByText(/Light technical contact/)).toBeTruthy();
+      expect(within(safety).getByText("This drill's stop rules")).toBeTruthy();
+      expect(within(safety).getByText('Stop when the glove stops meeting the punch.')).toBeTruthy();
+      expect(within(safety).getByText('Stop rules for every drill')).toBeTruthy();
+      expect(within(safety).getByText('Stop when fatigue breaks decision quality.')).toBeTruthy();
+
+      const items = within(detail).getAllByRole('listitem').map((item) => item.textContent);
+      const first = items.indexOf('Partner throws the jab.');
+      expect(first).toBeGreaterThanOrEqual(0);
+      expect(items.slice(first, first + 3)).toEqual([
+        'Partner throws the jab.',
+        'Catch it on the rear glove.',
+        'Return your own jab.',
+      ]);
+
+      expect(within(detail).getByText('Partners at technical distance.')).toBeTruthy();
+      expect(within(detail).getByText('Glove meets the punch, not the face')).toBeTruthy();
+      expect(within(detail).getByText('Reaching for the punch')).toBeTruthy();
+      expect(within(detail).getByText('Catching late')).toBeTruthy();
+      expect(within(detail).getByText('Coach calls "catch" on the contact')).toBeTruthy();
+      expect(within(detail).getByText(/Standard \(B\) · where to start/)).toBeTruthy();
+      expect(within(detail).getByText('Partner varies the rhythm.')).toBeTruthy();
+      expect(within(detail).getByText('Hand home first')).toBeTruthy();
+      // Coach-voiced watch points are for coaches.
+      expect(within(detail).queryByText('Can the athlete respond to one cue?')).toBeNull();
     });
 
     test('it presents itself as Learning and says plainly that it is not assigned work', async () => {
@@ -1428,20 +1514,103 @@ describe('tabs with nothing behind them are not offered', () => {
       expect(screen.getByText(/does not assign it to you, does not log it/)).toBeTruthy();
     });
 
-    test('no completion, logging or progression action appears on the Learning surface', async () => {
-      // The structural half of "Learning is not Assigned Training": not merely
-      // that the old button is gone, but that nothing on this surface writes.
+    test('no completion, logging or progression action appears, and opening a drill writes nothing', async () => {
+      // The structural half of "Learning is not Assigned Training": nothing on
+      // this surface writes, whether the list is showing or a drill is open.
+      // Snapshotted around the open, so a write to ANY endpoint is caught, not
+      // only the two that would be most obvious.
       storedReferenceDrills = [adopted];
+      storedReferenceDrillDetails = { [adopted.drill_id]: adoptedDetail };
       await renderWorkspace();
       openTab('Drills');
       await screen.findByText('Catch and Return');
+      const writesBefore = fetchCalls.filter((call) => call.method !== 'GET').length;
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open drill: Catch and Return' }));
+      await screen.findByRole('article', { name: 'Catch and Return' });
+      fireEvent.click(screen.getByRole('button', { name: 'Back to drills' }));
 
       for (const name of [/mark complete/i, /log/i, /complete/i, /assign/i, /start/i]) {
         expect(screen.queryByRole('button', { name })).toBeNull();
       }
+      expect(fetchCalls.filter((call) => call.method !== 'GET')).toHaveLength(writesBefore);
+    });
 
-      const writes = fetchCalls.filter((call) => call.method !== 'GET');
-      expect(writes.some((call) => call.url.includes('/api/pilot/progression'))).toBe(false);
+    test('Back to drills returns to the list, un-hiding the card grid', async () => {
+      await openAdoptedDrill();
+      // jsdom loads no CSS, so visibility is asserted on the class that hides it.
+      const grid = screen.getByRole('button', { name: 'Open drill: Catch and Return' }).closest('div.grid');
+      expect(grid?.classList.contains('hidden')).toBe(true);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Back to drills' }));
+
+      expect(screen.queryByRole('article', { name: 'Catch and Return' })).toBeNull();
+      expect(grid?.classList.contains('hidden')).toBe(false);
+    });
+
+    test('a drill with only general stop rules claims no drill-specific ones, and a warm-up rule reads as readiness', async () => {
+      // The corpus case: 114 of 119 drills have no drill-specific stop rule,
+      // and 63 carry a warm-up readiness rule, which is not a reason to stop.
+      storedReferenceDrills = [adopted];
+      storedReferenceDrillDetails = {
+        [adopted.drill_id]: {
+          ...adoptedDetail,
+          stop_rules: [
+            { ordinal: 1, condition_text: 'Stop when chasing replaces positioning.', scope: 'universal', rule_kind: 'intent_drift' },
+            { ordinal: 2, condition_text: 'Re-warm before contact after ~20 minutes idle.', scope: 'universal', rule_kind: 'warmup_decay' },
+          ],
+        },
+      };
+      await renderWorkspace();
+      openTab('Drills');
+      fireEvent.click(await screen.findByRole('button', { name: 'Open drill: Catch and Return' }));
+      const safety = within(await screen.findByRole('article', { name: 'Catch and Return' })).getByRole('region', { name: 'Safety' });
+
+      expect(within(safety).queryByText("This drill's stop rules")).toBeNull();
+      expect(within(safety).getByText('Stop rules for every drill')).toBeTruthy();
+      expect(within(safety).getByText('Stop when chasing replaces positioning.')).toBeTruthy();
+      expect(within(safety).getByText('Before contact or maximal effort')).toBeTruthy();
+      expect(within(safety).getByText('Re-warm before contact after ~20 minutes idle.')).toBeTruthy();
+    });
+
+    test('an equipment-only setup reads as equipment, never as setup instructions', async () => {
+      // The corpus case: standard_setup holds the same word as equipment_needed.
+      storedReferenceDrills = [adopted];
+      storedReferenceDrillDetails = {
+        [adopted.drill_id]: { ...adoptedDetail, setup: 'focus mitt', equipment_needed: 'focus mitt' },
+      };
+      await renderWorkspace();
+      openTab('Drills');
+      fireEvent.click(await screen.findByRole('button', { name: 'Open drill: Catch and Return' }));
+      const detail = await screen.findByRole('article', { name: 'Catch and Return' });
+
+      expect(within(detail).queryByRole('heading', { name: 'Setup' })).toBeNull();
+      expect(within(detail).getByRole('heading', { name: 'Equipment' })).toBeTruthy();
+      expect(within(detail).getByText('focus mitt')).toBeTruthy();
+    });
+
+    test('a drill withdrawn since the list loaded says so, instead of calling it a load failure', async () => {
+      storedReferenceDrills = [adopted];
+      storedReferenceDrillDetails = {};
+      await renderWorkspace();
+      openTab('Drills');
+      fireEvent.click(await screen.findByRole('button', { name: 'Open drill: Catch and Return' }));
+
+      expect(await screen.findByText("This drill is no longer in your gym's library.")).toBeTruthy();
+      expect(screen.queryByText(/failure to load the drill/)).toBeNull();
+    });
+
+    test('a drill that fails to load says so, rather than showing an empty drill', async () => {
+      storedReferenceDrills = [adopted];
+      storedReferenceDrillDetails = {};
+      detailReadFails = true;
+      await renderWorkspace();
+      openTab('Drills');
+      fireEvent.click(await screen.findByRole('button', { name: 'Open drill: Catch and Return' }));
+
+      expect(await screen.findByText('This drill did not load.')).toBeTruthy();
+      expect(screen.getByText(/failure to load the drill/)).toBeTruthy();
+      expect(screen.queryByRole('article', { name: 'Catch and Return' })).toBeNull();
     });
 
     test('a coach-authorization requirement is shown, because it is a safety fact', async () => {
@@ -1455,43 +1624,26 @@ describe('tabs with nothing behind them are not offered', () => {
     /**
      * THE SCREEN MAY NOT PROMISE SAFETY CONTENT IT DOES NOT SHOW.
      *
-     * The first cut of this panel told the athlete the library covered "when to
-     * stop" and instructed them to "Check the stop rules and the contact level".
-     * It renders neither: the browse cards consume AthleteDrillSummary, and stop
-     * rules live on AthleteDrillDetail, which this surface never requests. An
-     * athlete who followed that instruction would have concluded they had read
-     * the stop conditions for a drill whose stop conditions were never on screen
-     * -- the one class of false statement that matters most here, because stop
-     * rules are when to STOP.
-     *
-     * This is deliberately a BICONDITIONAL rather than a flat ban on the words.
-     * Banning the phrase would be satisfied by silence and would block the very
-     * change that fixes this properly -- rendering stop rules and then saying so.
-     * The rule enforced is: say it only if you show it.
+     * A BICONDITIONAL, not a ban: the rule is "say it only if you show it".
+     * Before W-D4 the cards rendered no stop rules, so the copy was held to
+     * silence and this test pinned both sides false. An opened drill now
+     * renders its stop rules (OD-2026-09-19-001), so the copy names them --
+     * and this checks the claim against the rendering on the opened drill,
+     * where the stop rules are.
      */
-    test('it does not claim to show stop rules unless it actually renders them', async () => {
-      storedReferenceDrills = [adopted];
-      await renderWorkspace();
-      openTab('Drills');
-      await screen.findByText('Catch and Return');
+    test('it claims to show stop rules exactly when an opened drill renders them', async () => {
+      await openAdoptedDrill();
 
-      // THE PANEL MUST BE EXPANDED FIRST. HelpPanel renders its description and
-      // usage list behind `{expanded && ...}`, so they are absent from the DOM
-      // while collapsed -- and a version of this test that skipped the click
-      // would find no claim and no rendering, and pass for the one reason that
-      // proves nothing. Written this way, restoring the old "when to stop" copy
-      // fails it.
+      // THE PANEL MUST BE EXPANDED FIRST: HelpPanel renders its description and
+      // usage only while expanded, so a collapsed panel would claim nothing.
       fireEvent.click(screen.getByRole('button', { name: /HELP: Reference Library/i }));
       expect(screen.getByText(/Reference material for the drills your gym has adopted/)).toBeTruthy();
 
       const claimsStopRules = screen.queryAllByText(/stop rule|when to stop/i).length > 0;
-      const rendersStopRules = screen.queryAllByText(/Stop if|Stop when/i).length > 0
-        || screen.queryAllByText(/^Stop rules:?$/i).length > 0;
+      const rendersStopRules = screen.queryAllByText(/Stop if|Stop when/i).length > 0;
 
       expect(claimsStopRules).toBe(rendersStopRules);
-      // And, for this head specifically: it shows none, so it claims none.
-      expect(rendersStopRules).toBe(false);
-      expect(claimsStopRules).toBe(false);
+      expect(rendersStopRules).toBe(true);
     });
   });
 });

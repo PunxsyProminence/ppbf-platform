@@ -1586,10 +1586,47 @@ describe('the athlete reference library against real Postgres', () => {
         name: 'Adopted Drill',
         referenceDrillId: REFERENCE_ID,
       });
+      // OD-2026-09-19-001: the detail carries practical instruction, which in
+      // the seeded corpus holds inline grounding-claim tags. Written here the
+      // way the seed writes them, so the stripping is proven against a real row.
+      await client.query(
+        `update pilot.drill_library
+            set what_good_looks_like = 'Hand back first [A2-070]',
+                what_bad_looks_like = 'Hand drops [B3-047][A5-149]',
+                common_errors = 'Pawing the jab',
+                corrections = 'Coach calls home [A6-037]',
+                transfer = 'Keeps the chin safe [A3-021]',
+                equipment_needed = 'focus mitts'
+          where organization_id = $1 and drill_id = $2`,
+        [ORG_A, REFERENCE_ID],
+      );
 
       const [summary] = await listAthleteDrillLibrary(ORG_A);
       const detail = await getAthleteDrillDetail(ORG_A, REFERENCE_ID);
       if (!detail) throw new Error('test bug: the promoted drill should be readable');
+
+      expect(detail.what_good_looks_like).toBe('Hand back first');
+      expect(detail.what_bad_looks_like).toBe('Hand drops');
+      expect(detail.common_errors).toBe('Pawing the jab');
+      expect(detail.corrections).toBe('Coach calls home');
+      expect(detail.equipment_needed).toBe('focus mitts');
+      expect(JSON.stringify(detail)).not.toMatch(/\[[A-Z]\d+-\d+\]/);
+      // Transfer is not athlete content: neither its key nor its words arrive.
+      expect(JSON.stringify(detail)).not.toContain('Keeps the chin safe');
+
+      // AN EXACT ALLOW-LIST, not only the deny-list below. A deny-list catches
+      // the names on it; a column added to the detail tomorrow under any other
+      // name fails here instead.
+      expect(Object.keys(detail).sort()).toEqual([
+        'common_errors', 'contact_level', 'corrections', 'cues', 'drill_id', 'equipment_needed',
+        'execution', 'name', 'purpose', 'requires_coach_authorization', 'scale_levels', 'setup',
+        'stop_rules', 'what_bad_looks_like', 'what_good_looks_like',
+      ]);
+      expect(Object.keys(detail.scale_levels[0]).sort()).toEqual([
+        'coach_watch_point', 'constraint_applied', 'contact_level', 'demand_description',
+        'is_starting_point', 'scale_level',
+      ]);
+      expect(Object.keys(detail.stop_rules[0]).sort()).toEqual(['condition_text', 'ordinal', 'rule_kind', 'scope']);
 
       // The instructional content IS there -- a projection that dropped
       // everything would pass a deny-list check and be useless.
@@ -1616,6 +1653,9 @@ describe('the athlete reference library against real Postgres', () => {
         'created_by_account_id', 'created_by_role', 'authoring_state', 'active', 'lineage_id',
         'version', 'supersedes_drill_id', 'superseded_at', 'skill_id', 'target_behavior',
         'secondary_skills', 'organization_id',
+        // Not an athlete field under OD-2026-09-19-001 either: transfer carries
+        // grounding tags by design and is coaching context.
+        'transfer',
       ];
       const keysAtEveryDepth = (value: unknown): string[] => {
         if (Array.isArray(value)) return value.flatMap(keysAtEveryDepth);

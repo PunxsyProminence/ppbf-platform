@@ -89,6 +89,181 @@ and should not try to.
 
 ---
 
+## OD-2026-09-19-001 -- Drills are progressive instructional objects (W-D4 product ruling)
+
+**Provenance: PRIMARY.**
+
+**Date:** 2026-09-19. **Governs:** how drill instruction is presented to athletes
+and coaches, how assigned work reaches its drill's instruction, the
+reference-derived operational drill lifecycle, and what makes a reference drill
+ready for operational adoption. Given with the owner's authorization of the
+sequential W-D4 execution (W-D4A drill detail, W-D4B assignment-aware drill
+journey, W-D4C lifecycle, discovery and promotion quality). **Extends, does not
+replace,** OD-2026-09-16-001, OD-2026-09-17-001 and OD-2026-09-18-001, except
+where noted below.
+
+Owner words, verbatim:
+
+> PRODUCT INTENT:
+>
+> PPBF drills are progressive instructional objects, not flat database records.
+>
+> Users begin with concise context and progressively access deeper information required to understand,
+> perform, coach, scale, correct or safely stop a drill.
+>
+> Normal pilot interaction depth:
+>
+> LEVEL 1 — DISCOVER
+> Concise drill summary/card.
+>
+> LEVEL 2 — UNDERSTAND
+> Complete organized drill detail.
+>
+> LEVEL 3 — DEEP DETAIL
+> Specific execution step, correction, scale or safety detail only when additional depth is useful.
+>
+> Do NOT build unlimited recursive nesting.
+>
+> Safety-critical information must remain readily visible and must not require deep navigation.
+>
+> CANONICAL CONTENT:
+>
+> reference drill
+> → operational drill
+> → assignment/card
+> → athlete performance/history
+>
+> Instructional content remains canonical on the reference drill.
+>
+> Operational adoption points to the exact reference identity/version.
+>
+> Assignments retain required historical snapshots but do not become another instructional content model.
+>
+> ASSIGNED ATHLETE:
+>
+> An athlete assigned a drill must be able to move directly from that assignment into the exact linked
+> instructional drill while retaining assignment context.
+>
+> Reading instruction:
+> - does NOT complete work;
+> - does NOT log performance;
+> - does NOT alter progression.
+>
+> COACH:
+>
+> Coaches must have enough instructional, safety, context, lifecycle and version information to make a
+> responsible adoption or assignment decision.
+>
+> Consequential actions should live on an informed decision surface.
+>
+> Do not impose ceremonial friction such as forcing coaches to open every subsection before acting.
+>
+> PROMOTION QUALITY:
+>
+> Technical row validity alone is insufficient for operational adoption.
+>
+> Required instructional completeness must be context-aware.
+>
+> Candidate required content:
+>
+> Identity:
+> - name
+> - purpose
+> - category
+> - difficulty
+>
+> Execution:
+> - usable setup
+> - ordered execution
+> - success/good-execution criteria
+>
+> Coaching:
+> - useful cue/coaching guidance
+> - failure/correction information where applicable
+>
+> Scaling:
+> - regression / standard / progression guidance where applicable
+>
+> Safety:
+> - contact level
+> - authorization requirement
+> - applicable stop conditions
+>
+> Context where applicable:
+> - solo / partner / coach-led
+> - equipment
+> - space/environment requirements
+>
+> Governance:
+> - active/current version
+> - valid source/provenance state
+> - not superseded/retracted
+>
+> Do NOT require meaningless fields merely to satisfy a generic checklist.
+>
+> LIFECYCLE:
+>
+> Reference-derived operational drill identity is durable:
+>
+> Available
+> → Operational
+> → Retired
+> → Restore
+>
+> Do NOT create duplicate reference-to-operational identities because an existing operational row is retired.
+>
+> Promoted reference-derived drills must not be described as "Gym-authored" unless they are actually
+> gym-authored.
+>
+> ROLE PROJECTION:
+>
+> Athlete and coach share one conceptual drill structure.
+>
+> Athlete:
+> practical instruction, cues, corrections, scaling and safety.
+>
+> Coach:
+> athlete content plus appropriate coaching decision context, lifecycle/version/provenance and internal
+> information.
+>
+> Internal governance/provenance must remain hidden from athlete projections.
+
+The same authorization lists, for W-D4A, what the athlete detail must deliver.
+Owner words, verbatim:
+
+> Deliver existing athlete-safe:
+>    - scale levels;
+>    - stop rules;
+>    - cues;
+>    - setup;
+>    - good/bad execution;
+>    - corrections where present.
+
+**What this changes in OD-2026-09-17-001.** Clause 8 of that ruling said athlete
+responses "may include only" eight fields, which excluded what good and bad
+execution look like, common errors and corrections. This ruling adds those four
+to the athlete DETAIL projection ("practical instruction, cues, corrections,
+scaling and safety"). Everything else in clause 8 still holds. In particular,
+"internal governance/provenance must remain hidden": what good and bad look like
+and corrections carry inline grounding-claim tags such as `[A2-070]` in the
+seeded corpus, so the athlete projection strips them (from every one of these
+fields) before the text leaves the server.
+
+**Build interpretation, flagged.** The athlete detail also carries
+`equipment_needed`, read as practical instruction. In 114 of the 119 seeded
+reference drills `standard_setup` holds the same equipment word, so athletes
+were already reading it -- labelled "Setup". Carrying the equipment value is what
+lets the screen label it truthfully, which W-D4A requires. Transfer, target
+behavior, skill codes, provenance and authoring state stay off the athlete
+projection.
+
+**What it does not decide.** It sets the depth (three levels, no recursion) and
+the direction for promotion quality, but not the exact required-field rule for
+each drill type. Where the current model cannot tell whether a field applies to
+a drill, that is a model or owner question, not something to infer from prose.
+
+---
+
 ## OD-2026-09-18-001 -- Every new assignment and Coach Card is built from an active operational drill
 
 **Provenance: PRIMARY.**

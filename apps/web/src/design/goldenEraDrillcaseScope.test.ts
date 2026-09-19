@@ -31,7 +31,7 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  *    invent nine with nothing behind them.
  *
  *    A visual pass is exactly when that kind of deletion happens quietly, so
- *    both halves are pinned: the five real fields and the three real actions
+ *    both halves are pinned: the five real fields and the real actions
  *    must still be there and still be the only ones, and the mockup's captions
  *    must NOT appear. If the owner later decides the drill library really should
  *    gain search, filters or assignment, that is a feature with its own PR,
@@ -41,9 +41,19 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  *    exception: Promote is an owner-approved coach action under
  *    OD-2026-09-16-001 (the hybrid reference / operational drill model), with its
  *    own PR, its own POST /api/pilot/drills/promote route, its own schema and its
- *    own tests. So the inventory below counts two buttons, and the Promote
+ *    own tests. So the inventory then counted two buttons, and the Promote
  *    control is asserted BY NAME — a count alone would let any second button
  *    satisfy this proof, which is the failure mode this file exists to catch.
+ *
+ *    W-D4A (OD-2026-09-19-001) is the next one, and arrived the same way: an
+ *    owner ruling, its own PR and its own tests. A reference drill now opens
+ *    into a full detail (backed by GET /api/pilot/drill-library?drill_id=,
+ *    which already existed), Promote moved from the one-line card onto that
+ *    detail, and every operational drill promoted from a reference can open
+ *    its reference. So the inventory grows by exactly those controls, each
+ *    asserted by name below, and "Equipment" leaves the invented list because
+ *    the card now labels the real equipment_needed field with it. Search and
+ *    filters are still NOT here; they remain banned until their own change.
  *
  * MUTATION CHECK: set a `--brass-NNN` on the `.ge-drillcase` block back to its
  * legacy value (e.g. `--brass-500: #B8912F`), or drop the class from the page,
@@ -57,6 +67,16 @@ const css = readDesignSystemCss(DESIGN_SYSTEM_ENTRY);
 
 const PAGE = readFileSync(
   path.resolve(__dirname, '../../app/coach/drills/page.tsx'),
+  'utf8',
+);
+
+/**
+ * The shared drill detail (W-D4A) renders on this route too, so the invented-
+ * caption and search bans cover it. Its interactive elements are counted
+ * separately below: they are expanders, not actions.
+ */
+const DETAIL = readFileSync(
+  path.resolve(__dirname, '../../components/drills/DrillDetail.tsx'),
   'utf8',
 );
 
@@ -154,7 +174,7 @@ describe('the 004B mockup did not delete or invent drill-library controls', () =
     expect(PAGE).toContain(label);
   });
 
-  test('the three real actions still exist', () => {
+  test('the real actions still exist', () => {
     expect(PAGE).toContain('Add drill');
     expect(PAGE).toContain('Back to Coach Workspace');
     expect(PAGE).toContain('href="/coach/environment/intake-router"');
@@ -163,6 +183,11 @@ describe('the 004B mockup did not delete or invent drill-library controls', () =
     // and a stray button cannot stand in for it.
     expect(PAGE).toContain('Promote');
     expect(PAGE).toContain('/api/pilot/drills/promote');
+    // W-D4A: the detail that Promote now lives on, and the way back from it.
+    expect(PAGE).toContain('View drill');
+    expect(PAGE).toContain('View instructions');
+    expect(PAGE).toContain('/api/pilot/drill-library?drill_id=');
+    expect(PAGE).toContain('Back to the reference library');
   });
 
   test('the real difficulty vocabulary is unchanged', () => {
@@ -177,7 +202,10 @@ describe('the 004B mockup did not delete or invent drill-library controls', () =
     // prose: "This is a failure to load, not an empty library."
     expect(PAGE).toContain('Loading...');
     expect(PAGE).toContain('This is a failure to load, not an empty library.');
-    expect(PAGE).toContain('Nothing yet. The first drill you add');
+    // The old empty-state promise ("the first drill you add is the first one
+    // your athletes will see") stopped being true at W-D2: a hand-written drill
+    // never reaches Learn. The state is still pinned, with truthful copy.
+    expect(PAGE).toContain('Nothing yet. Promote a drill from the reference library');
   });
 
   test('no control was invented from the reference image', () => {
@@ -195,14 +223,27 @@ describe('the 004B mockup did not delete or invent drill-library controls', () =
       'Rounds',
       'Purpose',
       'Stance',
-      'Equipment',
+      // 'Equipment' left this list at W-D4A: the card now labels the real
+      // equipment_needed field with it. It is a field, not a filter chip.
     ];
-    for (const caption of INVENTED) {
-      expect(PAGE).not.toContain(caption);
+    for (const source of [PAGE, DETAIL]) {
+      for (const caption of INVENTED) {
+        expect(source).not.toContain(caption);
+      }
+      // The reference's search rail. There is no search on this route.
+      expect(source).not.toMatch(/type="search"/);
+      expect(source).not.toMatch(/placeholder="Search/i);
     }
-    // The reference's search rail. There is no search on this route.
-    expect(PAGE).not.toMatch(/type="search"/);
-    expect(PAGE).not.toMatch(/placeholder="Search/i);
+  });
+
+  test('the shared drill detail adds reading controls only, never an action of its own', () => {
+    // Its only interactive elements are <details> expanders (Level 3). The
+    // Promote action is passed in by the page, where it is counted.
+    expect(DETAIL.match(/<button\b/g) ?? []).toHaveLength(0);
+    expect(DETAIL.match(/<input\b/g) ?? []).toHaveLength(0);
+    expect(DETAIL.match(/<select\b/g) ?? []).toHaveLength(0);
+    expect(DETAIL.match(/<Link\b/g) ?? []).toHaveLength(0);
+    expect(DETAIL).not.toMatch(/fetch\(/);
   });
 
   test('the control count is unchanged', () => {
@@ -213,10 +254,16 @@ describe('the 004B mockup did not delete or invent drill-library controls', () =
     // Promote control on each reference card. The name assertion in "the three
     // real actions still exist" is what makes the second one specifically
     // Promote; this case only holds the line against a THIRD appearing.
+    //
+    // Five since W-D4A: Add drill; View drill on each reference card; Back to
+    // the reference library and Promote on the opened detail; View
+    // instructions on each operational drill promoted from a reference. Named
+    // in "the real actions still exist"; this case holds the line against a
+    // SIXTH.
     expect(PAGE.match(/<input\b/g) ?? []).toHaveLength(2);
     expect(PAGE.match(/<textarea\b/g) ?? []).toHaveLength(2);
     expect(PAGE.match(/<select\b/g) ?? []).toHaveLength(1);
-    expect(PAGE.match(/<button\b/g) ?? []).toHaveLength(2);
+    expect(PAGE.match(/<button\b/g) ?? []).toHaveLength(5);
     expect(PAGE.match(/<Link\b/g) ?? []).toHaveLength(1);
   });
 });
