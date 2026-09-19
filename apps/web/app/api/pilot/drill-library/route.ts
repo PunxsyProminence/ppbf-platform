@@ -7,6 +7,7 @@ import {
   getDrillWithDetail,
   listAthleteDrillLibrary,
   listDrillLibrary,
+  listReferenceLifecycles,
 } from '@/src/server/pilot/drillLibraryV3';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -67,9 +68,17 @@ export async function GET(request: NextRequest) {
     //                   belongs on a minor's screen.
     //
     // Everyone else -- coach, organization_admin, admin, platform_owner, parent,
-    // volunteer, staff -- reads exactly what they read before, byte for byte.
+    // volunteer, staff -- reads the same drill shapes as before. The three
+    // authoring roles also receive a `lifecycle` key beside them (W-D4C, below).
     // Board is still refused by the gate.
     const isAthlete = principal.role === 'athlete';
+    // Where a reference stands in this gym -- including what it retired -- is
+    // governance for the people who promote, retire and restore: the same three
+    // roles /api/pilot/drills shows retired drills to. Every other reader
+    // (parent, volunteer, staff, platform owner) gets the library exactly as
+    // before, without it. Compared by name rather than held in a role array:
+    // this route's only role list is the shared reader policy.
+    const isAuthor = principal.role === 'coach' || principal.role === 'organization_admin' || principal.role === 'admin';
 
     if (drillId) {
       // Four different reasons to say no -- not promoted, promotion retired,
@@ -81,7 +90,14 @@ export async function GET(request: NextRequest) {
       if (!detail) {
         return NextResponse.json({ error: 'DRILL_NOT_FOUND' }, { status: 404 });
       }
-      return NextResponse.json({ drill: detail });
+      if (!isAuthor) {
+        return NextResponse.json({ drill: detail });
+      }
+      // Authors also get where this drill stands in their gym (W-D4C): the
+      // decision surface for Promote, Retire and Restore reads it from here,
+      // fresher than the list. Derived on every read from durable rows.
+      const lifecycles = await listReferenceLifecycles(principal.organizationId, [drillId]);
+      return NextResponse.json({ drill: detail, lifecycle: lifecycles[drillId] ?? null });
     }
 
     if (isAthlete) {
@@ -103,7 +119,13 @@ export async function GET(request: NextRequest) {
       relatedSkillId: searchParams.get('related_skill_id') ?? undefined,
       familyId: searchParams.get('family_id') ?? undefined,
     });
-    return NextResponse.json({ drills });
+    if (!isAuthor) {
+      return NextResponse.json({ drills });
+    }
+    // Keyed by reference drill id, beside the list rather than inside each row,
+    // so the row shape every existing consumer reads is unchanged.
+    const lifecycle = await listReferenceLifecycles(principal.organizationId);
+    return NextResponse.json({ drills, lifecycle });
   } catch (error) {
     return jsonError(error);
   }

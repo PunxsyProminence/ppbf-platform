@@ -597,10 +597,16 @@ async function seededDatabase(): Promise<Client> {
   await insertAssignment(client, { assignmentId: ASG_REFINED_V1, drillId: OP_REFINED_V1, drillName: 'Slip line as typed' });
 
   // (5b) An EARLIER version reinstated. v2 was adopted exactly as in (5), then
-  // the gym went back: v2 retired and v1 restored through updateDrill's
-  // `active` (v2 first, so the active-name index never sees both). The work
-  // was issued against v2, which is now the inactive row -- while the lineage
-  // is still run, through v1. v2's own `active` says "retired"; it is not.
+  // the gym went back: v2 retired and v1 active again. The work was issued
+  // against v2, which is now the inactive row -- while the lineage is still
+  // run, through v1. v2's own `active` says "retired"; it is not.
+  //
+  // Built RAW, not through updateDrill. Since W-D4C updateDrill's restore
+  // guard refuses to bring back a version that is not its lineage's newest
+  // (DrillRestoreRefusedError 'not_latest_version', proven in
+  // drillLifecycle.pg.test.ts), so this shape can no longer be written through
+  // it -- but rows written before the guard can still carry it, and the
+  // instruction chain has to read them correctly.
   await insertReference(client, { drillId: REF_REINSTATED, label: 'Reinstated', name: 'Hook Off The Jab' });
   await insertOperationalDrill(client, {
     drillId: OP_REINSTATED_V1,

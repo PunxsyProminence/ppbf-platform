@@ -7,8 +7,14 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import DrillDetail from '@/components/drills/DrillDetail';
 import { fromCoachDrillDetail, type DrillDetailView } from '@/components/drills/drillDetailView';
 import { apiBase } from '@/lib/apiBase';
+import { adoptionReadiness } from '@/src/lib/drillAdoptionReadiness';
 import { equipmentLabel, humanizeContactLevel } from '@/src/lib/drillPresentation';
-import type { DrillLibraryRow, DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
+import type {
+  DrillLibraryRow,
+  DrillWithDetail,
+  ReferenceLifecycle,
+  ReferenceLifecycleState,
+} from '@/src/server/pilot/drillLibraryV3';
 import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills';
 
 // The gym's drill library: the reference drills it can adopt, and the
@@ -31,6 +37,178 @@ type ReferenceDrill = DrillLibraryRow;
 const DIFFICULTIES = ['beginner', 'intermediate', 'advanced', 'elite'] as const;
 
 const REFERENCE_NOT_FOUND = "This reference drill is not in this gym's library.";
+
+// Where a reference drill stands in this gym (W-D4C), as the server derives it
+// from durable rows on every read. Worded for the coach deciding what to do.
+const LIFECYCLE_LABELS: Record<ReferenceLifecycleState, string> = {
+  available: 'Not adopted',
+  operational: 'Operational in this gym',
+  retired: 'Retired in this gym',
+  superseded: 'A newer version exists',
+  unavailable: 'Withdrawn',
+};
+
+// DISCOVERY (W-D4C): every filter reads a durable, structured column -- an
+// enum the database CHECKs, the discipline registry, the stored category, the
+// coach-authorization flag, or the server-derived lifecycle. None is inferred
+// from prose, so there is no solo/partner, space or equipment filter: nothing
+// records those as data. Search matches the drill's NAME only.
+type FilterKey = 'discipline' | 'category' | 'difficulty' | 'contact' | 'authorization' | 'lifecycle';
+
+interface FilterSpec {
+  key: FilterKey;
+  label: string;
+  valueOf: (drill: ReferenceDrill, lifecycle: ReferenceLifecycle | undefined) => string;
+  labelOf: (value: string) => string;
+}
+
+const FILTERS: FilterSpec[] = [
+  { key: 'discipline', label: 'Discipline', valueOf: (drill) => drill.discipline, labelOf: (value) => value },
+  { key: 'category', label: 'Category', valueOf: (drill) => drill.category, labelOf: (value) => value },
+  { key: 'difficulty', label: 'Difficulty', valueOf: (drill) => drill.difficulty, labelOf: (value) => value },
+  { key: 'contact', label: 'Contact', valueOf: (drill) => drill.contact_level, labelOf: humanizeContactLevel },
+  {
+    key: 'authorization',
+    label: 'Coach authorization',
+    valueOf: (drill) => (drill.requires_coach_authorization ? 'required' : 'not_required'),
+    labelOf: (value) => (value === 'required' ? 'Required' : 'Not required'),
+  },
+  {
+    key: 'lifecycle',
+    label: 'In this gym',
+    valueOf: (_drill, lifecycle) => lifecycle?.state ?? '',
+    labelOf: (value) => LIFECYCLE_LABELS[value as ReferenceLifecycleState] ?? value,
+  },
+];
+
+// What is known after a failed action, and after the re-read that follows it.
+// A refusal changed nothing. A 409 changed nothing either, but it can mean
+// this page's picture of the drill is out of date (another coach promoted,
+// retired or restored it) -- or not (a name another drill already holds) --
+// so the drill's status is read again without guessing which. A fault or a
+// dropped connection may have landed after the write committed, so its
+// outcome is unknown. Each sentence claims only what the page then knows,
+// including whether the re-read itself worked.
+type ActionOutcome = 'refused' | 'reread' | 'reread_failed' | 'unknown' | 'unknown_unread';
+
+const OUTCOME_EXPLANATIONS: Record<ActionOutcome, string> = {
+  refused: 'Nothing was changed. This drill is as it was.',
+  reread: 'Nothing was changed. This drill\'s status in this gym was read again.',
+  reread_failed: 'Nothing was changed, but this drill\'s status in this gym could not be read again. Reload the page before trying again.',
+  unknown: 'It is not known whether this change was saved. This drill\'s status in this gym was read again; check it before trying again.',
+  unknown_unread: 'It is not known whether this change was saved, and this drill\'s status in this gym could not be read again. Reload the page before trying again.',
+};
+
+const NO_FILTERS: Record<FilterKey, string> = {
+  discipline: '',
+  category: '',
+  difficulty: '',
+  contact: '',
+  authorization: '',
+  lifecycle: '',
+};
+
+// The decision surface for one reference drill: what it is in this gym, and
+// the one action that state allows. An unread state offers no action at all,
+// rather than defaulting to Promote. A component rather than a helper called
+// during render, so the page's ref-guarded handlers are only ever passed down
+// as event handlers.
+function ReferenceActions({
+  referenceDrillId,
+  state,
+  detail,
+  promotingReferenceId,
+  changingLifecycle,
+  busy,
+  onPromote,
+  onChangeLifecycle,
+}: {
+  referenceDrillId: string;
+  state: ReferenceLifecycle | undefined;
+  detail: DrillWithDetail | null;
+  promotingReferenceId: string;
+  changingLifecycle: boolean;
+  /**
+   * An action is still running -- its request or any re-read after it. No
+   * action may start then: its re-reads can change this drill's state and
+   * so the button offered, and a second action would interleave its answer
+   * with the first one's.
+   */
+  busy: boolean;
+  onPromote: (referenceDrillId: string) => void;
+  onChangeLifecycle: (referenceDrillId: string, operationalDrillId: string, restoring: boolean) => void;
+}) {
+  if (!state) {
+    return <p className="t-label text-[color:var(--bone-300)]">This drill&apos;s status in this gym could not be read.</p>;
+  }
+  const label = <p className="t-label text-[color:var(--bone-300)]">{LIFECYCLE_LABELS[state.state]}</p>;
+  if (state.state === 'available') {
+    const readiness = detail ? adoptionReadiness(detail) : null;
+    if (readiness && !readiness.ready) {
+      return (
+        <div className="basis-full space-y-[var(--s2)]">
+          <p className="t-label text-[color:var(--restricted-ink)]">Not ready to adopt</p>
+          <ul className="list-disc space-y-[var(--s1)] pl-[var(--s5)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+            {readiness.missing.map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </div>
+      );
+    }
+    return (
+      <button
+        type="button"
+        id={`lifecycle-${referenceDrillId}`}
+        onClick={() => onPromote(referenceDrillId)}
+        disabled={busy}
+        className="btn"
+      >
+        {promotingReferenceId === referenceDrillId ? 'Promoting...' : 'Promote'}
+      </button>
+    );
+  }
+  // A retired adoption whose reference was since withdrawn cannot come back:
+  // the server refuses that restore, so no button offers it.
+  if (state.state === 'retired' && detail && !detail.active) {
+    return (
+      <>
+        {label}
+        <p className="t-label text-[color:var(--bone-300)]">Its reference has been withdrawn, so it cannot be restored.</p>
+      </>
+    );
+  }
+  if ((state.state === 'operational' || state.state === 'retired') && state.operational_drill_id) {
+    const restoring = state.state === 'retired';
+    const operationalDrillId = state.operational_drill_id;
+    // Athletes read nothing of a withdrawn reference -- not in Learn, not on
+    // open work -- so the usual Retire consequence would promise what is
+    // already gone, and Restore would be refused afterwards.
+    const withdrawn = detail?.active === false;
+    return (
+      <>
+        {label}
+        <button
+          type="button"
+          id={`lifecycle-${referenceDrillId}`}
+          onClick={() => onChangeLifecycle(referenceDrillId, operationalDrillId, restoring)}
+          disabled={busy}
+          className="btn btn--ghost"
+        >
+          {changingLifecycle ? 'Saving...' : restoring ? 'Restore' : 'Retire'}
+        </button>
+        {/* What the action does, before it is taken -- no confirmation step,
+            which would be ceremony: both actions are undone by the other. */}
+        <p className="basis-full text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+          {restoring
+            ? 'Restoring brings back this same drill: coaches can assign it again, and athletes can read it in Learn.'
+            : withdrawn
+              ? 'Retiring stops new assignments. Its reference has been withdrawn, so athletes already cannot read it, and once retired it cannot be restored.'
+              : 'Retiring stops new assignments and takes it out of Learn. Assigned work that is still open keeps its instructions.'}
+        </p>
+      </>
+    );
+  }
+  return label;
+}
 
 function CoachDrillLibrary() {
   const [drills, setDrills] = useState<Drill[]>([]);
@@ -58,18 +236,24 @@ function CoachDrillLibrary() {
   const [promotingReferenceId, setPromotingReferenceId] = useState('');
   const promotingRef = useRef(false);
   const [promoteError, setPromoteError] = useState('');
-  // Promotion state is held separately from the rendered list because the two
-  // answer different questions. The list shows what the gym teaches now; the
-  // reference is reserved by ANY promotion of it, including a retired one --
-  // pilot_drills_one_reference_per_org deliberately ignores `active`. Reading
-  // both from one active-only list would offer Promote on a reference whose
-  // every click must 409.
-  // Keyed by reference drill id: true when an ACTIVE operational drill points at
-  // it, false when every promotion of it is retired. Retired promotions still
-  // reserve the reference, but "Already promoted" alone would tell a coach the
-  // drill is live when athletes cannot read it.
-  const [promotionState, setPromotionState] = useState<Record<string, boolean>>({});
+  // Where each reference drill stands in this gym, keyed by reference drill id
+  // (W-D4C). Derived by the SERVER from durable rows and sent with the list, so
+  // it can never disagree with them -- it replaced a client census that, when
+  // its read failed, silently showed every drill as never adopted and offered
+  // Promote on references the server would refuse.
+  const [lifecycle, setLifecycle] = useState<Record<string, ReferenceLifecycle>>({});
   const [promoteNotice, setPromoteNotice] = useState('');
+
+  // Retire and Restore (OD-2026-09-19-001 LIFECYCLE): one in-flight change at
+  // a time, mirrored in a ref for the same double-click reason as Promote.
+  const [changingLifecycle, setChangingLifecycle] = useState(false);
+  const changingLifecycleRef = useRef(false);
+  // What the alert says a failed action did (ActionOutcome, above).
+  const [actionOutcome, setActionOutcome] = useState<ActionOutcome>('refused');
+  const [focusRequest, setFocusRequest] = useState<{ referenceDrillId: string } | null>(null);
+
+  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<Record<FilterKey, string>>(NO_FILTERS);
 
   // The informed decision surface (OD-2026-09-19-001). A reference drill is
   // opened in full -- instruction, safety, scaling, source and version -- and
@@ -77,6 +261,9 @@ function CoachDrillLibrary() {
   // so it happens where the coach can see what they are adopting.
   const [openReferenceId, setOpenReferenceId] = useState('');
   const [openReference, setOpenReference] = useState<DrillDetailView | null>(null);
+  // The raw detail as well as the view: adoption readiness is judged on the
+  // server's own fields, by the same function the promote route enforces.
+  const [openReferenceDetail, setOpenReferenceDetail] = useState<DrillWithDetail | null>(null);
   const [openReferenceLoading, setOpenReferenceLoading] = useState(false);
   const [openReferenceError, setOpenReferenceError] = useState('');
   const openRequestRef = useRef(0);
@@ -109,32 +296,6 @@ function CoachDrillLibrary() {
     }
   }, []);
 
-  // The author-facing promotion census. Uses the drills route's existing
-  // include_retired capability rather than a new endpoint, and its rows are never
-  // rendered -- only their reference pointers are kept. A failure here leaves the
-  // set as it was rather than claiming nothing is promoted, because claiming that
-  // would re-offer Promote on a reserved reference.
-  const loadPromotionState = useCallback(async () => {
-    try {
-      const response = await fetch(`${apiBase()}/api/pilot/drills?include_retired=true`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-      if (!response.ok) return;
-      const payload = (await response.json()) as Partial<DrillLibraryResponse>;
-      if (!Array.isArray(payload.items)) return;
-      const state: Record<string, boolean> = {};
-      for (const drill of payload.items) {
-        if (!drill.reference_drill_id) continue;
-        state[drill.reference_drill_id] = Boolean(state[drill.reference_drill_id]) || drill.active !== false;
-      }
-      setPromotionState(state);
-    } catch {
-      // Deliberately silent: promotion state is a refinement of the reference
-      // cards, not their content, and the reference list has its own error state.
-    }
-  }, []);
-
   const loadReferenceLibrary = useCallback(async () => {
     try {
       const response = await fetch(`${apiBase()}/api/pilot/drill-library`, {
@@ -142,13 +303,23 @@ function CoachDrillLibrary() {
         credentials: 'include',
       });
       if (!response.ok) throw new Error('The reference drill library could not be loaded.');
-      const payload = (await response.json()) as { drills?: ReferenceDrill[] };
+      const payload = (await response.json()) as {
+        drills?: ReferenceDrill[];
+        lifecycle?: Record<string, ReferenceLifecycle>;
+      };
       if (!Array.isArray(payload.drills)) throw new Error('The reference drill library returned an invalid response.');
       setReferenceDrills(payload.drills);
+      setLifecycle(payload.lifecycle ?? {});
       setReferenceLoadError('');
+      return true;
     } catch (error) {
       setReferenceDrills([]);
+      // A stale map would keep offering the action from before the change the
+      // coach just made; with none, the open drill says its status could not be
+      // read and offers nothing.
+      setLifecycle({});
       setReferenceLoadError(error instanceof Error ? error.message : 'The reference drill library could not be loaded.');
+      return false;
     } finally {
       setReferenceLoading(false);
     }
@@ -157,18 +328,35 @@ function CoachDrillLibrary() {
   useEffect(() => {
     // Deferred behind an await so no state is set while the effect body runs.
     void (async () => {
-      await Promise.all([load(), loadReferenceLibrary(), loadPromotionState()]);
+      await Promise.all([load(), loadReferenceLibrary()]);
     })();
-  }, [load, loadReferenceLibrary, loadPromotionState]);
+  }, [load, loadReferenceLibrary]);
 
-  // Promoted state comes from the operational drills' own pointers, never from a
-  // name match: two drills can share a name for reasons that have nothing to do
-  // with promotion, and inferring provenance from one would be the false link
-  // reference_drill_id exists to replace. The census includes retired rows, which
-  // is why it is its own read.
-  const isPromoted = (referenceDrillId: string) => referenceDrillId in promotionState;
-  const promotionLabel = (referenceDrillId: string) =>
-    promotionState[referenceDrillId] ? 'Already promoted' : 'Promoted · retired';
+  // While a Promote, Retire or Restore is running -- its request, and every
+  // re-read after it -- the coach stays on the drill it is for and starts
+  // nothing else: Back, every control that opens a drill and the drill's own
+  // actions are disabled. Its notice, its alert, its re-read detail and its
+  // focus move all describe THAT action on THAT drill, so none of them may
+  // land on another drill or be mixed up with a second action.
+  const actionInFlight = promotingReferenceId !== '' || changingLifecycle;
+
+  // Name search and the durable filters, applied to the list the server sent.
+  const searchTerm = search.trim().toLowerCase();
+  const visibleReferenceDrills = referenceDrills.filter((drill) => {
+    if (searchTerm && !drill.name.toLowerCase().includes(searchTerm)) return false;
+    return FILTERS.every((spec) => !filters[spec.key] || spec.valueOf(drill, lifecycle[drill.drill_id]) === filters[spec.key]);
+  });
+  const filtering = searchTerm !== '' || FILTERS.some((spec) => filters[spec.key] !== '');
+  // Options are the values actually present, so a filter never offers a choice
+  // that can only return nothing -- except the one already chosen. An action can
+  // empty the chosen state (restoring the only retired drill); the select must
+  // go on showing that choice, which is still what narrows the list, rather
+  // than fall back to "Any" while the list stays narrowed.
+  const filterOptions = (spec: FilterSpec) =>
+    [...new Set([
+      ...referenceDrills.map((drill) => spec.valueOf(drill, lifecycle[drill.drill_id])),
+      filters[spec.key],
+    ].filter(Boolean))].sort();
 
   // Reading only: the coach detail endpoint is a GET. A request counter keeps a
   // slow answer for a drill the coach has already left from landing on the one
@@ -180,6 +368,7 @@ function CoachDrillLibrary() {
     setPromoteNotice('');
     setOpenReferenceId(referenceDrillId);
     setOpenReference(null);
+    setOpenReferenceDetail(null);
     setOpenReferenceError('');
     setOpenReferenceLoading(true);
     setPromoteError('');
@@ -194,10 +383,17 @@ function CoachDrillLibrary() {
       // 404 is an answer, not a failure: the drill is not in this gym's library.
       if (response.status === 404) throw new Error(REFERENCE_NOT_FOUND);
       if (!response.ok) throw new Error('This reference drill could not be loaded.');
-      const payload = (await response.json()) as { drill?: DrillWithDetail };
+      const payload = (await response.json()) as { drill?: DrillWithDetail; lifecycle?: ReferenceLifecycle | null };
       if (!payload.drill) throw new Error('This reference drill could not be loaded.');
       if (openRequestRef.current !== request) return;
       setOpenReference(fromCoachDrillDetail(payload.drill));
+      setOpenReferenceDetail(payload.drill);
+      // The detail's own lifecycle is read with the drill, so it is fresher
+      // than the list's; it replaces this drill's entry.
+      const fresh = payload.lifecycle;
+      if (fresh) {
+        setLifecycle((prev) => ({ ...prev, [referenceDrillId]: fresh }));
+      }
     } catch (error) {
       if (openRequestRef.current !== request) return;
       setOpenReferenceError(error instanceof Error ? error.message : 'This reference drill could not be loaded.');
@@ -210,28 +406,109 @@ function CoachDrillLibrary() {
   // drill, including an operational card far below the reference grid.
   function closeReferenceDrill() {
     openRequestRef.current += 1;
+    // A notice ("Retired. It can no longer...") speaks of the drill being
+    // left; above the library it would name no drill at all.
+    setPromoteNotice('');
     setOpenReferenceId('');
     setOpenReference(null);
+    setOpenReferenceDetail(null);
     setOpenReferenceError('');
     setOpenReferenceLoading(false);
+    setPromoteError('');
     const openerId = openerRef.current;
     if (openerId && typeof window !== 'undefined') {
       window.requestAnimationFrame(() => {
-        const opener = document.getElementById(openerId);
+        // The card that opened it can be gone by now -- filtered out by the
+        // state an action just changed, or retired off the operational list --
+        // and then the search box, at the head of the list, takes focus rather
+        // than the page body; if the library itself failed to load, so there is
+        // no search box either, the section's heading does.
+        const opener = document.getElementById(openerId)
+          ?? document.getElementById('reference-search')
+          ?? document.getElementById('reference-library-heading');
         opener?.scrollIntoView?.({ block: 'center' });
         opener?.focus();
       });
     }
   }
 
+  // After an action, succeeded or failed: focus goes to the drill's lifecycle
+  // control, re-rendered under the same id with its new label -- or, when the
+  // new state offers no action, to the drill's heading, so it never falls to
+  // the page body. Requested in the same render as the action's end, so the
+  // control is enabled again by the time the effect runs, then moved on the
+  // next frame -- but only from where the action left it (the page body, once
+  // the button it was on was disabled or removed, or somewhere in this drill).
+  // Focus the coach moved elsewhere while it saved -- into the Add a drill
+  // form, say -- stays there.
+  function focusLifecycleControl(referenceDrillId: string) {
+    setFocusRequest({ referenceDrillId });
+  }
+  useEffect(() => {
+    if (!focusRequest) return;
+    const id = focusRequest.referenceDrillId;
+    window.requestAnimationFrame(() => {
+      const heading = document.getElementById(`drill-detail-${id}`);
+      const drill = heading?.closest('article');
+      const current = document.activeElement;
+      if (current && current !== document.body && !drill?.contains(current)) return;
+      (document.getElementById(`lifecycle-${id}`) ?? heading)?.focus();
+    });
+  }, [focusRequest]);
+
+  // The open drill's own detail, read again after a refusal the page may have
+  // been out of date for: whether its reference is still in the library, and
+  // what it lacks to be adopted, come from the detail, not the list. Only for
+  // the drill that was open when the action STARTED (`openRequest`, the open
+  // counter captured then) and is open still -- navigation is disabled while
+  // the action runs, and this holds even if it were not. A failed read keeps
+  // what is shown.
+  async function rereadOpenDetail(referenceDrillId: string, openRequest: number) {
+    if (openRequestRef.current !== openRequest) return;
+    const request = openRequest;
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/drill-library?drill_id=${encodeURIComponent(referenceDrillId)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      if (!response.ok) return;
+      const payload = (await response.json()) as { drill?: DrillWithDetail; lifecycle?: ReferenceLifecycle | null };
+      if (!payload.drill || openRequestRef.current !== request) return;
+      setOpenReference(fromCoachDrillDetail(payload.drill));
+      setOpenReferenceDetail(payload.drill);
+      const fresh = payload.lifecycle;
+      if (fresh) {
+        setLifecycle((prev) => ({ ...prev, [referenceDrillId]: fresh }));
+      }
+    } catch {
+      // Keep what is shown; the list's status was already read again.
+    }
+  }
+
+  // After a failed action: re-read what it may have left out of date (both
+  // lists, then the open drill's detail) and say what is then known. A plain
+  // refusal left the page current, so nothing is read. The alert is shown only
+  // after this settles, so it never describes a re-read still in flight.
+  async function afterFailedAction(status: number | null, referenceDrillId: string, openRequest: number): Promise<ActionOutcome> {
+    const unknown = status === null || status >= 500;
+    if (!unknown && status !== 409) return 'refused';
+    const [, libraryRead] = await Promise.all([load(), loadReferenceLibrary()]);
+    if (libraryRead) await rereadOpenDetail(referenceDrillId, openRequest);
+    if (unknown) return libraryRead ? 'unknown' : 'unknown_unread';
+    return libraryRead ? 'reread' : 'reread_failed';
+  }
+
   async function promoteReference(referenceDrillId: string) {
-    if (promotingRef.current) return;
+    if (promotingRef.current || changingLifecycleRef.current) return;
 
     promotingRef.current = true;
+    const openRequest = openRequestRef.current;
     setPromotingReferenceId(referenceDrillId);
     setPromoteError('');
     setPromoteNotice('');
+    setActionOutcome('refused');
 
+    let status: number | null = null;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/drills/promote`, {
         method: 'POST',
@@ -239,23 +516,72 @@ function CoachDrillLibrary() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reference_drill_id: referenceDrillId }),
       });
+      status = response.status;
 
-      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; missing?: string[] };
       if (!response.ok) {
-        throw new Error(payload.error || 'The drill could not be promoted.');
+        const missing = Array.isArray(payload.missing) && payload.missing.length > 0 ? ` ${payload.missing.join(' ')}` : '';
+        throw new Error(`${payload.error || 'The drill could not be promoted.'}${missing}`);
       }
 
       // Reload rather than patching local state: the server decides what this
-      // gym has adopted, and "Already promoted" should be its answer, not this
-      // component's optimism. Both reads: the new drill belongs in the rendered
-      // list, and its pointer belongs in the census.
-      await Promise.all([load(), loadPromotionState()]);
+      // gym has adopted, and the lifecycle shown should be its answer, not this
+      // component's optimism.
+      await Promise.all([load(), loadReferenceLibrary()]);
       setPromoteNotice('Promoted. It is now an operational drill: coaches can assign it, and athletes in this gym can read it in Learn.');
     } catch (error) {
+      const outcome = await afterFailedAction(status, referenceDrillId, openRequest);
+      setActionOutcome(outcome);
       setPromoteError(error instanceof Error ? error.message : 'The drill could not be promoted.');
     } finally {
       promotingRef.current = false;
       setPromotingReferenceId('');
+      focusLifecycleControl(referenceDrillId);
+    }
+  }
+
+  // Retire or Restore the gym's adoption of a reference drill -- always the SAME
+  // operational identity (the adopted lineage's newest version), through the
+  // drills route's PATCH, whose restore guard the server enforces for every
+  // caller. Nothing is created: promoting again after a retirement is refused.
+  async function changeLifecycle(referenceDrillId: string, operationalDrillId: string, active: boolean) {
+    if (changingLifecycleRef.current || promotingRef.current) return;
+    changingLifecycleRef.current = true;
+    const openRequest = openRequestRef.current;
+    setChangingLifecycle(true);
+    setPromoteError('');
+    setPromoteNotice('');
+    setActionOutcome('refused');
+    // Whether Restore will be possible afterwards: not when the reference itself
+    // has been withdrawn, so the notice must not promise it then.
+    const restorable = openReferenceDetail?.active !== false;
+    let status: number | null = null;
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/drills`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ drill_id: operationalDrillId, active }),
+      });
+      status = response.status;
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || (active ? 'The drill could not be restored.' : 'The drill could not be retired.'));
+      }
+      await Promise.all([load(), loadReferenceLibrary()]);
+      setPromoteNotice(active
+        ? 'Restored. It is operational again: coaches can assign it, and athletes in this gym can read it in Learn.'
+        : restorable
+          ? 'Retired. It can no longer be newly assigned, and athletes no longer find it in Learn. Assigned work that is still open keeps its instructions. Restore brings the same drill back.'
+          : 'Retired. It can no longer be newly assigned. Its reference has been withdrawn, so it cannot be restored.');
+    } catch (error) {
+      const outcome = await afterFailedAction(status, referenceDrillId, openRequest);
+      setActionOutcome(outcome);
+      setPromoteError(error instanceof Error ? error.message : 'The drill could not be changed.');
+    } finally {
+      changingLifecycleRef.current = false;
+      setChangingLifecycle(false);
+      focusLifecycleControl(referenceDrillId);
     }
   }
 
@@ -418,7 +744,7 @@ function CoachDrillLibrary() {
         </section>
 
         <section ref={referenceSectionRef} className="mt-[var(--s6)]">
-          <h2 className="t-command text-[length:var(--t-lg)]">Reference library</h2>
+          <h2 id="reference-library-heading" tabIndex={-1} className="t-command text-[length:var(--t-lg)]">Reference library</h2>
           <p className="t-body mt-[var(--s2)] max-w-3xl text-[color:var(--bone-300)]">
             Seeded coaching material for planning and review. The reference source stays read-only. Open a
             drill to read all of it; promoting it from there adopts that exact version into this gym&apos;s
@@ -431,10 +757,10 @@ function CoachDrillLibrary() {
           )}
 
           {promoteError && (
-            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+            <div role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
               <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">{promoteError}</p>
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
-                This is a failure to promote. The reference library below is unchanged.
+                {OUTCOME_EXPLANATIONS[actionOutcome]}
               </p>
             </div>
           )}
@@ -457,7 +783,7 @@ function CoachDrillLibrary() {
           {/* LEVEL 2: the opened reference drill, with Promote on it. */}
           {openReferenceId && (
             <div className="mt-[var(--s4)] space-y-[var(--s4)]">
-              <button type="button" onClick={closeReferenceDrill} className="btn btn--ghost">
+              <button type="button" onClick={closeReferenceDrill} disabled={actionInFlight} className="btn btn--ghost">
                 Back to the reference library
               </button>
               {openReferenceLoading && <p className="t-body text-[color:var(--bone-300)]">Loading the drill...</p>}
@@ -472,28 +798,86 @@ function CoachDrillLibrary() {
                   view={openReference}
                   audience="coach"
                   focusOnMount
-                  actions={isPromoted(openReference.id) ? (
-                    <p className="t-label text-[color:var(--bone-300)]">{promotionLabel(openReference.id)}</p>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => void promoteReference(openReference.id)}
-                      disabled={promotingReferenceId !== ''}
-                      className="btn"
-                    >
-                      {promotingReferenceId === openReference.id ? 'Promoting...' : 'Promote'}
-                    </button>
+                  actions={(
+                    <ReferenceActions
+                      referenceDrillId={openReference.id}
+                      state={lifecycle[openReference.id]}
+                      detail={openReferenceDetail}
+                      promotingReferenceId={promotingReferenceId}
+                      changingLifecycle={changingLifecycle}
+                      busy={actionInFlight}
+                      onPromote={(id) => void promoteReference(id)}
+                      onChangeLifecycle={(id, operationalId, restoring) => void changeLifecycle(id, operationalId, restoring)}
+                    />
                   )}
                 />
               )}
             </div>
           )}
 
+          {/* DISCOVERY: name search and durable filters (W-D4C). Hidden while a
+              drill is open, with the grid it narrows. */}
+          {!referenceLoading && !referenceLoadError && referenceDrills.length > 0 && (
+            <div className={`mat-leather mt-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s4)]${openReferenceId ? ' hidden' : ''}`}>
+              <div className="grid gap-[var(--s3)] md:grid-cols-3">
+                <div className="field md:col-span-3">
+                  <label htmlFor="reference-search" className="t-label">Search by name</label>
+                  <input
+                    id="reference-search"
+                    type="search"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    className="input"
+                    autoComplete="off"
+                  />
+                </div>
+                {FILTERS.map((spec) => (
+                  <div key={spec.key} className="field">
+                    <label htmlFor={`reference-filter-${spec.key}`} className="t-label">{spec.label}</label>
+                    <select
+                      id={`reference-filter-${spec.key}`}
+                      value={filters[spec.key]}
+                      onChange={(event) => setFilters((prev) => ({ ...prev, [spec.key]: event.target.value }))}
+                      className="select"
+                    >
+                      <option value="">Any</option>
+                      {filterOptions(spec).map((value) => (
+                        <option key={value} value={value}>{spec.labelOf(value)}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s3)]">
+                <p role="status" className="t-label text-[color:var(--bone-300)]">
+                  Showing {visibleReferenceDrills.length} of {referenceDrills.length} reference drills
+                </p>
+                {filtering && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch('');
+                      setFilters(NO_FILTERS);
+                      document.getElementById('reference-search')?.focus();
+                    }}
+                    className="btn btn--ghost"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!referenceLoading && !referenceLoadError && referenceDrills.length > 0 && visibleReferenceDrills.length === 0 && !openReferenceId && (
+            <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">No reference drills match this search and these filters.</p>
+          )}
+
           {/* LEVEL 1: concise cards. Equipment is labelled as equipment -- it
               used to be printed under "Setup:", which for most of the corpus
               made an equipment word look like the setup instructions. */}
           <div className={`mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2${openReferenceId ? ' hidden' : ''}`}>
-            {referenceDrills.map((drill) => (
+            {visibleReferenceDrills.map((drill) => (
               <article key={drill.drill_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
                 <div className="flex items-baseline justify-between gap-[var(--s3)]">
                   <h3 className="t-command text-[length:var(--t-md)]">{drill.name}</h3>
@@ -519,13 +903,14 @@ function CoachDrillLibrary() {
                     type="button"
                     id={`view-reference-${drill.drill_id}`}
                     onClick={() => void openReferenceDrill(drill.drill_id, `view-reference-${drill.drill_id}`)}
+                    disabled={actionInFlight}
                     className="btn btn--ghost"
                     aria-label={`View drill: ${drill.name}`}
                   >
                     View drill
                   </button>
-                  {isPromoted(drill.drill_id) && (
-                    <p className="t-label text-[color:var(--bone-300)]">{promotionLabel(drill.drill_id)}</p>
+                  {lifecycle[drill.drill_id] && lifecycle[drill.drill_id].state !== 'available' && (
+                    <p className="t-label text-[color:var(--bone-300)]">{LIFECYCLE_LABELS[lifecycle[drill.drill_id].state]}</p>
                   )}
                 </div>
               </article>
@@ -579,6 +964,7 @@ function CoachDrillLibrary() {
                     type="button"
                     id={`view-instructions-${drill.drill_id}`}
                     onClick={() => void openReferenceDrill(drill.reference_drill_id as string, `view-instructions-${drill.drill_id}`)}
+                    disabled={actionInFlight}
                     className="btn btn--ghost mt-[var(--s3)]"
                     aria-label={`View instructions: ${drill.name}`}
                   >

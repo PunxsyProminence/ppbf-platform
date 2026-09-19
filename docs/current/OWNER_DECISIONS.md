@@ -369,6 +369,67 @@ owner's correction.
    answer comes from running the athlete's own two reads, so a coach does not
    send an athlete to read something they cannot open.
 
+**W-D4C build interpretations, flagged.** How the LIFECYCLE and PROMOTION
+QUALITY clauses above were built, and where they could not be. None is a new
+ruling; each is open to the owner's correction. The owner approved this split
+(build what the data supports, report the rest) before the build started.
+
+1. *Lifecycle is derived, never stored.* For each reference drill in a gym the
+   server derives one state from durable rows on every read: **operational**
+   (an active operational drill points at this exact reference version),
+   **retired** (adopted, none active), **superseded** (not adopted, and a newer
+   reference version exists), **withdrawn** (not adopted, reference inactive),
+   and otherwise **available**. It is shown only to the roles that promote,
+   retire and restore (coach, organization administrator, administrator) --
+   the same roles that see retired drills elsewhere.
+2. *NEEDS REVIEW is not built.* Nothing durable records that a drill was
+   reviewed or floor-validated, so a "needs review" state would either be
+   permanent for 114 of the 119 seeded drills or invented. VERIFIED_MODEL_GAP.
+3. *Retire and Restore work on the reference-derived identity.* They appear on
+   the reference drill's detail, the same decision surface as Promote. Restore
+   brings back the SAME operational drill: the adopted lineage's newest
+   version. The server refuses a restore of an earlier version, a restore while
+   another version of the lineage is active, and a restore whose reference has
+   been withdrawn. The refusal is enforced in the update itself, so a direct API
+   call gets the same rule. Promoting again after a retirement stays refused,
+   and the refusal now says to restore instead. Drills a gym wrote itself keep
+   their existing API-only retire/restore, now under the same guard.
+4. *Discovery uses durable fields only.* Search matches the drill name only.
+   The filters are discipline, category, difficulty, contact level,
+   coach-authorization and lifecycle. There is no solo / partner / coach-led,
+   space or equipment filter: the first two have no column at all, and
+   equipment is free text (37 raw values in the seed, with near-duplicates and
+   "or"/"," lists) that could only be filtered by parsing it. Some category
+   values name a format (partner, shadow, sparring); the Category filter
+   offers them as categories, not as a solo/partner attribute.
+5. *The promotion check is adoption readiness, not the context-aware quality
+   gate.* The server refuses to promote a reference drill unless it is current
+   (active, not superseded) and has a name, purpose, category, difficulty,
+   setup, execution, a description of good execution, easier / standard / harder
+   scaling with one starting level, and at least one stop rule. All 119 seeded
+   drills pass. The context-aware gate the ruling asks for is a
+   **VERIFIED_MODEL_GAP**. There is no durable data for: solo / partner /
+   coach-led; space / environment; whether a "where applicable" requirement
+   (failure/correction, scaling, drill-specific stop conditions, equipment)
+   applies to a given drill; ordered execution (execution is one text column);
+   or a floor-validation record.
+6. *Owner decisions left open, not guessed:*
+   - Should at least one coaching cue be required? That would block 34 of 119
+     drills, including 23 of the 25 conditioning drills.
+   - Are the 114 drafts marked REQUIRES FLOOR VALIDATION adoptable as they are?
+   - Should the blank equipment on the 5 source-manual drills count as missing?
+   - Should adopting a change proposal on a retired lineage be refused? Today it
+     brings the drill back under a new operational id, which is a second path
+     around Restore.
+   - Should a coach be able to reinstate an earlier version of a drill, or only
+     the newest? This build allows only the newest.
+   - A newer version of a reference drill that this gym adopted (and perhaps
+     retired) reads as not adopted and can be promoted as a separate
+     operational drill. Should adopting a newer reference version instead go
+     through the adopted drill (a coach-reviewed refinement), per
+     OD-2026-09-16-001 clause 5? No reference row has ever been superseded, so
+     this is latent.
+
 ---
 
 ## OD-2026-09-18-001 -- Every new assignment and Coach Card is built from an active operational drill

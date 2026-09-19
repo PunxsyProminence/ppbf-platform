@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { getDrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
+import { getDrillWithDetail, listReferenceLifecycles } from '@/src/server/pilot/drillLibraryV3';
 import {
   DRILL_DIFFICULTIES,
   DrillNameTakenError,
@@ -11,6 +11,7 @@ import {
   promoteReferenceDrill,
 } from '@/src/server/pilot/drills';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { adoptionReadiness } from '@/src/lib/drillAdoptionReadiness';
 
 export const runtime = 'nodejs';
 
@@ -62,9 +63,12 @@ function conflict(message: string): NextResponse {
 }
 
 export async function POST(request: NextRequest) {
+  // Kept for the catch below, which words the already-promoted refusal.
+  let organizationId: string | null = null;
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...DRILL_AUTHOR_ROLES]);
+    organizationId = principal.organizationId;
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const referenceDrillId = requireText(body.reference_drill_id, 'reference_drill_id');
@@ -88,6 +92,23 @@ export async function POST(request: NextRequest) {
     // promotion.
     if (!reference.active) {
       return conflict('This reference drill is retracted and cannot be promoted.');
+    }
+
+    // Adoption readiness (W-D4C), enforced HERE so no client -- the coach page
+    // or a direct API call -- can adopt a drill that is missing what it needs
+    // to run. The page runs the same function to show the answer first. It is
+    // the presence-and-governance check the data can decide, not the
+    // context-aware quality gate (see drillAdoptionReadiness.ts for why).
+    const readiness = adoptionReadiness(reference);
+    if (!readiness.ready) {
+      return NextResponse.json(
+        {
+          error: 'This reference drill is not ready to adopt.',
+          code: 'NOT_READY_TO_ADOPT',
+          missing: readiness.missing,
+        },
+        { status: 409 },
+      );
     }
 
     // Both sides carry the same four-literal vocabulary, so this transfers
@@ -152,11 +173,36 @@ export async function POST(request: NextRequest) {
     // drill that exists; "name taken" is resolved by the coach deciding which
     // drill owns that name. A single 409 would send them to the wrong remedy.
     if (error instanceof ReferenceDrillAlreadyPromotedError) {
+      // A retired adoption still holds the reference (the index is not partial
+      // on active), so a second promotion is refused. Say what the coach can do
+      // instead: bring the existing drill back, keeping its identity and its
+      // history, rather than a message that reads as a dead end.
+      const lifecycle = organizationId ? await lifecycleOf(organizationId, error.referenceDrillId) : null;
+      if (lifecycle === 'retired') {
+        return NextResponse.json(
+          {
+            error: 'This gym adopted this reference drill before and then retired it. Restore that drill instead of promoting it again.',
+            code: 'PROMOTION_RETIRED_RESTORE_INSTEAD',
+          },
+          { status: 409 },
+        );
+      }
       return conflict(error.message);
     }
     if (error instanceof DrillNameTakenError) {
       return conflict(error.message);
     }
     return jsonError(error);
+  }
+}
+
+// The reference's lifecycle for the session's gym, read only to word the
+// already-promoted refusal. A failure here must not turn a clear 409 into a 500.
+async function lifecycleOf(organizationId: string, referenceDrillId: string): Promise<string | null> {
+  try {
+    const lifecycles = await listReferenceLifecycles(organizationId, [referenceDrillId]);
+    return lifecycles[referenceDrillId]?.state ?? null;
+  } catch {
+    return null;
   }
 }

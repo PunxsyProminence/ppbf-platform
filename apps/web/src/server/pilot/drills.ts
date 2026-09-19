@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { query, queryOne } from './db';
+import { query, queryOne, withTransaction } from './db';
 
 // pilot.drills is owned by
 // infra/azure/pilot_slice_postgres_drills_migration.sql, applied through the
@@ -106,6 +106,30 @@ export class ReferenceDrillAlreadyPromotedError extends Error {
     super('This reference drill has already been promoted into this gym.');
     this.name = 'ReferenceDrillAlreadyPromotedError';
     this.referenceDrillId = referenceDrillId;
+  }
+}
+
+/**
+ * A restore the lifecycle does not allow (W-D4C). Restore brings back the SAME
+ * operational identity -- the retired lineage's newest version -- and nothing
+ * else, so each refusal names what the coach can do instead.
+ */
+export type RestoreRefusal = 'not_latest_version' | 'another_version_active' | 'reference_withdrawn' | 'state_changed';
+
+const RESTORE_REFUSAL_MESSAGES: Record<RestoreRefusal, string> = {
+  not_latest_version: 'This is an earlier version of the drill. Restore its newest version instead.',
+  another_version_active: 'Another version of this drill is already in use in this gym.',
+  reference_withdrawn: "This drill's reference has been withdrawn, so it cannot be restored.",
+  state_changed: 'This drill changed while it was being restored. Reload the page and try again.',
+};
+
+export class DrillRestoreRefusedError extends Error {
+  readonly reason: RestoreRefusal;
+
+  constructor(reason: RestoreRefusal) {
+    super(RESTORE_REFUSAL_MESSAGES[reason]);
+    this.name = 'DrillRestoreRefusedError';
+    this.reason = reason;
   }
 }
 
@@ -311,20 +335,126 @@ export async function updateDrill(params: {
     throw new Error('Missing drill fields to update');
   }
 
-  try {
-    const rows = await query<PilotDrill>(
-      `update pilot.drills
-       set ${assignments.join(', ')}, updated_at = now()
-       where organization_id = $1 and drill_id = $2
-       returning ${DRILL_FIELDS}`,
-      values,
-    );
+  // RESTORE IS GUARDED IN THE SAME STATEMENT (W-D4C). Setting active=true on a
+  // row that is already active is an ordinary edit and passes. Bringing back a
+  // retired row is allowed only for the lineage's newest version, only when no
+  // version of that lineage is active, and only while its reference (if any) is
+  // still active -- the same refusal the promote route makes for a withdrawn
+  // reference. Held in the WHERE clause of the UPDATE rather than in a read
+  // beforehand, so the target row is checked and changed together and a direct
+  // API call gets the same rule as the coach page. A restore first locks the
+  // lineage, in a statement of its own -- see below.
+  const restoreGuard = params.active === true
+    ? `
+       and (
+         d.active
+         or (
+           d.version = (
+             select max(l.version) from pilot.drills l
+             where l.organization_id = d.organization_id and l.lineage_id = d.lineage_id
+           )
+           and not exists (
+             select 1 from pilot.drills l
+             where l.organization_id = d.organization_id and l.lineage_id = d.lineage_id and l.active
+           )
+           and (
+             d.reference_drill_id is null
+             or exists (
+               select 1 from pilot.drill_library r
+               where r.organization_id = d.organization_id
+                 and r.drill_id = d.reference_drill_id
+                 and r.active
+             )
+           )
+         )
+       )`
+    : '';
 
-    return rows[0] ?? null;
+  const updateSql = `update pilot.drills d
+       set ${assignments.join(', ')}, updated_at = now()
+       where d.organization_id = $1 and d.drill_id = $2${restoreGuard}
+       returning ${DRILL_FIELDS.split(', ').map((column) => `d.${column}`).join(', ')}`;
+
+  try {
+    if (params.active !== true) {
+      const rows = await query<PilotDrill>(updateSql, values);
+      return rows[0] ?? null;
+    }
+
+    // A RESTORE LOCKS THE LINEAGE FIRST, IN A STATEMENT OF ITS OWN (Codex P1 on
+    // PR #939). The guard's "newest version" and "no version active" read the
+    // lineage's OTHER rows. Adopting a change proposal locks the lineage's
+    // newest row, marks it inactive and inserts an active successor. Were the
+    // guarded UPDATE itself to wait on that row, PostgreSQL would re-check it
+    // once the adoption commits against the statement's ORIGINAL snapshot --
+    // which cannot see the successor -- and bring the old version back beside
+    // it: two active versions. Locking the lineage's rows here and running the
+    // guard in the next statement means the guard reads a snapshot taken after
+    // any writer holding those rows has committed; an adoption that starts
+    // later waits for this restore instead, then retires the row it restored.
+    const restored = await withTransaction(async (client) => {
+      await client.query(
+        `select 1 from pilot.drills l
+         where l.organization_id = $1
+           and l.lineage_id = (
+             select d.lineage_id from pilot.drills d
+             where d.organization_id = $1 and d.drill_id = $2
+           )
+         for update`,
+        [params.organizationId, params.drillId],
+      );
+      const result = await client.query<PilotDrill>(updateSql, values);
+      return result.rows[0] ?? null;
+    });
+    if (restored) {
+      return restored;
+    }
+    // Nothing changed: either there is no such drill (null, as before), or the
+    // guard refused the restore -- and then the coach is told which rule.
+    const refusal = await restoreRefusalFor(params.organizationId, params.drillId);
+    if (refusal) {
+      throw new DrillRestoreRefusedError(refusal);
+    }
+    return null;
   } catch (error) {
     if (isDrillNameCollision(error)) {
-      throw new DrillNameTakenError(params.name ?? '');
+      // A restore sends no name, so name the drill that could not come back
+      // rather than printing an empty pair of quotes.
+      const name = params.name ?? (await getDrill(params.organizationId, params.drillId))?.name ?? '';
+      throw new DrillNameTakenError(name);
     }
     throw error;
   }
+}
+
+async function restoreRefusalFor(organizationId: string, drillId: string): Promise<RestoreRefusal | null> {
+  const row = await queryOne<{ latest: boolean; lineage_active: boolean; reference_withdrawn: boolean }>(
+    `select
+       d.version = (
+         select max(l.version) from pilot.drills l
+         where l.organization_id = d.organization_id and l.lineage_id = d.lineage_id
+       ) as latest,
+       exists (
+         select 1 from pilot.drills l
+         where l.organization_id = d.organization_id and l.lineage_id = d.lineage_id and l.active
+       ) as lineage_active,
+       (
+         d.reference_drill_id is not null
+         and not exists (
+           select 1 from pilot.drill_library r
+           where r.organization_id = d.organization_id and r.drill_id = d.reference_drill_id and r.active
+         )
+       ) as reference_withdrawn
+     from pilot.drills d
+     where d.organization_id = $1 and d.drill_id = $2`,
+    [organizationId, drillId],
+  );
+  if (!row) return null;
+  if (!row.latest) return 'not_latest_version';
+  if (row.lineage_active) return 'another_version_active';
+  if (row.reference_withdrawn) return 'reference_withdrawn';
+  // The drill exists and nothing refuses it NOW, but the guarded update refused
+  // it a moment ago: something changed in between. That is a conflict to retry,
+  // not a missing drill.
+  return 'state_changed';
 }
