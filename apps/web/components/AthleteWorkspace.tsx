@@ -20,9 +20,13 @@ import ThenAndNow from './ThenAndNow';
 import TrainingCard, { type TrainingSession } from './TrainingCard';
 import { cx } from './uiStyles';
 import useGymSound from './useGymSound';
+import DrillDetail from './drills/DrillDetail';
+import { fromAthleteDrillDetail, type DrillDetailView } from './drills/drillDetailView';
 import { apiBase } from '@/lib/apiBase';
+import { humanizeContactLevel } from '@/src/lib/drillPresentation';
 import { formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
 import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
+import type { AthleteDrillDetail } from '@/src/server/pilot/drillLibraryV3';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'attempt-log' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'messages' | 'shadow';
@@ -229,17 +233,24 @@ interface StoredAthleteFloorPlan {
  * promoted and still runs, and already stripped of authoring and provenance
  * metadata.
  *
- * A BOUNDED BROWSE SUBSET of the athlete-safe set, not the whole of it. The
- * owner rulings permit an athlete eight fields; this shape carries six of them
- * plus the drill's identity. STOP RULES AND SCALE GUIDANCE ARE PERMITTED BUT
- * NOT CARRIED HERE -- they live on AthleteDrillDetail, which this surface does
- * not request, so nothing on this screen may claim to show them. That is a
- * bound on the browse card, not a narrowing of the ruling.
+ * THE BROWSE SHAPE -- LEVEL 1 of OD-2026-09-19-001. The card renders only the
+ * name, what the drill is for, the contact level and the coach-authorization
+ * flag. Everything else -- steps, what good and bad look like, corrections,
+ * scaling and stop rules -- is LEVEL 2, read from AthleteDrillDetail when the
+ * athlete opens a drill, and rendered by the shared DrillDetail component.
  *
  * What is excluded outright is planning taxonomy -- no category, no difficulty
  * band, no skill code -- because this screen is for learning the drill, not for
  * planning sessions.
  */
+/** What the athlete reads when an opened drill has been withdrawn since the list loaded. */
+const DRILL_WITHDRAWN = "This drill is no longer in your gym's library.";
+
+/** The Learn card's Open button, addressable so Back can return focus to it. */
+function learnOpenButtonId(drillId: string): string {
+  return `learn-open-${drillId}`;
+}
+
 interface ReferenceDrill {
   id: string;
   name: string;
@@ -708,6 +719,13 @@ export default function AthleteWorkspace() {
   const [drills, setDrills] = useState<ReferenceDrill[]>([]);
   const [drillsLoading, setDrillsLoading] = useState(true);
   const [drillsError, setDrillsError] = useState<string | null>(null);
+  // LEVEL 2 of OD-2026-09-19-001: the one drill an athlete has opened. Read
+  // from the athlete detail endpoint, which is the server's constructive,
+  // provenance-free projection. Reading it writes nothing.
+  const [openDrillId, setOpenDrillId] = useState<string | null>(null);
+  const [openDrill, setOpenDrill] = useState<DrillDetailView | null>(null);
+  const [openDrillLoading, setOpenDrillLoading] = useState(false);
+  const [openDrillError, setOpenDrillError] = useState<string | null>(null);
 
   // Shadow State
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
@@ -877,6 +895,66 @@ export default function AthleteWorkspace() {
 
     return () => controller.abort();
   }, []);
+
+  // The opened drill's full detail. Keyed to the drill id and abortable, so a
+  // slow answer for a drill the athlete has already left cannot land on the
+  // one they opened next. GET only: opening a drill is reading.
+  useEffect(() => {
+    if (!openDrillId) return;
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        const response = await fetch(
+          `${apiBase()}/api/pilot/drill-library?drill_id=${encodeURIComponent(openDrillId)}`,
+          { method: 'GET', credentials: 'include', signal: controller.signal },
+        );
+        // 404 is an answer, not a failure: the drill was retired or its
+        // reference withdrawn after the list loaded. Trying again cannot help,
+        // so it is not described as a load failure.
+        if (response.status === 404) throw new Error(DRILL_WITHDRAWN);
+        if (!response.ok) throw new Error('This drill did not load.');
+        const payload = (await response.json()) as { drill?: AthleteDrillDetail };
+        if (controller.signal.aborted) return;
+        if (!payload.drill) throw new Error('This drill did not load.');
+        setOpenDrill(fromAthleteDrillDetail(payload.drill));
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setOpenDrillError(error instanceof Error ? error.message : 'This drill did not load.');
+      } finally {
+        if (!controller.signal.aborted) setOpenDrillLoading(false);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [openDrillId]);
+
+  // State is reset here, in the handler, rather than at the top of the effect:
+  // a synchronous setState inside an effect cascades a render before the
+  // request has even left.
+  const openReferenceDrill = (drillId: string) => {
+    setOpenDrill(null);
+    setOpenDrillError(null);
+    setOpenDrillLoading(true);
+    setOpenDrillId(drillId);
+  };
+
+  // Back returns focus to the card that opened the drill: the Back button is
+  // about to disappear, and focus would otherwise fall to <body>.
+  const closeReferenceDrill = () => {
+    const openerId = openDrillId;
+    setOpenDrillId(null);
+    setOpenDrill(null);
+    setOpenDrillError(null);
+    setOpenDrillLoading(false);
+    if (openerId && typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        const opener = document.getElementById(learnOpenButtonId(openerId));
+        opener?.scrollIntoView?.({ block: 'center' });
+        opener?.focus();
+      });
+    }
+  };
 
   // Fetch goals when athlete ID is set
   const loadGoals = useCallback(async () => {
@@ -2875,19 +2953,15 @@ export default function AthleteWorkspace() {
               <HelpPanel
                 title="Reference Library"
                 /* THE COPY MAY ONLY NAME WHAT THIS SCREEN ACTUALLY RENDERS.
-                   It said "and when to stop" and "Check the stop rules", and
-                   the browse cards render no stop rules -- they consume
-                   AthleteDrillSummary, which carries purpose, setup, execution,
-                   contact level, cues and the coach-authorization flag and
-                   nothing else. Stop rules exist on AthleteDrillDetail, which
-                   this surface does not call. Telling an athlete to check a
-                   safety instruction that is not on the screen is worse than
-                   staying silent about it: it invites them to believe they have
-                   read the stop conditions when they have not. */
-                description="Reference material for the drills your gym has adopted: what each drill is for, how it is set up and run, and its coaching cues."
+                   Before W-D4 the cards showed no stop rules and this copy was
+                   narrowed to say so. Opening a drill now renders its stop
+                   rules and scaling (OD-2026-09-19-001), so the copy names them
+                   -- and names them as one click away, because that is where
+                   they are. */
+                description="Reference material for the drills your gym has adopted. Open a drill to see what it is for, what it needs, how it runs, how to make it easier or harder, and when to stop."
                 usage={[
-                  'Read a drill before or after you train it',
-                  'Check the contact level, and whether a coach has to be there',
+                  'Open a drill before or after you train it',
+                  'Check the contact level, whether a coach has to be there, and the stop rules',
                   'Bring a question to your coach about anything here'
                 ]}
                 mistakes={[
@@ -2934,9 +3008,33 @@ export default function AthleteWorkspace() {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
+              {/* LEVEL 2: one opened drill, in full. The list is replaced rather
+                  than stacked under it, and "Back to drills" returns to it. */}
+              {openDrillId && (
+                <div className="space-y-[var(--s4)]">
+                  <button type="button" className="btn btn--ghost" onClick={closeReferenceDrill}>
+                    Back to drills
+                  </button>
+                  {openDrillLoading && <span className="working">Loading the drill...</span>}
+                  {!openDrillLoading && openDrillError && (
+                    <div className={PANEL}>
+                      <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{openDrillError}</p>
+                      {openDrillError !== DRILL_WITHDRAWN && (
+                        <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                          This is a failure to load the drill, not a sign it was removed. Go back and try again.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {!openDrillLoading && openDrill && <DrillDetail view={openDrill} audience="athlete" focusOnMount />}
+                </div>
+              )}
+
+              {/* LEVEL 1: concise cards. Name, what it is for, and the two safety
+                  facts an athlete should see before opening anything. */}
+              <div className={cx('grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]', openDrillId && 'hidden')}>
                 {drills.map(drill => (
-                  <div key={drill.id} className={`${PANEL_RAISED} space-y-[var(--s4)]`}>
+                  <div key={drill.id} className={`${PANEL_RAISED} space-y-[var(--s3)]`}>
                     <div className="flex justify-between items-start gap-[var(--s3)]">
                       <h4 className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{drill.name}</h4>
                       {drill.requiresCoachAuthorization && (
@@ -2944,29 +3042,19 @@ export default function AthleteWorkspace() {
                       )}
                     </div>
                     <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{drill.purpose}</p>
-                    <div className="space-y-[var(--s2)]">
-                      <p className="t-label">Setup:</p>
-                      <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{drill.setup}</p>
-                    </div>
-                    <div className="space-y-[var(--s2)]">
-                      <p className="t-label">How it runs:</p>
-                      <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{drill.execution}</p>
-                    </div>
-                    <div className="space-y-[var(--s2)]">
-                      <p className="t-label">Contact level:</p>
-                      <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{drill.contactLevel}</p>
-                    </div>
-                    {drill.cues.length > 0 && (
-                      <div className="space-y-[var(--s2)]">
-                        <p className="t-label">Coaching Cues:</p>
-                        <div className="flex flex-wrap gap-[var(--s2)]">
-                          {drill.cues.map((cue) => (
-                            <span key={`${drill.id}-${cue}`} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">⚡ {cue}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {/* NO ACTION CONTROL HERE, AND THAT IS THE DESIGN.
+                    <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+                      <span className="font-semibold text-[color:var(--bone-200)]">Contact:</span> {humanizeContactLevel(drill.contactLevel)}
+                    </p>
+                    <button
+                      type="button"
+                      id={learnOpenButtonId(drill.id)}
+                      className="btn btn--ghost"
+                      aria-label={`Open drill: ${drill.name}`}
+                      onClick={() => openReferenceDrill(drill.id)}
+                    >
+                      Open drill
+                    </button>
+                    {/* NO COMPLETION CONTROL HERE, AND THAT IS THE DESIGN.
                         "Mark Complete" stood here once and set a React flag.
                         There is no row anywhere for "this athlete practised this
                         library drill": pilot.assignment_completions is keyed on

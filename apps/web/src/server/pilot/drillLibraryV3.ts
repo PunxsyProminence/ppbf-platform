@@ -502,10 +502,71 @@ export interface AthleteDrillSummary {
   cues: string[];
 }
 
-/** The detail shape: the browse shape plus the two child sets that only matter when running the drill. */
+/**
+ * The detail shape: the browse shape, the two child sets that only matter when
+ * running the drill, and -- since OD-2026-09-19-001 -- the practical
+ * instruction an athlete checks themselves against: what good and bad look
+ * like, the common errors, and the corrections. Detail only; the browse list
+ * does not carry them.
+ */
 export interface AthleteDrillDetail extends AthleteDrillSummary {
+  what_good_looks_like: string;
+  what_bad_looks_like: string;
+  common_errors: string;
+  corrections: string;
+  /**
+   * Practical: what to bring. It is here so the screen can say "Equipment"
+   * rather than print an equipment word under "Setup" -- in 114 of the 119
+   * seeded drills standard_setup holds the same word as equipment_needed, so
+   * the athlete was already reading it, mislabelled.
+   */
+  equipment_needed: string;
   scale_levels: AthleteScaleGuidance[];
   stop_rules: AthleteStopRule[];
+}
+
+/**
+ * The practical-instruction columns an athlete's DETAIL may carry
+ * (OD-2026-09-19-001). Written out, like ATHLETE_DRILL_FIELDS, so nothing else
+ * is fetched on this path.
+ */
+const ATHLETE_INSTRUCTION_FIELDS =
+  'd.what_good_looks_like, d.what_bad_looks_like, d.common_errors, d.corrections, d.equipment_needed';
+
+interface AthleteInstructionRow {
+  what_good_looks_like: string;
+  what_bad_looks_like: string;
+  common_errors: string;
+  corrections: string;
+  equipment_needed: string;
+}
+
+/**
+ * Inline grounding-claim tags -- `[A2-070]`, `[B4-027]` -- are the evidence
+ * model's citations. In the seeded corpus they sit in what_good_looks_like,
+ * what_bad_looks_like and corrections among the fields above (and in transfer,
+ * which athletes do not get); every field here is stripped regardless, so a
+ * tag added to another one later cannot leak. They are provenance, and
+ * OD-2026-09-17-001 clause 8 keeps grounding claim ids off an athlete's screen,
+ * so they are removed before the text leaves the server rather than left for a
+ * renderer to remember. The pattern is the claim-id shape only, so ordinary
+ * bracketed prose is untouched.
+ */
+const GROUNDING_CLAIM_TAG = /[ \t]*\[[A-Z]\d+-\d+\]/g;
+
+export function stripGroundingClaimTags(text: string): string {
+  return text.replace(GROUNDING_CLAIM_TAG, '');
+}
+
+/** Constructive, like the other projections: every key named, tags stripped. */
+export function toAthleteInstruction(row: AthleteInstructionRow): AthleteInstructionRow {
+  return {
+    what_good_looks_like: stripGroundingClaimTags(row.what_good_looks_like ?? ''),
+    what_bad_looks_like: stripGroundingClaimTags(row.what_bad_looks_like ?? ''),
+    common_errors: stripGroundingClaimTags(row.common_errors ?? ''),
+    corrections: stripGroundingClaimTags(row.corrections ?? ''),
+    equipment_needed: stripGroundingClaimTags(row.equipment_needed ?? ''),
+  };
 }
 
 /**
@@ -618,8 +679,8 @@ export async function getAthleteDrillDetail(
   organizationId: string,
   drillId: string,
 ): Promise<AthleteDrillDetail | null> {
-  const drill = await queryOne<AthleteDrillScalarRow>(
-    `select ${ATHLETE_DRILL_FIELDS}
+  const drill = await queryOne<AthleteDrillScalarRow & AthleteInstructionRow>(
+    `select ${ATHLETE_DRILL_FIELDS}, ${ATHLETE_INSTRUCTION_FIELDS}
      from pilot.drill_library d
      where d.organization_id = $1
        and d.drill_id = $2
@@ -662,6 +723,7 @@ export async function getAthleteDrillDetail(
 
   return {
     ...toAthleteDrillSummary(drill, cues.map((cue) => cue.cue_text)),
+    ...toAthleteInstruction(drill),
     scale_levels: scaleLevels.map(toAthleteScaleGuidance),
     stop_rules: stopRules.map(toAthleteStopRule),
   };
