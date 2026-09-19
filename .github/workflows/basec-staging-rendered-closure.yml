@@ -1,0 +1,241 @@
+# ─────────────────────────────────────────────────────────────────────
+# TEMPORARY HARNESS -- NOT PRODUCT CODE, NOT A PERMANENT GATE.
+#
+# Base-C staging product acceptance is complete except for three rendered
+# observations that could not be captured from a workstation:
+#
+#   R1  the Athlete's own Attempts surface renders the attempt and the coach's
+#       current disposition, and leaks no reviewer account identity
+#   R2  an organization_admin renders the attempt and its disposition
+#   R3  Confirm / Correct / Dispute are not rendered for an organization_admin
+#
+# Everything else (A2-A6, A8, A9 read, A10 server refusal) is already settled and
+# is deliberately NOT repeated here.
+#
+# WHY THIS EXISTS AT ALL
+#   The two roles that must be rendered -- organization_admin and coach -- are
+#   provisioned as Microsoft accounts on an @ppbf.invalid address with no PIN, by
+#   design: resolvePrincipal revokes a privileged ppbf_local session on sight, so
+#   a PIN-backed admin would be destroyed by its own first use. There is no
+#   interactive path to render them. The workstation route needed a staging
+#   database credential, and six authorized retrieval attempts across two gates
+#   failed on an intermittent Azure management-plane fault. Here the credential
+#   resolves the same way deploy-staging.yml and apply-migrations.yml already
+#   resolve it, from the Container App secret over OIDC, and that path is proven.
+#
+# SAFETY PROPERTIES
+#   * Dispatch/PR only. No push trigger, no schedule. Nothing runs by merging.
+#   * `environment: staging`, so an environment protection rule gates it exactly
+#     as it gates apply-migrations and deploy-staging.
+#   * It resolves ONLY the staging Container App secret and asserts the database
+#     identity from the connection string itself before any write.
+#   * It refuses to touch a database whose host or name is not the approved
+#     staging pair, and refuses anything carrying a production marker.
+#   * It pins itself to the accepted Base-C commit and to the deployed revision,
+#     and fails BEFORE fixture setup if either has moved.
+#   * The spec cleans up in afterAll and verifies the cleanup by read-back.
+#   * No trace and no video are uploaded -- they could capture a raw magic-link
+#     token or a PIN. Only post-authentication screenshots are kept.
+# ─────────────────────────────────────────────────────────────────────
+
+name: basec-staging-rendered-closure
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/basec-staging-rendered-closure.yml
+      - apps/web/e2e/basec-staging-rendered-closure.spec.ts
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  # The same reasoning deploy-staging.yml spells out: this job repoints one
+  # shared fixture athlete and mints one shared fixture PIN. Two concurrent runs
+  # would tear down each other's fixture mid-assertion. A constant group is the
+  # point, and an evicted pending run costs nothing because it never started.
+  group: basec-staging-rendered-closure-app-ppbf-staging
+  cancel-in-progress: false
+
+env:
+  ACCEPTED_SHA: c2416709a12110e8e656712317a3db77f913994c
+  EXPECTED_REVISION: app-ppbf-staging--0000208
+  CONTAINER_APP_NAME: app-ppbf-staging
+  RESOURCE_GROUP: rg-ppbf-enterprise-staging
+  STAGING_BASE_URL: https://app-ppbf-staging.purpledesert-3a75d580.eastus.azurecontainerapps.io
+
+jobs:
+  rendered-closure:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Verify This Is The Accepted Base-C Commit
+        # A pull_request run checks out GitHub's EPHEMERAL MERGE COMMIT, so
+        # `git rev-parse HEAD` is never the accepted SHA and comparing it fails
+        # closed on a correct basis -- which is exactly what happened on the
+        # first run (checked out d00cfdd6, a merge of this branch into
+        # c2416709). `git merge-base` cannot rescue it either: checkout is
+        # shallow and origin/main is not in the runner's clone, and deepening
+        # the fetch would only preserve the wrong question.
+        #
+        # The pull_request EVENT already states the basis authoritatively, so
+        # that is what gets checked. Every field is pinned, so this cannot pass
+        # for a different PR, a different base, a different branch, or a fork.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.number }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          echo "event:      $EVENT_NAME"
+          echo "PR:         $PR_NUMBER"
+          echo "base ref:   $PR_BASE_REF"
+          echo "base SHA:   $PR_BASE_SHA"
+          echo "head ref:   $PR_HEAD_REF"
+          echo "head repo:  $PR_HEAD_REPO"
+          echo "accepted:   $ACCEPTED_SHA"
+
+          fail() { echo "::error::$1"; exit 1; }
+
+          [ "$EVENT_NAME" = "pull_request" ] \
+            || fail "This harness runs only as a pull_request event; got '$EVENT_NAME'."
+          [ "$PR_NUMBER" = "922" ] \
+            || fail "This harness is pinned to PR 922; got '$PR_NUMBER'."
+          [ "$PR_BASE_SHA" = "$ACCEPTED_SHA" ] \
+            || fail "SOURCE/VERSION BASIS CHANGED -- PR base SHA is '$PR_BASE_SHA', expected $ACCEPTED_SHA."
+          [ "$PR_BASE_REF" = "main" ] \
+            || fail "PR base ref is '$PR_BASE_REF', expected main."
+          [ "$PR_HEAD_REF" = "local/basec-staging-rendered-closure-ci" ] \
+            || fail "PR head ref is '$PR_HEAD_REF', expected local/basec-staging-rendered-closure-ci."
+          [ "$PR_HEAD_REPO" = "PunxsyProminence/ppbf-platform" ] \
+            || fail "PR head repo is '$PR_HEAD_REPO'; forked heads are refused."
+
+      - name: Verify Remote Main Has Not Moved
+        run: |
+          REMOTE="$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/main | cut -f1)"
+          echo "remote main: $REMOTE"
+          if [ "$REMOTE" != "$ACCEPTED_SHA" ]; then
+            echo "::error::SOURCE/VERSION BASIS CHANGED -- remote main is $REMOTE, expected $ACCEPTED_SHA."
+            exit 1
+          fi
+
+      - name: Verify The Review Route Still Reaches The Authenticated Boundary
+        run: |
+          CODE="$(curl -s -o /dev/null -w '%{http_code}' \
+            "${STAGING_BASE_URL}/api/pilot/training-attempts/review?attempt_id=probe")"
+          echo "unauthenticated review route: $CODE"
+          if [ "$CODE" != "401" ]; then
+            echo "::error::Expected 401 at the authenticated boundary, got $CODE. Base-C may not be deployed."
+            exit 1
+          fi
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify The Deployed Staging Revision Has Not Moved
+        run: |
+          REV="$(az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestRevisionName -o tsv)"
+          echo "live revision: $REV"
+          if [ "$REV" != "$EXPECTED_REVISION" ]; then
+            echo "::error::SOURCE/VERSION BASIS CHANGED -- live revision is $REV, expected $EXPECTED_REVISION."
+            exit 1
+          fi
+
+      - name: Resolve Staging Database Connection
+        run: |
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          # Deliberately NOT named AZURE_POSTGRES_CONNECTION_STRING: the shared
+          # playwright.config.ts starts a Next dev server to satisfy its
+          # webServer url, and that server must not pick up a staging database.
+          # The spec navigates only to absolute staging URLs.
+          echo "CLOSURE_DB_CONNECTION=$CONN" >> "$GITHUB_ENV"
+
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) { process.exit(2); }
+            process.stdout.write(host + "\n" + db);
+          ')"
+          HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          echo "resolved host: $HOST"
+          echo "resolved database: $DB"
+
+          case "$HOST" in
+            ppbf-pg-staging-7k4m2q*) ;;
+            *) echo "::error::Refusing to write: host $HOST is not the approved staging PostgreSQL host."; exit 1 ;;
+          esac
+          if [ "$DB" != "ppbf_staging" ]; then
+            echo "::error::Refusing to write: database is $DB, expected ppbf_staging."
+            exit 1
+          fi
+          case "$HOST$DB" in
+            *prod*) echo "::error::Refusing to write: production marker present in target identity."; exit 1 ;;
+          esac
+
+          echo "CLOSURE_EXPECTED_HOST=$HOST" >> "$GITHUB_ENV"
+          echo "CLOSURE_EXPECTED_DB=$DB" >> "$GITHUB_ENV"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        # The same invocation ci.yml and merged-main-e2e.yml already use.
+        run: npx --workspace web playwright install --with-deps chromium
+
+      - name: Run Base-C Rendered Closure Spec
+        env:
+          CLOSURE_DB_CONNECTION: ${{ env.CLOSURE_DB_CONNECTION }}
+          CLOSURE_EXPECTED_HOST: ${{ env.CLOSURE_EXPECTED_HOST }}
+          CLOSURE_EXPECTED_DB: ${{ env.CLOSURE_EXPECTED_DB }}
+          CLOSURE_BASE_URL: ${{ env.STAGING_BASE_URL }}
+        working-directory: apps/web
+        # One project and no retries on purpose: the spec provisions and tears
+        # down a single shared fixture, so a second project or a retry would run
+        # setup twice against the same rows.
+        run: |
+          npx playwright test \
+            --project=desktop-chromium \
+            --workers=1 \
+            --retries=0 \
+            e2e/basec-staging-rendered-closure.spec.ts
+
+      - name: Upload Rendered Evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basec-rendered-closure-screenshots
+          path: apps/web/closure-evidence/
+          if-no-files-found: warn
+          retention-days: 7
