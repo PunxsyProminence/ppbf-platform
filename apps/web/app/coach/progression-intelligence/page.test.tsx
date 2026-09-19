@@ -579,3 +579,140 @@ describe('a hold read nobody could complete is not the absence of a hold', () =>
     expect(screen.queryByText('Active Training Hold')).toBeNull();
   });
 });
+
+// W-D3, OD-2026-09-18-001. An assignment is built from a drill in the gym's
+// own library; there is no longer a typed-out drill name or description.
+describe('assigning a drill requires an operational drill', () => {
+  const DRILL = {
+    drill_id: 'drill-pivot',
+    name: 'Rear-foot pivot',
+    focus: 'Heel up before the cross lands.',
+    difficulty: 'beginner',
+    active: true,
+  };
+
+  /** The page's own reads, with the drill library answering as `drills` (false: 503). */
+  function assignFetch(drills: unknown[] | false, posts: Array<Record<string, unknown>>) {
+    return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/pilot/drills')) {
+        return drills === false
+          ? ({ ok: false, status: 503, json: async () => ({ error: 'unavailable' }) } as Response)
+          : ({ ok: true, json: async () => ({ items: drills }) } as Response);
+      }
+      if (url.includes('/progression/assignments') && init?.method === 'POST') {
+        posts.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return { ok: true, json: async () => ({ ok: true }) } as Response;
+      }
+      if (url.includes('/progression/gaps')) {
+        return { ok: true, json: async () => ({ items: [GAP] }) } as Response;
+      }
+      if (url.includes('/api/pilot/training-holds')) {
+        return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+      }
+      if (url.includes('/rabbit-holes/get')) {
+        return { ok: true, json: async () => ({ ok: true, rabbit_holes: [] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    });
+  }
+
+  async function openAssignForm(drills: unknown[] | false, posts: Array<Record<string, unknown>> = []) {
+    await renderWithAthlete(assignFetch(drills, posts));
+    await screen.findByText('Rear foot stays flat through the cross.');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Assign drill' }));
+    });
+    return posts;
+  }
+
+  test('the drill picker is required and the typed name/description inputs are gone', async () => {
+    await openAssignForm([DRILL]);
+
+    const picker = screen.getByLabelText('Drill') as HTMLSelectElement;
+    expect(picker.required).toBe(true);
+    expect(screen.queryByText(/Free-text or pick/)).toBeNull();
+    expect(screen.queryByLabelText('Drill name')).toBeNull();
+    expect(screen.queryByLabelText('Description / cues')).toBeNull();
+  });
+
+  test('assigning without picking a drill is stopped on the client, and nothing is posted', async () => {
+    const posts = await openAssignForm([DRILL]);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Assign drill' }));
+    });
+
+    expect(screen.getByText("Select a gap and a drill from this gym's library")).toBeTruthy();
+    expect(posts).toHaveLength(0);
+  });
+
+  test("the request carries the picked drill_id and none of the drill's wording", async () => {
+    const posts = await openAssignForm([DRILL]);
+
+    fireEvent.change(screen.getByLabelText('Drill'), { target: { value: 'drill-pivot' } });
+    // The drill's own wording is shown, read-only, as what the athlete will see.
+    expect(screen.getByText('What the athlete will see')).toBeTruthy();
+    expect(screen.getByText('Heel up before the cross lands.')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Assign drill' }));
+    });
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({ gap_id: 'gap-1', athlete_id: 'athlete-001', drill_id: 'drill-pivot' });
+    expect(posts[0]).not.toHaveProperty('drill_name');
+    expect(posts[0]).not.toHaveProperty('drill_description');
+  });
+
+  test('a gym with no drills gets a truthful empty state, not a form that can never submit', async () => {
+    await openAssignForm([]);
+
+    expect(screen.getByText(/This gym has no drills to assign yet/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open the Drill Library' }).getAttribute('href')).toBe('/coach/drills');
+    expect(screen.queryByLabelText('Drill')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Assign drill' })).toBeNull();
+  });
+
+  test('a drill list that failed to load says so, rather than claiming the gym has none', async () => {
+    await openAssignForm(false);
+
+    expect(screen.getByText(/did not load, so a drill cannot be assigned right now/)).toBeTruthy();
+    expect(screen.queryByText(/This gym has no drills to assign yet/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Assign drill' })).toBeNull();
+  });
+
+  // W-D3 review N1. Before the drill read lands, the page holds the same empty
+  // array it would hold for a gym with no drills. A coach can still reach the
+  // Assign form in that window -- the free-text athlete id and the gaps read do
+  // not wait on the drill list -- so the form must not read "not answered yet"
+  // as "none".
+  test('while the drill list has not answered, the form claims nothing; an answer of none then says so', async () => {
+    let answerDrills: (items: unknown[]) => void = () => {};
+    const drillsAnswer = new Promise<Response>((resolve) => {
+      answerDrills = (items) => resolve({ ok: true, json: async () => ({ items }) } as Response);
+    });
+    const everythingElse = assignFetch([DRILL], []);
+    const fetchMock = jest.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).endsWith('/api/pilot/drills') ? drillsAnswer : everythingElse(input, init),
+    );
+
+    await renderWithAthlete(fetchMock);
+    await screen.findByText('Rear foot stays flat through the cross.');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Assign drill' }));
+    });
+
+    expect(screen.getByText(/Loading the gym's drills/)).toBeTruthy();
+    expect(screen.queryByText(/This gym has no drills to assign yet/)).toBeNull();
+    expect(screen.queryByText(/did not load, so a drill cannot be assigned right now/)).toBeNull();
+    expect(screen.queryByLabelText('Drill')).toBeNull();
+
+    await act(async () => {
+      answerDrills([]);
+    });
+
+    expect(await screen.findByText(/This gym has no drills to assign yet/)).toBeTruthy();
+    expect(screen.queryByText(/Loading the gym's drills/)).toBeNull();
+  });
+});

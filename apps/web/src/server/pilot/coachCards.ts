@@ -11,6 +11,9 @@ import { ValidationError } from './errors';
 import {
   ASSIGNMENT_DRILL_JOIN,
   ASSIGNMENT_FIELDS,
+  assignableDrillPredicate,
+  drillNotAssignable,
+  requireAssignableDrillId,
   type DrillAssignment,
 } from './progression';
 
@@ -78,11 +81,16 @@ export interface ProgramIssuanceResult {
   skipped: SkippedMemberReport[];
 }
 
+/**
+ * What a Coach Card carries. W-D3, OD-2026-09-18-001: drillId is REQUIRED and
+ * names an active operational drill in the issuing gym; the card's wording is
+ * snapshotted from that drill by the writer, so there is no drillName or
+ * drillDescription for a caller to supply. drillDifficulty alone may still be
+ * set explicitly, overriding the drill's own difficulty exactly as before.
+ */
 interface CardContent {
-  drillName: string;
-  drillDescription: string;
-  drillDifficulty: string;
-  drillId?: string | null;
+  drillId: string;
+  drillDifficulty?: string;
   repCount?: number;
   durationMinutes?: number;
   frequencyPerWeek?: number;
@@ -109,13 +117,26 @@ export async function issueCoachCard(params: {
   athleteId: string;
   assignedByAccountId: string;
 } & CardContent): Promise<DrillAssignment> {
+  const drillId = requireAssignableDrillId(params.drillId);
+
+  // Resolve and snapshot in one statement, as assignDrill does: an unknown,
+  // cross-org, reference-library or retired drill_id selects nothing and so
+  // inserts nothing. Still a single statement, so still atomic without an
+  // explicit transaction. The casts are needed for the same reason as there --
+  // parameters in an INSERT ... SELECT list do not take the target column type.
   const rows = await query<DrillAssignment>(
     `with a as (
       insert into pilot.drill_assignments (
         assignment_id, organization_id, gap_id, athlete_id, assigned_by_account_id,
         drill_name, drill_description, drill_difficulty, rep_count, duration_minutes,
         frequency_per_week, due_date, drill_id, issuance_id, status, completion_percentage
-      ) values ($1, $2, null, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, null, 'assigned', 0)
+      )
+      select $1::text, d.organization_id, null, $4::text, $5::text,
+             d.name, d.focus, coalesce($6::text, d.difficulty),
+             $7::integer, $8::integer, $9::integer, $10::date,
+             d.drill_id, null, 'assigned', 0
+      from pilot.drills d
+      where ${assignableDrillPredicate('$2', '$3')}
       returning assignment_id, organization_id, gap_id, athlete_id, drill_id, drill_name,
                drill_description, drill_difficulty, rep_count, duration_minutes,
                frequency_per_week, due_date, status, completion_percentage,
@@ -127,18 +148,19 @@ export async function issueCoachCard(params: {
     [
       newAssignmentId(),
       params.organizationId,
+      drillId,
       params.athleteId,
       params.assignedByAccountId,
-      params.drillName,
-      params.drillDescription,
-      params.drillDifficulty,
+      params.drillDifficulty || null,
       params.repCount || null,
       params.durationMinutes || null,
       params.frequencyPerWeek || null,
       params.dueDate || null,
-      params.drillId || null,
     ],
   );
+  if (rows.length === 0) {
+    throw drillNotAssignable();
+  }
   return rows[0];
 }
 
@@ -165,6 +187,7 @@ export async function issueCoachCardToProgram(params: {
   programId: string;
 } & CardContent): Promise<ProgramIssuanceResult | null> {
   const organizationId = params.actor.organizationId;
+  const drillId = requireAssignableDrillId(params.drillId);
 
   // status comes back with the row rather than being filtered in the WHERE,
   // because the two refusals are deliberately DIFFERENT shapes. A program in
@@ -195,6 +218,22 @@ export async function issueCoachCardToProgram(params: {
       `That program is archived, so it cannot be issued new work. Reactivate "${program.program_name}" first.`,
       'PROGRAM_ARCHIVED',
     );
+  }
+
+  // The drill is checked here as well as inside the insert below, and only one
+  // of the two is load-bearing for safety. The insert is the guarantee -- it
+  // reads the drill in the same statement that writes the rows, so a retired or
+  // foreign drill can never be written. This earlier read exists for the case
+  // the insert never reaches: a program with no member this coach may reach
+  // returns early without writing anything, and without this an unassignable
+  // drill_id would come back from that path as a successful, empty issuance
+  // instead of the refusal every other path gives it.
+  const drill = await queryOne<{ drill_id: string }>(
+    `select d.drill_id from pilot.drills d where ${assignableDrillPredicate('$1', '$2')}`,
+    [organizationId, drillId],
+  );
+  if (!drill) {
+    throw drillNotAssignable();
   }
 
   const members = await query<{ athlete_id: string; athlete_name: string }>(
@@ -233,36 +272,51 @@ export async function issueCoachCardToProgram(params: {
     };
   }
 
-  // Shared values once, then two per member. $1..$11 are the card itself;
-  // each member tuple appends (assignment_id, athlete_id).
+  // Shared values once, then two per member. $1..$9 are the card itself; each
+  // member tuple appends (assignment_id, athlete_id).
   const values: unknown[] = [
     organizationId,
+    drillId,
     params.actor.accountId,
-    params.drillName,
-    params.drillDescription,
-    params.drillDifficulty,
+    params.drillDifficulty || null,
     params.repCount || null,
     params.durationMinutes || null,
     params.frequencyPerWeek || null,
     params.dueDate || null,
-    params.drillId || null,
     issuanceId,
   ];
   const tuples = authorized.map((member, index) => {
-    const base = 12 + index * 2;
+    const base = 10 + index * 2;
     values.push(newAssignmentId(), member.athlete_id);
-    return `($${base}, $1, null, $${base + 1}, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'assigned', 0)`;
+    return `($${base}::text, $${base + 1}::text)`;
   });
 
+  // Still ONE statement, so a group card still can never half-issue -- now
+  // resolving and snapshotting the drill for every member in that same
+  // statement. Crossing the drill with the member tuples means a drill that is
+  // no longer an active drill of this gym yields zero rows for EVERYONE rather
+  // than a card for some members and not others.
   const inserted = await query<{ assignment_id: string; athlete_id: string }>(
     `insert into pilot.drill_assignments (
        assignment_id, organization_id, gap_id, athlete_id, assigned_by_account_id,
        drill_name, drill_description, drill_difficulty, rep_count, duration_minutes,
        frequency_per_week, due_date, drill_id, issuance_id, status, completion_percentage
-     ) values ${tuples.join(', ')}
+     )
+     select m.assignment_id, d.organization_id, null, m.athlete_id, $3::text,
+            d.name, d.focus, coalesce($4::text, d.difficulty),
+            $5::integer, $6::integer, $7::integer, $8::date,
+            d.drill_id, $9::text, 'assigned', 0
+     from pilot.drills d
+     cross join (values ${tuples.join(', ')}) as m(assignment_id, athlete_id)
+     where ${assignableDrillPredicate('$1', '$2')}
      returning assignment_id, athlete_id`,
     values,
   );
+  // The drill passed the check above but was retired before this statement
+  // ran -- the one race only the insert itself can close.
+  if (inserted.length === 0) {
+    throw drillNotAssignable();
+  }
   const assignmentByAthlete = new Map(inserted.map((row) => [row.athlete_id, row.assignment_id]));
 
   return {

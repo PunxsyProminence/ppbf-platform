@@ -13,9 +13,14 @@
 //    only the database proves the branch is reachable.
 //
 // 3. Renaming a drill does not rewrite history. drill_name on an assignment is
-//    what the coach typed that day; drill_display_name is the drill as it
-//    stands now. The two must diverge after a rename, in the database, not in a
-//    fixture.
+//    the drill's name snapshotted the day it was assigned; drill_display_name
+//    is the drill as it stands now. The two must diverge after a rename, in the
+//    database, not in a fixture.
+//
+// 4. Since W-D3 (OD-2026-09-18-001) the writer builds every new assignment
+//    FROM an active drill in the same gym, in one INSERT ... SELECT. An
+//    unknown, cross-org, reference-library or retired drill_id selects nothing,
+//    so nothing is written -- only a real database proves that.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // PostgreSQL suites use. It NEVER connects to production or staging.
@@ -333,7 +338,26 @@ describe('drills.ts against the real schema', () => {
 });
 
 describe('an assignment anchored to a drill', () => {
-  test('carries the drill for display and the typed text as the record', async () => {
+  // W-D3, OD-2026-09-18-001: every NEW assignment is built from an active
+  // operational drill in the gym, and its wording is snapshotted from that
+  // drill by the INSERT itself. What the SQL refuses can only be proven here.
+
+  /** Assignment rows in ORG_A, counted directly -- not through the module under test. */
+  async function assignmentCount(): Promise<number> {
+    const client = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await client.connect();
+    try {
+      const result = await client.query<{ n: string }>(
+        `select count(*)::text as n from pilot.drill_assignments where organization_id = $1`,
+        [ORG_A],
+      );
+      return Number(result.rows[0].n);
+    } finally {
+      await client.end();
+    }
+  }
+
+  test("snapshots the drill's own wording, and a later rename does not rewrite it", async () => {
     const drill = await drills.createDrill({
       organizationId: ORG_A,
       name: 'Jab Retraction Snap',
@@ -349,20 +373,21 @@ describe('an assignment anchored to a drill', () => {
       athleteId: ATHLETE_A,
       assignedByAccountId: COACH_A,
       drillId: drill.drill_id,
-      drillName: 'Jab retraction (Tuesday floor)',
-      drillDescription: 'Three rounds, focus on the elbow.',
-      drillDifficulty: 'advanced',
     });
 
     expect(assignment.drill_id).toBe(drill.drill_id);
-    expect(assignment.drill_name).toBe('Jab retraction (Tuesday floor)');
+    // The snapshot IS the drill: name and focus, on the day it was assigned.
+    expect(assignment.drill_name).toBe('Jab Retraction Snap');
+    expect(assignment.drill_description).toBe('Return the fist to the chin on every jab.');
+    // No difficulty supplied, so the drill's own.
+    expect(assignment.drill_difficulty).toBe('advanced');
     expect(assignment.drill_display_name).toBe('Jab Retraction Snap');
     expect(assignment.drill_display_description).toBe('Return the fist to the chin on every jab.');
     expect(assignment.drill_cues).toEqual(['Elbow tucked', 'Snap on contact']);
     expect(assignment.drill_category).toBe('Striking');
 
     // Renaming the drill changes what a surface draws now. It must not touch
-    // what the coach typed on the day, which is the record of what was assigned.
+    // the snapshot, which is the record of what was assigned.
     await drills.updateDrill({
       organizationId: ORG_A,
       drillId: drill.drill_id,
@@ -370,40 +395,84 @@ describe('an assignment anchored to a drill', () => {
     });
 
     const reread = await progression.getDrillAssignmentById(ORG_A, assignment.assignment_id);
-    expect(reread?.drill_name).toBe('Jab retraction (Tuesday floor)');
+    expect(reread?.drill_name).toBe('Jab Retraction Snap');
     expect(reread?.drill_display_name).toBe('Jab Retraction Snap (Revised)');
   });
 
-  // Every assignment written before drills had identity carries only free text,
-  // and all of them must keep reading.
-  test('a typed assignment reads back with no anchor and its own text', async () => {
+  test("an explicit difficulty overrides the drill's own", async () => {
+    const drill = await drills.createDrill({
+      organizationId: ORG_A,
+      name: 'Rear Hand Return',
+      category: 'Striking',
+      focus: 'The cross comes home on the same line it went out.',
+      difficulty: 'advanced',
+    });
+
     const assignment = await progression.assignDrill({
       organizationId: ORG_A,
       gapId: GAP_A,
       athleteId: ATHLETE_A,
       assignedByAccountId: COACH_A,
-      drillName: 'Shadow boxing, three rounds',
-      drillDescription: 'Hands high, work the pivot.',
-      drillDifficulty: 'intermediate',
+      drillId: drill.drill_id,
+      drillDifficulty: 'beginner',
     });
 
-    expect(assignment.drill_id).toBeNull();
-    expect(assignment.drill_display_name).toBe('Shadow boxing, three rounds');
-    expect(assignment.drill_display_description).toBe('Hands high, work the pivot.');
+    expect(assignment.drill_difficulty).toBe('beginner');
+  });
+
+  // Every assignment written before W-D3 may carry only free text, and all of
+  // them must keep reading. The writer can no longer create one, so the row
+  // goes in as a raw fixture -- exactly as the historical data sits.
+  test('a legacy assignment with no drill anchor still reads back with its own text', async () => {
+    const client = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await client.connect();
+    try {
+      await client.query(
+        `insert into pilot.drill_assignments
+           (assignment_id, organization_id, gap_id, athlete_id, assigned_by_account_id, drill_name, drill_description)
+         values ('asg-legacy-typed', $1, $2, $3, $4, 'Shadow boxing, three rounds', 'Hands high, work the pivot.')`,
+        [ORG_A, GAP_A, ATHLETE_A, COACH_A],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const legacy = await progression.getDrillAssignmentById(ORG_A, 'asg-legacy-typed');
+    expect(legacy?.drill_id).toBeNull();
+    expect(legacy?.drill_name).toBe('Shadow boxing, three rounds');
+    expect(legacy?.drill_display_name).toBe('Shadow boxing, three rounds');
+    expect(legacy?.drill_display_description).toBe('Hands high, work the pivot.');
     // No drill to describe, so a reader renders nothing rather than a shell.
-    expect(assignment.drill_category).toBeNull();
-    expect(assignment.drill_cues).toBeNull();
+    expect(legacy?.drill_category).toBeNull();
+    expect(legacy?.drill_cues).toBeNull();
 
     const listed = await progression.getAthleteAssignments(ORG_A, ATHLETE_A);
-    const found = listed.find((item) => item.assignment_id === assignment.assignment_id);
+    const found = listed.find((item) => item.assignment_id === 'asg-legacy-typed');
     expect(found?.drill_id).toBeNull();
     expect(found?.drill_display_name).toBe('Shadow boxing, three rounds');
   });
 
-  // The composite foreign key is the boundary; the module must not be able to
-  // write across it even when handed another gym's drill_id.
+  test('a direct call with no drill_id is refused before anything is written', async () => {
+    const before = await assignmentCount();
+
+    await expect(
+      progression.assignDrill({
+        organizationId: ORG_A,
+        gapId: GAP_A,
+        athleteId: ATHLETE_A,
+        assignedByAccountId: COACH_A,
+        drillId: '' as string,
+      }),
+    ).rejects.toMatchObject({ status: 400, code: 'DRILL_ID_REQUIRED' });
+
+    expect(await assignmentCount()).toBe(before);
+  });
+
+  // The composite foreign key is the last boundary; the writer now refuses
+  // before reaching it, because it selects the drill from this gym only.
   test('cannot anchor to another organization drill', async () => {
     const [orgBDrill] = await drills.listDrills(ORG_B);
+    const before = await assignmentCount();
 
     await expect(
       progression.assignDrill({
@@ -412,10 +481,73 @@ describe('an assignment anchored to a drill', () => {
         athleteId: ATHLETE_A,
         assignedByAccountId: COACH_A,
         drillId: orgBDrill.drill_id,
-        drillName: 'Borrowed drill',
-        drillDescription: 'Should never be written.',
-        drillDifficulty: 'intermediate',
       }),
-    ).rejects.toThrow(/pilot_drill_assignments_fk_drill|foreign key/);
+    ).rejects.toMatchObject({ status: 400, code: 'DRILL_NOT_ASSIGNABLE' });
+
+    expect(await assignmentCount()).toBe(before);
+  });
+
+  test('a reference-library drill_id is not assignable, even in the same gym', async () => {
+    // A real pilot.drill_library row in ORG_A. It is the reference corpus, not
+    // an operational drill: to be assigned it has to be promoted first.
+    const client = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await client.connect();
+    try {
+      await client.query(
+        `insert into pilot.drill_library
+           (organization_id, drill_id, lineage_id, name, category, target_behavior,
+            purpose, standard_setup, execution, what_good_looks_like, what_bad_looks_like)
+         values ($1, 'drl_wd3_reference', 'lin_wd3_reference', 'Reference Jab', 'Striking', 'Jab returns',
+                 'purpose', 'setup', 'execution', 'good', 'bad')`,
+        [ORG_A],
+      );
+    } finally {
+      await client.end();
+    }
+    const before = await assignmentCount();
+
+    await expect(
+      progression.assignDrill({
+        organizationId: ORG_A,
+        gapId: GAP_A,
+        athleteId: ATHLETE_A,
+        assignedByAccountId: COACH_A,
+        drillId: 'drl_wd3_reference',
+      }),
+    ).rejects.toMatchObject({ status: 400, code: 'DRILL_NOT_ASSIGNABLE' });
+
+    expect(await assignmentCount()).toBe(before);
+  });
+
+  test('a retired drill cannot be newly assigned, and what it already anchors keeps reading', async () => {
+    const drill = await drills.createDrill({
+      organizationId: ORG_A,
+      name: 'Catch and Return',
+      category: 'Defense',
+      focus: 'Catch the jab on the glove and answer with your own.',
+    });
+    const existing = await progression.assignDrill({
+      organizationId: ORG_A,
+      gapId: GAP_A,
+      athleteId: ATHLETE_A,
+      assignedByAccountId: COACH_A,
+      drillId: drill.drill_id,
+    });
+    await drills.updateDrill({ organizationId: ORG_A, drillId: drill.drill_id, active: false });
+    const before = await assignmentCount();
+
+    await expect(
+      progression.assignDrill({
+        organizationId: ORG_A,
+        gapId: GAP_A,
+        athleteId: ATHLETE_A,
+        assignedByAccountId: COACH_A,
+        drillId: drill.drill_id,
+      }),
+    ).rejects.toMatchObject({ status: 400, code: 'DRILL_NOT_ASSIGNABLE' });
+
+    expect(await assignmentCount()).toBe(before);
+    const reread = await progression.getDrillAssignmentById(ORG_A, existing.assignment_id);
+    expect(reread?.drill_name).toBe('Catch and Return');
   });
 });

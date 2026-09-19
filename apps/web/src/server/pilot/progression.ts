@@ -1,4 +1,5 @@
 import { query, queryOne, withTransaction } from './db';
+import { ValidationError } from './errors';
 import { randomUUID } from 'node:crypto';
 
 // severity is a text column, so `order by severity desc` sorts alphabetically
@@ -142,30 +143,105 @@ export async function createProgressionGap(params: {
   return result[0];
 }
 
+// ---------------------------------------------------------------------------
+// NEW-ASSIGNMENT IDENTITY -- W-D3, OD-2026-09-18-001.
+//
+// Every NEW assignment is anchored to an active operational drill in the
+// assigning gym, and its wording is snapshotted FROM THAT DRILL. The caller
+// supplies a drill_id and nothing that identifies the drill in words.
+//
+// Held at the writer, not only at the route, so no future caller can bypass it
+// by forgetting a check: the writers below take `drillId: string` and resolve it
+// themselves, in the same statement that inserts the row.
+//
+// WHAT IS DELIBERATELY NOT CHANGED. pilot.drill_assignments.drill_id stays
+// NULLABLE and the free-text drill_name / drill_description columns stay
+// exactly as they are. Every assignment written before drills had identity
+// carries only that text, and the owner ruling keeps those rows valid, readable
+// and unrewritten. The rule governs new writes, not history -- which is why it
+// lives here and not in a NOT NULL constraint that would invalidate them.
+// ---------------------------------------------------------------------------
+
+/**
+ * "An active operational drill in this gym", as a WHERE clause over
+ * `pilot.drills d`. Each writer binds its own parameter positions.
+ *
+ * THE FIXTURE FIREWALL. The new-assignment writers read exactly five
+ * pilot.drills columns -- drill_id, name, focus, difficulty, active -- and
+ * never `DRILL_FIELDS` or `getDrill()`. Both of those select
+ * `reference_drill_id`, which exists only once the drill-reference-provenance
+ * migration has run. Several real-Postgres suites build pilot.drills without
+ * that migration, and a writer that selected the column would fail every one of
+ * them with `column "reference_drill_id" does not exist` -- exactly how W-D1's
+ * CI went red. A write needs the name, the focus, the difficulty and whether the
+ * drill is live; it never needs the drill's provenance.
+ *
+ * pilot.drill_library is not named anywhere here, and that is the whole of why
+ * a reference-library id cannot be assigned: it is not a pilot.drills row, so
+ * it selects nothing.
+ */
+export function assignableDrillPredicate(orgParam: string, drillParam: string): string {
+  return `d.organization_id = ${orgParam} and d.drill_id = ${drillParam} and d.active`;
+}
+
+/**
+ * Refuses anything but a non-empty string drill_id.
+ *
+ * The types already say `drillId: string`, but a type is a promise to the
+ * compiler, not a check at runtime -- a JSON body, a script or a test can still
+ * hand a writer null, a number or whitespace. This is the runtime half.
+ */
+export function requireAssignableDrillId(drillId: unknown): string {
+  if (typeof drillId !== 'string' || !drillId.trim()) {
+    throw new ValidationError(
+      'A new assignment requires the drill_id of an active drill in this gym.',
+      'DRILL_ID_REQUIRED',
+    );
+  }
+  return drillId.trim();
+}
+
+/**
+ * The drill_id named no ACTIVE drill in this gym at the moment of the write.
+ *
+ * Reached by a direct writer call with an unknown, cross-org, reference-library
+ * or retired id, and by the one race the route's pre-check cannot close: a drill
+ * retired between the route's check and the insert. A 400 rather than the
+ * route's hidden 404, because by the time a request gets here the route has
+ * already confirmed the drill exists in the caller's own gym.
+ */
+export function drillNotAssignable(): ValidationError {
+  return new ValidationError(
+    'That drill is not an active drill in this gym, so it cannot be assigned.',
+    'DRILL_NOT_ASSIGNABLE',
+  );
+}
+
 /**
  * Records a drill assignment against a gap.
  *
- * drillName and drillDescription are always written, with or without an anchor:
- * they are what was assigned that day, and a coach who typed their own wording
- * over a drill from the library keeps that wording forever. drillId is the
- * anchor, nullable because an assignment can still be typed out entirely by
- * hand, and because every assignment written before drills had identity carries
- * only the text.
+ * drillId is REQUIRED and must name an active operational drill in this
+ * organization. drill_name and drill_description are snapshotted from that
+ * drill's name and focus -- the caller cannot supply them -- and stay on the row
+ * forever as the record of what was assigned that day, however the drill is
+ * later edited. drillDifficulty is the one piece of drill wording a caller may
+ * still set: an explicitly supplied difficulty overrides the drill's own, as it
+ * always has, and otherwise the drill's difficulty is used.
  */
 export async function assignDrill(params: {
   organizationId: string;
   gapId: string;
   athleteId: string;
   assignedByAccountId: string;
-  drillName: string;
-  drillDescription: string;
-  drillDifficulty: string;
-  drillId?: string | null;
+  drillId: string;
+  drillDifficulty?: string;
   repCount?: number;
   durationMinutes?: number;
   frequencyPerWeek?: number;
   dueDate?: string;
 }): Promise<DrillAssignment> {
+  const drillId = requireAssignableDrillId(params.drillId);
+
   // Using crypto.randomUUID for secure randomness
   const assignmentId = `assignment_${Date.now()}_${randomUUID().substring(0, 8)}`;
 
@@ -173,16 +249,32 @@ export async function assignDrill(params: {
   // keeps showing up as unaddressed work, so the pair must commit together or
   // not at all.
   return withTransaction(async (client) => {
+    // RESOLVE AND SNAPSHOT IN ONE STATEMENT. The row is inserted FROM the drill,
+    // so an unknown, cross-org, reference-library or retired drill_id selects
+    // nothing and inserts nothing -- and because the check and the write are the
+    // same statement, a drill cannot be retired in between. The snapshot cannot
+    // diverge from the drill either: the wording comes from the row being
+    // pointed at, not from anything the caller sent.
+    //
     // The created row comes back through the same drill join every other read
-    // uses, so the caller gets the display fields immediately rather than
-    // having to fetch the assignment again to learn what to draw.
+    // uses, so the caller gets the display fields immediately.
     const result = await client.query<DrillAssignment>(
       `with a as (
         insert into pilot.drill_assignments (
           assignment_id, organization_id, gap_id, athlete_id, assigned_by_account_id,
           drill_name, drill_description, drill_difficulty, rep_count, duration_minutes,
           frequency_per_week, due_date, drill_id, status, completion_percentage
-        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'assigned', 0)
+        )
+        -- EXPLICIT CASTS. Unlike VALUES, a parameter in an INSERT ... SELECT
+        -- list does not take its type from the target column: an untyped
+        -- parameter there resolves to text, and text is not assignable to the
+        -- integer and date columns below.
+        select $1::text, d.organization_id, $4::text, $5::text, $6::text,
+               d.name, d.focus, coalesce($7::text, d.difficulty),
+               $8::integer, $9::integer, $10::integer, $11::date,
+               d.drill_id, 'assigned', 0
+        from pilot.drills d
+        where ${assignableDrillPredicate('$2', '$3')}
         returning assignment_id, organization_id, gap_id, athlete_id, drill_id, drill_name,
                  drill_description, drill_difficulty, rep_count, duration_minutes,
                  frequency_per_week, due_date, status, completion_percentage,
@@ -194,19 +286,23 @@ export async function assignDrill(params: {
       [
         assignmentId,
         params.organizationId,
+        drillId,
         params.gapId,
         params.athleteId,
         params.assignedByAccountId,
-        params.drillName,
-        params.drillDescription,
-        params.drillDifficulty,
+        params.drillDifficulty || null,
         params.repCount || null,
         params.durationMinutes || null,
         params.frequencyPerWeek || null,
         params.dueDate || null,
-        params.drillId || null,
       ],
     );
+
+    // Nothing was inserted: the drill is not an active drill in this gym.
+    // Thrown BEFORE the gap update, so the rollback leaves the gap untouched.
+    if (result.rows.length === 0) {
+      throw drillNotAssignable();
+    }
 
     // Update gap status to assigned. Scoped by organization_id so a gap_id
     // from another organization can never be mutated by this call.

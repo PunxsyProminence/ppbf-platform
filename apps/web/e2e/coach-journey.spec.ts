@@ -209,7 +209,21 @@ test.describe('Coach journey', () => {
       session: { role: 'coach' },
       routes: {
         '/api/pilot/athletes/list': { ok: true, items: [ROSA] },
-        '/api/pilot/drills': { ok: true, items: [] },
+        // Since W-D3 (OD-2026-09-18-001) a card is built from a drill in the
+        // gym's own library, so the gym needs one before a card can be issued.
+        '/api/pilot/drills': {
+          ok: true,
+          items: [
+            {
+              drill_id: 'drill-rope',
+              name: 'Jump rope',
+              category: 'Conditioning',
+              focus: 'Ten minutes, no misses',
+              difficulty: 'beginner',
+              active: true,
+            },
+          ],
+        },
         '/api/pilot/admin/programs': {
           ok: true,
           items: [
@@ -254,15 +268,23 @@ test.describe('Coach journey', () => {
     await expect(programPicker.getByRole('option', { name: /Old Guard/ })).toHaveCount(0);
 
     await programPicker.selectOption('prog-1');
-    await page.getByLabel('Title').fill('Jump rope');
-    await page.getByLabel('Description').fill('Ten minutes, no misses');
+    // The card is a drill, picked; there is nothing to type. The drill's own
+    // wording is shown read-only as what the athletes will see.
+    await expect(page.getByLabel('Title')).toHaveCount(0);
+    await expect(page.getByLabel('Description')).toHaveCount(0);
+    await page.getByLabel('Drill').selectOption('drill-rope');
+    await expect(page.getByText('What the athlete will see')).toBeVisible();
     await page.getByRole('button', { name: 'Issue to program' }).click();
 
-    // What left the browser: the program, never a list of athletes the client
-    // assembled for itself. Who is in the group is the server's answer.
+    // What left the browser: the program and the drill, never a list of
+    // athletes the client assembled for itself, and never wording of its own.
+    // Who is in the group is the server's answer; what the card says is the
+    // drill's.
     await expect.poll(() => issued).toHaveLength(1);
-    expect(issued[0]).toMatchObject({ program_id: 'prog-1', title: 'Jump rope' });
+    expect(issued[0]).toMatchObject({ program_id: 'prog-1', drill_id: 'drill-rope' });
     expect(issued[0]).not.toHaveProperty('athlete_id');
+    expect(issued[0]).not.toHaveProperty('title');
+    expect(issued[0]).not.toHaveProperty('description');
 
     const report = page.getByRole('region', { name: 'Issuance report' });
     await expect(report).toBeVisible();

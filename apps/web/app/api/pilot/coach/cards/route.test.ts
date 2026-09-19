@@ -65,7 +65,30 @@ const postRequest = (body: Record<string, unknown>) =>
     body: JSON.stringify(body),
   });
 
-const CARD_BODY = { title: 'Shadowbox', description: 'Three rounds before Friday' };
+// W-D3, OD-2026-09-18-001. A card is anchored to an active operational drill
+// in the caller's gym; its wording is snapshotted from that drill by the
+// writer, so the body carries a drill_id and nothing that names the drill.
+const CARD_BODY = { drill_id: 'drill-1' };
+
+const ACTIVE_DRILL = {
+  drill_id: 'drill-1',
+  name: 'Pivot',
+  focus: 'Line work',
+  difficulty: 'intermediate',
+  active: true,
+};
+
+// Every refusal below is asserted for BOTH targets. The two issue paths share
+// the route's gate, but they reach different writers, and a check that held for
+// one and quietly not the other is exactly the gap this is here to catch.
+const TARGETS = [
+  ['an individual card', { athlete_id: 'ath-1' }],
+  ['a program card', { program_id: 'prog-1' }],
+] as const;
+
+beforeEach(() => {
+  mockGetDrill.mockResolvedValue(ACTIVE_DRILL);
+});
 
 test('athletes and parents are refused in both directions before any module call', async () => {
   for (const role of ['athlete', 'parent'] as const) {
@@ -91,17 +114,31 @@ test('an individual card for an accessible athlete is issued under the principal
   }));
 
   expect(response.status).toBe(201);
-  expect(mockIssueCard).toHaveBeenCalledWith(expect.objectContaining({
+  const call = mockIssueCard.mock.calls[0][0];
+  expect(call).toEqual(expect.objectContaining({
     organizationId: 'org-1',
     athleteId: 'ath-1',
     assignedByAccountId: 'acct-coach-1',
-    drillName: 'Shadowbox',
-    drillDescription: 'Three rounds before Friday',
-    drillDifficulty: 'intermediate',
+    drillId: 'drill-1',
     frequencyPerWeek: 3,
     dueDate: '2026-08-28',
   }));
+  // The writer takes its wording from the drill, so the route hands it none.
+  expect(call).not.toHaveProperty('drillName');
+  expect(call).not.toHaveProperty('drillDescription');
+  // No explicit difficulty was sent, so none is passed and the drill decides.
+  expect(call.drillDifficulty).toBeUndefined();
   expect((await response.json()).assignment_id).toBe('asg-1');
+});
+
+test('an explicit valid difficulty is passed through to override the drill\'s', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  mockAssertAccess.mockResolvedValue(undefined);
+  mockIssueCard.mockResolvedValue({ assignment_id: 'asg-1' });
+
+  await POST(postRequest({ athlete_id: 'ath-1', ...CARD_BODY, drill_difficulty: 'elite' }));
+
+  expect(mockIssueCard.mock.calls[0][0].drillDifficulty).toBe('elite');
 });
 
 test('an athlete off the coach roster reads as not-found, indistinguishable from one that does not exist', async () => {
@@ -124,12 +161,109 @@ test('exactly one target: both athlete_id and program_id is refused, so is neith
   expect(mockIssueToProgram).not.toHaveBeenCalled();
 });
 
-test('a card with no drill anchor needs both title and description', async () => {
-  mockRequirePrincipal.mockResolvedValue(principal({}));
+describe.each(TARGETS)('drill_id is required for %s', (_label, target) => {
+  test.each([
+    ['absent', {}],
+    ['null', { drill_id: null }],
+    ['an empty string', { drill_id: '' }],
+    ['whitespace', { drill_id: '   ' }],
+    // Used to reach `.trim()` on a number and 500 with a TypeError.
+    ['a number', { drill_id: 42 }],
+  ])('%s -> 400 before any read or write', async (_what, drill) => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
 
-  expect((await POST(postRequest({ athlete_id: 'ath-1', title: 'Shadowbox' }))).status).toBe(400);
-  expect((await POST(postRequest({ athlete_id: 'ath-1', description: 'Rounds' }))).status).toBe(400);
-  expect(mockIssueCard).not.toHaveBeenCalled();
+    const response = await POST(postRequest({ ...target, ...drill }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: 'DRILL_ID_REQUIRED' });
+    expect(mockGetDrill).not.toHaveBeenCalled();
+    expect(mockIssueCard).not.toHaveBeenCalled();
+    expect(mockIssueToProgram).not.toHaveBeenCalled();
+  });
+
+  // INVERTED. This used to be 'a card with no drill anchor needs both title and
+  // description' -- i.e. a typed-out card was valid. The owner ruling ends that.
+  test('the old free-text-only card is refused', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+
+    const response = await POST(postRequest({ ...target, title: 'Shadowbox', description: 'Three rounds' }));
+
+    expect(response.status).toBe(400);
+    expect(mockIssueCard).not.toHaveBeenCalled();
+    expect(mockIssueToProgram).not.toHaveBeenCalled();
+  });
+});
+
+describe.each(TARGETS)('THE STALE-CLIENT RULE for %s: typed card wording is refused, not discarded', (_label, target) => {
+  test.each([
+    ['title', { title: 'Shadowbox' }],
+    ['description', { description: 'Three rounds before Friday' }],
+    ['both', { title: 'Shadowbox', description: 'Three rounds' }],
+    ['a non-string title', { title: 7 }],
+  ])('non-empty %s alongside a valid drill_id -> 400, nothing issued', async (_what, text) => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+
+    const response = await POST(postRequest({ ...target, ...CARD_BODY, ...text }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: 'DRILL_TEXT_NOT_ACCEPTED' });
+    // Refused before the drill is looked up: accepting the drill while dropping
+    // the coach's words is exactly what the rule prevents.
+    expect(mockGetDrill).not.toHaveBeenCalled();
+    expect(mockIssueCard).not.toHaveBeenCalled();
+    expect(mockIssueToProgram).not.toHaveBeenCalled();
+  });
+
+  test('absent, null or empty title/description say nothing and are tolerated', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockAssertAccess.mockResolvedValue(undefined);
+    mockIssueCard.mockResolvedValue({ assignment_id: 'asg-1' });
+    mockIssueToProgram.mockResolvedValue({ program_id: 'prog-1', issued: [], skipped: [] });
+
+    const blank = await POST(postRequest({ ...target, ...CARD_BODY, title: '', description: '   ' }));
+    expect(blank.status).toBe(201);
+    const nulls = await POST(postRequest({ ...target, ...CARD_BODY, title: null, description: null }));
+    expect(nulls.status).toBe(201);
+  });
+});
+
+describe.each(TARGETS)('only an active operational drill in this gym can anchor %s', (_label, target) => {
+  test("another gym's drill_id reads as absent", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockGetDrill.mockResolvedValue(null); // getDrill is org-scoped
+
+    const response = await POST(postRequest({ ...target, drill_id: 'drill-elsewhere' }));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Not found' });
+    expect(mockIssueCard).not.toHaveBeenCalled();
+    expect(mockIssueToProgram).not.toHaveBeenCalled();
+  });
+
+  test('a reference-library id is not assignable, and reads exactly like an unknown id', async () => {
+    // getDrill reads pilot.drills only, so a pilot.drill_library id finds nothing.
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockGetDrill.mockResolvedValue(null);
+
+    const response = await POST(postRequest({ ...target, drill_id: 'drl_3c2aad1eb8baa9' }));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Not found' });
+    expect(mockIssueCard).not.toHaveBeenCalled();
+    expect(mockIssueToProgram).not.toHaveBeenCalled();
+  });
+
+  test('a retired drill is refused by name', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockGetDrill.mockResolvedValue({ ...ACTIVE_DRILL, active: false });
+
+    const response = await POST(postRequest({ ...target, ...CARD_BODY }));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain('retired');
+    expect(mockIssueCard).not.toHaveBeenCalled();
+    expect(mockIssueToProgram).not.toHaveBeenCalled();
+  });
 });
 
 test('an unknown difficulty is a 400 naming the vocabulary, not a database error', async () => {
@@ -139,23 +273,6 @@ test('an unknown difficulty is a 400 naming the vocabulary, not a database error
 
   expect(response.status).toBe(400);
   expect((await response.json()).error).toContain('beginner');
-});
-
-test('another gym\'s drill_id reads as absent; a retired drill is refused by name', async () => {
-  mockRequirePrincipal.mockResolvedValue(principal({}));
-  mockAssertAccess.mockResolvedValue(undefined);
-
-  mockGetDrill.mockResolvedValue(null);
-  const hidden = await POST(postRequest({ athlete_id: 'ath-1', drill_id: 'drill-elsewhere' }));
-  expect(hidden.status).toBe(404);
-  expect(await hidden.json()).toEqual({ error: 'Not found' });
-
-  mockGetDrill.mockResolvedValue({ drill_id: 'drill-1', name: 'Pivot', focus: 'Line work', difficulty: 'intermediate', active: false });
-  const retired = await POST(postRequest({ athlete_id: 'ath-1', drill_id: 'drill-1' }));
-  expect(retired.status).toBe(400);
-  expect((await retired.json()).error).toContain('retired');
-
-  expect(mockIssueCard).not.toHaveBeenCalled();
 });
 
 test('a group card answers with the issued/skipped report exactly as the module produced it', async () => {
@@ -173,10 +290,14 @@ test('a group card answers with the issued/skipped report exactly as the module 
 
   expect(response.status).toBe(201);
   expect(await response.json()).toEqual(result);
-  expect(mockIssueToProgram).toHaveBeenCalledWith(expect.objectContaining({
+  const call = mockIssueToProgram.mock.calls[0][0];
+  expect(call).toEqual(expect.objectContaining({
     programId: 'prog-1',
+    drillId: 'drill-1',
     actor: expect.objectContaining({ organizationId: 'org-1', accountId: 'acct-coach-1' }),
   }));
+  expect(call).not.toHaveProperty('drillName');
+  expect(call).not.toHaveProperty('drillDescription');
   // The individual path never runs for a program card.
   expect(mockAssertAccess).not.toHaveBeenCalled();
 });

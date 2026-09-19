@@ -35,6 +35,22 @@ const PROGRAMS = [
   { program_id: 'prog-2', program_name: 'Old Guard', status: 'archived', active_member_count: 0 },
 ];
 
+// The gym's operational drills. Since W-D3 a card requires one, so the issue
+// form is only rendered when this list is non-empty -- which is why the
+// harness answers with a drill by default rather than an empty list.
+const DRILLS = [
+  {
+    organization_id: 'org-1',
+    drill_id: 'drill-rope',
+    name: 'Jump rope',
+    category: 'conditioning',
+    focus: 'Ten minutes, no misses',
+    cues: [],
+    difficulty: 'beginner',
+    active: true,
+  },
+];
+
 const REPORT = {
   program_id: 'prog-1',
   program_name: 'Junior Boxing',
@@ -92,6 +108,13 @@ function installFetch(options: {
       server holds; `false` refuses the read, which is the difference between
       "no cards were issued" and "nobody could look". */
   cardsList?: unknown[] | false;
+  /** What the operational drill list answers. An array is the gym's drills;
+      `false` refuses the read -- the difference between "this gym has no
+      drills" and "the list did not load", which the page must not conflate.
+      'reject' is a fetch that never got an answer (the network), and
+      'bad-json' an answer whose body could not be read: both leave the drill
+      list UNKNOWN, not empty. */
+  drills?: unknown[] | false | 'reject' | 'bad-json';
 } = {}) {
   const calls: FetchCall[] = [];
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -104,7 +127,22 @@ function installFetch(options: {
       return { ok: true, status: 200, json: async () => ({ items: PROGRAMS }) };
     }
     if (url.includes('/api/pilot/drills')) {
-      return { ok: true, status: 200, json: async () => ({ items: [] }) };
+      if (options.drills === 'reject') {
+        throw new TypeError('Failed to fetch');
+      }
+      if (options.drills === 'bad-json') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => {
+            throw new SyntaxError('Unexpected token < in JSON');
+          },
+        };
+      }
+      if (options.drills === false) {
+        return { ok: false, status: 503, json: async () => ({}) };
+      }
+      return { ok: true, status: 200, json: async () => ({ items: options.drills ?? DRILLS }) };
     }
     if (url.includes('/api/pilot/coach/cards') && init?.method === 'POST') {
       return { ok: true, status: 201, json: async () => options.cardsPostResponse ?? REPORT };
@@ -172,8 +210,7 @@ test('a group issue posts program_id and renders the issued/skipped report verba
 
   fireEvent.click(screen.getByRole('button', { name: 'Whole program' }));
   fireEvent.change(screen.getByLabelText('Program'), { target: { value: 'prog-1' } });
-  fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Jump rope' } });
-  fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Ten minutes, no misses' } });
+  fireEvent.change(screen.getByLabelText('Drill'), { target: { value: 'drill-rope' } });
 
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Issue to program' }));
@@ -184,7 +221,12 @@ test('a group issue posts program_id and renders the issued/skipped report verba
   const body = JSON.parse(String(post!.init!.body));
   expect(body.program_id).toBe('prog-1');
   expect(body.athlete_id).toBeUndefined();
-  expect(body.title).toBe('Jump rope');
+  // W-D3: the card is identified by the drill alone. The server refuses a
+  // request carrying a typed title or description, so sending one -- even the
+  // drill's own name -- would turn every issue into a 400.
+  expect(body.drill_id).toBe('drill-rope');
+  expect(body).not.toHaveProperty('title');
+  expect(body).not.toHaveProperty('description');
 
   // The report, verbatim: who got it AND who did not.
   const reportSection = await screen.findByLabelText('Issuance report');
@@ -201,11 +243,14 @@ test('verify and dispute wire into the existing completions endpoint with the ca
     render(<CoachCardsPage />);
   });
 
-  // 'Anna Cards' also sits in the roster select; the card list is ready
-  // once the issued card's title is on the page.
-  await screen.findByText('Jump rope');
+  // The card list is ready once its Verify button exists. This used to wait on
+  // the card's title, 'Jump rope' -- but since W-D3 the issue form lists the
+  // gym's drills, and the drill that card was built from carries the same name,
+  // so the title is no longer unique on the page. Waiting on the control the
+  // test is about to press is the more honest readiness signal anyway.
+  const verify = await screen.findByRole('button', { name: 'Verify' });
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+    fireEvent.click(verify);
   });
 
   await waitFor(() => {
@@ -342,5 +387,117 @@ describe('a card list nobody could read is not an empty card list', () => {
     expect(screen.getByText('Pick an athlete.')).toBeTruthy();
     expect(screen.queryByText(/Your cards could not be read/i)).toBeNull();
     expect(screen.getByText('No cards issued yet')).toBeTruthy();
+  });
+});
+
+// W-D3, OD-2026-09-18-001. A card is built from a drill in the gym's own
+// library; there is no longer a typed-out card.
+describe('a card is built from an operational drill', () => {
+  test('the drill picker is required and the typed title/description inputs are gone', async () => {
+    installFetch();
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    const picker = screen.getByLabelText('Drill') as HTMLSelectElement;
+    expect(picker.required).toBe(true);
+    // The old escape hatch, and the two inputs it led to, are gone.
+    expect(within(picker).queryByText(/Type it out instead/)).toBeNull();
+    expect(screen.queryByLabelText('Title')).toBeNull();
+    expect(screen.queryByLabelText('Description')).toBeNull();
+  });
+
+  test('issuing without picking a drill is stopped on the client, and nothing is posted', async () => {
+    const calls = installFetch();
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Issue card' }));
+    });
+
+    expect(screen.getByText("Pick a drill from this gym's library.")).toBeTruthy();
+    expect(calls.some((call) => call.url.includes('/api/pilot/coach/cards') && call.init?.method === 'POST')).toBe(false);
+  });
+
+  test("picking a drill shows the drill's own wording, read-only, as what the athlete will see", async () => {
+    installFetch();
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    fireEvent.change(screen.getByLabelText('Drill'), { target: { value: 'drill-rope' } });
+
+    expect(screen.getByText('What the athlete will see')).toBeTruthy();
+    expect(screen.getAllByText('Ten minutes, no misses').length).toBeGreaterThan(0);
+  });
+
+  test('a gym with no drills gets a truthful empty state, not a form that can never submit', async () => {
+    installFetch({ drills: [] });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    expect(await screen.findByText(/This gym has no drills to issue yet/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open the Drill Library' }).getAttribute('href')).toBe('/coach/drills');
+    // No dead form: neither the picker nor an issue button is offered.
+    expect(screen.queryByLabelText('Drill')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Issue card' })).toBeNull();
+  });
+
+  test('a drill list that failed to load says so, rather than claiming the gym has none', async () => {
+    installFetch({ drills: false });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    expect(await screen.findByText(/did not load, so a card cannot be issued right now/)).toBeTruthy();
+    expect(screen.queryByText(/This gym has no drills to issue yet/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Issue card' })).toBeNull();
+  });
+
+  // W-D3 review N1. A refused read (above) answers; these two never do. A
+  // rejected fetch or an unreadable body throws out of the load, and the drill
+  // list is left as the empty array it started as -- which, read as data, is
+  // exactly "this gym has no drills". It is not data. It is not knowing.
+  test.each([
+    ['a drill fetch that is rejected', 'reject' as const],
+    ['a drill answer whose body cannot be read', 'bad-json' as const],
+  ])('%s says the list did not load, never that the gym has none', async (_label, drills) => {
+    installFetch({ drills });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    expect(await screen.findByText(/did not load, so a card cannot be issued right now/)).toBeTruthy();
+    expect(screen.queryByText(/This gym has no drills to issue yet/)).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open the Drill Library' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Issue card' })).toBeNull();
+  });
+
+  test('a card list that fails AFTER the drills loaded leaves the drills readable and the form usable', async () => {
+    // The over-correction this guards against: the card list is read after the
+    // drills, and its failure lands in the same catch. It says nothing about
+    // the drill list, which was read successfully.
+    installFetch({ cardsList: false });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    expect(await screen.findByText(/Your cards could not be read/i)).toBeTruthy();
+    expect(screen.queryByText(/did not load, so a card cannot be issued right now/)).toBeNull();
+    expect(screen.queryByText(/This gym has no drills to issue yet/)).toBeNull();
+    const picker = screen.getByLabelText('Drill') as HTMLSelectElement;
+    expect(within(picker).getByRole('option', { name: 'Jump rope' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Issue card' })).toBeTruthy();
   });
 });

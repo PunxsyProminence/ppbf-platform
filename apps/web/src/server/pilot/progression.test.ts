@@ -33,18 +33,24 @@ afterEach(() => {
 });
 
 describe('assignDrill', () => {
+  // W-D3, OD-2026-09-18-001. These cases pin the WRITER-level half of the
+  // invariant. The route has its own checks; these prove a caller that skips
+  // the route still cannot write an unanchored or unassignable row. Whether the
+  // SQL actually refuses those rows against a real database is proven in
+  // coachCards.pg.test.ts and drillsPersistence.pg.test.ts -- a mocked client
+  // can only show what the writer ASKS for.
+  const base = {
+    organizationId: 'org-1',
+    gapId: 'gap-1',
+    athleteId: 'ath-1',
+    assignedByAccountId: 'coach-1',
+    drillId: 'drill-jab',
+  };
+
   test('writes the assignment and closes out the gap in one transaction', async () => {
     currentClient.query.mockResolvedValueOnce({ rows: [{ assignment_id: 'asg-1' }] });
 
-    const assignment = await assignDrill({
-      organizationId: 'org-1',
-      gapId: 'gap-1',
-      athleteId: 'ath-1',
-      assignedByAccountId: 'coach-1',
-      drillName: 'Jab discipline',
-      drillDescription: 'Three rounds on the bag',
-      drillDifficulty: 'intermediate',
-    });
+    const assignment = await assignDrill(base);
 
     // Both writes go through the transaction client, so a failure between them
     // cannot leave a drill assigned against a gap still marked 'identified'.
@@ -59,45 +65,95 @@ describe('assignDrill', () => {
     expect(assignment).toEqual({ assignment_id: 'asg-1' });
   });
 
-  // Every assignment written before drills had identity carries only free text,
-  // and a coach may still type one out, so the anchor stays nullable.
-  test('a typed assignment carries no anchor', async () => {
+  test('inserts FROM an active operational drill in the same org, snapshotting its name and focus', async () => {
     currentClient.query.mockResolvedValueOnce({ rows: [{ assignment_id: 'asg-1' }] });
 
-    await assignDrill({
-      organizationId: 'org-1',
-      gapId: 'gap-1',
-      athleteId: 'ath-1',
-      assignedByAccountId: 'coach-1',
-      drillName: 'Jab discipline',
-      drillDescription: 'Three rounds on the bag',
-      drillDifficulty: 'intermediate',
-    });
-
-    const [, insertParams] = currentClient.query.mock.calls[0];
-    expect(insertParams[12]).toBeNull();
-  });
-
-  test('a drill picked from the library is stored as the anchor alongside what was typed', async () => {
-    currentClient.query.mockResolvedValueOnce({ rows: [{ assignment_id: 'asg-1' }] });
-
-    await assignDrill({
-      organizationId: 'org-1',
-      gapId: 'gap-1',
-      athleteId: 'ath-1',
-      assignedByAccountId: 'coach-1',
-      drillId: 'drill-jab',
-      drillName: 'Jab retraction (Tuesday floor)',
-      drillDescription: 'Three rounds, focus on the elbow',
-      drillDifficulty: 'intermediate',
-    });
+    await assignDrill(base);
 
     const [insertSql, insertParams] = currentClient.query.mock.calls[0];
-    expect(insertSql).toContain('drill_id');
-    expect(insertParams[12]).toBe('drill-jab');
-    // The typed wording is the record of what was assigned that day.
-    expect(insertParams[5]).toBe('Jab retraction (Tuesday floor)');
-    expect(insertParams[6]).toBe('Three rounds, focus on the elbow');
+    // The row is selected out of pilot.drills, so the drill is resolved and the
+    // wording snapshotted in the same statement that writes it.
+    expect(insertSql).toMatch(/from pilot\.drills d\s+where d\.organization_id = \$2 and d\.drill_id = \$3 and d\.active/);
+    expect(insertSql).toContain('d.name, d.focus');
+    // Never the reference library -- which is why a drl_ id cannot be assigned.
+    expect(insertSql).not.toContain('drill_library');
+    expect(insertParams[1]).toBe('org-1');
+    expect(insertParams[2]).toBe('drill-jab');
+  });
+
+  test.each([
+    ['progression.ts', 'assignDrill'],
+    ['coachCards.ts', 'issueCoachCard'],
+    ['coachCards.ts', 'issueCoachCardToProgram'],
+  ])('THE FIXTURE FIREWALL: %s %s never reads reference_drill_id', (file, fn) => {
+    // A new-assignment writer that selected reference_drill_id -- directly, or
+    // by reusing DRILL_FIELDS or getDrill() -- would fail every real-Postgres
+    // suite that builds pilot.drills without the provenance migration, exactly
+    // how W-D1's CI went red. Asserted on the source, so it covers all three
+    // writers, including paths no mocked case below exercises.
+    const source = jest.requireActual<typeof import('fs')>('fs').readFileSync(
+      jest.requireActual<typeof import('path')>('path').join(__dirname, file),
+      'utf8',
+    );
+    const start = source.indexOf(`export async function ${fn}(`);
+    expect(start).toBeGreaterThanOrEqual(0);
+    const body = source.slice(start, source.indexOf('\n}\n', start));
+    expect(body).not.toMatch(/reference_drill_id|DRILL_FIELDS|getDrill\(/);
+    // And it does read the drill -- a writer that stopped reading pilot.drills
+    // would pass the line above for the wrong reason.
+    expect(body).toContain('from pilot.drills d');
+  });
+
+  test('carries no caller-supplied drill wording -- there is no parameter for it', async () => {
+    currentClient.query.mockResolvedValueOnce({ rows: [{ assignment_id: 'asg-1' }] });
+
+    await assignDrill(base);
+
+    // Eleven parameters: id, org, drill, gap, athlete, assigner, difficulty,
+    // reps, duration, frequency, due date. None of them is a name or a
+    // description, because those come from the drill.
+    const [, insertParams] = currentClient.query.mock.calls[0];
+    expect(insertParams).toHaveLength(11);
+  });
+
+  test('an explicit difficulty overrides the drill; an absent one lets the drill decide', async () => {
+    currentClient.query.mockResolvedValue({ rows: [{ assignment_id: 'asg-1' }] });
+
+    await assignDrill({ ...base, drillDifficulty: 'advanced' });
+    expect(currentClient.query.mock.calls[0][1][6]).toBe('advanced');
+
+    currentClient.query.mockClear();
+    await assignDrill(base);
+    // null, so `coalesce($7, d.difficulty)` falls through to the drill's own.
+    expect(currentClient.query.mock.calls[0][1][6]).toBeNull();
+    expect(currentClient.query.mock.calls[0][0]).toContain('coalesce($7::text, d.difficulty)');
+  });
+
+  test.each([
+    ['undefined', undefined],
+    ['null', null],
+    ['an empty string', ''],
+    ['whitespace', '   '],
+    ['a number', 42],
+  ])('refuses a drillId that is %s, before touching the database', async (_label, drillId) => {
+    await expect(
+      assignDrill({ ...base, drillId: drillId as unknown as string }),
+    ).rejects.toMatchObject({ status: 400, code: 'DRILL_ID_REQUIRED' });
+    expect(currentClient.query).not.toHaveBeenCalled();
+  });
+
+  test('a drill that selects nothing -- unknown, foreign, retired or a reference id -- is refused, and the gap is left alone', async () => {
+    // The INSERT ... SELECT found no active drill in this gym, so it inserted
+    // nothing. The writer must throw rather than return undefined, and must
+    // throw BEFORE the gap update, so the rollback leaves the gap as it was.
+    currentClient.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(assignDrill({ ...base, drillId: 'drl_3c2aad1eb8baa9' })).rejects.toMatchObject({
+      status: 400,
+      code: 'DRILL_NOT_ASSIGNABLE',
+    });
+    expect(currentClient.query).toHaveBeenCalledTimes(1);
+    expect(currentClient.query.mock.calls[0][0]).not.toContain('update pilot.progression_gaps');
   });
 });
 
