@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { query, queryOne } from './db';
+import { query, queryOne, withTransaction } from './db';
 
 // pilot.drills is owned by
 // infra/azure/pilot_slice_postgres_drills_migration.sql, applied through the
@@ -340,12 +340,10 @@ export async function updateDrill(params: {
   // retired row is allowed only for the lineage's newest version, only when no
   // version of that lineage is active, and only while its reference (if any) is
   // still active -- the same refusal the promote route makes for a withdrawn
-  // reference. Held in the WHERE clause of the one UPDATE rather than in a read
+  // reference. Held in the WHERE clause of the UPDATE rather than in a read
   // beforehand, so the target row is checked and changed together and a direct
-  // API call gets the same rule as the coach page. (Under READ COMMITTED a write
-  // to ANOTHER row of the lineage that commits during the statement is not
-  // locked out; the lineage has no lock of its own, and a coach racing two
-  // lifecycle changes on one drill is not a case this guards.)
+  // API call gets the same rule as the coach page. A restore first locks the
+  // lineage, in a statement of its own -- see below.
   const restoreGuard = params.active === true
     ? `
        and (
@@ -372,25 +370,50 @@ export async function updateDrill(params: {
        )`
     : '';
 
-  try {
-    const rows = await query<PilotDrill>(
-      `update pilot.drills d
+  const updateSql = `update pilot.drills d
        set ${assignments.join(', ')}, updated_at = now()
        where d.organization_id = $1 and d.drill_id = $2${restoreGuard}
-       returning ${DRILL_FIELDS.split(', ').map((column) => `d.${column}`).join(', ')}`,
-      values,
-    );
+       returning ${DRILL_FIELDS.split(', ').map((column) => `d.${column}`).join(', ')}`;
 
-    if (rows[0]) {
-      return rows[0];
+  try {
+    if (params.active !== true) {
+      const rows = await query<PilotDrill>(updateSql, values);
+      return rows[0] ?? null;
     }
-    if (params.active === true) {
-      // Nothing changed: either there is no such drill (null, as before), or the
-      // guard refused the restore -- and then the coach is told which rule.
-      const refusal = await restoreRefusalFor(params.organizationId, params.drillId);
-      if (refusal) {
-        throw new DrillRestoreRefusedError(refusal);
-      }
+
+    // A RESTORE LOCKS THE LINEAGE FIRST, IN A STATEMENT OF ITS OWN (Codex P1 on
+    // PR #939). The guard's "newest version" and "no version active" read the
+    // lineage's OTHER rows. Adopting a change proposal locks the lineage's
+    // newest row, marks it inactive and inserts an active successor. Were the
+    // guarded UPDATE itself to wait on that row, PostgreSQL would re-check it
+    // once the adoption commits against the statement's ORIGINAL snapshot --
+    // which cannot see the successor -- and bring the old version back beside
+    // it: two active versions. Locking the lineage's rows here and running the
+    // guard in the next statement means the guard reads a snapshot taken after
+    // any writer holding those rows has committed; an adoption that starts
+    // later waits for this restore instead, then retires the row it restored.
+    const restored = await withTransaction(async (client) => {
+      await client.query(
+        `select 1 from pilot.drills l
+         where l.organization_id = $1
+           and l.lineage_id = (
+             select d.lineage_id from pilot.drills d
+             where d.organization_id = $1 and d.drill_id = $2
+           )
+         for update`,
+        [params.organizationId, params.drillId],
+      );
+      const result = await client.query<PilotDrill>(updateSql, values);
+      return result.rows[0] ?? null;
+    });
+    if (restored) {
+      return restored;
+    }
+    // Nothing changed: either there is no such drill (null, as before), or the
+    // guard refused the restore -- and then the coach is told which rule.
+    const refusal = await restoreRefusalFor(params.organizationId, params.drillId);
+    if (refusal) {
+      throw new DrillRestoreRefusedError(refusal);
     }
     return null;
   } catch (error) {

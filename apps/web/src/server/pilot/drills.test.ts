@@ -1,7 +1,22 @@
-jest.mock('./db', () => ({
-  query: jest.fn(async () => []),
-  queryOne: jest.fn(async () => null),
-}));
+jest.mock('./db', () => {
+  const query = jest.fn(async () => []);
+  // A restore runs in a transaction: its client records every statement, in
+  // order, and routes all but the lineage lock through `query`, so the tests
+  // below read a restore's guarded UPDATE exactly where they always have.
+  const transactionStatements: string[] = [];
+  return {
+    query,
+    queryOne: jest.fn(async () => null),
+    transactionStatements,
+    withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => fn({
+      query: async (text: string, params: unknown[]) => {
+        transactionStatements.push(text);
+        if (/\bfor update\b/i.test(text)) return { rows: [] };
+        return { rows: await (query as jest.Mock)(text, params) };
+      },
+    })),
+  };
+});
 
 import {
   DrillNameTakenError,
@@ -185,6 +200,41 @@ describe('updateDrill', () => {
  * change; these tests pin where the rule is written and what happens when it
  * refuses. Whether Postgres then applies it to real rows is the pg suite's job.
  */
+describe('updateDrill: a restore locks the lineage before its guard reads it', () => {
+  const db = jest.requireMock('./db') as { transactionStatements: string[]; withTransaction: jest.Mock };
+  const flatten = (sql: string) => sql.replace(/\s+/g, ' ').trim();
+
+  beforeEach(() => {
+    db.transactionStatements.length = 0;
+  });
+
+  test('in one transaction: first the lock on every version of the lineage, then the guarded UPDATE', async () => {
+    mockQuery.mockResolvedValueOnce([drillRow()]);
+
+    await updateDrill({ organizationId: 'org-1', drillId: 'drill-1', active: true });
+
+    expect(db.withTransaction).toHaveBeenCalledTimes(1);
+    expect(db.transactionStatements.map(flatten)).toEqual([
+      'select 1 from pilot.drills l where l.organization_id = $1 and l.lineage_id = ( '
+        + 'select d.lineage_id from pilot.drills d where d.organization_id = $1 and d.drill_id = $2 ) for update',
+      expect.stringMatching(/^update pilot\.drills d set active = \$3, updated_at = now\(\) where d\.organization_id = \$1 and d\.drill_id = \$2 and \( d\.active or/),
+    ]);
+  });
+
+  test.each([
+    ['a retire', { active: false }],
+    ['an edit', { name: 'Renamed' }],
+  ] as const)('%s takes no lineage lock and opens no transaction', async (_case, change) => {
+    mockQuery.mockResolvedValueOnce([drillRow()]);
+
+    await updateDrill({ organizationId: 'org-1', drillId: 'drill-1', ...change });
+
+    expect(db.withTransaction).not.toHaveBeenCalled();
+    expect(db.transactionStatements).toEqual([]);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('updateDrill: the restore guard', () => {
   const GUARD_ACTIVE_OR_LATEST =
     'where d.organization_id = $1 and d.drill_id = $2 and ( d.active or ( d.version = ( '

@@ -71,8 +71,30 @@ const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/fu
 // Routes every query into the one embedded database. Declared before the
 // imports so jest's mock hoisting sees it.
 let activeClient: Client | null = null;
+let activeConnectionString: string | null = null;
 
+// withTransaction opens its OWN connection per call, as db.ts's pool does, so
+// a restore can genuinely wait on a row lock another connection holds -- the
+// one way to prove the restore serializes against a concurrent adoption.
 jest.mock('./db', () => ({
+  withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
+    if (!activeConnectionString) throw new Error('test bug: no active embedded database');
+    const own = new Client({ connectionString: activeConnectionString });
+    await own.connect();
+    try {
+      await own.query('BEGIN');
+      try {
+        const result = await fn({ query: (text: string, values: unknown[]) => own.query(text, values) });
+        await own.query('COMMIT');
+        return result;
+      } catch (error) {
+        await own.query('ROLLBACK').catch(() => {});
+        throw error;
+      }
+    } finally {
+      await own.end();
+    }
+  }),
   query: jest.fn(async (text: string, params: unknown[] = []) => {
     if (!activeClient) throw new Error('test bug: no active embedded client');
     const result = await activeClient.query(text, params);
@@ -391,10 +413,12 @@ beforeAll(async () => {
      migrations, the partial name index and the discipline foreign key. */
   await applyFullSchema(client, { infraDir: INFRA_DIR });
   activeClient = client;
+  activeConnectionString = connectionStringFor(DATABASE_NAME);
 });
 
 afterAll(async () => {
   activeClient = null;
+  activeConnectionString = null;
   await client?.end().catch(() => {});
   await new Promise<void>((resolve) => {
     let done = false;
@@ -690,6 +714,87 @@ describe('listReferenceLifecycles is read in the asking gym only (real database)
       state: 'operational',
       operational_drill_id: 'op-head-shared-other-v3',
     });
+  });
+});
+
+/** Waits until some backend in this database is blocked on a lock -- the restore, behind the adoption. */
+async function untilABackendWaitsOnALock(): Promise<void> {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    const { rows } = await client.query<{ waiting: number }>(
+      `select count(*)::int as waiting from pg_stat_activity
+       where datname = current_database() and wait_event_type = 'Lock'`,
+    );
+    if (rows[0].waiting > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error('the restore never waited on the adoption holding its lineage');
+}
+
+describe('updateDrill restore guard: a restore racing a change-proposal adoption (real database, two connections)', () => {
+  // Codex P1 on PR #939. The adoption (drillVersioning.ts#adoptDrillChangeProposal)
+  // locks the lineage's newest row, marks it inactive and inserts an active,
+  // here renamed, successor -- so the partial name index cannot stop both
+  // being active. A restore of that same row, arriving while the adoption is
+  // open, must wait for it and then see the successor: refused, one active
+  // version. Without the lineage lock taken in its own statement, the guarded
+  // UPDATE waits on the row itself and is re-checked against its original
+  // snapshot, which cannot see the successor, and restores beside it.
+  test('the restore waits for the adoption, then is refused not_latest_version; only the successor is active', async () => {
+    const gym = await newGym('restore-race');
+    await insertReference(gym, { drillId: 'ref-race', name: 'Slip Counter' });
+    const v1 = await promote(gym, 'ref-race', 'Slip Counter');
+    await retire(gym, v1);
+    const {
+      rows: [head],
+    } = await client.query<{ lineage_id: string }>(
+      `select lineage_id from pilot.drills where organization_id = $1 and drill_id = $2`,
+      [gym, v1],
+    );
+
+    const adopter = new Client({ connectionString: connectionStringFor(DATABASE_NAME) });
+    await adopter.connect();
+    let outcome: { value?: unknown; error?: unknown } | undefined;
+    try {
+      await adopter.query('BEGIN');
+      await adopter.query(
+        `select drill_id from pilot.drills
+         where organization_id = $1 and lineage_id = $2
+         order by version desc limit 1 for update`,
+        [gym, head.lineage_id],
+      );
+      await adopter.query(
+        `update pilot.drills set active = false, superseded_at = now(), updated_at = now()
+         where organization_id = $1 and drill_id = $2`,
+        [gym, v1],
+      );
+      await adopter.query(
+        `insert into pilot.drills
+           (organization_id, drill_id, name, category, focus, cues, difficulty, active,
+            version, lineage_id, supersedes_drill_id, reference_drill_id)
+         select organization_id, 'op-race-v2', 'Slip Counter, Shorter', category, focus, cues, difficulty, true,
+                version + 1, lineage_id, drill_id, reference_drill_id
+         from pilot.drills where organization_id = $1 and drill_id = $2`,
+        [gym, v1],
+      );
+
+      // The coach presses Restore while the adoption is still open.
+      const restoring = restore(gym, v1).then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+      await untilABackendWaitsOnALock();
+      await adopter.query('COMMIT');
+      outcome = await restoring;
+    } finally {
+      await adopter.end();
+    }
+
+    expect(outcome).toEqual({
+      error: expect.objectContaining({ name: 'DrillRestoreRefusedError', reason: 'not_latest_version' }),
+    });
+    const active = (await drillRows(gym)).filter((row) => row.active);
+    expect(active.map((row) => row.drill_id)).toEqual(['op-race-v2']);
+    expect(await activeOf(gym, v1)).toBe(false);
   });
 });
 
