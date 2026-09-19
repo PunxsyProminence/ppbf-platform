@@ -1180,4 +1180,295 @@ test.describe('Coach journey', () => {
        -- nothing read those counts and chose a state. */
     await expect(page.getByLabel('How did it go')).toHaveValue('unknown');
   });
+
+  /* Finding a reference drill, and being offered only what its state allows.
+     ------------------------------------------------------------------------
+
+     W-D4C, in a real browser. The route tests pin that the server derives each
+     reference drill's standing in this gym from durable rows, and the .pg
+     suites pin the restore guard. What neither can see is the coach's side of
+     it: that search and the filters narrow the grid actually on screen, that
+     an opened drill offers the ONE action its state allows -- Restore on a
+     retired adoption, Retire on an operational one, Promote only on a drill
+     never adopted -- and that Restore sends back the same operational drill
+     the server named. A retired adoption brought back as a fresh promotion
+     would be a second identity for one drill, which is the thing the lineage
+     exists to prevent.
+
+     The fixture is built so each narrowing can be told apart from the others:
+     the drill never adopted says "slip" in its PURPOSE, so a search that
+     matched more than names would show two drills instead of one, and the
+     retired drill does not say "slip" anywhere, so the search and the filter
+     together must come back empty. */
+  test('a coach searches and filters the reference library, and restores a retired drill in place', async ({ page }) => {
+    const ORG = 'org-ppbf';
+    const patched: Array<Record<string, unknown>> = [];
+    const promoted: Array<Record<string, unknown>> = [];
+    const drillReads: string[] = [];
+    let jabRestored = false;
+
+    const reference = (fields: Record<string, unknown> & { drill_id: string; contact_level: string }) => ({
+      organization_id: ORG,
+      lineage_id: fields.drill_id,
+      version: 1,
+      supersedes_drill_id: null,
+      superseded_at: null,
+      skill_id: null,
+      target_behavior: '',
+      what_bad_looks_like: '',
+      common_errors: '',
+      corrections: '',
+      transfer: '',
+      equipment_needed: 'none',
+      content_class: 'COACHING CRAFT - PPBF source manual v3',
+      source_ref: null,
+      grounding_claim_ids: [],
+      field_provenance: 'PPBF source manual v3',
+      active: true,
+      created_by_account_id: null,
+      created_by_role: null,
+      created_at: '2026-09-16T00:00:00.000Z',
+      updated_at: '2026-09-16T00:00:00.000Z',
+      standard_setup: 'Open floor, one athlete per lane.',
+      execution: 'Start slow.\n\nBuild to working pace.',
+      what_good_looks_like: 'Balanced the whole way through',
+      ...fields,
+    });
+
+    const SLIP = reference({
+      drill_id: 'ref-slip',
+      name: 'Slip line',
+      discipline: 'boxing',
+      category: 'defense',
+      difficulty: 'intermediate',
+      purpose: 'Move the head off the line of a straight punch.',
+      contact_level: 'light_technical',
+      requires_coach_authorization: true,
+    });
+    const JAB = reference({
+      drill_id: 'ref-jab',
+      name: 'Jab return',
+      discipline: 'boxing',
+      category: 'striking',
+      difficulty: 'beginner',
+      purpose: 'Return the hand to guard after every jab.',
+      contact_level: 'light_technical',
+      requires_coach_authorization: false,
+    });
+    const ROPE = reference({
+      drill_id: 'ref-rope',
+      name: 'Rope skip',
+      discipline: 'general',
+      category: 'conditioning',
+      difficulty: 'beginner',
+      // "slip" in the purpose, never in the name: see the note above.
+      purpose: 'Light feet, so the slip comes from the legs.',
+      contact_level: 'none',
+      requires_coach_authorization: false,
+    });
+    const REFERENCES = [SLIP, JAB, ROPE];
+
+    // The coach detail shape: the row plus its child sets, complete enough
+    // that the never-adopted drill is ready to adopt and so offers Promote.
+    const detailOf = (row: ReturnType<typeof reference>) => ({
+      ...row,
+      scale_levels: (['A', 'B', 'C'] as const).map((level) => ({
+        organization_id: ORG,
+        scale_id: `${row.drill_id}-${level}`,
+        drill_id: row.drill_id,
+        scale_level: level,
+        is_starting_point: level === 'B',
+        demand_description: `Level ${level} as written.`,
+        constraint_applied: '',
+        contact_level: row.contact_level,
+        coach_watch_point: '',
+        authoring_state: 'authored',
+      })),
+      stop_rules: [{
+        organization_id: ORG,
+        stop_rule_id: `${row.drill_id}-stop-1`,
+        drill_id: row.drill_id,
+        ordinal: 1,
+        condition_text: 'Stop when fatigue breaks decision quality.',
+        scope: 'universal',
+        rule_kind: 'fatigue',
+      }],
+      cues: [],
+      secondary_skills: [],
+    });
+
+    // The operational drills this gym runs. The jab lineage's newest version
+    // is op-jab-v2, and that is the id the server names for it: the page must
+    // send the id it was given rather than work one out.
+    const SLIP_OPERATIONAL = {
+      organization_id: ORG,
+      drill_id: 'op-slip',
+      reference_drill_id: SLIP.drill_id,
+      name: 'Slip line',
+      category: 'defense',
+      focus: 'Move the head off the line of a straight punch.',
+      cues: [],
+      difficulty: 'intermediate',
+      active: true,
+      created_at: '2026-09-17T00:00:00.000Z',
+      updated_at: '2026-09-17T00:00:00.000Z',
+    };
+    const JAB_HEAD = {
+      ...SLIP_OPERATIONAL,
+      drill_id: 'op-jab-v2',
+      reference_drill_id: JAB.drill_id,
+      name: 'Jab return',
+      category: 'striking',
+      focus: 'Return the hand to guard after every jab.',
+      difficulty: 'beginner',
+      active: false,
+    };
+
+    // Derived per read, as the server derives it: the jab adoption is retired
+    // until its head is restored, and then it is operational again.
+    const lifecycleNow = (): Record<string, { state: string; operational_drill_id: string | null }> => ({
+      [SLIP.drill_id]: { state: 'operational', operational_drill_id: SLIP_OPERATIONAL.drill_id },
+      [JAB.drill_id]: { state: jabRestored ? 'operational' : 'retired', operational_drill_id: JAB_HEAD.drill_id },
+      [ROPE.drill_id]: { state: 'available', operational_drill_id: null },
+    });
+
+    await installPilotApi(page, {
+      session: { role: 'coach' },
+      routes: {
+        '/api/pilot/drill-library': (url) => {
+          const lifecycle = lifecycleNow();
+          const drillId = url.searchParams.get('drill_id');
+          if (drillId) {
+            const row = REFERENCES.find((drill) => drill.drill_id === drillId);
+            return { drill: row ? detailOf(row) : null, lifecycle: lifecycle[drillId] ?? null };
+          }
+          return { drills: REFERENCES, lifecycle };
+        },
+        '/api/pilot/drills': (url, route) => {
+          if (route.request().method() === 'PATCH') {
+            const body = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>;
+            patched.push(body);
+            if (body.drill_id === JAB_HEAD.drill_id && body.active === true) jabRestored = true;
+            return { ok: true, organization_id: ORG, drill: { ...JAB_HEAD, active: jabRestored } };
+          }
+          drillReads.push(url.search);
+          return {
+            ok: true,
+            organization_id: ORG,
+            items: jabRestored ? [SLIP_OPERATIONAL, { ...JAB_HEAD, active: true }] : [SLIP_OPERATIONAL],
+          };
+        },
+        '/api/pilot/drills/promote': (_url, route) => {
+          promoted.push(JSON.parse(route.request().postData() ?? '{}'));
+          return { ok: true };
+        },
+      },
+    });
+
+    await page.goto('/coach/drills');
+
+    const showing = page.getByRole('status').filter({ hasText: /^Showing / });
+    const viewButtons = page.getByRole('button', { name: /^View drill: / });
+    const viewDrill = (name: string) => page.getByRole('button', { name: `View drill: ${name}` });
+    const card = (name: string) => page.locator('article').filter({ has: viewDrill(name) });
+    const search = page.getByRole('searchbox', { name: 'Search by name' });
+    const inThisGym = page.getByRole('combobox', { name: 'In this gym', exact: true });
+    const clearFilters = page.getByRole('button', { name: 'Clear filters' });
+    const back = page.getByRole('button', { name: 'Back to the reference library' });
+
+    await expect(showing).toHaveText('Showing 3 of 3 reference drills');
+    await expect(viewButtons).toHaveCount(3);
+
+    // Each card says where the drill stands in this gym -- except a drill never
+    // adopted, which is the ordinary case and carries no label.
+    await expect(card('Slip line').getByText('Operational in this gym')).toBeVisible();
+    await expect(card('Jab return').getByText('Retired in this gym')).toBeVisible();
+    await expect(card('Rope skip').getByText(/in this gym|Not adopted/)).toHaveCount(0);
+
+    /* 1. SEARCH, BY NAME ONLY, IGNORING CASE. "Rope skip" says "slip" in its
+          purpose; a search that read the purpose would show it too. */
+    await search.fill('SLIP');
+    await expect(showing).toHaveText('Showing 1 of 3 reference drills');
+    await expect(viewButtons).toHaveCount(1);
+    await expect(viewDrill('Slip line')).toBeVisible();
+    await search.fill('');
+    await expect(showing).toHaveText('Showing 3 of 3 reference drills');
+
+    /* 2. A FILTER, offering only the states actually present -- nothing here is
+          superseded or withdrawn, so neither is a choice that can only return
+          nothing. */
+    await expect(inThisGym.locator('option')).toHaveText([
+      'Any',
+      'Not adopted',
+      'Operational in this gym',
+      'Retired in this gym',
+    ]);
+    await inThisGym.selectOption({ label: 'Retired in this gym' });
+    await expect(showing).toHaveText('Showing 1 of 3 reference drills');
+    await expect(viewButtons).toHaveCount(1);
+    await expect(viewDrill('Jab return')).toBeVisible();
+
+    // Search and filter together: the retired drill is not called "slip".
+    await search.fill('slip');
+    await expect(showing).toHaveText('Showing 0 of 3 reference drills');
+    await expect(viewButtons).toHaveCount(0);
+    await expect(page.getByText('No reference drills match this search and these filters.')).toBeVisible();
+
+    /* 3. CLEAR FILTERS clears the search as well, and then has nothing left to
+          clear. */
+    await clearFilters.click();
+    await expect(showing).toHaveText('Showing 3 of 3 reference drills');
+    await expect(viewButtons).toHaveCount(3);
+    await expect(search).toHaveValue('');
+    await expect(inThisGym).toHaveValue('');
+    await expect(clearFilters).toHaveCount(0);
+
+    /* 4. THE RETIRED ADOPTION: Restore, and nothing else. Before it, the jab
+          drill is not among the drills this gym runs. */
+    await expect(page.getByRole('button', { name: 'View instructions: Jab return' })).toHaveCount(0);
+    await viewDrill('Jab return').click();
+    const jab = page.getByRole('article', { name: 'Jab return' });
+    await expect(jab.getByText('Retired in this gym')).toBeVisible();
+    // The discovery panel goes with the grid it narrows.
+    await expect(search).toBeHidden();
+    await expect(jab.getByRole('button', { name: /^(Promote|Retire)$/ })).toHaveCount(0);
+
+    await jab.getByRole('button', { name: 'Restore' }).click();
+
+    // The same drill, by the id the server named for the lineage's head --
+    // restored, not promoted again.
+    await expect.poll(() => patched).toHaveLength(1);
+    expect(patched[0]).toEqual({ drill_id: JAB_HEAD.drill_id, active: true });
+    await expect(page.getByRole('status').filter({ hasText: /^Restored\. It is operational again/ })).toBeVisible();
+
+    // And the page shows the server's answer, re-read, not its own optimism:
+    // operational again, with Retire the one action now offered, and back
+    // among the drills this gym runs.
+    await expect(jab.getByText('Operational in this gym')).toBeVisible();
+    await expect(jab.getByRole('button', { name: 'Retire' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'View instructions: Jab return' })).toBeVisible();
+
+    /* 5. AN OPERATIONAL ADOPTION: Retire is offered. Not pressed -- the server
+          owns what a retirement does; this is what the coach is offered. */
+    await back.click();
+    await viewDrill('Slip line').click();
+    const slip = page.getByRole('article', { name: 'Slip line' });
+    await expect(slip.getByText('Operational in this gym')).toBeVisible();
+    await expect(slip.getByRole('button', { name: 'Retire' })).toBeVisible();
+    await expect(slip.getByRole('button', { name: /^(Promote|Restore)$/ })).toHaveCount(0);
+
+    /* 6. A DRILL NEVER ADOPTED, and ready to be: Promote, and only Promote. */
+    await back.click();
+    await viewDrill('Rope skip').click();
+    const rope = page.getByRole('article', { name: 'Rope skip' });
+    await expect(rope.getByRole('button', { name: 'Promote' })).toBeVisible();
+    await expect(rope.getByText('Not ready to adopt')).toHaveCount(0);
+    await expect(rope.getByRole('button', { name: /^(Retire|Restore)$/ })).toHaveCount(0);
+
+    // Nothing above was a promotion, and nothing asked for the retired-drill
+    // census the lifecycle map replaced.
+    expect(promoted).toEqual([]);
+    expect(patched).toHaveLength(1);
+    expect(drillReads.filter((query) => query.includes('include_retired'))).toEqual([]);
+  });
 });

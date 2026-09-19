@@ -6,6 +6,7 @@ import { COACHING_CONTENT_READER_ROLES } from '@/src/server/pilot/coachingConten
 import {
   DRILL_DIFFICULTIES,
   DrillNameTakenError,
+  DrillRestoreRefusedError,
   createDrill,
   isDrillDifficulty,
   listDrills,
@@ -142,8 +143,10 @@ export async function GET(request: NextRequest) {
     // a pointer on the operational list.
     //
     // Every authorized non-athlete reader keeps the field, and the coach library
-    // depends on it: /coach/drills derives its "Already promoted" state from
-    // exactly this pointer.
+    // depends on it: /coach/drills marks a drill "From the reference library"
+    // and opens its instructions through exactly this pointer. (Where a
+    // reference stands in the gym -- operational, retired -- comes from the
+    // drill-library route's lifecycle since W-D4C, not from this pointer.)
     if (principal.role === 'athlete') {
       return NextResponse.json({
         ok: true,
@@ -249,6 +252,11 @@ export async function PATCH(request: NextRequest) {
   } catch (error) {
     if (error instanceof DrillNameTakenError) {
       return nameTaken(error);
+    }
+    // A restore the lifecycle refuses (W-D4C): a conflict with the drill's
+    // current state, worded so the coach knows what to do instead.
+    if (error instanceof DrillRestoreRefusedError) {
+      return NextResponse.json({ error: error.message, code: error.reason }, { status: 409 });
     }
     return jsonError(error);
   }

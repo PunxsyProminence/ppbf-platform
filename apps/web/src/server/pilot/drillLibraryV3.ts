@@ -299,6 +299,102 @@ export async function getDrillWithDetail(organizationId: string, drillId: string
   };
 }
 
+/**
+ * Where a reference drill stands in ONE gym (OD-2026-09-19-001 LIFECYCLE, W-D4C).
+ *
+ *   operational  the gym adopted it and runs it: an active pilot.drills row
+ *                points at this exact reference version.
+ *   retired      the gym adopted it and retired it: rows point at it, none is
+ *                active. Restore brings back the same identity; promoting again
+ *                is refused (pilot_drills_one_reference_per_org is not partial
+ *                on active, so a retired adoption still holds the reference).
+ *   superseded   not adopted here, and a newer version of the reference exists
+ *                (superseded_at, W-D4A's rule).
+ *   unavailable  not adopted here, and the reference is withdrawn (inactive).
+ *   available    not adopted here, and adoptable.
+ *
+ * Adoption comes first: for a gym that adopted a reference, what matters is
+ * what it did with it. Every term is a durable column or an EXISTS over one --
+ * nothing here reads prose, and nothing is stored: the state is derived on
+ * every read, so it cannot drift from the rows it describes.
+ *
+ * operational_drill_id is the operational identity the next lifecycle action
+ * acts on. While the gym runs the drill it is the ACTIVE row pointing at this
+ * reference -- the one Retire takes out, even in the rare lineage where an
+ * earlier version is the active one. Once retired it is the adopted lineage's
+ * HEAD (highest version) -- the one Restore brings back -- found through the
+ * lineage root, which pilot_drills_one_reference_per_org makes unique per
+ * reference. Null when the gym never adopted it.
+ *
+ * Authors only (coach, organization_admin, admin -- the roles that promote,
+ * retire and restore). Athlete and other reader reads never call this:
+ * lifecycle and adoption are how the gym's library is governed, not
+ * instruction.
+ */
+export type ReferenceLifecycleState = 'available' | 'operational' | 'retired' | 'superseded' | 'unavailable';
+
+export interface ReferenceLifecycle {
+  state: ReferenceLifecycleState;
+  operational_drill_id: string | null;
+}
+
+export async function listReferenceLifecycles(
+  organizationId: string,
+  drillIds?: string[],
+): Promise<Record<string, ReferenceLifecycle>> {
+  const rows = await query<{ drill_id: string; state: ReferenceLifecycleState; operational_drill_id: string | null }>(
+    `select d.drill_id,
+            case
+              when exists (
+                select 1 from pilot.drills od
+                where od.organization_id = d.organization_id
+                  and od.reference_drill_id = d.drill_id
+                  and od.active
+              ) then 'operational'
+              when exists (
+                select 1 from pilot.drills od
+                where od.organization_id = d.organization_id
+                  and od.reference_drill_id = d.drill_id
+              ) then 'retired'
+              when not d.active then 'unavailable'
+              when d.superseded_at is not null then 'superseded'
+              else 'available'
+            end as state,
+            coalesce(
+              (
+                select live.drill_id
+                from pilot.drills live
+                where live.organization_id = d.organization_id
+                  and live.reference_drill_id = d.drill_id
+                  and live.active
+                order by live.version desc
+                limit 1
+              ),
+              (
+                select head.drill_id
+                from pilot.drills root
+                join pilot.drills head
+                  on head.organization_id = root.organization_id
+                 and head.lineage_id = root.lineage_id
+                where root.organization_id = d.organization_id
+                  and root.reference_drill_id = d.drill_id
+                  and root.supersedes_drill_id is null
+                order by head.version desc
+                limit 1
+              )
+            ) as operational_drill_id
+     from pilot.drill_library d
+     where d.organization_id = $1
+       and ($2::text[] is null or d.drill_id = any($2::text[]))`,
+    [organizationId, drillIds ?? null],
+  );
+  const lifecycles: Record<string, ReferenceLifecycle> = {};
+  for (const row of rows) {
+    lifecycles[row.drill_id] = { state: row.state, operational_drill_id: row.operational_drill_id };
+  }
+  return lifecycles;
+}
+
 /** Every version of one drill lineage, oldest first -- mirrors drillVersioning.ts's getDrillLineage. */
 export async function getDrillLibraryLineage(organizationId: string, lineageId: string): Promise<DrillLibraryRow[]> {
   return query<DrillLibraryRow>(

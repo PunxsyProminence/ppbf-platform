@@ -1,7 +1,13 @@
 import { NextRequest } from 'next/server';
 
 import { GET, PATCH, POST } from './route';
-import { DrillNameTakenError, createDrill, listDrills, updateDrill } from '@/src/server/pilot/drills';
+import {
+  DrillNameTakenError,
+  DrillRestoreRefusedError,
+  createDrill,
+  listDrills,
+  updateDrill,
+} from '@/src/server/pilot/drills';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -250,9 +256,9 @@ describe('GET /api/pilot/drills', () => {
     test.each(['coach', 'organization_admin', 'admin', 'platform_owner', 'parent', 'volunteer', 'staff'] as const)(
       '%s keeps reference_drill_id',
       async (role) => {
-        // The coach library derives its "Already promoted" state from exactly
-        // this pointer, so redacting it for everyone would have broken W-D1's
-        // promotion surface. Every non-athlete reader role is asserted, not
+        // The coach library marks promoted drills and opens their instructions
+        // through exactly this pointer, so redacting it for everyone would
+        // break that surface. Every non-athlete reader role is asserted, not
         // just coach, because the redaction is keyed on athlete alone.
         mockRequirePrincipal.mockResolvedValueOnce(principal({ role }));
         mockListDrills.mockResolvedValueOnce([promoted()]);
@@ -389,5 +395,86 @@ describe('PATCH /api/pilot/drills', () => {
 
     expect(res.status).toBe(400);
     expect(mockUpdateDrill).not.toHaveBeenCalled();
+  });
+
+  test('a coach restores a retired drill, and the restore is audited', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockUpdateDrill.mockResolvedValueOnce(drill({ active: true }));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-1', active: true }));
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateDrill).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-1',
+      drillId: 'drill-1',
+      active: true,
+    }));
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: 'update',
+      entity_type: 'drill',
+      details: expect.objectContaining({ active: true }),
+    }));
+  });
+
+  /**
+   * W-D4C. A restore the lifecycle refuses is a conflict with the drill's
+   * current state -- not a miss (404), not a bad request (400), and not a
+   * server fault whose message is swallowed (500). The coach is told which
+   * rule refused it, and `code` carries the reason so the page does not have to
+   * match on wording.
+   */
+  describe('a restore the lifecycle refuses', () => {
+    test.each([
+      [
+        'not_latest_version',
+        'This is an earlier version of the drill. Restore its newest version instead.',
+      ],
+      [
+        'another_version_active',
+        'Another version of this drill is already in use in this gym.',
+      ],
+      [
+        'reference_withdrawn',
+        "This drill's reference has been withdrawn, so it cannot be restored.",
+      ],
+      // Round-1 repair R2: the guard refused but nothing refuses the drill on
+      // a second look -- it changed in between. Still a 409 (the drill exists,
+      // so not a 404), and the page is told to reload and retry rather than
+      // which rule to satisfy.
+      [
+        'state_changed',
+        'This drill changed while it was being restored. Reload the page and try again.',
+      ],
+    ] as const)('%s answers 409 with that reason as its code', async (reason, message) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+      mockUpdateDrill.mockRejectedValueOnce(new DrillRestoreRefusedError(reason));
+
+      const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-1', active: true }));
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: message, code: reason });
+      expect(mockUpdateDrill).toHaveBeenCalledWith(expect.objectContaining({
+        organizationId: 'org-1',
+        drillId: 'drill-1',
+        active: true,
+      }));
+      // Nothing changed, so nothing is recorded as having changed.
+      expect(mockAudit).not.toHaveBeenCalled();
+    });
+  });
+
+  // A restore sends no name; updateDrill reads the drill's own name so the
+  // conflict still names the drill that could not come back.
+  test('a restore whose name has since been taken reports the name, and is not audited', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockUpdateDrill.mockRejectedValueOnce(new DrillNameTakenError('Slip and Lateral Pivot Step'));
+
+    const res = await PATCH(bodyRequest('PATCH', { drill_id: 'drill-1', active: true }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'This gym already has a drill named "Slip and Lateral Pivot Step"',
+    });
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 });
