@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import CoachInstructionPanel from '@/components/drills/CoachInstructionPanel';
+import { readAssignmentInstruction, readReferenceInstruction } from '@/components/drills/drillInstructionRead';
+import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import type { CoachRosterAthlete } from '@/src/server/pilot/contracts';
 import type { DrillLibraryResponse, PilotDrill } from '@/src/server/pilot/drills';
 import { apiBase } from '@/lib/apiBase';
@@ -45,6 +48,10 @@ interface CoachCard {
   athlete_id: string;
   athlete_name: string;
   issuance_id: string | null;
+  // The operational drill the card was issued against; null only on a legacy
+  // row. Every card in one issuance shares it (issueCoachCardToProgram binds
+  // one drill for the whole program), so the group reads it off its first card.
+  drill_id: string | null;
   drill_name: string;
   drill_description: string;
   drill_display_name: string;
@@ -109,6 +116,9 @@ export default function CoachCardsPage() {
      gym has no drills" and "the list did not load" call for different actions.
      A coach told to add drills that already exist has been sent the wrong way. */
   const [drillsUnreadable, setDrillsUnreadable] = useState(false);
+  // One drill's instruction open at a time, from the form or from an issued
+  // card. Reading only: every read behind it is a GET (W-D4B).
+  const instruction = useDrillOpener();
 
   // signal is optional so the verify/dispute path can refresh the list
   // without owning a controller; the mount effect passes its own.
@@ -193,6 +203,9 @@ export default function CoachCardsPage() {
   }, [loadCards]);
 
   const onLibraryPick = (drillId: string) => {
+    // Instructions opened for the previous pick describe a drill that is no
+    // longer the one being issued.
+    if (instruction.openKey?.startsWith('picked:')) instruction.close({ returnFocus: false });
     const drill = drills.find((item) => item.drill_id === drillId);
     if (!drill) {
       setForm((prev) => ({ ...prev, drill_id: '' }));
@@ -208,6 +221,32 @@ export default function CoachCardsPage() {
   // The picked drill, so its wording can be SHOWN as what the athlete will read
   // without being editable.
   const pickedDrill = drills.find((drill) => drill.drill_id === form.drill_id) ?? null;
+  const pickedKey = pickedDrill ? `picked:${pickedDrill.drill_id}` : null;
+  const pickedOpen = pickedKey !== null && instruction.openKey === pickedKey;
+
+  // Before issuing: the exact reference version this gym adopted, by the
+  // pointer the operational drill carries -- never a name match.
+  const togglePickedInstructions = () => {
+    if (!pickedDrill?.reference_drill_id || !pickedKey) return;
+    if (pickedOpen) {
+      instruction.close();
+      return;
+    }
+    const referenceDrillId = pickedDrill.reference_drill_id;
+    instruction.open(pickedKey, 'card-picked-instructions', (signal) => readReferenceInstruction(referenceDrillId, signal));
+  };
+
+  // After issuing: the instruction the card links to, resolved on the server
+  // from the card itself -- so a drill the gym has since retired still opens,
+  // at the version the card was issued against.
+  const toggleGroupInstructions = (groupKey: string, assignmentId: string) => {
+    const key = `group:${groupKey}`;
+    if (instruction.openKey === key) {
+      instruction.close();
+      return;
+    }
+    instruction.open(key, `card-group-instructions-${groupKey}`, (signal) => readAssignmentInstruction(assignmentId, signal));
+  };
 
   const handleIssue = async () => {
     setErrorMessage('');
@@ -253,6 +292,7 @@ export default function CoachCardsPage() {
       // A group issue answers with the issued/skipped report; it is shown
       // verbatim so the coach knows exactly who got the card and who did not.
       setReport(mode === 'program' ? (payload as IssuanceReport) : null);
+      if (instruction.openKey?.startsWith('picked:')) instruction.close({ returnFocus: false });
       setForm({ ...EMPTY_FORM });
       await loadCards();
     } catch (error) {
@@ -436,6 +476,30 @@ export default function CoachCardsPage() {
                 {pickedDrill.focus && (
                   <p className="t-body text-[color:var(--bone-300)]">{pickedDrill.focus}</p>
                 )}
+                {/* The full drill, read before it is issued: safety, scaling,
+                    stop rules. A drill this gym wrote itself has no reference
+                    instruction, and says so rather than offering a dead control. */}
+                {pickedDrill.reference_drill_id ? (
+                  <div>
+                    <button
+                      type="button"
+                      id="card-picked-instructions"
+                      className="btn btn--ghost"
+                      aria-expanded={pickedOpen}
+                      aria-label={`${pickedOpen ? 'Hide' : 'View'} instructions: ${pickedDrill.name}`}
+                      onClick={togglePickedInstructions}
+                    >
+                      {pickedOpen ? 'Hide instructions' : 'View instructions'}
+                    </button>
+                    {pickedOpen && (
+                      <CoachInstructionPanel loading={instruction.loading} failed={instruction.failed} opened={instruction.opened} />
+                    )}
+                  </div>
+                ) : (
+                  <p className="t-muted text-[length:var(--t-xs)]">
+                    Written by this gym, so there are no reference instructions to open.
+                  </p>
+                )}
               </div>
             )}
 
@@ -557,8 +621,11 @@ export default function CoachCardsPage() {
             <div className="space-y-[var(--s4)]">
               {groups.map((group) => {
                 const first = group.cards[0];
+                const groupKey = group.issuance_id ?? first.assignment_id;
+                const groupOpen = instruction.openKey === `group:${groupKey}`;
+                const groupName = first.drill_display_name || first.drill_name;
                 return (
-                  <div key={group.issuance_id ?? first.assignment_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+                  <div key={groupKey} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                     <div className="flex flex-wrap items-center gap-[var(--s3)]">
                       <p className="font-semibold text-[color:var(--bone-100)]">
                         {first.drill_display_name || first.drill_name}
@@ -580,6 +647,24 @@ export default function CoachCardsPage() {
                     <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
                       {first.drill_display_description || first.drill_description}
                     </p>
+                    {/* A legacy card has no drill behind it, so nothing to open. */}
+                    {first.drill_id && (
+                      <div className="mt-[var(--s2)]">
+                        <button
+                          type="button"
+                          id={`card-group-instructions-${groupKey}`}
+                          className="btn btn--ghost"
+                          aria-expanded={groupOpen}
+                          aria-label={`${groupOpen ? 'Hide' : 'View'} instructions: ${groupName}`}
+                          onClick={() => toggleGroupInstructions(groupKey, first.assignment_id)}
+                        >
+                          {groupOpen ? 'Hide instructions' : 'View instructions'}
+                        </button>
+                        {groupOpen && (
+                          <CoachInstructionPanel loading={instruction.loading} failed={instruction.failed} opened={instruction.opened} />
+                        )}
+                      </div>
+                    )}
 
                     <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
                       {group.cards.map((card) => (

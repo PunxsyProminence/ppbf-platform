@@ -1,8 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import DrillDetail from '@/components/drills/DrillDetail';
+import { readAssignmentInstruction } from '@/components/drills/drillInstructionRead';
+import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
@@ -46,6 +49,37 @@ const ATHLETE_LOAD_COPY: ReadonlySet<string> = new Set([
   SCREEN_DID_NOT_LOAD,
 ]);
 
+/*
+ * Opening the drill a piece of work was issued against (OD-2026-09-19-001,
+ * W-D4B). Same rules as the lines above: each says what is true and what to
+ * do next, and none of them is a verdict on the athlete. "Nothing to open" and
+ * "did not load" stay apart -- the first is a fact about the drill, the second
+ * about the network, and they send a kid to different places.
+ *
+ * "Nothing to open" is ONE line whatever the reason, because the server sends
+ * one state for all of them: whether the gym wrote the drill itself or took it
+ * from the reference library, and whether it has since been retired, is how
+ * the library is assembled and governed -- provenance an athlete's screen does
+ * not carry (OD-2026-09-19-001 role projection).
+ */
+const DRILL_DID_NOT_LOAD = 'The drill did not load. Nothing about your assignment changed — try again in a minute.';
+const DRILL_NOTHING_TO_OPEN =
+  'There are no library instructions to open for this drill. What your coach wrote for this work is above — ask your coach how to run it.';
+
+// Learning a drill and doing the work are different acts (OD-2026-09-19-001:
+// reading instruction does not complete work, log performance or alter
+// progression). The opened drill says so in words, and it offers no way to log:
+// logging stays on the assignment, one Back away.
+function learningIsNotLogging(status: string): string {
+  if (status === 'completed') return 'This work is already logged as complete. Reading the drill does not change it.';
+  if (status === 'cancelled') return 'Your coach cancelled this work. Reading the drill does not change it.';
+  return 'Reading the drill does not log your work. When you have done it, go back to your assigned work and use Log completion.';
+}
+
+// Keyed by assignment, never by drill: two pieces of work can share a drill,
+// and focus has to come back to the one that was opened.
+const assignmentOpenerId = (assignmentId: string) => `assignment-open-${assignmentId}`;
+
 interface ProgressionGap {
   gap_id: string;
   athlete_id: string;
@@ -59,6 +93,10 @@ interface ProgressionGap {
 
 interface DrillAssignment {
   assignment_id: string;
+  // The operational drill this work was issued against. Null on a legacy row
+  // written before drills had identity: there is no drill to open, so no
+  // opener is drawn (OD-2026-09-18-001 clause 1).
+  drill_id?: string | null;
   // Null on a Coach Card -- work a coach issued directly, with no detection
   // gap behind it. getGapForAssignment already tolerates it (find over the
   // gaps list simply misses), so the card renders without an "Assigned for"
@@ -164,6 +202,9 @@ export default function AthleteProgressionIntelligencePage() {
   const [logReps, setLogReps] = useState('');
   const [logNotes, setLogNotes] = useState('');
   const [logBusy, setLogBusy] = useState(false);
+  // The drill opened from one assignment, if any. GET only -- see useDrillOpener.
+  const drillOpener = useDrillOpener();
+  const assignmentContextRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -295,6 +336,25 @@ export default function AthleteProgressionIntelligencePage() {
     return gaps.find((g) => g.gap_id === assignment?.gap_id);
   };
 
+  const openAssignmentDrill = (assignment: DrillAssignment) => {
+    drillOpener.open(assignment.assignment_id, assignmentOpenerId(assignment.assignment_id), (signal) =>
+      readAssignmentInstruction(assignment.assignment_id, signal),
+    );
+  };
+
+  // Matched against the list on every render rather than stored, so an opened
+  // drill can never outlive the assignment it was opened from.
+  const openedAssignment = drillOpener.openKey
+    ? assignments.find((a) => a.assignment_id === drillOpener.openKey) ?? null
+    : null;
+  const openedDrill = drillOpener.opened;
+
+  // The assignment is what the athlete opened, so it is where focus lands --
+  // the drill below it is what they came to read about it.
+  useEffect(() => {
+    if (drillOpener.openKey) assignmentContextRef.current?.focus();
+  }, [drillOpener.openKey]);
+
   return (
     <RoleStandaloneView roleLabel="Athlete Workspace" routeLabel="/athlete/progression-intelligence" allowedRoles={['athlete']} showShellHeader={false} room="floor">
       <div className="max-w-5xl mx-auto">
@@ -346,7 +406,110 @@ export default function AthleteProgressionIntelligencePage() {
             </div>
           )
         ) : (
-          <div className="space-y-[var(--s6)]">
+          <>
+          {/* One assignment's drill, opened from the assignment (W-D4B). The
+              assignment comes first and stays on screen -- who set it, when it
+              is due, how much of it -- so the athlete reads the drill as THIS
+              work, not as a library page. The list below is hidden, not
+              unmounted, so Back returns to it exactly as it was and nothing
+              on it reloads. */}
+          {openedAssignment && (
+            <div className="space-y-[var(--s4)]">
+              <button type="button" className="btn btn--ghost" onClick={() => drillOpener.close()}>
+                Back to your assigned work
+              </button>
+
+              <section
+                ref={assignmentContextRef}
+                tabIndex={-1}
+                aria-labelledby="assignment-context-name"
+                className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]"
+              >
+                <p className="t-eyebrow">Your assignment</p>
+                <p
+                  id="assignment-context-name"
+                  className="mt-[var(--s2)] text-[length:var(--t-md)] font-bold text-[color:var(--bone-100)]"
+                >
+                  {openedAssignment.drill_display_name || openedAssignment.drill_name}
+                </p>
+                {/* The coach's own words for this work stay on screen, so the
+                    opened view is never emptier than the card it came from. */}
+                <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+                  {openedAssignment.drill_display_description || openedAssignment.drill_description}
+                </p>
+                <dl className="mt-[var(--s4)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-3">
+                  {/* Always drawn. The name arrives with the drill read; until
+                      it does -- or if that read fails -- the line still says
+                      who set the work, in the words every other athlete
+                      surface falls back to. */}
+                  <div>
+                    <dt className="t-label">From</dt>
+                    <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                      {openedDrill?.assignedBy ?? 'Your coach'}
+                    </dd>
+                  </div>
+                  {openedAssignment.due_date && (
+                    <div>
+                      <dt className="t-label">Due</dt>
+                      <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                        {formatCalendarDay(openedAssignment.due_date)}
+                      </dd>
+                    </div>
+                  )}
+                  {openedAssignment.rep_count != null && (
+                    <div>
+                      <dt className="t-label">Reps</dt>
+                      <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{openedAssignment.rep_count}</dd>
+                    </div>
+                  )}
+                  {openedAssignment.duration_minutes != null && (
+                    <div>
+                      <dt className="t-label">Duration</dt>
+                      <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                        {openedAssignment.duration_minutes} min
+                      </dd>
+                    </div>
+                  )}
+                  {openedAssignment.frequency_per_week != null && (
+                    <div>
+                      <dt className="t-label">Frequency</dt>
+                      <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                        {openedAssignment.frequency_per_week}x/week
+                      </dd>
+                    </div>
+                  )}
+                  <div>
+                    <dt className="t-label">Progress</dt>
+                    <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                      {Math.min(Math.max(openedAssignment.completion_percentage, 0), 100)}% ·{' '}
+                      {openedAssignment.status.replaceAll('_', ' ')}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="mt-[var(--s4)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
+                  {learningIsNotLogging(openedAssignment.status)}
+                </p>
+              </section>
+
+              {/* Focus sits on the assignment above, so what the read produced
+                  is announced from here rather than by moving focus again. */}
+              <div role="status" aria-live="polite">
+                {drillOpener.loading && <p className="working">Loading the drill…</p>}
+                {drillOpener.failed && (
+                  <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--restricted-ink)]">
+                    {DRILL_DID_NOT_LOAD}
+                  </p>
+                )}
+                {openedDrill && openedDrill.state !== 'available' && (
+                  <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">{DRILL_NOTHING_TO_OPEN}</p>
+                )}
+                {openedDrill?.view && <span className="sr-only">{`${openedDrill.view.name}: the drill is below.`}</span>}
+              </div>
+              {openedDrill?.view && <DrillDetail view={openedDrill.view} audience="athlete" />}
+            </div>
+          )}
+
+          <div className={`space-y-[var(--s6)]${openedAssignment ? ' hidden' : ''}`}>
             <section>
               <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Identified Gaps</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
@@ -406,6 +569,21 @@ export default function AthleteProgressionIntelligencePage() {
                                 Assigned for:{' '}
                                 <span className="font-medium text-[color:var(--bone-200)]">{gap.gap_type.replaceAll('_', ' ')}</span>
                               </p>
+                            )}
+                            {/* Learning, kept apart from doing: this opens the
+                                drill's instruction and writes nothing. Log
+                                completion, below, is the only thing on this
+                                card that records work. */}
+                            {assignment.drill_id && (
+                              <button
+                                type="button"
+                                id={assignmentOpenerId(assignment.assignment_id)}
+                                className="btn btn--ghost mt-[var(--s3)]"
+                                aria-label={`Open drill: ${assignment.drill_display_name || assignment.drill_name}`}
+                                onClick={() => openAssignmentDrill(assignment)}
+                              >
+                                Open drill
+                              </button>
                             )}
                           </div>
                           <div className="text-right">
@@ -567,6 +745,7 @@ export default function AthleteProgressionIntelligencePage() {
               </section>
             )}
           </div>
+          </>
         )}
       </div>
     </RoleStandaloneView>
