@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import CoachInstructionPanel from '@/components/drills/CoachInstructionPanel';
+import { readAssignmentInstruction, readReferenceInstruction } from '@/components/drills/drillInstructionRead';
+import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
 import WorkAxis from '@/components/WorkAxis';
@@ -89,6 +92,9 @@ interface DrillLibraryItem {
   category: string | null;
   difficulty: string;
   active: boolean;
+  // The exact reference version this gym adopted, or null on a drill the gym
+  // wrote itself. Sent to coaches by /api/pilot/drills; removed for athletes.
+  reference_drill_id?: string | null;
 }
 
 interface ActiveHoldSummary {
@@ -164,6 +170,9 @@ export default function CoachProgressionIntelligencePage() {
   // be said once the read has actually succeeded.
   const [drillsLoaded, setDrillsLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
+  // One drill's instruction open at a time, from the assign form or from an
+  // assigned drill. Reading only: every read behind it is a GET (W-D4B).
+  const instruction = useDrillOpener();
   // Deterministic gap suggestions (owner decision 2026-08-15): computed
   // server-side from transparent arithmetic rules, never stored, and shown to
   // staff only. A suggestion becomes a real gap only through the confirm
@@ -456,6 +465,7 @@ export default function CoachProgressionIntelligencePage() {
         throw new Error((err as { error?: string }).error || 'Failed to assign drill');
       }
       setShowAssignForm(false);
+      if (instruction.openKey?.startsWith('picked:')) instruction.close({ returnFocus: false });
       setAssignForm({
         gap_id: '',
         drill_id: '',
@@ -509,6 +519,9 @@ export default function CoachProgressionIntelligencePage() {
   const holdUnreadable = shownHold === 'unreadable';
 
   const onLibraryPick = (drillId: string) => {
+    // Instructions opened for the previous pick describe a drill that is no
+    // longer the one being assigned.
+    if (instruction.openKey?.startsWith('picked:')) instruction.close({ returnFocus: false });
     const d = drills.find((x) => x.drill_id === drillId);
     if (!d) {
       setAssignForm((prev) => ({ ...prev, drill_id: '' }));
@@ -524,6 +537,40 @@ export default function CoachProgressionIntelligencePage() {
   // The drill the coach picked, so its wording can be SHOWN -- as what the
   // athlete will read -- without being editable.
   const pickedDrill = drills.find((d) => d.drill_id === assignForm.drill_id) ?? null;
+  const pickedKey = pickedDrill ? `picked:${pickedDrill.drill_id}` : null;
+  const pickedOpen = pickedKey !== null && instruction.openKey === pickedKey;
+
+  // Before assigning: the exact reference version this gym adopted, by the
+  // pointer the operational drill carries -- never a name match.
+  const togglePickedInstructions = () => {
+    if (!pickedDrill?.reference_drill_id || !pickedKey) return;
+    if (pickedOpen) {
+      instruction.close();
+      return;
+    }
+    const referenceDrillId = pickedDrill.reference_drill_id;
+    instruction.open(pickedKey, 'assign-picked-instructions', (signal) => readReferenceInstruction(referenceDrillId, signal));
+  };
+
+  // After assigning: the instruction the assignment links to, resolved on the
+  // server from the assignment itself -- so a drill the gym has since retired
+  // still opens, at the version the work was assigned against.
+  // A drill opened for one athlete's work is closed when the coach moves to
+  // another athlete, so it cannot reappear, expanded and unasked, on the way
+  // back -- and its read, if still in flight, is cancelled with it.
+  const chooseAthlete = (athleteId: string) => {
+    if (instruction.openKey) instruction.close({ returnFocus: false });
+    setSelectedAthlete(athleteId);
+  };
+
+  const toggleAssignmentInstructions = (assignmentId: string) => {
+    const key = `assignment:${assignmentId}`;
+    if (instruction.openKey === key) {
+      instruction.close();
+      return;
+    }
+    instruction.open(key, `assignment-instructions-${assignmentId}`, (signal) => readAssignmentInstruction(assignmentId, signal));
+  };
 
   return (
     <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/progression-intelligence" allowedRoles={['coach']} room="floor" showShellHeader={false}>
@@ -547,7 +594,7 @@ export default function CoachProgressionIntelligencePage() {
               <select
                 id="athlete-select"
                 value={selectedAthlete}
-                onChange={(e) => setSelectedAthlete(e.target.value)}
+                onChange={(e) => chooseAthlete(e.target.value)}
                 className="select"
               >
                 <option value="">Choose from roster…</option>
@@ -563,7 +610,7 @@ export default function CoachProgressionIntelligencePage() {
                 type="text"
                 placeholder="Enter athlete ID (e.g., ath-001)"
                 value={selectedAthlete}
-                onChange={(e) => setSelectedAthlete(e.target.value)}
+                onChange={(e) => chooseAthlete(e.target.value)}
                 className="input"
               />
             )}
@@ -662,6 +709,10 @@ export default function CoachProgressionIntelligencePage() {
                   <button
                     type="button"
                     onClick={() => {
+                      // Collapsing the form takes the picked drill's preview with it.
+                      if (showAssignForm && instruction.openKey?.startsWith('picked:')) {
+                        instruction.close({ returnFocus: false });
+                      }
                       setShowAssignForm((v) => !v);
                       if (!showAssignForm && openGaps.length === 1) {
                         setAssignForm((prev) => ({ ...prev, gap_id: openGaps[0].gap_id }));
@@ -810,6 +861,30 @@ export default function CoachProgressionIntelligencePage() {
                       {pickedDrill.focus && (
                         <p className="t-body text-[color:var(--bone-300)]">{pickedDrill.focus}</p>
                       )}
+                      {/* The full drill, read before it is assigned: safety,
+                          scaling, stop rules. A drill this gym wrote itself has
+                          no reference instruction, and says so. */}
+                      {pickedDrill.reference_drill_id ? (
+                        <div>
+                          <button
+                            type="button"
+                            id="assign-picked-instructions"
+                            className="btn btn--ghost"
+                            aria-expanded={pickedOpen}
+                            aria-label={`${pickedOpen ? 'Hide' : 'View'} instructions: ${pickedDrill.name}`}
+                            onClick={togglePickedInstructions}
+                          >
+                            {pickedOpen ? 'Hide instructions' : 'View instructions'}
+                          </button>
+                          {pickedOpen && (
+                            <CoachInstructionPanel loading={instruction.loading} failed={instruction.failed} opened={instruction.opened} />
+                          )}
+                        </div>
+                      ) : (
+                        <p className="t-muted text-[length:var(--t-xs)]">
+                          Written by this gym, so there are no reference instructions to open.
+                        </p>
+                      )}
                     </div>
                   )}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-[var(--s3)]">
@@ -895,6 +970,8 @@ export default function CoachProgressionIntelligencePage() {
                 ) : (
                   assignments.map((assignment) => {
                     const comps = completionsByAssignment[assignment.assignment_id] ?? [];
+                    const assignmentOpen = instruction.openKey === `assignment:${assignment.assignment_id}`;
+                    const assignmentName = assignment.drill_display_name || assignment.drill_name;
                     return (
                       <div key={assignment.assignment_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                         <div className="flex items-start justify-between gap-[var(--s3)]">
@@ -914,6 +991,24 @@ export default function CoachProgressionIntelligencePage() {
                             <p className="t-data mt-[var(--s2)] text-[color:var(--bone-400)]">
                               {assignment.completion_percentage}% complete · {assignment.status}
                             </p>
+                            {/* A legacy assignment has no drill behind it, so nothing to open. */}
+                            {assignment.drill_id && (
+                              <div className="mt-[var(--s3)]">
+                                <button
+                                  type="button"
+                                  id={`assignment-instructions-${assignment.assignment_id}`}
+                                  className="btn btn--ghost"
+                                  aria-expanded={assignmentOpen}
+                                  aria-label={`${assignmentOpen ? 'Hide' : 'View'} instructions: ${assignmentName}`}
+                                  onClick={() => toggleAssignmentInstructions(assignment.assignment_id)}
+                                >
+                                  {assignmentOpen ? 'Hide instructions' : 'View instructions'}
+                                </button>
+                                {assignmentOpen && (
+                                  <CoachInstructionPanel loading={instruction.loading} failed={instruction.failed} opened={instruction.opened} />
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                         {comps.length > 0 && (

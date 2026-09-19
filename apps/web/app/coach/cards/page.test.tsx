@@ -21,6 +21,11 @@ jest.mock('@/components/RoleStandaloneView', () => ({
   default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
 }));
 
+// Pinned to same-origin so the W-D4B tests can assert the EXACT url a preview
+// reads. Every older test here matches on includes(), so this changes nothing
+// for them.
+jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
+
 // full_name, because that is what getAthletesForCoach selects and therefore
 // what /api/pilot/athletes/list sends. The first version of this mock said
 // display_name -- a key the server has never produced -- so it pinned the
@@ -48,6 +53,9 @@ const DRILLS = [
     cues: [],
     difficulty: 'beginner',
     active: true,
+    // The server sends this column on every drill (DRILL_FIELDS); null is a
+    // drill the gym wrote itself.
+    reference_drill_id: null,
   },
 ];
 
@@ -71,6 +79,10 @@ const CARD_GROUP = {
       athlete_id: 'ath-1',
       athlete_name: 'Anna Cards',
       issuance_id: 'issuance-1',
+      // The operational drill the card was issued against. listCoachCards
+      // selects it with the rest of ASSIGNMENT_FIELDS, so a real card row
+      // always carries the key; only a legacy row has it null.
+      drill_id: 'drill-rope',
       drill_name: 'Jump rope',
       drill_description: 'Ten minutes, no misses',
       drill_display_name: 'Jump rope',
@@ -97,6 +109,203 @@ const CARD_GROUP = {
   ],
 };
 
+// W-D4B fixtures. The same Jump rope drill, this time promoted from the
+// reference library: reference_drill_id names the exact reference VERSION the
+// gym adopted, and that pointer -- never the name -- is what a preview reads.
+const PROMOTED_DRILL = { ...DRILLS[0], reference_drill_id: 'ref-rope' };
+
+// A drill the gym wrote itself. It has no reference instruction to open.
+const GYM_WRITTEN_DRILL = {
+  organization_id: 'org-1',
+  drill_id: 'drill-shadow',
+  name: 'Shadow rounds',
+  category: 'technique',
+  focus: 'Three rounds, hands up',
+  cues: [],
+  difficulty: 'intermediate',
+  active: true,
+  reference_drill_id: null,
+};
+
+const W_D4B_DRILLS = [PROMOTED_DRILL, GYM_WRITTEN_DRILL];
+
+// The coach detail shape (getDrillWithDetail): every reference column plus the
+// three child sets, as app/coach/drills/page.test.tsx's referenceDetail. Both
+// reads a coach can open answer with this shape, so one fixture serves both.
+const REFERENCE_DETAIL = {
+  organization_id: 'org-1',
+  drill_id: 'ref-rope',
+  lineage_id: 'ref-rope',
+  version: 1,
+  supersedes_drill_id: null,
+  superseded_at: null,
+  name: 'Jump rope',
+  discipline: 'boxing',
+  category: 'conditioning',
+  difficulty: 'fundamentals',
+  skill_id: 'SK-FOOT-01',
+  target_behavior: 'Stay light on the feet for a full round.',
+  purpose: 'Build rhythm on the balls of the feet.',
+  standard_setup: 'Clear floor, rope sized to the armpits.',
+  execution: 'Bounce on both feet.\n\nTurn the rope from the wrists.\n\nFinish the round without a miss.',
+  what_good_looks_like: 'Quiet landings\nElbows close to the ribs',
+  what_bad_looks_like: 'Flat-footed landings',
+  common_errors: 'Turning the rope from the shoulders',
+  corrections: 'Coach calls "wrists" on every miss',
+  transfer: 'Rhythm carries into ring footwork [A2-010]',
+  contact_level: 'none',
+  equipment_needed: 'jump rope',
+  requires_coach_authorization: false,
+  content_class: 'COACHING CRAFT - PPBF source manual v3',
+  source_ref: 'Punxsy_Drill_Library_Source_v3.docx',
+  grounding_claim_ids: ['A2-010'],
+  field_provenance: 'PPBF source manual v3',
+  active: true,
+  created_by_account_id: null,
+  created_by_role: null,
+  created_at: '2026-09-16T00:00:00.000Z',
+  updated_at: '2026-09-16T00:00:00.000Z',
+  scale_levels: [
+    { organization_id: 'org-1', scale_id: 'rs-a', drill_id: 'ref-rope', scale_level: 'A', is_starting_point: false, demand_description: 'Single bounces, one minute.', constraint_applied: '', contact_level: 'none', coach_watch_point: 'Is the athlete landing quietly?', authoring_state: 'authored' },
+    { organization_id: 'org-1', scale_id: 'rs-b', drill_id: 'ref-rope', scale_level: 'B', is_starting_point: true, demand_description: 'The drill as designed.', constraint_applied: '', contact_level: 'none', coach_watch_point: 'Can the athlete hold rhythm for a round?', authoring_state: 'authored' },
+  ],
+  stop_rules: [
+    { organization_id: 'org-1', stop_rule_id: 'rst-1', drill_id: 'ref-rope', ordinal: 1, condition_text: 'Stop when fatigue breaks decision quality.', scope: 'universal', rule_kind: 'fatigue' },
+    { organization_id: 'org-1', stop_rule_id: 'rst-2', drill_id: 'ref-rope', ordinal: 2, condition_text: 'Stop when the landings go flat-footed.', scope: 'drill_specific', rule_kind: 'technique_degradation' },
+  ],
+  cues: [
+    { organization_id: 'org-1', cue_id: 'rc-1', drill_id: 'ref-rope', cue_text: 'Wrists, not shoulders', cue_family: 'Rope', focus_type: 'internal', evidence_note: 'Coaching craft.', source_ref: null },
+  ],
+  secondary_skills: [],
+};
+
+// What GET /api/pilot/progression/drill-instruction answers a COACH for a card
+// issued against PROMOTED_DRILL, minus the assignment_id/assigned_by the fake
+// adds. operational_lifecycle is 'retired': no version of Jump rope is active
+// in the gym any more, and the card still opens at the version it was issued
+// against. athlete_can_open is false for the same reason: the server answers it
+// by running the athlete's own read, which only offers a reference some ACTIVE
+// gym drill adopts -- and none does now. So the realistic retired answer
+// carries both facts. Every answer spread over this one ('changed', 'current')
+// says its own athlete_can_open rather than inheriting this one.
+const COACH_INSTRUCTION = {
+  state: 'available',
+  audience: 'coach',
+  drill: REFERENCE_DETAIL,
+  operational_lifecycle: 'retired',
+  athlete_can_open: false,
+};
+
+// A second promoted drill, so a pick can move from one previewable drill to
+// another. The new pick then has a 'card-picked-instructions' toggle of its
+// own -- the element a focus return would land on, if the page asked for one.
+const PROMOTED_SLIP_DRILL = {
+  organization_id: 'org-1',
+  drill_id: 'drill-slip',
+  name: 'Slip line',
+  category: 'defense',
+  focus: 'Slip under the rope, eyes up',
+  cues: [],
+  difficulty: 'intermediate',
+  active: true,
+  reference_drill_id: 'ref-slip',
+};
+
+// Slip line's reference version, as the assignment read answers it for a card
+// issued against PROMOTED_SLIP_DRILL.
+const SLIP_REFERENCE_DETAIL = { ...REFERENCE_DETAIL, drill_id: 'ref-slip', lineage_id: 'ref-slip', name: 'Slip line' };
+
+// An individual card issued against Slip line.
+const SLIP_GROUP = {
+  issuance_id: null,
+  assigned_at: '2026-08-23T10:00:00Z',
+  cards: [
+    {
+      ...CARD_GROUP.cards[0],
+      assignment_id: 'asg-slip',
+      issuance_id: null,
+      drill_id: 'drill-slip',
+      drill_name: 'Slip line',
+      drill_description: 'Slip under the rope, eyes up',
+      drill_display_name: 'Slip line',
+      drill_display_description: 'Slip under the rope, eyes up',
+      drill_difficulty: 'intermediate',
+      status: 'assigned',
+      completion_percentage: 0,
+      assigned_at: '2026-08-23T10:00:00Z',
+      completions: [],
+    },
+  ],
+};
+
+// CARD_GROUP as REPORT describes it: one issuance, two cards. The instruction
+// is read off the FIRST card, asg-1.
+const ISSUED_GROUP = {
+  ...CARD_GROUP,
+  cards: [
+    CARD_GROUP.cards[0],
+    {
+      ...CARD_GROUP.cards[0],
+      assignment_id: 'asg-2',
+      athlete_id: 'ath-3',
+      athlete_name: 'Cora Cards',
+      status: 'assigned',
+      completion_percentage: 0,
+      completions: [],
+    },
+  ],
+};
+
+// An individual card issued against the gym-written drill. Keyed by its own
+// assignment id, because an individual card has no issuance.
+const GYM_WRITTEN_GROUP = {
+  issuance_id: null,
+  assigned_at: '2026-08-22T10:00:00Z',
+  cards: [
+    {
+      ...CARD_GROUP.cards[0],
+      assignment_id: 'asg-shadow',
+      issuance_id: null,
+      drill_id: 'drill-shadow',
+      drill_name: 'Shadow rounds',
+      drill_description: 'Three rounds, hands up',
+      drill_display_name: 'Shadow rounds',
+      drill_display_description: 'Three rounds, hands up',
+      drill_difficulty: 'intermediate',
+      status: 'assigned',
+      completion_percentage: 0,
+      assigned_at: '2026-08-22T10:00:00Z',
+      completions: [],
+    },
+  ],
+};
+
+// A card written before drills had identity: drill_id is null, and there is
+// no drill behind it to open.
+const LEGACY_GROUP = {
+  issuance_id: null,
+  assigned_at: '2026-08-01T10:00:00Z',
+  cards: [
+    {
+      ...CARD_GROUP.cards[0],
+      assignment_id: 'asg-legacy',
+      athlete_id: 'ath-2',
+      athlete_name: 'Bela Cards',
+      issuance_id: null,
+      drill_id: null,
+      drill_name: 'Heavy bag',
+      drill_description: 'Three rounds on the bag',
+      drill_display_name: 'Heavy bag',
+      drill_display_description: 'Three rounds on the bag',
+      drill_difficulty: 'intermediate',
+      status: 'assigned',
+      completion_percentage: 0,
+      assigned_at: '2026-08-01T10:00:00Z',
+      completions: [],
+    },
+  ],
+};
+
 interface FetchCall {
   url: string;
   init?: RequestInit;
@@ -115,11 +324,46 @@ function installFetch(options: {
       'bad-json' an answer whose body could not be read: both leave the drill
       list UNKNOWN, not empty. */
   drills?: unknown[] | false | 'reject' | 'bad-json';
+  /** The reference drills GET /api/pilot/drill-library?drill_id= can answer,
+      keyed by reference id. Any other id is a 404, as the route answers it --
+      so a preview that read by anything but the drill's own pointer would
+      come back empty rather than pass. */
+  referenceDetails?: Record<string, unknown>;
+  /** Per reference id: that read is held until its promise settles, so a
+      test can change the pick while one reference read is still in flight
+      and another, unheld, answers at once. */
+  referenceGates?: Record<string, Promise<void>>;
+  /** What GET /api/pilot/progression/drill-instruction answers: the
+      instruction half of the body (the fake adds assignment_id from the URL
+      and assigned_by), or 'fail' for a 500. */
+  drillInstruction?: Record<string, unknown> | 'fail';
 } = {}) {
   const calls: FetchCall[] = [];
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push({ url, init });
+    // The two W-D4B reads, answered explicitly. Left to the fallthrough below
+    // they would get {items: []}, which carries no drill at all.
+    if (url.includes('/api/pilot/drill-library?drill_id=')) {
+      const referenceId = decodeURIComponent(url.split('drill_id=')[1] ?? '');
+      await options.referenceGates?.[referenceId];
+      const detail = (options.referenceDetails ?? { [REFERENCE_DETAIL.drill_id]: REFERENCE_DETAIL })[referenceId];
+      return detail
+        ? { ok: true, status: 200, json: async () => ({ drill: detail }) }
+        : { ok: false, status: 404, json: async () => ({ error: 'DRILL_NOT_FOUND' }) };
+    }
+    if (url.includes('/api/pilot/progression/drill-instruction?assignment_id=')) {
+      const instruction = options.drillInstruction ?? COACH_INSTRUCTION;
+      if (instruction === 'fail') {
+        return { ok: false, status: 500, json: async () => ({ error: 'Internal error' }) };
+      }
+      const assignmentId = decodeURIComponent(url.split('assignment_id=')[1] ?? '');
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ assignment_id: assignmentId, assigned_by: 'Coach Rivera', ...instruction }),
+      };
+    }
     if (url.includes('/api/pilot/athletes/list')) {
       return { ok: true, status: 200, json: async () => ({ items: ROSTER }) };
     }
@@ -499,5 +743,731 @@ describe('a card is built from an operational drill', () => {
     const picker = screen.getByLabelText('Drill') as HTMLSelectElement;
     expect(within(picker).getByRole('option', { name: 'Jump rope' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Issue card' })).toBeTruthy();
+  });
+});
+
+/*
+ * W-D4B, OD-2026-09-19-001: THE COACH CAN READ THE DRILL BEHIND A CARD.
+ *
+ * Twice: before issuing, from the picked drill's own reference pointer, and
+ * after, from the card itself -- resolved on the server, so a drill the gym has
+ * since retired still opens at the version the card was issued against.
+ *
+ * Both are READS. Opening a drill writes nothing, and the issue POST is not
+ * changed by having looked: the W-D3 body goes out exactly as before, with no
+ * title, no description, and no reference id riding along.
+ */
+describe('W-D4B: the drill behind a card opens from where it is issued and reviewed', () => {
+  /** Every request that was not a plain read. Mount reads carry no method, which is a GET. */
+  const writes = (calls: FetchCall[]) => calls.filter((call) => (call.init?.method ?? 'GET') !== 'GET');
+
+  // The two lifecycle notes, exactly. "Changed" and "retired" are different
+  // facts: adopting a refinement deactivates the version it replaces, so an
+  // inactive version alone does not mean the gym stopped running the drill.
+  const CHANGED_NOTE =
+    'This gym has changed this drill since the work was issued, and another version of it is in use now. These are the reference instructions this work was issued against.';
+  const RETIRED_NOTE =
+    'This gym has retired this drill since the work was issued. These are the reference instructions it was issued against.';
+  // A third, independent fact: whether the athlete can open this same
+  // instruction from the work. A coach reading it should not send an athlete
+  // to read it if they cannot.
+  const ATHLETE_NOTE =
+    "Athletes cannot open these instructions from this work, because this gym no longer offers them to athletes.";
+  const LOAD_FAILED =
+    "The drill's instructions did not load. This is a failure to load, not a missing drill; try again in a minute.";
+  /** What the panel's live region says once a drill is open. The notes never join it. */
+  const OPENED_ANNOUNCEMENT = 'Jump rope: instructions open below.';
+
+  /** Whether `later` comes after `earlier` in document order. */
+  const follows = (earlier: Node, later: Node) =>
+    Boolean(earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  /**
+   * A note about where the card's drill stands, found where it now lives:
+   * INSIDE the opened drill, in the drill's own header, after the heading focus
+   * lands on and the content-status line it qualifies, and before the Safety
+   * section -- so reading forward from the heading reaches it before the
+   * instruction. Exactly one copy on the page, so a note left behind as a
+   * sibling before the article fails here too, and never in the live region.
+   */
+  function noteInOpenedDrill(article: HTMLElement, text: string): HTMLElement {
+    const note = within(article).getByText(text);
+    expect(screen.getAllByText(text)).toHaveLength(1);
+    const header = article.querySelector('header');
+    expect(header?.contains(note)).toBe(true);
+    const heading = within(article).getByRole('heading', { level: 2 });
+    const contentStatus = within(article).getByText(/^Content: /);
+    const safety = within(article).getByRole('region', { name: 'Safety' });
+    expect(follows(heading, note)).toBe(true);
+    expect(follows(contentStatus, note)).toBe(true);
+    expect(follows(note, safety)).toBe(true);
+    expect(screen.getByRole('status').contains(note)).toBe(false);
+    return note;
+  }
+
+  /**
+   * Whether `text` is put on screen at any point from now until the returned
+   * check is called -- not only whether it is there at the end. A stale answer
+   * that lands and is then replaced would pass a query made afterwards. (The
+   * same watch the progression page's race tests use.)
+   */
+  function watchScreenFor(text: string) {
+    let seen = document.body.textContent?.includes(text) ?? false;
+    const inspect = (records: MutationRecord[]) => {
+      for (const record of records) {
+        if (record.type === 'characterData' && record.target.textContent?.includes(text)) seen = true;
+        for (const node of Array.from(record.addedNodes)) {
+          if (node.textContent?.includes(text)) seen = true;
+        }
+      }
+    };
+    const observer = new MutationObserver(inspect);
+    observer.observe(document.body, { childList: true, characterData: true, subtree: true });
+    return () => {
+      inspect(observer.takeRecords());
+      observer.disconnect();
+      return seen || (document.body.textContent?.includes(text) ?? false);
+    };
+  }
+
+  /** Lets one animation frame pass. A close that returns focus does so in requestAnimationFrame, in order. */
+  const nextFrame = () =>
+    act(async () => {
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    });
+
+  test('a promoted drill offers its instructions before issuing, read by its own reference pointer', async () => {
+    const calls = installFetch({ drills: W_D4B_DRILLS, cardsList: [] });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    fireEvent.change(screen.getByLabelText('Drill'), { target: { value: 'drill-rope' } });
+
+    const toggle = screen.getByRole('button', { name: 'View instructions: Jump rope' });
+    expect(toggle.id).toBe('card-picked-instructions');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    // Offered, not opened: picking a drill reads nothing on its own.
+    expect(calls.some((call) => call.url.includes('/api/pilot/drill-library'))).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    // Exactly one read, of exactly the version the gym adopted.
+    const reads = calls.filter((call) => call.url.includes('/api/pilot/drill-library'));
+    expect(reads).toHaveLength(1);
+    expect(reads[0].url).toBe('/api/pilot/drill-library?drill_id=ref-rope');
+    expect(reads[0].init?.method).toBe('GET');
+
+    const detail = screen.getByRole('article', { name: 'Jump rope' });
+    const safety = within(detail).getByRole('region', { name: 'Safety' });
+    expect(within(safety).getByText('Stop when the landings go flat-footed.')).toBeTruthy();
+    expect(within(safety).getByText('Stop when fatigue breaks decision quality.')).toBeTruthy();
+    // The coach's line on what the content is and whether it is current.
+    expect(within(detail).getByText('Content: PPBF source manual v3. Current version.')).toBeTruthy();
+    // A reference read knows nothing about an issued card, so it claims no
+    // lifecycle at all -- neither note belongs anywhere but the assignment read.
+    expect(screen.queryByText(/retired this drill since the work was issued/)).toBeNull();
+    expect(screen.queryByText(/changed this drill since the work was issued/)).toBeNull();
+    // Nor anything about the athlete: there is no work yet for them to open it
+    // from. Not knowing (null) is not "cannot" (false), so the drill's header
+    // ends at its content-status line.
+    expect(screen.queryByText(ATHLETE_NOTE)).toBeNull();
+    expect(detail.querySelector('header')?.lastElementChild).toBe(
+      within(detail).getByText('Content: PPBF source manual v3. Current version.'),
+    );
+    // Learning is not doing: nothing inside the opened drill logs, completes
+    // or issues anything.
+    expect(within(detail).queryByRole('button', { name: /log|complete|verify|dispute|issue|promote/i })).toBeNull();
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.getAttribute('aria-label')).toBe('Hide instructions: Jump rope');
+    // The preview adds a labelled article and a labelled Safety region; the
+    // form's own 'Drill' label must still name exactly one control.
+    const picker = screen.getByLabelText('Drill');
+    expect(picker.tagName).toBe('SELECT');
+    expect(picker.id).toBe('card-drill');
+
+    // The opener is also the closer.
+    fireEvent.click(toggle);
+    expect(screen.queryByRole('article', { name: 'Jump rope' })).toBeNull();
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.getAttribute('aria-label')).toBe('View instructions: Jump rope');
+    // Closing is not a read either.
+    expect(calls.filter((call) => call.url.includes('/api/pilot/drill-library'))).toHaveLength(1);
+    expect(writes(calls)).toEqual([]);
+  });
+
+  test('a gym-written drill says there is nothing to open, and offers no dead control', async () => {
+    const calls = installFetch({ drills: W_D4B_DRILLS, cardsList: [] });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    fireEvent.change(screen.getByLabelText('Drill'), { target: { value: 'drill-shadow' } });
+
+    expect(screen.getByText('Written by this gym, so there are no reference instructions to open.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /instructions: Shadow rounds/ })).toBeNull();
+    expect(document.getElementById('card-picked-instructions')).toBeNull();
+    expect(calls.some((call) => call.url.includes('/api/pilot/drill-library'))).toBe(false);
+  });
+
+  test('changing the picked drill closes an open preview, and picking it again does not reopen it', async () => {
+    installFetch({ drills: W_D4B_DRILLS, cardsList: [] });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    fireEvent.change(screen.getByLabelText('Drill'), { target: { value: 'drill-rope' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'View instructions: Jump rope' }));
+    });
+    expect(screen.getByRole('article', { name: 'Jump rope' })).toBeTruthy();
+
+    // The open instructions described a drill that is no longer being issued.
+    fireEvent.change(screen.getByLabelText('Drill'), { target: { value: 'drill-shadow' } });
+    expect(screen.queryByRole('article', { name: 'Jump rope' })).toBeNull();
+
+    // The half that proves it was CLOSED rather than merely hidden: the panel
+    // is keyed by the picked drill, so a preview left open would reappear the
+    // moment its drill was picked again.
+    fireEvent.change(screen.getByLabelText('Drill'), { target: { value: 'drill-rope' } });
+    const toggle = screen.getByRole('button', { name: 'View instructions: Jump rope' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('article', { name: 'Jump rope' })).toBeNull();
+  });
+
+  test('changing the picked drill while its preview is open leaves focus on the Drill select, not on the toggle', async () => {
+    // Closing a preview returns focus to the control that opened it -- when the
+    // coach closed it. Here the close is a side effect of picking another
+    // drill, and the coach is still working the select.
+    installFetch({ drills: [PROMOTED_DRILL, PROMOTED_SLIP_DRILL], cardsList: [] });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    const picker = screen.getByLabelText('Drill') as HTMLSelectElement;
+    fireEvent.change(picker, { target: { value: 'drill-rope' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'View instructions: Jump rope' }));
+    });
+    expect(screen.getByRole('article', { name: 'Jump rope' })).toBeTruthy();
+
+    // Back to the select, and a different promoted drill.
+    picker.focus();
+    expect(document.activeElement).toBe(picker);
+    fireEvent.change(picker, { target: { value: 'drill-slip' } });
+
+    expect(screen.queryByRole('article')).toBeNull();
+    // The new pick has a toggle under the SAME id the old one had, so a focus
+    // return would have somewhere to land. Without this the assertion below
+    // could pass by the opener simply not existing.
+    const toggle = screen.getByRole('button', { name: 'View instructions: Slip line' });
+    expect(toggle.id).toBe('card-picked-instructions');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    await nextFrame();
+
+    expect(document.activeElement).toBe(picker);
+    expect(document.activeElement?.id).toBe('card-drill');
+    expect(document.activeElement).not.toBe(toggle);
+  });
+
+  test("a reference read still in flight when the pick changes is abandoned, and never lands in the next pick's preview", async () => {
+    /* The coach opens one adopted drill's preview, its read hangs, and they pick
+       a different ADOPTED drill and open its preview, which answers at once.
+       Both previews render in the same place, under the same
+       'card-picked-instructions' toggle -- so when the hung read finally
+       answers, there is a live preview for it to land in, and only the
+       opener's own guard keeps it out. (Review NB-2: this test used to pick a
+       gym-written drill second, which has no preview at all, so its
+       "never lands" half had nowhere to land and could not fail.)
+
+       The hung read answers with a name used nowhere else on the page, and the
+       screen is watched from before it answers, so "never lands" means never
+       rendered at any moment -- not merely gone by the time anyone looks. The
+       fake ignores the abort signal on purpose: a server that answers anyway
+       is the case the guard has to hold against. */
+    const HELD_ONLY_NAME = 'Double-under ladder';
+    let release: () => void = () => {};
+    const ropeGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const calls = installFetch({
+      drills: [PROMOTED_DRILL, PROMOTED_SLIP_DRILL],
+      cardsList: [],
+      referenceGates: { 'ref-rope': ropeGate },
+      referenceDetails: {
+        'ref-rope': { ...REFERENCE_DETAIL, name: HELD_ONLY_NAME },
+        'ref-slip': SLIP_REFERENCE_DETAIL,
+      },
+    });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    // 1. The first pick's preview, held in flight.
+    const picker = screen.getByLabelText('Drill');
+    fireEvent.change(picker, { target: { value: 'drill-rope' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'View instructions: Jump rope' }));
+    });
+    expect(screen.getByText('Loading the drill…')).toBeTruthy();
+    const heldRead = calls.find((call) => call.url === '/api/pilot/drill-library?drill_id=ref-rope');
+    expect(heldRead).toBeTruthy();
+    const heldEverShown = watchScreenFor(HELD_ONLY_NAME);
+
+    // 2. The pick changes to another adopted drill. That abandons the held read.
+    fireEvent.change(picker, { target: { value: 'drill-slip' } });
+    expect(heldRead?.init?.signal?.aborted).toBe(true);
+    expect(screen.queryByText('Loading the drill…')).toBeNull();
+
+    // 3. The new pick's preview, in the same place, answered at once.
+    const slipToggle = screen.getByRole('button', { name: 'View instructions: Slip line' });
+    expect(slipToggle.id).toBe('card-picked-instructions');
+    await act(async () => {
+      fireEvent.click(slipToggle);
+    });
+    const slipPanel = slipToggle.parentElement as HTMLElement;
+    expect(within(slipPanel).getByRole('article', { name: 'Slip line' })).toBeTruthy();
+
+    // 4. The held read answers anyway, with its own drill. Released, and then
+    // one macrotask so the whole read-then-parse chain has settled.
+    await act(async () => {
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // Never on screen, at any moment since it was abandoned.
+    expect(heldEverShown()).toBe(false);
+    expect(screen.queryByRole('article', { name: HELD_ONLY_NAME })).toBeNull();
+    // The preview is still the new pick's drill, open, and the only drill open.
+    expect(within(slipPanel).getByRole('article', { name: 'Slip line' })).toBeTruthy();
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(slipToggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.queryByText('Loading the drill…')).toBeNull();
+    // Two reads, each by its own drill's pointer, and nothing written.
+    expect(calls.filter((call) => call.url.includes('/api/pilot/drill-library')).map((call) => call.url)).toEqual([
+      '/api/pilot/drill-library?drill_id=ref-rope',
+      '/api/pilot/drill-library?drill_id=ref-slip',
+    ]);
+    expect(writes(calls)).toEqual([]);
+  });
+
+  test("a slow picked-drill read that lands after an issued group was opened never replaces the group's drill", async () => {
+    /* The two openers on this page share one slot. The coach opens the picked
+       drill's preview, its read hangs, and they open an issued card's drill
+       instead, which answers at once. When the hung read finally answers, it
+       is an answer to a question nobody is asking any more -- and if it landed
+       it would sit under the card's toggle, reading as the drill that card was
+       issued against.
+
+       The reference read is answered with a name used nowhere else on the page,
+       so "it never appears anywhere" is a statement about that answer alone.
+       The fake ignores the abort signal on purpose: a server that answers
+       anyway is exactly the case the opener's own guard has to hold against. */
+    const PICKED_ONLY_NAME = 'Double-under ladder';
+    let release: () => void = () => {};
+    const referenceGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const calls = installFetch({
+      drills: W_D4B_DRILLS,
+      cardsList: [SLIP_GROUP],
+      referenceGates: { 'ref-rope': referenceGate },
+      referenceDetails: { 'ref-rope': { ...REFERENCE_DETAIL, name: PICKED_ONLY_NAME } },
+      drillInstruction: {
+        state: 'available',
+        audience: 'coach',
+        drill: SLIP_REFERENCE_DETAIL,
+        operational_lifecycle: 'current',
+        athlete_can_open: true,
+      },
+    });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    const groupToggle = await screen.findByRole('button', { name: 'View instructions: Slip line' });
+    expect(groupToggle.id).toBe('card-group-instructions-asg-slip');
+
+    // 1. The picked preview, held in flight.
+    fireEvent.change(screen.getByLabelText('Drill'), { target: { value: 'drill-rope' } });
+    const pickedToggle = screen.getByRole('button', { name: 'View instructions: Jump rope' });
+    expect(pickedToggle.id).toBe('card-picked-instructions');
+    await act(async () => {
+      fireEvent.click(pickedToggle);
+    });
+    expect(screen.getByText('Loading the drill…')).toBeTruthy();
+    const pickedRead = calls.find((call) => call.url === '/api/pilot/drill-library?drill_id=ref-rope');
+    expect(pickedRead).toBeTruthy();
+
+    // 2. The group's drill, answered at once.
+    await act(async () => {
+      fireEvent.click(groupToggle);
+    });
+    expect(calls.filter((call) => call.url.includes('/api/pilot/progression/drill-instruction')).map((call) => call.url)).toEqual([
+      '/api/pilot/progression/drill-instruction?assignment_id=asg-slip',
+    ]);
+    // The newer open cancelled the older one.
+    expect(pickedRead?.init?.signal?.aborted).toBe(true);
+    const groupPanel = groupToggle.parentElement as HTMLElement;
+    expect(within(groupPanel).getByRole('article', { name: 'Slip line' })).toBeTruthy();
+    expect(document.body.innerHTML).not.toContain(PICKED_ONLY_NAME);
+
+    // 3. The held read answers anyway, with its own drill. Released, and then
+    // one macrotask so the whole read-then-parse chain has settled.
+    await act(async () => {
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // The group's panel still shows the group's drill, and it is the only drill open.
+    expect(within(groupPanel).getByRole('article', { name: 'Slip line' })).toBeTruthy();
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(groupToggle.getAttribute('aria-expanded')).toBe('true');
+    // The late answer is nowhere: not as an article, not as text, not in an attribute.
+    expect(screen.queryByRole('article', { name: PICKED_ONLY_NAME })).toBeNull();
+    expect(document.body.innerHTML).not.toContain(PICKED_ONLY_NAME);
+    // And the picked preview is closed, not waiting.
+    expect(pickedToggle.getAttribute('aria-expanded')).toBe('false');
+    expect(pickedToggle.getAttribute('aria-label')).toBe('View instructions: Jump rope');
+    expect(screen.queryByText('Loading the drill…')).toBeNull();
+    expect(writes(calls)).toEqual([]);
+  });
+
+  test.each([
+    ['one athlete', undefined, 'Issue card', { athlete_id: 'ath-1' }],
+    ['a whole program', 'Whole program', 'Issue to program', { program_id: 'prog-1' }],
+  ] as const)(
+    'previewing changes nothing about what is issued to %s: the POST body is the W-D3 body exactly',
+    async (_label, modeButton, issueButton, target) => {
+      const calls = installFetch({ drills: W_D4B_DRILLS, cardsList: [] });
+
+      await act(async () => {
+        render(<CoachCardsPage />);
+      });
+
+      if (modeButton) {
+        fireEvent.click(screen.getByRole('button', { name: modeButton }));
+        fireEvent.change(screen.getByLabelText('Program'), { target: { value: 'prog-1' } });
+      } else {
+        fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+      }
+      fireEvent.change(screen.getByLabelText('Drill'), { target: { value: 'drill-rope' } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'View instructions: Jump rope' }));
+      });
+      expect(screen.getByRole('article', { name: 'Jump rope' })).toBeTruthy();
+      // Opening wrote nothing.
+      expect(writes(calls)).toEqual([]);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: issueButton }));
+      });
+
+      const posts = writes(calls);
+      expect(posts).toHaveLength(1);
+      expect(posts[0].url).toBe('/api/pilot/coach/cards');
+      expect(posts[0].init?.method).toBe('POST');
+      // toEqual, not toMatchObject: no title, no description, and no
+      // reference_drill_id carried in from the preview.
+      expect(JSON.parse(String(posts[0].init?.body))).toEqual({
+        drill_id: 'drill-rope',
+        drill_difficulty: 'beginner',
+        ...target,
+      });
+      // The form was reset, and the preview of the drill it held went with it.
+      expect(screen.queryByRole('article', { name: 'Jump rope' })).toBeNull();
+    },
+  );
+
+  test('an issued group opens the instruction its first card links to, by assignment id, and says inside the drill that the gym has since retired it and the athlete cannot open it', async () => {
+    const calls = installFetch({ drills: W_D4B_DRILLS, cardsList: [ISSUED_GROUP, LEGACY_GROUP] });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    const toggle = await screen.findByRole('button', { name: 'View instructions: Jump rope' });
+    expect(toggle.id).toBe('card-group-instructions-issuance-1');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    // Keyed by the card, never by a drill or reference id: which version to
+    // show is the server's to resolve from the card's own drill row, so the
+    // client cannot substitute a newer one.
+    const reads = calls.filter((call) => call.url.includes('/api/pilot/progression/drill-instruction'));
+    expect(reads).toHaveLength(1);
+    expect(reads[0].url).toBe('/api/pilot/progression/drill-instruction?assignment_id=asg-1');
+    expect(reads[0].init?.method).toBe('GET');
+    expect(calls.some((call) => call.url.includes('/api/pilot/drill-library'))).toBe(false);
+
+    const detail = screen.getByRole('article', { name: 'Jump rope' });
+    // operational_lifecycle 'retired': said in words, in the drill's own header
+    // straight after its heading and content status -- and only that. Retired
+    // is not "changed".
+    const retired = noteInOpenedDrill(detail, RETIRED_NOTE);
+    expect(screen.queryByText(CHANGED_NOTE)).toBeNull();
+    expect(screen.queryByText(/changed this drill/)).toBeNull();
+    // athlete_can_open false: said too, after the lifecycle it follows from.
+    const athlete = noteInOpenedDrill(detail, ATHLETE_NOTE);
+    expect(follows(retired, athlete)).toBe(true);
+    // What the toggle produced is announced from the panel's one live region,
+    // and the notes are not part of that announcement.
+    const region = screen.getByRole('status');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    expect(region.textContent).toBe(OPENED_ANNOUNCEMENT);
+    expect(within(detail).getByRole('region', { name: 'Safety' })).toBeTruthy();
+    expect(within(detail).getByText('Content: PPBF source manual v3. Current version.')).toBeTruthy();
+    // Coach-only context comes through on the coach read.
+    expect(within(detail).getByText('Can the athlete hold rhythm for a round?')).toBeTruthy();
+    expect(within(detail).queryByRole('button', { name: /log|complete|verify|dispute|issue|promote/i })).toBeNull();
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.getAttribute('aria-label')).toBe('Hide instructions: Jump rope');
+
+    fireEvent.click(toggle);
+    expect(screen.queryByRole('article', { name: 'Jump rope' })).toBeNull();
+    expect(screen.queryByText(/retired this drill since the work was issued/)).toBeNull();
+    expect(screen.queryByText(ATHLETE_NOTE)).toBeNull();
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.getAttribute('aria-label')).toBe('View instructions: Jump rope');
+    expect(writes(calls)).toEqual([]);
+  });
+
+  test('a card whose drill the gym has since CHANGED says it changed, and never says it was retired', async () => {
+    /* Adopting a refinement deactivates the version it replaces, so the card's
+       own drill row is inactive while the gym still runs the drill as v2. The
+       old read saw only "inactive" and told the coach the drill was retired --
+       false, and the kind of false that sends a coach to re-plan work that is
+       still current. */
+    // The refinement carried reference_drill_id forward unchanged, and the
+    // active successor still adopts it -- so the athlete can still open it.
+    const calls = installFetch({
+      drills: W_D4B_DRILLS,
+      cardsList: [ISSUED_GROUP],
+      drillInstruction: { ...COACH_INSTRUCTION, operational_lifecycle: 'changed', athlete_can_open: true },
+    });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    const toggle = await screen.findByRole('button', { name: 'View instructions: Jump rope' });
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    // Still the version the card was issued against, not the newer one -- and
+    // the note that says so sits inside it, after its heading.
+    const detail = screen.getByRole('article', { name: 'Jump rope' });
+    noteInOpenedDrill(detail, CHANGED_NOTE);
+    expect(within(detail).getByRole('region', { name: 'Safety' })).toBeTruthy();
+    // The word itself, anywhere on the page -- not merely the one sentence.
+    expect(screen.queryByText(RETIRED_NOTE)).toBeNull();
+    expect(document.body.textContent).not.toMatch(/retired/i);
+    // The athlete can open it, so nothing says otherwise.
+    expect(screen.queryByText(ATHLETE_NOTE)).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe(OPENED_ANNOUNCEMENT);
+    expect(writes(calls)).toEqual([]);
+  });
+
+  test('a card whose drill is still current, and which the athlete can open, carries no note at all', async () => {
+    installFetch({
+      drills: W_D4B_DRILLS,
+      cardsList: [ISSUED_GROUP],
+      drillInstruction: { ...COACH_INSTRUCTION, operational_lifecycle: 'current', athlete_can_open: true },
+    });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    const toggle = await screen.findByRole('button', { name: 'View instructions: Jump rope' });
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    const detail = screen.getByRole('article', { name: 'Jump rope' });
+    for (const note of [RETIRED_NOTE, CHANGED_NOTE, ATHLETE_NOTE]) {
+      expect(screen.queryByText(note)).toBeNull();
+    }
+    expect(document.body.textContent).not.toMatch(/retired/i);
+    expect(document.body.textContent).not.toMatch(/changed this drill/i);
+    expect(document.body.textContent).not.toMatch(/athletes cannot open/i);
+    // Nothing is rendered where the notes go -- not even an empty row: the
+    // drill's header ends at its content-status line.
+    expect(detail.querySelector('header')?.lastElementChild).toBe(
+      within(detail).getByText('Content: PPBF source manual v3. Current version.'),
+    );
+    expect(screen.getByRole('status').textContent).toBe(OPENED_ANNOUNCEMENT);
+  });
+
+  test('a card whose drill is current but whose reference the athlete can no longer open says so inside the drill, and claims no lifecycle change', async () => {
+    /* The two facts are independent. Here the gym still runs the drill, but the
+       reference it adopted has been withdrawn from the library: the coach can
+       still review it (the content status says Retracted), while the athlete's
+       own read -- the one the server ran to answer athlete_can_open -- offers
+       nothing. A coach told only "current" would send the athlete to read
+       instructions they cannot open. */
+    const calls = installFetch({
+      drills: W_D4B_DRILLS,
+      cardsList: [ISSUED_GROUP],
+      drillInstruction: {
+        ...COACH_INSTRUCTION,
+        drill: { ...REFERENCE_DETAIL, active: false },
+        operational_lifecycle: 'current',
+        athlete_can_open: false,
+      },
+    });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    const toggle = await screen.findByRole('button', { name: 'View instructions: Jump rope' });
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    const detail = screen.getByRole('article', { name: 'Jump rope' });
+    expect(within(detail).getByText('Content: PPBF source manual v3. Retracted.')).toBeTruthy();
+    noteInOpenedDrill(detail, ATHLETE_NOTE);
+    // Only that note: the gym has neither changed nor retired its drill.
+    expect(screen.queryByText(RETIRED_NOTE)).toBeNull();
+    expect(screen.queryByText(CHANGED_NOTE)).toBeNull();
+    expect(document.body.textContent).not.toMatch(/retired this drill|changed this drill/i);
+    expect(screen.getByRole('status').textContent).toBe(OPENED_ANNOUNCEMENT);
+    expect(writes(calls)).toEqual([]);
+  });
+
+  test('a card issued against a gym-written drill says so when opened, and shows no drill', async () => {
+    const calls = installFetch({
+      drills: W_D4B_DRILLS,
+      cardsList: [GYM_WRITTEN_GROUP],
+      drillInstruction: { state: 'gym_written' },
+    });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    const toggle = await screen.findByRole('button', { name: 'View instructions: Shadow rounds' });
+    // An individual card has no issuance, so the group is keyed by the card.
+    expect(toggle.id).toBe('card-group-instructions-asg-shadow');
+
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    expect(calls.filter((call) => call.url.includes('/api/pilot/progression/drill-instruction')).map((call) => call.url)).toEqual([
+      '/api/pilot/progression/drill-instruction?assignment_id=asg-shadow',
+    ]);
+    expect(
+      screen.getByText(
+        "This drill was written by this gym, so there are no reference instructions to open. The athlete reads the gym's own wording.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole('article')).toBeNull();
+  });
+
+  test('an instruction read that fails says it did not load -- plainly, not as a failed write', async () => {
+    installFetch({ drills: W_D4B_DRILLS, cardsList: [ISSUED_GROUP], drillInstruction: 'fail' });
+    // useDrillOpener logs the failure for the operator; the page decides what the coach reads.
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    const alertsBefore = screen.queryAllByRole('alert').length;
+    expect(alertsBefore).toBe(0);
+
+    const toggle = await screen.findByRole('button', { name: 'View instructions: Jump rope' });
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+
+    // Said from the panel's ONE polite live region, so a screen-reader user
+    // hears what the toggle produced. getByRole throws on a second status, so
+    // a failure line that carried a role of its own would fail here too.
+    const region = screen.getByRole('status');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    expect(region.textContent).toBe(LOAD_FAILED);
+    expect(toggle.parentElement?.contains(region)).toBe(true);
+    const failure = within(region).getByText(LOAD_FAILED);
+    expect(failure.tagName).toBe('P');
+    expect(failure.hasAttribute('role')).toBe(false);
+    expect(failure.hasAttribute('aria-live')).toBe(false);
+    expect(failure.closest('[role]')).toBe(region);
+    // The page's red alert is reserved for a failed write. Nothing was written.
+    expect(screen.queryAllByRole('alert')).toHaveLength(alertsBefore);
+    expect(screen.queryByText('Failed')).toBeNull();
+    expect(screen.queryByRole('article')).toBeNull();
+    expect(errorSpy).toHaveBeenCalledWith(expect.objectContaining({ event: 'drill-instruction-load-failed' }));
+  });
+
+  test('a legacy card with no drill behind it offers nothing to open', async () => {
+    installFetch({ drills: W_D4B_DRILLS, cardsList: [LEGACY_GROUP] });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+
+    // The card itself is still listed with its own wording.
+    expect(await screen.findByText('Heavy bag')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /instructions: Heavy bag/ })).toBeNull();
+    expect(document.getElementById('card-group-instructions-asg-legacy')).toBeNull();
+  });
+
+  test('no preview action, opened or closed, before or after the pick changes, sends anything but a GET', async () => {
+    const calls = installFetch({ drills: W_D4B_DRILLS, cardsList: [ISSUED_GROUP, LEGACY_GROUP] });
+
+    await act(async () => {
+      render(<CoachCardsPage />);
+    });
+    await screen.findByRole('button', { name: 'Verify' });
+    const mounted = calls.length;
+
+    fireEvent.change(screen.getByLabelText('Drill'), { target: { value: 'drill-rope' } });
+    // Both controls carry the drill's name; document order puts the form first.
+    const [picked, group] = screen.getAllByRole('button', { name: 'View instructions: Jump rope' });
+    expect(picked.id).toBe('card-picked-instructions');
+    expect(group.id).toBe('card-group-instructions-issuance-1');
+
+    await act(async () => {
+      fireEvent.click(picked);
+    });
+    fireEvent.click(picked);
+    await act(async () => {
+      fireEvent.click(group);
+    });
+    fireEvent.click(group);
+    // And with a preview open when the pick changes.
+    await act(async () => {
+      fireEvent.click(picked);
+    });
+    fireEvent.change(screen.getByLabelText('Drill'), { target: { value: 'drill-shadow' } });
+
+    // The snapshot: every request the preview actions made, in order. Three
+    // reads and nothing else -- no write, and no read of anything but the two
+    // instruction routes.
+    expect(calls.slice(mounted).map((call) => [call.init?.method, call.url])).toEqual([
+      ['GET', '/api/pilot/drill-library?drill_id=ref-rope'],
+      ['GET', '/api/pilot/progression/drill-instruction?assignment_id=asg-1'],
+      ['GET', '/api/pilot/drill-library?drill_id=ref-rope'],
+    ]);
+    expect(writes(calls)).toEqual([]);
   });
 });

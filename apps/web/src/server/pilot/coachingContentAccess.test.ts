@@ -59,6 +59,11 @@ const PERMITTED_GATE_CONSTANTS: Record<string, string[]> = {
   'session-scripts/route.ts': [READER_POLICY],
   'workout-templates/route.ts': [READER_POLICY],
   'drills/promote/route.ts': ['DRILL_AUTHOR_ROLES'],
+  // W-D4B (OD-2026-09-19-001): the reference instruction a piece of assigned
+  // work links to. The same content class reached by another path, so it
+  // takes the same policy -- and then a record gate on the assignment's
+  // athlete, which is the route's own business and not a role list.
+  'progression/drill-instruction/route.ts': [READER_POLICY],
 };
 
 /**

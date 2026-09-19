@@ -54,6 +54,63 @@ const ASSIGNMENT = {
   created_at: '2026-08-18T10:00:00.000Z',
 };
 
+/* Work issued against a drill in the gym's library (W-D4B). drill_id -- the
+   operational version the coach assigned -- is what makes it openable; the
+   dose and the due date are what the athlete must still be able to see once
+   they have opened it. */
+const LINKED_ASSIGNMENT = {
+  assignment_id: 'asg-2',
+  drill_id: 'drl-op-7',
+  gap_id: GAP.gap_id,
+  drill_name: 'Slip-and-return shadow rounds',
+  drill_description: 'Slip the jab, come straight back to guard, reset your feet.',
+  drill_difficulty: 'foundational',
+  rep_count: 20,
+  duration_minutes: 15,
+  frequency_per_week: 3,
+  due_date: '2026-09-26',
+  completion_percentage: 40,
+  status: 'in_progress',
+  created_at: '2026-09-12T10:00:00.000Z',
+};
+
+const INSTRUCTION_ROUTE = '/api/pilot/progression/drill-instruction';
+
+/* What that route answers an athlete: the athlete-safe projection, with NO
+   drill_id key. The reference detail's own drill_id is the reference pointer,
+   and the server drops it (withoutReferencePointer), so the page has to open
+   the drill without it. A name for who set the work, never an account id. */
+const LINKED_INSTRUCTION = {
+  assignment_id: LINKED_ASSIGNMENT.assignment_id,
+  assigned_by: 'Coach J Rivera',
+  state: 'available',
+  audience: 'athlete',
+  drill: {
+    name: LINKED_ASSIGNMENT.drill_name,
+    purpose: 'Make the slip and the return to guard one movement, not two.',
+    setup: 'Open floor, in front of a mirror if there is one free.',
+    equipment_needed: 'None',
+    execution: 'Slip outside an imagined jab.\n\nBring both hands straight back to the chin.\n\nReset your feet before the next one.',
+    contact_level: 'none',
+    requires_coach_authorization: false,
+    cues: ['Hands home first', 'Chin behind the shoulder'],
+    what_good_looks_like: 'Hands back at the chin before the feet settle.',
+    what_bad_looks_like: 'Rear hand drifting down to the ribs after the slip.',
+    common_errors: '',
+    corrections: '',
+    scale_levels: [],
+    stop_rules: [
+      { ordinal: 1, condition_text: 'Stop if you feel dizzy or your neck hurts when you slip.', scope: 'universal', rule_kind: 'safety' },
+    ],
+  },
+};
+
+/* Reads the page makes with POST because the route only exports POST: the
+   session gate (see e2e/support/signIn.ts) and the rabbit-hole lesson read.
+   Neither writes, and neither is the opener's -- anything else that is not a
+   GET is. */
+const KNOWN_READ_POSTS: ReadonlySet<string> = new Set(['/api/pilot/auth/session', '/api/pilot/rabbit-holes/get']);
+
 test.describe('Athlete journey', () => {
   test('signs in at their own door with an Account ID and a PIN', async ({ page }) => {
     const loginAttempts: Array<Record<string, unknown>> = [];
@@ -135,6 +192,146 @@ test.describe('Athlete journey', () => {
       athlete_id: ATHLETE_ID,
       reps_completed: 30,
       notes: 'Hands came back every round.',
+    });
+  });
+
+  /* OPENING THE DRILL FROM THE WORK, AND COMING BACK TO IT (W-D4B).
+     Owner decision 2026-09-19: reading a drill's instruction does not complete
+     work, log performance or move progression. The route test proves the
+     server has no write verb; what only a browser can prove is that the PAGE
+     sends nothing but a read when a kid taps "Open drill", keeps the
+     assignment in front of them while they read, offers no way to log from
+     inside the drill, and puts them back on the same piece of work when they
+     are done -- where Log completion still does exactly what it did. */
+  test('opens the drill from their assigned work, reads it without logging anything, and comes back', async ({ page }) => {
+    const logged: Array<Record<string, unknown>> = [];
+
+    await installPilotApi(page, {
+      session: { role: 'athlete', athleteId: ATHLETE_ID },
+      routes: {
+        '/api/pilot/progression/gaps': { ok: true, items: [GAP] },
+        // The legacy row rides along to prove the opener is per assignment: a
+        // row written before drills had identity has nothing to open.
+        '/api/pilot/progression/assignments': { ok: true, items: [LINKED_ASSIGNMENT, ASSIGNMENT] },
+        [INSTRUCTION_ROUTE]: LINKED_INSTRUCTION,
+        '/api/pilot/progression/completions': (_url, route) => {
+          if (route.request().method() === 'POST') {
+            logged.push(JSON.parse(route.request().postData() ?? '{}'));
+            return { ok: true };
+          }
+          return { ok: true, items: [] };
+        },
+      },
+    });
+
+    await page.goto('/athlete/progression-intelligence');
+
+    const assignmentsHeading = page.getByRole('heading', { name: 'Drill Assignments' });
+    const opener = page.getByRole('button', { name: `Open drill: ${LINKED_ASSIGNMENT.drill_name}`, exact: true });
+    await expect(assignmentsHeading).toBeVisible();
+    await expect(opener).toBeVisible();
+    await expect(page.getByRole('button', { name: `Open drill: ${ASSIGNMENT.drill_name}` })).toHaveCount(0);
+
+    /* Recorded from here, after the list has settled: the list only renders
+       once its completions reads are done, so everything captured below is
+       the opener's, or Back's, or the log's. */
+    const sent: Array<{ method: string; path: string; search: string }> = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (url.pathname.startsWith('/api/pilot/')) {
+        sent.push({ method: request.method(), path: url.pathname, search: url.search });
+      }
+    });
+    const writes = () => sent.filter((r) => r.method !== 'GET' && !KNOWN_READ_POSTS.has(r.path));
+
+    await opener.click();
+
+    // The list steps aside -- hidden, not unmounted -- and nothing on it,
+    // Log completion included, is reachable while the drill is open.
+    await expect(assignmentsHeading).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Log completion' })).toHaveCount(0);
+
+    /* THE ASSIGNMENT STAYS IN FRONT OF THEM. Named by the drill it is for,
+       and it is where focus lands: the athlete opened a piece of work, not a
+       library page. */
+    const context = page.getByRole('region', { name: LINKED_ASSIGNMENT.drill_name, exact: true });
+    await expect(context).toBeVisible();
+    await expect(context).toBeFocused();
+    await expect(context.getByText('Your assignment', { exact: true })).toBeVisible();
+    // The coach's own words for this work, under its name, so the opened view
+    // is never emptier than the card it came from. Asked of the context, not
+    // the page: the same words are still in the hidden list behind it.
+    await expect(context.getByText(LINKED_ASSIGNMENT.drill_description, { exact: true })).toBeVisible();
+    const term = (label: string) =>
+      context
+        .locator('div', { has: page.getByRole('term').filter({ hasText: new RegExp(`^${label}$`) }) })
+        .getByRole('definition');
+    // Always drawn: "Your coach" until the read lands, then the name it carried.
+    await expect(term('From')).toHaveText('Coach J Rivera');
+    await expect(term('Due')).toHaveText('Sep 26, 2026');
+    await expect(term('Reps')).toHaveText('20');
+    await expect(term('Duration')).toHaveText('15 min');
+    await expect(term('Frequency')).toHaveText('3x/week');
+    await expect(term('Progress')).toHaveText('40% · in progress');
+    await expect(
+      context.getByText(
+        'Reading the drill does not log your work. When you have done it, go back to your assigned work and use Log completion.',
+      ),
+    ).toBeVisible();
+
+    // The drill itself, safety first and open.
+    const drill = page.getByRole('article', { name: LINKED_ASSIGNMENT.drill_name, exact: true });
+    await expect(drill).toBeVisible();
+    await expect(drill.getByRole('heading', { level: 2, name: LINKED_ASSIGNMENT.drill_name, exact: true })).toBeVisible();
+    const safety = drill.getByRole('region', { name: 'Safety', exact: true });
+    await expect(safety).toBeVisible();
+    await expect(safety).toContainText('Contact: No contact');
+    await expect(safety).toContainText(LINKED_INSTRUCTION.drill.stop_rules[0].condition_text);
+
+    /* LEARNING IS NOT LOGGING. Opening sent exactly one request: a GET keyed
+       by the assignment, carrying nothing else -- no drill id the page could
+       have swapped for a newer version. Nothing else went out, and above all
+       nothing to completions, the one route that records work. */
+    await expect.poll(() => sent.filter((r) => r.path === INSTRUCTION_ROUTE)).toHaveLength(1);
+    expect(sent.filter((r) => r.path === INSTRUCTION_ROUTE)).toEqual([
+      { method: 'GET', path: INSTRUCTION_ROUTE, search: `?assignment_id=${LINKED_ASSIGNMENT.assignment_id}` },
+    ]);
+    expect(writes()).toEqual([]);
+    expect(sent.filter((r) => r.path === '/api/pilot/progression/completions')).toEqual([]);
+
+    // And nothing inside the opened drill could record work either, or carries
+    // the provenance a coach reads.
+    await expect(drill.locator('form, input, textarea, select')).toHaveCount(0);
+    await expect(drill.getByText(/Source and version|Content status/)).toHaveCount(0);
+
+    // A name, never a raw staff identifier, on a minor's screen.
+    await expect(page.getByText(/acct-/)).toHaveCount(0);
+
+    /* BACK TO THE SAME PIECE OF WORK. Focus returns to the button that opened
+       it, so a keyboard or screen-reader user is where they left off. */
+    await page.getByRole('button', { name: 'Back to your assigned work' }).click();
+    await expect(opener).toBeFocused();
+    await expect(assignmentsHeading).toBeVisible();
+    await expect(page.getByRole('article')).toHaveCount(0);
+    expect(writes()).toEqual([]);
+    expect(sent.filter((r) => r.path === '/api/pilot/progression/completions')).toEqual([]);
+
+    /* ...and logging is where it always was, doing exactly what it did. Two
+       cards, two Log completion buttons: this one is the linked card's. */
+    const linkedCard = page
+      .locator('div.mat-leather')
+      .filter({ has: page.getByRole('heading', { level: 3, name: LINKED_ASSIGNMENT.drill_name, exact: true }) });
+    await linkedCard.getByRole('button', { name: 'Log completion' }).click();
+    await page.getByLabel('Reps completed (optional)').fill('20');
+    await page.getByLabel('Notes (optional)').fill('Read the drill first, then did the rounds.');
+    await page.getByRole('button', { name: 'Save log' }).click();
+
+    await expect.poll(() => logged).toHaveLength(1);
+    expect(logged[0]).toEqual({
+      assignment_id: LINKED_ASSIGNMENT.assignment_id,
+      athlete_id: ATHLETE_ID,
+      reps_completed: 20,
+      notes: 'Read the drill first, then did the rounds.',
     });
   });
 

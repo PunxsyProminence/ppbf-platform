@@ -234,6 +234,47 @@ export async function listDrillChangeProposals(
   );
 }
 
+/**
+ * Where one operational drill version stands now, for a coach looking at work
+ * that was issued against it (W-D4B).
+ *
+ *   current -- this version is active.
+ *   changed -- this version is inactive, but another version of the same
+ *              lineage is active: the gym refined the drill (or reinstated an
+ *              earlier version) and still runs it.
+ *   retired -- no version of the lineage is active: the gym no longer runs it.
+ *
+ * "Inactive" alone cannot tell those last two apart, because adopting a change
+ * proposal deactivates the version it replaces. Telling a coach the drill was
+ * retired when it was only refined is false lifecycle information.
+ *
+ * STATUS ONLY. This reads the lineage to describe it, never to pick content
+ * from it: the instruction shown for the work stays the one pinned by the
+ * version it was issued against. Null when the drill is not in this gym.
+ */
+export type OperationalDrillLifecycle = 'current' | 'changed' | 'retired';
+
+export async function getOperationalDrillLifecycle(
+  organizationId: string,
+  drillId: string,
+): Promise<OperationalDrillLifecycle | null> {
+  const row = await queryOne<{ active: boolean; lineage_active: boolean }>(
+    `select d.active,
+            exists (
+              select 1 from pilot.drills l
+              where l.organization_id = d.organization_id
+                and l.lineage_id = d.lineage_id
+                and l.active
+            ) as lineage_active
+     from pilot.drills d
+     where d.organization_id = $1 and d.drill_id = $2`,
+    [organizationId, drillId],
+  );
+  if (!row) return null;
+  if (row.active) return 'current';
+  return row.lineage_active ? 'changed' : 'retired';
+}
+
 /** Every version of one drill lineage, oldest first. */
 export async function getDrillLineage(organizationId: string, lineageId: string): Promise<PilotDrillVersionRow[]> {
   return query<PilotDrillVersionRow>(

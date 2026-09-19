@@ -262,6 +262,57 @@ the direction for promotion quality, but not the exact required-field rule for
 each drill type. Where the current model cannot tell whether a field applies to
 a drill, that is a model or owner question, not something to infer from prose.
 
+**W-D4B build interpretations, flagged.** These are how the assigned-athlete
+and coach clauses above were built. None is a new ruling; each is open to the
+owner's correction.
+
+1. *Exact version, no lookup.* Assigned work opens the reference version named
+   by the operational row it was assigned against
+   (`assignment.drill_id` -> that row's `reference_drill_id`). Nothing follows a
+   lineage to choose content. Staff are told where the lineage stands (see 6),
+   but that is a status line, not a source of content.
+2. *The athlete read is the Learn read.* Opening a drill from an assignment uses
+   the same promoted-and-live predicate and athlete-safe projection as Learn
+   (OD-2026-09-17-001 clause 7). So if the gym has since retired the drill (and
+   not refined it into an active successor), or the reference was withdrawn, the
+   athlete is told there are no library instructions to open for it. The
+   assignment itself -- its snapshot wording and its completions -- is unchanged
+   and readable (clause 4). **Owner question:** retiring a drill does not cancel
+   work already issued against it, so an athlete can hold open, due work whose
+   instruction this rule withholds. Whether in-progress work should keep its
+   instruction after retirement is the owner's call; this build follows clause 7
+   as written.
+3. *Provenance stays on the server.* The athlete response for an assignment
+   carries the instruction but not the reference drill id, which W-D2 treats as
+   internal provenance. Nor does it say why there is nothing to open: a drill
+   the gym wrote itself, a retired one, and work that predates drill links all
+   reach the athlete as one state and one neutral line, because each reason is
+   a fact about how the library is assembled and governed. Staff see the
+   reason.
+4. *"Coach" in the opened assignment is a derived name.* The new read names the
+   assigning coach with the display name athletes already read on recognitions
+   and development blocks (`getCoachDisplayName`), never an account id, and
+   falls back to "Your coach". This holds for the new read only: the existing
+   assignments list (`GET /api/pilot/progression/assignments`, unchanged here)
+   already sends `assigned_by_account_id` to athlete and guardian clients. That
+   is a pre-existing gap, left for a separate decision.
+5. *Guardians get the athlete projection from the new read.* It admits a linked
+   guardian through the existing athlete-access rule and gives them the
+   athlete-safe shape. There is no guardian control for it yet. This is
+   narrower than `/api/pilot/drill-library`, which already gives guardians the
+   full coach shape -- also pre-existing, and also left for a separate decision.
+6. *Coaches preview from where they decide.* The Coach Cards form and list and
+   the progression assign form and list each open the same drill detail
+   `/coach/drills` shows. Before issuing, the preview reads the adopted
+   reference by pointer. After issuing, it reads through the assignment, so the
+   work opens at the version it was issued against. The preview says when the
+   operational drill has since changed into another version (adopting a
+   refinement deactivates the version it replaces, which is not retirement) or
+   been retired, and nothing while it is still run. It also says when the
+   athlete can no longer open these instructions from the work, using the
+   athlete's own read to decide, so a coach does not send an athlete to read
+   something they cannot open.
+
 ---
 
 ## OD-2026-09-18-001 -- Every new assignment and Coach Card is built from an active operational drill
