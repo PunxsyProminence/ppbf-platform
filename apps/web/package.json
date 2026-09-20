@@ -228,7 +228,7 @@
     "test:e2e:board": "playwright test e2e/board-governance.spec.ts",
     "test:e2e:board:update": "playwright test e2e/board-governance.spec.ts --update-snapshots",
     "test:e2e:homepage": "playwright test e2e/public-homepage.spec.ts",
-    "test:e2e:coach": "playwright test e2e/coach-journey.spec.ts",
+    "test:e2e:coach": "playwright test e2e/coach-journey.spec.ts e2e/coach-visualization.spec.ts",
     "test:e2e:athlete": "playwright test e2e/athlete-journey.spec.ts",
     "test:e2e:guardian": "playwright test e2e/guardian-journey.spec.ts",
     "test:e2e:golden-era": "playwright test e2e/golden-era-scope-proofs.spec.ts",

@@ -170,8 +170,35 @@ test.describe('Coach guided visualization', () => {
     await expect(page.getByText('not a list the coach must read aloud', { exact: false })).toBeVisible();
     await expect(page.getByText('Use the jab as a range and information tool', { exact: false })).toHaveCount(0);
 
+    // Nor do the instructions for using them.
+    await expect(
+      page.getByText('Describe the opponent action and give the athlete', { exact: false }),
+    ).toHaveCount(0);
+
     await page.getByRole('button', { name: 'Offer the response options' }).click();
-    await expect(page.getByText('Use the jab as a range and information tool', { exact: false })).toBeVisible();
+
+    // The coach is TAKEN to what they asked for: in a real browser, focus is on
+    // the labelled region, not left on a button React has just unmounted.
+    const resource = page.getByRole('region', { name: /^Coach resource/ });
+    await expect(resource).toBeVisible();
+    await expect(resource).toBeFocused();
+
+    // Both authored lists arrive: the first and last of the manual's five
+    // instructions, and the options themselves.
+    await expect(
+      resource.getByText('Describe the opponent action and give the athlete', { exact: false }),
+    ).toBeVisible();
+    await expect(
+      resource.getByText('Continue after mistakes: recover, reset', { exact: false }),
+    ).toBeVisible();
+    await expect(
+      resource.getByText('Use the jab as a range and information tool', { exact: false }),
+    ).toBeVisible();
+
+    // And the exposure carries on from where it was, in sequence.
+    await expect(page.locator('section').getByText('Step 6 of 22')).toBeVisible();
+    await page.getByRole('button', { name: 'Next prompt' }).click();
+    await expect(page.getByRole('heading', { level: 2 })).toHaveText('Coach guidance');
   });
 
   test('Level 3 delivers cues only, with no fed answer anywhere', async ({ page }) => {

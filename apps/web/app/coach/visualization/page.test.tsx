@@ -174,8 +174,9 @@ describe('Level 1 — Guided: the authored order, and options only on request', 
     for (const option of PF001_RING_CUTTER.rounds[0].level1.options) {
       expect(screen.getByText(option)).toBeInTheDocument();
     }
-    // The button that was pressed is gone, so the change is said out loud.
-    expect(liveRegion()).toHaveTextContent('Offer the response options.');
+    // The button that was pressed is gone, so the change is said out loud --
+    // and it says where the coach now is, because focus moved there.
+    expect(liveRegion()).toHaveTextContent('Response options offered. Moved to the coach resource.');
   });
 
   test('asking for the options in one round does not reveal them in the next', () => {
@@ -570,5 +571,196 @@ describe('the page stays in its lane', () => {
     expect(source).not.toMatch(/method:\s*'(POST|PATCH|PUT|DELETE)'/);
     expect(source).not.toMatch(/localStorage|sessionStorage|indexedDB|document\.cookie/);
     expect(source).not.toMatch(/api\/pilot\/(drills|drill-library|progression|goals|video|calibration|shadow)/);
+  });
+});
+
+/**
+ * The manual prints two things behind "Offer the response options": the options
+ * themselves, and five instructions for HOW a coach uses them. Both are
+ * authored, and both are the coach's, not the athlete's.
+ *
+ * WHY THIS SUITE EXISTS. `guidedSession` carried `onRequest.ruleBullets` and the
+ * library test asserted it carried them -- while the page rendered only the
+ * rule and the options. Five authored instructions, including explaining why an
+ * option fits rather than naming a punch and continuing after mistakes, reached
+ * the model and stopped there. A test that pins the data and never asks what
+ * rendered cannot see that, so these tests ask the screen.
+ */
+describe('the authored option guidance reaches the coach, not just the model', () => {
+  const ROUNDS = PF001_RING_CUTTER.rounds.map((round, index) => ({
+    ordinal: index + 1,
+    label: round.label,
+    round,
+  }));
+
+  /** Stand on the decision prompt of one round, at Level 1. */
+  function askAt(ordinal: number) {
+    const mounted = render(<CoachVisualizationPage />);
+    runAt(1);
+    let asked = 0;
+    for (let step = 0; step < 40; step += 1) {
+      if (prompt() === 'Ask the athlete') {
+        asked += 1;
+        if (asked === ordinal) return mounted;
+      }
+      clickNext();
+    }
+    throw new Error(`never reached decision prompt ${ordinal}`);
+  }
+
+  function resource() {
+    return screen.getByRole('region', { name: /^Coach resource/ });
+  }
+
+  /** The authored text of one labelled list inside the resource, in order. */
+  function listUnder(labelText: string) {
+    const label = screen.getByText(labelText);
+    const list = label.nextElementSibling;
+    expect(list?.tagName).toBe('UL');
+    expect(list?.getAttribute('aria-labelledby')).toBe(label.id);
+    return Array.from(list!.querySelectorAll('li')).map((item) => item.textContent);
+  }
+
+  const RULES_LABEL = 'How the manual says to use them — for you, not lines to read out';
+  const OPTIONS_LABEL = 'The authored response options';
+
+  test.each(ROUNDS)(
+    'Round $ordinal, before the coach asks: the question and the governing rule, and nothing else',
+    ({ ordinal, round }) => {
+      askAt(ordinal);
+
+      expect(screen.getByText(round.level1.coachAsks)).toBeInTheDocument();
+      expect(screen.getByText(MANUAL_DELIVERY_RULES.level1OptionsRule)).toBeInTheDocument();
+
+      // No answer, and no instruction about answers: the bullets are not on
+      // screen at all, so nothing can be mistaken for the athlete's prompt.
+      for (const option of round.level1.options) {
+        expect(screen.queryByText(option)).toBeNull();
+      }
+      for (const bullet of MANUAL_DELIVERY_RULES.level1OptionsBullets) {
+        expect(screen.queryByText(bullet)).toBeNull();
+      }
+      expect(prompt()).toBe('Ask the athlete');
+      expect(screen.queryByRole('region', { name: /^Coach resource/ })).toBeNull();
+    },
+  );
+
+  test.each(ROUNDS)(
+    'Round $ordinal, after the coach asks: every authored instruction and option, once, in source order',
+    ({ ordinal, round }) => {
+      askAt(ordinal);
+      fireEvent.click(screen.getByRole('button', { name: 'Offer the response options' }));
+
+      // Exactly once each. Rendering the bullets twice would be as wrong as
+      // rendering them never: the coach would not know which list is which.
+      for (const text of [...MANUAL_DELIVERY_RULES.level1OptionsBullets, ...round.level1.options]) {
+        expect(screen.getAllByText(text)).toHaveLength(1);
+      }
+
+      // Source order, and the two lists kept apart.
+      expect(listUnder(RULES_LABEL)).toEqual([...MANUAL_DELIVERY_RULES.level1OptionsBullets]);
+      expect(listUnder(OPTIONS_LABEL)).toEqual([...round.level1.options]);
+
+      // Semantically distinct: both authored lists are inside the labelled
+      // coach region, and the athlete-facing question is not.
+      const region = resource();
+      for (const text of [...MANUAL_DELIVERY_RULES.level1OptionsBullets, ...round.level1.options]) {
+        expect(region).toContainElement(screen.getByText(text));
+      }
+      expect(region).not.toContainElement(screen.getByText(round.level1.coachAsks));
+      expect(region).not.toContainElement(screen.getByRole('heading', { level: 2 }));
+    },
+  );
+
+  test('every authored option instruction in the manual is reachable through the rendered session', () => {
+    const rendered = new Set<string>();
+
+    for (const { ordinal } of ROUNDS) {
+      const mounted = askAt(ordinal);
+      fireEvent.click(screen.getByRole('button', { name: 'Offer the response options' }));
+      for (const item of listUnder(RULES_LABEL)) {
+        if (item) rendered.add(item);
+      }
+      mounted.unmount();
+    }
+
+    // Source fidelity, stated as a set relation rather than a count: no
+    // authored instruction may exist in the model without reaching a screen.
+    for (const bullet of MANUAL_DELIVERY_RULES.level1OptionsBullets) {
+      expect(rendered).toContain(bullet);
+    }
+    // Counted on the SCREEN, not in the module. `level1OptionsBullets.length`
+    // would have passed with the render deleted, which is the shape of the
+    // defect this suite exists to catch.
+    expect(rendered.size).toBe(5);
+  });
+});
+
+/**
+ * Revealing replaces the button that was pressed. Without moving focus, a coach
+ * on a keyboard or a screen reader asks for the options and is dropped on
+ * `document.body` -- the content they requested is on screen and they are
+ * nowhere near it. The live region naming the button they just pressed does not
+ * fix that; only going there does.
+ */
+describe('asking for the options takes the coach to them', () => {
+  function flushing() {
+    const frames: FrameRequestCallback[] = [];
+    jest.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    return () => act(() => {
+      frames.splice(0).forEach((frame) => frame(0));
+    });
+  }
+
+  function atDecisionPrompt() {
+    render(<CoachVisualizationPage />);
+    runAt(1);
+    for (let step = 0; step < 5; step += 1) clickNext();
+    expect(prompt()).toBe('Ask the athlete');
+  }
+
+  test('focus lands on the labelled coach resource, not the body', () => {
+    const flush = flushing();
+    atDecisionPrompt();
+
+    const button = screen.getByRole('button', { name: 'Offer the response options' });
+    button.focus();
+    expect(document.activeElement).toBe(button);
+
+    fireEvent.click(button);
+    flush();
+
+    // The pressed control is gone by design, so focus had to go somewhere.
+    expect(screen.queryByRole('button', { name: 'Offer the response options' })).toBeNull();
+
+    const region = screen.getByRole('region', { name: 'Coach resource — Offer the response options' });
+    expect(document.activeElement).toBe(region);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  test('what it lands on is the requested content, and the page still has one live region', () => {
+    const flush = flushing();
+    atDecisionPrompt();
+    fireEvent.click(screen.getByRole('button', { name: 'Offer the response options' }));
+    flush();
+
+    const region = screen.getByRole('region', { name: /^Coach resource/ });
+    expect(region).toContainElement(
+      screen.getByText(MANUAL_DELIVERY_RULES.level1OptionsBullets[0]),
+    );
+    expect(region).toContainElement(
+      screen.getByText(PF001_RING_CUTTER.rounds[0].level1.options[0]),
+    );
+
+    // Concise on purpose: the focused region reads itself, so the region does
+    // not recite five instructions over the top of it.
+    expect(liveRegion()).toHaveTextContent('Response options offered. Moved to the coach resource.');
+    expect(liveRegion().textContent).not.toContain(
+      MANUAL_DELIVERY_RULES.level1OptionsBullets[0],
+    );
+    expect(screen.getAllByRole('status')).toHaveLength(1);
   });
 });

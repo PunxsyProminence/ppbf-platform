@@ -210,3 +210,119 @@ describe("ci.yml's own shell, executed against that topology", () => {
     expect([flags.docs_only, flags.guardian_e2e]).toEqual(['true', 'false']);
   });
 });
+
+/**
+ * A flagged suite must actually run the spec that flagged it.
+ *
+ * WHY THIS EXISTS. The classifier deciding `coach_e2e=true` is only the first
+ * half of attendance. The step it guards runs an npm script, and that script
+ * names its spec FILES explicitly -- so a coach spec can sit in `e2e/`, watch
+ * its own step run, and never be executed.
+ *
+ * MEASURED ON #940, precisely, because the first telling of this was wrong.
+ * `coach_e2e` came back `true` from `apps/web/app/coach/visualization/page.tsx`
+ * -- NOT from the new spec. The spec's own path matched no predicate at all:
+ * `isCoachE2ePath` named `apps/web/e2e/coach-journey`, so a diff touching only
+ * `coach-visualization.spec.ts` classified `unknown_code` and ran no browser
+ * suite, and `apps/web/src/lib/visualization/` did the same. Meanwhile
+ * `test:e2e:coach` ran only `coach-journey.spec.ts`, so the visualization
+ * journey's browser checks reported nothing and CI was green without them.
+ *
+ * So the gap had two halves and this repair closed both: the command now names
+ * every coach spec, and the predicate now names the coach spec FAMILY and the
+ * visualization source those specs read. The tests below hold each half.
+ *
+ * AGENT_KERNEL.md's documented check -- confirm the suite's flag comes back
+ * `true` -- passes even while the spec is unattended, which is why it is not
+ * enough on its own.
+ *
+ * NOT CIRCULAR. The spec cannot prove it is selected by running; if it is not
+ * selected it does not run to fail. So this lives in the fast regression suite
+ * that `npm test` runs on every non-docs-only diff, it reads the invoked script
+ * out of `ci.yml` rather than assuming its name, and it enumerates the coach
+ * specs from the filesystem rather than from a list it also checks.
+ */
+describe('the coach E2E command attends every coach spec on disk', () => {
+  /** The npm script `ci.yml` runs for a `coach_e2e` diff, read from the workflow. */
+  function coachScriptPerCi(): string {
+    const workflow = fs.readFileSync(
+      path.join(repositoryRoot, '.github/workflows/ci.yml'),
+      'utf8',
+    );
+    // The step that RUNS a coach command, not every step whose condition
+    // mentions the flag: "Install Playwright browsers" is guarded by an OR
+    // across all seven E2E flags and runs no npm script.
+    const guarded = workflow
+      .split(/\n      - name: /)
+      .filter((step) => /steps\.changes\.outputs\.coach_e2e == 'true'/.test(step))
+      .filter((step) => /run: npm --workspace web run \S+/.test(step));
+    expect(guarded).toHaveLength(1);
+
+    const run = /run: npm --workspace web run (\S+)/.exec(guarded[0]);
+    expect(run).not.toBeNull();
+    return run![1];
+  }
+
+  /** Every coach journey spec on disk, found rather than listed. */
+  function coachSpecsOnDisk(): string[] {
+    const dir = path.join(repositoryRoot, 'apps/web/e2e');
+    return fs
+      .readdirSync(dir)
+      .filter((name) => /^coach-.*\.spec\.ts$/.test(name))
+      .sort();
+  }
+
+  function packageScripts(): Record<string, string> {
+    return JSON.parse(
+      fs.readFileSync(path.join(repositoryRoot, 'apps/web/package.json'), 'utf8'),
+    ).scripts;
+  }
+
+  // One path at a time, on purpose. A combined list passes as soon as ANY
+  // path matches, so it cannot see that two of these three matched nothing --
+  // which is exactly what it hid. `unknown_code` is not asserted alongside
+  // `coach_e2e`: the classifier computes it as "no predicate matched", so it is
+  // implied by the flag rather than evidence for it.
+  it.each([
+    'apps/web/app/coach/visualization/page.tsx',
+    'apps/web/src/lib/visualization/pf001Scenario.ts',
+    'apps/web/src/lib/visualization/guidedSession.ts',
+    'apps/web/e2e/coach-visualization.spec.ts',
+  ])('sends %s to the coach suite on its own', (file) => {
+    const flags = classify([file]);
+
+    expect(flags.coach_e2e).toBe('true');
+    expect(flags.docs_only).toBe('false');
+  });
+
+  it('runs every coach spec, so none can flag the suite without being executed', () => {
+    const script = packageScripts()[coachScriptPerCi()];
+    expect(typeof script).toBe('string');
+
+    // A whitespace-delimited `e2e/<name>` argument, not a substring: the spec
+    // has to be handed to Playwright as a path, not mentioned in a comment or
+    // carried in a --grep pattern.
+    const passedToPlaywright = new Set(
+      script.split(/\s+/).filter((argument) => argument.startsWith('e2e/')),
+    );
+    const missing = coachSpecsOnDisk().filter((spec) => !passedToPlaywright.has(`e2e/${spec}`));
+    // Naming the absentees, because "some coach spec is unattended" is only
+    // actionable if it says which. Dropping coach-visualization.spec.ts from
+    // the command reds this line.
+    expect(missing).toEqual([]);
+
+    // Both halves of the pair the defect was measured on, stated outright so a
+    // reader does not have to reconstruct the filesystem to see the point.
+    expect(coachSpecsOnDisk()).toContain('coach-journey.spec.ts');
+    expect(coachSpecsOnDisk()).toContain('coach-visualization.spec.ts');
+  });
+
+  it('keeps that command inside the merged-main allow-list, so main runs it too', () => {
+    const allowList = fs.readFileSync(
+      path.join(repositoryRoot, '.github/workflows/merged-main-e2e.yml'),
+      'utf8',
+    );
+
+    expect(allowList).toContain(`'${coachScriptPerCi()}'`);
+  });
+});

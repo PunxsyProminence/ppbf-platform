@@ -62,6 +62,7 @@ export default function CoachVisualizationPage() {
   // regions talk over each other. Everything worth hearing is set here.
   const [announcement, setAnnouncement] = useState('');
   const promptRef = useRef<HTMLHeadingElement | null>(null);
+  const resourceRef = useRef<HTMLElement | null>(null);
 
   const segment = segments[index];
   const atEnd = segment?.kind === 'complete';
@@ -122,10 +123,25 @@ export default function CoachVisualizationPage() {
     focusPrompt();
   }
 
-  /** The coach asked for the authored options on this round only. */
-  function revealOptions(key: string, label: string) {
+  /**
+   * The coach asked for the authored options on this round only.
+   *
+   * Focus has to move. Revealing replaces the button that was pressed, so a
+   * coach working by keyboard or screen reader would otherwise be dropped on
+   * `document.body` with the thing they just asked for somewhere off in the
+   * page. The destination is the labelled resource region itself, so its name
+   * is announced on arrival and its contents are in reading order from there.
+   */
+  function revealOptions(key: string) {
     setRevealed((prev) => ({ ...prev, [key]: true }));
-    setAnnouncement(`${label}.`);
+    // Short on purpose. Moving focus is the signal the coach actually needs,
+    // and reciting five instructions and three options into the live region
+    // would compete with the region focus just landed on. Some screen readers
+    // drop a polite announcement made in the same tick as a focus change, so
+    // this sentence is a courtesy, not the mechanism.
+    setAnnouncement('Response options offered. Moved to the coach resource.');
+    if (typeof window === 'undefined') return;
+    window.requestAnimationFrame(() => resourceRef.current?.focus());
   }
 
   function next() {
@@ -291,21 +307,69 @@ export default function CoachVisualizationPage() {
                 {segment.onRequest && (
                   <div className="mt-[var(--s4)] border-t border-[color:var(--brass-700)] pt-[var(--s3)]">
                     {revealed[segment.key] ? (
-                      <>
-                        <p className="t-label text-[color:var(--bone-300)]">{segment.onRequest.label}</p>
-                        <ul className="mt-[var(--s3)] list-disc space-y-[var(--s2)] pl-[var(--s5)] text-[color:var(--bone-100)]">
+                      /*
+                       * The coach resource, and the focus destination. Both
+                       * authored lists live here: the manual's instructions for
+                       * USING the options, and the options themselves. Carrying
+                       * ruleBullets in the session model and then rendering only
+                       * the options dropped five authored instructions on the
+                       * floor -- including explaining why an option fits rather
+                       * than naming a punch, and continuing after mistakes.
+                       *
+                       * The headings are structural UI, not content: they mark
+                       * which authored text is for the coach and which is the
+                       * athlete-facing script, so neither gets read as the other.
+                       */
+                      <section
+                        ref={resourceRef}
+                        tabIndex={-1}
+                        aria-labelledby={`resource-heading-${segment.key}`}
+                        className="rounded-[var(--r-md)] bg-[color:var(--leather-800)] p-[var(--s4)]"
+                      >
+                        <h3
+                          id={`resource-heading-${segment.key}`}
+                          className="t-label text-[color:var(--brass-300)]"
+                        >
+                          Coach resource — {segment.onRequest.label}
+                        </h3>
+
+                        <p
+                          id={`resource-rules-label-${segment.key}`}
+                          className="t-label mt-[var(--s4)] text-[color:var(--bone-300)]"
+                        >
+                          How the manual says to use them — for you, not lines to read out
+                        </p>
+                        <ul
+                          aria-labelledby={`resource-rules-label-${segment.key}`}
+                          className="mt-[var(--s3)] list-disc space-y-[var(--s2)] pl-[var(--s5)] text-[color:var(--bone-100)]"
+                        >
+                          {segment.onRequest.ruleBullets.map((bullet) => (
+                            <li key={bullet} className="t-body">{bullet}</li>
+                          ))}
+                        </ul>
+
+                        <p
+                          id={`resource-options-label-${segment.key}`}
+                          className="t-label mt-[var(--s4)] text-[color:var(--bone-300)]"
+                        >
+                          The authored response options
+                        </p>
+                        <ul
+                          aria-labelledby={`resource-options-label-${segment.key}`}
+                          className="mt-[var(--s3)] list-disc space-y-[var(--s2)] pl-[var(--s5)] text-[color:var(--bone-100)]"
+                        >
                           {segment.onRequest.items.map((item) => (
                             <li key={item} className="t-body">{item}</li>
                           ))}
                         </ul>
-                      </>
+                      </section>
                     ) : (
                       <>
                         <p className="t-body text-[color:var(--bone-300)]">{segment.onRequest.rule}</p>
                         <button
                           type="button"
                           className="btn btn--ghost mt-[var(--s3)]"
-                          onClick={() => revealOptions(segment.key, segment.onRequest!.label)}
+                          onClick={() => revealOptions(segment.key)}
                         >
                           {segment.onRequest.label}
                         </button>
