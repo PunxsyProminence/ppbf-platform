@@ -363,6 +363,9 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/cue-library', label: 'Cue Library', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'cues coaching cues external focus analogy constraint families',
     hint: 'Every cue written into the drill library, searchable in one place. Read-only.' },
+  { href: '/coach/visualization', label: 'Guided Visualization', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'visualization imagery shadowboxing scenario opponent ring-cutter script guided session mental',
+    hint: 'Read one authored shadowboxing scenario to an athlete, prompt by prompt. Saves nothing.' },
   /* Shipped by the session-loop change (#551) linked from Quick Actions and
      the radar, but never given a door -- the exact orphan
      buildingMapCoverage.test.ts exists to catch, and it did. Room and roles
