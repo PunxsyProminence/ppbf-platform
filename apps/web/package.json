@@ -36,6 +36,7 @@
     "pilot:check-discipline-values": "node scripts/pilot-check-discipline-values.mjs",
     "pilot:check-waiver-statuses": "node scripts/pilot-check-waiver-statuses.mjs",
     "pilot:check-video-readiness": "node scripts/pilot-check-video-readiness.mjs",
+    "pilot:check-cue-source-provenance": "node scripts/pilot-check-cue-source-provenance.mjs",
     "pilot:apply-shadow-runtime": "node scripts/pilot-apply-shadow-runtime-migration.mjs",
     "pilot:apply-research-triage-view": "node scripts/pilot-apply-research-triage-view-migration.mjs",
     "pilot:apply-magic-link": "node scripts/pilot-apply-magic-link-migration.mjs",
