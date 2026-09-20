@@ -21,6 +21,12 @@ not replace it.
 
 ---
 
+## 2026-08-31 — local/sl01-runtime-lifecycle (offline runtime lifecycle)
+
+Worktree `C:\Dev_WORKTREES\sl01-runtime-lifecycle` owns the local offline replica's start/stop/status. `apps/web/scripts/offline-runtime.mjs` and `apps/web/scripts/lib/offline-runtime-lifecycle.mjs` match this checkout's path; do not land a second process killer or a hardcoded `C:\Dev\ppbf-platform` filter from another lane.
+
+— sl01-runtime-lifecycle
+
 ## 2026-08-28 — athlete-dev-block-foundation lane (plan-vs-actual: RESOLVED)
 
 **RESOLVED by the owner, same day. `pilot.athlete_development_block_reviews`
