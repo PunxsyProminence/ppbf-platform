@@ -51,13 +51,15 @@ test.describe('Coach guided visualization', () => {
     // The coach picks ONE level for the whole exposure, then it begins.
     await page.getByRole('button', { name: 'Run at Level 1' }).click();
     await expect(prompt).toHaveText('Before the Bell — Build the Opponent');
-    await expect(page.getByText('Step 1 of 22')).toBeVisible();
+    await expect(page.locator('section').getByText('Step 1 of 22')).toBeVisible();
     await expect(page.getByText('Picture a patient ring-cutter in a orthodox stance.', { exact: false })).toBeVisible();
 
     // Pause holds the fight where it is.
     await page.getByRole('button', { name: 'Pause' }).click();
     await expect(page.getByRole('button', { name: 'Next prompt' })).toBeDisabled();
-    await expect(page.getByText('Paused.', { exact: false })).toBeVisible();
+    // Said once on the panel and once into the live region, which is the point.
+    await expect(page.locator('section').getByText('Paused.', { exact: false })).toBeVisible();
+    await expect(page.getByRole('status')).toContainText('Paused.');
     await page.getByRole('button', { name: 'Resume' }).click();
     await expect(page.getByRole('button', { name: 'Next prompt' })).toBeEnabled();
 
@@ -146,14 +148,14 @@ test.describe('Coach guided visualization', () => {
     }
     const prompt = page.getByRole('heading', { level: 2 });
     await expect(prompt).toHaveText('The opponent acts');
-    await expect(page.getByText('Step 5 of 22')).toBeVisible();
+    await expect(page.locator('section').getByText('Step 5 of 22')).toBeVisible();
 
     await page.getByRole('button', { name: 'Rebuild the picture' }).click();
     await expect(prompt).toHaveText('Before the Bell — Build the Opponent');
 
     await page.getByRole('button', { name: 'Back to Round 1 of 3 — DISCOVER' }).click();
     await expect(prompt).toHaveText('The opponent acts');
-    await expect(page.getByText('Step 5 of 22')).toBeVisible();
+    await expect(page.locator('section').getByText('Step 5 of 22')).toBeVisible();
   });
 
   test('the Level 1 options stay out of the script until the coach asks for them', async ({ page }) => {

@@ -87,11 +87,76 @@ describe('PF-001 content is the authored scenario, copied not rewritten', () => 
     expect(MANUAL_DELIVERY_RULES.level3Note).toContain('not a command-response drill');
   });
 
-  test('no scoring vocabulary rides along in the content', () => {
-    const everyString = JSON.stringify({ PF001_RING_CUTTER, MANUAL_DELIVERY_RULES }).toLowerCase();
-    for (const word of ['scorecard', 'mastery', 'pass/fail', 'points', 'grade']) {
-      expect(everyString).not.toContain(word);
+  /**
+   * R5. A word in an authored scenario is not a scoring system, and a word list
+   * is not a contract. What must be true is structural: nothing this module
+   * exports carries a score, rating, verdict or progression decision, and a
+   * session produces prompts and nothing else.
+   */
+  test('the exported content has no field that could hold a judgement', () => {
+    const JUDGEMENT = /score|rating|rate|mastery|grade|verdict|pass|fail|progress|promote|result|outcome|percent|points|rubric|assessment|evaluation/i;
+
+    const keys = new Set<string>();
+    const walk = (value: unknown) => {
+      if (Array.isArray(value)) {
+        value.forEach(walk);
+        return;
+      }
+      if (value && typeof value === 'object') {
+        for (const [key, child] of Object.entries(value)) {
+          keys.add(key);
+          walk(child);
+        }
+      }
+    };
+    walk(PF001_RING_CUTTER);
+    walk(MANUAL_DELIVERY_RULES);
+    for (const level of [1, 2, 3] as DeliveryLevel[]) walk(buildGuidedSession(PF001_RING_CUTTER, level));
+
+    expect([...keys].filter((key) => JUDGEMENT.test(key))).toEqual([]);
+    // And the values are prose, not measurements: no numbers are carried at all.
+    const numbers: unknown[] = [];
+    const walkValues = (value: unknown) => {
+      if (Array.isArray(value)) return value.forEach(walkValues);
+      if (value && typeof value === 'object') return Object.values(value).forEach(walkValues);
+      if (typeof value === 'number' || typeof value === 'boolean') numbers.push(value);
+    };
+    walkValues(PF001_RING_CUTTER);
+    walkValues(MANUAL_DELIVERY_RULES);
+    for (const level of [1, 2, 3] as DeliveryLevel[]) walkValues(buildGuidedSession(PF001_RING_CUTTER, level));
+    expect(numbers).toEqual([]);
+  });
+
+  test('a session is a list of prompts: it computes nothing and returns no result', () => {
+    for (const level of [1, 2, 3] as DeliveryLevel[]) {
+      const segments = buildGuidedSession(PF001_RING_CUTTER, level);
+      for (const step of segments) {
+        expect(Object.keys(step).sort()).toEqual([
+          'body',
+          'items',
+          'key',
+          'kind',
+          'note',
+          'onRequest',
+          'phase',
+          'title',
+        ]);
+      }
+      // The last step is an end state, not a verdict: it carries no content of
+      // its own to interpret.
+      const last = segments[segments.length - 1];
+      expect(last.kind).toBe('complete');
+      expect(last.body).toEqual([]);
+      expect(last.items).toEqual([]);
+      expect(last.onRequest).toBeNull();
     }
+  });
+
+  test('the module exports only content, its order and their types', () => {
+    const lib = jest.requireActual<Record<string, unknown>>('./guidedSession');
+    const content = jest.requireActual<Record<string, unknown>>('./pf001Scenario');
+    expect(Object.keys(lib).sort()).toEqual(['buildGuidedSession']);
+    expect(Object.keys(content).sort()).toEqual(['MANUAL_DELIVERY_RULES', 'PF001_RING_CUTTER', 'VISUALIZATION_CONTENT_SOURCE']);
   });
 });
 

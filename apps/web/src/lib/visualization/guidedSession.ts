@@ -52,6 +52,12 @@ export interface OnRequest {
 }
 
 export interface SessionSegment {
+  /**
+   * Unique within one exposure, and carrying the level's shape: at Level 1 a
+   * round yields action/question/guidance/continue, at Level 2 reduced-cues and
+   * at Level 3 cue-only. It is what tracks whether the coach asked for that
+   * round's options, and what the order tests pin.
+   */
   key: string;
   kind: SegmentKind;
   /** Where the coach is: "Before the bell", "Round 1 of 3 — DISCOVER", "Debrief". */

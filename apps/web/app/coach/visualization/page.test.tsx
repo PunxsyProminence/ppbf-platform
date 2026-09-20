@@ -32,6 +32,11 @@ function position() {
   return screen.getByText(/^Step \d+ of \d+$/).textContent ?? '';
 }
 
+/** The page's single live region. */
+function liveRegion() {
+  return screen.getByRole('status');
+}
+
 function clickNext() {
   fireEvent.click(screen.getByRole('button', { name: 'Next prompt' }));
 }
@@ -169,6 +174,8 @@ describe('Level 1 — Guided: the authored order, and options only on request', 
     for (const option of PF001_RING_CUTTER.rounds[0].level1.options) {
       expect(screen.getByText(option)).toBeInTheDocument();
     }
+    // The button that was pressed is gone, so the change is said out loud.
+    expect(liveRegion()).toHaveTextContent('Offer the response options.');
   });
 
   test('asking for the options in one round does not reveal them in the next', () => {
@@ -258,6 +265,44 @@ describe('the controls a coach needs on the floor', () => {
     expect(prompt()).toBe('The opponent acts');
   });
 
+  test('the rebuild bookmark survives moving around inside the rebuild', () => {
+    render(<CoachVisualizationPage />);
+    runAt(1);
+    for (let step = 0; step < 4; step += 1) clickNext();
+    const wasAt = position();
+    expect(prompt()).toBe('The opponent acts');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild the picture' }));
+    expect(prompt()).toBe('Before the Bell — Build the Opponent');
+
+    // Re-establishing the picture can take more than one prompt; the way back
+    // must still be there afterwards.
+    clickNext();
+    expect(prompt()).toBe('Key visual cues');
+    const back = screen.getByRole('button', { name: 'Back to Round 1 of 3 — DISCOVER' });
+    expect(back).toBeInTheDocument();
+
+    fireEvent.click(back);
+    expect(position()).toBe(wasAt);
+    expect(prompt()).toBe('The opponent acts');
+  });
+
+  test('walking past the bookmarked point drops the bookmark, rather than offering a move backwards', () => {
+    render(<CoachVisualizationPage />);
+    runAt(1);
+    clickNext();
+    const wasAt = position();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild the picture' }));
+    expect(screen.getByRole('button', { name: /^Back to / })).toBeInTheDocument();
+
+    clickNext();
+    clickNext();
+    expect(position()).not.toBe(wasAt);
+    expect(screen.queryByRole('button', { name: /^Back to / })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Rebuild the picture' })).toBeInTheDocument();
+  });
+
   test('pause holds the fight where it is until resume', () => {
     render(<CoachVisualizationPage />);
     runAt(1);
@@ -274,6 +319,49 @@ describe('the controls a coach needs on the floor', () => {
     expect(screen.getByRole('button', { name: 'Next prompt' })).toBeEnabled();
     clickNext();
     expect(prompt()).not.toBe(held);
+  });
+
+  test('one live region carries every state change, and it is the same region throughout', () => {
+    render(<CoachVisualizationPage />);
+    const region = liveRegion();
+    expect(region).toHaveAttribute('aria-live', 'polite');
+    expect(region).toHaveTextContent('');
+
+    runAt(1);
+    expect(liveRegion()).toBe(region);
+    expect(region).toHaveTextContent('Level 1');
+    expect(region).toHaveTextContent('Step 1 of 22');
+
+    clickNext();
+    expect(region).toHaveTextContent('Key visual cues');
+    expect(region).toHaveTextContent('Step 2 of 22');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    expect(region).toHaveTextContent('Paused.');
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    expect(region).toHaveTextContent('Resumed.');
+
+    // Rebuild and the way back both say what happened.
+    clickNext();
+    clickNext();
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild the picture' }));
+    expect(region).toHaveTextContent('Rebuilding the picture.');
+    fireEvent.click(screen.getByRole('button', { name: /^Back to / }));
+    expect(region).toHaveTextContent('Back in the fight.');
+
+    // One region, one message: nothing else on the page claims that role.
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+  });
+
+  test('reaching the debrief and the end is announced by name, without a step count', () => {
+    render(<CoachVisualizationPage />);
+    runAt(3);
+    while (prompt() !== 'Post-Fight Debrief') clickNext();
+    expect(liveRegion()).toHaveTextContent('Post-Fight Debrief');
+    expect(liveRegion().textContent).not.toMatch(/Step \d+ of/);
+
+    clickNext();
+    expect(liveRegion()).toHaveTextContent('Session complete');
   });
 
   test('focus moves to the prompt, so a keyboard coach lands on what to say', () => {
@@ -341,6 +429,46 @@ describe('the debrief, and what the session refuses to claim', () => {
     expect(screen.queryByRole('button', { name: 'Next prompt' })).not.toBeInTheDocument();
   });
 
+  test('from session complete the debrief is still reachable, with what was typed', () => {
+    walkToDebrief();
+    fireEvent.change(screen.getByLabelText(PF001_RING_CUTTER.debriefQuestions[0]), {
+      target: { value: 'He cut the lane before he punched.' },
+    });
+    clickNext();
+    expect(prompt()).toBe('Session complete');
+
+    // The end is not a trap: the debrief is one deliberate step away, and it
+    // still holds the words that were typed into it.
+    expect(screen.queryByRole('button', { name: 'Rebuild the picture' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the debrief' }));
+
+    expect(prompt()).toBe('Post-Fight Debrief');
+    expect(liveRegion()).toHaveTextContent('Back to the debrief.');
+    expect(screen.getByLabelText(PF001_RING_CUTTER.debriefQuestions[0])).toHaveValue(
+      'He cut the lane before he punched.',
+    );
+
+    // And forward again is the same single step, not a restart.
+    clickNext();
+    expect(prompt()).toBe('Session complete');
+  });
+
+  test('starting a new exposure leaves nothing on screen claiming the old one', () => {
+    walkToDebrief();
+    clickNext();
+    expect(prompt()).toBe('Session complete');
+    expect(liveRegion()).toHaveTextContent('Session complete');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start a new exposure' }));
+
+    // The region is read on the chooser too, so the state it reports must be
+    // the state that exists: no session is running.
+    expect(prompt()).toBe('Choose how you will deliver it');
+    expect(liveRegion().textContent).not.toMatch(/Session complete/);
+    expect(liveRegion()).toHaveTextContent('New exposure.');
+    expect(document.body.textContent).not.toMatch(/Session complete/);
+  });
+
   test('a new exposure starts from the level choice, clean', () => {
     walkToDebrief();
     fireEvent.change(screen.getByLabelText(PF001_RING_CUTTER.debriefQuestions[0]), {
@@ -356,19 +484,71 @@ describe('the debrief, and what the session refuses to claim', () => {
     expect(screen.getByLabelText(PF001_RING_CUTTER.debriefQuestions[0])).toHaveValue('');
   });
 
-  test('nothing on the surface scores, grades or promotes', () => {
-    render(<CoachVisualizationPage />);
-    runAt(1);
-    const everything = walkEverything().join(' ') + document.body.textContent;
-    // No judgement anywhere. The one sentence that mentions readiness is the
-    // disclaimer refusing that claim, so the claim itself is asserted instead.
-    for (const word of [/\bscore/i, /mastery/i, /\bpassed\b/i, /\bfailed\b/i, /\bpromote/i, /\bgrade\b/i, /vividness/i]) {
-      expect(everything).not.toMatch(word);
+  test('no screen of any level scores, grades, promotes or offers to save', () => {
+    const screensRead: string[] = [];
+    for (const level of [1, 2, 3] as const) {
+      const mounted = render(<CoachVisualizationPage />);
+      screensRead.push(document.body.textContent ?? '');
+      runAt(level);
+      for (let step = 0; step < 40; step += 1) {
+        // Every screen in full, including any help the coach can reveal.
+        const reveal = screen.queryByRole('button', { name: 'Offer the response options' });
+        if (reveal) fireEvent.click(reveal);
+        screensRead.push(document.body.textContent ?? '');
+        // Nothing measures anything: no progress bar, meter or gauge anywhere.
+        expect(document.querySelectorAll('[role="progressbar"], progress, meter')).toHaveLength(0);
+        for (const name of [/save/i, /submit/i, /^log/i, /score/i, /rate/i, /grade/i, /assign/i, /issue/i, /complete session/i]) {
+          expect(screen.queryByRole('button', { name })).toBeNull();
+        }
+        const next = screen.queryByRole('button', { name: 'Next prompt' });
+        if (!next) break;
+        fireEvent.click(next);
+      }
+      mounted.unmount();
+    }
+
+    const everything = screensRead.join(' ');
+    // The judgement check runs on the page's OWN words: authored text is
+    // removed first. The manual really does name a level "Adaptive / Scored"
+    // and really does say "after scoring, defend or exit" — quoting the source
+    // is not the app scoring anyone.
+    const authored: string[] = [];
+    const collect = (value: unknown) => {
+      if (typeof value === 'string') return authored.push(value);
+      if (Array.isArray(value)) return value.forEach(collect);
+      if (value && typeof value === 'object') return Object.values(value).forEach(collect);
+      return undefined;
+    };
+    collect(PF001_RING_CUTTER);
+    collect(MANUAL_DELIVERY_RULES);
+    const pageWords = authored
+      .sort((left, right) => right.length - left.length)
+      .reduce((text, authoredString) => text.split(authoredString).join(' '), everything);
+
+    // The one sentence that mentions readiness is the disclaimer refusing that
+    // claim, so the claim itself is asserted below instead.
+    for (const word of [/\bscore/i, /mastery/i, /\bpassed\b/i, /\bfailed\b/i, /\bpromote/i, /\bgrade\b/i, /vividness/i, /\brating\b/i]) {
+      expect(pageWords).not.toMatch(word);
     }
     expect(everything).toContain('does not say the athlete has learned to');
-    for (const name of [/save/i, /submit/i, /log /i, /complete session/i, /assign/i, /issue/i]) {
-      expect(screen.queryByRole('button', { name })).toBeNull();
+    // The evidence really was every screen of every level, not one page.
+    expect(screensRead.length).toBeGreaterThan(45);
+  });
+});
+
+describe('every step of every level renders a prompt', () => {
+  test.each([1, 2, 3] as const)('Level %s never shows an empty or unknown state', (level) => {
+    const mounted = render(<CoachVisualizationPage />);
+    runAt(level);
+    for (let step = 0; step < 40; step += 1) {
+      expect(prompt().length).toBeGreaterThan(0);
+      expect(document.body.textContent).not.toContain('No scenario to run');
+      const next = screen.queryByRole('button', { name: 'Next prompt' });
+      if (!next) break;
+      fireEvent.click(next);
     }
+    expect(prompt()).toBe('Session complete');
+    mounted.unmount();
   });
 });
 

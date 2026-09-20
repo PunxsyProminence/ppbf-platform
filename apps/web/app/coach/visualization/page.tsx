@@ -57,10 +57,15 @@ export default function CoachVisualizationPage() {
   // the coach's observation, kept apart because neither proves the other.
   const [selfReport, setSelfReport] = useState<Record<number, string>>({});
   const [coachObservation, setCoachObservation] = useState('');
+  // ONE live region for the whole surface, always mounted (see the JSX): a
+  // region created together with its text is not reliably announced, and two
+  // regions talk over each other. Everything worth hearing is set here.
+  const [announcement, setAnnouncement] = useState('');
   const promptRef = useRef<HTMLHeadingElement | null>(null);
 
   const segment = segments[index];
   const atEnd = segment?.kind === 'complete';
+  const debriefIndex = segments.findIndex((step) => step.kind === 'debrief');
 
   /** Focus the prompt after a move, so a keyboard coach lands on what to say. */
   function focusPrompt() {
@@ -68,12 +73,24 @@ export default function CoachVisualizationPage() {
     window.requestAnimationFrame(() => promptRef.current?.focus());
   }
 
-  function goTo(next: number) {
+  /** What a coach who cannot see the screen needs to hear about a move. */
+  function announceStep(at: number, prefix = '') {
+    const step = segments[at];
+    if (!step) return;
+    const where = step.kind === 'complete' || step.kind === 'debrief'
+      ? step.title
+      : `${step.phase}. ${step.title}. Step ${at + 1} of ${segments.length}`;
+    setAnnouncement(prefix ? `${prefix} ${where}` : where);
+  }
+
+  function goTo(next: number, prefix = '') {
     setIndex(next);
+    announceStep(next, prefix);
     focusPrompt();
   }
 
   function startAt(chosen: DeliveryLevel) {
+    const chosenSegments = buildGuidedSession(SCENARIO, chosen);
     setLevel(chosen);
     setIndex(0);
     setPaused(false);
@@ -81,13 +98,44 @@ export default function CoachVisualizationPage() {
     setRevealed({});
     setSelfReport({});
     setCoachObservation('');
+    setAnnouncement(
+      `Level ${chosen}. ${chosenSegments[0].phase}. ${chosenSegments[0].title}. Step 1 of ${chosenSegments.length}`,
+    );
     focusPrompt();
+  }
+
+  /**
+   * Back to the level choice: a new exposure, with nothing carried over. The
+   * announcement is replaced rather than left alone, because the region is
+   * read on this screen too and the last thing it said was that a session had
+   * finished -- which is no longer true of anything.
+   */
+  function startOver() {
+    setLevel(null);
+    setIndex(0);
+    setPaused(false);
+    setResumeIndex(null);
+    setRevealed({});
+    setSelfReport({});
+    setCoachObservation('');
+    setAnnouncement('New exposure. Choose how you will deliver it.');
+    focusPrompt();
+  }
+
+  /** The coach asked for the authored options on this round only. */
+  function revealOptions(key: string, label: string) {
+    setRevealed((prev) => ({ ...prev, [key]: true }));
+    setAnnouncement(`${label}.`);
   }
 
   function next() {
     if (paused || atEnd) return;
-    setResumeIndex(null);
-    goTo(Math.min(index + 1, segments.length - 1));
+    const to = Math.min(index + 1, segments.length - 1);
+    // The rebuild bookmark survives moving around inside the rebuild: it is
+    // spent by returning, or dropped once the coach has walked past the point
+    // it would take them back to.
+    if (resumeIndex !== null && to >= resumeIndex) setResumeIndex(null);
+    goTo(to);
   }
 
   function rebuildPicture() {
@@ -96,14 +144,28 @@ export default function CoachVisualizationPage() {
       return;
     }
     setResumeIndex(index);
-    goTo(0);
+    goTo(0, 'Rebuilding the picture.');
   }
 
   function returnToFight() {
     if (resumeIndex === null) return;
     const back = resumeIndex;
     setResumeIndex(null);
-    goTo(back);
+    goTo(back, 'Back in the fight.');
+  }
+
+  /** From session complete: the debrief is still there to read and add to. */
+  function backToDebrief() {
+    if (debriefIndex < 0) return;
+    setResumeIndex(null);
+    goTo(debriefIndex, 'Back to the debrief.');
+  }
+
+  function togglePause() {
+    setPaused((was) => {
+      setAnnouncement(was ? 'Resumed.' : 'Paused. The fight has not moved on.');
+      return !was;
+    });
   }
 
   return (
@@ -118,6 +180,12 @@ export default function CoachVisualizationPage() {
         data-surface="kiosk"
       >
         <div className="mx-auto w-full max-w-3xl">
+          {/* The one live region, mounted for the life of the page so a screen
+              reader is listening before anything is said into it. */}
+          <p role="status" aria-live="polite" className="t-label text-[color:var(--bone-300)]">
+            {announcement}
+          </p>
+
           <header className="mb-[var(--s4)]">
             <p className="t-eyebrow">Coach Workspace</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
@@ -174,16 +242,6 @@ export default function CoachVisualizationPage() {
                 </p>
               </div>
             </section>
-          ) : !segment ? (
-            <div className="mat-leather rounded-[var(--r-lg)]">
-              <div className="empty">
-                <div className="empty-title">No scenario to run</div>
-                <p className="empty-msg mx-auto">
-                  This exposure has no authored prompts, so there is nothing to deliver. That is a
-                  content problem, not a session you can run.
-                </p>
-              </div>
-            </div>
           ) : (
             <>
               <section className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]">
@@ -207,7 +265,7 @@ export default function CoachVisualizationPage() {
                 </h2>
 
                 {paused && (
-                  <p role="status" className="t-label mt-[var(--s3)] text-[color:var(--bone-300)]">
+                  <p className="t-label mt-[var(--s3)] text-[color:var(--bone-300)]">
                     Paused. Rebuild the picture, then resume. The fight has not moved on.
                   </p>
                 )}
@@ -247,7 +305,7 @@ export default function CoachVisualizationPage() {
                         <button
                           type="button"
                           className="btn btn--ghost mt-[var(--s3)]"
-                          onClick={() => setRevealed((prev) => ({ ...prev, [segment.key]: true }))}
+                          onClick={() => revealOptions(segment.key, segment.onRequest!.label)}
                         >
                           {segment.onRequest.label}
                         </button>
@@ -320,7 +378,14 @@ export default function CoachVisualizationPage() {
                 <button type="button" className="btn btn--ghost" onClick={focusPrompt}>
                   Repeat this prompt
                 </button>
-                {resumeIndex === null ? (
+                {/* At the end the fight is over: rebuilding the picture belongs
+                    to the rounds, and what a coach wants there is the debrief
+                    they just worked through, still holding what was typed. */}
+                {atEnd ? (
+                  <button type="button" className="btn btn--ghost" onClick={backToDebrief}>
+                    Back to the debrief
+                  </button>
+                ) : resumeIndex === null ? (
                   <button type="button" className="btn btn--ghost" onClick={rebuildPicture}>
                     Rebuild the picture
                   </button>
@@ -330,16 +395,12 @@ export default function CoachVisualizationPage() {
                   </button>
                 )}
                 {!atEnd && (
-                  <button
-                    type="button"
-                    className="btn btn--ghost"
-                    onClick={() => setPaused((was) => !was)}
-                  >
+                  <button type="button" className="btn btn--ghost" onClick={togglePause}>
                     {paused ? 'Resume' : 'Pause'}
                   </button>
                 )}
                 {atEnd && (
-                  <button type="button" className="btn btn--ghost" onClick={() => setLevel(null)}>
+                  <button type="button" className="btn btn--ghost" onClick={startOver}>
                     Start a new exposure
                   </button>
                 )}
