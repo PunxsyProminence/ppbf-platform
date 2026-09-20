@@ -214,7 +214,25 @@ const isCoachE2ePath = (file) => {
       'apps/web/app/api/pilot/coach-reviews/',
       'apps/web/app/api/pilot/shadow/',
       'apps/web/app/api/pilot/athletes/',
-      'apps/web/e2e/coach-journey',
+      /* THE SUITE'S OWN SPECS -- all of them, not one. This was
+         'apps/web/e2e/coach-journey', which is the same "could not run
+         itself" miss the homepage and board predicates above record, with a
+         second edge: `test:e2e:coach` now runs TWO specs, so naming one of
+         them left the other unable to flag the suite that executes it.
+         Measured on #940: a diff touching only coach-visualization.spec.ts
+         classified `unknown_code`, and the visualization journey did not run
+         on the commit that wrote it. The prefix is the family, so the next
+         coach spec is attended by existing. */
+      'apps/web/e2e/coach-',
+      /* WHAT THE COACH SURFACE READS. The visualization route renders nothing
+         of its own: the authored scenario and the session model decide every
+         prompt, their order and which are withheld. A re-copy of the manual
+         content or a change to the delivery-level model is therefore a change
+         to what coach-visualization.spec.ts walks through, and both reached
+         no predicate at all -- they classified `unknown_code`, which ci.yml
+         reports as "no browser suite exercised them" and tells the reader to
+         widen the predicate that should have matched. This is that widening. */
+      'apps/web/src/lib/visualization/',
     ]) ||
     component.includes('Coach')
   );
