@@ -1,31 +1,45 @@
 /**
- * The order a coach delivers one authored scenario in, at one delivery level.
+ * The order a coach delivers one authored scenario in, as a LEVEL 1 GUIDED
+ * exposure. That is the whole of what VIZ-1 runs.
  *
- * THE LEVELS ARE NOT STEPS. The manual's Levels 1, 2 and 3 are three ways to
- * run the WHOLE three-round arc -- Guided, Decision, Adaptive -- and the coach
- * picks the one that fits the athlete's stage ("When the athlete reaches Level
- * 3 and the coach is using short cues only..."). Walking them one after another
- * inside a single exposure would feed the athlete the answer and then pretend
- * the cue-only version came next, which is the opposite of what the levels are
- * for. So a level is chosen for the exposure, and every round is delivered at
- * that level.
+ * WHY ONLY LEVEL 1. The manual describes three delivery modes for the whole
+ * three-round arc -- 1 Guided, 2 Decision, 3 Adaptive/Scored -- and they are
+ * modes, not stages to climb inside one session. VIZ-1's authorized product
+ * unit is the guided one: the coach describes the opponent action, leaves a
+ * beat, asks the authored question, and offers the lettered options only if the
+ * athlete cannot decide unaided.
+ *
+ * Levels 2 and 3 are NOT implemented here, and this file does not pretend to
+ * choose between modes it cannot deliver. Their wording stays in
+ * pf001Scenario.ts as source material -- `level2Cues`, `level3Cues`,
+ * `deliveryLevels`, `level3Note` -- so the source document is preserved whole
+ * and a later slice can build them. Level 3 in particular the manual defines as
+ * timed and scored, and VIZ-1 implements neither, so offering it as a runnable
+ * choice would have promised behaviour that does not exist.
  *
  * WHY THE ORDER IS DATA. Within a round the curriculum prints a fixed sequence,
- * and at Level 1 it also prints a rule for HOW to deliver it: describe the
- * opponent action and leave a beat, ask the question, and offer the lettered
- * options only if the athlete cannot decide unaided. Modelling that as data
- * lets a test pin it, and a mutation of it fail.
+ * and it also prints a rule for HOW to deliver it. Modelling that as data lets a
+ * test pin it, and a mutation of it fail.
  *
- * NOTHING IS ADDED. Every string comes from the scenario or from the manual's
- * own delivery rules in pf001Scenario.ts. This file chooses order, grouping and
- * gating only: no prompt is rewritten, none is skipped, and none is invented to
- * fill a gap (Round 3 has no corner note, so it gets no corner segment).
+ * NO AUTHORED PROSE IS ADDED OR REWRITTEN. Every `body`, `items`, `note` and
+ * `onRequest` string comes from the scenario or from the manual's own delivery
+ * rules in pf001Scenario.ts: none is rewritten, none is skipped, and none is
+ * invented to fill a gap (Round 3 has no corner note, so it gets no corner
+ * segment).
+ *
+ * WHAT THIS FILE DOES WRITE, and it is worth being exact because the page reads
+ * `title` out loud as the prompt: the structural labels. `title` on the
+ * non-authored steps ("The opponent acts", "Ask the athlete", "Coach guidance",
+ * "Continue the fight", "Corner note", "Key visual cues", "Common athlete
+ * mistakes", "Session complete"), `phase` ("Before the bell", "Round 1 of 3 —
+ * DISCOVER", "Debrief") and `onRequest.label` ("Offer the response options").
+ * The source labels its own steps differently -- "Opponent action / visual
+ * problem:", "Round 1 — DISCOVER" -- so these are this file's wording, chosen to
+ * be read aloud on a gym floor. Round purposes, cues, mistakes and debrief
+ * questions ARE authored and are passed through untouched.
  */
 
 import { MANUAL_DELIVERY_RULES, type ScenarioRound, type VisualizationScenario } from './pf001Scenario';
-
-/** 1 — Guided, 2 — Decision, 3 — Adaptive / Scored, as the manual names them. */
-export type DeliveryLevel = 1 | 2 | 3;
 
 export type SegmentKind =
   | 'opponent'
@@ -36,8 +50,6 @@ export type SegmentKind =
   | 'coach-question'
   | 'coach-guidance'
   | 'continue'
-  | 'reduced-cues'
-  | 'cue-only'
   | 'corner'
   | 'debrief'
   | 'complete';
@@ -53,10 +65,10 @@ export interface OnRequest {
 
 export interface SessionSegment {
   /**
-   * Unique within one exposure, and carrying the level's shape: at Level 1 a
-   * round yields action/question/guidance/continue, at Level 2 reduced-cues and
-   * at Level 3 cue-only. It is what tracks whether the coach asked for that
-   * round's options, and what the order tests pin.
+   * Unique within one exposure: a round yields purpose, action, question,
+   * guidance, continue and (where the source has one) a corner note. It is what
+   * tracks whether the coach asked for that round's options, and what the order
+   * tests pin.
    */
   key: string;
   kind: SegmentKind;
@@ -85,7 +97,7 @@ function segment(partial: Omit<SessionSegment, 'note' | 'onRequest'> & Partial<P
   return { note: null, onRequest: null, ...partial };
 }
 
-function roundSegments(round: ScenarioRound, ordinal: number, level: DeliveryLevel): SessionSegment[] {
+function roundSegments(round: ScenarioRound, ordinal: number): SessionSegment[] {
   const phase = `Round ${ordinal} of 3 — ${round.label.replace(/^Round \d+ — /, '')}`;
   const purpose = segment({
     key: `${round.key}-purpose`,
@@ -100,86 +112,61 @@ function roundSegments(round: ScenarioRound, ordinal: number, level: DeliveryLev
     ? [segment({ key: `${round.key}-corner`, kind: 'corner', phase, title: 'Corner note', body: [round.cornerNote], items: [] })]
     : [];
 
-  if (level === 1) {
-    return [
-      purpose,
-      segment({
-        key: `${round.key}-action`,
-        kind: 'opponent-action',
-        phase,
-        title: 'The opponent acts',
-        body: [round.level1.opponentAction],
-        items: [],
-        note: BEAT_RULE,
-      }),
-      segment({
-        key: `${round.key}-question`,
-        kind: 'coach-question',
-        phase,
-        title: 'Ask the athlete',
-        body: [round.level1.coachAsks],
-        items: [],
-        // The options are coaching resources, not a script: the manual says so
-        // in these words, so they stay behind the coach's own decision to use them.
-        onRequest: {
-          label: 'Offer the response options',
-          rule: MANUAL_DELIVERY_RULES.level1OptionsRule,
-          ruleBullets: [...MANUAL_DELIVERY_RULES.level1OptionsBullets],
-          items: round.level1.options,
-        },
-      }),
-      segment({
-        key: `${round.key}-guidance`,
-        kind: 'coach-guidance',
-        phase,
-        title: 'Coach guidance',
-        body: [round.level1.coachGuidance],
-        items: [],
-      }),
-      segment({
-        key: `${round.key}-continue`,
-        kind: 'continue',
-        phase,
-        title: 'Continue the fight',
-        body: [round.level1.continueTheFight],
-        items: [],
-      }),
-      ...corner,
-    ];
-  }
-
-  if (level === 2) {
-    return [
-      purpose,
-      segment({
-        key: `${round.key}-reduced-cues`,
-        kind: 'reduced-cues',
-        phase,
-        title: 'Level 2 — Reduced Cues',
-        body: [round.level2Cues],
-        items: [],
-      }),
-      ...corner,
-    ];
-  }
-
   return [
     purpose,
     segment({
-      key: `${round.key}-cue-only`,
-      kind: 'cue-only',
+      key: `${round.key}-action`,
+      kind: 'opponent-action',
       phase,
-      title: 'Level 3 — Cue-Only Version',
-      body: [round.level3Cues],
+      title: 'The opponent acts',
+      body: [round.level1.opponentAction],
       items: [],
-      note: MANUAL_DELIVERY_RULES.level3Note,
+      note: BEAT_RULE,
+    }),
+    segment({
+      key: `${round.key}-question`,
+      kind: 'coach-question',
+      phase,
+      title: 'Ask the athlete',
+      body: [round.level1.coachAsks],
+      items: [],
+      // The options are coaching resources, not a script: the manual says so
+      // in these words, so they stay behind the coach's own decision to use them.
+      onRequest: {
+        label: 'Offer the response options',
+        rule: MANUAL_DELIVERY_RULES.level1OptionsRule,
+        ruleBullets: [...MANUAL_DELIVERY_RULES.level1OptionsBullets],
+        items: round.level1.options,
+      },
+    }),
+    segment({
+      key: `${round.key}-guidance`,
+      kind: 'coach-guidance',
+      phase,
+      title: 'Coach guidance',
+      body: [round.level1.coachGuidance],
+      items: [],
+    }),
+    segment({
+      key: `${round.key}-continue`,
+      kind: 'continue',
+      phase,
+      title: 'Continue the fight',
+      body: [round.level1.continueTheFight],
+      items: [],
     }),
     ...corner,
   ];
 }
 
-/** One exposure of the whole scenario at one level, in the authored order. */
-export function buildGuidedSession(scenario: VisualizationScenario, level: DeliveryLevel): SessionSegment[] {
+/**
+ * One Level 1 Guided exposure of the whole scenario, in the authored order.
+ *
+ * There is no level parameter, on purpose: VIZ-1 delivers the guided mode and
+ * nothing else, and a parameter whose other values are unimplemented would be a
+ * promise the code cannot keep.
+ */
+export function buildGuidedSession(scenario: VisualizationScenario): SessionSegment[] {
   return [
     segment({
       key: 'before-the-bell',
@@ -205,7 +192,7 @@ export function buildGuidedSession(scenario: VisualizationScenario, level: Deliv
       body: [],
       items: scenario.commonMistakes,
     }),
-    ...scenario.rounds.flatMap((round, index) => roundSegments(round, index + 1, level)),
+    ...scenario.rounds.flatMap((round, index) => roundSegments(round, index + 1)),
     segment({
       key: 'debrief',
       kind: 'debrief',

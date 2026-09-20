@@ -40,16 +40,18 @@ test.describe('Coach guided visualization', () => {
       page.getByText(/Adaptive_Amateur_Boxing_Visualization_Curriculum_100_Scenarios\.docx/),
     ).toBeVisible();
 
-    // It opens on the delivery-level choice, carrying the manual's own rules.
+    // It opens on the rules and one start control. VIZ-1 delivers the manual's
+    // Level 1 Guided exposure, so there is no mode to choose between -- and no
+    // button offering a Decision or a timed, scored Adaptive mode that this
+    // slice does not implement.
     const prompt = page.getByRole('heading', { level: 2 });
-    await expect(prompt).toHaveText('Choose how you will deliver it');
-    await expect(page.getByText('1 — Guided')).toBeVisible();
-    await expect(page.getByText('2 — Decision')).toBeVisible();
-    await expect(page.getByText('3 — Adaptive / Scored')).toBeVisible();
+    await expect(prompt).toHaveText('Before you start');
     await expect(page.getByText('See the cue before the answer', { exact: false })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Run at Level/i })).toHaveCount(0);
+    await expect(page.getByText('2 — Decision')).toHaveCount(0);
+    await expect(page.getByText('3 — Adaptive / Scored')).toHaveCount(0);
 
-    // The coach picks ONE level for the whole exposure, then it begins.
-    await page.getByRole('button', { name: 'Run at Level 1' }).click();
+    await page.getByRole('button', { name: 'Start the guided session' }).click();
     await expect(prompt).toHaveText('Before the Bell — Build the Opponent');
     await expect(page.locator('section').getByText('Step 1 of 22')).toBeVisible();
     await expect(page.getByText('Picture a patient ring-cutter in a orthodox stance.', { exact: false })).toBeVisible();
@@ -115,7 +117,7 @@ test.describe('Coach guided visualization', () => {
 
     const prompt = page.getByRole('heading', { level: 2 });
     const promptText = async () => ((await prompt.textContent()) ?? '').trim();
-    await page.getByRole('button', { name: 'Run at Level 1' }).click();
+    await page.getByRole('button', { name: 'Start the guided session' }).click();
     for (let step = 0; step < 30; step += 1) {
       if ((await promptText()) === 'Post-Fight Debrief') break;
       await page.getByRole('button', { name: 'Next prompt' }).click();
@@ -128,9 +130,9 @@ test.describe('Coach guided visualization', () => {
 
     await page.reload();
 
-    // A refresh is a new unsaved exposure: back at the level choice, nothing kept.
-    await expect(prompt).toHaveText('Choose how you will deliver it');
-    await page.getByRole('button', { name: 'Run at Level 1' }).click();
+    // A refresh is a new unsaved exposure: back at the start screen, nothing kept.
+    await expect(prompt).toHaveText('Before you start');
+    await page.getByRole('button', { name: 'Start the guided session' }).click();
     for (let step = 0; step < 30; step += 1) {
       if ((await promptText()) === 'Post-Fight Debrief') break;
       await page.getByRole('button', { name: 'Next prompt' }).click();
@@ -142,7 +144,7 @@ test.describe('Coach guided visualization', () => {
     await installPilotApi(page, { session: { role: 'coach' } });
     await page.goto(ROUTE);
 
-    await page.getByRole('button', { name: 'Run at Level 1' }).click();
+    await page.getByRole('button', { name: 'Start the guided session' }).click();
     for (let step = 0; step < 4; step += 1) {
       await page.getByRole('button', { name: 'Next prompt' }).click();
     }
@@ -162,7 +164,7 @@ test.describe('Coach guided visualization', () => {
     await installPilotApi(page, { session: { role: 'coach' } });
     await page.goto(ROUTE);
 
-    await page.getByRole('button', { name: 'Run at Level 1' }).click();
+    await page.getByRole('button', { name: 'Start the guided session' }).click();
     for (let step = 0; step < 5; step += 1) {
       await page.getByRole('button', { name: 'Next prompt' }).click();
     }
@@ -201,17 +203,28 @@ test.describe('Coach guided visualization', () => {
     await expect(page.getByRole('heading', { level: 2 })).toHaveText('Coach guidance');
   });
 
-  test('Level 3 delivers cues only, with no fed answer anywhere', async ({ page }) => {
+  test('no unimplemented delivery mode is reachable in a real browser', async ({ page }) => {
     await installPilotApi(page, { session: { role: 'coach' } });
     await page.goto(ROUTE);
+    await page.getByRole('button', { name: 'Start the guided session' }).click();
 
-    await page.getByRole('button', { name: 'Run at Level 3' }).click();
-    const prompt = page.getByRole('heading', { level: 2 });
-    for (let step = 0; step < 4; step += 1) {
-      await page.getByRole('button', { name: 'Next prompt' }).click();
+    // Walk the whole exposure and prove the Level 2 and Level 3 shapes never
+    // appear. The source keeps their wording; this product does not deliver it,
+    // and Level 3 is the one the manual defines as timed and scored.
+    for (let step = 0; step < 30; step += 1) {
+      const reveal = page.getByRole('button', { name: 'Offer the response options' });
+      if (await reveal.count()) await reveal.click();
+
+      await expect(page.getByText('Reduced Cues')).toHaveCount(0);
+      await expect(page.getByText('Cue-Only')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /Run at Level/i })).toHaveCount(0);
+      await expect(page.locator('time, progress, meter, [role="progressbar"], [role="timer"]')).toHaveCount(0);
+
+      const next = page.getByRole('button', { name: 'Next prompt' });
+      if (!(await next.count())) break;
+      await next.click();
     }
-    await expect(prompt).toHaveText('Level 3 — Cue-Only Version');
-    await expect(page.getByText('not a command-response drill', { exact: false })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Offer the response options' })).toHaveCount(0);
+
+    await expect(page.getByRole('heading', { level: 2 })).toHaveText('Session complete');
   });
 });

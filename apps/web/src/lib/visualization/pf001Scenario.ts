@@ -1,9 +1,17 @@
 /**
  * PF-001 "The Ring-Cutter", copied verbatim from the authored visualization
- * curriculum. THIS FILE IS SOURCE CONTENT, NOT AUTHORING: every string below
- * is the coach-approved wording, and nothing here may be rewritten, summarized
- * or extended in code. If the curriculum changes, re-copy it; do not edit the
- * prose to suit the screen.
+ * curriculum. THIS FILE IS SOURCE CONTENT, NOT AUTHORING: every string below is
+ * copied from the current source document, and nothing here may be rewritten,
+ * summarized or extended in code. If the curriculum changes, re-copy it; do not
+ * edit the prose to suit the screen.
+ *
+ * WHAT THAT DOES AND DOES NOT CLAIM. Copying is a fidelity guarantee, not an
+ * endorsement. This file preserves the current source wording; it does not
+ * establish that the wording is final, that the programme has been validated in
+ * the field, or that the methodology works. The code approves nothing and
+ * validates nothing -- it renders authored prose in the order the source prints
+ * it. Field validation of this curriculum remains unproven, and no test in this
+ * repository can establish it.
  *
  * SOURCE DOCUMENT: Adaptive_Amateur_Boxing_Visualization_Curriculum_100_Scenarios.docx
  *   ("ADAPTIVE AMATEUR BOXING / Visualization Manual / Six Opponent Types -
@@ -22,6 +30,23 @@ export const VISUALIZATION_CONTENT_SOURCE = {
   document: 'Adaptive_Amateur_Boxing_Visualization_Curriculum_100_Scenarios.docx',
   version: "Content V4.1 content bank - Six Opponent Types, 100 Complete Shadowboxing Fight Scenarios, Three Development Levels, Coach's Edition",
   dated: '2026-09-15',
+} as const;
+
+/**
+ * What the copy above is, stated so a test can hold it rather than a comment
+ * nobody reads. Every clause here is deliberately a limit.
+ */
+export const CONTENT_AUTHORITY = {
+  /** The only claim this file makes. */
+  basis: 'Copied from the current source document, wording and order preserved.',
+  /** Not "approved", not "validated": nothing here has been tested on athletes. */
+  fieldValidation: 'UNPROVEN',
+  /** What running this code does not do. */
+  codeDoesNotValidate:
+    'This code preserves source wording. It does not approve, validate or evaluate the methodology, and no test here can.',
+  /** VIZ-1 delivers the guided mode only; the rest is source material. */
+  executableDeliveryModes: ['1 — Guided'],
+  sourceOnlyDeliveryModes: ['2 — Decision', '3 — Adaptive / Scored'],
 } as const;
 
 /** One authored round of the three-round arc, in the order the source prints it. */

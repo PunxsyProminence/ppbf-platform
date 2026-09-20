@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
-import { buildGuidedSession, type DeliveryLevel } from '@/src/lib/visualization/guidedSession';
+import { buildGuidedSession } from '@/src/lib/visualization/guidedSession';
 import {
   MANUAL_DELIVERY_RULES,
   PF001_RING_CUTTER,
@@ -13,16 +13,19 @@ import {
 /**
  * VIZ-1: one coach-guided scripted shadowboxing visualization exposure.
  *
- * WHAT THIS SURFACE IS. A coach stands on the floor with one trained boxer,
- * picks the delivery level that fits them, and reads ONE authored scenario one
- * prompt at a time, from building the imagined opponent through the authored
- * debrief. The athlete keeps an opponent and a ring in their head and answers
- * authored cues with real movement; the screen is the coach's script.
+ * WHAT THIS SURFACE IS. A coach stands on the floor with one trained boxer and
+ * reads ONE authored scenario one prompt at a time, from building the imagined
+ * opponent through the authored debrief. The athlete keeps an opponent and a
+ * ring in their head and answers authored cues with real movement; the screen is
+ * the coach's script.
  *
- * THE LEVEL IS A CHOICE, NOT A LADDER TO CLIMB IN ONE SESSION. Levels 1, 2 and
- * 3 are the manual's three ways to run the whole arc. The coach picks one for
- * the exposure; the page never walks a fed answer and then the cue-only version
- * as if they followed each other.
+ * ONE DELIVERY MODE: LEVEL 1 GUIDED. The manual describes three modes for the
+ * whole arc, and VIZ-1 runs the guided one. There is no mode chooser, because
+ * there is nothing to choose between: Level 2 and Level 3 are not implemented
+ * here. Level 3 the manual defines as timed and scored, and this surface has
+ * neither a timer nor a scorecard, so offering it would have promised behaviour
+ * that does not exist. Their wording stays in src/lib/visualization as source
+ * material for a later slice.
  *
  * WHAT IT DELIBERATELY IS NOT.
  *  - Not a record. Nothing is saved: no exposure, no completion, no debrief
@@ -40,11 +43,13 @@ import {
 
 const SCENARIO = PF001_RING_CUTTER;
 
-const LEVEL_NUMBERS: DeliveryLevel[] = [1, 2, 3];
+/* Built once, at module scope: the exposure is the same every time, so there is
+   nothing to memoize and no reason for the component to rebuild it. */
+const SEGMENTS = buildGuidedSession(SCENARIO);
 
 export default function CoachVisualizationPage() {
-  const [level, setLevel] = useState<DeliveryLevel | null>(null);
-  const segments = useMemo(() => (level ? buildGuidedSession(SCENARIO, level) : []), [level]);
+  const [started, setStarted] = useState(false);
+  const segments = SEGMENTS;
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   // Where the coach was before rebuilding the picture, so going back to the
@@ -64,8 +69,10 @@ export default function CoachVisualizationPage() {
   const promptRef = useRef<HTMLHeadingElement | null>(null);
   const resourceRef = useRef<HTMLElement | null>(null);
 
+  // Always defined: the exposure is a fixed list and every move is clamped to
+  // it, so there is no empty-session state to defend against.
   const segment = segments[index];
-  const atEnd = segment?.kind === 'complete';
+  const atEnd = segment.kind === 'complete';
   const debriefIndex = segments.findIndex((step) => step.kind === 'debrief');
 
   /** Focus the prompt after a move, so a keyboard coach lands on what to say. */
@@ -90,9 +97,8 @@ export default function CoachVisualizationPage() {
     focusPrompt();
   }
 
-  function startAt(chosen: DeliveryLevel) {
-    const chosenSegments = buildGuidedSession(SCENARIO, chosen);
-    setLevel(chosen);
+  function startSession() {
+    setStarted(true);
     setIndex(0);
     setPaused(false);
     setResumeIndex(null);
@@ -100,26 +106,26 @@ export default function CoachVisualizationPage() {
     setSelfReport({});
     setCoachObservation('');
     setAnnouncement(
-      `Level ${chosen}. ${chosenSegments[0].phase}. ${chosenSegments[0].title}. Step 1 of ${chosenSegments.length}`,
+      `${SEGMENTS[0].phase}. ${SEGMENTS[0].title}. Step 1 of ${SEGMENTS.length}`,
     );
     focusPrompt();
   }
 
   /**
-   * Back to the level choice: a new exposure, with nothing carried over. The
+   * Back to the start: a new exposure, with nothing carried over. The
    * announcement is replaced rather than left alone, because the region is
    * read on this screen too and the last thing it said was that a session had
    * finished -- which is no longer true of anything.
    */
   function startOver() {
-    setLevel(null);
+    setStarted(false);
     setIndex(0);
     setPaused(false);
     setResumeIndex(null);
     setRevealed({});
     setSelfReport({});
     setCoachObservation('');
-    setAnnouncement('New exposure. Choose how you will deliver it.');
+    setAnnouncement('New exposure. Nothing from the last one was kept.');
     focusPrompt();
   }
 
@@ -172,7 +178,6 @@ export default function CoachVisualizationPage() {
 
   /** From session complete: the debrief is still there to read and add to. */
   function backToDebrief() {
-    if (debriefIndex < 0) return;
     setResumeIndex(null);
     goTo(debriefIndex, 'Back to the debrief.');
   }
@@ -214,7 +219,7 @@ export default function CoachVisualizationPage() {
             </p>
           </header>
 
-          {!level ? (
+          {!started ? (
             <section className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]">
               <h2
                 ref={promptRef}
@@ -222,48 +227,33 @@ export default function CoachVisualizationPage() {
                 className="t-command"
                 style={{ fontSize: 'var(--t-lg)' }}
               >
-                Choose how you will deliver it
+                Before you start
               </h2>
               <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-                These are the manual&apos;s three delivery levels for the whole scenario, not stages
-                to climb inside one session. Pick the one that fits this athlete today.
+                One guided exposure of this scenario, read in the source&apos;s own order. You
+                describe what the opponent does, leave the athlete a beat to see it, and ask the
+                authored question. There is no clock, and nothing here is marked or kept.
               </p>
 
-              <div className="mt-[var(--s4)] space-y-[var(--s4)]">
-                {MANUAL_DELIVERY_RULES.deliveryLevels.map((row, rowIndex) => (
-                  <div key={row.level} className="border-t border-[color:var(--brass-700)] pt-[var(--s3)]">
-                    <p className="t-label">{row.level}</p>
-                    <p className="t-body mt-[var(--s2)] text-[color:var(--bone-100)]">{row.coachGivesTiming}</p>
-                    <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{row.purpose}</p>
-                    <button
-                      type="button"
-                      className="btn mt-[var(--s3)]"
-                      onClick={() => startAt(LEVEL_NUMBERS[rowIndex])}
-                    >
-                      Run at Level {LEVEL_NUMBERS[rowIndex]}
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-[var(--s5)] border-t border-[color:var(--brass-700)] pt-[var(--s4)]">
+              <div className="mt-[var(--s4)] border-t border-[color:var(--brass-700)] pt-[var(--s4)]">
                 <p className="t-label text-[color:var(--bone-300)]">The visualization rules</p>
                 <ul className="mt-[var(--s3)] list-disc space-y-[var(--s2)] pl-[var(--s5)] text-[color:var(--bone-100)]">
                   {MANUAL_DELIVERY_RULES.visualizationRules.map((rule) => (
                     <li key={rule} className="t-body">{rule}</li>
                   ))}
                 </ul>
-                <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-                  {MANUAL_DELIVERY_RULES.level3Note}
-                </p>
               </div>
+
+              <button type="button" className="btn mt-[var(--s5)]" onClick={startSession}>
+                Start the guided session
+              </button>
             </section>
           ) : (
             <>
               <section className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]">
                 <div className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
                   <p className="t-label text-[color:var(--bone-300)]">
-                    {segment.phase} · Level {level}
+                    {segment.phase}
                   </p>
                   <p className="t-label text-[color:var(--bone-300)]">
                     Step {index + 1} of {segments.length}
@@ -332,6 +322,17 @@ export default function CoachVisualizationPage() {
                         >
                           Coach resource — {segment.onRequest.label}
                         </h3>
+
+                        {/* The governing rule STAYS once the options are on
+                            screen. It used to be swapped out for them, which
+                            removed "If the athlete proposes a different
+                            technically sound response ... accept it." at the
+                            exact moment the alternatives appeared -- the one
+                            sentence that says the lettered answers are not the
+                            only right ones. */}
+                        <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
+                          {segment.onRequest.rule}
+                        </p>
 
                         <p
                           id={`resource-rules-label-${segment.key}`}
@@ -426,7 +427,7 @@ export default function CoachVisualizationPage() {
                     <p className="t-body text-[color:var(--bone-300)]">
                       That is all this screen knows. It does not say the athlete has learned to
                       visualize, that their technique improved, that anything transferred, or that
-                      they are ready for another level — and nothing here was recorded, so it is not
+                      they are ready for anything else — and nothing here was recorded, so it is not
                       evidence of the session either. What happened is what you and the athlete saw.
                     </p>
                   </div>

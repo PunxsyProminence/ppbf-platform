@@ -41,8 +41,9 @@ function clickNext() {
   fireEvent.click(screen.getByRole('button', { name: 'Next prompt' }));
 }
 
-function runAt(level: 1 | 2 | 3) {
-  fireEvent.click(screen.getByRole('button', { name: `Run at Level ${level}` }));
+/** Start the one exposure this surface delivers. */
+function start() {
+  fireEvent.click(screen.getByRole('button', { name: 'Start the guided session' }));
 }
 
 /** Walks the rest of the exposure and returns every prompt in the order shown. */
@@ -67,20 +68,21 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-describe('the coach chooses how to deliver it before anything runs', () => {
-  test("the manual's three levels are offered, with its rules, and no prompt is showing yet", () => {
+/**
+ * VIZ-1 delivers ONE exposure, the manual's Level 1 Guided. There is no mode
+ * chooser, and these tests hold that boundary: an earlier head offered all three
+ * modes as runnable buttons, which promised a Decision mode and a timed, scored
+ * Adaptive mode that this slice does not implement.
+ */
+describe('the surface offers one guided exposure and no choice of mode', () => {
+  test('it opens on the rules and a single start control, with no prompt running yet', () => {
     render(<CoachVisualizationPage />);
 
-    expect(prompt()).toBe('Choose how you will deliver it');
-    for (const row of MANUAL_DELIVERY_RULES.deliveryLevels) {
-      expect(screen.getByText(row.level)).toBeInTheDocument();
-      expect(screen.getByText(row.coachGivesTiming)).toBeInTheDocument();
-      expect(screen.getByText(row.purpose)).toBeInTheDocument();
-    }
+    expect(prompt()).toBe('Before you start');
     for (const rule of MANUAL_DELIVERY_RULES.visualizationRules) {
       expect(screen.getByText(rule)).toBeInTheDocument();
     }
-    expect(screen.getByText(MANUAL_DELIVERY_RULES.level3Note)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start the guided session' })).toBeInTheDocument();
     expect(screen.queryByText(/^Step \d+ of \d+$/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Next prompt' })).toBeNull();
 
@@ -91,25 +93,101 @@ describe('the coach chooses how to deliver it before anything runs', () => {
     ).toBeInTheDocument();
   });
 
-  test('it reads the network not at all, at any level', () => {
+  test('no control runs a mode this slice does not implement', () => {
     render(<CoachVisualizationPage />);
-    runAt(1);
+
+    // Before starting and after starting: no Level 2 or Level 3 run control
+    // exists anywhere, and the delivery-level table is not presented as a menu
+    // of things the coach can pick.
+    for (const phase of ['before', 'after'] as const) {
+      if (phase === 'after') start();
+
+      expect(screen.queryByRole('button', { name: /Run at Level/i })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Level 2/i })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Level 3/i })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Decision/i })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Adaptive/i })).toBeNull();
+
+      for (const row of MANUAL_DELIVERY_RULES.deliveryLevels) {
+        expect(screen.queryByText(row.level)).toBeNull();
+        expect(screen.queryByText(row.purpose)).toBeNull();
+        // The field that carries "Timed when ready. ... 3 x 3-minute rounds
+        // with 1-minute breaks." This slice has no clock, so the coach is never
+        // shown a mode that promises one.
+        expect(screen.queryByText(row.coachGivesTiming)).toBeNull();
+      }
+      expect(screen.queryByText(MANUAL_DELIVERY_RULES.level3Note)).toBeNull();
+    }
+  });
+
+  test('the Level 2 and Level 3 source wording never reaches the screen', () => {
+    render(<CoachVisualizationPage />);
+    start();
+
+    const everything: string[] = [];
+    for (let step = 0; step < 40; step += 1) {
+      const reveal = screen.queryByRole('button', { name: 'Offer the response options' });
+      if (reveal) fireEvent.click(reveal);
+      // Normalized, because the needles below are. The authored cue lines pad
+      // their bullets with double spaces and textContent keeps them, so a
+      // single-spaced needle could never match a raw haystack -- the assertion
+      // would pass whatever the page rendered. Found by review.
+      everything.push((document.body.textContent ?? '').replace(/\s+/g, ' '));
+      const next = screen.queryByRole('button', { name: 'Next prompt' });
+      if (!next) break;
+      fireEvent.click(next);
+    }
+    const read = everything.join(' ');
+
+    for (const round of PF001_RING_CUTTER.rounds) {
+      expect(read).not.toContain(round.level2Cues.replace(/\s+/g, ' '));
+      expect(read).not.toContain(round.level3Cues.replace(/\s+/g, ' '));
+    }
+    expect(read).not.toContain('Reduced Cues');
+    expect(read).not.toContain('Cue-Only');
+  });
+
+  test('nothing on any screen is timed or keeps a tally', () => {
+    render(<CoachVisualizationPage />);
+    start();
+
+    for (let step = 0; step < 40; step += 1) {
+      const reveal = screen.queryByRole('button', { name: 'Offer the response options' });
+      if (reveal) fireEvent.click(reveal);
+
+      // No clock and no tally: not as a word search over authored prose, but as
+      // the absence of anything that would measure or count.
+      expect(document.querySelectorAll('time, progress, meter, [role="progressbar"], [role="timer"]')).toHaveLength(0);
+      for (const name of [/start timer/i, /stop timer/i, /^timer/i, /stopwatch/i, /scorecard/i, /next round/i]) {
+        expect(screen.queryByRole('button', { name })).toBeNull();
+      }
+
+      const next = screen.queryByRole('button', { name: 'Next prompt' });
+      if (!next) break;
+      fireEvent.click(next);
+    }
+  });
+
+  test('it reads the network not at all', () => {
+    render(<CoachVisualizationPage />);
+    start();
     walkEverything();
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  test('the level chosen is named beside the position', () => {
+  test('the phase is named beside the position, without a mode to name', () => {
     render(<CoachVisualizationPage />);
-    runAt(2);
-    expect(screen.getByText('Before the bell · Level 2')).toBeInTheDocument();
-    expect(position()).toBe('Step 1 of 13');
+    start();
+    expect(screen.getByText('Before the bell')).toBeInTheDocument();
+    expect(screen.queryByText(/· Level \d/)).toBeNull();
+    expect(position()).toBe('Step 1 of 22');
   });
 });
 
 describe('Level 1 — Guided: the authored order, and options only on request', () => {
   test('every prompt appears once, in the source sequence, ending at session complete', () => {
     render(<CoachVisualizationPage />);
-    runAt(1);
+    start();
 
     expect(walkEverything()).toEqual([
       'Before the Bell — Build the Opponent',
@@ -139,7 +217,7 @@ describe('Level 1 — Guided: the authored order, and options only on request', 
 
   test('the opponent acts before the question is asked, with the beat rule shown', () => {
     render(<CoachVisualizationPage />);
-    runAt(1);
+    start();
     clickNext();
     clickNext();
     clickNext();
@@ -159,7 +237,7 @@ describe('Level 1 — Guided: the authored order, and options only on request', 
 
   test('the options are not read aloud by default: the rule is shown and the coach must ask', () => {
     render(<CoachVisualizationPage />);
-    runAt(1);
+    start();
     for (let step = 0; step < 5; step += 1) clickNext();
 
     expect(prompt()).toBe('Ask the athlete');
@@ -181,7 +259,7 @@ describe('Level 1 — Guided: the authored order, and options only on request', 
 
   test('asking for the options in one round does not reveal them in the next', () => {
     render(<CoachVisualizationPage />);
-    runAt(1);
+    start();
     for (let step = 0; step < 5; step += 1) clickNext();
     fireEvent.click(screen.getByRole('button', { name: 'Offer the response options' }));
     expect(screen.getByText(PF001_RING_CUTTER.rounds[0].level1.options[0])).toBeInTheDocument();
@@ -197,52 +275,12 @@ describe('Level 1 — Guided: the authored order, and options only on request', 
   });
 });
 
-describe('Level 2 and Level 3 deliver their own way', () => {
-  test('Level 2 gives reduced cues and never a fed answer', () => {
-    render(<CoachVisualizationPage />);
-    runAt(2);
 
-    const delivered = walkEverything();
-    expect(delivered).toEqual([
-      'Before the Bell — Build the Opponent',
-      'Key visual cues',
-      'Common athlete mistakes',
-      'What am I fighting?',
-      'Level 2 — Reduced Cues',
-      'Corner note',
-      'How can I use what I discovered?',
-      'Level 2 — Reduced Cues',
-      'Corner note',
-      'Can I solve an opponent who is now trying to solve me?',
-      'Level 2 — Reduced Cues',
-      'Post-Fight Debrief',
-      'Session complete',
-    ]);
-    expect(screen.queryByRole('button', { name: 'Offer the response options' })).toBeNull();
-  });
-
-  test('Level 3 gives cues only, and says a cue is not an instruction', () => {
-    render(<CoachVisualizationPage />);
-    runAt(3);
-    clickNext();
-    clickNext();
-    clickNext();
-    clickNext();
-
-    expect(prompt()).toBe('Level 3 — Cue-Only Version');
-    // The authored cue line pads its bullets with double spaces; the DOM query
-    // normalizes whitespace, so the expectation is normalized the same way
-    // rather than the content being tidied.
-    expect(screen.getByText(PF001_RING_CUTTER.rounds[0].level3Cues.replace(/\s+/g, ' '))).toBeInTheDocument();
-    expect(screen.getByText(MANUAL_DELIVERY_RULES.level3Note)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Offer the response options' })).toBeNull();
-  });
-});
 
 describe('the controls a coach needs on the floor', () => {
   test('repeating a prompt keeps the place', () => {
     render(<CoachVisualizationPage />);
-    runAt(1);
+    start();
     clickNext();
     const before = position();
 
@@ -254,7 +292,7 @@ describe('the controls a coach needs on the floor', () => {
 
   test('rebuilding the picture returns to the opponent, then back to the same prompt', () => {
     render(<CoachVisualizationPage />);
-    runAt(1);
+    start();
     for (let step = 0; step < 4; step += 1) clickNext();
     const wasAt = position();
 
@@ -268,7 +306,7 @@ describe('the controls a coach needs on the floor', () => {
 
   test('the rebuild bookmark survives moving around inside the rebuild', () => {
     render(<CoachVisualizationPage />);
-    runAt(1);
+    start();
     for (let step = 0; step < 4; step += 1) clickNext();
     const wasAt = position();
     expect(prompt()).toBe('The opponent acts');
@@ -290,7 +328,7 @@ describe('the controls a coach needs on the floor', () => {
 
   test('walking past the bookmarked point drops the bookmark, rather than offering a move backwards', () => {
     render(<CoachVisualizationPage />);
-    runAt(1);
+    start();
     clickNext();
     const wasAt = position();
 
@@ -306,7 +344,7 @@ describe('the controls a coach needs on the floor', () => {
 
   test('pause holds the fight where it is until resume', () => {
     render(<CoachVisualizationPage />);
-    runAt(1);
+    start();
     clickNext();
     const held = prompt();
 
@@ -328,9 +366,9 @@ describe('the controls a coach needs on the floor', () => {
     expect(region).toHaveAttribute('aria-live', 'polite');
     expect(region).toHaveTextContent('');
 
-    runAt(1);
+    start();
     expect(liveRegion()).toBe(region);
-    expect(region).toHaveTextContent('Level 1');
+    expect(region).toHaveTextContent('Before the Bell — Build the Opponent');
     expect(region).toHaveTextContent('Step 1 of 22');
 
     clickNext();
@@ -356,7 +394,7 @@ describe('the controls a coach needs on the floor', () => {
 
   test('reaching the debrief and the end is announced by name, without a step count', () => {
     render(<CoachVisualizationPage />);
-    runAt(3);
+    start();
     while (prompt() !== 'Post-Fight Debrief') clickNext();
     expect(liveRegion()).toHaveTextContent('Post-Fight Debrief');
     expect(liveRegion().textContent).not.toMatch(/Step \d+ of/);
@@ -373,7 +411,7 @@ describe('the controls a coach needs on the floor', () => {
     });
 
     render(<CoachVisualizationPage />);
-    runAt(1);
+    start();
     clickNext();
     act(() => {
       frames.splice(0).forEach((frame) => frame(0));
@@ -384,9 +422,9 @@ describe('the controls a coach needs on the floor', () => {
 });
 
 describe('the debrief, and what the session refuses to claim', () => {
-  function walkToDebrief(level: 1 | 2 | 3 = 1) {
+  function walkToDebrief() {
     render(<CoachVisualizationPage />);
-    runAt(level);
+    start();
     while (prompt() !== 'Post-Fight Debrief') clickNext();
   }
 
@@ -403,7 +441,7 @@ describe('the debrief, and what the session refuses to claim', () => {
 
   test('what is typed lives only in this exposure: a fresh mount has nothing', () => {
     const first = render(<CoachVisualizationPage />);
-    runAt(1);
+    start();
     while (prompt() !== 'Post-Fight Debrief') clickNext();
     const field = screen.getByLabelText(PF001_RING_CUTTER.debriefQuestions[0]);
     fireEvent.change(field, { target: { value: 'He cut me off at the lead foot.' } });
@@ -413,8 +451,8 @@ describe('the debrief, and what the session refuses to claim', () => {
     // mount could read it.
     first.unmount();
     render(<CoachVisualizationPage />);
-    expect(prompt()).toBe('Choose how you will deliver it');
-    runAt(1);
+    expect(prompt()).toBe('Before you start');
+    start();
     while (prompt() !== 'Post-Fight Debrief') clickNext();
     expect(screen.getByLabelText(PF001_RING_CUTTER.debriefQuestions[0])).toHaveValue('');
   });
@@ -462,15 +500,15 @@ describe('the debrief, and what the session refuses to claim', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Start a new exposure' }));
 
-    // The region is read on the chooser too, so the state it reports must be
+    // The region is read on the start screen too, so the state it reports must be
     // the state that exists: no session is running.
-    expect(prompt()).toBe('Choose how you will deliver it');
+    expect(prompt()).toBe('Before you start');
     expect(liveRegion().textContent).not.toMatch(/Session complete/);
-    expect(liveRegion()).toHaveTextContent('New exposure.');
+    expect(liveRegion()).toHaveTextContent('New exposure. Nothing from the last one was kept.');
     expect(document.body.textContent).not.toMatch(/Session complete/);
   });
 
-  test('a new exposure starts from the level choice, clean', () => {
+  test('a new exposure starts from the beginning, clean', () => {
     walkToDebrief();
     fireEvent.change(screen.getByLabelText(PF001_RING_CUTTER.debriefQuestions[0]), {
       target: { value: 'notes' },
@@ -478,19 +516,19 @@ describe('the debrief, and what the session refuses to claim', () => {
     clickNext();
 
     fireEvent.click(screen.getByRole('button', { name: 'Start a new exposure' }));
-    expect(prompt()).toBe('Choose how you will deliver it');
+    expect(prompt()).toBe('Before you start');
 
-    runAt(1);
+    start();
     while (prompt() !== 'Post-Fight Debrief') clickNext();
     expect(screen.getByLabelText(PF001_RING_CUTTER.debriefQuestions[0])).toHaveValue('');
   });
 
-  test('no screen of any level scores, grades, promotes or offers to save', () => {
+  test('no screen scores, grades, promotes or offers to save', () => {
     const screensRead: string[] = [];
-    for (const level of [1, 2, 3] as const) {
+    {
       const mounted = render(<CoachVisualizationPage />);
       screensRead.push(document.body.textContent ?? '');
-      runAt(level);
+      start();
       for (let step = 0; step < 40; step += 1) {
         // Every screen in full, including any help the coach can reveal.
         const reveal = screen.queryByRole('button', { name: 'Offer the response options' });
@@ -532,15 +570,15 @@ describe('the debrief, and what the session refuses to claim', () => {
       expect(pageWords).not.toMatch(word);
     }
     expect(everything).toContain('does not say the athlete has learned to');
-    // The evidence really was every screen of every level, not one page.
-    expect(screensRead.length).toBeGreaterThan(45);
+    // The evidence really was every screen of the exposure, not one page.
+    expect(screensRead.length).toBeGreaterThan(20);
   });
 });
 
-describe('every step of every level renders a prompt', () => {
-  test.each([1, 2, 3] as const)('Level %s never shows an empty or unknown state', (level) => {
+describe('every step of the exposure renders a prompt', () => {
+  test('no step ever shows an empty or unknown state', () => {
     const mounted = render(<CoachVisualizationPage />);
-    runAt(level);
+    start();
     for (let step = 0; step < 40; step += 1) {
       expect(prompt().length).toBeGreaterThan(0);
       expect(document.body.textContent).not.toContain('No scenario to run');
@@ -596,7 +634,7 @@ describe('the authored option guidance reaches the coach, not just the model', (
   /** Stand on the decision prompt of one round, at Level 1. */
   function askAt(ordinal: number) {
     const mounted = render(<CoachVisualizationPage />);
-    runAt(1);
+    start();
     let asked = 0;
     for (let step = 0; step < 40; step += 1) {
       if (prompt() === 'Ask the athlete') {
@@ -653,9 +691,28 @@ describe('the authored option guidance reaches the coach, not just the model', (
 
       // Exactly once each. Rendering the bullets twice would be as wrong as
       // rendering them never: the coach would not know which list is which.
-      for (const text of [...MANUAL_DELIVERY_RULES.level1OptionsBullets, ...round.level1.options]) {
+      for (const text of [
+        MANUAL_DELIVERY_RULES.level1OptionsRule,
+        ...MANUAL_DELIVERY_RULES.level1OptionsBullets,
+        ...round.level1.options,
+      ]) {
         expect(screen.getAllByText(text)).toHaveLength(1);
       }
+
+      // THE GOVERNING RULE STAYS. It used to be swapped out for the options,
+      // which removed the one authored sentence saying the lettered answers are
+      // not the only right ones -- "If the athlete proposes a different
+      // technically sound response ... accept it." -- at the exact moment the
+      // alternatives appeared. It is inside the coach region, above the bullets.
+      const ruleOnScreen = screen.getByText(MANUAL_DELIVERY_RULES.level1OptionsRule);
+      expect(resource()).toContainElement(ruleOnScreen);
+      expect(ruleOnScreen.textContent).toContain(
+        'If the athlete proposes a different technically sound response',
+      );
+      expect(
+        ruleOnScreen.compareDocumentPosition(screen.getByText(RULES_LABEL))
+        & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
 
       // Source order, and the two lists kept apart.
       expect(listUnder(RULES_LABEL)).toEqual([...MANUAL_DELIVERY_RULES.level1OptionsBullets]);
@@ -717,7 +774,7 @@ describe('asking for the options takes the coach to them', () => {
 
   function atDecisionPrompt() {
     render(<CoachVisualizationPage />);
-    runAt(1);
+    start();
     for (let step = 0; step < 5; step += 1) clickNext();
     expect(prompt()).toBe('Ask the athlete');
   }
