@@ -267,7 +267,7 @@ function discoveryPanel() {
 
 /**
  * A discovery filter by its label. Scoped to the panel because "Category" and
- * "Difficulty" also label the Add a drill form's controls.
+ * "Difficulty" also label the Create a gym drill form's controls.
  */
 function filterSelect(label: string) {
   return within(discoveryPanel()).getByRole('combobox', { name: label }) as HTMLSelectElement;
@@ -1223,7 +1223,7 @@ describe('after a lifecycle action', () => {
     frames.run();
 
     fireEvent.click(within(detail).getByRole('button', { name: 'Retire' }));
-    // Before the answer: the coach goes to the Add a drill form and types.
+    // Before the answer: the coach goes to the Create a gym drill form and types.
     const nameField = screen.getByLabelText('Name') as HTMLInputElement;
     nameField.focus();
     await screen.findByText(/^Retired\./);
@@ -1588,18 +1588,91 @@ describe('reference discovery', () => {
   });
 });
 
-// "Gym-authored" was false for every promoted drill (OD-2026-09-19-001).
-describe('the operational drills section', () => {
-  it('is called Operational drills and says where each drill came from', async () => {
+// The cabinet redesign (2026-09-20): the page reads in the order a coach
+// works. It used to open on the create form, ahead of the library.
+describe('the page order', () => {
+  it('reads reference library, then the gym\'s own drills, then creating one', async () => {
     global.fetch = routes({ operational: [authored, promoted] }) as unknown as typeof fetch;
 
     render(<CoachDrillLibraryPage />);
     await screen.findByText('Corner exit');
 
-    expect(screen.getByRole('heading', { name: 'Operational drills' })).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual([
+      'Reference library',
+      'In this gym',
+      'Create a gym drill',
+    ]);
+    // The whole create form -- every field and its button -- comes after the
+    // gym's drills, not before the library.
+    const gymDrills = screen.getByRole('heading', { name: 'In this gym' });
+    const form = ['drill-name', 'drill-category', 'drill-focus', 'drill-cues', 'drill-difficulty']
+      .map((id) => document.getElementById(id) as HTMLElement);
+    for (const control of [...form, screen.getByRole('button', { name: 'Add drill' })]) {
+      expect(gymDrills.compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    // Each part is a named region holding its own controls.
+    const library = screen.getByRole('region', { name: 'Reference library' });
+    expect(library).toContainElement(screen.getByRole('searchbox', { name: 'Search by name' }));
+    expect(library).toContainElement(screen.getByRole('button', { name: 'View drill: Seeded jab return' }));
+    expect(screen.getByRole('region', { name: 'In this gym' }))
+      .toContainElement(screen.getByRole('button', { name: 'View instructions: Seeded jab return' }));
+    expect(screen.getByRole('region', { name: 'Create a gym drill' }))
+      .toContainElement(screen.getByRole('button', { name: 'Add drill' }));
+  });
+
+  it('says adopting is not assigning in a sentence of its own, not the tail of a paragraph', async () => {
+    global.fetch = routes() as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    await screen.findByText('Corner exit');
+
+    // An exact-text match finds only an element whose own text is the sentence.
+    expect(screen.getByText('Promoting does not assign the drill to any athlete.')).toBeInTheDocument();
+  });
+
+  it('points an empty gym at the create form below it, where the form now is', async () => {
+    global.fetch = routes({ operational: [] }) as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+
+    expect(await screen.findByText(/^Nothing yet\. Promote a drill from the reference library, or create one below;/))
+      .toBeInTheDocument();
+  });
+});
+
+// "Gym-authored" was false for every promoted drill (OD-2026-09-19-001).
+describe('the in-this-gym section', () => {
+  it('is called In this gym and stamps where each drill came from', async () => {
+    global.fetch = routes({ operational: [authored, promoted] }) as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    await screen.findByText('Corner exit');
+
+    expect(screen.getByRole('heading', { name: 'In this gym' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Operational drills' })).not.toBeInTheDocument();
     expect(screen.queryByText(/Gym-authored/i)).not.toBeInTheDocument();
-    expect(screen.getByText('Footwork · Written by this gym')).toBeInTheDocument();
-    expect(screen.getByText('striking · From the reference library')).toBeInTheDocument();
+
+    const written = screen.getByRole('heading', { name: 'Corner exit' }).closest('article') as HTMLElement;
+    expect(within(written).getByText('Footwork')).toBeInTheDocument();
+    expect(within(written).getByText('Written by this gym')).toBeInTheDocument();
+    expect(within(written).queryByText('From reference library')).not.toBeInTheDocument();
+
+    const adopted = screen.getByRole('button', { name: 'View instructions: Seeded jab return' }).closest('article') as HTMLElement;
+    expect(within(adopted).getByText('striking')).toBeInTheDocument();
+    expect(within(adopted).getByText('From reference library')).toBeInTheDocument();
+    expect(within(adopted).queryByText('Written by this gym')).not.toBeInTheDocument();
+  });
+
+  it('offers nothing but View instructions on a gym drill: no assign, retire, restore, edit or delete', async () => {
+    global.fetch = routes({ operational: [authored, promoted] }) as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    await screen.findByText('Corner exit');
+
+    const written = screen.getByRole('heading', { name: 'Corner exit' }).closest('article') as HTMLElement;
+    const adopted = screen.getByRole('button', { name: 'View instructions: Seeded jab return' }).closest('article') as HTMLElement;
+    expect(within(written).queryAllByRole('button')).toHaveLength(0);
+    expect(within(adopted).getAllByRole('button').map((button) => button.textContent)).toEqual(['View instructions']);
   });
 
   it('opens a promoted drill\'s exact reference by its pointer; a hand-written drill has nothing to open', async () => {
@@ -1690,7 +1763,7 @@ describe('while an action is running', () => {
   const otherOperational = { ...promoted, drill_id: 'authored-3', reference_drill_id: 'reference-2', name: 'Other promoted drill' };
   const ACTION_NAMES = ['Promote', 'Retire', 'Restore', 'Saving...', 'Promoting...'];
 
-  /** The Add a drill form -- every field and its button -- is never part of the lock. */
+  /** The Create a gym drill form -- every field and its button -- is never part of the lock. */
   function expectAddDrillFormUsable() {
     for (const id of ['drill-name', 'drill-category', 'drill-focus', 'drill-cues', 'drill-difficulty']) {
       expect(document.getElementById(id)).toBeEnabled();
@@ -1742,7 +1815,7 @@ describe('while an action is running', () => {
     if (phase === 'the drill re-read') await waitFor(() => expect(readsOf(fetchMock, DETAIL_URL)).toBe(2));
 
     // Held: nothing that leaves the drill or starts an action is enabled, and
-    // pressing them does nothing. The Add a drill form is not locked.
+    // pressing them does nothing. The Create a gym drill form is not locked.
     const locked = lockedControls(detail);
     for (const control of locked) expect(control).toBeDisabled();
     for (const control of locked) fireEvent.click(control);

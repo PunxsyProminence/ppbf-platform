@@ -1908,8 +1908,11 @@
    DNA: consistency comes from the materials, not from every screen looking
    the same.
 
-   THE ONE MARKUP CHANGE is the `ge-drillcase` class on the page's <main>.
-   Everything below is scoped to it, so no rule can reach another route.
+   THE ONE MARKUP CHANGE, at 004B, was the `ge-drillcase` class on the page's
+   <main>. Everything below is scoped to it, so no rule can reach another
+   route. The 2026-09-20 cabinet redesign (at the foot of this block) added
+   page-owned `ge-drillcase__*` hook classes inside that scope; the shared
+   drill detail component still carries none.
 
    WHAT THE REFERENCE DRAWS THAT DOES NOT EXIST HERE, AND IS THEREFORE NOT
    BUILT. A search field. Four filter chips (Purpose / Stance / Equipment /
@@ -2007,11 +2010,17 @@
 }
 
 /* The engraved header plaque inside the lid: near-black lacquer, a bronze
-   hairline, letters cut into it. The page states only a bottom keyline here,
-   which floats on brick; against the cabinet it needs to be an object. The
-   padding is stated on all four sides because a filled plaque cannot inherit
-   the bottom-only padding the keyline version wanted. */
-.ge-drillcase header {
+   hairline, letters cut into it. The padding is stated on all four sides
+   because a filled plaque cannot inherit the bottom-only padding the keyline
+   version wanted.
+
+   NAMED BY ITS OWN CLASS, NOT BY `header`. This was `.ge-drillcase header`,
+   which also caught the <header> inside the shared drill detail (W-D4A) once
+   that detail began rendering on this route: the opened drill's title band
+   turned to black lacquer while its title kept the index card's dark ink, so
+   the drill's own name printed dark-on-dark. The plaque is the page's
+   masthead and nothing else. */
+.ge-drillcase .ge-drillcase__masthead {
   background-color: #14100D;
   background-image:
     var(--grain-fine),
@@ -2028,7 +2037,7 @@
 
 /* Cut lettering: the title is engraved brass on the plaque, so it takes the
    metal rather than the bone the rest of the cabinet uses. */
-.ge-drillcase header .t-command {
+.ge-drillcase .ge-drillcase__masthead .t-command {
   color: var(--brass-200);
   text-shadow: 0 1px 0 rgba(0,0,0,.78), 0 0 16px rgba(190,148,64,.20);
 }
@@ -2230,6 +2239,326 @@
   box-shadow:
     inset 0 1px 0 rgba(231,200,138,.26),
     0 1px 3px rgba(0,0,0,.45);
+}
+
+/* ---------------------------------------------------------------------------
+   THE CABINET REDESIGN (owner brief, 2026-09-20): the page recomposed in the
+   order a coach works -- find a reference drill, open it, decide; see what
+   this gym already runs; and last, quietest, write a drill of the gym's own.
+   Presentation only. The controls, handlers, ids and states are the ones the
+   page already had; goldenEraDrillcaseScope.test.ts still counts them.
+
+   FOUR MATERIALS, ONE PER JOB, so no two kinds of drill can be mistaken:
+     the cabinet    dark walnut carcass, bronze bead: the reference library
+     index cards    aged cream (the rules above): a reference drill, read-only
+     the worksurface  a leather blotter the opened card is laid on
+     ledger cards   blackened leather, stitched: a drill THIS gym runs
+   Brass is spent only where it means something: primary actions, the
+   lifecycle boundary on the opened drill, the one sentence that says adopting
+   is not assigning, and a promoted drill's provenance.
+
+   EVERY INK ON A LIGHT GROUND IS RESTATED. Tailwind's utilities sit in
+   @layer utilities and this sheet is unlayered, so each rule below beats the
+   bone utility its element carries without !important -- which it must: the
+   shared drill detail paints its body copy, its safety lines and its field
+   labels in bone, and on this route those landed on cream at about 1.2:1.
+   Measured before this change: Safety, "What it is for", Setup, Equipment and
+   How it runs were all effectively invisible on the opened drill, and the
+   cards' "Contact:" / "Equipment:" labels and "Coach authorization required"
+   line could not be read at all. Computed ratios below are against the
+   DARKEST point of the cream (#CFB88F):
+     body #3A2E1D 6.9:1 · strong #241B12 8.8:1 · not-ready #6F3411 5.0:1
+   and against the ledger leather's lightest gradient stop (#2A1F18):
+     bone-100 14.2:1 · bone-300 10.4:1 · brass-200 10.0:1
+   Computed from the sheet's stops, not sampled; the grain and the screen-
+   blended warm pool sit on top of them, so the rendered page is the proof.
+   --------------------------------------------------------------------------- */
+
+/* THE CABINET: the reference library's carcass. A darker, framed box standing
+   in front of the back boards, so the primary workspace reads as the one
+   object on the wall. The frame and its bead are inset shadows, so they cost
+   no layout and cannot catch a pointer. */
+.ge-drillcase .ge-drillcase__cabinet {
+  position: relative;
+  background-color: var(--wood-900);
+  background-image:
+    var(--grain),
+    linear-gradient(180deg, rgba(0,0,0,.34) 0%, transparent 16%),
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,.15) 0 2px, transparent 2px 23px),
+    linear-gradient(176deg, #2E1D0F 0%, #22160B 60%, #180F07 100%);
+  background-blend-mode: overlay, normal, normal, normal;
+  border: 1px solid color-mix(in srgb, var(--brass-800) 70%, #000);
+  box-shadow:
+    inset 0 0 0 5px #1A1108,
+    inset 0 0 0 6px rgb(var(--brass-700-rgb) / .42),
+    inset 0 12px 26px rgba(0,0,0,.55),
+    0 10px 26px rgba(0,0,0,.6);
+}
+
+/* The lid of the cabinet: its title and what the library is, above a bronze
+   rule. */
+.ge-drillcase .ge-drillcase__cabinet-head {
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid color-mix(in srgb, var(--brass-700) 55%, transparent);
+}
+
+/* THE BOUNDARY: "Promoting does not assign the drill to any athlete." Its own
+   engraved plate, in bone on dark bronze with a brass edge -- the lifecycle
+   boundary the brief names, stated where no coach can read past it. */
+.ge-drillcase .ge-drillcase__boundary {
+  max-width: 48rem;
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--brass-600);
+  border-left-width: 4px;
+  border-radius: var(--r-sm);
+  background-image: linear-gradient(180deg, rgb(var(--brass-900-rgb) / .92) 0%, rgba(20,16,13,.94) 100%);
+  color: var(--bone-100);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.45;
+  letter-spacing: .01em;
+}
+
+/* THE INDEX CARD'S OWN LINES. The labels ("Contact:", "Equipment:") carry a
+   bone utility; restated in the card's strong ink. */
+.ge-drillcase .ge-drillcase__card p > span {
+  color: #241B12;
+}
+
+/* "Coach authorization required": a safety gate, so it is set in the card's
+   strongest ink with a bronze rule beside it. It wore --locked-ink before --
+   the medically-not-allowed reservation's tint -- which on cream was
+   invisible, and which is not what a coach-authorization gate is. */
+.ge-drillcase .ge-drillcase__authorization {
+  padding-left: var(--s3);
+  border-left: 3px solid var(--brass-700);
+  color: #241B12;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+/* Where a reference drill already stands in this gym, stamped on its card. */
+.ge-drillcase .ge-drillcase__card .ge-drillcase__state {
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--brass-800) 55%, transparent);
+  border-radius: 3px;
+  background-color: rgb(255 250 238 / .38);
+  color: #241B12;
+  line-height: 1.2;
+}
+
+/* THE FOCUS RING ON CREAM. The scope's ring is brass-400 at 55%, which on the
+   card's cream is a faint halo. On a light ground it becomes a dark bronze
+   ring with a light inner gap, so a keyboard user can see which card's
+   control they are on. */
+.ge-drillcase .ge-drillcase__card .btn:focus-visible,
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised .btn:focus-visible {
+  box-shadow:
+    0 0 0 2px #F3E6CC,
+    0 0 0 5px var(--brass-900),
+    var(--focus);
+}
+
+/* A DISABLED CONTROL ON CREAM. The shared disabled face (globals.css) is a
+   bone-400 label on a translucent leather wash, tuned for a dark ground; on
+   the card it composites to a pale smear and "Promoting..." / "Saving..." --
+   the only sign an action is running -- all but disappears. Here it is a
+   dashed, flat plate with a mid-brown label (#5A4A33, about 4.8:1 on the
+   tinted cream): plainly not pressable, still readable. Only the opened
+   card needs it: a catalogue card's View drill is disabled only while an
+   action runs, and the catalogue is hidden for as long as one can. */
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised .btn:disabled {
+  color: #5A4A33;
+  background-color: rgb(58 46 29 / .1);
+  border: 1px dashed color-mix(in srgb, var(--brass-800) 60%, transparent);
+}
+
+/* THE WORKSURFACE: the leather blotter an opened drill is laid on. It takes
+   the place of the discovery rail and the card grid while a drill is open --
+   the page hides both -- so the opened card is the only thing in the cabinet,
+   not a pane beside the catalogue. */
+.ge-drillcase .ge-drillcase__worksurface {
+  background-color: var(--hide-950);
+  background-image:
+    var(--grain),
+    radial-gradient(90% 70% at 50% 0%, rgba(120,84,50,.16), transparent 70%),
+    linear-gradient(180deg, #1E1712 0%, #14100D 100%);
+  background-blend-mode: overlay, screen, normal;
+  border: 1px solid color-mix(in srgb, var(--brass-800) 60%, #000);
+  box-shadow: inset 0 2px 12px rgba(0,0,0,.65);
+}
+
+/* The card itself, pulled from the cabinet: the same cream as the catalogue,
+   lifted off the blotter. */
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised {
+  box-shadow:
+    0 2px 0 var(--wood-900),
+    0 14px 26px rgba(0,0,0,.62);
+}
+
+/* THE SHARED DETAIL'S INK PASS. DrillDetail is not edited: every voice it
+   paints in bone is restated here, scoped to the card on this route's
+   worksurface. :where() keeps the broad rule at (0,3,0), so the named rules
+   after it -- strong labels, the not-ready line -- win on source order. */
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised :where(p, li, dd) {
+  color: #3A2E1D;
+}
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised :where(dt, p > span:not(.plaque), li > span) {
+  color: #241B12;
+}
+
+/* The title band of the card: name, difficulty, discipline and category,
+   the content line, and the lifecycle boundary -- above a rule. */
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised > header {
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid color-mix(in srgb, var(--brass-800) 45%, transparent);
+}
+
+/* THE LIFECYCLE BOUNDARY on the opened drill: the state this drill is in
+   here and the one action that state allows, inside a brass edge. */
+.ge-drillcase .ge-drillcase__adopt {
+  border: 1px solid var(--brass-600);
+  background-color: rgb(255 248 230 / .45);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.34);
+}
+.ge-drillcase .ge-drillcase__worksurface .ge-drillcase__not-ready {
+  color: color-mix(in srgb, var(--restricted-deep) 72%, #000);
+  font-weight: 700;
+}
+
+/* SAFETY -- first and always open in the component; here it is also the
+   heaviest thing on the card after the title. Targeted by the region name
+   the component gives it, because the component is not edited. */
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised > section[aria-label="Safety"] {
+  border-color: var(--brass-600);
+  background-color: rgb(255 246 226 / .55);
+}
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised > section[aria-label="Safety"] > h3 {
+  color: #241B12;
+  font-size: 14px;
+  font-weight: 750;
+  letter-spacing: .18em;
+}
+
+/* The expanders (corrections, each scale level, coaching notes, source and
+   version). Their utilities paint a 20%-black wash, which on cream muddies to
+   a tan the labels sink into; they become a lighter card-within-the-card. */
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised details {
+  background-color: rgb(255 250 238 / .42);
+  border-color: color-mix(in srgb, var(--brass-800) 40%, transparent);
+}
+
+/* On a wide screen each instruction section reads as a labelled row -- its
+   heading in a left column, its content beside it -- the way a coach's card
+   is ruled. Safety keeps its full-width panel. Below 1024px everything stacks
+   as the component lays it out. */
+@media (min-width: 1024px) {
+  .ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised > section:not([aria-label]) {
+    display: grid;
+    grid-template-columns: minmax(10rem, 13rem) minmax(0, 1fr);
+    column-gap: var(--s5);
+    row-gap: var(--s2);
+    align-items: baseline;
+  }
+  .ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised > section:not([aria-label]) > * {
+    grid-column: 2;
+    margin: 0;
+  }
+  .ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised > section:not([aria-label]) > h3 {
+    grid-column: 1;
+  }
+}
+
+/* IN THIS GYM: the section head over the gym's own drills. */
+.ge-drillcase .ge-drillcase__shelf-head {
+  padding-bottom: var(--s3);
+  border-bottom: 1px solid color-mix(in srgb, var(--brass-800) 60%, transparent);
+}
+
+/* THE LEDGER CARD: a drill this gym runs. Blackened leather with a stitched
+   edge instead of cream with rivets, so an operational drill can never be
+   mistaken for a reference card it is only browsing. Every voice the index
+   card flipped to dark ink is flipped back to bone here -- equal specificity
+   to the card rules above and later in the sheet, so it wins on order. */
+.ge-drillcase .ge-drillcase__ledger {
+  color: var(--bone-200);
+  background-color: var(--hide-900);
+  background-image:
+    var(--grain),
+    radial-gradient(120% 90% at 24% 0%, rgba(120,84,50,.16), transparent 60%),
+    linear-gradient(170deg, #2A1F18 0%, #1E1712 55%, #15100C 100%);
+  background-blend-mode: overlay, screen, normal;
+  border: 1px solid color-mix(in srgb, var(--brass-800) 70%, #000);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--brass-300-rgb) / .10),
+    inset 0 -3px 8px rgba(0,0,0,.55),
+    0 4px 10px rgba(0,0,0,.55);
+}
+.ge-drillcase .ge-drillcase__ledger::after {
+  inset: 5px;
+  background-image: none;
+  border: 1px dashed rgb(220 207 178 / .2);
+  border-radius: calc(var(--r-lg) - 3px);
+}
+.ge-drillcase .ge-drillcase__ledger .t-command {
+  color: var(--bone-100);
+  text-shadow: 0 1px 0 rgba(0,0,0,.72);
+}
+.ge-drillcase .ge-drillcase__ledger .t-body,
+.ge-drillcase .ge-drillcase__ledger .t-label {
+  color: var(--bone-300);
+}
+.ge-drillcase .ge-drillcase__ledger ul li {
+  background-color: rgba(0,0,0,.3);
+  border-color: rgb(var(--brass-600-rgb) / .45);
+  color: var(--bone-300);
+}
+/* "View instructions" as an outlined bronze bar, so it stands off the dark
+   leather. Enabled only: a disabled one keeps the sheet's flat disabled face,
+   which `.btn:disabled` would otherwise lose to this rule's weight. */
+.ge-drillcase .ge-drillcase__ledger .btn--ghost:not(:disabled) {
+  background-image: none;
+  background-color: rgba(0,0,0,.25);
+  border-color: var(--brass-500);
+  color: var(--brass-200);
+}
+.ge-drillcase .ge-drillcase__ledger .btn--ghost:not(:disabled):hover {
+  border-color: var(--brass-300);
+  color: var(--bone-100);
+}
+
+/* Where an operational drill came from, stamped at its foot. */
+.ge-drillcase .ge-drillcase__provenance {
+  padding: 5px 8px;
+  border: 1px solid rgb(220 207 178 / .32);
+  border-radius: 3px;
+  color: var(--bone-300);
+  font: 650 11px/1.2 var(--font-data);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.ge-drillcase .ge-drillcase__provenance--reference {
+  border-color: var(--brass-600);
+  background-color: rgb(var(--brass-900-rgb) / .6);
+  color: var(--brass-200);
+}
+
+/* CREATE A GYM DRILL: the secondary workbench. The same walnut bay as the
+   discovery rail, set back -- flatter light, a fainter edge -- so it reads as
+   the path taken when the library has nothing, not as the page's first job. */
+.ge-drillcase .ge-drillcase__workbench {
+  background-image:
+    var(--grain),
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,.10) 0 2px, transparent 2px 15px),
+    linear-gradient(176deg, #2C1C0E 0%, #22160B 100%);
+  background-blend-mode: overlay, normal, normal;
+  border-color: color-mix(in srgb, var(--brass-800) 40%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.08),
+    inset 0 -3px 8px rgba(0,0,0,.45);
 }
 
 /* ==========================================================================
