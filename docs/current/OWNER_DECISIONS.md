@@ -89,6 +89,71 @@ and should not try to.
 
 ---
 
+## OD-2026-09-21-001 -- Claude builds, ChatGPT designs and enforces standards; product direction; minors' limits are coach-set data
+
+**Provenance: PRIMARY.**
+
+**Date:** 2026-09-21. **Governs:** who designs, who builds and who reviews;
+the product direction every lane builds toward; and where limits for minors
+come from. **Supersedes** the 2026-08-20 decision recorded in
+`AGENT_KERNEL.md` (Working channel) that the primary Claude session is the
+PPBF project command thread. Made in the Claude session that set up the
+account- and workspace-level AI instructions the same day. The OneDrive
+decision ledger carries the same decision as LEDGER-0010.
+
+### 1. Lanes
+
+The owner, verbatim:
+
+> 3 chat gpt takes over after you finish the instructions set ups, you build and chatgpt is the designer and stnadard enforcer 5 undo and the rest i agree with your recomendations
+
+"3" answered who does storage and ledger writes. "5 undo" restored a ChatGPT
+project and does not touch this repository.
+
+What that means for this repository:
+
+1. ChatGPT designs (product and system specs, work orders) and enforces
+   standards (reviews). Jason approves a design before it is built. ChatGPT
+   stays read-only here.
+2. Claude builds from approved work orders. Storage writes and the ledger are
+   ChatGPT's; Claude writes there only when a ChatGPT write fails.
+3. Grok keeps visual design and visual implementation.
+
+Interpretation put to the owner the same day and not corrected: "designer"
+means product and system design. Visual design stays Grok's, as
+`AGENT_KERNEL.md` already records.
+
+### 2. Product direction, and 3. limits for minors
+
+Put to the owner as one question with four options:
+
+> **1. Two app decisions went in under your blanket approval**
+>
+> - **App description:** "A coach-reviewed human capability platform, boxing first, with wrestling and multi-sport later. The AI teaches and drafts; coaches decide. The in-app AI never diagnoses."
+> - **Limits for minors:** "Coaches set the limits for minors as data: heat time, % of body weight, contact level, supervision. The AI applies them. If a limit is missing, it asks."
+>
+> - **A. Keep both** (recommended) -- the limits table doesn't exist yet; until it does, the AI will ask for the limits each time.
+> - B. Keep the app description, park the minors rule
+> - C. Reword either one
+> - D. Remove both
+
+**Owner's choice:** A, given as "the rest i agree with your recomendations"
+in the reply quoted under 1.
+
+What that means as built:
+
+1. The in-app AI teaches and drafts; the coach decides. No AI output is a
+   diagnosis.
+2. Limits for a minor -- heat exposure, percentage of body weight, contact
+   level, supervision -- are coach-set **data**. They are not constants in
+   code and not values the AI chooses.
+3. Where a feature needs one of those limits and none is set, the AI asks for
+   it. It does not fill in a default.
+4. No limits table exists yet. Building one is its own bounded slice and is
+   not authorized by this entry.
+
+---
+
 ## OD-2026-09-19-002 -- Open assigned work keeps its drill instruction after the gym retires the drill
 
 **Provenance: PRIMARY.**
