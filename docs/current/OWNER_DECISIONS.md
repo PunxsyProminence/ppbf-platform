@@ -142,13 +142,12 @@ in the reply quoted under 1.
 
 What that means as built:
 
-1. The in-app AI teaches and drafts; the coach decides. No AI output is a
-   diagnosis.
-2. Limits for a minor -- heat exposure, percentage of body weight, contact
-   level, supervision -- are coach-set **data**. They are not constants in
-   code and not values the AI chooses.
-3. Where a feature needs one of those limits and none is set, the AI asks for
-   it. It does not fill in a default.
+1. The AI teaches and drafts; coaches decide. The in-app AI never
+   diagnoses.
+2. Coaches set the limits for minors as **data**: heat time, % of body
+   weight, contact level, supervision. The AI applies them; they are not
+   constants in code and not values the AI chooses.
+3. If a limit is missing, the AI asks for it. It does not fill in a default.
 4. No limits table exists yet. Building one is its own bounded slice and is
    not authorized by this entry.
 
