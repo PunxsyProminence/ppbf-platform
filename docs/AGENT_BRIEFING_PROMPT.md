@@ -69,8 +69,10 @@ So: staffed by role, coordinated by lane. The standing work lanes are in
 time inside it. **Do not drive-by fix another lane's surface** -- if you spot
 something broken outside your lane, write it down and hand it over.
 
-Research writes only to `docs/research/`, and auditing only reads, so neither
-can collide with anyone.
+Research and audit are ChatGPT's lane (OD-2026-09-21-001), and ChatGPT is
+read-only here: it hands research and findings to Claude through the ledger or `PPBF-AI-Lanes/ChatGPT-Handoffs/` in the Admin@ OneDrive,
+and Claude commits what belongs in the repository. Neither role collides with
+anyone.
 
 ### Claim your work in GitHub, not in a document
 
@@ -120,7 +122,8 @@ nobody tests, so the boundary is one-directional:
    approximate it in code.
 
 If the drive and the repo's design system disagree about a colour, a radius or
-a type scale, the repo is right by definition. Fix the drive copy.
+a type scale, the repo is right by definition. Fix the drive copy; never edit
+the repo to match a study.
 
 ### What needs a human, not a commit
 
@@ -130,8 +133,9 @@ Stop and ask the owner -- do not implement, however obviously right it looks:
   allowed to do. These break daily workflows for real staff.
 - Anything that **reverses a recorded owner decision.** Several things here are
   parked deliberately.
-- Anything touching **production, migrations against real environments, or
-  releases.**
+- Anything touching **production**: production deploys and production
+  migrations. (Staging deploys and staging migrations are a build lane's, per
+  OD-2026-08-29-006.)
 - Any finding you believe means **a child is currently unsafe.** Raise that
   immediately and separately, not at the end of your work.
 
@@ -150,9 +154,10 @@ checks.
 Find yourself below.
 
 **Research.** Your brief is `docs/HANDOFF_RESEARCH.md` -- read it in full; it
-names six items and their priority order (corrected there on 2026-08-24). You
-write only to
-`docs/research/` (create it). You change no application code, no migrations, no
+names six items and their priority order (corrected there on 2026-08-24).
+Output lands only in `docs/research/` (create it): as ChatGPT you hand it to
+Claude through the ledger or `PPBF-AI-Lanes/ChatGPT-Handoffs/` in the Admin@ OneDrive, and Claude commits it; a Claude
+session in this role commits it itself. You change no application code, no migrations, no
 coefficients, no thresholds. You recommend; you do not implement. Carry
 citations inline. "We could not establish this" is a complete and valuable
 answer -- an uncited plausible answer is worse than nothing, because code gets
@@ -183,9 +188,10 @@ PR is your claim; open it as a draft on your first commit. Merge only as the
 kernel's Lane model allows. Keep the two habits above -- they are the two
 defect classes that have actually hurt this project.
 
-**Auditing.** Read-only and collision-free: you can read any lane. Findings go
-into `docs/capabilities/NETWORK_STATUS.md` -- record the **shape** of what you
-found, not just that you fixed it. **Auditing carries no merge rights**: no
+**Auditing.** ChatGPT's lane. Read-only and collision-free: you can read any
+lane. Findings reach `docs/capabilities/NETWORK_STATUS.md` through Claude (as
+ChatGPT, hand them over through the ledger or `PPBF-AI-Lanes/ChatGPT-Handoffs/` in the Admin@ OneDrive) -- record the
+**shape** of what you found, not just that it was fixed. **Auditing carries no merge rights**: no
 branches, commits, pushes, merges, deploys or migrations. If you find something
 broken outside the lane you are reading, write it up and route it; do not fix
 it in passing.

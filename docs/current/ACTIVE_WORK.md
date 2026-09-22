@@ -17,6 +17,9 @@ queue, its evidence, and the calibration-lab notes -- is kept verbatim in
 Do **not** preload `docs/current/WORK_QUEUE.md` for ordinary implementation. It
 is the detailed historical/verification ledger.
 
+Repo enforcement always wins over any note here, and nothing in this file
+authorizes production deploys or production migrations.
+
 States:
 
 - `BLOCKED` -- cannot be built correctly without a real product, safety or data decision
@@ -48,8 +51,8 @@ online-only writes until the offline-storage decision is made).
 ## Standing owner directions (2026-08-15/16)
 
 Carried verbatim from the 2026-08-15/16 batches. They are not yet entries in
-`docs/current/OWNER_DECISIONS.md`; items 3, 5 and 6 of that batch shipped and
-are in the archive copy.
+`docs/current/OWNER_DECISIONS.md`. Items 3, 5 and 6 of the 2026-08-16 batch
+shipped; item 3 still carries a boundary, below.
 
 - **Merch** (owner, 2026-08-15): merchandise sales are Program-lane revenue
   when payments go live -- earned income like class fees, settling to the
@@ -74,6 +77,24 @@ are in the archive copy.
   comparison); org-level unlocks mean an organization earns engine activation
   by accumulating real data. Design to be proposed per-engine as slices come
   up.
+- **Coach Intelligence Engine (111)** (2026-08-16, item 3) -- v1 ("The
+  Morning Read") shipped, commit `c05c8c68`. Widening it further is a new,
+  separate decision, not a resumption of this one.
+
+### Shipped with constraints that still bind (2026-08-15 queue)
+
+The 2026-08-15 queue shipped (release `3d2308ed`). Retired owner-decision
+constraints remain binding on any change to those surfaces:
+
+- deterministic gap suggestions: the coach confirms or dismisses; nothing
+  reaches an athlete unconfirmed;
+- the sports-medicine clearance board: clearance + holds only;
+- the issue #345 research workspace: submission never resolves a
+  requirement, structurally;
+- both competition skeletons (#376/#377): deliberately skeletal by owner
+  decision;
+- the payment slot (#378): the three reserved names, empty; CAP-012 stays
+  BLOCKED.
 
 ## Last recorded build queue: video calibration lab (2026-08-29, not re-checked)
 
@@ -120,6 +141,9 @@ arbitrary. Remaining at 2026-08-29:
 Historical runtime-verification gaps (including T-001/T-002 and the PR-238 bulk
 deployment) are evidence debt, not a blanket blocker on new development. Run
 the relevant runtime probe when touching or releasing the affected surface.
+Sparring failure contexts (2026-08-16, item 5) shipped at the DB and
+application layers; whether its migration was dispatched to staging or
+production was not confirmed as of 2026-08-29.
 
 ## History
 
