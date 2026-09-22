@@ -732,6 +732,19 @@ export default function AthleteWorkspace() {
      timing. */
   const sessionWriteChainRef = useRef<Promise<void>>(Promise.resolve());
   const checkingOutRef = useRef(false);
+  /* The note the session row holds right now, as far as this tab knows. A
+     draft save that lands WHILE check-out is waiting on the chain updates it
+     here, synchronously, so check-out's empty-box fallback is the latest
+     stored note and not the one captured when Check Out was pressed -- that
+     capture predates the wait and would overwrite the newer note with an
+     older one. Kept in step with activeSessionRecord for every other way the
+     record changes (check-in, rehydrate). */
+  const storedNoteRef = useRef<{ sessionId: string; note: string } | null>(null);
+  useEffect(() => {
+    storedNoteRef.current = activeSessionRecord
+      ? { sessionId: activeSessionRecord.sessionId, note: activeSessionRecord.checkInNote }
+      : null;
+  }, [activeSessionRecord]);
 
   /* The gym's own noises, off unless this browser opted in. play() is safe to
      call unconditionally: it returns false and does nothing when sound is off,
@@ -1301,6 +1314,7 @@ export default function AthleteWorkspace() {
 
           if (!response.ok) throw new Error('Notes were not saved.');
 
+          storedNoteRef.current = { sessionId: record.sessionId, note: draft };
           setActiveSessionRecord((current) => (
             current && current.sessionId === record.sessionId
               ? { ...current, checkInNote: draft }
@@ -1583,6 +1597,9 @@ export default function AthleteWorkspace() {
       // can land after this write and undo it. The chain never rejects -- each
       // draft records its own failure in notesSaveState -- so this only waits.
       await sessionWriteChainRef.current;
+      const storedNote = storedNoteRef.current?.sessionId === record.sessionId
+        ? storedNoteRef.current.note
+        : record.checkInNote;
 
       const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
         method: 'POST',
@@ -1602,10 +1619,11 @@ export default function AthleteWorkspace() {
           // readiness slider, and promoting it here is the old defect.
           rpe,
           rpe_method: rpe === null ? ('UNKNOWN' as const) : ('athlete_post_session_self_report' as const),
-          // The check-in note is the fallback because the session record
-          // requires a note and an empty box must not erase what check-in
-          // already stored.
-          notes: notes || record.checkInNote,
+          // The stored note is the fallback because the session record
+          // requires a note and an empty box must not erase what is already
+          // stored. Read AFTER the wait above, so a draft that landed during
+          // it counts -- see storedNoteRef.
+          notes: notes || storedNote,
           completed_flag: true,
           created_at: record.createdAt,
           updated_at: now.toISOString(),
@@ -2228,12 +2246,17 @@ export default function AthleteWorkspace() {
                 ) : activeSessionRecord ? (
                   <div className="space-y-[var(--s4)]">
                     <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Session active since {checkInTime}</p>
+                    {/* Held while check-out is in progress: check-out has already
+                        taken the notes, and no draft save may start now, so
+                        anything typed here would be silently dropped. A refused
+                        check-out releases it again. */}
                     <textarea
                       value={checkInNotes}
                       onChange={(e) => setCheckInNotes(e.target.value)}
+                      disabled={isCheckingOut}
                       placeholder="Session notes for your coach..."
                       aria-label="Session notes for your coach"
-                      className="textarea input--kiosk h-[89px]"
+                      className="textarea input--kiosk h-[89px] disabled:opacity-60"
                     />
                     <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]" role="status">
                       {notesSaveState === 'failed'

@@ -2175,6 +2175,65 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     expect(updates[updates.length - 1].body.completed_flag).toBe(true);
   });
 
+  // Write ORDER is not enough on its own: check-out's empty-box fallback used
+  // the note captured when Check Out was pressed, which predates the wait.
+  // A draft that lands during the wait is newer than that capture, and the
+  // fallback must not put the older note back over it.
+  test('a note saved while check-out waits is kept, not replaced by the older one', async () => {
+    persistSessionUpdates = true;
+    holdDraftSaves = true;
+    await openSession({ notes: 'old' });
+
+    const box = screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement;
+    expect(box.value).toBe('old');
+    fireEvent.change(box, { target: { value: 'new' } });
+    await waitFor(() => expect(heldDraftSaves).toHaveLength(1), { timeout: 5000 });
+
+    // Empty box at the moment of Check Out: the fallback decides the note.
+    fireEvent.change(box, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(checkOutBodies()).toHaveLength(0);
+
+    await act(async () => {
+      heldDraftSaves.shift()?.();
+    });
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+
+    expect(checkOutBodies()[0].notes).toBe('new');
+    await waitFor(() => expect(storedSessions[0]).toEqual(expect.objectContaining({
+      completed_flag: true,
+      notes: 'new',
+    })));
+  });
+
+  test('the notes box takes no typing while check-out is in progress, and a refused check-out gives it back', async () => {
+    holdDraftSaves = true;
+    await openSession();
+
+    const box = screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: 'Jab felt sharp.' } });
+    await waitFor(() => expect(heldDraftSaves).toHaveLength(1), { timeout: 5000 });
+
+    sessionUpdateFails = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // Waiting on the draft: anything typed now could not reach the session.
+    expect(box.disabled).toBe(true);
+
+    await act(async () => {
+      heldDraftSaves.shift()?.();
+    });
+    expect(await screen.findByText(/still checked in/i)).toBeTruthy();
+    // Refused: editing is back, and what was written is still there.
+    expect(box.disabled).toBe(false);
+    expect(box.value).toBe('Jab felt sharp.');
+  });
+
   test('no notes save starts once check-out has begun', async () => {
     await openSession();
 
