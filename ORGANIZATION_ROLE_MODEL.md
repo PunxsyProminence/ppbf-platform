@@ -56,10 +56,10 @@ Still gated regardless of the above:
 
 - **Organization-private athlete records.** `assertActorCanAccessAthlete`
   refuses `platform_owner` unconditionally, and refuses it *first* — ahead of
-  `board` and ahead of any organization comparison (access.ts:316-318,
-  `Forbidden: platform owner cannot access organization-private athlete records
-  by default`). The batched counterpart `accessibleAthleteIds` returns an empty
-  set for the same role and says so in its own comment (access.ts:372-376). The
+  `board` and ahead of any organization comparison (its opening branch in
+  access.ts: `Forbidden: platform owner cannot access organization-private
+  athlete records by default`). The batched counterpart `accessibleAthleteIds`
+  returns an empty set for `platform_owner` and `board` alike. The
   cross-organization visibility above is **de-identified and aggregate**; it is
   not a key to an individual youth record, and the two must never be collapsed.
   See [Enforcement model](#enforcement-model).
@@ -101,12 +101,6 @@ training sessions, the intake review queue, admin capabilities, safety and
 compliance violations, the athlete scheduler, safety escalations, wrestling
 league seasons, the league roster, external competitions, and competition
 entries.
-
-**Corrected 2026-08-22.** This paragraph said `board` was refused "before any
-other branch" and that the test held seven surfaces. Measured, both were wrong:
-`platform_owner` is the first branch (access.ts:316-318) and the test is a
-`test.each` of twelve cases. Nothing about the board boundary itself changed —
-only its position in the ladder, and the size of the proof standing under it.
 
 Allowed inside own organization:
 
@@ -180,7 +174,7 @@ Decision rule:
 
 - deny an athlete-scoped resource to `platform_owner` **first**, before
   organization scope is even compared. `assertActorCanAccessAthlete` opens with
-  it (access.ts:316-318) and takes no argument from organization_id, from the
+  it and takes no argument from organization_id, from the
   role ladder above, or from the pilot-phase visibility in
   [Platform Owner](#platform-owner).
 - deny an athlete-scoped resource to `board` **second**, and likewise before
@@ -190,12 +184,7 @@ Decision rule:
   platform_owner exemption at this step for an athlete-scoped resource** — that
   actor was already refused two branches earlier.
 
-**Corrected 2026-08-22.** The second bullet used to read "deny when
-organization_id does not match, unless the actor is platform_owner". That
-inverted the guard on the exact records it exists to protect: anyone writing a
-new athlete-scoped route against this section would have written the exemption
-back in and handed the platform owner every minor's record in every
-organization. The code has never behaved that way — the refusal is
-unconditional and is the function's first branch. What the pilot-phase
-visibility genuinely covers is de-identified, aggregate, cross-organization
-data; it was never athlete-record access.
+Never write a `platform_owner` exemption into an athlete-scoped route. The
+pilot-phase visibility covers de-identified, aggregate, cross-organization data;
+it was never athlete-record access. (Until 2026-08-22 this section wrongly read
+"unless the actor is platform_owner"; the code never behaved that way.)
