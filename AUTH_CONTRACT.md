@@ -1,33 +1,42 @@
 # Auth Contract
 
-This document defines the production backend contract for auth and role discovery, based on the current repository behavior and the requested server-facing endpoints.
+The backend contract for authentication and role discovery, as the code
+implements it. Checked against the route handlers on 2026-09-21.
 
-## Observed Current Behavior
+## Current behavior
 
-- Current login route: `POST /api/pilot/auth/login`
-- Current session route: `POST /api/pilot/auth/session`
-- Current logout route: `POST /api/pilot/auth/logout`
-- Current server token strategy: opaque session token stored in an HTTP-only cookie and hashed in `pilot.session_tokens`
-- Current auth record source: `pilot.accounts`
-- Current authorization role set (`PilotRole`, the type `requireRole` enforces against): `platform_owner`, `organization_admin`, `admin`, `coach`, `athlete`, `parent`, `board`, `volunteer`, `staff`
-- Current client route model (`ClubRole`) additionally splits the board seat into `board-president`, `board-chair`, `board-vice-chair`, `board-treasurer`, `board-secretary`, `board-safety-director`, `board-community-director`, `board-at-large`. Those seats select a landing page; they are not authorization roles and the server never issues one.
+- Server token strategy: opaque session token in an HTTP-only cookie, hashed in `pilot.session_tokens`
+- Auth record source: `pilot.accounts`
+- Authorization role set (`PilotRole` in [contracts.ts](apps/web/src/server/pilot/contracts.ts), the type `requireRole` enforces against): `platform_owner`, `organization_admin`, `admin`, `coach`, `athlete`, `parent`, `board`, `volunteer`, `staff`. [ORGANIZATION_ROLE_MODEL.md](ORGANIZATION_ROLE_MODEL.md) describes what each may see.
+- Client route model (`ClubRole` in [roleRoutes.ts](apps/web/components/roleRoutes.ts)) additionally splits the board seat into `board-president`, `board-chair`, `board-vice-chair`, `board-treasurer`, `board-secretary`, `board-safety-director`, `board-community-director`, `board-at-large`. Those seats select a landing page; they are not authorization roles and the server never issues one.
 
-Relevant source files:
+Route handlers under `apps/web/app/api/pilot/auth/`:
 
-- [apps/web/app/api/pilot/auth/login/route.ts](apps/web/app/api/pilot/auth/login/route.ts)
-- [apps/web/app/api/pilot/auth/logout/route.ts](apps/web/app/api/pilot/auth/logout/route.ts)
-- [apps/web/app/api/pilot/auth/session/route.ts](apps/web/app/api/pilot/auth/session/route.ts)
-- [apps/web/src/server/pilot/auth.ts](apps/web/src/server/pilot/auth.ts)
-- [apps/web/src/server/pilot/contracts.ts](apps/web/src/server/pilot/contracts.ts)
-- [apps/web/components/roleRoutes.ts](apps/web/components/roleRoutes.ts)
+| Route | Methods | Specified below |
+|---|---|---|
+| `/api/pilot/auth/login` | `POST` | yes |
+| `/api/pilot/auth/logout` | `POST` | yes |
+| `/api/pilot/auth/session` | `POST` | yes |
+| `/api/pilot/auth/activate` | `POST` | no -- read the route |
+| `/api/pilot/auth/change-pin` | `POST` | no -- read the route |
+| `/api/pilot/auth/logout-all` | `POST` | no -- read the route |
+| `/api/pilot/auth/magic-link/request` | `POST` | no -- read the route |
+| `/api/pilot/auth/magic-link/consume` | `GET`, `POST` | no -- read the route |
+| `/api/pilot/auth/microsoft/start` | `GET` | no -- read the route |
+| `/api/pilot/auth/microsoft/callback` | `GET` | no -- read the route |
 
-## Endpoint Contract
+Which credential a person uses (Microsoft, magic link, or account ID + PIN) is
+decided in [credentialPolicy.ts](apps/web/src/server/pilot/credentialPolicy.ts).
+In staging and production, PIN sign-in admits only athletes; `pinLoginPermitted`
+adds the BASE-03 offline local-runtime exception.
 
-Login, logout, and session are already implemented (at the `/api/pilot/auth/*`
-paths listed above under Observed Current Behavior) and match the contract
-below. `GET /auth/roles` is the one proposed addition, not yet built.
+Other source files: [auth.ts](apps/web/src/server/pilot/auth.ts),
+[http.ts](apps/web/src/server/pilot/http.ts),
+[sessionPolicy.ts](apps/web/src/server/pilot/sessionPolicy.ts).
 
-### POST /auth/login (implemented)
+## Endpoint contract
+
+### POST /api/pilot/auth/login
 
 Request body:
 
@@ -45,9 +54,13 @@ Response on success:
   "ok": true,
   "account_id": "string",
   "role": "string",
-  "athlete_id": "string | null"
+  "organization_id": "string",
+  "athlete_id": "string | null",
+  "has_master_shadow_access": "boolean"
 }
 ```
+
+The role is the one stored on the account; the route never overrides it.
 
 Response on failure:
 
@@ -60,21 +73,18 @@ Response on failure:
 Status codes:
 
 - `200` success
-- `400` missing or malformed request body
+- `400` a missing `account_id` or `pin`. A body that is not valid JSON is
+  not mapped: `request.json()` throws and `jsonError` falls back to `500`
+  (read from the code, 2026-09-21)
 - `401` invalid credentials
+- `429` too many attempts -- per account or per IP, from a durable and a
+  volatile limiter; a failed attempt counts against both, and a success clears
+  them
 - `500` unexpected server failure
 
-Session behavior:
+### POST /api/pilot/auth/logout
 
-- Server sets an HTTP-only session cookie.
-- Session token is opaque.
-- Server stores the hashed token in the database.
-
-### POST /auth/logout (implemented)
-
-Request:
-
-- Authenticated session cookie required.
+Request: authenticated session cookie required.
 
 Response on success:
 
@@ -86,33 +96,23 @@ Status codes:
 
 - `200` success
 - `401` no authenticated session
+- `403` the account must change its PIN first (`requirePrincipal` in
+  `http.ts` refuses a session with `must_change_pin` set:
+  `Forbidden: PIN change required before using this account`)
 - `500` unexpected server failure
 
-Session behavior:
+Behavior: revokes the token server-side, writes a `logout` audit event, and
+clears the session cookie.
 
-- Revoke the token server-side.
-- Clear the session cookie.
+### POST /api/pilot/auth/session
 
-### POST /auth/session (implemented)
-
-**Corrected 2026-08-22 — this heading read `GET /auth/session`.** It was wrong,
-and it contradicted this document's own Observed Current Behavior above, which
-has always said `POST /api/pilot/auth/session`.
-[route.ts](apps/web/app/api/pilot/auth/session/route.ts) exports `POST` and
-nothing else, so a `GET` answers `405`. Two callers carry the incident in their
-comments rather than in a changelog:
-[RoleSessionGate.tsx](apps/web/components/RoleSessionGate.tsx) records that it
-briefly used `GET` here, that `loadAuthoritativeRoleSession` treats any non-401
-failure as unauthenticated, and that every gated page therefore cleared a
-perfectly valid session and bounced its owner to `/login` — indistinguishable
-from being logged out; and
-[GlobalRoleHeader.tsx](apps/web/components/GlobalRoleHeader.tsx) points at that
-fix so the same mistake is not made a second time. Use `POST`.
-
-Request:
-
-- Method `POST`. No request body is required or read.
-- Session cookie supplied automatically by the browser.
+`POST` only; no request body is required or read, and the browser supplies the
+session cookie. **A `GET` answers `405`**, and because
+`loadAuthoritativeRoleSession` treats any non-401 failure as unauthenticated, a
+`GET` here makes every gated page drop a valid session and bounce its owner to
+`/login` (2026-08-22 correction; [RoleSessionGate.tsx](apps/web/components/RoleSessionGate.tsx)
+and [GlobalRoleHeader.tsx](apps/web/components/GlobalRoleHeader.tsx) carry the
+incident in their comments).
 
 Response when authenticated:
 
@@ -140,16 +140,14 @@ sets it.
 `pin_auth_permitted` is the server's ATTESTATION of its own PIN-policy verdict,
 not an authorization the client makes. `resolvePrincipal` reaches its return for
 a `ppbf_local` session only because `pinLoginPermitted` already admitted it, so
-this field reports that decision. The inputs stay on the server — `NODE_ENV`,
+this field reports that decision. The inputs stay on the server -- `NODE_ENV`,
 the offline runtime flag, whether the database connection is loopback, and
-board-seat state — because the browser must not see them and could not obtain
+board-seat state -- because the browser must not see them and could not obtain
 three of them.
 
 `components/roleSession.ts` reads it and never recomputes it: a `ppbf_local`
 session proceeds only on `pin_auth_permitted === true`, and one arriving without
-it stays `privileged_auth_required`. Absence is not consent. Before this the
-client decided from the role instead, and refused sessions the server had just
-admitted.
+it stays `privileged_auth_required`. Absence is not consent.
 
 Response when unauthenticated:
 
@@ -159,18 +157,16 @@ Response when unauthenticated:
 
 Status codes:
 
-- `200` always for a valid `POST`, authenticated or not — an unauthenticated
+- `200` always for a valid `POST`, authenticated or not -- an unauthenticated
   caller gets `200` with `"authenticated": false`, never `401`
 - `405` for any other method, `GET` included
 - `500` unexpected server failure
 
-### GET /auth/roles (proposed, not built)
+### Role catalog endpoint (proposed, not built -- open design question)
 
-Purpose:
-
-- Return the authoritative role catalog the frontend can render and the backend can authorize against.
-
-Proposed response:
+An earlier draft of this contract proposed `GET /auth/roles`, returning one
+catalog "the frontend can render and the backend can authorize against" that
+"should match" [roleRoutes.ts](apps/web/components/roleRoutes.ts), for example:
 
 ```json
 {
@@ -180,37 +176,46 @@ Proposed response:
 }
 ```
 
-Contract notes:
+Those are two different catalogs. `PilotRole` is the authorization union;
+`ClubRole` is the navigation model and adds the board-seat values, which are
+not authorization roles. A design has to pick one, or define both separately,
+before anything is built. In the existing API family the path would be
+`/api/pilot/auth/roles`. No such route exists under
+`apps/web/app/api/pilot/auth/` (checked 2026-09-21), and whether it is still
+wanted is also open.
 
-- The role catalog should match the current app route model in [apps/web/components/roleRoutes.ts](apps/web/components/roleRoutes.ts).
-- This endpoint is not present in the current repository and will need to be added in the backend layer.
+## Error mapping
 
-## Error States
+`jsonError` in [http.ts](apps/web/src/server/pilot/http.ts) maps a thrown
+error to a status across the pilot API:
 
-- `400` missing request fields, malformed JSON, or unsupported payload.
-- `401` invalid credentials or no authenticated session.
-- `403` authenticated but not authorized for the requested resource.
-- `500` unexpected server, database, or crypto failure.
+- a `PilotError` carries its own status;
+- `MedicalStatusBlockedError` and `GuardianConsentMissingError` -> `409`, with
+  their message disclosed (checked before any prefix matching);
+- otherwise by message prefix: `Unauthorized` -> `401`; `Forbidden` -> `403`;
+  `Missing`, `Request body`, `Unsupported` or `PIN` -> `400`; `Not found` or
+  `Athlete not found` -> `404`; the already-exists conflicts (account, athlete
+  link, athlete record, coverage, hold) -> `409`;
+- a SHADOW runtime outage -> `503`;
+- anything else -> `500`, with the raw message withheld from the client.
 
-The current server helper already maps these cases through `jsonError` in [apps/web/src/server/pilot/http.ts](apps/web/src/server/pilot/http.ts).
+Login's `429` is set by the login route itself. Session's `405` is Next.js
+answering a method the route does not export.
 
-## Session Model
+## Session and token
 
-- One opaque token per session.
-- Token is issued at login.
-- Token is stored only in an HTTP-only cookie on the client.
-- Token hash is stored in the database.
-- Logout revokes the stored token row.
-- Session lookup resolves the principal from the cookie, then joins to the account table.
+- One opaque token per session, generated server-side at login.
+- Only the hash is persisted (`pilot.session_tokens`); only the raw token is
+  returned, in the cookie.
+- Cookie: `httpOnly`, `sameSite=lax`, `secure` in production, `path=/`,
+  `maxAge = SESSION_ABSOLUTE_LIFETIME_SECONDS` from
+  [sessionPolicy.ts](apps/web/src/server/pilot/sessionPolicy.ts).
+- Logout revokes the stored token row and sets the cookie to empty with
+  `maxAge: 0`.
+- Session lookup resolves the principal from the cookie, then joins to the
+  account table.
 
-## Token Strategy
-
-- Generate an opaque token server-side.
-- Hash the token before persisting it.
-- Return only the raw token in the cookie.
-- Mark the cookie `httpOnly`, `sameSite=lax`, `secure` in production, and set a long-lived max age only if that is intended for the deployment policy.
-
-## Authorization Boundary
+## Authorization boundary
 
 - Frontend UI may hide or show controls based on the server session.
 - Security decisions must be enforced by the backend.
