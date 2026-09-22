@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
+import React, { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
 import AthleteAttemptLog from './AthleteAttemptLog';
@@ -330,30 +330,17 @@ const AUTO_CHECK_IN_NOTE_PATTERN = /^Auto check-in readiness (GREEN|YELLOW|RED)$
  * The post-session effort question an athlete answers at check-out, on the
  * 0-10 range pilot.sessions.rpe and validateSessionPayload accept.
  *
- * The words are the session-RPE convention (Foster et al., 2001: the modified
- * CR-10 scale used for session RPE). It puts words at 0, 1, 2, 3, 4, 5, 7 and
- * 10 and deliberately none at 6, 8 and 9, which sit between the words either
- * side -- so those stay bare numbers here rather than being given labels the
- * scale does not have.
+ * NUMBERS ONLY, with the two ends explained. The session contract defines the
+ * range and the provenance; it does not adopt any published instrument's
+ * verbal anchors, and words on 1-9 would change what the athlete is answering.
+ * Adopting a sourced scale is its own measurement decision, not copy.
  *
  * Asked about the session JUST FINISHED, never about how ready the athlete
  * felt beforehand: that is the check-in slider, which is a different record
  * and must never reach this one.
  */
 const POST_SESSION_EFFORT_QUESTION = 'How hard was the session you just finished?';
-const POST_SESSION_EFFORT_SCALE: ReadonlyArray<{ value: number; anchor: string | null }> = [
-  { value: 0, anchor: 'Rest' },
-  { value: 1, anchor: 'Very, very easy' },
-  { value: 2, anchor: 'Easy' },
-  { value: 3, anchor: 'Moderate' },
-  { value: 4, anchor: 'Somewhat hard' },
-  { value: 5, anchor: 'Hard' },
-  { value: 6, anchor: null },
-  { value: 7, anchor: 'Very hard' },
-  { value: 8, anchor: null },
-  { value: 9, anchor: null },
-  { value: 10, anchor: 'Maximal' },
-];
+const POST_SESSION_EFFORT_VALUES: readonly number[] = Array.from({ length: 11 }, (_, value) => value);
 
 /**
  * pilot.sessions stores date as `date` and rpe as `numeric`, and node-postgres
@@ -724,6 +711,22 @@ export default function AthleteWorkspace() {
      Observed duration is still not collected by anything, so there is still
      no Session Load to send. */
   const [postSessionEffort, setPostSessionEffort] = useState<{ sessionId: string; value: number } | null>(null);
+
+  /* ONE SESSION WRITE AT A TIME. The notes draft save and check-out both send
+     the WHOLE session row to /api/pilot/sessions/update, and the server applies
+     each one as it arrives with no ordering check -- so a draft save already in
+     flight when check-out is pressed could land after it and put back
+     completed_flag false and the old rpe, reopening a session the athlete had
+     just closed and erasing their effort answer. Cancelling the draft TIMER
+     (the effect cleanup) cannot stop a request that has already left.
+
+     So check-out waits for any draft save in flight to finish before it sends,
+     and from the moment check-out starts no new draft save may begin. The
+     effect cleanup already cancels a pending timer once isCheckingOut
+     re-renders; checkingOutRef is the same refusal made independent of render
+     timing, not a separate mechanism. */
+  const notesSaveInFlightRef = useRef<Promise<void> | null>(null);
+  const checkingOutRef = useRef(false);
 
   /* The gym's own noises, off unless this browser opted in. play() is safe to
      call unconditionally: it returns false and does nothing when sound is off,
@@ -1264,7 +1267,10 @@ export default function AthleteWorkspace() {
     }
 
     const timer = setTimeout(() => {
-      void (async () => {
+      // Check-out has started since this timer was set: its write carries the
+      // notes, and a draft save now could only race it. See notesSaveInFlightRef.
+      if (checkingOutRef.current) return;
+      const save = (async () => {
         setNotesSaveState('saving');
         try {
           const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
@@ -1298,6 +1304,10 @@ export default function AthleteWorkspace() {
           setNotesSaveState('failed');
         }
       })();
+      notesSaveInFlightRef.current = save;
+      void save.finally(() => {
+        if (notesSaveInFlightRef.current === save) notesSaveInFlightRef.current = null;
+      });
     }, NOTES_DRAFT_SAVE_DELAY_MS);
 
     return () => clearTimeout(timer);
@@ -1559,9 +1569,15 @@ export default function AthleteWorkspace() {
     // Read once, so the value and its method cannot disagree in the body.
     const rpe = answeredEffort;
 
+    checkingOutRef.current = true;
     setIsCheckingOut(true);
 
     try {
+      // A draft save already on the wire lands first, so it can never land
+      // after this write and undo it. It never rejects -- it records its own
+      // failure in notesSaveState -- so this only waits.
+      await notesSaveInFlightRef.current;
+
       const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
         method: 'POST',
         credentials: 'include',
@@ -1623,6 +1639,7 @@ export default function AthleteWorkspace() {
         + "Hit Check Out again, and tell a coach anything they need to know.",
       );
     } finally {
+      checkingOutRef.current = false;
       setIsCheckingOut(false);
     }
 
@@ -2223,7 +2240,7 @@ export default function AthleteWorkspace() {
                               ? 'Not saved yet.'
                               : 'Anything you write here saves as you go.'}
                     </p>
-                    {/* POST-SESSION EFFORT (A-FIN-05). Eleven described choices
+                    {/* POST-SESSION EFFORT (A-FIN-05). Eleven choices, 0 to 10,
                         rather than a slider, for the reason the Wellness panel
                         gives: a range input always has a position, so it
                         records an answer nobody gave. Nothing is selected until
@@ -2233,25 +2250,22 @@ export default function AthleteWorkspace() {
                     <fieldset className="space-y-[var(--s2)]">
                       <legend className="t-label mb-[var(--s2)]">{POST_SESSION_EFFORT_QUESTION}</legend>
                       <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
-                        0 is rest, 10 is the hardest you could go. It goes on the session when you check out.
+                        0 means not hard at all. 10 means as hard as you could go. It goes on the session when you check out.
                       </p>
-                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-[var(--s2)]">
-                        {POST_SESSION_EFFORT_SCALE.map(({ value, anchor }) => {
+                      <div className="grid grid-cols-4 sm:grid-cols-6 gap-[var(--s2)]">
+                        {POST_SESSION_EFFORT_VALUES.map((value) => {
                           const selected = answeredEffort === value;
                           return (
                             <button
                               key={value}
                               type="button"
-                              aria-label={anchor
-                                ? `${POST_SESSION_EFFORT_QUESTION} ${value}: ${anchor}`
-                                : `${POST_SESSION_EFFORT_QUESTION} ${value}`}
+                              aria-label={`${POST_SESSION_EFFORT_QUESTION} ${value}`}
                               aria-pressed={selected}
                               disabled={isCheckingOut}
                               onClick={() => setPostSessionEffort({ sessionId: activeSessionRecord.sessionId, value })}
-                              className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'} text-left`}
+                              className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
                             >
-                              <span className="t-data block" style={{ fontSize: 'var(--t-sm)' }}>{value}</span>
-                              {anchor ? <span className="block" style={{ fontSize: 'var(--t-sm)' }}>{anchor}</span> : null}
+                              <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{value}</span>
                             </button>
                           );
                         })}

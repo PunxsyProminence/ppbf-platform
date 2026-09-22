@@ -37,6 +37,8 @@ let storedSessions: Array<Record<string, unknown>> = [];
 let sessionListFails = false;
 let sessionUpdateFails = false;
 let persistSessionUpdates = false;
+let holdDraftSaves = false;
+let releaseDraftSave: (() => void) | null = null;
 let storedGoals: Array<Record<string, unknown>> = [];
 let goalUpdateFails = false;
 let sessionCreateFails = false;
@@ -189,6 +191,8 @@ beforeEach(() => {
   sessionListFails = false;
   sessionUpdateFails = false;
   persistSessionUpdates = false;
+  holdDraftSaves = false;
+  releaseDraftSave = null;
   storedGoals = [];
   goalUpdateFails = false;
   sessionCreateFails = false;
@@ -250,13 +254,25 @@ beforeEach(() => {
       return jsonResponse({ items: storedSessions });
     }
     if (url.includes('/api/pilot/sessions/update')) {
-      if (!sessionUpdateFails && persistSessionUpdates) {
-        // Stored the way pilot.sessions hands it back: numeric rpe as a string.
-        const body = parseBody(init);
+      const body = parseBody(init);
+      // Applied the way pilot.sessions applies it: the write that ARRIVES last
+      // wins, with no ordering check, and numeric rpe comes back as a string.
+      const apply = () => {
+        if (!persistSessionUpdates) return;
         storedSessions = storedSessions.map((row) => (row.session_id === body.session_id
           ? { ...row, ...body, rpe: body.rpe === null ? null : String(body.rpe) }
           : row));
+      };
+      if (!sessionUpdateFails && holdDraftSaves && body.completed_flag === false) {
+        // A draft save held on the wire until the test lets it arrive.
+        return new Promise<Response>((resolve) => {
+          releaseDraftSave = () => {
+            apply();
+            resolve(jsonResponse({ ok: true }));
+          };
+        });
       }
+      if (!sessionUpdateFails) apply();
       return jsonResponse(sessionUpdateFails ? { error: 'Internal server error' } : { ok: true }, !sessionUpdateFails);
     }
     if (url.endsWith('/api/pilot/sessions') && init?.method === 'POST' && sessionCreateFails) {
@@ -1931,16 +1947,11 @@ describe('a rehydrated session keeps the RPE it was actually stored with', () =>
 // back on the card the athlete already reads.
 describe('post-session effort is the athlete\'s answer at check-out, or nothing', () => {
   const EFFORT_Q = 'How hard was the session you just finished?';
-  // The session-RPE scale's words (modified CR-10). 6, 8 and 9 carry none, on
-  // purpose -- the scale leaves them between the words either side.
-  const EFFORT_WORDS: Record<number, string | null> = {
-    0: 'Rest', 1: 'Very, very easy', 2: 'Easy', 3: 'Moderate', 4: 'Somewhat hard', 5: 'Hard',
-    6: null, 7: 'Very hard', 8: null, 9: null, 10: 'Maximal',
-  };
 
+  // Numbers only: the session contract defines 0-10 and its provenance, not
+  // any published instrument's words for the points between.
   function effortName(value: number): string {
-    const word = EFFORT_WORDS[value];
-    return word ? `${EFFORT_Q} ${value}: ${word}` : `${EFFORT_Q} ${value}`;
+    return `${EFFORT_Q} ${value}`;
   }
 
   function effortButton(value: number): HTMLElement {
@@ -1983,6 +1994,12 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     expect(within(group).getByText(/Not answered — you can skip this/)).toBeTruthy();
     // No slider: a range input always has a position, which is an answer nobody gave.
     expect(within(group).queryByRole('slider')).toBeNull();
+    // The two ends are explained; nothing in between is given words.
+    expect(within(group).getByText(/0 means not hard at all\. 10 means as hard as you could go\./)).toBeTruthy();
+    for (const word of ['Rest', 'Moderate', 'Somewhat hard', 'Very hard', 'Maximal', 'Easy']) {
+      expect(within(group).queryByText(word)).toBeNull();
+    }
+    expect(group.textContent ?? '').not.toMatch(/CR-10|Foster/);
   });
 
   test('an untouched check-out records no effort: null with an UNKNOWN method', async () => {
@@ -2073,6 +2090,58 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     const body = await checkOut();
     expect(body.rpe).toBe(7);
     expect(await screen.findByText(/Your effort, 7 of 10, is on it too/)).toBeTruthy();
+  });
+
+  // The notes draft save and check-out both send the whole session row, and the
+  // server applies whichever ARRIVES last (the fixture does the same when
+  // persistSessionUpdates is on). A draft held on the wire past the check-out
+  // click is the ordering that used to reopen the session and erase the answer.
+  test('a notes save already in flight cannot land after check-out and undo it', async () => {
+    persistSessionUpdates = true;
+    holdDraftSaves = true;
+    await openSession();
+
+    fireEvent.change(screen.getByPlaceholderText(/Session notes for your coach/), { target: { value: 'Jab felt sharp.' } });
+    // The draft save has left and is being held by the "server".
+    await waitFor(() => expect(releaseDraftSave).not.toBeNull(), { timeout: 5000 });
+
+    fireEvent.click(effortButton(7));
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // Check-out waits for the draft on the wire instead of racing it.
+    expect(checkOutBodies()).toHaveLength(0);
+
+    await act(async () => {
+      releaseDraftSave?.();
+    });
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+
+    // What the server holds at the end is the check-out, not the draft.
+    await waitFor(() => expect(storedSessions[0]).toEqual(expect.objectContaining({
+      completed_flag: true,
+      rpe: '7',
+      rpe_method: 'athlete_post_session_self_report',
+      notes: 'Jab felt sharp.',
+    })));
+    expect(await screen.findByText(/Your effort, 7 of 10, is on it too/)).toBeTruthy();
+  });
+
+  test('no notes save starts once check-out has begun', async () => {
+    await openSession();
+
+    fireEvent.change(screen.getByPlaceholderText(/Session notes for your coach/), { target: { value: 'Last round was rough.' } });
+    // Pressed inside the draft save's delay, so its timer has not fired yet.
+    fireEvent.click(effortButton(5));
+    const body = await checkOut();
+    expect(body.notes).toBe('Last round was rough.');
+
+    // Past the draft delay: the only session update ever sent is the check-out.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1600));
+    });
+    expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1);
   });
 
   test('clearing the answer puts it back to not answered, and check-out then records none', async () => {
