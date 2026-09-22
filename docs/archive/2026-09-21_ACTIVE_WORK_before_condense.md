@@ -1,4 +1,4 @@
-> **ARCHIVED 2026-09-21.** Verbatim text of `docs/current/ACTIVE_WORK.md` at `4c3cb315524e4d8d1dcbdbd01c3f4079d7ca1c1b`, before it was
+> **ARCHIVED 2026-09-21.** Verbatim text of `docs/current/ACTIVE_WORK.md` at `80c288d3c5e6c12c5a906691718caf9b7af50fe0`, before it was
 > condensed. History and provenance only: the current rules are in `docs/current/ACTIVE_WORK.md`.
 > Do not preload. Everything below the line is unchanged.
 

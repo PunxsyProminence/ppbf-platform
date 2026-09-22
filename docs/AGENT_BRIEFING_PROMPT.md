@@ -70,9 +70,9 @@ time inside it. **Do not drive-by fix another lane's surface** -- if you spot
 something broken outside your lane, write it down and hand it over.
 
 Research and audit are ChatGPT's lane (OD-2026-09-21-001), and ChatGPT is
-read-only here: it hands research and findings to Claude through the ledger or `PPBF-AI-Lanes/ChatGPT-Handoffs/` in the Admin@ OneDrive,
-and Claude commits what belongs in the repository. Neither role collides with
-anyone.
+read-only here, so neither role collides with anyone. What reaches the
+repository is only what an approved work order or Jason's promotion authorizes;
+Claude commits it. The two role blocks below say where the output goes.
 
 ### Claim your work in GitHub, not in a document
 
@@ -155,9 +155,12 @@ Find yourself below.
 
 **Research.** Your brief is `docs/HANDOFF_RESEARCH.md` -- read it in full; it
 names six items and their priority order (corrected there on 2026-08-24).
-Output lands only in `docs/research/` (create it): as ChatGPT you hand it to
-Claude through the ledger or `PPBF-AI-Lanes/ChatGPT-Handoffs/` in the Admin@ OneDrive, and Claude commits it; a Claude
-session in this role commits it itself. You change no application code, no migrations, no
+Research stays in the Admin@ OneDrive folder `Library Intake/_CONTROL - Registers and Coverage Maps/AI_GOVERNANCE/REVIEW_REQUIRED/PPBF_FULL_APP_RESEARCH_BACKLOG_NOT_BUILD_SOURCE/`, marked NOT APP SOURCE, until it has
+been crosswalked, checked for duplicates and drift, and promoted by Jason.
+Only promoted build input reaches Claude: the artifact through drive-root `PPBF-AI-Lanes/ChatGPT-Handoffs/` in the Admin@ OneDrive,
+with the ledger carrying a summary, status and pointer, never the whole
+artifact. Claude commits it (to `docs/research/`, created on first use) only
+under the approved work order or promotion. You change no application code, no migrations, no
 coefficients, no thresholds. You recommend; you do not implement. Carry
 citations inline. "We could not establish this" is a complete and valuable
 answer -- an uncited plausible answer is worse than nothing, because code gets
@@ -189,9 +192,11 @@ kernel's Lane model allows. Keep the two habits above -- they are the two
 defect classes that have actually hurt this project.
 
 **Auditing.** ChatGPT's lane. Read-only and collision-free: you can read any
-lane. Findings reach `docs/capabilities/NETWORK_STATUS.md` through Claude (as
-ChatGPT, hand them over through the ledger or `PPBF-AI-Lanes/ChatGPT-Handoffs/` in the Admin@ OneDrive) -- record the
-**shape** of what you found, not just that it was fixed. **Auditing carries no merge rights**: no
+lane. Findings go to Claude as a handoff through drive-root `PPBF-AI-Lanes/ChatGPT-Handoffs/` in the Admin@ OneDrive, with
+the ledger carrying a summary and pointer -- record the **shape** of what you
+found, not just that it was fixed. A finding is a lead, not authorization for a
+repository change: Claude records it in `docs/capabilities/NETWORK_STATUS.md`
+or acts on it only when a work order or Jason authorizes that. **Auditing carries no merge rights**: no
 branches, commits, pushes, merges, deploys or migrations. If you find something
 broken outside the lane you are reading, write it up and route it; do not fix
 it in passing.
