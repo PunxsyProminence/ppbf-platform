@@ -86,6 +86,9 @@ session. The **Lane model** below governs who merges.
   painted it green.)
 - Work that starts elsewhere -- designs, research, generated assets -- enters
   as a branch or PR and is reviewed before merge.
+- No force-push without the owner's explicit permission and a documented
+  reason. (Carried from the retired `docs/archive/AGENT_EXECUTION_POLICY.md`,
+  where it was the only copy.)
 - Written policy reports; branch protection enforces. Only the owner can set
   the required status checks that make this rule technical.
 

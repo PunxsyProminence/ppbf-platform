@@ -150,8 +150,8 @@ checks.
 Find yourself below.
 
 **Research.** Your brief is `docs/HANDOFF_RESEARCH.md` -- read it in full; it
-names six items in priority order, and item 6 is first because it already
-governs live decisions about children's training. You write only to
+names six items and their priority order (corrected there on 2026-08-24). You
+write only to
 `docs/research/` (create it). You change no application code, no migrations, no
 coefficients, no thresholds. You recommend; you do not implement. Carry
 citations inline. "We could not establish this" is a complete and valuable
