@@ -43,7 +43,7 @@ These are measured operating constraints, not general model folklore:
 
 - GPT-5-family reasoning deployments reject non-default `temperature`; omit it for reasoning models.
 - Reasoning tokens count against `max_completion_tokens`; too-small budgets can return `finish_reason: length` with empty content.
-- Provider timeouts are per model (`timeoutMs` in `apps/web/src/server/pilot/shadowRouter.ts`, roughly twice the measured latency: 90 to 210 seconds at 2026-09-21) and stay under the 240-second Container Apps ingress limit. Do not reduce one without measurement.
+- Provider timeouts are per model (`timeoutMs` in `apps/web/src/server/pilot/shadowRouter.ts`): 90 to 210 seconds (values checked 2026-09-21), set at roughly twice the latencies measured on 2026-07-29, and all under the 240-second Container Apps ingress limit. Do not reduce one without measurement.
 - The response filter withholds unsupported percentages, `research/data shows`, and `proven` claims unless verified evidence is present.
 - The background SHADOW worker is controlled by deployment configuration. A disabled worker is not automatically an application defect.
 - Interactive Heavy Bag behavior is synchronous unless the current implementation and acceptance criteria explicitly say otherwise.

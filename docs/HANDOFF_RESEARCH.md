@@ -37,18 +37,19 @@ Carry sources inline.
 
 ## Where your output goes
 
-`docs/research/` — **this directory does not exist yet; create it.** Other
-agents are instructed not to touch it. Markdown with inline citations, draft PR
-per item, do not mark ready for review.
-
 Research is ChatGPT's lane (OD-2026-09-21-001), and ChatGPT is read-only on the
-repository. Research stays in the Admin@ OneDrive folder `Library Intake/_CONTROL -
-Registers and Coverage Maps/AI_GOVERNANCE/REVIEW_REQUIRED/PPBF_FULL_APP_RESEARCH_BACKLOG_NOT_BUILD_SOURCE/`,
-marked NOT APP SOURCE, until it has been crosswalked, checked for duplicates and
-drift, and promoted by Jason. Only promoted input reaches Claude -- the artifact
-through drive-root `PPBF-AI-Lanes/ChatGPT-Handoffs/`, with the ledger carrying a
-summary and pointer -- and Claude opens the `docs/research/` draft PR only under
-that promotion or an approved work order.
+repository. **Research goes to the Admin@ OneDrive folder `Library Intake/_CONTROL -
+Registers and Coverage Maps/AI_GOVERNANCE/REVIEW_REQUIRED/PPBF_FULL_APP_RESEARCH_BACKLOG_NOT_BUILD_SOURCE/`**,
+marked NOT APP SOURCE: Markdown with inline citations, one item per file. It
+stays there until it has been crosswalked, checked for duplicates and drift, and
+promoted by Jason.
+
+Only promoted input reaches the repository. The artifact goes to Claude through
+drive-root `PPBF-AI-Lanes/ChatGPT-Handoffs/`, with the ledger carrying a summary
+and pointer, and Claude opens a draft PR per item under `docs/research/` only
+under that promotion or an approved work order. That directory does not exist
+yet; the first such PR creates it, other agents do not touch it, and those PRs
+are not marked ready for review.
 
 Do **not** change application code, migrations, or any formula's coefficients or
 thresholds. Your output is the evidence base a separate, owner-approved change
