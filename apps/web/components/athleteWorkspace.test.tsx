@@ -38,9 +38,7 @@ let sessionListFails = false;
 let sessionUpdateFails = false;
 let storedGoals: Array<Record<string, unknown>> = [];
 let goalUpdateFails = false;
-let storedFloorPlans: Array<Record<string, unknown>> = [];
-let floorPlanPatchFails = false;
-let floorPlanPostFails = false;
+let sessionCreateFails = false;
 let storedAssignments: Array<Record<string, unknown>> = [];
 /**
  * W-D2: what /api/pilot/drill-library answers for an athlete -- the reference
@@ -117,8 +115,42 @@ function postedTo(path: string): FetchCall[] {
   return fetchCalls.filter((call) => call.method === 'POST' && call.url.endsWith(path));
 }
 
-function patchedTo(path: string): FetchCall[] {
-  return fetchCalls.filter((call) => call.method === 'PATCH' && call.url.endsWith(path));
+/** Every request that touched the generated-plan route, by any method. */
+function floorPlanCalls(): FetchCall[] {
+  return fetchCalls.filter((call) => call.url.includes('/api/pilot/floor-plans'));
+}
+
+/** The surface the masthead says is open -- the one line that follows activeTab. */
+function openSurface(): string {
+  return (screen.getByText(/^Athlete workspace · /).textContent ?? '').replace('Athlete workspace · ', '');
+}
+
+/**
+ * The work on the Floor, in the order drawn. Read off each card's Log
+ * completion link -- every open card has one -- because other panels on the
+ * page draw level-4 headings of their own.
+ */
+function floorWorkTitles(): string[] {
+  return screen
+    .getAllByRole('link', { name: /^Log completion: / })
+    .map((link) => (link.getAttribute('aria-label') ?? '').replace('Log completion: ', ''));
+}
+
+/** One coach-assigned row as GET /api/pilot/progression/assignments returns it. */
+function assignment(overrides: Record<string, unknown> = {}) {
+  return {
+    assignment_id: 'as-1',
+    drill_id: 'drl-1',
+    gap_id: 'gap-1',
+    drill_name: 'jab_cross',
+    drill_display_name: 'Jab-cross on the bag',
+    drill_description: 'Two-punch combination.',
+    drill_difficulty: 'beginner',
+    status: 'assigned',
+    completion_percentage: 0,
+    created_at: '2026-09-20T17:00:00.000Z',
+    ...overrides,
+  };
 }
 
 /** A stored check-in for today, in the shape GET /api/pilot/athlete/check-in
@@ -156,9 +188,7 @@ beforeEach(() => {
   sessionUpdateFails = false;
   storedGoals = [];
   goalUpdateFails = false;
-  storedFloorPlans = [];
-  floorPlanPatchFails = false;
-  floorPlanPostFails = false;
+  sessionCreateFails = false;
   storedAssignments = [];
   storedReferenceDrills = [];
   storedReferenceDrillDetails = {};
@@ -218,6 +248,9 @@ beforeEach(() => {
     if (url.includes('/api/pilot/sessions/update')) {
       return jsonResponse(sessionUpdateFails ? { error: 'Internal server error' } : { ok: true }, !sessionUpdateFails);
     }
+    if (url.endsWith('/api/pilot/sessions') && init?.method === 'POST' && sessionCreateFails) {
+      return jsonResponse({ error: 'Internal server error' }, false);
+    }
     if (url.includes('/api/pilot/goals/list')) {
       return jsonResponse({ items: storedGoals });
     }
@@ -226,14 +259,11 @@ beforeEach(() => {
     if (url.includes('/api/pilot/goals/update')) {
       return jsonResponse(goalUpdateFails ? { error: 'Internal server error' } : { ok: true }, !goalUpdateFails);
     }
+    // Still answered, so a component that went back to reading or writing a
+    // generated plan would get a plan-shaped reply -- and the cases below that
+    // assert no call reaches this route would catch it doing so.
     if (url.includes('/api/pilot/floor-plans')) {
-      if (init?.method === 'PATCH') {
-        return jsonResponse(floorPlanPatchFails ? { error: 'Internal server error' } : { ok: true }, !floorPlanPatchFails);
-      }
-      if (init?.method === 'POST') {
-        return jsonResponse(floorPlanPostFails ? { error: 'Internal server error' } : { ok: true }, !floorPlanPostFails);
-      }
-      return jsonResponse({ items: storedFloorPlans });
+      return jsonResponse({ items: [] });
     }
     if (url.includes('/api/pilot/progression/assignments')) {
       if (assignmentsFail) {
@@ -541,11 +571,12 @@ describe('athlete safety reporting', () => {
     await renderWorkspace();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
-    // Check-in sends the athlete to their floor plan; the session log they
+    // A stored check-in sends the athlete to their floor; the session log they
     // check out from is back on the dashboard.
+    await waitFor(() => expect(openSurface()).toBe('Floor'));
     openTab('Dashboard');
     const notes = await screen.findByPlaceholderText(/Session notes for your coach/);
-    await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
+    expect(postedTo('/api/pilot/sessions')).toHaveLength(1);
 
     fireEvent.change(notes, { target: { value: 'my wrist hurts' } });
     fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
@@ -1094,14 +1125,15 @@ describe('Today states the day back rather than offering a row of buttons', () =
     expect(screen.getByRole('button', { name: 'Start check-in' })).toBeTruthy();
   });
 
-  test('the floor plan says where it comes from instead of showing a count of nothing', async () => {
-    // The plan is generated at check-in from the athlete's own readiness, so
-    // before check-in there is genuinely nothing yet. "0 tasks" would be a
-    // claim about an empty plan; there is no plan.
+  test('Today offers no generated floor plan, because nothing generates one', async () => {
+    // A-FIN-04. The "Your floor plan" card promised work "built for you when
+    // you check in" -- the same three items for everyone, stored as if they
+    // were somebody's plan. The Floor is the coach's work now, and Today
+    // reaches it through the coach card below.
     await renderWorkspace();
 
-    expect(screen.getByText('Built for you when you check in.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Open the floor' })).toBeNull();
+    expect(screen.queryByText('Your floor plan')).toBeNull();
+    expect(screen.queryByText('Built for you when you check in.')).toBeNull();
   });
 
   test('no recorded goals reads as none recorded, not as zero', async () => {
@@ -1196,102 +1228,34 @@ describe('the athlete question box does not imply a coach reads it', () => {
   });
 });
 
-// The floor checkbox moved React state alone: an athlete ticked their work
-// off, reloaded, and the floor came back untouched. Completion lives on the
-// stored plan now (PATCH /api/pilot/floor-plans), and these pin the three
-// claims that has to hold up: the tick is written, the tick comes back, and a
-// refused write is never left on screen looking saved.
-function storedFloorPlan(tasks: Array<Record<string, unknown>>) {
-  return {
-    athleteName: 'Test Athlete',
-    readiness: 'GREEN',
-    generatedAt: '2026-08-20T17:00:00.000Z',
-    tasks,
-  };
-}
-
-function floorTask(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 'wf_1',
-    title: 'Technical Boxing Block',
-    category: 'Training',
-    description: 'Footwork progression.',
-    dueDate: '5:30 PM',
-    priority: 'High',
-    ...overrides,
-  };
-}
-
-describe('the floor survives a reload', () => {
-  test('ticking a task off writes it to the stored plan', async () => {
-    storedFloorPlans = [storedFloorPlan([floorTask()])];
-    await renderWorkspace();
-    openTab('Floor');
-
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Mark done: Technical Boxing Block' }));
-
-    await waitFor(() => expect(patchedTo('/api/pilot/floor-plans')).toHaveLength(1));
-    // task_id and the flag, nothing else -- above all no athlete_id, which the
-    // route must take from the session, never from this body.
-    expect(patchedTo('/api/pilot/floor-plans')[0].body).toEqual({ task_id: 'wf_1', completed: true });
-    expect(await screen.findByText('Marked done: Technical Boxing Block.')).toBeTruthy();
-  });
-
-  test('a task ticked off before a reload comes back ticked', async () => {
-    storedFloorPlans = [storedFloorPlan([
-      floorTask({ completed: true }),
-      floorTask({ id: 'wf_2', title: 'Cooldown + Session Journal' }),
-    ])];
-    await renderWorkspace();
-    openTab('Floor');
-
-    const done = await screen.findByRole('checkbox', { name: 'Mark done: Technical Boxing Block' }) as HTMLInputElement;
-    expect(done.checked).toBe(true);
-    // A task with no stored flag is not done -- absent must not read as true.
-    const open = screen.getByRole('checkbox', { name: 'Mark done: Cooldown + Session Journal' }) as HTMLInputElement;
-    expect(open.checked).toBe(false);
-  });
-
-  test('a refused write puts the box back and says nothing was saved', async () => {
-    storedFloorPlans = [storedFloorPlan([floorTask()])];
-    floorPlanPatchFails = true;
-    await renderWorkspace();
-    openTab('Floor');
-
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Mark done: Technical Boxing Block' }));
-
-    expect(await screen.findByText(/the box went back to where it was/)).toBeTruthy();
-    expect((screen.getByRole('checkbox', { name: 'Mark done: Technical Boxing Block' }) as HTMLInputElement).checked).toBe(false);
-    expect(screen.queryByText(/Marked done/)).toBeNull();
-  });
-});
-
 // The drills a coach assigned lived at /athlete/progression-intelligence,
 // reachable from this workspace only through a collapsed <details> at the foot
-// of the page. Today now carries the count and the door.
+// of the page. Today carries the count, and its door opens the Floor, which
+// lists that work (A-FIN-04).
 describe('Today shows the work a coach assigned', () => {
-  test('open assignments are counted for the athlete the session names, and the card links out', async () => {
+  test('open assignments are counted for the athlete the session names, and the card opens the floor', async () => {
     storedAssignments = [
-      { assignment_id: 'as-1', status: 'assigned' },
-      { assignment_id: 'as-2', status: 'in_progress' },
+      assignment({ assignment_id: 'as-1', status: 'assigned' }),
+      assignment({ assignment_id: 'as-2', status: 'in_progress', drill_display_name: 'Slip drill' }),
       // Finished work is record, not today.
-      { assignment_id: 'as-3', status: 'completed' },
+      assignment({ assignment_id: 'as-3', status: 'completed', drill_display_name: 'Old work' }),
     ];
     await renderWorkspace();
 
     expect(await screen.findByText('2 still to do.')).toBeTruthy();
-    const link = screen.getByRole('link', { name: 'Open your progression' });
-    expect(link.getAttribute('href')).toBe('/athlete/progression-intelligence');
-
     const asked = fetchCalls.find((call) => call.url.includes('/api/pilot/progression/assignments'));
     expect(asked?.url).toContain('athlete_id=ath_test');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open the floor' }));
+    expect(openSurface()).toBe('Floor');
+    expect(screen.getByRole('heading', { level: 4, name: 'Slip drill' })).toBeTruthy();
   });
 
   test('no assignments reads as none recorded, not as zero', async () => {
     await renderWorkspace();
 
     expect(await screen.findByText('No assigned work recorded.')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open your progression' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open the floor' })).toBeTruthy();
   });
 
   test('a failed read is reported as unavailable, never as no work assigned', async () => {
@@ -1300,6 +1264,176 @@ describe('Today shows the work a coach assigned', () => {
 
     expect(await screen.findByText('Not available right now.')).toBeTruthy();
     expect(screen.queryByText('No assigned work recorded.')).toBeNull();
+  });
+});
+
+// A-FIN-04: THE FLOOR IS THE WORK A COACH ASSIGNED. It used to be a plan this
+// component generated at check-in -- 'Dynamic Warmup + Mobility', 'Technical
+// Boxing Block', 'Cooldown + Session Journal', identical for every athlete --
+// POSTed to /api/pilot/floor-plans and shown as the day's work. These pin the
+// replacement: the coach's open rows, in the API's order, with the coach's
+// dose or none; honest empty and failure states; links to the Progression
+// page's own controls rather than copies of them; and nothing generated.
+describe('the Floor is the work a coach assigned', () => {
+  test('only open work is shown, in the order the API returned it', async () => {
+    storedAssignments = [
+      assignment({ assignment_id: 'as-2', status: 'in_progress', drill_display_name: 'Slip drill' }),
+      assignment({ assignment_id: 'as-9', status: 'completed', drill_display_name: 'Finished work' }),
+      assignment({ assignment_id: 'as-1', status: 'assigned', drill_display_name: 'Jab-cross on the bag' }),
+      assignment({ assignment_id: 'as-7', status: 'cancelled', drill_display_name: 'Cancelled work' }),
+      assignment({ assignment_id: 'as-8', status: 'incomplete', drill_display_name: 'Lapsed work' }),
+    ];
+    await renderWorkspace();
+    openTab('Floor');
+
+    await screen.findByRole('heading', { level: 4, name: 'Slip drill' });
+    const titles = floorWorkTitles();
+    // Not re-ranked: in_progress came first from the API, so it stays first.
+    expect(titles).toEqual(['Slip drill', 'Jab-cross on the bag']);
+    expect(screen.getByText('in progress')).toBeTruthy();
+    expect(screen.getByText('assigned')).toBeTruthy();
+  });
+
+  test('the dose and due date are the coach\'s, and an unset one is left out rather than filled', async () => {
+    storedAssignments = [
+      assignment({
+        assignment_id: 'as-1',
+        drill_display_name: 'Jab-cross on the bag',
+        rep_count: 30,
+        duration_minutes: 12,
+        frequency_per_week: 3,
+        due_date: '2026-09-25',
+      }),
+      assignment({ assignment_id: 'as-2', drill_display_name: 'Slip drill' }),
+    ];
+    await renderWorkspace();
+    openTab('Floor');
+
+    const dosed = (await screen.findByRole('heading', { level: 4, name: 'Jab-cross on the bag' })).closest('div.mat-leather--raised') as HTMLElement;
+    expect(within(dosed).getByText('30')).toBeTruthy();
+    expect(within(dosed).getByText('12 min')).toBeTruthy();
+    expect(within(dosed).getByText('3x/week')).toBeTruthy();
+    expect(within(dosed).getByText('Due')).toBeTruthy();
+
+    const bare = screen.getByRole('heading', { level: 4, name: 'Slip drill' }).closest('div.mat-leather--raised') as HTMLElement;
+    for (const label of ['Reps', 'Duration', 'Frequency', 'Due']) {
+      expect(within(bare).queryByText(label)).toBeNull();
+    }
+  });
+
+  test('each card links to the Progression page\'s own opener and log form, carrying no copy of either', async () => {
+    storedAssignments = [
+      assignment({ assignment_id: 'as-1', drill_display_name: 'Jab-cross on the bag' }),
+      // No drill behind it: nothing to open, but the work can still be logged.
+      assignment({ assignment_id: 'as 2', drill_id: null, drill_display_name: 'Coach note work' }),
+    ];
+    await renderWorkspace();
+    openTab('Floor');
+
+    const open = await screen.findByRole('link', { name: 'Open drill: Jab-cross on the bag' });
+    expect(open.getAttribute('href')).toBe('/athlete/progression-intelligence?assignment=as-1&intent=instruction');
+    expect(screen.getByRole('link', { name: 'Log completion: Jab-cross on the bag' }).getAttribute('href'))
+      .toBe('/athlete/progression-intelligence?assignment=as-1&intent=log');
+
+    expect(screen.queryByRole('link', { name: 'Open drill: Coach note work' })).toBeNull();
+    // The id is encoded, so it cannot smuggle a second parameter into the link.
+    expect(screen.getByRole('link', { name: 'Log completion: Coach note work' }).getAttribute('href'))
+      .toBe('/athlete/progression-intelligence?assignment=as%202&intent=log');
+
+    // The Floor holds no log form and no completion control of its own.
+    expect(screen.queryByRole('button', { name: 'Save log' })).toBeNull();
+    expect(screen.queryByLabelText(/Reps completed/)).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+  });
+
+  test('no open work says so, and offers no check-in that would pretend to build some', async () => {
+    storedAssignments = [assignment({ status: 'completed' })];
+    await renderWorkspace();
+    openTab('Floor');
+
+    expect(await screen.findByText('No open work from your coach.')).toBeTruthy();
+    expect(screen.queryByText(/Nothing on your floor yet/)).toBeNull();
+    expect(screen.queryByText(/work gets built/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Check In' })).toBeNull();
+    // The history lives one link away.
+    expect(screen.getByRole('link', { name: 'Open your progression' }).getAttribute('href'))
+      .toBe('/athlete/progression-intelligence');
+  });
+
+  test('a failed read is reported, never drawn as an empty floor, and can be retried', async () => {
+    assignmentsFail = true;
+    await renderWorkspace();
+    openTab('Floor');
+
+    expect(await screen.findByText("Could not load your coach's work")).toBeTruthy();
+    expect(screen.queryByText('No open work from your coach.')).toBeNull();
+
+    assignmentsFail = false;
+    storedAssignments = [assignment({ drill_display_name: 'Jab-cross on the bag' })];
+    fireEvent.click(screen.getByRole('button', { name: "Retry loading your coach's work" }));
+    expect(await screen.findByRole('heading', { level: 4, name: 'Jab-cross on the bag' })).toBeTruthy();
+  });
+
+  test('an account with no athlete record is told so, not left loading forever', async () => {
+    // The read is never made without an athlete id, so "Loading your coach's
+    // work..." would describe a request that is never going to happen.
+    authenticated = false;
+    await renderWorkspace();
+    openTab('Floor');
+
+    expect(await screen.findByText(/not linked to an athlete record, so there is no coach's work to show/)).toBeTruthy();
+    expect(screen.queryByText(/Loading your coach's work/)).toBeNull();
+    expect(screen.queryByText('No open work from your coach.')).toBeNull();
+    expect(fetchCalls.some((call) => call.url.includes('/api/pilot/progression/assignments'))).toBe(false);
+  });
+
+  test('check-in generates nothing: no plan is read or written, and no synthetic work appears', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    await waitFor(() => expect(openSurface()).toBe('Floor'));
+
+    expect(postedTo('/api/pilot/sessions')).toHaveLength(1);
+    expect(floorPlanCalls()).toHaveLength(0);
+    for (const generated of ['Dynamic Warmup + Mobility', 'Technical Boxing Block', 'Cooldown + Session Journal']) {
+      expect(screen.queryByText(generated)).toBeNull();
+    }
+    expect(screen.getByText('No open work from your coach.')).toBeTruthy();
+  });
+});
+
+// Where a check-in takes the athlete. It used to jump to the Floor before the
+// session was even sent -- so a refused check-in left the athlete on a floor,
+// and one made before the day's wellness check landed them on a locked one.
+describe('a session check-in goes where the day actually is', () => {
+  test('stored, with wellness recorded: straight to the floor', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+
+    await waitFor(() => expect(openSurface()).toBe('Floor'));
+    expect(screen.getByText("You are checked in. Your coach's work is on your floor.")).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Go to check in' })).toBeNull();
+  });
+
+  test('stored, with no wellness check yet: to Wellness, which is what opens the floor', async () => {
+    storedCheckIn = null;
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+
+    await waitFor(() => expect(openSurface()).toBe('Wellness'));
+    expect(screen.getByText('You are checked in. Do your wellness check next -- it opens your floor.')).toBeTruthy();
+  });
+
+  test('refused: the athlete stays where they pressed it, and is told nothing was saved', async () => {
+    sessionCreateFails = true;
+    await renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+
+    expect(await screen.findByText(/Nothing was saved, so there is no session to check out of/)).toBeTruthy();
+    expect(openSurface()).toBe('Dashboard');
   });
 });
 
@@ -1340,28 +1474,13 @@ describe('tabs with nothing behind them are not offered', () => {
     await renderWorkspace();
 
     openTab('Floor');
-    // The honest-empty grammar appears both in the panel and as the sync
-    // message loadFloorTasks sets, so this asserts presence, not uniqueness.
-    expect((await screen.findAllByText(/Nothing on your floor yet/)).length).toBeGreaterThan(0);
+    expect(await screen.findByText('No open work from your coach.')).toBeTruthy();
 
     openTab('Drills');
     expect(await screen.findByText(/have not added any reference drills/)).toBeTruthy();
 
     openTab('Schedule');
     expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
-  });
-
-  /* The empty floor names the action that fills it. Until the approved board
-     (AF-09) gave this state the room it has now, it named check-in in a single
-     grey line and offered no way to do it -- the athlete had to work out for
-     themselves that the control lives on another tab. */
-  test('an empty floor offers the check-in that fills it', async () => {
-    await renderWorkspace();
-
-    openTab('Floor');
-    await screen.findAllByText(/Nothing on your floor yet/);
-
-    expect(screen.getByRole('button', { name: 'Check In' })).toBeTruthy();
   });
 
   /* The masthead read "My Training Dashboard" on all eleven surfaces, so the
@@ -1760,42 +1879,31 @@ describe('check-in records no session RPE at all', () => {
 // decide what training is generated, shown, or sent. Check-in used to hand
 // the band to buildWorkoutFloorTasks, which bought GREEN athletes a
 // 'High-output intervals' conditioning finisher and everyone else reduced
-// work, then stamped the band (and a client-supplied athleteName) on the
-// stored plan a coach surface displayed as individualized work. These pin
-// both halves of the fix: the work is identical whatever the slider says,
-// and the band still lands on the session note, where a record belongs.
-describe('the readiness slider cannot change the prescribed work', () => {
+// work. That generator is gone altogether now (A-FIN-04): check-in builds no
+// work at any band, and the Floor shows what a coach assigned. These pin both
+// halves: nothing the slider can reach produces or changes work, and the band
+// still lands on the session note, where a record belongs.
+describe('the readiness slider cannot change the work', () => {
   async function checkInWithSlider(value: number) {
     await renderWorkspace();
     fireEvent.change(screen.getByLabelText('How ready do you feel today? (1-10)'), {
       target: { value: String(value) },
     });
     fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
-    await waitFor(() => expect(postedTo('/api/pilot/floor-plans')).toHaveLength(1));
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
-    return {
-      plan: postedTo('/api/pilot/floor-plans')[0].body,
-      session: postedTo('/api/pilot/sessions')[0].body,
-    };
+    await waitFor(() => expect(openSurface()).toBe('Floor'));
+    return { session: postedTo('/api/pilot/sessions')[0].body };
   }
 
-  // Task ids and due times carry the check-in clock, so two check-ins made at
-  // different moments legitimately differ there. The comparison is on the
-  // prescriptive content: what work, in which words, at what priority.
-  function workContentOf(planBody: Record<string, unknown>) {
-    const plan = planBody.plan as { tasks: Array<Record<string, unknown>> };
-    return plan.tasks.map(({ title, category, description, priority, linkedGoalId }) => (
-      { title, category, description, priority, linkedGoalId }
-    ));
-  }
-
-  test('check-ins at 3 and at 9 submit identical work, differing only in the recorded band', async () => {
+  test('check-ins at 3 and at 9 write only the session, differing only in the recorded band', async () => {
     const low = await checkInWithSlider(3);
+    const lowPlanCalls = floorPlanCalls().length;
     cleanup();
     fetchCalls.length = 0;
     const high = await checkInWithSlider(9);
 
-    expect(workContentOf(low.plan)).toEqual(workContentOf(high.plan));
+    expect(lowPlanCalls).toBe(0);
+    expect(floorPlanCalls()).toHaveLength(0);
 
     // The record still moves -- on the session's auto check-in note, and
     // nowhere else. The slider staying a live self-report is the point: it is
@@ -1805,52 +1913,20 @@ describe('the readiness slider cannot change the prescribed work', () => {
     expect(high.session.notes).toBe('Auto check-in readiness GREEN');
   });
 
-  // The two tests above compared RED against GREEN and stripped due times for
-  // clock skew -- and a mutation audit (2026-08-25) walked through both gaps:
-  // a branch scoped to YELLOW (slider 5-6) changed the prescribed work with
-  // the suite green, and doubling every due-time offset for non-GREEN
-  // athletes -- the slider deciding session pacing -- was equally invisible.
-  // This sweep closes both: every band, and the comparison keeps dueDate,
-  // with the clock frozen so identical pacing yields identical strings.
-  test('every band -- RED, YELLOW, GREEN -- gets identical work AND identical pacing', async () => {
-    jest.useFakeTimers({ now: new Date('2026-08-25T12:00:00Z') });
-    try {
-      const plans: Array<Record<string, unknown>> = [];
-      for (const value of [3, 5, 9]) {
-        const { plan } = await checkInWithSlider(value);
-        plans.push(plan);
-        cleanup();
-        fetchCalls.length = 0;
-      }
-      const workWithPacing = (planBody: Record<string, unknown>) => {
-        const plan = planBody.plan as { tasks: Array<Record<string, unknown>> };
-        return plan.tasks.map(({ id: _id, ...prescriptive }) => prescriptive);
-      };
-      expect(workWithPacing(plans[1])).toEqual(workWithPacing(plans[0]));
-      expect(workWithPacing(plans[2])).toEqual(workWithPacing(plans[0]));
-      // Non-vacuity: the frozen clock really produced due times to compare.
-      expect(JSON.stringify(workWithPacing(plans[0]))).toContain('dueDate');
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  // The POST comparison alone missed a third shape in the same audit: a task
-  // appended only to the DISPLAYED list (shown, never sent) escalated the
-  // floor a child actually reads while every payload assertion stayed green.
-  // Check-in lands the athlete on the Floor tab, so what renders right after
-  // is exactly what the slider must not change.
+  // A mutation audit (2026-08-25) found a task appended only to the DISPLAYED
+  // list escalating the floor a child reads while every payload assertion
+  // stayed green. So the display itself is pinned, at every band: check-in
+  // lands the athlete on the Floor, and what renders there is the coach's
+  // list, unchanged by the slider.
   test('the floor the athlete sees is identical whatever the slider says', async () => {
-    // On a successful save the floor re-reads the stored plan, so the display
-    // mirrors the POSTed payload the tests above already pin. The path where
-    // the CLIENT-built list is what the athlete keeps looking at -- and where
-    // the audit's shown-but-never-sent escalation survived -- is persistence
-    // failure: the POST errors, no re-read happens, the generated floor
-    // stands. Drive that path and pin the display itself.
-    floorPlanPostFails = true;
     const renderedTitles = async (value: number) => {
+      storedAssignments = [
+        assignment({ assignment_id: 'as-1', drill_display_name: 'Jab-cross on the bag' }),
+        assignment({ assignment_id: 'as-2', status: 'in_progress', drill_display_name: 'Slip drill' }),
+      ];
       await checkInWithSlider(value);
-      const titles = screen.getAllByRole('heading', { level: 4 }).map((heading) => heading.textContent);
+      await screen.findByRole('heading', { level: 4, name: 'Slip drill' });
+      const titles = floorWorkTitles();
       cleanup();
       fetchCalls.length = 0;
       return titles;
@@ -1863,11 +1939,7 @@ describe('the readiness slider cannot change the prescribed work', () => {
     expect(mid).toEqual(low);
     expect(high).toEqual(low);
     // Anchored to the real floor, so the equality cannot pass on an empty page.
-    expect(low).toEqual(expect.arrayContaining([
-      'Dynamic Warmup + Mobility',
-      'Technical Boxing Block',
-      'Cooldown + Session Journal',
-    ]));
+    expect(low).toEqual(['Jab-cross on the bag', 'Slip drill']);
   });
 
   test('no intensity escalation is reachable from the slider', async () => {
@@ -1880,22 +1952,6 @@ describe('the readiness slider cannot change the prescribed work', () => {
     expect(everySentBody).not.toContain('High-output');
     expect(everySentBody).not.toContain('Conditioning Finisher');
     expect(screen.queryByText(/High-output/)).toBeNull();
-  });
-
-  test('the stored plan carries no client-supplied identity and no readiness classification', async () => {
-    const { plan } = await checkInWithSlider(8);
-    const stored = plan.plan as Record<string, unknown>;
-
-    // The route resolves who the athlete is from the session principal. The
-    // client literal that used to travel here ('Current Athlete') was rendered
-    // by the coach workspace as if it were an athlete's identity.
-    expect(stored.athleteName).toBeUndefined();
-    expect(JSON.stringify(plan)).not.toContain('Current Athlete');
-
-    // And the band stays off the stored plan: stamping an unvalidated
-    // self-report's band on a plan presents the plan as derived from a
-    // measurement (readinessProvenance.ts -- no such measurement exists).
-    expect(stored.readiness).toBeUndefined();
   });
 });
 

@@ -335,6 +335,72 @@ test.describe('Athlete journey', () => {
     });
   });
 
+  /* ARRIVING FROM THE FLOOR (A-FIN-04). The athlete's Floor lists their open
+     coach work and links here for the two things it does not do itself --
+     read the drill, log the work -- so there is one opener and one log form.
+     The page tests pin the logic; what only a browser can prove is that the
+     real router hands the page its query string, the named work opens in
+     front of the athlete, and arriving writes nothing. */
+  test('lands on the work a Floor link names, and writes nothing by arriving', async ({ page }) => {
+    const logged: Array<Record<string, unknown>> = [];
+
+    await installPilotApi(page, {
+      session: { role: 'athlete', athleteId: ATHLETE_ID },
+      routes: {
+        '/api/pilot/progression/gaps': { ok: true, items: [GAP] },
+        '/api/pilot/progression/assignments': { ok: true, items: [LINKED_ASSIGNMENT, ASSIGNMENT] },
+        [INSTRUCTION_ROUTE]: LINKED_INSTRUCTION,
+        '/api/pilot/progression/completions': (_url, route) => {
+          if (route.request().method() === 'POST') {
+            logged.push(JSON.parse(route.request().postData() ?? '{}'));
+            return { ok: true };
+          }
+          return { ok: true, items: [] };
+        },
+      },
+    });
+
+    const sent: Array<{ method: string; path: string; search: string }> = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (url.pathname.startsWith('/api/pilot/')) {
+        sent.push({ method: request.method(), path: url.pathname, search: url.search });
+      }
+    });
+    const completionWrites = () => sent.filter((r) => r.path === '/api/pilot/progression/completions' && r.method !== 'GET');
+
+    // "Open drill" on the Floor: the drill opens, under its assignment, from one read.
+    await page.goto(`/athlete/progression-intelligence?assignment=${LINKED_ASSIGNMENT.assignment_id}&intent=instruction`);
+    await expect(page.getByRole('article', { name: LINKED_ASSIGNMENT.drill_name, exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: LINKED_ASSIGNMENT.drill_name, exact: true })).toBeFocused();
+    await expect.poll(() => sent.filter((r) => r.path === INSTRUCTION_ROUTE)).toHaveLength(1);
+    expect(sent.filter((r) => r.path === INSTRUCTION_ROUTE)[0]).toEqual({
+      method: 'GET',
+      path: INSTRUCTION_ROUTE,
+      search: `?assignment_id=${LINKED_ASSIGNMENT.assignment_id}`,
+    });
+    expect(completionWrites()).toEqual([]);
+
+    // "Log completion" on the Floor: that card's own form, open and focused, nothing sent yet.
+    await page.goto(`/athlete/progression-intelligence?assignment=${ASSIGNMENT.assignment_id}&intent=log`);
+    const reps = page.getByLabel('Reps completed (optional)');
+    await expect(reps).toBeVisible();
+    await expect(reps).toBeFocused();
+    await expect(page.getByRole('article')).toHaveCount(0);
+    expect(completionWrites()).toEqual([]);
+    expect(logged).toEqual([]);
+
+    // An id that is not in this athlete's own list opens nothing, and goes nowhere.
+    await page.goto('/athlete/progression-intelligence?assignment=asg-not-yours&intent=log');
+    await expect(page.getByRole('heading', { name: 'Drill Assignments' })).toBeVisible();
+    await expect(page.getByRole('button', { name: `Open drill: ${LINKED_ASSIGNMENT.drill_name}`, exact: true })).toBeVisible();
+    await expect(page.getByLabel('Reps completed (optional)')).toHaveCount(0);
+    await expect(page.getByRole('article')).toHaveCount(0);
+    expect(sent.some((r) => r.search.includes('asg-not-yours'))).toBe(false);
+    expect(completionWrites()).toEqual([]);
+    expect(logged).toEqual([]);
+  });
+
   test('the athlete door refuses an account that is not an athlete', async ({ page }) => {
     /* PIN sessions are athlete-only, and this page enforces it on the client
        as well as the server. It matters in a browser because the refusal has
