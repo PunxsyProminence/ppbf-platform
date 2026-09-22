@@ -1,4 +1,4 @@
-> **ARCHIVED 2026-09-21.** Verbatim text of `docs/CHATGPT-AUDIT-LANE.md` at `80c288d3c5e6c12c5a906691718caf9b7af50fe0`, before it was
+> **ARCHIVED 2026-09-21.** Verbatim text of `docs/CHATGPT-AUDIT-LANE.md` at `229842ebd45f0a23e3e4d06742a397d2df3408cb`, before it was
 > condensed. History and provenance only: the current rules are in `docs/CHATGPT-AUDIT-LANE.md`.
 > Do not preload. Everything below the line is unchanged.
 
@@ -172,20 +172,22 @@ Claude built that folder, verified its own round trip, and declared the
 mechanism live. That was one side of a two-sided contract, and ChatGPT was
 right to refuse to claim it worked.
 
-**Nobody is watching deployed behaviour.** Duty five -- deployed versus
-approved specification -- currently has no AI eye at all. ChatGPT cannot load
-the staging URL; Claude's sandbox refuses outbound HTTPS entirely and has
-never loaded a deployed page in this project. Both lanes reason from source
-and CI evidence.
+**Deployed behaviour: current state (checked 2026-09-21).** Claude on
+Jason's PC can load public deployed pages (`curl` HTTP 200; the desktop app's
+browser pane loaded the site) and screenshot them. Signed-in pages still need
+Jason, and no lane enters credentials. ChatGPT's 2026-08-20 limit stands: a
+ChatGPT fetch of the public production page timed out on 2026-09-21 (REPORTED
+by ChatGPT). See the capability update in `AGENT_KERNEL.md`.
 
-That gap is why a Claude claim of "the ground flip is safe" shipped a page
-whose text was unreadable, and why the owner's screenshot found in five
-seconds what 6,900 passing tests could not. **Jason's eye on the live URL is
-not a formality in this system. It is the only visual verification that
-exists.** No lane may imply otherwise while this holds.
-*[2026-09-21: Claude on Jason's PC can load public pages (`curl` HTTP 200;
-the browser pane loaded the site) and screenshot them. Signed-in pages still
-need Jason. See the capability update in `AGENT_KERNEL.md`.]*
+**History (2026-08-20 to 2026-09-21).** In that period duty five -- deployed
+versus approved specification -- had no AI instrument at all: ChatGPT could
+not load the staging URL, and Claude's sandbox refused outbound HTTPS and had
+never loaded a deployed page in this project. Both lanes reasoned from source
+and CI evidence. That gap is why a Claude claim of "the ground flip is safe"
+shipped a page whose text was unreadable, and why the owner's screenshot found
+in five seconds what 6,900 passing tests could not. Jason's eye on the live URL
+was then the only visual verification, and it remains the only one for
+signed-in pages.
 
 ## Governance sources
 

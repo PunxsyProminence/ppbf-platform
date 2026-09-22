@@ -1,4 +1,4 @@
-> **ARCHIVED 2026-09-21.** Verbatim text of `docs/AGENT_BRIEFING_PROMPT.md` at `80c288d3c5e6c12c5a906691718caf9b7af50fe0`, before it was
+> **ARCHIVED 2026-09-21.** Verbatim text of `docs/AGENT_BRIEFING_PROMPT.md` at `229842ebd45f0a23e3e4d06742a397d2df3408cb`, before it was
 > condensed. History and provenance only: the current rules are in `docs/AGENT_BRIEFING_PROMPT.md`.
 > Do not preload. Everything below the line is unchanged.
 
