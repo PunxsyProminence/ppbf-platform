@@ -5,8 +5,9 @@ amount of coding can close. Sibling of `docs/EXTERNAL_AUDIT_PROMPTS.md` and
 `docs/HANDOFF_VISUALS.md`.
 
 Read `AGENT_KERNEL.md` first, then `docs/capabilities/NETWORK_STATUS.md` (what
-has already merged, what is in flight, and which items below are blocked on your
-output rather than on code), then `docs/AI_COLLABORATION.md` for collision
+has already merged, and which items below are blocked on your output rather
+than on code; for what is in flight, query open PRs live with
+`gh pr list --state open`), then `docs/AI_COLLABORATION.md` for collision
 control, then `apps/web/src/server/pilot/formulas/registry.ts` and
 `docs/RESEARCH_EVIDENCE_REGISTRY.md`.
 
@@ -36,9 +37,19 @@ Carry sources inline.
 
 ## Where your output goes
 
-`docs/research/` — **this directory does not exist yet; create it.** Other
-agents are instructed not to touch it. Markdown with inline citations, draft PR
-per item, do not mark ready for review.
+Research is ChatGPT's lane (OD-2026-09-21-001), and ChatGPT is read-only on the
+repository. **Research goes to the Admin@ OneDrive folder `Library Intake/_CONTROL -
+Registers and Coverage Maps/AI_GOVERNANCE/REVIEW_REQUIRED/PPBF_FULL_APP_RESEARCH_BACKLOG_NOT_BUILD_SOURCE/`**,
+marked NOT APP SOURCE: Markdown with inline citations, one item per file. It
+stays there until it has been crosswalked, checked for duplicates and drift, and
+promoted by Jason.
+
+Only promoted input reaches the repository. The artifact goes to Claude through
+drive-root `PPBF-AI-Lanes/ChatGPT-Handoffs/`, with the ledger carrying a summary
+and pointer, and Claude opens a draft PR per item under `docs/research/` only
+under that promotion or an approved work order. That directory does not exist
+yet; the first such PR creates it, other agents do not touch it, and those PRs
+are not marked ready for review.
 
 Do **not** change application code, migrations, or any formula's coefficients or
 thresholds. Your output is the evidence base a separate, owner-approved change
@@ -64,8 +75,10 @@ that was not so.
 
 A complete clearance register exists in the schema —
 `pilot.person_clearances`, `pilot.clearance_types`,
-`pilot.activity_clearance_requirements`, and a `v_clearance_status` view — with
-**zero callers anywhere in the app.** A PR is wiring it up. But
+`pilot.activity_clearance_requirements`, and a `v_clearance_status` view — which had
+**zero callers** when this brief was written. It is now wired
+(`apps/web/src/server/pilot/clearanceRegister.ts`, used by the credentials
+routes; checked 2026-09-21). But
 `clearance_types` is seeded with only four hand-written placeholder rows by a
 migration, and `activity_clearance_requirements` has **no write path at all**.
 Wiring a register to a vocabulary nobody validated only relocates the problem.
@@ -95,7 +108,8 @@ Needed:
 ## 2. Travel waiver — what it must contain
 
 `apps/web/src/server/pilot/waiverCompliance.ts` tracks a `travel` waiver type,
-and a PR now **gates competition entry on it**: an athlete cannot be entered
+and competition entry **is gated on it** (#452, merged 2026-08-18;
+`competitionSafetyGates.ts`): an athlete cannot be entered
 into a wrestling match or external competition without one. That gate is only as
 good as the document behind it, and nobody has established what the document
 must say.
@@ -111,7 +125,7 @@ required-elements list with sources, plus a note on what the platform should
 
 ## 3. LEGACY-READINESS — validate it, or retire it
 
-The highest-value item here, because it sits at the centre of a confirmed
+Fourth in the priority order above, but it sits at the centre of a confirmed
 **HIGH-severity** finding: three separate "readiness" pipelines exist for the
 same athlete and none of them connect.
 
@@ -129,8 +143,8 @@ A coach therefore sees a triage colour that is a staff member's typed opinion,
 with no indication the athlete self-reported high soreness that morning.
 
 > Background: `docs/capabilities/READINESS_PROVENANCE_FACTS.md` documents this in
-> full, but **it is not on `main`** — it arrives with the
-> `fix/ct-readiness-provenance` branch. Read it there.
+> full. It has been on `main` since 2026-08-18 (#410); the description in this
+> item predates it and was not re-checked on 2026-09-21.
 
 The question is **not** "wire this formula in." It is *can these coefficients be
 justified for adolescent athletes, or should the formula be formally retired?*
