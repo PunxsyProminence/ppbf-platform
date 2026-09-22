@@ -9,11 +9,12 @@ cites the PR, SHA or run that proves it. If this file and remote evidence
 disagree, **remote wins** and the row is corrected explicitly rather than
 quietly.
 
-**Release state lives elsewhere.** `docs/current/AI_RELEASE_CONTROL.md` is the
-authoritative record for CURRENT_MAIN / STAGING_SHA / PRODUCTION_SHA and the
-image digests. This file tracks slice progress and points at that one; SHAs are
-not duplicated across both, because two copies of a SHA are two things that can
-drift apart.
+**Release state lives elsewhere.** Deployed SHAs and image digests come from
+live evidence (`AGENT_KERNEL.md`, "Your lane's state is not the system's
+state"). `docs/current/AI_RELEASE_CONTROL.md`, which this line used to name,
+was retired on 2026-09-21. This file tracks slice progress; SHAs are not
+duplicated here, because two copies of a SHA are two things that can drift
+apart.
 
 ## Status vocabulary
 

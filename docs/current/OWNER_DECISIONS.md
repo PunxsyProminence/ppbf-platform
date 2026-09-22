@@ -19,9 +19,11 @@ A decision the owner made that governs code, schema, policy, or lane
 behaviour, where a lane could otherwise build the opposite in good faith.
 
 Not here: work assignments, scope for a single ticket, or anything a lane may
-decide for itself. `docs/current/ACTIVE_WORK.md` is the work queue.
-`docs/current/AI_RELEASE_CONTROL.md` is the record of release decisions --
-what was frozen, refused, or abandoned -- and it stays there.
+decide for itself. `docs/current/ACTIVE_WORK.md` holds blocked and parked work.
+Release decisions -- what was frozen, refused, or abandoned -- were recorded in
+`docs/current/AI_RELEASE_CONTROL.md` until 2026-09-21; that record is now in
+`docs/archive/2026-09-21_AI_RELEASE_CONTROL_before_condense.md`, and release
+procedure is `docs/AI_DELIVERY_PIPELINE.md`.
 
 ## How to use it
 
