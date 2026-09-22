@@ -73,7 +73,9 @@ Response on failure:
 Status codes:
 
 - `200` success
-- `400` missing or malformed request body (a missing `account_id` or `pin`)
+- `400` a missing `account_id` or `pin`. A body that is not valid JSON is
+  not mapped: `request.json()` throws and `jsonError` falls back to `500`
+  (read from the code, 2026-09-21)
 - `401` invalid credentials
 - `429` too many attempts -- per account or per IP, from a durable and a
   volatile limiter; a failed attempt counts against both, and a success clears
@@ -94,6 +96,9 @@ Status codes:
 
 - `200` success
 - `401` no authenticated session
+- `403` the account must change its PIN first (`requirePrincipal` in
+  `http.ts` refuses a session with `must_change_pin` set:
+  `Forbidden: PIN change required before using this account`)
 - `500` unexpected server failure
 
 Behavior: revokes the token server-side, writes a `logout` audit event, and
@@ -157,12 +162,11 @@ Status codes:
 - `405` for any other method, `GET` included
 - `500` unexpected server failure
 
-### GET /auth/roles (proposed, not built)
+### Role catalog endpoint (proposed, not built -- open design question)
 
-Purpose: return the authoritative role catalog the frontend can render and the
-backend can authorize against.
-
-Proposed response:
+An earlier draft of this contract proposed `GET /auth/roles`, returning one
+catalog "the frontend can render and the backend can authorize against" that
+"should match" [roleRoutes.ts](apps/web/components/roleRoutes.ts), for example:
 
 ```json
 {
@@ -172,10 +176,13 @@ Proposed response:
 }
 ```
 
-The catalog should match the route model in
-[roleRoutes.ts](apps/web/components/roleRoutes.ts). No such route exists under
-`apps/web/app/api/pilot/auth/` (checked 2026-09-21). Whether it is still wanted
-is an open question.
+Those are two different catalogs. `PilotRole` is the authorization union;
+`ClubRole` is the navigation model and adds the board-seat values, which are
+not authorization roles. A design has to pick one, or define both separately,
+before anything is built. In the existing API family the path would be
+`/api/pilot/auth/roles`. No such route exists under
+`apps/web/app/api/pilot/auth/` (checked 2026-09-21), and whether it is still
+wanted is also open.
 
 ## Error mapping
 
@@ -183,6 +190,8 @@ is an open question.
 error to a status across the pilot API:
 
 - a `PilotError` carries its own status;
+- `MedicalStatusBlockedError` and `GuardianConsentMissingError` -> `409`, with
+  their message disclosed (checked before any prefix matching);
 - otherwise by message prefix: `Unauthorized` -> `401`; `Forbidden` -> `403`;
   `Missing`, `Request body`, `Unsupported` or `PIN` -> `400`; `Not found` or
   `Athlete not found` -> `404`; the already-exists conflicts (account, athlete
