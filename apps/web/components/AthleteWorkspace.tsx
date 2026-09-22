@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import React, { type FormEvent, useCallback, useEffect, useState } from 'react';
+import React, { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
 import AthleteAttemptLog from './AthleteAttemptLog';
@@ -325,6 +325,22 @@ function autoCheckInNote(readiness: ReadinessLevel): string {
 }
 
 const AUTO_CHECK_IN_NOTE_PATTERN = /^Auto check-in readiness (GREEN|YELLOW|RED)$/;
+
+/**
+ * The post-session effort question an athlete answers at check-out, on the
+ * 0-10 range pilot.sessions.rpe and validateSessionPayload accept.
+ *
+ * NUMBERS ONLY, with the two ends explained. The session contract defines the
+ * range and the provenance; it does not adopt any published instrument's
+ * verbal anchors, and words on 1-9 would change what the athlete is answering.
+ * Adopting a sourced scale is its own measurement decision, not copy.
+ *
+ * Asked about the session JUST FINISHED, never about how ready the athlete
+ * felt beforehand: that is the check-in slider, which is a different record
+ * and must never reach this one.
+ */
+const POST_SESSION_EFFORT_QUESTION = 'How hard was the session you just finished?';
+const POST_SESSION_EFFORT_VALUES: readonly number[] = Array.from({ length: 11 }, (_, value) => value);
 
 /**
  * pilot.sessions stores date as `date` and rpe as `numeric`, and node-postgres
@@ -681,14 +697,54 @@ export default function AthleteWorkspace() {
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
-  /* Nothing in this app collects a post-session RPE or an observed duration.
-     The check-in controls that used to supply them measured the wrong thing --
-     readiness before training, and a PLANNED duration -- so they were
-     disconnected rather than repointed, and check-out writes rpe null with an
-     UNKNOWN method. No placeholder state stands in for the missing control:
-     a variable that can only ever be null, feeding a call that can only ever
-     return early, reads as wired while recording nothing. Building the control
-     is the work; pretending it exists is not. */
+  /* The athlete's answer to the post-session effort question, if they gave
+     one (A-FIN-05). The check-in controls that used to supply an RPE measured
+     the wrong thing -- readiness before training -- and were disconnected; this
+     is the control that was missing, asked at the end of the session.
+
+     KEYED TO THE SESSION IT WAS GIVEN FOR. An answer carries the session id,
+     and it only counts while that session is the open one, so an answer can
+     never drift onto a later session -- "no value from previous sessions" is
+     structural, not a reset someone has to remember. It starts null, which is
+     "not answered", and stays null unless the athlete picks a number.
+
+     Observed duration is still not collected by anything, so there is still
+     no Session Load to send. */
+  const [postSessionEffort, setPostSessionEffort] = useState<{ sessionId: string; value: number } | null>(null);
+
+  /* ONE SESSION WRITE AT A TIME. The notes draft save and check-out both send
+     the WHOLE session row to /api/pilot/sessions/update, and the server applies
+     each one as it arrives with no ordering check -- so a draft save already in
+     flight when check-out is pressed could land after it and put back
+     completed_flag false and the old rpe, reopening a session the athlete had
+     just closed and erasing their effort answer. Cancelling the draft TIMER
+     (the effect cleanup) cannot stop a request that has already left.
+
+     So every session write joins ONE chain. A draft save does not leave until
+     every earlier one has landed, and check-out waits for the whole chain
+     before it sends -- remembering only the latest draft is not enough, since
+     two drafts can overlap and the older one could still arrive last. A draft
+     still queued when check-out starts is dropped, which only saves a write:
+     the chain already lands it before check-out, and check-out carries the
+     notes itself. From the moment check-out starts no new draft may join; the
+     effect cleanup already cancels a pending timer once isCheckingOut
+     re-renders, and checkingOutRef makes that refusal independent of render
+     timing. */
+  const sessionWriteChainRef = useRef<Promise<void>>(Promise.resolve());
+  const checkingOutRef = useRef(false);
+  /* The note the session row holds right now, as far as this tab knows. A
+     draft save that lands WHILE check-out is waiting on the chain updates it
+     here, synchronously, so check-out's empty-box fallback is the latest
+     stored note and not the one captured when Check Out was pressed -- that
+     capture predates the wait and would overwrite the newer note with an
+     older one. Kept in step with activeSessionRecord for every other way the
+     record changes (check-in, rehydrate). */
+  const storedNoteRef = useRef<{ sessionId: string; note: string } | null>(null);
+  useEffect(() => {
+    storedNoteRef.current = activeSessionRecord
+      ? { sessionId: activeSessionRecord.sessionId, note: activeSessionRecord.checkInNote }
+      : null;
+  }, [activeSessionRecord]);
 
   /* The gym's own noises, off unless this browser opted in. play() is safe to
      call unconditionally: it returns false and does nothing when sound is off,
@@ -734,6 +790,11 @@ export default function AthleteWorkspace() {
   const notesDraft = checkInNotes.trim();
   const notesStored = notesDraft.length > 0 && notesDraft === activeSessionRecord?.checkInNote;
   const recentSessions = storedSessions.filter((session) => session.completed).slice(0, 5);
+  // The answer for the session that is open now, or null. See postSessionEffort.
+  const answeredEffort = postSessionEffort !== null && activeSessionRecord !== null
+    && postSessionEffort.sessionId === activeSessionRecord.sessionId
+    ? postSessionEffort.value
+    : null;
   // Only a successful read is a number. See AthleteCountRead.
   const openCoachWorkRead: AthleteCountRead = assignedWorkError
     ? { status: 'unavailable' }
@@ -1224,7 +1285,12 @@ export default function AthleteWorkspace() {
     }
 
     const timer = setTimeout(() => {
-      void (async () => {
+      // Check-out has started since this timer was set: its write carries the
+      // notes, and a draft save now could only race it. See sessionWriteChainRef.
+      if (checkingOutRef.current) return;
+      const save = async () => {
+        // Queued behind an earlier draft, and check-out began meanwhile.
+        if (checkingOutRef.current) return;
         setNotesSaveState('saving');
         try {
           const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
@@ -1248,6 +1314,7 @@ export default function AthleteWorkspace() {
 
           if (!response.ok) throw new Error('Notes were not saved.');
 
+          storedNoteRef.current = { sessionId: record.sessionId, note: draft };
           setActiveSessionRecord((current) => (
             current && current.sessionId === record.sessionId
               ? { ...current, checkInNote: draft }
@@ -1257,7 +1324,10 @@ export default function AthleteWorkspace() {
         } catch {
           setNotesSaveState('failed');
         }
-      })();
+      };
+      // Chained, never raced: this draft leaves only after every earlier one
+      // has landed. save() records its own failure, so the chain never rejects.
+      sessionWriteChainRef.current = sessionWriteChainRef.current.then(save);
     }, NOTES_DRAFT_SAVE_DELAY_MS);
 
     return () => clearTimeout(timer);
@@ -1516,10 +1586,21 @@ export default function AthleteWorkspace() {
     const record = activeSessionRecord;
     const now = new Date();
     const notes = checkInNotes.trim();
+    // Read once, so the value and its method cannot disagree in the body.
+    const rpe = answeredEffort;
 
+    checkingOutRef.current = true;
     setIsCheckingOut(true);
 
     try {
+      // Every draft save already on the wire, or queued, lands first, so none
+      // can land after this write and undo it. The chain never rejects -- each
+      // draft records its own failure in notesSaveState -- so this only waits.
+      await sessionWriteChainRef.current;
+      const storedNote = storedNoteRef.current?.sessionId === record.sessionId
+        ? storedNoteRef.current.note
+        : record.checkInNote;
+
       const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
         method: 'POST',
         credentials: 'include',
@@ -1528,20 +1609,21 @@ export default function AthleteWorkspace() {
           session_id: record.sessionId,
           athlete_id: record.athleteId,
           date: record.date,
-          // Check-out is the first and only point at which a real session RPE
-          // could exist -- and no control on this screen collects one, so it
-          // does not exist yet. Written null with an UNKNOWN method: the
-          // athlete rated nothing, and "not recorded" is what gets stored.
-          // These are literals rather than a variable that could only ever
-          // hold null. When a check-out rating control is built, it supplies
-          // the value here and 'athlete_post_session_self_report' becomes the
-          // method; until then nothing may put a number in this field.
-          rpe: null,
-          rpe_method: 'UNKNOWN' as const,
-          // The check-in note is the fallback because the session record
-          // requires a note and an empty box must not erase what check-in
-          // already stored.
-          notes: notes || record.checkInNote,
+          // Check-out is the first and only point at which a session RPE can
+          // exist, and the athlete's own answer to the effort question is its
+          // only source. Answered: that number, attributed to the athlete's
+          // post-session self-report. Unanswered: null with an UNKNOWN method,
+          // "not recorded" -- never a default. The test is `=== null`, not
+          // truthiness, because 0 is a real answer. The stored record.rpe is
+          // deliberately NOT a fallback: on a pre-migration row it holds the
+          // readiness slider, and promoting it here is the old defect.
+          rpe,
+          rpe_method: rpe === null ? ('UNKNOWN' as const) : ('athlete_post_session_self_report' as const),
+          // The stored note is the fallback because the session record
+          // requires a note and an empty box must not erase what is already
+          // stored. Read AFTER the wait above, so a draft that landed during
+          // it counts -- see storedNoteRef.
+          notes: notes || storedNote,
           completed_flag: true,
           created_at: record.createdAt,
           updated_at: now.toISOString(),
@@ -1556,9 +1638,13 @@ export default function AthleteWorkspace() {
       setActiveSessionRecord(null);
       setCheckInNotes('');
       setNotesSaveState('idle');
-      setBackendSyncMessage(notes
+      // Cleared only now, after the server took it -- a refused check-out
+      // keeps the answer on screen for the retry (see the catch below).
+      setPostSessionEffort(null);
+      const effortLine = rpe === null ? '' : ` Your effort, ${rpe} of 10, is on it too.`;
+      setBackendSyncMessage((notes
         ? "Logged. What you wrote is on the session for your coach to read."
-        : "Logged. That one is on your card.");
+        : "Logged. That one is on your card.") + effortLine);
       // Re-read rather than trust the write: the recent list below and the
       // "are you still checked in" question are both answered from the server.
       await loadStoredSessions();
@@ -1568,24 +1654,26 @@ export default function AthleteWorkspace() {
       // was never looking when it happened.
       await loadTrainingCard();
     } catch (error) {
-      // Nothing is cleared on a failure. The session is still open and the
-      // notes are still in the box, so the athlete can try again instead of
-      // watching the screen empty itself.
+      // Nothing is cleared on a failure. The session is still open, and the
+      // notes and the effort answer are still on screen, so the athlete can
+      // try again instead of watching the screen empty itself.
       const detail = error instanceof Error && error.message ? `: ${error.message}` : '.';
       setBackendSyncMessage(
         `That did not take and you are still checked in${detail} `
         + "Hit Check Out again, and tell a coach anything they need to know.",
       );
     } finally {
+      checkingOutRef.current = false;
       setIsCheckingOut(false);
     }
 
     /* No Session Load feed here. It used to sit at the end of check-IN and pass
        the readiness slider as `session_rpe` and the PLANNED duration as
        `duration`, so SHADOW multiplied two numbers that had measured nothing
-       yet. Check-out has no post-session RPE and no observed duration to send
-       in their place, so it sends nothing: check-out records only what the
-       athlete actually supplied. */
+       yet. Check-out can now carry a real post-session RPE, but Session Load
+       is RPE x OBSERVED duration and nothing collects a duration, so it still
+       sends nothing: check-out records only what the athlete actually
+       supplied, on the session itself. */
   };
 
   const handleSavePainReport = async () => {
@@ -2158,12 +2246,17 @@ export default function AthleteWorkspace() {
                 ) : activeSessionRecord ? (
                   <div className="space-y-[var(--s4)]">
                     <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Session active since {checkInTime}</p>
+                    {/* Held while check-out is in progress: check-out has already
+                        taken the notes, and no draft save may start now, so
+                        anything typed here would be silently dropped. A refused
+                        check-out releases it again. */}
                     <textarea
                       value={checkInNotes}
                       onChange={(e) => setCheckInNotes(e.target.value)}
+                      disabled={isCheckingOut}
                       placeholder="Session notes for your coach..."
                       aria-label="Session notes for your coach"
-                      className="textarea input--kiosk h-[89px]"
+                      className="textarea input--kiosk h-[89px] disabled:opacity-60"
                     />
                     <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]" role="status">
                       {notesSaveState === 'failed'
@@ -2176,6 +2269,51 @@ export default function AthleteWorkspace() {
                               ? 'Not saved yet.'
                               : 'Anything you write here saves as you go.'}
                     </p>
+                    {/* POST-SESSION EFFORT (A-FIN-05). Eleven choices, 0 to 10,
+                        rather than a slider, for the reason the Wellness panel
+                        gives: a range input always has a position, so it
+                        records an answer nobody gave. Nothing is selected until
+                        the athlete selects it, skipping is said out loud, and
+                        only Check Out writes it -- the notes draft save above
+                        never carries it. */}
+                    <fieldset className="space-y-[var(--s2)]">
+                      <legend className="t-label mb-[var(--s2)]">{POST_SESSION_EFFORT_QUESTION}</legend>
+                      <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                        0 means not hard at all. 10 means as hard as you could go. It goes on the session when you check out.
+                      </p>
+                      <div className="grid grid-cols-4 sm:grid-cols-6 gap-[var(--s2)]">
+                        {POST_SESSION_EFFORT_VALUES.map((value) => {
+                          const selected = answeredEffort === value;
+                          return (
+                            <button
+                              key={value}
+                              type="button"
+                              aria-label={`${POST_SESSION_EFFORT_QUESTION} ${value}`}
+                              aria-pressed={selected}
+                              disabled={isCheckingOut}
+                              onClick={() => setPostSessionEffort({ sessionId: activeSessionRecord.sessionId, value })}
+                              className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
+                            >
+                              <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{value}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {answeredEffort === null ? (
+                        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                          Not answered — you can skip this. Checking out without it records no effort.
+                        </p>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setPostSessionEffort(null)}
+                          disabled={isCheckingOut}
+                          className="btn btn--ghost"
+                        >
+                          Clear my answer
+                        </button>
+                      )}
+                    </fieldset>
                     <button
                       type="button"
                       onClick={() => void handleCheckOut()}

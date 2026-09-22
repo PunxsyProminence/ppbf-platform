@@ -36,6 +36,10 @@ let rabbitHolesFail = false;
 let storedSessions: Array<Record<string, unknown>> = [];
 let sessionListFails = false;
 let sessionUpdateFails = false;
+let persistSessionUpdates = false;
+let holdDraftSaves = false;
+// Draft saves held on the wire, oldest first. A test releases them in the order it wants to prove against.
+let heldDraftSaves: Array<() => void> = [];
 let storedGoals: Array<Record<string, unknown>> = [];
 let goalUpdateFails = false;
 let sessionCreateFails = false;
@@ -187,6 +191,9 @@ beforeEach(() => {
   storedSessions = [];
   sessionListFails = false;
   sessionUpdateFails = false;
+  persistSessionUpdates = false;
+  holdDraftSaves = false;
+  heldDraftSaves = [];
   storedGoals = [];
   goalUpdateFails = false;
   sessionCreateFails = false;
@@ -248,6 +255,25 @@ beforeEach(() => {
       return jsonResponse({ items: storedSessions });
     }
     if (url.includes('/api/pilot/sessions/update')) {
+      const body = parseBody(init);
+      // Applied the way pilot.sessions applies it: the write that ARRIVES last
+      // wins, with no ordering check, and numeric rpe comes back as a string.
+      const apply = () => {
+        if (!persistSessionUpdates) return;
+        storedSessions = storedSessions.map((row) => (row.session_id === body.session_id
+          ? { ...row, ...body, rpe: body.rpe === null ? null : String(body.rpe) }
+          : row));
+      };
+      if (!sessionUpdateFails && holdDraftSaves && body.completed_flag === false) {
+        // A draft save held on the wire until the test lets it arrive.
+        return new Promise<Response>((resolve) => {
+          heldDraftSaves.push(() => {
+            apply();
+            resolve(jsonResponse({ ok: true }));
+          });
+        });
+      }
+      if (!sessionUpdateFails) apply();
       return jsonResponse(sessionUpdateFails ? { error: 'Internal server error' } : { ok: true }, !sessionUpdateFails);
     }
     if (url.endsWith('/api/pilot/sessions') && init?.method === 'POST' && sessionCreateFails) {
@@ -1908,6 +1934,379 @@ describe('a rehydrated session keeps the RPE it was actually stored with', () =>
   test('a notes save does not complete the session', async () => {
     const body = await draftSaveBodyFor(openSessionRow({ rpe: null }));
     expect(body.completed_flag).toBe(false);
+  });
+});
+
+// A-FIN-05: POST-SESSION EFFORT IS THE ATHLETE'S ANSWER, GIVEN AT CHECK-OUT, OR
+// NOTHING. Check-out wrote rpe null / UNKNOWN on every session because no
+// control asked. The question now sits on the open session's Session Log, as
+// described choices that start unanswered. These pin the whole contract:
+// untouched is null / UNKNOWN; 0, an ordinary value and 10 are sent exactly,
+// attributed to the athlete's post-session self-report; nothing else on the
+// screen -- the readiness slider, the notes, a previous session -- can become
+// the number; a refused check-out keeps the answer; and the stored value comes
+// back on the card the athlete already reads.
+describe('post-session effort is the athlete\'s answer at check-out, or nothing', () => {
+  const EFFORT_Q = 'How hard was the session you just finished?';
+
+  // Numbers only: the session contract defines 0-10 and its provenance, not
+  // any published instrument's words for the points between.
+  function effortName(value: number): string {
+    return `${EFFORT_Q} ${value}`;
+  }
+
+  function effortButton(value: number): HTMLElement {
+    return screen.getByRole('button', { name: effortName(value) });
+  }
+
+  function checkOutBodies(): Array<Record<string, unknown>> {
+    return postedTo('/api/pilot/sessions/update')
+      .map((call) => call.body)
+      .filter((body) => body.completed_flag === true);
+  }
+
+  async function checkOut(): Promise<Record<string, unknown>> {
+    const before = checkOutBodies().length;
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(before + 1));
+    return checkOutBodies()[before];
+  }
+
+  async function openSession(overrides: Record<string, unknown> = {}) {
+    storedSessions = [openSessionRow({ rpe: null, ...overrides })];
+    await renderWorkspace();
+    await screen.findByRole('button', { name: 'Check Out' });
+  }
+
+  test('the question is asked only on an open session, and starts unanswered', async () => {
+    await renderWorkspace();
+    await screen.findByText(/You are not checked in right now/);
+    expect(screen.queryByRole('group', { name: EFFORT_Q })).toBeNull();
+    cleanup();
+
+    await openSession();
+    const group = screen.getByRole('group', { name: EFFORT_Q });
+    const choices = within(group).getAllByRole('button', { pressed: false });
+    // Eleven choices, 0 to 10, and none of them chosen.
+    expect(within(group).queryAllByRole('button', { pressed: true })).toEqual([]);
+    expect(choices.map((choice) => choice.getAttribute('aria-label'))).toEqual(
+      Array.from({ length: 11 }, (_, value) => effortName(value)),
+    );
+    expect(within(group).getByText(/Not answered — you can skip this/)).toBeTruthy();
+    // No slider: a range input always has a position, which is an answer nobody gave.
+    expect(within(group).queryByRole('slider')).toBeNull();
+    // The two ends are explained; nothing in between is given words.
+    expect(within(group).getByText(/0 means not hard at all\. 10 means as hard as you could go\./)).toBeTruthy();
+    for (const word of ['Rest', 'Moderate', 'Somewhat hard', 'Very hard', 'Maximal', 'Easy']) {
+      expect(within(group).queryByText(word)).toBeNull();
+    }
+    expect(group.textContent ?? '').not.toMatch(/CR-10|Foster/);
+  });
+
+  test('an untouched check-out records no effort: null with an UNKNOWN method', async () => {
+    await openSession();
+
+    const body = await checkOut();
+    expect(body.rpe).toBeNull();
+    expect(body.rpe_method).toBe('UNKNOWN');
+  });
+
+  test.each([0, 7, 10])('an explicit %i is sent as exactly that, attributed to the athlete', async (value) => {
+    await openSession();
+
+    fireEvent.click(effortButton(value));
+    expect(effortButton(value).getAttribute('aria-pressed')).toBe('true');
+    const body = await checkOut();
+
+    // toBe, not toBeFalsy/toBeTruthy: 0 must arrive as 0, never as null.
+    expect(body.rpe).toBe(value);
+    expect(body.rpe_method).toBe('athlete_post_session_self_report');
+  });
+
+  test('a stored pre-session reading is not promoted, answered or not', async () => {
+    // The fixture's default rpe '8' is the readiness slider a pre-migration
+    // check-in stored. Answered, the answer wins; unanswered, it stays unrecorded.
+    storedSessions = [openSessionRow()];
+    await renderWorkspace();
+    await screen.findByRole('button', { name: 'Check Out' });
+
+    fireEvent.click(effortButton(3));
+    expect((await checkOut()).rpe).toBe(3);
+  });
+
+  test('the readiness slider cannot reach the check-out RPE', async () => {
+    await openSession();
+
+    fireEvent.change(screen.getByLabelText('How ready do you feel today? (1-10)'), { target: { value: '9' } });
+    const untouched = await checkOut();
+    expect(untouched.rpe).toBeNull();
+    expect(untouched.rpe_method).toBe('UNKNOWN');
+    cleanup();
+    fetchCalls.length = 0;
+
+    await openSession();
+    fireEvent.change(screen.getByLabelText('How ready do you feel today? (1-10)'), { target: { value: '2' } });
+    fireEvent.click(effortButton(7));
+    expect((await checkOut()).rpe).toBe(7);
+  });
+
+  test('the session notes cannot become an RPE', async () => {
+    await openSession();
+
+    fireEvent.change(screen.getByPlaceholderText(/Session notes for your coach/), { target: { value: '8' } });
+    const body = await checkOut();
+
+    expect(body.notes).toBe('8');
+    expect(body.rpe).toBeNull();
+    expect(body.rpe_method).toBe('UNKNOWN');
+  });
+
+  test('the notes draft save never carries the answer -- only check-out does', async () => {
+    await openSession();
+
+    fireEvent.click(effortButton(7));
+    fireEvent.change(screen.getByPlaceholderText(/Session notes for your coach/), { target: { value: 'Jab felt sharp.' } });
+
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1), { timeout: 5000 });
+    const [draft] = postedTo('/api/pilot/sessions/update');
+    expect(draft.body.completed_flag).toBe(false);
+    expect(draft.body.rpe).toBeNull();
+    expect(draft.body.rpe_method).toBe('UNKNOWN');
+  });
+
+  test('a refused check-out keeps the answer and the session, and claims nothing', async () => {
+    sessionUpdateFails = true;
+    await openSession();
+
+    fireEvent.click(effortButton(7));
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+
+    expect(await screen.findByText(/still checked in/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Check Out' })).toBeTruthy();
+    expect(effortButton(7).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByText(/Your effort, 7 of 10, is on it too/)).toBeNull();
+
+    // And the retry carries the same answer.
+    sessionUpdateFails = false;
+    const body = await checkOut();
+    expect(body.rpe).toBe(7);
+    expect(await screen.findByText(/Your effort, 7 of 10, is on it too/)).toBeTruthy();
+  });
+
+  // The notes draft save and check-out both send the whole session row, and the
+  // server applies whichever ARRIVES last (the fixture does the same when
+  // persistSessionUpdates is on). A draft held on the wire past the check-out
+  // click is the ordering that used to reopen the session and erase the answer.
+  test('a notes save already in flight cannot land after check-out and undo it', async () => {
+    persistSessionUpdates = true;
+    holdDraftSaves = true;
+    await openSession();
+
+    fireEvent.change(screen.getByPlaceholderText(/Session notes for your coach/), { target: { value: 'Jab felt sharp.' } });
+    // The draft save has left and is being held by the "server".
+    await waitFor(() => expect(heldDraftSaves).toHaveLength(1), { timeout: 5000 });
+
+    fireEvent.click(effortButton(7));
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // Check-out waits for the draft on the wire instead of racing it.
+    expect(checkOutBodies()).toHaveLength(0);
+
+    await act(async () => {
+      heldDraftSaves.shift()?.();
+    });
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+
+    // What the server holds at the end is the check-out, not the draft.
+    await waitFor(() => expect(storedSessions[0]).toEqual(expect.objectContaining({
+      completed_flag: true,
+      rpe: '7',
+      rpe_method: 'athlete_post_session_self_report',
+      notes: 'Jab felt sharp.',
+    })));
+    expect(await screen.findByText(/Your effort, 7 of 10, is on it too/)).toBeTruthy();
+  });
+
+  // Two drafts overlapping is the case remembering only the latest one missed:
+  // check-out would wait for the second while the first could still arrive
+  // last. Every held write is released NEWEST FIRST -- the worst order -- and
+  // the row must still end as the check-out.
+  test('overlapping notes saves are queued, and none can land after check-out', async () => {
+    persistSessionUpdates = true;
+    holdDraftSaves = true;
+    await openSession();
+
+    const box = screen.getByPlaceholderText(/Session notes for your coach/);
+    fireEvent.change(box, { target: { value: 'Jab felt sharp.' } });
+    await waitFor(() => expect(heldDraftSaves).toHaveLength(1), { timeout: 5000 });
+
+    // Keep typing, and let the second draft's delay run out while the first is on the wire.
+    fireEvent.change(box, { target: { value: 'Jab felt sharp. Hook was late.' } });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1600));
+    });
+    // Queued behind the first, not racing it.
+    expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1);
+
+    fireEvent.click(effortButton(7));
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+
+    // Release everything held, newest first, until check-out has gone.
+    await waitFor(async () => {
+      await act(async () => {
+        heldDraftSaves.pop()?.();
+      });
+      expect(checkOutBodies()).toHaveLength(1);
+    }, { timeout: 5000 });
+    await act(async () => {
+      while (heldDraftSaves.length > 0) heldDraftSaves.pop()?.();
+    });
+
+    await waitFor(() => expect(storedSessions[0]).toEqual(expect.objectContaining({
+      completed_flag: true,
+      rpe: '7',
+      rpe_method: 'athlete_post_session_self_report',
+      notes: 'Jab felt sharp. Hook was late.',
+    })));
+    // And nothing reached the server after the check-out did.
+    const updates = postedTo('/api/pilot/sessions/update');
+    expect(updates[updates.length - 1].body.completed_flag).toBe(true);
+  });
+
+  // Write ORDER is not enough on its own: check-out's empty-box fallback used
+  // the note captured when Check Out was pressed, which predates the wait.
+  // A draft that lands during the wait is newer than that capture, and the
+  // fallback must not put the older note back over it.
+  test('a note saved while check-out waits is kept, not replaced by the older one', async () => {
+    persistSessionUpdates = true;
+    holdDraftSaves = true;
+    await openSession({ notes: 'old' });
+
+    const box = screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement;
+    expect(box.value).toBe('old');
+    fireEvent.change(box, { target: { value: 'new' } });
+    await waitFor(() => expect(heldDraftSaves).toHaveLength(1), { timeout: 5000 });
+
+    // Empty box at the moment of Check Out: the fallback decides the note.
+    fireEvent.change(box, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(checkOutBodies()).toHaveLength(0);
+
+    await act(async () => {
+      heldDraftSaves.shift()?.();
+    });
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+
+    expect(checkOutBodies()[0].notes).toBe('new');
+    await waitFor(() => expect(storedSessions[0]).toEqual(expect.objectContaining({
+      completed_flag: true,
+      notes: 'new',
+    })));
+  });
+
+  test('the notes box takes no typing while check-out is in progress, and a refused check-out gives it back', async () => {
+    holdDraftSaves = true;
+    await openSession();
+
+    const box = screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: 'Jab felt sharp.' } });
+    await waitFor(() => expect(heldDraftSaves).toHaveLength(1), { timeout: 5000 });
+
+    sessionUpdateFails = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // Waiting on the draft: anything typed now could not reach the session.
+    expect(box.disabled).toBe(true);
+
+    await act(async () => {
+      heldDraftSaves.shift()?.();
+    });
+    expect(await screen.findByText(/still checked in/i)).toBeTruthy();
+    // Refused: editing is back, and what was written is still there.
+    expect(box.disabled).toBe(false);
+    expect(box.value).toBe('Jab felt sharp.');
+  });
+
+  test('no notes save starts once check-out has begun', async () => {
+    await openSession();
+
+    fireEvent.change(screen.getByPlaceholderText(/Session notes for your coach/), { target: { value: 'Last round was rough.' } });
+    // Pressed inside the draft save's delay, so its timer has not fired yet.
+    fireEvent.click(effortButton(5));
+    const body = await checkOut();
+    expect(body.notes).toBe('Last round was rough.');
+
+    // Past the draft delay: the only session update ever sent is the check-out.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1600));
+    });
+    expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1);
+  });
+
+  test('clearing the answer puts it back to not answered, and check-out then records none', async () => {
+    await openSession();
+
+    fireEvent.click(effortButton(4));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear my answer' }));
+
+    expect(screen.getByText(/Not answered — you can skip this/)).toBeTruthy();
+    const body = await checkOut();
+    expect(body.rpe).toBeNull();
+    expect(body.rpe_method).toBe('UNKNOWN');
+  });
+
+  test('check-out sends no duration and feeds no observation', async () => {
+    await openSession();
+
+    fireEvent.click(effortButton(7));
+    const body = await checkOut();
+
+    expect(Object.keys(body).sort()).toEqual([
+      'athlete_id', 'completed_flag', 'created_at', 'date', 'notes', 'rpe', 'rpe_method', 'session_id', 'updated_at',
+    ]);
+    expect(postedTo('/api/pilot/shadow/formulas/observations')).toHaveLength(0);
+  });
+
+  test.each([
+    [0, /effort 0 of 10/],
+    [7, /effort 7 of 10/],
+    [null, /effort not recorded/],
+  ])('what was stored comes back on the card as stored (%p)', async (value, stamp) => {
+    persistSessionUpdates = true;
+    await openSession();
+
+    if (value !== null) fireEvent.click(effortButton(value));
+    await checkOut();
+
+    // Read back through the existing session list and training card -- no
+    // second history. The list answers numeric RPE as a string, as node-postgres does.
+    expect(await screen.findByTitle(stamp)).toBeTruthy();
+    if (value === 0) expect(screen.queryByTitle(/effort not recorded/)).toBeNull();
+  });
+
+  test('check-in writes no RPE, and the next session starts unanswered after a rated one', async () => {
+    persistSessionUpdates = true;
+    await openSession();
+
+    fireEvent.click(effortButton(9));
+    expect((await checkOut()).rpe).toBe(9);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
+    expect(postedTo('/api/pilot/sessions')[0].body.rpe).toBeNull();
+    expect(postedTo('/api/pilot/sessions')[0].body.rpe_method).toBe('UNKNOWN');
+
+    openTab('Dashboard');
+    const group = await screen.findByRole('group', { name: EFFORT_Q });
+    expect(within(group).queryAllByRole('button', { pressed: true })).toEqual([]);
+    expect(within(group).getByText(/Not answered — you can skip this/)).toBeTruthy();
   });
 });
 
