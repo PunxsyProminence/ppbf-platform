@@ -93,7 +93,8 @@ and should not try to.
 
 ## OD-2026-09-21-001 -- Claude builds, ChatGPT designs and enforces standards; product direction; minors' limits are coach-set data
 
-**Provenance: PRIMARY.**
+**Provenance: PRIMARY** for the owner's quoted words and the options as put.
+Lines marked RECONSTRUCTED below are interpretations, each naming its source.
 
 **Date:** 2026-09-21. **Governs:** who designs, who builds and who reviews;
 the product direction every lane builds toward; and where limits for minors
@@ -112,14 +113,32 @@ The owner, verbatim:
 "3" answered who does storage and ledger writes. "5 undo" restored a ChatGPT
 project and does not touch this repository.
 
+Question 3 as it was put to the owner (options verbatim; the recommendation
+was C):
+
+> **3. Who does the file work on the drives**
+>
+> - A. I write whenever I hold the checked copy
+> - B. ChatGPT writes; I write only when it fails
+> - **C. Whoever holds the checked copy writes, the other verifies, and the ledger records who** (recommended)
+
+His answer took none of them verbatim: "chat gpt takes over after you finish
+the instructions set ups".
+
 What that means for this repository:
 
-1. ChatGPT designs (product and system specs, work orders) and enforces
-   standards (reviews). Jason approves a design before it is built. ChatGPT
-   stays read-only here.
-2. Claude builds from approved work orders. Storage writes and the ledger are
-   ChatGPT's; Claude writes there only when a ChatGPT write fails.
-3. Grok keeps visual design and visual implementation.
+1. ChatGPT designs and enforces standards; Claude builds (the owner's words).
+   ChatGPT stays read-only here (unchanged from `AGENT_KERNEL.md`). "Jason
+   approves a design before it is built" is the standing account-level rule
+   that Jason decides final product and design, not a new ruling in this
+   answer.
+2. After the instruction setup, storage writes and the ledger are ChatGPT's
+   ("chat gpt takes over"). RECONSTRUCTED: "Claude writes there only when a
+   ChatGPT write fails" is option B's wording, the option closest to his answer;
+   it was installed in the workspace facts the same day and he has not
+   corrected it.
+3. Grok keeps visual design and visual implementation. RECONSTRUCTED: see the
+   interpretation note below.
 
 Interpretation put to the owner the same day and not corrected: "designer"
 means product and system design. Visual design stays Grok's, as

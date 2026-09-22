@@ -96,20 +96,26 @@ constraints remain binding on any change to those surfaces:
 - the payment slot (#378): the three reserved names, empty; CAP-012 stays
   BLOCKED.
 
-## Last recorded build queue: video calibration lab (2026-08-29, not re-checked)
+## Last recorded build queue: video calibration lab (recorded 2026-08-29; re-checked 2026-09-21)
 
 Each surface reads what the one before it writes, so the order is not
-arbitrary. Remaining at 2026-08-29:
+arbitrary. The queue as recorded at 2026-08-29, with each item's state on
+`main` at 2026-09-21:
 
-1. **OD-2026-08-29-003, the pages.** The API accepts a pair selection
-   (`resolveComparisonPair` in `comparison.ts`, wired to both routes); neither
-   page offered the choice.
-2. **OD-2026-08-29-005, the superseding migration.** A revision integer per
-   pair, a unique constraint on (pair, revision), and the route translating the
-   23505 collision -- the translation is part of the ruling and owes its own
-   test.
-3. **`qaReadModel`** -- read the module before designing to it.
-4. **`gold`.**
+1. **OD-2026-08-29-003, the pages -- BUILT; do not rebuild.** Both
+   `apps/web/app/admin/calibration/review/page.tsx` and
+   `apps/web/app/admin/calibration/adjudicate/page.tsx` render the pair
+   selection (`data-testid="pair-selection"`).
+2. **OD-2026-08-29-005, the superseding migration -- not found on `main`.** A
+   revision integer per pair, a unique constraint on (pair, revision), and the
+   route translating the 23505 collision -- the translation is part of the
+   ruling and owes its own test. Searched: no revision column in
+   `infra/azure/pilot_slice_postgres_calibration_adjudication_migration.sql`,
+   and no `23505` handling in `apps/web/app/api/pilot/calibration/adjudication/route.ts`,
+   whose own comment notes no superseding column and no update path.
+3. **`qaReadModel`** -- the module exists with no non-test importer. Read it
+   before designing to it.
+4. **`gold`** -- the module and its migration exist with no non-test importer.
 
 ## BLOCKED
 
