@@ -125,6 +125,8 @@ inaccessible. This is a capability fact, checked rather than preferred: it is
 not a rule anyone can waive, and an instruction of the form "Claude downloads
 the package from OneDrive and commits it" does not run. Four delivery rounds
 were spent on handoffs written that way.
+*[Scoped 2026-09-21: see the capability update at the end of this
+section.]*
 
 Two clauses from 2026-08-24 survive the ruling, on different grounds.
 **Re-encode** stands because the tools are absent -- no `cjpeg`, no `jpegtran`,
@@ -171,7 +173,8 @@ So the lanes are:
   and land a binary where the owner directs it; it still does not re-encode or
   reconstruct one, and it **cannot** fetch bytes out of SharePoint/OneDrive at
   all -- that last one is a capability limit rather than a rule, so no
-  instruction can grant it. A visual preference that is not a defect is not
+  instruction can grant it. *[Scoped 2026-09-21: see the capability update
+  at the end of this section.]* A visual preference that is not a defect is not
   grounds to rewrite another lane's approved work.
 - **ChatGPT** -- independent audit, research, full-spectrum review, storage
   inventory and reconciliation, documentation, control ledger, exact-head SHA
@@ -199,8 +202,10 @@ So the lanes are:
   No lane converts a visual idea into a product decision on its own.
 
 Storage authority, promotion rules and the wider AI governance chain remain
-governed by the ACTIVE source in OneDrive at `Documents/Library Intake/_CONTROL
-- Registers and Coverage Maps/AI_GOVERNANCE/ACTIVE_APPROVED_SOURCE/`. That
+governed by the ACTIVE source in the Admin@ OneDrive, at the drive root:
+`Library Intake/_CONTROL - Registers and Coverage Maps/AI_GOVERNANCE/ACTIVE_APPROVED_SOURCE/`
+(checked 2026-09-21; a `Documents/` folder in the same drive does not contain
+it). That
 source is deliberately *not* duplicated here; it is named so a reader knows
 this file is not the whole picture. Claude claimed that master did not exist --
 it does, exactly where ChatGPT said. The search was of this repository and the
@@ -215,6 +220,46 @@ owns `main`. Nothing in this section is relaxed by that -- nobody
 direct-pushes `main`, every change lands by PR with green CI -- but *which*
 lane may merge is now a narrower question than this section answers. See
 **Lane model** below, which governs it.
+
+**Amendment (owner decision, 2026-09-21).** Jason, verbatim: *"you build and
+chatgpt is the designer and stnadard enforcer"* -- recorded in full as
+OD-2026-09-21-001 in `docs/current/OWNER_DECISIONS.md`. This supersedes the
+2026-08-20 decision above that the primary Claude session is the PPBF project
+command thread. The lanes are now:
+
+- **Jason** -- unchanged: final authority.
+- **ChatGPT** -- designer (product and system specs, work orders; Jason
+  approves a design before it is built) and standards enforcer (reviews), plus
+  research, documentation, storage and the decision/handoff ledger. Still
+  read-only on this repository: no branches, commits, pushes, merges, deploys
+  or migrations.
+- **Claude** -- builder: implements approved work orders, within the
+  functional and security scope listed above. Writes to storage or the ledger
+  only when a ChatGPT write fails, and records that it did.
+- **Grok** -- unchanged: visual design and visual implementation on its own
+  PRs. "Designer" in the owner's words means product and system design; visual
+  design stays Grok's.
+- **Codex** -- no lane. Its PR reviews are evidence, not approval.
+
+Everything else in this section stands: nobody direct-pushes `main`, every
+change lands by PR with green CI, and the Lane model below still governs who
+merges.
+
+**Capability update (checked 2026-09-21, Claude Code on Jason's Windows PC).**
+Three capability facts recorded above were true where they were checked and
+are not true on this machine. Each row is scoped to where it was measured. The
+cloud container lanes were not re-checked and keep the older facts until
+someone measures them.
+
+| Recorded earlier | Checked 2026-09-21 on Jason's PC | Instrument |
+|---|---|---|
+| Claude cannot read SharePoint/OneDrive file contents (2026-08-25) | **Text files: yes.** The Microsoft 365 connector's `read_resource` returned the full text of `PPBF-AI-Lanes/PPBF_DECISION_HANDOFF_LEDGER.md`. **Binary bytes (plates, zips): not checked.** The plate laws and the "a binary is delivered when a real `git add` lands" definition are unchanged. | connector read |
+| No AI lane can load a deployed page; Claude's sandbox refuses outbound HTTPS (2026-08-20) | **Claude can.** `curl` returned HTTP 200 from `https://www.punxsyprominence.org/`, and the desktop app's browser pane loaded the site. Pages behind sign-in still need Jason to sign in; no lane enters credentials. | `curl`, browser pane |
+| ChatGPT's OneDrive write is owner-reported, not observed (2026-08-24) | **Observed.** ChatGPT wrote ledger entry LEDGER-0010 into that ledger file and Claude read it back. | connector read-back |
+
+So on this machine duty 5 below (deployed behaviour against approved
+specification) has an AI instrument for public pages, and a visual claim can
+carry a screenshot. A visual claim without one is still unverified.
 
 ## Report the check, not the conclusion (owner instruction, 2026-08-20)
 
@@ -257,6 +302,9 @@ page looks, above all -- say so in the same sentence rather than in a caveat
 further down. `docs/CHATGPT-AUDIT-LANE.md` records that no AI lane can load a
 deployed page, so **every visual claim in this project is unverified by
 construction** and must be stated that way without being asked.
+*[2026-09-21: from Jason's PC Claude can load and screenshot public pages --
+see the capability update under Working channel. A visual claim without a
+screenshot is still unverified.]*
 
 ## Independent verification duties (agreed by both lanes, 2026-08-20)
 
@@ -301,6 +349,8 @@ load a deployed page. Claude's sandbox refuses outbound HTTPS; ChatGPT's
 browser tool could not load the staging URL. Duty 5 therefore rests entirely
 on the owner opening the page. No lane should imply deployed behaviour is
 being independently watched while that holds.
+*[2026-09-21: no longer holds for public pages on Jason's PC -- see the
+capability update under Working channel.]*
 
 ## Evidence is applicable, or it is not evidence (2026-08-28)
 
@@ -655,6 +705,9 @@ agent pays for them once. Every one was observed, not inferred; where a claim
 has an obvious way to check it, the check is named.
 
 **Running the tests**
+
+*Observed in the cloud container sandbox the parallel lanes use (Linux, `/opt`
+paths). Not checked on Windows.*
 
 - `npm test` in full is **OOM-killed** in the standard agent sandbox — it dies
   with exit code 137 and no failing test, which reads like a crash and is not
