@@ -68,7 +68,16 @@ Stop instead of producing `RELEASE READY` when any item is unknown or failed.
 Production promotion requires a separate explicit instruction from Jason, such as `Promote that release`.
 
 1. If migrations are required, dispatch the production migration workflow first and verify its result. Do not type `CONFIRMED` from assumption or from a merged SQL file alone.
-2. Dispatch `.github/workflows/deploy-production.yml` from `main` using:
+2. If the release introduces or changes reference data the new code depends
+   on, seed it **before** `deploy-production`, after the migrations: read
+   **production's own** seed account fresh (`check-database`, seed-identity,
+   production), run `seed-reference-data` as a dry-run, then apply with that
+   account. Never reuse staging's: staging used a lowercase admin address, and
+   production is a different, capital-A account. Deploying first leaves
+   production serving code whose catalogs are empty, which the archived
+   2026-08-24/25 release record shows, and whose planned sequence was
+   migrations, seed identity, seed dry-run and apply, then deploy.
+3. Dispatch `.github/workflows/deploy-production.yml` from `main` using:
 
 ```text
 confirm_sha: <exact prepared SHA>
@@ -77,12 +86,8 @@ migrations_complete: CONFIRMED
 allow_rollback: NO
 ```
 
-3. GitHub must halt at the protected `production` environment for Jason's approval. No AI approves that checkpoint.
-4. The workflow must verify the production schema, digest availability, rollback direction, deployment, and smoke checks.
-5. Seeding production reference data reads **production's own** seed account
-   fresh (`check-database`, seed-identity, production) and uses it. Never reuse
-   staging's: staging used a lowercase admin address, and production is a
-   different, capital-A account.
+4. GitHub must halt at the protected `production` environment for Jason's approval. No AI approves that checkpoint.
+5. The workflow must verify the production schema, digest availability, rollback direction, deployment, and smoke checks.
 
 A schema check is verified by running it, not by searching its source.
 `pilot-verify-schema.mjs` derives its expected objects from the migration SQL at
