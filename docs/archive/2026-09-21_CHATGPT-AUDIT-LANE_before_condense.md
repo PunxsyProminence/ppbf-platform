@@ -1,4 +1,4 @@
-> **ARCHIVED 2026-09-21.** Verbatim text of `docs/CHATGPT-AUDIT-LANE.md` at `4c3cb315524e4d8d1dcbdbd01c3f4079d7ca1c1b`, before it was
+> **ARCHIVED 2026-09-21.** Verbatim text of `docs/CHATGPT-AUDIT-LANE.md` at `80c288d3c5e6c12c5a906691718caf9b7af50fe0`, before it was
 > condensed. History and provenance only: the current rules are in `docs/CHATGPT-AUDIT-LANE.md`.
 > Do not preload. Everything below the line is unchanged.
 
@@ -133,7 +133,7 @@ until the first order failed.
 | Write this repository | **No, by contract.** Read-only. |
 | Load a deployed page | **No.** ChatGPT's browser tool could not load the staging URL. |
 | SharePoint / OneDrive / Google Drive in one conversation | **Yes**, as separate connector calls, not one unified query. |
-| Write to OneDrive | **Owner reports this is now yes; not verified here.** The row read "No -- the Microsoft connector exposes no upload, create, overwrite, move, rename or delete action to ChatGPT". Owner decision 2026-08-24: the current tooling exposes controlled storage mutation actions, and any documentation saying ChatGPT categorically cannot write, move or rename in OneDrive is stale. **Claude has not observed a ChatGPT storage mutation and does not certify it** -- this table's whole premise is "proved, not claimed", and the proof for this row belongs to ChatGPT's own round trip. The storage mutation limits below are unchanged and bind whatever the capability turns out to be. **Observed 2026-09-21:** ChatGPT wrote entry LEDGER-0010 into `PPBF-AI-Lanes/PPBF_DECISION_HANDOFF_LEDGER.md` and Claude read it back through the connector. |
+| Write to OneDrive | **Yes -- observed 2026-09-21 (end of this row).** History: on 2026-08-24 the owner reported this as yes, not verified here at the time. The row read "No -- the Microsoft connector exposes no upload, create, overwrite, move, rename or delete action to ChatGPT". Owner decision 2026-08-24: the current tooling exposes controlled storage mutation actions, and any documentation saying ChatGPT categorically cannot write, move or rename in OneDrive is stale. At that time Claude had not observed a ChatGPT storage mutation and did not certify it -- this table's whole premise is "proved, not claimed", and the proof for this row belonged to ChatGPT's own round trip. The storage mutation limits below are unchanged and bind whatever the capability turns out to be. **Observed 2026-09-21:** ChatGPT wrote entry LEDGER-0010 into `PPBF-AI-Lanes/PPBF_DECISION_HANDOFF_LEDGER.md` and Claude read it back through the connector. |
 
 **Claude's side of the same question, checked 2026-08-25 and recorded here
 because this is the file that keeps capability truth.** This table is
@@ -154,18 +154,16 @@ for the working routes.
 
 ### Two consequences, stated rather than implied
 
-**The handoff folder is not an automatic loop -- pending one round trip.**
+**The handoff loop -- round trip observed 2026-09-21 for the ledger file (end of this section).**
 `ChatGPT-Handoffs/` exists, Claude can write to it, ChatGPT can read it -- so
 it works Claude-to-ChatGPT and as somewhere Jason can drop a file. As written
 on 2026-08-20 it did **not** work ChatGPT-to-Claude, because the connector
 exposed ChatGPT no write action.
 
-The owner's 2026-08-24 decision says that tooling limit is stale. The
-condition this paragraph set is unchanged and is now the operative one:
-**until a write action is round-trip verified from ChatGPT's own side**,
-handoffs are relayed by Jason. Claude has not observed that round trip and is
-not the party who can. This is a statement about which evidence exists, not a
-claim that the capability is absent.
+The owner's 2026-08-24 decision said that tooling limit was stale. From then
+until 2026-09-21 the condition this paragraph set was the operative one:
+until a write action was round-trip verified from ChatGPT's own side,
+handoffs were relayed by Jason, and Claude had not observed that round trip.
 
 **2026-09-21:** that round trip is now observed for the ledger file: ChatGPT
 wrote an entry and Claude read it back.
