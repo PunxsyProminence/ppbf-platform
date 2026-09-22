@@ -21,11 +21,11 @@ Four adjacent checks exist and this one replaces none of them. They stack:
 
 | question | answered by |
 |---|---|
-| Did the suite that covers this actually run? | `scripts/ci-classify-paths.mjs`, `scripts/suiteAttendanceReporter.js`, `src/testing/safetyCriticalSuites.json` |
+| Did the suite that covers this actually run? | `scripts/ci-classify-paths.mjs`, `apps/web/scripts/suiteAttendanceReporter.js`, `apps/web/src/testing/safetyCriticalSuites.json` |
 | Does the test fail when the behaviour it names is broken? | mutation: watch it go red, then restore |
 | **Does this instrument measure THIS claim?** | **this file** |
 | How strong is the instrument? | the evidence ladder below |
-| Was deployed state observed, or inferred from source? | `docs/AI_DELIVERY_PIPELINE.md`, `docs/current/PRODUCTION_STATE.json` |
+| Was deployed state observed, or inferred from source? | live evidence, per `docs/AI_DELIVERY_PIPELINE.md` (it outranks `docs/current/PRODUCTION_STATE.json`, last updated 2026-08-28) |
 
 The first two can both pass while the third fails. In PR #755 four suites ran,
 61 cases were green, and three of them were incapable of failing for the reason
@@ -74,10 +74,14 @@ and **no claim inherits a level stronger than the instrument that produced
 it**. A run against staging is evidence at that level for what the run
 executed, and evidence of nothing at all for the rest of the release.
 
-The last rung sits where it does for one reason: no AI lane in this project can
-load a deployed page (`docs/CHATGPT-AUDIT-LANE.md`, and the kernel's known
-gap). Every visual claim here is unverified by construction until a person
-opens the page, and must be written that way without being asked.
+The last rung sits where it does because it is the one instrument no automated
+run supplies: a person looking. Where an AI lane can load a deployed page, a
+screenshot of the running page is evidence at the environment's own rung --
+from Jason's PC Claude can load public pages (checked 2026-09-21; the kernel's
+Capabilities table), ChatGPT could not load the staging URL (2026-08-20), and
+signed-in pages still need Jason. A visual claim with neither a screenshot nor
+a person opening the page is unverified, and must be written that way without
+being asked.
 
 `LOCAL_RUNTIME` covers a real execution somewhere that is not a deployed
 environment: a container, a sandbox, or a **GitHub Actions runner**. In this
@@ -103,7 +107,7 @@ answers completely is slower, flakier and no more applicable.
 | a SQL predicate, a constraint, a migration's effect | `.pg.test.ts` against real Postgres, with the migration applied first |
 | a guarantee that depends on two components interleaving | drive both, concurrently, through the shipped functions |
 | what a deployed environment contains | a run against that environment, read from the run's own output |
-| what a page looks like | a person opening it |
+| what a page looks like | a person opening it, or a screenshot of the running page |
 
 **Mutation is not always required and saying so is not a loophole.** A
 production version read has nothing to mutate. A source-only structural claim
@@ -157,7 +161,7 @@ gate stubbed open.
 gate works.*
 
 **Wrong UI target — the right word in the wrong place.**
-PR #814. The assertion was that `Unavailable` appeared somewhere on the coach
+PR #814 (closed unmerged; the repair landed as #898). The assertion was that `Unavailable` appeared somewhere on the coach
 screen. It already appeared elsewhere, so the case stayed green while the
 target tiles still rendered a confident `0` over a queue nobody could read. The
 repair walks from a named label to its own tile and asserts that tile's value,
@@ -196,8 +200,8 @@ hedge. It runs in CI on the pull request body via
 grades the other declaration a pull request body has to get right -- and
 locally as `node apps/web/scripts/check-evidence-applicability.mjs <file>`.
 There is deliberately no npm script for it: `apps/web/package.json` carries
-per-migration registrations and is open in nine branches at the time of
-writing, and a convenience alias is not worth a conflict in that file.
+per-migration registrations and was open in nine branches when this was
+written (2026-08-28), and a convenience alias is not worth a conflict in that file.
 
 It is **opt-in**: a body carrying no record passes. Requiring a record on every
 pull request would red every branch open today for a reason unrelated to its
