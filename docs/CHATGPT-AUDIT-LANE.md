@@ -8,6 +8,13 @@ side actually proved rather than what either claimed.
 Live contract. If the repository and this document disagree, the repository
 wins and this document is wrong.
 
+**Amendment (owner decision, 2026-09-21).** ChatGPT is now also the
+**designer** (product and system specs, work orders; Jason approves a design
+before it is built) and the **standards enforcer** (reviews). It stays
+read-only on this repository. The primary Claude session is no longer the
+project command thread; Claude is the builder. See `AGENT_KERNEL.md`, Working
+channel, and OD-2026-09-21-001 in `docs/current/OWNER_DECISIONS.md`.
+
 ## The lane
 
 ChatGPT owns:
@@ -31,6 +38,7 @@ the primary Claude session is the project command thread, by owner decision of
 2026-08-20. ChatGPT's earlier reading -- that the 2026-08-19 text was
 repository-scoped -- was correct about the text, and is recorded there as
 correct. The owner changed the rule, not the reading.
+*[Superseded 2026-09-21: see the amendment at the top.]*
 
 ## Storage mutation limits
 
@@ -101,6 +109,8 @@ deployed behaviour against approved specification.
 
 They bind harder under the 2026-08-20 decision, not less: project command,
 repository command and repository implementation now sit on one party.
+*[2026-09-21: design and standards moved to ChatGPT, which splits that
+concentration; the duties are unchanged.]*
 Pushback from Claude against one of these is a review issue, not a debate.
 
 ## Capabilities -- proved, not claimed
@@ -117,7 +127,7 @@ until the first order failed.
 | Write this repository | **No, by contract.** Read-only. |
 | Load a deployed page | **No.** ChatGPT's browser tool could not load the staging URL. |
 | SharePoint / OneDrive / Google Drive in one conversation | **Yes**, as separate connector calls, not one unified query. |
-| Write to OneDrive | **Owner reports this is now yes; not verified here.** The row read "No -- the Microsoft connector exposes no upload, create, overwrite, move, rename or delete action to ChatGPT". Owner decision 2026-08-24: the current tooling exposes controlled storage mutation actions, and any documentation saying ChatGPT categorically cannot write, move or rename in OneDrive is stale. **Claude has not observed a ChatGPT storage mutation and does not certify it** -- this table's whole premise is "proved, not claimed", and the proof for this row belongs to ChatGPT's own round trip. The storage mutation limits below are unchanged and bind whatever the capability turns out to be. |
+| Write to OneDrive | **Owner reports this is now yes; not verified here.** The row read "No -- the Microsoft connector exposes no upload, create, overwrite, move, rename or delete action to ChatGPT". Owner decision 2026-08-24: the current tooling exposes controlled storage mutation actions, and any documentation saying ChatGPT categorically cannot write, move or rename in OneDrive is stale. **Claude has not observed a ChatGPT storage mutation and does not certify it** -- this table's whole premise is "proved, not claimed", and the proof for this row belongs to ChatGPT's own round trip. The storage mutation limits below are unchanged and bind whatever the capability turns out to be. **Observed 2026-09-21:** ChatGPT wrote entry LEDGER-0010 into `PPBF-AI-Lanes/PPBF_DECISION_HANDOFF_LEDGER.md` and Claude read it back through the connector. |
 
 **Claude's side of the same question, checked 2026-08-25 and recorded here
 because this is the file that keeps capability truth.** This table is
@@ -125,7 +135,7 @@ ChatGPT's; the row that kept costing rounds is Claude's.
 
 | Capability | Status |
 |---|---|
-| Claude reads a SharePoint/OneDrive item's *contents* | **No.** The connector renders an image for viewing and does not return file contents. No download action, no unzip, `downloadUrl` null. A zip is completely inaccessible. |
+| Claude reads a SharePoint/OneDrive item's *contents* | **No.** The connector renders an image for viewing and does not return file contents. No download action, no unzip, `downloadUrl` null. A zip is completely inaccessible. **2026-09-21, Claude on Jason's PC: text files yes** -- the connector's `read_resource` returned the ledger file's full text. Binary bytes not checked. |
 | Claude lands a binary already reachable from its sandbox | **Yes**, and since the owner's 2026-08-25 ruling it may do so when directed. |
 | Claude re-encodes a JPEG | **No.** No `cjpeg`, `jpegtran`, ImageMagick or Pillow. Bad plates are refused and named, not corrected. |
 
@@ -151,6 +161,9 @@ handoffs are relayed by Jason. Claude has not observed that round trip and is
 not the party who can. This is a statement about which evidence exists, not a
 claim that the capability is absent.
 
+**2026-09-21:** that round trip is now observed for the ledger file: ChatGPT
+wrote an entry and Claude read it back.
+
 Claude built that folder, verified its own round trip, and declared the
 mechanism live. That was one side of a two-sided contract, and ChatGPT was
 right to refuse to claim it worked.
@@ -166,14 +179,18 @@ whose text was unreadable, and why the owner's screenshot found in five
 seconds what 6,900 passing tests could not. **Jason's eye on the live URL is
 not a formality in this system. It is the only visual verification that
 exists.** No lane may imply otherwise while this holds.
+*[2026-09-21: Claude on Jason's PC can load public pages (`curl` HTTP 200;
+the browser pane loaded the site) and screenshot them. Signed-in pages still
+need Jason. See the capability update in `AGENT_KERNEL.md`.]*
 
 ## Governance sources
 
 `AGENT_KERNEL.md` is the repository startup and execution contract.
 
 Broader AI governance, storage authority, routing and promotion rules are
-governed by the ACTIVE source in OneDrive at `Documents/Library Intake/
-_CONTROL - Registers and Coverage Maps/AI_GOVERNANCE/ACTIVE_APPROVED_SOURCE/`.
+governed by the ACTIVE source in the Admin@ OneDrive, at the drive root:
+`Library Intake/_CONTROL - Registers and Coverage Maps/AI_GOVERNANCE/ACTIVE_APPROVED_SOURCE/`
+(checked 2026-09-21).
 That source is deliberately **not** duplicated into this repository, per
 ChatGPT's point that a controlled source should not be copied merely to make
 the repository self-contained.
@@ -187,7 +204,8 @@ reported wider than it was run, and exactly what duty four exists to catch.
 - **Two manifests both named `_ACTIVE`** sit in `ACTIVE_APPROVED_SOURCE/`
   (`..._MANIFEST_v1_ACTIVE.docx` and `..._v2_ACTIVE.docx`). ChatGPT cites v2;
   v1's body also asserts v2 is controlling. Ambiguous to anyone resolving the
-  chain cold.
+  chain cold. *[Resolved 2026-09-21: v1 and v2 are renamed `_SUPERSEDED`;
+  `2026-09-21_AI_GOVERNANCE_ACTIVE_SOURCE_MANIFEST_v3_ACTIVE.md` is active.]*
 - **Duplicates outside the control folder**, in `PERSONAL - Not Club App or
   Nonprofit/`: a copy of the master and of the v1 manifest.
 - **The ACTIVE master's own body text opens `..._v2_REVIEW_REQUIRED`**, which
