@@ -14,7 +14,7 @@ import type { RabbitHoleLessonItem } from './RabbitHole';
 import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
 import ProfileHeader from './ProfileHeader';
 import TrainingHoldBanner from './TrainingHoldBanner';
-import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
+import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow, type AthleteCountRead } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import ThenAndNow from './ThenAndNow';
 import TrainingCard, { type TrainingSession } from './TrainingCard';
@@ -23,8 +23,9 @@ import useGymSound from './useGymSound';
 import DrillDetail from './drills/DrillDetail';
 import { fromAthleteDrillDetail, type DrillDetailView } from './drills/drillDetailView';
 import { apiBase } from '@/lib/apiBase';
+import { formatCalendarDay } from '@/lib/calendarDay';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
-import { formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
+import { formatGymStamp } from '@/src/lib/gymTime';
 import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
 import type { AthleteDrillDetail } from '@/src/server/pilot/drillLibraryV3';
 
@@ -183,43 +184,40 @@ interface SMARTGoal {
   timeBound: string;
 }
 
-interface FloorTask {
-  id: string;
-  title: string;
-  category: string;
-  description: string;
-  dueDate: string;
-  completed: boolean;
-  priority: 'High' | 'Normal';
-  linkedGoalId?: string;
-}
-
-interface WorkoutBuildInput {
-  checkInAt: Date;
-  activeGoal?: SMARTGoal;
-}
-
 /**
- * What check-in stores. No `athleteName`: the route knows who the principal is,
- * and the literal 'Current Athlete' this used to carry was rendered by the
- * coach workspace as if it were an athlete's identity. No `readiness` either:
- * the check-in slider is an unvalidated self-report (readinessProvenance.ts --
- * nothing passes the established reliability/validity bar), and stamping its
- * band on the stored plan presented the plan as derived from a measurement.
- * The band is still recorded, once, where a record belongs: the session's
- * auto check-in note.
+ * One piece of work a coach assigned this athlete, as the Floor shows it.
+ *
+ * A read of GET /api/pilot/progression/assignments -- the same rows
+ * /athlete/progression-intelligence lists -- carrying only the fields the Floor
+ * draws. Nothing here is derived: the dose and the due date are the coach's,
+ * or absent. The Progression page stays the owner of the full record, the
+ * drill instruction and the completion log; the Floor links to them.
+ *
+ * The Floor used to hold a plan this component generated at check-in -- the
+ * same three items for every athlete, stored as if it were somebody's plan.
+ * That is gone (A-FIN-04): the Floor is what a coach assigned, or it says
+ * nobody has.
  */
-interface StoredAthleteFloorPlan {
-  generatedAt: string;
-  tasks: Array<{
-    id: string;
-    title: string;
-    category: string;
-    description: string;
-    dueDate: string;
-    priority: 'High' | 'Normal';
-    linkedGoalId?: string;
-  }>;
+interface CoachWorkItem {
+  assignment_id: string;
+  drill_id?: string | null;
+  drill_name: string;
+  drill_display_name?: string | null;
+  status: string;
+  rep_count?: number | null;
+  duration_minutes?: number | null;
+  frequency_per_week?: number | null;
+  due_date?: string | null;
+}
+
+/** 'assigned' and 'in_progress' mean "still to do"; the rest are record, not today. */
+function isOpenCoachWork(status: string | undefined): boolean {
+  return status === 'assigned' || status === 'in_progress';
+}
+
+/** Where the Floor sends an athlete to act on one assignment. See the deep-link on that page. */
+function progressionLink(assignmentId: string, intent: 'instruction' | 'log'): string {
+  return `/athlete/progression-intelligence?assignment=${encodeURIComponent(assignmentId)}&intent=${intent}`;
 }
 
 /**
@@ -424,60 +422,6 @@ const KIOSK_TAB_INACTIVE =
 /* Kiosk panel shells — the sheet's materials instead of bordered rectangles. */
 const PANEL = 'mat-leather rounded-[var(--r-lg)] p-[var(--s5)]';
 const PANEL_RAISED = 'mat-leather--raised rounded-[var(--r-lg)] p-[var(--s5)]';
-
-function formatDueTime(checkInAt: Date, offsetMinutes: number): string {
-  const due = new Date(checkInAt.getTime() + offsetMinutes * 60000);
-  return formatGymTimeOfDay(due) ?? '';
-}
-
-/**
- * THE SAME WORK WHATEVER THE SLIDER SAYS, ON PURPOSE.
- *
- * This used to branch on the check-in readiness band: GREEN got "High-output
- * intervals" as a conditioning finisher and a normal-intensity technical
- * block; everyone else got reduced, controlled work. That let an unvalidated
- * 1-10 self-report slider decide what training a child was prescribed --
- * and readinessProvenance.ts is explicit that no readiness method on this
- * platform passes the established reliability/validity bar, so readiness may
- * be recorded but may not decide anything. The branching is removed, not
- * re-tuned: the readiness-specific conditioning slot is gone entirely rather
- * than replaced with an invented "neutral" prescription, and what remains is
- * the fixed, goal-linked list. A genuinely individualized plan is a coach's
- * to author, not this function's to derive from a slider.
- */
-function buildWorkoutFloorTasks({ checkInAt, activeGoal }: WorkoutBuildInput): FloorTask[] {
-  return [
-    {
-      id: `wf_${Date.now()}_1`,
-      title: 'Dynamic Warmup + Mobility',
-      category: 'Training',
-      description: '10-12 minute activation block: hips, shoulders, ankles, and core bracing.',
-      dueDate: formatDueTime(checkInAt, 10),
-      completed: false,
-      priority: 'High',
-    },
-    {
-      id: `wf_${Date.now()}_2`,
-      title: 'Technical Boxing Block',
-      category: 'Training',
-      description: 'Footwork progression + combination reps.',
-      dueDate: formatDueTime(checkInAt, 30),
-      completed: false,
-      priority: 'High',
-      linkedGoalId: activeGoal?.id,
-    },
-    {
-      id: `wf_${Date.now()}_3`,
-      title: 'Cooldown + Session Journal',
-      category: 'Homework',
-      description: 'Log notes, recovery signals, and one improvement point for next session.',
-      dueDate: formatDueTime(checkInAt, 80),
-      completed: false,
-      priority: 'Normal',
-      linkedGoalId: activeGoal?.id,
-    },
-  ];
-}
 
 // Fast-Track observation feed: best-effort only. The athlete's check-out
 // (POST /api/pilot/sessions/update) already fully succeeds or fails on its
@@ -699,19 +643,10 @@ export default function AthleteWorkspace() {
   const [newGoalTargetDate, setNewGoalTargetDate] = useState('');
   const [newGoalSuccessMetric, setNewGoalSuccessMetric] = useState('');
 
-  // Floor Tasks State - Real API data
-  const [floorTasks, setFloorTasks] = useState<FloorTask[]>([]);
-  const [tasksLoading, setTasksLoading] = useState(true);
-  const [tasksError, setTasksError] = useState<string | null>(null);
-  // One tick at a time. The whole plan payload is rewritten by each write, so
-  // two in flight at once would lose one -- and a lost tick is exactly the
-  // failure this persistence exists to end. Held boxes are visible; a
-  // silently dropped write is not.
-  const [savingFloorTaskId, setSavingFloorTaskId] = useState<string | null>(null);
-
-  // The work a coach assigned this athlete, counted for the Today card. The
-  // page it belongs to has always existed; nothing on this screen read it.
-  const [assignedWorkOpen, setAssignedWorkOpen] = useState(0);
+  // The work a coach assigned this athlete that is still open: the Floor's
+  // list and the Today card's count, from the one read. Kept in the order the
+  // API returned it -- the Floor does not re-rank a coach's list.
+  const [openCoachWork, setOpenCoachWork] = useState<CoachWorkItem[]>([]);
   const [assignedWorkLoading, setAssignedWorkLoading] = useState(true);
   const [assignedWorkError, setAssignedWorkError] = useState<string | null>(null);
 
@@ -754,7 +689,6 @@ export default function AthleteWorkspace() {
      a variable that can only ever be null, feeding a call that can only ever
      return early, reads as wired while recording nothing. Building the control
      is the work; pretending it exists is not. */
-  const [lastWorkoutBuildNote, setLastWorkoutBuildNote] = useState<string | null>(null);
 
   /* The gym's own noises, off unless this browser opted in. play() is safe to
      call unconditionally: it returns false and does nothing when sound is off,
@@ -769,7 +703,6 @@ export default function AthleteWorkspace() {
   /* Which group is open is DERIVED from the open tab, never stored alongside
      it. Two sources of truth for one selection is how a nav starts lying: the
      tab is the truth, the group is a read of it. */
-  const floorTasksRemaining = floorTasks.filter((task) => !task.completed).length;
   const activeGroup = groupForTab(activeTab);
   const activeGroupTabs = TAB_GROUPS.find((group) => group.id === activeGroup)?.tabs ?? [];
   /* The masthead names where you actually are, the way the approved board
@@ -801,7 +734,12 @@ export default function AthleteWorkspace() {
   const notesDraft = checkInNotes.trim();
   const notesStored = notesDraft.length > 0 && notesDraft === activeSessionRecord?.checkInNote;
   const recentSessions = storedSessions.filter((session) => session.completed).slice(0, 5);
-  const tasksDue = floorTasks.filter(t => !t.completed).length;
+  // Only a successful read is a number. See AthleteCountRead.
+  const openCoachWorkRead: AthleteCountRead = assignedWorkError
+    ? { status: 'unavailable' }
+    : assignedWorkLoading
+      ? { status: 'loading' }
+      : { status: 'read', count: openCoachWork.length };
   /* The day's workout and tasks open once the athlete has checked in (owner
      decision 2026-08-28: they have to do it to see that day's workout and
      tasks, and it must not block any other tool or capability).
@@ -1011,7 +949,7 @@ export default function AthleteWorkspace() {
   }, [loadGoals]);
 
   /**
-   * How much coach-assigned work is still open.
+   * The coach-assigned work that is still open -- what the Floor shows.
    *
    * This is the one thing on the athlete's screen that a person put there by
    * hand, and it was the hardest thing on the screen to find: the drills a
@@ -1020,16 +958,28 @@ export default function AthleteWorkspace() {
    * page. Today states the day back to the athlete, so it has to include the
    * part of the day somebody else set.
    *
-   * Counted, not listed -- the page owns the list. 'assigned' and
+   * Every open item, in the order the API returned it. No "due today" window:
+   * nothing on the record says which day a coach meant work for beyond its
+   * due date, and a window would hide work a coach did assign. 'assigned' and
    * 'in_progress' are the two statuses that mean "still to do"; 'completed',
-   * 'incomplete' and 'cancelled' are record, not today.
+   * 'incomplete' and 'cancelled' are record, not today -- the Progression page
+   * keeps that history.
    *
    * The route derives nothing from this id beyond the athlete named: it runs
    * assertActorCanAccessAthlete, which refuses an athlete any record but their
    * own. The value sent is the one the session handed back.
    */
   const loadAssignedWork = useCallback(async () => {
+    // Identity is still resolving: "Checking..." is telling the truth.
+    if (athleteIdentityState === 'loading') return;
+
     if (!backendAthleteId) {
+      /* Identity RESOLVED with no athlete record -- the same case loadCheckIn
+         handles below. A bare return would leave the Floor on "Loading your
+         coach's work..." for the rest of the session, describing a request
+         that is never going to be made. */
+      setAssignedWorkLoading(false);
+      setAssignedWorkError("This account is not linked to an athlete record, so there is no coach's work to show.");
       return;
     }
 
@@ -1042,16 +992,17 @@ export default function AthleteWorkspace() {
       );
       if (!response.ok) throw new Error('Your assigned work did not load.');
 
-      const data = (await response.json()) as { items?: Array<{ status?: string }> };
-      setAssignedWorkOpen(
-        (data.items ?? []).filter((item) => item.status === 'assigned' || item.status === 'in_progress').length,
-      );
+      const data = (await response.json()) as { items?: CoachWorkItem[] };
+      setOpenCoachWork((data.items ?? []).filter((item) => isOpenCoachWork(item.status)));
     } catch (error) {
+      // A failed read is not an empty list: the error is what renders, and
+      // nothing from an earlier read is left standing as if it were current.
+      setOpenCoachWork([]);
       setAssignedWorkError(error instanceof Error ? error.message : 'Your assigned work did not load.');
     } finally {
       setAssignedWorkLoading(false);
     }
-  }, [backendAthleteId]);
+  }, [backendAthleteId, athleteIdentityState]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -1158,78 +1109,6 @@ export default function AthleteWorkspace() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadTrainingCard();
   }, [loadTrainingCard]);
-
-  /**
-   * Load the athlete's floor tasks from their persisted floor plan.
-   *
-   * Check-in writes the generated plan to pilot.athlete_floor_plans via
-   * POST /api/pilot/floor-plans, so that table — not the session list — is the
-   * durable source for what is on the floor. GET returns plans newest-first.
-   *
-   * `completed` is read off the stored task rather than hardcoded to false,
-   * which it was until PATCH existed to write it. A plan that has just been
-   * generated carries no flag at all, so an absent one is not done -- but a
-   * task the athlete ticked off yesterday comes back ticked, which is the
-   * whole point of storing it.
-   */
-  const loadFloorTasks = useCallback(async () => {
-    if (!backendAthleteId) {
-      return;
-    }
-
-    try {
-      setTasksLoading(true);
-      setTasksError(null);
-      const response = await fetch(`${apiBase()}/api/pilot/floor-plans?limit=1`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-      if (!response.ok) throw new Error('Your floor did not load. Try again.');
-
-      const data = (await response.json()) as {
-        items?: Array<{
-          generatedAt?: string;
-          tasks?: Array<{
-            id: string;
-            title: string;
-            category?: string;
-            description?: string;
-            dueDate?: string;
-            priority?: string;
-            linkedGoalId?: string;
-            completed?: boolean;
-          }>;
-        }>;
-      };
-
-      const latestPlan = data.items?.[0] ?? null;
-      const planTasks: FloorTask[] = (latestPlan?.tasks ?? []).map((task) => ({
-        id: task.id,
-        title: task.title,
-        category: (task.category || 'Training') as FloorTask['category'],
-        description: task.description || '',
-        dueDate: task.dueDate || 'Scheduled',
-        completed: task.completed === true,
-        priority: (task.priority || 'Normal') as FloorTask['priority'],
-        linkedGoalId: task.linkedGoalId,
-      }));
-
-      setFloorTasks(planTasks);
-      if (planTasks.length === 0) {
-        setBackendSyncMessage("Nothing on your floor yet. Check in and today's work gets built.");
-      }
-    } catch (error) {
-      setTasksError(error instanceof Error ? error.message : 'Your floor did not load. Try again.');
-      setFloorTasks([]);
-    } finally {
-      setTasksLoading(false);
-    }
-  }, [backendAthleteId]);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadFloorTasks();
-  }, [loadFloorTasks]);
 
   const loadShadowObservations = useCallback(async () => {
     try {
@@ -1525,76 +1404,6 @@ export default function AthleteWorkspace() {
     }
   };
 
-  /**
-   * Tick a floor task off, and write it down.
-   *
-   * The checkbox moved React state and nothing else until now: an athlete
-   * marked their work done, reloaded, and the floor came back untouched. The
-   * flag is stored on the plan (PATCH /api/pilot/floor-plans), so the floor
-   * after a reload is the floor the record describes.
-   *
-   * Optimistic then reverted, the same shape handleUpdateGoalProgress already
-   * uses -- a checkbox that waits for a round trip reads as broken on a gym
-   * tablet. What must not happen is a tick that stays on screen with nothing
-   * behind it, so a refused write puts the box back and says so.
-   *
-   * The route takes no athlete_id: it writes the principal's own current plan.
-   */
-  const handleToggleFloorTask = async (taskId: string) => {
-    const task = floorTasks.find((candidate) => candidate.id === taskId);
-    if (!task || savingFloorTaskId) {
-      return;
-    }
-
-    const wasCompleted = task.completed;
-    const nextCompleted = !wasCompleted;
-    const putItBack = () => setFloorTasks((current) => current.map(
-      (candidate) => (candidate.id === taskId ? { ...candidate, completed: wasCompleted } : candidate),
-    ));
-
-    setFloorTasks((current) => current.map(
-      (candidate) => (candidate.id === taskId ? { ...candidate, completed: nextCompleted } : candidate),
-    ));
-
-    if (!backendAthleteId) {
-      // There is no local task store -- the plan exists only in
-      // pilot.athlete_floor_plans -- so without a session nothing is written
-      // anywhere.
-      putItBack();
-      setBackendSyncMessage("That did not save. You are not signed in right now -- sign in again and tick it off.");
-      return;
-    }
-
-    setSavingFloorTaskId(taskId);
-
-    try {
-      const response = await fetch(`${apiBase()}/api/pilot/floor-plans`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_id: taskId, completed: nextCompleted }),
-      });
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({ error: 'That did not save.' }))) as { error?: string };
-        putItBack();
-        setBackendSyncMessage(`${payload.error || 'That did not save.'} `
-          + 'Nothing was written down, so the box went back to where it was.');
-        return;
-      }
-
-      setBackendSyncMessage(nextCompleted
-        ? `Marked done: ${task.title}.`
-        : `Put back on your floor: ${task.title}.`);
-    } catch (error) {
-      putItBack();
-      setBackendSyncMessage(`${error instanceof Error ? error.message : 'That did not save.'} `
-        + 'Nothing was written down, so the box went back to where it was.');
-    } finally {
-      setSavingFloorTaskId(null);
-    }
-  };
-
   const handleCheckIn = async () => {
     // A second check-in over an open session would leave the first one open
     // forever, which is the state this screen exists to get out of.
@@ -1604,69 +1413,22 @@ export default function AthleteWorkspace() {
 
     const now = new Date();
     // The band is classified here for exactly one purpose: the session's
-    // auto check-in NOTE -- a record of how the athlete said they felt. It is
-    // deliberately not an input to buildWorkoutFloorTasks and not a field on
-    // the stored plan: the slider is an unvalidated self-report
-    // (readinessProvenance.ts), so it may be written down but may not change
-    // what work is generated, shown, or sent anywhere.
+    // auto check-in NOTE -- a record of how the athlete said they felt. The
+    // slider is an unvalidated self-report (readinessProvenance.ts), so it may
+    // be written down but may not change what work is shown or sent anywhere.
     const readiness = getReadinessLevel(readinessToTrain);
-    const activeGoal = smartGoals.find((goal) => goal.status === 'Active');
-    const generatedTasks = buildWorkoutFloorTasks({
-      checkInAt: now,
-      activeGoal,
-    });
 
-    setIsCheckingIn(true);
-    setFloorTasks((current) => {
-      const keepCompleted = current.filter((task) => task.completed);
-      return [...generatedTasks, ...keepCompleted];
-    });
-
-    const floorPlanPayload: StoredAthleteFloorPlan = {
-      generatedAt: now.toISOString(),
-      tasks: generatedTasks.map((task) => ({
-        id: task.id,
-        title: task.title,
-        category: task.category,
-        description: task.description,
-        dueDate: task.dueDate,
-        priority: task.priority,
-        linkedGoalId: task.linkedGoalId,
-      })),
-    };
-
-    // States the record and, in the same breath, that the record decided
-    // nothing -- the honest answer to an athlete wondering whether sliding
-    // low got them an easier day.
-    setLastWorkoutBuildNote(`Built at your check-in. You came in ${readiness} -- that is recorded on your session, and it does not change the work.`);
-    setActiveTab('athlete-floor');
-
+    // Check-in builds nothing. It used to generate a plan -- the same three
+    // items for everyone -- and POST it to /api/pilot/floor-plans as today's
+    // floor. The Floor is now the work a coach assigned (A-FIN-04), so the only
+    // thing this writes is the session.
     if (!backendAthleteId) {
-      setIsCheckingIn(false);
-      setBackendSyncMessage("Your workout is built, but nothing was saved -- you are not signed in. "
+      setBackendSyncMessage("That check-in did not take -- you are not signed in, so nothing was saved. "
         + "There is no session to check out of, so tell a coach you are here.");
       return;
     }
 
-    try {
-      const floorPlanResponse = await fetch(`${apiBase()}/api/pilot/floor-plans`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          athlete_id: backendAthleteId,
-          plan: floorPlanPayload,
-        }),
-      });
-
-      // Re-read the persisted plan so the floor shows what was actually stored
-      // rather than only the locally generated tasks.
-      if (floorPlanResponse.ok) {
-        await loadFloorTasks();
-      }
-    } catch {
-      // Floor plan persistence is secondary to session check-in.
-    }
+    setIsCheckingIn(true);
 
     const sessionId = `session_${Date.now()}`;
     const sessionDate = now.toISOString().slice(0, 10);
@@ -1709,10 +1471,18 @@ export default function AthleteWorkspace() {
           createdAt: now.toISOString(),
         });
         setNotesSaveState(checkInNotes.trim() ? 'saved' : 'idle');
-        setBackendSyncMessage("You are checked in. Today's work is on your floor.");
-        // Accepted — two notes rising a fifth. It confirms the line above and
-        // the floor that just filled with today's work; it never carries
-        // anything they do not.
+        // Where a stored check-in takes the athlete depends on the one gate
+        // this screen has (floorLockedPendingCheckIn): with today's wellness
+        // recorded, straight to their coach's work; without it, to Wellness,
+        // which is what opens that work. A check-in that did not store goes
+        // nowhere -- the message is the whole answer, and moving the athlete
+        // off the screen they pressed it on would bury it.
+        setActiveTab(floorLockedPendingCheckIn ? 'bio-checkin' : 'athlete-floor');
+        setBackendSyncMessage(floorLockedPendingCheckIn
+          ? 'You are checked in. Do your wellness check next -- it opens your floor.'
+          : "You are checked in. Your coach's work is on your floor.");
+        // Accepted — two notes rising a fifth. It confirms the line above; it
+        // never carries anything that line does not.
         play('accept');
         // The card gains an open box for the session just started. Without
         // this it still showed yesterday's card until the next page load.
@@ -2122,7 +1892,7 @@ export default function AthleteWorkspace() {
                   them is true before anything has happened. */}
               <section className={PANEL}>
                 <h3 className="t-label">Today</h3>
-                <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-3 lg:grid-cols-4">
+                <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-3">
                   <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
                     <p className="t-label">Check in</p>
                     <p className="t-body text-[color:var(--bone-300)]">
@@ -2146,32 +1916,6 @@ export default function AthleteWorkspace() {
                   </div>
 
                   <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
-                    <p className="t-label">Your floor plan</p>
-                    {/* The plan is built at check-in around the athlete's
-                        active goal (buildWorkoutFloorTasks) -- the same fixed
-                        list whatever the readiness slider says, and not
-                        handed down by a coach -- so this must never be worded
-                        as "assignments from your coach". Saying where it comes
-                        from is also the honest answer to why checking in is
-                        first: before check-in there is genuinely nothing here
-                        yet, rather than something being withheld. */}
-                    <p className="t-body text-[color:var(--bone-300)]">
-                      {floorTasks.length === 0
-                        ? 'Built for you when you check in.'
-                        : `${floorTasksRemaining} of ${floorTasks.length} left.`}
-                    </p>
-                    {floorTasks.length > 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('athlete-floor')}
-                        className="btn btn--kiosk btn--ghost w-full"
-                      >
-                        Open the floor
-                      </button>
-                    ) : null}
-                  </div>
-
-                  <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s3)]">
                     <p className="t-label">Your goals</p>
                     <p className="t-body text-[color:var(--bone-300)]">
                       {goalsError
@@ -2192,10 +1936,10 @@ export default function AthleteWorkspace() {
                   </div>
 
                   {/* The one card on Today that is not about what the athlete
-                      decided. The floor plan above is generated from their own
-                      check-in; this is what a coach assigned them, and until
-                      now the only route to it from this workspace was a
-                      collapsed <details> at the very foot of the page.
+                      decided: what a coach assigned them. It opens the Floor,
+                      which lists that work -- until A-FIN-04 the Floor held a
+                      plan generated at check-in instead, and the coach's work
+                      was reachable only from a page this card linked away to.
 
                       Same grammar as its siblings: an empty collection says
                       "none recorded" rather than showing a 0, and a read that
@@ -2207,16 +1951,17 @@ export default function AthleteWorkspace() {
                         ? 'Not available right now.'
                         : assignedWorkLoading
                           ? 'Checking...'
-                          : assignedWorkOpen === 0
+                          : openCoachWork.length === 0
                             ? 'No assigned work recorded.'
-                            : `${assignedWorkOpen} still to do.`}
+                            : `${openCoachWork.length} still to do.`}
                     </p>
-                    <Link
-                      href="/athlete/progression-intelligence"
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('athlete-floor')}
                       className="btn btn--kiosk btn--ghost w-full"
                     >
-                      Open your progression
-                    </Link>
+                      Open the floor
+                    </button>
                   </div>
                 </div>
 
@@ -2247,8 +1992,8 @@ export default function AthleteWorkspace() {
                 title="My Dashboard"
                 description="Your daily command center. Say how you feel, check in, see assigned work, and monitor your progress toward goals."
                 usage={[
-                  'Check in to open your session and build today\'s floor',
-                  'Review today\'s floor tasks',
+                  'Check in to open your session',
+                  'See how much work your coach has assigned you',
                   'Monitor active SMART goals',
                   'Note any pain or injury concerns'
                 ]}
@@ -2504,48 +2249,41 @@ export default function AthleteWorkspace() {
 
           {activeTab === 'athlete-floor' && !floorLockedPendingCheckIn && (
             <div className="space-y-6 panel-settle">
-              {lastWorkoutBuildNote && (
-                <div className={PANEL}>
-                  <p className="t-eyebrow">Today&apos;s Work</p>
-                  <p className="mt-[var(--s2)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">{lastWorkoutBuildNote}</p>
-                </div>
-              )}
               <HelpPanel
                 title="Athlete Floor"
-                description="Execute your daily assignments. Track training, homework, and goal-linked work with completion status."
+                description="The work your coach assigned you that is still open. Open a drill to read how it is done, and log it once you have done it."
                 usage={[
-                  'Review all tasks for the day',
-                  'Mark tasks complete as you finish them',
-                  'Link tasks to your active SMART goals',
-                  'Write down what you did and how it felt'
+                  'See every piece of open work your coach assigned',
+                  'Open a drill to read how it is done -- reading it records nothing',
+                  'Log completion when you have done the work',
+                  'Check the due date your coach set'
                 ]}
                 mistakes={[
-                  'Overlooking tasks marked as High priority',
-                  'Not linking tasks to relevant goals',
-                  'Missing deadlines by not checking due dates'
+                  'Finishing work and not logging it, so your coach cannot see it',
+                  'Missing a due date by not checking the floor'
                 ]}
               />
 
-              {tasksLoading && (
+              {assignedWorkLoading && (
                 <div className={`${PANEL} text-center`}>
-                  <span className="working">Loading your tasks...</span>
+                  <span className="working">Loading your coach&apos;s work...</span>
                 </div>
               )}
 
-              {tasksError && !tasksLoading && (
+              {/* A failed read is never drawn as an empty floor: "nobody has
+                  assigned you anything" is a claim about a coach, and a
+                  network failure is not evidence for it. */}
+              {assignedWorkError && !assignedWorkLoading && (
                 <div className="alert alert--critical" role="alert">
                   <span className="alert-icon" aria-hidden="true">✕</span>
                   <div className="alert-body">
-                    <p className="alert-title">Could not load your floor</p>
-                    <p className="alert-msg">{tasksError}</p>
+                    <p className="alert-title">Could not load your coach&apos;s work</p>
+                    <p className="alert-msg">{assignedWorkError}</p>
                     <div className="alert-action">
                       <button
-                        onClick={() => {
-                          setTasksError(null);
-                          void loadFloorTasks();
-                        }}
+                        onClick={() => void loadAssignedWork()}
                         className="btn btn--ghost min-h-[var(--tap)]"
-                        aria-label="Retry loading tasks"
+                        aria-label="Retry loading your coach's work"
                       >
                         Retry
                       </button>
@@ -2554,61 +2292,83 @@ export default function AthleteWorkspace() {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
-                {floorTasks.map(task => (
-                  <div
-                    key={task.id}
-                    className={`mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)] ${
-                      task.completed ? 'border-2 border-[color:var(--cleared)]' : ''
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-[var(--s4)] mb-[var(--s4)]">
-                      <div>
-                        <span className="t-label mb-[var(--s3)] inline-block rounded-[var(--r-sm)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)]">{task.category}</span>
-                        <h4 className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{task.title}</h4>
-                        {task.completed ? (
-                          <span className="badge badge--cleared mt-[var(--s3)]"><i>✓</i>Done</span>
-                        ) : null}
+              {/* One card per open assignment, in the order the API returned
+                  them. Every figure is the coach's, drawn only when they set
+                  it -- an absent dose is left absent, never filled with a
+                  default that would read as an instruction.
+
+                  The two actions are LINKS to the Progression page's own
+                  controls, not copies of them (see the deep-link there): one
+                  drill opener, one log form, one place a completion is
+                  written. Open drill writes nothing; Log completion opens the
+                  form, and only its Save writes. */}
+              {!assignedWorkLoading && !assignedWorkError && openCoachWork.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
+                  {openCoachWork.map((work) => {
+                    const name = work.drill_display_name || work.drill_name;
+                    return (
+                      <div key={work.assignment_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s4)]">
+                        <div className="flex items-start justify-between gap-[var(--s4)]">
+                          <h4 className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{name}</h4>
+                          <span className="t-label">{work.status.replaceAll('_', ' ')}</span>
+                        </div>
+                        <dl className="grid grid-cols-2 gap-[var(--s3)] text-[length:var(--t-sm)]">
+                          {work.rep_count != null && (
+                            <div>
+                              <dt className="t-label">Reps</dt>
+                              <dd className="t-data mt-[var(--s2)]">{work.rep_count}</dd>
+                            </div>
+                          )}
+                          {work.duration_minutes != null && (
+                            <div>
+                              <dt className="t-label">Duration</dt>
+                              <dd className="t-data mt-[var(--s2)]">{work.duration_minutes} min</dd>
+                            </div>
+                          )}
+                          {work.frequency_per_week != null && (
+                            <div>
+                              <dt className="t-label">Frequency</dt>
+                              <dd className="t-data mt-[var(--s2)]">{work.frequency_per_week}x/week</dd>
+                            </div>
+                          )}
+                          {work.due_date && (
+                            <div>
+                              <dt className="t-label">Due</dt>
+                              <dd className="t-data mt-[var(--s2)]">{formatCalendarDay(work.due_date)}</dd>
+                            </div>
+                          )}
+                        </dl>
+                        <div className="flex flex-wrap gap-[var(--s3)]">
+                          {work.drill_id ? (
+                            <Link
+                              href={progressionLink(work.assignment_id, 'instruction')}
+                              aria-label={`Open drill: ${name}`}
+                              className="btn btn--kiosk btn--ghost"
+                            >
+                              Open drill
+                            </Link>
+                          ) : null}
+                          <Link
+                            href={progressionLink(work.assignment_id, 'log')}
+                            aria-label={`Log completion: ${name}`}
+                            className="btn btn--kiosk"
+                          >
+                            Log completion
+                          </Link>
+                        </div>
                       </div>
-                      <input
-                        type="checkbox"
-                        checked={task.completed}
-                        // Held while any tick is being written, because the
-                        // whole plan is rewritten by each write and two at
-                        // once would lose one. See handleToggleFloorTask.
-                        disabled={savingFloorTaskId !== null}
-                        onChange={() => void handleToggleFloorTask(task.id)}
-                        aria-label={`Mark done: ${task.title}`}
-                        className="h-[21px] w-[21px] cursor-pointer accent-[var(--brass-600)] disabled:cursor-wait"
-                      />
-                    </div>
-                    <p className="mb-[var(--s4)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{task.description}</p>
-                    <div className="flex items-center justify-between text-[length:var(--t-sm)] text-[color:var(--bone-400)]">
-                      <span>⏰ {task.dueDate}</span>
-                      {/* Priority is chrome, not a safety state: bold bone with a
-                          glyph for High, muted for Normal (Laws 2 + 3). */}
-                      <span className={`font-semibold uppercase ${task.priority === 'High' ? 'text-[color:var(--bone-100)]' : 'text-[color:var(--bone-400)]'}`}>
-                        {task.priority === 'High' ? <span aria-hidden="true">▲ </span> : null}{task.priority}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
 
-              {/* AN EMPTY FLOOR IS THE HERO, not a footnote.
-                  Same two sentences as before, word for word, given the room
-                  the approved board gives them -- because on the day an
-                  athlete first opens this tab, this IS the screen, and it used
-                  to be one grey line under a help panel.
-
-                  The button is the point. The old empty state named the action
-                  ("check in") and offered no way to do it: the athlete had to
-                  work out that check-in lives on a different tab. This calls
-                  the same handleCheckIn as the Dashboard's card and the
-                  Session Log's button -- one behaviour, three doors -- and it
-                  is drawn only when there is no open session, exactly as the
-                  Dashboard card is. */}
-              {!tasksLoading && !tasksError && floorTasks.length === 0 && (
+              {/* AN EMPTY FLOOR IS THE HERO, not a footnote. On the day an
+                  athlete opens this tab to nothing, this IS the screen. It
+                  says the true thing -- no coach has assigned open work -- and
+                  offers nothing to press that would pretend otherwise. It used
+                  to promise that checking in would build the day's work, and
+                  checking in no longer builds anything. */}
+              {!assignedWorkLoading && !assignedWorkError && openCoachWork.length === 0 && (
                 <div className={`${PANEL} px-[var(--s5)] py-[var(--s7)] text-center`}>
                   <span
                     aria-hidden="true"
@@ -2618,26 +2378,19 @@ export default function AthleteWorkspace() {
                     ☑
                   </span>
                   <h3 className="t-command mt-[var(--s5)]" style={{ fontSize: 'var(--t-xl)' }}>
-                    Nothing on your floor yet.
+                    No open work from your coach.
                   </h3>
                   <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
-                    Check in and today&apos;s work gets built.
+                    When a coach assigns you a drill, it shows up here.
                   </p>
-                  {activeSessionRecord ? null : (
-                    <>
-                      <span className="mx-auto mt-[var(--s5)] block h-px w-[144px] bg-[color:var(--brass-800)]" />
-                      <button
-                        type="button"
-                        onClick={() => void handleCheckIn()}
-                        disabled={isCheckingIn}
-                        className="btn btn--kiosk mx-auto mt-[var(--s5)] w-auto disabled:opacity-50 disabled:grayscale"
-                      >
-                        {isCheckingIn ? 'Checking in...' : 'Check In'}
-                      </button>
-                    </>
-                  )}
                 </div>
               )}
+
+              {/* The richer record -- finished work, completion history, what
+                  each drill was assigned for -- stays on the Progression page. */}
+              <Link href="/athlete/progression-intelligence" className="btn btn--kiosk btn--ghost">
+                Open your progression
+              </Link>
             </div>
           )}
 
@@ -2867,8 +2620,8 @@ export default function AthleteWorkspace() {
                   The HONESTY is unchanged; only the voice is. "Unavailable -
                   not yet tracked" is a field status read out to a child, and
                   this file already had the right grammar for an honest empty a
-                  few hundred lines up -- "Nothing on your floor yet. Check in
-                  and today's work gets built." A coach says nobody has written
+                  few hundred lines up -- the Floor's "No open work from your
+                  coach." A coach says nobody has written
                   it down; a console reports a null column. Both refuse to
                   invent a value, which is the part that matters. */}
               <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] space-y-[var(--s2)]">
@@ -3320,7 +3073,7 @@ export default function AthleteWorkspace() {
         <AthleteSummaryPanel
           readiness={currentReadiness}
           readinessValue={readinessToTrain}
-          tasksDue={tasksDue}
+          openCoachWork={openCoachWorkRead}
           goalsActive={goalsActive}
           upcomingSession="Nothing posted yet."
         />

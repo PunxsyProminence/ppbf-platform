@@ -4,13 +4,25 @@ import React from 'react';
 import { RabbitHole, type RabbitHoleAnchor } from './RabbitHole';
 import ShadowChatButton from './ShadowChatButton';
 
+/**
+ * A count only a successful read may carry. 'loading' and 'unavailable' are
+ * not zero: 0 is a measurement, and neither state has measured anything.
+ */
+export type AthleteCountRead =
+  | { status: 'loading' }
+  | { status: 'unavailable' }
+  | { status: 'read'; count: number };
+
 interface AthleteSummaryPanelProps {
   readiness: 'GREEN' | 'YELLOW' | 'RED';
   // The 1-10 number the athlete actually set on the slider. Shown so the tile
   // reads back what they said instead of translating it into something the
   // platform does not claim (see the tile comment below).
   readinessValue: number;
-  tasksDue: number;
+  // The coach-assigned work still open, as the Floor lists it. A state, not a
+  // bare number, because a bare number made "still loading" and "the read
+  // failed" render as 0 -- which tells a child their coach set them nothing.
+  openCoachWork: AthleteCountRead;
   goalsActive: number;
   upcomingSession?: string;
   // No unreadMessages here, deliberately. The athlete has no inbound message
@@ -133,7 +145,7 @@ function getAttendanceGlyph(attendancePercent: number): string {
 export function AthleteSummaryPanel({
   readiness,
   readinessValue,
-  tasksDue,
+  openCoachWork,
   goalsActive,
   upcomingSession
 }: Readonly<AthleteSummaryPanelProps>) {
@@ -170,11 +182,24 @@ export function AthleteSummaryPanel({
         </p>
       </div>
 
-      {/* Tasks */}
-      <div className={STAT_TILE}>
-        <p className="stat-label">Tasks Due</p>
-        <p className="stat-val">{tasksDue}</p>
-      </div>
+      {/* Open coach work: every assigned or in-progress row a coach set,
+          counted from the same read the Floor lists. It was "Tasks Due", and
+          nothing here reads a due date -- the Floor deliberately shows every
+          open row rather than inventing a "due" window (A-FIN-04), so "due"
+          would be a claim no source supports. Only a successful read shows a
+          number, a real 0 included; a read in flight or one that failed says
+          so in words, the way the parent panel's null contract does. */}
+      {openCoachWork.status === 'read' ? (
+        <div className={STAT_TILE}>
+          <p className="stat-label">Open Coach Work</p>
+          <p className="stat-val">{openCoachWork.count}</p>
+        </div>
+      ) : (
+        <div className={KPI_TILE}>
+          <p className="t-label">Open Coach Work</p>
+          <p className="t-body mt-[var(--s3)]">{openCoachWork.status === 'loading' ? 'Checking...' : 'Unavailable'}</p>
+        </div>
+      )}
 
       {/* Goals */}
       <div className={STAT_TILE}>

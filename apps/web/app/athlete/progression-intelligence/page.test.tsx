@@ -1031,4 +1031,142 @@ describe('W-D4B: opening the drill an assignment was issued against', () => {
     expect(contextValue(context, 'Progress')).toBe('100% · completed');
     expect(within(openedView).queryAllByRole('button', { name: /log|complete|save/i })).toEqual([]);
   });
+
+  // A-FIN-04. The athlete's Floor lists their open coach work and links HERE
+  // for the two things it does not do itself -- read the drill, log the work --
+  // so there is one opener and one log form. These pin that a link lands on
+  // this page's own controls, only for work in the list the server returned
+  // for this athlete, and that following one writes nothing.
+  describe("A-FIN-04: a link from the Floor lands on this page's own controls", () => {
+    function arriveFromFloor(query: Record<string, string>) {
+      window.history.replaceState(null, '', `/athlete/progression-intelligence?${new URLSearchParams(query).toString()}`);
+    }
+
+    /** Lets every effect the landing could trigger run, so "nothing happened" is a real observation. */
+    async function settle() {
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+
+    function completionWrites(fetchMock: jest.Mock) {
+      return fetchMock.mock.calls.filter(([u, i]) => String(u).includes('/progression/completions') && method(i) !== 'GET');
+    }
+
+    afterEach(() => {
+      window.history.replaceState(null, '', '/');
+    });
+
+    test("intent=instruction opens that assignment's drill, reads the one instruction, and writes nothing", async () => {
+      arriveFromFloor({ assignment: ASSIGNMENT_ID, intent: 'instruction' });
+      const fetchMock = mockAssignedWork();
+      await renderAssignedWork(fetchMock);
+
+      expect(await screen.findByRole('article', { name: DRILL_NAME })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Back to your assigned work' })).toBeTruthy();
+      expect(routed.filter((r) => r === 'instruction')).toHaveLength(1);
+      expect(completionWrites(fetchMock)).toEqual([]);
+      // Reading is not logging: no form was opened on the way.
+      expect(screen.queryByLabelText('Reps completed (optional)')).toBeNull();
+    });
+
+    test("intent=log opens that assignment's own Log completion form, focused, and only Save writes", async () => {
+      arriveFromFloor({ assignment: ASSIGNMENT_ID, intent: 'log' });
+      // The re-read after a save is held for one timer tick, the way a real
+      // network holds it. Answered instantly, the reload's loading -> loaded
+      // flip lands in one render and nothing downstream ever sees it -- which
+      // would let a link that is NOT spent after one use pass this test.
+      const answer = mockAssignedWork();
+      let gapReads = 0;
+      const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('/progression/gaps') && ++gapReads > 1) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        return answer(input, init);
+      });
+      const opener = await renderAssignedWork(fetchMock);
+
+      const card = opener.closest('.mat-leather') as HTMLElement;
+      const reps = await within(card).findByLabelText('Reps completed (optional)');
+      await waitFor(() => expect(document.activeElement).toBe(reps));
+      // Only the named assignment's form -- the legacy row's stays closed.
+      const legacyCard = screen.getByText('Skipping rope').closest('.mat-leather') as HTMLElement;
+      expect(within(legacyCard).queryByLabelText('Reps completed (optional)')).toBeNull();
+      // Landing wrote nothing and read no drill.
+      expect(completionWrites(fetchMock)).toEqual([]);
+      expect(routed).not.toContain('instruction');
+
+      // It is the page's one log form, so it records exactly what it always has.
+      fireEvent.change(reps, { target: { value: '12' } });
+      fireEvent.click(within(card).getByRole('button', { name: 'Save log' }));
+      await waitFor(() => expect(completionWrites(fetchMock)).toHaveLength(1));
+      expect(JSON.parse(String((completionWrites(fetchMock)[0][1] as RequestInit).body))).toEqual({
+        assignment_id: ASSIGNMENT_ID,
+        athlete_id: 'athlete-001',
+        reps_completed: 12,
+      });
+
+      // The saved log re-reads the list; the link is spent, so the form does not
+      // reopen. The re-read is only over once each assignment's completions have
+      // been read again (two assignments, twice), so wait for that before
+      // claiming the form stayed shut.
+      await waitFor(() => expect(routed.filter((r) => r === 'assignments')).toHaveLength(2));
+      await waitFor(() => expect(routed.filter((r) => r === 'completions')).toHaveLength(4));
+      await screen.findByRole('button', { name: `Open drill: ${ASSIGNMENT_NAME}` });
+      await settle();
+      await settle();
+      expect(screen.queryByLabelText('Reps completed (optional)')).toBeNull();
+    });
+
+    test.each(['instruction', 'log'])(
+      "an id that is not in this athlete's own list opens nothing and asks the server for nothing more (intent=%s)",
+      async (intent) => {
+        arriveFromFloor({ assignment: 'someone-elses-assignment', intent });
+        const fetchMock = mockAssignedWork();
+        await renderAssignedWork(fetchMock);
+        await settle();
+
+        expect(screen.queryByRole('button', { name: 'Back to your assigned work' })).toBeNull();
+        expect(screen.queryByLabelText('Reps completed (optional)')).toBeNull();
+        expect(routed).not.toContain('instruction');
+        expect(completionWrites(fetchMock)).toEqual([]);
+        // The id went nowhere: it was only ever looked up in the list already returned.
+        expect(fetchMock.mock.calls.some(([u]) => String(u).includes('someone-elses'))).toBe(false);
+        expect(routed.filter((r) => r === 'assignments')).toHaveLength(1);
+      },
+    );
+
+    test('a link cannot open what the card itself would not offer', async () => {
+      // Completed work offers no log form; work with no drill offers no opener.
+      const completed = { ...DRILL_ASSIGNMENT, status: 'completed', completion_percentage: 100 };
+
+      arriveFromFloor({ assignment: ASSIGNMENT_ID, intent: 'log' });
+      const first = mockAssignedWork({ assignments: [completed, LEGACY_ASSIGNMENT] });
+      await renderAssignedWork(first);
+      await settle();
+      expect(screen.queryByLabelText('Reps completed (optional)')).toBeNull();
+      expect(completionWrites(first)).toEqual([]);
+    });
+
+    test('a link to work with no drill behind it reads no instruction', async () => {
+      arriveFromFloor({ assignment: 'asg-legacy-1', intent: 'instruction' });
+      const fetchMock = mockAssignedWork();
+      await renderAssignedWork(fetchMock);
+      await settle();
+
+      expect(routed).not.toContain('instruction');
+      expect(screen.queryByRole('button', { name: 'Back to your assigned work' })).toBeNull();
+    });
+
+    test('an intent the page does not know does nothing', async () => {
+      arriveFromFloor({ assignment: ASSIGNMENT_ID, intent: 'delete' });
+      const fetchMock = mockAssignedWork();
+      await renderAssignedWork(fetchMock);
+      await settle();
+
+      expect(routed).not.toContain('instruction');
+      expect(screen.queryByLabelText('Reps completed (optional)')).toBeNull();
+      expect(completionWrites(fetchMock)).toEqual([]);
+    });
+  });
 });
