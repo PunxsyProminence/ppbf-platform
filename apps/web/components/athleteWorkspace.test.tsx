@@ -53,6 +53,7 @@ let detailReadFails = false;
 let storedCheckIn: Record<string, unknown> | null;
 let checkInReadFails: boolean;
 let assignmentsFail = false;
+let assignmentsPending = false;
 
 // pilot.sessions stores date as `date` and rpe as `numeric`, so node-postgres
 // hands back a timestamp and a string, and the session validator rejects
@@ -194,6 +195,7 @@ beforeEach(() => {
   storedReferenceDrillDetails = {};
   detailReadFails = false;
   assignmentsFail = false;
+  assignmentsPending = false;
   // Checked in by default. The Floor is gated on today's check-in (owner
   // decision 2026-08-28), so a workspace that had NOT checked in would hide
   // the day's work from every test below that is about the floor rather than
@@ -268,6 +270,10 @@ beforeEach(() => {
     if (url.includes('/api/pilot/progression/assignments')) {
       if (assignmentsFail) {
         throw new Error('assignments offline');
+      }
+      if (assignmentsPending) {
+        // Never answers: the read is still in flight for the whole test.
+        return new Promise<Response>(() => {});
       }
       return jsonResponse({ items: storedAssignments });
     }
@@ -361,7 +367,7 @@ describe('athlete workspace honesty', () => {
     // not a measurement -- so the assertion targets stat tiles specifically.
     await renderWorkspace();
 
-    expect(screen.getByText('Tasks Due')).toBeTruthy();
+    expect(screen.getByText('Open Coach Work')).toBeTruthy();
     // Both label styles the summary row uses (stat tiles wear stat-label,
     // KPI tiles wear t-label), so a tile reintroduced in either dress fails;
     // the nav group's <button> matches neither.
@@ -1399,6 +1405,69 @@ describe('the Floor is the work a coach assigned', () => {
       expect(screen.queryByText(generated)).toBeNull();
     }
     expect(screen.getByText('No open work from your coach.')).toBeTruthy();
+  });
+});
+
+// The summary tile used to say "Tasks Due" over a bare number. Two claims no
+// source supported: nothing reads a due date (the Floor shows every open row,
+// deliberately, with no "due" window), and a read still in flight or one that
+// failed rendered as 0 -- "your coach set you nothing", said about a request
+// that had not answered. Only a successful read may show a number.
+describe('the summary tile counts open coach work, and only a read that answered shows a number', () => {
+  function summaryTile(): HTMLElement {
+    return screen.getByText('Open Coach Work').parentElement as HTMLElement;
+  }
+
+  test('a successful read with nothing open shows a real 0', async () => {
+    storedAssignments = [assignment({ status: 'completed' })];
+    await renderWorkspace();
+
+    await waitFor(() => expect(within(summaryTile()).getByText('0')).toBeTruthy());
+  });
+
+  test('a successful read shows the open count -- open rows only', async () => {
+    storedAssignments = [
+      assignment({ assignment_id: 'as-1', status: 'assigned' }),
+      assignment({ assignment_id: 'as-2', status: 'in_progress' }),
+      assignment({ assignment_id: 'as-3', status: 'completed' }),
+      assignment({ assignment_id: 'as-4', status: 'cancelled' }),
+    ];
+    await renderWorkspace();
+
+    await waitFor(() => expect(within(summaryTile()).getByText('2')).toBeTruthy());
+  });
+
+  test('a read still in flight says so, and is not 0', async () => {
+    assignmentsPending = true;
+    await renderWorkspace();
+
+    expect(within(summaryTile()).getByText('Checking...')).toBeTruthy();
+    expect(within(summaryTile()).queryByText('0')).toBeNull();
+  });
+
+  test('a failed read says unavailable, and is not 0', async () => {
+    assignmentsFail = true;
+    await renderWorkspace();
+
+    await waitFor(() => expect(within(summaryTile()).getByText('Unavailable')).toBeTruthy());
+    expect(within(summaryTile()).queryByText('0')).toBeNull();
+  });
+
+  test('an account with no athlete record is unavailable, not 0', async () => {
+    authenticated = false;
+    await renderWorkspace();
+
+    await waitFor(() => expect(within(summaryTile()).getByText('Unavailable')).toBeTruthy());
+    expect(within(summaryTile()).queryByText('0')).toBeNull();
+  });
+
+  test('nothing on the summary claims work is due', async () => {
+    storedAssignments = [assignment({ due_date: '2026-09-25' })];
+    await renderWorkspace();
+
+    await waitFor(() => expect(within(summaryTile()).getByText('1')).toBeTruthy());
+    expect(screen.queryByText('Tasks Due')).toBeNull();
+    expect(screen.queryByText(/tasks due/i)).toBeNull();
   });
 });
 

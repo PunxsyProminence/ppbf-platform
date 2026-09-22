@@ -14,7 +14,7 @@ import type { RabbitHoleLessonItem } from './RabbitHole';
 import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
 import ProfileHeader from './ProfileHeader';
 import TrainingHoldBanner from './TrainingHoldBanner';
-import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
+import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow, type AthleteCountRead } from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import ThenAndNow from './ThenAndNow';
 import TrainingCard, { type TrainingSession } from './TrainingCard';
@@ -734,7 +734,12 @@ export default function AthleteWorkspace() {
   const notesDraft = checkInNotes.trim();
   const notesStored = notesDraft.length > 0 && notesDraft === activeSessionRecord?.checkInNote;
   const recentSessions = storedSessions.filter((session) => session.completed).slice(0, 5);
-  const tasksDue = openCoachWork.length;
+  // Only a successful read is a number. See AthleteCountRead.
+  const openCoachWorkRead: AthleteCountRead = assignedWorkError
+    ? { status: 'unavailable' }
+    : assignedWorkLoading
+      ? { status: 'loading' }
+      : { status: 'read', count: openCoachWork.length };
   /* The day's workout and tasks open once the athlete has checked in (owner
      decision 2026-08-28: they have to do it to see that day's workout and
      tasks, and it must not block any other tool or capability).
@@ -3068,7 +3073,7 @@ export default function AthleteWorkspace() {
         <AthleteSummaryPanel
           readiness={currentReadiness}
           readinessValue={readinessToTrain}
-          tasksDue={tasksDue}
+          openCoachWork={openCoachWorkRead}
           goalsActive={goalsActive}
           upcomingSession="Nothing posted yet."
         />
