@@ -108,19 +108,19 @@ nobody tests, so the boundary is one-directional:
 
 | Thing | Canonical home | Direction |
 |---|---|---|
-| Tokens, classes, the eight design laws | `design-system/ppbf.css`, in the repo | repo → drive. Snapshot it to work against; editing the drive copy changes nothing. |
+| Tokens, classes and the active theme | `design-system/`, in the repo (entry point `ppbf.css`) | repo → drive. Snapshot it to work against; editing the drive copy changes nothing. |
 | Rendered assets: SVG icons, illustrations, photography | the drive folder, until committed | drive → repo, by a person who looked at the file. Committing is the release decision. |
 | Layout studies, flow diagrams, button explorations | the drive folder | they stay there. Studies, not sources. |
 
-1. **A class that is not in `ppbf.css` does not exist**, however finished it
+1. **A class that is not in the repo's design system does not exist**, however finished it
    looks in the drive. `apps/web/components/designSystemClasses.test.ts` fails
    the build on invented CSS classes, and it only reads the repo.
 2. **An asset is not delivered until it is committed.** A file sitting in the
    drive folder is still blocked. Move it, or report it as blocked -- never
    approximate it in code.
 
-If the drive and `ppbf.css` disagree about a colour, a radius or a type scale,
-`ppbf.css` is right by definition. Fix the drive copy.
+If the drive and the repo's design system disagree about a colour, a radius or
+a type scale, the repo is right by definition. Fix the drive copy.
 
 ### What needs a human, not a commit
 
@@ -160,10 +160,12 @@ built on it.
 
 **UI / UX and flow (design & visuals lane).** Grok's contract,
 `docs/GROK-VISUAL-LANE.md`, governs this lane; your brief is
-`docs/HANDOFF_VISUALS.md`. The design system is "Leather & Brass" -- read
-`design-system/ppbf.css`'s header for the eight laws; Law 2 (saturated colour
-means safety or status, nothing else) and Law 7 (**refusal is a stamp, not an
-error toast**) govern most of the work. Zero external assets: no font CDN, no
+`docs/HANDOFF_VISUALS.md`. The active look is **Golden Era V1**:
+`docs/GOLDEN-ERA-V1-CONTRACT.md` is its authority (named in
+`design-system/current/ppbf-theme.css`, 2026-08-24). "Leather & Brass" is
+retired as visual authority and kept in `design-system/legacy/` for reference
+only, though the Golden Era sheet still imports it underneath. Zero external
+assets: no font CDN, no
 raw hex, no Tailwind `slate-*`/`zinc-*`/`gray-*`; off-system colour utilities
 stand at 0 across the route files -- keep it there. Draft PRs only, and **do
 not mark them ready for review** -- the owner checks visual work page by page.

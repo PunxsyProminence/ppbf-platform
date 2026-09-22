@@ -24,7 +24,7 @@ Read additional documents only when the task actually touches their domain:
 - SHADOW safety/model behavior -> relevant SHADOW contract/spec plus the applicable sections of `docs/AI_CONTRIBUTOR_GUARDRAILS.md`
 - authentication/roles -> `AUTH_CONTRACT.md` and `ORGANIZATION_ROLE_MODEL.md`
 - database/schema/migrations -> database rules in `docs/AI_CONTRIBUTOR_GUARDRAILS.md` and the existing migration/runner pattern
-- visual design -> `design-system/README.md` and `design-system/ppbf.css`; Grok's contract is `docs/GROK-VISUAL-LANE.md`
+- visual design -> `docs/GOLDEN-ERA-V1-CONTRACT.md` (the active visual authority since 2026-08-24, named in `design-system/current/ppbf-theme.css`), `design-system/ppbf.css` and `design-system/README.md`; Grok's process contract is `docs/GROK-VISUAL-LANE.md`
 - ChatGPT's lane and capabilities -> `docs/CHATGPT-AUDIT-LANE.md`
 - audit/provenance/history -> `docs/current/WORK_QUEUE.md` and `docs/archive/`
 - writing an evidence claim in a PR body, status report or handoff -> `docs/current/EVIDENCE_APPLICABILITY.md`
