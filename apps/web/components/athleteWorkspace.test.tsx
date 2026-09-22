@@ -38,7 +38,8 @@ let sessionListFails = false;
 let sessionUpdateFails = false;
 let persistSessionUpdates = false;
 let holdDraftSaves = false;
-let releaseDraftSave: (() => void) | null = null;
+// Draft saves held on the wire, oldest first. A test releases them in the order it wants to prove against.
+let heldDraftSaves: Array<() => void> = [];
 let storedGoals: Array<Record<string, unknown>> = [];
 let goalUpdateFails = false;
 let sessionCreateFails = false;
@@ -192,7 +193,7 @@ beforeEach(() => {
   sessionUpdateFails = false;
   persistSessionUpdates = false;
   holdDraftSaves = false;
-  releaseDraftSave = null;
+  heldDraftSaves = [];
   storedGoals = [];
   goalUpdateFails = false;
   sessionCreateFails = false;
@@ -266,10 +267,10 @@ beforeEach(() => {
       if (!sessionUpdateFails && holdDraftSaves && body.completed_flag === false) {
         // A draft save held on the wire until the test lets it arrive.
         return new Promise<Response>((resolve) => {
-          releaseDraftSave = () => {
+          heldDraftSaves.push(() => {
             apply();
             resolve(jsonResponse({ ok: true }));
-          };
+          });
         });
       }
       if (!sessionUpdateFails) apply();
@@ -2103,7 +2104,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
 
     fireEvent.change(screen.getByPlaceholderText(/Session notes for your coach/), { target: { value: 'Jab felt sharp.' } });
     // The draft save has left and is being held by the "server".
-    await waitFor(() => expect(releaseDraftSave).not.toBeNull(), { timeout: 5000 });
+    await waitFor(() => expect(heldDraftSaves).toHaveLength(1), { timeout: 5000 });
 
     fireEvent.click(effortButton(7));
     fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
@@ -2114,7 +2115,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     expect(checkOutBodies()).toHaveLength(0);
 
     await act(async () => {
-      releaseDraftSave?.();
+      heldDraftSaves.shift()?.();
     });
     await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
 
@@ -2126,6 +2127,52 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
       notes: 'Jab felt sharp.',
     })));
     expect(await screen.findByText(/Your effort, 7 of 10, is on it too/)).toBeTruthy();
+  });
+
+  // Two drafts overlapping is the case remembering only the latest one missed:
+  // check-out would wait for the second while the first could still arrive
+  // last. Every held write is released NEWEST FIRST -- the worst order -- and
+  // the row must still end as the check-out.
+  test('overlapping notes saves are queued, and none can land after check-out', async () => {
+    persistSessionUpdates = true;
+    holdDraftSaves = true;
+    await openSession();
+
+    const box = screen.getByPlaceholderText(/Session notes for your coach/);
+    fireEvent.change(box, { target: { value: 'Jab felt sharp.' } });
+    await waitFor(() => expect(heldDraftSaves).toHaveLength(1), { timeout: 5000 });
+
+    // Keep typing, and let the second draft's delay run out while the first is on the wire.
+    fireEvent.change(box, { target: { value: 'Jab felt sharp. Hook was late.' } });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1600));
+    });
+    // Queued behind the first, not racing it.
+    expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1);
+
+    fireEvent.click(effortButton(7));
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+
+    // Release everything held, newest first, until check-out has gone.
+    await waitFor(async () => {
+      await act(async () => {
+        heldDraftSaves.pop()?.();
+      });
+      expect(checkOutBodies()).toHaveLength(1);
+    }, { timeout: 5000 });
+    await act(async () => {
+      while (heldDraftSaves.length > 0) heldDraftSaves.pop()?.();
+    });
+
+    await waitFor(() => expect(storedSessions[0]).toEqual(expect.objectContaining({
+      completed_flag: true,
+      rpe: '7',
+      rpe_method: 'athlete_post_session_self_report',
+      notes: 'Jab felt sharp. Hook was late.',
+    })));
+    // And nothing reached the server after the check-out did.
+    const updates = postedTo('/api/pilot/sessions/update');
+    expect(updates[updates.length - 1].body.completed_flag).toBe(true);
   });
 
   test('no notes save starts once check-out has begun', async () => {

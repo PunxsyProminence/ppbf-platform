@@ -720,12 +720,17 @@ export default function AthleteWorkspace() {
      just closed and erasing their effort answer. Cancelling the draft TIMER
      (the effect cleanup) cannot stop a request that has already left.
 
-     So check-out waits for any draft save in flight to finish before it sends,
-     and from the moment check-out starts no new draft save may begin. The
+     So every session write joins ONE chain. A draft save does not leave until
+     every earlier one has landed, and check-out waits for the whole chain
+     before it sends -- remembering only the latest draft is not enough, since
+     two drafts can overlap and the older one could still arrive last. A draft
+     still queued when check-out starts is dropped, which only saves a write:
+     the chain already lands it before check-out, and check-out carries the
+     notes itself. From the moment check-out starts no new draft may join; the
      effect cleanup already cancels a pending timer once isCheckingOut
-     re-renders; checkingOutRef is the same refusal made independent of render
-     timing, not a separate mechanism. */
-  const notesSaveInFlightRef = useRef<Promise<void> | null>(null);
+     re-renders, and checkingOutRef makes that refusal independent of render
+     timing. */
+  const sessionWriteChainRef = useRef<Promise<void>>(Promise.resolve());
   const checkingOutRef = useRef(false);
 
   /* The gym's own noises, off unless this browser opted in. play() is safe to
@@ -1268,9 +1273,11 @@ export default function AthleteWorkspace() {
 
     const timer = setTimeout(() => {
       // Check-out has started since this timer was set: its write carries the
-      // notes, and a draft save now could only race it. See notesSaveInFlightRef.
+      // notes, and a draft save now could only race it. See sessionWriteChainRef.
       if (checkingOutRef.current) return;
-      const save = (async () => {
+      const save = async () => {
+        // Queued behind an earlier draft, and check-out began meanwhile.
+        if (checkingOutRef.current) return;
         setNotesSaveState('saving');
         try {
           const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
@@ -1303,11 +1310,10 @@ export default function AthleteWorkspace() {
         } catch {
           setNotesSaveState('failed');
         }
-      })();
-      notesSaveInFlightRef.current = save;
-      void save.finally(() => {
-        if (notesSaveInFlightRef.current === save) notesSaveInFlightRef.current = null;
-      });
+      };
+      // Chained, never raced: this draft leaves only after every earlier one
+      // has landed. save() records its own failure, so the chain never rejects.
+      sessionWriteChainRef.current = sessionWriteChainRef.current.then(save);
     }, NOTES_DRAFT_SAVE_DELAY_MS);
 
     return () => clearTimeout(timer);
@@ -1573,10 +1579,10 @@ export default function AthleteWorkspace() {
     setIsCheckingOut(true);
 
     try {
-      // A draft save already on the wire lands first, so it can never land
-      // after this write and undo it. It never rejects -- it records its own
-      // failure in notesSaveState -- so this only waits.
-      await notesSaveInFlightRef.current;
+      // Every draft save already on the wire, or queued, lands first, so none
+      // can land after this write and undo it. The chain never rejects -- each
+      // draft records its own failure in notesSaveState -- so this only waits.
+      await sessionWriteChainRef.current;
 
       const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
         method: 'POST',
