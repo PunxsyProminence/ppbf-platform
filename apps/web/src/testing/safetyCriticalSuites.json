@@ -55,6 +55,11 @@
       "guards": "The gym-floor touch-target floor, asserted at BOTH ends: the rule scoped to [data-surface=\"kiosk\"] and the marker that actually puts that attribute on the athlete subtree. Written because the first attempt shipped a rule for a class that existed nowhere and protected nothing."
     },
     {
+      "path": "src/design/kioskTypeFloor.test.ts",
+      "minimumTests": 13,
+      "guards": "The other half of Law 5's gym-floor floor: 19.1px type, not just 55px targets. The target half has been enforced since a session-duration field was found at 36px; the type half was never written, and it hid behind a `font:` SHORTHAND that welds each voice's size to its family so no token override reaches it -- measured 11px eyebrows, 11px labels and 11px badges on the tablet a child reads at arm's length. It is (0,2,0) against unlayered (0,1,0) voices, so it dies silently three ways: deleted, wrapped in a layer, or beaten by one later rule. Companion to kioskTapFloor."
+    },
+    {
       "path": "src/design/typeLadder.test.ts",
       "minimumTests": 3,
       "guards": "The type ladder may not invert -- globals.css aliases Tailwind's theme names onto the phi ladder from an unlayered :root, and got it backwards, so every text-4xl md:text-5xl heading shrank as the viewport grew. --t-md is the kiosk minimum. Three tests: the smallest safety-bearing suite in src/design, and the easiest to lose."
