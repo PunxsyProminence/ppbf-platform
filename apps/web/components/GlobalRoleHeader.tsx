@@ -267,20 +267,18 @@ export default function GlobalRoleHeader() {
               Operations
             </Link>
           ) : null}
-          {/* Wrapped rather than given `hidden` directly, and the reason is
-              worth the two lines: CONTROL_QUIET already carries `inline-flex`,
-              so `hidden` and `inline-flex` are two display utilities of equal
-              weight in the same Tailwind layer and which one paints is decided
-              by the order the generated sheet happens to put them in. Measured
-              with `hidden` on the link itself: the control stayed visible at
-              412px and the row it sits on stayed with it. A wrapper has no
-              competing display class, so the intent is the only thing in the
-              cascade. */}
-          <div className="hidden items-center sm:flex">
-            <Link href="/dashboard" className={CONTROL_QUIET}>
-              Bell
-            </Link>
-          </div>
+          {/* THE BAR'S BELL STAYS AT EVERY WIDTH. It went behind the catalog
+              on the phone in the first draft of this slice and e2e/coach-
+              journey.spec.ts turned red twice for it, correctly: one test
+              asserts the bar is still there by looking for this link -- its
+              own comment calls that "the half that catches a removal that took
+              its neighbours with it" -- and a second uses it as the signal
+              that the chassis has mounted. Re-reading the ruling, it names the
+              duplicate in RoleStandaloneView, not this one. This is the
+              original; the copy one band down is what goes. */}
+          <Link href="/dashboard" className={CONTROL_QUIET}>
+            Bell
+          </Link>
           <button type="button" onClick={signOut} className={CONTROL_EXIT}>
             Logout
           </button>
