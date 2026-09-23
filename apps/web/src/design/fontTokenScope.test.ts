@@ -11,81 +11,121 @@ import path from 'node:path';
    were declared, and a custom property that is invalid at computed-value time
    takes down everything that reads it.
 
-   That cost far more than a typeface. Roughly three dozen rules in the design
-   system are written as a `font:` SHORTHAND naming one of these aliases, and a
-   shorthand whose value is invalid loses its size, weight and line-height
-   along with the family. Measured in a browser on the coach workspace before
-   the repair: .t-eyebrow asked for 11px, .t-label 11px, .t-data 13px, .badge
-   11px and .stat-val 39.3px, and every one of them rendered at the body's
-   15px. 68 of 139 text elements sat at exactly 15px, and a panel heading
-   rendered ONE PIXEL larger than the paragraph beneath it. With no size
-   difference left, the only things separating one block from the next were a
-   box outline and uppercase letters.
+   That cost far more than a typeface. 37 rules in the design system are
+   written as a `font:` SHORTHAND naming one of these aliases, and a shorthand
+   whose value is invalid loses its size, weight and line-height along with the
+   family. Measured in a browser before the repair: .t-eyebrow asked for 11px,
+   .t-label 11px, .t-data 13px, .badge 11px and .stat-val 39.3px, and every one
+   of them rendered at the body's 15px. 68 of 139 text elements sat at exactly
+   15px, and a panel heading rendered ONE PIXEL larger than the paragraph
+   beneath it.
 
    Nothing warns about this. The classes are present in the DOM, the fonts are
-   downloaded, the page renders, and the type is silently flat. So the scope is
-   pinned here on both sides: the variables go on <html>, and the aliases stay
-   on :root. Move either one and this fails. */
+   downloaded, the page renders, and the type is silently flat.
+
+   So the binding is pinned on both sides, BY NAME rather than by the shape of
+   the code: every `variable:` next/font declares must be interpolated into the
+   <html> tag, none may be left on <body>, and every :root alias must still
+   reference the variables it is written in terms of. An earlier version of
+   this file asserted JS identifiers instead, which meant renaming a variable
+   in the next/font options -- the exact way this breaks -- kept it green. */
 
 const REPO = path.resolve(__dirname, '../../../..');
 const LAYOUT = path.join(REPO, 'apps/web/app/layout.tsx');
 const GLOBALS = path.join(REPO, 'apps/web/app/globals.css');
 
-const FONT_VARIABLES = ['--font-tactical-display', '--font-tactical-body', '--font-geist-mono'] as const;
 const ALIASES = ['--font-stencil', '--font-body', '--font-mono', '--font-ui', '--font-data'] as const;
 
-/** The opening tag of an element in the layout, comments stripped. */
-function openingTag(source: string, tag: 'html' | 'body'): string {
-  const withoutComments = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '');
-  const match = withoutComments.match(new RegExp(`<${tag}\\b[^>]*>`));
+const layout = readFileSync(LAYOUT, 'utf8');
+const globals = readFileSync(GLOBALS, 'utf8');
+
+/** Comments stripped, so a tag named in prose is never mistaken for markup. */
+function withoutComments(source: string): string {
+  return source.replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+/** The opening tag of an element in the layout. */
+function openingTag(tag: 'html' | 'body'): string {
+  const match = withoutComments(layout).match(new RegExp(`<${tag}\\b[^>]*>`));
   if (!match) throw new Error(`no <${tag}> in apps/web/app/layout.tsx`);
   return match[0];
 }
 
-describe('the next/font variables are declared where the aliases can read them', () => {
-  const layout = readFileSync(LAYOUT, 'utf8');
+/**
+ * What next/font is actually told to publish, read from the `variable:` options
+ * rather than from the const names, together with the const that holds it.
+ * `const tacticalBody = localFont({ ..., variable: "--font-tactical-body" })`
+ * gives ['tacticalBody', '--font-tactical-body'].
+ */
+function declaredFontVariables(): Array<[holder: string, cssName: string]> {
+  const source = withoutComments(layout);
+  const found: Array<[string, string]> = [];
+  const declaration = /const\s+([A-Za-z_$][\w$]*)\s*=\s*localFont\(\{([\s\S]*?)\}\);/g;
 
-  it('puts every next/font variable on <html>', () => {
-    const html = openingTag(layout, 'html');
-    const missing = FONT_VARIABLES.filter((name) => {
-      const holder = name.replace('--font-', '').replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase());
-      return !html.includes(`${holder}.variable`);
-    });
+  for (const [, holder, options] of source.matchAll(declaration)) {
+    const variable = options.match(/variable:\s*["'`](--[\w-]+)["'`]/);
+    if (variable) found.push([holder, variable[1]]);
+  }
+  return found;
+}
+
+describe('the next/font variables are declared where the aliases can read them', () => {
+  const declared = declaredFontVariables();
+
+  it('finds the next/font declarations at all', () => {
+    expect(
+      declared.length >= 3
+        ? true
+        : `only ${declared.length} localFont({ ..., variable }) declaration(s) found in layout.tsx. `
+          + 'If the font loading moved, this guard has to move with it.',
+    ).toBe(true);
+  });
+
+  it('carries every declared font variable on <html>', () => {
+    const html = openingTag('html');
+    const missing = declared.filter(([holder]) => !html.includes(`${holder}.variable`));
 
     expect(
       missing.length === 0
         ? true
-        : `<html> is missing ${missing.join(', ')}. The :root aliases in globals.css `
-          + 'read these, so on <body> they resolve to nothing and every `font:` '
-          + 'shorthand that names an alias loses its size and weight too.',
+        : `<html> does not carry ${missing.map(([, name]) => name).join(', ')}. The :root aliases in `
+          + 'globals.css read these, so anywhere below :root they resolve to nothing and every '
+          + '`font:` shorthand naming an alias loses its size and weight too.',
     ).toBe(true);
   });
 
-  it('does not leave the font variables on <body>', () => {
-    const body = openingTag(layout, 'body');
-    const stranded = FONT_VARIABLES.filter((name) => {
-      const holder = name.replace('--font-', '').replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase());
-      return body.includes(`${holder}.variable`);
-    });
+  it('leaves none of them stranded on <body>', () => {
+    const body = openingTag('body');
+    const stranded = declared.filter(([holder]) => body.includes(`${holder}.variable`));
 
     expect(
       stranded.length === 0
         ? true
-        : `<body> still carries ${stranded.join(', ')}. :root cannot read a variable set below it.`,
+        : `<body> still carries ${stranded.map(([, name]) => name).join(', ')}. :root cannot read a `
+          + 'variable set below it.',
     ).toBe(true);
   });
 
-  it('keeps the aliases on :root, where the variables now are', () => {
-    const globals = readFileSync(GLOBALS, 'utf8');
+  it('keeps every :root alias reading a variable that is actually declared', () => {
     const rootBlock = globals.slice(globals.indexOf(':root {'));
+    const declaredNames = new Set(declared.map(([, name]) => name));
+    const broken: string[] = [];
 
-    const missing = ALIASES.filter((alias) => !rootBlock.includes(`${alias}:`));
+    for (const alias of ALIASES) {
+      const line = rootBlock.match(new RegExp(`^\\s*${alias}:([^;]*);`, 'm'));
+      if (!line) {
+        broken.push(`${alias} is no longer declared on :root`);
+        continue;
+      }
+      for (const [, referenced] of line[1].matchAll(/var\((--[\w-]+)/g)) {
+        if (!declaredNames.has(referenced)) {
+          broken.push(`${alias} reads ${referenced}, which no localFont() in layout.tsx publishes`);
+        }
+      }
+    }
 
     expect(
-      missing.length === 0
-        ? true
-        : `${missing.join(', ')} left the :root block. If an alias moves, the variables `
-          + 'it reads have to move with it.',
+      broken.length === 0 ? true : broken.join('\n  '),
     ).toBe(true);
   });
 });
