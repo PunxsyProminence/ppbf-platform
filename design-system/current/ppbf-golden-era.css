@@ -236,14 +236,21 @@
     0 20px 56px rgba(0, 0, 0, .52),
     inset 0 1px 0 rgba(255, 255, 255, .035);
 
-  /* Edges. Brass reads through its own ramp so a scope can still re-skin it;
-     src/design/brassAlphaChannel.test.ts exists to stop brass being spelled
-     out as a literal. */
-  --edge-light: rgb(var(--brass-300-rgb) / .10);
+  /* Edges that owe nothing to the brass ramp live here. */
   --edge-dark: rgba(7, 8, 9, .72);
-  --edge-brass: rgb(var(--brass-500-rgb) / .72);
   --edge-paper: rgba(95, 72, 44, .36);
 }
+
+/* The brass-derived edges are declared at the foot of each scope's own ramp
+   block below -- `.ge-floorboard` and `.ge-locker` -- and NOT here, which is
+   not a tidiness choice. A custom property whose value contains var() has that
+   var() substituted at computed-value time ON THE ELEMENT THAT DECLARES IT,
+   and what inherits downward is the already-substituted string. Declared on
+   :root, `rgb(var(--brass-500-rgb) / .38)` bakes the LEGACY ramp's #B8912F and
+   carries root gold into every golden-era scope -- measured in Chromium while
+   it was here: the floor board's panel arris computed rgba(184,145,47,0.38) on
+   a route whose whole scope exists to be bronze, and the e2e leak sweep reads
+   border colours. Declared beside the rungs they read, they resolve bronze. */
 
 /* CONTROLS ARE STEEL; BRASS IS FOR THE ONE YOU CHOSE. The skin repainted every
    button inside a leather panel as a bronze plaque -- and matched no anchor, so
@@ -433,7 +440,7 @@
    edge, so fast navigation feels deliberate rather than administrative. */
 .catalog-row.is-active,
 .corridor-door.is-active {
-  border-color: var(--edge-brass);
+  border-color: rgb(var(--brass-500-rgb) / .72);
   box-shadow: inset 0 1px 0 rgb(var(--brass-200-rgb) / .22), var(--shadow-contact);
 }
 
@@ -2590,6 +2597,15 @@
   --brass-800-rgb:  83  61  24;
   --brass-900: #392910;
   --brass-900-rgb:  57  41  16;
+  /* The edges of a steel surface in this room, read through the ramp above so
+     a re-skin moves them with it. --edge-lit is the lit top arris of a panel:
+     the one place the gym's brass still touches an ordinary working surface,
+     where the fixture overhead catches the metal, and the witness
+     e2e/golden-era-scope-proofs.spec.ts reads to prove this ramp reaches a
+     real shared component on a real route. */
+  --edge-light: rgb(var(--brass-300-rgb) / .10);
+  --edge-brass: rgb(var(--brass-500-rgb) / .72);
+  --edge-lit: rgb(var(--brass-500-rgb) / .38);
 }
 
 /* The locker carcass: dark wood with a warm interior wash, so panels read as
@@ -2607,6 +2623,7 @@
     linear-gradient(180deg, #25292B 0%, #1C1F21 38%, #171A1C 62%, #101214 100%);
   background-blend-mode: screen, normal;
   border-color: var(--edge-dark);
+  border-top-color: var(--edge-lit);
   border-radius: 5px;
   box-shadow: var(--shadow-contact), inset 0 1px 0 var(--edge-light);
 }
@@ -2691,6 +2708,15 @@
   --brass-800-rgb:  83  61  24;
   --brass-900: #392910;
   --brass-900-rgb:  57  41  16;
+  /* The edges of a steel surface in this room, read through the ramp above so
+     a re-skin moves them with it. --edge-lit is the lit top arris of a panel:
+     the one place the gym's brass still touches an ordinary working surface,
+     where the fixture overhead catches the metal, and the witness
+     e2e/golden-era-scope-proofs.spec.ts reads to prove this ramp reaches a
+     real shared component on a real route. */
+  --edge-light: rgb(var(--brass-300-rgb) / .10);
+  --edge-brass: rgb(var(--brass-500-rgb) / .72);
+  --edge-lit: rgb(var(--brass-500-rgb) / .38);
 }
 
 /* The board: slate in an aged-wood surround. The tab rail is the top edge of
@@ -2712,6 +2738,7 @@
     linear-gradient(180deg, #25292B 0%, #1C1F21 38%, #171A1C 62%, #101214 100%);
   background-blend-mode: screen, normal;
   border-color: var(--edge-dark);
+  border-top-color: var(--edge-lit);
   border-radius: 5px;
   box-shadow: var(--shadow-contact), inset 0 1px 0 var(--edge-light);
 }

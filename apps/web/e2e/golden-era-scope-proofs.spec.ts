@@ -412,8 +412,19 @@ const SCOPES: readonly ScopeCase[] = [
     session: { role: 'coach' },
     routes: { '/api/pilot/athletes/list': { ok: true, items: ATHLETES } },
     components: [
-      { selector: '.mat-leather button', property: 'background-image', note: 'a tab plaque screwed to the slate board' },
-      { selector: '.mat-leather', property: 'border-top-color', note: 'the aged wood surround of the board' },
+      /* THE WITNESS IS THE CHOSEN TAB, not any tab. It used to be
+         `.mat-leather button` -- every button in a panel on this route painted
+         a bronze plaque, so the first one the reader found was brass whatever
+         it was. That is no longer true and should not be: brass now marks the
+         thing you have SELECTED, and an ordinary control is steel, so the
+         reader's first match on this route is a ghost button whose
+         background-image is `none` -- a witness that proves nothing.
+         `[aria-current="page"]` is the element the scope's bronze ramp is
+         actually supposed to reach, it is a real shared component on a real
+         route, and it cannot be satisfied by an element that happens to be
+         brass by default. */
+      { selector: '.mat-leather button[aria-current="page"]', property: 'background-image', note: 'the chosen tab plaque on the board' },
+      { selector: '.mat-leather', property: 'border-top-color', note: 'the lit top arris of the board panel, where the fixture catches the metal' },
     ],
   },
   {
