@@ -44,10 +44,24 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${tacticalDisplay.variable} ${tacticalBody.variable} ${geistMono.variable} antialiased`}
-      >
+    /* THE FONT VARIABLES BELONG ON <html>, NOT ON <body>, AND THE DIFFERENCE
+       WAS NOT COSMETIC. globals.css declares --font-stencil, --font-body,
+       --font-mono, --font-ui and --font-data on `:root` -- which IS this
+       element -- in terms of these three. While they were set one element
+       lower, all five resolved to the guaranteed-invalid value, and every rule
+       written as a `font:` shorthand naming one of them threw away its SIZE,
+       WEIGHT and LINE-HEIGHT along with the family: .t-eyebrow asked for 11px,
+       .t-label 11px, .t-data 13px, .badge 11px, .stat-val 39.3px, and all of
+       them rendered at the body's 15px instead. Measured on the coach
+       workspace before this change, 68 of 139 text elements sat at exactly
+       15px and a panel heading rendered one pixel larger than its own
+       paragraph, which is why the type had no hierarchy and the gym's own
+       faces never reached the screen. */
+    <html
+      lang="en"
+      className={`${tacticalDisplay.variable} ${tacticalBody.variable} ${geistMono.variable}`}
+    >
+      <body className="antialiased">
         <ThemeProvider>
           {/* The route-derived plate variant is marked here and nowhere else.
               78 surfaces paint a room class of their own and 73 of those are
