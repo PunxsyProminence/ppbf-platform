@@ -359,6 +359,35 @@ describe('the Operations hub is offered to the admin desks only', () => {
   });
 });
 
+/* A-FIN-06 REVIEW FIX. Progression Intelligence carries the only surface where
+   issued work can be cancelled, and the cancel route admits an organization
+   admin. The door advertised it to a coach alone, so an admin the server
+   authorizes was never shown the way in -- a capability with no journey.
+   `roles` is a visibility hint and never a gate, which is precisely why this
+   one had to move: hiding the door protected nothing and hid a control. */
+describe('the Progression Intelligence door after the A-FIN-06 review', () => {
+  const PROGRESSION = '/coach/progression-intelligence';
+
+  it('is still a coach door', () => {
+    expect(visibleDoors('coach').map((d) => d.href)).toContain(PROGRESSION);
+  });
+
+  it('is now advertised to an admin, in the corridor and in the catalog', () => {
+    expect(visibleDoors('admin').map((d) => d.href)).toContain(PROGRESSION);
+    expect(searchDoors('admin', 'progression').map((d) => d.href)).toContain(PROGRESSION);
+  });
+
+  it('opened to that one role and to no other', () => {
+    expect(doorForPath(PROGRESSION)?.roles).toEqual(['coach', 'admin']);
+    // platform_owner and board are refused BY NAME in
+    // assertActorCanAccessAthlete, which every athlete-scoped read behind this
+    // surface passes through, so a door reaching them would be a bounce.
+    for (const role of ['platform_owner', 'board', 'athlete', 'parent', 'staff', 'volunteer'] as ClubRole[]) {
+      expect(visibleDoors(role).map((d) => d.href)).not.toContain(PROGRESSION);
+    }
+  });
+});
+
 describe('doorsByRoom', () => {
   it('drops rooms with nothing in them rather than showing an empty hallway', () => {
     for (const group of doorsByRoom('athlete')) {
