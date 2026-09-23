@@ -52,8 +52,23 @@ export function requireRole(actor: ActorIdentity, allowed: PilotRole[]): void {
 /* SOFT-DELETED ATHLETES ARE NOT AUTHORIZABLE.
    ------------------------------------------------------------------------
 
-   Every query in this file that decides whether an actor may reach an athlete
-   now requires a LIVE athlete row (`deleted_at is null`).
+   Every query in this file that DECIDES whether an actor may reach an athlete
+   now requires a LIVE athlete row (`deleted_at is null`): both branches of
+   assertCoachAssignedToAthlete, both branches of accessibleAthleteIds' coach
+   arm, its org-admin arm, assertAthleteBelongsToOrganization (which is also
+   what stops grantCoachCoverage issuing a grant on a deleted athlete), and
+   both halves of athleteIdsForCoach's union. Coverage grants get no exemption:
+   deletion ends none of them, so each of the three authorization queries that
+   read pilot.coach_coverage also demands a live pilot.athletes row matched on
+   the full composite key -- a join in the two per-coach lookups, an `exists`
+   in athleteIdsForCoach's union half.
+
+   That claim is about the authorization queries, and only those.
+   listActiveCoachCoverage is NOT one of them -- it is the admin's display of
+   which grants are currently in force, it decides nobody's access, and it is
+   deliberately left alone here. It joins pilot.athletes for the name only and
+   does not filter deleted_at, so a grant on a since-deleted athlete still
+   appears in that list. Do not read this header as covering it.
 
    Before this, deleting an athlete wrote `deleted_at` and nothing downstream
    read it -- the exact shape #690 fixed for guardians. An organization admin
@@ -86,16 +101,32 @@ export async function assertCoachAssignedToAthlete(coachId: string, athleteId: s
     return;
   }
 
+  // A live grant is not enough on its own: the athlete it names must still be
+  // a LIVE row in this organization. Deleting an athlete writes deleted_at and
+  // leaves their coverage grants exactly as they were -- nothing ends them --
+  // so before this join the coverage lookup was the one query in this
+  // function that never read deleted_at, and a covering coach whose grant had
+  // not lapsed kept reaching a deleted athlete through the chokepoint that
+  // every other path already closed. The join is on BOTH keys because
+  // pilot.athletes' key is composite (organization_id, athlete_id): the same
+  // athlete_id can name a different child in another gym.
+  //
+  // A deleted athlete simply matches no row here, so it falls through to the
+  // same Forbidden as no grant at all. Whether the athlete was deleted is, like
+  // an expired or revoked grant, not something the error channel discloses.
   let coverage: { athlete_id: string } | null = null;
   try {
     coverage = await queryOne<{ athlete_id: string }>(
-      `select athlete_id
-       from pilot.coach_coverage
-       where organization_id = $1
-         and athlete_id = $2
-         and covering_coach_id = $3
-         and starts_at <= now()
-         and expires_at > now()`,
+      `select cc.athlete_id
+       from pilot.coach_coverage cc
+       join pilot.athletes ath
+         on ath.organization_id = cc.organization_id and ath.athlete_id = cc.athlete_id
+       where cc.organization_id = $1
+         and cc.athlete_id = $2
+         and cc.covering_coach_id = $3
+         and cc.starts_at <= now()
+         and cc.expires_at > now()
+         and ath.deleted_at is null`,
       [organizationId, athleteId, coachId],
     );
   } catch (error) {
@@ -425,14 +456,27 @@ export async function accessibleAthleteIds(
     const remaining = distinctIds.filter((id) => !result.has(id));
     if (remaining.length > 0) {
       try {
+        // Same rule as the coverage lookup in assertCoachAssignedToAthlete,
+        // and for the same reason: a live grant names an athlete, it does not
+        // prove one is still there. Deleting an athlete writes deleted_at and
+        // ends none of their grants, so the grant table read alone admitted a
+        // deleted athlete here long after the per-candidate gate stopped
+        // admitting them -- and the whole contract of this function is that
+        // `result.has(id)` equals "assertActorCanAccessAthlete would not have
+        // thrown". Joining on BOTH halves of pilot.athletes' composite key
+        // (organization_id, athlete_id) because the same athlete_id can name a
+        // different child in another gym.
         const coverageRows = await query<{ athlete_id: string }>(
-          `select athlete_id
-           from pilot.coach_coverage
-           where organization_id = $1
-             and covering_coach_id = $2
-             and starts_at <= now()
-             and expires_at > now()
-             and athlete_id = any($3::text[])`,
+          `select cc.athlete_id
+           from pilot.coach_coverage cc
+           join pilot.athletes ath
+             on ath.organization_id = cc.organization_id and ath.athlete_id = cc.athlete_id
+           where cc.organization_id = $1
+             and cc.covering_coach_id = $2
+             and cc.starts_at <= now()
+             and cc.expires_at > now()
+             and cc.athlete_id = any($3::text[])
+             and ath.deleted_at is null`,
           [actor.organizationId, actor.accountId, remaining],
         );
         for (const row of coverageRows) {

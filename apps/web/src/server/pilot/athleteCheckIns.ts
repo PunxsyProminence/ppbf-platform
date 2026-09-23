@@ -7,6 +7,8 @@ import {
   WELLNESS_SCALE_MIN,
 } from '@/src/shared/wellnessScales';
 
+import { gymDayIso, type GymTimeInput } from '../../lib/gymTime';
+
 import { query, queryOne } from './db';
 
 // Athlete self check-in (Phase 2 slice 1): the athlete's own "I'm here,
@@ -111,6 +113,71 @@ export function sleepHoursError(value: unknown): string | null {
   return null;
 }
 
+/**
+ * WHICH DAY A CHECK-IN BELONGS TO, decided in Node rather than by Postgres.
+ *
+ * Both halves of this module used to ask the database: the insert left
+ * `checked_in_on` to its `default current_date`, and the read matched
+ * `checked_in_on = current_date`. That is the DATABASE SERVER'S day, in a
+ * zone this application never sets -- and both the production and the staging
+ * server report TimeZone = UTC (server parameter, read 2026-09-22), four or
+ * five hours ahead of the gym. Once it is past UTC midnight but still the
+ * previous day on the wall in Punxsutawney -- from 8pm during daylight time,
+ * 7pm during standard time -- the database has already rolled over, so for
+ * the back half of every training night a check-in was filed under
+ * TOMORROW'S date.
+ *
+ * The read agreed with the write, which is why nothing looked broken, and
+ * both were the wrong day. Monday night's arrival is stored as Tuesday; on
+ * Tuesday morning the athlete is told they have already checked in and
+ * cannot file Tuesday's own report, and the coach reads Monday night's
+ * numbers under Tuesday's heading.
+ *
+ * The gym's day is the one on the wall in Punxsutawney, and gymDayIso() is
+ * where this repo already keeps it -- the attendance register and the coach
+ * development log ask it the same question, and blockReview.ts performs the
+ * same reduction on the SQL side.
+ *
+ * The column default stays `current_date`. It is the schema's fallback for
+ * some other writer, not this module's answer.
+ *
+ * WHAT THIS DOES NOT FIX: THE ROWS ALREADY FILED UNDER THE OLD RULE. Every
+ * check-in taken after UTC midnight but before local midnight before this
+ * ships -- 8pm during daylight time, 7pm during standard time -- is sitting
+ * in the table dated the following day, and nothing here moves it. Those rows stay where
+ * they are on purpose -- a stored date is a record of what the system did,
+ * and rewriting it to match a later rule destroys the evidence that the rule
+ * changed -- so both harms above stay reachable for as long as one of those
+ * dates is still the gym's today. On that day the athlete is still told they
+ * have already checked in and still cannot file that day's own report
+ * (checkIn's pre-read finds the mis-dated row), and the coach panel still
+ * prints the previous evening's numbers under that day's heading. The window
+ * shuts by itself: no mis-dated row is written once this ships, so it lasts
+ * at most until the day after the last one was filed. Shutting it sooner
+ * means reconciling stored rows, which is a data change, is not this change,
+ * and is not something this module can do on its own. Whether any such row
+ * exists in production right now has not been checked from here.
+ *
+ * NULL IS NOT A DAY. There is no honest fallback when gymDayIso() cannot
+ * reduce an instant. Letting the write fall back to the column default would
+ * store the UTC day, which is the exact defect above; letting the read fall
+ * back to null would tell an athlete "no check-in today" without having
+ * looked for one. Both are a wrong answer given confidently, so this throws
+ * -- the same shape as attendance-today's ATTENDANCE_DAY_UNRESOLVED. No route
+ * reaches it: every caller in the app lets `now` default, and a `new Date()`
+ * always reduces. The `now` seam below does make it reachable with a
+ * caller-supplied value, and athleteCheckIns.pg.test.ts reaches it on purpose
+ * -- a throw nothing can ever trigger is a throw nobody can check. It stays
+ * a plain Error rather than a PilotError on purpose: per errors.ts, plain
+ * means "redact me", and an unresolvable clock is an internal fault, not
+ * something the caller can fix by sending different input.
+ */
+function requireGymDay(value: GymTimeInput = new Date()): string {
+  const day = gymDayIso(value);
+  if (!day) throw new Error('CHECK_IN_GYM_DAY_UNRESOLVED');
+  return day;
+}
+
 /** Idempotent by day: checking in twice returns the existing record --
  * arriving is a fact, not a counter. */
 export async function checkIn(input: {
@@ -126,6 +193,16 @@ export async function checkIn(input: {
   stress?: number | null;
   nutritionCompliance?: number | null;
   note?: string;
+  /**
+   * The instant the gym day is read off, defaulting to now.
+   *
+   * A seam, not a feature: it exists so a test can stand the clock on the far
+   * side of UTC midnight -- 02:30Z is still the previous evening in
+   * Punxsutawney -- and watch the REAL reduction run into a real table,
+   * rather than faking the system clock out from under the Postgres driver
+   * that shares it. No route passes it; an athlete checks in in the present.
+   */
+  now?: GymTimeInput;
 }): Promise<{ row: AthleteCheckInRow; created: boolean } | null> {
   const athlete = await queryOne<{ athlete_id: string }>(
     `select athlete_id from pilot.athletes
@@ -134,22 +211,28 @@ export async function checkIn(input: {
   );
   if (!athlete) return null;
 
-  const existing = await getTodayCheckIn(input.organizationId, input.athleteId);
+  // Resolved ONCE, then used by the pre-read, the insert and the re-read
+  // alike. Asking three times would let a tap at the stroke of gym midnight
+  // read one day, write the next, and then read back nothing at all.
+  const day = requireGymDay(input.now);
+
+  const existing = await checkInOnDay(input.organizationId, input.athleteId, day);
   if (existing) return { row: existing, created: false };
 
   const checkInId = randomUUID();
   await queryOne(
     `insert into pilot.athlete_check_ins
-       (organization_id, check_in_id, athlete_id,
+       (organization_id, check_in_id, athlete_id, checked_in_on,
         energy, soreness, focus, sleep_hours, hydration, motivation,
         mental_clarity, stress, nutrition_compliance, note)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     values ($1, $2, $3, $4::date, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      on conflict (organization_id, athlete_id, checked_in_on) do nothing
      returning check_in_id`,
     [
       input.organizationId,
       checkInId,
       input.athleteId,
+      day,
       input.energy ?? null,
       input.soreness ?? null,
       input.focus ?? null,
@@ -165,7 +248,7 @@ export async function checkIn(input: {
 
   // Under a concurrent double-tap the conflict clause makes one insert win;
   // both callers read back the same day's row.
-  const row = await getTodayCheckIn(input.organizationId, input.athleteId);
+  const row = await checkInOnDay(input.organizationId, input.athleteId, day);
   if (!row) return null;
   return { row, created: row.check_in_id === checkInId };
 }
@@ -190,13 +273,34 @@ const CHECK_IN_COLUMNS = `
   note, created_at
 `;
 
-export async function getTodayCheckIn(organizationId: string, athleteId: string): Promise<AthleteCheckInRow | null> {
+/**
+ * One athlete's row for one named gym day. The day is always a value this
+ * module resolved, never a caller's string and never `current_date`, so the
+ * read cannot land on a different day than the write did.
+ */
+async function checkInOnDay(
+  organizationId: string,
+  athleteId: string,
+  day: string,
+): Promise<AthleteCheckInRow | null> {
   return queryOne<AthleteCheckInRow>(
     `select ${CHECK_IN_COLUMNS}
      from pilot.athlete_check_ins
-     where organization_id = $1 and athlete_id = $2 and checked_in_on = current_date`,
-    [organizationId, athleteId],
+     where organization_id = $1 and athlete_id = $2 and checked_in_on = $3::date`,
+    [organizationId, athleteId, day],
   );
+}
+
+/** Today AT THE GYM -- see requireGymDay for why that is not `current_date`.
+ * Resolves the day ONCE and delegates, for the same reason checkIn does.
+ * `now` is the same seam checkIn carries and defaults the same way; no route
+ * passes it. */
+export async function getTodayCheckIn(
+  organizationId: string,
+  athleteId: string,
+  now?: GymTimeInput,
+): Promise<AthleteCheckInRow | null> {
+  return checkInOnDay(organizationId, athleteId, requireGymDay(now));
 }
 
 /** The athlete's own recent history, newest first. One athlete at a time,

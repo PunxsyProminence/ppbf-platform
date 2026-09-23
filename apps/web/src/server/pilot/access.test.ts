@@ -132,6 +132,28 @@ describe('assertCoachAssignedToAthlete', () => {
       expect(String(coverageSql)).toContain('expires_at > now()');
     });
 
+    // Deleting an athlete does not end the coverage grants on them, so the
+    // grant row alone cannot be the answer: the lookup must join the athlete
+    // on both halves of its composite key and require them live. A mocked db
+    // cannot execute that join -- the behavioural proofs are the table-backed
+    // fake under assertActorCanAccessAthlete below and, against real rows,
+    // softDeletedAthleteAccess.pg.test.ts -- so this pins the statement itself.
+    test('the coverage lookup admits only a LIVE athlete in the same organization', async () => {
+      mockQueryOne.mockResolvedValueOnce(null).mockResolvedValueOnce({ athlete_id: 'ath-1' });
+      await expect(assertCoachAssignedToAthlete('coach-sub', 'ath-1', 'org-1')).resolves.toBeUndefined();
+
+      const coverageSql = String(mockQueryOne.mock.calls[1][0]).replace(/\s+/g, ' ');
+      expect(coverageSql).toContain(
+        'join pilot.athletes ath on ath.organization_id = cc.organization_id and ath.athlete_id = cc.athlete_id',
+      );
+      expect(coverageSql).toContain('ath.deleted_at is null');
+      // The grant's own window and scoping are unchanged by the join.
+      expect(coverageSql).toContain('cc.organization_id = $1');
+      expect(coverageSql).toContain('cc.covering_coach_id = $3');
+      expect(coverageSql).toContain('cc.starts_at <= now()');
+      expect(coverageSql).toContain('cc.expires_at > now()');
+    });
+
     test('a coverage grant does not shadow the exact-match path: assigned coach still short-circuits', async () => {
       mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
       await expect(assertCoachAssignedToAthlete('coach-1', 'ath-1', 'org-1')).resolves.toBeUndefined();
@@ -438,6 +460,119 @@ describe('assertActorCanAccessAthlete', () => {
     });
   });
 
+  // A covering coach whose grant is still live, on an athlete who has since
+  // been soft-deleted. Deleting an athlete leaves their grants untouched, so
+  // this is a state production reaches in the ordinary course of things --
+  // and the one the coverage lookup, which never read pilot.athletes, used to
+  // let through the chokepoint.
+  //
+  // Answered from rows, not from a queue of canned results: the fake below
+  // honours "the athlete must be live" ONLY when the coverage statement joins
+  // pilot.athletes and says deleted_at is null. Drop either from access.ts and
+  // the fake admits the deleted athlete, and the refusal test goes red. The
+  // same pair against real Postgres is in softDeletedAthleteAccess.pg.test.ts.
+  describe('coach role -- a live coverage grant on a soft-deleted athlete', () => {
+    const athletes = [
+      { organization_id: 'org-1', athlete_id: 'ath-live', coach_id: 'coach-record', deleted_at: null },
+      { organization_id: 'org-1', athlete_id: 'ath-deleted', coach_id: 'coach-record', deleted_at: '2026-09-01T00:00:00Z' },
+    ];
+    // Both grants are inside their window right now; the athletes differ in
+    // deleted_at alone, so any difference in the answer is the deletion.
+    const liveGrants = [
+      { organization_id: 'org-1', athlete_id: 'ath-live', covering_coach_id: 'coach-covering' },
+      { organization_id: 'org-1', athlete_id: 'ath-deleted', covering_coach_id: 'coach-covering' },
+    ];
+
+    const coach = (accountId: string): ActorIdentity => ({ accountId, role: 'coach', organizationId: 'org-1', athleteId: null });
+    const orgAdmin: ActorIdentity = { accountId: 'acct-admin', role: 'organization_admin', organizationId: 'org-1', athleteId: null };
+
+    const refusalOf = (promise: Promise<void>) => promise.then(
+      () => { throw new Error('test bug: expected a refusal'); },
+      (error: unknown) => error as Error,
+    );
+
+    beforeEach(() => {
+      mockQueryOne.mockImplementation(async (sql: string, params: string[]) => {
+        const text = String(sql).replace(/\s+/g, ' ');
+
+        if (text.includes('from pilot.coach_coverage')) {
+          const [organizationId, athleteId, coachId] = params;
+          const grant = liveGrants.find((row) => row.organization_id === organizationId
+            && row.athlete_id === athleteId
+            && row.covering_coach_id === coachId);
+          if (!grant) return null;
+          const requiresLiveAthlete = text.includes('join pilot.athletes') && text.includes('deleted_at is null');
+          if (requiresLiveAthlete && !athletes.some((row) => row.organization_id === organizationId
+            && row.athlete_id === athleteId
+            && row.deleted_at === null)) {
+            return null;
+          }
+          return { athlete_id: grant.athlete_id };
+        }
+
+        if (text.includes('from pilot.athletes')) {
+          const liveOnly = text.includes('deleted_at is null');
+          if (text.includes('coach_id = $2')) {
+            const [athleteId, coachId, organizationId] = params;
+            const hit = athletes.find((row) => row.athlete_id === athleteId
+              && row.coach_id === coachId
+              && row.organization_id === organizationId
+              && (!liveOnly || row.deleted_at === null));
+            return hit ? { athlete_id: hit.athlete_id } : null;
+          }
+          const [athleteId, organizationId] = params;
+          const hit = athletes.find((row) => row.athlete_id === athleteId
+            && row.organization_id === organizationId
+            && (!liveOnly || row.deleted_at === null));
+          return hit ? { athlete_id: hit.athlete_id } : null;
+        }
+
+        throw new Error(`unexpected SQL in this test: ${text}`);
+      });
+    });
+
+    // clearAllMocks (the file-level afterEach) keeps an implementation; this
+    // one must not outlive the block and answer a later test's lookups.
+    afterEach(() => {
+      mockQueryOne.mockReset();
+    });
+
+    test('is refused, while the same grant on a live athlete is still admitted', async () => {
+      // Control first: the grant genuinely admits, so the refusal below cannot
+      // be "coverage is broken outright".
+      await expect(assertActorCanAccessAthlete(coach('coach-covering'), 'ath-live')).resolves.toBeUndefined();
+      await expect(assertActorCanAccessAthlete(coach('coach-covering'), 'ath-deleted')).rejects.toThrow(
+        'Forbidden: coach not assigned to athlete',
+      );
+    });
+
+    test('the refusal is indistinguishable from having no relationship at all', async () => {
+      const deleted = await refusalOf(assertActorCanAccessAthlete(coach('coach-covering'), 'ath-deleted'));
+      const unrelated = await refusalOf(assertActorCanAccessAthlete(coach('coach-unrelated'), 'ath-live'));
+      const neverExisted = await refusalOf(assertActorCanAccessAthlete(coach('coach-covering'), 'ath-never-existed'));
+
+      for (const other of [unrelated, neverExisted]) {
+        expect(deleted.constructor).toBe(other.constructor);
+        expect({ name: deleted.name, message: deleted.message }).toEqual({ name: other.name, message: other.message });
+        expect(Object.keys(deleted)).toEqual(Object.keys(other));
+      }
+    });
+
+    test('the coach of record and the org admin are unchanged: live admitted, deleted refused', async () => {
+      await expect(assertActorCanAccessAthlete(coach('coach-record'), 'ath-live')).resolves.toBeUndefined();
+      // The coach of record still short-circuits: no coverage lookup is paid.
+      expect(mockQueryOne).toHaveBeenCalledTimes(1);
+      await expect(assertActorCanAccessAthlete(coach('coach-record'), 'ath-deleted')).rejects.toThrow(
+        'Forbidden: coach not assigned to athlete',
+      );
+
+      await expect(assertActorCanAccessAthlete(orgAdmin, 'ath-live')).resolves.toBeUndefined();
+      await expect(assertActorCanAccessAthlete(orgAdmin, 'ath-deleted')).rejects.toThrow(
+        'Forbidden: athlete does not belong to organization',
+      );
+    });
+  });
+
   describe('athlete role', () => {
     test('allows athlete to access own record', async () => {
       const actor: ActorIdentity = { accountId: 'acct-1', role: 'athlete', organizationId: 'org-1', athleteId: 'ath-1' };
@@ -575,6 +710,121 @@ describe('accessibleAthleteIds', () => {
       mockQuery.mockResolvedValueOnce([]).mockRejectedValueOnce(dbDown);
       const actor: ActorIdentity = { accountId: 'coach-1', role: 'coach', organizationId: 'org-1', athleteId: null };
       await expect(accessibleAthleteIds(actor, ['ath-1'])).rejects.toThrow('connection refused');
+    });
+  });
+
+  // The batched twin of the coverage case under assertActorCanAccessAthlete: a
+  // grant that is still live, on an athlete who has since been soft-deleted.
+  // Deletion ends no grants, and the coverage half of this arm is its OWN
+  // query with its own where clause -- the roster half learned the rule and it
+  // did not, so `result.has(id)` stopped meaning "the per-candidate gate would
+  // not have thrown", which is this function's entire contract.
+  //
+  // Answered from rows, not from a queue of canned results: the fake honours
+  // "the athlete must be live" ONLY when the coverage statement joins
+  // pilot.athletes on both keys and says deleted_at is null. Drop either from
+  // access.ts and the deleted athlete comes back in the set. The same pair
+  // against real rows is in softDeletedAthleteAccess.pg.test.ts.
+  describe('coach role -- a live coverage grant on a soft-deleted athlete', () => {
+    const athletes = [
+      { organization_id: 'org-1', athlete_id: 'ath-live', coach_id: 'coach-record', deleted_at: null },
+      { organization_id: 'org-1', athlete_id: 'ath-deleted', coach_id: 'coach-record', deleted_at: '2026-09-01T00:00:00Z' },
+    ];
+    // Both grants are inside their window right now; the athletes differ in
+    // deleted_at alone, so any difference in the answer is the deletion.
+    const liveGrants = [
+      { organization_id: 'org-1', athlete_id: 'ath-live', covering_coach_id: 'coach-covering' },
+      { organization_id: 'org-1', athlete_id: 'ath-deleted', covering_coach_id: 'coach-covering' },
+    ];
+
+    const coach = (accountId: string): ActorIdentity => ({ accountId, role: 'coach', organizationId: 'org-1', athleteId: null });
+    const orgAdmin: ActorIdentity = { accountId: 'acct-admin', role: 'organization_admin', organizationId: 'org-1', athleteId: null };
+
+    beforeEach(() => {
+      mockQuery.mockImplementation(async (sql: string, params: unknown[]) => {
+        const text = String(sql).replace(/\s+/g, ' ');
+
+        if (text.includes('from pilot.coach_coverage')) {
+          const organizationId = params[0] as string;
+          const coachId = params[1] as string;
+          const candidates = params[2] as string[];
+          const requiresLiveAthlete = text.includes('join pilot.athletes')
+            && text.includes('ath.organization_id = cc.organization_id')
+            && text.includes('ath.athlete_id = cc.athlete_id')
+            && text.includes('ath.deleted_at is null');
+          return liveGrants
+            .filter((grant) => grant.organization_id === organizationId
+              && grant.covering_coach_id === coachId
+              && candidates.includes(grant.athlete_id)
+              && (!requiresLiveAthlete || athletes.some((row) => row.organization_id === grant.organization_id
+                && row.athlete_id === grant.athlete_id
+                && row.deleted_at === null)))
+            .map((grant) => ({ athlete_id: grant.athlete_id }));
+        }
+
+        if (text.includes('from pilot.athletes')) {
+          const liveOnly = text.includes('deleted_at is null');
+          // The coach arm's roster query carries the coach in $2 and the
+          // candidates in $3; the org-admin arm has no coach and candidates
+          // in $2.
+          const byCoach = text.includes('coach_id = $2');
+          const organizationId = params[0] as string;
+          const coachId = byCoach ? (params[1] as string) : null;
+          const candidates = (byCoach ? params[2] : params[1]) as string[];
+          return athletes
+            .filter((row) => row.organization_id === organizationId
+              && candidates.includes(row.athlete_id)
+              && (coachId === null || row.coach_id === coachId)
+              && (!liveOnly || row.deleted_at === null))
+            .map((row) => ({ athlete_id: row.athlete_id }));
+        }
+
+        throw new Error(`unexpected SQL in this test: ${text}`);
+      });
+    });
+
+    // clearAllMocks (the file-level afterEach) keeps an implementation; this
+    // one must not outlive the block and answer a later test's lookups.
+    afterEach(() => {
+      mockQuery.mockReset();
+    });
+
+    test('the covering coach gets the live athlete back and not the deleted one', async () => {
+      // ath-live is the control: the grant genuinely admits through this arm,
+      // so the exclusion below is the deletion and not a dead branch.
+      await expect(accessibleAthleteIds(coach('coach-covering'), ['ath-live', 'ath-deleted']))
+        .resolves.toEqual(new Set(['ath-live']));
+    });
+
+    test('the coach of record and the org admin are unchanged: live in, deleted out', async () => {
+      await expect(accessibleAthleteIds(coach('coach-record'), ['ath-live', 'ath-deleted']))
+        .resolves.toEqual(new Set(['ath-live']));
+      await expect(accessibleAthleteIds(orgAdmin, ['ath-live', 'ath-deleted']))
+        .resolves.toEqual(new Set(['ath-live']));
+    });
+
+    test('the deleted athlete the roster dropped is still offered to the coverage query', async () => {
+      // Otherwise the exclusion above could be the roster half quietly
+      // swallowing the id before coverage ever saw it, which would prove
+      // nothing about the join.
+      await accessibleAthleteIds(coach('coach-record'), ['ath-live', 'ath-deleted']);
+      const [, coverageParams] = mockQuery.mock.calls[1];
+      expect(coverageParams).toEqual(['org-1', 'coach-record', ['ath-deleted']]);
+    });
+
+    test('the coverage query joins the athlete on both keys and requires them live', async () => {
+      await accessibleAthleteIds(coach('coach-covering'), ['ath-live', 'ath-deleted']);
+      const coverageSql = String(mockQuery.mock.calls[1][0]).replace(/\s+/g, ' ');
+      expect(coverageSql).toContain(
+        'join pilot.athletes ath on ath.organization_id = cc.organization_id and ath.athlete_id = cc.athlete_id',
+      );
+      expect(coverageSql).toContain('ath.deleted_at is null');
+      // The grant's own window and scoping are unchanged by the join.
+      expect(coverageSql).toContain('cc.organization_id = $1');
+      expect(coverageSql).toContain('cc.covering_coach_id = $2');
+      expect(coverageSql).toContain('cc.starts_at <= now()');
+      expect(coverageSql).toContain('cc.expires_at > now()');
+      expect(coverageSql).toContain('cc.athlete_id = any($3::text[])');
     });
   });
 
