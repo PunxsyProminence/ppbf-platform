@@ -356,6 +356,12 @@ const PLATE_DECLARATION = /(?:^|;)\s*--plate\s*:\s*([^;]+)/;
 
 interface PlateResolution {
   readonly url: string | null;
+  /* The raw `--plate` value, kept alongside the parsed URL because the two
+     answer different questions: `url` is null both when a room declares
+     `--plate: none` and when the room declares nothing at all, and since the
+     floor converted to a material ground the difference between those is the
+     whole point of the test. */
+  readonly value: string;
   readonly selector: string;
   readonly specificity: Specificity;
   readonly order: number;
@@ -379,7 +385,7 @@ function platePropertyRules(css: string): { rule: CssRule; selector: string; val
  * or null when nothing declares one.
  */
 function resolvePlate(css: string, target: StyleTarget, state: MediaState): PlateResolution | null {
-  let winner: (PlateResolution & { value: string }) | null = null;
+  let winner: PlateResolution | null = null;
 
   for (const { rule, selector, value } of platePropertyRules(css)) {
     if (!rule.media.every((condition) => mediaHolds(condition, state))) continue;
