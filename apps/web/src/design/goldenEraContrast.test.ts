@@ -378,14 +378,20 @@ describe('a golden-era rule that overrides box-shadow on a control restates its 
    * records its exemptions: the list is decisions, and anything not on it is
    * owed an answer.
    *
-   * All three are plain `<button>` rather than `.btn`, so the base sheet's
+   * Both are plain `<button>` rather than `.btn`, so the base sheet's
    * `outline: 0` never applied to them and they keep the outline ring the
    * sheet gives every focusable. The browser probe measured a visible
    * indicator on each, on both viewports.
+   *
+   * `.ge-floorboard [role="tablist"] button` was a third entry and is gone,
+   * not because the tab plaques changed but because that selector did: no
+   * element in this application has ever carried role="tablist", so the
+   * exemption was excusing a rule that reached nothing. The coach tab rail
+   * carries `tab-rail` now, its steel rule restates var(--focus), and it
+   * appears in the OWED list above having answered.
    */
   const NOT_OWED: Record<string, string> = {
-    '.ge-floorboard [role="tablist"] button': 'tab plaque — plain <button>, keeps the sheet outline ring (measured visible)',
-    '.ge-floorboard .mat-leather button[aria-current="page"]': 'active tab plaque — same, and the .btn companion must not double-ring it',
+    '.ge-floorboard .mat-leather button[aria-current="page"]': 'active tab plaque — plain <button>, keeps the sheet outline ring, and the .btn companion must not double-ring it',
     '.ge-frontoffice nav.mat-leather button': 'people-console tab — plain <button>, measured visible at 2.6:1 on both viewports',
   };
 
