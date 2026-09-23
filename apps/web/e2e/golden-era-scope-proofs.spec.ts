@@ -333,15 +333,19 @@ const KNOWN_LEAKS: Readonly<Record<string, readonly KnownLeak[]>> = {
       why: FROZEN_ALIAS,
     },
   ],
-  '.ge-floorboard': [
-    {
-      key: 'button | background-color | rgb(169, 129, 38)',
-      source:
-        'apps/web/app/globals.css -- `--accent: var(--brass-600)` on :root, painted by the coach '
-        + 'workspace\'s current tab and mode buttons (`bg-[var(--accent)]`)',
-      why: FROZEN_ALIAS,
-    },
-  ],
+  /* `.ge-floorboard` HAD ONE ENTRY AND NOW HAS NONE. It was
+     `button | background-color | rgb(169, 129, 38)`: `--accent: var(--brass-600)`
+     aliased on :root in apps/web/app/globals.css and painted straight onto the
+     coach workspace's current tab and mode buttons through `bg-[var(--accent)]`
+     -- root gold reaching a bronze scope through a frozen alias nobody could
+     re-skin. The material pass did not set out to fix it. It fell out of the
+     rule that ordinary controls on this route are steel and brass means the
+     thing you have SELECTED: the steel rule paints background-color from the
+     scope, so the alias no longer reaches the screen, and the chosen tab takes
+     its brass from the scope's own ramp. Measured set on the route is now `[]`.
+     The ledger is checked in BOTH directions, so leaving this entry here after
+     fixing it would fail exactly as loudly as a new leak -- which is how it
+     came to be deleted rather than quietly kept. */
   /* `.ge-afterhours` HAD TWO ENTRIES AND NOW HAS NONE. Both were
      `border-[color:rgba(212,175,74,…)]` in apps/web/app/admin/shadow/page.tsx
      -- the console masthead rule, the evidence divider and the dashed upload
