@@ -48,15 +48,22 @@ const CSS = readDesignSystemCss(CSS_PATH);
 const SELECTOR_SOURCE = readFileSync(join(__dirname, 'plateVariant.ts'), 'utf8');
 
 /** The plate each room resolves to today, straight out of the locked inventory. */
-const DEFAULT_PLATE: Record<Room, string> = {
+/* THE FLOOR IS null ON PURPOSE. current/ppbf-golden-era.css converts the gym
+   floor to a material ground and sets `--plate: none`, so the painter has
+   nothing to paint there (owner direction 2026-09-22: the app is not tied to
+   real gym pictures). The declaration in the locked inventory below is still
+   in the archive and still the right answer for every other room; the floor's
+   answer is now "no photograph", and resolvePlate reports that as url: null. */
+const DEFAULT_PLATE: Record<Room, string | null> = {
   office: '/plates/plate-01-office-01.jpg',
-  floor: '/plates/plate-02a-floor-landscape-01.jpg',
+  floor: null,
   board: '/plates/plate-04-board-01.jpg',
   file: '/plates/plate-05-file-01.jpg',
   clinic: '/plates/plate-03-clinic-01.jpg',
   night: '/plates/plate-06-night-01.jpg',
 };
 
+const FLOOR_LANDSCAPE_PLATE = '/plates/plate-02a-floor-landscape-01.jpg';
 const FLOOR_PORTRAIT_PLATE = '/plates/plate-02b-floor-portrait-01.jpg';
 
 /* ==========================================================================
@@ -349,6 +356,12 @@ const PLATE_DECLARATION = /(?:^|;)\s*--plate\s*:\s*([^;]+)/;
 
 interface PlateResolution {
   readonly url: string | null;
+  /* The raw `--plate` value, kept alongside the parsed URL because the two
+     answer different questions: `url` is null both when a room declares
+     `--plate: none` and when the room declares nothing at all, and since the
+     floor converted to a material ground the difference between those is the
+     whole point of the test. */
+  readonly value: string;
   readonly selector: string;
   readonly specificity: Specificity;
   readonly order: number;
@@ -372,7 +385,7 @@ function platePropertyRules(css: string): { rule: CssRule; selector: string; val
  * or null when nothing declares one.
  */
 function resolvePlate(css: string, target: StyleTarget, state: MediaState): PlateResolution | null {
-  let winner: (PlateResolution & { value: string }) | null = null;
+  let winner: PlateResolution | null = null;
 
   for (const { rule, selector, value } of platePropertyRules(css)) {
     if (!rule.media.every((condition) => mediaHolds(condition, state))) continue;
@@ -615,8 +628,11 @@ describe('the resolver reads the sheet it is pointed at', () => {
       '.room--office', '.room--floor', '.room--board',
       '.room--file', '.room--clinic', '.room--night', '.on-canvas',
     ]));
-    // Six rooms, the portrait floor, and the warm canvas ground.
-    expect(declared).toHaveLength(8);
+    // Six rooms, the portrait floor, the warm canvas ground -- and the ninth,
+    // `.room--floor { --plate: none }` in the current theme, which is what
+    // takes the photograph off the gym floor.
+    expect(declared.filter((selector) => selector === '.room--floor')).toHaveLength(3);
+    expect(declared).toHaveLength(9);
   });
 
   it('still routes every plate through --plate, so resolving it means something', () => {
@@ -723,8 +739,24 @@ describe('the ladder below the variant still holds', () => {
     }
   });
 
-  it('keeps the portrait floor plate on an upright tablet', () => {
-    expect(resolvePlate(CSS, roomOn('floor', '/wall'), PORTRAIT)?.url).toBe(FLOOR_PORTRAIT_PLATE);
+  it('leaves the floor material on an upright tablet too, portrait rule or not', () => {
+    /*
+     * THE ORIENTATION RUNG'S ONLY LIVE CONSUMER WAS THIS ROOM, and it has
+     * converted. legacy/ppbf-leather-brass.css:3659 still declares the portrait
+     * floor plate inside its @media block, but the current theme's material
+     * ground is later in source order at the same specificity, so it wins in
+     * both orientations -- a gym tablet held upright gets the material floor,
+     * not a photograph, and the two do not fight.
+     *
+     * The mechanism itself is NOT retired: it is still proven, on a synthetic
+     * sheet, by the :where() trap tests below. That is deliberate. The owner
+     * ruling keeps the variant/orientation machinery for the surfaces that may
+     * still want imagery, and a kept mechanism with no live consumer has to be
+     * held up by something or it rots unnoticed.
+     */
+    expect(resolvePlate(CSS, roomOn('floor', '/wall'), PORTRAIT)?.url).toBeNull();
+    expect(resolvePlate(CSS, roomOn('floor', '/wall'), PORTRAIT)?.value).toBe('none');
+    expect(CSS).toContain(FLOOR_PORTRAIT_PLATE);
   });
 
   it('still takes every plate away under prefers-reduced-data', () => {
@@ -739,6 +771,33 @@ describe('the ladder below the variant still holds', () => {
 /* ==========================================================================
    (d) THE TRAP, BOTH WAYS ROUND
    ========================================================================== */
+
+/**
+ * The sheet as it stands for a room that still carries a photograph.
+ *
+ * The trap below is about cascade ARITHMETIC -- whether a variant rule written
+ * without :where() outranks the orientation override. The gym floor is the only
+ * room that has ever had a portrait variant to prove that on, and the current
+ * theme has since converted the floor to a material ground (`--plate: none`).
+ * So the proof runs with that one conversion lifted: everything else is the
+ * real sheet, in real source order.
+ *
+ * This is not the conversion hiding from its own guard. The three tests above
+ * assert the floor IS material, in both orientations. This one keeps the
+ * mechanism the owner ruling deliberately kept -- the variant and orientation
+ * machinery for whichever surface wants imagery next -- from rotting while it
+ * has no live consumer to stand on.
+ */
+function asPhotographicRoom(css: string): string {
+  const stripped = css.replace(/\.room--floor\s*\{[^}]*--plate:\s*none;[^}]*\}/g, '');
+  if (stripped === css) {
+    throw new Error(
+      'the floor material-ground rule was not found -- if it moved or was renamed, '
+      + 'this helper is lying about what it removes and the trap proof below is meaningless',
+    );
+  }
+  return stripped;
+}
 
 describe('a variant rule does not take the portrait plate off the gym tablet', () => {
   const WITH_WHERE = ':where([data-plate-variant~="2of2"]) .room--floor {\n'
@@ -763,15 +822,15 @@ describe('a variant rule does not take the portrait plate off the gym tablet', (
   });
 
   it('paints the second landscape plate on a landscape screen', () => {
-    const sheet = cssWithVariant(WITH_WHERE);
+    const sheet = asPhotographicRoom(cssWithVariant(WITH_WHERE));
     expect(resolvePlate(sheet, roomOn('floor', secondHalf), SCREEN)?.url)
       .toBe('/plates/plate-02a-floor-landscape-02.jpg');
     expect(resolvePlate(sheet, roomOn('floor', firstHalf), SCREEN)?.url)
-      .toBe(DEFAULT_PLATE.floor);
+      .toBe(FLOOR_LANDSCAPE_PLATE);
   });
 
   it('yields to the orientation override when the tablet is upright', () => {
-    const sheet = cssWithVariant(WITH_WHERE);
+    const sheet = asPhotographicRoom(cssWithVariant(WITH_WHERE));
     expect(resolvePlate(sheet, roomOn('floor', secondHalf), PORTRAIT)?.url).toBe(FLOOR_PORTRAIT_PLATE);
     expect(resolvePlate(sheet, roomOn('floor', firstHalf), PORTRAIT)?.url).toBe(FLOOR_PORTRAIT_PLATE);
   });
@@ -782,14 +841,14 @@ describe('a variant rule does not take the portrait plate off the gym tablet', (
     // build, and a landscape wall stretched onto an upright gym tablet. If this
     // expectation ever inverts, :where() has stopped doing its job and the
     // guard above has stopped meaning anything.
-    const sheet = cssWithVariant(WITHOUT_WHERE);
+    const sheet = asPhotographicRoom(cssWithVariant(WITHOUT_WHERE));
     expect(specificityOf('[data-plate-variant~="2of2"] .room--floor')).toEqual({ a: 0, b: 2, c: 0 });
     expect(resolvePlate(sheet, roomOn('floor', secondHalf), PORTRAIT)?.url)
       .toBe('/plates/plate-02a-floor-landscape-02.jpg');
   });
 
   it('leaves the other five rooms exactly where they were', () => {
-    const sheet = cssWithVariant(WITH_WHERE);
+    const sheet = asPhotographicRoom(cssWithVariant(WITH_WHERE));
     for (const room of Object.keys(DEFAULT_PLATE) as Room[]) {
       if (room === 'floor') continue;
       expect(resolvePlate(sheet, roomOn(room, secondHalf), SCREEN)?.url).toBe(DEFAULT_PLATE[room]);
