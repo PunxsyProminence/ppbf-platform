@@ -7,11 +7,25 @@
 //
 // Never used against production or staging -- the data directory and port
 // are test-scoped and torn down when this process receives SIGTERM.
+//
+// ON WINDOWS THAT SIGTERM NEVER ARRIVES. Node's `kill()` there is
+// TerminateProcess: this process ends mid-instruction and the handlers below
+// never run, so a passing suite used to leave its data directory behind on
+// every run. The detached janitor spawned below is what cleans up in that
+// case (and after a Ctrl+C or tool timeout on any platform); the sweep
+// removes what earlier runs left. Both live in lib/embedded-pg-cleanup.mjs,
+// which explains the mechanism. PPBF_EMBEDDED_PG_JANITOR=off disables both --
+// the cleanup suite uses that as its negative control.
 
+import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import AsyncExitHook from 'async-exit-hook';
 import EmbeddedPostgres from 'embedded-postgres';
+
+import { sweepStaleDataDirs, writeHelperPid } from './lib/embedded-pg-cleanup.mjs';
 
 // `embedded-postgres` registers its own SIGTERM/SIGINT handler at import time
 // (`AsyncExitHook(gracefulShutdown)` in its module body, via the same
@@ -37,6 +51,43 @@ const port = Number.parseInt(process.argv[3], 10);
 if (!dataDir || !Number.isFinite(port)) {
   console.error('Usage: node test-embedded-pg-server.mjs <dataDir> <port>');
   process.exit(1);
+}
+
+const cleanupEnabled = process.env.PPBF_EMBEDDED_PG_JANITOR !== 'off';
+
+if (cleanupEnabled) {
+  // Spawned before the cluster exists so nothing this process does afterwards
+  // is uncovered. `detached` is what lets it outlive this process: libuv puts
+  // every non-detached child in a kill-on-close job object, which is also
+  // why Postgres itself ends with this process on Windows. The janitor's
+  // stdin is the liveness signal -- this process holds the only write end,
+  // and the kernel closes it when this process ends, however it ends.
+  const janitor = spawn(
+    process.execPath,
+    [
+      path.join(path.dirname(fileURLToPath(import.meta.url)), 'test-embedded-pg-janitor.mjs'),
+      String(process.pid),
+      dataDir,
+      '--parent-pipe',
+    ],
+    { detached: true, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true },
+  );
+  janitor.on('error', () => {});
+  janitor.stdin.on('error', () => {});
+  // Neither the child nor the pipe keeps this process alive: its lifetime is
+  // still decided by Postgres and the suite that spawned it, as before.
+  janitor.stdin.unref();
+  janitor.unref();
+
+  // Clusters earlier runs left behind (a janitor killed along with its run).
+  // Live clusters owned by a live helper -- another suite running at the
+  // same time -- are left alone.
+  const swept = await sweepStaleDataDirs(path.dirname(path.resolve(dataDir)), { ownDataDir: dataDir });
+  if (swept.removed.length > 0 || swept.failed.length > 0) {
+    console.error(
+      `EMBEDDED_PG_SWEEP removed=${swept.removed.length} failed=${swept.failed.length} skipped=${swept.skipped.length}`,
+    );
+  }
 }
 
 const pg = new EmbeddedPostgres({
@@ -75,6 +126,12 @@ process.on('SIGINT', () => shutdown(0));
 
 try {
   await pg.initialise();
+  if (cleanupEnabled) {
+    // After initdb (which refuses a non-empty directory) and before start, so
+    // a sweep from another helper can tell this cluster is owned by a live
+    // process from the moment it has a postmaster.
+    await writeHelperPid(dataDir, process.pid);
+  }
   await pg.start();
   // Signal readiness on its own line; the parent test process watches
   // stdout for this exact marker before connecting.
