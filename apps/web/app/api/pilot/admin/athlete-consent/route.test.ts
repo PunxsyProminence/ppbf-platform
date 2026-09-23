@@ -4,11 +4,11 @@ import { GET, POST } from './route';
 import {
   checkGuardianMediaConsent,
   grantMediaConsent,
+  guardianDisplayName,
   listOrganizationConsentStatus,
-  listOrganizationGuardianNames,
   withdrawMediaConsent,
 } from '@/src/server/pilot/guardianConsent';
-import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { assertAthleteBelongsToOrganization } from '@/src/server/pilot/access';
 import { suppressPublishedMediaForAthlete } from '@/src/server/pilot/publication';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
@@ -21,7 +21,7 @@ jest.mock('@/src/server/pilot/guardianConsent', () => {
   return {
     ...actual,
     listOrganizationConsentStatus: jest.fn(),
-    listOrganizationGuardianNames: jest.fn(),
+    guardianDisplayName: jest.fn(),
     checkGuardianMediaConsent: jest.fn(),
     grantMediaConsent: jest.fn(),
     withdrawMediaConsent: jest.fn(),
@@ -36,17 +36,17 @@ jest.mock('@/src/server/pilot/http', () => {
   };
 });
 
-jest.mock('@/src/server/pilot/access', () => ({ assertActorCanAccessAthlete: jest.fn() }));
+jest.mock('@/src/server/pilot/access', () => ({ assertAthleteBelongsToOrganization: jest.fn() }));
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
 jest.mock('@/src/server/pilot/publication', () => ({ suppressPublishedMediaForAthlete: jest.fn() }));
 
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockList = jest.mocked(listOrganizationConsentStatus);
-const mockGuardianNames = jest.mocked(listOrganizationGuardianNames);
+const mockGuardianName = jest.mocked(guardianDisplayName);
 const mockCheckConsent = jest.mocked(checkGuardianMediaConsent);
 const mockGrant = jest.mocked(grantMediaConsent);
 const mockWithdraw = jest.mocked(withdrawMediaConsent);
-const mockAccess = jest.mocked(assertActorCanAccessAthlete);
+const mockAccess = jest.mocked(assertAthleteBelongsToOrganization);
 const mockSuppress = jest.mocked(suppressPublishedMediaForAthlete);
 const mockAudit = jest.mocked(writePilotAuditEvent);
 
@@ -83,7 +83,7 @@ beforeEach(() => {
     missingParentIds: ['p1', 'p2'],
     perGuardian: [],
   });
-  mockGuardianNames.mockResolvedValue(new Map([['p1', 'Dana Reyes']]));
+  mockGuardianName.mockResolvedValue('Dana Reyes');
   mockGrant.mockResolvedValue('wv-1');
   mockWithdraw.mockResolvedValue('wv-2');
   mockSuppress.mockResolvedValue([]);
@@ -132,6 +132,7 @@ describe('GET /api/pilot/admin/athlete-consent', () => {
               parent_id: 'p1',
               parent_name: 'Dana Reyes',
               status: 'signed',
+              consented: true,
               covers_video: true,
               public_use_allowed: false,
               signed_at: '2026-08-01T00:00:00Z',
@@ -200,6 +201,11 @@ describe('POST /api/pilot/admin/athlete-consent -- validation', () => {
     ['covers_video sent as the STRING "false"', { ...GRANT_BODY, covers_video: 'false' }],
     ['covers_video sent as null', { ...GRANT_BODY, covers_video: null }],
     ['an unparseable signed_at', { ...GRANT_BODY, signed_at: 'not-a-date' }],
+    // V8 rolls this over to March 2; Postgres refuses it. Accepting it would
+    // store a different day than the one written on the form.
+    ['a signed_at naming a day that does not exist', { ...GRANT_BODY, signed_at: '2026-02-30T12:00:00.000Z' }],
+    ['a bare year as signed_at', { ...GRANT_BODY, signed_at: '2026' }],
+    ['public_use_allowed sent as the STRING "true"', { ...GRANT_BODY, public_use_allowed: 'true' }],
     ['notes sent as a number', { ...GRANT_BODY, notes: 42 }],
   ])('%s is a 400 and writes nothing', async (_label, body) => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
@@ -213,14 +219,45 @@ describe('POST /api/pilot/admin/athlete-consent -- validation', () => {
 });
 
 describe('POST /api/pilot/admin/athlete-consent -- authorization', () => {
-  test('a coach who is not assigned to the athlete is refused, and nothing is written', async () => {
+  /*
+   * OWNER DECISION: a coach on this route is ORG-WIDE, not scoped to their own
+   * assigned athletes. Whoever is handed the paper at the door records it, and
+   * the audit beside this writer is itself org-wide -- scoping the write but
+   * not the read would offer a coach a button that refuses most of the rows in
+   * front of them.
+   *
+   * So the route must NOT reach for assertActorCanAccessAthlete, whose coach
+   * branch narrows to the coach of record plus live coverage grants. This test
+   * is what stops that chokepoint being reinstated as an apparent tidy-up.
+   */
+  test('a coach records for any athlete in their organization, not only their own', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach' }));
+
+    const response = await POST(jsonRequest({ ...GRANT_BODY, athlete_id: 'ath-not-mine' }));
+
+    expect(response.status).toBe(200);
+    expect(mockAccess).toHaveBeenCalledWith('org-a', 'ath-not-mine');
+    expect(mockGrant).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: 'org-a', athleteId: 'ath-not-mine', recordedByAccountId: 'acct-coach' }),
+    );
+  });
+
+  test('an athlete outside the caller organization is refused, and nothing is written', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
-    mockAccess.mockRejectedValueOnce(new Error('Forbidden: coach not assigned to athlete'));
+    mockAccess.mockRejectedValueOnce(new Error('Forbidden: athlete does not belong to organization'));
 
     const response = await POST(jsonRequest(GRANT_BODY));
 
     expect(response.status).toBe(403);
     expect(mockGrant).not.toHaveBeenCalled();
+  });
+
+  test('the guardian-membership check is run against THIS athlete and this organization', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+    await POST(jsonRequest(GRANT_BODY));
+
+    expect(mockCheckConsent).toHaveBeenCalledWith('org-a', 'ath-1');
   });
 
   test('a parent_id that does not guard this athlete is a 404, not a 403 -- and writes nothing', async () => {
@@ -258,6 +295,37 @@ describe('POST /api/pilot/admin/athlete-consent -- the write', () => {
     await POST(jsonRequest({ ...GRANT_BODY, covers_video: false }));
 
     expect(mockGrant).toHaveBeenCalledWith(expect.objectContaining({ coversVideo: false }));
+  });
+
+  test('public_use_allowed true is forwarded as true -- both halves of the form are recorded', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+    await POST(jsonRequest({ ...GRANT_BODY, public_use_allowed: true }));
+
+    expect(mockGrant).toHaveBeenCalledWith(expect.objectContaining({ publicUseAllowed: true }));
+  });
+
+  test('the tenant and the actor come from the session, never from the body', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('admin', { accountId: 'acct-front-desk' }));
+
+    await POST(jsonRequest({ ...GRANT_BODY, organization_id: 'org-somebody-else' }));
+
+    expect(mockGrant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: 'org-a',
+        athleteId: 'ath-1',
+        parentId: 'p1',
+        recordedByAccountId: 'acct-front-desk',
+      }),
+    );
+  });
+
+  test('recording a CONSENT never retracts anything -- the sweep belongs to withdrawal alone', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+
+    await POST(jsonRequest(GRANT_BODY));
+
+    expect(mockSuppress).not.toHaveBeenCalled();
   });
 
   test('a grant over a standing withdrawal is an ordinary write -- the route has no reversal guard', async () => {
@@ -304,6 +372,30 @@ describe('POST /api/pilot/admin/athlete-consent -- the write', () => {
     expect(mockWithdraw).toHaveBeenCalledTimes(1);
     expect(mockGrant).not.toHaveBeenCalled();
   });
+
+  test('a withdrawal carries the paper date and the filing note too, not only a grant', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin', { accountId: 'acct-front-desk' }));
+
+    await POST(
+      jsonRequest({
+        ...GRANT_BODY,
+        decision: 'withdraw',
+        signed_at: '2026-03-04T12:00:00.000Z',
+        notes: 'Filed in the office cabinet',
+      }),
+    );
+
+    expect(mockWithdraw).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: 'org-a',
+        athleteId: 'ath-1',
+        parentId: 'p1',
+        recordedByAccountId: 'acct-front-desk',
+        signedAt: '2026-03-04T12:00:00.000Z',
+        notes: 'Filed in the office cabinet',
+      }),
+    );
+  });
 });
 
 describe('POST /api/pilot/admin/athlete-consent -- audit and the withdrawal sweep', () => {
@@ -345,6 +437,51 @@ describe('POST /api/pilot/admin/athlete-consent -- audit and the withdrawal swee
     );
     await expect(response.json()).resolves.toEqual(
       expect.objectContaining({ retracted_publication_ids: ['pub-1', 'pub-2'] }),
+    );
+  });
+
+  test('a withdrawal writes its own consent_withdrawn event', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+    await POST(jsonRequest({ ...GRANT_BODY, decision: 'withdraw' }));
+
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'consent_withdrawn',
+        entity_type: 'guardian_media_consent',
+        entity_id: 'ath-1',
+        actor_role: 'coach',
+      }),
+    );
+  });
+
+  test('every retracted publication is independently auditable, not just the withdrawal', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockSuppress.mockResolvedValueOnce(['pub-1', 'pub-2']);
+
+    await POST(jsonRequest({ ...GRANT_BODY, decision: 'withdraw' }));
+
+    for (const publicationId of ['pub-1', 'pub-2']) {
+      expect(mockAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entity_type: 'video_publication',
+          entity_id: publicationId,
+          details: expect.objectContaining({ action: 'publication_retracted_on_consent_withdrawal' }),
+        }),
+      );
+    }
+  });
+
+  test('a failed sweep is itself recorded, so the gap is reconstructable', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockSuppress.mockRejectedValueOnce(new Error('suppression failed'));
+
+    await POST(jsonRequest({ ...GRANT_BODY, decision: 'withdraw' }));
+
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: expect.objectContaining({ action: 'consent_withdrawal_suppression_failed' }),
+      }),
     );
   });
 

@@ -10,6 +10,12 @@ interface GuardianConsentRow {
   parent_id: string;
   parent_name: string;
   status: string | null;
+  /* Whether this guardian counts as consented, decided by the server with the
+     same normalisation the consent gates use. This screen must never re-derive
+     it from `status`: that would be a second copy of the rule, and a second
+     copy is how a padded ' Signed ' once read as a signature to one reader and
+     as nothing to another. `status` is here to be DISPLAYED, not compared. */
+  consented: boolean;
   covers_video: boolean | null;
   public_use_allowed: boolean | null;
   signed_at: string | null;
@@ -72,7 +78,7 @@ export default function AthleteConsentAuditPage() {
     setOpenAthleteId(item.athlete_id);
     // Preselect the first guardian still missing consent -- the one the person
     // holding the paper is most likely here about.
-    const missing = item.per_guardian.find((g) => (g.status ?? '').trim().toLowerCase() !== 'signed');
+    const missing = item.per_guardian.find((g) => !g.consented);
     setSelectedParentId((missing ?? item.per_guardian[0])?.parent_id ?? '');
     setDecision('grant');
     setCoversVideo(true);
@@ -115,6 +121,12 @@ export default function AthleteConsentAuditPage() {
       await load();
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'That could not be recorded.');
+      // RE-READ EVEN ON FAILURE. A withdrawal whose suppression sweep failed
+      // answers 500 with the consent row ALREADY COMMITTED. Leaving the table
+      // as it was would show "Consent on file" on the row directly behind a
+      // message saying the withdrawal was recorded, and the two cannot both be
+      // true. The refusals that wrote nothing simply re-read the same state.
+      await load();
     } finally {
       setIsSaving(false);
     }

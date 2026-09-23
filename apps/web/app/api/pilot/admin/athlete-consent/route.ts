@@ -3,11 +3,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 import {
   checkGuardianMediaConsent,
   grantMediaConsent,
+  guardianDisplayName,
   listOrganizationConsentStatus,
-  listOrganizationGuardianNames,
   withdrawMediaConsent,
 } from '@/src/server/pilot/guardianConsent';
-import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { assertAthleteBelongsToOrganization } from '@/src/server/pilot/access';
 import { suppressPublishedMediaForAthlete } from '@/src/server/pilot/publication';
 import {
   hiddenNotFound,
@@ -64,16 +64,27 @@ const DECISIONS = new Set<ConsentDecision>(['grant', 'withdraw']);
  * finding sits unactioned.
  *
  * THE WRITER MAKES TWO AUTHORIZATION CHECKS, both required and in this order:
- *   1. assertActorCanAccessAthlete -- the caller may act on this athlete at
- *      all. platform_owner and board are refused outright by that function.
+ *   1. the athlete is in the caller's organization -- ORG-WIDE FOR EVERY ROLE
+ *      THAT REACHES HERE, coach included. This deliberately does NOT go
+ *      through assertActorCanAccessAthlete, whose coach branch narrows to the
+ *      coach of record plus live coverage grants. That narrowing is right for
+ *      reading an athlete's training record and wrong here, by owner decision:
+ *      whoever is handed the paper at the door records it, and the audit this
+ *      screen is attached to is itself org-wide, so scoping the write but not
+ *      the read would offer a coach a button that 403s on most of the rows in
+ *      front of them. Role admission is the gate above; this check is tenancy.
  *   2. the parent_id names a REAL linked guardian of THIS athlete. This one is
  *      not optional: writeMediaConsentUnderLock deliberately does not block on
  *      a missing link row (a guardian whose link was removed must still be
  *      able to put a withdrawal on file), so without this check a typo either
  *      writes a permanently invisible waiver or trips the waivers->parents
  *      foreign key and surfaces as an opaque 500.
- * A parent_id that is not a guardian of this athlete returns the same 404 as
- * an athlete that does not exist, matching the guardian route.
+ *
+ * THE TWO REFUSALS ARE NOT THE SAME SHAPE, and that is worth knowing before
+ * relying on one: an athlete outside the caller's organization is refused 403
+ * by check 1, while a parent_id that does not guard a reachable athlete is
+ * refused 404 by check 2. Check 1 already establishes tenancy, so check 2's
+ * 404 cannot be used to probe for athletes in another organization.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -87,24 +98,35 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      items: rows.map((row) => ({
-        athlete_id: row.athleteId,
-        athlete_name: row.athleteName,
-        consent_ok: row.consent.ok,
-        guardian_count: row.consent.guardianIds.length,
-        missing_guardian_count: row.consent.missingParentIds.length,
-        per_guardian: row.consent.perGuardian.map((g) => ({
-          parent_id: g.parentId,
-          // The name is what makes the picker usable: choosing which guardian
-          // a paper form belongs to from a list of opaque ids is how the wrong
-          // guardian gets recorded.
-          parent_name: guardianNames.get(g.parentId) ?? g.parentId,
-          status: g.status,
-          covers_video: g.coversVideo,
-          public_use_allowed: g.publicUseAllowed,
-          signed_at: g.signedAt,
-        })),
-      })),
+      items: rows.map((row) => {
+        const missing = new Set(row.consent.missingParentIds);
+        return {
+          athlete_id: row.athleteId,
+          athlete_name: row.athleteName,
+          consent_ok: row.consent.ok,
+          guardian_count: row.consent.guardianIds.length,
+          missing_guardian_count: row.consent.missingParentIds.length,
+          per_guardian: row.consent.perGuardian.map((g) => ({
+            parent_id: g.parentId,
+            // The name is what makes the picker usable: choosing which guardian
+            // a paper form belongs to from a list of opaque ids is how the wrong
+            // guardian gets recorded.
+            parent_name: guardianNames.get(g.parentId) ?? g.parentId,
+            status: g.status,
+            /* THE ANSWER, not the raw word, so no client has to re-derive it.
+               Whether a stored status counts as consent is one rule, applied
+               once, on the server -- the same normalisation the consent gates
+               use. A screen that compared this status itself would be a second
+               copy of that rule, which is exactly the drift that once let one
+               reader treat a padded ' Signed ' as a signature and another treat
+               it as nothing. */
+            consented: !missing.has(g.parentId),
+            covers_video: g.coversVideo,
+            public_use_allowed: g.publicUseAllowed,
+            signed_at: g.signedAt,
+          })),
+        };
+      }),
     });
   } catch (error) {
     return jsonError(error);
@@ -149,15 +171,33 @@ export async function POST(request: NextRequest) {
     const coversVideo = requireOptionalBoolean(body?.covers_video, 'covers_video', true);
     const publicUseAllowed = requireOptionalBoolean(body?.public_use_allowed, 'public_use_allowed', false);
 
-    // The date printed on the paper, when the entrant types one. Validated
-    // rather than passed through: an unparseable string would reach a
-    // `timestamptz not null` column and surface as an opaque 500.
+    /*
+     * The date printed on the paper, when the entrant types one.
+     *
+     * VALIDATED BY SHAPE AND BY THE CALENDAR, not by Date.parse alone. The
+     * string is stored raw and re-parsed by Postgres's own `timestamptz` input
+     * function, which is stricter than V8's: V8 rolls an out-of-range day over
+     * ("2026-02-30" becomes March 2) while Postgres rejects it. Accepting what
+     * V8 accepts would therefore either store a DIFFERENT day than the one on
+     * the form, or reach the column and surface as the opaque 500 this guard
+     * exists to prevent. So the day is checked against the calendar by reading
+     * it back out of the parsed instant.
+     */
     let signedAt: string | undefined;
     if (body?.signed_at !== undefined) {
-      if (typeof body.signed_at !== 'string' || !Number.isFinite(new Date(body.signed_at).getTime())) {
-        throw new Error('Unsupported signed_at: must be an ISO 8601 date');
+      const raw = body.signed_at;
+      const shape = typeof raw === 'string' ? /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.exec(raw) : null;
+      const parsed = shape ? new Date(raw as string) : null;
+      const roundTrips =
+        parsed !== null &&
+        Number.isFinite(parsed.getTime()) &&
+        parsed.getUTCFullYear() === Number(shape![1]) &&
+        parsed.getUTCMonth() + 1 === Number(shape![2]) &&
+        parsed.getUTCDate() === Number(shape![3]);
+      if (!roundTrips) {
+        throw new Error('Unsupported signed_at: must be an ISO 8601 UTC timestamp naming a real calendar day');
       }
-      signedAt = body.signed_at;
+      signedAt = raw as string;
     }
 
     let notes: string | undefined;
@@ -168,8 +208,9 @@ export async function POST(request: NextRequest) {
       notes = body.notes;
     }
 
-    // Check 1: may this caller act on this athlete at all.
-    await assertActorCanAccessAthlete(principal, athleteId);
+    // Check 1: tenancy, org-wide for every role the gate above admits. See
+    // the header for why this is not assertActorCanAccessAthlete.
+    await assertAthleteBelongsToOrganization(principal.organizationId, athleteId);
 
     // Check 2: is parent_id actually a linked guardian of this athlete. See
     // the header for why this cannot be skipped.
@@ -178,11 +219,13 @@ export async function POST(request: NextRequest) {
       return hiddenNotFound();
     }
 
-    const guardianNames = await listOrganizationGuardianNames(principal.organizationId);
-    // The foreign key from guardian_links onto pilot.parents means every id
-    // that passed check 2 has a name; the coalesce is defensiveness, not a
-    // state to build anything on.
-    const signedByName = guardianNames.get(parentId) ?? parentId;
+    // One name, one row. The org-wide map exists for the audit, which resolves
+    // hundreds of athletes in a page; a writer holding a single parent_id has
+    // no reason to read the whole roster's guardians to render one word. The
+    // foreign key from guardian_links onto pilot.parents means every id that
+    // passed check 2 has a row; the coalesce is defensiveness, not a state to
+    // build anything on.
+    const signedByName = (await guardianDisplayName(principal.organizationId, parentId)) ?? parentId;
 
     if (decision === 'grant') {
       // NO SPECIAL CASE FOR REVERSING A WITHDRAWAL, deliberately. Owner

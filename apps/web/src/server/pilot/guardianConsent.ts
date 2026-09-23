@@ -1,4 +1,4 @@
-import { query, withTransaction } from './db';
+import { query, queryOne, withTransaction } from './db';
 import { guardianAthleteIds, guardianParentIdForAthlete, guardianParentIds } from './guardianAccess';
 import { upsertWaiver, upsertWaiverWithClient, type UpsertWaiverParams } from './intake';
 import { normalizeWaiverStatusText } from './waiverCompliance';
@@ -432,6 +432,19 @@ export async function listOrganizationGuardianNames(organizationId: string): Pro
     [organizationId],
   );
   return new Map(rows.map((row) => [row.parent_id, row.full_name]));
+}
+
+// ONE guardian's name. The map above is for the audit, which resolves hundreds
+// of athletes in a page and would otherwise issue a query per row; a caller
+// holding a single parent_id should not read the whole roster's guardians to
+// render one word. Same deliberate absence of an account_id predicate, for the
+// same reason: the guardian who signed on paper has none.
+export async function guardianDisplayName(organizationId: string, parentId: string): Promise<string | null> {
+  const row = await queryOne<{ full_name: string }>(
+    `select full_name from pilot.parents where organization_id = $1 and parent_id = $2`,
+    [organizationId, parentId],
+  );
+  return row?.full_name ?? null;
 }
 
 export interface OrganizationConsentRow {
