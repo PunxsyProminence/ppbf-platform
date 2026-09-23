@@ -56,6 +56,8 @@ let storedReferenceDrillDetails: Record<string, Record<string, unknown>> = {};
 let detailReadFails = false;
 let storedCheckIn: Record<string, unknown> | null;
 let checkInReadFails: boolean;
+/** A-FIN-01: hold the wellness READ open for the whole test, so "still loading" can be asserted. */
+let checkInReadPending: boolean;
 let assignmentsFail = false;
 let assignmentsPending = false;
 
@@ -209,6 +211,7 @@ beforeEach(() => {
   // about the gate. The gate's own cases set this to null explicitly.
   storedCheckIn = checkedInRecord();
   checkInReadFails = false;
+  checkInReadPending = false;
 
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -222,6 +225,10 @@ beforeEach(() => {
       if ((init?.method ?? 'GET') === 'POST') {
         storedCheckIn = { ...checkedInRecord(), ...parseBody(init) };
         return jsonResponse({ item: storedCheckIn, already_checked_in: false });
+      }
+      if (checkInReadPending) {
+        // Never answers: the wellness read is still in flight for the whole test.
+        return new Promise<Response>(() => {});
       }
       return jsonResponse({
         today: storedCheckIn,
@@ -382,6 +389,30 @@ function openTab(label: string) {
   if (surface) {
     fireEvent.click(surface);
   }
+}
+
+/** A-FIN-01: the one pre-session input the Session Log offers -- optional, and empty until the athlete writes. */
+const PRE_CHECK_IN_NOTE = 'Anything your coach should know before you start?';
+/** A-FIN-01: what check-in stores when the athlete wrote nothing, solely because pilot.sessions requires a note. */
+const NO_NOTE_PLACEHOLDER = 'No athlete note provided at check-in.';
+/** The removed defaulted slider's label. Only ever asserted ABSENT, so a control that returns under it fails. */
+const REMOVED_SLIDER_LABEL = 'How ready do you feel today? (1-10)';
+
+/**
+ * Check in from the Session Log, writing `note` into the pre-check-in box
+ * first when one is given, and return the session body check-in POSTed.
+ * Leaves the box untouched when `note` is undefined -- the athlete who writes
+ * nothing, which is the case the placeholder exists for.
+ */
+async function checkInFromSessionLog(note?: string): Promise<Record<string, unknown>> {
+  const box = await screen.findByLabelText(PRE_CHECK_IN_NOTE);
+  if (note !== undefined) {
+    fireEvent.change(box, { target: { value: note } });
+  }
+  const before = postedTo('/api/pilot/sessions').length;
+  fireEvent.click(screen.getByRole('button', { name: 'Check In' }));
+  await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(before + 1));
+  return postedTo('/api/pilot/sessions')[before].body;
 }
 
 describe('athlete workspace honesty', () => {
@@ -696,12 +727,37 @@ describe('an open session across a reload', () => {
   // The check-in placeholder is stored because pilot.sessions requires a
   // non-empty note. Handing it back into the athlete's own box would present a
   // sentence the app wrote as one they wrote.
-  test('the automatic check-in note is not returned as the athlete own notes', async () => {
-    storedSessions = [openSessionRow({ notes: 'Auto check-in readiness GREEN' })];
+  //
+  // WIDENED IN A-FIN-01, not replaced. It covered 'Auto check-in readiness
+  // GREEN' alone; check-in no longer writes that form, but rows carrying all
+  // three bands still exist and are deliberately not rewritten, so every band
+  // stays suppressed -- and the new placeholder is suppressed the same way.
+  test.each([
+    'Auto check-in readiness GREEN',
+    'Auto check-in readiness YELLOW',
+    'Auto check-in readiness RED',
+    NO_NOTE_PLACEHOLDER,
+  ])('the system check-in note "%s" is not returned as the athlete own notes', async (stored) => {
+    storedSessions = [openSessionRow({ notes: stored })];
     await renderWorkspace();
 
     await screen.findByRole('button', { name: 'Check Out' });
     expect((screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement).value).toBe('');
+    // Nor anywhere else on the open session: the system's sentence is not
+    // on screen at all.
+    expect(screen.queryByText(stored)).toBeNull();
+    expect(screen.getByText('Anything you write here saves as you go.')).toBeTruthy();
+  });
+
+  // The suppression must not over-reach: a note that merely mentions the
+  // words is the athlete's own and comes back like any other.
+  test('a real note that only resembles a system note is still the athlete own', async () => {
+    storedSessions = [openSessionRow({ notes: 'Auto check-in readiness GREEN -- actually my knee hurts' })];
+    await renderWorkspace();
+
+    await screen.findByRole('button', { name: 'Check Out' });
+    expect((screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement).value)
+      .toBe('Auto check-in readiness GREEN -- actually my knee hurts');
   });
 
   test('notes reach the session record before any check-out happens', async () => {
@@ -821,7 +877,9 @@ describe('authored announcements on the athlete workspace', () => {
     // A board that could not be read is a blank board, and says nothing about
     // its own plumbing on top of the page's real work.
     expect(screen.getByText('Nothing on the board.')).toBeTruthy();
-    expect(screen.getByText('Pre-Session Self-Report')).toBeTruthy();
+    // Anchored on the Session Log's pre-check-in note since A-FIN-01. It was
+    // the "Pre-Session Self-Report" card, which went with its defaulted slider.
+    expect(await screen.findByLabelText(PRE_CHECK_IN_NOTE)).toBeTruthy();
     expect(await screen.findByRole('button', { name: 'Check In' })).toBeTruthy();
   });
 });
@@ -1943,9 +2001,10 @@ describe('a rehydrated session keeps the RPE it was actually stored with', () =>
 // described choices that start unanswered. These pin the whole contract:
 // untouched is null / UNKNOWN; 0, an ordinary value and 10 are sent exactly,
 // attributed to the athlete's post-session self-report; nothing else on the
-// screen -- the readiness slider, the notes, a previous session -- can become
-// the number; a refused check-out keeps the answer; and the stored value comes
-// back on the card the athlete already reads.
+// screen -- the pre-check-in note (the readiness slider, until A-FIN-01
+// removed it), the notes, a previous session -- can become the number; a
+// refused check-out keeps the answer; and the stored value comes back on the
+// card the athlete already reads.
 describe('post-session effort is the athlete\'s answer at check-out, or nothing', () => {
   const EFFORT_Q = 'How hard was the session you just finished?';
 
@@ -2034,20 +2093,37 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     expect((await checkOut()).rpe).toBe(3);
   });
 
-  test('the readiness slider cannot reach the check-out RPE', async () => {
-    await openSession();
+  // REWRITTEN IN A-FIN-01. This was 'the readiness slider cannot reach the
+  // check-out RPE', and the slider is gone. The property it pinned -- nothing
+  // the athlete puts in BEFORE the session can become the session's effort --
+  // now has one pre-session input to hold it against: the pre-check-in note.
+  // A bare number is the hardest case, so that is what goes in it, through a
+  // real check-in rather than a rehydrated row. Untouched, check-out still
+  // records nothing; answered, the answer wins over whatever the note said.
+  test('nothing entered before check-in can reach the check-out RPE', async () => {
+    await renderWorkspace();
+    expect(screen.queryByRole('slider')).toBeNull();
 
-    fireEvent.change(screen.getByLabelText('How ready do you feel today? (1-10)'), { target: { value: '9' } });
+    const checkIn = await checkInFromSessionLog('9');
+    expect(checkIn.rpe).toBeNull();
+    expect(checkIn.rpe_method).toBe('UNKNOWN');
+    openTab('Dashboard');
+    await screen.findByRole('button', { name: 'Check Out' });
     const untouched = await checkOut();
+    expect(untouched.notes).toBe('9');
     expect(untouched.rpe).toBeNull();
     expect(untouched.rpe_method).toBe('UNKNOWN');
     cleanup();
     fetchCalls.length = 0;
 
-    await openSession();
-    fireEvent.change(screen.getByLabelText('How ready do you feel today? (1-10)'), { target: { value: '2' } });
+    await renderWorkspace();
+    await checkInFromSessionLog('2');
+    openTab('Dashboard');
+    await screen.findByRole('button', { name: 'Check Out' });
     fireEvent.click(effortButton(7));
-    expect((await checkOut()).rpe).toBe(7);
+    const answered = await checkOut();
+    expect(answered.rpe).toBe(7);
+    expect(answered.rpe_method).toBe('athlete_post_session_self_report');
   });
 
   test('the session notes cannot become an RPE', async () => {
@@ -2327,72 +2403,101 @@ describe('check-in records no session RPE at all', () => {
   });
 
   test('no readiness value is submitted as a session RPE', async () => {
-    // The readiness slider still exists and still bands the check-in note. What
-    // it must never do again is reach pilot.sessions.rpe. A number here would
-    // be that regression whatever its value, so the assertion is on the type.
+    // The readiness slider is gone (A-FIN-01), and so is the band it wrote on
+    // the check-in note. What this still pins is that nothing reaches
+    // pilot.sessions.rpe at check-in: a number here would be that regression
+    // whatever its value, so the assertion is on the type -- and it holds
+    // with a bare number written in the pre-check-in note, too.
     await renderWorkspace();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
-    await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
+    const blank = await checkInFromSessionLog();
+    expect(typeof blank.rpe).not.toBe('number');
+    expect(blank.notes).toBe(NO_NOTE_PLACEHOLDER);
+    cleanup();
+    fetchCalls.length = 0;
 
-    const [checkIn] = postedTo('/api/pilot/sessions');
-    expect(typeof checkIn.body.rpe).not.toBe('number');
+    await renderWorkspace();
+    const numeric = await checkInFromSessionLog('8');
+    expect(typeof numeric.rpe).not.toBe('number');
+    expect(numeric.rpe_method).toBe('UNKNOWN');
+    // The note stays a note: stored as the words typed, not read as a rating.
+    expect(numeric.notes).toBe('8');
   });
 });
 
-// READINESS IS A RECORD, NOT A PRESCRIPTION. The check-in slider is a 1-10
-// self-report whose method nothing has validated -- readinessProvenance.ts is
-// explicit that NO readiness method passes the established
-// reliability/validity bar -- so its band may be written down, and may not
-// decide what training is generated, shown, or sent. Check-in used to hand
-// the band to buildWorkoutFloorTasks, which bought GREEN athletes a
-// 'High-output intervals' conditioning finisher and everyone else reduced
-// work. That generator is gone altogether now (A-FIN-04): check-in builds no
-// work at any band, and the Floor shows what a coach assigned. These pin both
-// halves: nothing the slider can reach produces or changes work, and the band
-// still lands on the session note, where a record belongs.
-describe('the readiness slider cannot change the work', () => {
-  async function checkInWithSlider(value: number) {
-    await renderWorkspace();
-    fireEvent.change(screen.getByLabelText('How ready do you feel today? (1-10)'), {
-      target: { value: String(value) },
-    });
-    fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
-    await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
-    await waitFor(() => expect(openSurface()).toBe('Floor'));
-    return { session: postedTo('/api/pilot/sessions')[0].body };
+// READINESS IS A RECORD, NOT A PRESCRIPTION. A pre-session self-report whose
+// method nothing has validated -- readinessProvenance.ts is explicit that NO
+// readiness method passes the established reliability/validity bar -- may be
+// written down, and may not decide what training is generated, shown, or sent.
+// Check-in used to hand the slider's band to buildWorkoutFloorTasks, which
+// bought GREEN athletes a 'High-output intervals' conditioning finisher and
+// everyone else reduced work. That generator is gone (A-FIN-04), and the
+// slider itself is gone (A-FIN-01).
+//
+// REWRITTEN IN A-FIN-01, and renamed from 'the readiness slider cannot change
+// the work'. The inputs these hold against are now the two that exist before a
+// session: the athlete's wellness answers (the durable pre-training
+// self-report) and the optional pre-check-in note. Neither may produce or
+// change work. The old first case also pinned the band landing on the session
+// note; that half is retired on purpose -- no band is written any more, and
+// the note is the athlete's words or the fixed placeholder (pinned below).
+describe('nothing said before the session can change the work', () => {
+  /** Today's wellness check with every 1-5 answer at one end of its scale. */
+  function wellnessAt(value: 1 | 5): Record<string, unknown> {
+    return {
+      ...checkedInRecord(),
+      energy: value,
+      soreness: value,
+      focus: value,
+      motivation: value,
+      mental_clarity: value,
+      stress: value,
+      hydration: value,
+      nutrition_compliance: value,
+      sleep_hours: value === 5 ? 9 : 4,
+    };
   }
 
-  test('check-ins at 3 and at 9 write only the session, differing only in the recorded band', async () => {
-    const low = await checkInWithSlider(3);
+  async function checkInWith(wellness: Record<string, unknown>, note?: string) {
+    storedCheckIn = wellness;
+    await renderWorkspace();
+    const session = await checkInFromSessionLog(note);
+    await waitFor(() => expect(openSurface()).toBe('Floor'));
+    return { session };
+  }
+
+  test('check-ins after opposite wellness answers, with and without a note, write only the session and no band', async () => {
+    const low = await checkInWith(wellnessAt(1));
     const lowPlanCalls = floorPlanCalls().length;
     cleanup();
     fetchCalls.length = 0;
-    const high = await checkInWithSlider(9);
+    const high = await checkInWith(wellnessAt(5), 'Feeling sharp today.');
 
     expect(lowPlanCalls).toBe(0);
     expect(floorPlanCalls()).toHaveLength(0);
 
-    // The record still moves -- on the session's auto check-in note, and
-    // nowhere else. The slider staying a live self-report is the point: it is
-    // kept as a record precisely so that removing its authority over the work
-    // does not quietly remove the athlete's voice too.
-    expect(low.session.notes).toBe('Auto check-in readiness RED');
-    expect(high.session.notes).toBe('Auto check-in readiness GREEN');
+    // The note is the athlete's words or the placeholder -- never a band, and
+    // never anything read off the wellness answers.
+    expect(low.session.notes).toBe(NO_NOTE_PLACEHOLDER);
+    expect(high.session.notes).toBe('Feeling sharp today.');
+    for (const body of [low.session, high.session]) {
+      expect(JSON.stringify(body)).not.toMatch(/\b(GREEN|YELLOW|RED)\b|Auto check-in readiness/);
+      expect(body.rpe).toBeNull();
+    }
   });
 
   // A mutation audit (2026-08-25) found a task appended only to the DISPLAYED
   // list escalating the floor a child reads while every payload assertion
-  // stayed green. So the display itself is pinned, at every band: check-in
-  // lands the athlete on the Floor, and what renders there is the coach's
-  // list, unchanged by the slider.
-  test('the floor the athlete sees is identical whatever the slider says', async () => {
-    const renderedTitles = async (value: number) => {
+  // stayed green. So the display itself is pinned: check-in lands the athlete
+  // on the Floor, and what renders there is the coach's list, unchanged by
+  // how they answered their wellness check or what they wrote before starting.
+  test('the floor the athlete sees is identical whatever the wellness answers say', async () => {
+    const renderedTitles = async (wellness: Record<string, unknown>, note?: string) => {
       storedAssignments = [
         assignment({ assignment_id: 'as-1', drill_display_name: 'Jab-cross on the bag' }),
         assignment({ assignment_id: 'as-2', status: 'in_progress', drill_display_name: 'Slip drill' }),
       ];
-      await checkInWithSlider(value);
+      await checkInWith(wellness, note);
       await screen.findByRole('heading', { level: 4, name: 'Slip drill' });
       const titles = floorWorkTitles();
       cleanup();
@@ -2400,21 +2505,23 @@ describe('the readiness slider cannot change the work', () => {
       return titles;
     };
 
-    const low = await renderedTitles(3);
-    const mid = await renderedTitles(5);
-    const high = await renderedTitles(10);
+    const low = await renderedTitles(wellnessAt(1), 'Wiped out, barely slept.');
+    const unanswered = await renderedTitles(checkedInRecord());
+    const high = await renderedTitles(wellnessAt(5), 'Ready to go hard.');
 
-    expect(mid).toEqual(low);
+    expect(unanswered).toEqual(low);
     expect(high).toEqual(low);
     // Anchored to the real floor, so the equality cannot pass on an empty page.
     expect(low).toEqual(['Jab-cross on the bag', 'Slip drill']);
   });
 
-  test('no intensity escalation is reachable from the slider', async () => {
-    // 10 is the value that used to buy the GREEN branch: a 'Conditioning
-    // Finisher' prescribing 'High-output intervals: 6 rounds x 90s on / 60s
-    // active recovery'. No slider value may buy an intensity prescription now.
-    await checkInWithSlider(10);
+  test('no intensity escalation is reachable from wellness answers or the note', async () => {
+    // The top of every scale plus a note asking for more is the strongest
+    // "ready" signal this screen can receive. It used to be the slider at 10
+    // that bought a 'Conditioning Finisher' prescribing 'High-output
+    // intervals: 6 rounds x 90s on / 60s active recovery'. Nothing may buy an
+    // intensity prescription now.
+    await checkInWith(wellnessAt(5), 'Push me hard, I feel great.');
 
     const everySentBody = JSON.stringify(fetchCalls.map((call) => call.body));
     expect(everySentBody).not.toContain('High-output');
@@ -2461,12 +2568,15 @@ describe('no session observation is fabricated for SHADOW', () => {
     // The "Session Duration (minutes)" box outlived the feed it fed: when the
     // Session Load observation moved to check-out and was then withheld for
     // want of real inputs, the input stayed on the card, collecting a number
-    // no code read. The slider assertion keeps this from passing vacuously on
-    // the wrong screen: same card, one control present, the dead one gone.
+    // no code read. The anchor assertion keeps this from passing vacuously on
+    // the wrong screen. It was the readiness slider on the same card; since
+    // A-FIN-01 removed both, the anchor is the pre-session input that
+    // replaced them -- present -- with the dead one still gone.
     await renderWorkspace();
 
-    expect(screen.getByLabelText('How ready do you feel today? (1-10)')).toBeTruthy();
+    expect(await screen.findByLabelText(PRE_CHECK_IN_NOTE)).toBeTruthy();
     expect(screen.queryByLabelText('Session Duration (minutes)')).toBeNull();
+    expect(screen.queryByLabelText(REMOVED_SLIDER_LABEL)).toBeNull();
   });
 });
 
@@ -2514,79 +2624,483 @@ describe('the training card is fed the RPE that was stored, not a substitute', (
   });
 });
 
-// THE SLIDER'S PRESENTATION MAY NOT OUT-CLAIM ITS AUTHORITY. #597 removed the
-// check-in slider's power over the generated work, but the copy around it kept
-// the old voice: a card headed "Current Readiness" over a "Readiness to Train"
-// slider, help text ordering a morning readiness check and warning against
-// "ignoring LOW readiness scores before intense training", and a summary tile
-// translating the band into an instruction (READY FOR TRAINING / MODIFY
-// TRAINING / COACH REVIEW REQUIRED). All of that told a child their 1-10
-// governs training when it decides nothing. These pin the honest presentation:
-// the number they chose is read back, the screen says outright that it neither
-// clears them nor changes the work, and no band buys an instruction. The band
-// word itself survives only as the descriptor of what they reported -- the
-// stored note format is pinned separately above and is deliberately untouched.
-describe('the check-in slider presents as a self-report, not a clearance', () => {
-  const SLIDER_LABEL = 'How ready do you feel today? (1-10)';
+// THE SELF-REPORT'S PRESENTATION MAY NOT OUT-CLAIM ITS AUTHORITY. #597 removed
+// the check-in slider's power over the generated work, but the copy around it
+// kept the old voice: a card headed "Current Readiness" over a "Readiness to
+// Train" slider, help text ordering a morning readiness check and warning
+// against "ignoring LOW readiness scores before intense training", and a
+// summary tile translating the band into an instruction (READY FOR TRAINING /
+// MODIFY TRAINING / COACH REVIEW REQUIRED). All of that told a child their
+// 1-10 governs training when it decides nothing.
+//
+// REWRITTEN IN A-FIN-01, and renamed from 'the check-in slider presents as a
+// self-report, not a clearance'. The slider is gone -- it started at 8, so the
+// "number they chose" these cases read back was, untouched, a number nobody
+// chose. The pre-session self-report is the wellness check, and the summary
+// tile now says whether it is on record. What these still pin is the same
+// property against the new surface: nothing on the screen claims a readiness
+// answer the athlete did not give, the tile says it is not a clearance, no
+// state of it buys a training instruction, and the old authority vocabulary
+// stays gone.
+//
+// Each old case, accounted for:
+//   'the number the athlete chose is shown back to them' -- RETIRED: there is
+//     no number any more. Replaced by the first case below, which pins that no
+//     readiness control or number is drawn at all.
+//   'the screen states that the report neither clears the athlete nor changes
+//     the work' -- REWRITTEN: the owner's 2026-08-24 sentence sat at the
+//     slider and was about it, so it left with it; the summary tile keeps
+//     "Not a clearance".
+//   'no slider value buys a training instruction' -- REWRITTEN over the four
+//     wellness states.
+//   'the dashboard help no longer instructs readiness-gated training' -- KEPT,
+//     with the removed card's heading added, and made real: it now expands the
+//     panel before asserting (it used to pass on a closed one) and pins the
+//     description's "Say how you feel" as gone with the slider it described.
+describe('the pre-session self-report presents as a self-report, not a clearance', () => {
+  function wellnessTile(): HTMLElement {
+    return screen.getByText("Today's Wellness").parentElement as HTMLElement;
+  }
 
-  test('the number the athlete chose is shown back to them', async () => {
+  /** The Session Log card on the Dashboard -- everything under its heading. */
+  function sessionLogPanel(): HTMLElement {
+    return screen.getByText('Session Log').parentElement as HTMLElement;
+  }
+
+  test('no readiness control or number is drawn before the athlete has answered anything', async () => {
     await renderWorkspace();
 
-    fireEvent.change(screen.getByLabelText(SLIDER_LABEL), {
-      target: { value: '4' },
-    });
+    const note = (await screen.findByLabelText(PRE_CHECK_IN_NOTE)) as HTMLTextAreaElement;
+    // The one pre-session input starts empty -- no value the athlete did not write.
+    expect(note.value).toBe('');
+    expect(screen.getByText(/Optional\. You can leave it empty\./)).toBeTruthy();
 
-    // At the control, and again on the summary tile -- their number, not a
-    // platform verdict derived from it.
-    expect(screen.getByText('4/10')).toBeTruthy();
-    expect(screen.getByText('4/10 · RED')).toBeTruthy();
+    // The defaulted slider, by its label and by its role: a range always has
+    // a position, which is an answer nobody gave.
+    expect(screen.queryByLabelText(REMOVED_SLIDER_LABEL)).toBeNull();
+    expect(screen.queryAllByRole('slider')).toEqual([]);
+    expect(screen.queryByText('Pre-Session Self-Report')).toBeNull();
+    // And nothing reads one back: not the tile's old "8/10 · GREEN", not any
+    // other n/10, not a bare band word.
+    expect(screen.queryByText('Your Self-Report')).toBeNull();
+    expect(screen.queryByText('8/10 · GREEN')).toBeNull();
+    expect(screen.queryByText(/\b\d+\/10\b/)).toBeNull();
+    expect(screen.queryByText(/\b(GREEN|YELLOW|RED)\b/)).toBeNull();
   });
 
-  test('the screen states that the report neither clears the athlete nor changes the work', async () => {
+  /**
+   * THE RULE, NOT THE REMOVED CONTROL'S FINGERPRINTS. The case above pins the
+   * slider that was taken out: its label, its role, its card heading, its
+   * n/10 read-back, its band words. A mutation audit (2026-09-22) showed that
+   * is not the same property as the one the slice exists for. A DIFFERENT
+   * defaulted control -- a `<select id="pre-readiness" defaultValue="8">`
+   * labelled "How ready are you to train?" -- was added to this panel and
+   * every case in this file stayed green, because it matched none of those
+   * fingerprints while doing exactly what the slider did: showing the athlete
+   * an answer of 8 that they had not given.
+   *
+   * So this reads the panel instead of the old control. Whatever the Session
+   * Log offers before check-in, and whatever it is called, each control must
+   * start with nothing in it. The defect is a pre-filled answer, not any
+   * particular way of asking for one.
+   */
+  test('every control offered before check-in starts unanswered, whatever it is called', async () => {
     await renderWorkspace();
+    await screen.findByLabelText(PRE_CHECK_IN_NOTE);
 
-    // At the slider itself, not buried in a help panel. The sentence is the
-    // owner's own (2026-08-24), pinned verbatim.
-    expect(
-      screen.getByText(/It does not medically clear you and does not determine your workout/)
-    ).toBeTruthy();
-    // And on the summary tile.
-    expect(
-      screen.getByText(/Not a clearance -- your workout does not change with it/)
-    ).toBeTruthy();
+    const panel = sessionLogPanel();
+    const controls = Array.from(panel.querySelectorAll('input, select, textarea'));
+    // Anchored on the optional note being one of them, so an empty panel --
+    // or the wrong panel -- cannot pass this by having nothing to check.
+    expect(controls.length).toBeGreaterThan(0);
+    expect(controls).toContain(screen.getByLabelText(PRE_CHECK_IN_NOTE));
+
+    for (const control of controls) {
+      if (control instanceof HTMLSelectElement) {
+        // A select always has a selection, so only an empty/unchosen option
+        // may be the one selected.
+        expect(control.options[control.selectedIndex]?.value ?? '').toBe('');
+        continue;
+      }
+      if (control instanceof HTMLInputElement && (control.type === 'checkbox' || control.type === 'radio')) {
+        expect(control.checked).toBe(false);
+        expect(control.hasAttribute('checked')).toBe(false);
+        continue;
+      }
+      // Text boxes and ranges alike: a range reports its position here, so a
+      // slider fails on its value before it fails on its role below.
+      expect((control as HTMLInputElement | HTMLTextAreaElement).value).toBe('');
+      expect(control.getAttribute('value') ?? '').toBe('');
+    }
+
+    // And nothing whose type carries a number by definition: a range or a
+    // spinner holds a figure the athlete never set.
+    expect(within(panel).queryAllByRole('slider')).toEqual([]);
+    expect(within(panel).queryAllByRole('spinbutton')).toEqual([]);
   });
 
-  test('no slider value buys a training instruction', async () => {
+  /**
+   * The other half of the same rule: a control that starts empty still must
+   * not put anything of its own on the session. Every control the panel
+   * offers is answered first, so that a new one cannot ride along unnoticed,
+   * and then the whole check-in body is pinned -- the athlete's words are the
+   * only thing of theirs in it.
+   */
+  test('nothing but the note the athlete typed reaches the check-in that is sent', async () => {
+    await renderWorkspace();
+    await screen.findByLabelText(PRE_CHECK_IN_NOTE);
+
+    for (const control of Array.from(sessionLogPanel().querySelectorAll('input, select, textarea'))) {
+      if (control instanceof HTMLSelectElement) {
+        const last = control.options[control.options.length - 1];
+        fireEvent.change(control, { target: { value: last ? last.value : '' } });
+      } else if (control instanceof HTMLInputElement && (control.type === 'checkbox' || control.type === 'radio')) {
+        fireEvent.click(control);
+      } else {
+        fireEvent.change(control, { target: { value: 'Left hand is stiff.' } });
+      }
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check In' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
+    const body = postedTo('/api/pilot/sessions')[0].body;
+
+    // The shape of a check-in, pinned whole: no tenth field carrying a
+    // readiness, a band, or anything else read off a control.
+    expect(Object.keys(body).sort()).toEqual([
+      'athlete_id',
+      'completed_flag',
+      'created_at',
+      'date',
+      'notes',
+      'rpe',
+      'rpe_method',
+      'session_id',
+      'updated_at',
+    ]);
+    expect(body.notes).toBe('Left hand is stiff.');
+    expect(body.rpe).toBeNull();
+    expect(body.rpe_method).toBe('UNKNOWN');
+  });
+
+  test('the summary says the wellness check is not a clearance', async () => {
     await renderWorkspace();
 
-    // Default 8 is the GREEN band: the tile used to say READY FOR TRAINING.
-    expect(screen.getByText('8/10 · GREEN')).toBeTruthy();
-    expect(screen.queryByText('READY FOR TRAINING')).toBeNull();
+    await waitFor(() => expect(within(wellnessTile()).getByText('Recorded today')).toBeTruthy());
+    expect(within(wellnessTile()).getByText(/Not a clearance\./)).toBeTruthy();
+    // The old tile's line was about the slider's number, and went with it.
+    expect(screen.queryByText(/Not a clearance -- your workout does not change with it/)).toBeNull();
+  });
 
-    // 5 is the YELLOW band: it used to say MODIFY TRAINING.
-    fireEvent.change(screen.getByLabelText(SLIDER_LABEL), { target: { value: '5' } });
-    expect(screen.getByText('5/10 · YELLOW')).toBeTruthy();
-    expect(screen.queryByText('MODIFY TRAINING')).toBeNull();
+  test.each([
+    ['recorded', () => undefined, 'Recorded today'],
+    ['not recorded', () => { storedCheckIn = null; }, 'Not recorded today'],
+    ['unavailable', () => { checkInReadFails = true; }, 'Unavailable'],
+    ['still loading', () => { checkInReadPending = true; }, 'Checking...'],
+  ])('no wellness state buys a training instruction (%s)', async (_state, arrange, shown) => {
+    arrange();
+    await renderWorkspace();
 
-    // 2 is the RED band: it used to say COACH REVIEW REQUIRED.
-    fireEvent.change(screen.getByLabelText(SLIDER_LABEL), { target: { value: '2' } });
-    expect(screen.getByText('2/10 · RED')).toBeTruthy();
-    expect(screen.queryByText('COACH REVIEW REQUIRED')).toBeNull();
+    await waitFor(() => expect(within(wellnessTile()).getByText(shown)).toBeTruthy());
+    // The three instructions the band used to buy, in any state.
+    for (const instruction of ['READY FOR TRAINING', 'MODIFY TRAINING', 'COACH REVIEW REQUIRED']) {
+      expect(screen.queryByText(instruction)).toBeNull();
+    }
   });
 
   test('the dashboard help no longer instructs readiness-gated training', async () => {
     await renderWorkspace();
+    // Until A-FIN-01 this test never opened the panel. HelpPanel draws its
+    // description and lists only when expanded, so every absence below held
+    // on a closed panel and would have held with the old lines restored.
+    // Expanding mounts its Ask SHADOW button, whose own sign-in read resolves
+    // a tick later; let it land inside act.
+    const toggle = screen.getByRole('button', { name: /HELP: My Dashboard/ });
+    await act(async () => {
+      fireEvent.click(toggle);
+      await Promise.resolve();
+    });
+    const help = toggle.parentElement as HTMLElement;
 
-    expect(screen.queryByText(/Check your readiness status first thing/)).toBeNull();
-    expect(screen.queryByText(/Ignoring LOW readiness/)).toBeNull();
+    // Anchored on lines that stay, so the absences cannot pass on a closed panel.
+    expect(within(help).getByText('Check in to open your session')).toBeTruthy();
+    expect(within(help).getByText(
+      'Your daily command center. Check in, see assigned work, report pain, and monitor your progress toward goals.',
+    )).toBeTruthy();
+
+    expect(within(help).queryByText(/Check your readiness status first thing/)).toBeNull();
+    expect(within(help).queryByText(/Ignoring LOW readiness/)).toBeNull();
     // The stale pointer at the Bio Check-In surface, which is intentionally
     // unreachable because it persists nothing. An instruction to go complete
     // it was a promise the app cannot keep.
-    expect(screen.queryByText(/Complete biological check-in/)).toBeNull();
+    expect(within(help).queryByText(/Complete biological check-in/)).toBeNull();
+    // A-FIN-01: "Say how you feel" described the removed check-in slider. The
+    // Dashboard asks nothing about how the athlete feels any more -- that is
+    // the Wellness check -- so its help may not claim it does. Scoped to the
+    // panel: the Today header says it too, and truthfully, since Today holds
+    // Wellness.
+    expect(within(help).queryByText(/Say how you feel/)).toBeNull();
+    expect(within(help).queryAllByText(/readiness/i)).toEqual([]);
 
     // The old authority vocabulary is gone with it.
     expect(screen.queryByText('Current Readiness')).toBeNull();
     expect(screen.queryByLabelText('Readiness to Train (1-10)')).toBeNull();
+    expect(screen.queryByText('Pre-Session Self-Report')).toBeNull();
+  });
+});
+
+// A-FIN-01: HONEST PRE-SESSION INPUT. The Session Log's only pre-session input
+// was a readiness slider initialised with useState(8), so an athlete who
+// touched nothing had "8/10 · GREEN" on their summary and "Auto check-in
+// readiness GREEN" written on their session as if they had said it. These pin
+// the replacement contract:
+//   - the session note is the athlete's words exactly (trimmed), or ONE fixed
+//     system placeholder that exists only because pilot.sessions requires a
+//     non-empty note -- never a band, a wellness answer or an effort;
+//   - the placeholder is never shown back as something the athlete wrote, on
+//     the open session or in their history, and the historical readiness
+//     markers are still recognised the same way (those rows are not rewritten);
+//   - check-in still writes rpe null / UNKNOWN, and writes nothing but the
+//     session -- no wellness record, no readiness row;
+//   - the Floor gate is still today's wellness check and nothing else.
+describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder that says so', () => {
+  test('a note written before check-in is stored exactly as the athlete wrote it, trimmed', async () => {
+    await renderWorkspace();
+
+    const body = await checkInFromSessionLog('   Left wrist still sore from Tuesday.  \n');
+    expect(body.notes).toBe('Left wrist still sore from Tuesday.');
+    expect(body.rpe).toBeNull();
+    expect(body.rpe_method).toBe('UNKNOWN');
+
+    // The same words are the open session's notes, already saved -- nothing
+    // written before pressing Check In is lost at it.
+    openTab('Dashboard');
+    const box = (await screen.findByPlaceholderText(/Session notes for your coach/)) as HTMLTextAreaElement;
+    expect(box.value.trim()).toBe('Left wrist still sore from Tuesday.');
+    expect(screen.getByText(/What you wrote stays put/)).toBeTruthy();
+  });
+
+  test('check-in without a note stores the fixed placeholder and invents no readiness', async () => {
+    await renderWorkspace();
+
+    const body = await checkInFromSessionLog();
+    // Non-empty, as the session contract requires -- and the one sentence
+    // that satisfies it, built from nothing the athlete did or did not say.
+    expect(body.notes).toBe(NO_NOTE_PLACEHOLDER);
+    expect(JSON.stringify(body)).not.toMatch(/readiness|\b(GREEN|YELLOW|RED)\b/);
+    expect(body.rpe).toBeNull();
+    expect(body.rpe_method).toBe('UNKNOWN');
+
+    // On the open session it is not the athlete's text: their box is empty,
+    // and the sentence is not on screen.
+    openTab('Dashboard');
+    const box = (await screen.findByPlaceholderText(/Session notes for your coach/)) as HTMLTextAreaElement;
+    expect(box.value).toBe('');
+    expect(screen.queryByText(NO_NOTE_PLACEHOLDER)).toBeNull();
+    expect(screen.getByText('Anything you write here saves as you go.')).toBeTruthy();
+  });
+
+  test('a note of only spaces is no note: the placeholder, not an empty string', async () => {
+    await renderWorkspace();
+
+    const body = await checkInFromSessionLog('   \n  ');
+    expect(body.notes).toBe(NO_NOTE_PLACEHOLDER);
+  });
+
+  test('an untouched session keeps the placeholder through check-out, and it never becomes an RPE', async () => {
+    await renderWorkspace();
+
+    await checkInFromSessionLog();
+    openTab('Dashboard');
+    fireEvent.click(await screen.findByRole('button', { name: 'Check Out' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+
+    const [checkOut] = postedTo('/api/pilot/sessions/update');
+    // Still non-empty, and still the system's sentence rather than one the
+    // athlete is credited with.
+    expect(checkOut.body.notes).toBe(NO_NOTE_PLACEHOLDER);
+    expect(checkOut.body.rpe).toBeNull();
+    expect(checkOut.body.rpe_method).toBe('UNKNOWN');
+    expect(await screen.findByText('Logged. That one is on your card.')).toBeTruthy();
+  });
+
+  test('Your Last Sessions shows the placeholder and every historic marker as no note, and real notes as written', async () => {
+    const completed = (id: string, notes: string, createdAt: string) => openSessionRow({
+      session_id: id,
+      notes,
+      completed_flag: true,
+      created_at: createdAt,
+      updated_at: createdAt,
+    });
+    storedSessions = [
+      completed('session_e', NO_NOTE_PLACEHOLDER, '2026-08-05T17:00:00.000Z'),
+      completed('session_d', 'Auto check-in readiness GREEN', '2026-08-04T17:00:00.000Z'),
+      completed('session_c', 'Auto check-in readiness YELLOW', '2026-08-03T17:00:00.000Z'),
+      completed('session_b', 'Auto check-in readiness RED', '2026-08-02T17:00:00.000Z'),
+      completed('session_a', 'Hands were down in round three.', '2026-08-01T17:00:00.000Z'),
+    ];
+    await renderWorkspace();
+
+    const history = (await screen.findByText('Your Last Sessions')).parentElement as HTMLElement;
+    const rows = within(history).getAllByRole('listitem').map((row) => row.textContent ?? '');
+    expect(rows).toHaveLength(5);
+    expect(rows.filter((row) => row.endsWith('No notes on this one.'))).toHaveLength(4);
+    expect(rows.some((row) => row.endsWith('Hands were down in round three.'))).toBe(true);
+    // The system's sentences are never printed as the athlete's.
+    expect(rows.some((row) => row.includes(NO_NOTE_PLACEHOLDER))).toBe(false);
+    expect(rows.some((row) => row.includes('Auto check-in readiness'))).toBe(false);
+  });
+
+  test('a session check-in writes the session and nothing else: no wellness record, no readiness row', async () => {
+    await renderWorkspace();
+
+    await checkInFromSessionLog('Ready when you are.');
+    expect(postedTo('/api/pilot/athlete/check-in')).toHaveLength(0);
+    expect(fetchCalls.filter((call) => /readiness/i.test(call.url))).toEqual([]);
+  });
+
+  test('the Floor gate is still the wellness check alone: a session note does not open it', async () => {
+    // Owner-approved gate (2026-08-28): the day's work opens on today's
+    // wellness check. Writing a note and checking in to a session is not
+    // that, so the athlete is sent to Wellness and the Floor stays gated.
+    storedCheckIn = null;
+    await renderWorkspace();
+
+    await checkInFromSessionLog('Shoulder feels fine today.');
+    await waitFor(() => expect(openSurface()).toBe('Wellness'));
+    openTab('Floor');
+    expect(await screen.findByRole('button', { name: 'Go to check in' })).toBeTruthy();
+  });
+});
+
+// A-FIN-01: the summary's wellness tile. It replaced "Your Self-Report · 8/10 ·
+// GREEN", and it is a read of the wellness record's PRESENCE today -- never of
+// what is in it. Only a read that answered may say "not recorded"; a read in
+// flight or one that failed says so instead, the same rule the Open Coach Work
+// tile beside it keeps.
+describe('the summary says whether today\'s wellness is on record, never a score', () => {
+  function wellnessTile(): HTMLElement {
+    return screen.getByText("Today's Wellness").parentElement as HTMLElement;
+  }
+
+  test('a check-in on record reads as recorded, and none of its answers are read back', async () => {
+    storedCheckIn = {
+      ...checkedInRecord(),
+      energy: 4,
+      soreness: 2,
+      focus: 5,
+      motivation: 3,
+      sleep_hours: 7,
+    };
+    await renderWorkspace();
+
+    await waitFor(() => expect(within(wellnessTile()).getByText('Recorded today')).toBeTruthy());
+    // No score, no average, no percentage: the tile carries no number at all.
+    expect(wellnessTile().textContent ?? '').not.toMatch(/\d|%/);
+  });
+
+  test('no check-in today reads as not recorded -- said by a read that answered', async () => {
+    storedCheckIn = null;
+    await renderWorkspace();
+
+    await waitFor(() => expect(within(wellnessTile()).getByText('Not recorded today')).toBeTruthy());
+  });
+
+  test('a read still in flight says Checking..., and is not a false absence', async () => {
+    checkInReadPending = true;
+    await renderWorkspace();
+
+    expect(within(wellnessTile()).getByText('Checking...')).toBeTruthy();
+    expect(within(wellnessTile()).queryByText('Not recorded today')).toBeNull();
+    expect(within(wellnessTile()).queryByText('Recorded today')).toBeNull();
+  });
+
+  test('a failed read says Unavailable, and is not "not recorded"', async () => {
+    checkInReadFails = true;
+    await renderWorkspace();
+
+    await waitFor(() => expect(within(wellnessTile()).getByText('Unavailable')).toBeTruthy());
+    expect(within(wellnessTile()).queryByText('Not recorded today')).toBeNull();
+  });
+
+  test('an account with no athlete record is Unavailable, not "not recorded"', async () => {
+    authenticated = false;
+    await renderWorkspace();
+
+    await waitFor(() => expect(within(wellnessTile()).getByText('Unavailable')).toBeTruthy());
+    expect(within(wellnessTile()).queryByText('Not recorded today')).toBeNull();
+  });
+
+  test('saving today\'s wellness check turns the tile to recorded -- the durable self-report is the one it reads', async () => {
+    storedCheckIn = null;
+    await renderWorkspace();
+    await waitFor(() => expect(within(wellnessTile()).getByText('Not recorded today')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Check in' }));
+
+    await waitFor(() => expect(within(wellnessTile()).getByText('Recorded today')).toBeTruthy());
+    expect(postedTo('/api/pilot/athlete/check-in')).toHaveLength(1);
+  });
+
+  test('nothing on the dashboard derives a readiness value or percentage from wellness', async () => {
+    storedCheckIn = { ...checkedInRecord(), energy: 5, soreness: 1, focus: 5, motivation: 5 };
+    await renderWorkspace();
+
+    await waitFor(() => expect(within(wellnessTile()).getByText('Recorded today')).toBeTruthy());
+    expect(screen.queryAllByText(/readiness/i)).toEqual([]);
+    expect(screen.queryByText(/\d+%/)).toBeNull();
+    expect(screen.queryByText(/average/i)).toBeNull();
+  });
+
+  /* THE TILE WEARS NO STATUS RUNG, IN ANY STATE. Until A-FIN-01 the tile it
+     replaced was painted by `readinessColor` in RoleSummaryPanels.tsx -- the
+     slider's band as --cleared / --monitor / --restricted -- and
+     src/design/readinessRungPolicy.test.ts guarded that mapping by source
+     because RoleSummaryPanels had no rendered test. The mapping is gone with
+     the band, so this takes over that site as a render check: none of the
+     four wellness states is a safety state, so none may borrow a rung, and
+     least of all --locked, which is reserved for a clinician's no
+     (MEDICALLY_NOT_ALLOWED). Read from the tile and everything inside it, so
+     a rung moved onto the value line fails as surely as one on the tile. */
+  test.each([
+    ['recorded', () => undefined, 'Recorded today'],
+    ['not recorded', () => { storedCheckIn = null; }, 'Not recorded today'],
+    ['unavailable', () => { checkInReadFails = true; }, 'Unavailable'],
+    ['still loading', () => { checkInReadPending = true; }, 'Checking...'],
+  ])('the tile borrows no status rung, least of all the locked medical one (%s)', async (_state, arrange, shown) => {
+    arrange();
+    await renderWorkspace();
+
+    await waitFor(() => expect(within(wellnessTile()).getByText(shown)).toBeTruthy());
+    const classes = [wellnessTile(), ...Array.from(wellnessTile().querySelectorAll('*'))]
+      .map((element) => element.getAttribute('class') ?? '')
+      .join(' ');
+    expect(classes).not.toMatch(/--(locked|restricted|monitor|cleared)\b/);
+    expect(classes).not.toMatch(/\blocked\b/);
+  });
+});
+
+// A-FIN-01: the Schedule help promised a readiness restriction -- "Readiness
+// RED may limit contact work", "Booking contact work with RED readiness" --
+// off the removed slider's band, which nothing (the scheduler included) ever
+// applied. Nothing readiness-based replaces it.
+describe('the Schedule help claims no readiness restriction', () => {
+  test('the help lists no readiness rule, and keeps what is still true', async () => {
+    await renderWorkspace();
+    openTab('Schedule');
+    // Expanding the panel mounts its Ask SHADOW button, whose own sign-in
+    // read resolves a tick later; let it land inside act.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /HELP: Schedule Session/ }));
+      await Promise.resolve();
+    });
+
+    // Anchored on a line that stays, so the absence cannot pass on a closed panel.
+    expect(screen.getByText('Booking while on academic hold')).toBeTruthy();
+    expect(screen.queryByText(/Readiness RED may limit contact work/)).toBeNull();
+    expect(screen.queryByText(/Booking contact work with RED readiness/)).toBeNull();
+    expect(screen.queryAllByText(/readiness/i)).toEqual([]);
   });
 });
 

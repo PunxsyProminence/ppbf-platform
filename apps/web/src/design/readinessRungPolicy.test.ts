@@ -36,9 +36,18 @@ const WEB = path.resolve(__dirname, '../..');
  * name, as individualized coaching input. The mapping went with its only
  * consumer; a new readiness-colouring surface must add itself here.
  */
+
+/*
+ * `readinessColor` (RoleSummaryPanels.tsx) was the second site until A-FIN-01
+ * (2026-09-22), which removed the athlete readiness tile and with it the
+ * mapping's only consumer. The mapping went too: no dormant mapping is kept
+ * alive here merely to satisfy a source-text test. What replaced the tile
+ * wears no rung in any state, and is guarded by render where it now lives,
+ * in components/athleteWorkspace.test.tsx. Any future readiness-coloured
+ * surface must add itself back to this guard.
+ */
 const SITES = [
   ['components/CoachWorkspace.tsx', 'readinessDotClass'],
-  ['components/RoleSummaryPanels.tsx', 'readinessColor'],
 ] as const;
 
 /**
