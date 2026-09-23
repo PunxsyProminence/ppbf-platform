@@ -514,7 +514,12 @@ describe('guardianConsent.ts against real Postgres', () => {
       const rows = await listOrganizationConsentStatus(ORG_ID);
 
       expect(rows).toEqual([
-        { athleteId: ATHLETE_ID, athleteName: 'Consent Athlete', consent: { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] } },
+        {
+          athleteId: ATHLETE_ID,
+          athleteName: 'Consent Athlete',
+          consent: { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] },
+          guardians: [],
+        },
       ]);
     } finally {
       activeClient = null;
