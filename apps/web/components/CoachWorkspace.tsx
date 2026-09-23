@@ -578,8 +578,19 @@ const WELLNESS_NOT_REPORTED = 'Not reported';
 const WELLNESS_NO_CHECK_IN_TODAY = 'No wellness check-in recorded today.';
 const WELLNESS_READ_FAILED =
   'Today’s wellness check-in could not be loaded. This is not a statement that the athlete did not check in -- try again in a minute.';
+/* The refusal sentence names the audience and no longer names a relationship.
+   Until A-FIN-03R1 it said check-ins were shown to the athlete's own coach, a
+   coach covering for them, and organization admins -- which was the rule the
+   route enforced then and is false now that any coach or admin in the
+   athlete's organization may read one. What a coach sees this for now is that
+   the athlete is not a LIVE athlete in the coach's own organization: another
+   gym's athlete, a soft-deleted one, or an id that names nobody anywhere. A
+   coach inside the organization can reach it too -- the deleted case -- so it
+   is never "the wrong coach for this athlete", and the screen cannot say
+   which of the three it is: the route refuses all three with the same 403 and
+   the panel must not invent a distinction the server withheld. */
 const WELLNESS_NO_ACCESS =
-  'You don’t have access to this athlete’s wellness check-ins. They are shown to the athlete’s coach, a coach covering for them, and organization admins.';
+  'You don’t have access to this athlete’s wellness check-ins. They are shown to coaches and organization admins in the athlete’s own organization.';
 
 /* A stored answer is a finite number or null. Anything else -- a missing key,
    a string, NaN -- makes the response unreadable, and it is treated as a
@@ -1817,10 +1828,15 @@ export default function CoachWorkspace() {
   }
 
   /* GET /api/pilot/coach/athlete-check-in decides, server-side, whether this
-     coach may see this athlete at all -- coach of record, active coverage, or
-     organization admin (owner decision 2026-09-22). The roster offers the
-     whole gym, so a 403 is an expected outcome and gets its own plain
-     sentence; it is never softened into "no check-in". The status of any
+     coach may see this athlete at all: any coach or organization admin in the
+     athlete's own organization may (A-FIN-03R1, owner instruction 2026-09-22
+     "any coach or admin should be able to read it"). Assignment and coverage
+     are not part of that rule any more, so a coach picking an athlete they
+     have never been assigned gets the check-in rather than a refusal.
+
+     A 403 is still an expected outcome, not a bug -- an athlete outside this
+     organization, or one who has been deleted -- so it keeps its own plain
+     sentence and is never softened into "no check-in". The status of any
      other failure goes to the console, not to the coach: a bare "500" tells a
      coach nothing they can act on. */
   const loadWellnessCheckIn = useCallback(async (athleteId: string) => {
