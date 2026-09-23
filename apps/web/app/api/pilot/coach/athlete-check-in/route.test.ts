@@ -175,8 +175,9 @@ beforeEach(() => {
     if (text.includes('from pilot.athlete_check_ins')) {
       /* THE DAY HAS TO BE A VALUE THE APPLICATION RESOLVED AND PASSED IN.
          `current_date` is the DATABASE's day, and the database runs in UTC:
-         after 8pm at the gym that is already tomorrow, so a read written that
-         way asks about a day the athlete has not reached. The predicate is
+         once it is past UTC midnight the gym is still on the previous day
+         (from 8pm during daylight time, 7pm during standard time), so a read
+         written that way asks about a day the athlete has not reached. The predicate is
          required, and the database's own clock is refused by name.
 
          The parameter POSITION is read out of the statement rather than
@@ -485,7 +486,9 @@ describe('the day read is the gym\'s day', () => {
 
   test('a row stored under the database\'s day is not today\'s report', async () => {
     /* Rosa's only row is dated the UTC day -- which is what the old write
-       path stored for every check-in taken after 8pm at the gym. A read that
+       path stored for every check-in taken after UTC midnight while the gym
+       was still on the previous day, from 8pm in daylight time and 7pm in
+       standard time. A read that
        still asked the database for its day would find this row and hand the
        coach an evening report under tomorrow's heading. The honest answer is
        that Rosa has not checked in on the gym day being asked about. */

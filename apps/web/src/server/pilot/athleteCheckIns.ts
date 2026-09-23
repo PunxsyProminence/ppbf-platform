@@ -121,9 +121,11 @@ export function sleepHoursError(value: unknown): string | null {
  * `checked_in_on = current_date`. That is the DATABASE SERVER'S day, in a
  * zone this application never sets -- and both the production and the staging
  * server report TimeZone = UTC (server parameter, read 2026-09-22), four or
- * five hours ahead of the gym. After 8pm ET the database has already rolled
- * over, so for the back half of every training night a check-in was filed
- * under TOMORROW'S date.
+ * five hours ahead of the gym. Once it is past UTC midnight but still the
+ * previous day on the wall in Punxsutawney -- from 8pm during daylight time,
+ * 7pm during standard time -- the database has already rolled over, so for
+ * the back half of every training night a check-in was filed under
+ * TOMORROW'S date.
  *
  * The read agreed with the write, which is why nothing looked broken, and
  * both were the wrong day. Monday night's arrival is stored as Tuesday; on
@@ -140,8 +142,9 @@ export function sleepHoursError(value: unknown): string | null {
  * some other writer, not this module's answer.
  *
  * WHAT THIS DOES NOT FIX: THE ROWS ALREADY FILED UNDER THE OLD RULE. Every
- * check-in taken after about 8pm ET before this ships is sitting in the table
- * dated the following day, and nothing here moves it. Those rows stay where
+ * check-in taken after UTC midnight but before local midnight before this
+ * ships -- 8pm during daylight time, 7pm during standard time -- is sitting
+ * in the table dated the following day, and nothing here moves it. Those rows stay where
  * they are on purpose -- a stored date is a record of what the system did,
  * and rewriting it to match a later rule destroys the evidence that the rule
  * changed -- so both harms above stay reachable for as long as one of those

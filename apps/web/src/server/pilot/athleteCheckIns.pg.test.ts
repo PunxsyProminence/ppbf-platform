@@ -18,7 +18,8 @@
 // survive) only exist in the TS module. So does the one this file's last
 // describe block is about: WHICH DAY a check-in belongs to is now decided by
 // gymDayIso() in Node, not by the database's `current_date`, and proving that
-// needs a real table whose own `current_date` can be shown to disagree.
+// needs a real table and a real Postgres to reduce the same instant, so the
+// day it would have filed the row under can be shown to be a different day.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -457,11 +458,11 @@ describe('the real check-in lifecycle against real rows', () => {
 const CHATGPT_BOUNDARY_INSTANT = '2026-09-23T02:30:00Z';
 
 // The same instant one year on, which is what the round-trip below actually
-// uses. The shape is identical -- 02:30Z during EDT is 22:30 the previous
-// evening -- but the day is far from any day this machine or its embedded
-// Postgres could be having. That matters: if the gym day under test happened
-// to equal the database's own `current_date`, a module that had never stopped
-// using `current_date` would pass every assertion here by coincidence.
+// uses. The shape is identical: 02:30Z during EDT is 22:30 the previous
+// evening. Nothing here depends on the machine's own date -- the two days
+// under test are read back from the stored row and from the database's
+// reduction of THIS instant, never from `current_date`, so the suite behaves
+// the same whatever day it runs on.
 const AFTER_UTC_MIDNIGHT = '2027-09-23T02:30:00Z';
 const GYM_DAY_THERE = '2027-09-22';
 const UTC_DAY_THERE = '2027-09-23';
@@ -498,11 +499,18 @@ describe('the gym day decides, not the database day', () => {
       expect(stored.rows.map((row) => row.day)).toEqual([GYM_DAY_THERE]);
       expect(stored.rows[0].day).not.toBe(UTC_DAY_THERE);
 
-      // And what the database would have said if anyone had asked it, which
-      // is why the two assertions above cannot pass on a current_date read:
-      // there is no row on that day at all.
-      const dbToday = await client.query(`select current_date::text as day`);
-      expect(dbToday.rows[0].day).not.toBe(GYM_DAY_THERE);
+      // What the database itself makes of THE TEST INSTANT: the UTC calendar
+      // day it falls on, which is the day a `current_date` read would have
+      // filed it under. Asked of the instant rather than of the wall clock:
+      // an assertion about the real `current_date` is a calendar time bomb,
+      // red on whatever day the machine happens to be having when it equals
+      // the day under test, while proving nothing new on every other day.
+      const dbDayOfInstant = await client.query(
+        `select ($1::timestamptz at time zone 'UTC')::text as utc_day`,
+        [AFTER_UTC_MIDNIGHT],
+      );
+      expect(dbDayOfInstant.rows[0].utc_day.slice(0, 10)).toBe(UTC_DAY_THERE);
+      expect(dbDayOfInstant.rows[0].utc_day.slice(0, 10)).not.toBe(GYM_DAY_THERE);
 
       // The same-instant read finds the same row...
       const readBack = await getTodayCheckIn(ORG_ID, ATHLETE_ID, AFTER_UTC_MIDNIGHT);
