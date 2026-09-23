@@ -109,6 +109,44 @@ const HOLD_SCOPE_LABEL: Record<ActiveHoldSummary['scope'], string> = {
   conditioning_only: 'CONDITIONING',
 };
 
+// A-FIN-06. Work the athlete is still expected to do -- the only work a coach
+// can cancel. The same two statuses the server's conditional update accepts;
+// completed, incomplete and cancelled work offers nothing.
+const isOpenWork = (status: string) => status === 'assigned' || status === 'in_progress';
+
+/**
+ * What the coach reads when a cancel fails. Plain sentences keyed on the
+ * outcome, never the server's status code or its raw message -- those go to
+ * the console for whoever debugs it.
+ *
+ * "Nothing was cancelled" is only said where it is known: every 4xx here is
+ * the server refusing before its write (role, not found, already closed).
+ * A 5xx or a request that never came back could have failed either side of
+ * the write -- the update commits on its own before the response is built, so
+ * a dropped connection or a gateway 5xx can follow a cancel that landed. That
+ * sentence therefore claims NEITHER outcome: it says the result is unknown and
+ * sends the coach to look. Trying again is safe either way, because work that
+ * is already cancelled answers success without writing anything.
+ */
+function cancelFailureMessage(status: number | null): string {
+  if (status === 409) {
+    return 'This work is already closed, so it can no longer be cancelled. Nothing was cancelled. Reload this athlete to see where it stands.';
+  }
+  if (status === 404) {
+    return 'This work could not be found for this athlete, or your access to their work has ended. Nothing was cancelled.';
+  }
+  if (status === 401) {
+    return 'Your sign-in has ended. Sign in again, then try again. Nothing was cancelled.';
+  }
+  if (status === 403) {
+    return 'Your account cannot cancel this athlete\'s work. Nothing was cancelled.';
+  }
+  if (status !== null && status >= 400 && status < 500) {
+    return 'The cancel request was refused. Nothing was cancelled.';
+  }
+  return 'The cancel could not be confirmed, so it may or may not have gone through. The work is shown as it was before you asked. Reload this athlete to see where it stands before trying again.';
+}
+
 export default function CoachProgressionIntelligencePage() {
   const [gaps, setGaps] = useState<ProgressionGap[]>([]);
   const [assignments, setAssignments] = useState<DrillAssignment[]>([]);
@@ -182,6 +220,22 @@ export default function CoachProgressionIntelligencePage() {
   const [suggestions, setSuggestions] = useState<GapSuggestionItem[]>([]);
   const [dismissedSuggestions, setDismissedSuggestions] = useState<ReadonlySet<string>>(new Set());
   const [confirmingSuggestion, setConfirmingSuggestion] = useState<string | null>(null);
+  // A-FIN-06 (owner decisions 2026-09-22): a coach can cancel work that is
+  // still open. Cancel is the only change offered -- no edit, no delete, no
+  // undo -- and it takes two presses: the first only asks. Each piece of
+  // state names the assignment it belongs to, so a question, a failure or a
+  // result can only ever render on the card it is about.
+  const [confirmingCancel, setConfirmingCancel] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState<string | null>(null);
+  const [cancelFailure, setCancelFailure] = useState<{ assignmentId: string; message: string } | null>(null);
+  const [cancelNotice, setCancelNotice] = useState('');
+  // The athlete on screen right now, readable from inside an async handler.
+  // A cancel is a write the coach can walk away from mid-flight; when it
+  // lands, the reload it triggers must be for the athlete still selected, or
+  // it would draw the previous athlete's list under the new one's name (see
+  // REQUEST ORDERING below). Written only in chooseAthlete, the one place the
+  // selection changes.
+  const selectedAthleteRef = useRef('');
 
   // Load roster + drill library once.
   useEffect(() => {
@@ -508,6 +562,85 @@ export default function CoachProgressionIntelligencePage() {
     }
   };
 
+  // The first press on "Cancel assignment" only opens the question, and puts
+  // focus on the safe answer. Keeping the work hands focus back to the button
+  // that asked, the same courtesy the instruction toggles give.
+  const askToCancel = (assignmentId: string) => {
+    setCancelFailure(null);
+    setCancelNotice('');
+    setConfirmingCancel(assignmentId);
+    window.requestAnimationFrame(() => document.getElementById(`cancel-keep-${assignmentId}`)?.focus());
+  };
+
+  const keepAssignment = (assignmentId: string) => {
+    setCancelFailure(null);
+    setConfirmingCancel(null);
+    window.requestAnimationFrame(() => document.getElementById(`cancel-assignment-${assignmentId}`)?.focus());
+  };
+
+  const handleCancelAssignment = async (assignment: DrillAssignment, name: string) => {
+    const athleteId = selectedAthlete;
+    if (!athleteId) return;
+    const { assignment_id: assignmentId } = assignment;
+    setBusy(true);
+    setCancelling(assignmentId);
+    setCancelFailure(null);
+    try {
+      let response: Response;
+      try {
+        response = await fetch(`${apiBase()}/api/pilot/progression/assignments/cancel`, {
+          credentials: 'include',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ assignment_id: assignmentId, athlete_id: athleteId }),
+        });
+      } catch (error) {
+        console.error({ event: 'assignment-cancel-failed', assignmentId, error });
+        setCancelFailure({ assignmentId, message: cancelFailureMessage(null) });
+        return;
+      }
+
+      // A FAILED CANCEL CHANGES NOTHING ON SCREEN. The card keeps the status
+      // the server last reported and the question stays open, so the coach can
+      // try again or keep the work. The page never marks work cancelled on its
+      // own say-so -- only the reload below, after the server agreed, does.
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { code?: unknown };
+        console.error({
+          event: 'assignment-cancel-failed',
+          assignmentId,
+          status: response.status,
+          ...(typeof payload.code === 'string' ? { code: payload.code } : {}),
+        });
+        setCancelFailure({ assignmentId, message: cancelFailureMessage(response.status) });
+        return;
+      }
+
+      setConfirmingCancel(null);
+      // The coach moved to another athlete while this was in flight. The
+      // cancel still happened, but this screen is somebody else's now and
+      // their own load is already running -- reloading this athlete here would
+      // put their list under the new name.
+      if (selectedAthleteRef.current !== athleteId) return;
+      setCancelNotice(
+        `${name} is cancelled. The athlete is no longer expected to do it; completions already logged are kept.`,
+      );
+      try {
+        await reloadAthleteData(athleteId);
+      } catch {
+        // Said as what it is: the cancel landed, the refresh did not. The card
+        // still shows the old status, and the coach must not read that as the
+        // cancel having failed.
+        setErrorMessage(
+          'The work was cancelled, but the list could not be reloaded to show it. Reload this athlete to see where it stands.',
+        );
+      }
+    } finally {
+      setCancelling(null);
+      setBusy(false);
+    }
+  };
+
   const openGaps = gaps.filter(
     (g) => g.status === 'identified' || g.status === 'assigned' || g.status === 'in_progress',
   );
@@ -560,6 +693,12 @@ export default function CoachProgressionIntelligencePage() {
   // back -- and its read, if still in flight, is cancelled with it.
   const chooseAthlete = (athleteId: string) => {
     if (instruction.openKey) instruction.close({ returnFocus: false });
+    // A cancel question, failure or result belongs to the athlete it was
+    // asked about, and does not follow the coach to the next one.
+    setConfirmingCancel(null);
+    setCancelFailure(null);
+    setCancelNotice('');
+    selectedAthleteRef.current = athleteId;
     setSelectedAthlete(athleteId);
   };
 
@@ -964,6 +1103,11 @@ export default function CoachProgressionIntelligencePage() {
             {/* Drill Assignments + verify surface */}
             <section>
               <h2 className="t-command mb-[var(--s4)] text-[length:var(--t-lg)]">Assigned Drills ({assignments.length})</h2>
+              {/* Always mounted, so a screen reader is already listening when
+                  a cancel's result is written into it. Empty otherwise. */}
+              <p role="status" aria-live="polite" className="t-body text-[color:var(--bone-300)]">
+                {cancelNotice ? <span className="mb-[var(--s3)] block">{cancelNotice}</span> : null}
+              </p>
               <div className="space-y-[var(--s3)]">
                 {assignments.length === 0 ? (
                   <p className="t-body text-[color:var(--bone-300)]">No drills assigned yet.</p>
@@ -972,6 +1116,12 @@ export default function CoachProgressionIntelligencePage() {
                     const comps = completionsByAssignment[assignment.assignment_id] ?? [];
                     const assignmentOpen = instruction.openKey === `assignment:${assignment.assignment_id}`;
                     const assignmentName = assignment.drill_display_name || assignment.drill_name;
+                    // Only open work can be cancelled, and the question is only
+                    // ever shown on the card it was asked about.
+                    const cancellable = isOpenWork(assignment.status);
+                    const askingToCancel = cancellable && confirmingCancel === assignment.assignment_id;
+                    const failedCancel =
+                      cancelFailure?.assignmentId === assignment.assignment_id ? cancelFailure.message : null;
                     return (
                       <div key={assignment.assignment_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                         <div className="flex items-start justify-between gap-[var(--s3)]">
@@ -1006,6 +1156,79 @@ export default function CoachProgressionIntelligencePage() {
                                 </button>
                                 {assignmentOpen && (
                                   <CoachInstructionPanel loading={instruction.loading} failed={instruction.failed} opened={instruction.opened} />
+                                )}
+                              </div>
+                            )}
+                            {/* The cancelled state, as the server reported it on
+                                the last read -- never drawn from the button press
+                                alone. */}
+                            {assignment.status === 'cancelled' && (
+                              <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+                                Cancelled. The athlete is no longer expected to do this work; completions already logged
+                                stay on its record.
+                              </p>
+                            )}
+                            {/* A-FIN-06: cancel is the only change a coach can
+                                make to issued work here, and only while it is
+                                open. Two presses: this one asks, the next one
+                                acts. */}
+                            {cancellable && (
+                              <div className="mt-[var(--s3)]">
+                                {askingToCancel ? (
+                                  <div
+                                    role="group"
+                                    aria-labelledby={`cancel-question-${assignment.assignment_id}`}
+                                    className="mat-leather--raised rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-500)] p-[var(--s3)] space-y-[var(--s2)]"
+                                  >
+                                    <p id={`cancel-question-${assignment.assignment_id}`} className="t-body font-semibold">
+                                      Cancel {assignmentName}?
+                                    </p>
+                                    <p className="t-body text-[color:var(--bone-300)]">
+                                      The athlete will no longer be expected to do this work. Its history stays:
+                                      completions already logged are kept, and nothing is deleted. Cancelled work cannot
+                                      be reopened.
+                                    </p>
+                                    {/* A failed write, so the page's alert
+                                        channel -- said once, on this card. */}
+                                    {failedCancel && (
+                                      <p role="alert" className="t-body text-[var(--restricted-ink)]">
+                                        {failedCancel}
+                                      </p>
+                                    )}
+                                    <div className="flex flex-wrap gap-[var(--s2)]">
+                                      <button
+                                        type="button"
+                                        className="btn"
+                                        disabled={busy}
+                                        onClick={() => void handleCancelAssignment(assignment, assignmentName)}
+                                      >
+                                        {cancelling === assignment.assignment_id ? 'Cancelling…' : 'Yes, cancel assignment'}
+                                      </button>
+                                      {/* Not while the request is in flight: a
+                                          sent cancel cannot be taken back, and a
+                                          "keep" pressed then would promise it. */}
+                                      <button
+                                        type="button"
+                                        id={`cancel-keep-${assignment.assignment_id}`}
+                                        className="btn btn--ghost"
+                                        disabled={cancelling === assignment.assignment_id}
+                                        onClick={() => keepAssignment(assignment.assignment_id)}
+                                      >
+                                        Keep assignment
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    id={`cancel-assignment-${assignment.assignment_id}`}
+                                    className="btn btn--ghost"
+                                    disabled={busy}
+                                    aria-label={`Cancel assignment: ${assignmentName}`}
+                                    onClick={() => askToCancel(assignment.assignment_id)}
+                                  >
+                                    Cancel assignment
+                                  </button>
                                 )}
                               </div>
                             )}
