@@ -4124,3 +4124,7 @@
     padding: var(--s2) var(--s3);
   }
 }
+
+/* THE FLOOR BOARD — Golden Era Visual 009. Last in source order so the
+   coach board can override the house material it deliberately does not wear. */
+@import "./ppbf-floor-board.css";

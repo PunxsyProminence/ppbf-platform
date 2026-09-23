@@ -1,0 +1,682 @@
+/* ===========================================================================
+   PPBF — THE FLOOR BOARD
+   Golden Era Visual 009. The coach's surface on /coach/environment/intake-router.
+
+   WHY THIS LOOKS THE WAY IT DOES, and why it is not the leather-and-brass
+   panel the rest of Golden Era uses.
+
+   The owner rejected five successive versions of this screen with the same
+   note each time: "everything is still rectangulr and square", "there is no
+   gym identity in there", "it looks like a early 2000s microsoft power point".
+   Each answer had been a new material on the same stack of bordered boxes.
+
+   He then sent twelve photographs of the actual building, and they settled it.
+   The gym's own information surfaces are ALREADY chalkboards and whiteboards:
+   a black board in a red-painted frame beside the door carrying the numbered
+   session in orange chalk, three dry-erase boards in one timber surround
+   carrying the week's programming, and more chalk behind the ring carrying
+   news and the punch combinations. The room is blue mats, grey block, red
+   posts, dark timber and a black ceiling — not bronze and hide.
+
+   So this scope is a chalkboard in a dark timber carcass with a red-painted
+   inner trim, standing in a photograph of the floor it belongs to. It is the
+   one Golden Era scope that does not wear the house material, because the
+   house material was the thing that kept reading as office software.
+
+   THE STRUCTURAL RULE, which is the part that actually fixed the complaint:
+   a box only exists here if it is a physical object. The three welfare
+   regions are not panels. They are chalk on one continuous slate, separated
+   by rules drawn with the side of the stick. Sections stay semantic
+   (<section aria-labelledby>) and carry no visible container at all. The only
+   bounded things on the board are the ones a coach physically operates — the
+   actuators, the navigation slats and the timer housing.
+
+   Nothing here paints a safety colour. Severity, readiness and refusal all
+   keep the tokens and the glyph-plus-word channels they already own, so this
+   sheet can be replaced without taking a safety semantic with it.
+   ========================================================================== */
+
+.ge-floorboard .coach-board {
+  /* The board's own vocabulary. Values read off the owner's photographs of
+     the building; they are deliberately local to this scope so no other
+     surface inherits a gym-specific colour. */
+  --cb-slate: #1B211E;
+  --cb-slate-lit: #232A26;
+  --cb-slate-deep: #141916;
+  --cb-chalk: #EAE6D9;
+  --cb-chalk-2: #C6C2B2;
+  --cb-chalk-3: #8F8C7E;
+  --cb-chalk-warn: #E4924A;   /* the orange the session list is written in */
+  --cb-chalk-amber: #D9AE5A;
+  --cb-timber: #5C4229;
+  --cb-timber-2: #4A331D;
+  --cb-timber-3: #2A1B0E;
+  --cb-trim: #A8321A;         /* the painted posts and door surround */
+  --cb-trim-2: #7E2312;
+  --cb-led: #5BE07A;          /* the round timer on the far wall */
+  --cb-screw: #DED7C4;
+
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 1242px;
+  margin-inline: auto;
+  padding: 26px;
+  color: var(--cb-chalk);
+
+  /* sawn timber, not a moulding: planks across, end grain dark */
+  background:
+    repeating-linear-gradient(88.4deg, rgba(0, 0, 0, .26) 0 1px, rgba(0, 0, 0, 0) 1px 9px),
+    repeating-linear-gradient(1.2deg,
+      var(--cb-timber) 0 22px, var(--cb-timber-2) 22px 41px,
+      #553C24 41px 63px, #412C18 63px 86px),
+    linear-gradient(176deg, #5E432A, var(--cb-timber-3));
+  box-shadow:
+    inset 0 2px 0 rgba(190, 146, 92, .34),
+    inset 0 -3px 0 rgba(18, 10, 4, .85),
+    inset 0 0 26px rgba(20, 12, 5, .5),
+    0 26px 48px rgba(0, 0, 0, .8);
+
+  /* A cut board is not square. The deviations are deterministic, never
+     generated per render, so two machines draw the same board. */
+  clip-path: polygon(
+    0.25% 0.6%, 25% 0, 50% 0.5%, 75% 0, 99.8% 0.7%,
+    100% 25%, 99.6% 50%, 100% 75%, 99.75% 99.4%,
+    75% 100%, 50% 99.5%, 25% 100%, 0.2% 99.3%,
+    0 75%, 0.4% 50%, 0 25%);
+}
+
+/* the painted inner trim */
+.ge-floorboard .coach-board::before {
+  content: "";
+  position: absolute;
+  inset: 16px;
+  pointer-events: none;
+  background: linear-gradient(176deg, var(--cb-trim), var(--cb-trim-2));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 150, 120, .30),
+    inset 0 -2px 0 rgba(40, 10, 4, .7);
+}
+
+/* ---------------------------------------------------------------- the slate */
+.ge-floorboard .cb-face {
+  position: relative;
+  margin: 10px;
+  padding: 34px 40px 38px;
+  background:
+    radial-gradient(70% 48% at 22% 8%, rgba(234, 230, 217, .055), rgba(0, 0, 0, 0) 62%),
+    radial-gradient(55% 40% at 82% 78%, rgba(234, 230, 217, .04), rgba(0, 0, 0, 0) 60%),
+    linear-gradient(174deg, var(--cb-slate-lit), var(--cb-slate) 52%, var(--cb-slate-deep));
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, .6),
+    inset 0 6px 22px rgba(0, 0, 0, .75),
+    inset 0 -8px 24px rgba(0, 0, 0, .6);
+}
+
+/* chalk dust that never fully wipes off. Decorative only, never over text. */
+.ge-floorboard .cb-face::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .5;
+  background:
+    radial-gradient(38% 15% at 26% 34%, rgba(234, 230, 217, .055), rgba(0, 0, 0, 0) 70%),
+    radial-gradient(30% 12% at 68% 62%, rgba(234, 230, 217, .045), rgba(0, 0, 0, 0) 70%),
+    radial-gradient(44% 10% at 48% 86%, rgba(234, 230, 217, .04), rgba(0, 0, 0, 0) 70%);
+}
+
+.ge-floorboard .cb-screw {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  z-index: 3;
+  background: radial-gradient(circle at 34% 30%, var(--cb-screw), #8C8577 52%, #3B382F);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .18), 0 2px 4px rgba(0, 0, 0, .7);
+}
+.ge-floorboard .cb-screw::after {
+  content: "";
+  position: absolute;
+  inset: 4px 1px;
+  background: rgba(30, 28, 22, .8);
+  border-radius: 1px;
+  transform: rotate(34deg);
+}
+.ge-floorboard .cb-screw--tl { top: 7px; left: 7px; }
+.ge-floorboard .cb-screw--tr { top: 7px; right: 7px; }
+.ge-floorboard .cb-screw--bl { bottom: 7px; left: 7px; }
+.ge-floorboard .cb-screw--br { bottom: 7px; right: 7px; }
+
+/* ------------------------------------------------------- sign and instrument */
+.ge-floorboard .cb-top {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 0 28px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.ge-floorboard .cb-eyebrow {
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: 13px;
+  letter-spacing: .40em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-3);
+}
+.ge-floorboard .cb-sign {
+  margin: 2px 0 0;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-2xl);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--cb-chalk);
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 0 14px rgba(234, 230, 217, .14);
+}
+/* chalk underline, drawn with the side of the stick */
+.ge-floorboard .cb-rule-under {
+  height: 6px;
+  margin-top: 5px;
+  width: 92%;
+  background: var(--cb-chalk-warn);
+  opacity: .85;
+  clip-path: polygon(0 44%, 6% 10%, 18% 60%, 31% 16%, 45% 64%, 59% 12%,
+    72% 58%, 86% 18%, 96% 56%, 100% 32%, 100% 100%, 0 100%);
+}
+
+/* The timer housing copies the wall unit in the gym: green LED on black.
+   It is a READOUT, not a clock. It shows the last elapsed value the server
+   sent and never interpolates, so there is deliberately no animation here. */
+.ge-floorboard .cb-instruments { display: flex; align-items: center; gap: 13px; }
+.ge-floorboard .cb-led {
+  padding: 9px 15px;
+  background: linear-gradient(180deg, #14171A, #0A0C0E);
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 0 2px #262B2F,
+    inset 0 2px 8px rgba(0, 0, 0, .9),
+    0 3px 8px rgba(0, 0, 0, .6);
+}
+.ge-floorboard .cb-led b {
+  font-family: var(--font-data);
+  font-size: var(--t-2xl);
+  font-weight: 700;
+  color: var(--cb-led);
+  line-height: 1;
+  letter-spacing: .06em;
+  text-shadow: 0 0 12px rgb(91 224 122 / .75);
+}
+.ge-floorboard .cb-led span {
+  display: block;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: 10px;
+  letter-spacing: .20em;
+  text-transform: uppercase;
+  color: #4E7A58;
+  margin-top: 3px;
+  text-align: center;
+}
+.ge-floorboard .cb-present {
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-md);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-2);
+}
+.ge-floorboard .cb-present b {
+  display: block;
+  font-family: var(--font-data);
+  font-size: var(--t-2xl);
+  color: var(--cb-chalk);
+  line-height: 1;
+}
+.ge-floorboard .cb-motto {
+  justify-self: end;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: 13px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-3);
+}
+
+/* ----------------------------------------------------------- chalk ledgers */
+.ge-floorboard .cb-sec { margin-top: 15px; }
+
+.ge-floorboard .cb-sech {
+  position: relative;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-md);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--cb-chalk);
+  padding-bottom: 5px;
+}
+.ge-floorboard .cb-sech em {
+  font-style: normal;
+  font-family: var(--font-data);
+  font-size: 13px;
+  letter-spacing: .02em;
+  color: var(--cb-chalk-3);
+  margin-left: 11px;
+}
+/* the rule under a heading: chalk, never a 1px keyline */
+.ge-floorboard .cb-sech::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--cb-chalk-2);
+  opacity: .55;
+  clip-path: polygon(0 38%, 4% 6%, 13% 58%, 24% 14%, 36% 60%, 48% 10%,
+    60% 56%, 72% 16%, 84% 58%, 94% 20%, 100% 46%, 100% 100%, 0 100%);
+}
+
+/* A welfare record is an incident to read, not a row to parse. */
+.ge-floorboard .cb-rec {
+  display: grid;
+  grid-template-columns: 28px 38px minmax(0, 1fr) auto;
+  gap: 2px 15px;
+  align-items: start;
+  padding: 13px 0 14px;
+  border-top: 1px solid rgb(234 230 217 / .11);
+}
+.ge-floorboard .cb-rec:first-of-type { border-top: 0; }
+
+.ge-floorboard .cb-who {
+  grid-column: 3;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-md);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--cb-chalk);
+  line-height: 1.15;
+}
+.ge-floorboard .cb-who .cb-age {
+  color: var(--cb-chalk-3);
+  font-size: var(--t-sm);
+  margin-left: 9px;
+}
+.ge-floorboard .cb-sev-word {
+  margin-left: 11px;
+  font-size: var(--t-sm);
+  letter-spacing: .13em;
+}
+.ge-floorboard .cb-what {
+  grid-column: 3;
+  font-size: var(--t-md);
+  color: var(--cb-chalk-2);
+  line-height: 1.38;
+  margin-top: 3px;
+  max-width: 74ch;
+}
+.ge-floorboard .cb-when {
+  grid-column: 3;
+  font-family: var(--font-data);
+  font-size: var(--t-sm);
+  color: var(--cb-chalk-3);
+  margin-top: 4px;
+}
+.ge-floorboard .cb-said {
+  grid-column: 3;
+  font-style: italic;
+  font-size: var(--t-sm);
+  color: var(--cb-chalk-3);
+  margin-top: 3px;
+}
+
+.ge-floorboard .cb-disc {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: 14px;
+  font-weight: 700;
+  color: #14110C;
+}
+.ge-floorboard .cb-portrait {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-sm);
+  color: var(--cb-chalk-2);
+  background: radial-gradient(circle at 36% 28%, #3C443E, #262D28 62%, #171C19);
+  box-shadow: inset 0 0 0 1px rgb(234 230 217 / .14);
+}
+
+/* ------------------------------------------------------------- the controls */
+/* PERFORM NOW. Dark steel, deliberately NOT red: the red on this board
+   belongs to the critical state of a record, and an actuator that borrowed it
+   would teach a coach that red means "button". */
+.ge-floorboard .cb-act {
+  grid-column: 4;
+  grid-row: 1 / span 5;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ge-floorboard .cb-actuator {
+  width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+  border-radius: 50%;
+  border: 0;
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-sm);
+  letter-spacing: .04em;
+  color: #E8E3D6;
+  background: radial-gradient(circle at 34% 28%, #5A6167, #343B40 55%, #171C20 92%);
+  box-shadow:
+    inset 0 1px 0 rgba(216, 222, 226, .34),
+    inset 0 -3px 5px rgba(0, 0, 0, .6),
+    0 4px 0 #0E1214,
+    0 6px 12px rgba(0, 0, 0, .6);
+  transition: translate var(--m-instant) var(--e-stamp);
+}
+.ge-floorboard .cb-actuator:active {
+  translate: 0 3px;
+  box-shadow: inset 0 1px 0 rgba(216, 222, 226, .28), 0 1px 0 #0E1214;
+}
+/* goldenEraContrast requires the companion: .btn:focus-visible carries the
+   whole indicator in box-shadow AND sets outline:0, so a scope rule of equal
+   weight that forgot this would delete the focus ring outright. */
+.ge-floorboard .cb-actuator:focus-visible {
+  outline: 0;
+  box-shadow: var(--focus), 0 4px 0 #0E1214;
+}
+.ge-floorboard .cb-act-label {
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-md);
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-2);
+}
+
+/* LEAVE THIS BOARD. A door, not an act: no bezel, an outward arrow. */
+.ge-floorboard .cb-door {
+  grid-column: 4;
+  grid-row: 1 / span 5;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+  text-decoration: none;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-md);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-amber);
+}
+.ge-floorboard .cb-door::after {
+  content: "";
+  width: 15px;
+  height: 11px;
+  flex: 0 0 auto;
+  background: var(--cb-chalk-amber);
+  clip-path: polygon(0 40%, 60% 40%, 60% 12%, 100% 50%, 60% 88%, 60% 60%, 0 60%);
+}
+.ge-floorboard .cb-door:focus-visible { outline: 0; box-shadow: var(--focus); }
+
+/* SWITCH THIS BOARD. Timber slats screwed across it — permanent hardware,
+   which is the one place on this surface a bounded shape is honest. */
+.ge-floorboard .cb-rack {
+  display: grid;
+  /* auto-fit rather than a fixed six: the board currently carries nine views
+     and the consolidation to six is a product decision the owner has not
+     taken yet. A hard `repeat(6, …)` would have silently mis-laid the real
+     nine the moment it met the app. */
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  /* see the phone block for why every track is floored at 0 */
+  gap: 10px;
+  margin: 20px 0 16px;
+}
+.ge-floorboard .cb-slat {
+  position: relative;
+  isolation: isolate;
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: 0;
+  cursor: pointer;
+  background: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-md);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #D8C49E;
+}
+.ge-floorboard .cb-slat-face {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    repeating-linear-gradient(2deg, var(--cb-timber) 0 7px, #4C3520 7px 14px),
+    linear-gradient(178deg, #5E432A, #38260F);
+  box-shadow:
+    inset 0 1px 0 rgba(190, 146, 92, .36),
+    inset 0 -2px 0 rgba(14, 8, 3, .7),
+    0 3px 7px rgba(0, 0, 0, .65);
+}
+.ge-floorboard .cb-slat::before,
+.ge-floorboard .cb-slat::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  margin-top: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  z-index: 1;
+  background: radial-gradient(circle at 34% 30%, var(--cb-screw), #8C8577 55%, #3B382F);
+  box-shadow: inset 0 -1px 1px rgba(0, 0, 0, .5);
+}
+.ge-floorboard .cb-slat::before { left: 7px; }
+.ge-floorboard .cb-slat::after { right: 7px; }
+/* The label and the count ride above the face. The face is EXCLUDED here:
+   it is absolutely positioned, and a blanket `> *` rule setting
+   position:relative on it collapses it to a zero-size box and the slat loses
+   its timber entirely. */
+.ge-floorboard .cb-slat > span:not(.cb-slat-face) { position: relative; z-index: 1; }
+.ge-floorboard .cb-slat[aria-current="page"] { color: #FBEFE2; }
+.ge-floorboard .cb-slat[aria-current="page"] .cb-slat-face {
+  background:
+    repeating-linear-gradient(2deg, #B03A22 0 7px, #9E3019 7px 14px),
+    linear-gradient(178deg, #B53D24, var(--cb-trim-2));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 160, 130, .45),
+    inset 0 -2px 0 rgba(50, 12, 4, .65),
+    0 4px 9px rgba(0, 0, 0, .6);
+}
+.ge-floorboard .cb-slat:focus-visible { outline: 0; box-shadow: var(--focus); }
+/* the pending count sits at the gym-floor type floor, not in an 11px pill */
+.ge-floorboard .cb-pending {
+  display: inline-grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-family: var(--font-data);
+  font-size: var(--t-md);
+  font-weight: 700;
+  color: #14110C;
+  background: radial-gradient(circle at 36% 30%, #E8CC80, var(--cb-chalk-amber) 62%, #7E6224);
+}
+
+/* ------------------------------------------------------------------ the day */
+.ge-floorboard .cb-day {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 0 38px;
+  align-items: start;
+}
+.ge-floorboard .cb-roster-row,
+.ge-floorboard .cb-roster-head {
+  display: grid;
+  grid-template-columns: 24px 36px 1.5fr 1.1fr 1.7fr;
+  gap: 0 13px;
+  align-items: center;
+}
+.ge-floorboard .cb-sched-row,
+.ge-floorboard .cb-sched-head {
+  display: grid;
+  grid-template-columns: .8fr 1.25fr 1.4fr;
+  gap: 0 13px;
+  align-items: center;
+}
+.ge-floorboard .cb-roster-head,
+.ge-floorboard .cb-sched-head {
+  padding: 6px 0 3px;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: 11px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-3);
+}
+.ge-floorboard .cb-roster-row,
+.ge-floorboard .cb-sched-row {
+  padding: 8px 0;
+  border-top: 1px solid rgb(234 230 217 / .11);
+  font-size: var(--t-md);
+  color: var(--cb-chalk-2);
+}
+.ge-floorboard .cb-no {
+  font-family: var(--font-data);
+  font-size: var(--t-sm);
+  color: var(--cb-chalk-3);
+}
+.ge-floorboard .cb-name {
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-md);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--cb-chalk);
+}
+/* Readiness keeps the rungs it already owns. The word and the glyph carry the
+   state; the disc is the third channel, never the only one. This surface does
+   not introduce a readiness or clearance vocabulary of its own. */
+.ge-floorboard .cb-ready {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-sm);
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-2);
+}
+.ge-floorboard .cb-ready i {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  box-shadow: inset 0 -1px 2px rgba(0, 0, 0, .4), 0 0 0 2px rgb(234 230 217 / .22);
+}
+.ge-floorboard .cb-note {
+  font-size: var(--t-sm);
+  color: var(--cb-chalk-3);
+  line-height: 1.3;
+}
+.ge-floorboard .cb-sched-row b {
+  font-family: var(--font-data);
+  font-weight: 700;
+  color: var(--cb-chalk-2);
+  font-size: var(--t-sm);
+}
+
+/* ------------------------------------------------------------------- phone */
+@media (max-width: 900px) {
+  .ge-floorboard .coach-board { padding: 14px; }
+  .ge-floorboard .cb-face { margin: 6px; padding: 24px 20px 28px; }
+  .ge-floorboard .cb-top { grid-template-columns: 1fr; gap: 12px; }
+  .ge-floorboard .cb-motto { justify-self: start; }
+  .ge-floorboard .cb-roster-head,
+  .ge-floorboard .cb-sched-head { display: none; }
+  .ge-floorboard .cb-rec { grid-template-columns: 28px 38px minmax(0, 1fr); gap: 3px 11px; }
+  .ge-floorboard .cb-who,
+  .ge-floorboard .cb-what,
+  .ge-floorboard .cb-when,
+  .ge-floorboard .cb-said { grid-column: 3; max-width: none; }
+  .ge-floorboard .cb-act,
+  .ge-floorboard .cb-door { grid-column: 1 / span 3; grid-row: auto; margin-top: 11px; align-self: start; }
+  .ge-floorboard .cb-who .cb-age,
+  .ge-floorboard .cb-sev-word { display: block; margin-left: 0; margin-top: 3px; }
+  /* minmax(0, …) is load-bearing: a grid item's default min-width is
+     auto, so without it a long view name refuses to shrink and pushes the
+     whole board past the viewport. Measured at 412: two slats held 204px
+     each against 332px of available width. */
+  .ge-floorboard .cb-rack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ge-floorboard .cb-slat { padding: 0 20px; text-align: center; line-height: 1.2; }
+  .ge-floorboard .cb-slat::before { left: 5px; }
+  .ge-floorboard .cb-slat::after { right: 5px; }
+  .ge-floorboard .cb-day { grid-template-columns: 1fr; gap: 20px; }
+  .ge-floorboard .cb-roster-row { grid-template-columns: 24px 36px minmax(0, 1fr); }
+  .ge-floorboard .cb-ready,
+  .ge-floorboard .cb-roster-row .cb-note { grid-column: 3; }
+}
+
+/* The press is a `translate`, which neither global reduced-motion rule
+   cancels — they kill transition and animation, not a static translate. */
+@media (prefers-reduced-motion: reduce) {
+  .ge-floorboard .cb-actuator { transition: none; }
+  .ge-floorboard .cb-actuator:active { translate: none; }
+}
+
+/* ===========================================================================
+   THE ROOM THE BOARD STANDS IN.
+
+   Route-local, applied through RoleStandaloneView's mainClassName seam and
+   nowhere else. .room--floor keeps its material ground for every other floor
+   route -- the owner's 2026-09-22 direction was that the floor is a material,
+   not a photograph, and that stands. This one surface answers his newer
+   direction instead, after he supplied photographs of the building and said
+   the pages should feel like a room in the gym, tied to what the page is
+   about. The coach board is the open floor, so it stands on the open floor.
+
+   The plate carries its own light, so the room's synthetic lamp pools are
+   turned off over it rather than double-lighting the photograph. Reduced-data
+   drops the image and the procedural floor underneath is what renders, which
+   is the plate system's existing failure mode and needs no new branch.
+
+   PROVENANCE: these are photographs of the club's own premises, supplied by
+   the owner on 2026-09-23, cropped to the plate geometry and darkened one
+   step so chalk stays legible over them. No person appears in any of them --
+   a candidate frame was rejected for containing a child -- and no other
+   organisation's marks appear in any of them.
+   ========================================================================== */
+.ge-coach-floor-room.room::after {
+  background-image: url("/plates/plate-09-ppbf-floor-landscape-01.jpg");
+  background-position: center top;
+  background-size: cover;
+}
+.ge-coach-floor-room.room::before {
+  background-image: none;
+}
+@media (orientation: portrait) {
+  .ge-coach-floor-room.room::after {
+    background-image: url("/plates/plate-09-ppbf-floor-portrait-01.jpg");
+  }
+}
+@media (prefers-reduced-data: reduce) {
+  .ge-coach-floor-room.room::after {
+    background-image: none;
+  }
+}

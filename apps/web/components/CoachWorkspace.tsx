@@ -2093,41 +2093,57 @@ export default function CoachWorkspace() {
 
   return (
     <div className="text-[color:var(--bone-200)]">
-      <div className="max-w-7xl mx-auto p-[var(--s4)] space-y-[var(--s6)]">
-        {/* HEADER */}
-        <div className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] space-y-[var(--s4)]">
+      {/* THE FLOOR BOARD. The chalkboard the gym already uses, rather than a
+          page of panels: design-system/current/ppbf-floor-board.css carries the
+          whole material and explains why this scope does not wear the house
+          leather. The screws and the slate are decoration; every semantic
+          region below is a real landmark with no visible container, which is
+          what keeps the welfare stack from turning back into a row of cards. */}
+      <div className="coach-board">
+        <span className="cb-screw cb-screw--tl" aria-hidden="true" />
+        <span className="cb-screw cb-screw--tr" aria-hidden="true" />
+        <span className="cb-screw cb-screw--bl" aria-hidden="true" />
+        <span className="cb-screw cb-screw--br" aria-hidden="true" />
+        <div className="cb-face">
+        {/* THE SIGN AND THE INSTRUMENTS.
+            The board names itself once. The old masthead repeated the role,
+            the route and the active tab in three separate bands before any
+            child-welfare information; the tab name now lives on the lit slat
+            in the rack, which is the only place it cannot drift from.
+
+            The readout is the gym's own wall timer, and it is a READOUT: it
+            shows the last elapsed_seconds the server sent and never
+            interpolates, because formatElapsed's own rule is that a clock
+            running while the page is being told nothing is a lie. */}
+        <div className="cb-top">
           <div>
-            <p className="t-eyebrow">Coach Development Workspace</p>
-            {/* The masthead names the open surface, the way the approved
-                athlete board does. It read "Live Session Management" on all
-                ten tabs, so the one line claiming to say where the coach was
-                was wrong nine times out of ten. Derived from activeTab, so it
-                cannot drift from the tab row below. */}
-            <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)] md:text-[length:var(--t-2xl)]">{activeTabLabel}</h1>
-            <p className="t-label mt-[var(--s3)] text-[color:var(--bone-400)]">
-              Coach workspace · Live session management
-            </p>
-            {/* The standing description of the workspace, kept on the tab it
-                describes. Under "Film Study" it was describing somewhere
-                else. */}
-            {activeTab === 'dashboard' && (
-              <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Manage your program floor, develop yourself, and track athlete progress with SMART goals and assessments.</p>
+            <p className="cb-eyebrow">Coach</p>
+            <h1 className="cb-sign">The Floor Board</h1>
+            <div className="cb-rule-under" aria-hidden="true" />
+          </div>
+          <div className="cb-instruments">
+            {liveRunState === 'loaded' && liveRun ? (
+              <>
+                <div className="cb-led">
+                  <b>{formatElapsed(liveRun.elapsed_seconds)}</b>
+                  <span>{liveRun.is_paused ? 'Paused · server' : 'Server elapsed'}</span>
+                </div>
+                {typeof liveRun.athletes_present === 'number' ? (
+                  <p className="cb-present"><b>{liveRun.athletes_present}</b>Present</p>
+                ) : (
+                  <p className="cb-present">Attendance<br />not recorded</p>
+                )}
+              </>
+            ) : (
+              <div className="cb-led">
+                <b>--:--</b>
+                <span>
+                  {liveRunState === 'loading' ? 'Checking' : liveRunState === 'unavailable' ? 'Unavailable' : 'No session'}
+                </span>
+              </div>
             )}
           </div>
-          {/* Two SHADOW buttons used to sit here and both were already on the
-              page. RoleStandaloneView renders a context-carrying Open SHADOW
-              Chat above this component on every standalone route, and the tab
-              row below already has a SHADOW Intel tab -- so a coach opening
-              this queue was offered the same assistant three times before
-              reaching any athlete. Both duplicates are gone; neither
-              destination is.
-
-              The motto line went with them. "Old Gauze | Sweat | Grit | Grind
-              | Dedication | Motivation" rendered at --t-xs on three separate
-              role workspaces, identically, above the fold. Repeated verbatim
-              per role it stops being the gym's voice and becomes chrome, and
-              at that size on leather it also sat under the contrast floor Law
-              3 exists to hold. */}
+          <p className="cb-motto">Observe · Decide · Execute · Repeat</p>
         </div>
 
         {/* ATHLETE PAIN REPORTS -- deliberately outside the tab switch and above
@@ -2475,33 +2491,34 @@ export default function CoachWorkspace() {
           ))}
         </div>
 
-        {/* TAB NAVIGATION */}
-        <div className={ui.tabContainer}>
-          <div className={ui.tabRow}>
-            {COACH_TABS.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                /* Which tab is open was carried by colour alone. A coach using
-                   a screen reader, or a colour-blind coach on a bright gym
-                   floor, got no answer at all -- Law 3, and the athlete
-                   workspace's own tab row has said aria-current since it was
-                   built. */
-                aria-current={activeTab === tab.id ? 'page' : undefined}
-                className={cx(
-                  ui.tabButtonBase,
-                  'gap-2',
-                  activeTab === tab.id ? ui.tabButtonActive : ui.tabButtonInactive,
-                )}
-              >
-                {tab.label}
-                {reviewQueueBadge && REVIEW_BADGED_TABS.has(tab.id) ? (
-                  <StatusBadge tone={reviewQueueBadge.tone} label={reviewQueueBadge.label} />
-                ) : null}
-              </button>
-            ))}
-          </div>
-        </div>
+        {/* THE SLAT RACK. Timber slats screwed across the board, which is the
+            one place on this surface a bounded shape is honest: these are
+            permanent hardware, not content in a box. The rack sits AFTER the
+            welfare stack on purpose, so navigation can never push a pain
+            report below the fold on a phone.
+
+            aria-current stays: which slat is lit was carried by colour alone
+            before, which answered nothing for a screen reader or for a
+            colour-blind coach on a bright floor (Law 3). The pending count
+            rides at the gym-floor type floor rather than in an 11px pill,
+            because a count a coach cannot read from arm's length is chrome. */}
+        <nav className="cb-rack" aria-label="Coach board views">
+          {COACH_TABS.map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              aria-current={activeTab === tab.id ? 'page' : undefined}
+              className="cb-slat"
+            >
+              <span className="cb-slat-face" aria-hidden="true" />
+              <span>{tab.label}</span>
+              {reviewQueueBadge && REVIEW_BADGED_TABS.has(tab.id) ? (
+                <span className="cb-pending">{reviewQueueBadge.label.replace(/[^0-9]/g, '') || '!'}</span>
+              ) : null}
+            </button>
+          ))}
+        </nav>
 
         {/* TAB CONTENT */}
         <div className="space-y-6">
@@ -2719,18 +2736,17 @@ export default function CoachWorkspace() {
                         <p className="t-label mb-[var(--s2)] block">Started</p>
                         <p className="t-body font-semibold">{formatGymDateTimeShort(liveRun.started_at) ?? liveRun.started_at}</p>
                       </div>
-                      <div>
-                        <p className="t-label mb-[var(--s2)] block">Elapsed (server clock)</p>
-                        <p className="t-data text-[length:var(--t-sm)]">{formatElapsed(liveRun.elapsed_seconds)}</p>
-                      </div>
-                      <div>
-                        <p className="t-label mb-[var(--s2)] block">Athletes Present</p>
-                        <p className="t-data text-[length:var(--t-sm)]">
-                          {typeof liveRun.athletes_present === 'number' ? liveRun.athletes_present : (
-                            <span className="text-[color:var(--bone-400)]">Not recorded for this run</span>
-                          )}
-                        </p>
-                      </div>
+                      {/* Elapsed and Athletes Present are NOT restated here.
+                          Both are the board's own instrument now, at the top
+                          of the floor board, which is where a coach looks for
+                          the clock and the head-count. Two copies of one
+                          server value on one screen is two places for it to
+                          disagree, and coachWorkspaceHonesty catches each
+                          duplicate by name -- it did, on both, the moment the
+                          instrument landed. The null case ("not recorded for
+                          this run") travelled with the value; the instrument
+                          states it rather than printing a bare number that
+                          was never recorded. */}
                       <Link href="/coach/session-scripts" className="btn">
                         Return to live delivery
                       </Link>
@@ -4005,6 +4021,7 @@ export default function CoachWorkspace() {
         {/* The four words, at the foot of the page. See WorkAxis for why this
             is not the motto line that was taken out of this header. */}
         <WorkAxis />
+        </div>
       </div>
     </div>
   );

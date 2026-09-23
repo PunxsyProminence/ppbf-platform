@@ -1412,11 +1412,17 @@ describe('authored announcements on the coach workspace', () => {
     });
 
     expect(screen.queryByText('From the Gym')).toBeNull();
-    // The masthead. It named the workspace on every tab until the approved
-    // board (AF-09) put the open surface in the heading and the workspace's
-    // name on the line under it -- this checks the line, which is the half
-    // that does not move when the coach changes tabs.
-    expect(screen.queryByText('Coach workspace · Live session management')).not.toBeNull();
+    // The board's own sign. This assertion used to read the masthead line
+    // 'Coach workspace · Live session management', which no longer exists:
+    // the floor board (Golden Era Visual 009) names itself once and lets the
+    // lit slat say which view is open, because the old band repeated the
+    // role, the route and the tab before any child-welfare information.
+    //
+    // The witness is retargeted rather than dropped, and it is the same KIND
+    // of witness: a line that is always present and does not move when the
+    // coach changes tabs, so a workspace that failed to render at all cannot
+    // slip through this test green.
+    expect(screen.queryByText('The Floor Board')).not.toBeNull();
 
     openTab('Floor');
     expect(screen.queryByText(/Session Workout Plan/i)).not.toBeNull();

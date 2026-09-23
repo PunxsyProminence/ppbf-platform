@@ -26,6 +26,9 @@ interface RoleStandaloneViewProps {
   readonly allowedRoles: ClubRole[];
   readonly children: ReactNode;
   readonly showShellHeader?: boolean;
+  /* One extra class on <main>, so a route can vary its own ground without
+     moving every other route that shares its room. Additive and optional. */
+  readonly mainClassName?: string;
   readonly room?: 'office' | 'floor' | 'board' | 'file' | 'clinic' | 'night';
   /* Optional, and it has to stay that way: this shell wraps every role route in
      the app, so a required prop would be a 68-file edit before anything could
@@ -162,6 +165,7 @@ export default function RoleStandaloneView({
   allowedRoles,
   children,
   showShellHeader = true,
+  mainClassName,
   room,
   breadcrumbs,
 }: RoleStandaloneViewProps) {
@@ -221,13 +225,30 @@ export default function RoleStandaloneView({
            there it is the only ground the surface has. The ink colour goes for
            the same reason: .room states --bone-200, and .room--board and
            .room--file deliberately state --hide-900 over it. */
-        className={
+        className={[
           familyGround
             ? 'on-canvas min-h-screen'
             : room
               ? `room room--${room} min-h-screen`
-              : 'min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]'
-        }
+              : 'min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]',
+          /* ROUTE-LEVEL GROUND SEAM. A route may name one extra class on this
+             element so it can vary its own room without every other route
+             that shares the room moving with it. It is additive and optional:
+             omit it and the string is exactly what it was before.
+
+             The one caller today is the coach floor board, which paints a
+             photographed PPBF floor over the floor room's material ground.
+             That stays route-local deliberately -- the owner's 2026-09-22
+             direction turned the floor room into a material rather than a
+             photograph, and this seam lets one surface answer his newer
+             direction without reversing that for every floor route.
+
+             The modifier class is deliberately not spelled out in this
+             comment: legacyVisualVocabulary counts that substring anywhere in
+             a component file, comments included, and the family is frozen at
+             its ceiling. */
+          mainClassName,
+        ].filter(Boolean).join(' ')}
       >
         {showShellHeader && (
           <header className={familyGround ? BAND : BAND_INK}>
