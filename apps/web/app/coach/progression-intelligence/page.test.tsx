@@ -13,15 +13,25 @@ import type { ReactNode } from 'react';
 
 import type { RabbitHoleLessonItem } from '@/components/RabbitHole';
 import type { AssignmentInstructionResponse } from '@/components/drills/drillInstructionRead';
-import type { CoachRosterAthlete } from '@/src/server/pilot/contracts';
+import type { ClubRole } from '@/components/roleRoutes';
+import type { CoachRosterAthlete, PilotAthlete } from '@/src/server/pilot/contracts';
 import type { DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
 import type { PilotDrill } from '@/src/server/pilot/drills';
 import type { AssignmentCompletion, DrillAssignment } from '@/src/server/pilot/progression';
 import CoachProgressionIntelligencePage from './page';
 
+/* The role list the page hands its shell, captured on every render. The shell
+   is stubbed out here -- it fetches a session and would gate every test in
+   this file -- and a stub that drops `allowedRoles` also drops the only
+   evidence in this suite of WHO the page admits. */
+const shellGate: ClubRole[][] = [];
+
 jest.mock('@/components/RoleStandaloneView', () => ({
   __esModule: true,
-  default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
+  default: ({ allowedRoles, children }: { readonly allowedRoles: ClubRole[]; readonly children: ReactNode }) => {
+    shellGate.push(allowedRoles);
+    return <div>{children}</div>;
+  },
 }));
 
 jest.mock('next/link', () => ({
@@ -2224,5 +2234,83 @@ describe('A-FIN-06: a coach cancels open assigned work', () => {
     expect(screen.queryByText('Jab return')).toBeNull();
     expect(screen.queryByText(/is cancelled\./)).toBeNull();
     expect(listReads(sent.slice(before))).toEqual([]);
+  });
+
+  // THE REVIEW FINDING THIS ANSWERS. The cancel route admits coach, admin and
+  // organization_admin, and so does every read this page makes -- but the
+  // surface was gated to ['coach'] and the building map advertised it to a
+  // coach alone. An Admin was authorized by the server and had no route to the
+  // control through the product: a backend-only permission with no journey.
+  //
+  // The gate is the entire fix. Nothing on this page branches on role, so
+  // these are the coach's own controls, reached by the one role the APIs were
+  // already answering -- which is why the journey below is driven through the
+  // same helpers every test above uses, and not through a second surface.
+  describe('an organization admin reaches the same control', () => {
+    /* What /api/pilot/athletes/list hands an ORGANIZATION ADMIN: the org-wide
+       row, not the coach's redacted roster row (getAthletesByOrganization
+       returns PilotAthlete; getAthletesForCoach returns CoachRosterAthlete).
+       Typed against that producer for the reason the fixtures above are --
+       a mock free to invent a key is a mock that can agree with a bug. */
+    const ORG_ROSTER: Pick<PilotAthlete, 'athlete_id' | 'full_name'>[] = [
+      { athlete_id: 'athlete-001', full_name: 'Rosa Delgado' },
+    ];
+
+    /** The same stand-in server, answering the roster read an admin gets. */
+    async function openBoardAsAdmin(sent: Sent[], assignments: DrillAssignment[]) {
+      const { fetchMock } = gymServer(sent, { assignments });
+      global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('/api/pilot/athletes/list')) return ok({ items: ORG_ROSTER });
+        return fetchMock(input, init);
+      }) as unknown as typeof fetch;
+      await act(async () => {
+        render(<CoachProgressionIntelligencePage />);
+      });
+      // A roster that answered replaces the free-text fallback with the picker.
+      const picker = await screen.findByRole('combobox', { name: 'Select Athlete' });
+      await act(async () => {
+        fireEvent.change(picker, { target: { value: 'athlete-001' } });
+      });
+      await screen.findByRole('heading', { name: `Assigned Drills (${assignments.length})` });
+      return picker;
+    }
+
+    test('the surface is gated to coach AND admin, so neither is bounced off it', async () => {
+      await openBoard([], { assignments: [] });
+
+      // Both, and only both: platform_owner and board are refused by name in
+      // assertActorCanAccessAthlete, so advertising them here would be a door
+      // onto a page whose every read fails.
+      expect(shellGate[shellGate.length - 1]).toEqual(['coach', 'admin']);
+    });
+
+    test('an admin picks an athlete off the org roster and cancels open work', async () => {
+      const sent: Sent[] = [];
+      const picker = await openBoardAsAdmin(sent, [ASSIGNED]);
+
+      // What makes this an ADMIN's journey and not a second coach's: the gate
+      // this page hands its shell. Asserted here as well as on its own above,
+      // because a page that no longer admits an admin would otherwise carry on
+      // passing every step below -- nothing here branches on role, which is
+      // the whole reason the gate was the only thing that needed to move.
+      expect(shellGate[shellGate.length - 1]).toContain('admin');
+      // The selection is a real choice off the admin's own roster read, by
+      // name -- not a typed-in id.
+      expect(within(picker).getByRole('option', { name: 'Rosa Delgado' })).toBeTruthy();
+
+      await askToCancel('Jab return');
+      const before = sent.length;
+      await confirmCancel('Jab return');
+
+      await waitFor(() =>
+        expect(within(cardOf('Jab return')).getByText('0% complete · cancelled')).toBeTruthy(),
+      );
+      // One cancel, for that assignment and that athlete -- the identical
+      // request the coach's own confirmation sends.
+      expect(writes(sent.slice(before))).toEqual([
+        { path: CANCEL_PATH, method: 'POST', body: { assignment_id: 'assign-open', athlete_id: 'athlete-001' } },
+      ]);
+      expect(screen.getByText(/^Jab return is cancelled\./)).toBeTruthy();
+    });
   });
 });

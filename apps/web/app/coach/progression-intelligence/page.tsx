@@ -711,8 +711,21 @@ export default function CoachProgressionIntelligencePage() {
     instruction.open(key, `assignment-instructions-${assignmentId}`, (signal) => readAssignmentInstruction(assignmentId, signal));
   };
 
+  /* A-FIN-06 review fix. The cancel route this page posts to admits coach,
+     admin and organization_admin, and every read the page makes answers an
+     organization admin as well -- the roster, gaps, assignments, completions,
+     suggestions and the hold read. The SURFACE was still gated to ['coach'],
+     so an Admin the server authorizes had no way to reach the control through
+     the product. Opening the gate is the whole correction: nothing below
+     branches on role, so an admin gets this page exactly as a coach does, and
+     the server's own checks are untouched.
+
+     'admin' is the ORGANIZATION administrator bucket -- roleSession.ts folds
+     organization_admin into it -- and deliberately not platform_owner, which
+     assertActorCanAccessAthlete refuses by name, so every athlete-scoped read
+     behind this page would bounce it. */
   return (
-    <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/progression-intelligence" allowedRoles={['coach']} room="floor" showShellHeader={false}>
+    <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/progression-intelligence" allowedRoles={['coach', 'admin']} room="floor" showShellHeader={false}>
       <div className="space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <p className="t-eyebrow">Closed-Loop Progression Intelligence</p>
