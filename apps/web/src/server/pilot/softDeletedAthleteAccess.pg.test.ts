@@ -98,13 +98,39 @@ const LIVE_ATHLETE = 'ATH-LIVE-1';
     active coverage grant. Exists because the coverage half of
     athleteIdsForCoach is a separate query branch: a first version of this
     suite filtered the roster half only, and every test still passed because
-    no fixture ever made coverage the sole path to a deleted athlete. */
+    no fixture ever made coverage the sole path to a deleted athlete. The
+    coverage lookup inside assertCoachAssignedToAthlete is a separate branch
+    too, and went unfiltered the same way until this fixture was aimed at it. */
 const COVERED_DELETED_ATHLETE = 'ATH-COVERED-DELETED-1';
 /** Same, not deleted -- the control for the coverage half. */
 const COVERED_LIVE_ATHLETE = 'ATH-COVERED-LIVE-1';
 /** Holds the covered athletes of record, so coverage is genuinely the only
     route COACH has to them. */
 const RECORD_COACH = 'acct-coach-record-sda';
+
+/* THE SECOND GYM. pilot.athletes' key is composite
+   (organization_id, athlete_id), so one athlete_id names a DIFFERENT child in
+   every organization that issues it -- intake numbering is per gym, not
+   global. Both coverage lookups in access.ts join pilot.athletes on BOTH
+   halves of that key for exactly this reason. The fixture below builds the
+   collision on purpose: everything else in this file lives in one
+   organization, where the organization_id half of those joins makes no
+   difference to any answer. */
+const OTHER_ORG_ID = 'org-sda-other';
+/** Organization B's covering coach -- the actor the cross-organization tests
+    run as. */
+const OTHER_ORG_COACH = 'acct-coach-other-sda';
+/** Coach of record for both of organization B's athletes, so coverage is the
+    only route OTHER_ORG_COACH has to either -- RECORD_COACH's job, next door. */
+const OTHER_ORG_RECORD_COACH = 'acct-coach-other-record-sda';
+/** Issues organization B's grants, as ADMIN_ACCOUNT issues organization A's. */
+const OTHER_ORG_ADMIN = 'acct-admin-other-sda';
+/** ONE athlete_id, TWO children: live in organization A, soft-deleted in
+    organization B, and it is organization B's grant that names it. */
+const CROSS_ORG_ATHLETE = 'ATH-CROSS-ORG-1';
+/** Organization B's own athlete, live, existing in no other gym -- the control
+    that proves a grant in organization B admits anybody at all. */
+const OTHER_ORG_LIVE_ATHLETE = 'ATH-OTHER-LIVE-1';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -129,6 +155,14 @@ const guardianActor: ActorIdentity = {
   role: 'parent',
   organizationId: ORG_ID,
   // Only meaningful for the athlete role; these three actors are not athletes.
+  athleteId: null,
+};
+// The only actor in this file whose organization is not ORG_ID.
+const otherOrgCoachActor: ActorIdentity = {
+  accountId: OTHER_ORG_COACH,
+  role: 'coach',
+  organizationId: OTHER_ORG_ID,
+  // Only meaningful for the athlete role; this one is not an athlete either.
   athleteId: null,
 };
 
@@ -159,6 +193,10 @@ async function findFreePort(): Promise<number> {
  * the same coach and linked to the same guardian, so any difference in what
  * the authorization layer returns is attributable to the deletion and nothing
  * else.
+ *
+ * Plus a SECOND gym, which exists for one reason: to put the same athlete_id
+ * in two organizations at once, live in one and deleted in the other. See the
+ * organization B block below.
  */
 async function freshDatabase(name: string): Promise<Client> {
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
@@ -233,15 +271,70 @@ async function freshDatabase(name: string): Promise<Client> {
     );
   }
 
+  // ORGANIZATION B, and the athlete_id collision. CROSS_ORG_ATHLETE gets one
+  // row in each gym: organization A's stays live and is RECORD_COACH's of
+  // record, so it belongs to no assertion elsewhere in this file;
+  // organization B's is deleted below. OTHER_ORG_LIVE_ATHLETE is organization
+  // B's own live athlete and exists in no other gym -- the control.
+  await client.query(
+    `insert into pilot.organizations (organization_id, organization_name, status)
+     values ($1, $1, 'active') on conflict do nothing`,
+    [OTHER_ORG_ID],
+  );
+  for (const [accountId, role] of [
+    [OTHER_ORG_COACH, 'coach'],
+    [OTHER_ORG_RECORD_COACH, 'coach'],
+    [OTHER_ORG_ADMIN, 'organization_admin'],
+  ] as const) {
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, $2, $3, 'microsoft') on conflict do nothing`,
+      [accountId, role, OTHER_ORG_ID],
+    );
+  }
+  await client.query(
+    `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class,
+       gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+     values ($1, $2, 'Gym A Child', '2011-05-06', 'fly', 'active', 'contact', true, $3, now(), now())
+     on conflict do nothing`,
+    [ORG_ID, CROSS_ORG_ATHLETE, RECORD_COACH],
+  );
+  // Both of organization B's athletes are covered by OTHER_ORG_COACH on an
+  // active grant, and neither is theirs of record -- so coverage is the only
+  // route to either, and the two tests differ in nothing but which gym holds
+  // the live row for the id.
+  for (const athleteId of [CROSS_ORG_ATHLETE, OTHER_ORG_LIVE_ATHLETE]) {
+    await client.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class,
+         gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, $2, 'Gym B Child', '2011-05-06', 'fly', 'active', 'contact', true, $3, now(), now())
+       on conflict do nothing`,
+      [OTHER_ORG_ID, athleteId, OTHER_ORG_RECORD_COACH],
+    );
+    await client.query(
+      `insert into pilot.coach_coverage (
+         organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at
+       ) values ($1, $2, $3, $4, now() - interval '1 hour', now() + interval '1 hour')`,
+      [OTHER_ORG_ID, athleteId, OTHER_ORG_COACH, OTHER_ORG_ADMIN],
+    );
+  }
+
   // The deletion itself -- exactly what deleteAthleteRecord writes, and
   // nothing more. If a future change makes deletion do more (deactivate the
   // account, revoke sessions), this test still pins that deleted_at ALONE is
   // sufficient to close access, which is the property that was missing.
-  for (const athleteId of [DELETED_ATHLETE, COVERED_DELETED_ATHLETE]) {
+  for (const [organizationId, athleteId] of [
+    [ORG_ID, DELETED_ATHLETE],
+    [ORG_ID, COVERED_DELETED_ATHLETE],
+    // Organization B's copy ONLY. Organization A's row carrying the same
+    // athlete_id is deliberately left live: it is the row a join that had
+    // lost its organization_id half would read instead.
+    [OTHER_ORG_ID, CROSS_ORG_ATHLETE],
+  ] as const) {
     await client.query(
       `update pilot.athletes set deleted_at = now(), updated_at = now()
        where organization_id = $1 and athlete_id = $2`,
-      [ORG_ID, athleteId],
+      [organizationId, athleteId],
     );
   }
 
@@ -316,6 +409,17 @@ async function withDatabase(name: string, run: () => Promise<void>): Promise<voi
   }
 }
 
+/** The error a refused call threw -- so two refusals can be compared whole,
+    not only by a substring of their message. */
+async function refusalOf(promise: Promise<void>): Promise<Error> {
+  return promise.then(
+    () => {
+      throw new Error('test bug: expected a refusal');
+    },
+    (error: unknown) => error as Error,
+  );
+}
+
 describe('a deleted athlete is unreachable through the coach path', () => {
   test('assertCoachAssignedToAthlete refuses the deleted athlete and allows the live one', async () => {
     await withDatabase('sda_coach_assert', async () => {
@@ -344,11 +448,201 @@ describe('a deleted athlete is unreachable through the coach path', () => {
     });
   });
 
+  /* THE COVERAGE HALF OF THE PER-ATHLETE GATE. athleteIdsForCoach's coverage
+     branch was filtered; assertCoachAssignedToAthlete's own coverage lookup
+     was not -- it read pilot.coach_coverage alone and never joined
+     pilot.athletes, and deleting an athlete ends none of their grants. So a
+     covering coach whose grant had not lapsed still reached a deleted athlete
+     through the gate every athlete-scoped route calls.
+
+     The grants are read back first, straight from the table: both are live
+     RIGHT NOW. Without that, the refusal below would pass just as well if the
+     fixture's grant had simply expired, and would prove nothing about
+     deletion. */
+  test('assertCoachAssignedToAthlete refuses a deleted athlete whose coverage grant is still live, and admits the live one', async () => {
+    await withDatabase('sda_coverage_assert', async () => {
+      const liveGrants = await activeClient!.query<{ athlete_id: string }>(
+        `select athlete_id from pilot.coach_coverage
+         where organization_id = $1 and covering_coach_id = $2
+           and starts_at <= now() and expires_at > now()`,
+        [ORG_ID, COACH],
+      );
+      expect(liveGrants.rows.map((row) => row.athlete_id).sort()).toEqual(
+        [COVERED_DELETED_ATHLETE, COVERED_LIVE_ATHLETE].sort(),
+      );
+
+      await expect(assertCoachAssignedToAthlete(COACH, COVERED_LIVE_ATHLETE, ORG_ID)).resolves.toBeUndefined();
+      await expect(assertCoachAssignedToAthlete(COACH, COVERED_DELETED_ATHLETE, ORG_ID)).rejects.toThrow(
+        'Forbidden: coach not assigned to athlete',
+      );
+    });
+  });
+
   test('accessibleAthleteIds does not return the deleted athlete to the coach', async () => {
     await withDatabase('sda_coach_batch', async () => {
       const reachable = await accessibleAthleteIds(coachActor, [LIVE_ATHLETE, DELETED_ATHLETE]);
       expect(reachable.has(LIVE_ATHLETE)).toBe(true);
       expect(reachable.has(DELETED_ATHLETE)).toBe(false);
+    });
+  });
+
+  /* THE COVERAGE HALF OF THE BATCHED GATE -- the third coverage branch, and
+     the last one to be filtered. accessibleAthleteIds runs the roster query
+     first and asks a SECOND query about whatever it missed; that second query
+     read pilot.coach_coverage alone. Since deletion ends no grants, a covering
+     coach's batched answer kept containing a deleted athlete after the
+     per-candidate gate had stopped admitting them -- and this function's
+     contract is that `result.has(id)` equals what that gate would have said.
+
+     Only COVERED_* are passed in, and only the coverage branch can return
+     them: both are RECORD_COACH's of record, so the roster half sees neither.
+     Both facts are read back from the table first, because a refusal proves
+     nothing about deletion if the grant had simply lapsed or the roster half
+     had silently answered instead. */
+  test('accessibleAthleteIds gives a covering coach the live athlete and not the deleted one', async () => {
+    await withDatabase('sda_coverage_batch', async () => {
+      const setup = await activeClient!.query<{ athlete_id: string; coach_id: string; covered: boolean }>(
+        `select a.athlete_id, a.coach_id,
+                exists (
+                  select 1 from pilot.coach_coverage cc
+                  where cc.organization_id = a.organization_id
+                    and cc.athlete_id = a.athlete_id
+                    and cc.covering_coach_id = $2
+                    and cc.starts_at <= now() and cc.expires_at > now()
+                ) as covered
+         from pilot.athletes a
+         where a.organization_id = $1 and a.athlete_id = any($3::text[])`,
+        [ORG_ID, COACH, [COVERED_LIVE_ATHLETE, COVERED_DELETED_ATHLETE]],
+      );
+      expect(setup.rows).toHaveLength(2);
+      for (const row of setup.rows) {
+        expect(row.coach_id).toBe(RECORD_COACH);
+        expect(row.covered).toBe(true);
+      }
+
+      const reachable = await accessibleAthleteIds(coachActor, [COVERED_LIVE_ATHLETE, COVERED_DELETED_ATHLETE]);
+      // Control: coverage does put an athlete in this set, so the exclusion is
+      // the deletion and not a branch that stopped returning anything.
+      expect(reachable.has(COVERED_LIVE_ATHLETE)).toBe(true);
+      expect(reachable.has(COVERED_DELETED_ATHLETE)).toBe(false);
+    });
+  });
+
+  /* The batched answer and the per-candidate gate must agree id for id --
+     that equivalence is what lets a caller swap a loop of
+     assertActorCanAccessAthlete for one accessibleAthleteIds call. A filter
+     applied to one and not the other would pass both tests above and still
+     break it. */
+  test('the batched answer matches the per-candidate gate on every covered id', async () => {
+    await withDatabase('sda_coverage_batch_agrees', async () => {
+      const candidates = [COVERED_LIVE_ATHLETE, COVERED_DELETED_ATHLETE, LIVE_ATHLETE, DELETED_ATHLETE];
+      const reachable = await accessibleAthleteIds(coachActor, candidates);
+
+      for (const athleteId of candidates) {
+        const gateAllows = await assertActorCanAccessAthlete(coachActor, athleteId).then(
+          () => true,
+          () => false,
+        );
+        expect({ athleteId, batched: reachable.has(athleteId) }).toEqual({ athleteId, batched: gateAllows });
+      }
+    });
+  });
+});
+
+/* THE ORGANIZATION_ID HALF OF THE COVERAGE JOIN, which nothing above can see.
+   Every fixture before this one lives in a single organization, so
+   `join pilot.athletes ath on ath.organization_id = cc.organization_id and
+   ath.athlete_id = cc.athlete_id` answers identically with or without its
+   first half: delete that half and all sixteen tests above stay green. What
+   held it in place was a string assertion in access.test.ts that reads the
+   SQL back -- and a query can satisfy a string and still authorize the wrong
+   child.
+
+   pilot.athletes' primary key is (organization_id, athlete_id), so one
+   athlete_id is a different child in every gym that issues it. Matched on
+   athlete_id alone, organization B's grant joins organization A's row,
+   `ath.deleted_at is null` then asks about organization A's child, and
+   organization B's coach is admitted on the strength of a row belonging to a
+   gym they have no relationship with. Both call sites are covered here
+   because the join is written out twice, and a fix to one is not a fix to the
+   other. */
+describe('a coverage grant is answered by its own organization row, not another gym', () => {
+  test('assertActorCanAccessAthlete refuses a covering coach whose athlete_id is live only in another organization', async () => {
+    await withDatabase('sda_cross_org_assert', async () => {
+      // The collision itself, read straight from the table: ONE athlete_id,
+      // two rows, and the live one is the other gym's. Neither row is this
+      // coach's of record, so the roster half of the gate answers neither.
+      const copies = await activeClient!.query<{
+        organization_id: string;
+        coach_id: string;
+        deleted: boolean;
+      }>(
+        `select organization_id, coach_id, deleted_at is not null as deleted
+         from pilot.athletes where athlete_id = $1 order by organization_id`,
+        [CROSS_ORG_ATHLETE],
+      );
+      expect(copies.rows).toHaveLength(2);
+      const [gymA, gymB] = copies.rows;
+      expect({ org: gymA.organization_id, coach: gymA.coach_id, deleted: gymA.deleted }).toEqual({
+        org: ORG_ID,
+        coach: RECORD_COACH,
+        deleted: false,
+      });
+      expect({ org: gymB.organization_id, coach: gymB.coach_id, deleted: gymB.deleted }).toEqual({
+        org: OTHER_ORG_ID,
+        coach: OTHER_ORG_RECORD_COACH,
+        deleted: true,
+      });
+
+      // And organization B's grants are live RIGHT NOW -- without this the
+      // refusal below would pass just as well against a lapsed grant, and
+      // would say nothing about which organization's row answered it.
+      const liveGrants = await activeClient!.query<{ athlete_id: string }>(
+        `select athlete_id from pilot.coach_coverage
+         where organization_id = $1 and covering_coach_id = $2
+           and starts_at <= now() and expires_at > now()`,
+        [OTHER_ORG_ID, OTHER_ORG_COACH],
+      );
+      expect(liveGrants.rows.map((row) => row.athlete_id).sort()).toEqual(
+        [CROSS_ORG_ATHLETE, OTHER_ORG_LIVE_ATHLETE].sort(),
+      );
+
+      // Two controls, because this exclusion has two ways of meaning nothing.
+      // First: a grant in organization B does admit somebody, so the refusal
+      // is not coverage having stopped working in this gym.
+      await expect(assertActorCanAccessAthlete(otherOrgCoachActor, OTHER_ORG_LIVE_ATHLETE)).resolves.toBeUndefined();
+      // Second: organization A's row really is live and really is
+      // authorizable -- it is a row the join WOULD accept, if it were asked
+      // about the right organization.
+      await expect(assertAthleteBelongsToOrganization(ORG_ID, CROSS_ORG_ATHLETE)).resolves.toBeUndefined();
+
+      const crossOrg = await refusalOf(assertActorCanAccessAthlete(otherOrgCoachActor, CROSS_ORG_ATHLETE));
+      // Which gym holds a live row for an id is no more the error channel's
+      // to disclose than a deletion or an expired grant is.
+      const neverExisted = await refusalOf(assertActorCanAccessAthlete(otherOrgCoachActor, 'ATH-NEVER-EXISTED'));
+      expect(crossOrg.message).toBe('Forbidden: coach not assigned to athlete');
+      expect(crossOrg.constructor).toBe(neverExisted.constructor);
+      expect({ name: crossOrg.name, message: crossOrg.message }).toEqual({
+        name: neverExisted.name,
+        message: neverExisted.message,
+      });
+    });
+  });
+
+  test('accessibleAthleteIds withholds an athlete_id that is live only in another organization', async () => {
+    await withDatabase('sda_cross_org_batch', async () => {
+      const reachable = await accessibleAthleteIds(otherOrgCoachActor, [OTHER_ORG_LIVE_ATHLETE, CROSS_ORG_ATHLETE]);
+      // Control: coverage does put organization B's own athlete in this set,
+      // so the exclusion below is the organization key and not a branch that
+      // stopped returning anything.
+      expect(reachable.has(OTHER_ORG_LIVE_ATHLETE)).toBe(true);
+      expect(reachable.has(CROSS_ORG_ATHLETE)).toBe(false);
+
+      // The same id, at this same moment, IS reachable -- in organization A,
+      // where the live row is. So the withholding above cannot be read as the
+      // row being gone everywhere.
+      const inGymA = await accessibleAthleteIds(adminActor, [CROSS_ORG_ATHLETE]);
+      expect(inGymA.has(CROSS_ORG_ATHLETE)).toBe(true);
     });
   });
 });
@@ -462,6 +756,31 @@ describe('assertActorCanAccessAthlete, the chokepoint 92 files call', () => {
       for (const actor of [adminActor, coachActor, guardianActor]) {
         await expect(assertActorCanAccessAthlete(actor, LIVE_ATHLETE)).resolves.toBeUndefined();
         await expect(assertActorCanAccessAthlete(actor, DELETED_ATHLETE)).rejects.toThrow();
+      }
+    });
+  });
+
+  // The coach above reaches DELETED_ATHLETE as coach of record. This is the
+  // other door: a covering coach, a grant that is still live, an athlete who
+  // is gone. The refusal must also say nothing the other refusals do not --
+  // "this athlete was deleted" is not the error channel's to disclose, any
+  // more than "your grant expired" is.
+  test('refuses a covering coach for a deleted athlete, exactly as it refuses no relationship at all', async () => {
+    await withDatabase('sda_chokepoint_coverage', async () => {
+      // Control: the same coach, the same kind of grant, a live athlete.
+      await expect(assertActorCanAccessAthlete(coachActor, COVERED_LIVE_ATHLETE)).resolves.toBeUndefined();
+
+      const deleted = await refusalOf(assertActorCanAccessAthlete(coachActor, COVERED_DELETED_ATHLETE));
+      // RECORD_COACH is not LIVE_ATHLETE's coach and holds no grant on them.
+      const unrelated = await refusalOf(
+        assertActorCanAccessAthlete({ ...coachActor, accountId: RECORD_COACH }, LIVE_ATHLETE),
+      );
+      const neverExisted = await refusalOf(assertActorCanAccessAthlete(coachActor, 'ATH-NEVER-EXISTED'));
+
+      expect(deleted.message).toBe('Forbidden: coach not assigned to athlete');
+      for (const other of [unrelated, neverExisted]) {
+        expect(deleted.constructor).toBe(other.constructor);
+        expect({ name: deleted.name, message: deleted.message }).toEqual({ name: other.name, message: other.message });
       }
     });
   });

@@ -928,11 +928,11 @@ function PeopleConsoleContent() {
               <dl className="mt-[var(--s4)] grid gap-[var(--s3)] sm:grid-cols-2">
                 <div className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s3)]">
                   <dt className="t-label">Sign-in ID</dt>
-                  <dd className="t-data mt-[var(--s2)] text-[length:var(--t-lg)] text-[color:var(--bone-100)]">{createdAthlete.accountId}</dd>
+                  <dd className="t-data t-data--lg mt-[var(--s2)]">{createdAthlete.accountId}</dd>
                 </div>
                 <div className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s3)]">
                   <dt className="t-label">One-time activation code</dt>
-                  <dd className="t-data mt-[var(--s2)] text-[length:var(--t-lg)] tracking-[0.2em] text-[color:var(--bone-100)]">{createdAthlete.activationCode}</dd>
+                  <dd className="t-data t-data--lg mt-[var(--s2)] tracking-[0.2em]">{createdAthlete.activationCode}</dd>
                 </div>
               </dl>
 

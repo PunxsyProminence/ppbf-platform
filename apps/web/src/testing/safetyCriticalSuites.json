@@ -60,6 +60,11 @@
       "guards": "The type ladder may not invert -- globals.css aliases Tailwind's theme names onto the phi ladder from an unlayered :root, and got it backwards, so every text-4xl md:text-5xl heading shrank as the viewport grew. --t-md is the kiosk minimum. Three tests: the smallest safety-bearing suite in src/design, and the easiest to lose."
     },
     {
+      "path": "src/design/fontTokenScope.test.ts",
+      "minimumTests": 4,
+      "guards": "The next/font variables stay on <html>, where the :root aliases can read them. When they sat on <body> all five aliases were invalid at computed-value time, which took the SIZE and WEIGHT out of all 37 `font:` shorthands in the legacy sheet as well as the family -- .t-eyebrow, .t-label, .t-data and .badge silently rendered at the inherited 15px, and nothing anywhere went red. Nothing else in the repository checks where those variables are declared."
+    },
+    {
       "path": "src/design/foundationMatchesLegacy.test.ts",
       "minimumTests": 43,
       "guards": "The foundation's copy of the neutral mechanics may not drift from the archive it was copied out of. Its own docblock names the stake: --t-md (kiosk minimum) and --tap (touch floor) drifting quietly is an accessibility regression waiting for a release, and the damage is deferred rather than absent -- it all lands on the day the theme stops importing legacy."

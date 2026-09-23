@@ -16,8 +16,6 @@ the second table is legal and simply unpainted.
 | File | Applied to | Dimensions | Bytes |
 |---|---|---|---|
 | `plate-01-office-01.jpg` | `.room--office` | 1280×720 | 148,739 |
-| `plate-02a-floor-landscape-01.jpg` | `.room--floor` | 1280×720 | 129,817 |
-| `plate-02b-floor-portrait-01.jpg` | `.room--floor`, `@media (orientation: portrait)` | 405×720 | 43,945 |
 | `plate-03-clinic-01.jpg` | `.room--clinic` | 1280×720 | 52,209 |
 | `plate-04-board-01.jpg` | `.room--board` | 1280×720 | 72,943 |
 | `plate-05-file-01.jpg` | `.room--file` | 1280×720 | 78,933 |
@@ -25,6 +23,25 @@ the second table is legal and simply unpainted.
 | `plate-07-warm-ground-01.jpg` | `.on-canvas` (family surfaces only — T7) | 1280×720 | 39,150 |
 | `plate-08-bell-gym-landscape-01.jpg` | `.ge-bell.on-canvas::after` (The Bell, /login) | 1280×720 | 189,771 |
 | `plate-08-bell-gym-portrait-01.jpg` | `.ge-bell.on-canvas::after`, `@media (orientation: portrait)` | 810×1440 | 99,891 |
+
+## The gym floor no longer takes a plate
+
+`current/ppbf-golden-era.css` converts `.room--floor` to a material ground —
+colour, two light pools, falloff and `--grain-fine` — and sets `--plate: none`.
+The painter is untouched: it simply has nothing to paint on that room. Owner
+direction, 2026-09-22, was that the app is not tied to real gym pictures, and
+the two plates below were the floor's. They stay committed and still pass the
+byte gate; nothing paints them.
+
+Board, File, Office, Clinic and Night keep their walls, the family ground
+(`.on-canvas`) keeps plate 07, and The Bell keeps plate 08. Board and File in
+particular are LIGHT rooms that switch the page to dark ink, so they cannot
+take the floor's dark ground without being re-inked in the same change.
+
+| File | Was applied to | Dimensions | Bytes |
+|---|---|---|---|
+| `plate-02a-floor-landscape-01.jpg` | `.room--floor` | 1280×720 | 129,817 |
+| `plate-02b-floor-portrait-01.jpg` | `.room--floor`, `@media (orientation: portrait)` | 405×720 | 43,945 |
 
 ## Landed but not declared — inert until an owner picks one
 
