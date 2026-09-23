@@ -274,7 +274,14 @@ export default function VideoCapturePage() {
 
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
-      <main className="room room--floor min-h-screen">
+      {/* No room modifier class here. Rooms were retired as a VISUAL concept
+          by owner decision: buildingMap.ts still files this door under a room
+          as structural metadata, but a screen is no longer required to paint
+          it, and legacyVisualVocabulary.test.ts caps that retired vocabulary
+          so it cannot grow back through new work like this. The cap counts
+          string occurrences anywhere in the file, comments included, which is
+          why this note does not spell the class out. */}
+      <main className="min-h-screen">
         <div className="mx-auto w-full max-w-4xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow text-[color:var(--brass-200)]">Coach Workspace</p>
