@@ -36,9 +36,21 @@
  * `.btn`, so there is no unlayered rule left to outrank the geometry.
  */
 
-/** Shared geometry: --tap tall, on the type ladder, focus ring visible on leather. */
+/**
+ * Shared geometry: --tap tall, on the type ladder, focus ring visible on
+ * leather.
+ *
+ * THE HORIZONTAL PADDING IS THE ONLY THING THAT NARROWS ON A PHONE, and the
+ * height deliberately does not move with it. At 412px the bar wrapped its
+ * controls onto FOUR rows and stood 267px tall before the page began -- the
+ * measurement that opened this slice. One Fibonacci step of side padding
+ * (--s4 to --s3, 13px to 8px) takes 10px off each control's width, which is
+ * what lets a row hold three instead of two. --tap does not move: a smaller
+ * target is the one fix this problem is not allowed to have, and a child in
+ * gloves is exactly who is holding the phone.
+ */
 const CONTROL =
-  'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border px-[var(--s4)] '
+  'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border px-[var(--s3)] sm:px-[var(--s4)] '
   + 'font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] transition '
   + 'focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
 

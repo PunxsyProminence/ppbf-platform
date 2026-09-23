@@ -56,7 +56,7 @@ interface RoleStandaloneViewProps {
    nothing at all for it, so the plain form looks correct in the markup while
    rendering as inherited body type. */
 const BAND =
-  "border-b border-[color:rgba(0,0,0,.16)] bg-[var(--paper)] px-[var(--s5)] py-[var(--s5)] shadow-[0_2px_8px_rgba(0,0,0,.14)]";
+  "border-b border-[color:rgba(0,0,0,.16)] bg-[var(--paper)] px-[var(--s4)] py-[var(--s4)] shadow-[0_2px_8px_rgba(0,0,0,.14)] sm:px-[var(--s5)] sm:py-[var(--s5)]";
 const EYEBROW =
   "font-mono text-[length:var(--t-xs)] uppercase tracking-[0.28em] text-[color:var(--brass-800)]";
 const TITLE =
@@ -73,7 +73,7 @@ const LINK =
    leather instead, so the shell and the page it wraps are one object, and the
    type moves from ink-on-paper to bone-and-brass-on-leather. */
 const BAND_INK =
-  "mat-leather--raised border-b border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]";
+  "mat-leather--raised border-b border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s4)] py-[var(--s4)] sm:px-[var(--s5)] sm:py-[var(--s5)]";
 const EYEBROW_INK =
   "font-mono text-[length:var(--t-xs)] uppercase tracking-[0.28em] text-[color:var(--brass-400)]";
 const TITLE_INK =
@@ -280,16 +280,29 @@ export default function RoleStandaloneView({
                     Operations
                   </Link>
                 ) : null}
-                <Link href="/dashboard" className={familyGround ? LINK : LINK_INK}>
-                  Bell
-                </Link>
+                {/* THE DUPLICATE BELL LEAVES THE PHONE. This band has
+                    carried a second Bell link since it was written, and the
+                    comment at the top of this file records it as a known
+                    duplicate left in place because removing navigation is a
+                    behaviour change to be raised rather than taken. It was
+                    raised, and the visual owner's design lane ruled on
+                    2026-09-23 that the duplication may not go on consuming
+                    mobile vertical space. The sticky bar directly above
+                    carries the same link at every width, so nothing becomes
+                    unreachable; on a phone it is one row nearer the thumb
+                    than this one was. */}
+                <div className="hidden items-center sm:flex">
+                  <Link href="/dashboard" className={familyGround ? LINK : LINK_INK}>
+                    Bell
+                  </Link>
+                </div>
               </div>
             </div>
           </header>
         )}
 
-        <section className="mx-auto w-full max-w-[1600px] p-[var(--s5)] md:p-[var(--s6)]">
-          <div className="mb-[var(--s5)] flex justify-end">
+        <section className="mx-auto w-full max-w-[1600px] p-[var(--s4)] sm:p-[var(--s5)] md:p-[var(--s6)]">
+          <div className="mb-[var(--s4)] flex justify-end sm:mb-[var(--s5)]">
             <ShadowChatButton context={`${roleLabel} ${routeLabel}`} />
           </div>
           {children}
