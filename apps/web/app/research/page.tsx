@@ -548,7 +548,7 @@ export default function ResearchIntakePage() {
             ].map((entry) => (
               <article key={entry.label} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                 <p className="t-label">{entry.label}</p>
-                <p className="t-data mt-[var(--s2)] text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]">{entry.value}</p>
+                <p className="t-data t-data--lg mt-[var(--s2)]">{entry.value}</p>
               </article>
             ))}
           </div>
