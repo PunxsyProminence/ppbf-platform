@@ -325,8 +325,14 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/recognition', label: 'Recognition', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'praise credit caught being good character mentorship pairing well done',
     hint: 'Tell an athlete they did well — two taps. And pair mentors with newer athletes.' },
+  /* A-FIN-06 review: the pair, not ['coach'] alone. The page admits both (its
+     own allowedRoles), and an admin who is never shown the door has no route
+     to the cancellation control the cancel API already authorizes them for.
+     Not ADMIN_GATE, for the reason the Athlete Intelligence door below writes
+     out: platform_owner is refused by name in assertActorCanAccessAthlete,
+     which every athlete-scoped read behind this surface passes through. */
   { href: '/coach/progression-intelligence', label: 'Progression Intelligence', room: 'floor',
-    roles: ['coach'], keywords: 'athlete progress load profiles cohort' },
+    roles: ['coach', 'admin'], keywords: 'athlete progress load profiles cohort' },
   { href: '/coach/cards', label: 'Coach Cards', room: 'floor', roles: ['coach'],
     keywords: 'card issue assign work homework drill program group athlete verify dispute',
     hint: 'Issue work to one athlete or a whole program, then verify what comes back.' },
