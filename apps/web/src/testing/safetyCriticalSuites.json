@@ -56,8 +56,8 @@
     },
     {
       "path": "src/design/kioskTypeFloor.test.ts",
-      "minimumTests": 13,
-      "guards": "The other half of Law 5's gym-floor floor: 19.1px type, not just 55px targets. The target half has been enforced since a session-duration field was found at 36px; the type half was never written, and it hid behind a `font:` SHORTHAND that welds each voice's size to its family so no token override reaches it -- measured 11px eyebrows, 11px labels and 11px badges on the tablet a child reads at arm's length. It is (0,2,0) against unlayered (0,1,0) voices, so it dies silently three ways: deleted, wrapped in a layer, or beaten by one later rule. Companion to kioskTapFloor."
+      "minimumTests": 28,
+      "guards": "The other half of Law 5's gym-floor floor: 19.1px type, not just 55px targets. The target half has been enforced since a session-duration field was found at 36px; the type half was never written, and it hid behind a LITERAL px size that no token override can reach -- four of the six voices pin it through a `font:` shorthand that also welds the size to the family, and two pin it with an ordinary font-size. Eyebrows and labels were MEASURED at 11px in Chromium on the athlete dashboard; badges are 11px as DECLARED at design-system/legacy/ppbf-leather-brass.css:807 and were never counted on a render, which is why the word here is 'declared'. It is (0,2,0) against unlayered (0,1,0) voices, so it dies silently three ways: deleted, wrapped in a layer, or beaten by one later rule -- including by an !important rule WEAKER than itself, which is a fourth way the first version of the sweep could not see. Also holds the control half of the same floor, nine selectors that raise buttons, inputs and selects off the desk ladder, and pins all six base sizes so the ladder it corrects cannot drift out from under it. Companion to kioskTapFloor."
     },
     {
       "path": "src/design/typeLadder.test.ts",

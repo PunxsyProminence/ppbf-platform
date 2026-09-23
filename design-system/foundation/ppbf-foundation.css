@@ -131,13 +131,26 @@
    it: 55px targets and 19.1px type on a gym-floor surface. The target half has
    been enforced above since the sweep that found a session-duration field at
    36px. The type half was never written, and the gap was invisible for a
-   different reason than the usual one: the semantic voices are declared with a
-   `font:` SHORTHAND, so their size is welded to their family and weight and no
-   token override reaches it. Measured in Chromium on the athlete dashboard at
-   412x915, every element of each voice counted: .t-eyebrow 3 at 11px, .t-label
-   25 at 11px, .t-muted 7 at 12.5px, .t-body 4 of 6 at 14px. Those are desk
-   sizes, read at arm's length on a tablet bolted to a wall, by a fourteen-
-   year-old who has just come off the bag.
+   different reason than the usual one: every one of these voices pins a
+   LITERAL px size, so there is no var() in any of them for a token, a ramp or
+   a scope override to point somewhere else. FOUR of the six do it through a
+   `font:` SHORTHAND, which additionally welds the size to the family and the
+   weight -- .t-eyebrow `650 11px/1` (legacy/ppbf-leather-brass.css:675),
+   .t-label `650 11px/1` (:682), .t-data `650 13px/1.5` (:685) and .badge
+   `700 11px/1` (:807). The other TWO are ordinary declarations: .t-body
+   `font-size: 14px` (:679) and .t-muted `font-size: 12.5px` (:680). An earlier
+   version of this paragraph said the shorthand explained all six; it explains
+   four, and the literal explains all six, which is the fact the rules below
+   actually turn on.
+
+   Measured in Chromium on the athlete dashboard at 412x915, every element of
+   each voice counted: .t-eyebrow 3 at 11px, .t-label 25 at 11px, .t-muted 7 at
+   12.5px, .t-body 4 of 6 at 14px. Those are desk sizes, read at arm's length
+   on a tablet bolted to a wall, by a fourteen-year-old who has just come off
+   the bag. .badge was NOT in that count and is not claimed as measured -- its
+   11px is the value its rule declares (:807). It does render on the route:
+   every goal card prints one (components/AthleteWorkspace.tsx:2691, through
+   getGoalStatusBadge at :424).
 
    WHAT THIS FLOOR CANNOT REACH, AND WHY IT DOES NOT REACH FOR IT. Seventeen of
    the nineteen `.t-data` figures on that same page are pinned by an INLINE
@@ -162,6 +175,25 @@
    this floor would not exist. (0,2,0) beats the voice and still loses to a
    scope rule at (0,3,0), which is the escape hatch: a route that genuinely
    needs a different size can still take it, in one visible place, on purpose.
+
+   EVERYTHING ELSE THAT MOVES WITH THE SIZE, stated here because a reader can
+   see the font-size lines below at a glance and will not see these. SEVEN
+   line-heights change and THREE OF THEM GO DOWN. That is deliberate: leading
+   is a ratio, so carrying .t-body's 1.62 up to 19.1px would add about 5px of
+   gap to every line of prose on a screen whose type has just grown 36%.
+
+     .t-eyebrow  1     -> 1.2    (legacy/ppbf-leather-brass.css:675, `11px/1`)
+     .t-label    1     -> 1.2    (:682, `11px/1`)
+     .t-body     1.62  -> 1.5    (:679)                                  DOWN
+     .t-muted    1.55  -> 1.45   (:680)                                  DOWN
+     .badge      1     -> 1.15   (:807, `11px/1`)
+     .badge i    1     -> 1.15   (:813)
+     .t-data     1.5   -> 1.15   (:685, `13px/1.5`)                      DOWN
+
+   THREE trackings come in, not the two the rules below name. .t-eyebrow .16em
+   -> .08em (:676) and .t-label .13em -> .06em (:683) are named there; .badge
+   .1em -> .05em (:807) is the same halving for the same reason and was not,
+   so a reader of the earlier version concluded the badge was untouched.
 
    NOT A DESKTOP CHANGE. Nothing here reaches an element that is not inside a
    [data-surface="kiosk"] subtree, so the coach and admin ladders are untouched.
@@ -200,12 +232,96 @@
   font-size: var(--t-lg);
   line-height: 1.15;
 }
-/* The sanctioned larger data rungs keep their own sizes. Without these two
-   restatements the rule above -- (0,2,0) against their (0,1,0) -- would pull
+/* The largest sanctioned data rung keeps its own size. Without this
+   restatement the rule above -- (0,2,0) against its (0,1,0) -- would pull
    .t-data--xl DOWN from 30.9px to 24.3px, which is a floor shrinking a figure
-   it was never about. */
-[data-surface="kiosk"] .t-data--lg { font-size: var(--t-lg); }
+   it was never about.
+
+   .t-data--lg IS NOT RESTATED, and the absence is the decision rather than an
+   oversight. It asks for --t-lg (legacy/ppbf-leather-brass.css:690) and the
+   kiosk .t-data rule above also resolves --t-lg, so a restatement would set
+   the value that already wins whichever of the two the cascade picks -- on
+   `.t-data.t-data--lg` and on a bare `.t-data--lg` alike. The restatement was
+   written, measured to be a no-op, and removed together with the guard
+   assertion that was its only consumer; a rule whose sole effect is to satisfy
+   its own test is a rule that reports health it is not providing. If the kiosk
+   .t-data rung ever moves off --t-lg, --lg needs its restatement back, and
+   this paragraph is the note that says so. */
 [data-surface="kiosk"] .t-data--xl { font-size: var(--t-xl); }
+
+/* ---------------------------------------------------------------------------
+   THE SAME FLOOR, ON THE CONTROLS.
+
+   Law 5's 19.1px is a property of the SURFACE, not of six class names. The
+   rules above only reach text that wears one of those classes, and the label
+   on a button wears none of them, so after the voices moved the gym floor
+   still had desk-sized controls on it. Swept before this rule was written:
+
+     app/schedule/page.tsx  three review controls at
+                           `text-[length:var(--t-xs)]`, 11.8px. That utility no
+                           longer stands at those call sites -- it was inert
+                           once this rule landed, and a class naming a size the
+                           surface forbids is worse than no class; the reason
+                           is recorded at the page's own kiosk marker.
+     components/CoachMilestoneMarker.tsx:173 `text-[length:var(--t-sm)]`, 15px
+     .btn                  15px (legacy/ppbf-leather-brass.css:828) -- every
+                           button on every kiosk surface that carries no size
+                           of its own
+     .btn--lever           12px (:2308)
+     .input/.select/.textarea  15px (:907)
+     .btn--kiosk           19px (:878) -- the opt-in kiosk button, 0.1px short
+                           of the figure it is named after
+
+   A STYLESHEET RULE RATHER THAN FORTY CALL-SITE EDITS. The five gym-floor
+   surfaces -- the whole /athlete subtree, /coach/floor-groups,
+   /coach/recognition, /coach/visualization and /schedule -- carry 133 control
+   or control-classed elements between them. Putting the floor at 133 call
+   sites puts it in 133 places that can each drift back, which is exactly how
+   the TAP floor failed the first time: .btn--kiosk and .input--kiosk existed
+   all along and were opt-in per control, and a session-duration field on a
+   child's screen sat at 36px through three accessibility sweeps.
+
+   AND IT DOES NOT DRAG LARGER TEXT DOWN, which is what the lane was protecting
+   when it refused a broad !important. This rule is UNLAYERED and Tailwind's
+   utilities sit in `@layer utilities`, so it beats a `text-[length:...]` at a
+   call site whatever that call site says -- a ceiling as well as a floor. It
+   was therefore only safe to write after counting. Of those 133 controls, SIX
+   declared a text size at all when the sweep ran, and not one asked for more
+   than --t-md: the four undersized ones listed above, plus
+   components/CoachRecognitionPad.tsx:226 and :261, which already sat at --t-md.
+   With the three stale /schedule utilities gone the count is THREE, and the
+   statement that matters is unchanged either way -- nothing on a gym-floor
+   surface is pulled down by this rule. A control that genuinely needs to be
+   larger keeps the same two escape hatches the voices have: a scope rule at
+   (0,3,0), or an inline style.
+
+   WHAT IT STILL CANNOT REACH, counted across all five surfaces rather than the
+   one page: 59 inline `style={{ fontSize: ... }}` pins, 31 of them below
+   --t-md (23 at --t-sm, 7 at --t-xs, one clamp that bottoms out at --t-sm).
+   An inline declaration beats every stylesheet rule that is not !important,
+   and the hammer that would reach them would also pull the 18 legitimately
+   LARGER inline pins (10 --t-lg, 7 --t-xl, 1 --t-2xl) down to 19.1px. Those
+   are a component slice of their own. So are the 79 ordinary non-control
+   texts on these surfaces that sit below --t-md -- prose, list items and
+   definition values that wear no semantic voice class. This rule claims the
+   controls and says so, rather than claiming the surface.
+
+   Checkboxes, radios and range inputs are inside the bare `input` selector and
+   are left there on purpose: their box is not font-relative in any engine, so
+   the declaration is inert on them rather than a geometry change nobody asked
+   for. The tap floor in apps/web/app/globals.css excludes them for the
+   opposite reason -- a 44px checkbox IS a layout bug.                      */
+[data-surface="kiosk"] .btn,
+[data-surface="kiosk"] .input,
+[data-surface="kiosk"] .select,
+[data-surface="kiosk"] .textarea,
+[data-surface="kiosk"] button,
+[data-surface="kiosk"] [role="button"],
+[data-surface="kiosk"] input,
+[data-surface="kiosk"] select,
+[data-surface="kiosk"] textarea {
+  font-size: var(--t-md);
+}
 
 /* A disabled control must be distinguishable without relying on colour. */
 :where(button, input, select, textarea):disabled {
