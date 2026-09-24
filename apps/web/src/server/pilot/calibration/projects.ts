@@ -294,8 +294,20 @@ export async function assertVideoClippable(
    * this function is: a clip row is a pointer, never a cached grant. A clip
    * cut before this rule existed keeps being refused every time it is opened,
    * rather than quietly going on producing corpus labels.
+   *
+   * ASKED HERE RATHER THAN ADDED TO getVideoSessionById, which is the shared
+   * read and is used against schemas that do not carry this column at all --
+   * widening it made filmStudyProposals.pg.test.ts fail on "column
+   * capture_take_id does not exist", and would have forced nine unrelated
+   * suites to apply a migration they have no use for. Whether a video was
+   * filmed to teach Shadow is a calibration question, so calibration asks it.
    */
-  if (video.capture_take_id === null) {
+  const provenance = await queryOne<{ capture_take_id: string | null }>(
+    `select capture_take_id from pilot.video_sessions
+      where organization_id = $1 and video_session_id = $2`,
+    [organizationId, videoSessionId],
+  );
+  if (!provenance || provenance.capture_take_id === null) {
     throw new VideoNotClippableError(video.status, 'not_teaching_footage');
   }
 
