@@ -81,6 +81,27 @@ export async function POST(request: NextRequest) {
     }
 
     /*
+     * WHAT PRODUCED THESE BYTES, taken from the client rather than inferred.
+     *
+     * Inferring 'in_app_recording' from the mere presence of a take was wrong:
+     * an angle that arrives as an EXISTING FILE chosen from the device -- the
+     * fallback for a browser whose recorder this platform cannot use -- also
+     * belongs to a take, and labelling it as recorded in-app would be a false
+     * provenance claim on a file this app never recorded.
+     *
+     * Validated against the closed vocabulary because the column's CHECK will
+     * refuse anything else as an opaque 500 otherwise.
+     */
+    const rawCaptureSource = typeof captureSourceValue === 'string' ? captureSourceValue.trim() : '';
+    if (rawCaptureSource && !['in_app_recording', 'file_upload'].includes(rawCaptureSource)) {
+      return NextResponse.json(
+        { error: 'Unsupported capture_source: expected "in_app_recording" or "file_upload".' },
+        { status: 400 },
+      );
+    }
+    const captureSource = rawCaptureSource || 'file_upload';
+
+    /*
      * CAP-VID-01: which attempt this file is a view of.
      *
      * RESOLVED SERVER-SIDE FROM THE TAKE, never taken from the client. The
@@ -116,36 +137,46 @@ export async function POST(request: NextRequest) {
       recordingSessionId = take[0].recording_session_id;
       captureTakeIdForRow = captureTakeId;
 
-      /*
-       * A CAPTURE RECORDING MUST NAME ITS SUBJECT. Refused here, on the
-       * server, not merely required by the form.
-       *
-       * Without this the capture surface recreated a bypass that already
-       * exists for ungrouped team uploads: videoScanSweep only asserts
-       * guardian consent when a video carries an athlete_id, because a video
-       * with none "has no guardian to ask". An ordinary unattributed upload is
-       * a known, accepted gap. A dedicated learning-capture UI whose own
-       * contexts are shadowboxing, heavy bag, mitts and sparring is not: it
-       * exists to film athletes, so footage of a minor would have entered the
-       * vision content screen with the consent check skipped.
-       *
-       * "Not ML-eligible yet" does not answer that. The refusal does.
-       *
-       * The consequence is deliberate and narrow: capture currently records
-       * ROSTERED ATHLETES ONLY. Filming a coach demonstrating has no athlete
-       * to name and is refused here rather than quietly stored as
-       * unattributed. Supporting it needs a participant model that says who is
-       * in the frame, which is an owner decision and is not invented here.
-       */
-      if (!athleteId) {
-        return NextResponse.json(
-          {
-            error:
-              'A recording must say which athlete it is of. Choose an athlete before recording.',
-          },
-          { status: 400 },
-        );
-      }
+    }
+
+    /*
+     * A CAPTURE RECORDING MUST NAME ITS SUBJECT. Refused here, on the server,
+     * not merely required by the form.
+     *
+     * Without this the capture surfaces recreate a bypass that already exists
+     * for ungrouped team uploads: videoScanSweep only asserts guardian consent
+     * when a video carries an athlete_id, because a video with none "has no
+     * guardian to ask". An ordinary unattributed upload is a known, accepted
+     * gap. A dedicated recorder is not: it exists to film athletes, so footage
+     * of a minor would enter the vision content screen with the consent check
+     * skipped.
+     *
+     * "Not ML-eligible yet" does not answer that. The refusal does.
+     *
+     * KEYED ON WHAT PRODUCED THE BYTES, NOT ON WHETHER THERE IS A TAKE. This
+     * used to test take-presence, which held only while the single in-app
+     * recorder was the grouped Teach Shadow one. Film Study now has its own
+     * recorder and sends NO take -- deliberately, because a takeless upload is
+     * what keeps its footage out of the recognition corpus -- so a take-keyed
+     * rule would let a dedicated capture UI store an unattributed recording of
+     * a minor again, which is the exact defect this refusal exists to prevent.
+     * capture_source says what the surface was; a file chosen from the
+     * ordinary video library declares none and keeps its known, accepted gap.
+     *
+     * The consequence is deliberate and narrow: both recorders film ROSTERED
+     * ATHLETES ONLY. Filming a coach demonstrating has no athlete to name and
+     * is refused here rather than quietly stored as unattributed. Supporting
+     * it needs a participant model that says who is in the frame, which is an
+     * owner decision and is not invented here.
+     */
+    if (!athleteId && (captureTakeIdForRow || captureSource === 'in_app_recording')) {
+      return NextResponse.json(
+        {
+          error:
+            'A recording must say which athlete it is of. Choose an athlete before recording.',
+        },
+        { status: 400 },
+      );
     }
 
     // Free text and allowed to be unknown. "Rear phone camera" is a fact about
@@ -185,26 +216,6 @@ export async function POST(request: NextRequest) {
       recordedAt = raw;
     }
 
-    /*
-     * WHAT PRODUCED THESE BYTES, taken from the client rather than inferred.
-     *
-     * Inferring 'in_app_recording' from the mere presence of a take was wrong:
-     * an angle that arrives as an EXISTING FILE chosen from the device -- the
-     * fallback for a browser whose recorder this platform cannot use -- also
-     * belongs to a take, and labelling it as recorded in-app would be a false
-     * provenance claim on a file this app never recorded.
-     *
-     * Validated against the closed vocabulary because the column's CHECK will
-     * refuse anything else as an opaque 500 otherwise.
-     */
-    const rawCaptureSource = typeof captureSourceValue === 'string' ? captureSourceValue.trim() : '';
-    if (rawCaptureSource && !['in_app_recording', 'file_upload'].includes(rawCaptureSource)) {
-      return NextResponse.json(
-        { error: 'Unsupported capture_source: expected "in_app_recording" or "file_upload".' },
-        { status: 400 },
-      );
-    }
-    const captureSource = rawCaptureSource || 'file_upload';
 
     const videoSessionId = randomUUID();
     const blobPath = `${principal.organizationId}/${videoSessionId}/${uploadDescriptor.generatedFileName}`;

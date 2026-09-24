@@ -59,7 +59,25 @@ import type { ClubRole } from './roleRoutes';
  * ---------------------------------------------------------------------------
  */
 
-export type Room = 'office' | 'floor' | 'board' | 'file' | 'clinic' | 'night';
+export type Room =
+  | 'office'
+  | 'floor'
+  | 'board'
+  | 'file'
+  | 'clinic'
+  /*
+   * TEACHING THE RECOGNIZER, kept apart from the gym floor on the owner's
+   * ruling. In a boxing gym "training" already means what an athlete does, so
+   * machine teaching living beside Film Study made one journey read as two
+   * halves of another. The corridor groups strictly by room, so a genuinely
+   * separate area has to BE a room -- anything else is three doors filed under
+   * the floor with the separation written only in their labels.
+   *
+   * Structural metadata, not a wall: no screen paints this one. Rooms were
+   * retired as a visual concept, and these surfaces are new work.
+   */
+  | 'teach'
+  | 'night';
 
 /** Every role, for surfaces that carry no gate. */
 export const OPEN = 'open' as const;
@@ -341,11 +359,27 @@ export const BUILDING: readonly Door[] = [
     hint: 'Roster rollup: sessions, RPE, readiness trend, training days, drill completion. Read-only.' },
   { href: '/coach/video-analysis', label: 'Video Analysis', room: 'floor',
     roles: ['coach', 'admin'], keywords: 'film breakdown footage' },
-  { href: '/coach/video-analysis/capture', label: 'Record a Punch', room: 'floor',
-    roles: ['coach', 'admin'], keywords: 'record camera capture film angles multi device join code take',
-    hint: 'Film a punch with this device. Several coaches can join one session and record it from different angles.' },
-  { href: '/coach/calibration', label: 'Clip Annotation', room: 'floor',
-    roles: ['coach', 'admin'], keywords: 'calibration annotate label clip punch defense ontology agreement study',
+  { href: '/coach/video-analysis/capture', label: 'Record for Film Study', room: 'floor',
+    roles: ['coach', 'admin'], keywords: 'record camera film study footage review athlete coaching',
+    hint: 'Film an athlete with this device for coaching review. Stays in Film Study; it cannot be moved into Teach Shadow.' },
+  /*
+   * TEACH SHADOW. Its own room because the owner ruled it a separate area, and
+   * because the corridor has no other way to express one: it groups by room and
+   * nothing else. Clip Annotation moved here rather than being duplicated --
+   * /coach/calibration is now a compatibility redirect with no door of its own,
+   * listed in buildingMapCoverage.test.ts's EXCLUDED for that reason.
+   *
+   * None of these three paints a room. They are new work, and rooms are retired
+   * as a visual concept.
+   */
+  { href: '/teach-shadow', label: 'Teach Shadow', room: 'teach',
+    roles: ['coach', 'admin'], keywords: 'machine learning recognition shadow teach educate examples corpus coverage vocabulary ontology model',
+    hint: 'Teaching Shadow to recognise punches, defense and movement. Nothing here trains or scores an athlete.' },
+  { href: '/teach-shadow/capture', label: 'Capture Examples', room: 'teach',
+    roles: ['coach', 'admin'], keywords: 'record camera capture angles multi device join code take example teaching shadow recognition',
+    hint: 'Film an example for Shadow. Several coaches can join one session and record it from different angles.' },
+  { href: '/teach-shadow/annotation', label: 'Clip Annotation', room: 'teach',
+    roles: ['coach', 'admin'], keywords: 'calibration annotate label clip punch defense ontology agreement study verify',
     hint: 'Label what you saw in a study clip. Two coaches label it separately; nothing here scores an athlete.' },
   { href: '/coach/video-publications', label: 'Video Publications', room: 'floor',
     roles: ['coach'], keywords: 'publish film share video' },
@@ -597,7 +631,7 @@ export const BUILDING: readonly Door[] = [
 ];
 
 /** The rooms, in the order a corridor should present them. */
-export const ROOM_ORDER: readonly Room[] = ['office', 'floor', 'board', 'file', 'clinic', 'night'];
+export const ROOM_ORDER: readonly Room[] = ['office', 'floor', 'board', 'file', 'clinic', 'teach', 'night'];
 
 export const ROOM_LABEL: Record<Room, string> = {
   office: 'Front Office',
@@ -605,6 +639,7 @@ export const ROOM_LABEL: Record<Room, string> = {
   board: 'Board Room',
   file: 'File Room',
   clinic: 'Clinic',
+  teach: 'Teach Shadow',
   night: 'After Hours',
 };
 
@@ -615,6 +650,7 @@ export const ROOM_BLURB: Record<Room, string> = {
   board: 'Governance and the eight seats.',
   file: 'Research, evidence, the ledger.',
   clinic: 'Medical clearance and compliance.',
+  teach: 'Teaching Shadow to recognise boxing. Not athlete training.',
   night: 'Shadow, and anything after hours.',
 };
 

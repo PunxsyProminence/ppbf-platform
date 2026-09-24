@@ -1,0 +1,338 @@
+"use client";
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import RoleSessionGate from '@/components/RoleSessionGate';
+import { apiBase } from '@/lib/apiBase';
+
+/*
+ * TEACH SHADOW: the home.
+ *
+ * A TEACHING LOOP, NOT A TOOL DIRECTORY. The order of this page is the order
+ * of the work -- what does Shadow need, film it, label it, see what the corpus
+ * now holds, go round again -- because the owner's instruction is that Shadow
+ * is taught the way a boxer is: find the weak area, work it, measure, repeat.
+ * A page of links in alphabetical order would be the same tools and none of
+ * the method.
+ *
+ * NOTHING HERE CLAIMS A MODEL EXISTS, and that is the constraint every figure
+ * on this page is shaped by. No recognition model has been trained or
+ * evaluated -- there is no model, inference or dataset table in the schema at
+ * all -- so this surface shows EVIDENCE COUNTS and says so plainly. The
+ * heading is "What Shadow needs more of", not "what Shadow is worst at": the
+ * first is answerable from governed rows, the second needs a model and a
+ * held-out evaluation, and answering it from these numbers would be a guess
+ * wearing the clothes of a measurement.
+ *
+ * NOR DOES IT SHOW 0%, AN EMPTY GAUGE, OR A GREYED-OUT DIAL. Each of those
+ * reads as "measured, and bad" rather than "not measured", and a coach who
+ * saw one would conclude the recognizer had been tried and had failed.
+ */
+
+interface PunchEvidenceCell {
+  punch_type: string;
+  stance: string | null;
+  events: number;
+  clips: number;
+}
+
+interface DefenseEvidenceCell {
+  defense_type: string;
+  events: number;
+  clips: number;
+}
+
+interface Coverage {
+  ontology_version: string;
+  capture: {
+    recording_sessions: number;
+    capture_takes: number;
+    captured_files: number;
+    multi_angle_takes: number;
+    athletes_captured: number;
+  };
+  labelling: {
+    clips_cut: number;
+    submitted_sets: number;
+    clips_with_two_submitted_sets: number;
+    adjudications: number;
+    gold_records: number;
+  };
+  punch_evidence: PunchEvidenceCell[];
+  defense_evidence: DefenseEvidenceCell[];
+  vocabulary: {
+    punch_types: string[];
+    defense_types: string[];
+    stances: string[];
+  };
+}
+
+/** `lead_straight` as a coach would read it, without inventing a nicer name. */
+function readable(term: string): string {
+  const spaced = term.replace(/_/g, ' ');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function stanceLabel(stance: string | null): string {
+  return stance ? readable(stance) : 'Stance not recorded';
+}
+
+export default function TeachShadowHomePage() {
+  const [coverage, setCoverage] = useState<Coverage | null>(null);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/teach-shadow/coverage`, {
+          credentials: 'include',
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          coverage?: Coverage;
+          error?: string;
+        };
+        if (!response.ok) throw new Error(payload.error || 'The coverage figures could not be read.');
+        /*
+         * A MISSING PAYLOAD IS AN ERROR, NOT AN EMPTY CORPUS. Treating an
+         * unanswered read as zeros would paint a gym that has filmed nothing,
+         * which is a specific and wrong claim about their work.
+         */
+        if (!payload.coverage) throw new Error('The coverage figures could not be read.');
+        setCoverage(payload.coverage);
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'The coverage figures could not be read.');
+      } finally {
+        setLoaded(true);
+      }
+    })();
+  }, []);
+
+  /*
+   * THINNEST FIRST, and the stance dimension is kept because it is where the
+   * gaps actually are: a gym films its orthodox fighters constantly and its
+   * southpaws rarely, and a list that averaged the two would hide exactly the
+   * hole somebody needs to go and fill.
+   */
+  const thinnest = coverage
+    ? [...coverage.punch_evidence]
+      .sort((a, b) => a.events - b.events || a.clips - b.clips)
+      .slice(0, 8)
+    : [];
+
+  return (
+    <RoleSessionGate allowedRoles={['coach', 'admin']}>
+      {/* No room modifier class here. Rooms were retired as a VISUAL concept
+          by owner decision: buildingMap.ts still files this door under a room
+          as structural metadata, but a screen is no longer required to paint
+          it, and legacyVisualVocabulary.test.ts caps that retired vocabulary
+          so it cannot grow back through new work like this. The cap counts
+          string occurrences anywhere in the file, comments included, which is
+          why this note does not spell the class out. */}
+      <main className="min-h-screen">
+        <div className="mx-auto w-full max-w-5xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
+          <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
+            <p className="t-eyebrow text-[color:var(--brass-200)]">Teach Shadow</p>
+            <h1 className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-2xl)' }}>
+              Teaching Shadow to see boxing
+            </h1>
+            <p className="t-body mt-[var(--s3)] max-w-3xl">
+              Shadow learns what a punch looks like the same way a boxer learns to throw one: you find the thing it
+              has seen least of, film more of it, label what happened, and check what the corpus now holds. Nothing
+              on this page trains or scores an athlete. Footage collected here is teaching evidence and stays
+              separate from Film Study.
+            </p>
+          </header>
+
+          {errorMessage ? (
+            <div role="alert" className="alert alert--warning mt-[var(--s5)]">
+              <span className="alert-icon" aria-hidden="true">▲</span>
+              <div className="alert-body">
+                <p className="alert-title">Attention</p>
+                <p className="alert-msg">{errorMessage}</p>
+              </div>
+            </div>
+          ) : null}
+
+          {/* 1. WHAT SHADOW NEEDS */}
+          <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>What Shadow needs more of</h2>
+            <p className="t-body mt-[var(--s2)] max-w-3xl">
+              Ranked by how little governed evidence exists, not by how the recognizer performs. There is no
+              recognizer yet, so nothing on this list is a statement about what Shadow finds hard &mdash; it is a
+              statement about what nobody has filmed and labelled much of.
+            </p>
+            {!loaded ? (
+              <p className="t-body mt-[var(--s3)]">Reading the corpus&hellip;</p>
+            ) : thinnest.length === 0 ? (
+              <p className="t-body mt-[var(--s3)]">No coverage figures are available.</p>
+            ) : (
+              <ul className="mt-[var(--s4)] flex flex-col gap-[var(--s2)]">
+                {thinnest.map((cell) => (
+                  <li key={`${cell.punch_type}-${cell.stance ?? 'none'}`} className="t-body">
+                    <span className="t-data uppercase tracking-[0.12em] text-[color:var(--brass-300)]">
+                      {readable(cell.punch_type)} &middot; {stanceLabel(cell.stance)}
+                    </span>
+                    <br />
+                    {cell.events === 0
+                      ? 'No labelled examples yet'
+                      : `${cell.events} labelled example${cell.events === 1 ? '' : 's'} across ${cell.clips} clip${cell.clips === 1 ? '' : 's'}`}
+                    {' '}&middot; corpus coverage gap
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* 2 and 3. THE TWO THINGS TO GO AND DO */}
+          <section className="mt-[var(--s5)] grid gap-[var(--s5)] md:grid-cols-2">
+            <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+              <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Capture examples</h2>
+              <p className="t-body mt-[var(--s2)]">
+                Film an example for Shadow. Several coaches can join one session from their own phones and record
+                the same attempt from different positions. Shadowboxing and heavy bag only, until a take can name
+                everyone who appears in it.
+              </p>
+              <Link href="/teach-shadow/capture" className="btn mt-[var(--s4)] inline-block">
+                Capture Examples
+              </Link>
+            </div>
+
+            <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+              <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Label &amp; verify</h2>
+              <p className="t-body mt-[var(--s2)]">
+                Label what you saw in a study clip, from the fixed vocabulary. Two coaches label the same clip
+                separately and neither sees the other&rsquo;s answers, so disagreement can be measured rather than
+                averaged away. Nothing recorded there scores an athlete.
+              </p>
+              <Link href="/teach-shadow/annotation" className="btn mt-[var(--s4)] inline-block">
+                Clip Annotation
+              </Link>
+            </div>
+          </section>
+
+          {/* 4. CORPUS COVERAGE */}
+          <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Corpus coverage</h2>
+            <p className="t-body mt-[var(--s2)] max-w-3xl">
+              Counts of evidence that exists. No readiness score and no percentage: a single number over these
+              would need a denominator nobody has set, and inventing one would make the corpus look finished.
+              Hours of footage is absent on purpose &mdash; the platform stores no duration, so any figure would be
+              made up.
+            </p>
+            {coverage ? (
+              <div className="mt-[var(--s4)] grid gap-[var(--s4)] sm:grid-cols-2">
+                <dl className="flex flex-col gap-[var(--s2)]">
+                  <div>
+                    <dt className="t-eyebrow">Filmed</dt>
+                    <dd className="t-body">
+                      {coverage.capture.captured_files} file{coverage.capture.captured_files === 1 ? '' : 's'} across{' '}
+                      {coverage.capture.capture_takes} take{coverage.capture.capture_takes === 1 ? '' : 's'} in{' '}
+                      {coverage.capture.recording_sessions} session
+                      {coverage.capture.recording_sessions === 1 ? '' : 's'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="t-eyebrow">Filmed from more than one device</dt>
+                    <dd className="t-body">
+                      {coverage.capture.multi_angle_takes} take
+                      {coverage.capture.multi_angle_takes === 1 ? '' : 's'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="t-eyebrow">Athletes filmed</dt>
+                    <dd className="t-body">{coverage.capture.athletes_captured}</dd>
+                  </div>
+                </dl>
+                <dl className="flex flex-col gap-[var(--s2)]">
+                  <div>
+                    <dt className="t-eyebrow">Clips cut for labelling</dt>
+                    <dd className="t-body">{coverage.labelling.clips_cut}</dd>
+                  </div>
+                  <div>
+                    <dt className="t-eyebrow">Labelled and submitted</dt>
+                    <dd className="t-body">
+                      {coverage.labelling.submitted_sets} set
+                      {coverage.labelling.submitted_sets === 1 ? '' : 's'}, of which{' '}
+                      {coverage.labelling.clips_with_two_submitted_sets} clip
+                      {coverage.labelling.clips_with_two_submitted_sets === 1 ? '' : 's'} have two
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="t-eyebrow">Settled</dt>
+                    <dd className="t-body">
+                      {coverage.labelling.adjudications} adjudication
+                      {coverage.labelling.adjudications === 1 ? '' : 's'},{' '}
+                      {coverage.labelling.gold_records} gold record
+                      {coverage.labelling.gold_records === 1 ? '' : 's'}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            ) : (
+              <p className="t-body mt-[var(--s3)]">{loaded ? 'No coverage figures are available.' : 'Reading the corpus…'}</p>
+            )}
+          </section>
+
+          {/* 5. VOCABULARY */}
+          <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Current vocabulary</h2>
+            <p className="t-body mt-[var(--s2)] max-w-3xl">
+              The only terms anything may be labelled with. One canonical list, and only an administrator changes
+              it. A term being in the list says it is nameable, not that Shadow has been taught it &mdash; the
+              counts above say how much evidence stands behind each one.
+            </p>
+            {coverage ? (
+              <>
+                <p className="t-data mt-[var(--s3)] uppercase tracking-[0.12em] text-[color:var(--brass-300)]">
+                  {coverage.ontology_version}
+                </p>
+                <div className="mt-[var(--s3)] grid gap-[var(--s4)] sm:grid-cols-2">
+                  <div>
+                    <h3 className="t-eyebrow">Punches</h3>
+                    <ul className="mt-[var(--s2)] flex flex-col gap-[var(--s1)]">
+                      {coverage.vocabulary.punch_types.map((term) => (
+                        <li key={term} className="t-body">{readable(term)}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <h3 className="t-eyebrow">Defense</h3>
+                    <ul className="mt-[var(--s2)] flex flex-col gap-[var(--s1)]">
+                      {coverage.defense_evidence.map((cell) => (
+                        <li key={cell.defense_type} className="t-body">
+                          {readable(cell.defense_type)}
+                          {' '}&middot;{' '}
+                          {cell.events === 0 ? 'no labelled examples' : `${cell.events} labelled`}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </section>
+
+          {/* 6. MODEL PERFORMANCE */}
+          <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Model performance</h2>
+            {/* SAID IN WORDS, WITH NO DIAL BESIDE IT. A gauge at zero, a greyed
+                meter or an "0%" would all read as "measured, and bad" instead
+                of "not measured", and a coach who saw one would conclude the
+                recognizer had been tried and had failed. */}
+            <p className="t-body mt-[var(--s2)] max-w-3xl">
+              No evaluated recognition model yet. Nothing has been trained on this corpus and nothing has been
+              measured against held-out footage, so there is no accuracy, no confidence and no score to show. When
+              there is one, it will be reported per punch, per stance and per camera position rather than as a
+              single number &mdash; one overall figure can hide a recognizer that fails completely on southpaws.
+            </p>
+          </section>
+
+          <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
+            <Link href="/coach/environment/intake-router" className="btn btn--ghost">Back to Coach Workspace</Link>
+          </div>
+        </div>
+      </main>
+    </RoleSessionGate>
+  );
+}

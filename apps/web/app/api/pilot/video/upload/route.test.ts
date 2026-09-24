@@ -209,6 +209,49 @@ describe('a capture recording carries its take and its subject', () => {
     expect(response.status).toBe(202);
   });
 
+  /*
+   * THE FILM STUDY RECORDER SENDS NO TAKE, ON PURPOSE -- a takeless upload is
+   * what keeps its footage out of the recognition corpus. So the safeguarding
+   * refusal cannot be keyed on take-presence: it is keyed on capture_source,
+   * which says a dedicated recorder produced the bytes. Without these two, a
+   * recorder could film a minor and store them unattributed, and the guardian
+   * consent check videoScanSweep runs only for videos that name an athlete
+   * would never fire.
+   */
+  test('a Film Study recording carries no take, and is still refused without an athlete', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+
+    const response = await POST(
+      uploadRequest({ file: videoFile(), capture_source: 'in_app_recording' }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockQuery.mock.calls.some(([sql]) => String(sql).includes('insert into pilot.video_sessions'))).toBe(false);
+  });
+
+  test('a Film Study recording that names its athlete is stored with no recognition session or take', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    assignedAthlete();
+
+    const response = await POST(
+      uploadRequest({
+        file: videoFile(),
+        athlete_id: 'ath-1',
+        capture_source: 'in_app_recording',
+      }),
+    );
+
+    expect(response.status).toBe(202);
+    const insert = mockQuery.mock.calls.find(([sql]) => String(sql).includes('insert into pilot.video_sessions'));
+    const params = insert?.[1] as unknown[];
+    // recording_session_id, capture_take_id and the per-view identity. All
+    // null is the whole Film Study contract: nothing here can join a take, so
+    // nothing here can become corpus evidence.
+    expect([params[10], params[11], params[12]]).toEqual([null, null, null]);
+    expect(params[3]).toBe('ath-1');
+    expect(params[15]).toBe('in_app_recording');
+  });
+
   test('a take from another organization is not found, and nothing is stored', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({}));
     assignedAthlete();
