@@ -46,6 +46,30 @@ interface VideoSessionRow {
   created_at: string;
 }
 
+/*
+ * FILM STUDY READS EXCLUDE TEACH SHADOW FOOTAGE, AND THE ADMIN READ DOES NOT.
+ *
+ * This route feeds the coach video console, the athlete's own film and the
+ * parent view -- all Film Study surfaces. Teach Shadow capture stores an
+ * athlete_id (it must; the guardian-consent sweep only runs for a video that
+ * names one), so without this filter a teaching example recorded on the gym
+ * floor turns up in that athlete's film library as though it were coaching
+ * footage. The two areas are not separate if their media mixes on the read
+ * side, whatever the recorders do.
+ *
+ * NOT APPLIED TO THE ORGANIZATION-ADMIN BRANCH, deliberately. That branch is
+ * what /admin/video-review reads, and a safeguarding review that cannot see
+ * every file in the organization is a safeguarding review with a blind spot
+ * somebody chose. Hiding footage from the people whose job is to look at all
+ * of it would be the wrong repair for a product-separation problem.
+ *
+ * `capture_take_id is null` is the discriminator because Teach Shadow capture
+ * always sends a take and Film Study never does. Ungrouped uploads that
+ * predate grouping are null too, and belong in Film Study, which is where
+ * they already appear.
+ */
+const FILM_STUDY_ONLY = 'and capture_take_id is null';
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -70,6 +94,7 @@ export async function GET(request: NextRequest) {
          where organization_id = $1
            and athlete_id = $2
            and status = 'ready'
+           ${FILM_STUDY_ONLY}
          order by created_at desc limit $3`,
         [principal.organizationId, principal.athleteId, limit],
       );
@@ -81,7 +106,7 @@ export async function GET(request: NextRequest) {
       rows = await query<VideoSessionRow>(
         `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
          from pilot.video_sessions
-         where organization_id = $1 and athlete_id = $2 and status = 'ready'
+         where organization_id = $1 and athlete_id = $2 and status = 'ready' ${FILM_STUDY_ONLY}
          order by created_at desc limit $3`,
         [principal.organizationId, athleteId, limit],
       );
@@ -91,7 +116,7 @@ export async function GET(request: NextRequest) {
         rows = await query<VideoSessionRow>(
           `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
            from pilot.video_sessions
-           where organization_id = $1 and athlete_id = $2
+           where organization_id = $1 and athlete_id = $2 ${FILM_STUDY_ONLY}
            order by created_at desc limit $3`,
           [principal.organizationId, athleteId, limit],
         );
@@ -124,6 +149,7 @@ export async function GET(request: NextRequest) {
           `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
            from pilot.video_sessions
            where organization_id = $1
+             ${FILM_STUDY_ONLY}
              and (athlete_id is null or athlete_id in (
                select athlete_id from pilot.athletes where coach_id = $2 and organization_id = $1
              ))

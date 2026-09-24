@@ -144,6 +144,55 @@ describe('GET /api/pilot/video/list', () => {
     expect(sql).not.toEqual(expect.stringContaining("status = 'ready'"));
   });
 
+  /*
+   * TEACH SHADOW FOOTAGE IS NOT FILM STUDY FOOTAGE, AND THIS IS THE READ SIDE
+   * OF THAT.
+   *
+   * Teach Shadow capture stores an athlete_id -- it must, because the
+   * guardian-consent sweep only runs for a video that names one -- so without
+   * this filter a teaching example recorded on the gym floor appears in that
+   * athlete's film library as though a coach had filmed it for review. The
+   * recorders being separate does not separate anything if the reads mix.
+   *
+   * The organization-admin branch is asserted NOT to filter, in the same
+   * breath, because that one feeds safeguarding review and a review that
+   * cannot see every file in the organization has a blind spot somebody chose.
+   */
+  test.each([
+    ['athlete', () => principal({ role: 'athlete', athleteId: 'ath-1' }), 'http://localhost/api/pilot/video/list'],
+    ['parent', () => principal({ role: 'parent' }), 'http://localhost/api/pilot/video/list?athlete_id=ath-1'],
+    ['coach asking about one athlete', () => principal({ role: 'coach' }), 'http://localhost/api/pilot/video/list?athlete_id=ath-1'],
+    ['coach listing everything they may see', () => principal({ role: 'coach' }), 'http://localhost/api/pilot/video/list'],
+  ])('a %s reading Film Study never sees Teach Shadow footage', async (_label, who, url) => {
+    mockRequirePrincipal.mockResolvedValueOnce(who());
+    // The parent and named-athlete branches pass through
+    // assertActorCanAccessAthlete first, which reads the link with queryOne.
+    // Answering it keeps these tests about the listing rather than about the
+    // access check, which has its own tests above.
+    const { queryOne } = jest.requireMock('@/src/server/pilot/db');
+    queryOne.mockResolvedValue({ athlete_id: 'ath-1', coach_id: 'acct-1' });
+    mockQuery.mockResolvedValue([]);
+
+    const res = await GET(request(url));
+
+    expect(res.status).toBe(200);
+    const listing = mockQuery.mock.calls
+      .map(([sql]) => String(sql))
+      .find((sql) => sql.includes('from pilot.video_sessions'));
+    expect(listing).toContain('capture_take_id is null');
+  });
+
+  test('the organization-admin read is deliberately NOT filtered, so safeguarding sees everything', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockQuery.mockResolvedValueOnce([]);
+
+    const res = await GET(request());
+
+    expect(res.status).toBe(200);
+    const [sql] = mockQuery.mock.calls[0]!;
+    expect(String(sql)).not.toContain('capture_take_id is null');
+  });
+
   test('organization_admin gets org-wide access', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
     mockQuery.mockResolvedValueOnce([{ video_session_id: 'v1' }, { video_session_id: 'v2' }]);

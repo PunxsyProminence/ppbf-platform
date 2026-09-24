@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import nextConfig from '../next.config';
-import { CAMERA_DOCUMENT_ROUTES, isCameraDocument } from './cameraDocuments';
+import { CAMERA_DOCUMENT_ROUTES, isCameraDocument, requiresDocumentLoad } from './cameraDocuments';
 
 /*
  * A RECORDER MUST BE ARRIVED AT WITH A FULL PAGE LOAD.
@@ -107,18 +107,101 @@ test('each recorder is actually reachable, by an anchor', () => {
   expect([...anchored].sort()).toEqual([...CAMERA_DOCUMENT_ROUTES].sort());
 });
 
-test('the corridor decides per door, because its hrefs are not literals', () => {
-  /*
-   * The scan above reads literal hrefs. Corridor renders every door in the
-   * building from `door.href`, so a capture door goes through it with no
-   * literal anywhere for the scan to see -- and the corridor is how most
-   * people navigate this application. It has to make the choice at runtime,
-   * and this is the assertion that it still does.
-   */
-  const corridor = readFileSync(path.join(WEB, 'components', 'Corridor.tsx'), 'utf8');
+/*
+ * THE GLOBAL CHROME, DERIVED RATHER THAN LISTED.
+ *
+ * GlobalRoleHeader is mounted by the root layout on every signed-in surface,
+ * which includes both recorders. Everything it renders is therefore navigation
+ * that can happen while the current document holds camera=(self) -- and
+ * leaving that document by a soft navigation carries the grant onto every
+ * ordinary page afterwards, for as long as the tab lives.
+ *
+ * The first version of this file checked only links that pointed AT a
+ * recorder, and named Corridor by hand. It missed the larger and worse set:
+ * the card catalog reaches every door in the building through
+ * router.push(door.href), the session bar's own controls are `<Link>`, and the
+ * safety badge is mounted beside them. Reading the header's imports means a
+ * control added to the bar tomorrow is covered without anybody remembering to
+ * add it here.
+ */
+const CHROME = (() => {
+  const header = readFileSync(path.join(WEB, 'components', 'GlobalRoleHeader.tsx'), 'utf8');
+  const names = [...header.matchAll(/^import\s+(?:[\w{},\s*]+)\s+from\s+["']\.\/([\w/]+)["'];?$/gm)]
+    .map((match) => match[1]!);
+  return ['GlobalRoleHeader', ...names]
+    .map((name) => ['tsx', 'ts'].map((ext) => path.join(WEB, 'components', `${name}.${ext}`)).find((file) => SOURCES.includes(file)))
+    .filter((file): file is string => Boolean(file));
+})();
 
-  expect(corridor).toContain('isCameraDocument');
-  expect(corridor).toMatch(/if \(isCameraDocument\(door\.href\)\)/);
+test('the chrome set is read off the header, and is not empty', () => {
+  // A regex that matched nothing would make the two assertions below vacuous.
+  const names = CHROME.map(relative);
+  expect(names).toContain('components/GlobalRoleHeader.tsx');
+  expect(names).toContain('components/Corridor.tsx');
+  expect(names).toContain('components/CardCatalog.tsx');
+  expect(CHROME.length).toBeGreaterThan(4);
+});
+
+test('nothing in the global chrome navigates with a bare next/link', () => {
+  const offenders: string[] = [];
+  for (const file of CHROME) {
+    if (relative(file) === 'components/ChromeLink.tsx') continue; // it IS the wrapper
+    const source = readFileSync(file, 'utf8');
+    if (/^import\s+Link\s+from\s+["']next\/link["']/m.test(source)) {
+      offenders.push(`${relative(file)} imports next/link directly`);
+    }
+  }
+  // Whoever trips this: use ChromeLink. It renders a `<Link>` everywhere
+  // except on the two documents where a soft navigation would carry a camera
+  // grant off the page that was granted it.
+  expect(offenders).toEqual([]);
+});
+
+test('nothing in the global chrome routes programmatically without asking first', () => {
+  const offenders: string[] = [];
+  for (const file of CHROME) {
+    const source = readFileSync(file, 'utf8');
+    const navigates = /router\.(push|replace)\s*\(/.test(source);
+    if (navigates && !source.includes('requiresDocumentLoad')) {
+      offenders.push(`${relative(file)} calls router.push/replace with no camera-document check`);
+    }
+  }
+  /*
+   * A coarse check on purpose. Proving each individual call site is guarded
+   * would mean parsing control flow, and a guard that needs a parser is one
+   * nobody maintains. This says: a chrome component that navigates in code has
+   * at least consulted the rule -- which is what the card catalog failed to do
+   * while looking entirely correct.
+   */
+  expect(offenders).toEqual([]);
+});
+
+test('the two places that navigate by a variable href still consult the rule', () => {
+  // Neither has a literal href anywhere for the scan above to read, and
+  // between them they are how most people move around this application.
+  const catalog = readFileSync(path.join(WEB, 'components', 'CardCatalog.tsx'), 'utf8');
+  expect(catalog).toMatch(/requiresDocumentLoad\(pathname, door\.href\)/);
+  expect(catalog).toMatch(/window\.location\.assign\(door\.href\)/);
+
+  const corridor = readFileSync(path.join(WEB, 'components', 'Corridor.tsx'), 'utf8');
+  expect(corridor).toContain('ChromeLink');
+});
+
+test('leaving a camera document needs a load, not only arriving at one', () => {
+  /*
+   * The direction the first repair missed. Arriving soft means the camera
+   * never opens, which is visible immediately. Leaving soft means the grant
+   * stays live on every ordinary page after it, which is visible to nobody.
+   */
+  expect(requiresDocumentLoad('/teach-shadow/capture', '/dashboard')).toBe(true);
+  expect(requiresDocumentLoad('/coach/video-analysis/capture', '/login')).toBe(true);
+  expect(requiresDocumentLoad('/teach-shadow/capture', '/coach/video-analysis/capture')).toBe(true);
+  expect(requiresDocumentLoad('/dashboard', '/teach-shadow/capture')).toBe(true);
+
+  // And an ordinary move between ordinary pages stays soft: making every
+  // navigation a page load would be a different app.
+  expect(requiresDocumentLoad('/dashboard', '/coach/video-analysis')).toBe(false);
+  expect(requiresDocumentLoad(null, '/teach-shadow')).toBe(false);
 });
 
 test('a trailing slash or a query string does not smuggle a link past the check', () => {

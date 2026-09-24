@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useSyncExternalStore } from "react";
 import {
@@ -12,6 +11,8 @@ import {
 } from "./roleSession";
 import { apiBase } from '@/lib/apiBase';
 import { isRefusalSurface } from "./buildingMap";
+import ChromeLink from "./ChromeLink";
+import { requiresDocumentLoad } from "./cameraDocuments";
 import { canUseOperationsHub } from "./operationsAccess";
 import FeedbackBox from "./FeedbackBox";
 import Corridor from "./Corridor";
@@ -163,7 +164,12 @@ export default function GlobalRoleHeader() {
     // nothing to revoke and "logout" silently left the session alive.
     void fetch(`${apiBase()}/api/pilot/auth/logout`, { method: 'POST', credentials: 'include' });
     clearRoleSession();
-    router.replace("/login");
+    /* A CAMERA DOCUMENT IS LEFT BY LOADING, even on the way out.
+       router.replace is a soft navigation, so signing out from a
+       recorder would carry camera=(self) onto the login page and
+       onto whatever is opened next in that tab. */
+    if (requiresDocumentLoad(pathname, "/login")) window.location.replace("/login");
+    else router.replace("/login");
   }
 
   return (
@@ -227,9 +233,9 @@ export default function GlobalRoleHeader() {
           <SoundToggle />
           <FeedbackBox />
           {FEEDBACK_TRIAGE_ROLES.includes(session.role) ? (
-            <Link href="/admin/feedback" className={CONTROL_QUIET}>
+            <ChromeLink href="/admin/feedback" className={CONTROL_QUIET}>
               Triage
-            </Link>
+            </ChromeLink>
           ) : null}
           {/* Administration, not a cross-role launcher (owner decision,
               2026-08-26). This link sat on every signed-in surface for every
@@ -239,13 +245,13 @@ export default function GlobalRoleHeader() {
               The same predicate the page's own gate uses, so the two cannot
               disagree about who this is for. */}
           {canUseOperationsHub(session.role) ? (
-            <Link href="/operations" className={CONTROL_QUIET}>
+            <ChromeLink href="/operations" className={CONTROL_QUIET}>
               Operations
-            </Link>
+            </ChromeLink>
           ) : null}
-          <Link href="/dashboard" className={CONTROL_QUIET}>
+          <ChromeLink href="/dashboard" className={CONTROL_QUIET}>
             Bell
-          </Link>
+          </ChromeLink>
           <button type="button" onClick={signOut} className={CONTROL_EXIT}>
             Logout
           </button>

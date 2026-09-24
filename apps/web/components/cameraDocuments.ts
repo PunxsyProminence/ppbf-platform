@@ -28,10 +28,29 @@ export const CAMERA_DOCUMENT_ROUTES = [
   '/coach/video-analysis/capture',
 ] as const;
 
-/** True when navigating to this href must reload the document. */
+/** True when this href IS one of the camera documents. */
 export function isCameraDocument(href: string): boolean {
   // Compared on the path alone: a query string or hash does not change which
   // document is served, and neither should change how it is reached.
   const path = href.split('?')[0]!.split('#')[0]!.replace(/\/$/, '');
   return (CAMERA_DOCUMENT_ROUTES as readonly string[]).includes(path);
+}
+
+/*
+ * BOTH ENDS OF A NAVIGATION MATTER, and only one of them was checked at first.
+ *
+ * Arriving at a recorder by a soft navigation leaves it inside a document
+ * served camera=(), so it cannot open a camera. LEAVING one by a soft
+ * navigation is the opposite failure and the more serious of the two: the
+ * document keeps its camera=(self) grant, and every ordinary page the coach
+ * visits afterwards is running with a capability it was never granted, for as
+ * long as the tab lives. A cross-site scripting hole on any of those pages
+ * then reaches a camera.
+ *
+ * So a navigation needs a real document load when EITHER end is a camera
+ * document. Moving between the two recorders counts: they hold different
+ * policies only because they are different documents.
+ */
+export function requiresDocumentLoad(from: string | null | undefined, to: string): boolean {
+  return isCameraDocument(to) || (typeof from === 'string' && isCameraDocument(from));
 }

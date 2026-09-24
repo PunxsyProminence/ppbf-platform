@@ -1,8 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
-import { isCameraDocument } from './cameraDocuments';
+import ChromeLink from './ChromeLink';
 import { usePathname } from 'next/navigation';
 import { useSyncExternalStore } from 'react';
 
@@ -121,40 +120,22 @@ export default function Corridor() {
                 <ul className="corridor-doors">
                   {group.doors.map((door) => {
                     const current = door.href === pathname;
-                    const className = `corridor-door${current ? ' is-current' : ''}`;
                     /*
-                     * A RECORDER IS REACHED WITH A FULL PAGE LOAD, never a
-                     * soft navigation. Permissions-Policy comes with a
-                     * DOCUMENT, and `<Link>` does not fetch one -- the router
-                     * patches the page in place, so the camera grant belongs
-                     * to whatever page the coach started on. Walk in here from
-                     * anywhere else and the recorder is running inside a
-                     * document served camera=(), which refuses getUserMedia
-                     * and blames the browser for it. See components/
-                     * cameraDocuments.ts.
+                     * ChromeLink, not Link. The corridor is mounted on the
+                     * recorders as well as on every other surface, and a soft
+                     * navigation in either direction breaks the document-
+                     * scoped camera policy -- shut on the way in, still open
+                     * on the way out. See components/cameraDocuments.ts.
                      */
-                    if (isCameraDocument(door.href)) {
-                      return (
-                        <li key={door.href}>
-                          <a
-                            href={door.href}
-                            className={className}
-                            aria-current={current ? 'page' : undefined}
-                          >
-                            {door.label}
-                          </a>
-                        </li>
-                      );
-                    }
                     return (
                       <li key={door.href}>
-                        <Link
+                        <ChromeLink
                           href={door.href}
-                          className={className}
+                          className={`corridor-door${current ? ' is-current' : ''}`}
                           aria-current={current ? 'page' : undefined}
                         >
                           {door.label}
-                        </Link>
+                        </ChromeLink>
                       </li>
                     );
                   })}
