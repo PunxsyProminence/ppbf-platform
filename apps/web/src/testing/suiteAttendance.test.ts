@@ -449,12 +449,21 @@ describe('the suite attendance reporter', () => {
   });
 
   it('names an ignore pattern as the reason when one swallowed a registered suite', () => {
+    /* THE SUITE NAME IS READ FROM THE REGISTER, NEVER SPELLED OUT HERE.
+       `everythingRan().slice(1)` drops the first result, so this test is about
+       ENTRIES[0] whatever ENTRIES[0] happens to be -- but the ignore pattern
+       and the last assertion used to say one suite's name out loud while the
+       path assertion read ENTRIES[0].path. Deleting the first register entry,
+       for reasons having nothing to do with this test, moved ENTRIES[0] to a
+       different suite and failed this one on a subject it does not own. The
+       register is the source of truth; this reads it rather than restating it. */
+    const swallowed = ENTRIES[0].path.replace(/^.*\//, '').replace(/\.test\.tsx?$/, '');
     const results = everythingRan().slice(1);
     const contexts = [
       {
         config: {
           ...CONTEXTS[0].config,
-          testPathIgnorePatterns: ['/node_modules/', 'safeguardingRedReservation'],
+          testPathIgnorePatterns: ['/node_modules/', swallowed],
         },
       },
     ];
@@ -472,7 +481,7 @@ describe('the suite attendance reporter', () => {
       const error = reporter.getLastError();
       expect(error?.message).toContain(ENTRIES[0].path);
       expect(error?.message).toContain('EXCLUDED FROM THE RUN');
-      expect(error?.message).toContain('safeguardingRedReservation');
+      expect(error?.message).toContain(swallowed);
     } finally {
       write.mockRestore();
     }
