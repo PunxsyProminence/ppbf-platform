@@ -8,6 +8,15 @@ import WorkAxis from './WorkAxis';
 import { HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import { cx, ui } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
+/* THE SHARED GLANCE MODEL. One derivation of the facts the board states, so
+   that BOARD and ROOM render the same truth instead of each working out its
+   own. See the file header for why that is structural here and not advisory. */
+import {
+  coachTasksFrom,
+  formatElapsed,
+  readinessGlance,
+  reviewQueueBadgeFor,
+} from '@/coach/coachGlance';
 import {
   READINESS_UNVALIDATED_CAVEAT,
   isReadinessMethodValidated,
@@ -309,22 +318,13 @@ function credentialBandBadge(band: string): { readonly tone: BadgeTone; readonly
   return CREDENTIAL_BAND_LABEL[band] ?? CREDENTIAL_BAND_LABEL.missing;
 }
 
-/**
- * "1h 04m" / "12m 30s" from the server's own elapsed count. Whole seconds
- * only, because that is what the server sends; this never interpolates
- * between reads, which would show a clock that is running while the page is
- * not being told anything.
- */
-function formatElapsed(totalSeconds: number): string {
-  const safe = Number.isFinite(totalSeconds) && totalSeconds > 0 ? Math.floor(totalSeconds) : 0;
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const seconds = safe % 60;
-  if (hours > 0) {
-    return `${hours}h ${String(minutes).padStart(2, '0')}m`;
-  }
-  return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
-}
+/* "1h 04m" / "12m 30s" from the server's own elapsed count. Whole seconds only,
+   because that is what the server sends; it never interpolates between reads,
+   which would show a clock running while the page is being told nothing.
+
+   Now lives in src/coach/coachGlance.ts so the ROOM layout's wall clock reads
+   the same seconds through the same function as the BOARD layout's LED, rather
+   than each rounding the server's number its own way. */
 
 interface ShadowReviewQueueItem {
   intake_case_id: string;
@@ -1100,46 +1100,34 @@ export default function CoachWorkspace() {
      and this is the change that gives it one. */
   const injuryFlags = athletes.filter(a => a.injuryFlag).length;
   const injuryTrackingAvailable = athletes.some(a => a.injuryFlag !== null);
-  const redReadinessCount = athletes.filter((athlete) => athlete.readiness === 'RED').length;
-  const yellowReadinessCount = athletes.filter((athlete) => athlete.readiness === 'YELLOW').length;
-  const unknownReadinessCount = athletes.filter((athlete) => athlete.readiness === 'UNKNOWN').length;
-  /* "The feed told us something", NOT "somebody has a band".
-     This was `athletes.some(a => a.readiness !== 'UNKNOWN')`, which was the
-     same question while every reading became a band. Once unvalidated readings
-     stopped being promoted, an organization whose scores are ALL staff
-     judgements -- which is every organization today -- had no athlete with a
-     band, so the tile fell to "No signal": it called a working feed a dead one
-     AND took the provenance caveat down with it, since the caveat renders
-     inside this branch. "No signal" has to keep meaning no signal. */
-  const readinessTrackingAvailable = athletes.some((athlete) => athlete.readiness !== 'UNKNOWN')
-    || contextualReadiness.length > 0;
-  /* How many readings the feed returned, and how many of those may not be
-     presented as measurements.
-     Counted from the two sources SEPARATELY, because an unvalidated reading no
-     longer becomes a band: it leaves the athlete UNKNOWN and lands in
-     contextualReadiness instead. Deriving "unvalidated" from the roster the way
-     an earlier draft did returned 0 for exactly the rows it was meant to count,
-     so the caveat silently stopped rendering the moment the gate started
-     working -- the opposite of the intent, and invisible without a test. */
-  const bandedReadinessCount = athletes.filter((athlete) => athlete.readiness !== 'UNKNOWN').length;
-  const unvalidatedReadinessCount = contextualReadiness.length;
-  const trackedReadinessCount = bandedReadinessCount + unvalidatedReadinessCount;
+  /* THE READINESS COUNTS NOW COME FROM THE SHARED MODEL.
+     The two traps these counts have fallen into before -- "the feed told us
+     something" collapsing into "somebody has a band", and "unvalidated" being
+     derived from the roster where it always reads 0 -- are written up at
+     readinessGlance() in src/coach/coachGlance.ts, with the reason each is
+     invisible without a test. They are the kind of mistake that gets made once
+     per renderer, which is exactly why there is now only one.
+
+     The local names are kept so every reader below is untouched by this move. */
+  const readiness = useMemo(
+    () => readinessGlance(athletes, contextualReadiness),
+    [athletes, contextualReadiness],
+  );
+  const redReadinessCount = readiness.red;
+  const yellowReadinessCount = readiness.yellow;
+  const unknownReadinessCount = readiness.unknown;
+  const readinessTrackingAvailable = readiness.trackingAvailable;
+  const bandedReadinessCount = readiness.banded;
+  const unvalidatedReadinessCount = readiness.unvalidated;
+  const trackedReadinessCount = readiness.tracked;
   // The task list is DERIVED from real pending work, not stored: the platform
   // has no coach-task store, and the fabricated five-item list this replaced
   // showed every coach the same stale to-dos with due dates that had already
   // passed (behavioral-audit backlog item). The SHADOW review queue is loaded
   // on mount by loadShadowData; when a real task store exists, this memo is
   // the seam to swap it in.
-  const coachTasks = useMemo<CoachTask[]>(
-    () => shadowQueue
-      .filter((item) => item.status === 'pending_review')
-      .map((item) => ({
-        id: item.intake_case_id,
-        title: `Review intake case: ${item.summary}`,
-        when: `In review queue since ${item.updated_at.slice(0, 10)}`,
-        priority: 'High' as const,
-        status: 'Open' as const,
-      })),
+  const coachTasks = useMemo<ReadonlyArray<CoachTask>>(
+    () => coachTasksFrom(shadowQueue),
     [shadowQueue],
   );
   /* reviewsNeeded is GONE with the summary row. It filtered the same
@@ -1168,12 +1156,7 @@ export default function CoachWorkspace() {
      come back is not a safeguarding state, and --locked belongs to the one
      thing it is reserved for; borrowing it for an unreachable endpoint would
      teach a coach that the reserved red can mean "try again later". */
-  const reviewQueueBadge: CoachTabBadge =
-    shadowQueueState === 'loading'
-      ? { tone: 'monitor', label: 'checking' }
-      : shadowQueueState === 'unavailable'
-        ? { tone: 'restricted', label: 'unavailable' }
-        : { tone: 'monitor', label: `${assignmentsDue} pending` };
+  const reviewQueueBadge: CoachTabBadge = reviewQueueBadgeFor(shadowQueueState, assignmentsDue);
 
   /* The wellness read the panel may draw: only one the coach asked for, and
      only for the athlete selected NOW. The loader's guards already keep a
