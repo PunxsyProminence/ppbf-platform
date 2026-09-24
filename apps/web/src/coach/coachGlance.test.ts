@@ -13,6 +13,7 @@
 
 import {
   coachTasksFrom,
+  escalationGlance,
   formatElapsed,
   readinessGlance,
   reviewQueueBadgeFor,
@@ -176,5 +177,71 @@ describe('reviewQueueBadgeFor', () => {
       .map((state) => reviewQueueBadgeFor(state, 2).tone);
     expect(tones).toEqual(['monitor', 'monitor', 'restricted']);
     expect(tones).not.toContain('locked');
+  });
+});
+
+describe('escalationGlance', () => {
+  const row = (
+    severity: 'low' | 'moderate' | 'high' | 'critical',
+    status: 'open' | 'acknowledged' | 'resolved' = 'open',
+  ) => ({ severity, status });
+
+  it('stops counting a row the coach has acknowledged', () => {
+    /* THE ONE THAT SHIPPED. The board printed the ARRAY LENGTH as "N open".
+       Acknowledging does not remove the row -- the handler replaces it in place
+       on purpose, so the coach can still see what they just did and read that
+       closing it out is an admin decision. Keeping the row is right; counting
+       it as open was not. The board said "2 open" directly above a row whose
+       own body said "Acknowledged", and nothing failed, because no test had
+       ever read that number. */
+    const glance = escalationGlance([
+      row('critical'),
+      row('high', 'acknowledged'),
+    ]);
+    expect(glance.open).toBe(1);
+  });
+
+  it('keeps the acknowledged row as its own fact rather than throwing it away', () => {
+    // A renderer wanting "1 acknowledged, waiting on admin" reads this, instead
+    // of subtracting two other numbers and hoping the difference means that.
+    const glance = escalationGlance([
+      row('critical'),
+      row('high', 'acknowledged'),
+      row('low', 'acknowledged'),
+    ]);
+    expect(glance.acknowledgedStillShown).toBe(2);
+  });
+
+  it('composes severity over the OPEN rows only', () => {
+    // An acknowledged critical is not waiting on anybody. Counting it in the
+    // composition would put a critical on the glance that nobody needs to act
+    // on, which is the same false-alarm problem in the other direction.
+    const glance = escalationGlance([
+      row('critical'),
+      row('high'),
+      row('high'),
+      row('moderate'),
+      row('critical', 'acknowledged'),
+      row('low', 'resolved'),
+    ]);
+    expect([glance.critical, glance.high, glance.moderate, glance.low]).toEqual([1, 2, 1, 0]);
+    expect(glance.open).toBe(4);
+  });
+
+  it('adds up: the composition accounts for every open row and no others', () => {
+    const rows = [row('critical'), row('high'), row('moderate'), row('low'), row('high', 'acknowledged')];
+    const glance = escalationGlance(rows);
+    expect(glance.critical + glance.high + glance.moderate + glance.low).toBe(glance.open);
+  });
+
+  it('reports nothing waiting when nothing is, without inventing a state', () => {
+    expect(escalationGlance([])).toEqual({
+      open: 0, critical: 0, high: 0, moderate: 0, low: 0, acknowledgedStillShown: 0,
+    });
+  });
+
+  it('does not treat a resolved row as acknowledged, or as open', () => {
+    const glance = escalationGlance([row('critical', 'resolved')]);
+    expect([glance.open, glance.acknowledgedStillShown]).toEqual([0, 0]);
   });
 });

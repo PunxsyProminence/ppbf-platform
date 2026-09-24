@@ -821,6 +821,55 @@ describe('safety escalations inbox', () => {
     expect(screen.queryByText(/Closing it out is an admin decision/)).not.toBeNull();
   });
 
+  test('the heading stops saying "open" about a row the coach just acknowledged', async () => {
+    /* THE NUMBER THAT SHIPPED WRONG, AND WHY IT SURVIVED.
+
+       The heading printed the ARRAY LENGTH as "N open". Acknowledging does not
+       remove the row -- the handler replaces it in place on purpose, so the
+       coach can still see what they just did and read that closing it out is an
+       admin decision. Keeping the row is right. Counting it as open was not.
+
+       So the board announced "2 open" directly above a row whose own body said
+       "Acknowledged", and nothing failed, because no test in this file had ever
+       read that number. This one does.
+
+       It also drifted against SafetyAttentionBadge, which is mounted globally,
+       reads the same ?status=open feed, and does not re-poll for two minutes --
+       so the disagreement was by construction AND by timing.
+
+       Both halves are asserted here deliberately: the count must fall, AND the
+       acknowledged row must stay on screen. A "fix" that dropped the row would
+       pass the first half while taking away the coach's confirmation that their
+       acknowledgement landed. */
+    await renderWorkspace({
+      athletesList: rosterWithNames,
+      escalationsGet: () => jsonResponse({
+        ok: true,
+        escalations: [
+          escalation(),
+          escalation({ escalation_id: 'esc_2', athlete_id: 'ath_1', severity: 'critical' }),
+        ],
+      }),
+      escalationsPost: () => jsonResponse({
+        ok: true,
+        escalation: escalation({ status: 'acknowledged' }),
+      }),
+    });
+
+    expect(screen.getByText('2 open')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: /^Acknowledge safety escalation for / })[0]);
+    });
+
+    // The count is now about what is actually waiting.
+    expect(screen.getByText('1 open')).toBeTruthy();
+    expect(screen.queryByText('2 open')).toBeNull();
+
+    // And the row the coach acknowledged has NOT vanished from under them.
+    expect(screen.queryByText(/Closing it out is an admin decision/)).not.toBeNull();
+  });
+
   test('a double-click sends exactly one acknowledge request', async () => {
     let release: (() => void) | undefined;
     const posted: unknown[] = [];

@@ -13,6 +13,7 @@ import { apiBase } from '@/lib/apiBase';
    own. See the file header for why that is structural here and not advisory. */
 import {
   coachTasksFrom,
+  escalationGlance,
   formatElapsed,
   readinessGlance,
   reviewQueueBadgeFor,
@@ -1158,6 +1159,12 @@ export default function CoachWorkspace() {
      teach a coach that the reserved red can mean "try again later". */
   const reviewQueueBadge: CoachTabBadge = reviewQueueBadgeFor(shadowQueueState, assignmentsDue);
 
+  /* Open escalations, and what they are made of. The composition is not read
+     by this layout yet -- the ROOM design wants "4 NEED ATTENTION, 1 critical,
+     2 high, 1 medium" -- but the count is, and both come from one derivation so
+     the two layouts cannot answer the same question differently. */
+  const escalationCounts = useMemo(() => escalationGlance(escalations), [escalations]);
+
   /* The wellness read the panel may draw: only one the coach asked for, and
      only for the athlete selected NOW. The loader's guards already keep a
      stale response out of state; this is the last check, at the point where a
@@ -2229,8 +2236,14 @@ export default function CoachWorkspace() {
         <section aria-live="polite" aria-labelledby="cb-escalations-heading" className="cb-sec">
           <div className="cb-sech" id="cb-escalations-heading">
             Safety Escalations
-            {!escalationsLoading && !escalationsError && escalations.length > 0 ? (
-              <em>{escalations.length} open</em>
+            {/* "N open" counts rows that ARE open. It used to count the array,
+                which keeps an acknowledged row on purpose so the coach can see
+                what they just did -- so the board announced "3 open" directly
+                above a row whose own body said "Acknowledged". The rule lives
+                in the glance model now, where the ROOM layout reads the same
+                one rather than counting the array again. */}
+            {!escalationsLoading && !escalationsError && escalationCounts.open > 0 ? (
+              <em>{escalationCounts.open} open</em>
             ) : null}
             <button
               type="button"

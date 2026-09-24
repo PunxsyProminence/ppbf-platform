@@ -204,3 +204,67 @@ export function reviewQueueBadgeFor(
   if (shadowQueueState === 'unavailable') return { tone: 'restricted', label: 'unavailable' };
   return { tone: 'monitor', label: `${pendingCount} pending` };
 }
+
+export type GlanceEscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
+export type GlanceEscalationStatus = 'open' | 'acknowledged' | 'resolved';
+
+/** Only the fields the escalation derivation reads. */
+export interface GlanceEscalation {
+  readonly severity: GlanceEscalationSeverity;
+  readonly status: GlanceEscalationStatus;
+}
+
+export interface EscalationGlance {
+  /** Rows still genuinely open. This is the number the word "open" may label. */
+  readonly open: number;
+  /** The composition of those open rows, so a glance can say WHAT is waiting
+   *  rather than only how much. Counted over open rows only: an acknowledged
+   *  critical is no longer waiting on anybody. */
+  readonly critical: number;
+  readonly high: number;
+  readonly moderate: number;
+  readonly low: number;
+  /** Rows the coach has acknowledged that are still on screen. Deliberately
+   *  not zero and deliberately not hidden -- see below. */
+  readonly acknowledgedStillShown: number;
+}
+
+/**
+ * The escalation counts, over the rows actually loaded.
+ *
+ * THE BUG THIS EXISTS TO CLOSE. The board printed `{escalations.length} open`.
+ * Acknowledging a row does not remove it from that array -- the handler
+ * replaces it in place with the server's returned acknowledged row, on purpose,
+ * so the coach can still see what they just did and read the note saying
+ * closing it out is an admin decision. Keeping the row is right. Counting it as
+ * open was not. The board said "3 open" directly above a row whose own body
+ * said "Acknowledged", and nothing failed, because no test ever read that
+ * number.
+ *
+ * It also disagreed with SafetyAttentionBadge, which is mounted globally and
+ * reads the same `?status=open` feed but does not re-poll for two minutes. So
+ * the two instruments drifted by construction AND by timing.
+ *
+ * `acknowledgedStillShown` is returned rather than discarded because it is a
+ * real fact about what is on screen, and a renderer that wants to say "1
+ * acknowledged, waiting on admin" should read it here instead of counting the
+ * difference between two other numbers and hoping.
+ *
+ * What this deliberately does NOT do is re-derive severity. The row's own
+ * severity is the one the escalation ladder recorded; a second opinion about
+ * how serious a safeguarding record is would be a second answer to that
+ * question.
+ */
+export function escalationGlance(
+  rows: ReadonlyArray<GlanceEscalation>,
+): EscalationGlance {
+  const open = rows.filter((row) => row.status === 'open');
+  return {
+    open: open.length,
+    critical: open.filter((row) => row.severity === 'critical').length,
+    high: open.filter((row) => row.severity === 'high').length,
+    moderate: open.filter((row) => row.severity === 'moderate').length,
+    low: open.filter((row) => row.severity === 'low').length,
+    acknowledgedStillShown: rows.filter((row) => row.status === 'acknowledged').length,
+  };
+}
