@@ -369,6 +369,19 @@ const POST_SESSION_EFFORT_QUESTION = 'How hard was the session you just finished
 const POST_SESSION_EFFORT_VALUES: readonly number[] = Array.from({ length: 11 }, (_, value) => value);
 
 /**
+ * A-FIN-07. Pain severity, 1 to 10 -- and deliberately NOT 0 to 10 like the
+ * effort scale above it.
+ *
+ * `severity_1_10` is the unit the observation is stored under, and
+ * `painReportAlert.ts` treats a value at or below zero as "not a pain report"
+ * and raises no coach alert for it. A 0 button would therefore be a control
+ * that files a report nobody is told about, which is the failure this slice
+ * exists to remove rather than a second way to express it. An athlete with no
+ * pain does not open this modal.
+ */
+const PAIN_SEVERITY_VALUES: readonly number[] = Array.from({ length: 10 }, (_, index) => index + 1);
+
+/**
  * pilot.sessions stores date as `date` and rpe as `numeric`, and node-postgres
  * hands both back in shapes the session validator rejects on the way in: a
  * timestamp for the first, a string for the second. A rehydrated record is
@@ -665,11 +678,29 @@ export default function AthleteWorkspace() {
      Log is an optional note that starts empty (checkInNotes below). */
   const [selectedPainLocation, setSelectedPainLocation] = useState<string | null>(null);
   const [showPainModal, setShowPainModal] = useState(false);
-  const [currentPainType, setCurrentPainType] = useState<PainType>('Dull');
-  const [currentPainSeverity, setCurrentPainSeverity] = useState(3);
+  /* A-FIN-07. These two started as 'Dull' and 3, so the pain modal opened with
+     "Dull, 3/10" already on screen -- an answer about a child's body that the
+     child had not given. It is the same false-answer defect A-FIN-01 removed
+     from the readiness slider, and it sat on the one input whose whole purpose
+     is telling an adult that something hurts.
+
+     `null` is the unanswered state and is not a legal pain report: the save
+     guard refuses it before any fetch. That refusal is deliberate rather than
+     a nullable payload. `painReportAlert.ts` reads a null observation value as
+     "no reading" and raises no coach alert, so sending an incomplete report
+     would store a row that looks filed and alerts nobody -- worse than
+     refusing it here, where the athlete can still see the form. */
+  const [currentPainType, setCurrentPainType] = useState<PainType | null>(null);
+  const [currentPainSeverity, setCurrentPainSeverity] = useState<number | null>(null);
   const [painLog, setPainLog] = useState<PainLogEntry[]>([]);
   const [isSavingPain, setIsSavingPain] = useState(false);
   const [painSaveMessage, setPainSaveMessage] = useState('');
+  /* A-FIN-07. One expression, read by both the disabled Save button and the
+     line that says why it is disabled, so the control and its explanation
+     cannot drift apart. The save handler repeats the same test rather than
+     trusting this, because a disabled button is a courtesy and a guard is a
+     guarantee. */
+  const painReportIncomplete = currentPainType === null || currentPainSeverity === null;
 
   // Goals State - Real API data
   const [smartGoals, setSmartGoals] = useState<SMARTGoal[]>([]);
@@ -1728,7 +1759,13 @@ export default function AthleteWorkspace() {
   };
 
   const handleSavePainReport = async () => {
-    if (!selectedPainLocation) {
+    /* A-FIN-07. An incomplete pain report is not a quiet partial save: it is
+       no write at all. Location, type and severity must each be the athlete's
+       own answer before anything leaves this browser -- no fetch, no painLog
+       entry, no injury flag, no observation, no coach alert. The Save button
+       is disabled in the same condition, so this guard is the second lock
+       rather than the only one. */
+    if (!selectedPainLocation || currentPainType === null || currentPainSeverity === null) {
       return;
     }
 
@@ -1811,7 +1848,18 @@ export default function AthleteWorkspace() {
         : 'Logged on your record. No coach was flagged for it, so tell one in person.');
 
       setShowPainModal(false);
+      /* A-FIN-07. The stored answers go with the modal. Leaving them set made
+         the NEXT report open pre-filled with the last one -- a different way
+         of putting words in the athlete's mouth, and a harder one to notice
+         because the numbers were genuinely theirs once. */
+      setCurrentPainType(null);
+      setCurrentPainSeverity(null);
     } catch (error) {
+      /* A-FIN-07. The modal deliberately stays open. This message renders
+         inside it (role="alert"); it used to render only in the card behind
+         the modal's own fixed overlay, so a failed pain report looked to the
+         athlete exactly like nothing happening at all. The answers stay on
+         screen so the retry costs one tap, not the whole form again. */
       setPainSaveMessage(error instanceof Error
         ? error.message
         : 'That pain report did not save. Report it again, and tell a coach in person.');
@@ -2239,14 +2287,27 @@ export default function AthleteWorkspace() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => setShowPainModal(true)}
+                        onClick={() => {
+                          /* A-FIN-07. Every report starts unanswered, including
+                             the second one. Clearing here rather than on Cancel
+                             covers both ways out of the modal. */
+                          setCurrentPainType(null);
+                          setCurrentPainSeverity(null);
+                          setPainSaveMessage('');
+                          setShowPainModal(true);
+                        }}
                         disabled={!selectedPainLocation}
                         className="btn btn--ghost min-h-[var(--tap)] px-[var(--s3)] disabled:opacity-50 disabled:grayscale"
                       >
                         Report Pain
                       </button>
                     </div>
-                    {painSaveMessage ? (
+                    {/* A-FIN-07. Only while the modal is CLOSED. This line is
+                        the success path's home; the failure path keeps the
+                        modal open and says so inside it, because this element
+                        sits behind that modal's fixed overlay and a message
+                        nobody can see is the same as no message. */}
+                    {painSaveMessage && !showPainModal ? (
                       <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]" role="status">{painSaveMessage}</p>
                     ) : null}
                     {painLog[0] ? (
@@ -3380,22 +3441,81 @@ export default function AthleteWorkspace() {
               <div className="space-y-[var(--s4)]">
                 <div className="field">
                   <label className="t-label" htmlFor="pain-type-select">Pain Type</label>
-                  <select id="pain-type-select" value={currentPainType} onChange={(e) => setCurrentPainType(e.target.value as PainType)} className="select input--kiosk">
+                  {/* A-FIN-07. The empty option is the point: the select used
+                      to open on 'Dull' because a bare <select> shows its first
+                      option, which makes the most common answer the one the
+                      app supplies. The prompt below never serialises as a
+                      PainType -- it maps back to null. */}
+                  <select
+                    id="pain-type-select"
+                    value={currentPainType ?? ''}
+                    onChange={(e) => setCurrentPainType(e.target.value === '' ? null : (e.target.value as PainType))}
+                    className="select input--kiosk"
+                  >
+                    <option value="">Select a pain type...</option>
                     {(['Sharp', 'Dull', 'Burning', 'Tight', 'Pulling', 'Throbbing', 'Swollen', 'Numbness/Tingling', 'Instability', 'Other'] as PainType[]).map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="t-label block mb-[var(--s3)]" htmlFor="pain-severity-range">Severity (1-10)</label>
-                  <input id="pain-severity-range" type="range" min="1" max="10" value={currentPainSeverity} onChange={(e) => setCurrentPainSeverity(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
-                  <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{currentPainSeverity}/10</p>
-                </div>
+                {/* A-FIN-07. Ten choices rather than a range, for the reason
+                    the post-session effort control gives: a range input always
+                    holds a position, so it reports an answer nobody gave. This
+                    one held 3 and printed "3/10" over it. No 0 option -- the
+                    server's pain model is 1-10 and zero is not a pain report
+                    (painReportAlert.ts). */}
+                <fieldset className="space-y-[var(--s2)]">
+                  <legend className="t-label mb-[var(--s2)]">Severity (1-10)</legend>
+                  <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                    Choose the number that matches what you feel.
+                  </p>
+                  <div className="grid grid-cols-5 gap-[var(--s2)]">
+                    {PAIN_SEVERITY_VALUES.map((value) => {
+                      const selected = currentPainSeverity === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          aria-label={`Severity ${value}`}
+                          aria-pressed={selected}
+                          disabled={isSavingPain}
+                          onClick={() => setCurrentPainSeverity(value)}
+                          className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
+                        >
+                          <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{value}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {currentPainSeverity === null ? (
+                    <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                      Not answered yet.
+                    </p>
+                  ) : null}
+                </fieldset>
               </div>
+              {/* A-FIN-07. The failure lives here now, inside the overlay,
+                  and assertively -- role="alert" rather than the card's
+                  role="status", because "no coach was told" is not a passive
+                  update. Success closes the modal and reports in the card. */}
+              {painSaveMessage ? (
+                <p
+                  className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]"
+                  role="alert"
+                  data-testid="pain-modal-alert"
+                >
+                  {painSaveMessage}
+                </p>
+              ) : null}
+              {painReportIncomplete ? (
+                <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                  Choose a pain type and severity before saving.
+                </p>
+              ) : null}
               <div className="flex gap-[var(--s3)]">
                 <button
                   onClick={() => void handleSavePainReport()}
-                  disabled={isSavingPain}
+                  disabled={isSavingPain || painReportIncomplete}
                   className="btn btn--kiosk flex-1 disabled:opacity-50 disabled:grayscale"
                 >
                   {isSavingPain ? 'Saving...' : 'Save'}
