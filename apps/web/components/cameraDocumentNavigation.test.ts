@@ -124,13 +124,39 @@ test('each recorder is actually reachable, by an anchor', () => {
  * control added to the bar tomorrow is covered without anybody remembering to
  * add it here.
  */
+function componentsImportedBy(file: string): string[] {
+  const source = readFileSync(file, 'utf8');
+  const names = [
+    // Relative, as the chrome imports its siblings.
+    ...[...source.matchAll(/^import\s+(?:[\w{},\s*]+)\s+from\s+["']\.\/([\w/]+)["'];?$/gm)].map((m) => m[1]!),
+    // Aliased, as a page under app/ imports a component.
+    ...[...source.matchAll(/^import\s+(?:[\w{},\s*]+)\s+from\s+["']@\/components\/([\w/]+)["'];?$/gm)].map((m) => m[1]!),
+  ];
+  return names
+    .map((name) => ['tsx', 'ts'].map((ext) => path.join(WEB, 'components', `${name}.${ext}`)).find((f) => SOURCES.includes(f)))
+    .filter((f): f is string => Boolean(f));
+}
+
+/*
+ * EVERYTHING THAT RENDERS ON A CAMERA DOCUMENT, not only the session bar.
+ *
+ * Two sources, because there are two ways a component ends up on a recorder:
+ * the global chrome, which is mounted on every signed-in surface, and whatever
+ * the capture pages themselves render. The second is how RoleSessionGate was
+ * missed -- it wraps both recorders and redirects on an expired session, a
+ * starting PIN or a role that may not be there, which is more exits than any
+ * link in the application offers.
+ */
 const CHROME = (() => {
-  const header = readFileSync(path.join(WEB, 'components', 'GlobalRoleHeader.tsx'), 'utf8');
-  const names = [...header.matchAll(/^import\s+(?:[\w{},\s*]+)\s+from\s+["']\.\/([\w/]+)["'];?$/gm)]
-    .map((match) => match[1]!);
-  return ['GlobalRoleHeader', ...names]
-    .map((name) => ['tsx', 'ts'].map((ext) => path.join(WEB, 'components', `${name}.${ext}`)).find((file) => SOURCES.includes(file)))
-    .filter((file): file is string => Boolean(file));
+  const roots = [
+    path.join(WEB, 'components', 'GlobalRoleHeader.tsx'),
+    ...CAMERA_DOCUMENT_ROUTES.map((route) => path.join(WEB, 'app', ...route.slice(1).split('/'), 'page.tsx')),
+  ];
+  const found = new Set<string>([path.join(WEB, 'components', 'GlobalRoleHeader.tsx')]);
+  for (const root of roots) {
+    for (const file of componentsImportedBy(root)) found.add(file);
+  }
+  return [...found];
 })();
 
 test('the chrome set is read off the header, and is not empty', () => {
@@ -139,6 +165,9 @@ test('the chrome set is read off the header, and is not empty', () => {
   expect(names).toContain('components/GlobalRoleHeader.tsx');
   expect(names).toContain('components/Corridor.tsx');
   expect(names).toContain('components/CardCatalog.tsx');
+  // The one the first version of this file missed, and the one with the most
+  // ways out of a recorder.
+  expect(names).toContain('components/RoleSessionGate.tsx');
   expect(CHROME.length).toBeGreaterThan(4);
 });
 
@@ -185,6 +214,43 @@ test('the two places that navigate by a variable href still consult the rule', (
 
   const corridor = readFileSync(path.join(WEB, 'components', 'Corridor.tsx'), 'utf8');
   expect(corridor).toContain('ChromeLink');
+});
+
+test('the gate that wraps both recorders redirects by loading a document', () => {
+  /*
+   * RoleSessionGate is rendered by both capture pages and redirects on an
+   * expired session, a starting PIN, a role that may not be here, or a server
+   * error -- four exits, all of them router.replace, all of them from a
+   * document holding camera=(self). The capability would have outlived the
+   * session the gate had just cleared.
+   */
+  const gate = readFileSync(path.join(WEB, 'components', 'RoleSessionGate.tsx'), 'utf8');
+
+  expect(gate).toContain('requiresDocumentLoad');
+  // Every redirect goes through the one helper, so a fifth added later
+  // inherits the rule instead of quietly reopening this.
+  expect(gate).not.toMatch(/router\.replace\((?!destination\))/);
+  expect(gate).toMatch(/window\.location\.replace\(destination\)/);
+});
+
+test('signing out does not lose the logout request to the unload', () => {
+  /*
+   * Making the exit a document load introduced this: an ordinary fetch is
+   * cancelled when the page goes away, so the server would never revoke the
+   * session -- "logout" that leaves the session alive, which is the defect
+   * the credentials note in both files already exists to prevent.
+   */
+  for (const name of ['GlobalRoleHeader.tsx', 'CardCatalog.tsx']) {
+    const source = readFileSync(path.join(WEB, 'components', name), 'utf8');
+    // Matched on the line, not with a balanced-paren regex: the URL contains
+    // `${apiBase()}` and its closing paren would end the match early.
+    const logout = source
+      .split(/\r?\n/)
+      .filter((line) => line.includes('auth/logout') && line.includes('fetch('));
+    expect(logout).toHaveLength(1);
+    expect(logout[0]).toContain('keepalive: true');
+    expect(logout[0]).toContain("credentials: 'include'");
+  }
 });
 
 test('leaving a camera document needs a load, not only arriving at one', () => {

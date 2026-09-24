@@ -162,7 +162,14 @@ export default function GlobalRoleHeader() {
     // credentials matters here: cross-origin (SWA static + Container App API)
     // a fetch without it does not carry the session cookie, so the server had
     // nothing to revoke and "logout" silently left the session alive.
-    void fetch(`${apiBase()}/api/pilot/auth/logout`, { method: 'POST', credentials: 'include' });
+    /* keepalive, because the branch below may unload this document
+       immediately. An ordinary fetch is cancelled when that happens, so the
+       server would never revoke the session -- "logout" that leaves the
+       session alive, which is the exact defect the credentials note above
+       exists to prevent, reintroduced by making the exit a document load.
+       keepalive asks the browser to finish the request after the page is
+       gone; it is bounded to 64 KiB, and this request has no body. */
+    void fetch(`${apiBase()}/api/pilot/auth/logout`, { method: 'POST', credentials: 'include', keepalive: true });
     clearRoleSession();
     /* A CAMERA DOCUMENT IS LEFT BY LOADING, even on the way out.
        router.replace is a soft navigation, so signing out from a

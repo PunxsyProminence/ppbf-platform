@@ -47,26 +47,37 @@ interface VideoSessionRow {
 }
 
 /*
- * FILM STUDY READS EXCLUDE TEACH SHADOW FOOTAGE, AND THE ADMIN READ DOES NOT.
+ * THIS ROUTE ANSWERS FOR A PURPOSE, NOT FOR A ROLE, and the difference was a
+ * defect the first time.
  *
- * This route feeds the coach video console, the athlete's own film and the
- * parent view -- all Film Study surfaces. Teach Shadow capture stores an
- * athlete_id (it must; the guardian-consent sweep only runs for a video that
- * names one), so without this filter a teaching example recorded on the gym
- * floor turns up in that athlete's film library as though it were coaching
- * footage. The two areas are not separate if their media mixes on the read
- * side, whatever the recorders do.
+ * Teach Shadow capture stores an athlete_id -- it must, because the
+ * guardian-consent sweep only runs for a video that names one -- so a teaching
+ * example recorded on the gym floor turns up in that athlete's film library
+ * unless something excludes it. Two recorders are not two areas if their media
+ * mixes on the read side.
  *
- * NOT APPLIED TO THE ORGANIZATION-ADMIN BRANCH, deliberately. That branch is
- * what /admin/video-review reads, and a safeguarding review that cannot see
- * every file in the organization is a safeguarding review with a blind spot
- * somebody chose. Hiding footage from the people whose job is to look at all
- * of it would be the wrong repair for a product-separation problem.
+ * The first repair filtered by ROLE: everyone except an organization admin got
+ * Film-Study-only, because /admin/video-review needs every file. But an admin
+ * is also allowed on /coach/video-analysis, which is Film Study, and it reads
+ * this same route -- so the one person who can see everything saw teaching
+ * footage in the film library. The filter has to follow what the SURFACE is
+ * for, not who is looking.
+ *
+ * SO FILM STUDY IS THE DEFAULT, FOR EVERY ROLE, and a caller opts out. That
+ * direction matters: a surface that forgets to say what it is gets the
+ * separated view, which is the safe mistake. `scope=all` is the opt-out, it is
+ * refused to anyone who is not an organization admin, and exactly one surface
+ * sends it -- the safeguarding review, whose whole job is to look at every
+ * file in the organization.
+ *
+ * It only ever NARROWS what a caller would otherwise be allowed: the role
+ * branches below still decide what they may see at all. A parameter that could
+ * widen access would not be safe to take from a client.
  *
  * `capture_take_id is null` is the discriminator because Teach Shadow capture
- * always sends a take and Film Study never does. Ungrouped uploads that
- * predate grouping are null too, and belong in Film Study, which is where
- * they already appear.
+ * always sends a take and Film Study never does. Ungrouped uploads predating
+ * takes are null too, and belong in Film Study, which is where they already
+ * appear.
  */
 const FILM_STUDY_ONLY = 'and capture_take_id is null';
 
@@ -82,6 +93,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid limit parameter' }, { status: 400 });
     }
 
+    /*
+     * ALL MEDIA, OR THE FILM STUDY VIEW. Refused rather than silently
+     * downgraded for a role that may not ask: a safeguarding surface that
+     * quietly received a filtered list would be a review with a blind spot
+     * nobody chose, which is worse than an error somebody can see.
+     */
+    const scope = searchParams.get('scope');
+    if (scope !== null && scope !== 'all' && scope !== 'film_study') {
+      return NextResponse.json({ error: 'Invalid scope parameter' }, { status: 400 });
+    }
+    if (scope === 'all' && !isOrganizationAdminRole(principal.role)) {
+      throw new Error('Forbidden: only an organization admin may list every video');
+    }
+    const mediaFilter = scope === 'all' ? '' : FILM_STUDY_ONLY;
+
     let rows: VideoSessionRow[];
 
     if (principal.role === 'athlete') {
@@ -94,7 +120,7 @@ export async function GET(request: NextRequest) {
          where organization_id = $1
            and athlete_id = $2
            and status = 'ready'
-           ${FILM_STUDY_ONLY}
+           ${mediaFilter}
          order by created_at desc limit $3`,
         [principal.organizationId, principal.athleteId, limit],
       );
@@ -106,7 +132,7 @@ export async function GET(request: NextRequest) {
       rows = await query<VideoSessionRow>(
         `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
          from pilot.video_sessions
-         where organization_id = $1 and athlete_id = $2 and status = 'ready' ${FILM_STUDY_ONLY}
+         where organization_id = $1 and athlete_id = $2 and status = 'ready' ${mediaFilter}
          order by created_at desc limit $3`,
         [principal.organizationId, athleteId, limit],
       );
@@ -116,7 +142,7 @@ export async function GET(request: NextRequest) {
         rows = await query<VideoSessionRow>(
           `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
            from pilot.video_sessions
-           where organization_id = $1 and athlete_id = $2 ${FILM_STUDY_ONLY}
+           where organization_id = $1 and athlete_id = $2 ${mediaFilter}
            order by created_at desc limit $3`,
           [principal.organizationId, athleteId, limit],
         );
@@ -149,7 +175,7 @@ export async function GET(request: NextRequest) {
           `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
            from pilot.video_sessions
            where organization_id = $1
-             ${FILM_STUDY_ONLY}
+             ${mediaFilter}
              and (athlete_id is null or athlete_id in (
                select athlete_id from pilot.athletes where coach_id = $2 and organization_id = $1
              ))
@@ -167,7 +193,7 @@ export async function GET(request: NextRequest) {
       rows = await query<VideoSessionRow>(
         `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
          from pilot.video_sessions
-         where organization_id = $1 ${athleteFilter}
+         where organization_id = $1 ${mediaFilter} ${athleteFilter}
          order by created_at desc limit $2`,
         params,
       );
