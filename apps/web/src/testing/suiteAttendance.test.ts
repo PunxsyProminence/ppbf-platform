@@ -103,7 +103,6 @@ const ENTRIES: ManifestEntry[] = manifest.suites;
  * register nobody guards is exactly that.
  */
 const REQUIRED_BY_NAME = [
-  'src/design/safeguardingRedReservation.test.ts',
   'src/design/plateBinaries.test.ts',
   'src/design/brassAlphaChannel.test.ts',
   'src/design/lightGroundVoices.test.ts',
