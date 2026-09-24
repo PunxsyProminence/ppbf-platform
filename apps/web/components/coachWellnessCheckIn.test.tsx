@@ -177,16 +177,21 @@ async function pickAthlete(name: string): Promise<void> {
  *  carries `hover:border-[color:var(--brass-500)]`, so a substring test for the
  *  brass border would report every row as selected. */
 function looksSelected(row: HTMLButtonElement): boolean {
-  /* This used to read two Tailwind classes off the old roster row. The floor
-     board rewrote that row and the classes went with it, but the property
-     did not move: exactly one row reads as picked.
+  /* WHAT THIS PROVES, stated accurately after I overclaimed once.
 
-     It is pinned on aria-pressed now, which is a STRONGER witness than the
-     class pair it replaces -- a coach using a screen reader was told nothing
-     at all by a background colour, and the selection drives which child's
-     wellness answers are on screen. The board still paints the row; the
-     paint is just no longer the only channel. */
-  return row.getAttribute('aria-pressed') === 'true';
+     It proves the SEMANTIC half: which row is selected, in the channel a
+     screen reader reads and the design selector targets. It does NOT prove
+     the pixels, and it cannot -- jsdom does not apply the design system, so a
+     computed background here would be the same for every row.
+
+     The visual half is pinned where the stylesheet can actually be read:
+     src/design/goldenEraFloorboardScope.test.ts asserts that the selected
+     selector exists in the resolved sheet AND carries a real paint
+     declaration. DOM truth says which athlete is selected; design truth says
+     the selection is visibly rendered. Neither half is sufficient alone, and
+     the earlier version of this helper had only the visual one. */
+  return row.getAttribute('aria-pressed') === 'true'
+    && row.classList.contains('cb-roster-row');
 }
 
 function panel(): HTMLElement {

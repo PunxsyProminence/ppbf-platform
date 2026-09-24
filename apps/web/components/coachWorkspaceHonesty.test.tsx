@@ -845,6 +845,76 @@ describe('safety escalations inbox', () => {
     expect(screen.queryByText(/Closing it out is an admin decision/)).not.toBeNull();
   });
 
+  test('one alarm saving does not disable or swallow another', async () => {
+    /* THE BEHAVIOUR THAT WAS CHANGED, AND WAS NOT PROVEN.
+
+       It used to be a single busy id: while ANY acknowledgement was in
+       flight, every open alarm on the board went dead, and the handler ALSO
+       early-returned, so a coach who tapped a second alarm inside that window
+       had the tap silently discarded -- no request, no error, no change on
+       screen. The real feed serves more than one open escalation, so that was
+       the ordinary case rather than an edge.
+
+       Acknowledgements are independent writes: the POST is keyed by
+       escalation_id, the error map is keyed by escalation_id, and the row is
+       replaced from the server's own returned object. So each row guards only
+       itself now. This holds that: A is busy, B is still operable, B's tap
+       reaches the network with its OWN id, and nothing was dropped. */
+    const posted: Array<{ escalation_id?: string }> = [];
+    const release: Record<string, () => void> = {};
+
+    await renderWorkspace({
+      athletesList: rosterWithNames,
+      escalationsGet: () => jsonResponse({
+        ok: true,
+        escalations: [
+          escalation(),
+          escalation({ escalation_id: 'esc_2', athlete_id: 'ath_2', reason: 'Second open alarm.' }),
+        ],
+      }),
+      escalationsPost: (body) => {
+        posted.push(body);
+        const id = String(body.escalation_id);
+        return new Promise<Response>((resolve) => {
+          release[id] = () => resolve(jsonResponse({
+            ok: true,
+            escalation: escalation({ escalation_id: id, status: 'acknowledged' }),
+          }));
+        });
+      },
+    });
+
+    const buttons = () => screen.getAllByRole('button', { name: /^Acknowledge safety escalation for / });
+    expect(buttons()).toHaveLength(2);
+
+    // A goes first and is held open by the server.
+    fireEvent.click(buttons()[0]);
+    expect(posted.map((p) => p.escalation_id)).toEqual(['esc_1']);
+
+    // A is busy. B is NOT: this is the assertion the old implementation failed.
+    const [aButton, bButton] = buttons() as HTMLButtonElement[];
+    expect(aButton.disabled).toBe(true);
+    expect(bButton.disabled).toBe(false);
+
+    // B's tap reaches the network with its own id rather than being dropped.
+    fireEvent.click(bButton);
+    expect(posted.map((p) => p.escalation_id)).toEqual(['esc_1', 'esc_2']);
+
+    // Exactly one request each: per-row independence is not permission to
+    // double-send.
+    expect(posted.filter((p) => p.escalation_id === 'esc_1')).toHaveLength(1);
+    expect(posted.filter((p) => p.escalation_id === 'esc_2')).toHaveLength(1);
+
+    await act(async () => {
+      release.esc_1?.();
+      release.esc_2?.();
+    });
+
+    // Both acknowledged, so neither tap was silently discarded.
+    expect(screen.queryAllByRole('button', { name: /^Acknowledge safety escalation for / })).toHaveLength(0);
+    expect(screen.queryAllByText(/Closing it out is an admin decision/)).toHaveLength(2);
+  });
+
   test('the server\'s refusal is surfaced, and the row stays open rather than pretending', async () => {
     await renderWorkspace({
       athletesList: rosterWithNames,

@@ -135,3 +135,51 @@ describe('the 002 mockup did not delete or invent coach tabs', () => {
     expect(tabBlock().match(/label: '/g) ?? []).toHaveLength(REAL_TABS.length);
   });
 });
+
+/* ===========================================================================
+   THE SELECTED ROW IS VISIBLY SELECTED.
+
+   The component test in components/coachWellnessCheckIn.test.tsx proves the
+   SEMANTIC half -- which athlete the coach picked, in aria-pressed, on the
+   row class this selector targets. It cannot prove the visual half, because
+   jsdom does not apply this stylesheet and every row would compute the same
+   background there.
+
+   This is the other half, and both are needed. The selection decides whose
+   wellness answers are on screen, so a coach has to be able to SEE which row
+   they picked, and an earlier version of that component helper witnessed the
+   paint and nothing else -- when the row was rewritten, the paint witness was
+   replaced by an accessibility witness and the visual guarantee silently had
+   no test at all for one commit. Finding the selector is not enough: it must
+   carry a real treatment.
+   ========================================================================== */
+describe('the picked roster row is painted, not only announced', () => {
+  const SELECTED = '.ge-floorboard .cb-roster-row[aria-pressed="true"]';
+
+  function selectedRuleBody(): string | null {
+    const at = css.indexOf(SELECTED);
+    if (at === -1) return null;
+    const open = css.indexOf('{', at);
+    const close = css.indexOf('}', open);
+    if (open === -1 || close === -1) return null;
+    return css.slice(open + 1, close);
+  }
+
+  it('reads a real sheet, so nothing below passes on an empty string', () => {
+    expect(css.length).toBeGreaterThan(10_000);
+    expect(css).toContain('.ge-floorboard');
+  });
+
+  it('states the selected row at all', () => {
+    expect(selectedRuleBody()).not.toBeNull();
+  });
+
+  it('gives it a visible treatment rather than only a selector', () => {
+    const body = selectedRuleBody() ?? '';
+    // Any real paint channel counts; pinning one exact colour would make a
+    // retune of the board a false failure. An empty rule, or one that only
+    // set a cursor or a transition, would not.
+    const paints = /(^|[;\s])(background|background-color|background-image|box-shadow|outline|border-color|border-left)\s*:/.test(body);
+    expect([SELECTED, paints, body.trim()]).toEqual([SELECTED, true, body.trim()]);
+  });
+});

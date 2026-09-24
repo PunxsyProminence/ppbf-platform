@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AnnouncementBanner from './AnnouncementBanner';
 import ProfilePortrait from './ProfilePortrait';
 import WorkAxis from './WorkAxis';
-import { CoachSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
+import { HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
 import { cx, ui } from './uiStyles';
 import { apiBase } from '@/lib/apiBase';
 import {
@@ -97,7 +97,12 @@ const COACH_TABS = [
  * coachTasks) -- so Tasks and SHADOW Intel show the same underlying work seen
  * from two angles, not two counts that could disagree.
  */
-const REVIEW_BADGED_TABS: ReadonlySet<TabID> = new Set<TabID>(['tasks', 'shadow']);
+/* SHADOW ALONE. This held ['tasks', 'shadow'], so the queue's four-state
+   status rendered on two slats at once -- the exact duplicate-owner pattern
+   the same change set out to remove, reintroduced one line away from the fix.
+   One surface owns the queue, and it is the one where a queue item is
+   actually resolved. */
+const REVIEW_BADGED_TABS: ReadonlySet<TabID> = new Set<TabID>(['shadow']);
 
 type SessionMode = 'Group' | 'One-on-One';
 
@@ -1064,20 +1069,14 @@ export default function CoachWorkspace() {
      the same class of defect as a hub inventing one -- the coach acts on the
      claim either way, and here they would go on working around a feature they
      already have. */
-  const sessionStatus = useMemo(() => {
-    if (liveRunState === 'loading') {
-      return 'Checking whether you have a session in progress...';
-    }
-    if (liveRunState === 'unavailable') {
-      return 'Whether you have a session in progress could not be checked. A live session may be running that is not shown here.';
-    }
-    if (liveRun) {
-      return liveRun.is_paused
-        ? `Session in progress, paused at ${formatElapsed(liveRun.elapsed_seconds)}.`
-        : `Session in progress -- running ${formatElapsed(liveRun.elapsed_seconds)}.`;
-    }
-    return 'No session in progress. Session Scripts is where a live delivery starts.';
-  }, [liveRun, liveRunState]);
+  /* sessionStatus is GONE. It was a second, independent derivation of
+     live-run truth -- loading, unavailable, paused, running, none -- built to
+     feed a summary row that no longer exists, and it had no reader left.
+
+     A dead alternative derivation sitting beside the live one is not
+     harmless: it is a second answer to "is a session running", ready for
+     someone to wire back up, and the whole point of the instrument is that
+     the question has exactly one answer on this screen. */
 
   // Attendance/injury/readiness are currently always 'Unknown'/null/'UNKNOWN'
   // (see loadAthletes) -- these counts are real aggregations, but over data
@@ -1149,7 +1148,11 @@ export default function CoachWorkspace() {
       })),
     [shadowQueue],
   );
-  const reviewsNeeded = coachTasks.filter(t => t.status === 'Open' && t.title.includes('Review')).length;
+  /* reviewsNeeded is GONE with the summary row. It filtered the same
+     population as assignmentsDue -- every coachTask is status Open and every
+     title begins "Review intake case: " -- so it was the same number by
+     construction and had no reader left. assignmentsDue stays: the slat
+     reads it twice. */
   const assignmentsDue = coachTasks.filter(t => t.status === 'Open').length;
   // A missing badge must mean "genuinely nothing pending", never "the queue
   // failed to load" -- assignmentsDue is 0 in both cases, and the Tasks tab's
@@ -2587,9 +2590,14 @@ export default function CoachWorkspace() {
                            rendering of live-run state anywhere on this
                            workspace.
 
-            CoachSummaryPanel itself is untouched and still serves its other
-            roles. What is removed here is its grouping role on this surface,
-            because keeping it is exactly how the old dashboard creeps back. */}
+            A CORRECTION TO WHAT THIS COMMENT FIRST SAID. It claimed
+            CoachSummaryPanel "still serves its other roles". It does not:
+            CoachWorkspace was its only importer anywhere under apps/web, so
+            removing that import leaves the export with no callers at all.
+            The component and RoleSummaryPanels are deliberately left alone
+            here -- deleting them is separate cleanup, not part of this
+            correction -- but a comment asserting a caller that does not exist
+            is the kind of thing a later reader builds on. */}
 
         {/* THE SLAT RACK. Timber slats screwed across the board, which is the
             one place on this surface a bounded shape is honest: these are
