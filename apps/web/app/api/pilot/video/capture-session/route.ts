@@ -8,11 +8,11 @@ import {
   findOpenSessionByJoinCode,
   getOpenTake,
   getSessionById,
+  isSingleSubjectContext,
   listTakeFiles,
-  TRAINING_CONTEXTS,
+  SINGLE_SUBJECT_TRAINING_CONTEXTS,
   type RecordingSession,
   type CaptureTake,
-  type TrainingContext,
 } from '@/src/server/pilot/captureSessions';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -75,14 +75,25 @@ export async function POST(request: NextRequest) {
 
     if (action === 'create') {
       const rawContext = typeof body?.training_context === 'string' ? body.training_context : '';
-      if (!TRAINING_CONTEXTS.includes(rawContext as TrainingContext)) {
-        throw new Error(`Unsupported training_context: expected one of ${TRAINING_CONTEXTS.join(', ')}`);
+      /*
+       * REFUSED SERVER-SIDE, not merely absent from the form's dropdown. A
+       * capture names ONE athlete and the scan sweep checks consent for
+       * exactly that athlete, so a context with a second person in frame would
+       * record two people and ask about one. Withheld until a participant
+       * model can name everyone in a take.
+       */
+      if (!isSingleSubjectContext(rawContext)) {
+        throw new Error(
+          `Unsupported training_context: capture currently records one athlete at a time, so it accepts only ${SINGLE_SUBJECT_TRAINING_CONTEXTS.join(' and ')}`,
+        );
       }
 
       const { session, take } = await createRecordingSession({
         organizationId: principal.organizationId,
         createdByAccountId: principal.accountId,
-        trainingContext: rawContext as TrainingContext,
+        // isSingleSubjectContext is a type guard, so rawContext is already
+        // narrowed to a real TrainingContext by the refusal above.
+        trainingContext: rawContext,
       });
 
       return NextResponse.json({ ok: true, session: await sessionPayload(session, take) });
