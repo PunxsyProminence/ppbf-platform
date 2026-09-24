@@ -13,6 +13,15 @@ export interface VideoSessionRecord {
   // is never opened by the worker. The scan sweep (#49) is the only thing in
   // the platform that writes 'ready'.
   status: string;
+  /*
+   * WHICH ATTEMPT THIS FILE IS A VIEW OF, and null for everything else.
+   *
+   * Null covers two histories nothing here can tell apart: an upload that
+   * predates grouping entirely, and a Film Study recording, which sends no
+   * take precisely so that it cannot become corpus evidence. Both are "not
+   * Teach Shadow footage", which is the question the calibration gate asks.
+   */
+  capture_take_id: string | null;
 }
 
 export interface VideoScanClaim extends VideoSessionRecord {
@@ -24,7 +33,7 @@ export async function getVideoSessionById(
   videoSessionId: string,
 ): Promise<VideoSessionRecord | null> {
   return queryOne<VideoSessionRecord>(
-    `select video_session_id, organization_id, athlete_id, blob_path, status
+    `select video_session_id, organization_id, athlete_id, blob_path, status, capture_take_id
      from pilot.video_sessions
      where organization_id = $1 and video_session_id = $2`,
     [organizationId, videoSessionId],

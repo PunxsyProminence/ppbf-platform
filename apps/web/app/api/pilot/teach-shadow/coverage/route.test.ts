@@ -203,6 +203,40 @@ test('every statement is scoped to the session organization, never to the caller
   expect(JSON.stringify(mockQuery.mock.calls)).not.toContain(CALLER_SUPPLIED_ORG);
 });
 
+test('no count treats footage that was not recorded to teach Shadow as corpus evidence', async () => {
+  /*
+   * REFUSING TO REOPEN A LEGACY CLIP IS NOT THE SAME AS NOT COUNTING IT.
+   *
+   * assertVideoClippable stops a clip being cut from anything but teaching
+   * footage, and stops an existing one being opened again. Neither of those
+   * touches this surface: the labels, adjudications and gold records already
+   * produced from pre-takes footage are still rows, and counting them here
+   * would report them as evidence the recognizer may be taught from -- which
+   * is the promotion the whole boundary exists to prevent, arriving through
+   * the reporting side instead of the write side.
+   *
+   * Every corpus count therefore walks back to the source video. The capture
+   * statement is exempt and asserted separately: it counts video rows, which
+   * carry the column themselves.
+   */
+  mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+  await GET(request());
+
+  const statements = mockQuery.mock.calls.map(([text]) => String(text));
+  const capture = statements.filter((text) => text.includes('as recording_sessions'));
+  const corpus = statements.filter((text) => !text.includes('as recording_sessions'));
+
+  expect(capture).toHaveLength(1);
+  expect(corpus).toHaveLength(3);
+  for (const text of corpus) {
+    expect(text).toContain('capture_take_id is not null');
+  }
+  // The capture side needs no join: capture_take_id is on the video row it
+  // already counts.
+  expect(capture[0]).toContain('capture_take_id is not null');
+});
+
 test('a gold record is one that was promoted, not one that was nominated or excluded', async () => {
   /*
    * governance_state runs candidate -> gold -> excluded and DEFAULTS to

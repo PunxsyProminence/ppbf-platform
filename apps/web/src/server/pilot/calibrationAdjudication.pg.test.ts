@@ -26,6 +26,8 @@ import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
+import { seedCaptureTake } from '../../testing/captureFixture';
+
 jest.setTimeout(180_000);
 
 const PG_USER = 'postgres';
@@ -41,6 +43,11 @@ const MIGRATION_RUNNER_PATH = path.resolve(
 
 const BASE_SQL = 'pilot_slice_postgres.sql';
 const VIDEO_SESSIONS_SQL = 'pilot_slice_postgres_video_sessions_migration.sql';
+/* Applied because these suites now seed a recording session and a take: a
+   study cuts its clips from teaching footage, and assertVideoClippable
+   refuses anything else. It also adds capture_take_id to pilot.video_sessions,
+   so it must run after the video-sessions migration, never before. */
+const CAPTURE_SESSIONS_SQL = 'pilot_slice_postgres_capture_sessions_migration.sql';
 const PROJECTS_SQL = 'pilot_slice_postgres_calibration_projects_migration.sql';
 const ANNOTATIONS_SQL = 'pilot_slice_postgres_calibration_annotations_migration.sql';
 const ADJUDICATION_SQL = 'pilot_slice_postgres_calibration_adjudication_migration.sql';
@@ -106,7 +113,7 @@ async function runnerDatabase(name: string): Promise<Client> {
 
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
-  for (const file of [BASE_SQL, VIDEO_SESSIONS_SQL, PROJECTS_SQL, ANNOTATIONS_SQL]) {
+  for (const file of [BASE_SQL, VIDEO_SESSIONS_SQL, CAPTURE_SESSIONS_SQL, PROJECTS_SQL, ANNOTATIONS_SQL]) {
     await client.query(await readMigration(file));
   }
   return client;
@@ -127,13 +134,20 @@ async function seedTenancy(client: Client): Promise<void> {
       [accountId, ORG_ID],
     );
   }
+  /* Teaching footage: assertVideoClippable refuses a video with no capture
+     take, because only footage recorded to teach Shadow may become evidence a
+     recognizer is taught from. These fixtures predate takes; a study cuts its
+     clips from teaching footage, so this is the accurate description, not a
+     way around the guard. seedCaptureTake is idempotent. */
+  const take = await seedCaptureTake(client, { organizationId: ORG_ID, createdByAccountId: ANNOTATOR_A });
   await client.query(
     `insert into pilot.video_sessions
        (video_session_id, organization_id, uploaded_by_account_id, athlete_id, title,
-        blob_path, file_name, file_size_bytes, mime_type, status)
-     values ($1, $2, $3, null, 'Sparring', 'p/adj.mp4', 'adj.mp4', 2048, 'video/mp4', 'ready')
+        blob_path, file_name, file_size_bytes, mime_type, status,
+        recording_session_id, capture_take_id)
+     values ($1, $2, $3, null, 'Sparring', 'p/adj.mp4', 'adj.mp4', 2048, 'video/mp4', 'ready', $4, $5)
      on conflict do nothing`,
-    [VIDEO_ID, ORG_ID, ANNOTATOR_A],
+    [VIDEO_ID, ORG_ID, ANNOTATOR_A, take.recordingSessionId, take.captureTakeId],
   );
 }
 
@@ -228,7 +242,7 @@ beforeAll(async () => {
 
   const migrateClient = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await migrateClient.connect();
-  for (const file of [BASE_SQL, VIDEO_SESSIONS_SQL, PROJECTS_SQL, ANNOTATIONS_SQL, ADJUDICATION_SQL]) {
+  for (const file of [BASE_SQL, VIDEO_SESSIONS_SQL, CAPTURE_SESSIONS_SQL, PROJECTS_SQL, ANNOTATIONS_SQL, ADJUDICATION_SQL]) {
     await migrateClient.query(await readMigration(file));
   }
   await seedTenancy(migrateClient);
@@ -657,12 +671,16 @@ describe('an adjudication never blocks a deletion request', () => {
   test('deleting the footage takes the adjudication and its fields with it', async () => {
     const client = await freshClient();
     try {
+      // Teaching footage, like every other video these suites clip. See the
+      // note in the seed.
+      const doomedTake = await seedCaptureTake(client, { organizationId: ORG_ID, createdByAccountId: ANNOTATOR_A });
       await client.query(
         `insert into pilot.video_sessions
            (video_session_id, organization_id, uploaded_by_account_id, athlete_id, title,
-            blob_path, file_name, file_size_bytes, mime_type, status)
-         values ('vs-adj-doomed', $1, $2, null, 'Doomed', 'p/d.mp4', 'd.mp4', 10, 'video/mp4', 'ready')`,
-        [ORG_ID, ANNOTATOR_A],
+            blob_path, file_name, file_size_bytes, mime_type, status,
+            recording_session_id, capture_take_id)
+         values ('vs-adj-doomed', $1, $2, null, 'Doomed', 'p/d.mp4', 'd.mp4', 10, 'video/mp4', 'ready', $3, $4)`,
+        [ORG_ID, ANNOTATOR_A, doomedTake.recordingSessionId, doomedTake.captureTakeId],
       );
       const staged = await stagedDisagreement('C-DOOMED', 'vs-adj-doomed');
       const { adjudication: row } = await adjudication.recordAdjudication({

@@ -108,29 +108,53 @@ export interface TeachShadowCoverage {
 }
 
 /*
- * SUBMITTED SETS ONLY, everywhere a label is counted.
+ * WHAT COUNTS AS CORPUS EVIDENCE, AND THE THREE THINGS THAT NARROW IT.
  *
- * An in-progress set is one coach's unfinished work, still editable, and
- * invisible to the other annotator by design. Counting it would make the
- * corpus look larger than the evidence anyone has actually stood behind, and
- * the number would go DOWN when a coach deleted a mistaken event -- a coverage
- * figure that moves backwards for a good reason is a figure nobody trusts.
+ * SUBMITTED SETS ONLY. An in-progress set is one coach's unfinished work,
+ * still editable, and invisible to the other annotator by design. Counting it
+ * would make the corpus look larger than the evidence anyone has stood behind,
+ * and the number would go DOWN when a coach deleted a mistaken event -- a
+ * figure that moves backwards for a good reason is one nobody trusts.
  *
- * AND ONE ONTOLOGY VERSION, which is not a detail. ontology.ts says every row
- * carries the vocabulary it was created under precisely so that a study run
- * under 0.1 and one run under 0.2 are never pooled by accident, and that
- * nothing in this subsystem may aggregate across two versions without a
- * recorded decision. Only one version exists today, so an unfiltered count
- * happens to be right -- and would quietly stop being right on the day a
- * second one shipped, while still stamping the answer with the current
- * version's name. The filter costs nothing now and is the difference between
- * a figure that is correct and one that is merely not yet wrong.
+ * ONE ONTOLOGY VERSION. ontology.ts says every calibration row carries the
+ * vocabulary it was created under precisely so a study run under 0.1 and one
+ * run under 0.2 are never pooled, and that nothing here may aggregate across
+ * versions without a recorded decision. Only one version exists today, so an
+ * unfiltered count happens to be right -- and would quietly stop being right
+ * the day a second one shipped, while still stamping the answer 0.1.
+ *
+ * AND TEACHING FOOTAGE ONLY, which is the boundary the whole area exists to
+ * hold. Film Study media can never be promoted into the recognition corpus,
+ * and a label is the form that promotion takes: the labels are the evidence a
+ * recognizer is taught from. assertVideoClippable refuses to cut a clip from
+ * anything but teaching footage, but clips cut before that rule existed are
+ * still in the database, and refusing to REOPEN them does not stop their
+ * labels being counted here as corpus evidence. So every count below walks
+ * back to the source video and requires a capture take.
+ *
+ * capture_take_id is the discriminator because Teach Shadow capture always
+ * sends one and Film Study never does. NULL is ambiguous -- it covers both a
+ * Film Study recording and an upload predating takes -- and ambiguity resolves
+ * to NOT PROVEN teaching footage, because the owner's rule is that a
+ * destination is chosen before the media exists rather than reconstructed
+ * afterwards. Those rows stay in the database as history; they stop being
+ * counted as evidence.
  */
+const TEACHING_SOURCE_JOIN = (alias: string) => `
+  join pilot.calibration_clips cc
+    on cc.calibration_clip_id = ${alias}.calibration_clip_id
+   and cc.organization_id = ${alias}.organization_id
+  join pilot.video_sessions cv
+    on cv.video_session_id = cc.video_session_id
+   and cv.organization_id = cc.organization_id
+   and cv.capture_take_id is not null`;
+
 const SUBMITTED_EVENTS_FROM = `
   from pilot.calibration_annotation_events e
   join pilot.calibration_annotation_sets s
     on s.annotation_set_id = e.annotation_set_id
    and s.organization_id = e.organization_id
+  ${TEACHING_SOURCE_JOIN('e')}
  where e.organization_id = $1
    and s.status = 'submitted'
    and s.ontology_version = $2`;
@@ -174,32 +198,49 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
       gold_candidates: number;
     }>(
       `select
-         -- Not version-scoped, and correctly so: cutting a clip records no
-         -- observation, so it is not stamped with a vocabulary and pools
-         -- across nothing.
-         (select count(*)::int from pilot.calibration_clips where organization_id = $1)
+         -- Clips cut from teaching footage. A clip cut from anything else is
+         -- history, not corpus, so it is not counted as either.
+         (select count(*)::int from pilot.calibration_clips c
+            join pilot.video_sessions v
+              on v.video_session_id = c.video_session_id
+             and v.organization_id = c.organization_id
+             and v.capture_take_id is not null
+           where c.organization_id = $1)
            as clips_cut,
-         (select count(*)::int from pilot.calibration_annotation_sets
-           where organization_id = $1 and status = 'submitted' and ontology_version = $2)
+         (select count(*)::int from pilot.calibration_annotation_sets s
+            ${TEACHING_SOURCE_JOIN('s')}
+           where s.organization_id = $1 and s.status = 'submitted' and s.ontology_version = $2)
            as submitted_sets,
          (select count(*)::int from (
-            select calibration_clip_id
-              from pilot.calibration_annotation_sets
-             where organization_id = $1 and status = 'submitted' and ontology_version = $2
-             group by calibration_clip_id
+            select s.calibration_clip_id
+              from pilot.calibration_annotation_sets s
+              ${TEACHING_SOURCE_JOIN('s')}
+             where s.organization_id = $1 and s.status = 'submitted' and s.ontology_version = $2
+             group by s.calibration_clip_id
             having count(*) >= 2
           ) c)
            as clips_with_two_submitted_sets,
-         (select count(*)::int from pilot.calibration_adjudications
-           where organization_id = $1 and ontology_version = $2)
+         (select count(*)::int from pilot.calibration_adjudications a
+            ${TEACHING_SOURCE_JOIN('a')}
+           where a.organization_id = $1 and a.ontology_version = $2)
            as adjudications,
-         (select count(*)::int from pilot.calibration_gold_records
-           where organization_id = $1 and ontology_version = $2
-             and governance_state = 'gold')
+         -- Gold carries its own video_session_id as provenance, so it needs no
+         -- hop through the clip.
+         (select count(*)::int from pilot.calibration_gold_records g
+            join pilot.video_sessions v
+              on v.video_session_id = g.video_session_id
+             and v.organization_id = g.organization_id
+             and v.capture_take_id is not null
+           where g.organization_id = $1 and g.ontology_version = $2
+             and g.governance_state = 'gold')
            as gold_records,
-         (select count(*)::int from pilot.calibration_gold_records
-           where organization_id = $1 and ontology_version = $2
-             and governance_state = 'candidate')
+         (select count(*)::int from pilot.calibration_gold_records g
+            join pilot.video_sessions v
+              on v.video_session_id = g.video_session_id
+             and v.organization_id = g.organization_id
+             and v.capture_take_id is not null
+           where g.organization_id = $1 and g.ontology_version = $2
+             and g.governance_state = 'candidate')
            as gold_candidates`,
       [organizationId, BOXING_ONTOLOGY_VERSION],
     ),

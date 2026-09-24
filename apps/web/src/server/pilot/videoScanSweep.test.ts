@@ -53,6 +53,10 @@ const CLAIM = {
   blob_path: 'org-1/vs-1/clip.mp4',
   status: 'quarantined',
   scan_attempts: 1,
+  // An ordinary ungrouped upload. The column is on the row either way and the
+  // sweep does not read it: scanning is about whether a file is safe to open,
+  // which has nothing to do with what it was filmed for.
+  capture_take_id: null,
 };
 
 function scanResult(overrides: Partial<Awaited<ReturnType<typeof scanVideoSession>>>) {
