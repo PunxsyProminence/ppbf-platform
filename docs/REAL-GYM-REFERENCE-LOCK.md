@@ -1,6 +1,31 @@
-# REAL GYM REFERENCE LOCK
-**Status:** LOCKED 2026-08-24 · Owner: Jason Neale · Lane: Grok visual  
-**Purpose:** Prevent environmental drift. Every Golden Era plate, mockup, and page must derive from **this gym**, not a stock boxing gym.
+# REAL GYM REFERENCE
+**Status:** REFERENCE, not law, as of 2026-09-24 · Owner: Jason Neale  
+**Purpose:** Describe what this gym actually is, so nobody has to guess again.
+
+> **2026-09-24 — OWNER DECISION.** Jason: *"let's scrap all the visual rules ...
+> let's start the rules from scratch when we find somthing that we want to turn
+> into a rule we will."*
+>
+> This file no longer enforces anything. Its change-control clause, its
+> forbidden list and its drift test are retired along with the rest of the
+> visual rule set, and the Golden Era guards that cited it are archived under
+> `archive/visual-rules-2026-09-24/`.
+>
+> What is kept, and why: everything below is a DESCRIPTION OF A REAL PLACE —
+> the ring canvas, the blue foam ceiling, the rough wood, the chalkboards, the
+> room-to-room framing, the photo inventory. Those are facts about a building
+> in Punxsutawney, and they do not stop being true because the visual language
+> changed. Read it as source material, not as permission or prohibition.
+>
+> One thing it does NOT contain, found on 2026-09-24 from the club's own public
+> material: the club's identity palette is BLACK, RED and WHITE, around a
+> cartoon boxing-groundhog crest with PUNXSY / PROMINENCE arced in heavy
+> condensed caps. Its fight posters are charcoal, blood-red and bone-white. No
+> brass, gold, parchment or leather appears anywhere the club speaks for
+> itself. The old "Golden Era furniture on a real-gym plate" instruction below
+> is therefore historical, and the palette question is the owner's to settle.
+
+**Original purpose, 2026-08-24:** Prevent environmental drift. Every Golden Era plate, mockup, and page must derive from **this gym**, not a stock boxing gym.
 
 > If a future Grok session cannot see conversation history, this file + the owner-supplied photos are the environmental authority.
 

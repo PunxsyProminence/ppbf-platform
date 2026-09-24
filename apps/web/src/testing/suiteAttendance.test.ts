@@ -97,21 +97,37 @@ interface ManifestEntry {
 const ENTRIES: ManifestEntry[] = manifest.suites;
 
 /**
- * The nine the incident review named. Pinned here so the register can never be
- * quietly shrunk below the agreed floor -- the failure mode this whole change
- * exists to prevent is coverage leaving without anything going red, and a
- * register nobody guards is exactly that.
+ * Pinned here so the register can never be quietly shrunk -- the failure mode
+ * this whole change exists to prevent is coverage leaving without anything
+ * going red, and a register nobody guards is exactly that.
+ *
+ * 2026-09-24, OWNER DECISION. Jason: "let's scrap all the visual rules ...
+ * let's start the rules from scratch when we find somthing that we want to
+ * turn into a rule we will."
+ *
+ * Five of the nine the 2026-08-25 incident review named were AESTHETIC guards
+ * -- brassAlphaChannel, lightGroundVoices, kioskTapFloor, typeLadder and
+ * legacyVisualVocabulary. They policed which rung a colour came from, which
+ * voices a material owed, how large type and touch targets had to be, and
+ * which vocabulary was frozen. All five enforced a visual language the club is
+ * replacing, and the frozen vocabulary had already begun refusing work the
+ * owner asked for. They are archived intact under
+ * archive/visual-rules-2026-09-24/ rather than deleted, and removed from this
+ * list because a required-list naming files that are not there is not a guard,
+ * it is a permanently red run.
+ *
+ * The four that remain are not about how anything looks. They are about the
+ * app not telling somebody something untrue: the reserved safeguarding red,
+ * the readiness rungs, the safety semantics surviving a theme swap, and the
+ * plate bytes actually being a complete image. If the new visual language
+ * needs its own guards, they get written when something bites -- see
+ * docs/VISUAL-NOTES.md for how one earns its place.
  */
 const REQUIRED_BY_NAME = [
   'src/design/safeguardingRedReservation.test.ts',
   'src/design/plateBinaries.test.ts',
-  'src/design/brassAlphaChannel.test.ts',
-  'src/design/lightGroundVoices.test.ts',
   'src/design/readinessRungPolicy.test.ts',
   'src/design/safetySemanticsSurviveTheThemeSwap.test.ts',
-  'src/design/kioskTapFloor.test.tsx',
-  'src/design/typeLadder.test.ts',
-  'src/design/legacyVisualVocabulary.test.ts',
 ];
 
 /* ------------------------------------------------------------------------ */
