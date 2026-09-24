@@ -124,13 +124,31 @@ describe('every committed plate is encoded for dark material', () => {
     expect(sof?.sampling.every(([h, v]) => h === 1 && v === 1)).toBe(true);
   });
 
-  /* Landscape walls and the one portrait crop, at the shipped resolution.
-     A plate arriving at the wrong size is the other half of what the 600x360
-     file got wrong, and it is invisible until somebody opens the image. */
-  it.each(files)('%s is one of the declared plate geometries', (name) => {
+  /* A REAL PLATE, NOT ONE OF FOUR BLESSED SIZES.
+
+     This was an allow-list: 1280x720 / 2560x1440 / 405x720 / 810x1440. It was
+     written when the surfaces were fixed, and it refused every new one -- a
+     wall-screen plate at 1920x1080 is not on that list. 2560x1440 was on the
+     list with no file behind it, so the list was already partly fiction.
+
+     Owner decision 2026-09-24: "dont worry about the specs well go general
+     with the screens keep a bit of edge space for now."
+
+     What the list was really catching is still caught. The 600x360 file in the
+     comment above was a thumbnail where a wall should be, and that is the fact
+     held to here. 720 is the shortest long edge among the 22 plates that have
+     actually shipped, so this admits every real plate and refuses that class of
+     file. Squares, and landscape images wearing a portrait name, are caught by
+     the orientation assertion below, which is untouched. */
+  it.each(files)('%s is a real plate rather than a thumbnail', (name) => {
     const sof = readSof(readFileSync(path.join(PLATES_DIR, name)));
-    const geometry = `${sof?.width}x${sof?.height}`;
-    expect(['1280x720', '2560x1440', '405x720', '810x1440']).toContain(geometry);
+    const width = sof?.width ?? 0;
+    const height = sof?.height ?? 0;
+    // A truncated or unreadable SOF reads as zero, which is its own failure.
+    expect([name, width > 0, height > 0]).toEqual([name, true, true]);
+    // The value is carried into the assertion so a failure names what it found.
+    const longEdge = Math.max(width, height);
+    expect([name, longEdge, longEdge >= 720]).toEqual([name, longEdge, true]);
   });
 
   /**

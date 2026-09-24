@@ -96,13 +96,21 @@ session. The **Lane model** below governs who merges.
 
 - **Plate laws.** Real `.jpg` binary only; never base64, data URI, or
   chat-byte relay; JPEG SOI and EOI present; larger than 8 KB; at most 400 KB;
-  4:4:4 with every component 1x1; only the declared landscape and portrait
-  geometries (1280x720 / 2560x1440 landscape, 405x720 / 810x1440 portrait);
-  filename orientation matching the image; every CSS-declared plate existing
-  on disk; the exact ordered filename; no silent re-encode inside the
-  repository; bad input refused rather than quietly corrected.
-  `apps/web/src/design/plateBinaries.test.ts` enforces these on the bytes and
-  is not to be weakened.
+  4:4:4 with every component 1x1; a long edge of at least 720px, so a plate is
+  never a thumbnail; filename orientation matching the image, and never square;
+  every CSS-declared plate existing on disk; the exact ordered filename; no
+  silent re-encode inside the repository; bad input refused rather than quietly
+  corrected. `apps/web/src/design/plateBinaries.test.ts` enforces these on the
+  bytes. The byte-integrity laws above are not to be weakened without an owner
+  decision recorded here.
+- **Plate geometry is not a law.** Until 2026-09-24 this section named four
+  exact geometries (1280x720 / 2560x1440 landscape, 405x720 / 810x1440
+  portrait) and said the suite was not to be weakened, which made any new
+  surface a violation rather than a decision -- a wall-screen plate at 1920x1080
+  was illegal, and 2560x1440 was declared with no file behind it. Owner
+  decision, 2026-09-24: *"dont worry about the specs well go general with the
+  screens keep a bit of edge space for now."* Size is now held to the integrity
+  floor above, not to a list.
 - **A binary is delivered when a real `git add` of the actual file lands on a
   branch.** A README, manifest, folder path, link, zip in a drive, base64
   payload, or `.jpg`-named placeholder is not a delivery, however complete its

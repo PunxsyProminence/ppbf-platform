@@ -53,7 +53,7 @@
     {
       "path": "src/design/plateBinaries.test.ts",
       "minimumTests": 138,
-      "guards": "The plate laws, enforced on the bytes -- SOI and EOI present, size window, 4:4:4 with 1x1 components, declared geometries, filename orientation. AGENT_KERNEL.md names this file as the gate and says it is not to be weakened. Three of the first attempts to get plates into this repository failed in ways no human reviewer could see."
+      "guards": "The plate laws, enforced on the bytes -- SOI and EOI present, byte-size window, 4:4:4 with 1x1 components, a long edge of at least 720px so a plate is never a thumbnail, filename orientation and never square. AGENT_KERNEL.md names this file as the gate. Three of the first attempts to get plates into this repository failed in ways no human reviewer could see. The four-geometry allow-list was retired by owner decision 2026-09-24 ('go general with the screens'); it refused a 1920x1080 wall plate and declared one geometry that no file ever used."
     },
     {
       "path": "src/design/readDesignSystemCssResolvesImports.test.ts",
