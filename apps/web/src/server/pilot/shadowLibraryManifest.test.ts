@@ -63,7 +63,7 @@ const CASES: Record<string, unknown> = {
 };
 
 type Outcome =
-  | { ok: true; count: number; contentLengths: number[]; files?: string[] }
+  | { ok: true; count: number; contentLengths: number[]; files?: string[]; resolved?: string[] }
   | { ok: false; message: string };
 
 // The checked-in manifest, read in-process. The synthetic cases above prove the
@@ -73,6 +73,12 @@ type Outcome =
 // after that document moved to docs/archive/. Because the preflight reads every
 // entry and aborts on any unreadable one -- "Nothing was registered." -- one
 // dead path took the ENTIRE doctrine seed down for anyone who ran it.
+// Repository root, resolved the way the production seed resolves it:
+// resolveManifestEntryFile is path.resolve(cwd, '..', '..', entry.file) with
+// cwd = apps/web. The archive guard below compares against this, not against
+// the manifest's raw strings.
+const REPO_ROOT = path.resolve(WEB_ROOT, '..', '..');
+const ARCHIVE_DIR = path.join(REPO_ROOT, 'docs', 'archive');
 const REAL_MANIFEST_PATH = path.join(WEB_ROOT, 'scripts/shadow-library-seed-manifest.json');
 const REAL_MANIFEST = JSON.parse(fs.readFileSync(REAL_MANIFEST_PATH, 'utf8')) as {
   sources: { doctrine_kind: string; file: string }[];
@@ -98,7 +104,8 @@ beforeAll(() => {
     + ` const r = await m.loadManifest();`
     + ` out["real_manifest"] = {ok: true, count: r.length,`
     + ` contentLengths: r.map((e) => (typeof e.contents === 'string' ? e.contents.length : -1)),`
-    + ` files: r.map((e) => e.file)}; }`
+    + ` files: r.map((e) => e.file),`
+    + ` resolved: r.map((e) => m.resolveManifestEntryFile(e))}; }`
     + ` catch (e) { out["real_manifest"] = {ok: false, message: e.message}; }`;
 
   const body = Object.keys(CASES)
@@ -236,12 +243,30 @@ describe('the checked-in SHADOW doctrine manifest', () => {
   // working seed that publishes known-false doctrine at authority_tier 1, which
   // SHADOW could then retrieve and cite. The entry was removed instead, and this
   // keeps any archived document out of the doctrine set.
-  it('registers no document from docs/archive/', () => {
-    const archived = REAL_MANIFEST.sources
-      .filter((entry) => entry.file.split('\\').join('/').includes('docs/archive/'))
-      .map((entry) => `${entry.doctrine_kind}: ${entry.file}`);
+  //
+  // THE RESOLVED PATH, NOT THE MANIFEST STRING. A first version of this guard
+  // matched the raw `file` text for "docs/archive/", which is weaker than the
+  // claim it was recording: production resolves every entry through
+  // resolveManifestEntryFile (path.resolve(cwd, '..', '..', file)), so
+  // `docs/current/../archive/SHADOW_SPECIFICATION.md` resolves INTO docs/archive
+  // while failing a substring test. The guard now asks the production resolver
+  // where the file actually lands and compares that against the resolved archive
+  // directory, so an equivalent path cannot walk around it.
+  it('registers no document that RESOLVES under docs/archive/', () => {
+    const outcome = outcomes.real_manifest;
+    if (!outcome.ok) {
+      throw new Error(`the checked-in manifest was refused: ${outcome.message}`);
+    }
 
-    expect({ archivedDoctrineEntries: archived }).toEqual({ archivedDoctrineEntries: [] });
+    const resolved = outcome.resolved ?? [];
+    expect(resolved).toHaveLength(REAL_MANIFEST.sources.length);
+
+    const inside = resolved.filter((absolutePath) => {
+      const rel = path.relative(ARCHIVE_DIR, absolutePath);
+      return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+    });
+
+    expect({ archivedDoctrineEntries: inside }).toEqual({ archivedDoctrineEntries: [] });
   });
 
   // Guards the shape the two tests above depend on: an emptied manifest would
