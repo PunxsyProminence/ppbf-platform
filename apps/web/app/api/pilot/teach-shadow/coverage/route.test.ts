@@ -57,7 +57,7 @@ const CAPTURE_ROW = {
   recording_sessions: 3,
   capture_takes: 7,
   captured_files: 11,
-  multi_angle_takes: 2,
+  takes_with_multiple_files: 2,
   athletes_captured: 4,
 };
 
@@ -67,6 +67,7 @@ const LABELLING_ROW = {
   clips_with_two_submitted_sets: 4,
   adjudications: 2,
   gold_records: 1,
+  gold_candidates: 3,
 };
 
 /** Statements the mock did not recognise. Asserted empty, so an unmatched
@@ -200,6 +201,25 @@ test('every statement is scoped to the session organization, never to the caller
     expect(params[0]).toBe('org-principal');
   }
   expect(JSON.stringify(mockQuery.mock.calls)).not.toContain(CALLER_SUPPLIED_ORG);
+});
+
+test('a gold record is one that was promoted, not one that was nominated or excluded', async () => {
+  /*
+   * governance_state runs candidate -> gold -> excluded and DEFAULTS to
+   * candidate, so an unfiltered count reports rows somebody deliberately kept
+   * out of the reference dataset as part of it. The two states are read by
+   * separate statements here, and the route must not merge them.
+   */
+  mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+  const response = await GET(request());
+  const body = await response.json();
+
+  const [labelling] = mockQuery.mock.calls.filter(([text]) => String(text).includes('as clips_cut'));
+  expect(String(labelling[0])).toContain("governance_state = 'gold'");
+  expect(String(labelling[0])).toContain("governance_state = 'candidate'");
+  expect(body.coverage.labelling).toHaveProperty('gold_records');
+  expect(body.coverage.labelling).toHaveProperty('gold_candidates');
 });
 
 /*

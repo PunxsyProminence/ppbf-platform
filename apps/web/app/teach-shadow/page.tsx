@@ -48,7 +48,7 @@ interface Coverage {
     recording_sessions: number;
     capture_takes: number;
     captured_files: number;
-    multi_angle_takes: number;
+    takes_with_multiple_files: number;
     athletes_captured: number;
   };
   labelling: {
@@ -57,6 +57,7 @@ interface Coverage {
     clips_with_two_submitted_sets: number;
     adjudications: number;
     gold_records: number;
+    gold_candidates: number;
   };
   punch_evidence: PunchEvidenceCell[];
   defense_evidence: DefenseEvidenceCell[];
@@ -114,11 +115,27 @@ export default function TeachShadowHomePage() {
    * southpaws rarely, and a list that averaged the two would hide exactly the
    * hole somebody needs to go and fill.
    */
-  const thinnest = coverage
-    ? [...coverage.punch_evidence]
+  /*
+   * CATCH-ALLS ARE NOT GAPS. 'other_punch' and 'unclassifiable_punch' name
+   * what an annotator could not classify, so they sit permanently at or near
+   * zero and would occupy the top of any thinnest-first list forever --
+   * pushing out the cells somebody could actually go and film. Nobody can be
+   * sent to the gym to record an unclassifiable punch.
+   */
+  const FILMABLE = (cell: PunchEvidenceCell) =>
+    cell.punch_type !== 'other_punch' && cell.punch_type !== 'unclassifiable_punch';
+
+  const ranked = coverage
+    ? [...coverage.punch_evidence].filter(FILMABLE)
       .sort((a, b) => a.events - b.events || a.clips - b.clips)
-      .slice(0, 8)
     : [];
+  const thinnest = ranked.slice(0, 8);
+  /*
+   * Said out loud rather than left to the cut. A list that stops at eight when
+   * thirty cells are equally empty reads as "these eight are the gaps", which
+   * would send a coach to film a shortlist that is not one.
+   */
+  const alsoEmpty = ranked.slice(8).filter((cell) => cell.events === 0).length;
 
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
@@ -182,6 +199,12 @@ export default function TeachShadowHomePage() {
                 ))}
               </ul>
             )}
+            {alsoEmpty > 0 ? (
+              <p className="t-body mt-[var(--s3)]">
+                {alsoEmpty} further combination{alsoEmpty === 1 ? '' : 's'} also {alsoEmpty === 1 ? 'has' : 'have'} no
+                labelled examples. The eight above are a place to start, not the whole gap.
+              </p>
+            ) : null}
           </section>
 
           {/* 2 and 3. THE TWO THINGS TO GO AND DO */}
@@ -221,54 +244,68 @@ export default function TeachShadowHomePage() {
               made up.
             </p>
             {coverage ? (
-              <div className="mt-[var(--s4)] grid gap-[var(--s4)] sm:grid-cols-2">
-                <dl className="flex flex-col gap-[var(--s2)]">
-                  <div>
-                    <dt className="t-eyebrow">Filmed</dt>
-                    <dd className="t-body">
-                      {coverage.capture.captured_files} file{coverage.capture.captured_files === 1 ? '' : 's'} across{' '}
-                      {coverage.capture.capture_takes} take{coverage.capture.capture_takes === 1 ? '' : 's'} in{' '}
-                      {coverage.capture.recording_sessions} session
-                      {coverage.capture.recording_sessions === 1 ? '' : 's'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="t-eyebrow">Filmed from more than one device</dt>
-                    <dd className="t-body">
-                      {coverage.capture.multi_angle_takes} take
-                      {coverage.capture.multi_angle_takes === 1 ? '' : 's'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="t-eyebrow">Athletes filmed</dt>
-                    <dd className="t-body">{coverage.capture.athletes_captured}</dd>
-                  </div>
-                </dl>
-                <dl className="flex flex-col gap-[var(--s2)]">
-                  <div>
-                    <dt className="t-eyebrow">Clips cut for labelling</dt>
-                    <dd className="t-body">{coverage.labelling.clips_cut}</dd>
-                  </div>
-                  <div>
-                    <dt className="t-eyebrow">Labelled and submitted</dt>
-                    <dd className="t-body">
-                      {coverage.labelling.submitted_sets} set
-                      {coverage.labelling.submitted_sets === 1 ? '' : 's'}, of which{' '}
-                      {coverage.labelling.clips_with_two_submitted_sets} clip
-                      {coverage.labelling.clips_with_two_submitted_sets === 1 ? '' : 's'} have two
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="t-eyebrow">Settled</dt>
-                    <dd className="t-body">
-                      {coverage.labelling.adjudications} adjudication
-                      {coverage.labelling.adjudications === 1 ? '' : 's'},{' '}
-                      {coverage.labelling.gold_records} gold record
-                      {coverage.labelling.gold_records === 1 ? '' : 's'}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
+              /*
+                 ONE FACT PER LINE, because the sentence that reads better is
+                 the one that overclaims. "37 files across 19 takes" says the
+                 files span the takes; a take where every upload failed holds
+                 none, and the sentence would be describing footage that is not
+                 there. Each count below is a count of exactly one thing.
+              */
+              <dl className="mt-[var(--s4)] grid gap-[var(--s3)] sm:grid-cols-2">
+                <div>
+                  <dt className="t-eyebrow">Files captured</dt>
+                  <dd className="t-body">{coverage.capture.captured_files}</dd>
+                </div>
+                <div>
+                  <dt className="t-eyebrow">Takes recorded</dt>
+                  <dd className="t-body">
+                    {coverage.capture.capture_takes} in {coverage.capture.recording_sessions} session
+                    {coverage.capture.recording_sessions === 1 ? '' : 's'}
+                  </dd>
+                </div>
+                <div>
+                  {/* Files, not cameras. The platform knows how many uploads
+                      arrived against a take; it does not know how many phones
+                      were in the room. */}
+                  <dt className="t-eyebrow">Takes with more than one file</dt>
+                  <dd className="t-body">{coverage.capture.takes_with_multiple_files}</dd>
+                </div>
+                <div>
+                  <dt className="t-eyebrow">Athletes filmed</dt>
+                  <dd className="t-body">{coverage.capture.athletes_captured}</dd>
+                </div>
+                <div>
+                  <dt className="t-eyebrow">Clips cut for labelling</dt>
+                  <dd className="t-body">{coverage.labelling.clips_cut}</dd>
+                </div>
+                <div>
+                  <dt className="t-eyebrow">Annotation sets submitted</dt>
+                  <dd className="t-body">{coverage.labelling.submitted_sets}</dd>
+                </div>
+                <div>
+                  {/* The only clips agreement can be measured on: one coach
+                      labelling alone produces no disagreement to measure. */}
+                  <dt className="t-eyebrow">Clips with two submitted sets</dt>
+                  <dd className="t-body">{coverage.labelling.clips_with_two_submitted_sets}</dd>
+                </div>
+                <div>
+                  <dt className="t-eyebrow">Adjudications settled</dt>
+                  <dd className="t-body">{coverage.labelling.adjudications}</dd>
+                </div>
+                <div>
+                  {/* PROMOTED, not nominated. A record defaults to candidate
+                      and can be deliberately excluded, so counting every row
+                      would report excluded records as part of the reference
+                      set -- the opposite of why somebody excluded them. */}
+                  <dt className="t-eyebrow">Gold records promoted</dt>
+                  <dd className="t-body">
+                    {coverage.labelling.gold_records}
+                    {coverage.labelling.gold_candidates > 0
+                      ? `, with ${coverage.labelling.gold_candidates} still a candidate`
+                      : ''}
+                  </dd>
+                </div>
+              </dl>
             ) : (
               <p className="t-body mt-[var(--s3)]">{loaded ? 'No coverage figures are available.' : 'Reading the corpus…'}</p>
             )}

@@ -75,7 +75,7 @@ const COVERAGE = {
     recording_sessions: 5,
     capture_takes: 19,
     captured_files: 37,
-    multi_angle_takes: 11,
+    takes_with_multiple_files: 11,
     athletes_captured: 23,
   },
   labelling: {
@@ -84,6 +84,7 @@ const COVERAGE = {
     clips_with_two_submitted_sets: 17,
     adjudications: 9,
     gold_records: 13,
+    gold_candidates: 6,
   },
   punch_evidence: [
     // Deliberately handed to the page BEST-COVERED FIRST, so a page that simply
@@ -91,13 +92,17 @@ const COVERAGE = {
     { punch_type: 'lead_straight', stance: 'orthodox', events: 412, clips: 57 },
     { punch_type: 'lead_hook', stance: null, events: 6, clips: 3 },
     { punch_type: 'rear_uppercut', stance: 'southpaw', events: 0, clips: 0 },
+    // Catch-alls, at zero. They must not occupy the list: nobody can be sent
+    // to the gym to film an unclassifiable punch.
+    { punch_type: 'other_punch', stance: 'orthodox', events: 0, clips: 0 },
+    { punch_type: 'unclassifiable_punch', stance: 'orthodox', events: 0, clips: 0 },
   ],
   defense_evidence: [
     { defense_type: 'slip', events: 28, clips: 14 },
     { defense_type: 'roll', events: 0, clips: 0 },
   ],
   vocabulary: {
-    punch_types: ['lead_straight', 'lead_hook', 'rear_uppercut'],
+    punch_types: ['lead_straight', 'lead_hook', 'rear_uppercut', 'other_punch', 'unclassifiable_punch'],
     defense_types: ['slip', 'roll'],
     stances: ['orthodox', 'southpaw'],
   },
@@ -210,18 +215,26 @@ test('every coverage count is rendered from the payload, not from a constant in 
   // unauthenticated read, and the route would refuse it (route.ts:31).
   expect(fetchMock).toHaveBeenCalledWith(COVERAGE_URL, { credentials: 'include' });
 
-  const text = pageText();
-  expect(text).toContain('37 files across 19 takes in 5 sessions');
-  expect(text).toContain('11 takes');
-  expect(text).toContain('41 sets, of which 17 clips have two');
-  expect(text).toContain('9 adjudications, 13 gold records');
-  expect(text).toContain('boxing-ontology-0.1');
+  expect(pageText()).toContain('boxing-ontology-0.1');
 
-  // The two counts that render as a bare number are read through their own
-  // label, so a value landing under the wrong heading fails here rather than
-  // passing because the digits exist somewhere on the page.
+  /*
+   * EVERY COUNT READ THROUGH ITS OWN LABEL, not looked for anywhere on the
+   * page. A value landing under the wrong heading fails here rather than
+   * passing because the digits exist somewhere in the document -- which is
+   * how a coverage panel comes to report takes under "athletes" and nobody
+   * notices.
+   */
+  expect(valueFor('Files captured')).toBe('37');
+  expect(valueFor('Takes recorded')).toBe('19 in 5 sessions');
+  expect(valueFor('Takes with more than one file')).toBe('11');
   expect(valueFor('Athletes filmed')).toBe('23');
   expect(valueFor('Clips cut for labelling')).toBe('64');
+  expect(valueFor('Annotation sets submitted')).toBe('41');
+  expect(valueFor('Clips with two submitted sets')).toBe('17');
+  expect(valueFor('Adjudications settled')).toBe('9');
+  // PROMOTED and CANDIDATE are different states and the panel must not merge
+  // them: a candidate is adjudicated and deliberately not in the dataset.
+  expect(valueFor('Gold records promoted')).toBe('13, with 6 still a candidate');
 });
 
 test('the thinnest evidence is listed first, and a cell with nothing in it says so in words', async () => {
@@ -252,6 +265,23 @@ test('the thinnest evidence is listed first, and a cell with nothing in it says 
   expect(items[0]).toContain('No labelled examples yet');
   expect(items[0]).not.toMatch(/\d/);
   expect(items[1]).toContain('6 labelled examples across 3 clips');
+});
+
+test('the gap list names only punches somebody could go and film', async () => {
+  /*
+   * 'other_punch' and 'unclassifiable_punch' name what an annotator could not
+   * classify. They sit at or near zero permanently, so a thinnest-first list
+   * that included them would be topped by them forever and would push out the
+   * cells a coach could actually do something about.
+   */
+  await renderLoaded();
+
+  const needsSection = screen
+    .getByRole('heading', { name: 'What Shadow needs more of' })
+    .closest('section') as HTMLElement;
+
+  expect(needsSection.textContent).not.toContain('Other punch');
+  expect(needsSection.textContent).not.toContain('Unclassifiable punch');
 });
 
 test('a failed read shows an alert and does not render zeros as if the gym had filmed nothing', async () => {

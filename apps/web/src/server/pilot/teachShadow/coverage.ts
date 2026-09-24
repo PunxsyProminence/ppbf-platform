@@ -62,8 +62,17 @@ export interface TeachShadowCoverage {
     capture_takes: number;
     /** Video rows that belong to a take. Film Study footage is never counted. */
     captured_files: number;
-    /** Takes with two or more files, i.e. genuinely filmed from more than one device. */
-    multi_angle_takes: number;
+    /*
+     * Takes carrying more than one file. NOT "filmed from more than one
+     * device", which it was called first and is not what it counts: a coach
+     * who records an angle and then attaches a file shot on the same phone
+     * produces two files from one device, and a take filmed by two phones
+     * where one upload failed produces one file from two. The platform knows
+     * how many files arrived; it does not know how many cameras were in the
+     * room, because camera_view is free text and camera_view_id is minted per
+     * file.
+     */
+    takes_with_multiple_files: number;
     athletes_captured: number;
   };
   labelling: {
@@ -73,7 +82,17 @@ export interface TeachShadowCoverage {
     /** Clips two coaches have both finished -- the only ones agreement can be measured on. */
     clips_with_two_submitted_sets: number;
     adjudications: number;
+    /*
+     * PROMOTED, not merely nominated. governance_state runs candidate -> gold
+     * -> excluded, defaulting to 'candidate' so that a caller who forgets to
+     * say produces a row OUTSIDE the reference dataset rather than inside it.
+     * Counting every row and calling the total "gold records" would report
+     * deliberately EXCLUDED records as part of the reference set, which is the
+     * opposite of what somebody excluded them for.
+     */
     gold_records: number;
+    /** Adjudicated and nominated, and deliberately not yet part of anything. */
+    gold_candidates: number;
   };
   /** Every term in the vocabulary, including the ones with nothing behind them. */
   punch_evidence: PunchEvidenceCell[];
@@ -119,7 +138,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
       recording_sessions: number;
       capture_takes: number;
       captured_files: number;
-      multi_angle_takes: number;
+      takes_with_multiple_files: number;
       athletes_captured: number;
     }>(
       `select
@@ -137,7 +156,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
              group by capture_take_id
             having count(*) >= 2
           ) t)
-           as multi_angle_takes,
+           as takes_with_multiple_files,
          (select count(distinct athlete_id)::int from pilot.video_sessions
            where organization_id = $1 and capture_take_id is not null and athlete_id is not null)
            as athletes_captured`,
@@ -149,6 +168,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
       clips_with_two_submitted_sets: number;
       adjudications: number;
       gold_records: number;
+      gold_candidates: number;
     }>(
       `select
          -- Not version-scoped, and correctly so: cutting a clip records no
@@ -171,8 +191,13 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
            where organization_id = $1 and ontology_version = $2)
            as adjudications,
          (select count(*)::int from pilot.calibration_gold_records
-           where organization_id = $1 and ontology_version = $2)
-           as gold_records`,
+           where organization_id = $1 and ontology_version = $2
+             and governance_state = 'gold')
+           as gold_records,
+         (select count(*)::int from pilot.calibration_gold_records
+           where organization_id = $1 and ontology_version = $2
+             and governance_state = 'candidate')
+           as gold_candidates`,
       [organizationId, BOXING_ONTOLOGY_VERSION],
     ),
     query<{ punch_type: string; stance: string | null; events: number; clips: number }>(
@@ -234,7 +259,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
       recording_sessions: 0,
       capture_takes: 0,
       captured_files: 0,
-      multi_angle_takes: 0,
+      takes_with_multiple_files: 0,
       athletes_captured: 0,
     },
     labelling: labelling[0] ?? {
@@ -243,6 +268,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
       clips_with_two_submitted_sets: 0,
       adjudications: 0,
       gold_records: 0,
+      gold_candidates: 0,
     },
     punch_evidence,
     defense_evidence,

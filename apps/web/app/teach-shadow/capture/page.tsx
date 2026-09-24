@@ -130,7 +130,10 @@ export default function TeachShadowCapturePage() {
     },
   });
 
-  const { phase, errorMessage, setErrorMessage } = recorder;
+  // Destructured rather than read through `recorder.` at each use: the hook
+  // hands back a ref among its values, and the lint rule reads a member
+  // access on that object as touching a ref during render.
+  const { phase, errorMessage, setErrorMessage, videoRef, recordedBytes, stoppedAtLimit, stop } = recorder;
 
   /*
    * The roster, because a capture MUST name the athlete it is of. That is not
@@ -237,7 +240,7 @@ export default function TeachShadowCapturePage() {
   }
 
   const take = session?.current_take ?? null;
-  const megabytes = (recorder.recordedBytes / (1024 * 1024)).toFixed(1);
+  const megabytes = (recordedBytes / (1024 * 1024)).toFixed(1);
   const limitMb = Math.round(CAPTURE_MAX_BLOB_BYTES / (1024 * 1024));
 
   return (
@@ -381,7 +384,7 @@ export default function TeachShadowCapturePage() {
                 </label>
 
                 <video
-                  ref={recorder.videoRef}
+                  ref={videoRef}
                   muted
                   playsInline
                   className="mt-[var(--s4)] w-full rounded-[var(--r-md)] bg-[color:var(--hide-900)]"
@@ -393,7 +396,7 @@ export default function TeachShadowCapturePage() {
                     Recording · {megabytes} MB of {limitMb} MB
                   </p>
                 ) : null}
-                {recorder.stoppedAtLimit && phase !== 'recording' ? (
+                {stoppedAtLimit && phase !== 'recording' ? (
                   <p role="status" className="t-body mt-[var(--s3)]">
                     Recording stopped at the {limitMb} MB limit and is being kept. Start the next take to carry on.
                   </p>
@@ -401,7 +404,7 @@ export default function TeachShadowCapturePage() {
 
                 <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
                   {phase === 'recording' ? (
-                    <button type="button" className="btn" onClick={recorder.stop}>Stop</button>
+                    <button type="button" className="btn" onClick={stop}>Stop</button>
                   ) : (
                     <button
                       type="button"

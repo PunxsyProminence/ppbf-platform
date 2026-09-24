@@ -83,11 +83,20 @@ export function useCameraRecorder<TContext>({
   const chunksRef = useRef<Blob[]>([]);
   const bytesRef = useRef(0);
 
-  // The recorder's onstop fires long after the render that created it, so it
-  // must not close over a stale callback. A ref updated every render is what
-  // keeps "what to do with the footage" current without restarting anything.
+  /*
+   * The recorder's onstop fires long after the render that created it, so it
+   * must not close over a stale callback. This ref carries the CURRENT one.
+   *
+   * Assigned in an effect rather than during render, which is not a formality:
+   * React may render a component and throw the result away, and a ref written
+   * on that pass would be left holding a callback from a render that never
+   * committed. The effect runs only after a commit, and onstop cannot fire
+   * before the page has been shown, so there is no window where it is stale.
+   */
   const onRecordedRef = useRef(onRecorded);
-  onRecordedRef.current = onRecorded;
+  useEffect(() => {
+    onRecordedRef.current = onRecorded;
+  });
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());

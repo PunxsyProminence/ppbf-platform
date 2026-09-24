@@ -67,7 +67,10 @@ export default function FilmStudyCapturePage() {
     },
   });
 
-  const { phase, errorMessage, setErrorMessage } = recorder;
+  // Destructured rather than read through `recorder.` at each use: the hook
+  // hands back a ref among its values, and the lint rule reads a member
+  // access on that object as touching a ref during render.
+  const { phase, errorMessage, setErrorMessage, videoRef, recordedBytes, stoppedAtLimit, stop } = recorder;
 
   /*
    * The roster, because this recording MUST name the athlete it is of -- both
@@ -111,7 +114,7 @@ export default function FilmStudyCapturePage() {
     }
   }
 
-  const megabytes = (recorder.recordedBytes / (1024 * 1024)).toFixed(1);
+  const megabytes = (recordedBytes / (1024 * 1024)).toFixed(1);
   const limitMb = Math.round(CAPTURE_MAX_BLOB_BYTES / (1024 * 1024));
 
   return (
@@ -187,7 +190,7 @@ export default function FilmStudyCapturePage() {
               </label>
 
               <video
-                ref={recorder.videoRef}
+                ref={videoRef}
                 muted
                 playsInline
                 className="mt-[var(--s4)] w-full rounded-[var(--r-md)] bg-[color:var(--hide-900)]"
@@ -199,7 +202,7 @@ export default function FilmStudyCapturePage() {
                   Recording · {megabytes} MB of {limitMb} MB
                 </p>
               ) : null}
-              {recorder.stoppedAtLimit && phase !== 'recording' ? (
+              {stoppedAtLimit && phase !== 'recording' ? (
                 <p role="status" className="t-body mt-[var(--s3)]">
                   Recording stopped at the {limitMb} MB limit and is being kept. Record again to carry on.
                 </p>
@@ -213,7 +216,7 @@ export default function FilmStudyCapturePage() {
 
               <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
                 {phase === 'recording' ? (
-                  <button type="button" className="btn" onClick={recorder.stop}>Stop</button>
+                  <button type="button" className="btn" onClick={stop}>Stop</button>
                 ) : (
                   <button
                     type="button"
