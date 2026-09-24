@@ -93,6 +93,16 @@ export interface TeachShadowCoverage {
  * corpus look larger than the evidence anyone has actually stood behind, and
  * the number would go DOWN when a coach deleted a mistaken event -- a coverage
  * figure that moves backwards for a good reason is a figure nobody trusts.
+ *
+ * AND ONE ONTOLOGY VERSION, which is not a detail. ontology.ts says every row
+ * carries the vocabulary it was created under precisely so that a study run
+ * under 0.1 and one run under 0.2 are never pooled by accident, and that
+ * nothing in this subsystem may aggregate across two versions without a
+ * recorded decision. Only one version exists today, so an unfiltered count
+ * happens to be right -- and would quietly stop being right on the day a
+ * second one shipped, while still stamping the answer with the current
+ * version's name. The filter costs nothing now and is the difference between
+ * a figure that is correct and one that is merely not yet wrong.
  */
 const SUBMITTED_EVENTS_FROM = `
   from pilot.calibration_annotation_events e
@@ -100,7 +110,8 @@ const SUBMITTED_EVENTS_FROM = `
     on s.annotation_set_id = e.annotation_set_id
    and s.organization_id = e.organization_id
  where e.organization_id = $1
-   and s.status = 'submitted'`;
+   and s.status = 'submitted'
+   and s.ontology_version = $2`;
 
 export async function readTeachShadowCoverage(organizationId: string): Promise<TeachShadowCoverage> {
   const [capture, labelling, punchRows, defenseRows] = await Promise.all([
@@ -140,24 +151,29 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
       gold_records: number;
     }>(
       `select
+         -- Not version-scoped, and correctly so: cutting a clip records no
+         -- observation, so it is not stamped with a vocabulary and pools
+         -- across nothing.
          (select count(*)::int from pilot.calibration_clips where organization_id = $1)
            as clips_cut,
          (select count(*)::int from pilot.calibration_annotation_sets
-           where organization_id = $1 and status = 'submitted')
+           where organization_id = $1 and status = 'submitted' and ontology_version = $2)
            as submitted_sets,
          (select count(*)::int from (
             select calibration_clip_id
               from pilot.calibration_annotation_sets
-             where organization_id = $1 and status = 'submitted'
+             where organization_id = $1 and status = 'submitted' and ontology_version = $2
              group by calibration_clip_id
             having count(*) >= 2
           ) c)
            as clips_with_two_submitted_sets,
-         (select count(*)::int from pilot.calibration_adjudications where organization_id = $1)
+         (select count(*)::int from pilot.calibration_adjudications
+           where organization_id = $1 and ontology_version = $2)
            as adjudications,
-         (select count(*)::int from pilot.calibration_gold_records where organization_id = $1)
+         (select count(*)::int from pilot.calibration_gold_records
+           where organization_id = $1 and ontology_version = $2)
            as gold_records`,
-      [organizationId],
+      [organizationId, BOXING_ONTOLOGY_VERSION],
     ),
     query<{ punch_type: string; stance: string | null; events: number; clips: number }>(
       `select e.punch_type, e.stance,
@@ -167,7 +183,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
            and e.event_class = 'punch'
            and e.punch_type is not null
         group by e.punch_type, e.stance`,
-      [organizationId],
+      [organizationId, BOXING_ONTOLOGY_VERSION],
     ),
     query<{ defense_type: string; events: number; clips: number }>(
       `select e.defense_type,
@@ -177,7 +193,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
            and e.event_class = 'defense'
            and e.defense_type is not null
         group by e.defense_type`,
-      [organizationId],
+      [organizationId, BOXING_ONTOLOGY_VERSION],
     ),
   ]);
 
