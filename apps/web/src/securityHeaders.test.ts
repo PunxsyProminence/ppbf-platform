@@ -7,15 +7,38 @@
 
 import nextConfig from '../next.config';
 
-async function resolveHeaders(): Promise<Map<string, string>> {
+const CAPTURE_ROUTE = '/coach/video-analysis/capture';
+
+/*
+ * TWO RULES NOW, AND EXACTLY ONE MUST MATCH ANY PATH.
+ *
+ * The in-app recorder needs a camera, and Permissions-Policy is a per-response
+ * header -- a page served with camera=() can never turn one on later. So the
+ * capture surface is its own document and only that document asks for the
+ * capability; every other page in the app stays closed.
+ *
+ * If both rules ever matched one path, Next would emit Permissions-Policy
+ * twice and leave the winner to the browser. This helper therefore asserts
+ * that precisely one rule matches, which is the property the negative
+ * lookahead in next.config.ts exists to provide.
+ */
+function resolveHeaders(routeRules: Awaited<ReturnType<NonNullable<typeof nextConfig.headers>>>, pathname: string) {
+  const matching = routeRules.filter((rule) => {
+    if (rule.source === CAPTURE_ROUTE) return pathname === CAPTURE_ROUTE;
+    return pathname !== CAPTURE_ROUTE;
+  });
+  expect(matching).toHaveLength(1);
+  return new Map(matching[0].headers.map((h) => [h.key, h.value]));
+}
+
+async function headersFor(pathname: string): Promise<Map<string, string>> {
   const rules = await nextConfig.headers!();
-  expect(rules).toHaveLength(1);
-  expect(rules[0].source).toBe('/:path*');
-  return new Map(rules[0].headers.map((h) => [h.key, h.value]));
+  expect(rules).toHaveLength(2);
+  return resolveHeaders(rules, pathname);
 }
 
 test('every baseline defense is present on every route', async () => {
-  const headers = await resolveHeaders();
+  const headers = await headersFor('/coach/video-analysis');
 
   expect([...headers.keys()].sort()).toEqual([
     'Content-Security-Policy',
@@ -33,7 +56,7 @@ test('every baseline defense is present on every route', async () => {
 });
 
 test('the production CSP stays as narrow as the app inventory allows', async () => {
-  const headers = await resolveHeaders();
+  const headers = await headersFor('/coach/video-analysis');
   const csp = headers.get('Content-Security-Policy')!;
 
   // The inventory (2026-08-15): local fonts, app-served images with
@@ -59,6 +82,52 @@ test('the production CSP stays as narrow as the app inventory allows', async () 
   expect(csp).not.toContain('unsafe-eval');
   expect(csp).not.toMatch(/\s\*\s|\s\*;|src \*/);
   expect(csp).not.toContain('frame-src');
+});
+
+
+/*
+ * The capture route is the ONLY document that may open a camera, and even
+ * there the microphone stays shut: punch recognition must work on silent
+ * shadowboxing and in loud gyms, so impact sound would be a shortcut signal
+ * rather than something the recognizer should lean on. The recorder asks for a
+ * video-only stream, so an open microphone would serve nothing.
+ */
+test('the capture route opens the camera and nothing else', async () => {
+  const headers = await headersFor('/coach/video-analysis/capture');
+
+  expect(headers.get('Permissions-Policy')).toBe('camera=(self), microphone=(), geolocation=()');
+});
+
+test('every other route still refuses the camera outright', async () => {
+  for (const pathname of ['/', '/coach/video-analysis', '/admin/athlete-consent', '/athlete/dashboard']) {
+    const headers = await headersFor(pathname);
+    expect(headers.get('Permissions-Policy')).toBe('camera=(), microphone=(), geolocation=()');
+  }
+});
+
+/*
+ * The capture route is not a hole in anything else. Widening one header on one
+ * document must not quietly relax the rest of that document's defenses, so the
+ * capture response is asserted to carry the identical CSP, frame and transport
+ * protections every other route gets.
+ */
+test('the capture route keeps every other defense unchanged', async () => {
+  const capture = await headersFor('/coach/video-analysis/capture');
+  const ordinary = await headersFor('/coach/video-analysis');
+
+  for (const key of [
+    'Content-Security-Policy',
+    'X-Frame-Options',
+    'X-Content-Type-Options',
+    'Referrer-Policy',
+    'Strict-Transport-Security',
+  ]) {
+    expect(capture.get(key)).toBe(ordinary.get(key));
+  }
+  // In particular: recording does not need to talk to anywhere new. The upload
+  // still goes to this origin, so direct-to-Blob's CSP widening stays a
+  // separate, deliberate act rather than arriving as a side effect of this one.
+  expect(capture.get('Content-Security-Policy')).toContain("connect-src 'self'");
 });
 
 test('the powered-by banner is off', () => {

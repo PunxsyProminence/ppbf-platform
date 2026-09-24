@@ -165,3 +165,151 @@ describe('POST /api/pilot/video/upload', () => {
     expect(res.status).toBe(403);
   });
 });
+
+/*
+ * CAP-VID-01. The capture surface sends a take; these are the refusals that
+ * stop it producing footage the rest of the platform would mishandle.
+ */
+describe('a capture recording carries its take and its subject', () => {
+  const OPEN_TAKE = [{ recording_session_id: 'rs-1', state: 'open' }];
+
+  /*
+   * The real coach-assignment check runs in these cases -- it is not stubbed,
+   * because two tests above prove it REFUSES and stubbing it here would quietly
+   * weaken them. queryOne answers that check with an assigned athlete, the same
+   * way the existing 202 case does; query then answers the take lookup.
+   */
+  function assignedAthlete() {
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+  }
+
+  /*
+   * THE SAFEGUARDING REFUSAL. videoScanSweep only asserts guardian consent
+   * when a video names an athlete -- a video with none "has no guardian to
+   * ask". A dedicated learning-capture UI that filmed a minor and stored them
+   * unattributed would therefore enter the vision content screen with that
+   * check skipped. Refused on the server, so a client cannot simply omit it.
+   */
+  test('a recording with a take but no athlete is refused, and nothing is stored', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    assignedAthlete();
+    mockQuery.mockResolvedValueOnce(OPEN_TAKE);
+
+    const response = await POST(uploadRequest({ file: videoFile(), capture_take_id: 'take-1' }));
+
+    expect(response.status).toBe(400);
+    expect(mockQuery.mock.calls.some(([sql]) => String(sql).includes('insert into pilot.video_sessions'))).toBe(false);
+  });
+
+  test('an ordinary ungrouped upload still needs no athlete -- this refusal is scoped to capture', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+
+    const response = await POST(uploadRequest({ file: videoFile(), title: 'Team drill' }));
+
+    expect(response.status).toBe(202);
+  });
+
+  test('a take from another organization is not found, and nothing is stored', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    assignedAthlete();
+    mockQuery.mockResolvedValueOnce([]);
+
+    const response = await POST(
+      uploadRequest({ file: videoFile(), capture_take_id: 'take-elsewhere', athlete_id: 'ath-1' }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(mockQuery.mock.calls.some(([sql]) => String(sql).includes('insert into pilot.video_sessions'))).toBe(false);
+  });
+
+  test('a closed take is refused rather than silently attaching to a finished attempt', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    assignedAthlete();
+    mockQuery.mockResolvedValueOnce([{ recording_session_id: 'rs-1', state: 'closed' }]);
+
+    const response = await POST(
+      uploadRequest({ file: videoFile(), capture_take_id: 'take-1', athlete_id: 'ath-1' }),
+    );
+
+    expect(response.status).toBe(409);
+  });
+
+  /*
+   * An angle chosen from the device is still an angle of this attempt, and
+   * must not be labelled as something this app recorded. capture_source is
+   * therefore declared rather than inferred from the presence of a take.
+   */
+  test('capture_source is taken from the request, so a chosen file is not called an in-app recording', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    assignedAthlete();
+    mockQuery.mockResolvedValueOnce(OPEN_TAKE);
+
+    const response = await POST(
+      uploadRequest({
+        file: videoFile(),
+        capture_take_id: 'take-1',
+        athlete_id: 'ath-1',
+        capture_source: 'file_upload',
+      }),
+    );
+
+    expect(response.status).toBe(202);
+    const insert = mockQuery.mock.calls.find(([sql]) => String(sql).includes('insert into pilot.video_sessions'));
+    expect(insert?.[1]).toContain('file_upload');
+  });
+
+  test('an invented capture_source is refused rather than reaching the column check', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    assignedAthlete();
+    mockQuery.mockResolvedValueOnce(OPEN_TAKE);
+
+    const response = await POST(
+      uploadRequest({
+        file: videoFile(),
+        capture_take_id: 'take-1',
+        athlete_id: 'ath-1',
+        capture_source: 'telepathy',
+      }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  test('a recorded angle stores the session resolved from the take, never one the client named', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    assignedAthlete();
+    mockQuery.mockResolvedValueOnce(OPEN_TAKE);
+
+    const response = await POST(
+      uploadRequest({
+        file: videoFile(),
+        capture_take_id: 'take-1',
+        athlete_id: 'ath-1',
+        capture_source: 'in_app_recording',
+        recording_session_id: 'rs-somebody-elses',
+      }),
+    );
+
+    expect(response.status).toBe(202);
+    const insert = mockQuery.mock.calls.find(([sql]) => String(sql).includes('insert into pilot.video_sessions'));
+    expect(insert?.[1]).toContain('rs-1');
+    expect(insert?.[1]).not.toContain('rs-somebody-elses');
+  });
+
+  test('an out-of-calendar recorded_at is refused rather than reaching a timestamptz column', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    assignedAthlete();
+    mockQuery.mockResolvedValueOnce(OPEN_TAKE);
+
+    const response = await POST(
+      uploadRequest({
+        file: videoFile(),
+        capture_take_id: 'take-1',
+        athlete_id: 'ath-1',
+        recorded_at: '2026-02-30T12:00:00.000Z',
+      }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+});

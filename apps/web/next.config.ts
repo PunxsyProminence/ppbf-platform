@@ -35,20 +35,48 @@ const CONTENT_SECURITY_POLICY = [
 	"frame-ancestors 'none'",
 ].join("; ");
 
-const SECURITY_HEADERS = [
-	{ key: "Content-Security-Policy", value: CONTENT_SECURITY_POLICY },
-	// Belt to frame-ancestors' braces, for anything old enough to need it.
-	{ key: "X-Frame-Options", value: "DENY" },
-	{ key: "X-Content-Type-Options", value: "nosniff" },
-	{ key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-	// The app uses no device APIs (the photo flow is a file input; "camera"
-	// in ProfileSettings is prose about EXIF stripping).
-	{ key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
-	// No includeSubDomains: only the www app origin is known to be HTTPS-only
-	// end to end; the apex and any future subdomains are not this config's to
-	// commit.
-	{ key: "Strict-Transport-Security", value: "max-age=31536000" },
-];
+// THE CAMERA IS OFF EVERYWHERE EXCEPT ONE DOCUMENT.
+//
+// Permissions-Policy is a per-RESPONSE header, which is the fact that shapes
+// this: a page served with camera=() can never turn the camera on later, no
+// matter what a button on it does. So the in-app recorder cannot be a modal on
+// an ordinary page -- it has to be its own document, and only that document
+// asks for the capability.
+//
+// The alternative was camera=(self) for the whole origin, which the owner
+// authorized. It is not taken: it would hand the capability to every page in
+// the app to serve one, and a cross-site scripting hole anywhere would then
+// reach a camera instead of stopping at the DOM.
+//
+// Microphone stays CLOSED even on the capture route, and that is a product
+// decision rather than caution. Punch recognition has to work on silent
+// shadowboxing, in loud gyms, and across several cameras hearing different
+// sound mixtures; impact sound would offer the model a shortcut instead of
+// making it learn the movement. The recorder requests a video-only stream, so
+// there is nothing for an open microphone to serve.
+const PERMISSIONS_POLICY_CLOSED = "camera=(), microphone=(), geolocation=()";
+const PERMISSIONS_POLICY_CAPTURE = "camera=(self), microphone=(), geolocation=()";
+
+// The one document allowed to open a camera. Kept as a constant because the
+// header rules below must agree with it exactly: a typo in either would either
+// leave the recorder unable to start or open the camera on a route nobody
+// examined.
+const CAPTURE_ROUTE = "/coach/video-analysis/capture";
+
+function securityHeaders(permissionsPolicy: string) {
+	return [
+		{ key: "Content-Security-Policy", value: CONTENT_SECURITY_POLICY },
+		// Belt to frame-ancestors' braces, for anything old enough to need it.
+		{ key: "X-Frame-Options", value: "DENY" },
+		{ key: "X-Content-Type-Options", value: "nosniff" },
+		{ key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+		{ key: "Permissions-Policy", value: permissionsPolicy },
+		// No includeSubDomains: only the www app origin is known to be HTTPS-only
+		// end to end; the apex and any future subdomains are not this config's to
+		// commit.
+		{ key: "Strict-Transport-Security", value: "max-age=31536000" },
+	];
+}
 
 const nextConfig: NextConfig = {
 	output: staticExportEnabled ? "export" : "standalone",
@@ -63,10 +91,20 @@ const nextConfig: NextConfig = {
 	// is the live one. The static-export path ignores it; if that path ever
 	// ships, staticwebapp.config.json must mirror these.
 	async headers() {
+		// TWO MUTUALLY EXCLUSIVE RULES, not a general rule plus an override.
+		// Next applies every matching entry, so two rules that both matched the
+		// capture route would emit Permissions-Policy twice and leave which one
+		// wins to the browser. The negative lookahead makes exactly one rule
+		// match any given path, so the answer is decided here rather than by a
+		// user agent. securityHeaders.test.ts pins both sides.
 		return [
 			{
-				source: "/:path*",
-				headers: SECURITY_HEADERS,
+				source: CAPTURE_ROUTE,
+				headers: securityHeaders(PERMISSIONS_POLICY_CAPTURE),
+			},
+			{
+				source: `/((?!${CAPTURE_ROUTE.slice(1)}$).*)`,
+				headers: securityHeaders(PERMISSIONS_POLICY_CLOSED),
 			},
 		];
 	},
