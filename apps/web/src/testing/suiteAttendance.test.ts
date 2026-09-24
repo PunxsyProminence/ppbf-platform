@@ -125,7 +125,6 @@ const ENTRIES: ManifestEntry[] = manifest.suites;
  */
 const REQUIRED_BY_NAME = [
   'src/design/plateBinaries.test.ts',
-  'src/design/readinessRungPolicy.test.ts',
   'src/design/safetySemanticsSurviveTheThemeSwap.test.ts',
 ];
 

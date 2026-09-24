@@ -36,14 +36,9 @@
   ],
   "suites": [
     {
-      "path": "src/design/readinessRungPolicy.test.ts",
-      "minimumTests": 4,
-      "guards": "Readiness triage may not be painted as a medical refusal. It names every known mapping site explicitly because RoleSummaryPanels has no test file at all -- so when this goes dark, nothing else in the repository covers its subject."
-    },
-    {
       "path": "src/design/safetySemanticsSurviveTheThemeSwap.test.ts",
-      "minimumTests": 15,
-      "guards": "locked / restricted / monitor / cleared must survive the visual reset, each keeping a non-colour channel. It is a contract on an INCOMING theme, so it is at its most load-bearing exactly while the design system is being replaced -- the window in which files move and suites stop loading."
+      "minimumTests": 5,
+      "guards": "locked / restricted / monitor / cleared must still be DEFINED by whatever theme is loaded. A state that resolves to nothing is invisible, and no component test catches it because jsdom does not apply the stylesheet. It is a contract on an INCOMING theme, so it is at its most load-bearing exactly while the design system is being replaced. FLOOR LOWERED 15 -> 5 on 2026-09-24, owner decision 'keep the outcome, drop the prescribed implementation': the ten removed assertions demanded an -ink pair per token, a class literally named .badge, text-transform uppercase on it, and a badge--<name> variant per token. Those dictate a component name, a token naming convention and a typographic treatment, and they blocked scoping a palette to the rebuilt coach board. The non-colour channel they claimed to protect is now asserted where it is observable -- 'a RED readiness band never wears the medical-stop rung' in components/coachWorkspaceHonesty.test.tsx checks the band renders as a WORD, which a .badge that is uppercase and empty never did."
     },
     {
       "path": "src/design/cornerColor.test.ts",

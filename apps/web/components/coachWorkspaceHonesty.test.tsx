@@ -1540,6 +1540,62 @@ describe('roster readiness comes from the board feed, honestly', () => {
     evidence_class: 'ESTABLISHED',
   });
 
+  /* READINESS IS NOT A MEDICAL REFUSAL, HELD AS BEHAVIOUR RATHER THAN BY ADDRESS.
+
+     This replaces src/design/readinessRungPolicy.test.ts, 183 lines that guarded
+     the same fact by NAMING two files and two function identifiers. That guard
+     could not see a rewrite: rename `readinessDotClass`, or render readiness
+     from a new component, and it went on passing while protecting nothing. It
+     also could not see `SafetyAttentionBadge`, which reaches for `badge--locked`
+     on a critical escalation -- a real use of the medical rung, outside the one
+     address the registry knew about.
+
+     The fact is worth keeping and is narrower than the old rule: readiness
+     triage is "look closer", the locked rung means a clinician said no, and the
+     two must not wear the same mark. So this reads the rendered document and
+     holds the RULE, not the address. A new ROOM layout is covered on the day it
+     lands, because it asserts over whatever is on screen.
+
+     `--restricted` on a RED band is the correct paint and must keep passing;
+     only `--locked` is the lie. */
+  test('a RED readiness band never wears the medical-stop rung', async () => {
+    await renderWorkspace({
+      athletesList: threeAthletes,
+      readinessBoard: () => jsonResponse({
+        items: [
+          validatedEntry('ath_1', 'RED', 2),
+          validatedEntry('ath_2', 'YELLOW', 5),
+          validatedEntry('ath_3', 'GREEN', 9),
+        ],
+      }),
+    });
+
+    /* BACKGROUND PAINT ONLY, and that narrowing is load-bearing. A first
+       version matched the rung token anywhere in a class string and failed on
+       `border-[color:var(--locked)]` -- a safety panel that is CORRECTLY
+       outlined in the medical rung because it is a medical panel. Reading
+       that as a violation would have made the guard demand a real lie be
+       removed. What readiness paints is a filled disc, so the background
+       channel is the one that carries this fact. */
+    const rungPainted = Array.from(document.querySelectorAll('*')).filter((el) => {
+      const cls = typeof el.className === 'string' ? el.className : '';
+      return /bg-\[var\(--(cleared|monitor|restricted|locked)\)\]/.test(cls);
+    });
+
+    // Non-vacuous: if the roster stopped painting rungs at all this would pass
+    // for the wrong reason, so the guard proves it found something first.
+    expect(rungPainted.length).toBeGreaterThan(0);
+
+    const wearingLocked = rungPainted
+      .map((el) => String(el.className))
+      .filter((cls) => /bg-\[var\(--locked\)\]/.test(cls));
+    expect(wearingLocked).toEqual([]);
+
+    // The other half of the channel: the band is a word on screen, not only a
+    // colour, so the state survives greyscale, sunlight and colour blindness.
+    expect(screen.getAllByText('RED').length).toBeGreaterThan(0);
+  });
+
   test('validated statuses color the tile and the absent athlete stays unknown, said out loud', async () => {
     await renderWorkspace({
       athletesList: threeAthletes,

@@ -125,33 +125,35 @@ describe('the safety ladder survives a change of look', () => {
     expect((value ?? '').length).toBeGreaterThan(0);
   });
 
-  it.each(SAFETY_TOKENS)('%s keeps an ink pair, so a state can be read on its own ground', (token) => {
-    // Every rung ships `X` and `X-ink` together. A theme that supplied only the
-    // ground colour would leave the label to inherit whatever was underneath,
-    // which is how a status chip ends up unreadable rather than merely
-    // differently coloured.
-    expect(definitionOf(`${token}-ink`)).toBeTruthy();
-  });
+  /* WHAT THIS FILE USED TO ALSO DEMAND, and why it no longer does.
 
-  /* THE NON-COLOUR CHANNEL. `.badge` is the component that carries it -- a
-     glyph and an uppercase label beside the colour -- so a state survives
-     greyscale, a board packet printed in mono, and every form of colour
-     blindness. A theme may restyle it; a theme may not delete it, and it may
-     not stop uppercasing, because then colour becomes the only channel again. */
-  it('keeps the badge component that carries the second channel', () => {
-    expect(css).toMatch(/\.badge\s*(,[^{]*)?\{/);
-  });
+     Owner decision 2026-09-24, via the designer's list: "3 agreed" -- keep the
+     outcome, drop the prescribed implementation. Four assertions were removed:
 
-  it('keeps the badge label uppercased, which is half of the second channel', () => {
-    const badgeRules = [...css.matchAll(/\.badge[^{]*\{([^}]*)\}/g)].map((m) => m[1]).join(' ');
-    expect(badgeRules).toMatch(/text-transform\s*:\s*uppercase/);
-  });
+       - every token must ship an `X-ink` pair;
+       - a class literally named `.badge` must exist;
+       - some `.badge` rule must carry `text-transform: uppercase`;
+       - every token must have a `badge--<name>` variant.
 
-  it.each(SAFETY_TOKENS)('%s has a badge variant, so the state has somewhere to be labelled', (token) => {
-    // e.g. --locked -> .badge--locked. The modifier existing is what lets a
-    // caller reach for the labelled component instead of painting a bare
-    // coloured element and calling it a status.
-    const variant = `badge--${token.replace('--', '')}`;
-    expect(css).toContain(variant);
-  });
+     Each of those dictates a component name, a token naming convention or a
+     typographic treatment. None of them is the fact. The fact is that a coach
+     can tell one state from another WITHOUT decoding colour -- on a wall screen
+     in sunlight, in greyscale, or colour blind.
+
+     Two reasons they went rather than being kept as a belt-and-braces:
+     they blocked the design outright (defining the rungs on an unqualified
+     :root prevents scoping a palette to a new surface, and the coach board is
+     being rebuilt with two layouts), and they could not actually prove the
+     thing they claimed -- a `.badge` that is uppercase and renders an empty
+     string satisfied all four while conveying nothing.
+
+     The outcome is now asserted where it can really be observed: in the
+     rendered document. See "a RED readiness band never wears the medical-stop
+     rung" in components/coachWorkspaceHonesty.test.tsx, which checks the band
+     appears as a WORD on screen, not only as a painted disc.
+
+     WHAT STAYS HERE is the one CSS-level fact a render test cannot reach: swap
+     the theme and every safety state must still be defined by whatever sheet is
+     now loaded. A state that resolves to nothing is invisible, and no component
+     test catches that because jsdom does not apply the stylesheet. */
 });
