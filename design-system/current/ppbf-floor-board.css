@@ -1147,3 +1147,250 @@
   outline: 0;
   box-shadow: var(--focus);
 }
+
+/* ===========================================================================
+   THE ROOM LAYOUT.
+
+   The same facts as the board, wearing the objects the gym already has: a
+   round wall clock, a peg board of hanging tags, clipboards on nails.
+
+   The shapes are not decoration. A dial is read faster than a number from
+   across a floor; a tag on a hook makes UNMARKED a physical thing occupying a
+   column rather than a figure that rounds away; a clipboard is the thing a
+   coach already reaches for. Each object was chosen because the real one
+   answers the same question.
+
+   EVERY OBJECT HAS AN UNHAPPY STATE THAT LOOKS NOTHING LIKE ITS HAPPY ONE.
+   That is the constraint the material serves, not the other way round: a peg
+   board with four empty columns reads as an empty gym, and a clock reading
+   zero reads as a session that has not begun. So --quiet dims and de-weights,
+   --unread takes the warning chalk and an outline, and neither can be mistaken
+   for the confident rendering.
+   ========================================================================== */
+.ge-floorboard .rm {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 18px 22px;
+  align-items: start;
+  margin: 4px 0 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgb(234 230 217 / .14);
+}
+@media (max-width: 900px) {
+  .ge-floorboard .rm { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---- the wall clock ---------------------------------------------------- */
+.ge-floorboard .rm-clockwrap { grid-row: span 2; }
+.ge-floorboard .rm-clock {
+  position: relative;
+  width: 186px;
+  height: 186px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: radial-gradient(circle at 42% 34%, #26302B, #141916 70%);
+  box-shadow:
+    inset 0 0 0 7px #2A1B0E,
+    inset 0 0 0 9px rgba(190, 146, 92, .30),
+    0 6px 18px rgba(0, 0, 0, .6);
+}
+/* Twelve marks, so it reads as a dial rather than a circle with a number in
+   it. A conic gradient rather than twelve elements: this is a texture, and a
+   dozen empty spans would be a dozen things for a screen reader to skip. */
+.ge-floorboard .rm-clock-ticks {
+  position: absolute;
+  inset: 14px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    from 0deg,
+    rgba(234, 230, 217, .34) 0deg 1.1deg,
+    transparent 1.1deg 30deg
+  );
+  -webkit-mask: radial-gradient(circle, transparent 66%, #000 67%);
+          mask: radial-gradient(circle, transparent 66%, #000 67%);
+}
+.ge-floorboard .rm-clock--paused {
+  box-shadow:
+    inset 0 0 0 7px #2A1B0E,
+    inset 0 0 0 9px rgba(217, 174, 90, .5),
+    0 6px 18px rgba(0, 0, 0, .6);
+}
+.ge-floorboard .rm-clock-n {
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: 2.05rem;
+  letter-spacing: .02em;
+  color: var(--cb-led);
+  line-height: 1;
+}
+.ge-floorboard .rm-clock-n--quiet { color: var(--cb-chalk-3); }
+.ge-floorboard .rm-clock-s {
+  font-size: var(--t-xs);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-2);
+  text-align: center;
+  max-width: 128px;
+}
+.ge-floorboard .rm-clock-s--warn { color: var(--cb-chalk-warn); }
+
+/* ---- the peg board ------------------------------------------------------ */
+.ge-floorboard .rm-h {
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-sm);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-2);
+  margin: 0 0 8px;
+}
+.ge-floorboard .rm-pegrow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 10px 10px;
+  border-radius: 3px;
+  background:
+    repeating-linear-gradient(90deg, #3A2917 0 2px, transparent 2px 26px),
+    linear-gradient(178deg, #4A331D, #2A1B0E);
+  box-shadow: inset 0 1px 0 rgba(190, 146, 92, .26), inset 0 -3px 0 rgba(0, 0, 0, .55);
+}
+.ge-floorboard .rm-peg {
+  position: relative;
+  padding: 14px 6px 8px;
+  text-align: center;
+  border-radius: 2px;
+  background: linear-gradient(178deg, #E7DFC8, #C9BE9F);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, .5);
+}
+/* The hook the tag hangs from. */
+.ge-floorboard .rm-peg-hook {
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  margin-left: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, var(--cb-screw), #8C8577 55%, #3B382F);
+}
+.ge-floorboard .rm-peg-n {
+  display: block;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: 1.5rem;
+  line-height: 1;
+  color: #22180C;
+}
+.ge-floorboard .rm-peg-l {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--t-xs);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #4A3B24;
+}
+/* The four columns are told apart by a painted edge, not by four fills: the
+   tags are one object and the paint is the marking on them. */
+.ge-floorboard .rm-peg--in  { border-bottom: 4px solid var(--cleared, #3F7D4E); }
+.ge-floorboard .rm-peg--out { border-bottom: 4px solid var(--cb-trim); }
+.ge-floorboard .rm-peg--ex  { border-bottom: 4px solid var(--cb-chalk-amber); }
+.ge-floorboard .rm-peg--un  { border-bottom: 4px solid #6E6A5C; }
+
+.ge-floorboard .rm-state {
+  margin: 8px 0 0;
+  font-size: var(--t-xs);
+  color: var(--cb-chalk-3);
+}
+.ge-floorboard .rm-unread {
+  padding: 12px 14px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgb(228 146 74 / .5);
+}
+.ge-floorboard .rm-unread-h {
+  margin: 0;
+  font-family: var(--font-stencil, var(--font-display));
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-warn);
+}
+
+/* ---- the clipboards ----------------------------------------------------- */
+.ge-floorboard .rm-clips {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 14px;
+}
+@media (max-width: 900px) {
+  .ge-floorboard .rm-clips { grid-column: 1; }
+}
+.ge-floorboard .rm-clip {
+  position: relative;
+  padding: 20px 14px 14px;
+  border-radius: 2px;
+  background: linear-gradient(178deg, #EDE6D2, #D6CCB0);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .55);
+}
+.ge-floorboard .rm-clip-nail {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  margin-left: -5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, var(--cb-screw), #7E786A 55%, #33302A);
+}
+/* The steel clamp across the top. */
+.ge-floorboard .rm-clip-clamp {
+  position: absolute;
+  top: 4px;
+  left: 22%;
+  width: 56%;
+  height: 9px;
+  border-radius: 2px;
+  background: linear-gradient(178deg, #B9B3A4, #6F6A5E);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 1px 2px rgba(0, 0, 0, .45);
+}
+.ge-floorboard .rm-clip-t {
+  margin: 0;
+  font-size: var(--t-xs);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #5A4A30;
+}
+.ge-floorboard .rm-clip-v {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: 1.7rem;
+  line-height: 1.05;
+  color: #22180C;
+}
+.ge-floorboard .rm-clip-d {
+  margin-top: 6px;
+  font-size: var(--t-xs);
+  color: #4A3B24;
+}
+.ge-floorboard .rm-sev {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+.ge-floorboard .rm-sev b { font-family: var(--font-stencil, var(--font-display)); }
+/* Nothing waiting. Dimmed and de-weighted so it cannot be misread at a glance
+   as a count -- but still legible, because "nothing open" is the good news the
+   coach came for and it used to be silence. */
+.ge-floorboard .rm-clip--quiet { background: linear-gradient(178deg, #CFC8B5, #B6AF9B); }
+.ge-floorboard .rm-clip--quiet .rm-clip-v { color: #4E4A3D; }
+/* Could not be read. Warning outline, so it is never mistaken for a confident
+   zero. */
+.ge-floorboard .rm-clip--unread {
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .55), inset 0 0 0 2px var(--cb-trim);
+}
+.ge-floorboard .rm-clip--unread .rm-clip-v { color: var(--cb-trim-2); }

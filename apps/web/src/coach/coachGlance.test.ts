@@ -12,6 +12,7 @@
  */
 
 import {
+  attendanceGlance,
   coachTasksFrom,
   escalationGlance,
   formatElapsed,
@@ -243,5 +244,89 @@ describe('escalationGlance', () => {
   it('does not treat a resolved row as acknowledged, or as open', () => {
     const glance = escalationGlance([row('critical', 'resolved')]);
     expect([glance.open, glance.acknowledgedStillShown]).toEqual([0, 0]);
+  });
+});
+
+describe('attendanceGlance', () => {
+  const at = (attendance:
+    'Present' | 'Absent' | 'Excused' | 'Unknown' | 'Unavailable' | 'NotCovered') => ({ attendance });
+
+  it('tallies the four marks a coach reads across the room', () => {
+    const glance = attendanceGlance([
+      at('Present'), at('Present'), at('Absent'), at('Excused'), at('Unknown'),
+    ]);
+    expect([glance.present, glance.absent, glance.excused, glance.unmarked]).toEqual([2, 1, 1, 1]);
+    expect(glance.covered).toBe(5);
+    expect(glance.readable).toBe(true);
+  });
+
+  it('REFUSES to tally when the register could not be read', () => {
+    /* THE FALSE ZERO, AND WHY IT IS DANGEROUS ON A PEG BOARD.
+
+       A failed read moves EVERY athlete to 'Unavailable'. A tally over that
+       renders 0 present, 0 absent, 0 excused -- the board telling a coach that
+       nobody came, in the same typography it uses to tell them who did. On a
+       peg board it is four empty columns, which reads as an empty gym rather
+       than as a broken read.
+
+       So the flag, not the numbers, is what the renderer must ask first. */
+    const glance = attendanceGlance([at('Unavailable'), at('Unavailable'), at('Unavailable')]);
+    expect(glance.readable).toBe(false);
+    expect([glance.present, glance.absent, glance.excused, glance.unmarked]).toEqual([0, 0, 0, 0]);
+    expect(glance.covered).toBe(0);
+  });
+
+  it('refuses even when only some athletes are unavailable', () => {
+    // A partial read is still not a register. Showing "1 present" beside two
+    // athletes nobody could look up is a count with a hole in it, presented as
+    // though it were whole.
+    const glance = attendanceGlance([at('Present'), at('Unavailable')]);
+    expect(glance.readable).toBe(false);
+  });
+
+  it('keeps "nobody asked" apart from "no mark yet"', () => {
+    /* Three kinds of not-knowing, and they are not interchangeable. NotCovered
+       athletes were never part of the question -- they cannot be missing from a
+       register they were never on -- so they do not land in unmarked and they
+       do not swell the denominator. */
+    const glance = attendanceGlance([
+      at('Present'), at('Unknown'), at('NotCovered'), at('NotCovered'),
+    ]);
+    expect(glance.unmarked).toBe(1);
+    expect(glance.notCovered).toBe(2);
+    expect(glance.covered).toBe(2);
+  });
+
+  it('still reports who was never asked about when the read failed', () => {
+    // NotCovered is knowable without the register: it comes from the access
+    // contract, not from today's marks. Losing it would be losing a fact the
+    // failure did not actually take away.
+    const glance = attendanceGlance([at('Unavailable'), at('NotCovered')]);
+    expect(glance.readable).toBe(false);
+    expect(glance.notCovered).toBe(1);
+  });
+
+  it('treats a register nobody has marked yet as readable, not as broken', () => {
+    // Before the register is taken, everyone is Unknown. That is the ordinary
+    // start of a session and it is not a failure -- four columns with everyone
+    // in the unmarked one is the truth.
+    const glance = attendanceGlance([at('Unknown'), at('Unknown'), at('Unknown')]);
+    expect(glance.readable).toBe(true);
+    expect(glance.unmarked).toBe(3);
+    expect(glance.covered).toBe(3);
+  });
+
+  it('adds up: the four marks account for the covered register exactly', () => {
+    const glance = attendanceGlance([
+      at('Present'), at('Absent'), at('Excused'), at('Unknown'), at('NotCovered'),
+    ]);
+    expect(glance.present + glance.absent + glance.excused + glance.unmarked)
+      .toBe(glance.covered);
+  });
+
+  it('holds together on an empty roster', () => {
+    const glance = attendanceGlance([]);
+    expect(glance.readable).toBe(true);
+    expect(glance.covered).toBe(0);
   });
 });

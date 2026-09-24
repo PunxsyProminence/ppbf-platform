@@ -11,7 +11,9 @@ import { apiBase } from '@/lib/apiBase';
 /* THE SHARED GLANCE MODEL. One derivation of the facts the board states, so
    that BOARD and ROOM render the same truth instead of each working out its
    own. See the file header for why that is structural here and not advisory. */
+import CoachRoomLayout from './CoachRoomLayout';
 import {
+  attendanceGlance,
   coachTasksFrom,
   escalationGlance,
   formatElapsed,
@@ -1200,6 +1202,11 @@ export default function CoachWorkspace() {
      the two layouts cannot answer the same question differently. */
   const escalationCounts = useMemo(() => escalationGlance(escalations), [escalations]);
 
+  /* The register as a tally. `readable` is the first thing any renderer must
+     ask: a failed read moves every athlete to 'Unavailable', and a tally over
+     that state is four zeroes wearing the typography of a real count. */
+  const attendanceCounts = useMemo(() => attendanceGlance(athletes), [athletes]);
+
   /* The wellness read the panel may draw: only one the coach asked for, and
      only for the athlete selected NOW. The loader's guards already keep a
      stale response out of state; this is the last check, at the point where a
@@ -2223,6 +2230,22 @@ export default function CoachWorkspace() {
               ))}
             </div>
           </div>
+          {/* THE INSTRUMENTS BELONG TO THE BOARD LAYOUT ONLY.
+
+              In ROOM the wall clock carries the session, so leaving these here
+              rendered the elapsed time twice -- harmless, since both read the
+              same value through the same function -- and, far worse, put
+              "3 Present" within inches of the peg board's "3 PRESENT".
+
+              Those are NOT the same fact. This one is liveRun.athletes_present,
+              a number a coach typed into a session run and which the board
+              already refuses to call a headcount. The peg board's is today's
+              register. Two different facts in identical words, side by side,
+              read as corroboration -- a coach would take one as confirming the
+              other, and on the day they disagree the wrong one is believed.
+
+              So the room owns the session instrument when the room is showing. */}
+          {coachLayout === 'board' && (
           <div className="cb-instruments">
             {/* THE SINGLE RENDERING OF LIVE-RUN STATE on this workspace.
 
@@ -2265,8 +2288,37 @@ export default function CoachWorkspace() {
               </>
             )}
           </div>
+          )}
           <p className="cb-motto">Observe · Decide · Execute · Repeat</p>
         </div>
+
+        {/* THE ROOM GLANCE LAYER.
+
+            Same facts, as the objects the gym already has. It reads the glance
+            model and nothing else, so it cannot answer a question differently
+            from the board above it.
+
+            THE RECORDS BELOW STAY. A glance layer that REPLACED them would put
+            a coach one unbuilt interaction away from an open safety escalation
+            -- the clipboards are not doors yet -- and a layout that hides a
+            child-welfare record behind a number nobody can tap is worse than
+            the column it was meant to improve. Glance first, records under it.
+            When the clipboards open the records, the stack can go. */}
+        {coachLayout === 'room' && (
+          <CoachRoomLayout
+            liveRunState={liveRunState}
+            hasRun={Boolean(liveRun)}
+            elapsedLabel={liveRun ? formatElapsed(liveRun.elapsed_seconds) : null}
+            paused={Boolean(liveRun?.is_paused)}
+            attendance={attendanceCounts}
+            rosterLoading={athletesLoading}
+            escalations={escalationCounts}
+            escalationsLoading={escalationsLoading}
+            escalationsError={escalationsError}
+            readiness={readiness}
+            shadowBadge={reviewQueueBadge}
+          />
+        )}
 
         {/* SAFETY ESCALATIONS. Chalk on the board, not a panel on it.
 

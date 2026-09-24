@@ -205,6 +205,88 @@ export function reviewQueueBadgeFor(
   return { tone: 'monitor', label: `${pendingCount} pending` };
 }
 
+export type GlanceAttendanceMark =
+  | 'Present' | 'Absent' | 'Excused' | 'Unknown' | 'Unavailable' | 'NotCovered';
+
+/** Only the field the attendance derivation reads. */
+export interface GlanceAthleteAttendance {
+  readonly attendance: GlanceAttendanceMark;
+}
+
+export interface AttendanceGlance {
+  /** Whether a tally may be shown AT ALL. False means the register read
+   *  failed, and the honest answer is "unavailable", not four zeroes. */
+  readonly readable: boolean;
+  readonly present: number;
+  readonly absent: number;
+  readonly excused: number;
+  /** Looked, and this athlete has no mark today. Before the register is taken,
+   *  this is everyone. It is a real state and gets its own column. */
+  readonly unmarked: number;
+  /** The covered register: the athletes this coach was actually asked about. */
+  readonly covered: number;
+  /** Nobody asked. A third kind of not-knowing, kept apart from the second. */
+  readonly notCovered: number;
+}
+
+/**
+ * The attendance register, as a tally a coach can read across a room.
+ *
+ * THREE KINDS OF NOT-KNOWING, and the whole value of this function is that it
+ * refuses to blur them.
+ *
+ *   Unknown      we looked, and this athlete has no mark yet. Before the
+ *                register is taken this is everyone, and it is not bad news.
+ *   Unavailable  nobody could look. The read failed.
+ *   NotCovered   nobody asked. The roster lists the whole organization; the
+ *                register is only read for the athletes this coach's access
+ *                contract clears them for.
+ *
+ * WHY `readable` EXISTS. A failed read moves EVERY athlete to 'Unavailable'
+ * (CoachWorkspace.tsx, loadAttendanceToday's catch). Without this flag, a tally
+ * over that state renders 0 present, 0 absent, 0 excused -- a board telling a
+ * coach that nobody came, in the exact typography it uses to tell them who did.
+ * That is the false-zero failure this codebase keeps having to design around,
+ * and on a peg board it would be four empty columns, which reads as an empty
+ * gym rather than a broken read.
+ *
+ * So: any Unavailable at all means no tally. The renderer says the register
+ * could not be read and shows nothing that could be mistaken for a count.
+ *
+ * `covered` is the denominator when there is one. It excludes NotCovered,
+ * because an athlete nobody asked about cannot be missing from a register they
+ * were never on.
+ */
+export function attendanceGlance(
+  athletes: ReadonlyArray<GlanceAthleteAttendance>,
+): AttendanceGlance {
+  const count = (mark: GlanceAttendanceMark) =>
+    athletes.filter((athlete) => athlete.attendance === mark).length;
+
+  const notCovered = count('NotCovered');
+  const readable = count('Unavailable') === 0;
+
+  if (!readable) {
+    return {
+      readable: false,
+      present: 0, absent: 0, excused: 0, unmarked: 0,
+      covered: 0,
+      notCovered,
+    };
+  }
+
+  const present = count('Present');
+  const absent = count('Absent');
+  const excused = count('Excused');
+  const unmarked = count('Unknown');
+  return {
+    readable: true,
+    present, absent, excused, unmarked,
+    covered: present + absent + excused + unmarked,
+    notCovered,
+  };
+}
+
 export type GlanceEscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
 export type GlanceEscalationStatus = 'open' | 'acknowledged' | 'resolved';
 
