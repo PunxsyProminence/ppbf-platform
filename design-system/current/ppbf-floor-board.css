@@ -387,6 +387,10 @@
   translate: 0 3px;
   box-shadow: inset 0 1px 0 rgba(216, 222, 226, .28), 0 1px 0 #0E1214;
 }
+.ge-floorboard .cb-actuator:active:focus-visible {
+  outline: 0;
+  box-shadow: var(--focus), 0 1px 0 #0E1214;
+}
 /* goldenEraContrast requires the companion: .btn:focus-visible carries the
    whole indicator in box-shadow AND sets outline:0, so a scope rule of equal
    weight that forgot this would delete the focus ring outright. */
@@ -679,4 +683,405 @@
   .ge-coach-floor-room.room::after {
     background-image: none;
   }
+}
+
+/* ===========================================================================
+   THE DE-PANELLING.
+
+   This is the block that actually answers the owner's standing complaint:
+   "everything is still rectangulr and square", said of five versions, and
+   said again of the first build of this board.
+
+   The boxes were never authored on this screen. They come from shared
+   material classes -- .mat-leather, .mat-leather--raised, .stat, .btn --
+   that every staff surface wears, and CoachWorkspace has roughly fifteen
+   hundred lines of markup carrying them. Restyling that markup panel by
+   panel would take a week and would drift from the rest of the app while it
+   happened. So the materials are neutralised HERE, inside this scope only,
+   and every other surface in the app keeps them untouched.
+
+   A board written on does not have a container per fact. Regions are chalk
+   rules and space. The exception stays the exception: an object a coach
+   physically operates still gets an edge, because that edge is what says it
+   can be pressed.
+
+   Ink moves with the ground. These voices were tuned for hide and brass; on
+   slate they are re-inked to chalk, or they render as dark-on-dark, which is
+   precisely the failure darkPanelMaterials exists to catch elsewhere.
+   ========================================================================== */
+
+.ge-floorboard .coach-board .mat-leather,
+.ge-floorboard .coach-board .mat-leather--raised,
+.ge-floorboard .coach-board .mat-leather--worn,
+.ge-floorboard .coach-board .mat-slate,
+.ge-floorboard .coach-board .stat {
+  background: none;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Where a region used to be a bordered card, the chalk rule does the work a
+   border was doing: it says one thing ended and another began. */
+.ge-floorboard .coach-board .mat-leather + .mat-leather,
+.ge-floorboard .coach-board .stat + .stat {
+  border-top: 1px solid rgb(234 230 217 / .11);
+  padding-top: var(--s4);
+}
+
+/* The inks. */
+.ge-floorboard .coach-board .t-command,
+.ge-floorboard .coach-board h1,
+.ge-floorboard .coach-board h2,
+.ge-floorboard .coach-board h3,
+.ge-floorboard .coach-board h4 { color: var(--cb-chalk); }
+.ge-floorboard .coach-board .t-body,
+.ge-floorboard .coach-board .t-data,
+.ge-floorboard .coach-board p,
+.ge-floorboard .coach-board li,
+.ge-floorboard .coach-board dd { color: var(--cb-chalk-2); }
+.ge-floorboard .coach-board .t-eyebrow,
+.ge-floorboard .coach-board .t-label,
+.ge-floorboard .coach-board .t-muted,
+.ge-floorboard .coach-board dt { color: var(--cb-chalk-3); }
+.ge-floorboard .coach-board .stat-val { color: var(--cb-chalk); }
+.ge-floorboard .coach-board .stat-label,
+.ge-floorboard .coach-board .stat-note { color: var(--cb-chalk-3); }
+
+/* Controls keep an edge, because an edge is what says "press me". They stop
+   being brass plates and become the board's own hardware: dark steel for an
+   act, a bare label with an arrow for a door out. */
+.ge-floorboard .coach-board .btn {
+  min-height: var(--tap);
+  border: 0;
+  border-radius: 3px;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-md);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #E8E3D6;
+  background: linear-gradient(180deg, #3A4145, #262D31 55%, #171C20);
+  box-shadow:
+    inset 0 1px 0 rgba(216, 222, 226, .30),
+    inset 0 -2px 5px rgba(0, 0, 0, .6),
+    0 3px 0 #0E1214,
+    0 5px 10px rgba(0, 0, 0, .55);
+  transition: translate var(--m-instant) var(--e-stamp);
+}
+.ge-floorboard .coach-board .btn:hover { color: #FBF6E8; }
+.ge-floorboard .coach-board .btn:active {
+  translate: 0 2px;
+  box-shadow: inset 0 1px 0 rgba(216, 222, 226, .24), 0 1px 0 #0E1214;
+}
+/* The companion, which goldenEraContrast requires and which is not
+   ceremony: .btn:focus-visible carries the entire indicator in box-shadow
+   and also sets outline:0, so the rule above -- same weight, later in the
+   sheet -- would otherwise delete the focus ring outright and leave a
+   keyboard user with no visible position on a safety surface. */
+.ge-floorboard .coach-board .btn:focus-visible {
+  outline: 0;
+  box-shadow: var(--focus), 0 3px 0 #0E1214;
+}
+/* And the pressed-AND-focused case, which the guard caught and which is a
+   real state: a keyboard user holding Space on a control is focused and
+   active at once. Without this the :active rule above wins and the ring
+   disappears at exactly the moment the control is being operated. */
+.ge-floorboard .coach-board .btn:active:focus-visible {
+  outline: 0;
+  box-shadow: var(--focus), 0 1px 0 #0E1214;
+}
+.ge-floorboard .coach-board .btn--ghost {
+  background: none;
+  box-shadow: none;
+  color: var(--cb-chalk-amber);
+  padding-left: 0;
+}
+.ge-floorboard .coach-board .btn--ghost:hover { color: #F4D79A; }
+.ge-floorboard .coach-board .btn--ghost:focus-visible { outline: 0; box-shadow: var(--focus); }
+.ge-floorboard .coach-board .btn:disabled { opacity: .55; }
+
+/* Fields, where a tab collects something, stay legible on slate. */
+.ge-floorboard .coach-board input,
+.ge-floorboard .coach-board select,
+.ge-floorboard .coach-board textarea {
+  background: rgb(10 13 12 / .55);
+  border: 1px solid rgb(234 230 217 / .20);
+  border-radius: 2px;
+  color: var(--cb-chalk);
+  min-height: var(--tap);
+}
+.ge-floorboard .coach-board input:focus,
+.ge-floorboard .coach-board select:focus,
+.ge-floorboard .coach-board textarea:focus {
+  outline: 0;
+  box-shadow: var(--focus);
+  border-color: rgb(234 230 217 / .42);
+}
+
+/* Links that leave the board read as doors, not as more brass. */
+.ge-floorboard .coach-board a:not(.btn) { color: var(--cb-chalk-amber); }
+.ge-floorboard .coach-board a:not(.btn):focus-visible { outline: 0; box-shadow: var(--focus); }
+
+/* The safety badges keep their own colour -- they carry a reserved semantic
+   and this sheet is not allowed to restate it -- but they lose the pill so
+   they read as a stamped word on the board rather than a chip in a card. */
+.ge-floorboard .coach-board .badge {
+  background: none;
+  border: 0;
+  padding-left: 0;
+  padding-right: 0;
+  font-size: var(--t-sm);
+  letter-spacing: .13em;
+}
+
+/* Slots the board owns rather than the old markup. */
+.ge-floorboard .cb-portrait-slot { align-self: start; }
+.ge-floorboard .cb-state { font-size: var(--t-md); color: var(--cb-chalk-2); margin-top: 9px; }
+.ge-floorboard .cb-unavailable { margin-top: 9px; }
+.ge-floorboard .cb-unavailable-head {
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-md);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-warn);
+}
+.ge-floorboard .cb-rec-error { color: var(--cb-chalk-warn); }
+.ge-floorboard .cb-ack-done { grid-column: 3; }
+.ge-floorboard .cb-refresh {
+  margin-left: auto;
+  font-size: var(--t-sm);
+  letter-spacing: .14em;
+  color: var(--cb-chalk-3);
+}
+.ge-floorboard .cb-refresh::after { display: none; }
+.ge-floorboard .cb-refresh:hover { color: var(--cb-chalk); }
+.ge-floorboard .cb-sech { display: flex; align-items: baseline; gap: 0; }
+
+/* The corner brackets that .ge-floorboard screws onto every leather panel
+   (ppbf-golden-era.css:2443) have nothing to hold once the panel is gone:
+   they render as four brass ticks floating in the chalk. The paper notices
+   are the same story from the other side -- a bright cream sheet is correct
+   pinned to a leather console and wrong written on a chalkboard, so the
+   notes become chalk like everything else and keep their place at the foot
+   of the board rather than competing with an open escalation. */
+.ge-floorboard .coach-board .mat-leather::before,
+.ge-floorboard .coach-board .mat-leather::after,
+.ge-floorboard .coach-board .mat-leather--raised::before,
+.ge-floorboard .coach-board .mat-leather--raised::after,
+.ge-floorboard .coach-board .stat::before,
+.ge-floorboard .coach-board .stat::after {
+  content: none;
+  display: none;
+}
+
+.ge-floorboard .coach-board .mat-paper {
+  background: none;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--cb-chalk-2);
+}
+.ge-floorboard .coach-board .mat-paper::before,
+.ge-floorboard .coach-board .mat-paper::after { content: none; display: none; }
+.ge-floorboard .coach-board .mat-paper .t-command,
+.ge-floorboard .coach-board .mat-paper h2,
+.ge-floorboard .coach-board .mat-paper h3 { color: var(--cb-chalk); }
+.ge-floorboard .coach-board .mat-paper .t-body,
+.ge-floorboard .coach-board .mat-paper p { color: var(--cb-chalk-2); }
+.ge-floorboard .coach-board .mat-paper .t-eyebrow,
+.ge-floorboard .coach-board .mat-paper .t-label,
+.ge-floorboard .coach-board .mat-paper .t-data,
+.ge-floorboard .coach-board .mat-paper .t-muted { color: var(--cb-chalk-3); }
+
+/* --------------------------------------------------- TODAY, after the rewrite */
+.ge-floorboard .cb-today { margin-top: 4px; }
+.ge-floorboard .cb-roster { margin-top: 2px; }
+.ge-floorboard .cb-roster-row {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-top: 1px solid rgb(234 230 217 / .11);
+  border-radius: 0;
+  box-shadow: none;
+  cursor: pointer;
+  padding: 8px 0;
+  min-height: var(--tap);
+  color: var(--cb-chalk-2);
+}
+.ge-floorboard .cb-roster-row:hover { background: rgb(234 230 217 / .04); }
+.ge-floorboard .cb-roster-row[aria-pressed="true"] { background: rgb(234 230 217 / .07); }
+.ge-floorboard .cb-roster-row:focus-visible { outline: 0; box-shadow: var(--focus); }
+.ge-floorboard .cb-ring {
+  display: block;
+  font-family: var(--font-hand);
+  font-size: var(--t-sm);
+  color: var(--cb-chalk-amber);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ge-floorboard .cb-mark { font-family: var(--font-data); font-size: var(--t-sm); color: var(--cb-chalk-3); }
+.ge-floorboard .cb-mark--unavailable { color: var(--cb-chalk-warn); }
+.ge-floorboard .cb-injury { display: block; margin-top: 3px; }
+.ge-floorboard .cb-sched { margin-top: 34px; }
+.ge-floorboard .cb-doors { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 16px; }
+@media (max-width: 900px) {
+  .ge-floorboard .cb-sched { margin-top: 22px; margin-left: 18px; }
+  .ge-floorboard .cb-roster-row { grid-template-columns: 24px 36px minmax(0, 1fr); }
+  .ge-floorboard .cb-roster-row .cb-ready,
+  .ge-floorboard .cb-roster-row .cb-mark { grid-column: 3; }
+}
+
+/* The roster row's real geometry. The portrait is a fixed slot so a long
+   name cannot ride over it, and the readiness word gets room to sit on one
+   line instead of stacking into the name beside it. */
+.ge-floorboard .cb-roster-head,
+.ge-floorboard .cb-roster-row {
+  grid-template-columns: 26px 44px minmax(0, 1.6fr) 150px minmax(0, 1fr);
+  gap: 0 16px;
+}
+.ge-floorboard .cb-roster-row .cb-name { min-width: 0; }
+.ge-floorboard .cb-ready { white-space: nowrap; }
+.ge-floorboard .cb-sched-row,
+.ge-floorboard .cb-sched-head { grid-template-columns: 78px minmax(0, 1.5fr) minmax(0, 1fr); }
+
+/* Block template chooser, on the view it belongs to. */
+.ge-floorboard .cb-modes { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.ge-floorboard .cb-modes-label {
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: 11px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-3);
+  margin-right: 4px;
+}
+.ge-floorboard .cb-mode {
+  min-height: var(--tap);
+  padding: 0 20px;
+  border: 0;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-md);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-2);
+  background: rgb(10 13 12 / .5);
+  box-shadow: inset 0 0 0 1px rgb(234 230 217 / .16);
+}
+.ge-floorboard .cb-mode[aria-pressed="true"] {
+  color: #FBEFE2;
+  background: linear-gradient(178deg, #B53D24, var(--cb-trim-2));
+  box-shadow: inset 0 1px 0 rgba(255, 160, 130, .4), 0 3px 7px rgba(0, 0, 0, .55);
+}
+.ge-floorboard .cb-mode:focus-visible { outline: 0; box-shadow: var(--focus); }
+
+/* The notices. AnnouncementBanner hard-codes a rounded, bordered, shadowed
+   card on each item (AnnouncementBanner.tsx:201) -- correct on a leather
+   console, wrong written on slate, and not something to change in a shared
+   component that other surfaces render correctly. Neutralised here only. */
+.ge-floorboard .cb-notice { margin-top: 13px; }
+.ge-floorboard .cb-notice > p {
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-md);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-3);
+}
+.ge-floorboard .cb-notice div > div {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+.ge-floorboard .cb-notice p { color: var(--cb-chalk-2); }
+
+/* Open tasks read as lines on the board, like every other record here. */
+.ge-floorboard .coach-board .mat-leather--raised {
+  padding-top: var(--s3);
+  padding-bottom: var(--s3);
+}
+
+@media (max-width: 900px) {
+  /* Nothing on this board may push the page sideways. The roster row is the
+     one grid wide enough to try. */
+  .ge-floorboard .cb-roster-head,
+  .ge-floorboard .cb-roster-row {
+    grid-template-columns: 22px 40px minmax(0, 1fr);
+    gap: 2px 12px;
+  }
+  .ge-floorboard .cb-roster-row .cb-ready,
+  .ge-floorboard .cb-roster-row .cb-mark,
+  .ge-floorboard .cb-roster-row .cb-injury { grid-column: 3; }
+  .ge-floorboard .cb-sched-row,
+  .ge-floorboard .cb-sched-head { grid-template-columns: 66px minmax(0, 1fr); }
+  .ge-floorboard .cb-sched-row .cb-note { grid-column: 2; }
+  .ge-floorboard .cb-doors { flex-direction: column; gap: 6px; }
+}
+
+@media (max-width: 900px) {
+  /* minmax(0, …) again, for the same reason as the slat rack: a grid track
+     defaults to min-content, so one wide child inside the day grid drags the
+     whole board past the viewport. Measured at 412: the roster section held
+     372px inside a 332px field and the page scrolled sideways by 22px. */
+  .ge-floorboard .cb-day { grid-template-columns: minmax(0, 1fr); }
+  .ge-floorboard .cb-day > * { min-width: 0; }
+  .ge-floorboard .cb-sched { margin-left: 0; }
+}
+@media (max-width: 900px) {
+  /* A door's label plus its arrow is one unbroken run, so a long one
+     ("Return to live delivery") cannot wrap and overhangs by its own
+     overflow. Let the label wrap and keep the arrow with the last word. */
+  .ge-floorboard .cb-door { white-space: normal; max-width: 100%; }
+}
+
+/* The readiness signal, written at the head of the roster rather than boxed
+   in a tile. The number is loud because it is a count of children who need
+   looking at; the caveats sit with it, not in a panel nobody opens. */
+.ge-floorboard .cb-readiness { margin: 6px 0 4px; }
+.ge-floorboard .cb-readiness-line { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.ge-floorboard .cb-readiness-line b {
+  font-family: var(--font-data);
+  font-size: var(--t-xl);
+  font-weight: 700;
+  color: var(--cb-chalk);
+  line-height: 1;
+}
+.ge-floorboard .cb-readiness-nosignal { color: var(--cb-chalk-3) !important; font-size: var(--t-lg) !important; }
+.ge-floorboard .cb-readiness-line span { font-size: var(--t-md); color: var(--cb-chalk-2); }
+.ge-floorboard .cb-caveat {
+  font-size: var(--t-sm);
+  color: var(--cb-chalk-3);
+  margin-top: 5px;
+  max-width: 78ch;
+  line-height: 1.4;
+}
+
+/* The queue's word on the slat. It is a word, not a digit: "0 pending" and
+   "unavailable" are different sentences and only one of them is a count. */
+.ge-floorboard .cb-pending {
+  padding: 0 10px;
+  min-width: 0;
+  border-radius: 13px;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-sm);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.ge-floorboard .cb-pending--clear {
+  background: none;
+  color: var(--cb-chalk-3);
+  box-shadow: inset 0 0 0 1px rgb(234 230 217 / .22);
+}
+.ge-floorboard .cb-pending--unavailable {
+  background: none;
+  color: var(--cb-chalk-warn);
+  box-shadow: inset 0 0 0 1px rgb(228 146 74 / .45);
 }

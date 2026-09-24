@@ -807,10 +807,17 @@ const ALLOW_LIST: readonly AllowListEntry[] = [
   // individualized work), taking its --locked error box with it: one
   // --locked site and three --locked-ink sites fewer, shrunk here in the
   // same change as this guard requires.
-  { file: 'components/CoachWorkspace.tsx', channel: '--locked', identifier: 'error', sites: 4, reason: DEFECT },
+  /* 4 -> 2. The floor-board rewrite took the leather panels off this surface
+     and with them two sites where a reserved-red channel sat within five
+     lines of a failure word. The ratchet only turns one way, so the entry
+     shrinks in the same change that swept it. */
+  { file: 'components/CoachWorkspace.tsx', channel: '--locked', identifier: 'error', sites: 2, reason: DEFECT },
   { file: 'components/CoachWorkspace.tsx', channel: '--locked', identifier: 'unable-to', sites: 1, reason: DEFECT },
   { file: 'components/CoachWorkspace.tsx', channel: '--locked', identifier: 'unavailable', sites: 1, reason: DEFECT },
-  { file: 'components/CoachWorkspace.tsx', channel: '--locked-ink', identifier: 'error', sites: 12, reason: DEFECT },
+  /* 12 -> 7, same sweep: the escalation, pain and barrier records no longer
+     paint their own failure ink, and the summary row that carried five more
+     of these is disassembled. */
+  { file: 'components/CoachWorkspace.tsx', channel: '--locked-ink', identifier: 'error', sites: 7, reason: DEFECT },
   { file: 'components/CoachWorkspace.tsx', channel: '--locked-ink', identifier: 'incomplete', sites: 1, reason: DEFECT },
   { file: 'components/CoachWorkspace.tsx', channel: '--locked-ink', identifier: 'unable-to', sites: 1, reason: DEFECT },
   { file: 'components/CoachWorkspace.tsx', channel: '--locked-ink', identifier: 'unavailable', sites: 1, reason: DEFECT },

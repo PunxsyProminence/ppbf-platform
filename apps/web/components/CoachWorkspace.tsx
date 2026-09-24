@@ -771,7 +771,15 @@ export default function CoachWorkspace() {
   const [shadowQueue, setShadowQueue] = useState<ShadowReviewQueueItem[]>([]);
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
   const [shadowReadError, setShadowReadError] = useState('');
-  const [shadowQueueUnavailable, setShadowQueueUnavailable] = useState(false);
+  /* THE QUEUE'S READ STATE, explicit, because the count alone cannot carry it.
+     assignmentsDue === 0 is ALSO the value before the request comes back, so a
+     healthy empty queue and a queue nobody has asked about yet were the same
+     zero. "Nothing is waiting for you" and "I have not looked yet" are
+     different sentences and a coach is entitled to both of them. No new
+     endpoint and no new model: this is bookkeeping on a request that already
+     exists. */
+  const [shadowQueueState, setShadowQueueState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+  const shadowQueueUnavailable = shadowQueueState === 'unavailable';
   const [shadowQueueTotal, setShadowQueueTotal] = useState<number | null>(null);
   // Per-item, not a single shared flag: a coach can be resolving one case
   // while a different one's error is still on screen.
@@ -784,7 +792,20 @@ export default function CoachWorkspace() {
   const [escalations, setEscalations] = useState<CoachEscalation[]>([]);
   const [escalationsLoading, setEscalationsLoading] = useState(true);
   const [escalationsError, setEscalationsError] = useState('');
-  const [escalationAckBusyId, setEscalationAckBusyId] = useState<string | null>(null);
+  /* A SET, not a single id, and that is a correction to a safety control.
+     It was one id, so the button was disabled when ANY acknowledgement was in
+     flight -- every open alarm on the board went dead while one was saving --
+     and the handler ALSO early-returned, so a coach who tapped a second alarm
+     during that window had the tap silently dropped with no feedback at all.
+     The real feed serves more than one open escalation, so that was the normal
+     case, not an edge.
+
+     Acknowledgements are independent writes to different rows: the POST is
+     keyed by escalation_id, the error map is keyed by escalation_id, and the
+     row is replaced from the server's own returned object with a functional
+     updater. Nothing about running two at once is unsafe. So each row now
+     guards only itself, and no tap is thrown away. */
+  const [escalationAckBusy, setEscalationAckBusy] = useState<ReadonlySet<string>>(() => new Set());
   const [escalationAckErrors, setEscalationAckErrors] = useState<Record<string, string>>({});
   const [barrierReports, setBarrierReports] = useState<CoachBarrierReport[]>([]);
   const [barrierReportsTruncated, setBarrierReportsTruncated] = useState(false);
@@ -1136,11 +1157,26 @@ export default function CoachWorkspace() {
   // Collapsing that distinction back to silence one UI element up would
   // reproduce the exact false-reassurance failure this file guards against
   // elsewhere (see the readiness/injuryFlag handling).
-  const reviewQueueBadge: CoachTabBadge | undefined = shadowQueueUnavailable
-    ? { tone: 'locked', label: 'unavailable' }
-    : assignmentsDue > 0
-      ? { tone: 'monitor', label: `${assignmentsDue} pending` }
-      : undefined;
+  /* The SHADOW slat is the board's permanent statement about the queue, so a
+     coach learns on arrival whether anything is waiting without opening the
+     view. Four states, all of them said out loud:
+
+       checking      the read is in flight -- NOT zero
+       0 pending     the read succeeded and the queue is empty. This is the
+                     good news a coach came for and it used to be silence.
+       N pending     the read succeeded and there is work
+       unavailable   the read failed. Never rendered as a count.
+
+     The failure tone is RESTRICTED, not locked. A network read that did not
+     come back is not a safeguarding state, and --locked belongs to the one
+     thing it is reserved for; borrowing it for an unreachable endpoint would
+     teach a coach that the reserved red can mean "try again later". */
+  const reviewQueueBadge: CoachTabBadge =
+    shadowQueueState === 'loading'
+      ? { tone: 'monitor', label: 'checking' }
+      : shadowQueueState === 'unavailable'
+        ? { tone: 'restricted', label: 'unavailable' }
+        : { tone: 'monitor', label: `${assignmentsDue} pending` };
 
   /* The wellness read the panel may draw: only one the coach asked for, and
      only for the athlete selected NOW. The loader's guards already keep a
@@ -1617,7 +1653,7 @@ export default function CoachWorkspace() {
         // built from the review projection alone: an observation-projection
         // failure must not flag the board, and a queue failure must, wherever
         // that board is rendered.
-        setShadowQueueUnavailable(Boolean(queueError));
+        setShadowQueueState(queueError ? 'unavailable' : 'loaded');
 
         if (queueError || observationError) {
           const failed = [queueError, observationError].filter(Boolean).join(' and ');
@@ -1626,7 +1662,7 @@ export default function CoachWorkspace() {
           setShadowReadError('');
         }
       } catch (error) {
-        setShadowQueueUnavailable(true);
+        setShadowQueueState('unavailable');
         setShadowReadError(error instanceof Error ? error.message : 'Unable to load SHADOW read models.');
       }
   }, []);
@@ -1677,10 +1713,10 @@ export default function CoachWorkspace() {
   // this"); resolving stays admin-only server-side and is not offered here.
   // The row swaps to whatever the SERVER returns -- never to a local guess.
   async function acknowledgeCoachEscalation(escalationId: string) {
-    if (escalationAckBusyId) {
+    if (escalationAckBusy.has(escalationId)) {
       return;
     }
-    setEscalationAckBusyId(escalationId);
+    setEscalationAckBusy((prev) => new Set(prev).add(escalationId));
     setEscalationAckErrors((prev) => ({ ...prev, [escalationId]: '' }));
     try {
       const response = await fetch(`${apiBase()}/api/pilot/escalations`, {
@@ -1711,7 +1747,11 @@ export default function CoachWorkspace() {
         [escalationId]: 'Network error -- the escalation was not acknowledged. Please try again.',
       }));
     } finally {
-      setEscalationAckBusyId(null);
+      setEscalationAckBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(escalationId);
+        return next;
+      });
     }
   }
 
@@ -2122,34 +2162,188 @@ export default function CoachWorkspace() {
             <div className="cb-rule-under" aria-hidden="true" />
           </div>
           <div className="cb-instruments">
-            {liveRunState === 'loaded' && liveRun ? (
+            {/* THE SINGLE RENDERING OF LIVE-RUN STATE on this workspace.
+
+                It used to be said twice -- here and in a Today's Session
+                panel -- and an older test required both copies so a coach
+                reading either could not be told the opposite by the other.
+                That is presentation history, not the safety property. The
+                property is that UNKNOWN MUST NEVER RENDER AS "no session",
+                because /coach/session-scripts disables its start button on
+                exactly this signal so a coach cannot open a second delivery
+                over a live one. One owner satisfies that better than two
+                copies that can disagree, which is the same reason the
+                duplicated elapsed value came out of the panel below. */}
+            {liveRunState === 'loading' && (
+              <div className="cb-led"><b>--:--</b><span>Checking session</span></div>
+            )}
+
+            {liveRunState === 'unavailable' && (
+              <div className="cb-led cb-led--unknown">
+                <b>?</b>
+                <span>Session could not be checked</span>
+              </div>
+            )}
+
+            {liveRunState === 'loaded' && !liveRun && (
+              <div className="cb-led"><b>--:--</b><span>No session in progress.</span></div>
+            )}
+
+            {liveRunState === 'loaded' && liveRun && (
               <>
                 <div className="cb-led">
                   <b>{formatElapsed(liveRun.elapsed_seconds)}</b>
-                  <span>{liveRun.is_paused ? 'Paused · server' : 'Server elapsed'}</span>
+                  <span>{liveRun.is_paused ? 'Paused' : 'Server elapsed'}</span>
                 </div>
                 {typeof liveRun.athletes_present === 'number' ? (
                   <p className="cb-present"><b>{liveRun.athletes_present}</b>Present</p>
                 ) : (
-                  <p className="cb-present">Attendance<br />not recorded</p>
+                  <p className="cb-present cb-present--none">Attendance not recorded for this run</p>
                 )}
               </>
-            ) : (
-              <div className="cb-led">
-                <b>--:--</b>
-                <span>
-                  {liveRunState === 'loading' ? 'Checking' : liveRunState === 'unavailable' ? 'Unavailable' : 'No session'}
-                </span>
-              </div>
             )}
           </div>
           <p className="cb-motto">Observe · Decide · Execute · Repeat</p>
         </div>
 
-        {/* ATHLETE PAIN REPORTS -- deliberately outside the tab switch and above
-            everything else on the page. A child reporting pain has to reach the
+        {/* SAFETY ESCALATIONS. Chalk on the board, not a panel on it.
+
+            This region used to be a leather card with a locked-red border
+            holding more bordered cards, one per alarm. The owner's note on
+            five successive versions was that the screen was a stack of boxes;
+            the boxes were doing no work here -- a container per record does
+            not make an incident easier to read, it makes the board look like
+            a form. The heading owns a chalk rule, each record is separated by
+            a hairline, and the only bounded object left is the actuator,
+            which is bounded because a coach presses it.
+
+            The safety semantics are untouched and deliberately so: the
+            severity mark still goes through StatusBadge and painSeverityTone,
+            so the reserved red stays the property of the rung that owns it
+            and this sheet can be replaced without taking a safety colour with
+            it. Nothing here paints a safety state by hand.
+
+            It is FIRST on the board now, above pain and barriers, because it
+            is the only one of the three carrying an action the coach takes on
+            this screen. aria-live stays: an alarm that arrives while the
+            coach is reading something else has to announce itself. */}
+        <section aria-live="polite" aria-labelledby="cb-escalations-heading" className="cb-sec">
+          <div className="cb-sech" id="cb-escalations-heading">
+            Safety Escalations
+            {!escalationsLoading && !escalationsError && escalations.length > 0 ? (
+              <em>{escalations.length} open</em>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void loadEscalations()}
+              className="cb-door cb-refresh"
+              aria-label="Refresh safety escalations"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {escalationsLoading && <p className="cb-state">Checking for open escalations...</p>}
+
+          {!escalationsLoading && escalationsError && (
+            <div className="cb-unavailable">
+              <p className="cb-unavailable-head">Read unavailable</p>
+              <p className="cb-state">{escalationsError}</p>
+              <p className="cb-state">
+                Escalations may exist that are not shown here. Do not read this as &quot;all clear&quot;.
+              </p>
+            </div>
+          )}
+
+          {!escalationsLoading && !escalationsError && escalations.length === 0 && (
+            <p className="cb-state">
+              No open escalations for your athletes. One appears here the moment a near miss, pain
+              report, or safety-gate flag escalates.
+            </p>
+          )}
+
+          {!escalationsLoading && !escalationsError && escalations.length > 0 && escalations.map((escalation) => {
+            const athlete = athletes.find((item) => item.id === escalation.athlete_id);
+            const who = athlete?.name ?? `Athlete ID ${escalation.athlete_id}`;
+            const busy = escalationAckBusy.has(escalation.escalation_id);
+            return (
+              <article key={escalation.escalation_id} className="cb-rec">
+                {/* The roster's own portrait behaviour, not a second one.
+                    A coach who works with twenty children recognises a face
+                    faster than a name, and an athlete with no photo on file
+                    gets the initials plate rather than an empty circle --
+                    both of which ProfilePortrait already decides. Decorative
+                    because the name is right beside it. */}
+                <span className="cb-portrait-slot">
+                  <ProfilePortrait
+                    accountId={athlete?.accountId ?? null}
+                    initials={athlete?.initials ?? '—'}
+                    name={who}
+                    photoAvailable={Boolean(athlete?.photoAvailable)}
+                    size="sm"
+                    decorative
+                  />
+                </span>
+                <p className="cb-who">
+                  {who}
+                  <span className="cb-sev-word">
+                    <StatusBadge tone={painSeverityTone(escalation.severity)} label={escalation.severity} />
+                  </span>
+                </p>
+                <p className="cb-what">{escalation.reason}</p>
+                <p className="cb-when">
+                  {ESCALATION_SOURCE_LABEL[escalation.source_type] ?? escalation.source_type}
+                  {' · '}
+                  {painReportTime(escalation.created_at)}
+                </p>
+
+                {escalation.status === 'open' ? (
+                  <span className="cb-act">
+                    <button
+                      type="button"
+                      onClick={() => void acknowledgeCoachEscalation(escalation.escalation_id)}
+                      disabled={busy}
+                      className="cb-actuator"
+                      /* The accessible name carries the athlete. A screen
+                         reader's control list used to read N identical
+                         "Acknowledge" buttons with nothing to tell them
+                         apart, on the one surface where picking the wrong
+                         one matters. */
+                      aria-label={`Acknowledge safety escalation for ${who}`}
+                    >
+                      {busy ? '...' : 'Ack'}
+                    </button>
+                    <span className="cb-act-label">{busy ? 'Acknowledging' : 'Acknowledge'}</span>
+                  </span>
+                ) : (
+                  <p className="cb-when cb-ack-done">
+                    Acknowledged. Closing it out is an admin decision and happens on the admin
+                    escalations console.
+                  </p>
+                )}
+
+                {escalationAckErrors[escalation.escalation_id] && (
+                  <p role="alert" className="cb-when cb-rec-error">
+                    {escalationAckErrors[escalation.escalation_id]}
+                  </p>
+                )}
+              </article>
+            );
+          })}
+        </section>
+
+        {/* ATHLETE PAIN REPORTS -- outside the tab switch, like the two
+            regions it sits between. A child reporting pain has to reach the
             coach on whatever screen they are already looking at, not on a tab
-            they have to know to open. */}
+            they have to know to open.
+
+            It no longer claims to be "above everything else on the page",
+            which this comment used to say and which was measurably false:
+            422.7px of chrome stood above it at 1440x900 and 587.3px at
+            412x915. Safety Escalations is now above it deliberately -- that
+            is the one region of the three carrying an action the coach takes
+            here, and the acknowledge control used to sit 24px BELOW the fold
+            on a 900px screen with a single open alarm. */}
         <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--locked)] p-[var(--s4)] space-y-[var(--s3)]">
           <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
             <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[var(--locked-ink)]">
@@ -2164,6 +2358,18 @@ export default function CoachWorkspace() {
               Refresh
             </button>
           </div>
+          {/* THE INJURY-FEED DISCLOSURE, moved here from a tile in the old
+              summary row. It qualifies THIS domain, so it belongs under this
+              heading: there is no backend injury feed, and a coach must not
+              read that absence as an absence of injuries. The second line is
+              the one that makes the first one usable -- pain an athlete
+              reported about themselves IS a real feed, and it is the one
+              being listed directly below. */}
+          <p className="cb-caveat cb-caveat--lead">
+            No backend injury feed yet -- do not read this as &quot;no injuries&quot;. Pain an athlete
+            reported themselves is a separate real feed, listed here.
+          </p>
+
 
           {painReportsLoading && (
             <p className="text-xs text-[color:var(--bone-300)]">Checking for athlete pain reports...</p>
@@ -2261,100 +2467,6 @@ export default function CoachWorkspace() {
           )}
         </section>
 
-        {/* SAFETY ESCALATIONS -- also outside the tab switch, directly under
-            the pain reports and wearing the same locked band: an escalation is
-            what a near miss, pain report, or safety-gate flag becomes when it
-            is severe enough to auto-escalate, and this pull surface is the
-            platform's only alarm. The coach acknowledges ("I have seen this");
-            resolving stays an admin call server-side and is not offered. */}
-        <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--locked)] p-[var(--s4)] space-y-[var(--s3)]">
-          <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-            <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[var(--locked-ink)]">
-              Safety Escalations
-            </h2>
-            <button
-              type="button"
-              onClick={() => void loadEscalations()}
-              className="btn btn--ghost"
-              aria-label="Refresh safety escalations"
-            >
-              Refresh
-            </button>
-          </div>
-
-          {escalationsLoading && (
-            <p className="text-xs text-[color:var(--bone-300)]">Checking for open escalations...</p>
-          )}
-
-          {!escalationsLoading && escalationsError && (
-            <div className="border-2 border-[var(--locked)] bg-[color-mix(in_srgb,var(--locked)_22%,var(--hide-950))]/20 p-3">
-              <p className="text-sm font-semibold text-[color:var(--locked-ink)]">{escalationsError}</p>
-              <p className="mt-1 text-xs text-[color:var(--locked-ink)]">
-                Escalations may exist that are not shown here. Do not read this as &quot;all clear&quot;.
-              </p>
-            </div>
-          )}
-
-          {!escalationsLoading && !escalationsError && escalations.length === 0 && (
-            <p className="text-xs text-[color:var(--bone-400)]">
-              No open escalations for your athletes. One appears here the moment a near miss, pain
-              report, or safety-gate flag escalates.
-            </p>
-          )}
-
-          {!escalationsLoading && !escalationsError && escalations.length > 0 && (
-            <div className="space-y-3">
-              {escalations.map((escalation) => {
-                const athleteName = athletes.find((athlete) => athlete.id === escalation.athlete_id)?.name;
-                return (
-                  <article
-                    key={escalation.escalation_id}
-                    className="mat-leather--raised rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s3)] space-y-[var(--s2)]"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
-                      <div>
-                        <p className="text-[length:var(--t-md)] font-black text-[color:var(--bone-100)]">
-                          {athleteName ?? `Athlete ID ${escalation.athlete_id}`}
-                        </p>
-                        <p className="t-data text-[color:var(--bone-400)]">
-                          {ESCALATION_SOURCE_LABEL[escalation.source_type] ?? escalation.source_type}
-                          {' -- '}
-                          {painReportTime(escalation.created_at)}
-                        </p>
-                      </div>
-                      <StatusBadge tone={painSeverityTone(escalation.severity)} label={escalation.severity} />
-                    </div>
-
-                    <p className="t-body text-[color:var(--bone-200)]">{escalation.reason}</p>
-
-                    {escalation.status === 'open' ? (
-                      <button
-                        type="button"
-                        onClick={() => void acknowledgeCoachEscalation(escalation.escalation_id)}
-                        disabled={escalationAckBusyId !== null}
-                        className="btn disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {escalationAckBusyId === escalation.escalation_id ? 'Acknowledging...' : 'Acknowledge'}
-                      </button>
-                    ) : (
-                      <p className="t-data text-[color:var(--bone-400)]">
-                        Acknowledged. Closing it out is an admin decision and happens on the admin
-                        escalations console.
-                      </p>
-                    )}
-
-                    {escalationAckErrors[escalation.escalation_id] && (
-                      <p role="alert" className="t-data text-[var(--locked-ink)]">
-                        {escalationAckErrors[escalation.escalation_id]}
-                      </p>
-                    )}
-                  </article>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
         {/* FAMILY BARRIER REPORTS -- also outside the tab switch. A guardian
             who wrote "something at home is in the way of training" was told it
             was sent to their child's coach; this panel is where that promise
@@ -2440,13 +2552,13 @@ export default function CoachWorkspace() {
           placement="coach_workspace"
           kind="notice"
           heading="Gym Notices"
-          className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
+          className="cb-notice"
         />
         <AnnouncementBanner
           placement="coach_workspace"
           kind="motivation"
           heading="From the Gym"
-          className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
+          className="cb-notice"
         />
 
         <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
@@ -2455,41 +2567,29 @@ export default function CoachWorkspace() {
         </div>
 
         {/* ROLE SUMMARY PANEL */}
-        <CoachSummaryPanel
-          sessionStatus={sessionStatus}
-          /* THE ROSTER SIZE. This was the attendance-derived count, which
-             was permanently 0 because nothing fed the attendance column, so
-             the panel's empty-floor branch fired for every coach, always. A
-             feed exists now -- but the roster is still the right source for
-             "is anybody assigned to you", because an empty floor and a floor
-             nobody has marked in yet are different questions. */
-          activeAthletes={athletes.length}
-          /* null where no feed answered, which the panel renders as a
-             disclosure instead of a number. injuryFlag is null for every
-             athlete (no feed), and the two queue counts are derived from
-             coachTasks, which is empty whenever the review queue could not be
-             read -- a 0 there tells a coach their queue is clear when nobody
-             could look. */
-          injuryFlags={injuryTrackingAvailable ? injuryFlags : null}
-          reviewsNeeded={shadowQueueUnavailable ? null : reviewsNeeded}
-          assignmentsDue={shadowQueueUnavailable ? null : assignmentsDue}
-        />
+        {/* THE SUMMARY ROW IS DISASSEMBLED, not deleted and not preserved.
 
-        {/* MODE TOGGLE */}
-        <div className="mat-leather flex w-fit gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s3)]">
-          {(['Group', 'One-on-One'] as const).map(mode => (
-            <button
-              key={mode}
-              onClick={() => setSessionMode(mode)}
-              className={cx(
-                ui.modeButtonBase,
-                sessionMode === mode ? ui.modeButtonActive : ui.modeButtonInactive,
-              )}
-            >
-              {mode} Mode
-            </button>
-          ))}
-        </div>
+            It grouped four facts that belong to four different surfaces, and
+            the grouping is what made this page a dashboard. Each fact now
+            renders ONCE, on the surface that owns it:
+
+              Athletes  -> the roster heading, which can say "4 assigned"
+                           beside the four names instead of a bare 4, and
+                           whose loading and error branches are careful never
+                           to claim nobody is assigned.
+              Injuries  -> under Athlete Pain Reports, which is the domain it
+                           qualifies.
+              Reviews   -> the SHADOW view, where the queue is resolved.
+              Due       -> gone as an independent metric. It filtered the same
+                           coachTasks population as Reviews and was the same
+                           number by construction.
+              Session   -> the board's instrument, which is now the single
+                           rendering of live-run state anywhere on this
+                           workspace.
+
+            CoachSummaryPanel itself is untouched and still serves its other
+            roles. What is removed here is its grouping role on this surface,
+            because keeping it is exactly how the old dashboard creeps back. */}
 
         {/* THE SLAT RACK. Timber slats screwed across the board, which is the
             one place on this surface a bounded shape is honest: these are
@@ -2513,8 +2613,18 @@ export default function CoachWorkspace() {
             >
               <span className="cb-slat-face" aria-hidden="true" />
               <span>{tab.label}</span>
-              {reviewQueueBadge && REVIEW_BADGED_TABS.has(tab.id) ? (
-                <span className="cb-pending">{reviewQueueBadge.label.replace(/[^0-9]/g, '') || '!'}</span>
+              {REVIEW_BADGED_TABS.has(tab.id) ? (
+                <span
+                  className={
+                    reviewQueueBadge.tone === 'restricted'
+                      ? 'cb-pending cb-pending--unavailable'
+                      : shadowQueueState === 'loaded' && assignmentsDue === 0
+                        ? 'cb-pending cb-pending--clear'
+                        : 'cb-pending'
+                  }
+                >
+                  {reviewQueueBadge.label}
+                </span>
               ) : null}
             </button>
           ))}
@@ -2524,428 +2634,190 @@ export default function CoachWorkspace() {
         <div className="space-y-6">
           {/* DASHBOARD */}
           {activeTab === 'dashboard' && (
-            <div className="space-y-6 animate-fadeIn">
-              <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-                <h3 className="t-eyebrow">Quick Actions</h3>
-                {/* The SHADOW Chat launcher and the Write a Rabbit Hole link
-                    used to open this grid. Operations V1 (2026-08-21) keeps
-                    Quick Actions operational: the SHADOW Intel tab below is
-                    the coach's own intelligence surface and stays, and
-                    /rabbit-holes keeps its corridor door -- neither surface
-                    lost any access, only this shortcut row. */}
-                <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
-                  <Link
-                    href="/schedule"
-                    className="btn"
-                  >
-                    Open Scheduler
-                  </Link>
-                  <Link
-                    href="/coach/session-scripts"
-                    className="btn"
-                  >
-                    Session Scripts: Run Tonight&apos;s Plan
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('floor')}
-                    className="btn"
-                  >
-                    Open Live Floor
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('tasks')}
-                    className="btn btn--ghost"
-                  >
-                    Process Tasks
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('shadow')}
-                    className="btn btn--ghost"
-                  >
-                    Open SHADOW Intel
-                  </button>
-                  <Link
-                    href="/coach/floor-groups"
-                    className="btn btn--ghost"
-                  >
-                    Today&apos;s Floor Groups
-                  </Link>
-                  <Link
-                    href="/coach/drills"
-                    className="btn btn--ghost"
-                  >
-                    Open Drill Library
-                  </Link>
-                  <Link
-                    href="/coach/cue-library"
-                    className="btn btn--ghost"
-                  >
-                    Open Cue Library
-                  </Link>
-                  <Link
-                    href="/coach/workout-templates"
-                    className="btn btn--ghost"
-                  >
-                    Browse Workout Templates
-                  </Link>
-                </div>
-              </section>
+            <div className="cb-today animate-fadeIn">
+              {/* TODAY. Rewritten, not restyled.
 
-              <section className="grid gap-[var(--s3)] md:grid-cols-3">
-                <article className="mat-leather--raised rounded-[var(--r-lg)] px-[var(--s4)] py-[var(--s3)]">
-                  <p className="t-eyebrow">Readiness Alerts</p>
-                  {readinessTrackingAvailable ? (
-                    <>
-                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{redReadinessCount + yellowReadinessCount}</p>
-                      <p className="t-muted">{redReadinessCount} RED, {yellowReadinessCount} YELLOW{unknownReadinessCount > 0 ? `, ${unknownReadinessCount} unknown — unknown is not clear` : ''}</p>
-                      {/* The score's own caveat, shown WITH the count rather
-                          than in a help panel a coach may never open. The rule
-                          that already governs assessment results -- a value is
-                          never read without its measurement properties --
-                          applies here too; readiness was simply exempt from it
-                          until the provenance columns existed to say so.
-                          Disappears on its own if a validated method is ever
-                          wired, because the condition is computed from the
-                          feed. */}
-                      {contextualReadiness.length > 0 && (
-                        <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-400)]">
-                          {contextualReadiness.length} staff judgement(s) recorded but not counted
-                          above — they are written down, not measured, so they are not read as a
-                          readiness band.
+                  What used to stand here: a Quick Actions card holding nine
+                  doors, a row of four count tiles, a three-tile alert row, a
+                  Today's Session panel and a two-column grid of bordered
+                  cards -- roughly 1,600px of furniture above the day's work.
+                  After that was de-panelled with CSS the owner read it
+                  exactly right: "a fancey excel sheet with different size
+                  boxing in colmns". Stripping the border off a column still
+                  leaves a column. He then said we may rewrite and rewire, so
+                  this is rewritten rather than skinned again.
+
+                  What went, and why losing it costs nothing:
+                  - THE FOUR COUNT TILES. Injuries is written as the literal
+                    null and read "Unavailable" permanently; Reviews and Due
+                    filter the SAME coachTasks array and were therefore always
+                    the same number. Two of the four carried no information at
+                    all. The real pending count rides on the SHADOW slat, next
+                    to the work it describes.
+                  - QUICK ACTIONS. Nine doors in a grid, above the day, all
+                    competing with it. The doors that belong to the day now
+                    sit beside the day; the rest belong to Floor.
+                  - TODAY'S SESSION. The board's instrument already states the
+                    session, and for a while it stated it twice.
+
+                  What stayed verbatim because it means something: the
+                  ring-name takedown, the wellness read with every one of its
+                  states, and the open-task list. */}
+
+              <div className="cb-day">
+                <section aria-labelledby="cb-floor-heading">
+                  <div className="cb-sech" id="cb-floor-heading">
+                    Today&rsquo;s Floor
+                    {!athletesLoading && !athletesError && athletes.length > 0 ? (
+                      <em>{athletes.length} assigned</em>
+                    ) : null}
+                  </div>
+
+                  {/* THE READINESS SIGNAL, and it is restored deliberately
+                      after being cut by mistake.
+
+                      It stood in a row of three count tiles, and the tiles
+                      were furniture, so all three went. Eight tests then went
+                      red and were right to: this is not a count, it is a
+                      PROVENANCE surface. It is the thing that says "No signal"
+                      instead of "0 flags" when the feed failed, that refuses
+                      to promote an unvalidated reading into a RED or YELLOW
+                      band, that says unknown is not clear, and that carries
+                      the unvalidated-method caveat beside the number rather
+                      than in a help panel a coach may never open. A coach
+                      reading "0" where the truth is "nobody could look" is
+                      the exact false-reassurance failure this file's own
+                      comments guard against everywhere else.
+
+                      So the honesty is kept and only the box is gone: it is
+                      written at the head of the roster it describes, where a
+                      coach reads the names it is about. */}
+                  <div className="cb-readiness">
+                    {readinessTrackingAvailable ? (
+                      <>
+                        <p className="cb-readiness-line">
+                          <b>{redReadinessCount + yellowReadinessCount}</b>
+                          <span>
+                            {redReadinessCount} RED, {yellowReadinessCount} YELLOW
+                            {unknownReadinessCount > 0 ? `, ${unknownReadinessCount} unknown \u2014 unknown is not clear` : ''}
+                          </span>
                         </p>
-                      )}
-                      {unvalidatedReadinessCount > 0 && (
-                        <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-400)]">
-                          {unvalidatedReadinessCount === trackedReadinessCount
-                            ? READINESS_UNVALIDATED_CAVEAT
-                            : `${unvalidatedReadinessCount} of ${trackedReadinessCount} of these `
-                              + `readings come from a method nobody has established. `
-                              + READINESS_UNVALIDATED_CAVEAT}
+                        {contextualReadiness.length > 0 && (
+                          <p className="cb-caveat">
+                            {contextualReadiness.length} staff judgement(s) recorded but not counted
+                            above &mdash; they are written down, not measured, so they are not read as a
+                            readiness band.
+                          </p>
+                        )}
+                        {unvalidatedReadinessCount > 0 && (
+                          <p className="cb-caveat">
+                            {unvalidatedReadinessCount === trackedReadinessCount
+                              ? READINESS_UNVALIDATED_CAVEAT
+                              : `${unvalidatedReadinessCount} of ${trackedReadinessCount} of these `
+                                + `readings come from a method nobody has established. `
+                                + READINESS_UNVALIDATED_CAVEAT}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <p className="cb-readiness-line">
+                          <b className="cb-readiness-nosignal">No signal</b>
                         </p>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-400)]">No signal</p>
-                      <p className="t-muted">No fresh readiness check-ins -- do not read this as &quot;zero flags&quot;</p>
-                    </>
-                  )}
-                </article>
-                <article className="mat-leather--raised rounded-[var(--r-lg)] px-[var(--s4)] py-[var(--s3)]">
-                  <p className="t-eyebrow">Injury Flags</p>
-                  {injuryTrackingAvailable ? (
-                    <>
-                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{injuryFlags}</p>
-                      <p className="t-muted">Escalate before block progression</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-400)]">Not tracked</p>
-                      <p className="t-muted">No backend injury feed yet -- do not read this as &quot;no injuries&quot;</p>
-                      <p className="t-muted mt-[var(--s2)]">Pain an athlete reported themselves is a separate feed, at the top of this page.</p>
-                    </>
-                  )}
-                </article>
-                <article className="mat-leather--raised rounded-[var(--r-lg)] px-[var(--s4)] py-[var(--s3)]">
-                  <p className="t-eyebrow">Open Reviews</p>
-                  {/* Its two siblings above both guard this exact case and
-                      both say so out loud ("do not read this as zero flags",
-                      "do not read this as no injuries"). This tile alone
-                      rendered the bare count, and coachTasks is empty whenever
-                      the queue could not be read -- so it printed a confident
-                      0 over an unread queue. */}
-                  {shadowQueueUnavailable ? (
-                    <>
-                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-400)]">Unavailable</p>
-                      <p className="t-muted">The review queue could not be read -- do not read this as &quot;no reviews&quot;</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{reviewsNeeded}</p>
-                      <p className="t-muted">Resolve queue items this session</p>
-                    </>
-                  )}
-                </article>
-              </section>
-
-              <HelpPanel
-                title="Coach Dashboard"
-                description="Overview of your session status, athlete roster, and immediate action items."
-                usage={[
-                  'Check session status and athlete readiness before class',
-                  'Review flagged athletes (RED/YELLOW readiness)',
-                  'See athletes with injury concerns',
-                  'Monitor open tasks and due dates'
-                ]}
-                mistakes={[
-                  'Missing injury flags before session start',
-                  'Not reviewing task deadlines',
-                  'Overlooking RED readiness athletes'
-                ]}
-              />
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Session Status.
-
-                    Two real feeds, kept apart on purpose. The live run
-                    (/api/pilot/session-scripts/runs) is what is happening on
-                    the floor NOW, clocked by the server. The schedule
-                    (/api/pilot/scheduler) is what the gym intends today. A
-                    scheduled class is not evidence that anyone is in the room,
-                    and a live delivery is not evidence that it was the class
-                    on the calendar -- so neither is ever rendered as the
-                    other, and no third "session status" is synthesised from
-                    the pair.
-
-                    This panel used to carry a "Planned — Not Yet Implemented"
-                    stamp over three "Unavailable - not yet tracked" rows and
-                    the sentence "There is no scheduling backend feed yet".
-                    All four claims were false against this build. */}
-                <div className={ui.panelSpaced}>
-                  <h3 className="t-eyebrow">Today&apos;s Session</h3>
-
-                  {liveRunState === 'loading' && (
-                    <p className="t-muted">Checking for a session in progress...</p>
-                  )}
-
-                  {/* --restricted, not --locked, on this and the other two
-                      "could not be read" boxes added here. The safeguarding
-                      red is reserved for the top of the safety ladder -- a
-                      person who may not participate (owner decision
-                      2026-08-19) -- and a fetch that failed is not that.
-                      src/design/safeguardingRedReservation.test.ts enforces
-                      it and names the substitution. */}
-                  {liveRunState === 'unavailable' && (
-                    <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                      <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
-                        Whether you have a session in progress could not be checked. A live session may be
-                        running that is not shown here.
-                      </p>
-                    </div>
-                  )}
-
-                  {liveRunState === 'loaded' && liveRun && (
-                    <div className="space-y-[var(--s3)]">
-                      <p>
-                        <StatusBadge tone={liveRun.is_paused ? 'monitor' : 'cleared'} label={liveRun.is_paused ? 'Paused' : 'In progress'} />
-                      </p>
-                      <div>
-                        <p className="t-label mb-[var(--s2)] block">Started</p>
-                        <p className="t-body font-semibold">{formatGymDateTimeShort(liveRun.started_at) ?? liveRun.started_at}</p>
-                      </div>
-                      {/* Elapsed and Athletes Present are NOT restated here.
-                          Both are the board's own instrument now, at the top
-                          of the floor board, which is where a coach looks for
-                          the clock and the head-count. Two copies of one
-                          server value on one screen is two places for it to
-                          disagree, and coachWorkspaceHonesty catches each
-                          duplicate by name -- it did, on both, the moment the
-                          instrument landed. The null case ("not recorded for
-                          this run") travelled with the value; the instrument
-                          states it rather than printing a bare number that
-                          was never recorded. */}
-                      <Link href="/coach/session-scripts" className="btn">
-                        Return to live delivery
-                      </Link>
-                    </div>
-                  )}
-
-                  {liveRunState === 'loaded' && !liveRun && (
-                    <p className="t-muted">No session in progress.</p>
-                  )}
-
-                  <div className="space-y-[var(--s3)]">
-                    <p className="t-label mb-[var(--s2)] block">Scheduled today</p>
-
-                    {todayClassesState === 'loading' && (
-                      <p className="t-muted">Loading today&apos;s schedule...</p>
-                    )}
-
-                    {todayClassesState === 'unavailable' && (
-                      <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                        <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
-                          Today&apos;s schedule could not be loaded. This is not a statement that nothing is
-                          scheduled -- open the scheduler to see what is on.
+                        <p className="cb-caveat">
+                          No fresh readiness check-ins -- do not read this as &quot;zero flags&quot;
                         </p>
-                      </div>
-                    )}
-
-                    {todayClassesState === 'loaded' && todayClasses.length === 0 && (
-                      <p className="t-muted">No class is scheduled for you today.</p>
-                    )}
-
-                    {todayClassesState === 'loaded' && todayClasses.length > 0 && (
-                      <ul className="space-y-[var(--s2)]">
-                        {todayClasses.map((item) => (
-                          <li
-                            key={item.class_id}
-                            className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]"
-                          >
-                            <p className="t-body font-semibold">{item.title}</p>
-                            <p className="t-muted">
-                              {formatGymTimeOfDay(item.start_at) ?? item.start_at}
-                              {' - '}
-                              {formatGymTimeOfDay(item.end_at) ?? item.end_at}
-                              {item.location ? ` | ${item.location}` : ''}
-                            </p>
-                            {/* A cancelled class stays listed and says so.
-                                Dropping it would leave a coach who remembers
-                                it on the calendar unable to tell a
-                                cancellation from a failed read. */}
-                            {item.status === 'cancelled' && (
-                              <p className="mt-[var(--s2)]"><StatusBadge tone="restricted" label="Cancelled" /></p>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
+                      </>
                     )}
                   </div>
-                </div>
 
-                {/* Athlete Roster */}
-                <div className={ui.panelSpaced}>
-                  <h3 className="t-eyebrow">Athlete Roster</h3>
-
-                  {athletesLoading && (
-                    <div className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)] text-center">
-                      <p className="t-muted">Loading athletes...</p>
-                      <div className="mt-[var(--s3)] flex justify-center">
-                        <div className="animate-spin h-5 w-5 border-2 border-[color:var(--brass-300)] border-t-transparent rounded-full"></div>
-                      </div>
-                    </div>
-                  )}
+                  {athletesLoading && <p className="cb-state">Loading athletes...</p>}
 
                   {athletesError && !athletesLoading && (
-                    <div className="rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                      <div className="flex items-center justify-between mb-[var(--s2)] gap-[var(--s3)]">
-                        <p className="text-[color:var(--locked-ink)] text-[length:var(--t-sm)] font-semibold">Error loading athletes</p>
-                        <button
-                          onClick={() => void loadAthletes()}
-                          className="btn btn--ghost"
-                          aria-label="Retry loading athletes"
-                        >
-                          Retry
-                        </button>
-                      </div>
-                      <p className="text-[color:var(--locked-ink)] text-[length:var(--t-xs)]">{athletesError}</p>
-                    </div>
-                  )}
-
-                  {!athletesLoading && athletes.length === 0 && !athletesError && (
-                    <div className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)] text-center">
-                      <p className="t-muted">No athletes found</p>
-                    </div>
-                  )}
-
-                  {/* The roster kept a cap; Open Tasks below did not, and the
-                      difference is the grid, not the list. This panel shares a
-                      md:grid row with Today's Session, so an uncapped roster
-                      stretches that row to whatever the session's enrolment
-                      happens to be and leaves the session card floating in a
-                      column of empty leather. The list is also genuinely
-                      unbounded -- a club-wide roster, not a session's worth.
-
-                      What was wrong was the number. max-h-48 is 192px: four
-                      athlete rows, on a desktop with a thousand pixels of room,
-                      so a coach with a twenty-athlete session was scrolling a
-                      porthole inside a page that was already scrolling. The cap
-                      is viewport-relative now and it grows with the screen --
-                      55vh (Fibonacci) on a tablet, the golden major at 61.8vh
-                      from lg up. On a 900px laptop that is ~495px, ten or
-                      twelve athletes rather than four; on the gym tablet it
-                      still stops short of eating the panel. */}
-                  <div className="space-y-2 max-h-[55vh] lg:max-h-[61.8vh] overflow-y-auto">
-                    {athletes.map(athlete => (
-                      /* The row and its takedown are SIBLINGS, not nested. The
-                         row is itself a button -- the whole card selects the
-                         athlete -- and a button inside a button is invalid HTML
-                         that browsers resolve by dropping one of them, so the
-                         only way to put a second control on this card is beside
-                         it. The wrapper carries the key for that reason and
-                         does nothing else. */
-                      <div key={athlete.id}>
+                    <div className="cb-unavailable">
+                      <p className="cb-unavailable-head">Roster unavailable</p>
+                      <p className="cb-state">{athletesError}</p>
+                      <p className="cb-state">
+                        This is not a statement that nobody is assigned to you. Athletes may exist
+                        that are not listed here.
+                      </p>
                       <button
                         type="button"
-                        onClick={() => {
-                          setSelectedAthleteId(athlete.id);
-                          setAthleteChosenByCoach(true);
-                          // A deliberate pick, so this is where the wellness
-                          // read starts -- never from the seeded selection.
-                          void loadWellnessCheckIn(athlete.id);
-                        }}
-                        /* The highlight and the wellness read follow the same
-                           signal: `athleteChosenByCoach`, a coach's actual
-                           pick. The roster still seeds `selectedAthleteId`
-                           with the first athlete for the behaviour that needs
-                           it, but a seeded value is "a selection nobody made"
-                           -- so it must not wear the look of one. A row that
-                           presents itself as chosen beside a panel saying
-                           "select an athlete" tells the coach two different
-                           things about the same roster, and the one thing a
-                           default must never claim is that somebody decided
-                           to open a child's self-report. */
-                        className={`w-full p-[var(--s3)] border rounded-[var(--r-md)] cursor-pointer transition text-left ${
-                          athleteChosenByCoach && selectedAthleteId === athlete.id
-                            ? 'bg-[rgb(var(--brass-400-rgb)_/_.10)] border-[color:var(--brass-500)]'
-                            : 'bg-[rgba(0,0,0,.28)] border-[color:rgb(var(--brass-400-rgb)_/_.22)] hover:border-[color:var(--brass-500)]'
-                        }`}
+                        onClick={() => void loadAthletes()}
+                        className="cb-door"
+                        aria-label="Retry loading athletes"
                       >
-                        {/* A face, then the name. A coach who works with twenty
-                            people recognises them by face long before they read
-                            a name; the column of strings this replaces made the
-                            person holding the tablet do a lookup the room had
-                            already done for them.
+                        Try again
+                      </button>
+                    </div>
+                  )}
 
-                            Everyone has a portrait here whether or not they have
-                            a photograph -- the brass plate with their initials is
-                            the same object in the same frame, so no row looks
-                            unfinished and no row advertises that a photograph
-                            exists but is being withheld. */}
-                        <div className="flex items-center justify-between gap-[var(--s3)]">
-                          <div className="flex items-center gap-[var(--s3)] min-w-0">
-                            <ProfilePortrait
-                              accountId={athlete.accountId ?? null}
-                              initials={athlete.initials ?? '—'}
-                              name={athlete.name}
-                              photoAvailable={Boolean(athlete.photoAvailable)}
-                              size="sm"
-                              decorative
-                            />
-                            <span className="min-w-0">
-                              <span className="block truncate font-semibold">{athlete.name}</span>
+                  {/* The guarded sentence, kept verbatim. Its counterpart test
+                      asserts that a coach WITH a roster never sees it -- the
+                      empty-floor branch once keyed off attendance, which is
+                      hardcoded Unknown for everyone, so this line printed above
+                      every real roster in the gym. Both directions still hold. */}
+                  {!athletesLoading && !athletesError && athletes.length === 0 && (
+                    <p className="cb-state">Nobody is assigned to you yet.</p>
+                  )}
+
+                  {!athletesLoading && !athletesError && athletes.length > 0 && (
+                    <div className="cb-roster">
+                      <div className="cb-roster-head" aria-hidden="true">
+                        <span>#</span><span /><span>Athlete</span><span>Readiness</span><span>Today</span>
+                      </div>
+                      {athletes.map((athlete, index) => (
+                        <div key={athlete.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedAthleteId(athlete.id);
+                              setAthleteChosenByCoach(true);
+                              void loadWellnessCheckIn(athlete.id);
+                            }}
+                            className="cb-roster-row"
+                            aria-pressed={athleteChosenByCoach && selectedAthleteId === athlete.id}
+                          >
+                            <span className="cb-no">{index + 1}</span>
+                            <span className="cb-portrait-slot">
+                              <ProfilePortrait
+                                accountId={athlete.accountId ?? null}
+                                initials={athlete.initials ?? '\u2014'}
+                                name={athlete.name}
+                                photoAvailable={Boolean(athlete.photoAvailable)}
+                                size="sm"
+                                decorative
+                              />
+                            </span>
+                            <span className="cb-name">
+                              {athlete.name}
                               {athlete.ringName && (
-                                <span className="block truncate font-[family-name:var(--font-hand)] text-[length:var(--t-sm)] text-[color:var(--brass-300)]">
-                                  &ldquo;{athlete.ringName}&rdquo;
-                                </span>
+                                <span className="cb-ring">&ldquo;{athlete.ringName}&rdquo;</span>
                               )}
                             </span>
-                          </div>
-                          {/* The safety column, kept as its own block on the far
-                              side of the row. Identity on the left, state on the
-                              right, and nothing personal painted onto either. */}
-                          <span className="flex flex-none items-center gap-2">
-                            <span
-                              className={`w-2 h-2 rounded-full ${readinessDotClass(athlete.readiness)}`}
-                              title={athlete.readiness === 'UNKNOWN' ? 'Readiness not tracked' : `Readiness: ${athlete.readiness}`}
-                            ></span>
-                            {/* TODAY'S MARK, and the three readings it can
-                                carry are worded so they cannot be confused.
-                                A mark that exists shows as itself. 'No mark
-                                yet' is what an unregistered athlete looks
-                                like before class and is not a claim about
-                                whether they came. 'Unavailable' means the
-                                register could not be read at all -- said
-                                plainly, in the restricted ink, because a
-                                coach glancing down this column would
-                                otherwise read a quiet word as a quiet
+
+                            {/* READINESS in three channels, not one. It was an
+                                8px dot whose only second channel was a title
+                                attribute -- which a touch user never sees and
+                                a colour-blind coach on a bright floor cannot
+                                use. The band is printed as a word beside the
+                                disc now, and UNKNOWN says it is not tracked
+                                rather than sitting grey and reading as calm.
+                                The rungs themselves are unchanged. */}
+                            <span className="cb-ready">
+                              <i className={readinessDotClass(athlete.readiness)} />
+                              {athlete.readiness === 'UNKNOWN' ? 'Not tracked' : athlete.readiness}
+                            </span>
+
+                            {/* TODAY'S MARK. The three not-knowing words are
+                                kept exactly as worded, because the wording IS
+                                the safety property: a mark that exists shows
+                                as itself, "no mark yet" is not a claim that
+                                they were absent, and a register that could not
+                                be read says so rather than passing as a quiet
                                 answer. */}
                             <span
-                              className={athlete.attendance === 'Unavailable'
-                                ? 't-muted text-[var(--restricted-ink)]'
-                                : 't-muted'}
+                              className={athlete.attendance === 'Unavailable' ? 'cb-mark cb-mark--unavailable' : 'cb-mark'}
                               title={athlete.attendance === 'Unavailable'
                                 ? 'Today\u2019s register could not be read \u2014 this is not a statement that they were absent'
                                 : athlete.attendance === 'NotCovered'
@@ -2962,12 +2834,12 @@ export default function CoachWorkspace() {
                                     ? 'Not your athlete'
                                     : athlete.attendance}
                             </span>
-                          </span>
-                        </div>
-                        {athlete.injuryFlag && (
-                          <p className="mt-[var(--s2)]"><StatusBadge tone="locked" label="Injury flag active" /></p>
-                        )}
-                      </button>
+                            {athlete.injuryFlag && (
+                              <span className="cb-injury">
+                                <StatusBadge tone="locked" label="Injury flag active" />
+                              </span>
+                            )}
+                          </button>
 
                       {/* THE TAKEDOWN, shown only on the athlete the coach
                           deliberately selected.
@@ -3070,10 +2942,64 @@ export default function CoachWorkspace() {
                             : `Ring name removed. ${athlete.name} cannot set a new one until the gym's lock expires.`}
                         </p>
                       )}
-                      </div>
-                    ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                {/* THE DAY, offset rather than sharing a baseline with the
+                    roster. Two columns starting on one line read as a table;
+                    one starting lower reads as a second thing written on the
+                    same board. */}
+                <section aria-labelledby="cb-schedule-heading" className="cb-sched">
+                  <div className="cb-sech" id="cb-schedule-heading">Today&rsquo;s Schedule</div>
+
+                  {todayClassesState === 'loading' && (
+                    <p className="cb-state">Loading today&rsquo;s schedule...</p>
+                  )}
+
+                  {todayClassesState === 'unavailable' && (
+                    <div className="cb-unavailable">
+                      <p className="cb-unavailable-head">Read unavailable</p>
+                      <p className="cb-state">
+                        Today&rsquo;s schedule could not be loaded. This is not a statement that
+                        nothing is scheduled -- open the scheduler to see what is on.
+                      </p>
+                    </div>
+                  )}
+
+                  {todayClassesState === 'loaded' && todayClasses.length === 0 && (
+                    <p className="cb-state">No class is scheduled for you today.</p>
+                  )}
+
+                  {todayClassesState === 'loaded' && todayClasses.length > 0 && (
+                    <div>
+                      {todayClasses.map((entry) => (
+                        <div key={entry.class_id} className="cb-sched-row">
+                          <b>{formatGymTimeOfDay(entry.start_at) ?? entry.start_at}</b>
+                          <span className="cb-name">{entry.title}</span>
+                          <span className="cb-note">
+                            {entry.location}
+                            {entry.status === 'cancelled' && (
+                              <> <StatusBadge tone="restricted" label="Cancelled" /></>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* The doors that belong to the day, beside the day. */}
+                  <div className="cb-doors">
+                    <Link href="/schedule" className="cb-door">Open scheduler</Link>
+                    <Link href="/coach/session-scripts" className="cb-door">
+                      {liveRunState === 'loaded' && liveRun ? 'Return to live delivery' : 'Session scripts'}
+                    </Link>
+                    <Link href="/coach/intelligence" className="cb-door">Morning read</Link>
                   </div>
-                </div>
+                </section>
+              </div>
 
                 {/* WELLNESS CHECK-IN (A-FIN-03): today's self-report for the
                     athlete the coach picked, read back as the athlete gave it.
@@ -3186,7 +3112,6 @@ export default function CoachWorkspace() {
                   )}
                 </section>
 
-                {/* Open Tasks */}
                 <div className="md:col-span-2 mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
                   <h3 className="t-eyebrow">Open Tasks</h3>
                   {/* Cap removed outright rather than raised. This panel is
@@ -3216,7 +3141,6 @@ export default function CoachWorkspace() {
                     )}
                   </div>
                 </div>
-              </div>
             </div>
           )}
 
@@ -3237,6 +3161,53 @@ export default function CoachWorkspace() {
           {/* FLOOR */}
           {activeTab === 'floor' && (
             <div className="space-y-6 animate-fadeIn">
+              {/* THE BLOCK TEMPLATE SWITCH, moved here from the board's
+                  chrome. It sat above the view rail, so it rendered on all
+                  nine views while changing exactly one: measured, it was
+                  277px from the only panel it affects, and that panel says of
+                  itself that it is "the standard block template, not a running
+                  session". It is a template chooser, so it lives on the view
+                  that shows the template. Neither it nor the open view
+                  survives a reload -- both reset -- which is worth knowing
+                  before anyone treats it as a mode the gym is in. */}
+              {/* THE SESSION-DELIVERY DOORS, on the view that runs a
+                  session rather than in a nine-door grid above the day.
+
+                  The delivery loop once worked end to end while nothing
+                  linked to it -- the scripts page, floor groups, the drill
+                  library, the cue library and the template catalogue were
+                  reachable only by typing the URL -- which is why every one
+                  of them is pinned by a test. The guarantee those tests hold
+                  is reachability and destination, not that the Dashboard owns
+                  them forever, so they move with the workflow and the tests
+                  follow them here. Session Scripts stays on TODAY as well,
+                  because starting or resuming tonight's delivery is a thing a
+                  coach does on arrival. */}
+              <div className="cb-doors">
+                <Link href="/coach/session-scripts" className="cb-door">
+                  {"Session Scripts: Run Tonight's Plan"}
+                </Link>
+                <Link href="/coach/floor-groups" className="cb-door">{"Today's Floor Groups"}</Link>
+                <Link href="/coach/drills" className="cb-door">Open Drill Library</Link>
+                <Link href="/coach/cue-library" className="cb-door">Open Cue Library</Link>
+                <Link href="/coach/workout-templates" className="cb-door">Browse Workout Templates</Link>
+              </div>
+
+              <div className="cb-modes" role="group" aria-label="Block template">
+                <span className="cb-modes-label">Block template</span>
+                {(['Group', 'One-on-One'] as const).map(mode => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setSessionMode(mode)}
+                    aria-pressed={sessionMode === mode}
+                    className="cb-mode"
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+
               <HelpPanel
                 title="Coach Floor"
                 description="Live session management. Track workout blocks, athlete observations, and make real-time adjustments."
@@ -3679,6 +3650,19 @@ export default function CoachWorkspace() {
           {/* SHADOW AI */}
           {activeTab === 'shadow' && (
             <div className="space-y-6 animate-fadeIn">
+              {/* THE REVIEW-QUEUE READ STATE, moved here from a tile in the
+                  old summary row, because this is the view where a queue item
+                  is actually resolved. The full sentence stays visible rather
+                  than living only in an aria-label: a coach reading 0 where
+                  the truth is that nobody could look is the failure this
+                  disclosure exists to refuse, and a screen-reader-only
+                  version would not reach the coach who is looking at it. */}
+              {shadowQueueUnavailable && (
+                <p className="cb-caveat cb-caveat--lead">
+                  The review queue could not be read -- do not read this as &quot;no reviews&quot;
+                </p>
+              )}
+
               <RoleSpecificShadow
                 role="coach"
                 description="Ask SHADOW about session management, athlete readiness, goals, tasks, or coaching strategy. Every answer below and in the assistant panel comes from a live request scoped to your roster -- nothing here is a canned example."

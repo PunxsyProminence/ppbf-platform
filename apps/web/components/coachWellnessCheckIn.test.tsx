@@ -177,8 +177,16 @@ async function pickAthlete(name: string): Promise<void> {
  *  carries `hover:border-[color:var(--brass-500)]`, so a substring test for the
  *  brass border would report every row as selected. */
 function looksSelected(row: HTMLButtonElement): boolean {
-  return row.classList.contains('bg-[rgb(var(--brass-400-rgb)_/_.10)]')
-    && row.classList.contains('border-[color:var(--brass-500)]');
+  /* This used to read two Tailwind classes off the old roster row. The floor
+     board rewrote that row and the classes went with it, but the property
+     did not move: exactly one row reads as picked.
+
+     It is pinned on aria-pressed now, which is a STRONGER witness than the
+     class pair it replaces -- a coach using a screen reader was told nothing
+     at all by a background colour, and the selection drives which child's
+     wellness answers are on screen. The board still paints the row; the
+     paint is just no longer the only channel. */
+  return row.getAttribute('aria-pressed') === 'true';
 }
 
 function panel(): HTMLElement {

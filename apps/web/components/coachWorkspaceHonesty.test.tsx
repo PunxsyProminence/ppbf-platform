@@ -392,11 +392,20 @@ describe('the hub does not deny a capability the platform has', () => {
     // "nothing is running" here would undo that.
     await renderWorkspace({ liveRun: () => jsonResponse({}, { ok: false, status: 503 }) });
 
-    // Twice on purpose: the KPI summary line and the Today's Session panel
-    // both say it, and a coach who reads either one must not be told the
-    // opposite by the other.
-    expect(screen.queryAllByText(/could not be checked/i).length).toBe(2);
+    // ONE OWNER, not two copies. This used to require the sentence twice --
+    // the summary line and the Today's Session panel -- so that a coach
+    // reading either could not be told the opposite by the other. That is
+    // presentation history. The safety property is that UNKNOWN MUST NEVER
+    // RENDER AS "no session", and one authoritative rendering holds it better
+    // than two that can disagree, which is why the duplicated elapsed value
+    // came out of the panel in the same change.
+    //
+    // Pinned by property, deliberately not by a weak length === 1: the
+    // sentence is present, the opposite sentence is absent, and no elapsed
+    // figure is presented as current while the read is failing.
+    expect(screen.queryAllByText(/could not be checked/i).length).toBeGreaterThan(0);
     expect(screen.queryByText('No session in progress.')).toBeNull();
+    expect(screen.queryByText(/Server elapsed/i)).toBeNull();
   });
 
   test('a healthy read with nothing running says so plainly', async () => {
@@ -785,7 +794,11 @@ describe('safety escalations inbox', () => {
     expect(screen.queryAllByText(/Near miss/).length).toBeGreaterThan(0);
     // An athlete the roster read could not name is shown by id, not dropped.
     expect(screen.queryByText('Athlete ID ath_unknown')).not.toBeNull();
-    expect(screen.getAllByRole('button', { name: 'Acknowledge' })).toHaveLength(2);
+    // The accessible name carries the athlete now. A screen-reader control
+    // list used to read N identical "Acknowledge" buttons on the one
+    // surface where pressing the wrong one matters, so the name was made
+    // specific and these queries follow it.
+    expect(screen.getAllByRole('button', { name: /^Acknowledge safety escalation for / })).toHaveLength(2);
   });
 
   test('acknowledge posts the escalation id and shows the state the server returned', async () => {
@@ -800,11 +813,11 @@ describe('safety escalations inbox', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+      fireEvent.click(screen.getAllByRole('button', { name: /^Acknowledge safety escalation for / })[0]);
     });
 
     expect(posted).toEqual([{ action: 'acknowledge', escalation_id: 'esc_1' }]);
-    expect(screen.queryByRole('button', { name: 'Acknowledge' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Acknowledge safety escalation for / })).toBeNull();
     expect(screen.queryByText(/Closing it out is an admin decision/)).not.toBeNull();
   });
 
@@ -822,7 +835,7 @@ describe('safety escalations inbox', () => {
       },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+    fireEvent.click(screen.getAllByRole('button', { name: /^Acknowledge safety escalation for / })[0]);
     fireEvent.click(screen.getByRole('button', { name: /Acknowledg/ }));
     expect(posted).toHaveLength(1);
 
@@ -840,11 +853,11 @@ describe('safety escalations inbox', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+      fireEvent.click(screen.getAllByRole('button', { name: /^Acknowledge safety escalation for / })[0]);
     });
 
     expect(screen.queryByText('Missing escalation record')).not.toBeNull();
-    expect(screen.queryByRole('button', { name: 'Acknowledge' })).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /^Acknowledge safety escalation for / })).not.toBeNull();
   });
 
   test('a failed read never renders as "no escalations"', async () => {
@@ -1671,37 +1684,53 @@ describe('the hub links to the session-delivery surfaces', () => {
   // The delivery loop worked end to end while nothing linked to it: the
   // scripts page, floor groups, the drill library, the cue library and the
   // template catalog were all reachable only by typing the URL. These pin
-  // the Quick Actions links that make that loop part of the coach's day.
+  // the links that make that loop part of the coach's day.
+  //
+  // They used to hang in a Quick Actions grid on the Dashboard. The grid is
+  // gone -- nine doors above the day's work, competing with it -- and these
+  // five now live on FLOOR, the view that runs a session. The guarantee this
+  // block holds is reachability and correct destination, so the location
+  // assertion moved with the doors and the label/href assertions did not
+  // change at all. Session Scripts is reachable from both views.
   test.each([
     ["Session Scripts: Run Tonight's Plan", '/coach/session-scripts'],
     ["Today's Floor Groups", '/coach/floor-groups'],
     ['Open Drill Library', '/coach/drills'],
     ['Open Cue Library', '/coach/cue-library'],
     ['Browse Workout Templates', '/coach/workout-templates'],
-  ])('the dashboard links "%s" to %s', async (label, href) => {
+  ])('the floor view links "%s" to %s', async (label, href) => {
     await renderWorkspace();
+    openTab('Floor');
 
     const link = screen.getByRole('link', { name: label });
     expect(link.getAttribute('href')).toBe(href);
   });
 
-  test('the existing operational quick actions were not displaced by the new links', async () => {
+  // The scheduler door stays on the arrival view: "what is on today" is a
+  // question a coach asks on walking in, not one that belongs to the session
+  // template. Its label and destination are unchanged.
+  test('the scheduler door stays on the arrival view', async () => {
     await renderWorkspace();
 
-    expect(screen.getByRole('link', { name: 'Open Scheduler' }).getAttribute('href')).toBe('/schedule');
+    expect(screen.getByRole('link', { name: /Open scheduler/i }).getAttribute('href')).toBe('/schedule');
   });
 
   // Operations V1 (2026-08-21): the SHADOW Chat launcher and the Rabbit Hole
   // shortcut left the quick-action row -- a coach's Quick Actions are
-  // operational work. Neither surface lost any access: the SHADOW Intel tab
-  // below remains the coach's own intelligence surface, and /rabbit-holes
-  // keeps its corridor door for the coach role.
-  test('the lab shortcuts are gone from Quick Actions, and SHADOW Intel stays', async () => {
+  // operational work. Neither surface lost any access: the SHADOW view
+  // remains the coach's own intelligence surface, and /rabbit-holes keeps its
+  // corridor door for the coach role.
+  //
+  // The Quick Actions grid itself is now gone, so the first two assertions
+  // are restated against the whole workspace -- a stronger claim than "not in
+  // that grid" -- and the third follows SHADOW to the view rail, where it is
+  // a board control rather than a button in a card.
+  test('the lab shortcuts are absent from the workspace, and SHADOW stays reachable', async () => {
     await renderWorkspace();
 
     expect(screen.queryByRole('link', { name: /SHADOW Chat/ })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Write a Rabbit Hole' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Open SHADOW Intel' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^SHADOW/ })).toBeTruthy();
   });
 });
 
@@ -2146,32 +2175,79 @@ describe('the coach summary row claims only what was actually read', () => {
     return (tile?.textContent ?? '').replace(label, '').trim();
   }
 
-  test('the summary tiles say Unavailable rather than 0 when nothing answered', async () => {
+  test('a failed read is disclosed in words, never as a zero', async () => {
     /* coachTasks is empty whenever the review queue read failed, so both
        counts derived from it were 0 -- a confident "nothing waiting for you"
        over a queue nobody could look at. And injuryFlag is null for every
-       athlete, because no injury feed exists at all. */
+       athlete, because no injury feed exists at all.
+
+       THE SURFACE MOVED, THE GUARANTEE DID NOT. These three facts used to be
+       three tiles in one summary row and are now sentences on the surfaces
+       that own them: the injury feed under Athlete Pain Reports, the review
+       queue on SHADOW where the queue is resolved. Due is gone entirely --
+       it filtered the same coachTasks population as Reviews and was the same
+       number by construction, so it was never an independent fact.
+
+       What is asserted is unchanged in substance: a read that failed must
+       say so, and must not render as a count. */
     await renderWorkspace({
       athletesList: roster,
       reviewProjection: async () => jsonResponse({}, { ok: false, status: 503 }),
     });
 
-    for (const label of ['Injuries', 'Reviews', 'Due']) {
-      expect([label, tileValue(label)]).toEqual([label, 'Unavailable']);
-    }
+    // The injury feed does not exist, and says so, on the domain it qualifies.
+    expect(screen.queryByText(/do not read this as "no injuries"/i)).not.toBeNull();
+
+    // The review queue could not be read, and says so where it is worked.
+    openTab('SHADOW');
+    expect(
+      screen.queryByText(/The review queue could not be read -- do not read this as "no reviews"/i),
+    ).not.toBeNull();
   });
 
-  test('a real count still renders as a number, including a real zero', async () => {
-    /* The other direction, and the one that keeps the fix honest: a panel
-       that printed "Unavailable" unconditionally would satisfy the test above
-       while telling a coach nothing. A queue that WAS read and holds nothing
-       is the good news they came for. */
+  test('a successfully read empty queue says 0 pending, on the board', async () => {
+    /* The direction that keeps the fix honest: a surface that said
+       "unavailable" unconditionally would satisfy the failure test while
+       telling a coach nothing. A queue that WAS read and holds nothing is the
+       good news they came for, and it used to be SILENCE -- the old badge
+       rendered only when the count was above zero.
+
+       The owner moved from a summary tile to the SHADOW control on the view
+       rail, so a coach learns it on arrival without opening the view. What is
+       asserted is the same fact in the same direction. */
     await renderWorkspace({ athletesList: roster });
 
-    expect(tileValue('Reviews')).toBe('0');
-    expect(tileValue('Due')).toBe('0');
-    // Injuries has no feed at all, so it is Unavailable even on a good read.
-    expect(tileValue('Injuries')).toBe('Unavailable');
+    const shadow = screen.getByRole('button', { name: /^SHADOW/ });
+    expect(shadow.textContent).toMatch(/0 pending/i);
+    expect(shadow.textContent).not.toMatch(/unavailable/i);
+
+    // Injuries has no feed at all, so it discloses that even on a good read.
+    expect(screen.queryByText(/do not read this as "no injuries"/i)).not.toBeNull();
+  });
+
+  test('a zero that has not been read yet is never shown as a zero', async () => {
+    /* The defect the explicit read state exists to close, and it was real:
+       assignmentsDue is 0 before the request comes back as well as after an
+       empty one, so "nothing is waiting for you" and "I have not looked yet"
+       were the same zero. They are different sentences now. */
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await renderWorkspace({
+      athletesList: roster,
+      reviewProjection: async () => {
+        await held;
+        return jsonResponse({ queue: [], total: 0 });
+      },
+    });
+
+    const shadow = screen.getByRole('button', { name: /^SHADOW/ });
+    expect(shadow.textContent).toMatch(/checking/i);
+    expect(shadow.textContent).not.toMatch(/0 pending/i);
+
+    release?.();
   });
 
   test('the Open Reviews tile says the queue could not be read, not "0"', async () => {
@@ -2182,21 +2258,55 @@ describe('the coach summary row claims only what was actually read', () => {
       reviewProjection: async () => jsonResponse({}, { ok: false, status: 503 }),
     });
 
+    // On SHADOW now, beside the queue it describes, and as a visible sentence
+    // rather than an aria-label: a coach reading 0 where the truth is that
+    // nobody could look is the failure this exists to refuse, and a
+    // screen-reader-only version would not reach the coach who is looking.
+    openTab('SHADOW');
     expect(
       screen.queryByText(/The review queue could not be read -- do not read this as "no reviews"/i),
     ).not.toBeNull();
   });
 
-  test('a healthy queue still shows its real counts, including a real zero', async () => {
-    /* Without this, a panel that rendered "Unavailable" unconditionally would
-       pass every test above. A genuine 0 from a queue that WAS read is the
-       good news a coach came for, and it must survive. */
-    await renderWorkspace({ athletesList: roster });
+  test('a failed queue read says unavailable on the board, never a count', async () => {
+    /* The other half, pinned to the same owner: the control must say the read
+       failed and must never render that failure as a number, because a coach
+       reading 0 where the truth is that nobody could look is the exact
+       false-reassurance this whole file refuses. */
+    await renderWorkspace({
+      athletesList: roster,
+      reviewProjection: async () => jsonResponse({}, { ok: false, status: 503 }),
+    });
+
+    const shadow = screen.getByRole('button', { name: /^SHADOW/ });
+    expect(shadow.textContent).toMatch(/unavailable/i);
+    expect(shadow.textContent).not.toMatch(/\d+ pending/i);
+  });
+
+  test('a healthy queue still shows its real pending count', async () => {
+    /* The tail of this assertion used to read the Open Reviews tile's own
+       strapline ("Resolve queue items this session"). The tile is gone and
+       the strapline with it; the FACT it stood for -- a queue that was read
+       reports its real count and reports no failure -- is pinned on the
+       control that owns the queue now. */
+    await renderWorkspace({
+      athletesList: roster,
+      reviewProjection: async () => jsonResponse({
+        queue: [
+          { intake_case_id: 'case_a', status: 'pending_review', summary: 'A', document_count: 1, updated_at: '2026-09-21T10:00:00.000Z' },
+          { intake_case_id: 'case_b', status: 'pending_review', summary: 'B', document_count: 1, updated_at: '2026-09-22T10:00:00.000Z' },
+        ],
+        total: 2,
+      }),
+    });
 
     expect(
       screen.queryByText(/The review queue could not be read/i),
     ).toBeNull();
-    expect(screen.queryByText(/Resolve queue items this session/i)).not.toBeNull();
+
+    const shadow = screen.getByRole('button', { name: /^SHADOW/ });
+    expect(shadow.textContent).toMatch(/2 pending/i);
+    expect(shadow.textContent).not.toMatch(/unavailable/i);
   });
 
   test('the dashboard injury tile still says the feed does not exist', async () => {
