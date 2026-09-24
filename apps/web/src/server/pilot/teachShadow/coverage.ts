@@ -28,10 +28,13 @@ import {
  * WHAT IS DELIBERATELY ABSENT, because the data cannot support it:
  *   - Hours or minutes of footage. pilot.video_sessions has no duration column
  *     of any kind; file_size_bytes is not duration.
- *   - A count of distinct camera angles. camera_view is free text and
- *     nullable, and camera_view_id is minted per file, so counting either
- *     answers a different question than the one asked. "Takes filmed from two
- *     or more devices" is the honest substitute and is reported instead.
+ *   - A count of distinct camera angles, and equally a count of DEVICES.
+ *     camera_view is free text and nullable, camera_view_id is minted per
+ *     file, and uploaded_by_account_id names a coach rather than a phone, so
+ *     none of them answers "how many cameras were in the room". What is
+ *     reported instead is the plainest true statement available -- how many
+ *     takes carry more than one file -- and it is labelled as that, because
+ *     one phone recording an attempt twice satisfies it just as two phones do.
  *   - Anything derived from capture_source. It records whether bytes were
  *     recorded in-app or chosen from a device, and BOTH recorders now produce
  *     'in_app_recording'. The Teach Shadow corpus is identified by

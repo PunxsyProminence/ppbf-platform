@@ -678,12 +678,14 @@ export default function CoachVideoAnalysisPage() {
               into Teach Shadow.
             </p>
             <p className="t-body mt-[var(--s3)]">
-              <Link href="/coach/video-analysis/capture" className="btn">Record for Film Study</Link>
+              {/* A plain anchor, so the recorder is served its own document
+                  and with it the camera grant. See components/cameraDocuments.ts. */}
+              <a href="/coach/video-analysis/capture" className="btn">Record for Film Study</a>
             </p>
             <p className="t-body mt-[var(--s3)]">
-              <Link href="/teach-shadow/capture" className="underline">
+              <a href="/teach-shadow/capture" className="underline">
                 Recording an example to teach Shadow instead?
-              </Link>
+              </a>
             </p>
             <p className="t-body mt-[var(--s3)]">Or choose an existing file:</p>
             <form onSubmit={(e) => { void handleUpload(e); }} className="mt-[var(--s3)] space-y-[var(--s3)]">

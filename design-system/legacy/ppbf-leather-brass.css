@@ -2447,7 +2447,7 @@ body.ppbf.on-canvas {
    dark. Dropped into a nav list whose labels are bone, the File Room's blurb
    went light-on-light and vanished. A hallway is a working surface, not a
    showcase, so every block stays on the dark ground and the room is identified
-   by an accent edge that reads identically in all six.
+   by an accent edge that reads identically in all of them.
    The attribute selector outranks the bare .room--* rules without !important. */
 .corridor-room { padding: var(--s4) var(--s5) var(--s5); position: relative; }
 .corridor-room[class*="room--"] {
@@ -2463,6 +2463,14 @@ body.ppbf.on-canvas {
 .corridor-room.room--file   { --room-accent: var(--cork); }
 .corridor-room.room--clinic { --room-accent: #4E6B52; }
 .corridor-room.room--night  { --room-accent: var(--hide-500); }
+/* Teach Shadow. A literal, like the clinic's, because nothing in the wood /
+   brick / cork / hide ramp is unclaimed, and NOT any brass: brass-400 is
+   reserved below for the room you are standing in, and a dimmer brass would
+   read as a faded "you are here". Without a rule here the new room is the
+   only block in the corridor with no edge at all -- box-shadow falls back to
+   transparent -- which would leave the one area this whole change exists to
+   separate as the one nobody can pick out. */
+.corridor-room.room--teach  { --room-accent: #4A5B75; }
 /* The room you are standing in takes the brass edge and lifts off the ground. */
 .corridor-room.is-here[class*="room--"] {
   box-shadow: inset 3px 0 0 var(--brass-400);

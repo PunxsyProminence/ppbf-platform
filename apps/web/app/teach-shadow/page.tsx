@@ -216,9 +216,11 @@ export default function TeachShadowHomePage() {
                 the same attempt from different positions. Shadowboxing and heavy bag only, until a take can name
                 everyone who appears in it.
               </p>
-              <Link href="/teach-shadow/capture" className="btn mt-[var(--s4)] inline-block">
+              {/* A plain anchor, so the recorder is served its own document
+                  and with it the camera grant. See components/cameraDocuments.ts. */}
+              <a href="/teach-shadow/capture" className="btn mt-[var(--s4)] inline-block">
                 Capture Examples
-              </Link>
+              </a>
             </div>
 
             <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">

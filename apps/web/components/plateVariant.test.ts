@@ -59,9 +59,10 @@ const SELECTOR_SOURCE = readFileSync(join(__dirname, 'plateVariant.ts'), 'utf8')
  *
  * `floor` has a rule that declares no photograph -- resolvePlate finds it and
  * reports url: null. `teach` has no `.room--*` rule in the sheet at all, so
- * resolvePlate finds nothing and returns undefined. Writing null for it below
- * would assert the sheet says something it does not say, and the guard would
- * then be checking a claim this repository invented.
+ * resolvePlate finds nothing and returns null for the WHOLE resolution -- not
+ * an entry whose url happens to be null, which is a different answer and the
+ * one `floor` gives. Writing null in the map below would assert the sheet
+ * declares a plate of none, which it does not.
  *
  * The room arrived after rooms were retired as a visual concept: buildingMap
  * still files Teach Shadow's doors under it as structural metadata, and no

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { useCameraRecorder } from '@/components/useCameraRecorder';
 import { apiBase } from '@/lib/apiBase';
@@ -72,10 +71,19 @@ interface SessionState {
   current_take: CurrentTake | null;
 }
 
-/** Fixed when RECORD is pressed, so "Next take" mid-recording cannot refile it. */
+/**
+ * Everything about a recording that is settled when RECORD is pressed.
+ *
+ * Not just the take. cameraView is here for the same reason: a coach who
+ * repositions the phone mid-rep and retypes the field, or types ahead for the
+ * next angle, would otherwise have this recording filed under the viewpoint
+ * that was in the box when they pressed STOP. The description belongs to the
+ * footage that was actually shot.
+ */
 interface TakeContext {
   captureTakeId: string;
   athleteId: string;
+  cameraView: string;
 }
 
 export default function TeachShadowCapturePage() {
@@ -86,6 +94,13 @@ export default function TeachShadowCapturePage() {
   const [athletes, setAthletes] = useState<Array<{ athlete_id: string; full_name: string }>>([]);
   const [athleteId, setAthleteId] = useState('');
   const [busy, setBusy] = useState(false);
+  /*
+   * A CHOSEN FILE CAN BE 45 MB ON GYM WIFI. Without this the only sign
+   * anything is happening is every control greying out at once, which reads as
+   * the page having broken rather than as an upload in flight -- and a coach
+   * who concludes that presses the button again.
+   */
+  const [attaching, setAttaching] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -115,7 +130,7 @@ export default function TeachShadowCapturePage() {
       form.append('capture_take_id', context.captureTakeId);
       form.append('athlete_id', context.athleteId);
       form.append('capture_source', 'in_app_recording');
-      if (cameraView.trim()) form.append('camera_view', cameraView.trim());
+      if (context.cameraView) form.append('camera_view', context.cameraView);
       form.append('recorded_at', recordedAt);
 
       const response = await fetch(`${apiBase()}/api/pilot/video/upload`, {
@@ -204,7 +219,11 @@ export default function TeachShadowCapturePage() {
       setErrorMessage('Choose which athlete this is of before recording.');
       return;
     }
-    void recorder.start({ captureTakeId: currentTake.capture_take_id, athleteId });
+    void recorder.start({
+      captureTakeId: currentTake.capture_take_id,
+      athleteId,
+      cameraView: cameraView.trim(),
+    });
   }
 
   /*
@@ -215,6 +234,7 @@ export default function TeachShadowCapturePage() {
    */
   async function uploadExistingFile(chosen: File, captureTakeId: string) {
     setErrorMessage('');
+    setAttaching(true);
     setBusy(true);
     try {
       const form = new FormData();
@@ -235,6 +255,7 @@ export default function TeachShadowCapturePage() {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'That file could not be added to this take.');
     } finally {
+      setAttaching(false);
       setBusy(false);
     }
   }
@@ -272,9 +293,17 @@ export default function TeachShadowCapturePage() {
               made before the bytes exist. The failure this prevents is a coach
               filming a genuinely useful teaching sequence on the wrong surface
               and only realising afterwards, when moving it is forbidden. */}
-          <p role="note" className="t-body mt-[var(--s5)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s4)]">
+          {/* ON A MATERIAL GROUND, not bare on the page. `.t-body` resolves
+              to a light ink (var(--bone-200)) meant for the dark panels the
+              rest of this screen is built from; the sheet only darkens it
+              under `.on-canvas` and `.mat-paper`. Standing alone on the page
+              background it was cream on cream -- unreadable, on the one
+              paragraph the owner made an acceptance requirement. */}
+          <div className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s4)]">
+            <p role="note" className="t-body">
             For teaching Shadow. Media recorded here belongs to the recognition-teaching workflow, not Film Study.
-          </p>
+            </p>
+          </div>
 
           {errorMessage ? (
             <div role="alert" className="alert alert--warning mt-[var(--s5)]">
@@ -396,6 +425,11 @@ export default function TeachShadowCapturePage() {
                     Recording · {megabytes} MB of {limitMb} MB
                   </p>
                 ) : null}
+                {attaching ? (
+                  <p role="status" className="t-body mt-[var(--s3)]">
+                    Adding that file to this take&hellip; large files take a while on gym wifi.
+                  </p>
+                ) : null}
                 {stoppedAtLimit && phase !== 'recording' ? (
                   <p role="status" className="t-body mt-[var(--s3)]">
                     Recording stopped at the {limitMb} MB limit and is being kept. Start the next take to carry on.
@@ -427,7 +461,7 @@ export default function TeachShadowCapturePage() {
                     disabled={phase !== 'idle' || busy || !take || !athleteId}
                     onClick={() => fileInputRef.current?.click()}
                   >
-                    Add an angle from a file
+                    {attaching ? 'Adding…' : 'Add an angle from a file'}
                   </button>
                   <input
                     ref={fileInputRef}
@@ -486,7 +520,10 @@ export default function TeachShadowCapturePage() {
           )}
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/teach-shadow" className="btn btn--ghost">Back to Teach Shadow</Link>
+            {/* Leaving by anchor: a soft navigation would carry
+                camera=(self) onto the home page, which was never granted
+                it, for as long as the tab lives. */}
+            <a href="/teach-shadow" className="btn btn--ghost">Back to Teach Shadow</a>
           </div>
         </div>
       </main>

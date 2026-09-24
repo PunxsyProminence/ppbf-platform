@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { useCameraRecorder } from '@/components/useCameraRecorder';
 import { apiBase } from '@/lib/apiBase';
@@ -37,6 +36,9 @@ export default function FilmStudyCapturePage() {
   const [title, setTitle] = useState('');
   const [uploaded, setUploaded] = useState(0);
   const [busy, setBusy] = useState(false);
+  // See the note on the Teach Shadow recorder: a chosen file can be large, and
+  // controls greying out with no other sign reads as a broken page.
+  const [attaching, setAttaching] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -101,6 +103,7 @@ export default function FilmStudyCapturePage() {
 
   async function uploadExistingFile(chosen: File) {
     setErrorMessage('');
+    setAttaching(true);
     setBusy(true);
     try {
       // capture_source says a file was chosen, not recorded. Calling a file
@@ -110,6 +113,7 @@ export default function FilmStudyCapturePage() {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'That file could not be uploaded.');
     } finally {
+      setAttaching(false);
       setBusy(false);
     }
   }
@@ -145,13 +149,24 @@ export default function FilmStudyCapturePage() {
               made before the bytes exist. The failure this prevents is a coach
               filming a genuinely useful teaching sequence here and only
               realising afterwards, when moving it is forbidden. */}
-          <p role="note" className="t-body mt-[var(--s5)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s4)]">
+          {/* ON A MATERIAL GROUND, not bare on the page. `.t-body` resolves
+              to a light ink (var(--bone-200)) meant for the dark panels the
+              rest of this screen is built from; the sheet only darkens it
+              under `.on-canvas` and `.mat-paper`. Standing alone on the page
+              background it was cream on cream -- unreadable, on the one
+              paragraph the owner made an acceptance requirement. */}
+          <div className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s4)]">
+            <p role="note" className="t-body">
             For coaching review of an athlete. Media recorded here stays in Film Study and cannot be moved into
             Teach Shadow.{' '}
-            <Link href="/teach-shadow/capture" className="underline">
+            {/* Both ends of this are camera documents; a soft navigation
+                between them would leave the second one running inside the
+                first one’s policy. */}
+            <a href="/teach-shadow/capture" className="underline">
               Recording an example to teach Shadow instead?
-            </Link>
-          </p>
+            </a>
+            </p>
+          </div>
 
           {errorMessage ? (
             <div role="alert" className="alert alert--warning mt-[var(--s5)]">
@@ -202,6 +217,11 @@ export default function FilmStudyCapturePage() {
                   Recording · {megabytes} MB of {limitMb} MB
                 </p>
               ) : null}
+              {attaching ? (
+                <p role="status" className="t-body mt-[var(--s3)]">
+                  Uploading that file&hellip; large files take a while on gym wifi.
+                </p>
+              ) : null}
               {stoppedAtLimit && phase !== 'recording' ? (
                 <p role="status" className="t-body mt-[var(--s3)]">
                   Recording stopped at the {limitMb} MB limit and is being kept. Record again to carry on.
@@ -237,7 +257,7 @@ export default function FilmStudyCapturePage() {
                   disabled={phase !== 'idle' || busy || !athleteId}
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  Choose a file instead
+                  {attaching ? 'Uploading…' : 'Choose a file instead'}
                 </button>
                 <input
                   ref={fileInputRef}
@@ -255,7 +275,10 @@ export default function FilmStudyCapturePage() {
           </section>
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/coach/video-analysis" className="btn btn--ghost">Back to Video Analysis</Link>
+            {/* Leaving by anchor too: a soft navigation would carry
+                camera=(self) onto a page that was never granted it, for as
+                long as the tab lives. */}
+            <a href="/coach/video-analysis" className="btn btn--ghost">Back to Video Analysis</a>
           </div>
         </div>
       </main>

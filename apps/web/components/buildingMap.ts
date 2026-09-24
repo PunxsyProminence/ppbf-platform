@@ -732,11 +732,18 @@ export function doorForPath(pathname: string): Door | null {
 /* ==========================================================================
    WHERE AN EASTER EGG MAY STAND
 
-   docs/shadow-ui/ROOM-PURPOSE-DNA.md answers "Easter eggs?" for all six rooms
-   and the answer is only twice yes: the gym floor is their PRIMARY HOME, and
-   the front office takes them as chalk, notices and photographs. The other
-   four say NEVER in capitals -- board, file, clinic, and after hours on a
-   deny. docs/shadow-ui/EGGS-LOAD-FIRST-12.md says the same thing from the
+   docs/shadow-ui/ROOM-PURPOSE-DNA.md answers "Easter eggs?" for the six rooms
+   that existed when it was written, and the answer is only twice yes: the gym
+   floor is their PRIMARY HOME, and the front office takes them as chalk,
+   notices and photographs. The other four say NEVER in capitals -- board,
+   file, clinic, and after hours on a deny.
+
+   TEACH SHADOW HAS NO ENTRY IN THAT DOCUMENT because it is newer, and it is
+   not listed below. That is the default answering rather than an omission:
+   the surfaces there are a coach deciding what the recognizer has been shown
+   too little of, and a flourish on one would sit beside a figure somebody is
+   about to act on. If the owner wants eggs there, the DNA document is where
+   that decision belongs, and this list follows it. docs/shadow-ui/EGGS-LOAD-FIRST-12.md says the same thing from the
    other end: "Never load onto: board, file, clinic, shadow deny."
 
    This matters here rather than only in the pages because the two components
@@ -756,7 +763,7 @@ export function roomAllowsEggs(room: Room | null | undefined): boolean {
 /**
  * May the surface at this path carry an egg?
  *
- * A path with no door answers NO, deliberately. Four of the six rooms forbid
+ * A path with no door answers NO, deliberately. Five of the seven rooms forbid
  * eggs outright, so "somewhere the map has never heard of" is much more likely
  * to be one of those than one of the two that allow them; and the cost of the
  * two answers is not symmetric — a missing flourish is nothing, a joke in a

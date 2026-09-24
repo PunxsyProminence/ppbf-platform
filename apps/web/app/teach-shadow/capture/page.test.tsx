@@ -125,15 +125,32 @@ async function openSession() {
 }
 
 test('says where the footage goes, above the control that records it', async () => {
-  await renderPage();
+  /*
+   * WITH A SESSION OPEN, so there is a Record control to be above. The first
+   * version of this test rendered the page in its no-session state, where the
+   * only thing on screen is the session form -- it asserted the sentence
+   * existed and could not have caught the sentence moving BELOW the controls,
+   * which is the arrangement the owner made an acceptance requirement.
+   */
+  await openSession();
 
   const statement = screen.getByText(
     /Media recorded here belongs to the recognition-teaching workflow, not Film Study/i,
   );
-  // The destination is stated before a session even exists, so it is read
-  // before any decision rather than after one.
-  expect(statement).toBeInTheDocument();
-  expect(screen.getByRole('note')).toBe(statement.closest('[role="note"]'));
+  const control = screen.getByRole('button', { name: 'Record Example for Shadow' });
+
+  expect(statement.compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING)
+    .toBeTruthy();
+});
+
+test('the destination is stated before a session even exists', async () => {
+  // Read before the first decision, not after it: a coach choosing between
+  // the two recorders has not started a session yet.
+  await renderPage();
+
+  expect(
+    screen.getByText(/Media recorded here belongs to the recognition-teaching workflow, not Film Study/i),
+  ).toBeInTheDocument();
 });
 
 test('a recording carries the take it was started against', async () => {
@@ -188,6 +205,33 @@ test('the take is fixed when recording starts, not when it stops', async () => {
   expect(uploads[0]!.get('capture_take_id')).toBe('take-1');
 
   SESSION.current_take = { capture_take_id: 'take-1', take_number: 1, state: 'open', files: [] };
+});
+
+test('the camera view is the one that was typed when filming started', async () => {
+  /*
+   * A coach on the second phone types 'front', presses record, then
+   * repositions the phone mid-rep and retypes the field -- or types ahead for
+   * the angle they are about to shoot. Read at stop time, the footage would be
+   * filed under a viewpoint it was not shot from, and nothing downstream could
+   * tell: a wrong camera_view is a plausible-looking label nobody checks.
+   */
+  await openSession();
+  fireEvent.change(screen.getByLabelText(/which athlete/i), { target: { value: 'ath-1' } });
+  fireEvent.change(screen.getByLabelText(/this camera/i), { target: { value: 'front' } });
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Record Example for Shadow' }));
+  });
+  fireEvent.change(screen.getByLabelText(/this camera/i), { target: { value: 'side' } });
+  await act(async () => {
+    recorderInstances[0]!.ondataavailable?.({ data: new Blob(['x']) });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+  });
+
+  await waitFor(() => expect(uploads).toHaveLength(1));
+  expect(uploads[0]!.get('camera_view')).toBe('front');
 });
 
 test('offers only the contexts with one person in frame', async () => {
