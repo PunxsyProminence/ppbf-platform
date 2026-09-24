@@ -124,7 +124,6 @@ const ENTRIES: ManifestEntry[] = manifest.suites;
  * docs/VISUAL-NOTES.md for how one earns its place.
  */
 const REQUIRED_BY_NAME = [
-  'src/design/safeguardingRedReservation.test.ts',
   'src/design/plateBinaries.test.ts',
   'src/design/readinessRungPolicy.test.ts',
   'src/design/safetySemanticsSurviveTheThemeSwap.test.ts',

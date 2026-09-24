@@ -3,8 +3,10 @@
     "The register of suites that may not vanish from a run without the run going red.",
     "A suite that fails to LOAD reports as one failing file while every assertion it owns",
     "disappears from the totals, so the passing test count goes UP. On 2026-08-25 that",
-    "happened to safeguardingRedReservation.test.ts and the reserved medical red had no",
-    "guard on main at all. Enforced by scripts/suiteAttendanceReporter.js on every",
+    "happened to the safeguarding-red suite -- since retired by owner decision, see below --",
+    "and the run stayed green while its subject had no guard on main at all. The suite is",
+    "gone; the failure mode it exposed is why this register exists and is not.",
+    "Enforced by scripts/suiteAttendanceReporter.js on every",
     "unnarrowed run; the register itself is kept honest by src/testing/suiteAttendance.test.ts.",
     "",
     "minimumTests is a MEASURED FLOOR. It is not a target and it is not a ceiling: adding",
@@ -21,14 +23,18 @@
     "type and targets must be, which vocabulary is frozen -- and the club's own identity",
     "turns out to be black, red and white with a boxing-groundhog crest, not brass and",
     "parchment. A rule defending a design decision we have abandoned is not protection.",
-    "What remains here are the suites that stop the app telling somebody something untrue."
+    "What remains here are the suites that stop the app telling somebody something untrue.",
+    "",
+    "2026-09-24, OWNER DECISION on the safeguarding red: 'delete red no need for it to be",
+    "excluded'. The reservation held #A81E22 and seven tokens for MEDICALLY_NOT_ALLOWED",
+    "alone, banned the literal from CSS and TS/TSX, and carried a 118-entry ledger of every",
+    "existing site where a red sat near a failure word. The club's own identity is black,",
+    "red and white, so the app could not wear its own colours. The hue monopoly and the",
+    "ledger are gone. What is NOT gone: --locked still exists and still means a medical",
+    "stop. Anything that needs a medical stop to stay distinguishable from an ordinary",
+    "error belongs in a test of that surface, not in a repository-wide colour ban."
   ],
   "suites": [
-    {
-      "path": "src/design/safeguardingRedReservation.test.ts",
-      "minimumTests": 8,
-      "guards": "The reserved safeguarding red. #A81E22 / --locked belongs to MEDICALLY_NOT_ALLOWED alone (owner decision 2026-08-19); this is the guard that stops load errors, empty states and 'not on file' placeholders wearing it through any of the four derived channels. This is the suite that went dark on 2026-08-25."
-    },
     {
       "path": "src/design/readinessRungPolicy.test.ts",
       "minimumTests": 4,
