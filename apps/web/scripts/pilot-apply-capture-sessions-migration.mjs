@@ -76,6 +76,13 @@ function resolveSslConfig() {
 // closed vocabulary; without it the column accepts any string and the
 // distinction between recorded and uploaded footage stops being reliable.
 //
+// EVERY FOREIGN-KEY CHECK ALSO PINS ITS ARITY, and that is the tenant
+// invariant rather than a detail. A single-column reference to a take would
+// let a video in one organization name a take in another: the routes happen to
+// scope their reads, but application scoping is a habit and a foreign key is a
+// guarantee. `array_length(conkey, 1) = 2` is what refuses a database where
+// somebody replaced the composite key with the simpler-looking one.
+//
 // to_regclass() rather than the ::regclass cast: the cast raises before any
 // column is evaluated when a table is absent, which would report an unmigrated
 // database as a SQL error instead of as unreadiness.
@@ -123,6 +130,7 @@ const READINESS_QUERY = `
         and conrelid = to_regclass('pilot.video_sessions')
         and contype = 'f'
         and confdeltype = 'n'
+        and array_length(conkey, 1) = 2
     ) as recording_session_fk_ready,
     exists (
       select 1 from pg_constraint
@@ -130,7 +138,15 @@ const READINESS_QUERY = `
         and conrelid = to_regclass('pilot.video_sessions')
         and contype = 'f'
         and confdeltype = 'n'
+        and array_length(conkey, 1) = 2
     ) as capture_take_fk_ready,
+    exists (
+      select 1 from pg_constraint
+      where conname = 'capture_takes_recording_session_fk'
+        and conrelid = to_regclass('pilot.capture_takes')
+        and contype = 'f'
+        and array_length(conkey, 1) = 2
+    ) as take_session_fk_ready,
     exists (
       select 1
       from information_schema.columns

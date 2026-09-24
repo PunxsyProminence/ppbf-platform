@@ -278,11 +278,33 @@ export async function advanceTake(params: {
   });
 }
 
+/*
+ * TAKES THE SAME SESSION LOCK advanceTake TAKES, FIRST, and that ordering is
+ * the entire correctness of this function.
+ *
+ * It did not, and the interleaving that produced was real: a close could shut
+ * the open take, an advance already holding the session could then create take
+ * N+1 as open, and the close would finally mark the session closed. End state:
+ * a CLOSED session with an OPEN take -- precisely the contradiction the take
+ * table exists to prevent, reached without either statement being wrong on its
+ * own.
+ *
+ * Both writers now claim the same row before touching takes, so one waits for
+ * the other and sees its committed result. Mocked tests cannot catch this;
+ * only the lock ordering prevents it.
+ */
 export async function closeRecordingSession(params: {
   organizationId: string;
   recordingSessionId: string;
 }): Promise<void> {
   await withTransaction(async (client) => {
+    await client.query(
+      `select 1 from pilot.recording_sessions
+        where organization_id = $1 and recording_session_id = $2
+        for update`,
+      [params.organizationId, params.recordingSessionId],
+    );
+
     await client.query(
       `update pilot.capture_takes
           set state = 'closed', closed_at = now()

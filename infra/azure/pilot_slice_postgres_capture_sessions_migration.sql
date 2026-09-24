@@ -49,7 +49,12 @@ create table if not exists pilot.recording_sessions (
   state text not null default 'open'
     check (state in ('open', 'closed')),
   created_at timestamptz not null default now(),
-  closed_at timestamptz null
+  closed_at timestamptz null,
+  -- Not redundant with the primary key. It is the TARGET every composite
+  -- foreign key below points at, which is what makes a cross-organization
+  -- relationship unrepresentable rather than merely unlikely. Same device the
+  -- calibration schema uses for the same reason.
+  constraint recording_sessions_org_scoped_unique unique (organization_id, recording_session_id)
 );
 
 -- A join code only has to be unambiguous among the sessions you could still
@@ -64,8 +69,7 @@ create index if not exists idx_recording_sessions_org_created
 
 create table if not exists pilot.capture_takes (
   capture_take_id text primary key,
-  recording_session_id text not null
-    references pilot.recording_sessions(recording_session_id) on delete cascade,
+  recording_session_id text not null,
   organization_id text not null,
   -- Human-facing within its session: "take 3", not a uuid nobody can say out
   -- loud while standing on the gym floor.
@@ -74,7 +78,21 @@ create table if not exists pilot.capture_takes (
     check (state in ('open', 'closed')),
   created_at timestamptz not null default now(),
   closed_at timestamptz null,
-  constraint capture_takes_number_unique unique (recording_session_id, take_number)
+  constraint capture_takes_number_unique unique (recording_session_id, take_number),
+  constraint capture_takes_org_scoped_unique unique (organization_id, capture_take_id),
+  /*
+   * COMPOSITE, CARRYING organization_id, and that is the whole point. A
+   * single-column reference to recording_session_id would let a take in one
+   * gym name a session in another: the routes happen to scope their reads
+   * correctly, but application scoping is a habit and a foreign key is a
+   * guarantee. With the organization in the key, the contradictory row cannot
+   * be written at all -- which is the standard the calibration schema already
+   * holds itself to.
+   */
+  constraint capture_takes_recording_session_fk
+    foreign key (organization_id, recording_session_id)
+    references pilot.recording_sessions(organization_id, recording_session_id)
+    on delete cascade
 );
 
 -- ONE OPEN TAKE AT A TIME, enforced by the database rather than by whichever
@@ -135,11 +153,25 @@ begin
       check (capture_source is null or capture_source in ('in_app_recording', 'file_upload'));
   end if;
 
-  -- ON DELETE SET NULL, not CASCADE and not RESTRICT. Deleting a recording
-  -- session must never delete the footage, and must never be blocked by it:
-  -- the retention purge hard-deletes rows, and a restricting constraint here
-  -- would abort that sweep. Losing the grouping while keeping the video is the
-  -- right direction to fail in.
+  /*
+   * COMPOSITE, so a video in one organization cannot name a session or take in
+   * another. The routes scope their reads, but that is application discipline;
+   * this makes the contradictory row unrepresentable.
+   *
+   * THE NULLABILITY IS LOAD-BEARING AND CORRECT. Default MATCH SIMPLE means a
+   * composite foreign key is not enforced when ANY of its columns is NULL.
+   * organization_id is never null, so for an ordinary ungrouped upload -- where
+   * recording_session_id and capture_take_id are both NULL -- the constraint
+   * stands down entirely, which is exactly right: every video that predates
+   * this migration is that shape. The moment a grouping id IS present, the pair
+   * must match a real row in the same organization.
+   *
+   * ON DELETE SET NULL, not CASCADE and not RESTRICT. Deleting a recording
+   * session must never delete the footage, and must never be blocked by it:
+   * the retention purge hard-deletes rows, and a restricting constraint here
+   * would abort that sweep. Losing the grouping while keeping the video is the
+   * right direction to fail in.
+   */
   if not exists (
     select 1
     from pg_constraint
@@ -148,8 +180,8 @@ begin
   ) then
     alter table pilot.video_sessions
       add constraint video_sessions_recording_session_fk
-      foreign key (recording_session_id)
-      references pilot.recording_sessions(recording_session_id)
+      foreign key (organization_id, recording_session_id)
+      references pilot.recording_sessions(organization_id, recording_session_id)
       on delete set null;
   end if;
 
@@ -161,8 +193,8 @@ begin
   ) then
     alter table pilot.video_sessions
       add constraint video_sessions_capture_take_fk
-      foreign key (capture_take_id)
-      references pilot.capture_takes(capture_take_id)
+      foreign key (organization_id, capture_take_id)
+      references pilot.capture_takes(organization_id, capture_take_id)
       on delete set null;
   end if;
 end

@@ -7,6 +7,7 @@ jest.mock('./db', () => ({
 import { query, queryOne, withTransaction } from './db';
 import {
   advanceTake,
+  closeRecordingSession,
   createRecordingSession,
   findOpenSessionByJoinCode,
   generateJoinCode,
@@ -200,6 +201,61 @@ describe('advancing to the next take', () => {
     await expect(
       advanceTake({ organizationId: 'org-a', recordingSessionId: 'rs-1' }),
     ).rejects.toThrow(/closed/);
+  });
+});
+
+describe('closing a session', () => {
+  /*
+   * THE LOCK ORDERING IS THE WHOLE TEST. close did not take the session lock,
+   * and the interleaving that allowed was real: close shuts the open take, an
+   * advance already holding the session creates take N+1 as open, then close
+   * marks the session closed. End state -- a CLOSED session with an OPEN take,
+   * the exact contradiction the take table exists to prevent, with neither
+   * statement wrong on its own.
+   *
+   * A mocked test cannot reproduce the interleaving. It CAN pin the property
+   * that prevents it: both writers claim the same row before touching takes.
+   */
+  test('claims the session row before it touches any take', async () => {
+    mockClient.query.mockResolvedValue({ rows: [] });
+
+    await closeRecordingSession({ organizationId: 'org-a', recordingSessionId: 'rs-1' });
+
+    const statements = mockClient.query.mock.calls.map(([sql]) => String(sql));
+    expect(statements[0]).toContain('for update');
+    expect(statements[0]).toContain('pilot.recording_sessions');
+    expect(statements[1]).toContain('pilot.capture_takes');
+  });
+
+  test('locks the same row advancing does, so the two serialize against each other', async () => {
+    mockClient.query.mockResolvedValue({ rows: [] });
+    await closeRecordingSession({ organizationId: 'org-a', recordingSessionId: 'rs-1' });
+    const closeLock = String(mockClient.query.mock.calls[0][0]);
+    const closeParams = mockClient.query.mock.calls[0][1];
+
+    jest.clearAllMocks();
+    mockWithTransaction.mockImplementation(((fn: (c: unknown) => unknown) => fn(mockClient)) as never);
+    mockClient.query
+      .mockResolvedValueOnce({ rows: [{ state: 'open' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [takeRow()] });
+    await advanceTake({ organizationId: 'org-a', recordingSessionId: 'rs-1' });
+    const advanceLock = String(mockClient.query.mock.calls[0][0]);
+
+    /*
+     * The SQL text differs -- advance reads `state`, close reads a literal --
+     * and that is fine. What must match is the ROW each one claims: same
+     * table, same two predicate columns, same FOR UPDATE. Comparing the text
+     * would fail on a harmless rewording while missing a changed predicate,
+     * which is the wrong way round.
+     */
+    for (const lock of [closeLock, advanceLock]) {
+      expect(lock).toContain('pilot.recording_sessions');
+      expect(lock).toContain('organization_id = $1');
+      expect(lock).toContain('recording_session_id = $2');
+      expect(lock).toContain('for update');
+    }
+    expect(closeParams).toEqual(['org-a', 'rs-1']);
   });
 });
 

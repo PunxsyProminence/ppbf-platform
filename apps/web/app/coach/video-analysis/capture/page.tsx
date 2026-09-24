@@ -68,12 +68,15 @@ export default function VideoCapturePage() {
   const [trainingContext, setTrainingContext] = useState('shadowboxing');
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [cameraView, setCameraView] = useState('');
+  const [athletes, setAthletes] = useState<Array<{ athlete_id: string; full_name: string }>>([]);
+  const [athleteId, setAthleteId] = useState('');
   const [phase, setPhase] = useState<RecorderPhase>('idle');
   const [recordedBytes, setRecordedBytes] = useState(0);
   const [stoppedAtLimit, setStoppedAtLimit] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -85,6 +88,26 @@ export default function VideoCapturePage() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+  }, []);
+
+  /*
+   * The roster, because a capture MUST name the athlete it is of. That is not
+   * a form nicety: the scan sweep only asks for guardian consent when a video
+   * carries an athlete_id, so an unattributed recording of a minor would reach
+   * the vision screen with that check skipped. The server refuses it too.
+   */
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include' });
+        const payload = (await response.json().catch(() => ({}))) as {
+          items?: Array<{ athlete_id: string; full_name: string }>;
+        };
+        setAthletes(payload.items ?? []);
+      } catch {
+        setErrorMessage('The athlete list could not be loaded, so recording is unavailable.');
+      }
+    })();
   }, []);
 
   // The camera is released when this page is left. A preview that keeps
@@ -149,6 +172,10 @@ export default function VideoCapturePage() {
       setErrorMessage('Start or join a recording session first.');
       return;
     }
+    if (!athleteId) {
+      setErrorMessage('Choose which athlete this is of before recording.');
+      return;
+    }
 
     setPhase('starting');
     try {
@@ -173,7 +200,7 @@ export default function VideoCapturePage() {
         typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(candidate),
       );
       if (!mimeType) {
-        throw new Error('This browser cannot record a video format the platform accepts. Use Choose existing video instead.');
+        throw new Error('This browser cannot record a format the platform accepts. Use "Add an angle from a file" to attach one to this take instead.');
       }
 
       const recorder = new MediaRecorder(stream, { mimeType });
@@ -220,6 +247,38 @@ export default function VideoCapturePage() {
     }
   }
 
+  /*
+   * An angle that was shot outside this page. It carries the SAME take, so it
+   * groups with the recorded angles -- and it declares capture_source
+   * 'file_upload', because calling a file this app never recorded an
+   * in-app recording would be a false provenance claim.
+   */
+  async function uploadExistingFile(chosen: File, captureTakeId: string) {
+    setPhase('uploading');
+    setErrorMessage('');
+    try {
+      const form = new FormData();
+      form.append('file', chosen);
+      form.append('capture_take_id', captureTakeId);
+      form.append('athlete_id', athleteId);
+      form.append('capture_source', 'file_upload');
+      if (cameraView.trim()) form.append('camera_view', cameraView.trim());
+
+      const response = await fetch(`${apiBase()}/api/pilot/video/upload`, {
+        method: 'POST',
+        credentials: 'include',
+        body: form,
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || 'That file could not be added to this take.');
+      if (session) await refresh(session.recording_session_id);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'That file could not be added to this take.');
+    } finally {
+      setPhase('idle');
+    }
+  }
+
   function stopRecording() {
     const recorder = recorderRef.current;
     if (recorder && recorder.state === 'recording') recorder.stop();
@@ -247,6 +306,8 @@ export default function VideoCapturePage() {
       const form = new FormData();
       form.append('file', file);
       form.append('capture_take_id', captureTakeId);
+      form.append('athlete_id', athleteId);
+      form.append('capture_source', 'in_app_recording');
       if (cameraView.trim()) form.append('camera_view', cameraView.trim());
       if (recordedAtRef.current) form.append('recorded_at', recordedAtRef.current);
 
@@ -289,9 +350,10 @@ export default function VideoCapturePage() {
               Record a Punch
             </h1>
             <p className="t-body mt-[var(--s3)] max-w-3xl">
-              Short learning captures. Recording stops automatically at {limitMb} MB, which is the largest file the
-              upload path currently takes. Several coaches can film the same punch from different positions: one
-              starts a session, the others join it with the code, and every phone records its own angle.
+              Short learning captures. Recording stops itself at {limitMb} MB, which is a deliberate margin under
+              the upload limit rather than the limit itself, so a take is never lost to a refused upload. Several
+              coaches can film the same punch from different positions: one starts a session, the others join it
+              with the code, and every phone records its own angle.
             </p>
           </header>
 
@@ -375,7 +437,21 @@ export default function VideoCapturePage() {
               </div>
 
               <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+                {/* REQUIRED, and the server refuses without it. An
+                    unattributed recording would reach the vision content
+                    screen with the guardian-consent check skipped, because
+                    that check only runs for a video that names an athlete. */}
                 <label className="t-eyebrow flex flex-col gap-[var(--s2)]">
+                  Which athlete is this of
+                  <select className="input" value={athleteId} onChange={(e) => setAthleteId(e.target.value)}>
+                    <option value="">Choose an athlete…</option>
+                    {athletes.map((athlete) => (
+                      <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="t-eyebrow mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
                   This camera&rsquo;s view (optional)
                   {/* Free text and allowed to stay empty. Only a human in the
                       gym can say "side on, southpaw side"; the browser knows
@@ -420,6 +496,31 @@ export default function VideoCapturePage() {
                       {phase === 'uploading' ? 'Uploading…' : phase === 'starting' ? 'Opening camera…' : 'Record'}
                     </button>
                   )}
+                  {/* THE SAME TAKE, FROM A FILE. A browser whose recorder
+                      this platform cannot use still has a camera app, and an
+                      angle shot outside the page is still an angle of this
+                      attempt. Previously the only advice was to go back to the
+                      ordinary uploader, which sends no take and would have
+                      silently produced an ungrouped video. */}
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    disabled={phase !== 'idle' || busy || !take || !athleteId}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Add an angle from a file
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      const chosen = event.target.files?.[0];
+                      event.target.value = '';
+                      if (chosen && take) void uploadExistingFile(chosen, take.capture_take_id);
+                    }}
+                  />
                   <button
                     type="button"
                     className="btn btn--ghost"
