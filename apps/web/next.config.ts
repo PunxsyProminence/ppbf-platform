@@ -35,33 +35,52 @@ const CONTENT_SECURITY_POLICY = [
 	"frame-ancestors 'none'",
 ].join("; ");
 
-// THE CAMERA IS OFF EVERYWHERE EXCEPT ONE DOCUMENT.
+// THE CAMERA IS OFF EVERYWHERE EXCEPT TWO DOCUMENTS.
 //
 // Permissions-Policy is a per-RESPONSE header, which is the fact that shapes
 // this: a page served with camera=() can never turn the camera on later, no
-// matter what a button on it does. So the in-app recorder cannot be a modal on
-// an ordinary page -- it has to be its own document, and only that document
-// asks for the capability.
+// matter what a button on it does. So a recorder cannot be a modal on an
+// ordinary page -- it has to be its own document, and only that document asks
+// for the capability.
+//
+// THERE ARE TWO BECAUSE THE APP RECORDS FOR TWO DIFFERENT PURPOSES, and the
+// owner's ruling is that those purposes never mix: footage shot for a coach to
+// review with an athlete stays in Film Study, and footage shot to teach Shadow
+// what a punch looks like is collected under Teach Shadow. Separate documents
+// are what make that separation real rather than a label -- the destination is
+// settled by which page the coach stood on before pressing record, not by a
+// dropdown afterwards.
 //
 // The alternative was camera=(self) for the whole origin, which the owner
 // authorized. It is not taken: it would hand the capability to every page in
-// the app to serve one, and a cross-site scripting hole anywhere would then
+// the app to serve two, and a cross-site scripting hole anywhere would then
 // reach a camera instead of stopping at the DOM.
 //
-// Microphone stays CLOSED even on the capture route, and that is a product
+// Microphone stays CLOSED even on the capture routes, and that is a product
 // decision rather than caution. Punch recognition has to work on silent
 // shadowboxing, in loud gyms, and across several cameras hearing different
 // sound mixtures; impact sound would offer the model a shortcut instead of
-// making it learn the movement. The recorder requests a video-only stream, so
+// making it learn the movement. Both recorders request a video-only stream, so
 // there is nothing for an open microphone to serve.
 const PERMISSIONS_POLICY_CLOSED = "camera=(), microphone=(), geolocation=()";
 const PERMISSIONS_POLICY_CAPTURE = "camera=(self), microphone=(), geolocation=()";
 
-// The one document allowed to open a camera. Kept as a constant because the
-// header rules below must agree with it exactly: a typo in either would either
-// leave the recorder unable to start or open the camera on a route nobody
-// examined.
-const CAPTURE_ROUTE = "/coach/video-analysis/capture";
+// The only documents allowed to open a camera. Kept as ONE list because the
+// header rules below are derived from it: a route added here is granted the
+// camera and excluded from the closed rule in the same act, so the two sides
+// can never disagree. Maintaining them separately is how a recorder ends up
+// unable to start, or a camera ends up open on a route nobody examined.
+const CAPTURE_ROUTES = [
+	// Teaching Shadow: grouped, multi-angle, becomes recognition evidence.
+	"/teach-shadow/capture",
+	// Film Study: one coach filming one athlete to review with them. Never
+	// promotable into the Teach Shadow corpus.
+	"/coach/video-analysis/capture",
+] as const;
+
+// Every capture route, anchored, as one alternation -- the negative lookahead
+// the closed rule is built from.
+const CAPTURE_ROUTE_ALTERNATION = CAPTURE_ROUTES.map((route) => `${route.slice(1)}$`).join("|");
 
 function securityHeaders(permissionsPolicy: string) {
 	return [
@@ -91,19 +110,20 @@ const nextConfig: NextConfig = {
 	// is the live one. The static-export path ignores it; if that path ever
 	// ships, staticwebapp.config.json must mirror these.
 	async headers() {
-		// TWO MUTUALLY EXCLUSIVE RULES, not a general rule plus an override.
-		// Next applies every matching entry, so two rules that both matched the
-		// capture route would emit Permissions-Policy twice and leave which one
-		// wins to the browser. The negative lookahead makes exactly one rule
-		// match any given path, so the answer is decided here rather than by a
-		// user agent. securityHeaders.test.ts pins both sides.
+		// ONE RULE PER CAPTURE ROUTE, PLUS ONE CLOSED RULE, and exactly one of
+		// them matches any given path. Next applies EVERY matching entry, so two
+		// rules that both matched a capture route would emit Permissions-Policy
+		// twice and leave which one wins to the browser. The negative lookahead
+		// is built from the same list the open rules are, so the answer is
+		// decided here rather than by a user agent. securityHeaders.test.ts pins
+		// every side of it.
 		return [
-			{
-				source: CAPTURE_ROUTE,
+			...CAPTURE_ROUTES.map((route) => ({
+				source: route,
 				headers: securityHeaders(PERMISSIONS_POLICY_CAPTURE),
-			},
+			})),
 			{
-				source: `/((?!${CAPTURE_ROUTE.slice(1)}$).*)`,
+				source: `/((?!${CAPTURE_ROUTE_ALTERNATION}).*)`,
 				headers: securityHeaders(PERMISSIONS_POLICY_CLOSED),
 			},
 		];
