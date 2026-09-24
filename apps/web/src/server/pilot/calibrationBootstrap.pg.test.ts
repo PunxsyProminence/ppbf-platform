@@ -14,7 +14,7 @@
 //     so only a real database can say what the WHERE clause does with them
 //   * the source video row is not touched by being annotated against
 //   * the rows the bootstrap creates are the rows the existing read paths
-//     behind /coach/calibration return
+//     behind /teach-shadow/annotation return
 //   * each creation writes an audit row carrying the creator's REAL role, read
 //     from their account row -- a mock would only prove the argument was passed
 //   * a refused creation writes none, and a refused AUDIT write leaves the rows
@@ -446,7 +446,7 @@ describe('establishing a ready video as a calibration study', () => {
   });
 
   test('the resulting rows are the ones the existing picker reads', async () => {
-    // Acceptance criterion 6, at the layer /coach/calibration's two GET routes
+    // Acceptance criterion 6, at the layer /teach-shadow/annotation's two GET routes
     // actually call: listCalibrationProjects then listCalibrationClips.
     const { project, clip } = await bootstrap.bootstrapCalibrationClip(
       request({ clipCode: 'C-06' }),
