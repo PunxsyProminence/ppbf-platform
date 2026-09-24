@@ -19,6 +19,12 @@ import {
   reviewQueueBadgeFor,
 } from '@/coach/coachGlance';
 import {
+  DEFAULT_COACH_LAYOUT,
+  readCoachLayout,
+  writeCoachLayout,
+  type CoachLayoutId,
+} from '@/coach/coachLayout';
+import {
   READINESS_UNVALIDATED_CAVEAT,
   isReadinessMethodValidated,
 } from '@/src/server/pilot/readinessProvenance';
@@ -743,6 +749,35 @@ export default function CoachWorkspace() {
   const activeTabLabel = COACH_TABS.find((tab) => tab.id === activeTab)?.label ?? 'Dashboard';
   const [sessionMode, setSessionMode] = useState<SessionMode>('Group');
   const [coachAccountId, setCoachAccountId] = useState('');
+
+  /* WHICH LAYOUT THE COACH IS LOOKING AT. Both render the same glance model;
+     neither computes anything of its own. See src/coach/coachLayout.ts.
+
+     Hydrated in an effect rather than read during render, because localStorage
+     does not exist on the server and a preference read at render time is a
+     hydration mismatch waiting to happen.
+
+     The ref is not ceremony. coachAccountId arrives asynchronously, so this
+     effect runs a second time when it lands -- and without the guard that
+     second run would silently throw away a choice the coach made in the
+     meantime, which on a slow session read is an ordinary thing to do. Once
+     they have chosen, their choice wins over anything stored. */
+  const [coachLayout, setCoachLayout] = useState<CoachLayoutId>(DEFAULT_COACH_LAYOUT);
+  const layoutChosenByCoach = useRef(false);
+  useEffect(() => {
+    if (layoutChosenByCoach.current) return;
+    setCoachLayout(readCoachLayout(coachAccountId));
+  }, [coachAccountId]);
+
+  const chooseCoachLayout = useCallback((next: CoachLayoutId) => {
+    layoutChosenByCoach.current = true;
+    setCoachLayout(next);
+    // Best effort. A tablet that cannot remember still switches; it just
+    // forgets. writeCoachLayout also declines to store anything until the
+    // account id is known, so one coach's choice never lands in the slot every
+    // not-yet-identified session reads from.
+    writeCoachLayout(coachAccountId, next);
+  }, [coachAccountId]);
   const [reviewSessionId, setReviewSessionId] = useState('');
   // The review picker: which athlete's sessions are listed, and the list
   // itself. 'idle' (no athlete chosen), 'loading', 'loaded' (possibly empty),
@@ -2166,6 +2201,27 @@ export default function CoachWorkspace() {
             <p className="cb-eyebrow">Coach</p>
             <h1 className="cb-sign">The Floor Board</h1>
             <div className="cb-rule-under" aria-hidden="true" />
+            {/* THE LAYOUT TOGGLE. Deliberately outside every tab branch: it
+                changes how the whole board is drawn, not what any one tab
+                shows, and a control that moved or vanished per tab would read
+                as a tab-scoped setting.
+
+                Shaped like the session-mode toggle below -- two pressed
+                buttons carrying aria-pressed -- because that is the pattern
+                this workspace already teaches. */}
+            <div className="cb-layout" role="group" aria-label="Board layout">
+              {(['board', 'room'] as const).map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={cx('cb-layout-pick', coachLayout === id && 'cb-layout-pick--on')}
+                  onClick={() => chooseCoachLayout(id)}
+                  aria-pressed={coachLayout === id}
+                >
+                  {id === 'board' ? 'Board' : 'Room'}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="cb-instruments">
             {/* THE SINGLE RENDERING OF LIVE-RUN STATE on this workspace.

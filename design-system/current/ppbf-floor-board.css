@@ -1085,3 +1085,65 @@
   color: var(--cb-chalk-warn);
   box-shadow: inset 0 0 0 1px rgb(228 146 74 / .45);
 }
+
+/* ===========================================================================
+   THE LAYOUT TOGGLE.
+
+   Two positions, BOARD and ROOM, carried as a pair of small brass switch
+   plates under the sign. It is not a tab and must not read as one: the slats
+   in the rack change WHAT is on the board, this changes HOW THE WHOLE BOARD IS
+   DRAWN, so it sits with the sign rather than in the rack.
+
+   The pressed position is stated in three channels, not one. The plate lifts,
+   the chalk goes bright, and aria-pressed says so out loud -- because on a wall
+   screen across a gym in daylight, a colour difference alone is not a channel,
+   and a coach who cannot tell which layout they are in will tap until
+   something moves.
+   ========================================================================== */
+.ge-floorboard .cb-layout {
+  display: inline-flex;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 3px;
+  border-radius: 3px;
+  background: linear-gradient(178deg, #241C12, #17110A);
+  box-shadow:
+    inset 0 1px 0 rgba(190, 146, 92, .22),
+    inset 0 -2px 0 rgba(0, 0, 0, .55);
+}
+.ge-floorboard .cb-layout-pick {
+  min-height: var(--tap);
+  padding: 0 14px;
+  border: 0;
+  cursor: pointer;
+  border-radius: 2px;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-sm);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-3);
+  background: none;
+  box-shadow: inset 0 0 0 1px rgb(168 122 66 / .22);
+}
+.ge-floorboard .cb-layout-pick:hover {
+  color: var(--cb-chalk-2);
+}
+/* The pressed plate. Lifted, brighter, and warmer than its neighbour -- the
+   same brass the rack uses for a lit slat, so the vocabulary is one thing. */
+.ge-floorboard .cb-layout-pick--on {
+  color: var(--cb-chalk);
+  background:
+    repeating-linear-gradient(2deg, var(--cb-timber) 0 7px, #4C3520 7px 14px),
+    linear-gradient(178deg, #5E432A, #38260F);
+  box-shadow:
+    inset 0 1px 0 rgba(190, 146, 92, .4),
+    inset 0 -2px 0 rgba(14, 8, 3, .7),
+    0 2px 5px rgba(0, 0, 0, .6);
+}
+/* Every control on this board that sets box-shadow needs its own
+   focus-visible, or the ring it would otherwise inherit is overwritten by the
+   rule above and keyboard focus silently disappears. */
+.ge-floorboard .cb-layout-pick:focus-visible {
+  outline: 0;
+  box-shadow: var(--focus);
+}
