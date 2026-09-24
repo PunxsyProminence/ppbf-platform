@@ -31,12 +31,22 @@ import {
  * punches across angles is annotation work later, against the footage itself.
  */
 
+/*
+ * ONLY THE CONTEXTS WITH ONE PERSON IN FRAME, and the server refuses the rest
+ * independently rather than trusting this list.
+ *
+ * A capture names one athlete and the scan sweep checks consent for exactly
+ * that athlete. Filming sparring would put a second person in frame whom the
+ * row never names and nothing ever asks about -- the same defect as an
+ * unattributed recording, narrowed from "nobody named" to "one of two". Mitts
+ * has a second person for the same reason, and 'other' bounds nothing so it
+ * cannot promise a single subject.
+ *
+ * These come back when a participant model can name everyone in a take.
+ */
 const TRAINING_CONTEXTS: Array<{ value: string; label: string }> = [
   { value: 'shadowboxing', label: 'Shadowboxing' },
   { value: 'heavy_bag', label: 'Heavy bag' },
-  { value: 'mitts', label: 'Mitts' },
-  { value: 'sparring', label: 'Sparring' },
-  { value: 'other', label: 'Other' },
 ];
 
 interface TakeFile {

@@ -253,3 +253,46 @@ describe('reading the session state', () => {
     expect(mockGetSession).not.toHaveBeenCalled();
   });
 });
+
+/*
+ * CAPTURE RECORDS ONE ATHLETE AT A TIME, FOR NOW.
+ *
+ * A capture names one athlete and the scan sweep checks guardian consent for
+ * exactly that athlete. A context with a second person in frame would record
+ * two people and ask about one -- the same defect as an unattributed
+ * recording, narrowed from "nobody named" to "one of two named". These
+ * contexts are therefore refused by the SERVER, not merely left out of the
+ * form, so a client that posts one directly is refused too.
+ *
+ * When a participant model can name everyone in a take, these tests are the
+ * ones to change, and changing them should be a deliberate act.
+ */
+describe('multi-person contexts are withheld until a take can name everyone in it', () => {
+  test.each(['sparring', 'mitts', 'other'])('a %s session is refused and nothing is created', async (context) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+    const response = await POST(jsonRequest({ action: 'create', training_context: context }));
+
+    expect(response.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test.each(['shadowboxing', 'heavy_bag'])('a %s session is allowed', async (context) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+    const response = await POST(jsonRequest({ action: 'create', training_context: context }));
+
+    expect(response.status).toBe(200);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ trainingContext: context }));
+  });
+
+  test('the refusal says why, so a coach is not left guessing which contexts work', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+    const response = await POST(jsonRequest({ action: 'create', training_context: 'sparring' }));
+
+    const payload = (await response.json()) as { error: string };
+    expect(payload.error).toMatch(/one athlete at a time/);
+    expect(payload.error).toMatch(/shadowboxing/);
+  });
+});

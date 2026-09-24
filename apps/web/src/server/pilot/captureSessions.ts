@@ -43,6 +43,36 @@ export const TRAINING_CONTEXTS = [
 
 export type TrainingContext = (typeof TRAINING_CONTEXTS)[number];
 
+/*
+ * WHAT CAPTURE MAY FILM TODAY, and why it is narrower than the vocabulary
+ * above.
+ *
+ * A capture names ONE athlete, and the scan sweep checks guardian consent for
+ * exactly that athlete. In a context where a second person is in frame, the
+ * second person is never represented in the row and therefore never checked --
+ * so a sparring take would record two people and ask about one. That is the
+ * same defect as the unattributed recording this surface already refuses, just
+ * narrowed from "nobody named" to "one of two named".
+ *
+ * So the multi-person contexts are withheld from CAPTURE until a participant
+ * model exists that can name everyone in a take and have consent evaluated for
+ * each of them. That model is an owner decision and is deliberately not
+ * invented here.
+ *
+ * 'other' is withheld for the same reason rather than a different one: it
+ * bounds nothing, so it cannot promise a single subject.
+ *
+ * THE VOCABULARY ITSELF IS UNCHANGED. The database still accepts all five, and
+ * footage recorded another way keeps its meaning. This list narrows one
+ * workflow, not the schema -- so lifting it when the participant model lands is
+ * deleting an entry here, not a migration.
+ */
+export const SINGLE_SUBJECT_TRAINING_CONTEXTS = ['shadowboxing', 'heavy_bag'] as const;
+
+export function isSingleSubjectContext(value: string): value is TrainingContext {
+  return (SINGLE_SUBJECT_TRAINING_CONTEXTS as readonly string[]).includes(value);
+}
+
 export const CAPTURE_SOURCES = ['in_app_recording', 'file_upload'] as const;
 export type CaptureSource = (typeof CAPTURE_SOURCES)[number];
 
