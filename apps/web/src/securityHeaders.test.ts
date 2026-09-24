@@ -24,6 +24,18 @@ import nextConfig from '../next.config';
  */
 const CAPTURE_ROUTES = ['/teach-shadow/capture', '/coach/video-analysis/capture'] as const;
 
+/*
+ * THE SAME TWO DOCUMENTS, REQUESTED WITH A TRAILING SLASH.
+ *
+ * path-to-regexp compiles a literal source non-strictly, so the open rule
+ * already matches these. The closed rule's lookahead has to exclude them too,
+ * or the request matches BOTH rules, Permissions-Policy is emitted twice, and
+ * the browser decides -- which is the one outcome this arrangement exists to
+ * prevent. The lookahead was anchored with `$` alone and did not, so these are
+ * listed rather than left to be assumed.
+ */
+const CAPTURE_ROUTES_TRAILING_SLASH = CAPTURE_ROUTES.map((route) => `${route}/`);
+
 // Routes that must never be handed a camera. /teach-shadow and
 // /teach-shadow/annotation are in here on purpose: they are the new area's
 // other two documents, they sit directly beside a route that IS granted the
@@ -31,6 +43,12 @@ const CAPTURE_ROUTES = ['/teach-shadow/capture', '/coach/video-analysis/capture'
 const CLOSED_ROUTES = [
 	'/',
 	'/teach-shadow',
+	'/teach-shadow/',
+	// A path BELOW a capture route is a different document and stays closed --
+	// the lookahead must exclude the trailing slash without swallowing what
+	// comes after it.
+	'/teach-shadow/capture/preview',
+	'/coach/video-analysis/capture/preview',
 	'/teach-shadow/annotation',
 	'/coach/video-analysis',
 	'/coach/calibration',
@@ -79,7 +97,7 @@ test('the config grants the camera to exactly the two capture documents and noth
 
 test('exactly one rule matches every route the app serves', async () => {
 	const rules = await nextConfig.headers!();
-	for (const pathname of [...CAPTURE_ROUTES, ...CLOSED_ROUTES]) {
+	for (const pathname of [...CAPTURE_ROUTES, ...CAPTURE_ROUTES_TRAILING_SLASH, ...CLOSED_ROUTES]) {
 		expect({ pathname, matched: rulesMatching(rules, pathname).length })
 			.toEqual({ pathname, matched: 1 });
 	}
@@ -139,7 +157,7 @@ test('the production CSP stays as narrow as the app inventory allows', async () 
  * rather than something the recognizer should lean on. Both recorders ask for
  * a video-only stream, so an open microphone would serve nothing.
  */
-test.each(CAPTURE_ROUTES)('%s opens the camera and nothing else', async (route) => {
+test.each([...CAPTURE_ROUTES, ...CAPTURE_ROUTES_TRAILING_SLASH])('%s opens the camera and nothing else', async (route) => {
 	const headers = await headersFor(route);
 
 	expect(headers.get('Permissions-Policy')).toBe('camera=(self), microphone=(), geolocation=()');

@@ -78,9 +78,22 @@ const CAPTURE_ROUTES = [
 	"/coach/video-analysis/capture",
 ] as const;
 
-// Every capture route, anchored, as one alternation -- the negative lookahead
-// the closed rule is built from.
-const CAPTURE_ROUTE_ALTERNATION = CAPTURE_ROUTES.map((route) => `${route.slice(1)}$`).join("|");
+/*
+ * Every capture route, anchored, as one alternation -- the negative lookahead
+ * the closed rule is built from.
+ *
+ * `/?$` RATHER THAN `$`, AND THAT SLASH IS LOAD-BEARING. path-to-regexp
+ * compiles a literal source non-strictly, so "/teach-shadow/capture" also
+ * matches "/teach-shadow/capture/". A lookahead anchored with `$` alone does
+ * NOT exclude that trailing-slash form, so the request matched both the open
+ * rule and the closed one, Next emitted Permissions-Policy twice, and which
+ * one won was left to the browser -- the exact failure this whole arrangement
+ * exists to prevent. Verified against the vendored matcher, both ways.
+ *
+ * It must stay `/?$` and not, say, `.*`: "/teach-shadow/capture/anything" is a
+ * different document and belongs to the closed rule.
+ */
+const CAPTURE_ROUTE_ALTERNATION = CAPTURE_ROUTES.map((route) => `${route.slice(1)}/?$`).join("|");
 
 function securityHeaders(permissionsPolicy: string) {
 	return [
