@@ -174,12 +174,39 @@ describe('the picked roster row is painted, not only announced', () => {
     expect(selectedRuleBody()).not.toBeNull();
   });
 
-  it('gives it a visible treatment rather than only a selector', () => {
-    const body = selectedRuleBody() ?? '';
-    // Any real paint channel counts; pinning one exact colour would make a
-    // retune of the board a false failure. An empty rule, or one that only
-    // set a cursor or a transition, would not.
-    const paints = /(^|[;\s])(background|background-color|background-image|box-shadow|outline|border-color|border-left)\s*:/.test(body);
-    expect([SELECTED, paints, body.trim()]).toEqual([SELECTED, true, body.trim()]);
+  /* THE VALUE, NOT THE PROPERTY NAME. The first version of this matched the
+     NAME of any paint property, so `background: none`, `outline: 0` and
+     `box-shadow: none` all satisfied it -- a guard that passes on a rule
+     painting nothing, which is worse than no guard because it reads as
+     covered.
+
+     It pins the current contract directly instead: the selected row declares
+     a background, and that background is a real colour. If an intentional
+     redesign moves the selected treatment to an outline or a shadow, that
+     redesign updates this guard in the same change. That is the point of
+     pinning it narrowly rather than abstracting over every channel a row
+     could theoretically use. */
+  const NOT_A_PAINT = new Set([
+    'none', 'transparent', 'initial', 'inherit', 'unset', 'revert', 'revert-layer', '',
+  ]);
+
+  function selectedBackground(): string | null {
+    const body = selectedRuleBody();
+    if (body === null) return null;
+    const m = body.match(/(?:^|[;{\s])background(?:-color)?\s*:\s*([^;}]+)/);
+    return m ? m[1].trim() : null;
+  }
+
+  it('declares a background on the selected row', () => {
+    expect(selectedBackground()).not.toBeNull();
+  });
+
+  it('paints it with a real colour rather than nothing', () => {
+    const value = (selectedBackground() ?? '').toLowerCase();
+    const blank = NOT_A_PAINT.has(value);
+    // A fully transparent literal is the same as no paint at all.
+    const fullyTransparent = /\/\s*0\s*\)/.test(value) || /,\s*0\s*\)/.test(value);
+    // The value is carried into the assertion so a failure names what it found.
+    expect([value, blank, fullyTransparent]).toEqual([value, false, false]);
   });
 });

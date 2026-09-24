@@ -172,10 +172,11 @@ async function pickAthlete(name: string): Promise<void> {
   });
 }
 
-/** Whether a row is wearing the selected look. Pinned to the two classes the
- *  roster uses for it, checked as whole class tokens: the UNSELECTED row
- *  carries `hover:border-[color:var(--brass-500)]`, so a substring test for the
- *  brass border would report every row as selected. */
+/** Whether a row is the one the coach picked. The hazard this comment used to
+ *  describe -- a substring test for the brass border reporting every row as
+ *  selected, because the unselected row carries the same colour on hover --
+ *  went with the classes it described when the roster was rewritten as a
+ *  ledger on the floor board. */
 function looksSelected(row: HTMLButtonElement): boolean {
   /* WHAT THIS PROVES, stated accurately after I overclaimed once.
 

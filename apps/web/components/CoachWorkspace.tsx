@@ -91,12 +91,6 @@ const COACH_TABS = [
   { id: 'shadow', label: 'SHADOW Intel' },
 ] as const satisfies readonly CoachTab[];
 
-/**
- * Both of these badge the same value by construction -- coachTasks is derived
- * entirely from shadowQueue's pending_review items (see the comment above
- * coachTasks) -- so Tasks and SHADOW Intel show the same underlying work seen
- * from two angles, not two counts that could disagree.
- */
 /* SHADOW ALONE. This held ['tasks', 'shadow'], so the queue's four-state
    status rendered on two slats at once -- the exact duplicate-owner pattern
    the same change set out to remove, reintroduced one line away from the fix.
@@ -1600,6 +1594,25 @@ export default function CoachWorkspace() {
   }, [loadAthletes]);
 
   const loadShadowData = useCallback(async () => {
+      /* THE READ IS IN FLIGHT, AND THE BOARD SAYS SO -- on every call, not
+         just the first. shadowQueueState began life as 'loading' and was only
+         ever written on completion, so the initial load reported CHECKING
+         correctly and every RETRY did not: a failed read left UNAVAILABLE on
+         the slat, the coach pressed Retry, and the slat went on saying
+         UNAVAILABLE for the whole of the second request. The board was lying
+         for the duration of every retry, and the earlier test missed it
+         because it only held the FIRST request open.
+
+         The stale error is cleared here too. Without that the board would say
+         CHECKING while still presenting the previous failure as current,
+         which is a different wrong answer rather than a fix.
+
+         What is deliberately NOT cleared: shadowQueue, shadowObservations and
+         shadowQueueTotal. Items already on screen stay put while a refresh
+         checks. Blanking a queue a coach is reading in order to announce that
+         we are looking at it would be a worse lie than the one being fixed. */
+      setShadowQueueState('loading');
+      setShadowReadError('');
       try {
         const [queueResult, observationResult] = await Promise.allSettled([
           fetch(`${apiBase()}/api/pilot/shadow/review-projection`, {

@@ -2338,6 +2338,62 @@ describe('the coach summary row claims only what was actually read', () => {
     ).not.toBeNull();
   });
 
+  test('a retry says checking while it is checking, not the old failure', async () => {
+    /* THE STATE THAT WAS ONLY EVER CORRECT ONCE.
+
+       shadowQueueState started as 'loading' and was then written only on
+       completion, so the FIRST read reported CHECKING and every retry did
+       not: a failed read left UNAVAILABLE on the slat, the coach pressed
+       Retry, and the slat went on saying UNAVAILABLE for the whole of the
+       second request. The board was lying for the duration of every retry.
+
+       The earlier in-flight test missed this because it only held the first
+       request open. This one drives the real sequence through the real
+       control -- the SHADOW view's own Retry, which already calls
+       loadShadowData -- rather than adding one to suit the test. */
+    let call = 0;
+    let release: (() => void) | undefined;
+
+    await renderWorkspace({
+      athletesList: roster,
+      reviewProjection: async () => {
+        call += 1;
+        if (call === 1) return jsonResponse({}, { ok: false, status: 503 });
+        return new Promise<Response>((resolve) => {
+          release = () => resolve(jsonResponse({ queue: [], total: 0 }));
+        });
+      },
+    });
+
+    const slat = () => screen.getByRole('button', { name: /^SHADOW/ });
+
+    // The failed read is disclosed, on the board.
+    expect(slat().textContent).toMatch(/unavailable/i);
+
+    openTab('SHADOW');
+    expect(screen.queryByText(/Unable to load SHADOW/i)).not.toBeNull();
+
+    // The coach retries. The second read is now in flight.
+    fireEvent.click(screen.getByRole('button', { name: 'Retry loading SHADOW queue' }));
+
+    // While it is in flight the board says so, and says nothing else.
+    expect(slat().textContent).toMatch(/checking/i);
+    expect(slat().textContent).not.toMatch(/unavailable/i);
+    expect(slat().textContent).not.toMatch(/0 pending/i);
+
+    // And the previous failure is no longer presented as current -- otherwise
+    // the board would say "checking" and "this failed" at the same time.
+    expect(screen.queryByText(/Unable to load SHADOW/i)).toBeNull();
+
+    await act(async () => {
+      release?.();
+    });
+
+    // A queue that was read and holds nothing is the good news, and it lands.
+    expect(slat().textContent).toMatch(/0 pending/i);
+    expect(slat().textContent).not.toMatch(/checking|unavailable/i);
+  });
+
   test('a failed queue read says unavailable on the board, never a count', async () => {
     /* The other half, pinned to the same owner: the control must say the read
        failed and must never render that failure as a number, because a coach
