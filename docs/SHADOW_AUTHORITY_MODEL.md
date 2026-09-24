@@ -918,6 +918,14 @@ Classification legend:
 
 ### Alignment Matrix
 
+Point-in-time matrix, not doctrine. These rows were last reconciled against
+`main` a1506d2e on 2026-09-24, and every path cited below resolves on that
+commit. Where this matrix and section 20 disagree about what exists, section 20
+and the code win. A row is evidence of what was true at that commit, not a
+standing claim -- re-verify before relying on one. Five rows previously read
+MISSING for capabilities that were already implemented; a builder trusting them
+would have rebuilt working subsystems.
+
 1. current auth and role checks: ALIGNS
 Evidence:
 - apps/web/src/server/pilot/http.ts
@@ -984,22 +992,29 @@ Evidence:
 - write usage across domain/intake routes under apps/web/app/api/pilot
 Notes: broad coverage exists, but canonical SHADOW event types are not yet emitted.
 
-9. telemetry: MISSING
+9. telemetry: ALIGNS
 Evidence:
-- no dedicated server telemetry writer or telemetry table in apps/web/src/server/pilot.
+- writer: apps/web/src/server/pilot/shadowTelemetry.ts
+- table: pilot.shadow_telemetry_events (infra/azure/pilot_slice_postgres.sql)
+- read surface: apps/web/app/api/pilot/shadow/telemetry/route.ts
 
 10. promotion workflow: PARTIAL
 Evidence:
 - intake promotion with organization_admin gate: apps/web/app/api/pilot/intake/review-action/route.ts
 Notes: promotion exists for intake path; no generalized SHADOW promotion spine for all domains.
 
-11. research gap workflow: MISSING
+11. research gap workflow: ALIGNS
 Evidence:
-- no backend research requirement creation workflow under apps/web/src/server/pilot.
+- creation: apps/web/src/server/pilot/shadowResearch.ts (createShadowResearchRequirement)
+- table: pilot.shadow_research_requirements (infra/azure/pilot_slice_postgres.sql)
+- routes: apps/web/app/api/pilot/shadow/research-requirements/route.ts and
+  apps/web/app/api/pilot/shadow/research-submissions/route.ts
 
 12. multi-gym support: PARTIAL
 Evidence:
-- organization scope and migration: apps/web/app/api/pilot/admin/migrate-multiorg/route.ts
+- organization scope and migration: infra/azure/pilot_slice_postgres_multiorg_migration.sql,
+  applied by apps/web/scripts/pilot-apply-multiorg-migration.mjs. There is no
+  migrate-multiorg HTTP route; the migration is script-and-SQL only.
 - organization-aware writes and checks in pilot routes and services.
 Notes: organization-level scale exists; gym and program partition model is not yet present.
 
@@ -1008,17 +1023,44 @@ Evidence:
 - organization boundary strongly present via organization_id in pilot services and migrations.
 - gym_id boundary not present in current pilot schema/services.
 
-14. source confidence: MISSING
+14. source confidence: ALIGNS
 Evidence:
-- no confidence taxonomy or verification state model persisted in pilot backend.
+- tier taxonomy: apps/web/src/server/pilot/shadowEvidenceTier.ts
+  (PROVEN / EMERGING / EXPERIMENTAL / RESEARCH_NEEDED)
+- persisted verification state: verification_state columns in
+  infra/azure/pilot_slice_postgres.sql, checked against
+  ('unverified', 'durable_client', 'human_reviewed')
 
-15. recommendation accountability: MISSING
+15. recommendation accountability: ALIGNS
 Evidence:
-- no backend recommendation life-cycle tracking pipeline found in pilot services.
+- life cycle: apps/web/src/server/pilot/shadowRecommendations.ts
+  (createProvisionalRecommendation, decideOnRecommendation)
+- outcome grading: apps/web/src/server/pilot/shadowDecisionOutcomes.ts
+  (evaluateDecisionOutcome)
+- tables: pilot.shadow_recommendations and pilot.shadow_decisions
+  (infra/azure/pilot_slice_postgres_shadow_decision_loop_migration.sql)
+Notes: apps/web/app/api/pilot/shadow/recommendations/route.ts is the production
+creation boundary and calls createProvisionalRecommendation. What is missing is
+a producer for it: no production client posts to that creation route. The Coach
+Decision Loop reads recommendations and accepts or rejects them; nothing
+originates one. What may originate a recommendation is an open owner decision.
 
-16. failure learning: MISSING
+16. failure learning: PARTIAL
 Evidence:
-- no explicit failure-intelligence workflow (root cause, corrective goal, lesson capture) in pilot backend.
+- near-miss capture: apps/web/src/server/pilot/shadowNearMisses.ts, table
+  pilot.shadow_near_misses
+- outcome grading: apps/web/src/server/pilot/shadowDecisionOutcomes.ts, match
+  states match / partial / miss / confounded
+- learning signal: apps/web/src/server/pilot/shadowLearningLoop.ts, promoted to
+  durable learning only after human review
+- intervention learning record: apps/web/src/server/pilot/interventionEvidence.ts,
+  learning_signal and learning_notes on pilot.intervention_outcome_reviews
+  (infra/azure/pilot_slice_postgres_intervention_evidence_migration.sql)
+Notes: failure and outcome evidence IS retained, including near misses,
+human-reviewed outcome states, and human-reviewed intervention learning signals
+and notes. What is absent is the canonical failure-intelligence workflow of
+section 10 connecting failure -> root-cause investigation -> corrective goal ->
+progress tracking -> knowledge-base update.
 
 17. video and sensor readiness: PARTIAL
 Evidence:

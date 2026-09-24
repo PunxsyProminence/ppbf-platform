@@ -63,8 +63,20 @@ const CASES: Record<string, unknown> = {
 };
 
 type Outcome =
-  | { ok: true; count: number; contentLengths: number[] }
+  | { ok: true; count: number; contentLengths: number[]; files?: string[] }
   | { ok: false; message: string };
+
+// The checked-in manifest, read in-process. The synthetic cases above prove the
+// READER refuses a bad manifest; they cannot prove the manifest this repository
+// actually ships is good, and that is the failure that happened: the
+// `shadow-specification` entry still pointed at docs/SHADOW_SPECIFICATION.md
+// after that document moved to docs/archive/. Because the preflight reads every
+// entry and aborts on any unreadable one -- "Nothing was registered." -- one
+// dead path took the ENTIRE doctrine seed down for anyone who ran it.
+const REAL_MANIFEST_PATH = path.join(WEB_ROOT, 'scripts/shadow-library-seed-manifest.json');
+const REAL_MANIFEST = JSON.parse(fs.readFileSync(REAL_MANIFEST_PATH, 'utf8')) as {
+  sources: { doctrine_kind: string; file: string }[];
+};
 
 let outcomes: Record<string, Outcome>;
 let workdir: string;
@@ -78,6 +90,17 @@ beforeAll(() => {
     manifestPaths[name] = file;
   }
 
+  // Deleting the override rather than setting it: this case must exercise the
+  // DEFAULT path resolution, which is what the npm script uses and therefore
+  // what actually runs in an operator's hands.
+  const realCase =
+    `try { delete process.env.PILOT_LIBRARY_MANIFEST;`
+    + ` const r = await m.loadManifest();`
+    + ` out["real_manifest"] = {ok: true, count: r.length,`
+    + ` contentLengths: r.map((e) => (typeof e.contents === 'string' ? e.contents.length : -1)),`
+    + ` files: r.map((e) => e.file)}; }`
+    + ` catch (e) { out["real_manifest"] = {ok: false, message: e.message}; }`;
+
   const body = Object.keys(CASES)
     .map((name) =>
       `try { process.env.PILOT_LIBRARY_MANIFEST = P[${JSON.stringify(name)}];`
@@ -85,7 +108,8 @@ beforeAll(() => {
       + ` out[${JSON.stringify(name)}] = {ok: true, count: r.length,`
       + ` contentLengths: r.map((e) => (typeof e.contents === 'string' ? e.contents.length : -1))}; }`
       + ` catch (e) { out[${JSON.stringify(name)}] = {ok: false, message: e.message}; }`)
-    .join('\n');
+    .join('\n')
+    .concat('\n', realCase);
 
   const script = `
     import * as m from ${JSON.stringify(MODULE_URL)};
@@ -119,7 +143,7 @@ describe('SHADOW library seed manifest', () => {
   // Importing the module must not run the seed. If it did, this suite would be
   // reporting on a process that had already tried to reach a live API.
   it('can be imported without the seed running', () => {
-    expect(Object.keys(outcomes).sort()).toEqual(Object.keys(CASES).sort());
+    expect(Object.keys(outcomes).sort()).toEqual([...Object.keys(CASES), 'real_manifest'].sort());
   });
 
   it('accepts a manifest whose files all exist', () => {
@@ -172,5 +196,58 @@ describe('SHADOW library seed manifest', () => {
 
   it('still refuses a manifest with no sources', () => {
     expect(refusal('no_sources_at_all')).toContain('no sources');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The manifest this repository actually ships.
+//
+// Everything above tests the reader against manifests the test itself wrote.
+// These test the artifact, because a reader that correctly refuses a broken
+// manifest is no comfort when the broken manifest is the one in the repository.
+// ---------------------------------------------------------------------------
+
+describe('the checked-in SHADOW doctrine manifest', () => {
+  it('passes its own preflight, so the doctrine seed can register anything at all', () => {
+    const outcome = outcomes.real_manifest;
+    if (!outcome.ok) {
+      throw new Error(
+        'the checked-in manifest is refused by its own preflight, so seed:shadow:library '
+        + `registers NOTHING: ${outcome.message}`,
+      );
+    }
+    expect(outcome.count).toBe(REAL_MANIFEST.sources.length);
+  });
+
+  it('names only files that are readable and non-empty', () => {
+    const outcome = outcomes.real_manifest;
+    if (!outcome.ok) {
+      throw new Error(`the checked-in manifest was refused: ${outcome.message}`);
+    }
+    // -1 is the sentinel for "entry carried no string contents" -- a preflight
+    // that returned an entry it never actually read.
+    expect(outcome.contentLengths.filter((n) => n <= 0)).toEqual([]);
+  });
+
+  // The regression itself. docs/archive/SHADOW_SPECIFICATION.md opens with
+  // "ARCHIVED -- HISTORICAL VISION DOCUMENT. DO NOT BUILD FROM THIS." and states
+  // that most of its BUILT claims are false against the running platform.
+  // Repointing the dead entry there would have turned a broken seed into a
+  // working seed that publishes known-false doctrine at authority_tier 1, which
+  // SHADOW could then retrieve and cite. The entry was removed instead, and this
+  // keeps any archived document out of the doctrine set.
+  it('registers no document from docs/archive/', () => {
+    const archived = REAL_MANIFEST.sources
+      .filter((entry) => entry.file.split('\\').join('/').includes('docs/archive/'))
+      .map((entry) => `${entry.doctrine_kind}: ${entry.file}`);
+
+    expect({ archivedDoctrineEntries: archived }).toEqual({ archivedDoctrineEntries: [] });
+  });
+
+  // Guards the shape the two tests above depend on: an emptied manifest would
+  // let `contentLengths.filter(...)` pass over an empty array while guarding
+  // nothing at all.
+  it('still carries doctrine to register', () => {
+    expect(REAL_MANIFEST.sources.length).toBeGreaterThan(0);
   });
 });
