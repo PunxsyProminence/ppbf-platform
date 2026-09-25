@@ -710,6 +710,61 @@ describe('athlete safety reporting', () => {
       expect(screen.queryByText(/flagged for a coach/i)).toBeNull();
     });
 
+    /* A-FIN-07 R1. A 2xx IS NOT THE SAME AS "A COACH WAS TOLD".
+     *
+     * setInjuryFlag(true) ran on any response.ok, before the body was read,
+     * and the body is parsed with `.catch(() => ({}))`. So a 200 that did not
+     * parse put "Pain reported this session. A coach has been told." on the
+     * card and "No coach was flagged for it" directly underneath. Both cannot
+     * be true, and the child reads the reassuring one and stops looking for
+     * another way to tell someone.
+     *
+     * The server settles it: it raises the coach alert before storing the
+     * observation and returns coachNotified: true when it did. These two
+     * fail-closed on anything else -- without claiming "not saved", which a
+     * 2xx does not establish.
+     */
+    test('a 200 whose body will not parse claims nothing, and says so in the modal', async () => {
+      /* A 2xx whose body is not JSON -- a gateway's HTML error page is the
+         everyday cause. `response.json()` rejects, the component's
+         `.catch(() => ({}))` swallows it, and the old code had already set the
+         injury flag by then. Built in the same shape as `jsonResponse` above
+         rather than with a real `Response`, which jsdom does not provide. */
+      painObservationResponse = {
+        ok: true,
+        json: async () => { throw new SyntaxError('Unexpected token < in JSON at position 0'); },
+      } as unknown as Response;
+      await openPainReport({ type: 'Sharp', severity: 4 });
+
+      const alert = await screen.findByTestId('pain-modal-alert');
+      expect(alert.getAttribute('role')).toBe('alert');
+      expect(alert.textContent).toMatch(/could not confirm that a coach was told/i);
+
+      expect(screen.queryByTestId('pain-reported-indicator')).toBeNull();
+      expect(screen.queryByText(/a coach has been told/i)).toBeNull();
+      expect(screen.queryByText(/last report:/i)).toBeNull();
+      expect(screen.queryByText(/flagged for a coach to look at/i)).toBeNull();
+
+      // Not the non-2xx claim: the observation may well be stored, and the
+      // client cannot see that either way.
+      expect(screen.queryByText(/was not saved/i)).toBeNull();
+
+      expect(screen.getByRole('heading', { name: /soreness details/i })).toBeTruthy();
+      expect((screen.getByLabelText('Pain Type') as HTMLSelectElement).value).toBe('Sharp');
+      expect(screen.getByRole('button', { name: 'Severity 4' }).getAttribute('aria-pressed')).toBe('true');
+    });
+
+    test('a 200 that parses but never says coachNotified claims nothing either', async () => {
+      painObservationResponse = jsonResponse({ ok: true });
+      await openPainReport({ type: 'Sharp', severity: 4 });
+
+      const alert = await screen.findByTestId('pain-modal-alert');
+      expect(alert.textContent).toMatch(/could not confirm that a coach was told/i);
+      expect(screen.queryByTestId('pain-reported-indicator')).toBeNull();
+      expect(screen.queryByText(/last report:/i)).toBeNull();
+      expect(screen.getByRole('heading', { name: /soreness details/i })).toBeTruthy();
+    });
+
     test('a report the server accepted closes the modal and reports in the card', async () => {
       painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
       await openPainReport({ type: 'Sharp', severity: 4 });

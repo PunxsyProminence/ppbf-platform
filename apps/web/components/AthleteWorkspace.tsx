@@ -1828,6 +1828,31 @@ export default function AthleteWorkspace() {
         painReport?: { coachNotified?: boolean };
       };
 
+      /* A-FIN-07 R1. THE SUCCESS STATE IS THE SERVER'S WORD, NOT THE STATUS
+         CODE.
+
+         `setInjuryFlag(true)` ran on any 2xx, before this was read. The body
+         is parsed with `.catch(() => ({}))`, so a 200 whose body did not parse
+         produced BOTH "Pain reported this session. A coach has been told." on
+         the card and "No coach was flagged for it" underneath it. Two claims
+         that cannot both be true, and a child believes the reassuring one.
+
+         The server settles it and says so in that same comment on its own
+         response: it raises the coach alert BEFORE storing the observation and
+         returns `painReport.coachNotified: true` when it did. Anything else --
+         unparseable, missing `painReport`, or `coachNotified` absent -- is a
+         response this client cannot read, so it claims nothing.
+
+         Fail closed, but do NOT overclaim in the other direction either: "not
+         saved" is not established here, because the server returned 2xx and
+         the observation may well be stored. The honest statement is that the
+         app could not confirm, and the action that follows from it is the same
+         one either way -- tell a coach in person. */
+      if (payload.painReport?.coachNotified !== true) {
+        setPainSaveMessage('The app could not confirm that a coach was told. Tell a coach in person.');
+        return;
+      }
+
       setPainLog((current) => [newPainLogEntry, ...current]);
       setInjuryFlag(true);
       /* `setSoreness((current) => Math.max(current, currentPainSeverity))`
@@ -1843,9 +1868,14 @@ export default function AthleteWorkspace() {
          different rules; the pain report already has its own escalating path
          above, which is where that severity belongs. */
 
-      setPainSaveMessage(payload.painReport?.coachNotified
-        ? 'Logged, and flagged for a coach to look at.'
-        : 'Logged on your record. No coach was flagged for it, so tell one in person.');
+      /* Only one success sentence survives. The old second branch -- "Logged
+         on your record. No coach was flagged for it" -- described a state the
+         server does not produce for a valid 1-10 report: `raised: false` comes
+         back only when the value is null or at or below zero, and this form
+         can no longer send either. Keeping it meant a message whose only
+         reachable cause was an unreadable response, printed as though it were
+         a known outcome. */
+      setPainSaveMessage('Logged, and flagged for a coach to look at.');
 
       setShowPainModal(false);
       /* A-FIN-07. The stored answers go with the modal. Leaving them set made
