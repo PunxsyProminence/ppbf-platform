@@ -223,10 +223,10 @@ For internal discussions and code comments:
 |------|---------|-------|
 | **Quick Round** | Fast model response | `tier: 'quick'` |
 | **Heavy Bag Session** | Deep reasoning response | `tier: 'heavy'` |
-| **The Corner** | Routing/orchestration layer | Future: `shadowRouter.ts` |
-| **The Playbook** | SHADOW Knowledge Library | `pilot.shadow_library` |
+| **The Corner** | Routing/orchestration layer | `shadowRouter.ts` |
+| **The Playbook** | SHADOW Knowledge Library | `pilot.shadow_library_sources` / `_documents` / `_chunks` / `_capability_map` |
 | **Scout Report** | Research requirement | `research_requirement_id` in query |
-| **The Scorecard** | Growth Metrics tracking | `pilot.growth_metrics` |
+| **The Scorecard** | Growth Metrics tracking | derived in `shadowMetrics.ts`; there is no `growth_metrics` table |
 
 ---
 
