@@ -1400,3 +1400,187 @@ describe('unsupported answers and an empty Library', () => {
     expect(payload.evidenceNotice).toBe('EVIDENCE_RETRIEVAL_UNAVAILABLE');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Board summaries are refused at the request boundary, not in a worker.
+//
+// MANUAL_OVERRIDE_ROLES includes coach, so resolveSessionType honored a coach's
+// sessionType: 'board_summary'. executeBoardSummaryJob then refused that same
+// coach with SHADOW_JOB_SCOPE_FORBIDDEN -- correct authority, one process too
+// late. The coach got a queued job that could never run, and learned about it
+// as a background failure rather than as an answer.
+//
+// The worker is ENABLED in these tests deliberately: with it disabled the route
+// returns 'degraded' for its own reasons and would pass whether or not the gate
+// exists. Enabled is the configuration where the old behaviour actually reached
+// the jobs table.
+// ---------------------------------------------------------------------------
+describe('board summary authority at the request boundary', () => {
+  const BOARD_SUMMARY_REFUSAL = 'Not authorized to generate a board summary.';
+
+  beforeEach(() => {
+    mockIsShadowWorkerEnabled.mockReturnValue(true);
+  });
+
+  test('a coach asking for a board summary is refused 403', async () => {
+    const response = await POST(postRequest({
+      message: 'Summarize governance items for the board.',
+      sessionType: 'board_summary',
+    }));
+
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.error).toBe(BOARD_SUMMARY_REFUSAL);
+    expect(body.success).toBe(false);
+  });
+
+  test('the refusal happens before the jobs table is touched', async () => {
+    await POST(postRequest({
+      message: 'Summarize governance items for the board.',
+      sessionType: 'board_summary',
+    }));
+
+    // The route probes shadow_jobs readiness immediately before enqueueing.
+    // That probe never running is what "refused before enqueue" means here --
+    // there is no job row to fail later.
+    expect(jest.mocked(assertShadowRuntimeReadiness)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ requiredTables: ['shadow_jobs'] }),
+    );
+  });
+
+  test('the refusal costs no model call', async () => {
+    // Installed here rather than relied upon: this suite leaves global.fetch
+    // real unless a test replaces it, and asserting "not called" against a
+    // non-mock silently passes nothing.
+    const fetchSpy = jest.fn();
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    await POST(postRequest({
+      message: 'Summarize governance items for the board.',
+      sessionType: 'board_summary',
+    }));
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // The failure mode a lenient fix would introduce: quietly answering the
+  // question as ordinary chat. The caller asked for a governance summary; a
+  // Quick Round answer is a different, less governed thing, and returning one
+  // without saying so is worse than refusing.
+  test('an unauthorized board summary is refused, never downgraded to ordinary chat', async () => {
+    const response = await POST(postRequest({
+      message: 'Summarize governance items for the board.',
+      sessionType: 'board_summary',
+    }));
+
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.state).toBe('filtered');
+    expect(body.tier).not.toBe(undefined);
+    // No assistant answer was produced for a request that was refused.
+    expect(mockAppendConversationExchange).not.toHaveBeenCalled();
+  });
+
+  test.each(['admin', 'organization_admin', 'platform_owner'] as const)(
+    '%s passes the board summary gate',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+      const response = await POST(postRequest({
+        message: 'Summarize governance items for the board.',
+        sessionType: 'board_summary',
+      }));
+
+      // Asserting on the refusal itself rather than on the status, so an
+      // unrelated gate failing later cannot be mistaken for this one passing.
+      const body = await response.json();
+      expect(body.error).not.toBe(BOARD_SUMMARY_REFUSAL);
+    },
+  );
+
+  // resolveSessionType discards requestedSessionType for any role outside
+  // MANUAL_OVERRIDE_ROLES, so these roles asked for a governance summary and
+  // were answered as ordinary chat. Gating on the RESOLVED type alone refused
+  // the coach and kept downgrading everyone further from the data -- the same
+  // silent substitution, just quieter.
+  test.each(['athlete', 'parent', 'staff', 'volunteer'] as const)(
+    '%s explicitly asking for a board summary is refused, not answered as ordinary chat',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+      const response = await POST(postRequest({
+        message: 'Summarize governance items for the board.',
+        sessionType: 'board_summary',
+      }));
+
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body.error).toBe(BOARD_SUMMARY_REFUSAL);
+    },
+  );
+
+  // A 403 that pre-empts "chest pain" answers the wrong question about the
+  // wrong thing. The authorization refusal defers to the high-risk path, which
+  // queues a human review and hands off -- the authorization failure is still
+  // true, and still less urgent.
+  test('an urgent symptom in an unauthorized board summary reaches the high-risk path, not the 403', async () => {
+    const fetchSpy = jest.fn();
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const response = await POST(postRequest({
+      message: 'I have chest pain right now, should I keep training?',
+      sessionType: 'board_summary',
+    }));
+
+    const body = await response.json();
+
+    // The safety boundary owns this request outright.
+    expect(response.status).toBe(400);
+    expect(body.error).not.toBe(BOARD_SUMMARY_REFUSAL);
+    expect(body.state).toBe('filtered');
+    expect(body.requiresHumanReview).toBe(true);
+    expect(body.highRiskTopic).toBe('chest_pain');
+
+    // Escalated at the severity the REAL classifier earns, not the one I
+    // assumed: validateShadowRequest classifies this as
+    // 'personal_health_concern', which is 'high' rather than 'critical' -- the
+    // four critical classifications are chest_pain, fainting,
+    // loss_of_consciousness and urgent_personal_symptom as CLASSIFICATIONS, and
+    // 'chest_pain' here is the TOPIC. Pinning the real values so a change to
+    // either mapping is visible.
+    expect(mockQueueHumanReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: 'chest_pain',
+        severity: 'high',
+        metadata: expect.objectContaining({
+          sessionType: 'board_summary',
+          validationClassification: 'personal_health_concern',
+        }),
+      }),
+    );
+
+    // AND IT GOT THERE FIRST. Deferring the 403 was only half the fix: the
+    // generic safety handler sits below the board/scout worker branch, so
+    // without the early branch this request still probed shadow_jobs, and on an
+    // unconfigured worker returned a 503 about background modes instead of the
+    // handoff. The worker is ENABLED in this describe block, so the probe would
+    // fire if the ordering were wrong.
+    expect(jest.mocked(assertShadowRuntimeReadiness)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ requiredTables: ['shadow_jobs'] }),
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // Coach keeps every other manual override. This slice narrowed one session
+  // type; if it had narrowed the concept, this would fail.
+  test('a coach can still choose Heavy Bag', async () => {
+    const response = await POST(postRequest({
+      message: 'How can our footwork rotation improve?',
+      sessionType: 'heavy_bag',
+    }));
+
+    const body = await response.json();
+    expect(body.error).not.toBe(BOARD_SUMMARY_REFUSAL);
+    expect(response.status).not.toBe(403);
+  });
+});
