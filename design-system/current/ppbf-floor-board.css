@@ -1555,3 +1555,36 @@
 }
 .ge-floorboard .rg-door:hover { color: #22180C; box-shadow: inset 0 -1px 0 rgb(34 24 12 / .7); }
 .ge-floorboard .rg-door:focus-visible { outline: 0; box-shadow: var(--focus); }
+
+/* ===========================================================================
+   INK ON THE LIGHT OBJECTS.
+
+   The board sets its inks by ELEMENT -- `.ge-floorboard .coach-board h2`,
+   `... p`, `... li` -- because the board is dark slate and everything written
+   on it is chalk. That is right for the board and wrong for anything light
+   sitting ON it, and those element selectors carry one more specificity point
+   than a class does, so they win silently.
+
+   The result was chalk-white text on bone enamel: the register's heading was
+   invisible, and the clipboard titles were washing out at a glance in a way
+   that looked like small type rather than like a bug. I had already noticed
+   the clipboards looking faint and written it off.
+
+   So the light objects restate their inks at matching specificity, later in
+   the file. Not a workaround -- a light surface genuinely needs its own ink,
+   and the board's rule cannot know which of its children are dark.
+   ========================================================================== */
+.ge-floorboard .coach-board .rg-h { color: #22180C; }
+.ge-floorboard .coach-board .rg-eyebrow { color: #5A4A30; }
+.ge-floorboard .coach-board .rg-state { color: #4A3B24; }
+.ge-floorboard .coach-board .rg-unread-h { color: var(--cb-trim-2); }
+.ge-floorboard .coach-board .rg-row { color: #22180C; }
+.ge-floorboard .coach-board .rg-name { color: #22180C; }
+
+.ge-floorboard .coach-board .rm-clip-t { color: #5A4A30; }
+.ge-floorboard .coach-board .rm-clip-d { color: #4A3B24; }
+.ge-floorboard .coach-board .rm-clip-v { color: #22180C; }
+.ge-floorboard .coach-board .rm-clip--quiet .rm-clip-v { color: #4E4A3D; }
+.ge-floorboard .coach-board .rm-clip--unread .rm-clip-v { color: var(--cb-trim-2); }
+.ge-floorboard .coach-board .rm-sev li { color: #4A3B24; }
+.ge-floorboard .coach-board .rm-peg-l { color: #4A3B24; }
