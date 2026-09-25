@@ -89,6 +89,40 @@ test('nothing reaches a recorder through a client-side navigation', () => {
   expect(offenders).toEqual([]);
 });
 
+test('every surface that renders a list of doors decides per door', () => {
+  /*
+   * THE HOLE THE LITERAL SCAN LEAVES, closed by naming the surfaces instead.
+   *
+   * The scan above reads `href="..."`, so `<Link href={door.href}>` is
+   * invisible to it -- and a list built from the building map can reach BOTH
+   * camera documents. That is how the door register kept a soft navigation
+   * into the recorders after the corridor and the card catalog were fixed:
+   * three surfaces navigate by a variable and the test knew about two.
+   *
+   * A general scan for ANY variable href was tried first and is not here. It
+   * would flag thirteen call sites across the application that render lists of
+   * their own links -- operations, the workspace, the breadcrumbs -- none of
+   * which can reach a camera document, and converting them all to buy this one
+   * guard is a worse trade than naming the three surfaces that read the
+   * building map. This does not generalise to a fourth door list, which is a
+   * real limit and the reason the door register had to be found by review
+   * rather than by CI.
+   */
+  const doorLists = [
+    ['components/Corridor.tsx', 'ChromeLink'],
+    ['components/CardCatalog.tsx', 'requiresDocumentLoad'],
+    ['app/admin/door-register/page.tsx', 'ChromeLink'],
+  ] as const;
+
+  for (const [file, expected] of doorLists) {
+    const source = readFileSync(path.join(WEB, ...file.split('/')), 'utf8');
+    expect({ file, consults: source.includes(expected) }).toEqual({ file, consults: true });
+    // And none of them may still hand a door straight to next/link.
+    expect({ file, bare: source.includes('<Link href={door.href}') })
+      .toEqual({ file, bare: false });
+  }
+});
+
 test('each recorder is actually reachable, by an anchor', () => {
   /*
    * The assertion above is satisfied by a recorder nothing links to at all,
@@ -152,7 +186,11 @@ const CHROME = (() => {
     path.join(WEB, 'components', 'GlobalRoleHeader.tsx'),
     ...CAMERA_DOCUMENT_ROUTES.map((route) => path.join(WEB, 'app', ...route.slice(1).split('/'), 'page.tsx')),
   ];
-  const found = new Set<string>([path.join(WEB, 'components', 'GlobalRoleHeader.tsx')]);
+  // The roots are in the set too, not merely walked: a soft-navigating link
+  // written directly on a recorder is the shortest way to reopen this, and
+  // seeding only the header left the capture pages themselves unchecked.
+  const found = new Set<string>(roots.filter((root) => SOURCES.includes(root)));
+  found.add(path.join(WEB, 'components', 'GlobalRoleHeader.tsx'));
   for (const root of roots) {
     for (const file of componentsImportedBy(root)) found.add(file);
   }
@@ -168,6 +206,9 @@ test('the chrome set is read off the header, and is not empty', () => {
   // The one the first version of this file missed, and the one with the most
   // ways out of a recorder.
   expect(names).toContain('components/RoleSessionGate.tsx');
+  for (const route of CAMERA_DOCUMENT_ROUTES) {
+    expect(names).toContain(`app${route}/page.tsx`);
+  }
   expect(CHROME.length).toBeGreaterThan(4);
 });
 
@@ -251,6 +292,25 @@ test('signing out does not lose the logout request to the unload', () => {
     expect(logout[0]).toContain('keepalive: true');
     expect(logout[0]).toContain("credentials: 'include'");
   }
+});
+
+test('an upload in flight is not silently thrown away by the exits we just hardened', () => {
+  /*
+   * THE COST OF MAKING EVERY EXIT A PAGE LOAD. The recording lives in page
+   * memory until the POST that stores it finishes, and that POST dies with the
+   * document. It survived before only because the session bar soft-navigated.
+   * Every control we converted is now a way to discard the rep that was just
+   * filmed, with no error, because the handler that would report one is gone
+   * with the page. keepalive covers the logout POST beside it and cannot cover
+   * this: 64 KiB, and this body is a video.
+   */
+  const recorder = readFileSync(path.join(WEB, 'components', 'useCameraRecorder.ts'), 'utf8');
+
+  expect(recorder).toContain("addEventListener('beforeunload'");
+  expect(recorder).toContain("removeEventListener('beforeunload'");
+  // Only while uploading: an idle recorder must not interrupt ordinary
+  // navigation with a browser prompt.
+  expect(recorder).toMatch(/if \(phase !== 'uploading'\) return;/);
 });
 
 test('leaving a camera document needs a load, not only arriving at one', () => {

@@ -108,6 +108,38 @@ export function useCameraRecorder<TContext>({
   // after the coach navigates away is a recording light nobody can account for.
   useEffect(() => () => stopStream(), [stopStream]);
 
+  /*
+   * ASK BEFORE THROWING AWAY A TAKE THAT IS STILL UPLOADING.
+   *
+   * The recording lives in page memory until the POST that stores it finishes,
+   * and that POST dies with the document. This did not matter while every
+   * control in the session bar was a soft navigation: the page unmounted, the
+   * fetch carried on, and the footage arrived. Making the exits from a camera
+   * document a real page load -- which they have to be, or the recorder cannot
+   * open a camera at all -- turned every one of those controls into a way to
+   * silently discard the rep that was just filmed. keepalive does not help
+   * here the way it does for the logout POST beside it: it is bounded to
+   * 64 KiB and this body is a video.
+   *
+   * So the browser asks. A coach who means to leave loses nothing they did not
+   * choose to lose, and one who clicked the wrong thing keeps the take. The
+   * listener exists ONLY while an upload is in flight, so ordinary navigation
+   * away from an idle recorder is never interrupted.
+   *
+   * Modern browsers show their own wording and ignore any message set here,
+   * which is why none is set.
+   */
+  useEffect(() => {
+    if (phase !== 'uploading') return;
+    const hold = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      // Still required by some browsers to trigger the prompt at all.
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', hold);
+    return () => window.removeEventListener('beforeunload', hold);
+  }, [phase]);
+
   const finish = useCallback(async (mimeType: string, recordedAt: string, context: TContext) => {
     setPhase('uploading');
     try {
