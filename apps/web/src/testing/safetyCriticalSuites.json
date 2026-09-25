@@ -89,6 +89,11 @@
       "path": "src/testing/suiteAttendance.test.ts",
       "minimumTests": 35,
       "guards": "The register and the attendance reporter themselves. Listed here on purpose: a guard on guards that could vanish silently would leave the register unvalidated and every entry below unproven, which is the exact failure this file exists to make loud."
+    },
+    {
+      "path": "components/coachGlanceParity.test.tsx",
+      "minimumTests": 23,
+      "guards": "BOARD and ROOM tell a coach the same truth from one source of state. The coach board renders two ways now, and the danger is not that one looks wrong -- it is that they quietly answer the same question differently. This repository already ships two instruments over one escalation queue that disagree by construction (SafetyAttentionBadge renders nothing unless critical+high>0 while the board counted all four severities), which is what happens when a fact has two owners. Every honest state is driven through BOTH layouts here: session unavailable vs no session, register unreadable vs empty gym, readiness feed dead vs board empty, SHADOW unavailable vs zero pending. Proven to detect divergence by mutation -- breaking the room clock alone fails the ROOM case and leaves BOARD green. Several assertions are satisfied by the records still stacked under the room glance layer and so pass trivially today; they are the ratchet for when those records move behind the clipboards."
     }
   ]
 }
