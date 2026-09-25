@@ -310,14 +310,25 @@ function boardSummaryJob(role: ShadowJob['role']): ShadowJob {
 }
 
 describe('board summary scope refusal', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
+  // processNextShadowJob revalidates the actor's CURRENT role against the role
+  // stored on the job and throws SHADOW_JOB_AUTHORIZATION_CHANGED when they
+  // differ. A fixed 'coach' revalidation here made the admin /
+  // organization_admin / platform_owner cases die at that earlier gate, so they
+  // passed "not refused by the scope gate" without ever reaching the scope gate
+  // -- green for the wrong reason, proving nothing. The revalidated role now
+  // matches the job's role, and each test asserts it got past that gate.
+  function revalidateAs(role: ShadowJob['role']): void {
     mockQueryOne.mockResolvedValue({
-      role: 'coach',
+      role,
       athlete_id: null,
-      is_platform_owner: false,
+      is_platform_owner: role === 'platform_owner',
       organization_status: 'active',
     });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    revalidateAs('coach');
     mockCompleteJob.mockResolvedValue(undefined);
     mockFailJob.mockResolvedValue(undefined);
     global.fetch = jest.fn() as unknown as typeof fetch;
@@ -352,19 +363,24 @@ describe('board summary scope refusal', () => {
   });
 
   test.each(['admin', 'organization_admin', 'platform_owner'] as const)(
-    '%s is not refused by the scope gate',
+    '%s reaches board summary execution rather than the scope gate',
     async (role) => {
       mockClaimNextJob.mockResolvedValue(boardSummaryJob(role));
+      revalidateAs(role);
       llmReply('Board summary: nothing requires board attention.');
 
       const result = await processNextShadowJob();
 
       expect(result.error).not.toBe('SHADOW_JOB_SCOPE_FORBIDDEN');
-      expect(mockFailJob).not.toHaveBeenCalledWith(
-        expect.anything(),
-        'SHADOW_JOB_SCOPE_FORBIDDEN',
-        expect.anything(),
-      );
+      // The gate that used to swallow these. Asserting its absence is what
+      // makes the assertion above mean "passed the scope gate" rather than
+      // "died before it".
+      expect(result.error).not.toBe('SHADOW_JOB_AUTHORIZATION_CHANGED');
+      // Positive proof of reach: an authorized board summary actually calls
+      // the provider and completes.
+      expect(global.fetch).toHaveBeenCalled();
+      expect(mockCompleteJob).toHaveBeenCalled();
+      expect(mockFailJob).not.toHaveBeenCalled();
     },
   );
 
@@ -373,13 +389,19 @@ describe('board summary scope refusal', () => {
   // permanently dead job. Only the scope verdict is terminal.
   test('a transient provider failure on an AUTHORIZED board summary stays retryable', async () => {
     mockClaimNextJob.mockResolvedValue(boardSummaryJob('admin'));
-    global.fetch = jest.fn().mockRejectedValue(new Error('socket hang up')) as unknown as typeof fetch;
+    revalidateAs('admin');
+    const fetchSpy = jest.fn().mockRejectedValue(new Error('socket hang up'));
+    global.fetch = fetchSpy as unknown as typeof fetch;
 
     await processNextShadowJob();
 
+    // The failure must be the PROVIDER's, not an earlier gate's -- otherwise
+    // this proves retryability of the wrong error.
+    expect(fetchSpy).toHaveBeenCalled();
     expect(mockFailJob).toHaveBeenCalledTimes(1);
     const [, errorCode, options] = mockFailJob.mock.calls[0];
     expect(errorCode).not.toBe('SHADOW_JOB_SCOPE_FORBIDDEN');
+    expect(errorCode).not.toBe('SHADOW_JOB_AUTHORIZATION_CHANGED');
     // Either no options at all, or retryable left true. What must NOT happen
     // is retryable:false arriving on an ordinary execution failure.
     expect(options?.retryable).not.toBe(false);

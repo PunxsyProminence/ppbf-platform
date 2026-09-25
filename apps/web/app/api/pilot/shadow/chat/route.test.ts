@@ -1498,6 +1498,45 @@ describe('board summary authority at the request boundary', () => {
     },
   );
 
+  // resolveSessionType discards requestedSessionType for any role outside
+  // MANUAL_OVERRIDE_ROLES, so these roles asked for a governance summary and
+  // were answered as ordinary chat. Gating on the RESOLVED type alone refused
+  // the coach and kept downgrading everyone further from the data -- the same
+  // silent substitution, just quieter.
+  test.each(['athlete', 'parent', 'staff', 'volunteer'] as const)(
+    '%s explicitly asking for a board summary is refused, not answered as ordinary chat',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+      const response = await POST(postRequest({
+        message: 'Summarize governance items for the board.',
+        sessionType: 'board_summary',
+      }));
+
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body.error).toBe(BOARD_SUMMARY_REFUSAL);
+    },
+  );
+
+  // A 403 that pre-empts "chest pain" answers the wrong question about the
+  // wrong thing. The authorization refusal defers to the high-risk path, which
+  // queues a human review and hands off -- the authorization failure is still
+  // true, and still less urgent.
+  test('an urgent symptom in an unauthorized board summary reaches the high-risk path, not the 403', async () => {
+    const response = await POST(postRequest({
+      message: 'I have chest pain right now, should I keep training?',
+      sessionType: 'board_summary',
+    }));
+
+    const body = await response.json();
+    expect(body.error).not.toBe(BOARD_SUMMARY_REFUSAL);
+    expect(response.status).not.toBe(403);
+    // The safety boundary owns this request: it withholds an answer and
+    // escalates rather than refusing on authorization grounds.
+    expect(mockQueueHumanReview).toHaveBeenCalled();
+  });
+
   // Coach keeps every other manual override. This slice narrowed one session
   // type; if it had narrowed the concept, this would fail.
   test('a coach can still choose Heavy Bag', async () => {

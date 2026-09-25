@@ -646,6 +646,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // and refused session types have no tier and keep the classifier's.
     const effectiveTier = sessionTypeToTier(sessionType) ?? classification.tier;
 
+    // Step 2: Validate request first (blocks diagnosis, clearance, prescription
+    // for non-educational queries). COMPUTED HERE, HANDLED BELOW, and the order
+    // is the point: a request carrying an urgent personal symptom must reach the
+    // high-risk handoff even when it also fails an authorization check. A 403
+    // that pre-empts "chest pain" answers the wrong question about the wrong
+    // thing. The refusal below therefore defers to it.
+    const requestValidation = validateShadowRequest(message, userRole, organizationId);
+
     // A board summary the executor would refuse is refused HERE, before the
     // worker-readiness probe, the context build, the enqueue and any provider
     // call. executeBoardSummaryJob has always rejected anyone outside
@@ -655,11 +663,25 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // worker, against a job row that had already been written. The authority
     // was correct and the timing was wrong.
     //
+    // THE REQUESTED TYPE, NOT ONLY THE RESOLVED ONE. resolveSessionType silently
+    // discards requestedSessionType for any role outside MANUAL_OVERRIDE_ROLES,
+    // so an athlete, parent, staff member or volunteer asking explicitly for a
+    // board summary resolved to quick_round and was answered as ordinary chat.
+    // Gating on the resolved type alone would refuse the coach and keep
+    // downgrading everyone else -- the same silent substitution this refusal
+    // exists to prevent, just for the roles further from the data.
+    //
     // The refusal is explicit rather than a downgrade to Quick Round or Heavy
     // Bag. Silently answering a different, less governed question than the one
     // asked is worse than saying no: the caller asked for a governance summary
     // and would have received ordinary chat without being told.
-    if (sessionType === 'board_summary' && !BOARD_SUMMARY_ROLES.has(userRole as PilotRole)) {
+    const boardSummaryRequested = sessionType === 'board_summary'
+      || requestedSessionType === 'board_summary';
+    if (
+      boardSummaryRequested
+      && requestValidation.valid
+      && !BOARD_SUMMARY_ROLES.has(userRole as PilotRole)
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -742,8 +764,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       );
     }
 
-    // Step 2: Validate request first (blocks diagnosis, clearance, prescription for non-educational queries)
-    const requestValidation = validateShadowRequest(message, userRole, organizationId);
     if (!requestValidation.valid) {
       const messageId = `msg_${Date.now()}`;
       await queueHumanReview({
