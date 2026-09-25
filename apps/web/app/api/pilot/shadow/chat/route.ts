@@ -675,10 +675,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // Bag. Silently answering a different, less governed question than the one
     // asked is worse than saying no: the caller asked for a governance summary
     // and would have received ordinary chat without being told.
-    // The safety boundary's response, extracted so it can run at TWO points
-    // without being written twice. The generic call site is still below, in its
-    // original position; board summaries need it EARLIER, and duplicating the
-    // block is how the two copies drift.
+    // The safety boundary's one response implementation. It is a local helper
+    // rather than an inline block because the chokepoint below is the single
+    // call site and should read as one statement, not as thirty lines of
+    // response construction sitting in the middle of the control flow.
+    //
+    // It briefly had TWO call sites -- a board-only early invocation plus a
+    // generic one further down -- and that arrangement is what the chokepoint
+    // replaced. If a second call site ever appears here again, the precedence
+    // contract has been reintroduced as a per-branch reminder, which is the
+    // thing that decayed three times.
     const respondWithSafetyBoundary = async (): Promise<NextResponse<ShadowChatResponse>> => {
       const messageId = `msg_${Date.now()}`;
       await queueHumanReview({

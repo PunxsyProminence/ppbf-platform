@@ -10,6 +10,7 @@ import { evaluateShadowUnlockState } from '@/src/server/pilot/shadowUnlocks';
 import {
   appendConversationExchange,
   appendUserMessage,
+  assertConversationAccess,
   loadConversationMessages,
   queueHumanReview,
   resolveConversation,
@@ -1750,15 +1751,35 @@ describe('SHADOW pre-generation safety precedence', () => {
   });
 
   // The other half of the contract, and the reason it is a PRECEDENCE rule
-  // rather than "safety always wins". These gates decide whether the caller may
-  // be here at all, and safety must not become a way around them: a tenant
-  // boundary or a global throttle that an urgent word could unlock would be a
-  // bypass, not a safeguard. The global limits are also what stop the
-  // human-review queue being written to without bound.
+  // rather than "safety always wins".
+  //
+  // These gates decide whether the caller may be here at all. Safety must not
+  // become a way around them: a tenant boundary or a global throttle that an
+  // urgent word could unlock would be a bypass, not a safeguard. The global
+  // limits are also what stop the human-review queue being written to without
+  // bound, so "a safety response costs no model tokens" is not "costs nothing".
+  //
+  // PINNED EXECUTABLY, NOT JUST CLASSIFIED. Guarding only the lower side would
+  // let a future edit drag the chokepoint up across these gates with the
+  // SAFETY_FIRST matrix still green. Each row proves its own gate fired, and
+  // every row proves the safety handler did NOT run first -- the queue write is
+  // the observable for that, because it happens before the safety response is
+  // returned.
   describe('gates that safety does NOT outrank', () => {
-    it('a global chat rate limit still refuses an urgent message', async () => {
+    it('core runtime readiness still refuses an urgent message', async () => {
+      const readiness = jest.mocked(assertShadowRuntimeReadiness);
+      readiness.mockRejectedValueOnce(new Error('SHADOW runtime not ready'));
+
+      const response = await POST(postRequest({ message: URGENT_MESSAGE }));
+
+      expect(readiness).toHaveBeenCalled();
+      expect(response.status).toBeGreaterThanOrEqual(500);
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    });
+
+    it('the global chat rate limit still refuses an urgent message', async () => {
       mockEnforceRateLimit.mockImplementation(async (input) => {
-        if (input?.endpointKey !== 'heavy_bag') {
+        if (input?.endpointKey === 'chat') {
           throw new ShadowRateLimitExceeded(60, 'chat');
         }
       });
@@ -1768,6 +1789,64 @@ describe('SHADOW pre-generation safety precedence', () => {
 
       expect(response.status).toBe(429);
       expect(body.error).toBe('Rate limit exceeded.');
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    });
+
+    // Distinct from the row above on purpose. A test that throws on "the first
+    // non-Heavy-Bag limiter call" only ever exercises `chat`, so moving the
+    // chokepoint BETWEEN the two global limits would leave it green while
+    // chat_daily silently became SAFETY_FIRST. Here `chat` resolves and only
+    // the daily limit throws.
+    it('the global daily rate limit still refuses an urgent message', async () => {
+      const seen: string[] = [];
+      mockEnforceRateLimit.mockImplementation(async (input) => {
+        seen.push(String(input?.endpointKey));
+        if (input?.endpointKey === 'chat_daily') {
+          throw new ShadowRateLimitExceeded(3_600, 'chat_daily');
+        }
+      });
+
+      const response = await POST(postRequest({ message: URGENT_MESSAGE }));
+      const body = await response.json();
+
+      // Proves the daily limit was actually reached rather than the request
+      // dying at the chat limit.
+      expect(seen).toContain('chat');
+      expect(seen).toContain('chat_daily');
+      expect(response.status).toBe(429);
+      expect(body.error).toBe('Rate limit exceeded.');
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    });
+
+    it('athlete authorization still refuses an urgent message', async () => {
+      const accessCheck = jest.mocked(assertActorCanAccessAthlete);
+      accessCheck.mockRejectedValueOnce(new Error('Forbidden: athlete cannot access another athlete record'));
+
+      const response = await POST(postRequest({
+        message: URGENT_MESSAGE,
+        athleteId: 'athlete-not-mine',
+      }));
+
+      expect(accessCheck).toHaveBeenCalled();
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(response.status).toBeLessThan(500);
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    });
+
+    it('conversation authorization still refuses an urgent message', async () => {
+      const conversationCheck = jest.mocked(assertConversationAccess);
+      conversationCheck.mockRejectedValueOnce(new Error('SHADOW_CONVERSATION_NOT_FOUND'));
+
+      const response = await POST(postRequest({
+        message: URGENT_MESSAGE,
+        conversationId: '00000000-0000-4000-8000-0000000009ff',
+      }));
+      const body = await response.json();
+
+      expect(conversationCheck).toHaveBeenCalled();
+      expect(response.status).toBe(404);
+      expect(body.error).toBe('Not found');
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
     });
   });
 });
