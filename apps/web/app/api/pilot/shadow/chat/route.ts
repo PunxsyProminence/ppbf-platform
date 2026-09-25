@@ -675,8 +675,66 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // Bag. Silently answering a different, less governed question than the one
     // asked is worse than saying no: the caller asked for a governance summary
     // and would have received ordinary chat without being told.
+    // The safety boundary's response, extracted so it can run at TWO points
+    // without being written twice. The generic call site is still below, in its
+    // original position; board summaries need it EARLIER, and duplicating the
+    // block is how the two copies drift.
+    const respondWithSafetyBoundary = async (): Promise<NextResponse<ShadowChatResponse>> => {
+      const messageId = `msg_${Date.now()}`;
+      await queueHumanReview({
+        organizationId,
+        accountId: userId,
+        conversationId: requestedConversationId,
+        category: requestValidation.topic ?? 'safety_boundary',
+        severity: ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom']
+          .includes(requestValidation.classification ?? '')
+          ? 'critical'
+          : 'high',
+        summary: 'A SHADOW chat request was withheld by the pre-generation safety boundary.',
+        metadata: {
+          sessionType,
+          athleteScoped: Boolean(athleteId),
+          validationClassification: requestValidation.classification ?? null,
+        },
+      }).catch(() => {
+        console.error('SHADOW human-review queue write failed');
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          state: 'filtered',
+          response: requestValidation.error || 'Request validation failed',
+          messageId,
+          createdAt: new Date().toISOString(),
+          filtered: true,
+          requiresHumanReview: true,
+          highRiskTopic: requestValidation.topic,
+          evidenceTier: 'RESEARCH_NEEDED',
+          handoff: resolveHandoff({ requiresHumanReview: true, topic: requestValidation.topic }),
+          tier: effectiveTier,
+          complexity: classification.complexity,
+          error: requestValidation.error,
+        },
+        { status: 400 },
+      );
+    };
+
     const boardSummaryRequested = sessionType === 'board_summary'
       || requestedSessionType === 'board_summary';
+
+    // SAFETY OUTRANKS AUTHORITY, AND OUTRANKS PLUMBING. Deferring the 403 was
+    // only half of it: the generic safety handler sits below the board/scout
+    // worker branch, so a high-risk board-summary request still reached the
+    // shadow_jobs readiness probe, and on an unconfigured worker still returned
+    // a 503 "background mode not active" instead of the handoff. Someone
+    // reporting chest pain was answered about infrastructure.
+    //
+    // Narrow to board summaries on purpose: no other session type's ordering
+    // changes, and the generic call site below keeps its original position.
+    if (boardSummaryRequested && !requestValidation.valid) {
+      return respondWithSafetyBoundary();
+    }
+
     if (
       boardSummaryRequested
       && requestValidation.valid
@@ -765,43 +823,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     }
 
     if (!requestValidation.valid) {
-      const messageId = `msg_${Date.now()}`;
-      await queueHumanReview({
-        organizationId,
-        accountId: userId,
-        conversationId: requestedConversationId,
-        category: requestValidation.topic ?? 'safety_boundary',
-        severity: ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom']
-          .includes(requestValidation.classification ?? '')
-          ? 'critical'
-          : 'high',
-        summary: 'A SHADOW chat request was withheld by the pre-generation safety boundary.',
-        metadata: {
-          sessionType,
-          athleteScoped: Boolean(athleteId),
-          validationClassification: requestValidation.classification ?? null,
-        },
-      }).catch(() => {
-        console.error('SHADOW human-review queue write failed');
-      });
-      return NextResponse.json(
-        {
-          success: false,
-          state: 'filtered',
-          response: requestValidation.error || 'Request validation failed',
-          messageId,
-          createdAt: new Date().toISOString(),
-          filtered: true,
-          requiresHumanReview: true,
-          highRiskTopic: requestValidation.topic,
-          evidenceTier: 'RESEARCH_NEEDED',
-          handoff: resolveHandoff({ requiresHumanReview: true, topic: requestValidation.topic }),
-          tier: effectiveTier,
-          complexity: classification.complexity,
-          error: requestValidation.error,
-        },
-        { status: 400 },
-      );
+      return respondWithSafetyBoundary();
     }
 
     const interactionTopic = requestValidation.topic && requestValidation.topic !== 'none'

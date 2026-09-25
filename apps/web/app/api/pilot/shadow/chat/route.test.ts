@@ -1524,17 +1524,51 @@ describe('board summary authority at the request boundary', () => {
   // queues a human review and hands off -- the authorization failure is still
   // true, and still less urgent.
   test('an urgent symptom in an unauthorized board summary reaches the high-risk path, not the 403', async () => {
+    const fetchSpy = jest.fn();
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
     const response = await POST(postRequest({
       message: 'I have chest pain right now, should I keep training?',
       sessionType: 'board_summary',
     }));
 
     const body = await response.json();
+
+    // The safety boundary owns this request outright.
+    expect(response.status).toBe(400);
     expect(body.error).not.toBe(BOARD_SUMMARY_REFUSAL);
-    expect(response.status).not.toBe(403);
-    // The safety boundary owns this request: it withholds an answer and
-    // escalates rather than refusing on authorization grounds.
-    expect(mockQueueHumanReview).toHaveBeenCalled();
+    expect(body.state).toBe('filtered');
+    expect(body.requiresHumanReview).toBe(true);
+    expect(body.highRiskTopic).toBe('chest_pain');
+
+    // Escalated at the severity the REAL classifier earns, not the one I
+    // assumed: validateShadowRequest classifies this as
+    // 'personal_health_concern', which is 'high' rather than 'critical' -- the
+    // four critical classifications are chest_pain, fainting,
+    // loss_of_consciousness and urgent_personal_symptom as CLASSIFICATIONS, and
+    // 'chest_pain' here is the TOPIC. Pinning the real values so a change to
+    // either mapping is visible.
+    expect(mockQueueHumanReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: 'chest_pain',
+        severity: 'high',
+        metadata: expect.objectContaining({
+          sessionType: 'board_summary',
+          validationClassification: 'personal_health_concern',
+        }),
+      }),
+    );
+
+    // AND IT GOT THERE FIRST. Deferring the 403 was only half the fix: the
+    // generic safety handler sits below the board/scout worker branch, so
+    // without the early branch this request still probed shadow_jobs, and on an
+    // unconfigured worker returned a 503 about background modes instead of the
+    // handoff. The worker is ENABLED in this describe block, so the probe would
+    // fire if the ordering were wrong.
+    expect(jest.mocked(assertShadowRuntimeReadiness)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ requiredTables: ['shadow_jobs'] }),
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   // Coach keeps every other manual override. This slice narrowed one session
