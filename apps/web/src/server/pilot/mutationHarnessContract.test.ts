@@ -219,9 +219,11 @@ describe('the spec is validated before anything is touched', () => {
 describe('the invoking working tree is never mutated', () => {
   const git = (args: string[], cwd: string) => execFileSync('git', args, { cwd, encoding: 'utf8' });
   let repo = '';
+  let specDir = '';
 
   beforeAll(() => {
     repo = fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-harness-test-'));
+    specDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-harness-spec-'));
     git(['init', '--quiet', '-b', 'main'], repo);
     git(['config', 'user.email', 'harness@test.local'], repo);
     git(['config', 'user.name', 'Harness Test'], repo);
@@ -233,10 +235,13 @@ describe('the invoking working tree is never mutated', () => {
 
   afterAll(() => {
     try { fs.rmSync(repo, { recursive: true, force: true }); } catch { /* temp dir */ }
+    try { fs.rmSync(specDir, { recursive: true, force: true }); } catch { /* temp dir */ }
   });
 
   const runHarness = (spec: unknown) => {
-    const specPath = path.join(repo, 'spec.json');
+    // OUTSIDE the repository under test. A spec written inside it is untracked
+    // dirt, which the clean-tree guard would (correctly) refuse.
+    const specPath = path.join(specDir, 'spec.json');
     fs.writeFileSync(specPath, JSON.stringify(spec));
     const result = spawnSync(process.execPath, [scriptPath, '--spec', specPath], {
       cwd: repo, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
@@ -318,6 +323,51 @@ describe('the invoking working tree is never mutated', () => {
     expect(digest()).toBe(before);
   });
 
+  it('refuses when ANY file is uncommitted, not only the ones it would mutate', () => {
+    /* THE HOLE THIS CLOSES, and it is the one the tool exists to prevent:
+       "the proof ran against a different candidate than the builder thought".
+       A mutation proof is about two files -- the source being broken and the
+       TEST meant to notice -- and only the first appears in the spec. Checking
+       just the mutated file left an uncommitted test running as its previous
+       version in the scratch tree, and a NEW test file not existing there at
+       all. `jest -t` matching nothing does not fail loudly, so that graded as
+       a surviving mutant: a confident wrong finding about a test that never
+       ran. */
+    const unrelated = path.join(repo, 'the-test-that-should-notice.txt');
+    fs.writeFileSync(unrelated, 'a test file the spec never mentions\n');
+    try {
+      const result = runHarness({
+        test: 'exit 0',
+        mutants: [{ label: 'anything', file: 'subject.txt', find: 'GUARD', replace: 'GONE' }],
+      });
+      expect(result.status).toBe(2);
+      expect(result.out).toMatch(/Working tree is not clean/);
+      expect(result.out).toMatch(/the-test-that-should-notice/);
+      expect(result.out).toMatch(/a survivor would be reported for a test that\s+never ran/);
+    } finally {
+      fs.rmSync(unrelated, { force: true });
+    }
+  });
+
+  it('can be told the difference does not matter, but only explicitly', () => {
+    const unrelated = path.join(repo, 'scratch-note.txt');
+    fs.writeFileSync(unrelated, 'unrelated scratch\n');
+    try {
+      const specPath = path.join(specDir, 'spec.json');
+      fs.writeFileSync(specPath, JSON.stringify({
+        test: process.platform === 'win32' ? 'findstr GUARD subject.txt' : 'grep -q GUARD subject.txt',
+        mutants: [{ label: 'guard removed', file: 'subject.txt', find: 'GUARD', replace: 'GONE', expect: 'RED' }],
+      }));
+      const result = spawnSync(process.execPath, [scriptPath, '--spec', specPath, '--allow-dirty'], {
+        cwd: repo, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
+      });
+      expect(result.status).toBe(0);
+      expect(`${result.stdout}`).toMatch(/1 of 1 mutants behaved as declared/);
+    } finally {
+      fs.rmSync(unrelated, { force: true });
+    }
+  });
+
   it('refuses to run at all when the file it would mutate has uncommitted edits', () => {
     /* Mutants run against a commit. An uncommitted edit is not in that commit,
        so a green table would describe code the author is not holding. */
@@ -330,7 +380,7 @@ describe('the invoking working tree is never mutated', () => {
         mutants: [{ label: 'anything', file: 'subject.txt', find: 'GUARD', replace: 'GONE' }],
       });
       expect(result.status).toBe(2);
-      expect(result.out).toMatch(/Uncommitted changes in files this spec mutates/);
+      expect(result.out).toMatch(/Working tree is not clean/);
     } finally {
       fs.writeFileSync(subject, committed);
     }

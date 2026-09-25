@@ -231,16 +231,33 @@ function main(argv) {
   const sha = git(['rev-parse', shaArg || 'HEAD'], repoRoot);
   const keep = argv.includes('--keep');
 
-  // THE CANDIDATE MUST BE COMMITTED. Mutants run against `sha`, so an
-  // uncommitted edit is simply not in the thing being proven -- and a green
-  // table would then describe code that is not what the author is holding.
-  const touched = [...new Set(spec.mutants.flatMap((m) => m.edits.map((e) => e.file)))];
-  const dirty = git(['status', '--porcelain', '--', ...touched], repoRoot);
-  if (dirty) {
+  // THE CANDIDATE MUST BE COMMITTED -- THE WHOLE OF IT, not just the files the
+  // spec mutates.
+  //
+  // This checked only the mutated files at first, and that was a hole of
+  // exactly the kind this tool exists to close: "the proof ran against a
+  // different candidate than the builder thought". The files a mutation proof
+  // is ABOUT are usually two -- the source being broken and the TEST that is
+  // supposed to notice -- and only the first appears in the spec. An
+  // uncommitted test file therefore left the scratch worktree running the
+  // previous version of the test, or, if the test file was new and untracked,
+  // running no such test at all. `jest -t` matching nothing does not fail
+  // loudly; it just does not fail, which this would have graded as a mutant
+  // that survived. A wrong finding, reported confidently, about a test that
+  // was never executed.
+  //
+  // Untracked files count for the same reason: a new test that exists only in
+  // the working tree is not in `sha` either.
+  const dirty = git(['status', '--porcelain'], repoRoot);
+  if (dirty && !argv.includes('--allow-dirty')) {
     process.stderr.write(
-      'Uncommitted changes in files this spec mutates:\n' + dirty + '\n\n'
-      + `Mutants run against ${sha.slice(0, 8)}, so those edits would not be in the proof.\n`
-      + 'Commit them (or pass --sha) and run again.\n',
+      `Working tree is not clean, and mutants run against ${sha.slice(0, 8)}:\n\n${dirty}\n\n`
+      + 'None of the above is in that commit, so the proof would describe code you are not\n'
+      + 'holding -- most dangerously a test file, where the scratch worktree would run the\n'
+      + 'old version, or no test at all, and a survivor would be reported for a test that\n'
+      + 'never ran.\n\n'
+      + 'Commit them, or pass --allow-dirty if you have established the difference cannot\n'
+      + 'affect this proof.\n',
     );
     return 2;
   }
