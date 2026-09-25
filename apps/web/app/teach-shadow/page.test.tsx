@@ -15,7 +15,7 @@
 // that did not come back.
 
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import TeachShadowHomePage from './page';
@@ -56,18 +56,38 @@ const RELEASE_URL = (id: string) => `/api/pilot/video/${id}/release`;
 // and fail the test in afterEach on the record.
 const unexpectedRequests: string[] = [];
 
-function mockCoverageFetch(respond: () => Response, held: () => Response = () => jsonResponse({ ok: true, items: [] })) {
+function mockCoverageFetch(
+  respond: () => Response,
+  held: () => Response = () => jsonResponse({ ok: true, items: [] }),
+  reviewLink: () => Response = () => jsonResponse({ ok: true, url: REVIEW_SAS }),
+) {
   const mock = jest.fn(async (input: RequestInfo | URL) => {
     const requested = String(input);
     if (requested === COVERAGE_URL) return respond();
     if (requested === HELD_URL) return held();
-    if (requested === REVIEW_LINK_URL) return jsonResponse({ ok: true, url: 'https://blob.example/v.webm?sas' });
+    if (requested === REVIEW_LINK_URL) return reviewLink();
     if (requested === RELEASE_URL('vs-1')) return jsonResponse({ ok: true });
     unexpectedRequests.push(requested);
     throw new Error(`Unexpected fetch: ${requested}`);
   });
   global.fetch = mock as unknown as typeof fetch;
   return mock;
+}
+
+const REVIEW_SAS = 'https://blob.example/v.webm?sas';
+
+function requestedUrls(mock: ReturnType<typeof mockCoverageFetch>): string[] {
+  return mock.mock.calls.map(([input]) => String(input));
+}
+
+/*
+ * A stand-in for the window the page opens on the click. The page navigates
+ * this handle once the URL arrives, so the test can see whether the footage
+ * was ever actually shown -- which a spy returning a bare truthy object
+ * could not.
+ */
+function fakeReviewWindow() {
+  return { opener: {} as unknown, location: { replace: jest.fn() }, close: jest.fn() };
 }
 
 function jsonResponse(body: unknown, ok = true) {
@@ -338,16 +358,19 @@ test('held footage is listed by take and angle, and Release waits on opening it'
   expect(pageText()).toContain('Open this footage for review before Release becomes available');
 });
 
-test('a blocked review window does not arm Release', async () => {
+test('NEGATIVE CONTROL -- a blocked review window asks for no link at all', async () => {
   /*
-   * THE LIE THIS PREVENTS. A browser may refuse the popup. The link WAS
-   * issued, so the server prerequisite would pass -- enabling Release anyway
-   * would tell the coach the open succeeded when nothing appeared. We have
-   * already accepted this platform cannot prove anyone watched; it must not
-   * additionally claim an action succeeded that the browser rejected.
+   * THE ORDER IS THE CONTROL, not just the null check.
+   *
+   * review-link WRITES the video_review_link_issued audit row that the server
+   * accepts as the release prerequisite. Requesting the link first and only
+   * then discovering the popup was blocked leaves that row already written:
+   * Release stays disabled on this page, but a direct POST would satisfy the
+   * server with no review window ever opened. So the window must be opened
+   * synchronously on the click, and a refusal must abort BEFORE the request.
    */
   const opener = jest.spyOn(window, 'open').mockReturnValue(null);
-  mockCoverageFetch(
+  const fetchMock = mockCoverageFetch(
     () => jsonResponse({ ok: true, coverage: COVERAGE }),
     () => jsonResponse({ ok: true, items: [HELD_ITEM] }),
   );
@@ -358,6 +381,68 @@ test('a blocked review window does not arm Release', async () => {
 
   expect(await screen.findByRole('alert')).toHaveTextContent(/blocked the review window/i);
   expect(screen.getByRole('button', { name: 'Release' })).toBeDisabled();
+  // The whole point: no credential was minted, so nothing exists for a direct
+  // POST to lean on.
+  expect(requestedUrls(fetchMock)).not.toContain(REVIEW_LINK_URL);
+  opener.mockRestore();
+});
+
+test('NEGATIVE CONTROL -- a failed review-link closes the window it opened', async () => {
+  /*
+   * The window is opened before the request, so the failure path owns it. A
+   * blank tab left behind would look like the footage failed to load rather
+   * than like the request failing, and the coach would sit waiting on it.
+   */
+  const reviewWindow = fakeReviewWindow();
+  const opener = jest.spyOn(window, 'open').mockReturnValue(reviewWindow as unknown as Window);
+  mockCoverageFetch(
+    () => jsonResponse({ ok: true, coverage: COVERAGE }),
+    () => jsonResponse({ ok: true, items: [HELD_ITEM] }),
+    () => jsonResponse({ error: 'That footage could not be opened for review.' }, false),
+  );
+
+  render(<TeachShadowHomePage />);
+  await screen.findByText(/Take 3/);
+  fireEvent.click(screen.getByRole('button', { name: 'Open for review' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent(/could not be opened for review/i);
+  expect(reviewWindow.close).toHaveBeenCalled();
+  expect(reviewWindow.location.replace).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Release' })).toBeDisabled();
+  opener.mockRestore();
+});
+
+test('a successful issuance navigates the open window, and only then arms Release', async () => {
+  /*
+   * The positive control the two above are negatives of. Release becomes
+   * available only once the window is actually showing the footage -- and the
+   * opener reference is severed, so the review tab cannot reach back into
+   * this page.
+   */
+  const reviewWindow = fakeReviewWindow();
+  const opener = jest.spyOn(window, 'open').mockReturnValue(reviewWindow as unknown as Window);
+  mockCoverageFetch(
+    () => jsonResponse({ ok: true, coverage: COVERAGE }),
+    () => jsonResponse({ ok: true, items: [HELD_ITEM] }),
+  );
+
+  render(<TeachShadowHomePage />);
+  await screen.findByText(/Take 3/);
+  // Opened blank on the click -- the URL is not known yet.
+  fireEvent.click(screen.getByRole('button', { name: 'Open for review' }));
+  expect(opener).toHaveBeenCalledWith('', '_blank');
+
+  /*
+   * waitFor, not findByRole: the Release button is ALREADY in the document,
+   * disabled. findByRole would resolve on it immediately, before the state
+   * that arms it has flushed, and the assertion below would read the stale
+   * disabled button -- a test that passes only by accident of timing.
+   */
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: 'Release' })).toBeEnabled();
+  });
+  expect(reviewWindow.location.replace).toHaveBeenCalledWith(REVIEW_SAS);
+  expect(reviewWindow.opener).toBeNull();
   opener.mockRestore();
 });
 
@@ -426,7 +511,10 @@ test('nothing held says so, rather than looking broken', async () => {
   render(<TeachShadowHomePage />);
   await screen.findByText(/Nothing is waiting/);
 
-  expect(pageText()).toContain('Footage you film appears here until you release it');
+  // Not "everything you film waits here": the screen clears most of it, so a
+  // queue describing itself as the destination for all footage would describe
+  // an environment the gym does not run.
+  expect(pageText()).toContain('Footage the content screen clears on its own never appears here');
 });
 
 test('the held section never claims anybody watched anything', async () => {

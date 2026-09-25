@@ -173,6 +173,41 @@ export default function TeachShadowHomePage() {
    * which nothing here can observe.
    */
   async function openForReview(videoSessionId: string) {
+    /*
+     * THE WINDOW OPENS ON THE CLICK, BEFORE ANYTHING IS REQUESTED.
+     *
+     * Everything above the first await still runs inside the click handler,
+     * so the browser's user activation is intact and the popup is allowed.
+     * Opening it after the network round trip relied on that activation
+     * surviving an async gap, which browsers -- mobile ones especially -- do
+     * not guarantee.
+     *
+     * THE ORDER IS THE POINT, not just reliability. review-link WRITES the
+     * video_review_link_issued audit row that the server later accepts as the
+     * release prerequisite. Asking for the link first and discovering the
+     * popup was blocked afterwards leaves that row already written: the
+     * button stays disabled, but a direct POST would satisfy the server with
+     * no review window ever opened. A blocked popup must mean no link was
+     * ever requested.
+     *
+     * 'noopener' cannot be used: it makes window.open return null in some
+     * browsers, and the handle is needed to navigate this window once the
+     * URL arrives. Clearing .opener severs the reference the same way.
+     */
+    const reviewWindow = window.open('', '_blank');
+    if (!reviewWindow) {
+      setHeldError(
+        'Your browser blocked the review window. Allow pop-ups for this site, then open it again.',
+      );
+      return;
+    }
+    try {
+      reviewWindow.opener = null;
+    } catch {
+      // Some browsers refuse the assignment. The window is still ours to
+      // navigate, and severing opener is a hardening step, not the control.
+    }
+
     setBusyVideoId(videoSessionId);
     setHeldError('');
     try {
@@ -186,27 +221,13 @@ export default function TeachShadowHomePage() {
       if (!response.ok || !payload.url) {
         throw new Error(payload.error || 'That footage could not be opened for review.');
       }
-      /*
-       * THE WINDOW HAS TO HAVE ACTUALLY OPENED.
-       *
-       * A browser may refuse the popup. window.open then returns null, and
-       * enabling Release regardless would tell the coach the open succeeded
-       * when nothing appeared -- and the server prerequisite WOULD pass,
-       * because the link was issued. We have already accepted that this
-       * platform cannot prove anyone watched; it should not additionally
-       * claim an action succeeded that the browser rejected.
-       *
-       * Opened BEFORE the state is recorded, so the failure path cannot arm
-       * the button.
-       */
-      const opened = window.open(payload.url, '_blank', 'noopener,noreferrer');
-      if (!opened) {
-        throw new Error(
-          'Your browser blocked the review window. Allow pop-ups for this site, then open it again.',
-        );
-      }
+      // replace(), so the blank entry does not become a back-button step.
+      reviewWindow.location.replace(payload.url);
+      // Armed only once the window is actually showing the footage.
       setOpenedForReview((current) => new Set(current).add(videoSessionId));
     } catch (error) {
+      // No URL to show, so the window it opened must not be left stranded.
+      reviewWindow.close();
       setHeldError(error instanceof Error ? error.message : 'That footage could not be opened for review.');
     } finally {
       setBusyVideoId('');
@@ -381,7 +402,8 @@ export default function TeachShadowHomePage() {
               <p className="t-body mt-[var(--s3)]">Reading held footage&hellip;</p>
             ) : held.length === 0 ? (
               <p className="t-body mt-[var(--s3)]">
-                Nothing is waiting. Footage you film appears here until you release it.
+                Nothing is waiting. Footage the content screen clears on its own never
+                appears here &mdash; only takes it could not decide about.
               </p>
             ) : (
               <ul className="mt-[var(--s4)] flex flex-col gap-[var(--s3)]">

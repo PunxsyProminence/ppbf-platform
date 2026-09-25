@@ -11,8 +11,10 @@
 //
 // This is that surface. Organization admins only, precisely because the coach
 // is excluded from this decision. It is a human attestation, not a second
-// automated pass: the reviewer opens the clip (review-link), watches it, and
-// records 'approve' or 'block'. 'approve' is the only path here that sets
+// automated pass: the reviewer opens the clip (review-link) and records
+// 'approve' or 'block'. What the platform can verify is that it issued this
+// reviewer a link against the verdict they acted on -- not that they watched,
+// which nothing here can observe. 'approve' is the only path here that sets
 // status='ready'; 'block' leaves the video quarantined, so a refusal changes
 // nothing about what anyone can watch.
 //
