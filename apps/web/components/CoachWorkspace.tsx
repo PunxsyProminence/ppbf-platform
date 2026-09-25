@@ -889,6 +889,26 @@ export default function CoachWorkspace() {
   /* Readings that exist but may not be presented as measurements. Kept so a
      coach sees the judgement and its caveat rather than having it vanish --
      "not a measurement" is not "not written down". */
+  /* WHETHER THE READINESS FEED ANSWERED AT ALL.
+
+     There was no such state. `if (readinessResponse.ok)` had no else and the
+     catch only carried a comment, so a read that FAILED and a read that
+     SUCCEEDED WITH NOTHING IN IT produced the identical rendering. Two
+     different facts, one sentence -- the false-zero shape this file guards
+     against everywhere else, sitting in the readiness surface itself.
+
+     WHAT IS DELIBERATELY NOT CHANGED: both still say "No signal". That
+     collapse is a recorded decision, pinned by the test named "a healthy feed
+     with no fresh check-ins reads the same as no signal", and it is defensible
+     -- from where the coach stands, both mean there is nothing here to act on.
+     Overturning a written ruling is not mine to do.
+
+     What this adds is the REASON, on the failure case only. "No signal"
+     remains true in both; a coach who needs to know whether to retry or to go
+     and ask somebody can now tell which one they are looking at. */
+  const [readinessReadState, setReadinessReadState] =
+    useState<'loading' | 'loaded' | 'unavailable'>('loading');
+
   const [contextualReadiness, setContextualReadiness] = useState<
     ReadonlyArray<{ athleteId: string; band: string; score: number | null }>
   >([]);
@@ -1598,9 +1618,26 @@ export default function CoachWorkspace() {
           // below shows. It is computed from the feed rather than hardcoded so
           // it stops showing on its own if a validated method is ever wired,
           // instead of becoming a stale disclaimer nobody removes.
+          setReadinessReadState('loaded');
+        } else {
+          /* THE BRANCH THAT DID NOT EXIST. A non-ok response fell through
+             silently, leaving whatever was in state from last time and a tile
+             that could not tell a coach the feed had failed. */
+          setReadinessReadState('unavailable');
+          setContextualReadiness([]);
         }
       } catch {
-        // UNKNOWN across the board -- the tile says so instead of claiming zero flags.
+        /* UNKNOWN across the board, and the tile now says WHY rather than only
+           that there is nothing.
+
+           The contextual list is CLEARED on failure, unlike the SHADOW queue
+           which deliberately survives an in-flight refresh. The cases differ: a
+           queue still being read is data that is merely not fresh yet, while
+           this is a read that came back failed, and the count derived from a
+           stale array would render as a current one beside a line saying the
+           feed could not be read. Two statements, one of them false. */
+        setReadinessReadState('unavailable');
+        setContextualReadiness([]);
       }
 
       setAthletes(athleteList);
@@ -2316,6 +2353,7 @@ export default function CoachWorkspace() {
             escalationsLoading={escalationsLoading}
             escalationsError={escalationsError}
             readiness={readiness}
+            readinessReadState={readinessReadState}
             shadowBadge={reviewQueueBadge}
           />
         )}
@@ -2852,6 +2890,19 @@ export default function CoachWorkspace() {
                         <p className="cb-caveat">
                           No fresh readiness check-ins -- do not read this as &quot;zero flags&quot;
                         </p>
+                        {/* WHICH KIND OF NOTHING. "No signal" is true whether
+                            the feed answered with an empty board or did not
+                            answer at all, and that collapse is a deliberate
+                            ruling. But the two ask different things of the
+                            coach: one is somebody to chase, the other is a
+                            read to retry. This line is the only difference,
+                            and it appears only on the failure. */}
+                        {readinessReadState === 'unavailable' && (
+                          <p className="cb-caveat cb-caveat--warn">
+                            The readiness feed could not be read. This is not a statement
+                            that nobody checked in.
+                          </p>
+                        )}
                       </>
                     )}
                   </div>

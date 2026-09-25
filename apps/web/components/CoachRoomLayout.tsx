@@ -47,6 +47,10 @@ export interface CoachRoomLayoutProps {
   readonly escalationsLoading: boolean;
   readonly escalationsError: string;
   readonly readiness: ReadinessGlance;
+  /** Whether the readiness feed answered. "No signal" is true both when it
+   *  answered with nothing and when it did not answer, and the room says which
+   *  -- one is somebody to chase, the other is a read to retry. */
+  readonly readinessReadState: 'loading' | 'loaded' | 'unavailable';
   readonly shadowBadge: GlanceBadge;
 }
 
@@ -95,6 +99,7 @@ export default function CoachRoomLayout({
   escalationsLoading,
   escalationsError,
   readiness,
+  readinessReadState,
   shadowBadge,
 }: CoachRoomLayoutProps) {
   return (
@@ -208,16 +213,26 @@ export default function CoachRoomLayout({
             how much judgement is sitting here uncounted -- which is a real
             number and a real prompt -- and it says "not counted" out loud rather
             than letting a coach read it as a measurement. */}
-        <Clipboard
-          title="Context items"
-          value={readiness.trackingAvailable ? String(readiness.unvalidated) : 'No signal'}
-          state={readiness.trackingAvailable ? (readiness.unvalidated > 0 ? 'ok' : 'quiet') : 'unread'}
-          detail={readiness.trackingAvailable
-            ? (readiness.unvalidated > 0
-              ? 'Staff judgement recorded, not counted as a measurement'
-              : 'Nothing recorded today')
-            : 'No fresh check-ins — do not read this as "zero flags"'}
-        />
+        {readinessReadState === 'loading' ? (
+          <Clipboard title="Context items" value="Checking" state="quiet" />
+        ) : (
+          <Clipboard
+            title="Context items"
+            value={readiness.trackingAvailable ? String(readiness.unvalidated) : 'No signal'}
+            state={readiness.trackingAvailable ? (readiness.unvalidated > 0 ? 'ok' : 'quiet') : 'unread'}
+            detail={readiness.trackingAvailable
+              ? (readiness.unvalidated > 0
+                ? 'Staff judgement recorded, not counted as a measurement'
+                : 'Nothing recorded today')
+              /* Which kind of nothing. Both are "No signal" -- that collapse is
+                 a recorded ruling -- but one is somebody to chase and the other
+                 is a read to retry, and a coach cannot act on the first without
+                 being told which they have. */
+              : readinessReadState === 'unavailable'
+                ? 'The feed could not be read — not a statement that nobody checked in'
+                : 'No fresh check-ins — do not read this as "zero flags"'}
+          />
+        )}
 
         <Clipboard
           title="Shadow queue"

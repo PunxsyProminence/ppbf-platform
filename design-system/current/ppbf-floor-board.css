@@ -1394,3 +1394,9 @@
   box-shadow: 0 3px 8px rgba(0, 0, 0, .55), inset 0 0 0 2px var(--cb-trim);
 }
 .ge-floorboard .rm-clip--unread .rm-clip-v { color: var(--cb-trim-2); }
+
+/* The failure caveat. It sits under the same "No signal" headline as the
+   empty-board caveat -- that collapse is a recorded ruling -- so it has to
+   be told apart by something other than position. Warning chalk, which this
+   sheet already uses for a read that did not come back. */
+.ge-floorboard .cb-caveat--warn { color: var(--cb-chalk-warn); }

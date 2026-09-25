@@ -1809,6 +1809,45 @@ describe('roster readiness comes from the board feed, honestly', () => {
 
     expect(screen.getByText('No signal')).toBeTruthy();
   });
+
+  test('the two kinds of nothing are still told apart underneath the same headline', async () => {
+    /* THE HOLE UNDER A DELIBERATE RULING.
+
+       The test above pins a real decision: an empty board and a dead feed both
+       read "No signal", because from where the coach stands both mean there is
+       nothing here to act on. That ruling stands and this does not touch it.
+
+       What did NOT exist was any way to tell which one you had. The load block
+       was `if (readinessResponse.ok) { ... }` with no else, and a catch that
+       carried only a comment -- so a failed read left whatever was in state
+       from last time and a tile that could not say the feed had gone. Two
+       different facts, one sentence, which is the false-zero shape this file
+       guards against everywhere else, sitting in the readiness surface itself.
+
+       The difference matters because it changes what the coach does next. An
+       empty board is somebody to go and ask. A dead feed is a read to retry,
+       and possibly a thing to report. */
+    await renderWorkspace({
+      athletesList: threeAthletes,
+      readinessBoard: () => jsonResponse({}, { ok: false, status: 500 }),
+    });
+
+    // The ruling: the headline is unchanged.
+    expect(screen.getByText('No signal')).toBeTruthy();
+    // The addition: and it says which kind of nothing this is.
+    expect(screen.getByText(/readiness feed could not be read/i)).toBeTruthy();
+    expect(screen.getByText(/not a statement that nobody checked in/i)).toBeTruthy();
+  });
+
+  test('a feed that answered empty does NOT claim it could not be read', async () => {
+    // The other direction, and the one that makes the line above worth having.
+    // If this sentence appeared on every empty board it would be noise within a
+    // week and a coach would stop reading it on the day it was true.
+    await renderWorkspace({ athletesList: threeAthletes });
+
+    expect(screen.getByText('No signal')).toBeTruthy();
+    expect(screen.queryByText(/could not be read/i)).toBeNull();
+  });
 });
 
 // The read side of ParentHub's "Sent to your child's coach": the barrier
