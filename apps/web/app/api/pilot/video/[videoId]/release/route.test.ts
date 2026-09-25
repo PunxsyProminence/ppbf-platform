@@ -5,6 +5,7 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getVideoReleasePolicy } from '@/src/server/pilot/videoReleasePolicy';
 import { queryOne } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { assertActorHoldsCurrentReviewLink } from '@/src/server/pilot/videoScanReview';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -27,6 +28,10 @@ jest.mock('@/src/server/pilot/videoReleasePolicy', () => {
     getVideoReleasePolicy: jest.fn(async () => 'scan_required'),
   };
 });
+jest.mock('@/src/server/pilot/videoScanReview', () => ({
+  ...jest.requireActual('@/src/server/pilot/videoScanReview'),
+  assertActorHoldsCurrentReviewLink: jest.fn(),
+}));
 jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn(),
 }));
@@ -34,6 +39,7 @@ jest.mock('@/src/server/pilot/audit', () => ({
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+const mockPrereq = assertActorHoldsCurrentReviewLink as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -88,6 +94,45 @@ describe('POST /api/pilot/video/[videoId]/release', () => {
       expect(mockAudit).not.toHaveBeenCalled();
     },
   );
+
+  /*
+   * THE PREREQUISITE IS MOCKED IN THIS FILE, so without these the route could
+   * stop calling it and every test here would still pass. What it ANSWERS is
+   * decided in src/server/pilot/videoReviewPrerequisite.test.ts, including the
+   * three negative controls; what this route owes is that it asks, and that a
+   * refusal actually stops the write.
+   */
+  test('a release asks whether this actor holds a current review link', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'coach-1' }));
+    mockQueryOne
+      .mockResolvedValueOnce(videoRow())
+      .mockResolvedValueOnce({ status: 'ready' });
+
+    await call();
+
+    expect(mockPrereq).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'coach-1' }),
+      'vid-1',
+      // The row's OWN verdict, passed through -- which is what binds the
+      // review link to the state the actor is deciding on.
+      'needs_human_review',
+    );
+  });
+
+  test('without a review link nothing is written, not merely refused', async () => {
+    // A refusal that still flipped the row to 'ready' would be no refusal.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'coach-1' }));
+    mockQueryOne.mockResolvedValueOnce(videoRow());
+    mockPrereq.mockRejectedValueOnce(
+      new Error('Forbidden: open the review link for this footage before releasing it'),
+    );
+
+    const res = await call();
+
+    expect(res.status).toBe(403);
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
 
   test('the uploading coach releases their own video and the release is audited', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'coach-1' }));

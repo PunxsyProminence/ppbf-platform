@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { assertVideoIsFilmStudyMedia } from '@/src/server/pilot/videoDestination';
 
 import {
   assertActorCanAccessAthlete,
@@ -143,6 +144,14 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
+
+    /*
+     * A PUBLICATION IS FILM STUDY'S OUTPUT. Teaching footage was recorded to
+     * show a recognizer what a punch looks like, not to be published, and
+     * every later step reads the publication row rather than the video -- so a
+     * draft made from it would carry that footage past every subsequent check.
+     */
+    await assertVideoIsFilmStudyMedia(principal.organizationId, body.video_session_id);
 
     const publication = await createPublication({
       organizationId: principal.organizationId,

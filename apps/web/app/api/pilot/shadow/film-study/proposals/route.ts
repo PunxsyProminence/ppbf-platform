@@ -11,6 +11,7 @@
 // so the exit exists first and the executor lands into a surface that can
 // already clear it.
 import { NextResponse, type NextRequest } from 'next/server';
+import { assertVideoIsFilmStudyMedia } from '@/src/server/pilot/videoDestination';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
@@ -191,6 +192,18 @@ export async function POST(request: NextRequest) {
     if (!observationText) {
       throw new Error('Missing observation_text');
     }
+
+    /*
+     * A COACH-REPORTED OBSERVATION IS FILM STUDY. Teaching footage is not
+     * coaching film and may not be written about as though it were.
+     *
+     * This route had no video lookup at all before, so the guard also starts
+     * refusing an id that does not exist or belongs to another gym. That is a
+     * wider refusal than the boundary strictly needs and it is the right
+     * direction: an observation citing a video this organization cannot see
+     * was never a sound row.
+     */
+    await assertVideoIsFilmStudyMedia(principal.organizationId, videoSessionId);
 
     // Same per-athlete access check every athlete-scoped write takes. Writing
     // an observation about an athlete is at least as sensitive as reading one.

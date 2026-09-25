@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
@@ -40,6 +40,17 @@ interface DefenseEvidenceCell {
   defense_type: string;
   events: number;
   clips: number;
+}
+
+interface HeldFootage {
+  video_session_id: string;
+  file_name: string;
+  take_number: number | null;
+  camera_view: string | null;
+  status: string;
+  scan_state: string;
+  releasable: boolean;
+  refused_by_scan: boolean;
 }
 
 interface Coverage {
@@ -83,6 +94,20 @@ export default function TeachShadowHomePage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [loaded, setLoaded] = useState(false);
 
+  const [held, setHeld] = useState<HeldFootage[]>([]);
+  const [heldLoaded, setHeldLoaded] = useState(false);
+  const [heldError, setHeldError] = useState('');
+  const [busyVideoId, setBusyVideoId] = useState('');
+  /*
+   * WHICH FILES THIS PAGE HAS OPENED FOR REVIEW, so Release can be offered.
+   *
+   * Page memory, and deliberately NOT the authority: the server checks the
+   * same thing independently and refuses without it, which is the half that
+   * matters. A reload clears this and the coach opens the footage again --
+   * annoying, and far better than a button that looks armed and is not.
+   */
+  const [openedForReview, setOpenedForReview] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     void (async () => {
       try {
@@ -108,6 +133,87 @@ export default function TeachShadowHomePage() {
       }
     })();
   }, []);
+
+  const loadHeld = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/teach-shadow/held`, {
+        credentials: 'include',
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        items?: HeldFootage[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || 'Held footage could not be read.');
+      if (!payload.items) throw new Error('Held footage could not be read.');
+      setHeld(payload.items);
+      setHeldError('');
+    } catch (error) {
+      setHeldError(error instanceof Error ? error.message : 'Held footage could not be read.');
+    } finally {
+      setHeldLoaded(true);
+    }
+  }, []);
+
+  /*
+   * Wrapped in an async IIFE, matching the coverage read above. Calling the
+   * loader directly from the effect body reads to the lint rule as setting
+   * state synchronously inside an effect -- the state is only ever set after
+   * an await, but the rule cannot see that through the callback.
+   */
+  useEffect(() => {
+    void (async () => { await loadHeld(); })();
+  }, [loadHeld]);
+
+  /*
+   * OPENS THE FOOTAGE IN A NEW TAB, and records that this page asked.
+   *
+   * The link is a short-lived read-only credential minted by the server. What
+   * the server will check at Release is that IT issued this person one for
+   * this file against its current scan verdict -- not that anyone watched,
+   * which nothing here can observe.
+   */
+  async function openForReview(videoSessionId: string) {
+    setBusyVideoId(videoSessionId);
+    setHeldError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/video/review-link`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video_session_id: videoSessionId }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (!response.ok || !payload.url) {
+        throw new Error(payload.error || 'That footage could not be opened for review.');
+      }
+      setOpenedForReview((current) => new Set(current).add(videoSessionId));
+      window.open(payload.url, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      setHeldError(error instanceof Error ? error.message : 'That footage could not be opened for review.');
+    } finally {
+      setBusyVideoId('');
+    }
+  }
+
+  async function releaseHeld(videoSessionId: string) {
+    setBusyVideoId(videoSessionId);
+    setHeldError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/video/${videoSessionId}/release`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || 'That footage could not be released.');
+      // Re-read rather than patching the row out: the server decides what is
+      // still held, and a list this page edited by hand would drift from it.
+      await loadHeld();
+    } catch (error) {
+      setHeldError(error instanceof Error ? error.message : 'That footage could not be released.');
+    } finally {
+      setBusyVideoId('');
+    }
+  }
 
   /*
    * THINNEST FIRST, and the stance dimension is kept because it is where the
@@ -207,33 +313,127 @@ export default function TeachShadowHomePage() {
             ) : null}
           </section>
 
-          {/* 2 and 3. THE TWO THINGS TO GO AND DO */}
-          <section className="mt-[var(--s5)] grid gap-[var(--s5)] md:grid-cols-2">
-            <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
-              <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Capture examples</h2>
-              <p className="t-body mt-[var(--s2)]">
-                Film an example for Shadow. Several coaches can join one session from their own phones and record
-                the same attempt from different positions. Shadowboxing and heavy bag only, until a take can name
-                everyone who appears in it.
-              </p>
-              {/* A plain anchor, so the recorder is served its own document
-                  and with it the camera grant. See components/cameraDocuments.ts. */}
-              <a href="/teach-shadow/capture" className="btn mt-[var(--s4)] inline-block">
-                Capture Examples
-              </a>
-            </div>
+          {/* 2, 3 and 4. THE WORK, IN THE ORDER IT HAPPENS.
+              Three stacked stages rather than a two-card pairing: capture,
+              release, label is a DEPENDENCY, and a side-by-side grid with
+              release underneath would say "capture and label, then release".
+              Footage cannot be labelled until it has been released, so the
+              page reads in the order a coach must work. */}
+          <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+            <p className="t-eyebrow">Stage one</p>
+            <h2 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>Capture examples</h2>
+            <p className="t-body mt-[var(--s2)]">
+              Film an example for Shadow. Several coaches can join one session from their own phones and record
+              the same attempt from different positions. Shadowboxing and heavy bag only, until a take can name
+              everyone who appears in it.
+            </p>
+            {/* A plain anchor, so the recorder is served its own document
+                and with it the camera grant. See components/cameraDocuments.ts. */}
+            <a href="/teach-shadow/capture" className="btn mt-[var(--s4)] inline-block">
+              Capture Examples
+            </a>
+          </section>
 
-            <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
-              <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Label &amp; verify</h2>
-              <p className="t-body mt-[var(--s2)]">
-                Label what you saw in a study clip, from the fixed vocabulary. Two coaches label the same clip
-                separately and neither sees the other&rsquo;s answers, so disagreement can be measured rather than
-                averaged away. Nothing recorded there scores an athlete.
+          {/* HELD TEACHING FOOTAGE. Every upload is held until somebody
+              releases it, and until then it cannot be cut into a study clip.
+              This section exists because separating the Film Study read hid
+              teaching footage from the only screen that had a Release control,
+              and the footage then sat here forever with nothing to see. */}
+          <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+            <p className="t-eyebrow">Stage two</p>
+            <h2 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>Held teaching footage</h2>
+            <p className="t-body mt-[var(--s2)] max-w-3xl">
+              Everything filmed here is held until someone opens it for review and releases it. Nothing can be
+              labelled, and nothing counts as evidence, until then. You release what you filmed; an administrator
+              can release anyone&rsquo;s.
+            </p>
+
+            {heldError ? (
+              <div role="alert" className="alert alert--warning mt-[var(--s4)]">
+                <span className="alert-icon" aria-hidden="true">&#9650;</span>
+                <div className="alert-body">
+                  <p className="alert-title">Attention</p>
+                  <p className="alert-msg">{heldError}</p>
+                </div>
+              </div>
+            ) : null}
+
+            {!heldLoaded ? (
+              <p className="t-body mt-[var(--s3)]">Reading held footage&hellip;</p>
+            ) : held.length === 0 ? (
+              <p className="t-body mt-[var(--s3)]">
+                Nothing is waiting. Footage you film appears here until you release it.
               </p>
-              <Link href="/teach-shadow/annotation" className="btn mt-[var(--s4)] inline-block">
-                Clip Annotation
-              </Link>
-            </div>
+            ) : (
+              <ul className="mt-[var(--s4)] flex flex-col gap-[var(--s3)]">
+                {held.map((item) => (
+                  <li
+                    key={item.video_session_id}
+                    className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]"
+                  >
+                    <p className="t-data uppercase tracking-[0.12em] text-[color:var(--brass-300)]">
+                      {item.take_number === null ? 'Take not recorded' : `Take ${item.take_number}`}
+                      {' · '}
+                      {item.camera_view ?? 'View not described'}
+                    </p>
+                    <p className="t-body mt-[var(--s2)]">{item.file_name}</p>
+                    {/* WHAT IS TRUE OF THIS ROW, not a verdict on the footage.
+                        'blocked' and 'infected' are the two a person cannot
+                        clear; everything else is waiting on somebody. */}
+                    <p className="t-body mt-[var(--s2)]">
+                      {item.refused_by_scan
+                        ? 'The content screen refused this file. It cannot be released here — ask an administrator.'
+                        : item.releasable
+                          ? 'Ready for you to open and release.'
+                          : 'Still waiting on its content scan.'}
+                    </p>
+                    {item.releasable ? (
+                      <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+                        <button
+                          type="button"
+                          className="btn btn--ghost"
+                          disabled={busyVideoId === item.video_session_id}
+                          onClick={() => { void openForReview(item.video_session_id); }}
+                        >
+                          Open for review
+                        </button>
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={!openedForReview.has(item.video_session_id) || busyVideoId === item.video_session_id}
+                          onClick={() => { void releaseHeld(item.video_session_id); }}
+                        >
+                          Release
+                        </button>
+                      </div>
+                    ) : null}
+                    {/* SAYS WHAT THE SERVER ACTUALLY REQUIRES. It can tell that
+                        a review link was issued to this person for this file;
+                        it cannot tell that anybody watched, because the browser
+                        fetches the footage straight from storage. The wording
+                        never claims otherwise. */}
+                    {item.releasable && !openedForReview.has(item.video_session_id) ? (
+                      <p className="t-body mt-[var(--s2)]">
+                        Open this footage for review before Release becomes available.
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+            <p className="t-eyebrow">Stage three</p>
+            <h2 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>Label &amp; verify</h2>
+            <p className="t-body mt-[var(--s2)]">
+              Label what you saw in a study clip, from the fixed vocabulary. Two coaches label the same clip
+              separately and neither sees the other&rsquo;s answers, so disagreement can be measured rather than
+              averaged away. Nothing recorded there scores an athlete.
+            </p>
+            <Link href="/teach-shadow/annotation" className="btn mt-[var(--s4)] inline-block">
+              Clip Annotation
+            </Link>
           </section>
 
           {/* 4. CORPUS COVERAGE */}

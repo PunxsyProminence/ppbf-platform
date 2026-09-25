@@ -26,6 +26,7 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import { reviewVideoSessionScan, type VideoScanReviewDecision } from '@/src/server/pilot/videoSessions';
 import {
+  assertActorHoldsCurrentReviewLink,
   authorizeVideoScanReview,
   VideoScanReviewRefused,
   VIDEO_REVIEW_DECIDE_ROLES,
@@ -69,6 +70,20 @@ export async function POST(request: NextRequest) {
     const decision = rawDecision as VideoScanReviewDecision;
 
     const video = await authorizeVideoScanReview(principal, videoSessionId);
+
+    /*
+     * APPROVE IS THE SECOND WAY TO 'ready', so it carries the same
+     * prerequisite as the release route: the administrator taking it must
+     * hold a current review link for this footage, issued to them, against
+     * the verdict it carries now.
+     *
+     * BLOCK IS DELIBERATELY EXEMPT. It narrows access rather than widening
+     * it, and an administrator who can tell from the scan record alone that
+     * footage must not be seen should not have to open a link to say so.
+     */
+    if (decision === 'approve') {
+      await assertActorHoldsCurrentReviewLink(principal, videoSessionId, video.scan_state);
+    }
 
     const updated = await reviewVideoSessionScan({
       organizationId: principal.organizationId,

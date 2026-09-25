@@ -27,6 +27,9 @@ interface VideoSessionRow {
   blob_path: string;
   uploaded_by_account_id: string;
   created_at: string;
+  /** Null for Film Study and for anything uploaded before grouping existed.
+   *  Non-null means the footage was recorded to teach Shadow. */
+  capture_take_id: string | null;
 }
 
 /**
@@ -281,7 +284,7 @@ export async function GET(
     const { videoId } = await params;
 
     const row = await queryOne<VideoSessionRow>(
-      `select video_session_id, organization_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, blob_path, uploaded_by_account_id, created_at
+      `select video_session_id, organization_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, blob_path, uploaded_by_account_id, created_at, capture_take_id
        from pilot.video_sessions
        where video_session_id = $1 and organization_id = $2`,
       [videoId, principal.organizationId],
@@ -294,6 +297,23 @@ export async function GET(
       return hiddenNotFound();
     }
     if (row.status !== 'ready') {
+      return hiddenNotFound();
+    }
+    /*
+     * ORDINARY PLAYBACK IS A FILM STUDY SURFACE. Once held teaching footage
+     * can be released, it reaches 'ready' and this route would mint it a
+     * playback SAS like any other video -- reopening on the single-video read
+     * exactly what separating the list read closed.
+     *
+     * Teach Shadow's own review goes through /api/pilot/video/review-link,
+     * which is the path built for quarantined footage and is unaffected.
+     *
+     * hiddenNotFound, not a named refusal, because this route answers every
+     * "does not exist" and "exists but forbidden" case identically on purpose;
+     * saying "that is teaching footage" here would be the disclosure oracle
+     * the rest of the function is written to avoid.
+     */
+    if (row.capture_take_id !== null) {
       return hiddenNotFound();
     }
 

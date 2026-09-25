@@ -5,6 +5,7 @@ import { POST as REVIEW_LINK } from '../review-link/route';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { getVideoSessionForReview, reviewVideoSessionScan } from '@/src/server/pilot/videoSessions';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { assertActorHoldsCurrentReviewLink } from '@/src/server/pilot/videoScanReview';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -20,6 +21,10 @@ jest.mock('@/src/server/pilot/access', () => {
   return { ...actual, assertActorCanAccessAthlete: jest.fn().mockResolvedValue(undefined) };
 });
 
+jest.mock('@/src/server/pilot/videoScanReview', () => ({
+  ...jest.requireActual('@/src/server/pilot/videoScanReview'),
+  assertActorHoldsCurrentReviewLink: jest.fn(),
+}));
 jest.mock('@/src/server/pilot/videoSessions', () => ({
   getVideoSessionForReview: jest.fn(),
   reviewVideoSessionScan: jest.fn(),
@@ -74,7 +79,48 @@ function req(body: unknown, path = 'scan-review') {
   });
 }
 
+const mockPrereq = assertActorHoldsCurrentReviewLink as jest.Mock;
+
 describe('POST /api/pilot/video/scan-review', () => {
+  /*
+   * APPROVE IS THE SECOND WAY TO 'ready', so it carries the same prerequisite
+   * as the release route. BLOCK does not: it narrows access rather than
+   * widening it, and an admin who can tell from the scan record alone that
+   * footage must not be seen should not have to open a link to say so.
+   */
+  test('approving asks whether this admin holds a current review link', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(video());
+    mockReview.mockResolvedValue({ ...video(), status: 'ready', scan_state: 'passed' });
+
+    await POST(req({ video_session_id: 'vs-1', decision: 'approve' }));
+
+    expect(mockPrereq).toHaveBeenCalled();
+  });
+
+  test('blocking does not, because it takes access away rather than granting it', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(video());
+    mockReview.mockResolvedValue({ ...video(), status: 'archived', scan_state: 'blocked' });
+
+    await POST(req({ video_session_id: 'vs-1', decision: 'block' }));
+
+    expect(mockPrereq).not.toHaveBeenCalled();
+  });
+
+  test('an approval without a review link writes nothing', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(video());
+    mockPrereq.mockRejectedValueOnce(
+      new Error('Forbidden: open the review link for this footage before releasing it'),
+    );
+
+    const res = await POST(req({ video_session_id: 'vs-1', decision: 'approve' }));
+
+    expect(res.status).toBe(403);
+    expect(mockReview).not.toHaveBeenCalled();
+  });
+
   test('an admin releasing a deferred video sets it ready and records who decided', async () => {
     mockRequirePrincipal.mockResolvedValue(principal());
     mockGetVideo.mockResolvedValue(video());

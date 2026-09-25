@@ -8,6 +8,7 @@ import {
   getVideoReleasePolicy,
   releasableScanStates,
 } from '@/src/server/pilot/videoReleasePolicy';
+import { assertActorHoldsCurrentReviewLink } from '@/src/server/pilot/videoScanReview';
 
 export const runtime = 'nodejs';
 
@@ -106,6 +107,20 @@ export async function POST(
         { status: 409 },
       );
     }
+
+    /*
+     * AND THE PERSON DOING IT HOLDS A CURRENT REVIEW LINK FOR THIS FOOTAGE.
+     *
+     * Checked here, after the entitlement and state refusals, so a caller who
+     * may not touch this video at all is told that rather than being sent to
+     * open a link they still could not act on.
+     *
+     * Until now this was page state: the console disabled Release until a
+     * review link succeeded, and a direct POST was accepted with nothing
+     * opened. The footage this guards is a minor's quarantined video that no
+     * scanner could clear.
+     */
+    await assertActorHoldsCurrentReviewLink(principal, videoId, row.scan_state);
 
     // The state predicate is repeated on the write so a video that left
     // quarantine between the read and the write is never dragged back to

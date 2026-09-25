@@ -37,6 +37,10 @@ jest.mock('next/link', () => ({
 // the bare path. Pinning the literal is deliberate: if the page ever reads a
 // different route, these tests must not quietly follow it.
 const COVERAGE_URL = '/api/pilot/teach-shadow/coverage';
+// The second read this page makes. Pinned as its own literal for the same
+// reason as the first: if the page ever asks for something else, these tests
+// must not quietly follow it.
+const HELD_URL = '/api/pilot/teach-shadow/held';
 
 // A catch-all fetch mock that answers ok:true to anything is a known hazard in
 // this repo (app/coach/video-analysis/page.test.tsx:156): a fetch added later is
@@ -47,14 +51,13 @@ const COVERAGE_URL = '/api/pilot/teach-shadow/coverage';
 // and fail the test in afterEach on the record.
 const unexpectedRequests: string[] = [];
 
-function mockCoverageFetch(respond: () => Response) {
+function mockCoverageFetch(respond: () => Response, held: () => Response = () => jsonResponse({ ok: true, items: [] })) {
   const mock = jest.fn(async (input: RequestInfo | URL) => {
     const requested = String(input);
-    if (requested !== COVERAGE_URL) {
-      unexpectedRequests.push(requested);
-      throw new Error(`Unexpected fetch: ${requested}`);
-    }
-    return respond();
+    if (requested === COVERAGE_URL) return respond();
+    if (requested === HELD_URL) return held();
+    unexpectedRequests.push(requested);
+    throw new Error(`Unexpected fetch: ${requested}`);
   });
   global.fetch = mock as unknown as typeof fetch;
   return mock;
@@ -178,9 +181,16 @@ test('the sections run in the order of the teaching loop, not in tool-directory 
     .getAllByRole('heading', { level: 2 })
     .map((heading) => heading.textContent);
 
+  /*
+   * THREE STACKED STAGES, NOT A TWO-CARD PAIRING. Capture, release, label is a
+   * DEPENDENCY: footage cannot be labelled until somebody has released it. A
+   * grid with release underneath would read "capture and label, then release",
+   * which is the wrong instruction.
+   */
   expect(headings).toEqual([
     'What Shadow needs more of',
     'Capture examples',
+    'Held teaching footage',
     'Label & verify',
     'Corpus coverage',
     'Current vocabulary',
@@ -282,6 +292,95 @@ test('the gap list names only punches somebody could go and film', async () => {
 
   expect(needsSection.textContent).not.toContain('Other punch');
   expect(needsSection.textContent).not.toContain('Unclassifiable punch');
+});
+
+const HELD_ITEM = {
+  video_session_id: 'vs-1',
+  file_name: 'capture.webm',
+  take_number: 3,
+  camera_view: 'front',
+  status: 'quarantined',
+  scan_state: 'unconfigured',
+  releasable: true,
+  refused_by_scan: false,
+};
+
+test('held footage is listed by take and angle, and Release waits on opening it', async () => {
+  /*
+   * THE REGRESSION THIS SECTION EXISTS FOR. Every upload is held, and the only
+   * Release control used to live on the Film Study screen -- which this area
+   * was deliberately hidden from. Teaching footage then sat quarantined
+   * forever, calibration refused it for not being 'ready', and nothing a coach
+   * could open said why.
+   *
+   * Release starts disabled because the SERVER refuses a release with no
+   * review link. The button is not the protection; it just stops a coach
+   * pressing something that would fail.
+   */
+  mockCoverageFetch(
+    () => jsonResponse({ ok: true, coverage: COVERAGE }),
+    () => jsonResponse({ ok: true, items: [HELD_ITEM] }),
+  );
+
+  render(<TeachShadowHomePage />);
+  await screen.findByText(/Take 3/);
+
+  expect(pageText()).toContain('front');
+  expect(screen.getByRole('button', { name: 'Open for review' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Release' })).toBeDisabled();
+  expect(pageText()).toContain('Open this footage for review before Release becomes available');
+});
+
+test('footage the scan refused is shown and marked, not quietly dropped', async () => {
+  /*
+   * Nobody can release it -- but a coach who films something and watches it
+   * vanish cannot tell a refusal from a capture that never saved. It stays on
+   * the list, with no controls and a plain reason.
+   */
+  mockCoverageFetch(
+    () => jsonResponse({ ok: true, coverage: COVERAGE }),
+    () => jsonResponse({
+      ok: true,
+      items: [{ ...HELD_ITEM, releasable: false, refused_by_scan: true, scan_state: 'blocked' }],
+    }),
+  );
+
+  render(<TeachShadowHomePage />);
+  await screen.findByText(/Take 3/);
+
+  expect(pageText()).toContain('The content screen refused this file');
+  expect(screen.queryByRole('button', { name: 'Release' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Open for review' })).toBeNull();
+});
+
+test('nothing held says so, rather than looking broken', async () => {
+  mockCoverageFetch(() => jsonResponse({ ok: true, coverage: COVERAGE }));
+
+  render(<TeachShadowHomePage />);
+  await screen.findByText(/Nothing is waiting/);
+
+  expect(pageText()).toContain('Footage you film appears here until you release it');
+});
+
+test('the held section never claims anybody watched anything', async () => {
+  /*
+   * THE HONESTY CONSTRAINT ON A SAFEGUARDING CONTROL. The server can prove it
+   * issued this person a review link for this file. It cannot prove they
+   * watched -- the browser fetches the footage straight from storage. Wording
+   * that said "reviewed" or "watched" would be claiming what nothing here can
+   * observe.
+   */
+  mockCoverageFetch(
+    () => jsonResponse({ ok: true, coverage: COVERAGE }),
+    () => jsonResponse({ ok: true, items: [HELD_ITEM] }),
+  );
+
+  render(<TeachShadowHomePage />);
+  await screen.findByText(/Take 3/);
+
+  const section = screen.getByRole('heading', { name: 'Held teaching footage' }).closest('section');
+  expect(section?.textContent ?? '').not.toMatch(/watched|you have reviewed|inspection/i);
+  expect(section?.textContent ?? '').toContain('open');
 });
 
 test('a failed read shows an alert and does not render zeros as if the gym had filmed nothing', async () => {
