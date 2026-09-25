@@ -675,10 +675,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // Bag. Silently answering a different, less governed question than the one
     // asked is worse than saying no: the caller asked for a governance summary
     // and would have received ordinary chat without being told.
-    // The safety boundary's response, extracted so it can run at TWO points
-    // without being written twice. The generic call site is still below, in its
-    // original position; board summaries need it EARLIER, and duplicating the
-    // block is how the two copies drift.
+    // The safety boundary's one response implementation. It is a local helper
+    // rather than an inline block because the chokepoint below is the single
+    // call site and should read as one statement, not as thirty lines of
+    // response construction sitting in the middle of the control flow.
+    //
+    // It briefly had TWO call sites -- a board-only early invocation plus a
+    // generic one further down -- and that arrangement is what the chokepoint
+    // replaced. If a second call site ever appears here again, the precedence
+    // contract has been reintroduced as a per-branch reminder, which is the
+    // thing that decayed three times.
     const respondWithSafetyBoundary = async (): Promise<NextResponse<ShadowChatResponse>> => {
       const messageId = `msg_${Date.now()}`;
       await queueHumanReview({
@@ -722,24 +728,48 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const boardSummaryRequested = sessionType === 'board_summary'
       || requestedSessionType === 'board_summary';
 
-    // SAFETY OUTRANKS AUTHORITY, AND OUTRANKS PLUMBING. Deferring the 403 was
-    // only half of it: the generic safety handler sits below the board/scout
-    // worker branch, so a high-risk board-summary request still reached the
-    // shadow_jobs readiness probe, and on an unconfigured worker still returned
-    // a 503 "background mode not active" instead of the handoff. Someone
-    // reporting chest pain was answered about infrastructure.
+    // ===================================================================
+    // SAFETY CHOKEPOINT
     //
-    // Narrow to board summaries on purpose: no other session type's ordering
-    // changes, and the generic call site below keeps its original position.
-    if (boardSummaryRequested && !requestValidation.valid) {
+    // Everything ABOVE this line may refuse a request without consulting the
+    // safety boundary: authentication, structural validation of the body, core
+    // runtime readiness, the global chat and daily abuse limits, and
+    // athlete/conversation authorization. Those are either "there is no usable
+    // request" or "this caller may not be here at all", and safety must not
+    // become a way around a tenant boundary or a throttle -- a caller could
+    // otherwise buy an exemption by typing a symptom.
+    //
+    // Everything BELOW this line is a capability or cost refusal: which SHADOW
+    // mode you may run, whether the worker for it is configured, whether you
+    // have spent your Heavy Bag allowance. None of those may answer someone
+    // reporting an urgent symptom. The caller passed every gate that decides
+    // whether they are allowed to talk to SHADOW at all; what is left is a
+    // question about features, and a feature answer is the wrong reply to
+    // chest pain.
+    //
+    // WHY THIS IS ONE LINE RATHER THAN A RULE PER BRANCH. It was a rule per
+    // branch, and the rule was forgotten twice. The board-summary refusal
+    // (#970) jumped the safety handler; the fix for it jumped the worker
+    // readiness probe too, so an unconfigured worker still answered chest pain
+    // with "this background mode is not active". Auditing the rest then found
+    // the same defect already sitting on main in two more places -- the Film
+    // Study / Recovery Round refusal, and the Scout worker probe. Three
+    // authors, three misses, same shape. A contract every new refusal has to
+    // remember is a contract that decays; this one is structural, so a branch
+    // added below it is behind it by construction.
+    //
+    // The classification behind the split is recorded in
+    // app/api/pilot/shadow/chat/route.test.ts, in the describe named
+    // "SHADOW pre-generation safety precedence", which is the
+    // executable half of this comment: every branch below is exercised twice,
+    // once with a benign message to prove the branch really fires and once with
+    // an urgent one to prove this line beats it.
+    // ===================================================================
+    if (!requestValidation.valid) {
       return respondWithSafetyBoundary();
     }
 
-    if (
-      boardSummaryRequested
-      && requestValidation.valid
-      && !BOARD_SUMMARY_ROLES.has(userRole as PilotRole)
-    ) {
+    if (boardSummaryRequested && !BOARD_SUMMARY_ROLES.has(userRole as PilotRole)) {
       return NextResponse.json(
         {
           success: false,
@@ -820,10 +850,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         },
         { status: 503 },
       );
-    }
-
-    if (!requestValidation.valid) {
-      return respondWithSafetyBoundary();
     }
 
     const interactionTopic = requestValidation.topic && requestValidation.topic !== 'none'

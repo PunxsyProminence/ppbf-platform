@@ -10,6 +10,7 @@ import { evaluateShadowUnlockState } from '@/src/server/pilot/shadowUnlocks';
 import {
   appendConversationExchange,
   appendUserMessage,
+  assertConversationAccess,
   loadConversationMessages,
   queueHumanReview,
   resolveConversation,
@@ -1582,5 +1583,270 @@ describe('board summary authority at the request boundary', () => {
     const body = await response.json();
     expect(body.error).not.toBe(BOARD_SUMMARY_REFUSAL);
     expect(response.status).not.toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SHADOW pre-generation safety precedence
+//
+// THE CONTRACT. Once a request has passed every gate that decides whether the
+// caller may talk to SHADOW at all -- authentication, structural validation,
+// core runtime readiness, the global chat and daily abuse limits, and
+// athlete/conversation authorization -- no CAPABILITY or COST refusal may
+// answer an urgent symptom. What is left below that point is a question about
+// features, and a feature answer is the wrong reply to chest pain.
+//
+// WHY IT IS A MATRIX. This defect has been introduced three times by three
+// authors in the same file. The board-summary refusal jumped the safety
+// handler; the fix for it jumped the worker-readiness probe as well; and the
+// audit that followed found the same shape already on main at the Film Study /
+// Recovery Round refusal and the Scout worker probe. Guarding one branch at a
+// time is what produced that history.
+//
+// EVERY ROW HAS A POSITIVE CONTROL, and that is not decoration. A row whose
+// setup silently stopped reaching its branch would still return the safety
+// response for the urgent case and pass -- green for the wrong reason, which is
+// the exact defect class that shipped in this slice's predecessor. The benign
+// case proves the branch fires; only then does the urgent case mean anything.
+// ---------------------------------------------------------------------------
+
+const URGENT_MESSAGE = 'I have chest pain right now, should I keep training?';
+const BENIGN_MESSAGE = 'What does a good footwork rotation look like?';
+
+type PrecedenceRow = {
+  readonly branch: string;
+  readonly role: PilotPrincipal['role'];
+  readonly sessionType: string;
+  readonly workerEnabled: boolean;
+  readonly capHeavyBag?: true;
+  /** Proves the branch under test actually fired for a benign message. */
+  readonly benign: (body: Record<string, unknown>, status: number) => void;
+};
+
+const PRECEDENCE_ROWS: readonly PrecedenceRow[] = [
+  {
+    branch: 'board-summary authority refusal',
+    role: 'coach',
+    sessionType: 'board_summary',
+    workerEnabled: true,
+    benign: (body, status) => {
+      expect(status).toBe(403);
+      expect(body.error).toBe('Not authorized to generate a board summary.');
+    },
+  },
+  {
+    branch: 'Heavy Bag hourly cap',
+    role: 'coach',
+    sessionType: 'heavy_bag',
+    workerEnabled: true,
+    capHeavyBag: true,
+    benign: (body, status) => {
+      expect(status).toBe(429);
+      expect(body.error).toBe('Rate limit exceeded.');
+    },
+  },
+  {
+    branch: 'Film Study not available in chat',
+    role: 'coach',
+    sessionType: 'film_study',
+    workerEnabled: true,
+    benign: (body, status) => {
+      expect(status).toBe(400);
+      expect(body.error).toBe('The requested SHADOW session type is not available from chat.');
+    },
+  },
+  {
+    branch: 'Recovery Round not available in chat',
+    role: 'coach',
+    sessionType: 'recovery_round',
+    workerEnabled: true,
+    benign: (body, status) => {
+      expect(status).toBe(400);
+      expect(body.error).toBe('The requested SHADOW session type is not available from chat.');
+    },
+  },
+  {
+    branch: 'Scout worker unavailable',
+    role: 'coach',
+    sessionType: 'scout_report',
+    workerEnabled: false,
+    benign: (body, status) => {
+      expect(status).toBe(503);
+      expect(body.error).toBe('Background worker unavailable.');
+    },
+  },
+  {
+    branch: 'board worker unavailable, authorized actor',
+    role: 'organization_admin',
+    sessionType: 'board_summary',
+    workerEnabled: false,
+    benign: (body, status) => {
+      expect(status).toBe(503);
+      expect(body.error).toBe('Background worker unavailable.');
+    },
+  },
+];
+
+describe('SHADOW pre-generation safety precedence', () => {
+  function arrange(row: PrecedenceRow): jest.Mock {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: row.role }));
+    mockIsShadowWorkerEnabled.mockReturnValue(row.workerEnabled);
+    if (row.capHeavyBag) {
+      // Only the Heavy Bag tier cap trips. The two GLOBAL limits must still
+      // pass, because this contract deliberately does not put safety ahead of
+      // them -- a caller must not buy a throttle exemption by typing a symptom.
+      mockEnforceRateLimit.mockImplementation(async (input) => {
+        if (input?.endpointKey === 'heavy_bag') {
+          throw new ShadowRateLimitExceeded(1800, 'heavy_bag');
+        }
+      });
+    }
+    const fetchSpy = jest.fn();
+    global.fetch = fetchSpy as unknown as typeof fetch;
+    return fetchSpy;
+  }
+
+  describe.each(PRECEDENCE_ROWS)('$branch', (row) => {
+    it('POSITIVE CONTROL: the branch fires for a benign message', async () => {
+      arrange(row);
+
+      const response = await POST(postRequest({
+        message: BENIGN_MESSAGE,
+        sessionType: row.sessionType,
+      }));
+
+      row.benign(await response.json(), response.status);
+    });
+
+    it('an urgent symptom beats it', async () => {
+      const fetchSpy = arrange(row);
+
+      const response = await POST(postRequest({
+        message: URGENT_MESSAGE,
+        sessionType: row.sessionType,
+      }));
+      const body = await response.json();
+
+      // The safety boundary owns the request.
+      expect(response.status).toBe(400);
+      expect(body.state).toBe('filtered');
+      expect(body.requiresHumanReview).toBe(true);
+      expect(body.highRiskTopic).toBe('chest_pain');
+      expect(mockQueueHumanReview).toHaveBeenCalledWith(
+        expect.objectContaining({ category: 'chest_pain', severity: 'high' }),
+      );
+
+      // And the branch under test did NOT get to answer instead.
+      expect(body.error).not.toBe('Not authorized to generate a board summary.');
+      expect(body.error).not.toBe('The requested SHADOW session type is not available from chat.');
+      expect(body.error).not.toBe('Background worker unavailable.');
+      expect(body.error).not.toBe('Rate limit exceeded.');
+
+      // Nor did anything downstream of it run: no jobs-table probe, no model.
+      expect(jest.mocked(assertShadowRuntimeReadiness)).not.toHaveBeenCalledWith(
+        expect.objectContaining({ requiredTables: ['shadow_jobs'] }),
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // The other half of the contract, and the reason it is a PRECEDENCE rule
+  // rather than "safety always wins".
+  //
+  // These gates decide whether the caller may be here at all. Safety must not
+  // become a way around them: a tenant boundary or a global throttle that an
+  // urgent word could unlock would be a bypass, not a safeguard. The global
+  // limits are also what stop the human-review queue being written to without
+  // bound, so "a safety response costs no model tokens" is not "costs nothing".
+  //
+  // PINNED EXECUTABLY, NOT JUST CLASSIFIED. Guarding only the lower side would
+  // let a future edit drag the chokepoint up across these gates with the
+  // SAFETY_FIRST matrix still green. Each row proves its own gate fired, and
+  // every row proves the safety handler did NOT run first -- the queue write is
+  // the observable for that, because it happens before the safety response is
+  // returned.
+  describe('gates that safety does NOT outrank', () => {
+    it('core runtime readiness still refuses an urgent message', async () => {
+      const readiness = jest.mocked(assertShadowRuntimeReadiness);
+      readiness.mockRejectedValueOnce(new Error('SHADOW runtime not ready'));
+
+      const response = await POST(postRequest({ message: URGENT_MESSAGE }));
+
+      expect(readiness).toHaveBeenCalled();
+      expect(response.status).toBeGreaterThanOrEqual(500);
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    });
+
+    it('the global chat rate limit still refuses an urgent message', async () => {
+      mockEnforceRateLimit.mockImplementation(async (input) => {
+        if (input?.endpointKey === 'chat') {
+          throw new ShadowRateLimitExceeded(60, 'chat');
+        }
+      });
+
+      const response = await POST(postRequest({ message: URGENT_MESSAGE }));
+      const body = await response.json();
+
+      expect(response.status).toBe(429);
+      expect(body.error).toBe('Rate limit exceeded.');
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    });
+
+    // Distinct from the row above on purpose. A test that throws on "the first
+    // non-Heavy-Bag limiter call" only ever exercises `chat`, so moving the
+    // chokepoint BETWEEN the two global limits would leave it green while
+    // chat_daily silently became SAFETY_FIRST. Here `chat` resolves and only
+    // the daily limit throws.
+    it('the global daily rate limit still refuses an urgent message', async () => {
+      const seen: string[] = [];
+      mockEnforceRateLimit.mockImplementation(async (input) => {
+        seen.push(String(input?.endpointKey));
+        if (input?.endpointKey === 'chat_daily') {
+          throw new ShadowRateLimitExceeded(3_600, 'chat_daily');
+        }
+      });
+
+      const response = await POST(postRequest({ message: URGENT_MESSAGE }));
+      const body = await response.json();
+
+      // Proves the daily limit was actually reached rather than the request
+      // dying at the chat limit.
+      expect(seen).toContain('chat');
+      expect(seen).toContain('chat_daily');
+      expect(response.status).toBe(429);
+      expect(body.error).toBe('Rate limit exceeded.');
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    });
+
+    it('athlete authorization still refuses an urgent message', async () => {
+      const accessCheck = jest.mocked(assertActorCanAccessAthlete);
+      accessCheck.mockRejectedValueOnce(new Error('Forbidden: athlete cannot access another athlete record'));
+
+      const response = await POST(postRequest({
+        message: URGENT_MESSAGE,
+        athleteId: 'athlete-not-mine',
+      }));
+
+      expect(accessCheck).toHaveBeenCalled();
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(response.status).toBeLessThan(500);
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    });
+
+    it('conversation authorization still refuses an urgent message', async () => {
+      const conversationCheck = jest.mocked(assertConversationAccess);
+      conversationCheck.mockRejectedValueOnce(new Error('SHADOW_CONVERSATION_NOT_FOUND'));
+
+      const response = await POST(postRequest({
+        message: URGENT_MESSAGE,
+        conversationId: '00000000-0000-4000-8000-0000000009ff',
+      }));
+      const body = await response.json();
+
+      expect(conversationCheck).toHaveBeenCalled();
+      expect(response.status).toBe(404);
+      expect(body.error).toBe('Not found');
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    });
   });
 });
