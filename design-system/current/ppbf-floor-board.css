@@ -1512,8 +1512,19 @@
 .ge-floorboard .rg-mark--present { color: #2F6B3E; }
 .ge-floorboard .rg-mark--absent { color: var(--cb-trim-2); }
 .ge-floorboard .rg-mark--excused { color: #7A5A18; }
-.ge-floorboard .rg-mark--unknown { color: #6B6455; font-style: italic; }
-.ge-floorboard .rg-mark--notcovered { color: #7E7767; font-style: italic; }
+/* DARKENED TO CLEAR AA, and the numbers are here because a measurement is what
+   changed them, not a preference. On the register's bone ground (#E4DCC6) the
+   previous inks measured 4.29:1 and 3.25:1 -- "No mark yet" and "Not on your
+   register", the two lines a coach reads when the answer is that nobody knows,
+   set faintest of anything on the sheet. They now measure 5.32:1 and 4.84:1.
+
+   The hierarchy is deliberately kept: not-covered stays quieter than unknown,
+   which stays quieter than the body ink, because they are decreasingly the
+   coach's problem. Quieter is allowed. Below the floor is not, and the floor
+   is now measured on every run by e2e/coach-room-ink.spec.ts rather than
+   judged by eye -- which is how these two passed review in the first place. */
+.ge-floorboard .rg-mark--unknown { color: #5C564A; font-style: italic; }
+.ge-floorboard .rg-mark--notcovered { color: #635C4E; font-style: italic; }
 .ge-floorboard .rg-mark--unavailable {
   color: var(--cb-trim-2);
   font-style: italic;
@@ -1588,6 +1599,32 @@
 .ge-floorboard .coach-board .rm-clip--unread .rm-clip-v { color: var(--cb-trim-2); }
 .ge-floorboard .coach-board .rm-sev li { color: #4A3B24; }
 .ge-floorboard .coach-board .rm-peg-l { color: #4A3B24; }
+
+/* AND EVERY ELEMENT INSIDE A LIGHT OBJECT, not only the ones that exist today.
+   The rules above name a class each, which means they protect the markup that
+   was written when they were. Setting the ink on `.rm-clip-d` does NOT save a
+   `<p>` placed inside it: the board's `... p` rule matches that paragraph
+   directly, and a direct match beats an inherited colour however specific the
+   parent's rule is. That is not a hypothetical -- the readiness clipboard grew
+   two paragraphs in this same change, and without the next four lines both
+   would have rendered chalk-white on bone, which is precisely the bug this
+   block was added to fix. Descendant rules mean the next person to put a
+   paragraph on a clipboard does not have to know any of this. */
+.ge-floorboard .coach-board .rm-clip p,
+.ge-floorboard .coach-board .rm-clip li,
+.ge-floorboard .coach-board .rg p,
+.ge-floorboard .coach-board .rg li { color: #4A3B24; }
+
+/* The caveat is quieter than the line it qualifies, but it is still ink on
+   bone -- it may go lighter than the body, never toward the chalk it sits
+   nowhere near. */
+.ge-floorboard .coach-board .rm-clip-caveat {
+  margin: 4px 0 0;
+  font-size: var(--t-xs);
+  line-height: 1.35;
+  color: #5A4A30;
+}
+.ge-floorboard .coach-board .rm-clip-line { margin: 0; }
 
 /* ===========================================================================
    BEHIND THE CLIPBOARD, and a solid ground under every light object.

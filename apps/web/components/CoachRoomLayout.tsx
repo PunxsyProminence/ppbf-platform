@@ -217,6 +217,39 @@ export default function CoachRoomLayout({
 
       {/* THE CLIPBOARDS. Three nails, three jobs. */}
       <section className="rm-clips" aria-label="Attention">
+        {/* THE ALARM STILL ANNOUNCES ITSELF HERE.
+
+            In BOARD the escalation records sit in the stack inside an
+            aria-live="polite" section, and the reason is written beside it:
+            an alarm that arrives while the coach is reading something else has
+            to announce itself. ROOM retires that block -- correctly, a second
+            copy of a safeguarding surface is how the board and
+            SafetyAttentionBadge came to disagree -- and in doing so it took
+            the announcement with it. An escalation arriving in ROOM changed a
+            digit on a clipboard, behind a door that is shut, in silence.
+
+            IT IS RENDERED UNCONDITIONALLY, which is the part that is easy to
+            get wrong. A live region has to be in the document BEFORE its
+            content changes; one that appears at the same moment as the text
+            inside it is frequently not announced at all. So this element
+            always exists and only its text changes -- it is never wrapped in
+            the loading or error branch below.
+
+            It is silent when there is nothing to say. A region that says
+            "0 open" every time a poll returns trains a coach to ignore it,
+            which costs exactly the announcement this exists to make. */}
+        <p className="sr-only" role="status" aria-atomic="true">
+          {escalationsLoading
+            ? ''
+            : escalationsError
+              ? 'Safety escalations could not be read. Escalations may exist that are not shown.'
+              : escalations.open > 0
+                ? `${escalations.open} safety escalation${escalations.open === 1 ? '' : 's'} `
+                  + `open${escalations.critical > 0 ? `, ${escalations.critical} critical` : ''}. `
+                  + 'Open the attention clipboard to read them.'
+                : ''}
+        </p>
+
         {/* THE ATTENTION CLIPBOARD IS A DOOR IN EVERY STATE, including the
             unread one. A read that failed is exactly when a coach most wants
             to look: the records panel behind it carries the retry, the error
@@ -259,29 +292,56 @@ export default function CoachRoomLayout({
 
         {/* READINESS AS AN ATTENTION COUNT, never a dial.
             Bands are gated on provenance upstream: a reading from an established
-            method may become GREEN/YELLOW/RED, a staff judgement may not, and
-            today nothing satisfies that gate. So what this clipboard reports is
-            how much judgement is sitting here uncounted -- which is a real
-            number and a real prompt -- and it says "not counted" out loud rather
-            than letting a coach read it as a measurement. */}
+            method may become GREEN/YELLOW/RED, a staff judgement may not. What
+            is flagged goes in the headline; what was written down but may not be
+            read as a measurement goes underneath, saying so out loud.
+
+            THIS CLIPBOARD USED TO REPORT `unvalidated` AND NOTHING ELSE, under
+            the title "Context items". With an athlete carrying a RED band it
+            therefore read 0, over the words "Nothing recorded today", while the
+            record stacked below it said 1 RED. Two instruments over one fact,
+            disagreeing -- the exact failure this layout's parity suite exists to
+            prevent, and it survived sixteen of its tests because every readiness
+            case in that suite fed a board with nothing on it. A renderer showing
+            nothing passes every test about nothing. */}
         {readinessReadState === 'loading' ? (
-          <Clipboard title="Context items" value="Checking" state="quiet" />
+          <Clipboard title="Readiness" value="Checking" state="quiet" />
+        ) : !readiness.trackingAvailable ? (
+          <Clipboard
+            title="Readiness"
+            value="No signal"
+            state="unread"
+            /* Which kind of nothing. Both are "No signal" -- that collapse is
+               a recorded ruling -- but one is somebody to chase and the other
+               is a read to retry, and a coach cannot act on the first without
+               being told which they have. */
+            detail={readinessReadState === 'unavailable'
+              ? 'The feed could not be read — not a statement that nobody checked in'
+              : 'No fresh check-ins — do not read this as "zero flags"'}
+          />
         ) : (
           <Clipboard
-            title="Context items"
-            value={readiness.trackingAvailable ? String(readiness.unvalidated) : 'No signal'}
-            state={readiness.trackingAvailable ? (readiness.unvalidated > 0 ? 'ok' : 'quiet') : 'unread'}
-            detail={readiness.trackingAvailable
-              ? (readiness.unvalidated > 0
-                ? 'Staff judgement recorded, not counted as a measurement'
-                : 'Nothing recorded today')
-              /* Which kind of nothing. Both are "No signal" -- that collapse is
-                 a recorded ruling -- but one is somebody to chase and the other
-                 is a read to retry, and a coach cannot act on the first without
-                 being told which they have. */
-              : readinessReadState === 'unavailable'
-                ? 'The feed could not be read — not a statement that nobody checked in'
-                : 'No fresh check-ins — do not read this as "zero flags"'}
+            title="Readiness"
+            value={String(readiness.red + readiness.yellow)}
+            state={readiness.red + readiness.yellow > 0 ? 'ok' : 'quiet'}
+            detail={(
+              <>
+                {/* Same sentence the board writes, assembled the same way, so
+                    the two cannot round or phrase it differently. */}
+                <p className="rm-clip-line">
+                  {readiness.red} RED, {readiness.yellow} YELLOW
+                  {readiness.unknown > 0
+                    ? `, ${readiness.unknown} unknown — unknown is not clear`
+                    : ''}
+                </p>
+                {readiness.unvalidated > 0 && (
+                  <p className="rm-clip-caveat">
+                    {readiness.unvalidated} staff judgement(s) recorded but not counted
+                    above &mdash; written down, not measured, so not read as a readiness band.
+                  </p>
+                )}
+              </>
+            )}
           />
         )}
 

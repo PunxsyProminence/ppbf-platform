@@ -61,10 +61,18 @@ test.describe('Coach room light objects stay legible', () => {
     await installPilotApi(page, {
       session: { role: 'coach' },
       routes: {
+        /* THE FIXTURE HAS TO PRODUCE EVERY MARK STATE, or the measurement
+           below certifies only the states it happened to render. Three
+           athletes, deliberately: one marked present, one covered but
+           unmarked ("No mark yet"), and one absent from the register
+           entirely ("Not on your register"). The last two are set in the
+           faintest inks on the sheet, and with a two-athlete roster where
+           both were covered, neither was on screen to be measured. */
         '/api/pilot/athletes/list': {
           items: [
             { athlete_id: 'ath_1', full_name: 'Jordan P.' },
             { athlete_id: 'ath_2', full_name: 'Sam R.' },
+            { athlete_id: 'ath_3', full_name: 'Alex T.' },
           ],
         },
         '/api/pilot/coach/attendance-today': {
@@ -103,15 +111,55 @@ test.describe('Coach room light objects stay legible', () => {
       const SELECTORS = [
         '.rg-h', '.rg-eyebrow', '.rg-name', '.rg-mark', '.rg-state',
         '.rm-clip-t', '.rm-clip-v', '.rm-clip-d',
+        '.rm-clip-line', '.rm-clip-caveat',
         '.rm-peg-n', '.rm-peg-l',
       ];
 
-      return SELECTORS.map((sel) => {
-        const el = document.querySelector(sel);
-        if (!el) return { sel, found: false, ratio: null, fg: null, bg: null };
-        const fg = getComputedStyle(el).color;
-        const bg = groundOf(el);
-        return { sel, found: true, ratio: contrast(fg, bg), fg, bg };
+      /* Named, because the two arms below return different shapes -- a
+         measurement and a not-found marker -- and without a declared element
+         type the flatMap infers a union of two ARRAYS that it then refuses to
+         flatten. */
+      type Reading = {
+        sel: string;
+        found: boolean;
+        ratio: number | null;
+        fg: string | null;
+        bg: string | null;
+        text: string | null;
+      };
+
+      /* EVERY MATCH, NOT THE FIRST ONE. This read `querySelector` until it was
+         pointed out: there are four clipboards, several pegs and a row per
+         athlete, and measuring element [0] of each class let the other
+         twenty-odd go unmeasured. One correctly-inked clipboard would have
+         certified the three beside it. The bug this whole file exists to catch
+         is a cascade failure, and a cascade failure does not politely restrict
+         itself to the first element in the document.
+
+         Elements with no text are skipped rather than measured. A colour on an
+         empty span is not something a coach can fail to read, and counting
+         them would pad the non-vacuity floor below with things that prove
+         nothing. */
+      return SELECTORS.flatMap((sel): Reading[] => {
+        const els = [...document.querySelectorAll(sel)]
+          .filter((el) => (el.textContent ?? '').trim() !== '');
+        if (els.length === 0) {
+          return [{ sel, found: false, ratio: null, fg: null, bg: null, text: null }];
+        }
+        return els.map((el, i) => {
+          const fg = getComputedStyle(el).color;
+          const bg = groundOf(el);
+          return {
+            sel: `${sel}[${i}]`,
+            found: true,
+            ratio: contrast(fg, bg),
+            fg,
+            bg,
+            // Carried so a failure names the words a coach could not read,
+            // not only the class they happened to be wearing.
+            text: (el.textContent ?? '').trim().slice(0, 48),
+          };
+        });
       });
     }, { contrastSrc: CONTRAST_FN });
 
@@ -168,14 +216,19 @@ test.describe('Coach room light objects stay legible', () => {
         }
         return 'rgb(0, 0, 0)';
       };
-      const el = document.querySelector('.rd .cb-what');
-      if (!el) return null;
-      const fg = getComputedStyle(el).color;
-      const bg = groundOf(el);
-      return { ratio: contrast(fg, bg), fg, bg };
+      // Every record behind the door, for the same reason as above: one
+      // legible reason line says nothing about the second escalation's.
+      const els = [...document.querySelectorAll('.rd .cb-what')]
+        .filter((el) => (el.textContent ?? '').trim() !== '');
+      if (els.length === 0) return null;
+      return els.map((el) => {
+        const fg = getComputedStyle(el).color;
+        const bg = groundOf(el);
+        return { ratio: contrast(fg, bg), fg, bg, text: (el.textContent ?? '').trim().slice(0, 48) };
+      });
     }, { contrastSrc: CONTRAST_FN });
 
     expect(reading).not.toBeNull();
-    expect(reading!.ratio ?? 0).toBeGreaterThanOrEqual(4.5);
+    expect(reading!.filter((r) => (r.ratio ?? 0) < 4.5)).toEqual([]);
   });
 });

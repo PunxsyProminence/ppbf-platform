@@ -201,6 +201,47 @@ describe.each(LAYOUTS)('%s layout tells the same truth', (layout) => {
     expect(screen.queryByText(/could not be read/i)).toBeNull();
   });
 
+  test('a flagged athlete is reported as flagged, in both layouts', async () => {
+    /* THE CASE THIS SUITE DID NOT HAVE, and the reason it matters more than
+       the two above it.
+
+       Every readiness assertion here tested a kind of NOTHING -- a feed that
+       failed, and a board that came back empty. Both are satisfied by a
+       renderer that shows nothing at all, which is exactly what ROOM did: its
+       clipboard rendered `readiness.unvalidated` and nothing else, so an
+       athlete carrying a RED band arrived as the number 0 under the words
+       "Nothing recorded today". The board said 1 RED. Sixteen parity tests
+       passed over the top of it, because not one of them ever put a band on
+       the feed.
+
+       A validated reading is needed to produce a band at all: the workspace
+       refuses to promote a row whose method nobody established, so the
+       provenance fields below are load-bearing, not decoration. */
+    await renderInLayout(layout, {
+      athletesList: roster,
+      readinessBoard: () => jsonResponse({
+        items: [{
+          athlete_id: 'ath_1',
+          status: 'RED',
+          score: 31,
+          method: 'HRV_RMSSD',
+          reliability_status: 'ESTABLISHED',
+          validity_status: 'ESTABLISHED',
+        }],
+      }),
+    });
+
+    // The flag reaches the coach.
+    expect(screen.getAllByText(/1 RED/).length).toBeGreaterThan(0);
+
+    /* And is not contradicted in the same breath. These are the two sentences
+       a coach would have read on the room's clipboard while an athlete was
+       flagged RED, and either one alone is enough to send them back to the
+       floor. */
+    expect(screen.queryByText(/Nothing recorded today/i)).toBeNull();
+    expect(screen.queryByText(/No signal/)).toBeNull();
+  });
+
   /* ---- SHADOW ----------------------------------------------------------- */
 
   test('a SHADOW queue that could not be read is never rendered as a count', async () => {
@@ -220,6 +261,34 @@ describe.each(LAYOUTS)('%s layout tells the same truth', (layout) => {
   });
 
   /* ---- ESCALATIONS ------------------------------------------------------ */
+
+  test('an open escalation announces itself, in either layout', async () => {
+    /* REACHABLE IS NOT THE SAME AS ANNOUNCED, and the test below this one only
+       covers reachable.
+
+       BOARD puts the records in an aria-live="polite" section and says why
+       beside it: an alarm arriving while the coach is reading something else
+       has to announce itself. ROOM retires that section -- rightly, one owner
+       per safeguarding surface -- and the announcement left with it. A coach
+       using a screen reader in ROOM got a digit changing behind a shut door,
+       silently.
+
+       This asserts the PROPERTY, not either layout's mechanism: somewhere in
+       this document there is a live region that says an escalation is open.
+       BOARD satisfies it with the records section it already had, ROOM with a
+       status line of its own. Neither is named here, so either may be rebuilt
+       without this test having to be edited to keep meaning what it says. */
+    await renderInLayout(layout, {
+      athletesList: roster,
+      escalationsGet: () => jsonResponse({ ok: true, escalations: [escalation()] }),
+    });
+
+    const announced = [...document.querySelectorAll(
+      '[aria-live="polite"], [aria-live="assertive"], [role="status"], [role="alert"]',
+    )].filter((el) => /escalation/i.test(el.textContent ?? ''));
+
+    expect(announced.length).toBeGreaterThan(0);
+  });
 
   test('an open escalation reaches the coach in either layout', async () => {
     /* THE RATCHET FIRED, AND THIS IS THE UPDATE IT ASKED FOR.
@@ -450,5 +519,68 @@ describe('the room carries the facts in its own objects', () => {
     const rows = document.querySelectorAll('.rg-row');
     expect(rows.length).toBe(pegTotal);
     expect(rows.length).toBe(3);
+  });
+});
+
+describe('the layout choice is remembered', () => {
+  const KEY = 'ppbf:coach-layout:v1:acct_coach_1';
+
+  test('a choice made before the session read lands is still written down', async () => {
+    /* THE WINDOW THIS COVERS IS THE ORDINARY ONE, not an exotic one.
+
+       The account id arrives from an asynchronous session read, and the
+       preference is keyed by account so one coach's choice cannot leak onto
+       the next coach who picks up the tablet. Both of those are right. Together
+       they meant that a coach who reached for the toggle before that read
+       returned had their write DECLINED -- correctly, there was no account to
+       write against -- and then never asked again. The layout held for that
+       visit and was forgotten by the next one.
+
+       Toggling immediately is not unusual behaviour on a gym tablet on slow
+       wifi. It is the normal way to use a two-position control. So the visible
+       symptom was "this setting does not work", intermittently, in exactly the
+       conditions the gym actually has. */
+    let releaseSession: (value: Response) => void = () => {};
+    const heldSession = new Promise<Response>((resolve) => { releaseSession = resolve; });
+
+    await renderWorkspace({ session: () => heldSession });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Room' }));
+    });
+
+    /* Nothing is stored yet, and that is the correct intermediate state --
+       storing under the anonymous key is the shared-tablet bleed the key
+       scheme exists to prevent. This asserts the refusal still happens, so a
+       "fix" that simply wrote it anyway would fail here. */
+    expect(globalThis.localStorage.getItem(KEY)).toBeNull();
+
+    await act(async () => {
+      releaseSession(jsonResponse({ authenticated: true, account_id: 'acct_coach_1' }));
+      await heldSession;
+    });
+
+    expect(globalThis.localStorage.getItem(KEY)).toBe('room');
+
+    // And the coach is still looking at what they chose -- the arriving
+    // session must not scroll them back to the default on its way past.
+    expect(
+      screen.getAllByRole('button', { pressed: true }).map((el) => el.textContent?.trim()),
+    ).toContain('Room');
+  });
+
+  test('the ordinary path still writes exactly once, from the handler', async () => {
+    // The retry above is dormant unless a write was refused. If it were not,
+    // every layout change would write twice and the effect would be doing the
+    // handler's job -- so this pins which one is load-bearing.
+    await renderWorkspace();
+    const setItem = jest.spyOn(globalThis.Storage.prototype, 'setItem');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Room' }));
+    });
+
+    const layoutWrites = setItem.mock.calls.filter(([key]) => String(key) === KEY);
+    expect(layoutWrites).toEqual([[KEY, 'room']]);
   });
 });

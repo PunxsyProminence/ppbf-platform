@@ -774,6 +774,10 @@ export default function CoachWorkspace() {
     setCoachLayout(readCoachLayout(coachAccountId));
   }, [coachAccountId]);
 
+  /* Whether a choice the coach made is still waiting to be written down.
+     See the flush effect below for why that is a state worth tracking. */
+  const layoutPendingWrite = useRef(false);
+
   const chooseCoachLayout = useCallback((next: CoachLayoutId) => {
     layoutChosenByCoach.current = true;
     setCoachLayout(next);
@@ -781,8 +785,30 @@ export default function CoachWorkspace() {
     // forgets. writeCoachLayout also declines to store anything until the
     // account id is known, so one coach's choice never lands in the slot every
     // not-yet-identified session reads from.
-    writeCoachLayout(coachAccountId, next);
+    layoutPendingWrite.current = !writeCoachLayout(coachAccountId, next);
   }, [coachAccountId]);
+
+  /* AND THE WRITE THAT WAS REFUSED IS RETRIED WHEN IT CAN SUCCEED.
+     The refusal above is correct -- there is genuinely no account to store a
+     preference against yet -- but on its own it dropped the choice on the
+     floor. The account id arrives from an asynchronous session read, so a coach
+     who toggles in the first moments after the board opens got their layout for
+     that visit and never again: the write was declined once and nothing ever
+     asked a second time. On a gym tablet on slow wifi, toggling immediately is
+     not an edge case, it is the normal way to use the control, which made this
+     a preference that appeared simply not to work.
+
+     Persisting belongs in the handler, where the user event is -- this is not
+     that. This is a synchronisation with an external store that could not be
+     performed when it was asked for, re-attempted when its precondition
+     arrives, which is what an effect is actually for. It does nothing at all
+     unless a write was refused, so the ordinary path still writes exactly
+     once, from the handler. */
+  useEffect(() => {
+    if (!layoutPendingWrite.current) return;
+    if (coachAccountId.trim() === '') return;
+    if (writeCoachLayout(coachAccountId, coachLayout)) layoutPendingWrite.current = false;
+  }, [coachAccountId, coachLayout]);
   const [reviewSessionId, setReviewSessionId] = useState('');
   // The review picker: which athlete's sessions are listed, and the list
   // itself. 'idle' (no athlete chosen), 'loading', 'loaded' (possibly empty),

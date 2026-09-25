@@ -22,6 +22,13 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import CoachWorkspace from './CoachWorkspace';
 
 export interface RouteResponses {
+  /* The identity read, overridable so a test can hold it open.
+     Every other route here exists so a suite can fail a read. This one exists
+     so a suite can DELAY one: the account id arrives from this response, and
+     several behaviours -- which storage key a preference lands under, whether
+     a preference can be stored at all -- are only reachable while it is still
+     in flight. Left alone it answers exactly as before. */
+  session?: () => Promise<Response> | Response;
   floorPlans?: () => Promise<Response>;
   /* Widened to match its siblings below. Most routes here already accept a
      plain Response as well as a promise, because jsonResponse is synchronous
@@ -61,7 +68,9 @@ function installFetch(routes: RouteResponses = {}): jest.Mock {
     const url = String(input);
 
     if (url.includes('/api/pilot/auth/session')) {
-      return jsonResponse({ authenticated: true, account_id: 'acct_coach_1' });
+      return routes.session
+        ? routes.session()
+        : jsonResponse({ authenticated: true, account_id: 'acct_coach_1' });
     }
     if (url.includes('/api/pilot/athletes/list')) {
       return routes.athletesList ? routes.athletesList() : jsonResponse({ items: [] });
