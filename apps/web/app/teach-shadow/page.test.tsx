@@ -15,7 +15,7 @@
 // that did not come back.
 
 import '@testing-library/jest-dom';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import TeachShadowHomePage from './page';
@@ -41,6 +41,11 @@ const COVERAGE_URL = '/api/pilot/teach-shadow/coverage';
 // reason as the first: if the page ever asks for something else, these tests
 // must not quietly follow it.
 const HELD_URL = '/api/pilot/teach-shadow/held';
+// The two writes the held queue makes. Pinned as literals for the same reason
+// as the reads: a page that starts calling something else must fail here
+// rather than have these tests follow it.
+const REVIEW_LINK_URL = '/api/pilot/video/review-link';
+const RELEASE_URL = (id: string) => `/api/pilot/video/${id}/release`;
 
 // A catch-all fetch mock that answers ok:true to anything is a known hazard in
 // this repo (app/coach/video-analysis/page.test.tsx:156): a fetch added later is
@@ -56,6 +61,8 @@ function mockCoverageFetch(respond: () => Response, held: () => Response = () =>
     const requested = String(input);
     if (requested === COVERAGE_URL) return respond();
     if (requested === HELD_URL) return held();
+    if (requested === REVIEW_LINK_URL) return jsonResponse({ ok: true, url: 'https://blob.example/v.webm?sas' });
+    if (requested === RELEASE_URL('vs-1')) return jsonResponse({ ok: true });
     unexpectedRequests.push(requested);
     throw new Error(`Unexpected fetch: ${requested}`);
   });
@@ -329,6 +336,66 @@ test('held footage is listed by take and angle, and Release waits on opening it'
   expect(screen.getByRole('button', { name: 'Open for review' })).toBeEnabled();
   expect(screen.getByRole('button', { name: 'Release' })).toBeDisabled();
   expect(pageText()).toContain('Open this footage for review before Release becomes available');
+});
+
+test('a blocked review window does not arm Release', async () => {
+  /*
+   * THE LIE THIS PREVENTS. A browser may refuse the popup. The link WAS
+   * issued, so the server prerequisite would pass -- enabling Release anyway
+   * would tell the coach the open succeeded when nothing appeared. We have
+   * already accepted this platform cannot prove anyone watched; it must not
+   * additionally claim an action succeeded that the browser rejected.
+   */
+  const opener = jest.spyOn(window, 'open').mockReturnValue(null);
+  mockCoverageFetch(
+    () => jsonResponse({ ok: true, coverage: COVERAGE }),
+    () => jsonResponse({ ok: true, items: [HELD_ITEM] }),
+  );
+
+  render(<TeachShadowHomePage />);
+  await screen.findByText(/Take 3/);
+  fireEvent.click(screen.getByRole('button', { name: 'Open for review' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent(/blocked the review window/i);
+  expect(screen.getByRole('button', { name: 'Release' })).toBeDisabled();
+  opener.mockRestore();
+});
+
+test('malware and a content-screen refusal are not the same message', async () => {
+  /*
+   * 'infected' came from a real scanner and no human may release it on any
+   * surface; 'blocked' is a judgement an organization admin can still review.
+   * Telling a coach to ask an administrator about malware sends them after
+   * something nobody can do.
+   */
+  mockCoverageFetch(
+    () => jsonResponse({ ok: true, coverage: COVERAGE }),
+    () => jsonResponse({
+      ok: true,
+      items: [{ ...HELD_ITEM, status: 'infected', releasable: false, refused_by_scan: true }],
+    }),
+  );
+
+  render(<TeachShadowHomePage />);
+  await screen.findByText(/Take 3/);
+
+  expect(pageText()).toContain('A scanner found malware in this file. It cannot be released by anyone.');
+  expect(pageText()).not.toContain('an administrator can review it');
+});
+
+test('the section does not claim every upload needs a person', async () => {
+  /*
+   * Both deploy workflows set PPBF_VIDEO_CONTENT_SCAN=vision, so the sweep
+   * promotes what it can clear. Saying everything waits for a human would
+   * describe an environment the gym does not run.
+   */
+  mockCoverageFetch(() => jsonResponse({ ok: true, coverage: COVERAGE }));
+
+  render(<TeachShadowHomePage />);
+  await screen.findByText(/Nothing is waiting/);
+
+  expect(pageText()).toContain('Most clears itself');
+  expect(pageText()).not.toContain('Everything filmed here is held until someone');
 });
 
 test('footage the scan refused is shown and marked, not quietly dropped', async () => {

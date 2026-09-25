@@ -88,6 +88,20 @@ describe('POST /api/pilot/video/scan-review', () => {
    * widening it, and an admin who can tell from the scan record alone that
    * footage must not be seen should not have to open a link to say so.
    */
+  test('the decision is written against the verdict the admin inspected', async () => {
+    // Same race as the release route: without the prior state as a predicate
+    // the approval would land on evidence the reviewer never saw.
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetVideo.mockResolvedValue(video());
+    mockReview.mockResolvedValue({ ...video(), status: 'ready', scan_state: 'passed' });
+
+    await POST(req({ video_session_id: 'vs-1', decision: 'approve' }));
+
+    expect(mockReview).toHaveBeenCalledWith(expect.objectContaining({
+      priorScanState: video().scan_state,
+    }));
+  });
+
   test('approving asks whether this admin holds a current review link', async () => {
     mockRequirePrincipal.mockResolvedValue(principal());
     mockGetVideo.mockResolvedValue(video());

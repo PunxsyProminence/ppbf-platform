@@ -186,8 +186,26 @@ export default function TeachShadowHomePage() {
       if (!response.ok || !payload.url) {
         throw new Error(payload.error || 'That footage could not be opened for review.');
       }
+      /*
+       * THE WINDOW HAS TO HAVE ACTUALLY OPENED.
+       *
+       * A browser may refuse the popup. window.open then returns null, and
+       * enabling Release regardless would tell the coach the open succeeded
+       * when nothing appeared -- and the server prerequisite WOULD pass,
+       * because the link was issued. We have already accepted that this
+       * platform cannot prove anyone watched; it should not additionally
+       * claim an action succeeded that the browser rejected.
+       *
+       * Opened BEFORE the state is recorded, so the failure path cannot arm
+       * the button.
+       */
+      const opened = window.open(payload.url, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        throw new Error(
+          'Your browser blocked the review window. Allow pop-ups for this site, then open it again.',
+        );
+      }
       setOpenedForReview((current) => new Set(current).add(videoSessionId));
-      window.open(payload.url, '_blank', 'noopener,noreferrer');
     } catch (error) {
       setHeldError(error instanceof Error ? error.message : 'That footage could not be opened for review.');
     } finally {
@@ -343,9 +361,10 @@ export default function TeachShadowHomePage() {
             <p className="t-eyebrow">Stage two</p>
             <h2 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>Held teaching footage</h2>
             <p className="t-body mt-[var(--s2)] max-w-3xl">
-              Everything filmed here is held until someone opens it for review and releases it. Nothing can be
-              labelled, and nothing counts as evidence, until then. You release what you filmed; an administrator
-              can release anyone&rsquo;s.
+              Footage starts held while it is screened. Most clears itself and moves on; what appears here is what
+              the screen could not settle on its own, and it stays held until a person opens it for review and
+              releases it. Nothing can be labelled, and nothing counts as evidence, until then. You release what you
+              filmed; an administrator can release anyone&rsquo;s.
             </p>
 
             {heldError ? (
@@ -381,11 +400,20 @@ export default function TeachShadowHomePage() {
                         'blocked' and 'infected' are the two a person cannot
                         clear; everything else is waiting on somebody. */}
                     <p className="t-body mt-[var(--s2)]">
-                      {item.refused_by_scan
-                        ? 'The content screen refused this file. It cannot be released here — ask an administrator.'
-                        : item.releasable
-                          ? 'Ready for you to open and release.'
-                          : 'Still waiting on its content scan.'}
+                      {/* THREE DIFFERENT OUTCOMES, AND THEY ARE NOT
+                          INTERCHANGEABLE. 'infected' came from a real scanner
+                          and no human may release it on any surface; 'blocked'
+                          is a content-screen judgement an organization admin
+                          can still review. Telling a coach to ask an
+                          administrator about malware would send them after
+                          something nobody can do. */}
+                      {item.status === 'infected'
+                        ? 'A scanner found malware in this file. It cannot be released by anyone.'
+                        : item.refused_by_scan
+                          ? 'The content screen refused this file. You cannot release it here — an administrator can review it.'
+                          : item.releasable
+                            ? 'Ready for you to open and release.'
+                            : 'Still waiting on its content scan.'}
                     </p>
                     {item.releasable ? (
                       <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">

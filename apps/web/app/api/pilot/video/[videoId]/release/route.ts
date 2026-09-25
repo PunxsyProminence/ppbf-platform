@@ -122,16 +122,30 @@ export async function POST(
      */
     await assertActorHoldsCurrentReviewLink(principal, videoId, row.scan_state);
 
-    // The state predicate is repeated on the write so a video that left
-    // quarantine between the read and the write is never dragged back to
-    // 'ready', and so two simultaneous releases produce one audit record.
+    /*
+     * COMPARE AND SET ON THE EXACT STATE THAT WAS REVIEWED.
+     *
+     * The state predicate is repeated on the write so a video that left
+     * quarantine between the read and the write is never dragged back to
+     * 'ready', and so two simultaneous releases produce one audit record.
+     *
+     * AND ON row.scan_state, NOT ON THE RELEASABLE SET, which is the half
+     * this was missing. The prerequisite above proves the actor holds a review
+     * link issued against the verdict this row carried when it was read. If a
+     * re-scan changes that verdict before the write, `any(releasable)` would
+     * still accept it -- the release would go through on a review of a
+     * verdict that no longer holds, which is precisely what binding the link
+     * to the scan state was for. Narrowing it to the inspected value closes
+     * the window: the release either applies to what was reviewed, or it
+     * fails and the coach is asked to look again.
+     */
     const released = await queryOne<{ status: string }>(
       `update pilot.video_sessions
        set status = 'ready', updated_at = now()
        where video_session_id = $1 and organization_id = $2 and status = 'quarantined'
-         and scan_state = any($3::text[])
+         and scan_state = $3
        returning status`,
-      [videoId, principal.organizationId, releasable],
+      [videoId, principal.organizationId, row.scan_state],
     );
 
     if (!released) {
