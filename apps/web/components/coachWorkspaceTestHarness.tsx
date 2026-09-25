@@ -23,7 +23,13 @@ import CoachWorkspace from './CoachWorkspace';
 
 export interface RouteResponses {
   floorPlans?: () => Promise<Response>;
-  reviewProjection?: () => Promise<Response>;
+  /* Widened to match its siblings below. Most routes here already accept a
+     plain Response as well as a promise, because jsonResponse is synchronous
+     and a test that does not need to control timing should not have to write
+     `async () =>` to say so. This one did not, so a synchronous stub against it
+     was a type error -- caught only after a `| head` swallowed tsc's exit code
+     and made two real errors look like a clean run. */
+  reviewProjection?: () => Promise<Response> | Response;
   coachReviews?: () => Promise<Response>;
   announcements?: () => Promise<Response>;
   intakeReviewAction?: (body: { intake_case_id?: string; action?: string }) => Promise<Response>;

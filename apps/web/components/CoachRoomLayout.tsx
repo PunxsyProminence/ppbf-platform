@@ -52,6 +52,9 @@ export interface CoachRoomLayoutProps {
    *  -- one is somebody to chase, the other is a read to retry. */
   readonly readinessReadState: 'loading' | 'loaded' | 'unavailable';
   readonly shadowBadge: GlanceBadge;
+  /** Opens the register behind the peg board -- the first glance -> open ->
+   *  work door in the room. */
+  readonly onOpenRegister: () => void;
 }
 
 /** One hanging tag on the peg board. */
@@ -101,6 +104,7 @@ export default function CoachRoomLayout({
   readiness,
   readinessReadState,
   shadowBadge,
+  onOpenRegister,
 }: CoachRoomLayoutProps) {
   return (
     <div className="rm">
@@ -151,7 +155,10 @@ export default function CoachRoomLayout({
           whole reason attendanceGlance carries a `readable` flag instead of
           leaving a renderer to infer it from zeroes: empty columns read as an
           empty gym, in the same wood the full ones use. */}
-      <section className="rm-pegs" aria-label="Attendance register">
+      {/* Named for what it IS -- the glance -- so it cannot be confused with
+          the register it opens. Two regions called "attendance register" is a
+          coin toss for anyone navigating by landmark. */}
+      <section className="rm-pegs" aria-label="Attendance at a glance">
         <p className="rm-h">Attendance</p>
         {rosterLoading ? (
           <p className="rm-state">Reading the register…</p>
@@ -164,12 +171,22 @@ export default function CoachRoomLayout({
           </div>
         ) : (
           <>
-            <div className="rm-pegrow">
+            {/* THE PEG BOARD IS THE DOOR. The whole board is one control rather
+                than four, because the question a coach is asking when they
+                reach for it is "who is that", not "who is that, in the absent
+                column" -- and four separate doors into one register would be
+                four ways to land in the same place. */}
+            <button
+              type="button"
+              className="rm-pegrow rm-pegrow--door"
+              onClick={onOpenRegister}
+              aria-label="Open today's attendance register"
+            >
               <Peg label="Present" count={attendance.present} tone="in" />
               <Peg label="Absent" count={attendance.absent} tone="out" />
               <Peg label="Excused" count={attendance.excused} tone="ex" />
               <Peg label="Unmarked" count={attendance.unmarked} tone="un" />
-            </div>
+            </button>
             {attendance.notCovered > 0 && (
               <p className="rm-state">
                 {attendance.notCovered} not on your register — nobody asked about them.

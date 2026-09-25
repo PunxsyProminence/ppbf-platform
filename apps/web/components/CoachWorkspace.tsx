@@ -11,9 +11,12 @@ import { apiBase } from '@/lib/apiBase';
 /* THE SHARED GLANCE MODEL. One derivation of the facts the board states, so
    that BOARD and ROOM render the same truth instead of each working out its
    own. See the file header for why that is structural here and not advisory. */
+import CoachAttendanceRegister from './CoachAttendanceRegister';
 import CoachRoomLayout from './CoachRoomLayout';
 import {
   attendanceGlance,
+  attendanceMarkLabel,
+  attendanceMarkTitle,
   coachTasksFrom,
   escalationGlance,
   formatElapsed,
@@ -1227,6 +1230,10 @@ export default function CoachWorkspace() {
      that state is four zeroes wearing the typography of a real count. */
   const attendanceCounts = useMemo(() => attendanceGlance(athletes), [athletes]);
 
+  /* The register behind the peg board. Closed by default: it is the DETAIL of
+     a glance, and a detail that arrives already open is just the column again. */
+  const [registerOpen, setRegisterOpen] = useState(false);
+
   /* The wellness read the panel may draw: only one the coach asked for, and
      only for the athlete selected NOW. The loader's guards already keep a
      stale response out of state; this is the last check, at the point where a
@@ -2355,6 +2362,21 @@ export default function CoachWorkspace() {
             readiness={readiness}
             readinessReadState={readinessReadState}
             shadowBadge={reviewQueueBadge}
+            onOpenRegister={() => setRegisterOpen(true)}
+          />
+        )}
+
+        {/* THE REGISTER THE PEG BOARD OPENS. Same athletes, same marks, same
+            words -- it is handed the roster the glance counted rather than
+            reading its own, so the count and the names behind it cannot
+            disagree. `readable` is passed rather than inferred from an empty
+            list, because a failed read and an empty gym must not look alike. */}
+        {coachLayout === 'room' && registerOpen && (
+          <CoachAttendanceRegister
+            athletes={athletes}
+            loading={athletesLoading}
+            readable={attendanceCounts.readable}
+            onClose={() => setRegisterOpen(false)}
           />
         )}
 
@@ -2992,23 +3014,15 @@ export default function CoachWorkspace() {
                                 they were absent, and a register that could not
                                 be read says so rather than passing as a quiet
                                 answer. */}
+                            {/* The words for a mark come from the glance model,
+                                so this roster and the open register behind the
+                                peg board cannot describe the same state
+                                differently. Wording unchanged by the move. */}
                             <span
                               className={athlete.attendance === 'Unavailable' ? 'cb-mark cb-mark--unavailable' : 'cb-mark'}
-                              title={athlete.attendance === 'Unavailable'
-                                ? 'Today\u2019s register could not be read \u2014 this is not a statement that they were absent'
-                                : athlete.attendance === 'NotCovered'
-                                  ? 'The register is only read for athletes you are cleared for, so nobody asked about this one -- not a statement about whether they trained'
-                                  : athlete.attendance === 'Unknown'
-                                    ? 'No attendance mark recorded for today yet'
-                                    : `Marked ${athlete.attendance.toLowerCase()} today`}
+                              title={attendanceMarkTitle(athlete.attendance)}
                             >
-                              {athlete.attendance === 'Unknown'
-                                ? 'No mark yet'
-                                : athlete.attendance === 'Unavailable'
-                                  ? 'Register unavailable'
-                                  : athlete.attendance === 'NotCovered'
-                                    ? 'Not your athlete'
-                                    : athlete.attendance}
+                              {attendanceMarkLabel(athlete.attendance)}
                             </span>
                             {athlete.injuryFlag && (
                               <span className="cb-injury">

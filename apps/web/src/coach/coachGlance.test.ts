@@ -13,6 +13,8 @@
 
 import {
   attendanceGlance,
+  attendanceMarkLabel,
+  attendanceMarkTitle,
   coachTasksFrom,
   escalationGlance,
   formatElapsed,
@@ -328,5 +330,49 @@ describe('attendanceGlance', () => {
     const glance = attendanceGlance([]);
     expect(glance.readable).toBe(true);
     expect(glance.covered).toBe(0);
+  });
+});
+
+describe('what a mark is called', () => {
+  /* Not styling, and not a calculation. It is the sentence a coach reads, and
+     it is the single most likely thing to drift between two surfaces showing
+     the same register -- the board saying "No mark yet" while the register
+     behind it says "Unmarked", leaving a coach to work out whether those are
+     the same state. One function, both surfaces. */
+
+  it('gives each kind of not-knowing its own words', () => {
+    expect(attendanceMarkLabel('Unknown')).toBe('No mark yet');
+    expect(attendanceMarkLabel('Unavailable')).toBe('Register unavailable');
+    expect(attendanceMarkLabel('NotCovered')).toBe('Not your athlete');
+  });
+
+  it('never lets one kind of not-knowing wear another\'s words', () => {
+    /* Three states, three sentences, no overlap. "Nobody could look" read as
+       "nobody has ticked them off" sends a coach to mark a register that is not
+       there; "nobody asked" read as "unmarked" sends them to mark a child they
+       are not cleared for. */
+    const labels = (['Unknown', 'Unavailable', 'NotCovered'] as const).map(attendanceMarkLabel);
+    expect(new Set(labels).size).toBe(3);
+    for (const label of labels) {
+      expect(label).not.toMatch(/^(Present|Absent|Excused)$/);
+    }
+  });
+
+  it('passes a real mark through as itself', () => {
+    expect(attendanceMarkLabel('Present')).toBe('Present');
+    expect(attendanceMarkLabel('Absent')).toBe('Absent');
+    expect(attendanceMarkLabel('Excused')).toBe('Excused');
+  });
+
+  it('says what each kind of not-knowing is NOT', () => {
+    // Every one of these has been read as its neighbour at some point.
+    expect(attendanceMarkTitle('Unavailable')).toMatch(/not a statement that they were absent/i);
+    expect(attendanceMarkTitle('NotCovered')).toMatch(/not a statement about whether they trained/i);
+    expect(attendanceMarkTitle('Unknown')).toMatch(/no attendance mark recorded/i);
+  });
+
+  it('describes a real mark as a mark', () => {
+    expect(attendanceMarkTitle('Present')).toBe('Marked present today');
+    expect(attendanceMarkTitle('Excused')).toBe('Marked excused today');
   });
 });

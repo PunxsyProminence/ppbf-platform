@@ -334,4 +334,38 @@ describe('the room carries the facts in its own objects', () => {
     const value = document.querySelector('.rm-clip .rm-clip-v');
     expect(value?.textContent?.trim()).toBe('1');
   });
+
+  test('the peg board opens the register, and it holds the same population it counted', async () => {
+    /* THE FIRST GLANCE -> OPEN -> WORK DOOR, and the property that makes it
+       worth anything: the names behind the number are the population the number
+       was taken from. A coach who taps "1 present, 2 unmarked" and finds four
+       names, or two, has been told two different things by one instrument.
+
+       Counted off the pegs and off the register rows in the same assertion, so
+       this fails if either side drifts rather than only if the door breaks. */
+    await renderInLayout('room', {
+      athletesList: () => jsonResponse({
+        items: [
+          { athlete_id: 'ath_1', full_name: 'Jordan P.' },
+          { athlete_id: 'ath_2', full_name: 'Sam R.' },
+          { athlete_id: 'ath_3', full_name: 'Rosa D.' },
+        ],
+      }),
+      attendanceToday: () => jsonResponse({
+        covered: ['ath_1', 'ath_2', 'ath_3'],
+        marks: [{ athlete_id: 'ath_1', status: 'present' }],
+      }),
+    });
+
+    const pegTotal = [...document.querySelectorAll('.rm-peg-n')]
+      .reduce((sum, el) => sum + Number(el.textContent ?? 0), 0);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: "Open today's attendance register" }));
+    });
+
+    const rows = document.querySelectorAll('.rg-row');
+    expect(rows.length).toBe(pegTotal);
+    expect(rows.length).toBe(3);
+  });
 });

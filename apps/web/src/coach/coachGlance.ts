@@ -287,6 +287,47 @@ export function attendanceGlance(
   };
 }
 
+/**
+ * What a mark is CALLED, in one place.
+ *
+ * This is not a calculation and it is not styling. It is the sentence a coach
+ * reads, and it is the single most likely thing to drift between two surfaces
+ * showing the same register: the board says "No mark yet" while a detail
+ * surface says "Unmarked", and now the gym has two vocabularies for one state
+ * and a coach has to work out whether they mean the same thing.
+ *
+ * Three of these are kinds of not-knowing and they are deliberately worded so
+ * they cannot be mistaken for each other or for a mark:
+ *
+ *   Unknown      "No mark yet"          -- we looked, nobody has marked them
+ *   Unavailable  "Register unavailable" -- nobody could look
+ *   NotCovered   "Not your athlete"     -- nobody asked
+ */
+export function attendanceMarkLabel(mark: GlanceAttendanceMark): string {
+  if (mark === 'Unknown') return 'No mark yet';
+  if (mark === 'Unavailable') return 'Register unavailable';
+  if (mark === 'NotCovered') return 'Not your athlete';
+  return mark;
+}
+
+/**
+ * The longer form, for a title attribute or a detail line.
+ *
+ * Each of the not-knowing cases says what it is NOT, because every one of them
+ * has been read as its neighbour at some point: an unreadable register as an
+ * absence, an unasked-about athlete as an unmarked one.
+ */
+export function attendanceMarkTitle(mark: GlanceAttendanceMark): string {
+  if (mark === 'Unavailable') {
+    return 'Today’s register could not be read — this is not a statement that they were absent';
+  }
+  if (mark === 'NotCovered') {
+    return 'The register is only read for athletes you are cleared for, so nobody asked about this one -- not a statement about whether they trained';
+  }
+  if (mark === 'Unknown') return 'No attendance mark recorded for today yet';
+  return `Marked ${mark.toLowerCase()} today`;
+}
+
 export type GlanceEscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
 export type GlanceEscalationStatus = 'open' | 'acknowledged' | 'resolved';
 
