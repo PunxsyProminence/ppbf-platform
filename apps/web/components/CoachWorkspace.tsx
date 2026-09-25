@@ -1234,6 +1234,11 @@ export default function CoachWorkspace() {
      a glance, and a detail that arrives already open is just the column again. */
   const [registerOpen, setRegisterOpen] = useState(false);
 
+  /* The escalation records behind the attention clipboard. Closed by default
+     for the same reason the register is: a detail that arrives open is the
+     stack again, which is what the room exists to stop being. */
+  const [attentionOpen, setAttentionOpen] = useState(false);
+
   /* The wellness read the panel may draw: only one the coach asked for, and
      only for the athlete selected NOW. The loader's guards already keep a
      stale response out of state; this is the last check, at the point where a
@@ -2223,6 +2228,121 @@ export default function CoachWorkspace() {
     }
   }
 
+  /* Built once and placed once. See the placement comment below for why a
+     second copy of this surface is not an option. */
+  const escalationSection = (
+        <section aria-live="polite" aria-labelledby="cb-escalations-heading" className="cb-sec">
+          <div className="cb-sech" id="cb-escalations-heading">
+            Safety Escalations
+            {/* "N open" counts rows that ARE open. It used to count the array,
+                which keeps an acknowledged row on purpose so the coach can see
+                what they just did -- so the board announced "3 open" directly
+                above a row whose own body said "Acknowledged". The rule lives
+                in the glance model now, where the ROOM layout reads the same
+                one rather than counting the array again. */}
+            {!escalationsLoading && !escalationsError && escalationCounts.open > 0 ? (
+              <em>{escalationCounts.open} open</em>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void loadEscalations()}
+              className="cb-door cb-refresh"
+              aria-label="Refresh safety escalations"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {escalationsLoading && <p className="cb-state">Checking for open escalations...</p>}
+
+          {!escalationsLoading && escalationsError && (
+            <div className="cb-unavailable">
+              <p className="cb-unavailable-head">Read unavailable</p>
+              <p className="cb-state">{escalationsError}</p>
+              <p className="cb-state">
+                Escalations may exist that are not shown here. Do not read this as &quot;all clear&quot;.
+              </p>
+            </div>
+          )}
+
+          {!escalationsLoading && !escalationsError && escalations.length === 0 && (
+            <p className="cb-state">
+              No open escalations for your athletes. One appears here the moment a near miss, pain
+              report, or safety-gate flag escalates.
+            </p>
+          )}
+
+          {!escalationsLoading && !escalationsError && escalations.length > 0 && escalations.map((escalation) => {
+            const athlete = athletes.find((item) => item.id === escalation.athlete_id);
+            const who = athlete?.name ?? `Athlete ID ${escalation.athlete_id}`;
+            const busy = escalationAckBusy.has(escalation.escalation_id);
+            return (
+              <article key={escalation.escalation_id} className="cb-rec">
+                {/* The roster's own portrait behaviour, not a second one.
+                    A coach who works with twenty children recognises a face
+                    faster than a name, and an athlete with no photo on file
+                    gets the initials plate rather than an empty circle --
+                    both of which ProfilePortrait already decides. Decorative
+                    because the name is right beside it. */}
+                <span className="cb-portrait-slot">
+                  <ProfilePortrait
+                    accountId={athlete?.accountId ?? null}
+                    initials={athlete?.initials ?? '—'}
+                    name={who}
+                    photoAvailable={Boolean(athlete?.photoAvailable)}
+                    size="sm"
+                    decorative
+                  />
+                </span>
+                <p className="cb-who">
+                  {who}
+                  <span className="cb-sev-word">
+                    <StatusBadge tone={painSeverityTone(escalation.severity)} label={escalation.severity} />
+                  </span>
+                </p>
+                <p className="cb-what">{escalation.reason}</p>
+                <p className="cb-when">
+                  {ESCALATION_SOURCE_LABEL[escalation.source_type] ?? escalation.source_type}
+                  {' · '}
+                  {painReportTime(escalation.created_at)}
+                </p>
+
+                {escalation.status === 'open' ? (
+                  <span className="cb-act">
+                    <button
+                      type="button"
+                      onClick={() => void acknowledgeCoachEscalation(escalation.escalation_id)}
+                      disabled={busy}
+                      className="cb-actuator"
+                      /* The accessible name carries the athlete. A screen
+                         reader's control list used to read N identical
+                         "Acknowledge" buttons with nothing to tell them
+                         apart, on the one surface where picking the wrong
+                         one matters. */
+                      aria-label={`Acknowledge safety escalation for ${who}`}
+                    >
+                      {busy ? '...' : 'Ack'}
+                    </button>
+                    <span className="cb-act-label">{busy ? 'Acknowledging' : 'Acknowledge'}</span>
+                  </span>
+                ) : (
+                  <p className="cb-when cb-ack-done">
+                    Acknowledged. Closing it out is an admin decision and happens on the admin
+                    escalations console.
+                  </p>
+                )}
+
+                {escalationAckErrors[escalation.escalation_id] && (
+                  <p role="alert" className="cb-when cb-rec-error">
+                    {escalationAckErrors[escalation.escalation_id]}
+                  </p>
+                )}
+              </article>
+            );
+          })}
+        </section>
+  );
+
   return (
     <div className="text-[color:var(--bone-200)]">
       {/* THE FLOOR BOARD. The chalkboard the gym already uses, rather than a
@@ -2363,7 +2483,27 @@ export default function CoachWorkspace() {
             readinessReadState={readinessReadState}
             shadowBadge={reviewQueueBadge}
             onOpenRegister={() => setRegisterOpen(true)}
+            onOpenAttention={() => setAttentionOpen(true)}
           />
+        )}
+
+        {/* THE ESCALATION RECORDS, BEHIND THE CLIPBOARD.
+
+            The same JSX the board renders in its stack, placed here instead --
+            not a second rendering of it. It carries everything the block owned:
+            the records, the severity, the acknowledgement with its busy state
+            and its per-record errors, the refresh, and all three read states.
+            That completeness is what earns retiring the block from ROOM. */}
+        {coachLayout === 'room' && attentionOpen && (
+          <div className="rd">
+            <div className="rd-top">
+              <p className="rd-eyebrow">Behind the clipboard</p>
+              <button type="button" className="rd-close" onClick={() => setAttentionOpen(false)}>
+                Close
+              </button>
+            </div>
+            {escalationSection}
+          </div>
         )}
 
         {/* THE REGISTER THE PEG BOARD OPENS. Same athletes, same marks, same
@@ -2401,116 +2541,18 @@ export default function CoachWorkspace() {
             is the only one of the three carrying an action the coach takes on
             this screen. aria-live stays: an alarm that arrives while the
             coach is reading something else has to announce itself. */}
-        <section aria-live="polite" aria-labelledby="cb-escalations-heading" className="cb-sec">
-          <div className="cb-sech" id="cb-escalations-heading">
-            Safety Escalations
-            {/* "N open" counts rows that ARE open. It used to count the array,
-                which keeps an acknowledged row on purpose so the coach can see
-                what they just did -- so the board announced "3 open" directly
-                above a row whose own body said "Acknowledged". The rule lives
-                in the glance model now, where the ROOM layout reads the same
-                one rather than counting the array again. */}
-            {!escalationsLoading && !escalationsError && escalationCounts.open > 0 ? (
-              <em>{escalationCounts.open} open</em>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => void loadEscalations()}
-              className="cb-door cb-refresh"
-              aria-label="Refresh safety escalations"
-            >
-              Refresh
-            </button>
-          </div>
+        {/* THE ESCALATION RECORDS, RENDERED ONCE.
 
-          {escalationsLoading && <p className="cb-state">Checking for open escalations...</p>}
+            In BOARD they sit in the stack, where they have always been. In
+            ROOM they live behind the attention clipboard instead -- the door
+            fully replaces this block's ownership, so per the designer's rule
+            the block retires from ROOM rather than being duplicated under a
+            door that already reaches it.
 
-          {!escalationsLoading && escalationsError && (
-            <div className="cb-unavailable">
-              <p className="cb-unavailable-head">Read unavailable</p>
-              <p className="cb-state">{escalationsError}</p>
-              <p className="cb-state">
-                Escalations may exist that are not shown here. Do not read this as &quot;all clear&quot;.
-              </p>
-            </div>
-          )}
-
-          {!escalationsLoading && !escalationsError && escalations.length === 0 && (
-            <p className="cb-state">
-              No open escalations for your athletes. One appears here the moment a near miss, pain
-              report, or safety-gate flag escalates.
-            </p>
-          )}
-
-          {!escalationsLoading && !escalationsError && escalations.length > 0 && escalations.map((escalation) => {
-            const athlete = athletes.find((item) => item.id === escalation.athlete_id);
-            const who = athlete?.name ?? `Athlete ID ${escalation.athlete_id}`;
-            const busy = escalationAckBusy.has(escalation.escalation_id);
-            return (
-              <article key={escalation.escalation_id} className="cb-rec">
-                {/* The roster's own portrait behaviour, not a second one.
-                    A coach who works with twenty children recognises a face
-                    faster than a name, and an athlete with no photo on file
-                    gets the initials plate rather than an empty circle --
-                    both of which ProfilePortrait already decides. Decorative
-                    because the name is right beside it. */}
-                <span className="cb-portrait-slot">
-                  <ProfilePortrait
-                    accountId={athlete?.accountId ?? null}
-                    initials={athlete?.initials ?? '—'}
-                    name={who}
-                    photoAvailable={Boolean(athlete?.photoAvailable)}
-                    size="sm"
-                    decorative
-                  />
-                </span>
-                <p className="cb-who">
-                  {who}
-                  <span className="cb-sev-word">
-                    <StatusBadge tone={painSeverityTone(escalation.severity)} label={escalation.severity} />
-                  </span>
-                </p>
-                <p className="cb-what">{escalation.reason}</p>
-                <p className="cb-when">
-                  {ESCALATION_SOURCE_LABEL[escalation.source_type] ?? escalation.source_type}
-                  {' · '}
-                  {painReportTime(escalation.created_at)}
-                </p>
-
-                {escalation.status === 'open' ? (
-                  <span className="cb-act">
-                    <button
-                      type="button"
-                      onClick={() => void acknowledgeCoachEscalation(escalation.escalation_id)}
-                      disabled={busy}
-                      className="cb-actuator"
-                      /* The accessible name carries the athlete. A screen
-                         reader's control list used to read N identical
-                         "Acknowledge" buttons with nothing to tell them
-                         apart, on the one surface where picking the wrong
-                         one matters. */
-                      aria-label={`Acknowledge safety escalation for ${who}`}
-                    >
-                      {busy ? '...' : 'Ack'}
-                    </button>
-                    <span className="cb-act-label">{busy ? 'Acknowledging' : 'Acknowledge'}</span>
-                  </span>
-                ) : (
-                  <p className="cb-when cb-ack-done">
-                    Acknowledged. Closing it out is an admin decision and happens on the admin
-                    escalations console.
-                  </p>
-                )}
-
-                {escalationAckErrors[escalation.escalation_id] && (
-                  <p role="alert" className="cb-when cb-rec-error">
-                    {escalationAckErrors[escalation.escalation_id]}
-                  </p>
-                )}
-              </article>
-            );
-          })}
-        </section>
+            One JSX expression, two placements. A second copy of a safeguarding
+            surface is how the board and SafetyAttentionBadge came to disagree
+            in the first place. */}
+        {coachLayout === 'board' && escalationSection}
 
         {/* ATHLETE PAIN REPORTS -- outside the tab switch, like the two
             regions it sits between. A child reporting pain has to reach the

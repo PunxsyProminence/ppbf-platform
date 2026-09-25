@@ -1588,3 +1588,74 @@
 .ge-floorboard .coach-board .rm-clip--unread .rm-clip-v { color: var(--cb-trim-2); }
 .ge-floorboard .coach-board .rm-sev li { color: #4A3B24; }
 .ge-floorboard .coach-board .rm-peg-l { color: #4A3B24; }
+
+/* ===========================================================================
+   BEHIND THE CLIPBOARD, and a solid ground under every light object.
+
+   THE BACKGROUND-COLOR IS NOT BELT AND BRACES. These objects are painted with
+   a gradient, which lives in background-image, so their computed
+   background-color is transparent -- and a transparent ground is exactly how
+   the chalk-ink bug stayed invisible: nothing could read what colour the text
+   was sitting on. A solid colour underneath makes the ground REAL, both to a
+   browser that fails to paint the gradient and to the contrast regression that
+   now measures these surfaces.
+   ========================================================================== */
+.ge-floorboard .coach-board .rg { background-color: #E4DCC6; }
+.ge-floorboard .coach-board .rm-clip { background-color: #E2DAC3; }
+.ge-floorboard .coach-board .rm-clip--quiet { background-color: #C2BBA8; }
+.ge-floorboard .coach-board .rm-peg { background-color: #D8D0B6; }
+
+/* A clipboard that opens. The nail and the clamp stay exactly where they were;
+   only the element changed, because a door has to BE a button rather than look
+   like one -- a coach on a keyboard finds it that way, and finds nothing on the
+   clipboards that are still only readouts. */
+.ge-floorboard .coach-board .rm-clip--door {
+  display: block;
+  width: 100%;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.ge-floorboard .coach-board .rm-clip--door:hover { box-shadow: 0 5px 12px rgba(0, 0, 0, .6); }
+.ge-floorboard .coach-board .rm-clip--door:focus-visible { outline: 0; box-shadow: var(--focus); }
+
+/* The records panel the clipboard opens. It is not another light object: the
+   escalation records are the board's own chalk surface, moved, so the panel is
+   a frame around them rather than a new material to read them on. */
+.ge-floorboard .coach-board .rd {
+  margin: 0 0 18px;
+  padding: 12px 14px 4px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgb(234 230 217 / .18);
+}
+.ge-floorboard .coach-board .rd-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.ge-floorboard .coach-board .rd-eyebrow {
+  margin: 0;
+  font-size: var(--t-xs);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-3);
+}
+.ge-floorboard .coach-board .rd-close {
+  min-height: var(--tap);
+  padding: 0 14px;
+  border: 0;
+  cursor: pointer;
+  border-radius: 2px;
+  background: none;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-sm);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-2);
+  box-shadow: inset 0 0 0 1px rgb(234 230 217 / .28);
+}
+.ge-floorboard .coach-board .rd-close:hover { color: var(--cb-chalk); }
+.ge-floorboard .coach-board .rd-close:focus-visible { outline: 0; box-shadow: var(--focus); }

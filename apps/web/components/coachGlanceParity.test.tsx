@@ -222,14 +222,28 @@ describe.each(LAYOUTS)('%s layout tells the same truth', (layout) => {
   /* ---- ESCALATIONS ------------------------------------------------------ */
 
   test('an open escalation reaches the coach in either layout', async () => {
-    /* TRIVIAL IN ROOM TODAY: satisfied by the records still stacked under the
-       glance layer. It is here as the ratchet -- when the clipboards become
-       doors and the stack goes, a room that cannot reach this record fails
-       here rather than on a tablet in a gym. */
+    /* THE RATCHET FIRED, AND THIS IS THE UPDATE IT ASKED FOR.
+
+       This was written when ROOM still stacked the board's records under its
+       glance layer, and it said so: trivially satisfied today, load-bearing the
+       moment the records move behind a door. They have. The attention clipboard
+       is now a door and the escalation block is retired from ROOM, so this test
+       went red -- which is the whole reason it existed.
+
+       What it holds now is stronger than what it held then: not "the record is
+       somewhere on the page", but "the record is REACHABLE", by the route a
+       coach actually has. A layout where the door stops opening fails here. */
     await renderInLayout(layout, {
       athletesList: roster,
       escalationsGet: () => jsonResponse({ ok: true, escalations: [escalation()] }),
     });
+
+    if (layout === 'room') {
+      expect(screen.queryByText(/Pain score 8 reported after sparring round/)).toBeNull();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Open safety escalation records' }));
+      });
+    }
 
     expect(screen.getByText(/Pain score 8 reported after sparring round/)).toBeTruthy();
   });
@@ -333,6 +347,75 @@ describe('the room carries the facts in its own objects', () => {
     // regex for the count is really a regex for a coincidence.
     const value = document.querySelector('.rm-clip .rm-clip-v');
     expect(value?.textContent?.trim()).toBe('1');
+  });
+
+  test('the attention clipboard is closed until asked, then holds the real records', async () => {
+    /* The second door. The records it opens are not a copy of the board's --
+       they are the same JSX, placed here instead, and the escalation block is
+       retired from ROOM because this door fully replaces what it owned. A copy
+       would be how the board and SafetyAttentionBadge came to disagree. */
+    await renderInLayout('room', {
+      athletesList: roster,
+      escalationsGet: () => jsonResponse({ ok: true, escalations: [escalation()] }),
+    });
+
+    expect(screen.queryByText(/Pain score 8 reported after sparring round/)).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open safety escalation records' }));
+    });
+
+    // The record, and the action that goes with it. A door onto records a coach
+    // cannot act on would be a worse version of the stack it replaced.
+    expect(screen.getByText(/Pain score 8 reported after sparring round/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Acknowledge safety escalation for / })).toBeTruthy();
+  });
+
+  test('the clipboard still opens when the read FAILED, because that is when it matters', async () => {
+    /* A door that closes itself on failure strands the coach on a summary
+       saying "Unread" with nowhere to go. The panel behind it carries the
+       error, the retry, and the warning that escalations may exist which are
+       not shown -- none of which fits on a clipboard. */
+    await renderInLayout('room', {
+      athletesList: roster,
+      escalationsGet: () => jsonResponse({}, { ok: false, status: 500 }),
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open safety escalation records' }));
+    });
+
+    /* Scoped to the panel deliberately. The warning appears TWICE when the
+       panel is open -- once on the clipboard, once in the records -- and that
+       is correct rather than sloppy: a coach who only glances must see it, and
+       so must a coach who opens. A page-wide query would pass on either copy
+       alone, so it would not prove the panel carries it. */
+    const panel = document.querySelector('.rd');
+    expect(panel).not.toBeNull();
+    expect(panel?.textContent).toMatch(/Read unavailable/i);
+    expect(panel?.textContent).toMatch(/may exist that are not shown/i);
+    expect(screen.getByRole('button', { name: 'Refresh safety escalations' })).toBeTruthy();
+  });
+
+  test('the escalation block is retired from the room, not duplicated under its own door', async () => {
+    /* The designer's rule: once a door gives complete access to everything a
+       legacy block owns, that block retires in the same slice. Leaving it below
+       keeps exactly the clutter the room exists to remove, and makes the record
+       answerable in two places.
+
+       Counted rather than asserted absent, because "not on the page" would also
+       pass if the door were broken and the record unreachable. */
+    await renderInLayout('room', {
+      athletesList: roster,
+      escalationsGet: () => jsonResponse({ ok: true, escalations: [escalation()] }),
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open safety escalation records' }));
+    });
+
+    expect(screen.getAllByText(/Pain score 8 reported after sparring round/)).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /^Acknowledge safety escalation for / })).toHaveLength(1);
   });
 
   test('the peg board opens the register, and it holds the same population it counted', async () => {

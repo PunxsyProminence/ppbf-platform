@@ -55,6 +55,8 @@ export interface CoachRoomLayoutProps {
   /** Opens the register behind the peg board -- the first glance -> open ->
    *  work door in the room. */
   readonly onOpenRegister: () => void;
+  /** Opens the escalation records behind the attention clipboard. */
+  readonly onOpenAttention: () => void;
 }
 
 /** One hanging tag on the peg board. */
@@ -73,21 +75,37 @@ function Peg({ label, count, tone }: {
 }
 
 /** A clipboard on a nail. `detail` is optional because not every clipboard has
- *  a composition to show, and an empty line would read as a missing one. */
-function Clipboard({ title, value, detail, state }: {
+ *  a composition to show, and an empty line would read as a missing one.
+ *
+ *  `onOpen` turns it into a door. A clipboard that opens and one that does not
+ *  are the same object with the same contents, so the difference has to be in
+ *  the element -- a real button, with a real accessible name -- rather than in
+ *  a cursor. A coach navigating by keyboard finds the doors that way, and finds
+ *  nothing on the ones that are still only readouts. */
+function Clipboard({ title, value, detail, state, onOpen, openLabel }: {
   readonly title: string;
   readonly value: string;
   readonly detail?: React.ReactNode;
   readonly state?: 'ok' | 'quiet' | 'unread';
+  readonly onOpen?: () => void;
+  readonly openLabel?: string;
 }) {
-  return (
-    <div className={`rm-clip rm-clip--${state ?? 'ok'}`}>
+  const body = (
+    <>
       <span className="rm-clip-nail" aria-hidden="true" />
       <span className="rm-clip-clamp" aria-hidden="true" />
       <p className="rm-clip-t">{title}</p>
       <b className="rm-clip-v">{value}</b>
       {detail ? <div className="rm-clip-d">{detail}</div> : null}
-    </div>
+    </>
+  );
+  const cls = `rm-clip rm-clip--${state ?? 'ok'}`;
+
+  if (!onOpen) return <div className={cls}>{body}</div>;
+  return (
+    <button type="button" className={`${cls} rm-clip--door`} onClick={onOpen} aria-label={openLabel}>
+      {body}
+    </button>
   );
 }
 
@@ -105,6 +123,7 @@ export default function CoachRoomLayout({
   readinessReadState,
   shadowBadge,
   onOpenRegister,
+  onOpenAttention,
 }: CoachRoomLayoutProps) {
   return (
     <div className="rm">
@@ -198,20 +217,35 @@ export default function CoachRoomLayout({
 
       {/* THE CLIPBOARDS. Three nails, three jobs. */}
       <section className="rm-clips" aria-label="Attention">
+        {/* THE ATTENTION CLIPBOARD IS A DOOR IN EVERY STATE, including the
+            unread one. A read that failed is exactly when a coach most wants
+            to look: the records panel behind it carries the retry, the error
+            and the "escalations may exist that are not shown" warning. A door
+            that closes itself on failure would strand them on the summary. */}
         {escalationsLoading ? (
-          <Clipboard title="Need attention" value="Checking" state="quiet" />
+          <Clipboard
+            title="Need attention"
+            value="Checking"
+            state="quiet"
+            onOpen={onOpenAttention}
+            openLabel="Open safety escalation records"
+          />
         ) : escalationsError ? (
           <Clipboard
             title="Need attention"
             value="Unread"
             state="unread"
             detail="Escalations may exist that are not shown. Not an all-clear."
+            onOpen={onOpenAttention}
+            openLabel="Open safety escalation records"
           />
         ) : (
           <Clipboard
             title="Need attention"
             value={String(escalations.open)}
             state={escalations.open > 0 ? 'ok' : 'quiet'}
+            onOpen={onOpenAttention}
+            openLabel="Open safety escalation records"
             detail={escalations.open > 0 ? (
               <ul className="rm-sev">
                 {escalations.critical > 0 && <li><b>{escalations.critical}</b> critical</li>}
