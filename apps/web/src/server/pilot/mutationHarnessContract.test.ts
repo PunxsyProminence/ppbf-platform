@@ -428,7 +428,14 @@ describe('the invoking working tree is never mutated', () => {
     }
   });
 
-  it('can be told the difference does not matter, but only explicitly', () => {
+  it('offers no override, because an explicit bypass still produces inapplicable evidence', () => {
+    /* This shipped briefly as --allow-dirty and it reopened the hole above
+       wholesale: with it, an edited or brand-new test is absent from the
+       candidate, the scratch worktree runs the old test or none at all, and the
+       table still reads "mutants behaved as declared". Making the bypass
+       explicit does not make the result applicable. Pinned as a flag that must
+       stay unimplemented, because the convenient thing to do when this refusal
+       is inconvenient is to add it back. */
     const unrelated = path.join(repo, 'scratch-note.txt');
     fs.writeFileSync(unrelated, 'unrelated scratch\n');
     try {
@@ -437,11 +444,16 @@ describe('the invoking working tree is never mutated', () => {
         test: process.platform === 'win32' ? 'findstr GUARD subject.txt' : 'grep -q GUARD subject.txt',
         mutants: [{ label: 'guard removed', file: 'subject.txt', find: 'GUARD', replace: 'GONE', expect: 'RED' }],
       }));
-      const result = spawnSync(process.execPath, [scriptPath, '--spec', specPath, '--allow-dirty'], {
-        cwd: repo, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
-      });
-      expect(result.status).toBe(0);
-      expect(`${result.stdout}`).toMatch(/1 of 1 mutants behaved as declared/);
+      for (const argv of [
+        [scriptPath, '--spec', specPath, '--allow-dirty'],
+        [scriptPath, '--spec', specPath, '--force'],
+      ]) {
+        const result = spawnSync(process.execPath, argv, { cwd: repo, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+        expect(result.status).toBe(2);
+        expect(`${result.stdout}${result.stderr}`).toMatch(/Working tree is not clean/);
+        expect(`${result.stdout}${result.stderr}`).toMatch(/There is no override/);
+        expect(`${result.stdout}${result.stderr}`).not.toMatch(/behaved as declared/);
+      }
     } finally {
       fs.rmSync(unrelated, { force: true });
     }

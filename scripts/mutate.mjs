@@ -289,16 +289,27 @@ function main(argv) {
   //
   // Untracked files count for the same reason: a new test that exists only in
   // the working tree is not in `sha` either.
+  //
+  // AND THERE IS NO OVERRIDE. This shipped briefly with an --allow-dirty flag,
+  // which reopened the whole hole: with it, an edited or brand-new test is
+  // absent from the candidate, the scratch worktree runs the old test or none
+  // at all, and the table still says "mutants behaved as declared". Making a
+  // bypass explicit does not make the evidence it produces applicable. A
+  // contract that reads "the candidate must be committed, unless the operator
+  // says otherwise" is not a contract.
+  //
+  // To prove an older commit while this tree is dirty, invoke from a clean
+  // worktree. Do not weaken the boundary to make that convenient.
   const dirty = git(['status', '--porcelain'], repoRoot);
-  if (dirty && !argv.includes('--allow-dirty')) {
+  if (dirty) {
     process.stderr.write(
       `Working tree is not clean, and mutants run against ${sha.slice(0, 8)}:\n\n${dirty}\n\n`
       + 'None of the above is in that commit, so the proof would describe code you are not\n'
       + 'holding -- most dangerously a test file, where the scratch worktree would run the\n'
       + 'old version, or no test at all, and a survivor would be reported for a test that\n'
       + 'never ran.\n\n'
-      + 'Commit them, or pass --allow-dirty if you have established the difference cannot\n'
-      + 'affect this proof.\n',
+      + 'Commit them, or run this from a clean worktree. There is no override: a proof\n'
+      + 'against the wrong subject is not evidence, however deliberately it was requested.\n',
     );
     return 2;
   }
