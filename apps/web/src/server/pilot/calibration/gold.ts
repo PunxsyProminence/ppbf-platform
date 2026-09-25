@@ -112,6 +112,9 @@ interface AdjudicationProvenanceRow {
   annotation_set_id_b: string;
   resolution_type: string;
   missed_event_verdict: string | null;
+  /** Null when the clip's source was not recorded to teach Shadow, or when
+   *  the video row is gone. Both mean the reading is not reference data. */
+  capture_take_id: string | null;
 }
 
 function requireNonEmpty(value: unknown, field: string): string {
@@ -186,11 +189,17 @@ export async function nominateGoldCandidate(
          adj.resolution_type,
          adj.missed_event_verdict,
          clip.calibration_project_id,
-         clip.video_session_id
+         clip.video_session_id,
+         -- LEFT, so a missing video row still reports as "no such
+         -- adjudication" rather than as the wrong refusal below.
+         vid.capture_take_id
        from pilot.calibration_adjudications adj
        join pilot.calibration_clips clip
          on clip.organization_id = adj.organization_id
         and clip.calibration_clip_id = adj.calibration_clip_id
+       left join pilot.video_sessions vid
+         on vid.organization_id = clip.organization_id
+        and vid.video_session_id = clip.video_session_id
       where adj.organization_id = $1 and adj.adjudication_id = $2`,
       [organizationId, adjudicationId],
     );
@@ -198,6 +207,26 @@ export async function nominateGoldCandidate(
     const source = provenance.rows[0];
     if (!source) {
       throw new Error('Not found: no such adjudication in this organization');
+    }
+
+    /*
+     * A GOLD RECORD IS REFERENCE DATA FOR TEACHING A RECOGNIZER, so its source
+     * has to be footage that was recorded to teach one.
+     *
+     * assertVideoClippable stops a clip being cut from anything else and stops
+     * an existing one being reopened, but neither reaches here: an adjudication
+     * that already exists over a pre-takes clip could still be nominated, and
+     * the resulting record would be reference data drawn from footage whose
+     * destination nobody chose. The owner's rule is that a destination is
+     * settled before the media exists, never reconstructed afterwards.
+     *
+     * The old rows stay as history. They do not become eligible.
+     */
+    if (source.capture_take_id === null) {
+      throw new Error(
+        'Forbidden: this reading came from footage that was not recorded to teach Shadow, '
+        + 'so it cannot become reference data',
+      );
     }
 
     if (source.resolution_type === 'unresolvable' || source.missed_event_verdict === 'unresolvable') {
@@ -280,6 +309,15 @@ export async function promoteGoldRecord(input: PromoteGoldRecordInput): Promise<
         where organization_id = $1
           and gold_record_id = $2
           and governance_state = 'candidate'
+          -- AND ITS SOURCE IS TEACHING FOOTAGE. A candidate nominated before
+          -- that boundary existed must not be promotable into the reference
+          -- set now; it stays a historical row. See nominateGoldCandidate.
+          and exists (
+            select 1 from pilot.video_sessions v
+             where v.organization_id = pilot.calibration_gold_records.organization_id
+               and v.video_session_id = pilot.calibration_gold_records.video_session_id
+               and v.capture_take_id is not null
+          )
         returning ${GOLD_COLUMNS}`,
       [organizationId, goldRecordId, promotedByAccountId],
     );

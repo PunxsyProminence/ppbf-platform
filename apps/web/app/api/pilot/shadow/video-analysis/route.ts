@@ -20,6 +20,7 @@ import { hiddenNotFound, isUuid, jsonError, requirePrincipal } from '@/src/serve
 import { enqueueJob, getJobStatusForActor } from '@/src/server/pilot/shadowJobQueue';
 import { isFilmStudyVisionConfigured } from '@/src/server/pilot/shadowFilmStudy';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
+import { assertVideoIsFilmStudyMedia } from '@/src/server/pilot/videoDestination';
 
 export interface VideoAnalysisRequest {
   videoSessionId: string;
@@ -95,6 +96,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         reason: 'VIDEO_SESSION_NOT_READY',
       } satisfies VideoAnalysisResponse, { status: 409 });
     }
+
+    /*
+     * AND IT MUST BE FILM STUDY FOOTAGE. Teach Shadow captures are recorded to
+     * teach a recognizer, not to be analysed as coaching film, and the owner's
+     * ruling is that they never cross. Placed after the status gate so a
+     * caller is told the ordinary thing first, and before consent because a
+     * video that may not be here at all should not have its athlete's consent
+     * examined.
+     */
+    await assertVideoIsFilmStudyMedia(principal.organizationId, videoSessionId);
 
     // T-008: 'ready' only means the content-safety scan passed -- it says
     // nothing about guardian media consent. The video-publication approval

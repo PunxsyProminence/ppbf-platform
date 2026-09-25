@@ -144,6 +144,97 @@ describe('GET /api/pilot/video/list', () => {
     expect(sql).not.toEqual(expect.stringContaining("status = 'ready'"));
   });
 
+  /*
+   * TEACH SHADOW FOOTAGE IS NOT FILM STUDY FOOTAGE, AND THIS IS THE READ SIDE
+   * OF THAT.
+   *
+   * Teach Shadow capture stores an athlete_id -- it must, because the
+   * guardian-consent sweep only runs for a video that names one -- so without
+   * this filter a teaching example recorded on the gym floor appears in that
+   * athlete's film library as though a coach had filmed it for review. The
+   * recorders being separate does not separate anything if the reads mix.
+   *
+   * The organization-admin branch is asserted NOT to filter, in the same
+   * breath, because that one feeds safeguarding review and a review that
+   * cannot see every file in the organization has a blind spot somebody chose.
+   */
+  test.each([
+    ['athlete', () => principal({ role: 'athlete', athleteId: 'ath-1' }), 'http://localhost/api/pilot/video/list'],
+    ['parent', () => principal({ role: 'parent' }), 'http://localhost/api/pilot/video/list?athlete_id=ath-1'],
+    ['coach asking about one athlete', () => principal({ role: 'coach' }), 'http://localhost/api/pilot/video/list?athlete_id=ath-1'],
+    ['coach listing everything they may see', () => principal({ role: 'coach' }), 'http://localhost/api/pilot/video/list'],
+  ])('a %s reading Film Study never sees Teach Shadow footage', async (_label, who, url) => {
+    mockRequirePrincipal.mockResolvedValueOnce(who());
+    // The parent and named-athlete branches pass through
+    // assertActorCanAccessAthlete first, which reads the link with queryOne.
+    // Answering it keeps these tests about the listing rather than about the
+    // access check, which has its own tests above.
+    const { queryOne } = jest.requireMock('@/src/server/pilot/db');
+    queryOne.mockResolvedValue({ athlete_id: 'ath-1', coach_id: 'acct-1' });
+    mockQuery.mockResolvedValue([]);
+
+    const res = await GET(request(url));
+
+    expect(res.status).toBe(200);
+    const listing = mockQuery.mock.calls
+      .map(([sql]) => String(sql))
+      .find((sql) => sql.includes('from pilot.video_sessions'));
+    expect(listing).toContain('capture_take_id is null');
+  });
+
+  test('an admin opening Film Study gets the Film Study view, not everything', async () => {
+    /*
+     * THE DEFECT THIS REPLACED. The filter used to be decided by ROLE, so an
+     * organization admin was handed every video -- but an admin is allowed on
+     * /coach/video-analysis, which is Film Study and reads this same route.
+     * The one person who can see everything therefore saw teaching footage in
+     * the film library, which is exactly the blur the separation exists to
+     * remove. Film Study is now the default for every role.
+     */
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockQuery.mockResolvedValueOnce([]);
+
+    const res = await GET(request());
+
+    expect(res.status).toBe(200);
+    expect(String(mockQuery.mock.calls[0]![0])).toContain('capture_take_id is null');
+  });
+
+  test('safeguarding review asks for every file, and gets it', async () => {
+    // /admin/video-review is the one surface that sends scope=all. A review
+    // that could not see every file in the organization would have a blind
+    // spot somebody chose.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockQuery.mockResolvedValueOnce([]);
+
+    const res = await GET(request('http://localhost/api/pilot/video/list?scope=all'));
+
+    expect(res.status).toBe(200);
+    expect(String(mockQuery.mock.calls[0]![0])).not.toContain('capture_take_id is null');
+  });
+
+  test('a coach cannot ask for every file by naming the scope', async () => {
+    // The parameter only ever narrows for everyone else; widening is not a
+    // thing a client may request.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+
+    const res = await GET(request('http://localhost/api/pilot/video/list?scope=all'));
+
+    expect(res.status).toBe(403);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('an unrecognised scope is refused rather than quietly ignored', async () => {
+    // Silently falling back would mean a surface that misspelled its intent
+    // got a different list than it asked for and never found out.
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+
+    const res = await GET(request('http://localhost/api/pilot/video/list?scope=everything'));
+
+    expect(res.status).toBe(400);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
   test('organization_admin gets org-wide access', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
     mockQuery.mockResolvedValueOnce([{ video_session_id: 'v1' }, { video_session_id: 'v2' }]);

@@ -666,10 +666,26 @@ export default function CoachVideoAnalysisPage() {
             {/* Recording is a LINK, not a button that opens a recorder here.
                 Permissions-Policy is a per-response header and this document
                 is served with camera=(), so no control on this page could ever
-                open a camera. The capture route is its own document and is the
-                only one granted the capability. */}
+                open a camera. The recorder is its own document and is one of
+                only two granted the capability. */}
+            {/* WHERE THE FOOTAGE GOES, SAID BEFORE THE CONTROL. Teaching
+                Shadow and reviewing an athlete are separate destinations with
+                no promotion path between them, so a coach has to choose before
+                pressing record rather than discover afterwards that the
+                footage cannot be moved. */}
             <p className="t-body mt-[var(--s3)]">
-              <Link href="/coach/video-analysis/capture" className="btn">Record video</Link>
+              For coaching review of an athlete. Media recorded here stays in Film Study and cannot be moved
+              into Teach Shadow.
+            </p>
+            <p className="t-body mt-[var(--s3)]">
+              {/* A plain anchor, so the recorder is served its own document
+                  and with it the camera grant. See components/cameraDocuments.ts. */}
+              <a href="/coach/video-analysis/capture" className="btn">Record for Film Study</a>
+            </p>
+            <p className="t-body mt-[var(--s3)]">
+              <a href="/teach-shadow/capture" className="underline">
+                Recording an example to teach Shadow instead?
+              </a>
             </p>
             <p className="t-body mt-[var(--s3)]">Or choose an existing file:</p>
             <form onSubmit={(e) => { void handleUpload(e); }} className="mt-[var(--s3)] space-y-[var(--s3)]">

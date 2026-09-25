@@ -7,6 +7,7 @@ import { assertGuardianMediaConsent, GuardianConsentMissingError } from '@/src/s
 import { enqueueJob } from '@/src/server/pilot/shadowJobQueue';
 import { isFilmStudyVisionConfigured } from '@/src/server/pilot/shadowFilmStudy';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
+import { assertVideoIsFilmStudyMedia } from '@/src/server/pilot/videoDestination';
 
 jest.mock('@/src/server/pilot/http', () => ({
   ...jest.requireActual('@/src/server/pilot/http'),
@@ -23,6 +24,10 @@ jest.mock('@/src/server/pilot/guardianConsent', () => {
     assertGuardianMediaConsent: jest.fn(),
   };
 });
+jest.mock('@/src/server/pilot/videoDestination', () => ({
+  ...jest.requireActual('@/src/server/pilot/videoDestination'),
+  assertVideoIsFilmStudyMedia: jest.fn(),
+}));
 jest.mock('@/src/server/pilot/shadowJobQueue', () => ({
   enqueueJob: jest.fn(),
   getJobStatusForActor: jest.fn(),
@@ -40,6 +45,7 @@ const mockAssertConsent = jest.mocked(assertGuardianMediaConsent);
 const mockEnqueue = jest.mocked(enqueueJob);
 const mockConfigured = jest.mocked(isFilmStudyVisionConfigured);
 const mockVideo = jest.mocked(getVideoSessionById);
+const mockDestination = jest.mocked(assertVideoIsFilmStudyMedia);
 
 const readyVideo = {
   video_session_id: 'vs-1',
@@ -71,6 +77,33 @@ beforeEach(() => {
 });
 
 describe('POST video-analysis enqueues Film Study', () => {
+
+  /*
+   * THE GUARD IS MOCKED IN THIS FILE, so without this the route could stop
+   * calling it and every test here would still pass. What the guard ANSWERS is
+   * decided once in src/server/pilot/videoDestination.test.ts; what each route
+   * owes is that it asks.
+   *
+   * Four paths accept a video id without ever seeing a list, which is why
+   * filtering the Film Study list was navigation rather than an invariant.
+   */
+  test('asks whether this footage is Film Study media before analysing it', async () => {
+    await POST(post({ videoSessionId: 'vs-1' }));
+
+    expect(mockDestination).toHaveBeenCalledWith('org-1', 'vs-1');
+  });
+
+  test('teaching footage is refused rather than queued', async () => {
+    mockDestination.mockRejectedValueOnce(
+      new Error('Forbidden: this footage was recorded to teach Shadow, so it cannot be used as Film Study media'),
+    );
+
+    const response = await POST(post({ videoSessionId: 'vs-1' }));
+
+    expect(response.status).toBe(403);
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
   test('queues a job from the video session row, not from caller input', async () => {
     const response = await POST(post({ videoSessionId: 'vs-1' }));
 

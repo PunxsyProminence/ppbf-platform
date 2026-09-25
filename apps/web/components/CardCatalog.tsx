@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { requiresDocumentLoad } from './cameraDocuments';
 import { useSyncExternalStore } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
@@ -264,9 +265,21 @@ export default function CardCatalog() {
              the API is a separate origin from the static app, so a fetch
              without them carries no session cookie and the server has nothing
              to revoke — "logout" that silently leaves the session alive. */
-          void fetch(`${apiBase()}/api/pilot/auth/logout`, { method: 'POST', credentials: 'include' });
+          /* keepalive, because the branch below may unload this document
+             immediately. An ordinary fetch is cancelled when that happens, so the
+             server would never revoke the session -- "logout" that leaves the
+             session alive, which is the exact defect the credentials note above
+             exists to prevent, reintroduced by making the exit a document load.
+             keepalive asks the browser to finish the request after the page is
+             gone; it is bounded to 64 KiB, and this request has no body. */
+          void fetch(`${apiBase()}/api/pilot/auth/logout`, { method: 'POST', credentials: 'include', keepalive: true });
           clearRoleSession();
-          router.replace('/login');
+          /* A CAMERA DOCUMENT IS LEFT BY LOADING, even on the way out.
+             router.replace is a soft navigation, so signing out from a
+             recorder would carry camera=(self) onto the login page and
+             onto whatever is opened next in that tab. */
+          if (requiresDocumentLoad(pathname, '/login')) window.location.replace('/login');
+          else router.replace('/login');
           return null;
         },
       },
@@ -371,6 +384,20 @@ export default function CardCatalog() {
 
   function go(door: Door) {
     close();
+    /*
+     * A CAMERA DOCUMENT IS NOT ROUTED TO, IT IS LOADED. router.push is a soft
+     * navigation: the App Router patches the current document, which keeps
+     * whatever Permissions-Policy that document was served with. Pushed INTO a
+     * recorder it leaves the camera shut; pushed OUT of one it carries
+     * camera=(self) onto every page after it. The catalog reaches every door
+     * in the building, so it is one of the two places this can happen with no
+     * literal href anywhere for a scan to find. See components/
+     * cameraDocuments.ts.
+     */
+    if (requiresDocumentLoad(pathname, door.href)) {
+      window.location.assign(door.href);
+      return;
+    }
     router.push(door.href);
   }
 

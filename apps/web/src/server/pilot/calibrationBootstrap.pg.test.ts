@@ -14,7 +14,7 @@
 //     so only a real database can say what the WHERE clause does with them
 //   * the source video row is not touched by being annotated against
 //   * the rows the bootstrap creates are the rows the existing read paths
-//     behind /coach/calibration return
+//     behind /teach-shadow/annotation return
 //   * each creation writes an audit row carrying the creator's REAL role, read
 //     from their account row -- a mock would only prove the argument was passed
 //   * a refused creation writes none, and a refused AUDIT write leaves the rows
@@ -33,6 +33,8 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 
 import { Client } from 'pg';
+
+import { seedCaptureTake } from '../../testing/captureFixture';
 
 jest.setTimeout(180_000);
 
@@ -74,6 +76,11 @@ const BASE_SQL = 'pilot_slice_postgres.sql';
 // sourceRetractionChecks.pg.test.ts uses.
 const RETENTION_SQL = 'pilot_slice_postgres_data_retention_deletion_migration.sql';
 const VIDEO_SESSIONS_SQL = 'pilot_slice_postgres_video_sessions_migration.sql';
+/* Applied because these suites now seed a recording session and a take: a
+   study cuts its clips from teaching footage, and assertVideoClippable
+   refuses anything else. It also adds capture_take_id to pilot.video_sessions,
+   so it must run after the video-sessions migration, never before. */
+const CAPTURE_SESSIONS_SQL = 'pilot_slice_postgres_capture_sessions_migration.sql';
 const CALIBRATION_SQL = 'pilot_slice_postgres_calibration_projects_migration.sql';
 
 let PG_PORT: number;
@@ -169,13 +176,24 @@ async function seedTenancy(client: Client): Promise<void> {
     [OTHER_ORG_VIDEO_ID, OTHER_ORG_ID, OTHER_ORG_ATHLETE_ID, 'ready', OTHER_ORG_COACH_ID],
   ];
   for (const [videoId, orgId, athleteId, status, uploader] of videos) {
+    /* Teaching footage: assertVideoClippable refuses a video with no capture
+       take, because only footage recorded to teach Shadow may become evidence
+       a recognizer is taught from. These fixtures predate takes, and a study
+       cuts its clips from teaching footage, so this is the accurate
+       description rather than a way around the guard. Idempotent, and one
+       session per organization is all these suites need. */
+    const take = await seedCaptureTake(client, { organizationId: orgId, createdByAccountId: uploader });
     await client.query(
       `insert into pilot.video_sessions
          (video_session_id, organization_id, uploaded_by_account_id, athlete_id, title,
-          blob_path, file_name, file_size_bytes, mime_type, status)
-       values ($1, $2, $3, $4, 'Sparring round', $5, 'round.mp4', 1024, 'video/mp4', $6)
+          blob_path, file_name, file_size_bytes, mime_type, status,
+          recording_session_id, capture_take_id)
+       values ($1, $2, $3, $4, 'Sparring round', $5, 'round.mp4', 1024, 'video/mp4', $6, $7, $8)
        on conflict do nothing`,
-      [videoId, orgId, uploader, athleteId, `${orgId}/${videoId}.mp4`, status],
+      [
+        videoId, orgId, uploader, athleteId, `${orgId}/${videoId}.mp4`, status,
+        take.recordingSessionId, take.captureTakeId,
+      ],
     );
   }
 }
@@ -339,6 +357,7 @@ beforeAll(async () => {
   await migrateClient.query(await readMigration(BASE_SQL));
   await migrateClient.query(await readMigration(RETENTION_SQL));
   await migrateClient.query(await readMigration(VIDEO_SESSIONS_SQL));
+  await migrateClient.query(await readMigration(CAPTURE_SESSIONS_SQL));
   await migrateClient.query(await readMigration(CALIBRATION_SQL));
   await seedTenancy(migrateClient);
   await migrateClient.end();
@@ -446,7 +465,7 @@ describe('establishing a ready video as a calibration study', () => {
   });
 
   test('the resulting rows are the ones the existing picker reads', async () => {
-    // Acceptance criterion 6, at the layer /coach/calibration's two GET routes
+    // Acceptance criterion 6, at the layer /teach-shadow/annotation's two GET routes
     // actually call: listCalibrationProjects then listCalibrationClips.
     const { project, clip } = await bootstrap.bootstrapCalibrationClip(
       request({ clipCode: 'C-06' }),

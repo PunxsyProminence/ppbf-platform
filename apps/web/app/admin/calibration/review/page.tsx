@@ -46,7 +46,7 @@ import { formatDurationMs, formatMediaOffset } from '@/src/lib/clipTime';
  * Wire shapes, declared here rather than imported from the calibration
  * modules: those import ./db, and importing one as a VALUE into a
  * 'use client' component would pull the Postgres driver into the browser
- * bundle. Same reason app/coach/calibration/page.tsx restates them.
+ * bundle. Same reason app/teach-shadow/annotation/page.tsx restates them.
  * ------------------------------------------------------------------ */
 
 interface CalibrationClip {

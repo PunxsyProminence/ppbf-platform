@@ -1,110 +1,83 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useRef, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import { useCameraRecorder } from '@/components/useCameraRecorder';
 import { apiBase } from '@/lib/apiBase';
-import {
-  CAPTURE_CHUNK_MS,
-  CAPTURE_MAX_BLOB_BYTES,
-  CAPTURE_MIME_CANDIDATES,
-  captureFileDescriptor,
-} from '@/lib/capturePolicy';
+import { CAPTURE_MAX_BLOB_BYTES } from '@/lib/capturePolicy';
 
 /*
- * CAP-VID-01: the capture surface.
+ * FILM STUDY: the recorder.
  *
  * ITS OWN DOCUMENT, NOT A MODAL, and that is forced by the platform rather
  * than chosen for layout. Permissions-Policy is a per-response header, so a
  * page served with camera=() can never open a camera however its buttons are
- * written. next.config.ts grants camera=(self) to THIS route alone; every
- * other page in the app stays closed. Moving this UI onto another page would
- * silently break it.
+ * written. next.config.ts grants camera=(self) to this route and to the Teach
+ * Shadow recorder, and to nothing else.
  *
- * WHAT IT IS FOR: several coaches, each on their own phone, filming the same
- * punch from different positions. They coordinate out loud, as they already
- * would. The platform's job is only to remember that the separate files are
- * views of one attempt.
+ * WHAT MAKES IT FILM STUDY IS WHAT IT DOES NOT SEND. There is no recording
+ * session here, no join code, no take, and no "next take" -- and that absence
+ * is the product contract, not a missing feature. A take is what groups the
+ * angles of one attempt and what makes footage part of the recognition corpus;
+ * an upload with no take cannot join one, so nothing recorded here can ever
+ * become teaching evidence. The owner ruled there is no promotion path, and
+ * this is where that ruling is enforced rather than merely stated.
  *
- * NO SHARED STREAM. No WebRTC, no central recorder, no clock synchronisation.
- * Each device records locally and uploads its own file. Aligning the actual
- * punches across angles is annotation work later, against the footage itself.
+ * IT STILL NAMES ITS ATHLETE, and the server refuses it otherwise. The
+ * guardian-consent check in the scan sweep only runs for a video that carries
+ * an athlete_id, so an unattributed recording of a minor would reach the
+ * vision screen with that check skipped. That refusal is keyed on
+ * capture_source rather than on take-presence for exactly this page's sake.
  */
 
-/*
- * ONLY THE CONTEXTS WITH ONE PERSON IN FRAME, and the server refuses the rest
- * independently rather than trusting this list.
- *
- * A capture names one athlete and the scan sweep checks consent for exactly
- * that athlete. Filming sparring would put a second person in frame whom the
- * row never names and nothing ever asks about -- the same defect as an
- * unattributed recording, narrowed from "nobody named" to "one of two". Mitts
- * has a second person for the same reason, and 'other' bounds nothing so it
- * cannot promise a single subject.
- *
- * These come back when a participant model can name everyone in a take.
- */
-const TRAINING_CONTEXTS: Array<{ value: string; label: string }> = [
-  { value: 'shadowboxing', label: 'Shadowboxing' },
-  { value: 'heavy_bag', label: 'Heavy bag' },
-];
-
-interface TakeFile {
-  videoSessionId: string;
-  cameraView: string | null;
-  uploadedByAccountId: string;
-  status: string;
-}
-
-interface CurrentTake {
-  capture_take_id: string;
-  take_number: number;
-  state: string;
-  files: TakeFile[];
-}
-
-interface SessionState {
-  recording_session_id: string;
-  join_code: string;
-  training_context: string;
-  state: string;
-  current_take: CurrentTake | null;
-}
-
-type RecorderPhase = 'idle' | 'starting' | 'recording' | 'uploading';
-
-export default function VideoCapturePage() {
-  const [session, setSession] = useState<SessionState | null>(null);
-  const [trainingContext, setTrainingContext] = useState('shadowboxing');
-  const [joinCodeInput, setJoinCodeInput] = useState('');
-  const [cameraView, setCameraView] = useState('');
+export default function FilmStudyCapturePage() {
   const [athletes, setAthletes] = useState<Array<{ athlete_id: string; full_name: string }>>([]);
   const [athleteId, setAthleteId] = useState('');
-  const [phase, setPhase] = useState<RecorderPhase>('idle');
-  const [recordedBytes, setRecordedBytes] = useState(0);
-  const [stoppedAtLimit, setStoppedAtLimit] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [title, setTitle] = useState('');
+  const [uploaded, setUploaded] = useState(0);
   const [busy, setBusy] = useState(false);
+  // See the note on the Teach Shadow recorder: a chosen file can be large, and
+  // controls greying out with no other sign reads as a broken page.
+  const [attaching, setAttaching] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const bytesRef = useRef(0);
-  const recordedAtRef = useRef<string | null>(null);
 
-  const stopStream = useCallback(() => {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
-  }, []);
+  async function sendToFilmStudy(file: File, subjectAthleteId: string, recordedAt: string | null, source: string) {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('athlete_id', subjectAthleteId);
+    form.append('capture_source', source);
+    if (title.trim()) form.append('title', title.trim());
+    if (recordedAt) form.append('recorded_at', recordedAt);
+    // No capture_take_id, deliberately. See the note at the top of this file.
+
+    const response = await fetch(`${apiBase()}/api/pilot/video/upload`, {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    });
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+    if (!response.ok) throw new Error(payload.error || 'The recording could not be uploaded.');
+    setUploaded((count) => count + 1);
+  }
+
+  const recorder = useCameraRecorder<{ athleteId: string }>({
+    unsupportedFormatMessage:
+      'This browser cannot record a format the platform accepts. Use "Choose a file instead" to upload footage shot elsewhere.',
+    onRecorded: async (file, { recordedAt, context }) => {
+      await sendToFilmStudy(file, context.athleteId, recordedAt, 'in_app_recording');
+    },
+  });
+
+  // Destructured rather than read through `recorder.` at each use: the hook
+  // hands back a ref among its values, and the lint rule reads a member
+  // access on that object as touching a ref during render.
+  const { phase, errorMessage, setErrorMessage, videoRef, recordedBytes, stoppedAtLimit, stop } = recorder;
 
   /*
-   * The roster, because a capture MUST name the athlete it is of. That is not
-   * a form nicety: the scan sweep only asks for guardian consent when a video
-   * carries an athlete_id, so an unattributed recording of a minor would reach
-   * the vision screen with that check skipped. The server refuses it too.
+   * The roster, because this recording MUST name the athlete it is of -- both
+   * because Film Study footage is reviewed with a named athlete and because
+   * the server will not store an in-app recording without one.
    */
   useEffect(() => {
     void (async () => {
@@ -118,228 +91,33 @@ export default function VideoCapturePage() {
         setErrorMessage('The athlete list could not be loaded, so recording is unavailable.');
       }
     })();
-  }, []);
+  }, [setErrorMessage]);
 
-  // The camera is released when this page is left. A preview that keeps
-  // running after the coach navigates away is a recording light nobody can
-  // account for.
-  useEffect(() => () => stopStream(), [stopStream]);
-
-  async function post(body: unknown): Promise<Record<string, unknown>> {
-    const response = await fetch(`${apiBase()}/api/pilot/video/capture-session`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const payload = (await response.json().catch(() => ({}))) as { error?: string };
-    if (!response.ok) throw new Error(payload.error || 'That did not work.');
-    return payload as Record<string, unknown>;
-  }
-
-  const refresh = useCallback(async (recordingSessionId: string) => {
-    const response = await fetch(
-      `${apiBase()}/api/pilot/video/capture-session?recording_session_id=${encodeURIComponent(recordingSessionId)}`,
-      { credentials: 'include' },
-    );
-    const payload = (await response.json().catch(() => ({}))) as { session?: SessionState; error?: string };
-    if (!response.ok) throw new Error(payload.error || 'Unable to read the recording session.');
-    if (payload.session) setSession(payload.session);
-  }, []);
-
-  /*
-   * Polled while a session is open so each device sees the other angles
-   * arriving against the current attempt. Polling rather than a live channel:
-   * this is a handful of coaches for a few minutes, and the honest measure of
-   * whether the grouping worked is what the server says, not what this tab
-   * believes it uploaded.
-   */
-  useEffect(() => {
-    if (!session || session.state !== 'open') return;
-    const id = setInterval(() => {
-      void refresh(session.recording_session_id).catch(() => {});
-    }, 5000);
-    return () => clearInterval(id);
-  }, [session, refresh]);
-
-  async function guarded(work: () => Promise<void>) {
-    setBusy(true);
-    setErrorMessage('');
-    try {
-      await work();
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'That did not work.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function startRecording() {
-    setErrorMessage('');
-    setStoppedAtLimit(false);
-    const take = session?.current_take;
-    if (!take) {
-      setErrorMessage('Start or join a recording session first.');
-      return;
-    }
+  function record() {
     if (!athleteId) {
       setErrorMessage('Choose which athlete this is of before recording.');
       return;
     }
-
-    setPhase('starting');
-    try {
-      /*
-       * VIDEO ONLY. audio:false is a product decision, not an oversight: the
-       * recognizer has to work on silent shadowboxing and in loud gyms, so
-       * impact sound would be a shortcut it could lean on instead of learning
-       * the movement. It also means this page never asks for a microphone the
-       * Permissions-Policy would refuse anyway.
-       */
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
-      }
-
-      const mimeType = CAPTURE_MIME_CANDIDATES.find((candidate) =>
-        typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(candidate),
-      );
-      if (!mimeType) {
-        throw new Error('This browser cannot record a format the platform accepts. Use "Add an angle from a file" to attach one to this take instead.');
-      }
-
-      const recorder = new MediaRecorder(stream, { mimeType });
-      recorderRef.current = recorder;
-      chunksRef.current = [];
-      bytesRef.current = 0;
-      setRecordedBytes(0);
-      recordedAtRef.current = new Date().toISOString();
-
-      recorder.ondataavailable = (event) => {
-        if (!event.data || event.data.size === 0) return;
-        chunksRef.current.push(event.data);
-        bytesRef.current += event.data.size;
-        setRecordedBytes(bytesRef.current);
-        /*
-         * STOPS ITSELF ON BYTES, before the ceiling rather than at it. The
-         * alternative -- letting the coach finish and refusing the upload --
-         * loses the take and the athlete's rep, and there is no way to get
-         * either back.
-         */
-        if (bytesRef.current >= CAPTURE_MAX_BLOB_BYTES && recorder.state === 'recording') {
-          setStoppedAtLimit(true);
-          recorder.stop();
-        }
-      };
-
-      recorder.onstop = () => {
-        void finishRecording(mimeType, take.capture_take_id);
-      };
-
-      // Timeslice: without it the recorder emits one blob at the end and the
-      // accumulated size is unknown until it is too late to stop.
-      recorder.start(CAPTURE_CHUNK_MS);
-      setPhase('recording');
-    } catch (error) {
-      stopStream();
-      setPhase('idle');
-      const message = error instanceof Error ? error.message : 'The camera could not be started.';
-      setErrorMessage(
-        message.includes('Permission') || message.includes('NotAllowed')
-          ? 'The camera was refused. Allow camera access for this site, then try again.'
-          : message,
-      );
-    }
+    void recorder.start({ athleteId });
   }
 
-  /*
-   * An angle that was shot outside this page. It carries the SAME take, so it
-   * groups with the recorded angles -- and it declares capture_source
-   * 'file_upload', because calling a file this app never recorded an
-   * in-app recording would be a false provenance claim.
-   */
-  async function uploadExistingFile(chosen: File, captureTakeId: string) {
-    setPhase('uploading');
+  async function uploadExistingFile(chosen: File) {
     setErrorMessage('');
+    setAttaching(true);
+    setBusy(true);
     try {
-      const form = new FormData();
-      form.append('file', chosen);
-      form.append('capture_take_id', captureTakeId);
-      form.append('athlete_id', athleteId);
-      form.append('capture_source', 'file_upload');
-      if (cameraView.trim()) form.append('camera_view', cameraView.trim());
-
-      const response = await fetch(`${apiBase()}/api/pilot/video/upload`, {
-        method: 'POST',
-        credentials: 'include',
-        body: form,
-      });
-      const payload = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(payload.error || 'That file could not be added to this take.');
-      if (session) await refresh(session.recording_session_id);
+      // capture_source says a file was chosen, not recorded. Calling a file
+      // this app never recorded an in-app recording would be a false
+      // provenance claim on somebody else's bytes.
+      await sendToFilmStudy(chosen, athleteId, null, 'file_upload');
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'That file could not be added to this take.');
+      setErrorMessage(error instanceof Error ? error.message : 'That file could not be uploaded.');
     } finally {
-      setPhase('idle');
+      setAttaching(false);
+      setBusy(false);
     }
   }
 
-  function stopRecording() {
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state === 'recording') recorder.stop();
-  }
-
-  async function finishRecording(mimeType: string, captureTakeId: string) {
-    setPhase('uploading');
-    try {
-      const descriptor = captureFileDescriptor(mimeType);
-      if (!descriptor) {
-        throw new Error('That recording is in a format the platform does not accept.');
-      }
-
-      /*
-       * The File is constructed with the PLAIN container type. MediaRecorder
-       * hands back video/webm;codecs="vp8" and the upload route compares MIME
-       * with strict equality, so the parameterised string is refused even
-       * though WebM is perfectly acceptable. Normalising the parameters
-       * describes the same bytes more plainly; renaming the container would be
-       * a lie the server's magic-byte check would catch.
-       */
-      const blob = new Blob(chunksRef.current, { type: descriptor.contentType });
-      const file = new File([blob], `capture${descriptor.extension}`, { type: descriptor.contentType });
-
-      const form = new FormData();
-      form.append('file', file);
-      form.append('capture_take_id', captureTakeId);
-      form.append('athlete_id', athleteId);
-      form.append('capture_source', 'in_app_recording');
-      if (cameraView.trim()) form.append('camera_view', cameraView.trim());
-      if (recordedAtRef.current) form.append('recorded_at', recordedAtRef.current);
-
-      const response = await fetch(`${apiBase()}/api/pilot/video/upload`, {
-        method: 'POST',
-        credentials: 'include',
-        body: form,
-      });
-      const payload = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(payload.error || 'The recording could not be uploaded.');
-
-      if (session) await refresh(session.recording_session_id);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'The recording could not be uploaded.');
-    } finally {
-      chunksRef.current = [];
-      stopStream();
-      setPhase('idle');
-    }
-  }
-
-  const take = session?.current_take ?? null;
   const megabytes = (recordedBytes / (1024 * 1024)).toFixed(1);
   const limitMb = Math.round(CAPTURE_MAX_BLOB_BYTES / (1024 * 1024));
 
@@ -357,15 +135,38 @@ export default function VideoCapturePage() {
           <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
             <p className="t-eyebrow text-[color:var(--brass-200)]">Coach Workspace</p>
             <h1 className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-2xl)' }}>
-              Record a Punch
+              Record for Film Study
             </h1>
             <p className="t-body mt-[var(--s3)] max-w-3xl">
-              Short learning captures. Recording stops itself at {limitMb} MB, which is a deliberate margin under
-              the upload limit rather than the limit itself, so a take is never lost to a refused upload. Several
-              coaches can film the same punch from different positions: one starts a session, the others join it
-              with the code, and every phone records its own angle.
+              Film an athlete to review with them. Recording stops itself at {limitMb} MB, which is a deliberate
+              margin under the upload limit rather than the limit itself, so a take is never lost to a refused
+              upload. The footage lands in the athlete&rsquo;s video library once it has been scanned.
             </p>
           </header>
+
+          {/* WHERE THIS FOOTAGE GOES, SAID BEFORE ANY CONTROL APPEARS. There
+              is no promotion path in either direction, so the choice has to be
+              made before the bytes exist. The failure this prevents is a coach
+              filming a genuinely useful teaching sequence here and only
+              realising afterwards, when moving it is forbidden. */}
+          {/* ON A MATERIAL GROUND, not bare on the page. `.t-body` resolves
+              to a light ink (var(--bone-200)) meant for the dark panels the
+              rest of this screen is built from; the sheet only darkens it
+              under `.on-canvas` and `.mat-paper`. Standing alone on the page
+              background it was cream on cream -- unreadable, on the one
+              paragraph the owner made an acceptance requirement. */}
+          <div className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s4)]">
+            <p role="note" className="t-body">
+            For coaching review of an athlete. Media recorded here stays in Film Study and cannot be moved into
+            Teach Shadow.{' '}
+            {/* Both ends of this are camera documents; a soft navigation
+                between them would leave the second one running inside the
+                first one’s policy. */}
+            <a href="/teach-shadow/capture" className="underline">
+              Recording an example to teach Shadow instead?
+            </a>
+            </p>
+          </div>
 
           {errorMessage ? (
             <div role="alert" className="alert alert--warning mt-[var(--s5)]">
@@ -377,207 +178,107 @@ export default function VideoCapturePage() {
             </div>
           ) : null}
 
-          {!session ? (
-            <section className="mt-[var(--s5)] flex flex-col gap-[var(--s5)]">
-              <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
-                <h2 className="t-eyebrow">Start a session</h2>
-                <label className="t-eyebrow mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
-                  What is being filmed
-                  <select className="input" value={trainingContext} onChange={(e) => setTrainingContext(e.target.value)}>
-                    {TRAINING_CONTEXTS.map((context) => (
-                      <option key={context.value} value={context.value}>{context.label}</option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  className="btn mt-[var(--s4)]"
-                  disabled={busy}
-                  onClick={() => guarded(async () => {
-                    const payload = await post({ action: 'create', training_context: trainingContext });
-                    setSession(payload.session as SessionState);
-                  })}
-                >
-                  Start recording session
-                </button>
-              </div>
+          <section className="mt-[var(--s5)] flex flex-col gap-[var(--s5)]">
+            <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+              {/* REQUIRED, and the server refuses without it. An unattributed
+                  recording would reach the vision content screen with the
+                  guardian-consent check skipped, because that check only runs
+                  for a video that names an athlete. */}
+              <label className="t-eyebrow flex flex-col gap-[var(--s2)]">
+                Which athlete is this of
+                <select className="input" value={athleteId} onChange={(e) => setAthleteId(e.target.value)}>
+                  <option value="">Choose an athlete…</option>
+                  {athletes.map((athlete) => (
+                    <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
+                  ))}
+                </select>
+              </label>
 
-              <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
-                <h2 className="t-eyebrow">Join a session</h2>
-                {/* The code says WHICH session, never that this device may
-                    join it -- the server checks the signed-in coach and the
-                    organization independently. */}
-                <p className="t-body mt-[var(--s2)]">
-                  Enter the code shown on the phone that started the session. You still need to be signed in.
-                </p>
-                <label className="t-eyebrow mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
-                  Join code
-                  <input
-                    className="input"
-                    value={joinCodeInput}
-                    onChange={(e) => setJoinCodeInput(e.target.value)}
-                    autoCapitalize="characters"
-                    autoCorrect="off"
-                    spellCheck={false}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="btn mt-[var(--s4)]"
-                  disabled={busy || !joinCodeInput.trim()}
-                  onClick={() => guarded(async () => {
-                    const payload = await post({ action: 'join', join_code: joinCodeInput });
-                    setSession(payload.session as SessionState);
-                  })}
-                >
-                  Join session
-                </button>
-              </div>
-            </section>
-          ) : (
-            <section className="mt-[var(--s5)] flex flex-col gap-[var(--s5)]">
-              <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
-                <p className="t-eyebrow">Join code</p>
-                <p className="t-gothic text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-2xl)', letterSpacing: '0.18em' }}>
-                  {session.join_code}
-                </p>
-                <p className="t-body mt-[var(--s2)]">
-                  Take {take?.take_number ?? '—'} · {session.training_context.replace('_', ' ')}
-                </p>
-              </div>
-
-              <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
-                {/* REQUIRED, and the server refuses without it. An
-                    unattributed recording would reach the vision content
-                    screen with the guardian-consent check skipped, because
-                    that check only runs for a video that names an athlete. */}
-                <label className="t-eyebrow flex flex-col gap-[var(--s2)]">
-                  Which athlete is this of
-                  <select className="input" value={athleteId} onChange={(e) => setAthleteId(e.target.value)}>
-                    <option value="">Choose an athlete…</option>
-                    {athletes.map((athlete) => (
-                      <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="t-eyebrow mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
-                  This camera&rsquo;s view (optional)
-                  {/* Free text and allowed to stay empty. Only a human in the
-                      gym can say "side on, southpaw side"; the browser knows
-                      which lens it used and nothing about where it was aimed. */}
-                  <input
-                    className="input"
-                    value={cameraView}
-                    onChange={(e) => setCameraView(e.target.value)}
-                    placeholder="front, side, behind"
-                  />
-                </label>
-
-                <video
-                  ref={videoRef}
-                  muted
-                  playsInline
-                  className="mt-[var(--s4)] w-full rounded-[var(--r-md)] bg-[color:var(--hide-900)]"
-                  style={{ aspectRatio: '16 / 9' }}
+              <label className="t-eyebrow mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
+                What this is (optional)
+                <input
+                  className="input"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Southpaw counter work"
                 />
+              </label>
 
+              <video
+                ref={videoRef}
+                muted
+                playsInline
+                className="mt-[var(--s4)] w-full rounded-[var(--r-md)] bg-[color:var(--hide-900)]"
+                style={{ aspectRatio: '16 / 9' }}
+              />
+
+              {phase === 'recording' ? (
+                <p role="status" className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">
+                  Recording · {megabytes} MB of {limitMb} MB
+                </p>
+              ) : null}
+              {attaching ? (
+                <p role="status" className="t-body mt-[var(--s3)]">
+                  Uploading that file&hellip; large files take a while on gym wifi.
+                </p>
+              ) : null}
+              {stoppedAtLimit && phase !== 'recording' ? (
+                <p role="status" className="t-body mt-[var(--s3)]">
+                  Recording stopped at the {limitMb} MB limit and is being kept. Record again to carry on.
+                </p>
+              ) : null}
+              {uploaded > 0 && phase === 'idle' ? (
+                <p role="status" className="t-body mt-[var(--s3)]">
+                  {uploaded === 1 ? 'One recording has' : `${uploaded} recordings have`} been sent to Film Study.
+                  Each one is scanned before it can be played.
+                </p>
+              ) : null}
+
+              <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
                 {phase === 'recording' ? (
-                  <p role="status" className="t-data mt-[var(--s3)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">
-                    Recording · {megabytes} MB of {limitMb} MB
-                  </p>
-                ) : null}
-                {stoppedAtLimit && phase !== 'recording' ? (
-                  <p role="status" className="t-body mt-[var(--s3)]">
-                    Recording stopped at the {limitMb} MB limit and is being kept. Start the next take to carry on.
-                  </p>
-                ) : null}
-
-                <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
-                  {phase === 'recording' ? (
-                    <button type="button" className="btn" onClick={stopRecording}>Stop</button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={phase !== 'idle' || busy || !take}
-                      onClick={() => { void startRecording(); }}
-                    >
-                      {phase === 'uploading' ? 'Uploading…' : phase === 'starting' ? 'Opening camera…' : 'Record'}
-                    </button>
-                  )}
-                  {/* THE SAME TAKE, FROM A FILE. A browser whose recorder
-                      this platform cannot use still has a camera app, and an
-                      angle shot outside the page is still an angle of this
-                      attempt. Previously the only advice was to go back to the
-                      ordinary uploader, which sends no take and would have
-                      silently produced an ungrouped video. */}
-                  <button
-                    type="button"
-                    className="btn btn--ghost"
-                    disabled={phase !== 'idle' || busy || !take || !athleteId}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    Add an angle from a file
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="video/*"
-                    className="hidden"
-                    onChange={(event) => {
-                      const chosen = event.target.files?.[0];
-                      event.target.value = '';
-                      if (chosen && take) void uploadExistingFile(chosen, take.capture_take_id);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn--ghost"
-                    disabled={busy || phase !== 'idle'}
-                    onClick={() => guarded(async () => {
-                      const payload = await post({ action: 'advance_take', recording_session_id: session.recording_session_id });
-                      setSession(payload.session as SessionState);
-                      setStoppedAtLimit(false);
-                    })}
-                  >
-                    Next take
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn--ghost"
-                    disabled={busy || phase !== 'idle'}
-                    onClick={() => guarded(async () => {
-                      await post({ action: 'close', recording_session_id: session.recording_session_id });
-                      setSession(null);
-                    })}
-                  >
-                    Finish session
-                  </button>
-                </div>
-              </div>
-
-              <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
-                <h2 className="t-eyebrow">Angles on this take</h2>
-                {take && take.files.length > 0 ? (
-                  <ul className="mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
-                    {take.files.map((takeFile) => (
-                      <li key={takeFile.videoSessionId} className="t-body">
-                        {takeFile.cameraView ?? 'View not described'} · {takeFile.status}
-                      </li>
-                    ))}
-                  </ul>
+                  <button type="button" className="btn" onClick={stop}>Stop</button>
                 ) : (
-                  <p className="t-body mt-[var(--s2)]">
-                    Nothing recorded against this take yet. Angles from other phones appear here as they upload.
-                  </p>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={phase !== 'idle' || busy}
+                    onClick={record}
+                  >
+                    {phase === 'uploading' ? 'Uploading…' : phase === 'starting' ? 'Opening camera…' : 'Record for Film Study'}
+                  </button>
                 )}
+                {/* A browser whose recorder this platform cannot use still has
+                    a camera app, and footage shot on it is still Film Study
+                    footage. It goes to the same place by the same route, and
+                    declares that it was chosen rather than recorded here. */}
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  disabled={phase !== 'idle' || busy || !athleteId}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {attaching ? 'Uploading…' : 'Choose a file instead'}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="video/*"
+                  className="hidden"
+                  onChange={(event) => {
+                    const chosen = event.target.files?.[0];
+                    event.target.value = '';
+                    if (chosen) void uploadExistingFile(chosen);
+                  }}
+                />
               </div>
-            </section>
-          )}
+            </div>
+          </section>
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/coach/video-analysis" className="btn btn--ghost">Back to Video Analysis</Link>
+            {/* Leaving by anchor too: a soft navigation would carry
+                camera=(self) onto a page that was never granted it, for as
+                long as the tab lives. */}
+            <a href="/coach/video-analysis" className="btn btn--ghost">Back to Video Analysis</a>
           </div>
         </div>
       </main>
