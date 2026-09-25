@@ -1400,3 +1400,114 @@ describe('unsupported answers and an empty Library', () => {
     expect(payload.evidenceNotice).toBe('EVIDENCE_RETRIEVAL_UNAVAILABLE');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Board summaries are refused at the request boundary, not in a worker.
+//
+// MANUAL_OVERRIDE_ROLES includes coach, so resolveSessionType honored a coach's
+// sessionType: 'board_summary'. executeBoardSummaryJob then refused that same
+// coach with SHADOW_JOB_SCOPE_FORBIDDEN -- correct authority, one process too
+// late. The coach got a queued job that could never run, and learned about it
+// as a background failure rather than as an answer.
+//
+// The worker is ENABLED in these tests deliberately: with it disabled the route
+// returns 'degraded' for its own reasons and would pass whether or not the gate
+// exists. Enabled is the configuration where the old behaviour actually reached
+// the jobs table.
+// ---------------------------------------------------------------------------
+describe('board summary authority at the request boundary', () => {
+  const BOARD_SUMMARY_REFUSAL = 'Not authorized to generate a board summary.';
+
+  beforeEach(() => {
+    mockIsShadowWorkerEnabled.mockReturnValue(true);
+  });
+
+  test('a coach asking for a board summary is refused 403', async () => {
+    const response = await POST(postRequest({
+      message: 'Summarize governance items for the board.',
+      sessionType: 'board_summary',
+    }));
+
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.error).toBe(BOARD_SUMMARY_REFUSAL);
+    expect(body.success).toBe(false);
+  });
+
+  test('the refusal happens before the jobs table is touched', async () => {
+    await POST(postRequest({
+      message: 'Summarize governance items for the board.',
+      sessionType: 'board_summary',
+    }));
+
+    // The route probes shadow_jobs readiness immediately before enqueueing.
+    // That probe never running is what "refused before enqueue" means here --
+    // there is no job row to fail later.
+    expect(jest.mocked(assertShadowRuntimeReadiness)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ requiredTables: ['shadow_jobs'] }),
+    );
+  });
+
+  test('the refusal costs no model call', async () => {
+    // Installed here rather than relied upon: this suite leaves global.fetch
+    // real unless a test replaces it, and asserting "not called" against a
+    // non-mock silently passes nothing.
+    const fetchSpy = jest.fn();
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    await POST(postRequest({
+      message: 'Summarize governance items for the board.',
+      sessionType: 'board_summary',
+    }));
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // The failure mode a lenient fix would introduce: quietly answering the
+  // question as ordinary chat. The caller asked for a governance summary; a
+  // Quick Round answer is a different, less governed thing, and returning one
+  // without saying so is worse than refusing.
+  test('an unauthorized board summary is refused, never downgraded to ordinary chat', async () => {
+    const response = await POST(postRequest({
+      message: 'Summarize governance items for the board.',
+      sessionType: 'board_summary',
+    }));
+
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.state).toBe('filtered');
+    expect(body.tier).not.toBe(undefined);
+    // No assistant answer was produced for a request that was refused.
+    expect(mockAppendConversationExchange).not.toHaveBeenCalled();
+  });
+
+  test.each(['admin', 'organization_admin', 'platform_owner'] as const)(
+    '%s passes the board summary gate',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+      const response = await POST(postRequest({
+        message: 'Summarize governance items for the board.',
+        sessionType: 'board_summary',
+      }));
+
+      // Asserting on the refusal itself rather than on the status, so an
+      // unrelated gate failing later cannot be mistaken for this one passing.
+      const body = await response.json();
+      expect(body.error).not.toBe(BOARD_SUMMARY_REFUSAL);
+    },
+  );
+
+  // Coach keeps every other manual override. This slice narrowed one session
+  // type; if it had narrowed the concept, this would fail.
+  test('a coach can still choose Heavy Bag', async () => {
+    const response = await POST(postRequest({
+      message: 'How can our footwork rotation improve?',
+      sessionType: 'heavy_bag',
+    }));
+
+    const body = await response.json();
+    expect(body.error).not.toBe(BOARD_SUMMARY_REFUSAL);
+    expect(response.status).not.toBe(403);
+  });
+});

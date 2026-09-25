@@ -56,7 +56,10 @@ import {
   ShadowRateLimitExceeded,
 } from '@/src/server/pilot/shadowRateLimit';
 import { getShadowChatCapabilities } from '@/src/server/pilot/shadowChatCapabilities';
-import { MANUAL_OVERRIDE_ROLES as MANUAL_OVERRIDE_ROLE_LIST } from '@/src/server/pilot/shadowRoleSets';
+import {
+  BOARD_SUMMARY_ROLES as BOARD_SUMMARY_ROLE_LIST,
+  MANUAL_OVERRIDE_ROLES as MANUAL_OVERRIDE_ROLE_LIST,
+} from '@/src/server/pilot/shadowRoleSets';
 import {
   PLATFORM_SCOPE_UNAVAILABLE_CONTEXT,
   formatPlatformRollup,
@@ -469,6 +472,9 @@ const HEAVY_BAG_UNCAPPED_ROLES = new Set<PilotRole>([
   'admin',
   'platform_owner',
 ]);
+// The same authority the executor enforces, read from the one list, so the
+// request boundary and executeBoardSummaryJob cannot drift apart.
+const BOARD_SUMMARY_ROLES = new Set<PilotRole>(BOARD_SUMMARY_ROLE_LIST);
 const SESSION_TYPE_OVERRIDES = new Set<import('@/src/server/pilot/shadowRouter').ShadowSessionType>([
   'quick_round',
   'heavy_bag',
@@ -639,6 +645,39 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // mapping round-trips, so only an honored override changes anything. Async
     // and refused session types have no tier and keep the classifier's.
     const effectiveTier = sessionTypeToTier(sessionType) ?? classification.tier;
+
+    // A board summary the executor would refuse is refused HERE, before the
+    // worker-readiness probe, the context build, the enqueue and any provider
+    // call. executeBoardSummaryJob has always rejected anyone outside
+    // BOARD_SUMMARY_ROLES with SHADOW_JOB_SCOPE_FORBIDDEN, but a coach could
+    // reach it: MANUAL_OVERRIDE_ROLES includes coach, so the override was
+    // honored at the boundary and the refusal arrived later, in a background
+    // worker, against a job row that had already been written. The authority
+    // was correct and the timing was wrong.
+    //
+    // The refusal is explicit rather than a downgrade to Quick Round or Heavy
+    // Bag. Silently answering a different, less governed question than the one
+    // asked is worse than saying no: the caller asked for a governance summary
+    // and would have received ordinary chat without being told.
+    if (sessionType === 'board_summary' && !BOARD_SUMMARY_ROLES.has(userRole as PilotRole)) {
+      return NextResponse.json(
+        {
+          success: false,
+          state: 'filtered',
+          response: 'Board summaries are generated for organization administrators. Ask an administrator to run one.',
+          messageId: `msg_${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          filtered: true,
+          requiresHumanReview: false,
+          evidenceTier: 'RESEARCH_NEEDED',
+          handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
+          tier: effectiveTier,
+          complexity: classification.complexity,
+          error: 'Not authorized to generate a board summary.',
+        },
+        { status: 403 },
+      );
+    }
 
     // The Heavy Bag cap is enforced here rather than beside the `chat` limits
     // above because it depends on sessionType, which is not known until the
