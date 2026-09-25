@@ -530,12 +530,252 @@ describe('athlete workspace honesty', () => {
 // cover the payload the server accepts and the message the athlete is left
 // with when it does not.
 describe('athlete safety reporting', () => {
-  async function openPainReport() {
+  /* A-FIN-07 changed what these helpers have to do. This used to be one
+     function that opened the modal and pressed Save, because the modal opened
+     already holding 'Dull' and 3 -- the defect. Answering is now a separate,
+     explicit step, and every test below that files a report says out loud
+     which type and which number the athlete chose. */
+  async function openPainModal(location = 'Neck') {
     await renderWorkspace();
-    fireEvent.change(screen.getByLabelText('Body location'), { target: { value: 'Neck' } });
+    fireEvent.change(screen.getByLabelText('Body location'), { target: { value: location } });
     fireEvent.click(screen.getByRole('button', { name: 'Report Pain' }));
+  }
+
+  function answerPain({ type = 'Sharp', severity = 4 }: { type?: string; severity?: number } = {}) {
+    fireEvent.change(screen.getByLabelText('Pain Type'), { target: { value: type } });
+    fireEvent.click(screen.getByRole('button', { name: `Severity ${severity}` }));
+  }
+
+  const painObservations = () => postedTo('/api/pilot/shadow/formulas/observations');
+
+  async function openPainReport(answers?: { type?: string; severity?: number }) {
+    await openPainModal();
+    answerPain(answers);
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   }
+
+  /* A-FIN-07. THE PAIN FORM ANSWERS NOTHING ON THE ATHLETE'S BEHALF.
+   *
+   * It opened holding 'Dull' and 3, and printed "3/10" over a range input
+   * already sitting at 3. A child tapping "Report Pain" on a sore shoulder was
+   * shown a completed description of their own body before they had said a
+   * word, and Save would file exactly that. It is the same defect A-FIN-01
+   * took out of the readiness slider, on the one control whose entire purpose
+   * is telling an adult something is wrong.
+   *
+   * These guards are written against the RENDERED modal rather than the state
+   * hook, because the defect was visible before it was storable: the wrong
+   * thing was on screen whether or not the athlete pressed anything.
+   */
+  describe('the pain form starts unanswered', () => {
+    test('nothing is chosen, and nothing numeric is shown, when the modal opens', async () => {
+      await openPainModal();
+
+      expect((screen.getByLabelText('Pain Type') as HTMLSelectElement).value).toBe('');
+      expect(screen.getByRole('option', { name: 'Select a pain type...' })).toBeTruthy();
+
+      // No severity is pressed. aria-pressed is the control's own claim about
+      // whether it holds an answer, so it is what gets asserted.
+      const severities = screen.getAllByRole('button', { name: /^Severity \d+$/ });
+      expect(severities).toHaveLength(10);
+      expect(severities.filter((b) => b.getAttribute('aria-pressed') === 'true')).toEqual([]);
+
+      // The specific lie: a number over a control nobody moved.
+      expect(screen.queryByText('3/10')).toBeNull();
+      expect(screen.queryByText(/\d+\/10/)).toBeNull();
+
+      // A range input cannot express "unanswered" -- it always has a position.
+      // Its absence from this modal is the structural half of the fix.
+      expect(document.querySelectorAll('input[type="range"]')).toHaveLength(0);
+
+      expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.getByText(/choose a pain type and severity before saving/i)).toBeTruthy();
+    });
+
+    test('a type on its own is not a report, and reaches no one', async () => {
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      await openPainModal();
+      fireEvent.change(screen.getByLabelText('Pain Type'), { target: { value: 'Sharp' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await Promise.resolve();
+
+      expect(painObservations()).toEqual([]);
+      expect(screen.queryByTestId('pain-reported-indicator')).toBeNull();
+      expect(screen.queryByText(/last report:/i)).toBeNull();
+    });
+
+    test('a severity on its own is not a report, and reaches no one', async () => {
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      await openPainModal();
+      fireEvent.click(screen.getByRole('button', { name: 'Severity 4' }));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await Promise.resolve();
+
+      expect(painObservations()).toEqual([]);
+      expect(screen.queryByTestId('pain-reported-indicator')).toBeNull();
+      expect(screen.queryByText(/last report:/i)).toBeNull();
+    });
+
+    test('what is sent is exactly what the athlete chose, and nothing else', async () => {
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      await openPainReport({ type: 'Sharp', severity: 4 });
+
+      await screen.findByText(/flagged for a coach to look at/);
+      const [observation] = painObservations();
+      /* The fixture is chosen so the assertion doubles as a negative one:
+         4 is not the 3 the severity control used to hold, and Sharp is not
+         the Dull the type select used to open on. Pinning the exact pair is
+         therefore enough -- a form that supplied its own answers again could
+         not satisfy this. */
+      expect(observation.body).toEqual(expect.objectContaining({
+        kind: 'pain_report',
+        unit: 'severity_1_10',
+        value: 4,
+        dimensions: expect.objectContaining({
+          location: 'Neck',
+          painType: 'Sharp',
+          injuryFlag: true,
+        }),
+      }));
+    });
+
+    test('the next report does not inherit the last one', async () => {
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      await openPainReport({ type: 'Burning', severity: 9 });
+      await screen.findByText(/flagged for a coach to look at/);
+
+      // Same athlete, second report. Carrying the first one's answers forward
+      // is a quieter version of the same defect: the numbers were genuinely
+      // theirs once, which makes the wrong ones harder to notice.
+      fireEvent.click(screen.getByRole('button', { name: 'Report Pain' }));
+
+      expect((screen.getByLabelText('Pain Type') as HTMLSelectElement).value).toBe('');
+      expect(screen.getAllByRole('button', { name: /^Severity \d+$/ })
+        .filter((b) => b.getAttribute('aria-pressed') === 'true')).toEqual([]);
+      expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    /* FOUND BY MUTATION, and the reason this test exists separately from the
+       one above it. Deleting the reset on "Report Pain" left that one GREEN,
+       because it reports successfully first and the success path clears the
+       answers on its own. The path that actually needs the reset is the one
+       where nothing was saved: an athlete picks Sharp and 8, thinks better of
+       it, presses Cancel -- and the next person to open this form on a gym
+       tablet, or the same athlete about a different body part an hour later,
+       finds Sharp and 8 already filled in. */
+    test('answers abandoned with Cancel do not come back on the next report', async () => {
+      await openPainModal();
+      answerPain({ type: 'Sharp', severity: 8 });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(painObservations()).toEqual([]);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Report Pain' }));
+
+      expect((screen.getByLabelText('Pain Type') as HTMLSelectElement).value).toBe('');
+      expect(screen.getAllByRole('button', { name: /^Severity \d+$/ })
+        .filter((b) => b.getAttribute('aria-pressed') === 'true')).toEqual([]);
+      expect(screen.queryByText('8/10')).toBeNull();
+    });
+  });
+
+  /* A-FIN-07, second half. A failed pain save used to be invisible.
+   *
+   * The catch set the message but never closed the modal, and the message
+   * rendered in the card BEHIND that modal's `fixed inset-0 ... z-50` overlay.
+   * So the athlete pressed Save, the report reached nobody, and the screen did
+   * not change. Silence is the worst possible answer here: it is
+   * indistinguishable from success to the person who most needs to know.
+   */
+  describe('a pain report that fails says so where the athlete is looking', () => {
+    test('the failure is inside the open modal, and assertive', async () => {
+      painObservationResponse = jsonResponse({}, false);
+      await openPainReport({ type: 'Sharp', severity: 4 });
+
+      const alert = await screen.findByTestId('pain-modal-alert');
+      expect(alert.getAttribute('role')).toBe('alert');
+      expect(alert.textContent).toMatch(/was not saved and no coach was told/i);
+
+      // Still open -- so the alert above is on top of the overlay, not under it.
+      expect(screen.getByRole('heading', { name: /soreness details/i })).toBeTruthy();
+
+      // And the answers survive, so the retry is one tap rather than the form again.
+      expect((screen.getByLabelText('Pain Type') as HTMLSelectElement).value).toBe('Sharp');
+      expect(screen.getByRole('button', { name: 'Severity 4' }).getAttribute('aria-pressed')).toBe('true');
+
+      expect(screen.queryByTestId('pain-reported-indicator')).toBeNull();
+      expect(screen.queryByText(/last report:/i)).toBeNull();
+      expect(screen.queryByText(/flagged for a coach/i)).toBeNull();
+    });
+
+    /* A-FIN-07 R1. A 2xx IS NOT THE SAME AS "A COACH WAS TOLD".
+     *
+     * setInjuryFlag(true) ran on any response.ok, before the body was read,
+     * and the body is parsed with `.catch(() => ({}))`. So a 200 that did not
+     * parse put "Pain reported this session. A coach has been told." on the
+     * card and "No coach was flagged for it" directly underneath. Both cannot
+     * be true, and the child reads the reassuring one and stops looking for
+     * another way to tell someone.
+     *
+     * The server settles it: it raises the coach alert before storing the
+     * observation and returns coachNotified: true when it did. These two
+     * fail-closed on anything else -- without claiming "not saved", which a
+     * 2xx does not establish.
+     */
+    test('a 200 whose body will not parse claims nothing, and says so in the modal', async () => {
+      /* A 2xx whose body is not JSON -- a gateway's HTML error page is the
+         everyday cause. `response.json()` rejects, the component's
+         `.catch(() => ({}))` swallows it, and the old code had already set the
+         injury flag by then. Built in the same shape as `jsonResponse` above
+         rather than with a real `Response`, which jsdom does not provide. */
+      painObservationResponse = {
+        ok: true,
+        json: async () => { throw new SyntaxError('Unexpected token < in JSON at position 0'); },
+      } as unknown as Response;
+      await openPainReport({ type: 'Sharp', severity: 4 });
+
+      const alert = await screen.findByTestId('pain-modal-alert');
+      expect(alert.getAttribute('role')).toBe('alert');
+      expect(alert.textContent).toMatch(/could not confirm that a coach was told/i);
+
+      expect(screen.queryByTestId('pain-reported-indicator')).toBeNull();
+      expect(screen.queryByText(/a coach has been told/i)).toBeNull();
+      expect(screen.queryByText(/last report:/i)).toBeNull();
+      expect(screen.queryByText(/flagged for a coach to look at/i)).toBeNull();
+
+      // Not the non-2xx claim: the observation may well be stored, and the
+      // client cannot see that either way.
+      expect(screen.queryByText(/was not saved/i)).toBeNull();
+
+      expect(screen.getByRole('heading', { name: /soreness details/i })).toBeTruthy();
+      expect((screen.getByLabelText('Pain Type') as HTMLSelectElement).value).toBe('Sharp');
+      expect(screen.getByRole('button', { name: 'Severity 4' }).getAttribute('aria-pressed')).toBe('true');
+    });
+
+    test('a 200 that parses but never says coachNotified claims nothing either', async () => {
+      painObservationResponse = jsonResponse({ ok: true });
+      await openPainReport({ type: 'Sharp', severity: 4 });
+
+      const alert = await screen.findByTestId('pain-modal-alert');
+      expect(alert.textContent).toMatch(/could not confirm that a coach was told/i);
+      expect(screen.queryByTestId('pain-reported-indicator')).toBeNull();
+      expect(screen.queryByText(/last report:/i)).toBeNull();
+      expect(screen.getByRole('heading', { name: /soreness details/i })).toBeTruthy();
+    });
+
+    test('a report the server accepted closes the modal and reports in the card', async () => {
+      painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true } });
+      await openPainReport({ type: 'Sharp', severity: 4 });
+
+      await screen.findByText(/flagged for a coach to look at/);
+      expect(screen.queryByRole('heading', { name: /soreness details/i })).toBeNull();
+      // The indicator states something that happened, so it may only appear
+      // after the server said it did.
+      expect(await screen.findByTestId('pain-reported-indicator')).toBeTruthy();
+    });
+  });
 
   test('a pain report is sent with a kind and unit the observations API accepts', async () => {
     painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true, severity: 'high' } });
