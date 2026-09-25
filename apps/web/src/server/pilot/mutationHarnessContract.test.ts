@@ -101,6 +101,49 @@ describe('bytes are not re-encoded', () => {
   });
 });
 
+describe('a mutation target cannot leave the scratch worktree', () => {
+  /* The tool's headline claim is that the branch you are about to push is never
+     the thing being mutated, and path.join(tree, file) does not make that true:
+     "../../" walks straight out. The quieter version is node_modules, which is
+     a junction back to the caller's real dependency tree, so a write there
+     leaves the sandbox while looking contained. */
+  const norm = (file: string) => evaluate(`m.normalizeEditPath(${JSON.stringify(file)})`);
+  const normErr = (file: string) => evaluateError(`m.normalizeEditPath(${JSON.stringify(file)})`);
+
+  it('accepts an ordinary repository-relative path, in posix form', () => {
+    expect(norm('apps/web/components/X.tsx')).toBe('apps/web/components/X.tsx');
+    expect(norm('apps\\web\\components\\X.tsx')).toBe('apps/web/components/X.tsx');
+    expect(norm('./apps/web/./X.tsx')).toBe('apps/web/X.tsx');
+  });
+
+  it('refuses traversal that resolves outside the tree', () => {
+    expect(normErr('../../outside.txt')).toMatch(/escapes the scratch worktree/);
+    expect(normErr('apps/../../outside.txt')).toMatch(/escapes the scratch worktree/);
+  });
+
+  it('allows traversal that stays inside, because that is not an escape', () => {
+    expect(norm('apps/web/../web/X.tsx')).toBe('apps/web/X.tsx');
+  });
+
+  it('refuses absolute paths, posix and windows', () => {
+    expect(normErr('/etc/passwd')).toMatch(/must be relative/);
+    expect(normErr('C:/Dev/ppbf-platform/x.ts')).toMatch(/must be relative/);
+  });
+
+  it('refuses node_modules, which is linked back to the invoking tree', () => {
+    expect(normErr('node_modules/jest/index.js')).toMatch(/linked to the invoking tree/);
+    expect(normErr('apps/web/node_modules/x/index.js')).toMatch(/linked to the invoking tree/);
+  });
+
+  it('rejects a bad path during spec parsing, before anything is created', () => {
+    const message = evaluateError(`m.parseSpec(${JSON.stringify(JSON.stringify({
+      test: 't',
+      mutants: [{ file: '../../escape.txt', find: 'a', replace: 'b' }],
+    }))})`);
+    expect(message).toMatch(/escapes the scratch worktree/);
+  });
+});
+
 describe('grading a mutant', () => {
   it('reads a non-zero exit as RED and a zero exit as GREEN', () => {
     expect(evaluate('m.classify(0)')).toBe('GREEN');
@@ -321,6 +364,42 @@ describe('the invoking working tree is never mutated', () => {
     expect(result.status).toBe(2);
     expect(result.out).toMatch(/Anchor not found/);
     expect(digest()).toBe(before);
+  });
+
+  it('refuses to grade anything when the test command is not green unmutated', () => {
+    /* THE POSITIVE CONTROL. Grading was: non-zero means RED, expected RED plus
+       actual RED means proof accepted. So a misspelled command, a missing
+       binary or a dependency that fails to load all exit non-zero and were
+       credited as a killed mutant -- a proof that passes because nothing ran.
+       Note the mutant below declares RED, and would have been "satisfied" by
+       the broken command. */
+    const before = digest();
+    const result = runHarness({
+      test: 'this-command-does-not-exist-anywhere --please',
+      mutants: [{ label: 'would have been credited', file: 'subject.txt', find: 'GUARD', replace: 'GONE', expect: 'RED' }],
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.out).toMatch(/Positive control failed/);
+    expect(result.out).toMatch(/does not pass on the UNMUTATED candidate/);
+    // Nothing graded: no mutant may be credited off a broken runner.
+    expect(result.out).not.toMatch(/behaved as declared/);
+    expect(result.out).not.toMatch(/would have been credited\s+expected/);
+    expect(digest()).toBe(before);
+  });
+
+  it('refuses a target that is not tracked at the candidate commit', () => {
+    const before = digest();
+    const untracked = path.join(specDir, 'not-in-the-repo.txt');
+    fs.writeFileSync(untracked, 'x');
+    const result = runHarness({
+      test: 'exit 0',
+      mutants: [{ label: 'untracked target', file: 'not-in-the-repo.txt', find: 'x', replace: 'y' }],
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.out).toMatch(/is not tracked at/);
+    expect(digest()).toBe(before);
+    fs.rmSync(untracked, { force: true });
   });
 
   it('refuses when ANY file is uncommitted, not only the ones it would mutate', () => {

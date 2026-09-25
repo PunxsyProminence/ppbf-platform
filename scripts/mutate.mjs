@@ -46,6 +46,11 @@
 // green is a finding about the test, not a formality -- on 2026-09-24 exactly
 // that turned up a test which passed through a self-cleaning success path and
 // never exercised the reset it was named for.
+//
+// AND IT HAS NO TIMEOUT OF ITS OWN. A hung test command hangs the run. Because
+// every mutation happens in disposable state, that is an availability problem
+// rather than a source-integrity one: kill it and the worst case is still a
+// leaked temp directory. Give the test command its own timeout if it needs one.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -96,7 +101,13 @@ export function parseSpec(raw) {
       if (typeof e.find !== 'string' || e.find === '') throw new Error(`${at} needs a non-empty "find" anchor.`);
       if (typeof e.replace !== 'string') throw new Error(`${at} needs a "replace" string ("" is allowed -- that is a deletion).`);
       if (e.find === e.replace) throw new Error(`${at} does not change anything: "find" and "replace" are identical.`);
-      return { file: e.file, find: e.find, replace: e.replace };
+      let file;
+      try {
+        file = normalizeEditPath(e.file);
+      } catch (error) {
+        throw new Error(`${at}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      return { file, find: e.find, replace: e.replace };
     });
 
     const expect = m.expect ?? RED;
@@ -156,6 +167,36 @@ function countOccurrences(haystack, needle) {
 }
 
 export const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
+
+/**
+ * Normalises a spec's file path and refuses anything that could leave the
+ * scratch worktree.
+ *
+ * WHY THIS IS NOT PARANOIA. The tool's headline claim is that the branch you
+ * are about to push is never the thing being mutated, and `path.join(tree, f)`
+ * does not make that true on its own: `../../` walks straight out of the
+ * disposable tree and into the caller's. There is a quieter version of the same
+ * hole -- `node_modules` inside the scratch tree is a junction back to the
+ * caller's real one, so a path under it writes through the link. A claim the
+ * code does not enforce is a claim, not a property.
+ */
+export function normalizeEditPath(file) {
+  if (typeof file !== 'string' || !file.trim()) throw new Error('Edit path must be a non-empty string.');
+  const raw = file.trim().replace(/\\/g, '/');
+  if (path.posix.isAbsolute(raw) || /^[A-Za-z]:/.test(raw)) {
+    throw new Error(`Edit path must be relative to the repository root, not absolute: ${file}`);
+  }
+  const normalized = path.posix.normalize(raw);
+  if (normalized === '..' || normalized.startsWith('../')) {
+    throw new Error(`Edit path escapes the scratch worktree: ${file}`);
+  }
+  if (normalized.split('/').includes('node_modules')) {
+    // Linked back to the caller by design, so a write here leaves the sandbox
+    // even though the path looks contained.
+    throw new Error(`Edit path is inside node_modules, which is linked to the invoking tree: ${file}`);
+  }
+  return normalized;
+}
 
 /**
  * A non-zero exit is RED. That is the whole rule, and it is deliberately blunt:
@@ -272,6 +313,50 @@ function main(argv) {
 
     process.stdout.write(`mutation proof against ${sha.slice(0, 8)}, in a throwaway worktree\n`
       + `  ${tree}\n  (this working tree is not touched)\n\n`);
+
+    /* EVERY TARGET MUST BE A TRACKED REGULAR FILE AT THE CANDIDATE. Path
+       normalisation stops traversal; this stops the rest. A symlink is a write
+       through to wherever it points, a submodule gate is not a file, and an
+       untracked path is not part of the thing being proven at all. Checked
+       against the commit rather than the scratch tree, so the answer cannot
+       depend on what the checkout happens to have materialised. */
+    const touched = [...new Set(spec.mutants.flatMap((m) => m.edits.map((e) => e.file)))];
+    for (const file of touched) {
+      const entry = git(['ls-tree', '-z', sha, '--', file], repoRoot).replace(/\0$/, '');
+      if (!entry) throw new Error(`${file} is not tracked at ${sha.slice(0, 8)}, so it is not part of the candidate.`);
+      const mode = entry.slice(0, 6);
+      if (mode === '120000') throw new Error(`${file} is a symlink at ${sha.slice(0, 8)}; a write through it would leave the scratch worktree.`);
+      if (mode === '160000') throw new Error(`${file} is a submodule at ${sha.slice(0, 8)}, not a file this can mutate.`);
+      if (mode !== '100644' && mode !== '100755') throw new Error(`${file} is not a regular file at ${sha.slice(0, 8)} (mode ${mode}).`);
+    }
+
+    /* THE POSITIVE CONTROL, and the hole that made this necessary.
+       Grading was: run the command, non-zero means RED, expected RED plus
+       actual RED means the proof passed. So a misspelled command, a missing
+       binary, a dependency that fails to load or a shell error all EXIT
+       NON-ZERO and were credited as a killed mutant. A proof that passes
+       because nothing ran is the precise failure this tool exists to stop.
+       Each distinct command must therefore go green on the pristine candidate
+       before any mutant using it is graded. */
+    const commands = [...new Set(spec.mutants.map((m) => m.test))];
+    for (const command of commands) {
+      process.stdout.write(`  baseline (unmutated) ... `);
+      const baseline = run(command, tree);
+      if (baseline.status !== 0) {
+        process.stdout.write('NOT GREEN\n');
+        const detail = (baseline.stderr || baseline.stdout || '').trim().split('\n').slice(-12).join('\n');
+        throw new Error(
+          'Positive control failed: the test command does not pass on the UNMUTATED candidate.\n\n'
+          + `  command: ${command}\n`
+          + `  exit:    ${baseline.status}${baseline.crashed ? ' (runner never started)' : ''}\n\n`
+          + (detail ? `${detail}\n\n` : '')
+          + 'Nothing was graded. A mutant cannot prove a test bites when that test does not\n'
+          + 'pass to begin with -- every mutant would report RED for the wrong reason.',
+        );
+      }
+      process.stdout.write('GREEN\n');
+    }
+    process.stdout.write('\n');
 
     for (const mutant of spec.mutants) {
       results.push(proveOne(mutant, tree));
