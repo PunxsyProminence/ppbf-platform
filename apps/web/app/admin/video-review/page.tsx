@@ -47,7 +47,11 @@ function VideoReviewConsoleContent() {
   const loadQuarantinedVideos = useCallback(async () => {
     setError('');
     try {
-      const response = await fetch(`${apiBase()}/api/pilot/video/list`, {
+      // scope=all, because safeguarding review is the one surface whose job is
+      // every file in the organization. Everything else -- including Film
+      // Study, which an admin may also open -- gets the Film-Study-only
+      // default. See the note in that route.
+      const response = await fetch(`${apiBase()}/api/pilot/video/list?scope=all`, {
         method: 'GET',
         credentials: 'include',
       });

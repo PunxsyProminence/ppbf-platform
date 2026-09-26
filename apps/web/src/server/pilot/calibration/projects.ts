@@ -236,11 +236,13 @@ export async function setCalibrationProjectStatus(
 export class VideoNotClippableError extends Error {
   readonly videoStatus: string | null;
 
-  constructor(videoStatus: string | null) {
+  constructor(videoStatus: string | null, reason: 'missing' | 'status' | 'not_teaching_footage' = videoStatus === null ? 'missing' : 'status') {
     super(
-      videoStatus === null
+      reason === 'missing'
         ? 'Not found: no such video in this organization'
-        : `Forbidden: video is not available for calibration (status ${videoStatus})`,
+        : reason === 'not_teaching_footage'
+          ? 'Forbidden: this video was not recorded to teach Shadow, so it cannot be cut into a study clip'
+          : `Forbidden: video is not available for calibration (status ${videoStatus})`,
     );
     this.name = 'VideoNotClippableError';
     this.videoStatus = videoStatus;
@@ -272,6 +274,41 @@ export async function assertVideoClippable(
   }
   if (video.status !== CLIPPABLE_VIDEO_STATUS) {
     throw new VideoNotClippableError(video.status);
+  }
+  /*
+   * ONLY FOOTAGE RECORDED TO TEACH SHADOW MAY BECOME A STUDY CLIP.
+   *
+   * The owner's ruling is categorical: Film Study media cannot be promoted
+   * into the recognition corpus. Cutting a clip and labelling it IS that
+   * promotion -- the labels become the evidence a recognizer is taught from --
+   * so the refusal has to live at the gate rather than in the absence of a
+   * button. There is no coach-facing clip cutter today; there is an operator
+   * script, and "no UI for it yet" is not an invariant.
+   *
+   * A take is the discriminator because Teach Shadow capture always sends one
+   * and Film Study never does. Null therefore also catches uploads that
+   * predate grouping, which is correct for the same reason: nothing records
+   * that they were shot to teach anything.
+   *
+   * CHECKED ON EVERY READ, not only at creation, for the reason the rest of
+   * this function is: a clip row is a pointer, never a cached grant. A clip
+   * cut before this rule existed keeps being refused every time it is opened,
+   * rather than quietly going on producing corpus labels.
+   *
+   * ASKED HERE RATHER THAN ADDED TO getVideoSessionById, which is the shared
+   * read and is used against schemas that do not carry this column at all --
+   * widening it made filmStudyProposals.pg.test.ts fail on "column
+   * capture_take_id does not exist", and would have forced nine unrelated
+   * suites to apply a migration they have no use for. Whether a video was
+   * filmed to teach Shadow is a calibration question, so calibration asks it.
+   */
+  const provenance = await queryOne<{ capture_take_id: string | null }>(
+    `select capture_take_id from pilot.video_sessions
+      where organization_id = $1 and video_session_id = $2`,
+    [organizationId, videoSessionId],
+  );
+  if (!provenance || provenance.capture_take_id === null) {
+    throw new VideoNotClippableError(video.status, 'not_teaching_footage');
   }
 
   return { videoSessionId: video.video_session_id, athleteId: video.athlete_id };

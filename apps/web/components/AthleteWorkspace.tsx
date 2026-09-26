@@ -14,7 +14,13 @@ import type { RabbitHoleLessonItem } from './RabbitHole';
 import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
 import ProfileHeader from './ProfileHeader';
 import TrainingHoldBanner from './TrainingHoldBanner';
-import { AthleteSummaryPanel, HelpPanel, RoleSpecificShadow, type AthleteCountRead } from './RoleSummaryPanels';
+import {
+  AthleteSummaryPanel,
+  HelpPanel,
+  RoleSpecificShadow,
+  type AthleteCountRead,
+  type AthleteWellnessTodayRead,
+} from './RoleSummaryPanels';
 import ShadowChatButton from './ShadowChatButton';
 import ThenAndNow from './ThenAndNow';
 import TrainingCard, { type TrainingSession } from './TrainingCard';
@@ -118,7 +124,6 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
 function groupForTab(tab: TabID): GroupID {
   return TAB_GROUPS.find((group) => group.tabs.some((entry) => entry.id === tab))?.id ?? 'today';
 }
-type ReadinessLevel = 'GREEN' | 'YELLOW' | 'RED';
 /**
  * The categories a goal can be filed under, and the mirror of GOAL_CATEGORIES
  * in src/server/pilot/contracts.ts and the CHECK in
@@ -315,16 +320,36 @@ type AthleteIdentityState = 'loading' | 'resolved' | 'unavailable';
 const NOTES_DRAFT_SAVE_DELAY_MS = 1200;
 
 /**
- * The note stored when the athlete typed nothing at check-in. pilot.sessions
- * requires a non-empty note, so something has to be written; recognising that
- * exact form on the way back is what keeps it out of the athlete's own notes
- * box, where it would read as a sentence they wrote.
+ * The note stored when the athlete wrote nothing before checking in (A-FIN-01).
+ *
+ * pilot.sessions requires a non-empty note, so something has to be written --
+ * and this is that something, solely to satisfy the contract. It is ONE fixed
+ * sentence on purpose: it says nothing about the athlete, is built from no
+ * input (no wellness answer, no effort, no inferred feeling, no coach text),
+ * and is recognised on the way back so it never lands in the athlete's own
+ * notes box or reads in their history as a sentence they wrote. See
+ * isSystemCheckInNote.
  */
-function autoCheckInNote(readiness: ReadinessLevel): string {
-  return `Auto check-in readiness ${readiness}`;
-}
+const NO_ATHLETE_NOTE_PLACEHOLDER = 'No athlete note provided at check-in.';
 
+/**
+ * The note check-in stored in the same situation BEFORE A-FIN-01: "Auto
+ * check-in readiness GREEN", the band of a 1-10 slider that started at 8 -- so
+ * an athlete who touched nothing had "GREEN" written on their session as if
+ * they had said it. Nothing writes this form any more. Rows that already carry
+ * it are deliberately not rewritten (no migration, no cleanup), so it is still
+ * recognised here: read, never written.
+ */
 const AUTO_CHECK_IN_NOTE_PATTERN = /^Auto check-in readiness (GREEN|YELLOW|RED)$/;
+
+/**
+ * Whether a stored session note is the system's, not the athlete's: today's
+ * placeholder or the historical readiness marker. Either one is "no note" to
+ * every surface that shows the athlete their own words.
+ */
+function isSystemCheckInNote(notes: string): boolean {
+  return notes === NO_ATHLETE_NOTE_PLACEHOLDER || AUTO_CHECK_IN_NOTE_PATTERN.test(notes);
+}
 
 /**
  * The post-session effort question an athlete answers at check-out, on the
@@ -336,11 +361,25 @@ const AUTO_CHECK_IN_NOTE_PATTERN = /^Auto check-in readiness (GREEN|YELLOW|RED)$
  * Adopting a sourced scale is its own measurement decision, not copy.
  *
  * Asked about the session JUST FINISHED, never about how ready the athlete
- * felt beforehand: that is the check-in slider, which is a different record
- * and must never reach this one.
+ * felt beforehand. That was the check-in slider until A-FIN-01 removed it; the
+ * pre-session self-report is now the wellness check, a different record that
+ * must never reach this one -- and neither may the pre-check-in note.
  */
 const POST_SESSION_EFFORT_QUESTION = 'How hard was the session you just finished?';
 const POST_SESSION_EFFORT_VALUES: readonly number[] = Array.from({ length: 11 }, (_, value) => value);
+
+/**
+ * A-FIN-07. Pain severity, 1 to 10 -- and deliberately NOT 0 to 10 like the
+ * effort scale above it.
+ *
+ * `severity_1_10` is the unit the observation is stored under, and
+ * `painReportAlert.ts` treats a value at or below zero as "not a pain report"
+ * and raises no coach alert for it. A 0 button would therefore be a control
+ * that files a report nobody is told about, which is the failure this slice
+ * exists to remove rather than a second way to express it. An athlete with no
+ * pain does not open this modal.
+ */
+const PAIN_SEVERITY_VALUES: readonly number[] = Array.from({ length: 10 }, (_, index) => index + 1);
 
 /**
  * pilot.sessions stores date as `date` and rpe as `numeric`, and node-postgres
@@ -410,12 +449,6 @@ function normalizeStoredSession(row: unknown): StoredSession | null {
     completed: record.completed_flag === true,
     createdAt,
   };
-}
-
-function getReadinessLevel(readinessToTrain: number): ReadinessLevel {
-  if (readinessToTrain >= 7) return 'GREEN';
-  if (readinessToTrain >= 5) return 'YELLOW';
-  return 'RED';
 }
 
 /* Goal states are queue outcomes, so they wear the design system's badge rungs
@@ -636,14 +669,38 @@ export default function AthleteWorkspace() {
      rendered as a status line and not as a tickbox: the tickbox let an athlete
      set it by hand, and that hand-set value went nowhere. */
   const [injuryFlag, setInjuryFlag] = useState(false);
-  const [readinessToTrain, setReadinessToTrain] = useState(8);
+  /* `readinessToTrain` stood here as useState(8) until A-FIN-01. It drove the
+     "How ready do you feel today?" slider, so before the athlete touched
+     anything the screen already claimed they had said 8/10 -- on the slider,
+     on the summary tile ("8/10 · GREEN"), and in the note check-in stored.
+     There is no replacement state: the pre-session self-report is the wellness
+     check (todayCheckIn above), and the only pre-session input on the Session
+     Log is an optional note that starts empty (checkInNotes below). */
   const [selectedPainLocation, setSelectedPainLocation] = useState<string | null>(null);
   const [showPainModal, setShowPainModal] = useState(false);
-  const [currentPainType, setCurrentPainType] = useState<PainType>('Dull');
-  const [currentPainSeverity, setCurrentPainSeverity] = useState(3);
+  /* A-FIN-07. These two started as 'Dull' and 3, so the pain modal opened with
+     "Dull, 3/10" already on screen -- an answer about a child's body that the
+     child had not given. It is the same false-answer defect A-FIN-01 removed
+     from the readiness slider, and it sat on the one input whose whole purpose
+     is telling an adult that something hurts.
+
+     `null` is the unanswered state and is not a legal pain report: the save
+     guard refuses it before any fetch. That refusal is deliberate rather than
+     a nullable payload. `painReportAlert.ts` reads a null observation value as
+     "no reading" and raises no coach alert, so sending an incomplete report
+     would store a row that looks filed and alerts nobody -- worse than
+     refusing it here, where the athlete can still see the form. */
+  const [currentPainType, setCurrentPainType] = useState<PainType | null>(null);
+  const [currentPainSeverity, setCurrentPainSeverity] = useState<number | null>(null);
   const [painLog, setPainLog] = useState<PainLogEntry[]>([]);
   const [isSavingPain, setIsSavingPain] = useState(false);
   const [painSaveMessage, setPainSaveMessage] = useState('');
+  /* A-FIN-07. One expression, read by both the disabled Save button and the
+     line that says why it is disabled, so the control and its explanation
+     cannot drift apart. The save handler repeats the same test rather than
+     trusting this, because a disabled button is a courtesy and a guard is a
+     guarantee. */
+  const painReportIncomplete = currentPainType === null || currentPainSeverity === null;
 
   // Goals State - Real API data
   const [smartGoals, setSmartGoals] = useState<SMARTGoal[]>([]);
@@ -691,6 +748,11 @@ export default function AthleteWorkspace() {
   // still inside.
   const [storedSessions, setStoredSessions] = useState<StoredSession[]>([]);
   const [storedSessionLoad, setStoredSessionLoad] = useState<StoredSessionLoadState>('loading');
+  /* The athlete's notes for their coach: typed before check-in (the optional
+     pre-check-in note) and after it (the open session's notes box). One state
+     for both, so what was written before pressing Check In is the same text
+     the open session then shows and keeps saving. It starts empty and only the
+     athlete fills it. */
   const [checkInNotes, setCheckInNotes] = useState('');
   const [activeSessionRecord, setActiveSessionRecord] = useState<ActiveSessionRecord | null>(null);
   const [notesSaveState, setNotesSaveState] = useState<NotesSaveState>('idle');
@@ -753,7 +815,6 @@ export default function AthleteWorkspace() {
      so the volume being down costs nothing. */
   const { play } = useGymSound();
 
-  const currentReadiness: ReadinessLevel = getReadinessLevel(readinessToTrain);
   const checkInTime = activeSessionRecord ? formatGymStamp(activeSessionRecord.createdAt) : null;
 
   /* Which group is open is DERIVED from the open tab, never stored alongside
@@ -801,6 +862,19 @@ export default function AthleteWorkspace() {
     : assignedWorkLoading
       ? { status: 'loading' }
       : { status: 'read', count: openCoachWork.length };
+  /* Whether today's wellness check is on record, from the one read that knows:
+     the same todayCheckIn / checkInLoading / checkInLoadError the Wellness tab
+     and the Floor gate below use, so the summary tile cannot disagree with
+     either. Only a read that answered may say "not recorded"; one in flight is
+     loading and one that failed is unavailable. A state, never a score -- see
+     AthleteWellnessTodayRead. */
+  const wellnessTodayRead: AthleteWellnessTodayRead = checkInLoadError !== null
+    ? { status: 'unavailable' }
+    : checkInLoading
+      ? { status: 'loading' }
+      : todayCheckIn
+        ? { status: 'recorded' }
+        : { status: 'not_recorded' };
   /* The day's workout and tasks open once the athlete has checked in (owner
      decision 2026-08-28: they have to do it to see that day's workout and
      tasks, and it must not block any other tool or capability).
@@ -1240,11 +1314,13 @@ export default function AthleteWorkspace() {
           }
         : null);
 
-      if (open && !AUTO_CHECK_IN_NOTE_PATTERN.test(open.notes)) {
-        // Put back what the athlete had written. A draft already in the box
-        // wins: this read also runs on a manual retry and after a check-out
-        // failure, where overwriting would destroy the notes it exists to
-        // protect.
+      if (open && !isSystemCheckInNote(open.notes)) {
+        // Put back what the athlete had written -- and only that: the
+        // no-note placeholder and the old readiness marker are the system's
+        // words, and in this box they would read as the athlete's. A draft
+        // already in the box wins: this read also runs on a manual retry and
+        // after a check-out failure, where overwriting would destroy the
+        // notes it exists to protect.
         setCheckInNotes((current) => current || open.notes);
       }
 
@@ -1482,11 +1558,6 @@ export default function AthleteWorkspace() {
     }
 
     const now = new Date();
-    // The band is classified here for exactly one purpose: the session's
-    // auto check-in NOTE -- a record of how the athlete said they felt. The
-    // slider is an unvalidated self-report (readinessProvenance.ts), so it may
-    // be written down but may not change what work is shown or sent anywhere.
-    const readiness = getReadinessLevel(readinessToTrain);
 
     // Check-in builds nothing. It used to generate a plan -- the same three
     // items for everyone -- and POST it to /api/pilot/floor-plans as today's
@@ -1502,7 +1573,16 @@ export default function AthleteWorkspace() {
 
     const sessionId = `session_${Date.now()}`;
     const sessionDate = now.toISOString().slice(0, 10);
-    const checkInNote = checkInNotes.trim() || autoCheckInNote(readiness);
+    // The note is the athlete's own words, exactly as typed (trimmed), or --
+    // when they wrote nothing -- the fixed system placeholder, which exists
+    // only because pilot.sessions requires a non-empty note. Until A-FIN-01
+    // the empty case stored "Auto check-in readiness <band>" from a slider
+    // that started at 8, which put an answer on the session that nobody had
+    // given. Nothing the athlete did not write may stand in for their note:
+    // not a wellness answer, not an effort rating, not a guess at how they
+    // feel.
+    const athleteNote = checkInNotes.trim();
+    const checkInNote = athleteNote || NO_ATHLETE_NOTE_PLACEHOLDER;
 
     try {
       const sessionResponse = await fetch(`${apiBase()}/api/pilot/sessions`, {
@@ -1540,7 +1620,7 @@ export default function AthleteWorkspace() {
           checkInNote,
           createdAt: now.toISOString(),
         });
-        setNotesSaveState(checkInNotes.trim() ? 'saved' : 'idle');
+        setNotesSaveState(athleteNote ? 'saved' : 'idle');
         // Where a stored check-in takes the athlete depends on the one gate
         // this screen has (floorLockedPendingCheckIn): with today's wellness
         // recorded, straight to their coach's work; without it, to Wellness,
@@ -1622,7 +1702,9 @@ export default function AthleteWorkspace() {
           // The stored note is the fallback because the session record
           // requires a note and an empty box must not erase what is already
           // stored. Read AFTER the wait above, so a draft that landed during
-          // it counts -- see storedNoteRef.
+          // it counts -- see storedNoteRef. On a session nobody wrote a note
+          // for, that is the no-note placeholder, replayed as it was stored
+          // and still recognised as the system's in history.
           notes: notes || storedNote,
           completed_flag: true,
           created_at: record.createdAt,
@@ -1677,7 +1759,13 @@ export default function AthleteWorkspace() {
   };
 
   const handleSavePainReport = async () => {
-    if (!selectedPainLocation) {
+    /* A-FIN-07. An incomplete pain report is not a quiet partial save: it is
+       no write at all. Location, type and severity must each be the athlete's
+       own answer before anything leaves this browser -- no fetch, no painLog
+       entry, no injury flag, no observation, no coach alert. The Save button
+       is disabled in the same condition, so this guard is the second lock
+       rather than the only one. */
+    if (!selectedPainLocation || currentPainType === null || currentPainSeverity === null) {
       return;
     }
 
@@ -1740,6 +1828,31 @@ export default function AthleteWorkspace() {
         painReport?: { coachNotified?: boolean };
       };
 
+      /* A-FIN-07 R1. THE SUCCESS STATE IS THE SERVER'S WORD, NOT THE STATUS
+         CODE.
+
+         `setInjuryFlag(true)` ran on any 2xx, before this was read. The body
+         is parsed with `.catch(() => ({}))`, so a 200 whose body did not parse
+         produced BOTH "Pain reported this session. A coach has been told." on
+         the card and "No coach was flagged for it" underneath it. Two claims
+         that cannot both be true, and a child believes the reassuring one.
+
+         The server settles it and says so in that same comment on its own
+         response: it raises the coach alert BEFORE storing the observation and
+         returns `painReport.coachNotified: true` when it did. Anything else --
+         unparseable, missing `painReport`, or `coachNotified` absent -- is a
+         response this client cannot read, so it claims nothing.
+
+         Fail closed, but do NOT overclaim in the other direction either: "not
+         saved" is not established here, because the server returned 2xx and
+         the observation may well be stored. The honest statement is that the
+         app could not confirm, and the action that follows from it is the same
+         one either way -- tell a coach in person. */
+      if (payload.painReport?.coachNotified !== true) {
+        setPainSaveMessage('The app could not confirm that a coach was told. Tell a coach in person.');
+        return;
+      }
+
       setPainLog((current) => [newPainLogEntry, ...current]);
       setInjuryFlag(true);
       /* `setSoreness((current) => Math.max(current, currentPainSeverity))`
@@ -1755,12 +1868,28 @@ export default function AthleteWorkspace() {
          different rules; the pain report already has its own escalating path
          above, which is where that severity belongs. */
 
-      setPainSaveMessage(payload.painReport?.coachNotified
-        ? 'Logged, and flagged for a coach to look at.'
-        : 'Logged on your record. No coach was flagged for it, so tell one in person.');
+      /* Only one success sentence survives. The old second branch -- "Logged
+         on your record. No coach was flagged for it" -- described a state the
+         server does not produce for a valid 1-10 report: `raised: false` comes
+         back only when the value is null or at or below zero, and this form
+         can no longer send either. Keeping it meant a message whose only
+         reachable cause was an unreadable response, printed as though it were
+         a known outcome. */
+      setPainSaveMessage('Logged, and flagged for a coach to look at.');
 
       setShowPainModal(false);
+      /* A-FIN-07. The stored answers go with the modal. Leaving them set made
+         the NEXT report open pre-filled with the last one -- a different way
+         of putting words in the athlete's mouth, and a harder one to notice
+         because the numbers were genuinely theirs once. */
+      setCurrentPainType(null);
+      setCurrentPainSeverity(null);
     } catch (error) {
+      /* A-FIN-07. The modal deliberately stays open. This message renders
+         inside it (role="alert"); it used to render only in the card behind
+         the modal's own fixed overlay, so a failed pain report looked to the
+         athlete exactly like nothing happening at all. The answers stay on
+         screen so the retry costs one tap, not the whole form again. */
       setPainSaveMessage(error instanceof Error
         ? error.message
         : 'That pain report did not save. Report it again, and tell a coach in person.');
@@ -1821,9 +1950,12 @@ export default function AthleteWorkspace() {
   };
 
   const painLocations = ['Neck', 'Shoulders', 'Upper back', 'Lower back', 'Core', 'Hips', 'Quads', 'Hamstrings', 'Calves', 'Hands/Wrists'];
+  // "Why is my readiness score low?" stood second in this list until A-FIN-01.
+  // The only readiness score this screen ever gave the athlete was the check-in
+  // slider's -- defaulted to 8 -- and that slider is gone, so the question
+  // pointed at a number they no longer have and never chose.
   const suggestedQuestions = [
     'What workout is scheduled for today?',
-    'Why is my readiness score low?',
     'What SMART goal am I working on this week?',
     'Do I have any outstanding tasks?',
     'What does soreness score mean for my training?'
@@ -2075,10 +2207,19 @@ export default function AthleteWorkspace() {
                   check-in" -- a surface deliberately unreachable because it
                   persists nothing (see the TAB_GROUPS note at the top of this
                   file). Instructions may only name things this screen actually
-                  does. */}
+                  does.
+
+                  "Say how you feel" went the same way in A-FIN-01. It was
+                  written (#603) for the check-in slider, and with the slider
+                  gone this screen asks nothing about how the athlete feels:
+                  that is the Wellness check, on its own tab. What the
+                  Dashboard does is check in, show assigned work, take a pain
+                  report and track goals, so that is all the description says.
+                  The Today header above still says it, and truthfully -- Today
+                  holds Wellness. */}
               <HelpPanel
                 title="My Dashboard"
-                description="Your daily command center. Say how you feel, check in, see assigned work, and monitor your progress toward goals."
+                description="Your daily command center. Check in, see assigned work, report pain, and monitor your progress toward goals."
                 usage={[
                   'Check in to open your session',
                   'See how much work your coach has assigned you',
@@ -2092,51 +2233,32 @@ export default function AthleteWorkspace() {
                 ]}
               />
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s5)]">
-                {/* Self-report card. Headed "Current Readiness" over a
-                    "Readiness to Train" slider until 2026-08-24 -- vocabulary
-                    from when this number decided the generated work. #597
-                    ended that authority (an unvalidated self-report may be
-                    recorded, never prescribe), so the card now presents the
-                    slider as what it is: the athlete saying how they feel,
-                    written on their session, deciding nothing. The band and
-                    the stored note format are untouched; only what is said to
-                    the athlete changed. */}
-                <div className={PANEL_RAISED}>
-                  <h3 className="t-label mb-[var(--s4)]">Pre-Session Self-Report</h3>
-                  <div className="space-y-[var(--s4)]">
-                    {/* Sleep and Energy Level stood here until 2026-08-23 and
-                        recorded nothing: neither reached any request body, on
-                        check-in or anywhere else. Removed rather than stamped,
-                        the way the guardian consent prototype was: a control
-                        that silently discards what it asks for is worse than
-                        no control.
+              {/* One column now: the card that shared this row is gone. */}
+              <div className="grid grid-cols-1 gap-[var(--s5)]">
+                {/* THE PRE-SESSION SELF-REPORT CARD IS GONE (A-FIN-01). It held
+                    one control, "How ready do you feel today? (1-10)" -- an
+                    HTML range that started at 8, so before the athlete touched
+                    anything the screen claimed they had answered 8/10, the
+                    summary tile read it back as "8/10 · GREEN", and check-in
+                    wrote "Auto check-in readiness GREEN" on their session. A
+                    range always has a position, which is an answer nobody gave
+                    -- the same reason the Wellness panel and the post-session
+                    effort question use described choices that start empty.
 
-                        Session Duration followed on 2026-08-25. When Sleep and
-                        Energy went it still wrote -- check-in posted it to
-                        SHADOW as an observed `duration`, which is how a
-                        PLANNED 60 minutes became an observed one -- but the
-                        same rework that ended that (see the check-out handler)
-                        left the box standing, asking a child for a number no
-                        code read. Wiring any of these is a real option and a
-                        separate decision -- it needs an owner call on what the
-                        reading would mean and who, if anyone, it should
-                        reach. */}
-                    <div>
-                      <label className="t-label block mb-[var(--s3)]" htmlFor="readiness-train">How ready do you feel today? (1-10)</label>
-                      <input id="readiness-train" type="range" min="1" max="10" value={readinessToTrain} onChange={(e) => setReadinessToTrain(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
-                      <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{readinessToTrain}/10</p>
-                      {/* Said here, at the control, not in a help panel: the
-                          number is a subjective self-report. It is recorded on
-                          the session at check-in and that is all it does. The
-                          sentence is the owner's (2026-08-24). */}
-                      <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
-                        This records how you say you feel before training.
-                        It does not medically clear you and does not determine your workout.
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                    It is not replaced by another readiness control, because
+                    nothing authoritative stores a pre-session readiness answer
+                    from an athlete: the durable pre-training self-report is the
+                    wellness check (Today -> Wellness). What the Session Log
+                    offers before check-in instead is an optional note for the
+                    coach, which starts empty and goes on the session.
+
+                    Its history, kept: it was headed "Current Readiness" over a
+                    "Readiness to Train" slider until 2026-08-24, when #597
+                    ended the number's authority over the work. Sleep and Energy
+                    Level stood on it until 2026-08-23 and recorded nothing;
+                    Session Duration followed on 2026-08-25, after the
+                    rework that stopped posting it to SHADOW as an observed
+                    duration left the box asking for a number no code read. */}
 
                 {/* Pain/Injury Card */}
                 <div className={PANEL_RAISED}>
@@ -2195,14 +2317,27 @@ export default function AthleteWorkspace() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => setShowPainModal(true)}
+                        onClick={() => {
+                          /* A-FIN-07. Every report starts unanswered, including
+                             the second one. Clearing here rather than on Cancel
+                             covers both ways out of the modal. */
+                          setCurrentPainType(null);
+                          setCurrentPainSeverity(null);
+                          setPainSaveMessage('');
+                          setShowPainModal(true);
+                        }}
                         disabled={!selectedPainLocation}
                         className="btn btn--ghost min-h-[var(--tap)] px-[var(--s3)] disabled:opacity-50 disabled:grayscale"
                       >
                         Report Pain
                       </button>
                     </div>
-                    {painSaveMessage ? (
+                    {/* A-FIN-07. Only while the modal is CLOSED. This line is
+                        the success path's home; the failure path keeps the
+                        modal open and says so inside it, because this element
+                        sits behind that modal's fixed overlay and a message
+                        nobody can see is the same as no message. */}
+                    {painSaveMessage && !showPainModal ? (
                       <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]" role="status">{painSaveMessage}</p>
                     ) : null}
                     {painLog[0] ? (
@@ -2326,6 +2461,29 @@ export default function AthleteWorkspace() {
                 ) : (
                   <div className="space-y-[var(--s4)]">
                     <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">You are not checked in right now.</p>
+                    {/* THE PRE-CHECK-IN NOTE (A-FIN-01), where the defaulted
+                        readiness slider used to be the only pre-session input.
+                        Optional and empty until the athlete writes in it: what
+                        they write is stored on the session exactly (trimmed),
+                        and leaving it empty stores the fixed no-note
+                        placeholder, which no screen shows back as theirs. It is
+                        the same text the open session's notes box then holds,
+                        so nothing written here is lost at check-in. */}
+                    <div className="field">
+                      <label className="t-label block mb-[var(--s2)]" htmlFor="pre-check-in-note">
+                        Anything your coach should know before you start?
+                      </label>
+                      <textarea
+                        id="pre-check-in-note"
+                        value={checkInNotes}
+                        onChange={(e) => setCheckInNotes(e.target.value)}
+                        aria-describedby="pre-check-in-note-help"
+                        className="textarea input--kiosk h-[89px]"
+                      />
+                      <p id="pre-check-in-note-help" className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                        Optional. You can leave it empty. What you write goes on your session when you check in.
+                      </p>
+                    </div>
                     <button
                       type="button"
                       onClick={() => void handleCheckIn()}
@@ -2349,7 +2507,11 @@ export default function AthleteWorkspace() {
                         <li key={session.sessionId} className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
                           <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>{session.date}</span>
                           {' - '}
-                          {AUTO_CHECK_IN_NOTE_PATTERN.test(session.notes)
+                          {/* The system's words -- the no-note placeholder,
+                              or the old readiness marker on an older row --
+                              read as no note, never as a sentence the
+                              athlete wrote. */}
+                          {isSystemCheckInNote(session.notes)
                             ? 'No notes on this one.'
                             : session.notes}
                         </li>
@@ -3086,12 +3248,19 @@ export default function AthleteWorkspace() {
                 description="Classes and sign-ups live in the unified scheduler. This is the door to it."
                 usage={[
                   'Open the unified scheduler to see live classes',
-                  'Check your academic status first',
-                  'Readiness RED may limit contact work'
+                  'Check your academic status first'
                 ]}
+                /* "Readiness RED may limit contact work" and "Booking contact
+                   work with RED readiness" stood in these two lists until
+                   A-FIN-01. The RED on this screen was the band of the
+                   check-in slider -- a self-report that started at 8 and
+                   decided nothing -- and the scheduler reads no readiness at
+                   all, so the copy claimed a restriction nothing applies, on
+                   an answer the athlete may never have given. Nothing
+                   readiness-based replaces them: the scheduler owns booking
+                   and eligibility. */
                 mistakes={[
-                  'Booking while on academic hold',
-                  'Booking contact work with RED readiness'
+                  'Booking while on academic hold'
                 ]}
               />
             </div>
@@ -3209,8 +3378,7 @@ export default function AthleteWorkspace() {
             this workspace has no feed for the athlete's next class, so the
             tile must not name one. */}
         <AthleteSummaryPanel
-          readiness={currentReadiness}
-          readinessValue={readinessToTrain}
+          wellnessToday={wellnessTodayRead}
           openCoachWork={openCoachWorkRead}
           goalsActive={goalsActive}
           upcomingSession="Nothing posted yet."
@@ -3303,22 +3471,81 @@ export default function AthleteWorkspace() {
               <div className="space-y-[var(--s4)]">
                 <div className="field">
                   <label className="t-label" htmlFor="pain-type-select">Pain Type</label>
-                  <select id="pain-type-select" value={currentPainType} onChange={(e) => setCurrentPainType(e.target.value as PainType)} className="select input--kiosk">
+                  {/* A-FIN-07. The empty option is the point: the select used
+                      to open on 'Dull' because a bare <select> shows its first
+                      option, which makes the most common answer the one the
+                      app supplies. The prompt below never serialises as a
+                      PainType -- it maps back to null. */}
+                  <select
+                    id="pain-type-select"
+                    value={currentPainType ?? ''}
+                    onChange={(e) => setCurrentPainType(e.target.value === '' ? null : (e.target.value as PainType))}
+                    className="select input--kiosk"
+                  >
+                    <option value="">Select a pain type...</option>
                     {(['Sharp', 'Dull', 'Burning', 'Tight', 'Pulling', 'Throbbing', 'Swollen', 'Numbness/Tingling', 'Instability', 'Other'] as PainType[]).map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="t-label block mb-[var(--s3)]" htmlFor="pain-severity-range">Severity (1-10)</label>
-                  <input id="pain-severity-range" type="range" min="1" max="10" value={currentPainSeverity} onChange={(e) => setCurrentPainSeverity(Number.parseInt(e.target.value, 10))} className="range--kiosk cursor-pointer" />
-                  <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-sm)' }}>{currentPainSeverity}/10</p>
-                </div>
+                {/* A-FIN-07. Ten choices rather than a range, for the reason
+                    the post-session effort control gives: a range input always
+                    holds a position, so it reports an answer nobody gave. This
+                    one held 3 and printed "3/10" over it. No 0 option -- the
+                    server's pain model is 1-10 and zero is not a pain report
+                    (painReportAlert.ts). */}
+                <fieldset className="space-y-[var(--s2)]">
+                  <legend className="t-label mb-[var(--s2)]">Severity (1-10)</legend>
+                  <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                    Choose the number that matches what you feel.
+                  </p>
+                  <div className="grid grid-cols-5 gap-[var(--s2)]">
+                    {PAIN_SEVERITY_VALUES.map((value) => {
+                      const selected = currentPainSeverity === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          aria-label={`Severity ${value}`}
+                          aria-pressed={selected}
+                          disabled={isSavingPain}
+                          onClick={() => setCurrentPainSeverity(value)}
+                          className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
+                        >
+                          <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{value}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {currentPainSeverity === null ? (
+                    <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                      Not answered yet.
+                    </p>
+                  ) : null}
+                </fieldset>
               </div>
+              {/* A-FIN-07. The failure lives here now, inside the overlay,
+                  and assertively -- role="alert" rather than the card's
+                  role="status", because "no coach was told" is not a passive
+                  update. Success closes the modal and reports in the card. */}
+              {painSaveMessage ? (
+                <p
+                  className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]"
+                  role="alert"
+                  data-testid="pain-modal-alert"
+                >
+                  {painSaveMessage}
+                </p>
+              ) : null}
+              {painReportIncomplete ? (
+                <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                  Choose a pain type and severity before saving.
+                </p>
+              ) : null}
               <div className="flex gap-[var(--s3)]">
                 <button
                   onClick={() => void handleSavePainReport()}
-                  disabled={isSavingPain}
+                  disabled={isSavingPain || painReportIncomplete}
                   className="btn btn--kiosk flex-1 disabled:opacity-50 disabled:grayscale"
                 >
                   {isSavingPain ? 'Saving...' : 'Save'}
