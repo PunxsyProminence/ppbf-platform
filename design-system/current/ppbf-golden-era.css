@@ -2061,61 +2061,86 @@
    the intent rather than leaving a room with no wall relying on a fallback
    nobody reading this block can see.
 
-   THE WALL IS A SIMPLE GROUND, NOT A PHOTOGRAPH, and it took opening the
-   photographs to know that.
+   THE WALL IS THE GYM, AND EVERY PLATE NAMED HERE WAS OPENED FIRST.
 
-   An earlier version of this rule bound the two floor plates here, reasoning
-   that the real gym was already committed to this repository and only needed
-   switching back on. Both plates were then OPENED and looked at.
-   plate-02a-floor-landscape-01.jpg is grey-brown brick with a caged industrial
-   lamp on it. plate-02b-floor-portrait-01.jpg is a plain brick wall with no gym
-   in it at all. docs/REAL-GYM-REFERENCE-LOCK.md names that exact thing under
-   Forbidden, in these words: "Generic grey-brown brick + caged industrial lamps
-   as the default wall". Binding them was a filename read rather than a look, and
-   it shipped the one wall that lock exists to keep out.
+   Owner ruling 2026-09-26: the rooms should look like the ring plate, each room
+   and each piece of equipment should feel different, and anything missing can be
+   created. Explicitly: do not revert.
 
-   What the gym actually looks like is plate-02b-floor-portrait-ring-01.jpg: a
-   blue-grey canvas under tan ropes, an Everlast corner post in cream with gold
-   and red, rough timber posts and a beamed ceiling, black bags, a red wall
-   behind, one warm lamp against a cool tube. Warm wood is REAL in that room,
-   which is why the owner's 2026-09-26 ruling is to MIX rather than replace.
+   WHAT WAS WRONG BEFORE, so it is not repeated. An earlier pass bound
+   plate-02a-floor-landscape-01.jpg and plate-02b-floor-portrait-01.jpg here from
+   their filenames. Opened, they are grey-brown brick with a caged industrial
+   lamp, and a plain brick wall with no gym in it -- the first of which
+   docs/REAL-GYM-REFERENCE-LOCK.md names under Forbidden in those exact words.
+   Every plate below has been opened and described.
 
-   So the ground is a flat, quiet, warm-dark surface in that room's own register
-   -- owner direction the same day: "basic simple backdrop and a color style". A
-   backdrop is not a picture of the gym; it is the tone the gym is lit in, with
-   the identity carried by colour and by the furniture standing on it.
-   `--plate: none` leaves the painter intact with nothing to paint, the same
-   contract .room--floor uses. */
+   WHAT IS BOUND NOW, AND WHY EACH ONE
+   - Portrait: plate-02b-floor-portrait-02.jpg. The strength corner -- blue
+     interlocking mats, black rack, coloured bumper plates, dumbbells on a rack,
+     mirrors, timber beams under a cool tube. Gear on racks is the nearest thing
+     the shipped set has to a room where drills and equipment live, so the drill
+     cabinet is not borrowing another room's identity on a tablet.
+   - Landscape: plate-08-bell-gym-landscape-01.jpg. Timber plank wall, the flag,
+     a wood-framed mirror onto the blue mat floor, rope, gloves on benches at both
+     edges, and a deliberately empty centre. It is the only landscape plate in the
+     set that shows this gym at all.
+
+   BOTH ARE INTERIM AND THE SECOND ONE IS A KNOWN COMPROMISE. plate-08 is The
+   Bell's wall at /login, so until the cabinet has a landscape plate of its own
+   two rooms share one, which is the opposite of the "different feel for every
+   room" this ruling asks for. The plate this room actually wants does not exist
+   yet: the corner where drills are kept -- gear shelves, gloves tagged with
+   sticky notes, a card index or a clipboard wall, quiet in the centre and no
+   lettering anywhere in frame. That is a Grok image-lane deliverable, and when it
+   lands it replaces both URLs below and this paragraph goes with it.
+
+   NO LETTERING IS A REAL CONSTRAINT, not a preference. plate-02b-floor-
+   portrait-02 carries a chalkboard of garbled pseudo-writing, and
+   plate-08-bell-gym-portrait-01 carries a banner reading 3RD INFANTRY DIVISION.
+   The lock says plates carry zero lettering because UI text lives in code, and
+   text inside the photograph competes with the text on top of it. Neither is
+   fixable here; both go in the brief.
+
+   THE SCRIM IS LIGHTER THAN IT WAS. The cabinet is an opaque object inset from
+   three edges, so it protects its own legibility and the wall does not have to
+   be beaten flat to make type readable -- only the band behind the stile does,
+   and the stile's own drawer fronts are material. */
 .ge-drillcase.room {
-  --plate: none;
-  background-color: #17110B;
+  --plate: url("/plates/plate-08-bell-gym-landscape-01.jpg");
+  background-color: transparent;
   background-image:
     var(--grain),
-    linear-gradient(176deg, #1E160E 0%, #17110B 58%, #100C08 100%);
+    linear-gradient(94deg,
+      rgba(14,10,6,.58) 0%,
+      rgba(14,10,6,.30) 28%,
+      rgba(16,11,7,.14) 60%,
+      rgba(18,12,8,.24) 100%);
   background-size: 180px 180px, 100% 100%;
   background-blend-mode: overlay, normal;
 }
 
-/* THE CABINET ITSELF, now that the ground is no longer pretending to be it.
-   The back boards moved off the room and onto the work surface, which is the
-   object they always described: dark walnut running vertically, the way the
-   reference's panel does. The ground behind it is the room's own quiet
-   backdrop, not a picture of the room. */
-.ge-drillcase .ge-drillcase__surface {
-  background-color: var(--wood-900);
-  background-image:
-    var(--grain),
-    repeating-linear-gradient(90deg,
-      rgba(0,0,0,.42) 0 3px, rgba(156,107,58,.10) 3px 5px, transparent 5px 96px),
-    repeating-linear-gradient(90deg,
-      transparent 0 11px, rgba(0,0,0,.10) 11px 13px, transparent 13px 29px),
-    linear-gradient(174deg, #3A2412 0%, #2A1A0C 55%, #1A1108 100%);
-  background-size: 180px 180px, 100% 100%, 100% 100%, 100% 100%;
-  background-blend-mode: overlay, normal, normal, normal;
-  box-shadow:
-    inset 0 1px 0 rgba(231,200,138,.10),
-    0 18px 44px rgba(0,0,0,.62);
+@media (orientation: portrait) {
+  .ge-drillcase.room {
+    --plate: url("/plates/plate-02b-floor-portrait-02.jpg");
+    background-image:
+      var(--grain),
+      linear-gradient(184deg,
+        rgba(14,10,6,.58) 0%,
+        rgba(14,10,6,.32) 30%,
+        rgba(16,11,7,.20) 70%,
+        rgba(18,12,8,.34) 100%);
+  }
 }
+
+/* THE WORK SURFACE IS AIR, NOT A SLAB.
+
+   It painted the cabinet carcass across the whole work area until the owner sent
+   three mockups on 2026-09-26. In all three the photograph of the gym IS the
+   ground and the content stands on it as separate riveted boards, with bags,
+   ropes and brick showing in the gaps between them. One opaque panel across
+   three quarters of the screen is precisely what those mockups are not: it
+   demotes the gym to a border. So this element keeps its layout job and gives up
+   its material one, and each board below brings its own plaque. */
 
 /* The light comes through the open door, not from ceiling fixtures. The room's
    two-lamp wash is replaced by one warm pool from the hinge side and a deep
@@ -2186,18 +2211,25 @@
   padding: var(--s5) var(--s4);
 }
 
-/* NO PANEL INSIDE A PANEL. The library section carries .ge-drillcase__cabinet,
-   which painted the carcass back when <main> was the whole cabinet interior.
-   The surface IS the carcass now, so leaving that rule in place framed a walnut
-   box inside a walnut box -- two borders, two shadows, and the card-stack
-   reading this layout exists to get away from. The hook stays (the scope test
-   and the e2e sweep both name it); what it paints inside the surface does not. */
-.ge-drillcase .ge-drillcase__surface > .ge-drillcase__cabinet {
-  background: none;
-  border: 0;
-  box-shadow: none;
-  padding: 0;
-  margin-top: 0;
+/* EACH STATION IS A BOARD ON THE GYM WALL. An earlier pass flattened the
+   library's panel, and that was correct while the surface behind it was a walnut
+   slab -- a panel inside a panel. The slab is gone, so the flattening goes with
+   it. On the owner's mockups every group of content is a dark riveted board with
+   a brass keyline, hung on the photograph with the room visible around it, and
+   that is what these are. */
+.ge-drillcase .ge-drillcase__surface > section {
+  margin: 0;
+  padding: var(--s5);
+  border: 1px solid color-mix(in srgb, var(--brass-700) 58%, transparent);
+  border-radius: var(--r-lg);
+  background-color: #1B1410;
+  background-image:
+    var(--grain-fine),
+    linear-gradient(176deg, #241B14 0%, #1A130E 62%, #120D09 100%);
+  background-blend-mode: overlay, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.13),
+    0 16px 38px rgba(0,0,0,.58);
 }
 
 .ge-drillcase .ge-drillcase__stations {
@@ -2218,6 +2250,9 @@
   flex: 1 1 auto;
   min-width: 0;
   padding: var(--s5) var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
 }
 
 /* The reading measure, on the prose and nothing else. A paragraph 1400px wide
@@ -2250,10 +2285,16 @@
      else, which is a margin, not a room. Inset on three sides, the wall carries
      the outer thirds the reference lock asks for and the cabinet reads as a
      thing standing IN the room rather than as the room itself. */
+  /* THE ROOM SHOWS DOWN THE RIGHT, which is how the owner's coach-dashboard
+     mockup is composed: the signboard on the left, the boards through the
+     middle, and the gym itself -- bags, ropes, ring -- down the right third.
+     A cap on the boards is what leaves that third standing. It is not the
+     centred column this layout removed: nothing is centred, the content is
+     left-aligned against the stile and the room takes the rest. */
   .ge-drillcase .ge-drillcase__surface {
-    margin: var(--s5) var(--s5) var(--s5) 0;
-    padding: var(--s6);
-    border-radius: var(--r-lg);
+    margin: 0;
+    padding: var(--s6) var(--s6) var(--s7);
+    max-width: 68rem;
   }
 }
 
