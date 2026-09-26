@@ -2072,6 +2072,19 @@ export default function CoachWorkspace() {
     sessionNoteAthleteRef.current = athleteId;
     setSessionNoteRead({ status: 'loading', athleteId });
 
+    /* THE SECOND CONJUNCT IS REDUNDANT TODAY, AND THAT IS LOAD-BEARING.
+       sessionNoteAthleteRef is written in exactly one place -- the line above,
+       inside this loader -- and this loader aborts its predecessor before
+       reaching it. So the ref cannot move without an abort, and
+       signal.aborted is already true wherever the identity check would fire.
+       A mutation that removes the identity half alone therefore survives: no
+       test can distinguish them, and none should be contrived to.
+
+       It stays as defence in depth, but the redundancy depends entirely on
+       that one-writer invariant. If a second writer to the ref ever appears,
+       or the abort stops preceding it, this check becomes the only thing
+       standing between a late response for one child and another child's name
+       on screen -- and it will need a test of its own that day. */
     const superseded = () => controller.signal.aborted || sessionNoteAthleteRef.current !== athleteId;
 
     try {

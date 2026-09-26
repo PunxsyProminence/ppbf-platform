@@ -3925,3 +3925,145 @@ describe('an athlete can take a shared note back', () => {
     expect(JSON.stringify(checkOut.body)).not.toContain('wrist');
   });
 });
+
+/* A SEND THAT FAILED MAY NOT MISSTATE WHAT A COACH CAN READ.
+   The 'failed' state used to be permanent and used to outrank every other
+   status, which produced two false screens:
+
+     - a failed Share, box then cleared: still "try again", with no publication
+       button left to try again with;
+     - a Share that SUCCEEDED, edited, second publication failed: only "try
+       again", saying nothing about the coach still being able to read the
+       earlier version. That is the screen misstating what a coach can see --
+       the same class of defect as the whitespace bug this slice already fixed.
+
+   What has to hold. The failure is shown only while it is true of the draft in
+   the box AND the action that failed is still offered, so "try again" always
+   names a button that is there. What the coach can read is stated first and on
+   its own line, never replaced by the error. And a UI state reset changes
+   nothing on the server: the last successfully shared value stays shared. */
+describe('a failed send says try again only while there is something to try', () => {
+  const SHARED = 'My wrist hurts when I jab.';
+  const CHANGED = 'Actually it is my elbow.';
+  const FAILED_LINE = 'That did not reach your coach -- try again.';
+  const STILL_READABLE = 'Your coach can still read what you shared before. This change is not shared yet.';
+
+  function box(): HTMLTextAreaElement {
+    return screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement;
+  }
+
+  async function openSession(notes: string) {
+    // persistSessionUpdates so the fixture row is the server's answer: a write
+    // that failed must leave it exactly as it was.
+    persistSessionUpdates = true;
+    storedSessions = [openSessionRow({ rpe: null, notes })];
+    await renderWorkspace();
+    await screen.findByRole('button', { name: 'Check Out' });
+  }
+
+  test('a failed Share stops saying try again once that draft is gone', async () => {
+    await openSession(NO_NOTE_PLACEHOLDER);
+    sessionUpdateFails = true;
+
+    fireEvent.change(box(), { target: { value: 'Knee twinged on the third round.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
+
+    expect(await screen.findByText(FAILED_LINE)).toBeTruthy();
+    // Shown only with the control it tells them to press.
+    expect(screen.getByRole('button', { name: 'Share with coach' })).toBeTruthy();
+
+    fireEvent.change(box(), { target: { value: '' } });
+
+    expect(screen.queryByText(FAILED_LINE)).toBeNull();
+    expect(screen.getByText('Only you can see this until you share it.')).toBeTruthy();
+    // Nothing left to retry, and nothing on screen claiming otherwise.
+    expect(screen.queryByRole('button', { name: /Share with coach|Update coach|Withdraw from coach/ })).toBeNull();
+    // The failed attempt changed nothing the coach reads.
+    expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1);
+    expect(storedSessions[0].notes).toBe(NO_NOTE_PLACEHOLDER);
+  });
+
+  test('the same draft is still retryable, and the retry clears the failure', async () => {
+    await openSession(NO_NOTE_PLACEHOLDER);
+    sessionUpdateFails = true;
+
+    fireEvent.change(box(), { target: { value: 'Knee twinged on the third round.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
+    expect(await screen.findByText(FAILED_LINE)).toBeTruthy();
+
+    sessionUpdateFails = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
+
+    expect(await screen.findByText('Your coach can read this.')).toBeTruthy();
+    expect(screen.queryByText(FAILED_LINE)).toBeNull();
+    expect(storedSessions[0].notes).toBe('Knee twinged on the third round.');
+  });
+
+  test('a failed second send still tells the athlete what their coach can read', async () => {
+    await openSession(NO_NOTE_PLACEHOLDER);
+
+    fireEvent.change(box(), { target: { value: SHARED } });
+    fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
+    expect(await screen.findByText('Your coach can read this.')).toBeTruthy();
+    expect(storedSessions[0].notes).toBe(SHARED);
+
+    sessionUpdateFails = true;
+    fireEvent.change(box(), { target: { value: CHANGED } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update coach' }));
+
+    expect(await screen.findByText(FAILED_LINE)).toBeTruthy();
+    // THE POINT OF THIS CASE. The screen does not say only "try again": it
+    // still says the coach can read what was shared before, and says it FIRST.
+    const truth = screen.getByText(STILL_READABLE);
+    const live = truth.closest('[role="status"]');
+    expect(live).not.toBeNull();
+    const announced = live!.textContent ?? '';
+    expect(announced.indexOf('Your coach can still read')).toBeGreaterThanOrEqual(0);
+    expect(announced.indexOf('Your coach can still read')).toBeLessThan(announced.indexOf('That did not reach'));
+    // Retryable with the same draft, so the control stays.
+    expect(screen.getByRole('button', { name: 'Update coach' })).toBeTruthy();
+    // And the version the coach can read is untouched.
+    expect(storedSessions[0].notes).toBe(SHARED);
+  });
+
+  /* The message is reset, not merely hidden. Without the state reset the
+     failure would still be sitting there, keyed to text the athlete had
+     already moved past, and typing those words again would bring a message
+     about the old attempt back onto a draft that has not been sent at all. */
+  test('a failure the athlete moved past does not come back when the same words do', async () => {
+    await openSession(NO_NOTE_PLACEHOLDER);
+    sessionUpdateFails = true;
+
+    fireEvent.change(box(), { target: { value: 'Knee twinged on the third round.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
+    expect(await screen.findByText(FAILED_LINE)).toBeTruthy();
+
+    fireEvent.change(box(), { target: { value: '' } });
+    expect(screen.queryByText(FAILED_LINE)).toBeNull();
+
+    fireEvent.change(box(), { target: { value: 'Knee twinged on the third round.' } });
+    expect(screen.queryByText(FAILED_LINE)).toBeNull();
+    // And nothing is stuck: this draft can still be sent.
+    expect(screen.getByRole('button', { name: 'Share with coach' })).toBeTruthy();
+    expect(screen.getByText('Only you can see this until you share it.')).toBeTruthy();
+  });
+
+  test('clearing the box after a failed update resets the message, never the shared note', async () => {
+    await openSession(SHARED);
+    sessionUpdateFails = true;
+
+    fireEvent.change(box(), { target: { value: CHANGED } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update coach' }));
+    expect(await screen.findByText(FAILED_LINE)).toBeTruthy();
+
+    fireEvent.change(box(), { target: { value: '' } });
+
+    expect(screen.queryByText(FAILED_LINE)).toBeNull();
+    // A UI reset is not a withdrawal: the note is still shared, the screen
+    // still says so, and taking it back is still the athlete's to press.
+    expect(screen.getByText(STILL_READABLE)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Withdraw from coach' })).toBeTruthy();
+    expect(storedSessions[0].notes).toBe(SHARED);
+    expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1);
+  });
+});

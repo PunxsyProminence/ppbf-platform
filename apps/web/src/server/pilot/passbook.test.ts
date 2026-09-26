@@ -609,6 +609,29 @@ describe('the passbook withholds staff-only fields from a family reader', () => 
   const sessionById = (result: Awaited<ReturnType<typeof getAthletePassbook>>, id: string) =>
     result?.pages.sessions.find((entry) => entry.session_id === id);
 
+  /* REACH A REAL ENTRY BEFORE ASSERTING ABOUT ITS KEYS.
+     sessionById returns undefined for a session that is not in the book, and
+     expect(undefined).not.toHaveProperty('notes') PASSES. So an assertion
+     about an absent key, taken on its own, also passes for a book that lost
+     every session -- a regression that empties the sessions page would leave
+     the system-text cases below green while telling a coach nothing happened
+     at the gym. This pins the entry down first: the page has rows, this
+     session is one of them, and it is recognisable by the fields a reader
+     would identify it by. Only then is the key assertion worth anything. */
+  function presentSession(
+    result: Awaited<ReturnType<typeof getAthletePassbook>>,
+    id: string,
+    identity: { date: string },
+  ) {
+    const sessions = result?.pages.sessions;
+    expect(Array.isArray(sessions)).toBe(true);
+    expect(sessions?.length ?? 0).toBeGreaterThan(0);
+    const entry = sessionById(result, id);
+    expect(entry).toBeDefined();
+    expect(entry).toMatchObject(identity);
+    return entry;
+  }
+
   test('the reader tables are not empty', () => {
     expect(FAMILY_READERS.length).toBeGreaterThan(0);
     expect(STAFF_READERS.length).toBeGreaterThan(0);
@@ -711,11 +734,16 @@ describe('the passbook withholds staff-only fields from a family reader', () => 
       arrange();
 
       const result = await getAthletePassbook('org-1', 'ath-1', 'parent');
+      const entry = presentSession(result, 'session-human', { date: '2026-08-03' });
 
       // Both halves: the query does not ask for it, and the projection does
       // not map it even though the mocked row carries it anyway.
       expect(sessionSql()).not.toContain('notes');
-      expect(Object.keys(sessionById(result, 'session-human') ?? {})).not.toContain('notes');
+      // `?? {}` here is type narrowing only. presentSession has already
+      // failed the test if there is no entry -- which matters, because
+      // Object.keys({}) contains nothing either, so this line on its own
+      // would have read as a pass for a book that lost every session.
+      expect(Object.keys(entry ?? {})).not.toContain('notes');
       expect(JSON.stringify(result?.pages.sessions)).not.toContain('wrist hurts');
     });
 
@@ -770,8 +798,11 @@ describe('the passbook withholds staff-only fields from a family reader', () => 
         arrange();
 
         const result = await getAthletePassbook('org-1', 'ath-1', role);
+        // The session the placeholder was stored on is really in the book, and
+        // it is the note that is missing from it -- not the session.
+        const entry = presentSession(result, 'session-placeholder', { date: '2026-08-02' });
 
-        expect(sessionById(result, 'session-placeholder')).not.toHaveProperty('notes');
+        expect(entry).not.toHaveProperty('notes');
         expect(JSON.stringify(result?.pages.sessions)).not.toContain('No athlete note provided');
       },
     );
@@ -782,8 +813,11 @@ describe('the passbook withholds staff-only fields from a family reader', () => 
         arrange();
 
         const result = await getAthletePassbook('org-1', 'ath-1', role);
+        // Same discipline: a real session from 2026-08-01, with the readiness
+        // marker filtered off it rather than the session filtered away.
+        const entry = presentSession(result, 'session-auto', { date: '2026-08-01' });
 
-        expect(sessionById(result, 'session-auto')).not.toHaveProperty('notes');
+        expect(entry).not.toHaveProperty('notes');
         expect(JSON.stringify(result?.pages.sessions)).not.toContain('Auto check-in readiness');
       },
     );
