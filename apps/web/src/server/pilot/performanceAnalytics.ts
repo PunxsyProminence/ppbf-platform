@@ -1,9 +1,22 @@
+import type { SessionRpeMethod } from './contracts';
 import { query } from './db';
 import {
   READINESS_VALUE_MAX,
   READINESS_VALUE_MIN,
   readinessValidatedScopeSql,
 } from './readinessProvenance';
+
+/**
+ * The one session-RPE provenance that means "the athlete rated the session
+ * they just finished". Typed as SessionRpeMethod rather than written as a
+ * bare string in the SQL below, so a typo is a typecheck failure instead of a
+ * predicate that silently matches nothing and averages an empty set to null --
+ * which would look exactly like "nobody has rated a session yet".
+ *
+ * Declared here rather than added to contracts.ts: this slice does not own
+ * that file, and the type it exports is already the authority.
+ */
+const SESSION_RPE_SELF_REPORT: SessionRpeMethod = 'athlete_post_session_self_report';
 
 // Read-only performance rollup for the coach/admin analytics surface.
 //
@@ -114,7 +127,34 @@ export async function getPerformanceRollup(
       `select athlete_id,
               count(*)::int as sessions_total,
               (count(*) filter (where completed_flag))::int as sessions_completed,
-              avg(rpe)::float8 as avg_rpe
+              -- ONLY A REAL POST-SESSION SELF-REPORT IS SESSION RPE.
+              -- pilot.sessions.rpe holds two different measurements. Before
+              -- pilot_slice_postgres_session_rpe_semantics_migration, check-IN
+              -- wrote a pre-session READINESS slider into this column; after
+              -- it, check-OUT writes the athlete's own answer to "how hard was
+              -- the session you just finished". The migration did not and
+              -- could not tell them apart retroactively, so it marked every
+              -- existing row UNKNOWN and left the numbers where they were.
+              --
+              -- rpe_method is therefore the only thing that says which
+              -- measurement a number IS, and contracts.ts says so outright:
+              -- "Read this field only alongside rpe_method." This read did
+              -- not, so "Avg RPE" averaged readiness answers together with
+              -- effort answers and labelled the result as one measurement --
+              -- a number about a child that means neither thing.
+              --
+              -- The same shape as the readiness query below: the rows stay,
+              -- they no longer average. UNKNOWN sessions still count in
+              -- sessions_total and sessions_completed, because they are real
+              -- sessions -- it is only their RPE that is unusable. And the
+              -- method is the authority: nothing here infers that an UNKNOWN
+              -- row "looks like" session RPE from completion, date or the
+              -- value itself.
+              --
+              -- avg() over no qualifying rows is null, which is the honest
+              -- answer. It must never become 0: "nobody has rated a session"
+              -- and "every session was rated nothing" are different facts.
+              (avg(rpe) filter (where rpe_method = '${SESSION_RPE_SELF_REPORT}'))::float8 as avg_rpe
        from pilot.sessions
        where organization_id = $1 and athlete_id = any($2::text[]) and date >= $3::date
        group by athlete_id`,
