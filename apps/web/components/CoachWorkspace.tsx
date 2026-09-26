@@ -3488,6 +3488,34 @@ export default function CoachWorkspace() {
                           </>
                         )
                       )}
+
+                      {/* A RE-READ LIVES IN THE SUCCESSFUL STATES, not only the
+                          failed one. This panel reads once, on the coach's
+                          deliberate click, and nothing revalidated it
+                          afterwards -- so an athlete who shared a note, thought
+                          again and withdrew it (the owner decision of
+                          2026-09-25 exists to let them) left the withdrawn
+                          words sitting on an already-open coach screen for as
+                          long as it stayed open. The database had retracted it;
+                          this screen had not, and the only route back to the
+                          server was to click away and click back.
+
+                          Manual, not polled: no interval is invented here. It
+                          goes through the same loader, so the abort and the
+                          supersession checks still hold, and a refresh that
+                          FAILS lands in the unavailable branch above -- which
+                          says the read did not land. That distinction is the
+                          point: a network failure must never be dressed up as
+                          a withdrawal. */}
+                      {sessionNoteShown.status === 'loaded' && (
+                        <button
+                          type="button"
+                          onClick={() => void loadSessionNote(sessionNoteShown.athleteId)}
+                          className="btn btn--ghost"
+                        >
+                          Refresh session note
+                        </button>
+                      )}
                     </section>
                   )}
                 </section>

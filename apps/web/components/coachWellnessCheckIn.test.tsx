@@ -1055,3 +1055,84 @@ describe('the check-in and the note fail separately', () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 });
+
+/* RETRACTION REACHES A SCREEN THAT IS ALREADY OPEN.
+   The note is read once, when the coach deliberately picks a roster row, and
+   nothing revalidated it afterwards. So the sequence the owner decision of
+   2026-09-25 exists to permit -- an athlete shares, thinks again, withdraws --
+   left the withdrawn words rendered on any coach screen that happened to be
+   sitting on that athlete, for as long as it stayed there. The server had
+   retracted it; this panel had not, and the only path back to the server was
+   to click away and click back.
+
+   These pin the re-read, and the distinction that makes it safe: a refresh
+   that FAILS says the read did not land. It must never be allowed to look
+   like a withdrawal, because "the athlete took it back" and "we could not ask"
+   are different facts about a child. */
+describe('a withdrawn note can be cleared from an already-open coach screen', () => {
+  it('refreshing after a withdrawal drops the text and shows the no-note state', async () => {
+    let withdrawn = false;
+    await renderWorkspace(
+      (athleteId) => jsonResponse({ today: checkInRow(athleteId) }),
+      () => jsonResponse({ today: { note: withdrawn ? null : SHARED_NOTE } }),
+    );
+
+    await pickAthlete('Jordan P.');
+    expect(noteText()).toBe(SHARED_NOTE);
+
+    // The athlete withdraws it in their own browser. Nothing tells this screen,
+    // and nothing should: the point is that the coach can ask again.
+    withdrawn = true;
+    expect(noteText()).toBe(SHARED_NOTE);
+
+    await act(async () => {
+      fireEvent.click(within(notePanel()).getByRole('button', { name: 'Refresh session note' }));
+    });
+
+    expect(within(notePanel()).getByText(NO_NOTE_WRITTEN)).not.toBeNull();
+    expect(notePanel().textContent).not.toContain('Ankle rolled');
+  });
+
+  it('a failed refresh reports the failure and never implies a withdrawal', async () => {
+    let fail = false;
+    await renderWorkspace(
+      (athleteId) => jsonResponse({ today: checkInRow(athleteId) }),
+      () => (fail
+        ? jsonResponse({ error: 'Internal server error' }, { ok: false, status: 500 })
+        : jsonResponse({ today: { note: SHARED_NOTE } })),
+    );
+
+    await pickAthlete('Jordan P.');
+    expect(noteText()).toBe(SHARED_NOTE);
+
+    fail = true;
+    await act(async () => {
+      fireEvent.click(within(notePanel()).getByRole('button', { name: 'Refresh session note' }));
+    });
+
+    expect(within(notePanel()).getByText(NOTE_READ_FAILED)).not.toBeNull();
+    expect(within(notePanel()).queryByText(NO_NOTE_WRITTEN)).toBeNull();
+    expect(within(notePanel()).queryByText(NO_SESSION_TODAY)).toBeNull();
+  });
+
+  it('offers the re-read in every successful state, not only where text is showing', async () => {
+    await renderWorkspace(
+      (athleteId) => jsonResponse({ today: checkInRow(athleteId) }),
+      () => jsonResponse({ today: null }),
+    );
+
+    await pickAthlete('Jordan P.');
+
+    expect(within(notePanel()).getByText(NO_SESSION_TODAY)).not.toBeNull();
+    expect(within(notePanel()).getByRole('button', { name: 'Refresh session note' })).not.toBeNull();
+  });
+
+  it('is not offered before a coach has picked anybody', async () => {
+    await renderWorkspace(
+      (athleteId) => jsonResponse({ today: checkInRow(athleteId) }),
+      () => jsonResponse({ today: { note: SHARED_NOTE } }),
+    );
+
+    expect(screen.queryByRole('button', { name: 'Refresh session note' })).toBeNull();
+  });
+});
