@@ -447,15 +447,19 @@ export async function retrieveShadowContext(params: {
   //
   // Near-miss `description` is unsanitised coach free text about a youth
   // roster. Every role that cleared assertActorCanAccessAthlete above used to
-  // reach the read below, so athletes and their parents received text that
-  // GET /api/pilot/shadow/near-misses denies them -- the same records, the
-  // same organization, one surface gated and the other not.
+  // reach the read below, so the path COULD place that text into athlete and
+  // parent prompt context even though GET /api/pilot/shadow/near-misses
+  // denies those roles -- the same records, the same organization, one
+  // surface gated and the other not. Whether it ever actually did is not
+  // asserted here and was not measured: no conversation, database or log was
+  // read, and the owner states none was sent.
   //
   // DECISION_LOOP_ROLES is the list that route already requires, so this is
   // the same rule expressed once rather than a second literal that can drift
-  // away from it. Of the roles that can clear the check above -- coach,
-  // organization_admin, admin, athlete, parent -- it excludes exactly athlete
-  // and parent. platform_owner and board never get here at all.
+  // away from it. The gate refuses every role outside that set. access.ts
+  // additionally refuses platform_owner and board before this point, which is
+  // READ FROM that module rather than exercised here -- which is why the
+  // tests enumerate the whole PilotRole union instead of relying on it.
   //
   // The gate is BEFORE the query, not a filter after it: an excluded role
   // must not cause the read, carry an evidence id, or learn from the shape of
