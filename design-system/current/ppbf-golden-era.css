@@ -1970,8 +1970,11 @@
    DNA: consistency comes from the materials, not from every screen looking
    the same.
 
-   THE ONE MARKUP CHANGE is the `ge-drillcase` class on the page's <main>.
-   Everything below is scoped to it, so no rule can reach another route.
+   THE ONE MARKUP CHANGE, at 004B, was the `ge-drillcase` class on the page's
+   <main>. Everything below is scoped to it, so no rule can reach another
+   route. The 2026-09-20 cabinet redesign (at the foot of this block) added
+   page-owned `ge-drillcase__*` hook classes inside that scope; the shared
+   drill detail component still carries none.
 
    WHAT THE REFERENCE DRAWS THAT DOES NOT EXIST HERE, AND IS THEREFORE NOT
    BUILT. A search field. Four filter chips (Purpose / Stance / Equipment /
@@ -2034,27 +2037,110 @@
   --brass-900-rgb:  57  41  16;
 }
 
-/* The carcass. .room--floor paints brick, which is the wall the gym's floor
-   room stands in -- but this surface is the INSIDE of a cabinet, so the ground
-   becomes its back boards: dark walnut running vertically, the way the
-   reference's panel does. (0,2,0) against .room--floor's (0,1,0), and later in
-   source order, so it wins both ways without !important. The --plate custom
-   property is deliberately NOT touched; that cascade is a shared room
-   inventory with its own guard. */
-.ge-drillcase.room--floor {
-  background-color: var(--wood-900);
+/* The carcass, and THIS ROOM'S OWN GROUND.
+
+   This block used to key off `.room--floor` -- the page wore `room room--floor`
+   and the cabinet painted over the gym floor's brick. The paint and the class
+   disagreed: the door in buildingMap.ts filed the surface under the Gym Floor,
+   the class said floor, and what came up was walnut. That is exactly the drift
+   buildingMap.ts's own header warns about ("the catalog said Front Office, the
+   wall came up clinic green"), and it is why the owner's 2026-09-26 ruling makes
+   the drill cabinet a room of its own rather than a cabinet standing in someone
+   else's.
+
+   So the selector is `.ge-drillcase.room` now. Same specificity it had, (0,2,0)
+   against bare `.room`'s (0,1,0), and still later in source order, so it wins
+   both ways without !important -- but it no longer borrows another room's
+   identity to get there.
+
+   `--plate: none` IS RESTATED HERE, and it is not redundant. It was arriving
+   from `.room--floor`'s golden-era override, which this page no longer wears;
+   the legacy PLATES block would otherwise be the only thing with an opinion,
+   and it binds `--plate` per room class. The painter reads `var(--plate, none)`
+   (legacy:3598), so an unset token already resolves to nothing -- this states
+   the intent rather than leaving a room with no wall relying on a fallback
+   nobody reading this block can see.
+
+   THE WALL IS THE GYM, AND EVERY PLATE NAMED HERE WAS OPENED FIRST.
+
+   Owner ruling 2026-09-26: the rooms should look like the ring plate, each room
+   and each piece of equipment should feel different, and anything missing can be
+   created. Explicitly: do not revert.
+
+   WHAT WAS WRONG BEFORE, so it is not repeated. An earlier pass bound
+   plate-02a-floor-landscape-01.jpg and plate-02b-floor-portrait-01.jpg here from
+   their filenames. Opened, they are grey-brown brick with a caged industrial
+   lamp, and a plain brick wall with no gym in it -- the first of which
+   docs/REAL-GYM-REFERENCE-LOCK.md names under Forbidden in those exact words.
+   Every plate below has been opened and described.
+
+   WHAT IS BOUND NOW, AND WHY EACH ONE
+   - Portrait: plate-02b-floor-portrait-02.jpg. The strength corner -- blue
+     interlocking mats, black rack, coloured bumper plates, dumbbells on a rack,
+     mirrors, timber beams under a cool tube. Gear on racks is the nearest thing
+     the shipped set has to a room where drills and equipment live, so the drill
+     cabinet is not borrowing another room's identity on a tablet.
+   - Landscape: plate-08-bell-gym-landscape-01.jpg. Timber plank wall, the flag,
+     a wood-framed mirror onto the blue mat floor, rope, gloves on benches at both
+     edges, and a deliberately empty centre. It is the only landscape plate in the
+     set that shows this gym at all.
+
+   BOTH ARE INTERIM AND THE SECOND ONE IS A KNOWN COMPROMISE. plate-08 is The
+   Bell's wall at /login, so until the cabinet has a landscape plate of its own
+   two rooms share one, which is the opposite of the "different feel for every
+   room" this ruling asks for. The plate this room actually wants does not exist
+   yet: the corner where drills are kept -- gear shelves, gloves tagged with
+   sticky notes, a card index or a clipboard wall, quiet in the centre and no
+   lettering anywhere in frame. That is a Grok image-lane deliverable, and when it
+   lands it replaces both URLs below and this paragraph goes with it.
+
+   NO LETTERING IS A REAL CONSTRAINT, not a preference. plate-02b-floor-
+   portrait-02 carries a chalkboard of garbled pseudo-writing, and
+   plate-08-bell-gym-portrait-01 carries a banner reading 3RD INFANTRY DIVISION.
+   The lock says plates carry zero lettering because UI text lives in code, and
+   text inside the photograph competes with the text on top of it. Neither is
+   fixable here; both go in the brief.
+
+   THE SCRIM IS LIGHTER THAN IT WAS. The cabinet is an opaque object inset from
+   three edges, so it protects its own legibility and the wall does not have to
+   be beaten flat to make type readable -- only the band behind the stile does,
+   and the stile's own drawer fronts are material. */
+.ge-drillcase.room {
+  --plate: url("/plates/plate-08-bell-gym-landscape-01.jpg");
+  background-color: transparent;
   background-image:
     var(--grain),
-    /* board seams down the back panel */
-    repeating-linear-gradient(90deg,
-      rgba(0,0,0,.42) 0 3px, rgba(156,107,58,.10) 3px 5px, transparent 5px 96px),
-    /* long vertical grain inside each board */
-    repeating-linear-gradient(90deg,
-      transparent 0 11px, rgba(0,0,0,.10) 11px 13px, transparent 13px 29px),
-    linear-gradient(174deg, #3A2412 0%, #2A1A0C 55%, #1A1108 100%);
-  background-size: 180px 180px, 100% 100%, 100% 100%, 100% 100%;
-  background-blend-mode: overlay, normal, normal, normal;
+    linear-gradient(94deg,
+      rgba(14,10,6,.58) 0%,
+      rgba(14,10,6,.30) 28%,
+      rgba(16,11,7,.14) 60%,
+      rgba(18,12,8,.24) 100%);
+  background-size: 180px 180px, 100% 100%;
+  background-blend-mode: overlay, normal;
 }
+
+@media (orientation: portrait) {
+  .ge-drillcase.room {
+    --plate: url("/plates/plate-02b-floor-portrait-02.jpg");
+    background-image:
+      var(--grain),
+      linear-gradient(184deg,
+        rgba(14,10,6,.58) 0%,
+        rgba(14,10,6,.32) 30%,
+        rgba(16,11,7,.20) 70%,
+        rgba(18,12,8,.34) 100%);
+  }
+}
+
+/* THE WORK SURFACE IS AIR, NOT A SLAB.
+
+   It painted the cabinet carcass across the whole work area until the owner sent
+   three mockups on 2026-09-26. In all three the photograph of the gym IS the
+   ground and the content stands on it as separate riveted boards, with bags,
+   ropes and brick showing in the gaps between them. One opaque panel across
+   three quarters of the screen is precisely what those mockups are not: it
+   demotes the gym to a border. So this element keeps its layout job and gives up
+   its material one, and each board below brings its own plaque. */
 
 /* The light comes through the open door, not from ceiling fixtures. The room's
    two-lamp wash is replaced by one warm pool from the hinge side and a deep
@@ -2068,12 +2154,225 @@
     radial-gradient(120% 74% at 50% 108%, rgba(0,0,0,.70), transparent 66%);
 }
 
+/* ==========================================================================
+   THE EQUIPMENT RAIL -- three drawer fronts, not a row of tabs.
+
+   The owner's 2026-09-26 direction for this room: "the tabs in the room is
+   different equipment", and a coach should know where they are standing from
+   the layout and the materials alone. So the rail is built as the fronts of the
+   cabinet's own drawers -- walnut faces with engraved bronze nameplates -- and
+   the one the coach is standing at is THE ONLY BRASS IN THE ROW. That is the
+   same rule the rest of the material system follows: brass means "the thing you
+   have chosen", never "this is a control".
+
+   THE TARGET IS --tap (55px), STATED ON THE FRONT ITSELF. Three side-by-side
+   controls at the head of a room are exactly where a thumb arrives first, and
+   padding alone does not make a promise a guard can read. The nameplate sits at
+   --t-md rather than a label size, because this is the thing that answers
+   "which equipment am I at" and the answer should not be the smallest type on
+   the screen.
+
+   NO `display` ON THE PANELS. The three stations are hidden with the `hidden`
+   ATTRIBUTE, whose UA rule is `display: none`, and an unlayered `display` on a
+   panel hook here would out-rank it and leave every station visible at once.
+   None of the three panel hooks below sets one; this comment is what stops the
+   next person adding it.
+   ========================================================================== */
+/* THE ROOM'S PLAN: a stile down the left, the work surface filling the rest,
+   and no column anywhere.
+
+   Owner ruling 2026-09-26, after measuring ChatGPT's and Grok's shells in a
+   browser rather than describing them: ChatGPT runs a 340px labelled rail
+   against main at 1100px of a 1440px viewport, with a 0px border between them;
+   Grok runs a 57px icon stile with its strongest edge at rgba(15,13,10,0.04).
+   What both actually share, and what is taken here, is that the SHELL fills the
+   viewport while the CONTENT keeps a reading measure, and that panes are told
+   apart by tone rather than by rules or card edges.
+
+   This surface used to be `mx-auto max-w-6xl`: a 1152px column with dead ground
+   down both sides of any real screen. The column is gone. What is left of it is
+   a measure on the prose inside, which is where a measure belongs.
+
+   THE RAIL IS TRANSPARENT ON PURPOSE. It stands ON the wall -- the photograph
+   of the gym -- rather than covering it, so the bags and beams in the outer
+   third of the plate are what the stile is nailed to. Only the drawer fronts
+   are material. That is the mix stated in one rule: real gym at layer 0,
+   golden-era furniture standing on it. */
+.ge-drillcase .ge-drillcase__room {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.ge-drillcase .ge-drillcase__rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: var(--s5) var(--s4);
+}
+
+/* EACH STATION IS A BOARD ON THE GYM WALL. An earlier pass flattened the
+   library's panel, and that was correct while the surface behind it was a walnut
+   slab -- a panel inside a panel. The slab is gone, so the flattening goes with
+   it. On the owner's mockups every group of content is a dark riveted board with
+   a brass keyline, hung on the photograph with the room visible around it, and
+   that is what these are. */
+.ge-drillcase .ge-drillcase__surface > section {
+  margin: 0;
+  padding: var(--s5);
+  border: 1px solid color-mix(in srgb, var(--brass-700) 58%, transparent);
+  border-radius: var(--r-lg);
+  background-color: #1B1410;
+  background-image:
+    var(--grain-fine),
+    linear-gradient(176deg, #241B14 0%, #1A130E 62%, #120D09 100%);
+  background-blend-mode: overlay, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.13),
+    0 16px 38px rgba(0,0,0,.58);
+}
+
+.ge-drillcase .ge-drillcase__stations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+/* The way out sits at the foot of the stile, pushed there rather than placed:
+   the stile is a column and this is the only thing in it that belongs at the
+   bottom whatever the height. */
+.ge-drillcase .ge-drillcase__leave {
+  margin-top: auto;
+  text-align: center;
+}
+
+.ge-drillcase .ge-drillcase__surface {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--s5) var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+
+/* The reading measure, on the prose and nothing else. A paragraph 1400px wide
+   is unreadable however handsome the room is; a cabinet 1400px wide is just a
+   cabinet. */
+.ge-drillcase .ge-drillcase__surface p {
+  max-width: 78ch;
+}
+
+@media (min-width: 1024px) {
+  .ge-drillcase .ge-drillcase__room {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .ge-drillcase .ge-drillcase__rail {
+    flex: 0 0 auto;
+    width: clamp(16.5rem, 22vw, 21rem);
+    padding: var(--s6) var(--s4) var(--s6) var(--s5);
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    max-height: 100vh;
+    overflow-y: auto;
+  }
+
+  /* THE CABINET IS INSET FROM BOTH EDGES, not flush to the right one. The first
+     build ran the surface to the right edge and the photograph survived only as
+     a strip behind the stile -- the gym on one side of the screen and nowhere
+     else, which is a margin, not a room. Inset on three sides, the wall carries
+     the outer thirds the reference lock asks for and the cabinet reads as a
+     thing standing IN the room rather than as the room itself. */
+  /* THE ROOM SHOWS DOWN THE RIGHT, which is how the owner's coach-dashboard
+     mockup is composed: the signboard on the left, the boards through the
+     middle, and the gym itself -- bags, ropes, ring -- down the right third.
+     A cap on the boards is what leaves that third standing. It is not the
+     centred column this layout removed: nothing is centred, the content is
+     left-aligned against the stile and the room takes the rest. */
+  .ge-drillcase .ge-drillcase__surface {
+    margin: 0;
+    padding: var(--s6) var(--s6) var(--s7);
+    max-width: 68rem;
+  }
+}
+
+/* A drawer front, now stacked down the stile rather than laid across the top.
+   Full width of the stile at every size: the 412px screenshot that produced the
+   earlier full-width rule was showing the same defect a narrow stile would,
+   and a column of fronts that do not line up does not read as one cabinet. */
+.ge-drillcase .ge-drillcase__station {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--s1);
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--s3) var(--s4);
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--brass-700) 54%, transparent);
+  border-radius: var(--r-md);
+  background-color: #1B130C;
+  background-image:
+    var(--grain-fine),
+    linear-gradient(178deg, #2C1E12 0%, #1C130B 62%, #130D08 100%);
+  background-blend-mode: overlay, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.13),
+    0 4px 10px rgba(0,0,0,.52);
+}
+
+.ge-drillcase .ge-drillcase__station .ge-drillcase__station-name {
+  color: color-mix(in srgb, var(--brass-200) 58%, var(--bone-200));
+  font-size: var(--t-md);
+  text-shadow: 0 1px 0 rgba(0,0,0,.62);
+}
+
+.ge-drillcase .ge-drillcase__station .ge-drillcase__station-note {
+  color: var(--bone-300);
+  letter-spacing: 0.11em;
+}
+
+/* The drawer that is open. Brass face, the nameplate cut into it, and the front
+   sits PROUD of the others rather than merely brighter -- a coach reading the
+   row at a glance gets the answer from the shape as well as the metal, which is
+   what a colour-blind coach reading it gets too. */
+.ge-drillcase .ge-drillcase__station[aria-current='true'] {
+  border-color: color-mix(in srgb, var(--brass-300) 82%, transparent);
+  background-color: var(--brass-800);
+  background-image:
+    var(--grain-fine),
+    linear-gradient(178deg,
+      color-mix(in srgb, var(--brass-500) 88%, #000) 0%,
+      var(--brass-700) 58%,
+      color-mix(in srgb, var(--brass-800) 92%, #000) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,232,186,.34),
+    0 7px 16px rgba(0,0,0,.6);
+}
+
+.ge-drillcase .ge-drillcase__station[aria-current='true'] .ge-drillcase__station-name {
+  color: #17110A;
+  text-shadow: 0 1px 0 rgba(255,232,186,.34);
+}
+
+.ge-drillcase .ge-drillcase__station[aria-current='true'] .ge-drillcase__station-note {
+  color: color-mix(in srgb, #17110A 76%, var(--brass-900));
+}
+
 /* The engraved header plaque inside the lid: near-black lacquer, a bronze
-   hairline, letters cut into it. The page states only a bottom keyline here,
-   which floats on brick; against the cabinet it needs to be an object. The
-   padding is stated on all four sides because a filled plaque cannot inherit
-   the bottom-only padding the keyline version wanted. */
-.ge-drillcase header {
+   hairline, letters cut into it. The padding is stated on all four sides
+   because a filled plaque cannot inherit the bottom-only padding the keyline
+   version wanted.
+
+   NAMED BY ITS OWN CLASS, NOT BY `header`. This was `.ge-drillcase header`,
+   which also caught the <header> inside the shared drill detail (W-D4A) once
+   that detail began rendering on this route: the opened drill's title band
+   turned to black lacquer while its title kept the index card's dark ink, so
+   the drill's own name printed dark-on-dark. The plaque is the page's
+   masthead and nothing else. */
+.ge-drillcase .ge-drillcase__masthead {
   background-color: #14100D;
   background-image:
     var(--grain-fine),
@@ -2090,7 +2389,7 @@
 
 /* Cut lettering: the title is engraved brass on the plaque, so it takes the
    metal rather than the bone the rest of the cabinet uses. */
-.ge-drillcase header .t-command {
+.ge-drillcase .ge-drillcase__masthead .t-command {
   color: var(--brass-200);
   text-shadow: 0 1px 0 rgba(0,0,0,.78), 0 0 16px rgba(190,148,64,.20);
 }
@@ -2292,6 +2591,326 @@
   box-shadow:
     inset 0 1px 0 rgba(231,200,138,.26),
     0 1px 3px rgba(0,0,0,.45);
+}
+
+/* ---------------------------------------------------------------------------
+   THE CABINET REDESIGN (owner brief, 2026-09-20): the page recomposed in the
+   order a coach works -- find a reference drill, open it, decide; see what
+   this gym already runs; and last, quietest, write a drill of the gym's own.
+   Presentation only. The controls, handlers, ids and states are the ones the
+   page already had; goldenEraDrillcaseScope.test.ts still counts them.
+
+   FOUR MATERIALS, ONE PER JOB, so no two kinds of drill can be mistaken:
+     the cabinet    dark walnut carcass, bronze bead: the reference library
+     index cards    aged cream (the rules above): a reference drill, read-only
+     the worksurface  a leather blotter the opened card is laid on
+     ledger cards   blackened leather, stitched: a drill THIS gym runs
+   Brass is spent only where it means something: primary actions, the
+   lifecycle boundary on the opened drill, the one sentence that says adopting
+   is not assigning, and a promoted drill's provenance.
+
+   EVERY INK ON A LIGHT GROUND IS RESTATED. Tailwind's utilities sit in
+   @layer utilities and this sheet is unlayered, so each rule below beats the
+   bone utility its element carries without !important -- which it must: the
+   shared drill detail paints its body copy, its safety lines and its field
+   labels in bone, and on this route those landed on cream at about 1.2:1.
+   Measured before this change: Safety, "What it is for", Setup, Equipment and
+   How it runs were all effectively invisible on the opened drill, and the
+   cards' "Contact:" / "Equipment:" labels and "Coach authorization required"
+   line could not be read at all. Computed ratios below are against the
+   DARKEST point of the cream (#CFB88F):
+     body #3A2E1D 6.9:1 · strong #241B12 8.8:1 · not-ready #6F3411 5.0:1
+   and against the ledger leather's lightest gradient stop (#2A1F18):
+     bone-100 14.2:1 · bone-300 10.4:1 · brass-200 10.0:1
+   Computed from the sheet's stops, not sampled; the grain and the screen-
+   blended warm pool sit on top of them, so the rendered page is the proof.
+   --------------------------------------------------------------------------- */
+
+/* THE CABINET: the reference library's carcass. A darker, framed box standing
+   in front of the back boards, so the primary workspace reads as the one
+   object on the wall. The frame and its bead are inset shadows, so they cost
+   no layout and cannot catch a pointer. */
+.ge-drillcase .ge-drillcase__cabinet {
+  position: relative;
+  background-color: var(--wood-900);
+  background-image:
+    var(--grain),
+    linear-gradient(180deg, rgba(0,0,0,.34) 0%, transparent 16%),
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,.15) 0 2px, transparent 2px 23px),
+    linear-gradient(176deg, #2E1D0F 0%, #22160B 60%, #180F07 100%);
+  background-blend-mode: overlay, normal, normal, normal;
+  border: 1px solid color-mix(in srgb, var(--brass-800) 70%, #000);
+  box-shadow:
+    inset 0 0 0 5px #1A1108,
+    inset 0 0 0 6px rgb(var(--brass-700-rgb) / .42),
+    inset 0 12px 26px rgba(0,0,0,.55),
+    0 10px 26px rgba(0,0,0,.6);
+}
+
+/* The lid of the cabinet: its title and what the library is, above a bronze
+   rule. */
+.ge-drillcase .ge-drillcase__cabinet-head {
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid color-mix(in srgb, var(--brass-700) 55%, transparent);
+}
+
+/* THE BOUNDARY: "Promoting does not assign the drill to any athlete." Its own
+   engraved plate, in bone on dark bronze with a brass edge -- the lifecycle
+   boundary the brief names, stated where no coach can read past it. */
+.ge-drillcase .ge-drillcase__boundary {
+  max-width: 48rem;
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--brass-600);
+  border-left-width: 4px;
+  border-radius: var(--r-sm);
+  background-image: linear-gradient(180deg, rgb(var(--brass-900-rgb) / .92) 0%, rgba(20,16,13,.94) 100%);
+  color: var(--bone-100);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.45;
+  letter-spacing: .01em;
+}
+
+/* THE INDEX CARD'S OWN LINES. The labels ("Contact:", "Equipment:") carry a
+   bone utility; restated in the card's strong ink. */
+.ge-drillcase .ge-drillcase__card p > span {
+  color: #241B12;
+}
+
+/* "Coach authorization required": a safety gate, so it is set in the card's
+   strongest ink with a bronze rule beside it. It wore --locked-ink before --
+   the medically-not-allowed reservation's tint -- which on cream was
+   invisible, and which is not what a coach-authorization gate is. */
+.ge-drillcase .ge-drillcase__authorization {
+  padding-left: var(--s3);
+  border-left: 3px solid var(--brass-700);
+  color: #241B12;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+/* Where a reference drill already stands in this gym, stamped on its card. */
+.ge-drillcase .ge-drillcase__card .ge-drillcase__state {
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--brass-800) 55%, transparent);
+  border-radius: 3px;
+  background-color: rgb(255 250 238 / .38);
+  color: #241B12;
+  line-height: 1.2;
+}
+
+/* THE FOCUS RING ON CREAM. The scope's ring is brass-400 at 55%, which on the
+   card's cream is a faint halo. On a light ground it becomes a dark bronze
+   ring with a light inner gap, so a keyboard user can see which card's
+   control they are on. */
+.ge-drillcase .ge-drillcase__card .btn:focus-visible,
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised .btn:focus-visible {
+  box-shadow:
+    0 0 0 2px #F3E6CC,
+    0 0 0 5px var(--brass-900),
+    var(--focus);
+}
+
+/* A DISABLED CONTROL ON CREAM. The shared disabled face (globals.css) is a
+   bone-400 label on a translucent leather wash, tuned for a dark ground; on
+   the card it composites to a pale smear and "Promoting..." / "Saving..." --
+   the only sign an action is running -- all but disappears. Here it is a
+   dashed, flat plate with a mid-brown label (#5A4A33, about 4.8:1 on the
+   tinted cream): plainly not pressable, still readable. Only the opened
+   card needs it: a catalogue card's View drill is disabled only while an
+   action runs, and the catalogue is hidden for as long as one can. */
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised .btn:disabled {
+  color: #5A4A33;
+  background-color: rgb(58 46 29 / .1);
+  border: 1px dashed color-mix(in srgb, var(--brass-800) 60%, transparent);
+}
+
+/* THE WORKSURFACE: the leather blotter an opened drill is laid on. It takes
+   the place of the discovery rail and the card grid while a drill is open --
+   the page hides both -- so the opened card is the only thing in the cabinet,
+   not a pane beside the catalogue. */
+.ge-drillcase .ge-drillcase__worksurface {
+  background-color: var(--hide-950);
+  background-image:
+    var(--grain),
+    radial-gradient(90% 70% at 50% 0%, rgba(120,84,50,.16), transparent 70%),
+    linear-gradient(180deg, #1E1712 0%, #14100D 100%);
+  background-blend-mode: overlay, screen, normal;
+  border: 1px solid color-mix(in srgb, var(--brass-800) 60%, #000);
+  box-shadow: inset 0 2px 12px rgba(0,0,0,.65);
+}
+
+/* The card itself, pulled from the cabinet: the same cream as the catalogue,
+   lifted off the blotter. */
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised {
+  box-shadow:
+    0 2px 0 var(--wood-900),
+    0 14px 26px rgba(0,0,0,.62);
+}
+
+/* THE SHARED DETAIL'S INK PASS. DrillDetail is not edited: every voice it
+   paints in bone is restated here, scoped to the card on this route's
+   worksurface. :where() keeps the broad rule at (0,3,0), so the named rules
+   after it -- strong labels, the not-ready line -- win on source order. */
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised :where(p, li, dd) {
+  color: #3A2E1D;
+}
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised :where(dt, p > span:not(.plaque), li > span) {
+  color: #241B12;
+}
+
+/* The title band of the card: name, difficulty, discipline and category,
+   the content line, and the lifecycle boundary -- above a rule. */
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised > header {
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid color-mix(in srgb, var(--brass-800) 45%, transparent);
+}
+
+/* THE LIFECYCLE BOUNDARY on the opened drill: the state this drill is in
+   here and the one action that state allows, inside a brass edge. */
+.ge-drillcase .ge-drillcase__adopt {
+  border: 1px solid var(--brass-600);
+  background-color: rgb(255 248 230 / .45);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.34);
+}
+.ge-drillcase .ge-drillcase__worksurface .ge-drillcase__not-ready {
+  color: color-mix(in srgb, var(--restricted-deep) 72%, #000);
+  font-weight: 700;
+}
+
+/* SAFETY -- first and always open in the component; here it is also the
+   heaviest thing on the card after the title. Targeted by the region name
+   the component gives it, because the component is not edited. */
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised > section[aria-label="Safety"] {
+  border-color: var(--brass-600);
+  background-color: rgb(255 246 226 / .55);
+}
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised > section[aria-label="Safety"] > h3 {
+  color: #241B12;
+  font-size: 14px;
+  font-weight: 750;
+  letter-spacing: .18em;
+}
+
+/* The expanders (corrections, each scale level, coaching notes, source and
+   version). Their utilities paint a 20%-black wash, which on cream muddies to
+   a tan the labels sink into; they become a lighter card-within-the-card. */
+.ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised details {
+  background-color: rgb(255 250 238 / .42);
+  border-color: color-mix(in srgb, var(--brass-800) 40%, transparent);
+}
+
+/* On a wide screen each instruction section reads as a labelled row -- its
+   heading in a left column, its content beside it -- the way a coach's card
+   is ruled. Safety keeps its full-width panel. Below 1024px everything stacks
+   as the component lays it out. */
+@media (min-width: 1024px) {
+  .ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised > section:not([aria-label]) {
+    display: grid;
+    grid-template-columns: minmax(10rem, 13rem) minmax(0, 1fr);
+    column-gap: var(--s5);
+    row-gap: var(--s2);
+    align-items: baseline;
+  }
+  .ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised > section:not([aria-label]) > * {
+    grid-column: 2;
+    margin: 0;
+  }
+  .ge-drillcase .ge-drillcase__worksurface > .mat-leather--raised > section:not([aria-label]) > h3 {
+    grid-column: 1;
+  }
+}
+
+/* IN THIS GYM: the section head over the gym's own drills. */
+.ge-drillcase .ge-drillcase__shelf-head {
+  padding-bottom: var(--s3);
+  border-bottom: 1px solid color-mix(in srgb, var(--brass-800) 60%, transparent);
+}
+
+/* THE LEDGER CARD: a drill this gym runs. Blackened leather with a stitched
+   edge instead of cream with rivets, so an operational drill can never be
+   mistaken for a reference card it is only browsing. Every voice the index
+   card flipped to dark ink is flipped back to bone here -- equal specificity
+   to the card rules above and later in the sheet, so it wins on order. */
+.ge-drillcase .ge-drillcase__ledger {
+  color: var(--bone-200);
+  background-color: var(--hide-900);
+  background-image:
+    var(--grain),
+    radial-gradient(120% 90% at 24% 0%, rgba(120,84,50,.16), transparent 60%),
+    linear-gradient(170deg, #2A1F18 0%, #1E1712 55%, #15100C 100%);
+  background-blend-mode: overlay, screen, normal;
+  border: 1px solid color-mix(in srgb, var(--brass-800) 70%, #000);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--brass-300-rgb) / .10),
+    inset 0 -3px 8px rgba(0,0,0,.55),
+    0 4px 10px rgba(0,0,0,.55);
+}
+.ge-drillcase .ge-drillcase__ledger::after {
+  inset: 5px;
+  background-image: none;
+  border: 1px dashed rgb(220 207 178 / .2);
+  border-radius: calc(var(--r-lg) - 3px);
+}
+.ge-drillcase .ge-drillcase__ledger .t-command {
+  color: var(--bone-100);
+  text-shadow: 0 1px 0 rgba(0,0,0,.72);
+}
+.ge-drillcase .ge-drillcase__ledger .t-body,
+.ge-drillcase .ge-drillcase__ledger .t-label {
+  color: var(--bone-300);
+}
+.ge-drillcase .ge-drillcase__ledger ul li {
+  background-color: rgba(0,0,0,.3);
+  border-color: rgb(var(--brass-600-rgb) / .45);
+  color: var(--bone-300);
+}
+/* "View instructions" as an outlined bronze bar, so it stands off the dark
+   leather. Enabled only: a disabled one keeps the sheet's flat disabled face,
+   which `.btn:disabled` would otherwise lose to this rule's weight. */
+.ge-drillcase .ge-drillcase__ledger .btn--ghost:not(:disabled) {
+  background-image: none;
+  background-color: rgba(0,0,0,.25);
+  border-color: var(--brass-500);
+  color: var(--brass-200);
+}
+.ge-drillcase .ge-drillcase__ledger .btn--ghost:not(:disabled):hover {
+  border-color: var(--brass-300);
+  color: var(--bone-100);
+}
+
+/* Where an operational drill came from, stamped at its foot. */
+.ge-drillcase .ge-drillcase__provenance {
+  padding: 5px 8px;
+  border: 1px solid rgb(220 207 178 / .32);
+  border-radius: 3px;
+  color: var(--bone-300);
+  font: 650 11px/1.2 var(--font-data);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.ge-drillcase .ge-drillcase__provenance--reference {
+  border-color: var(--brass-600);
+  background-color: rgb(var(--brass-900-rgb) / .6);
+  color: var(--brass-200);
+}
+
+/* CREATE A GYM DRILL: the secondary workbench. The same walnut bay as the
+   discovery rail, set back -- flatter light, a fainter edge -- so it reads as
+   the path taken when the library has nothing, not as the page's first job. */
+.ge-drillcase .ge-drillcase__workbench {
+  background-image:
+    var(--grain),
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,.10) 0 2px, transparent 2px 15px),
+    linear-gradient(176deg, #2C1C0E 0%, #22160B 100%);
+  background-blend-mode: overlay, normal, normal;
+  border-color: color-mix(in srgb, var(--brass-800) 40%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.08),
+    inset 0 -3px 8px rgba(0,0,0,.45);
 }
 
 /* ==========================================================================

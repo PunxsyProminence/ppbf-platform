@@ -196,6 +196,26 @@ describe('golden-era drillcase scope', () => {
     expect(declarations).not.toMatch(/#A81E22/i);
     expect(declarations).not.toMatch(/--locked|--stamp-red/);
   });
+
+  test('the masthead plaque is reached by its own class, never by the <header> element', () => {
+    // `.ge-drillcase header` also caught the shared drill detail's own
+    // <header> once W-D4A rendered it on this route: the opened drill's title
+    // band turned to black lacquer under the index card's dark ink, and the
+    // drill's name printed dark-on-dark. Comments stripped: the block's prose
+    // names the old selector to say why it went.
+    const stripped = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
+    expect(stripped).not.toMatch(/\.ge-drillcase\s+header\b/);
+    expect(stripped).toContain('.ge-drillcase .ge-drillcase__masthead {');
+    expect(PAGE).toMatch(/<header className="[^"]*\bge-drillcase__masthead\b/);
+  });
+
+  test('"Coach authorization required" is not dressed in the medical reservation', () => {
+    // It wore --locked-ink, the MEDICALLY_NOT_ALLOWED tint, which on the cream
+    // card was also invisible. A coach-authorization gate is not that state.
+    const line = sliceFrom(PAGE, '{drill.requires_coach_authorization && (', 'Coach authorization required');
+    expect(line).not.toMatch(/--locked|--stamp-red/);
+    expect(line).toContain('ge-drillcase__authorization');
+  });
 });
 
 describe('the 004B mockup did not delete or invent drill-library controls', () => {
@@ -419,14 +439,21 @@ describe('the 004B mockup did not delete or invent drill-library controls', () =
     //   - two selects: difficulty, and ONE element mapped over the FILTERS
     //     specs (six on screen, one in the source -- which is why the FILTERS
     //     array itself is pinned, key by key and field by field, above);
-    //   - seven buttons: the five above, plus Retire / Restore (one element
+    //   - EIGHT buttons: the five above, plus Retire / Restore (one element
     //     whose caption follows the derived lifecycle) on the opened detail,
-    //     and Clear filters on the discovery rail. Named in "the real actions
-    //     still exist"; this case holds the line against an EIGHTH.
+    //     Clear filters on the discovery rail, and -- since the 2026-09-26 room
+    //     ruling -- the equipment rail's station button, which is ONE element in
+    //     the source rendered three times from STATIONS. Named in "the real
+    //     actions still exist"; this case holds the line against a NINTH.
+    //
+    //     This number went 7 -> 8 for a control that was ADDED deliberately, and
+    //     that is the only reason it may move: the whole point of the census is
+    //     that a mockup pass cannot quietly invent a control with nothing behind
+    //     it, and the rail has the three stations behind it.
     expect(PAGE.match(/<input\b/g) ?? []).toHaveLength(3);
     expect(PAGE.match(/<textarea\b/g) ?? []).toHaveLength(2);
     expect(PAGE.match(/<select\b/g) ?? []).toHaveLength(2);
-    expect(PAGE.match(/<button\b/g) ?? []).toHaveLength(7);
+    expect(PAGE.match(/<button\b/g) ?? []).toHaveLength(8);
     expect(PAGE.match(/<Link\b/g) ?? []).toHaveLength(1);
   });
 });

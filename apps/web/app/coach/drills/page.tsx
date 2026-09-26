@@ -147,7 +147,7 @@ function ReferenceActions({
     if (readiness && !readiness.ready) {
       return (
         <div className="basis-full space-y-[var(--s2)]">
-          <p className="t-label text-[color:var(--restricted-ink)]">Not ready to adopt</p>
+          <p className="ge-drillcase__not-ready t-label text-[color:var(--restricted-ink)]">Not ready to adopt</p>
           <ul className="list-disc space-y-[var(--s1)] pl-[var(--s5)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
             {readiness.missing.map((item) => <li key={item}>{item}</li>)}
           </ul>
@@ -210,6 +210,36 @@ function ReferenceActions({
   return label;
 }
 
+/* THE EQUIPMENT IN THIS ROOM.
+ *
+ * The drill cabinet is a room, not a document, so its three parts are three
+ * pieces of equipment standing in it rather than three sections you scroll
+ * past: the cabinet you read from, the shelf of drills this gym actually runs,
+ * and the workbench where a new one gets written. Walking to one is what the
+ * rail below does.
+ *
+ * `hidden` IS THE ATTRIBUTE, NOT THE TAILWIND CLASS, and that is the whole
+ * reason this is testable. The utility class is CSS, jsdom compiles none, and a
+ * class-hidden panel stays in the accessibility tree here while disappearing in
+ * a browser -- so every query in page.test.tsx would go on passing at exactly
+ * the configuration where the contract is false. The attribute is honoured by
+ * the UA sheet AND by the accessibility tree jsdom builds, so one station is
+ * reachable at a time in both, and no scope rule below sets `display` on these
+ * three hooks to out-rank it.
+ *
+ * THE PANELS STAY MOUNTED. Switching station hides a panel, it does not unmount
+ * it, so a half-typed drill on the workbench and a chosen filter on the shelf
+ * are both still there when the coach walks back. Unmounting would have made
+ * the rail quietly destructive.
+ */
+type Station = 'library' | 'gym' | 'workbench';
+
+const STATIONS: readonly { readonly id: Station; readonly label: string; readonly note: string }[] = [
+  { id: 'library', label: 'Reference cabinet', note: 'Read and adopt' },
+  { id: 'gym', label: 'This gym’s shelf', note: 'What we run' },
+  { id: 'workbench', label: 'Workbench', note: 'Write a new one' },
+];
+
 function CoachDrillLibrary() {
   const [drills, setDrills] = useState<Drill[]>([]);
   const [loading, setLoading] = useState(true);
@@ -217,6 +247,10 @@ function CoachDrillLibrary() {
   const [referenceDrills, setReferenceDrills] = useState<ReferenceDrill[]>([]);
   const [referenceLoading, setReferenceLoading] = useState(true);
   const [referenceLoadError, setReferenceLoadError] = useState('');
+  /* Which station the coach is standing at. 'library' because the cabinet is
+     what this room is for; the workbench opened the page once and put the rare
+     path in front of the usual one. */
+  const [station, setStation] = useState<Station>('library');
 
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
@@ -372,8 +406,10 @@ function CoachDrillLibrary() {
     setOpenReferenceError('');
     setOpenReferenceLoading(true);
     setPromoteError('');
-    // The detail renders in the reference section; an operational card far
-    // below it opens it too, so bring the coach to where it appears.
+    // The detail renders at the reference cabinet; a card on the gym's shelf
+    // opens it too, so walk the coach to the equipment it appears on before
+    // scrolling -- otherwise the scroll targets a panel the attribute hides.
+    setStation('library');
     referenceSectionRef.current?.scrollIntoView?.({ block: 'start' });
     try {
       const response = await fetch(
@@ -417,13 +453,34 @@ function CoachDrillLibrary() {
     setPromoteError('');
     const openerId = openerRef.current;
     if (openerId && typeof window !== 'undefined') {
+      /* THE CONTROL SAYS "BACK TO THE REFERENCE LIBRARY", SO THAT IS WHERE THIS
+         LANDS. The card that opened the detail can be on the gym's shelf, and an
+         earlier draft of this walked the coach back to that shelf so focus could
+         return to the exact card -- which contradicted the only promise the
+         button makes, and moved a coach to a station they had not asked for.
+         page.test.tsx said so immediately: the search and filters did not come
+         back.
+
+         So the station is always the cabinet, and the opener gets focus only if
+         it STANDS at the cabinet. When it does not -- or has been filtered away
+         -- the fallbacks below take it, and both of those stand here too.
+
+         SYNCHRONOUSLY, not inside the frame: the frame below is the one that
+         focuses, React flushes this before it runs, and doing it in the frame
+         would have needed a second one -- silently changing the contract every
+         caller that counts frames is measuring. */
+      setStation('library');
       window.requestAnimationFrame(() => {
         // The card that opened it can be gone by now -- filtered out by the
         // state an action just changed, or retired off the operational list --
         // and then the search box, at the head of the list, takes focus rather
         // than the page body; if the library itself failed to load, so there is
         // no search box either, the section's heading does.
-        const opener = document.getElementById(openerId)
+        const openedFrom = document.getElementById(openerId);
+        const atTheCabinet = openedFrom?.closest('[data-station]')?.getAttribute('data-station') === 'library'
+          ? openedFrom
+          : null;
+        const opener = atTheCabinet
           ?? document.getElementById('reference-search')
           ?? document.getElementById('reference-library-heading');
         opener?.scrollIntoView?.({ block: 'center' });
@@ -439,7 +496,7 @@ function CoachDrillLibrary() {
   // control is enabled again by the time the effect runs, then moved on the
   // next frame -- but only from where the action left it (the page body, once
   // the button it was on was disabled or removed, or somewhere in this drill).
-  // Focus the coach moved elsewhere while it saved -- into the Add a drill
+  // Focus the coach moved elsewhere while it saved -- into the Create a gym drill
   // form, say -- stays there.
   function focusLifecycleControl(referenceDrillId: string) {
     setFocusRequest({ referenceDrillId });
@@ -635,129 +692,111 @@ function CoachDrillLibrary() {
     }
   }
 
+  // THE ORDER IS THE JOURNEY (owner redesign, 2026-09-20): find a reference
+  // drill, open it, decide; then what this gym already runs; then, last and
+  // quietest, writing a drill of the gym's own. The create form used to open
+  // the page, which put the rare path ahead of the usual one. Every control,
+  // handler and state below is the one that was here -- only where each sits,
+  // and what it is dressed in, changed. The three section headings gained ids
+  // so each section is a region named by its heading.
   return (
-    <main className="ge-drillcase room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
-      <div className="mx-auto max-w-5xl">
-        <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
-          <p className="t-eyebrow">Coach</p>
-          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Drill Library</h1>
-          {/* Truthful since W-D2: athletes read a drill in Learn only when it was
-              promoted from the reference library. A drill written by hand here
-              is assignable, and its name and purpose reach the athlete on the
-              assignment, but it has no reference instructions to read. */}
-          <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
-            Operational drills are what assignments point at, so the same drill means the same thing for
-            every coach and every athlete. Athletes can read a drill&apos;s full instructions once this gym
-            promotes it from the reference library.
-          </p>
-          <Link href="/coach/environment/intake-router" className="btn btn--ghost mt-[var(--s4)]">
+    /* NO `bg-[var(--hide-950)]` AND NO `max-w-6xl` ANY MORE.
+
+       The opaque utility background was painting over the room's own ground,
+       which since the 2026-09-26 mix ruling is a photograph of this gym behind
+       a scrim -- an unlayered Tailwind background on <main> would have hidden
+       it and the failure would have looked like "the plate does not work".
+
+       The column is gone with it. It was `mx-auto max-w-6xl`: 1152px of content
+       with dead ground down both sides of any real screen. The reading measure
+       moved onto the prose, where a measure belongs, and the room now runs wall
+       to wall the way the two shells measured for this ruling do. */
+    <main className="ge-drillcase room min-h-screen text-[color:var(--bone-200)]">
+      <div className="ge-drillcase__room">
+        <div className="ge-drillcase__rail">
+          {/* The nameplate, on the stile rather than across the top. A masthead
+              band spanning the full width is the column's last habit: it costs
+              the same vertical space on a phone as on a 27in monitor and tells
+              the coach nothing they did not already know from the door. */}
+          <header className="ge-drillcase__masthead">
+            <p className="t-eyebrow">Coach</p>
+            <h1 className="t-command mt-[var(--s2)] text-[length:var(--t-xl)]">Drill Library</h1>
+            <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+              Find, inspect and adopt drills for this gym.
+            </p>
+          </header>
+
+        {/* THE RAIL: the equipment standing in this room, and walking to one.
+            BUTTONS WITH `aria-current`, NOT role="tablist". role="tablist"
+            appears nowhere in this application, and a real tablist owes every
+            child role="tab", aria-selected and arrow-key ownership that this
+            rail does not implement -- claiming the role without them tells a
+            screen reader to expect a keyboard contract that is not there.
+            CoachWorkspace made this same call for its own rail. */}
+          <nav aria-label="Equipment in this room" className="ge-drillcase__stations">
+            {STATIONS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setStation(item.id)}
+              /* THE RAIL IS INSIDE THE ACTION LOCK. W-D4C binds the coach to a
+                 drill until its action and every re-read after it have finished,
+                 so that nothing it reports can land on another drill. Walking to
+                 another piece of equipment is exactly the kind of "something
+                 else" that lock exists to stop -- it was the first thing this
+                 rail broke, and page.test.tsx's own lock cases are what said so.
+                 Disabled rather than hidden: the row is the coach's map of the
+                 room, and a map that loses an entry while a save is in flight is
+                 worse than one that is briefly untouchable. */
+                disabled={actionInFlight}
+                aria-current={station === item.id ? 'true' : undefined}
+                className="ge-drillcase__station"
+              >
+                <span className="ge-drillcase__station-name t-command">{item.label}</span>
+                <span className="ge-drillcase__station-note t-label">{item.note}</span>
+              </button>
+            ))}
+          </nav>
+
+          {/* The way out, at the foot of the stile. It was beside the title in
+              the masthead band, which put "leave" at the same weight as the
+              room's own name. */}
+          <Link href="/coach/environment/intake-router" className="btn btn--ghost ge-drillcase__leave">
             Back to Coach Workspace
           </Link>
-        </header>
+        </div>
 
-        <section className="mat-leather mt-[var(--s6)] rounded-[var(--r-lg)] p-[var(--s5)]">
-          <h2 className="t-command text-[length:var(--t-lg)]">Add a drill</h2>
+        <div className="ge-drillcase__surface">
 
-          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
-            <div className="field">
-              <label htmlFor="drill-name" className="t-label">Name</label>
-              <input
-                id="drill-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                className="input"
-                placeholder="Straight jab retraction"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="drill-category" className="t-label">Category</label>
-              <input
-                id="drill-category"
-                value={category}
-                onChange={(event) => setCategory(event.target.value)}
-                className="input"
-                placeholder="Striking"
-              />
-            </div>
-          </div>
-
-          <div className="field mt-[var(--s4)]">
-            <label htmlFor="drill-focus" className="t-label">What it is for</label>
-            <textarea
-              id="drill-focus"
-              value={focus}
-              onChange={(event) => setFocus(event.target.value)}
-              rows={2}
-              className="textarea"
-              placeholder="Quick fist return to protect the chin after the jab."
-            />
-          </div>
-
-          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
-            <div className="field">
-              <label htmlFor="drill-cues" className="t-label">
-                Coaching cues, one per line
-              </label>
-              <textarea
-                id="drill-cues"
-                value={cues}
-                onChange={(event) => setCues(event.target.value)}
-                rows={4}
-                className="textarea font-mono"
-                placeholder={'Elbow tucked\nShoulder covers chin\nSnap the fist back'}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="drill-difficulty" className="t-label">Difficulty</label>
-              <select
-                id="drill-difficulty"
-                value={difficulty}
-                onChange={(event) => setDifficulty(event.target.value)}
-                className="select"
-              >
-                {DIFFICULTIES.map((level) => (
-                  <option key={level} value={level}>{level}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {formError && (
-            <p role="alert" className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
-              {formError}
+        {/* 1. THE REFERENCE LIBRARY -- the primary workspace: the drill cabinet. */}
+        <section
+          ref={referenceSectionRef}
+          data-station="library"
+          hidden={station !== 'library'}
+          aria-labelledby="reference-library-heading"
+          className="ge-drillcase__cabinet mt-[var(--s6)] rounded-[var(--r-lg)] p-[var(--s4)] md:p-[var(--s5)]"
+        >
+          <div className="ge-drillcase__cabinet-head">
+            <h2 id="reference-library-heading" tabIndex={-1} className="t-command text-[length:var(--t-xl)]">Reference library</h2>
+            {/* Truthful since W-D2: athletes read a drill in Learn only when it was
+                promoted from the reference library. */}
+            <p className="t-body mt-[var(--s2)] max-w-3xl text-[color:var(--bone-300)]">
+              Seeded coaching material for planning and review. The reference source stays read-only: open a
+              drill to read all of it before deciding whether to adopt it. Promoting adopts that exact drill and
+              version into this gym, where it becomes an operational drill in the list below, and athletes in
+              this gym can then read its full instructions in Learn.
             </p>
-          )}
-          {saved && (
-            <p className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--cleared)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--cleared-ink)]">
-              ✓ {saved}
-            </p>
-          )}
-
-          <button
-            type="button"
-            onClick={() => void createDrill()}
-            disabled={saving}
-            className="btn mt-[var(--s5)] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {saving ? 'Saving...' : 'Add drill'}
-          </button>
-        </section>
-
-        <section ref={referenceSectionRef} className="mt-[var(--s6)]">
-          <h2 id="reference-library-heading" tabIndex={-1} className="t-command text-[length:var(--t-lg)]">Reference library</h2>
-          <p className="t-body mt-[var(--s2)] max-w-3xl text-[color:var(--bone-300)]">
-            Seeded coaching material for planning and review. The reference source stays read-only. Open a
-            drill to read all of it; promoting it from there adopts that exact version into this gym&apos;s
-            operational drills below, where assignments point. Once promoted, athletes in this gym can read
-            it in Learn. Promoting does not assign the drill to any athlete.
-          </p>
+            {/* Its own line, not the tail of a paragraph: adopting and assigning
+                are different acts, and this is the one sentence that says so. */}
+            <p className="ge-drillcase__boundary mt-[var(--s3)]">Promoting does not assign the drill to any athlete.</p>
+          </div>
 
           {promoteNotice && (
-            <p role="status" className="t-body mt-[var(--s3)] text-[color:var(--bone-200)]">{promoteNotice}</p>
+            <p role="status" className="t-body mt-[var(--s4)] text-[color:var(--bone-200)]">{promoteNotice}</p>
           )}
 
           {promoteError && (
-            <div role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+            <div role="alert" className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
               <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">{promoteError}</p>
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 {OUTCOME_EXPLANATIONS[actionOutcome]}
@@ -765,10 +804,10 @@ function CoachDrillLibrary() {
             </div>
           )}
 
-          {referenceLoading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading reference drills...</p>}
+          {referenceLoading && <p className="t-body mt-[var(--s4)] text-[color:var(--bone-300)]">Loading reference drills...</p>}
 
           {!referenceLoading && referenceLoadError && (
-            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+            <div className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
               <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">{referenceLoadError}</p>
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 This is a failure to load, not an empty reference library.
@@ -777,12 +816,15 @@ function CoachDrillLibrary() {
           )}
 
           {!referenceLoading && !referenceLoadError && referenceDrills.length === 0 && (
-            <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">No reference drills are available.</p>
+            <p className="t-body mt-[var(--s4)] text-[color:var(--bone-300)]">No reference drills are available.</p>
           )}
 
-          {/* LEVEL 2: the opened reference drill, with Promote on it. */}
+          {/* LEVEL 2: the opened reference drill, with Promote on it -- the card
+              pulled from the cabinet and laid on the work surface. It REPLACES
+              the discovery rail and the card grid below (both hidden while it is
+              open); it is not a pane beside them. */}
           {openReferenceId && (
-            <div className="mt-[var(--s4)] space-y-[var(--s4)]">
+            <div className="ge-drillcase__worksurface mt-[var(--s4)] space-y-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s3)] md:p-[var(--s5)]">
               <button type="button" onClick={closeReferenceDrill} disabled={actionInFlight} className="btn btn--ghost">
                 Back to the reference library
               </button>
@@ -799,16 +841,20 @@ function CoachDrillLibrary() {
                   audience="coach"
                   focusOnMount
                   actions={(
-                    <ReferenceActions
-                      referenceDrillId={openReference.id}
-                      state={lifecycle[openReference.id]}
-                      detail={openReferenceDetail}
-                      promotingReferenceId={promotingReferenceId}
-                      changingLifecycle={changingLifecycle}
-                      busy={actionInFlight}
-                      onPromote={(id) => void promoteReference(id)}
-                      onChangeLifecycle={(id, operationalId, restoring) => void changeLifecycle(id, operationalId, restoring)}
-                    />
+                    // The lifecycle boundary: where this drill stands in this gym,
+                    // and the one action that state allows.
+                    <div className="ge-drillcase__adopt flex w-full flex-wrap items-center gap-[var(--s3)] rounded-[var(--r-md)] p-[var(--s3)]">
+                      <ReferenceActions
+                        referenceDrillId={openReference.id}
+                        state={lifecycle[openReference.id]}
+                        detail={openReferenceDetail}
+                        promotingReferenceId={promotingReferenceId}
+                        changingLifecycle={changingLifecycle}
+                        busy={actionInFlight}
+                        onPromote={(id) => void promoteReference(id)}
+                        onChangeLifecycle={(id, operationalId, restoring) => void changeLifecycle(id, operationalId, restoring)}
+                      />
+                    </div>
                   )}
                 />
               )}
@@ -819,8 +865,8 @@ function CoachDrillLibrary() {
               drill is open, with the grid it narrows. */}
           {!referenceLoading && !referenceLoadError && referenceDrills.length > 0 && (
             <div className={`mat-leather mt-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s4)]${openReferenceId ? ' hidden' : ''}`}>
-              <div className="grid gap-[var(--s3)] md:grid-cols-3">
-                <div className="field md:col-span-3">
+              <div className="grid items-end gap-[var(--s3)] sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+                <div className="field sm:col-span-2 md:col-span-3 xl:col-span-6">
                   <label htmlFor="reference-search" className="t-label">Search by name</label>
                   <input
                     id="reference-search"
@@ -870,18 +916,19 @@ function CoachDrillLibrary() {
           )}
 
           {!referenceLoading && !referenceLoadError && referenceDrills.length > 0 && visibleReferenceDrills.length === 0 && !openReferenceId && (
-            <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">No reference drills match this search and these filters.</p>
+            <p className="t-body mt-[var(--s4)] text-[color:var(--bone-300)]">No reference drills match this search and these filters.</p>
           )}
 
-          {/* LEVEL 1: concise cards. Equipment is labelled as equipment -- it
-              used to be printed under "Setup:", which for most of the corpus
-              made an equipment word look like the setup instructions. */}
-          <div className={`mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2${openReferenceId ? ' hidden' : ''}`}>
+          {/* LEVEL 1: concise index cards. Equipment is labelled as equipment --
+              it used to be printed under "Setup:", which for most of the corpus
+              made an equipment word look like the setup instructions. A card
+              carries no Promote: adoption is decided on the opened drill. */}
+          <div className={`mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2 xl:grid-cols-3${openReferenceId ? ' hidden' : ''}`}>
             {visibleReferenceDrills.map((drill) => (
-              <article key={drill.drill_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
-                <div className="flex items-baseline justify-between gap-[var(--s3)]">
+              <article key={drill.drill_id} className="ge-drillcase__card mat-leather--raised flex flex-col rounded-[var(--r-lg)] p-[var(--s4)]">
+                <div className="flex items-start justify-between gap-[var(--s3)]">
                   <h3 className="t-command text-[length:var(--t-md)]">{drill.name}</h3>
-                  <span className="plaque">{drill.difficulty}</span>
+                  <span className="plaque shrink-0">{drill.difficulty}</span>
                 </div>
                 <p className="t-label mt-[var(--s2)]">{drill.discipline} · {drill.category}</p>
                 <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{drill.purpose}</p>
@@ -894,11 +941,16 @@ function CoachDrillLibrary() {
                   </p>
                 )}
                 {drill.requires_coach_authorization && (
-                  <p className="mt-[var(--s3)] text-[length:var(--t-xs)] font-semibold text-[var(--locked-ink)]">
+                  <p className="ge-drillcase__authorization mt-[var(--s3)]">
                     Coach authorization required
                   </p>
                 )}
-                <div className="mt-[var(--s4)] flex flex-wrap items-center gap-[var(--s3)]">
+                {/* The state stamp sits above the button rather than beside it, so
+                    every card's View drill lands on the same line of its row. */}
+                <div className="mt-auto flex flex-col items-start gap-[var(--s3)] pt-[var(--s4)]">
+                  {lifecycle[drill.drill_id] && lifecycle[drill.drill_id].state !== 'available' && (
+                    <p className="ge-drillcase__state t-label">{LIFECYCLE_LABELS[lifecycle[drill.drill_id].state]}</p>
+                  )}
                   <button
                     type="button"
                     id={`view-reference-${drill.drill_id}`}
@@ -909,23 +961,30 @@ function CoachDrillLibrary() {
                   >
                     View drill
                   </button>
-                  {lifecycle[drill.drill_id] && lifecycle[drill.drill_id].state !== 'available' && (
-                    <p className="t-label text-[color:var(--bone-300)]">{LIFECYCLE_LABELS[lifecycle[drill.drill_id].state]}</p>
-                  )}
                 </div>
               </article>
             ))}
           </div>
         </section>
 
-        <section className="mt-[var(--s6)]">
-          {/* "Gym-authored" was false for every promoted drill (OD-2026-09-19-001).
-              These are the gym's operational drills -- promoted or written here --
-              and each one says which. */}
-          <h2 className="t-command text-[length:var(--t-lg)]">Operational drills</h2>
-          <p className="t-body mt-[var(--s2)] max-w-3xl text-[color:var(--bone-300)]">
-            The drills this gym runs and assigns: promoted from the reference library, or written here.
-          </p>
+        {/* 2. IN THIS GYM -- the gym's operational drills, the ones assignments
+            point at. "Gym-authored" was false for every promoted drill
+            (OD-2026-09-19-001), so each card says which kind it is. Working
+            ledger cards rather than index cards, so a drill the gym runs never
+            reads as one it is only browsing. */}
+        <section
+          data-station="gym"
+          hidden={station !== 'gym'}
+          aria-labelledby="gym-drills-heading"
+          className="mt-[var(--s7)]"
+        >
+          <div className="ge-drillcase__shelf-head">
+            <p className="t-eyebrow">Operational drills</p>
+            <h2 id="gym-drills-heading" className="t-command mt-[var(--s2)] text-[length:var(--t-lg)]">In this gym</h2>
+            <p className="t-body mt-[var(--s2)] max-w-3xl text-[color:var(--bone-300)]">
+              These are the drills this gym currently runs and can assign.
+            </p>
+          </div>
 
           {loading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>}
 
@@ -940,37 +999,20 @@ function CoachDrillLibrary() {
 
           {!loading && !loadError && drills.length === 0 && (
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-              Nothing yet. Promote a drill from the reference library, or add one above; assignments can only
+              Nothing yet. Promote a drill from the reference library, or create one below; assignments can only
               point at operational drills.
             </p>
           )}
 
-          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
+          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2 xl:grid-cols-3">
             {drills.map((drill) => (
-              <article key={drill.drill_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
-                <div className="flex items-baseline justify-between gap-[var(--s3)]">
+              <article key={drill.drill_id} className="ge-drillcase__ledger mat-leather--raised flex flex-col rounded-[var(--r-lg)] p-[var(--s4)]">
+                <div className="flex items-start justify-between gap-[var(--s3)]">
                   <h3 className="t-command text-[length:var(--t-md)]">{drill.name}</h3>
-                  <span className="plaque">{drill.difficulty}</span>
+                  <span className="plaque shrink-0">{drill.difficulty}</span>
                 </div>
-                <p className="t-label mt-[var(--s2)]">
-                  {drill.category} · {drill.reference_drill_id ? 'From the reference library' : 'Written by this gym'}
-                </p>
+                <p className="t-label mt-[var(--s2)]">{drill.category}</p>
                 <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{drill.focus}</p>
-                {/* A promoted drill's instructions live on its reference drill, so
-                    this opens that exact reference -- the pointer, never a name
-                    match. A hand-written drill has no reference to open. */}
-                {drill.reference_drill_id && (
-                  <button
-                    type="button"
-                    id={`view-instructions-${drill.drill_id}`}
-                    onClick={() => void openReferenceDrill(drill.reference_drill_id as string, `view-instructions-${drill.drill_id}`)}
-                    disabled={actionInFlight}
-                    className="btn btn--ghost mt-[var(--s3)]"
-                    aria-label={`View instructions: ${drill.name}`}
-                  >
-                    View instructions
-                  </button>
-                )}
                 {drill.cues.length > 0 && (
                   <ul className="mt-[var(--s3)] flex flex-wrap gap-[var(--s2)]">
                     {drill.cues.map((cue) => (
@@ -980,10 +1022,130 @@ function CoachDrillLibrary() {
                     ))}
                   </ul>
                 )}
+                <div className="mt-auto flex flex-wrap items-center gap-[var(--s3)] pt-[var(--s4)]">
+                  <p className={`ge-drillcase__provenance${drill.reference_drill_id ? ' ge-drillcase__provenance--reference' : ''}`}>
+                    {drill.reference_drill_id ? 'From reference library' : 'Written by this gym'}
+                  </p>
+                  {/* A promoted drill's instructions live on its reference drill, so
+                      this opens that exact reference -- the pointer, never a name
+                      match. A hand-written drill has no reference to open. */}
+                  {drill.reference_drill_id && (
+                    <button
+                      type="button"
+                      id={`view-instructions-${drill.drill_id}`}
+                      onClick={() => void openReferenceDrill(drill.reference_drill_id as string, `view-instructions-${drill.drill_id}`)}
+                      disabled={actionInFlight}
+                      className="btn btn--ghost"
+                      aria-label={`View instructions: ${drill.name}`}
+                    >
+                      View instructions
+                    </button>
+                  )}
+                </div>
               </article>
             ))}
           </div>
         </section>
+
+        {/* 3. CREATE A GYM DRILL -- the secondary workbench, for a drill the
+            reference library does not have. Its fields, validation, saving and
+            messages are exactly the Add a drill form that used to open the page.
+            A drill written here is assignable, and its name and purpose reach
+            the athlete on the assignment, but it has no reference instructions
+            to read in Learn. */}
+        <section
+          data-station="workbench"
+          hidden={station !== 'workbench'}
+          aria-labelledby="create-drill-heading"
+          className="ge-drillcase__workbench mat-leather mt-[var(--s7)] rounded-[var(--r-lg)] p-[var(--s4)] md:p-[var(--s5)]"
+        >
+          <h2 id="create-drill-heading" className="t-command text-[length:var(--t-md)]">Create a gym drill</h2>
+          <p className="t-body mt-[var(--s2)] max-w-3xl text-[color:var(--bone-300)]">
+            For a drill this gym needs that the reference library does not have. It becomes an operational drill
+            coaches can assign, but it has no reference instructions for athletes to read.
+          </p>
+
+          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2 xl:grid-cols-[1fr_1fr_1.4fr_1.6fr_0.9fr]">
+            <div className="field">
+              <label htmlFor="drill-name" className="t-label">Name</label>
+              <input
+                id="drill-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                className="input"
+                placeholder="Straight jab retraction"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="drill-category" className="t-label">Category</label>
+              <input
+                id="drill-category"
+                value={category}
+                onChange={(event) => setCategory(event.target.value)}
+                className="input"
+                placeholder="Striking"
+              />
+            </div>
+            <div className="field md:col-span-2 xl:col-span-1">
+              <label htmlFor="drill-focus" className="t-label">What it is for</label>
+              <textarea
+                id="drill-focus"
+                value={focus}
+                onChange={(event) => setFocus(event.target.value)}
+                rows={2}
+                className="textarea"
+                placeholder="Quick fist return to protect the chin after the jab."
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="drill-cues" className="t-label">
+                Coaching cues, one per line
+              </label>
+              <textarea
+                id="drill-cues"
+                value={cues}
+                onChange={(event) => setCues(event.target.value)}
+                rows={4}
+                className="textarea font-mono"
+                placeholder={'Elbow tucked\nShoulder covers chin\nSnap the fist back'}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="drill-difficulty" className="t-label">Difficulty</label>
+              <select
+                id="drill-difficulty"
+                value={difficulty}
+                onChange={(event) => setDifficulty(event.target.value)}
+                className="select"
+              >
+                {DIFFICULTIES.map((level) => (
+                  <option key={level} value={level}>{level}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {formError && (
+            <p role="alert" className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+              {formError}
+            </p>
+          )}
+          {saved && (
+            <p className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--cleared)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--cleared-ink)]">
+              ✓ {saved}
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={() => void createDrill()}
+            disabled={saving}
+            className="btn mt-[var(--s5)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? 'Saving...' : 'Add drill'}
+          </button>
+        </section>
+        </div>
       </div>
     </main>
   );

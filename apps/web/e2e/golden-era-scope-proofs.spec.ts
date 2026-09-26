@@ -429,6 +429,7 @@ const SCOPES: readonly ScopeCase[] = [
           {
             organization_id: 'org-punxsy',
             drill_id: 'drill-1',
+            reference_drill_id: 'ref-1',
             name: 'Straight jab retraction',
             category: 'Striking',
             focus: 'Quick fist return to protect the chin after the jab.',
@@ -440,10 +441,51 @@ const SCOPES: readonly ScopeCase[] = [
           },
         ],
       },
+      /* A real reference drill, so the sweep reads the cabinet, its discovery
+         rail and a cream index card -- not only the load-failure notice an
+         unstubbed library answers with, which is all it measured before the
+         cabinet redesign. */
+      '/api/pilot/drill-library': {
+        drills: [
+          {
+            drill_id: 'ref-1',
+            name: 'Slip line',
+            discipline: 'boxing',
+            category: 'defense',
+            difficulty: 'intermediate',
+            purpose: 'Slip a straight punch off the centre line and stay in range to counter.',
+            standard_setup: 'Partners at technical distance.',
+            equipment_needed: 'focus mitts',
+            contact_level: 'light_technical',
+            requires_coach_authorization: true,
+          },
+        ],
+        lifecycle: { 'ref-1': { state: 'operational', operational_drill_id: 'drill-1' } },
+      },
     },
     components: [
       { selector: '.btn', property: 'background-image', note: 'the ghost button back to the coach workspace' },
-      { selector: '.input', property: 'border-top-color', note: 'the drill-name field keyline' },
+      { selector: '.input', property: 'border-top-color', note: 'the name-search field keyline (first field since the cabinet redesign)' },
+      {
+        /* The equipment rail, added by the 2026-09-26 room ruling. New surface
+           the scope paints, so it earns a probe like any other.
+
+           NO WALK STEP WAS ADDED TO THIS HARNESS FOR THE HIDDEN STATIONS, and
+           that is a measured decision rather than an omission. Two of the three
+           stations carry the `hidden` attribute, but nothing this sweep does is
+           blind to that: the probes read getComputedStyle off querySelector, and
+           a display:none element still resolves its colours; `renders` is matched
+           against textContent, which includes hidden text (its own docblock says
+           why it is not innerText); and `ready` names .ge-drillcase .mat-leather,
+           the discovery panel inside the station that IS open. So every existing
+           probe on this surface still measures what it always did. */
+        selector: '.ge-drillcase__station',
+        property: 'background-image',
+        note: 'a drawer front on the equipment rail',
+      },
+      { selector: '.ge-drillcase__boundary', property: 'border-left-color', note: 'the brass edge of "Promoting does not assign the drill to any athlete."' },
+      { selector: '.ge-drillcase__state', property: 'border-top-color', note: 'the lifecycle stamp on a cream index card' },
+      { selector: '.ge-drillcase__provenance--reference', property: 'border-top-color', note: 'a promoted drill\'s provenance stamp on its ledger card' },
       {
         // The JSX spells this border as a legacy literal
         // (`border-[color:rgba(212,175,74,.22)]`) and the scope's own rule
