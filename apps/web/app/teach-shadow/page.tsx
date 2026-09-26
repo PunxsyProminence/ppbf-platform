@@ -60,7 +60,7 @@ interface Coverage {
     capture_takes: number;
     captured_files: number;
     takes_with_multiple_files: number;
-    athletes_captured: number;
+
   };
   labelling: {
     clips_cut: number;
@@ -521,10 +521,6 @@ export default function TeachShadowHomePage() {
                       were in the room. */}
                   <dt className="t-eyebrow">Takes with more than one file</dt>
                   <dd className="t-body">{coverage.capture.takes_with_multiple_files}</dd>
-                </div>
-                <div>
-                  <dt className="t-eyebrow">Athletes filmed</dt>
-                  <dd className="t-body">{coverage.capture.athletes_captured}</dd>
                 </div>
                 <div>
                   <dt className="t-eyebrow">Clips cut for labelling</dt>

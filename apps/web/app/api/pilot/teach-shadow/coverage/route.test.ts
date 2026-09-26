@@ -58,7 +58,6 @@ const CAPTURE_ROW = {
   capture_takes: 7,
   captured_files: 11,
   takes_with_multiple_files: 2,
-  athletes_captured: 4,
 };
 
 const LABELLING_ROW = {
