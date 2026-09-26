@@ -209,9 +209,46 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     enforcedBy: ['access.ts#assertActorCanAccessAthlete'],
   },
   'sessions.notes': {
-    tier: 'athlete_record',
-    enforcedBy: ['access.ts#assertActorCanAccessAthlete'],
-    note: 'Free text a coach typed about a child.',
+    tier: 'organization',
+    enforcedBy: [
+      '../../../app/api/pilot/coach/athlete-session-note/route.ts#GET',
+      'sessionNotes.ts#getTodaySessionNote',
+      'passbook.ts#mapSession',
+      'access.ts#assertActorCanAccessAthlete',
+    ],
+    note:
+      'Free text typed for a coach at check-in -- in the shipped UI, by the ATHLETE. The '
+      + 'previous entry said "a coach typed about a child", and was wrong in both halves.'
+      + '\n\n'
+      + 'AUTHORSHIP IS NOT ESTABLISHED, and "the athlete wrote it" is NOT a safe assumption. '
+      + 'AthleteWorkspace is the only shipped UI that writes this column, but it is not the '
+      + 'only writer: POST /api/pilot/sessions and /api/pilot/sessions/update both accept '
+      + 'organization_admin and coach as well as athlete, and scripts/seed-data.ts bulk-loads '
+      + 'notes from CSV. The row carries no author or last-editor column, so no reader can be '
+      + 'told who wrote any given note. Who may EDIT a note after an athlete creates it is an '
+      + 'open owner decision, left open deliberately by A-FIN-08; until it is made, the honest '
+      + 'caption names nobody.'
+      + '\n\n'
+      + 'THE ENFORCED TIER IS ORGANIZATION, NOT athlete_record. A-FIN-08 (owner decision '
+      + '2026-09-25, "any coach or admin in the organization") reads this column through a '
+      + 'dedicated staff route gated by assertAthleteBelongsToOrganization -- organization '
+      + 'membership, not the per-relationship coach-of-record-or-coverage rule that '
+      + 'assertActorCanAccessAthlete holds. Recording it as athlete_record would claim a '
+      + 'narrower gate than the code actually applies. assertActorCanAccessAthlete stays in '
+      + 'the list because /api/pilot/sessions/list still returns the whole session record '
+      + 'behind it; that path was deliberately NOT widened.'
+      + '\n\n'
+      + 'LINKED GUARDIANS ARE EXCLUDED. The passbook omits the key entirely for a parent '
+      + 'rather than sending null, because null would assert that no note exists. Absence '
+      + 'means "not in your audience". The athlete still reads their own.'
+      + '\n\n'
+      + 'SYSTEM TEXT IS NOT NOTE TEXT. The A-FIN-01 placeholder and the historical '
+      + '"Auto check-in readiness GREEN/YELLOW/RED" rows are suppressed for every reader, '
+      + 'including the athlete, by shared/sessionNoteSemantics.ts. They remain stored '
+      + 'unchanged; no migration rewrote them. An EMPTY note is suppressed on the same '
+      + 'ground: the column is not null, but nothing in the schema forbids an empty or '
+      + 'whitespace-only string, and the CSV seeder does not go through the write path that '
+      + 'would reject one.',
   },
   'waivers.signed_by_name': {
     tier: 'athlete_record',
