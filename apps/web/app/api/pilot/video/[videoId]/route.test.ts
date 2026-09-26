@@ -112,6 +112,9 @@ const videoRow = (overrides: Record<string, unknown> = {}) => ({
   blob_path: 'org-1/vid-1/f.mp4',
   uploaded_by_account_id: 'coach-1',
   created_at: '2026-01-01T00:00:00.000Z',
+  // Film Study footage. Teach Shadow capture always carries a take, and this
+  // route refuses those -- see the test at the bottom of the file.
+  capture_take_id: null,
   ...overrides,
 });
 
@@ -654,4 +657,22 @@ describe('a status this gate cannot read never means yes', () => {
     expect(res.status).toBe(409);
     expect((await res.json()).code).toBe('GUARDIAN_CONSENT_WITHDRAWN');
   });
+});
+
+test('teaching footage is not playable through the ordinary video route', async () => {
+  /*
+   * ONCE HELD TEACHING FOOTAGE CAN BE RELEASED it reaches 'ready', and this
+   * route would mint it a playback link like any other video -- reopening on
+   * the single-video read exactly what separating the list read closed.
+   *
+   * Answered as hiddenNotFound, like every other refusal here, so the route
+   * does not become an oracle for which ids exist. Teach Shadow's own review
+   * goes through /api/pilot/video/review-link and is unaffected.
+   */
+  mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+  mockQueryOne.mockResolvedValueOnce(videoRow({ capture_take_id: 'take-1' }));
+
+  const res = await call();
+
+  expect(res.status).toBe(404);
 });

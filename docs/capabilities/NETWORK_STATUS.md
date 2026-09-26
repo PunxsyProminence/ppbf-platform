@@ -654,7 +654,7 @@ reader knows what can be trusted. Both root contract files are among them:
 contradicted, five of them non-safety. **The retention policy is an outlier, not
 the house style.**
 
-Two smaller ones for anyone editing docs: `docs/AGENT_EXECUTION_POLICY.md`
+Two smaller ones for anyone editing docs: `docs/AGENT_EXECUTION_POLICY.md` (retired to `docs/archive/` 2026-09-21)
 declares itself read-first and binding, contradicts `AGENT_KERNEL.md` on three
 rules, is unmarked and is referenced by **zero** files — a second binding policy
 nobody reads is exactly the overlap that got `MULTI_AI_EXECUTION_PLAN.md`

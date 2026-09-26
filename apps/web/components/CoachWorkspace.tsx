@@ -35,6 +35,16 @@ import {
   type CoachDevelopmentGoalRow,
   type CoachDevelopmentGoalStatus,
 } from '@/src/shared/coachDevelopment';
+// The words for each 1-5 wellness answer, imported rather than restated. The
+// athlete picks a number by these anchors on their own screen, so the coach
+// reading that number back has to see the same words -- a second vocabulary
+// here would be a second scale.
+import {
+  WELLNESS_SCALES,
+  WELLNESS_SCALE_KEYS,
+  wellnessAnchor,
+  type WellnessScaleKey,
+} from '@/src/shared/wellnessScales';
 
 type TabID = 'dashboard' | 'floor' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
@@ -513,6 +523,143 @@ function normalizeSessionReview(row: unknown): SessionReview | null {
   };
 }
 
+/**
+ * One athlete's wellness check-in for today, as GET
+ * /api/pilot/coach/athlete-check-in returns it in `today`. Mirrors
+ * AthleteCheckInRow in src/server/pilot/athleteCheckIns.ts, cut to what the
+ * panel shows.
+ *
+ * Every answer is `number | null`, and null is the athlete skipping the
+ * question: it renders as "Not reported", never as 0, 3 or any other stand-in.
+ * "Not reported" and not "Not answered" (owner wording, 2026-09-22): it says
+ * what the record holds -- no value for this measure -- without asserting what
+ * the athlete did with the question.
+ * sleepHours is hours -- a quantity, not a rating -- and the eight 1-5
+ * measures take their meaning from src/shared/wellnessScales.ts.
+ *
+ * NOTHING IS DERIVED FROM THESE. No band, no average, no "ready" -- the shared
+ * scales module says in terms that these self-reports are not a readiness
+ * score, and this panel is a read-back of what the athlete said, not a verdict
+ * on it.
+ */
+interface CoachAthleteCheckIn {
+  readonly athleteId: string;
+  readonly checkedInOn: string;
+  readonly sleepHours: number | null;
+  readonly note: string;
+  readonly measures: Readonly<Record<WellnessScaleKey, number | null>>;
+}
+
+/**
+ * The read of the selected athlete's check-in. Four outcomes, and none of them
+ * may borrow another's words:
+ *
+ *   loaded + today null  the server looked and there is no check-in today
+ *   no_access            the server refused THIS coach for THIS athlete (403)
+ *   unavailable          nobody could look -- network, server, or a response
+ *                        this screen could not read
+ *
+ * "No check-in today" rendered for a failed read would tell a coach a child
+ * did not check in when nobody knows, and rendered for a refusal would tell
+ * them something about a child they are not cleared to be told anything about.
+ *
+ * Every state carries the athlete it was asked about, so the panel can refuse
+ * to draw a result under any other athlete's name.
+ */
+type WellnessCheckInRead =
+  | { readonly status: 'loading'; readonly athleteId: string }
+  | { readonly status: 'loaded'; readonly athleteId: string; readonly today: CoachAthleteCheckIn | null }
+  | { readonly status: 'no_access'; readonly athleteId: string }
+  | { readonly status: 'unavailable'; readonly athleteId: string };
+
+/* The panel's sentences, named once so the component and its tests agree on
+   the exact words and so each outcome keeps words no other outcome uses. */
+const WELLNESS_NOT_REPORTED = 'Not reported';
+const WELLNESS_NO_CHECK_IN_TODAY = 'No wellness check-in recorded today.';
+const WELLNESS_READ_FAILED =
+  'Today’s wellness check-in could not be loaded. This is not a statement that the athlete did not check in -- try again in a minute.';
+/* The refusal sentence names the audience and no longer names a relationship.
+   Until A-FIN-03R1 it said check-ins were shown to the athlete's own coach, a
+   coach covering for them, and organization admins -- which was the rule the
+   route enforced then and is false now that any coach or admin in the
+   athlete's organization may read one. What a coach sees this for now is that
+   the athlete is not a LIVE athlete in the coach's own organization: another
+   gym's athlete, a soft-deleted one, or an id that names nobody anywhere. A
+   coach inside the organization can reach it too -- the deleted case -- so it
+   is never "the wrong coach for this athlete", and the screen cannot say
+   which of the three it is: the route refuses all three with the same 403 and
+   the panel must not invent a distinction the server withheld. */
+const WELLNESS_NO_ACCESS =
+  'You don’t have access to this athlete’s wellness check-ins. They are shown to coaches and organization admins in the athlete’s own organization.';
+
+/* A stored answer is a finite number or null. Anything else -- a missing key,
+   a string, NaN -- makes the response unreadable, and it is treated as a
+   failed read rather than coerced. Coercing is where this goes wrong quietly:
+   `undefined` would slide into "Not reported", which is a claim about the
+   stored record that the response never made. */
+function isStoredAnswer(value: unknown): value is number | null {
+  return value === null || (typeof value === 'number' && Number.isFinite(value));
+}
+
+function parseCoachCheckIn(value: unknown, athleteId: string): CoachAthleteCheckIn | null | 'unreadable' {
+  if (value === null) {
+    return null;
+  }
+  if (!value || typeof value !== 'object') {
+    return 'unreadable';
+  }
+  const record = value as Record<string, unknown>;
+  // Keyed to the athlete that was asked about. A row naming anybody else is
+  // never drawn under this athlete's name, whatever produced it.
+  if (record.athlete_id !== athleteId) {
+    return 'unreadable';
+  }
+  const checkedInOn = record.checked_in_on;
+  const note = record.note;
+  const sleepHours = record.sleep_hours;
+  if (typeof checkedInOn !== 'string' || typeof note !== 'string' || !isStoredAnswer(sleepHours)) {
+    return 'unreadable';
+  }
+  const measures = {} as Record<WellnessScaleKey, number | null>;
+  // Swept from the shared key list, so a measure added there cannot be
+  // silently missing here.
+  for (const key of WELLNESS_SCALE_KEYS) {
+    const answer = record[key];
+    if (!isStoredAnswer(answer)) {
+      return 'unreadable';
+    }
+    measures[key] = answer;
+  }
+  return { athleteId, checkedInOn, sleepHours, note, measures };
+}
+
+/** "mental_clarity" -> "Mental clarity". Derived from the shared key rather
+ *  than kept as a second list of names beside WELLNESS_SCALES. */
+function wellnessMeasureLabel(key: WellnessScaleKey): string {
+  const words = key.replace(/_/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** The stored number and the words the athlete picked it by. A value outside
+ *  the scale (the table's check constraint makes that unreachable today) is
+ *  shown as the number alone -- never hidden, never given another number's
+ *  words. */
+function wellnessMeasureText(key: WellnessScaleKey, value: number | null): string {
+  if (value === null) {
+    return WELLNESS_NOT_REPORTED;
+  }
+  const anchor = wellnessAnchor(key, value);
+  return anchor === null ? String(value) : `${value} — ${anchor}`;
+}
+
+/** Sleep is a quantity and reads as one: the stored hours, verbatim. */
+function sleepHoursText(value: number | null): string {
+  if (value === null) {
+    return WELLNESS_NOT_REPORTED;
+  }
+  return `${value} ${value === 1 ? 'hour' : 'hours'}`;
+}
+
 /* READINESS RED IS NOT THE LOCKED RUNG.
    readinessBoard defines its own bands as operational triage and says so:
    "GREEN = train as planned, YELLOW = check in with the athlete first,
@@ -727,6 +874,24 @@ export default function CoachWorkspace() {
      above: the pre-confirm warning is a prediction and this is a record, and
      the two are allowed to be sourced differently for that reason. */
   const [nicknameClearedHours, setNicknameClearedHours] = useState<Record<string, number | null>>({});
+
+  /* THE SELECTED ATHLETE'S WELLNESS CHECK-IN (A-FIN-03).
+     Read only when the coach PICKS an athlete, never for the roster's seeded
+     first row: the owner's user for this read is a coach deliberately looking
+     at one athlete, and the roster lists the whole gym -- reading the first
+     child's wellness on every dashboard load, whether or not anyone looked,
+     would be reading a minor's self-report for nobody.
+
+     TWO GUARDS AGAINST THE WRONG CHILD, because one is not enough. The
+     AbortController cancels the previous athlete's request the moment another
+     is picked; the ref is the check after every await, which still holds when
+     a response has already arrived and only its body is left to read (the
+     same second suspension point loadReviewSessions documents). And the
+     render only draws a read whose athleteId matches the current selection,
+     so a stale state can never be painted under a new name. */
+  const [wellnessRead, setWellnessRead] = useState<WellnessCheckInRead | null>(null);
+  const wellnessAthleteRef = useRef('');
+  const wellnessAbortRef = useRef<AbortController | null>(null);
 
   const workoutBlocks = useMemo<WorkoutBlock[]>(() => {
     if (sessionMode === 'One-on-One') {
@@ -976,6 +1141,17 @@ export default function CoachWorkspace() {
     : assignmentsDue > 0
       ? { tone: 'monitor', label: `${assignmentsDue} pending` }
       : undefined;
+
+  /* The wellness read the panel may draw: only one the coach asked for, and
+     only for the athlete selected NOW. The loader's guards already keep a
+     stale response out of state; this is the last check, at the point where a
+     name and a child's answers meet on screen. */
+  const wellnessShown = athleteChosenByCoach && wellnessRead && wellnessRead.athleteId === selectedAthleteId
+    ? wellnessRead
+    : null;
+  const wellnessAthleteName = wellnessShown
+    ? athletes.find((athlete) => athlete.id === wellnessShown.athleteId)?.name ?? 'this athlete'
+    : '';
 
   // Athlete pain reports. The write path refuses to store a pain report it
   // could not raise a coach-visible record for, so anything returned here is a
@@ -1650,6 +1826,76 @@ export default function CoachWorkspace() {
       setNicknameClearBusyId(null);
     }
   }
+
+  /* GET /api/pilot/coach/athlete-check-in decides, server-side, whether this
+     coach may see this athlete at all: any coach or organization admin in the
+     athlete's own organization may (A-FIN-03R1, owner instruction 2026-09-22
+     "any coach or admin should be able to read it"). Assignment and coverage
+     are not part of that rule any more, so a coach picking an athlete they
+     have never been assigned gets the check-in rather than a refusal.
+
+     A 403 is still an expected outcome, not a bug -- an athlete outside this
+     organization, or one who has been deleted -- so it keeps its own plain
+     sentence and is never softened into "no check-in". The status of any
+     other failure goes to the console, not to the coach: a bare "500" tells a
+     coach nothing they can act on. */
+  const loadWellnessCheckIn = useCallback(async (athleteId: string) => {
+    wellnessAbortRef.current?.abort();
+    const controller = new AbortController();
+    wellnessAbortRef.current = controller;
+    wellnessAthleteRef.current = athleteId;
+    setWellnessRead({ status: 'loading', athleteId });
+
+    const superseded = () => controller.signal.aborted || wellnessAthleteRef.current !== athleteId;
+
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/coach/athlete-check-in?athlete_id=${encodeURIComponent(athleteId)}`,
+        { method: 'GET', credentials: 'include', signal: controller.signal },
+      );
+      if (superseded()) {
+        return;
+      }
+      if (response.status === 403) {
+        setWellnessRead({ status: 'no_access', athleteId });
+        return;
+      }
+      if (!response.ok) {
+        throw new Error('wellness check-in read failed', { cause: { status: response.status } });
+      }
+      const payload = (await response.json()) as unknown;
+      // The second suspension point: the coach may have picked someone else
+      // while the body was being read.
+      if (superseded()) {
+        return;
+      }
+      /* `today` must be PRESENT to mean anything. A body without it is not
+         "no check-in" -- `payload.today ?? null` would make it one -- it is a
+         response this screen does not understand. */
+      const parsed = payload && typeof payload === 'object' && 'today' in payload
+        ? parseCoachCheckIn((payload as { today: unknown }).today, athleteId)
+        : 'unreadable';
+      if (parsed === 'unreadable') {
+        throw new Error('wellness check-in response unreadable');
+      }
+      setWellnessRead({ status: 'loaded', athleteId, today: parsed });
+    } catch (error) {
+      if (superseded()) {
+        return;
+      }
+      console.error({ event: 'coach-wellness-check-in-load-failed', error });
+      setWellnessRead({ status: 'unavailable', athleteId });
+    }
+  }, []);
+
+  // A request still in flight when the workspace goes away is cancelled
+  // rather than left to resolve into a component that no longer exists.
+  useEffect(() => {
+    const aborts = wellnessAbortRef;
+    return () => {
+      aborts.current?.abort();
+    };
+  }, []);
 
   // The review picker's session read. GET /api/pilot/sessions/list is the
   // existing per-athlete session read; its own requireRole +
@@ -2610,9 +2856,23 @@ export default function CoachWorkspace() {
                         onClick={() => {
                           setSelectedAthleteId(athlete.id);
                           setAthleteChosenByCoach(true);
+                          // A deliberate pick, so this is where the wellness
+                          // read starts -- never from the seeded selection.
+                          void loadWellnessCheckIn(athlete.id);
                         }}
+                        /* The highlight and the wellness read follow the same
+                           signal: `athleteChosenByCoach`, a coach's actual
+                           pick. The roster still seeds `selectedAthleteId`
+                           with the first athlete for the behaviour that needs
+                           it, but a seeded value is "a selection nobody made"
+                           -- so it must not wear the look of one. A row that
+                           presents itself as chosen beside a panel saying
+                           "select an athlete" tells the coach two different
+                           things about the same roster, and the one thing a
+                           default must never claim is that somebody decided
+                           to open a child's self-report. */
                         className={`w-full p-[var(--s3)] border rounded-[var(--r-md)] cursor-pointer transition text-left ${
-                          selectedAthleteId === athlete.id
+                          athleteChosenByCoach && selectedAthleteId === athlete.id
                             ? 'bg-[rgb(var(--brass-400-rgb)_/_.10)] border-[color:var(--brass-500)]'
                             : 'bg-[rgba(0,0,0,.28)] border-[color:rgb(var(--brass-400-rgb)_/_.22)] hover:border-[color:var(--brass-500)]'
                         }`}
@@ -2798,6 +3058,117 @@ export default function CoachWorkspace() {
                     ))}
                   </div>
                 </div>
+
+                {/* WELLNESS CHECK-IN (A-FIN-03): today's self-report for the
+                    athlete the coach picked, read back as the athlete gave it.
+
+                    Its own full-width panel rather than a block inside the
+                    roster: the roster shares a grid row with Today's Session
+                    and is height-capped, so nine answers and a note in there
+                    would either stretch the session card or sit inside a
+                    scroller.
+
+                    Every measure is listed whether or not it carries a value.
+                    The athlete's own read-back hides the skipped ones because
+                    the athlete knows what they skipped; a coach does not, and
+                    a missing row would read as "not asked" rather than "not
+                    reported". Nothing here is ranked, coloured by value,
+                    averaged or turned into a band -- the number and its
+                    shared words are the whole claim. */}
+                <section
+                  aria-labelledby="coach-wellness-check-in-heading"
+                  className="md:col-span-2 mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]"
+                >
+                  <h3 id="coach-wellness-check-in-heading" className="t-eyebrow">Wellness Check-In</h3>
+
+                  {!wellnessShown && (
+                    <p className="t-muted">Select an athlete in the roster to see their wellness check-in for today.</p>
+                  )}
+
+                  {wellnessShown?.status === 'loading' && (
+                    <p className="t-muted">Loading today&apos;s wellness check-in for {wellnessAthleteName}...</p>
+                  )}
+
+                  {/* A refusal is not a failure and not an empty day. It says
+                      only that this coach cannot see this athlete's check-ins,
+                      and who can -- nothing about whether one exists. */}
+                  {wellnessShown?.status === 'no_access' && (
+                    <p className="t-body">{WELLNESS_NO_ACCESS}</p>
+                  )}
+
+                  {/* --restricted, not --locked: a read that did not land is a
+                      request problem, and the safeguarding red is reserved for
+                      a person who may not participate. */}
+                  {wellnessShown?.status === 'unavailable' && (
+                    <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] space-y-[var(--s2)]">
+                      <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                        {WELLNESS_READ_FAILED}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void loadWellnessCheckIn(wellnessShown.athleteId)}
+                        className="btn btn--ghost"
+                        aria-label="Try loading the wellness check-in again"
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  )}
+
+                  {wellnessShown?.status === 'loaded' && wellnessShown.today === null && (
+                    <p className="t-muted">{WELLNESS_NO_CHECK_IN_TODAY}</p>
+                  )}
+
+                  {wellnessShown?.status === 'loaded' && wellnessShown.today !== null && (
+                    <div className="space-y-[var(--s3)]">
+                      <p className="t-body">
+                        Today&apos;s report for {wellnessAthleteName}, checked in on {wellnessShown.today.checkedInOn}.
+                      </p>
+                      <dl className="grid gap-[var(--s3)] sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                          <dt className="t-label">Sleep</dt>
+                          <dd
+                            className={wellnessShown.today.sleepHours === null
+                              ? 't-data text-[color:var(--bone-400)]'
+                              : 't-data'}
+                          >
+                            {sleepHoursText(wellnessShown.today.sleepHours)}
+                          </dd>
+                        </div>
+                        {WELLNESS_SCALES.map((scale) => {
+                          const value = wellnessShown.today?.measures[scale.key] ?? null;
+                          return (
+                            <div
+                              key={scale.key}
+                              className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]"
+                            >
+                              <dt className="t-label">{wellnessMeasureLabel(scale.key)}</dt>
+                              <dd className={value === null ? 't-data text-[color:var(--bone-400)]' : 't-data'}>
+                                {wellnessMeasureText(scale.key, value)}
+                              </dd>
+                            </div>
+                          );
+                        })}
+                      </dl>
+                      <div>
+                        <p className="t-label mb-[var(--s2)] block">Athlete&apos;s note</p>
+                        {/* Only the stored empty string (the column's default
+                            when the athlete wrote nothing) gets the label. A
+                            note of spaces or line breaks is what was stored,
+                            so it is shown, not relabelled as "no note". */}
+                        {wellnessShown.today.note === '' ? (
+                          <p className="t-muted">No note written.</p>
+                        ) : (
+                          /* pre-wrap so the note keeps the athlete's own line
+                             breaks: "exactly as stored" includes where they
+                             pressed return. */
+                          <p className="t-body whitespace-pre-wrap">{wellnessShown.today.note}</p>
+                        )}
+                      </div>
+                      <p className="t-muted">Self-reported by the athlete.</p>
+                    </div>
+                  )}
+                </section>
 
                 {/* Open Tasks */}
                 <div className="md:col-span-2 mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">

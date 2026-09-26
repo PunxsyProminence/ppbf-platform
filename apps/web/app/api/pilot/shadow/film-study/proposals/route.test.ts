@@ -19,6 +19,10 @@ jest.mock('@/src/server/pilot/access', () => ({
   ...jest.requireActual('@/src/server/pilot/access'),
   assertActorCanAccessAthlete: jest.fn(),
 }));
+jest.mock('@/src/server/pilot/videoDestination', () => ({
+  ...jest.requireActual('@/src/server/pilot/videoDestination'),
+  assertVideoIsFilmStudyMedia: jest.fn(),
+}));
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
 jest.mock('@/src/server/pilot/shadowFilmStudyProposals', () => ({
   createCoachReportedObservation: jest.fn(),

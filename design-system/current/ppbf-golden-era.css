@@ -203,6 +203,68 @@
    a visual pass cannot reach what an unverified caller sees.
    ========================================================================== */
 
+/* ==========================================================================
+   THE FLOOR IS A MATERIAL, NOT A PHOTOGRAPH
+   --------------------------------------------------------------------------
+   Owner direction, 2026-09-22: "im not tied down to actual gym pictures, the
+   app need to be intuitive, user friendly and fun to use while keeping the gym
+   identy basically looking like it belongs in there".
+
+   The room system was already photograph-OPTIONAL: legacy/ppbf-leather-brass
+   .css:1286-1294 says in as many words that a room is gradients plus
+   procedural grain and renders with no network, and the photograph is an extra
+   layer painted by `.room::after` from `--plate`. So this does not replace the
+   room system. It declares that ONE room -- the gym floor, the room a coach
+   and an athlete actually work in -- carries its identity in material and
+   light instead of in a picture of a wall.
+
+   SCOPE IS DELIBERATELY ONE ROOM. Board and File are LIGHT walls that switch
+   the page to dark ink (legacy:1404, :1418). Giving them this dark ground
+   without re-inking them would put #1E1712 text on #171411 -- about 1.04:1,
+   invisible -- across the board and file doors and the board refusal screen,
+   and nothing in the suite measures text against a room ground, so nothing
+   would have caught it. Office, Clinic and Night keep their walls for now, and
+   the family ground (.on-canvas) and The Bell keep their photographs: the
+   shared painter at legacy:3580-3594 is what The Bell's image rides on, so it
+   is not touched here.
+
+   `--plate: none` rather than deleting the declaration: the painter stays
+   exactly as it is and simply has nothing to paint, which keeps the stacking
+   contract, the reduced-data behaviour and The Bell all intact.
+
+   Grain is --grain-fine at its own 120px tile, soft-light. The token is not
+   redefined -- 31 other rules read it.                                       */
+.room--floor {
+  --plate: none;
+  background-color: #171411;
+  background-image: var(--grain-fine);
+  background-size: 120px 120px;
+  background-blend-mode: soft-light;
+}
+
+/* THE LIGHT STAYS ON ::before, WHERE THE ROOM KEEPS IT. The base sheet draws a
+   fixture pool there for every room (legacy:1325-1335), tuned for a wall with a
+   photograph under it. Left alone it stacks on top of this ground and washes it
+   out -- measured in a browser against this branch's own compiled sheet before
+   this rule existed. So the floor restates that one layer rather than adding a
+   second light: two practical pools and the room falloff, and the floor's own
+   shadow direction (--sx: 0, --sy: 1, legacy:1858-1864) still agrees with it. */
+.room--floor::before {
+  background-image:
+    radial-gradient(72% 52% at 16% -8%,
+      rgba(214, 156, 91, .16) 0%,
+      rgba(214, 156, 91, .07) 38%,
+      rgba(214, 156, 91, 0) 70%),
+    radial-gradient(52% 42% at 86% 12%,
+      rgba(255, 210, 145, .075) 0%,
+      rgba(255, 210, 145, .025) 42%,
+      rgba(255, 210, 145, 0) 72%),
+    linear-gradient(180deg,
+      rgba(255, 255, 255, .018) 0%,
+      rgba(0, 0, 0, .08) 44%,
+      rgba(0, 0, 0, .28) 100%);
+}
+
 /* THE TOKEN SCOPE. Everything this route renders that resolves metal -- the
    panel keylines, .btn--ghost, the .t-eyebrow voice, .stat-note, the focus
    ring -- reads var(--brass-*). Redefining the ramp on the bare scope re-skins

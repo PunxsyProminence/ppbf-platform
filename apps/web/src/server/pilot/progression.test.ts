@@ -12,11 +12,13 @@ jest.mock('./db', () => ({
 
 import {
   assignDrill,
+  cancelDrillAssignment,
   getAssignmentCompletions,
   getAthleteAssignments,
   getAthleteGaps,
   getCompletionById,
   getDrillAssignmentById,
+  recordCompletion,
   verifyCompletion,
 } from './progression';
 import { query, queryOne } from './db';
@@ -267,5 +269,117 @@ describe('verifyCompletion', () => {
     mockQuery.mockResolvedValueOnce([]);
 
     await expect(verifyCompletion('c-other-gym', 'coach-1', true, 'org-1')).resolves.toBeNull();
+  });
+});
+
+// A-FIN-06, owner decisions 2026-09-22. The WRITER-level half of cancelling:
+// which transitions exist, and that a cancel writes the status and nothing
+// else. The route's access order is pinned in
+// app/api/pilot/progression/assignments/cancel/route.test.ts. A mocked
+// database shows what the writer ASKS for; the concurrency claim (a completion
+// committing first makes the conditional update match nothing) is Postgres's
+// READ COMMITTED re-check, not something a mock can prove.
+describe('cancelDrillAssignment', () => {
+  const params = { organizationId: 'org-1', assignmentId: 'asg-1', athleteId: 'ath-1' };
+  const row = (status: string, overrides: Record<string, unknown> = {}) => ({
+    assignment_id: 'asg-1',
+    athlete_id: 'ath-1',
+    status,
+    rep_count: 30,
+    due_date: '2026-10-01',
+    ...overrides,
+  });
+
+  test('open work: one conditional update, and the updated row comes back', async () => {
+    mockQuery.mockResolvedValueOnce([row('cancelled')]);
+
+    await expect(cancelDrillAssignment(params)).resolves.toEqual({
+      assignment: row('cancelled'),
+      alreadyCancelled: false,
+    });
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    // Nothing to explain, so no re-read.
+    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  test('the update sets status alone, and only open work in this gym, for this athlete, can match it', async () => {
+    mockQuery.mockResolvedValueOnce([row('cancelled')]);
+
+    await cancelDrillAssignment(params);
+
+    const [sql, sqlParams] = mockQuery.mock.calls[0];
+    expect(sql).toMatch(/set status = 'cancelled'\s+where organization_id = \$1 and assignment_id = \$2 and athlete_id = \$3\s+and status in \('assigned', 'in_progress'\)/);
+    expect(String(sql).match(/\bset\b([\s\S]*?)\bwhere\b/i)?.[1].trim()).toBe("status = 'cancelled'");
+    expect(sql).not.toContain('updated_at');
+    expect(sql).not.toContain('assignment_completions');
+    expect(sqlParams).toEqual(['org-1', 'asg-1', 'ath-1']);
+  });
+
+  test('already-cancelled work is a success that writes nothing and returns the row as it stands', async () => {
+    const existing = row('cancelled', { completion_percentage: 50 });
+    mockQuery.mockResolvedValueOnce([]); // matched nothing: cancelled is not open
+    mockQueryOne.mockResolvedValueOnce(existing);
+
+    await expect(cancelDrillAssignment(params)).resolves.toEqual({ assignment: existing, alreadyCancelled: true });
+    // The re-read is the organization-scoped reader, by this assignment.
+    expect(mockQueryOne.mock.calls[0][1]).toEqual(['org-1', 'asg-1']);
+  });
+
+  test.each(['completed', 'incomplete'])('%s work is refused with a 409 naming why', async (status) => {
+    mockQuery.mockResolvedValueOnce([]);
+    mockQueryOne.mockResolvedValueOnce(row(status));
+
+    await expect(cancelDrillAssignment(params)).rejects.toMatchObject({ status: 409, code: 'ASSIGNMENT_CLOSED' });
+  });
+
+  test("an unknown id, another gym's id and another athlete's work all come back as null", async () => {
+    mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+    mockQueryOne.mockResolvedValueOnce(null);
+    await expect(cancelDrillAssignment(params)).resolves.toBeNull();
+
+    mockQueryOne.mockResolvedValueOnce(row('assigned', { athlete_id: 'ath-2' }));
+    await expect(cancelDrillAssignment(params)).resolves.toBeNull();
+  });
+
+  test('never opens a transaction: one statement is the whole write', async () => {
+    const { withTransaction } = jest.requireMock('./db') as { withTransaction: jest.Mock };
+    mockQuery.mockResolvedValueOnce([row('cancelled')]);
+
+    await cancelDrillAssignment(params);
+
+    expect(withTransaction).not.toHaveBeenCalled();
+    expect(currentClient.query).not.toHaveBeenCalled();
+  });
+});
+
+// A-FIN-06, owner decision 2026-09-22: no new completions on cancelled work.
+// Checked under a row lock BEFORE the insert, so the check and the write
+// cannot be split by a cancel landing in between.
+describe('recordCompletion on cancelled work', () => {
+  const params = { organizationId: 'org-1', assignmentId: 'asg-1', athleteId: 'ath-1' };
+
+  test('is refused with a 409 before anything is inserted', async () => {
+    currentClient.query.mockResolvedValueOnce({ rows: [{ status: 'cancelled' }] });
+
+    await expect(recordCompletion(params)).rejects.toMatchObject({ status: 409, code: 'ASSIGNMENT_CANCELLED' });
+    expect(currentClient.query).toHaveBeenCalledTimes(1);
+    const [lockSql, lockParams] = currentClient.query.mock.calls[0];
+    expect(lockSql).toContain('for update');
+    expect(lockSql).not.toContain('insert');
+    expect(lockParams).toEqual(['org-1', 'asg-1']);
+  });
+
+  test.each(['assigned', 'in_progress', 'completed'])('%s work still takes the log, locked and checked first', async (status) => {
+    currentClient.query
+      .mockResolvedValueOnce({ rows: [{ status }] }) // lock + status check
+      .mockResolvedValueOnce({ rows: [{ completion_id: 'c1' }] }) // insert
+      .mockResolvedValueOnce({ rows: [{ frequency_per_week: null, status }] }) // touchAssignmentProgress lock
+      .mockResolvedValueOnce({ rows: [{ n: '1' }] }); // count
+
+    await expect(recordCompletion(params)).resolves.toEqual({ completion_id: 'c1' });
+    const order = currentClient.query.mock.calls.map(([sql]) => String(sql));
+    expect(order[0]).toContain('for update');
+    expect(order[1]).toContain('insert into pilot.assignment_completions');
   });
 });

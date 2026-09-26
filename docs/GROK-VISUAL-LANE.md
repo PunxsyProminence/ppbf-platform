@@ -41,6 +41,9 @@ OneDrive and commits it” is not a rule to relax or tighten — it is an
 instruction that cannot execute, and every handoff written around it has cost a
 round. That is a capability fact, checked rather than preferred, and it is now
 recorded in the contract instead of being rediscovered each time.
+*[2026-09-21: from Jason's PC, Claude can read text-file contents from
+OneDrive; binary bytes are still unchecked, so for plates nothing here
+changes. See the capability update in `AGENT_KERNEL.md`.]*
 
 **What a delivery is, since four rounds have turned on it.** A binary enters
 this repository when a real `git add` of the actual file lands on a feature
@@ -374,6 +377,9 @@ return bytes. `downloadUrl` is null. A zip cannot be opened at all. An
 instruction to "download from OneDrive and commit" is therefore not a slow or
 discouraged route — it is a scheduled failed round, and it has produced four of
 them.
+*[2026-09-21: from Jason's PC, Claude can read text-file contents from
+OneDrive; binary bytes are still unchecked, so for plates nothing here
+changes. See the capability update in `AGENT_KERNEL.md`.]*
 
 If Grok can create the visual binary, Grok owns putting that exact binary in
 its branch. When Grok's tooling cannot, the working fallback is:

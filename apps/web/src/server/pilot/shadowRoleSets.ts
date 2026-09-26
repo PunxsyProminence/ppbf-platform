@@ -68,6 +68,32 @@ export const MANUAL_OVERRIDE_ROLES: readonly PilotRole[] = [
   'platform_owner',
 ];
 
+// Who may have a board summary GENERATED for them.
+//
+// This is deliberately NOT MANUAL_OVERRIDE_ROLES, and the difference is the
+// defect this set exists to close. Choosing a session type and being allowed to
+// run THIS session type are separate permissions -- the same split
+// HEAVY_BAG_UNCAPPED_ROLES already makes in the chat route.
+//
+// MANUAL_OVERRIDE_ROLES includes coach, so a coach could ask for
+// sessionType: 'board_summary' and be honored at the request boundary, and the
+// executor then refused them with SHADOW_JOB_SCOPE_FORBIDDEN after the job row
+// was already written. The authority check happened one process too late: the
+// coach got a queued job that could never run, and the refusal arrived as a
+// background failure rather than as an answer.
+//
+// This list is the executor's existing authority, lifted verbatim so the
+// request boundary and the executor cannot drift apart. It is NOT a widening:
+// coach was never able to execute one. Coach stays in MANUAL_OVERRIDE_ROLES
+// because coach legitimately overrides other session types, Heavy Bag among
+// them -- removing it there would take away a permission this change is not
+// about.
+export const BOARD_SUMMARY_ROLES: readonly PilotRole[] = [
+  'organization_admin',
+  'admin',
+  'platform_owner',
+];
+
 // Roles permitted to write into the SHADOW Library: register sources and
 // documents, add chunks, and define capability coverage rules.
 //

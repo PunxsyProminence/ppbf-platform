@@ -19,7 +19,7 @@ Before editing, check current `main`, `docs/current/ACTIVE_WORK.md`, and open PR
 4. Draft PRs are early visibility, not an approval ceremony.
 5. Re-derive or close materially stale branches instead of repeatedly patching them forward.
 
-No permanent Builder/Gatekeeper identity is required. An agent may build one change and review another. Independent review is useful for higher-risk work, but executable evidence outranks model agreement.
+Across AI products the lanes are fixed by OD-2026-09-21-001 (Claude builds; ChatGPT designs and enforces standards, read-only here; Grok owns visual; see `AGENT_KERNEL.md`, Working channel). Among parallel Claude lanes no permanent Builder/Gatekeeper identity is required: one lane may build one change and review another. Independent review is useful for higher-risk work, but executable evidence outranks model agreement.
 
 ## Reviewers are separate signals
 
@@ -63,6 +63,6 @@ Credits, quota, an outage, permissions or a broken integration are TOOL/ENVIRONM
 
 ## Normal path
 
-`request -> inspect current source/open PRs -> bounded branch -> implement -> targeted proof -> CI -> review if warranted -> merge`
+`request or approved work order -> inspect current source/open PRs -> bounded branch -> implement -> targeted proof -> CI -> review if warranted -> merge`
 
 Agents without repository execution may still provide complete patches, files, tests, or findings. Their behavioral claims remain `UNVERIFIED` until applied to current source and executed by a repo-capable agent.

@@ -32,6 +32,7 @@ import {
 } from './shadowFilmStudy';
 import { createFilmStudyProposal } from './shadowFilmStudyProposals';
 import type { PilotRole } from './contracts';
+import { BOARD_SUMMARY_ROLES } from './shadowRoleSets';
 import { queryOne } from './db';
 import { claimNextJob, completeJob, failJob, type JobType } from './shadowJobQueue';
 import { composeShadowSystemPrompt, SHADOW_SYSTEM_PROMPT, validateShadowResponse } from './shadowChat';
@@ -340,7 +341,21 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
     };
   } catch (execError) {
     const errorCode = jobFailureCode(execError);
-    await failJob(job, errorCode);
+    // A scope refusal is a verdict, not a blip. Retrying it re-reads the same
+    // stored actor role against the same list and reaches the same answer, so
+    // the retries only delay a failure that is already decided -- and each one
+    // re-claims a lease the worker could spend on real work. Retryability is
+    // still the default for everything else here, deliberately: a provider
+    // timeout or a transient database error is exactly what retries are for.
+    //
+    // This matters for rows queued BEFORE the request-boundary gate above
+    // existed: those jobs are unreachable by any authorized actor and would
+    // otherwise burn their full retry budget proving it.
+    if (errorCode === 'SHADOW_JOB_SCOPE_FORBIDDEN') {
+      await failJob(job, errorCode, { retryable: false });
+    } else {
+      await failJob(job, errorCode);
+    }
     return {
       processed: true,
       jobId: job.jobId,
@@ -970,7 +985,11 @@ async function executeFilmStudyJob(payload: Record<string, unknown>): Promise<Re
 async function executeBoardSummaryJob(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   if (payload.requestMode !== 'chat') throw new Error('SHADOW_JOB_CONTEXT_INVALID');
   const trust = requireAsyncTrustContext(payload);
-  if (!['admin', 'organization_admin', 'platform_owner'].includes(trust.role)) {
+  // Read from shadowRoleSets rather than restated here. This literal and the
+  // chat route's override list were the two ends of the mismatch: the same
+  // three roles, written twice, with a fourth role able to reach only one of
+  // them. One list now feeds both.
+  if (!BOARD_SUMMARY_ROLES.includes(trust.role)) {
     throw new Error('SHADOW_JOB_SCOPE_FORBIDDEN');
   }
   const message = payloadToText(payload.message, '');

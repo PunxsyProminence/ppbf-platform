@@ -81,6 +81,7 @@
     "pilot:apply-membership-account-fk": "node scripts/pilot-apply-membership-account-fk-migration.mjs",
     "pilot:apply-waiver-parent-fk": "node scripts/pilot-apply-waiver-parent-fk-migration.mjs",
     "pilot:apply-waiver-recorded-by": "node scripts/pilot-apply-waiver-recorded-by-migration.mjs",
+    "pilot:apply-capture-sessions": "node scripts/pilot-apply-capture-sessions-migration.mjs",
     "pilot:apply-research-requirement-subject": "node scripts/pilot-apply-research-requirement-subject-migration.mjs",
     "pilot:apply-readiness-provenance": "node scripts/pilot-apply-readiness-provenance-migration.mjs",
     "pilot:apply-session-rpe-semantics": "node scripts/pilot-apply-session-rpe-semantics-migration.mjs",
@@ -359,7 +360,8 @@
     "test:migrations:medical-clearance-coverage": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/medicalClearanceCoverageCheck.pg.test.ts --testTimeout=180000",
     "test:migrations:readiness-gates": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/migrationReadinessGates.pg.test.ts --testTimeout=180000",
     "test:migrations:unexercised-runners": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/unexercisedMigrationRunners.pg.test.ts --testTimeout=180000",
-    "test:migrations:cue-source-provenance": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/cueSourceProvenance.pg.test.ts --testTimeout=180000"
+    "test:migrations:cue-source-provenance": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/cueSourceProvenance.pg.test.ts --testTimeout=180000",
+    "test:migrations:assignment-cancellation": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/assignmentCancellation.pg.test.ts --testTimeout=180000"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",

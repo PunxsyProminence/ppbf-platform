@@ -1,0 +1,560 @@
+/**
+ * @jest-environment jsdom
+ */
+
+/**
+ * A-FIN-03 -- a coach reads the wellness check-in of the athlete they picked.
+ *
+ * The route decides WHO may read (see
+ * app/api/pilot/coach/athlete-check-in/route.test.ts). These cases are about
+ * what the coach is then told, and the ways that can go wrong on a screen:
+ * a skipped question shown as a number, a failed read shown as "no check-in",
+ * a refusal shown as either, one child's answers drawn under another child's
+ * name, or a band/average appearing that nobody measured.
+ */
+
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+
+import { WELLNESS_SCALES, wellnessAnchor, type WellnessScaleKey } from '@/src/shared/wellnessScales';
+
+import CoachWorkspace from './CoachWorkspace';
+
+const ATHLETES = [
+  { athlete_id: 'ath_1', full_name: 'Jordan P.' },
+  { athlete_id: 'ath_2', full_name: 'Sam R.' },
+] as const;
+
+/** The panel's sentences, pinned here as literals: a test that imported them
+ *  from the component would pass whatever the component said. */
+const NO_CHECK_IN_TODAY = 'No wellness check-in recorded today.';
+/** A value the record does not hold. The owner's wording (2026-09-22): the
+ *  panel reports what is stored, so a null is "Not reported" and never the
+ *  "Not answered" the athlete's own screen uses about its own form. */
+const NOT_REPORTED = 'Not reported';
+const READ_FAILED =
+  'Today’s wellness check-in could not be loaded. This is not a statement that the athlete did not check in -- try again in a minute.';
+/** The refusal sentence as A-FIN-03R1 leaves it: the audience, with no claim
+ *  about assignment or coverage. Pinned as a literal for the same reason as
+ *  the rest -- imported copy would pass whatever the component said. */
+const NO_ACCESS =
+  'You don’t have access to this athlete’s wellness check-ins. They are shown to coaches and organization admins in the athlete’s own organization.';
+
+/** The coach-facing name of every 1-5 measure, as the owner listed them. */
+const MEASURE_LABELS: Readonly<Record<WellnessScaleKey, string>> = {
+  energy: 'Energy',
+  soreness: 'Soreness',
+  focus: 'Focus',
+  motivation: 'Motivation',
+  hydration: 'Hydration',
+  mental_clarity: 'Mental clarity',
+  stress: 'Stress',
+  nutrition_compliance: 'Nutrition compliance',
+};
+
+const JORDAN_NOTE = 'Left knee is "tight" after sparring.\nStill want to work pads.';
+
+/** A pilot.athlete_check_ins row as the coach route returns it in `today`. */
+function checkInRow(athleteId: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    organization_id: 'org-1',
+    check_in_id: `ci-${athleteId}`,
+    athlete_id: athleteId,
+    checked_in_on: '2026-09-22',
+    energy: 4,
+    soreness: 2,
+    focus: 5,
+    sleep_hours: 7.5,
+    hydration: 3,
+    motivation: 1,
+    mental_clarity: 2,
+    stress: 5,
+    nutrition_compliance: 4,
+    note: JORDAN_NOTE,
+    created_at: '2026-09-22T21:05:00.000Z',
+    ...overrides,
+  };
+}
+
+/** A bare check-in: here, and every question skipped. */
+function bareRow(athleteId: string): Record<string, unknown> {
+  return checkInRow(athleteId, {
+    energy: null,
+    soreness: null,
+    focus: null,
+    sleep_hours: null,
+    hydration: null,
+    motivation: null,
+    mental_clarity: null,
+    stress: null,
+    nutrition_compliance: null,
+    note: '',
+  });
+}
+
+function jsonResponse(body: unknown, init?: { ok?: boolean; status?: number }): Response {
+  return {
+    ok: init?.ok ?? true,
+    status: init?.status ?? 200,
+    json: async () => body,
+  } as unknown as Response;
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+type CheckInRoute = (athleteId: string, init?: RequestInit) => Promise<Response> | Response;
+
+function installFetch(athleteCheckIn: CheckInRoute): jest.Mock {
+  const fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.includes('/api/pilot/coach/athlete-check-in')) {
+      const athleteId = new URL(url, 'http://localhost').searchParams.get('athlete_id') ?? '';
+      return athleteCheckIn(athleteId, init);
+    }
+    if (url.includes('/api/pilot/athletes/list')) return jsonResponse({ items: ATHLETES });
+    if (url.includes('/api/pilot/profile/roster')) return jsonResponse({ ok: true, items: [] });
+    if (url.includes('/api/pilot/auth/session')) {
+      return jsonResponse({ authenticated: true, account_id: 'acct_coach_1' });
+    }
+    if (url.includes('/api/pilot/session-scripts/runs')) return jsonResponse({ run: null });
+    if (url.includes('/api/pilot/scheduler')) return jsonResponse({ ok: true, classes: [] });
+    if (url.includes('/api/pilot/coach/credentials')) return jsonResponse({ ok: true, items: [] });
+    if (url.includes('/api/pilot/coach/attendance-today')) {
+      return jsonResponse({ ok: true, day: '2026-09-22', covered: ['ath_1', 'ath_2'], marks: [] });
+    }
+    if (url.includes('/api/pilot/coach/development')) return jsonResponse({ ok: true, goals: [], activities: [] });
+    if (url.includes('/api/pilot/coach/readiness-board')) return jsonResponse({ items: [] });
+    if (url.includes('/api/pilot/shadow/review-projection')) return jsonResponse({ queue: [] });
+    if (url.includes('/api/pilot/shadow/observation-projection')) return jsonResponse({ items: [] });
+    if (url.includes('/api/pilot/announcements/get')) return jsonResponse({ ok: true, announcements: [] });
+    if (url.includes('/api/pilot/coach/pain-reports')) {
+      return jsonResponse({ ok: true, painReports: [], windowDays: 14, truncated: false });
+    }
+    if (url.includes('/api/pilot/coach/barrier-reports')) {
+      return jsonResponse({ ok: true, barrierReports: [], truncated: false });
+    }
+    if (url.includes('/api/pilot/escalations')) return jsonResponse({ ok: true, escalations: [] });
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+
+  global.fetch = fetchMock as unknown as typeof fetch;
+  return fetchMock;
+}
+
+async function renderWorkspace(athleteCheckIn: CheckInRoute): Promise<jest.Mock> {
+  const fetchMock = installFetch(athleteCheckIn);
+  await act(async () => {
+    render(<CoachWorkspace />);
+  });
+  await screen.findByText('Jordan P.');
+  return fetchMock;
+}
+
+/** The roster row for an athlete -- the whole card is the select. */
+function rosterRow(name: string): HTMLButtonElement {
+  const row = screen.getAllByText(name)
+    .map((element) => element.closest('button'))
+    .find((button): button is HTMLButtonElement => button !== null);
+  if (!row) throw new Error(`No roster row for ${name}`);
+  return row;
+}
+
+async function pickAthlete(name: string): Promise<void> {
+  await act(async () => {
+    fireEvent.click(rosterRow(name));
+  });
+}
+
+/** Whether a row is wearing the selected look. Pinned to the two classes the
+ *  roster uses for it, checked as whole class tokens: the UNSELECTED row
+ *  carries `hover:border-[color:var(--brass-500)]`, so a substring test for the
+ *  brass border would report every row as selected. */
+function looksSelected(row: HTMLButtonElement): boolean {
+  return row.classList.contains('bg-[rgb(var(--brass-400-rgb)_/_.10)]')
+    && row.classList.contains('border-[color:var(--brass-500)]');
+}
+
+function panel(): HTMLElement {
+  return screen.getByRole('region', { name: 'Wellness Check-In' });
+}
+
+/** The displayed value under a measure's label. */
+function measure(label: string): string {
+  const term = within(panel()).getByText(label, { selector: 'dt' });
+  return term.nextElementSibling?.textContent ?? '';
+}
+
+function checkInRequests(fetchMock: jest.Mock): Array<[unknown, RequestInit | undefined]> {
+  return fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/pilot/coach/athlete-check-in')) as Array<
+    [unknown, RequestInit | undefined]
+  >;
+}
+
+let consoleError: jest.SpyInstance;
+
+beforeEach(() => {
+  // Failure cases log the status for diagnosis; the log is asserted where it
+  // matters and kept out of the test output everywhere else.
+  consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
+describe('the read starts from a deliberate pick', () => {
+  it('reads nothing for the roster\'s seeded selection, and says how to start', async () => {
+    const fetchMock = await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }));
+
+    expect(checkInRequests(fetchMock)).toHaveLength(0);
+    expect(within(panel()).getByText('Select an athlete in the roster to see their wellness check-in for today.')).not.toBeNull();
+    // And the panel is the only thing on screen making a claim about the
+    // selection: nothing is loading, and no answer of any kind is drawn.
+    expect(within(panel()).queryAllByRole('term')).toHaveLength(0);
+    expect(within(panel()).queryByText(/Loading today's wellness check-in/)).toBeNull();
+  });
+
+  it('leaves every roster row unselected while the selection is only the seeded one', async () => {
+    /* The roster seeds `selectedAthleteId` with the first athlete when it
+       loads (CoachWorkspace.loadAthletes). The seed stays -- other behaviour
+       needs it -- but nothing on screen may present it as the coach's choice.
+
+       A lit row and a coach's pick are two different claims, and only the
+       second is a person deciding to look at a particular child's
+       self-report. So on arrival no row is lit, the panel says how to start,
+       and nothing has been asked for. */
+    const fetchMock = await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }));
+
+    expect(looksSelected(rosterRow('Jordan P.'))).toBe(false);
+    expect(looksSelected(rosterRow('Sam R.'))).toBe(false);
+    expect(checkInRequests(fetchMock)).toHaveLength(0);
+    expect(within(panel()).queryAllByRole('term')).toHaveLength(0);
+  });
+
+  it('asks the coach route for the picked athlete, by GET, with the session cookie', async () => {
+    const fetchMock = await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_2') }));
+
+    await pickAthlete('Sam R.');
+
+    const requests = checkInRequests(fetchMock);
+    expect(requests).toHaveLength(1);
+    const [url, init] = requests[0];
+    expect(String(url)).toContain('/api/pilot/coach/athlete-check-in?athlete_id=ath_2');
+    expect(init?.method).toBe('GET');
+    expect(init?.credentials).toBe('include');
+  });
+
+  it('gives the picked row the selected look, and only that row', async () => {
+    await renderWorkspace((athleteId) => jsonResponse({ today: checkInRow(athleteId) }));
+
+    await pickAthlete('Sam R.');
+    expect(looksSelected(rosterRow('Sam R.'))).toBe(true);
+    expect(looksSelected(rosterRow('Jordan P.'))).toBe(false);
+
+    // Including when the coach then picks the athlete the roster had seeded:
+    // the look follows the pick, it does not accumulate.
+    await pickAthlete('Jordan P.');
+    expect(looksSelected(rosterRow('Jordan P.'))).toBe(true);
+    expect(looksSelected(rosterRow('Sam R.'))).toBe(false);
+  });
+
+  it('reads once for the athlete that was clicked, and for nobody else', async () => {
+    const fetchMock = await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_2') }));
+
+    await pickAthlete('Sam R.');
+
+    const requests = checkInRequests(fetchMock).map(([url]) => String(url));
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toContain('athlete_id=ath_2');
+    expect(requests[0]).not.toContain('athlete_id=ath_1');
+    expect(within(panel()).getByText(/Today's report for Sam R\./)).not.toBeNull();
+  });
+});
+
+describe('a check-in that exists is read back exactly as stored', () => {
+  it('shows the date, every measure, sleep in hours and the note verbatim', async () => {
+    await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }));
+    await pickAthlete('Jordan P.');
+
+    expect(within(panel()).getByText(/checked in on 2026-09-22\./)).not.toBeNull();
+    expect(within(panel()).getByText(/Today's report for Jordan P\./)).not.toBeNull();
+
+    // Sleep is a quantity: the stored hours, not a rating and not rounded.
+    expect(measure('Sleep')).toBe('7.5 hours');
+
+    // Each 1-5 answer is the stored number AND the words the athlete picked it
+    // by -- taken from the shared scales module, not restated here.
+    const row = checkInRow('ath_1');
+    for (const scale of WELLNESS_SCALES) {
+      const value = row[scale.key] as number;
+      expect({ key: scale.key, shown: measure(MEASURE_LABELS[scale.key]) })
+        .toEqual({ key: scale.key, shown: `${value} — ${wellnessAnchor(scale.key, value)}` });
+    }
+    // Pinned once by value too, so a change of wording in the shared module
+    // is a visible diff here and not only a silent re-derivation.
+    expect(measure('Stress')).toBe('5 — Very stressed');
+    expect(measure('Soreness')).toBe('2 — A little stiff');
+
+    const noteLabel = within(panel()).getByText("Athlete's note");
+    expect(noteLabel.nextElementSibling?.textContent).toBe(JORDAN_NOTE);
+  });
+
+  it('lists every measure, including the ones the owner named, and nothing it did not store', async () => {
+    await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }));
+    await pickAthlete('Jordan P.');
+
+    const terms = within(panel()).getAllByRole('term').map((term) => term.textContent);
+    expect(terms).toEqual(['Sleep', ...WELLNESS_SCALES.map((scale) => MEASURE_LABELS[scale.key])]);
+  });
+
+  it('shows a stored null as "Not reported" -- never 0, never 3', async () => {
+    await renderWorkspace(() => jsonResponse({ today: bareRow('ath_1') }));
+    await pickAthlete('Jordan P.');
+
+    expect(measure('Sleep')).toBe(NOT_REPORTED);
+    for (const scale of WELLNESS_SCALES) {
+      expect({ key: scale.key, shown: measure(MEASURE_LABELS[scale.key]) })
+        .toEqual({ key: scale.key, shown: NOT_REPORTED });
+    }
+    const definitions = within(panel()).getAllByRole('definition').map((node) => node.textContent ?? '');
+    for (const text of definitions) {
+      expect(text).not.toMatch(/\d/);
+    }
+    expect(within(panel()).getByText('No note written.')).not.toBeNull();
+  });
+
+  it('keeps no record, a null value and an empty note in three separate sets of words', async () => {
+    /* A check-in EXISTS here and every field in it is empty, which is the one
+       case where the three could be run together. They are not: the row is
+       there, so "No wellness check-in recorded today." would be false; each
+       missing value says only that it was not reported; and the note gets its
+       own sentence rather than the measures' words. */
+    await renderWorkspace(() => jsonResponse({ today: bareRow('ath_1') }));
+    await pickAthlete('Jordan P.');
+
+    expect(within(panel()).queryByText(NO_CHECK_IN_TODAY)).toBeNull();
+    expect(within(panel()).getAllByText(NOT_REPORTED).length).toBe(WELLNESS_SCALES.length + 1);
+    expect(within(panel()).getByText('No note written.')).not.toBeNull();
+    // The wording the owner ruled against, in case it comes back by habit.
+    expect(panel().textContent).not.toMatch(/Not answered/);
+  });
+
+  it('shows a whitespace-only note as stored, not relabelled as "No note written."', async () => {
+    // The athlete route stores body.note untrimmed, so this can be stored.
+    const spacesNote = '  \n ';
+    await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1', { note: spacesNote }) }));
+    await pickAthlete('Jordan P.');
+
+    const noteLabel = within(panel()).getByText("Athlete's note");
+    expect(noteLabel.nextElementSibling?.textContent).toBe(spacesNote);
+    expect(within(panel()).queryByText('No note written.')).toBeNull();
+  });
+
+  it('shows a partly answered check-in with each answer in its own place', async () => {
+    await renderWorkspace(() => jsonResponse({
+      today: checkInRow('ath_1', { focus: null, sleep_hours: 9, stress: null }),
+    }));
+    await pickAthlete('Jordan P.');
+
+    expect(measure('Focus')).toBe(NOT_REPORTED);
+    expect(measure('Stress')).toBe(NOT_REPORTED);
+    expect(measure('Energy')).toBe(`4 — ${wellnessAnchor('energy', 4)}`);
+    expect(measure('Sleep')).toBe('9 hours');
+  });
+
+  it('derives nothing: no band, no average, no score, no clearance', async () => {
+    await renderWorkspace(() => jsonResponse({ today: checkInRow('ath_1') }));
+    await pickAthlete('Jordan P.');
+
+    const text = panel().textContent ?? '';
+    expect(text).not.toMatch(/\b(GREEN|YELLOW|RED)\b/);
+    expect(text).not.toMatch(/readiness|average|score|clearance|cleared|ready to train/i);
+    // Nothing on the panel is badged, and nothing is coloured by the value.
+    expect(panel().querySelector('.badge')).toBeNull();
+    expect(panel().innerHTML).not.toMatch(/--(cleared|monitor|restricted|locked)\b/);
+  });
+});
+
+describe('an empty day, a failed read and a refusal are three different answers', () => {
+  it('no row today is said plainly, and is not a failure or a refusal', async () => {
+    await renderWorkspace(() => jsonResponse({ today: null }));
+    await pickAthlete('Jordan P.');
+
+    expect(within(panel()).getByText(NO_CHECK_IN_TODAY)).not.toBeNull();
+    expect(within(panel()).queryByText(READ_FAILED)).toBeNull();
+    expect(within(panel()).queryByText(NO_ACCESS)).toBeNull();
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it('a server failure is a failure, in plain words, with the status kept off the screen', async () => {
+    await renderWorkspace(() => jsonResponse({ error: 'Internal server error' }, { ok: false, status: 500 }));
+    await pickAthlete('Jordan P.');
+
+    expect(within(panel()).getByText(READ_FAILED)).not.toBeNull();
+    expect(within(panel()).queryByText(NO_CHECK_IN_TODAY)).toBeNull();
+    expect(within(panel()).queryByText(NO_ACCESS)).toBeNull();
+    expect(panel().textContent).not.toMatch(/500|Internal server error/);
+    // The status is not lost -- it goes where a person diagnosing it looks.
+    expect(consoleError).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'coach-wellness-check-in-load-failed',
+      error: expect.objectContaining({ cause: { status: 500 } }),
+    }));
+  });
+
+  it('a request that never landed is a failure, not an empty day', async () => {
+    await renderWorkspace(() => {
+      throw new TypeError('Failed to fetch');
+    });
+    await pickAthlete('Jordan P.');
+
+    expect(within(panel()).getByText(READ_FAILED)).not.toBeNull();
+    expect(within(panel()).queryByText(NO_CHECK_IN_TODAY)).toBeNull();
+    expect(panel().textContent).not.toMatch(/Failed to fetch/);
+  });
+
+  it.each([
+    ['a body with no `today` at all', {}],
+    ['a row with a measure missing', { today: (() => { const row = checkInRow('ath_1'); delete row.stress; return row; })() }],
+    ['a row with sleep sent as text', { today: checkInRow('ath_1', { sleep_hours: '7.5' }) }],
+    ['a row for a different athlete', { today: checkInRow('ath_2') }],
+  ])('%s is an unreadable response, never "no check-in" or "Not reported"', async (_label, body) => {
+    await renderWorkspace(() => jsonResponse(body));
+    await pickAthlete('Jordan P.');
+
+    expect(within(panel()).getByText(READ_FAILED)).not.toBeNull();
+    expect(within(panel()).queryByText(NO_CHECK_IN_TODAY)).toBeNull();
+    expect(within(panel()).queryByText(NOT_REPORTED)).toBeNull();
+    expect(within(panel()).queryByText(/Left knee/)).toBeNull();
+  });
+
+  it('a refusal says only that this coach has no access, and shows no wellness data', async () => {
+    // The message the route now refuses with: the athlete is not a live
+    // athlete in this session's organization.
+    await renderWorkspace(() => jsonResponse({ error: 'Forbidden: athlete does not belong to organization' }, { ok: false, status: 403 }));
+    await pickAthlete('Jordan P.');
+
+    expect(within(panel()).getByText(NO_ACCESS)).not.toBeNull();
+    expect(within(panel()).queryByText(NO_CHECK_IN_TODAY)).toBeNull();
+    expect(within(panel()).queryByText(READ_FAILED)).toBeNull();
+    expect(within(panel()).queryAllByRole('term')).toHaveLength(0);
+    expect(panel().textContent).not.toMatch(/Forbidden|403/);
+  });
+
+  it('the refusal does not restate the obsolete coach-of-record / coverage rule', async () => {
+    /* A-FIN-03R1: wellness is no longer limited to the athlete's own coach or
+       a coach covering for them, so a refusal that still explained the rule
+       that way would send a coach off to ask for an assignment that would not
+       have helped -- a true refusal behind a false explanation. The words are
+       checked, not just the sentence, so the old wording cannot return in a
+       paraphrase. */
+    await renderWorkspace(() => jsonResponse({ error: 'Forbidden: athlete does not belong to organization' }, { ok: false, status: 403 }));
+    await pickAthlete('Jordan P.');
+
+    const text = panel().textContent ?? '';
+    expect(text).toContain(NO_ACCESS);
+    expect(text).not.toMatch(/coach of record|covering|coverage|assigned/i);
+  });
+
+  it('a failed read can be tried again, and the retry reads the same athlete', async () => {
+    let attempts = 0;
+    const fetchMock = await renderWorkspace(() => {
+      attempts += 1;
+      return attempts === 1
+        ? jsonResponse({ error: 'Internal server error' }, { ok: false, status: 500 })
+        : jsonResponse({ today: checkInRow('ath_1') });
+    });
+    await pickAthlete('Jordan P.');
+    expect(within(panel()).getByText(READ_FAILED)).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.click(within(panel()).getByRole('button', { name: 'Try loading the wellness check-in again' }));
+    });
+
+    expect(within(panel()).queryByText(READ_FAILED)).toBeNull();
+    expect(measure('Sleep')).toBe('7.5 hours');
+    const requests = checkInRequests(fetchMock).map(([url]) => String(url));
+    expect(requests).toHaveLength(2);
+    expect(requests.every((url) => url.includes('athlete_id=ath_1'))).toBe(true);
+  });
+});
+
+describe('one athlete\'s answers never appear under another\'s name', () => {
+  it('a slow response for the first athlete cannot overwrite the second', async () => {
+    const slowJordan = deferred<Response>();
+    const signals: Record<string, AbortSignal | undefined> = {};
+    await renderWorkspace((athleteId, init) => {
+      signals[athleteId] = init?.signal ?? undefined;
+      return athleteId === 'ath_1'
+        ? slowJordan.promise
+        : jsonResponse({ today: checkInRow('ath_2', { note: 'Sam feels fine.', energy: 2 }) });
+    });
+
+    await pickAthlete('Jordan P.');
+    await pickAthlete('Sam R.');
+
+    // Picking Sam cancelled Jordan's request outright.
+    expect(signals.ath_1?.aborted).toBe(true);
+    expect(signals.ath_2?.aborted).toBe(false);
+    expect(within(panel()).getByText(/Today's report for Sam R\./)).not.toBeNull();
+
+    // Jordan's answer arrives anyway (a fetch that ignores the signal). It is
+    // dropped: Sam's check-in stays on screen, and none of Jordan's does.
+    await act(async () => {
+      slowJordan.resolve(jsonResponse({ today: checkInRow('ath_1') }));
+    });
+
+    expect(within(panel()).getByText(/Today's report for Sam R\./)).not.toBeNull();
+    expect(measure('Energy')).toBe(`2 — ${wellnessAnchor('energy', 2)}`);
+    expect(within(panel()).getByText('Sam feels fine.')).not.toBeNull();
+    expect(within(panel()).queryByText(/Left knee/)).toBeNull();
+    expect(within(panel()).queryByText(/Jordan P\./)).toBeNull();
+  });
+
+  it('a first athlete\'s answer landing while the second is still loading is not shown', async () => {
+    const slowJordan = deferred<Response>();
+    const slowSam = deferred<Response>();
+    await renderWorkspace((athleteId) => (athleteId === 'ath_1' ? slowJordan.promise : slowSam.promise));
+
+    await pickAthlete('Jordan P.');
+    await pickAthlete('Sam R.');
+
+    await act(async () => {
+      slowJordan.resolve(jsonResponse({ today: checkInRow('ath_1') }));
+    });
+
+    // Still Sam's loading line -- not Jordan's answers, and not a failure.
+    expect(within(panel()).getByText(/Loading today's wellness check-in for Sam R\./)).not.toBeNull();
+    expect(within(panel()).queryByText(/Left knee/)).toBeNull();
+    expect(within(panel()).queryAllByRole('term')).toHaveLength(0);
+    expect(within(panel()).queryByText(READ_FAILED)).toBeNull();
+
+    await act(async () => {
+      slowSam.resolve(jsonResponse({ today: null }));
+    });
+    expect(within(panel()).getByText(NO_CHECK_IN_TODAY)).not.toBeNull();
+  });
+
+  it('a stale failure for the first athlete does not paint the second as failed', async () => {
+    const slowJordan = deferred<Response>();
+    await renderWorkspace((athleteId) => (athleteId === 'ath_1'
+      ? slowJordan.promise
+      : jsonResponse({ today: null })));
+
+    await pickAthlete('Jordan P.');
+    await pickAthlete('Sam R.');
+
+    await act(async () => {
+      slowJordan.resolve(jsonResponse({ error: 'Internal server error' }, { ok: false, status: 500 }));
+    });
+
+    expect(within(panel()).getByText(NO_CHECK_IN_TODAY)).not.toBeNull();
+    expect(within(panel()).queryByText(READ_FAILED)).toBeNull();
+  });
+});

@@ -34,6 +34,7 @@ import {
   grantMediaConsent,
   listConsentForGuardian,
   listOrganizationConsentStatus,
+  listOrganizationGuardianNames,
   resolveActingParent,
   withdrawMediaConsent,
 } from './guardianConsent';
@@ -194,6 +195,108 @@ describe('grantMediaConsent / withdrawMediaConsent', () => {
       mockTxClient,
       expect.objectContaining({ status: 'withdrawn', coversVideo: false, publicUseAllowed: false }),
     );
+  });
+
+  /*
+   * RECORDING A SIGNATURE THAT HAPPENED ON PAPER.
+   *
+   * The guardian's own console signs now and omits both of these, which is why
+   * they are optional -- that path must keep behaving exactly as it did. The
+   * staff writer supplies the date printed on the form and where the paper is
+   * held.
+   */
+  describe('the paper details a staff entrant supplies', () => {
+    test('an omitted signedAt still records a timestamp, so the column is never empty', async () => {
+      const before = Date.now();
+
+      await grantMediaConsent({
+        organizationId: 'org-a',
+        athleteId: 'ath-1',
+        parentId: 'p1',
+        signedByName: 'Jane Guardian',
+        recordedByAccountId: 'acct-entrant',
+        coversVideo: true,
+        publicUseAllowed: false,
+      });
+
+      const waiver = mockUpsertWaiverWithClient.mock.calls[0][1] as { signedAt: string; notes?: string };
+      expect(Date.parse(waiver.signedAt)).toBeGreaterThanOrEqual(before);
+      expect(waiver.notes).toBeUndefined();
+    });
+
+    test.each([
+      [
+        'a grant',
+        () =>
+          grantMediaConsent({
+            organizationId: 'org-a',
+            athleteId: 'ath-1',
+            parentId: 'p1',
+            signedByName: 'Jane Guardian',
+            recordedByAccountId: 'acct-entrant',
+            coversVideo: true,
+            publicUseAllowed: false,
+            signedAt: '2026-03-04T12:00:00.000Z',
+            notes: 'Form in the office cabinet',
+          }),
+      ],
+      [
+        'a withdrawal',
+        () =>
+          withdrawMediaConsent({
+            organizationId: 'org-a',
+            athleteId: 'ath-1',
+            parentId: 'p1',
+            signedByName: 'Jane Guardian',
+            recordedByAccountId: 'acct-entrant',
+            signedAt: '2026-03-04T12:00:00.000Z',
+            notes: 'Form in the office cabinet',
+          }),
+      ],
+    ] as Array<[string, () => Promise<string>]>)('%s forwards the paper date and note verbatim', async (_label, write) => {
+      await write();
+
+      expect(mockUpsertWaiverWithClient).toHaveBeenCalledWith(
+        mockTxClient,
+        expect.objectContaining({ signedAt: '2026-03-04T12:00:00.000Z', notes: 'Form in the office cabinet' }),
+      );
+    });
+
+    test('a back-dated entry still takes the lock, like every other write', async () => {
+      await grantMediaConsent({
+        organizationId: 'org-a',
+        athleteId: 'ath-1',
+        parentId: 'p1',
+        signedByName: 'Jane Guardian',
+        recordedByAccountId: 'acct-entrant',
+        coversVideo: true,
+        publicUseAllowed: false,
+        signedAt: '2020-01-01T12:00:00.000Z',
+      });
+
+      expect(lockCalls()).toHaveLength(1);
+    });
+
+    test('signedByRole stays the literal "parent" -- a staff entry is not a different KIND of consent', async () => {
+      await grantMediaConsent({
+        organizationId: 'org-a',
+        athleteId: 'ath-1',
+        parentId: 'p1',
+        signedByName: 'Jane Guardian',
+        recordedByAccountId: 'acct-staff',
+        coversVideo: true,
+        publicUseAllowed: false,
+        signedAt: '2026-03-04T12:00:00.000Z',
+      });
+
+      // Who typed it is on the audit row, not on the waiver. Making this
+      // distinguishable in the stored consent is the one change that would
+      // have cost a migration.
+      expect(mockUpsertWaiverWithClient).toHaveBeenCalledWith(
+        mockTxClient,
+        expect.objectContaining({ signedByRole: 'parent', recordedByAccountId: 'acct-staff' }),
+      );
+    });
   });
 
   /**
@@ -404,24 +507,68 @@ describe('listConsentForGuardian', () => {
   });
 });
 
+describe('listOrganizationGuardianNames', () => {
+  test('one query for the whole org, and it never touches account_id', async () => {
+    mockQuery.mockResolvedValueOnce([
+      { parent_id: 'p1', full_name: 'Dana Reyes' },
+      { parent_id: 'p2', full_name: 'Sam Okafor' },
+    ]);
+
+    const names = await listOrganizationGuardianNames('org-a');
+
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(params).toEqual(['org-a']);
+    // A guardian who signed on paper and never signed in has account_id NULL.
+    // Filtering on it would return an empty picker for exactly the people this
+    // screen exists to record consent for.
+    expect(String(sql)).not.toMatch(/account_id/i);
+    expect(names.get('p1')).toBe('Dana Reyes');
+    expect(names.get('p2')).toBe('Sam Okafor');
+  });
+});
+
 describe('listOrganizationConsentStatus', () => {
   test('returns every athlete in the org with a consent breakdown, including zero-guardian athletes', async () => {
     mockQuery
       .mockResolvedValueOnce([{ athlete_id: 'ath-1', full_name: 'Sample Athlete' }]) // athletes list
+      .mockResolvedValueOnce([]) // org guardian names
       .mockResolvedValueOnce([]); // guardian_links for ath-1: none
 
     const result = await listOrganizationConsentStatus('org-a');
 
     expect(result).toEqual([
-      { athleteId: 'ath-1', athleteName: 'Sample Athlete', consent: { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] } },
+      {
+        athleteId: 'ath-1',
+        athleteName: 'Sample Athlete',
+        consent: { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] },
+        guardians: [],
+      },
     ]);
+  });
+
+  test('each guardian id is resolved to a name, from one org-wide lookup', async () => {
+    mockQuery
+      .mockResolvedValueOnce([{ athlete_id: 'ath-1', full_name: 'Sample Athlete' }]) // athletes list
+      .mockResolvedValueOnce([{ parent_id: 'p1', full_name: 'Dana Reyes' }]) // org guardian names
+      .mockResolvedValueOnce([{ parent_id: 'p1' }]) // guardian_links for ath-1
+      .mockResolvedValueOnce([
+        { parent_id: 'p1', status: 'signed', covers_video: true, public_use_allowed: false, created_at: '2026-08-01T00:00:00Z' },
+      ]); // current consent
+
+    const result = await listOrganizationConsentStatus('org-a');
+
+    expect(result[0].guardians).toEqual([{ parentId: 'p1', fullName: 'Dana Reyes' }]);
   });
 
   // page is opt-in and must default to unbounded: this function backs the
   // org-wide consent AUDIT, and a silent cap would hide the exact finding
   // (a non-compliant athlete) the audit exists to surface.
   test('with no page argument, the athletes query carries no LIMIT/OFFSET', async () => {
-    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1', full_name: 'Sample Athlete' }]).mockResolvedValueOnce([]);
+    mockQuery
+      .mockResolvedValueOnce([{ athlete_id: 'ath-1', full_name: 'Sample Athlete' }])
+      .mockResolvedValueOnce([]) // org guardian names
+      .mockResolvedValueOnce([]); // guardian_links
 
     await listOrganizationConsentStatus('org-a');
 
@@ -431,7 +578,10 @@ describe('listOrganizationConsentStatus', () => {
   });
 
   test('an explicit page bounds the athletes query', async () => {
-    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-1', full_name: 'Sample Athlete' }]).mockResolvedValueOnce([]);
+    mockQuery
+      .mockResolvedValueOnce([{ athlete_id: 'ath-1', full_name: 'Sample Athlete' }])
+      .mockResolvedValueOnce([]) // org guardian names
+      .mockResolvedValueOnce([]); // guardian_links
 
     await listOrganizationConsentStatus('org-a', { limit: 50, offset: 100 });
 

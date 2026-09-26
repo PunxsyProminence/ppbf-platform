@@ -355,6 +355,53 @@ export default function AthleteProgressionIntelligencePage() {
     if (drillOpener.openKey) assignmentContextRef.current?.focus();
   }, [drillOpener.openKey]);
 
+  /* A link from the athlete's Floor names one assignment and what they came to
+     do with it: `?assignment=<id>&intent=instruction` opens that assignment's
+     drill instruction (a read -- it writes nothing), and `&intent=log` opens
+     its Log completion form (nothing is written until they press Save log).
+     The Floor links here rather than carrying its own copy of either control,
+     so there is one opener and one log form.
+
+     The id is only ever looked up in the list the server already returned for
+     this athlete. An id that is not in it -- someone else's, a stale one, a
+     typo -- matches nothing, and the page renders as though no link had been
+     followed. It never widens what is read.
+
+     Consumed once per page load, whatever the outcome: a saved log reloads the
+     list, and that reload must not reopen what the athlete just closed. */
+  const deepLinkConsumedRef = useRef(false);
+  const focusLogFormForRef = useRef<string | null>(null);
+  const openInstruction = drillOpener.open;
+  useEffect(() => {
+    if (deepLinkConsumedRef.current || loading) return;
+    deepLinkConsumedRef.current = true;
+    if (loadFailed) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const target = assignments.find((a) => a.assignment_id === params.get('assignment'));
+    if (!target) return;
+
+    const intent = params.get('intent');
+    if (intent === 'instruction' && target.drill_id) {
+      openInstruction(target.assignment_id, assignmentOpenerId(target.assignment_id), (signal) =>
+        readAssignmentInstruction(target.assignment_id, signal),
+      );
+    } else if (intent === 'log' && target.status !== 'cancelled' && target.status !== 'completed') {
+      focusLogFormForRef.current = target.assignment_id;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLoggingAssignmentId(target.assignment_id);
+      setLogReps('');
+      setLogNotes('');
+    }
+  }, [loading, loadFailed, assignments, openInstruction]);
+
+  // Lands the athlete in the form the Floor sent them to, once it has drawn.
+  useEffect(() => {
+    if (!loggingAssignmentId || focusLogFormForRef.current !== loggingAssignmentId) return;
+    focusLogFormForRef.current = null;
+    document.getElementById(`reps-${loggingAssignmentId}`)?.focus();
+  }, [loggingAssignmentId]);
+
   return (
     <RoleStandaloneView roleLabel="Athlete Workspace" routeLabel="/athlete/progression-intelligence" allowedRoles={['athlete']} showShellHeader={false} room="floor">
       <div className="max-w-5xl mx-auto">

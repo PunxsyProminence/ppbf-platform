@@ -15,7 +15,11 @@
 // athlete, and its idempotent-by-day behavior (a second call the same day
 // returns the SAME row with created:false, including the concurrent
 // double-tap race the on-conflict-do-nothing + re-read pattern is meant to
-// survive) only exist in the TS module.
+// survive) only exist in the TS module. So does the one this file's last
+// describe block is about: WHICH DAY a check-in belongs to is now decided by
+// gymDayIso() in Node, not by the database's `current_date`, and proving that
+// needs a real table and a real Postgres to reduce the same instant, so the
+// day it would have filed the row under can be shown to be a different day.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -30,7 +34,38 @@ import type { Readable } from 'node:stream';
 
 import { Client } from 'pg';
 
+import type { GymTimeInput } from '../../lib/gymTime';
+
 let activeClient: Client | null = null;
+
+/**
+ * A counting, optionally-scripted wrapper around the gym clock.
+ *
+ * `checkIn` must resolve the gym day ONCE and reuse that one value for the
+ * pre-read, the insert and the re-read. Nothing about the finished rows can
+ * show that: an operation that asked three times on a quiet afternoon would
+ * get the same answer three times and look identical. So the property has to
+ * be observed at the clock itself -- `calls` counts resolutions, and `days`
+ * hands out a DIFFERENT day per call so that an operation which asked more
+ * than once would visibly write one day and read another.
+ *
+ * Everything else in this module is the real gymTime: with `days` empty the
+ * wrapper delegates, so the boundary test below exercises the actual
+ * reduction on an actual instant rather than a scripted answer.
+ */
+const mockGymClock: { calls: number; days: (string | null)[] } = { calls: 0, days: [] };
+
+jest.mock('../../lib/gymTime', () => {
+  const actual: typeof import('../../lib/gymTime') = jest.requireActual('../../lib/gymTime');
+  return {
+    ...actual,
+    gymDayIso: (value?: GymTimeInput) => {
+      mockGymClock.calls += 1;
+      const scripted = mockGymClock.days.shift();
+      return scripted === undefined ? actual.gymDayIso(value) : scripted;
+    },
+  };
+});
 
 jest.mock('./db', () => ({
   query: jest.fn(async (text: string, params: unknown[] = []) => {
@@ -45,7 +80,10 @@ jest.mock('./db', () => ({
   }),
 }));
 
+import { gymDayIso } from '../../lib/gymTime';
+
 import { checkIn, getTodayCheckIn, listRecentCheckIns, wellnessValueError } from './athleteCheckIns';
+import { PilotError } from './errors';
 
 jest.setTimeout(180_000);
 
@@ -181,6 +219,8 @@ afterAll(async () => {
 
 afterEach(() => {
   activeClient = null;
+  mockGymClock.calls = 0;
+  mockGymClock.days = [];
 });
 function insertCheckIn(client: Client, checkInId: string, overrides: Record<string, string | number | null> = {}) {
   return client.query(
@@ -407,6 +447,164 @@ describe('the real check-in lifecycle against real rows', () => {
     try {
       await applyModuleSchema(client);
       await expect(getTodayCheckIn(ORG_ID, ATHLETE_ID)).resolves.toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// The instant ChatGPT named for this: already the 23rd in UTC, still the
+// evening of the 22nd on the wall in Punxsutawney.
+const CHATGPT_BOUNDARY_INSTANT = '2026-09-23T02:30:00Z';
+
+// The same instant one year on, which is what the round-trip below actually
+// uses. The shape is identical: 02:30Z during EDT is 22:30 the previous
+// evening. Nothing here depends on the machine's own date -- the two days
+// under test are read back from the stored row and from the database's
+// reduction of THIS instant, never from `current_date`, so the suite behaves
+// the same whatever day it runs on.
+const AFTER_UTC_MIDNIGHT = '2027-09-23T02:30:00Z';
+const GYM_DAY_THERE = '2027-09-22';
+const UTC_DAY_THERE = '2027-09-23';
+
+describe('the gym day decides, not the database day', () => {
+  test('a check-in taken after UTC midnight is stored and read back as the PUNXSUTAWNEY day', async () => {
+    const client = await freshDatabase('checkins_gym_day');
+    activeClient = client;
+    try {
+      await applyModuleSchema(client);
+
+      // The reduction itself, so the constants above are not merely this test
+      // agreeing with itself. (The import is the counting wrapper; with no
+      // scripted day queued it delegates to the real gymDayIso.)
+      expect(gymDayIso(CHATGPT_BOUNDARY_INSTANT)).toBe('2026-09-22');
+      expect(gymDayIso(AFTER_UTC_MIDNIGHT)).toBe(GYM_DAY_THERE);
+
+      const created = await checkIn({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        energy: 4,
+        now: AFTER_UTC_MIDNIGHT,
+      });
+      expect(created).toMatchObject({ created: true, row: { checked_in_on: GYM_DAY_THERE } });
+
+      // Read straight out of the table rather than back through the module,
+      // because the defect being regression-tested was precisely a read and a
+      // write agreeing with each other on the wrong day.
+      const stored = await client.query(
+        `select checked_in_on::text as day from pilot.athlete_check_ins
+         where organization_id = $1 and athlete_id = $2`,
+        [ORG_ID, ATHLETE_ID],
+      );
+      expect(stored.rows.map((row) => row.day)).toEqual([GYM_DAY_THERE]);
+      expect(stored.rows[0].day).not.toBe(UTC_DAY_THERE);
+
+      // What the database itself makes of THE TEST INSTANT: the UTC calendar
+      // day it falls on, which is the day a `current_date` read would have
+      // filed it under. Asked of the instant rather than of the wall clock:
+      // an assertion about the real `current_date` is a calendar time bomb,
+      // red on whatever day the machine happens to be having when it equals
+      // the day under test, while proving nothing new on every other day.
+      const dbDayOfInstant = await client.query(
+        `select ($1::timestamptz at time zone 'UTC')::text as utc_day`,
+        [AFTER_UTC_MIDNIGHT],
+      );
+      expect(dbDayOfInstant.rows[0].utc_day.slice(0, 10)).toBe(UTC_DAY_THERE);
+      expect(dbDayOfInstant.rows[0].utc_day.slice(0, 10)).not.toBe(GYM_DAY_THERE);
+
+      // The same-instant read finds the same row...
+      const readBack = await getTodayCheckIn(ORG_ID, ATHLETE_ID, AFTER_UTC_MIDNIGHT);
+      expect(readBack!.check_in_id).toBe(created!.row.check_in_id);
+
+      // ...and the idempotency contract still holds on that day: a second tap
+      // returns the first row untouched, energy 4 rather than 1.
+      const second = await checkIn({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        energy: 1,
+        now: AFTER_UTC_MIDNIGHT,
+      });
+      expect(second).toMatchObject({
+        created: false,
+        row: { check_in_id: created!.row.check_in_id, energy: 4, checked_in_on: GYM_DAY_THERE },
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  // The binding constraint, and the reason checkIn takes a `day` through its
+  // three steps instead of asking three times: a tap at the stroke of gym
+  // midnight would otherwise check one day for an existing row, insert under
+  // the next, and then re-read the third -- returning null to an athlete whose
+  // check-in is sitting in the table.
+  test('checkIn resolves the gym day ONCE and uses that one value to read, write and re-read', async () => {
+    const client = await freshDatabase('checkins_gym_day_once');
+    activeClient = client;
+    try {
+      await applyModuleSchema(client);
+
+      // Three different answers, handed out in order. One resolution takes
+      // only the first.
+      mockGymClock.days = ['2027-04-01', '2027-04-02', '2027-04-03'];
+      mockGymClock.calls = 0;
+
+      const result = await checkIn({ organizationId: ORG_ID, athleteId: ATHLETE_ID, energy: 3 });
+
+      expect(mockGymClock.calls).toBe(1);
+      expect(result).toMatchObject({ created: true, row: { checked_in_on: '2027-04-01' } });
+      // The counter alone could be satisfied by caching the wrong day, so the
+      // stored row is checked too: one resolution AND it is the one used.
+      const stored = await client.query(
+        `select checked_in_on::text as day from pilot.athlete_check_ins
+         where organization_id = $1 and athlete_id = $2`,
+        [ORG_ID, ATHLETE_ID],
+      );
+      expect(stored.rows.map((row) => row.day)).toEqual(['2027-04-01']);
+
+      // The read half has the same obligation, for the same reason.
+      mockGymClock.days = ['2027-04-01', '2027-04-02'];
+      mockGymClock.calls = 0;
+      const today = await getTodayCheckIn(ORG_ID, ATHLETE_ID);
+      expect(mockGymClock.calls).toBe(1);
+      expect(today).toMatchObject({ checked_in_on: '2027-04-01' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an unresolvable clock fails loudly rather than falling back to another day', async () => {
+    const client = await freshDatabase('checkins_gym_day_unresolvable');
+    activeClient = client;
+    try {
+      await applyModuleSchema(client);
+
+      const writeFailure = await checkIn({
+        organizationId: ORG_ID,
+        athleteId: ATHLETE_ID,
+        energy: 4,
+        now: 'not-an-instant',
+      }).catch((error: unknown) => error);
+      expect((writeFailure as Error).message).toBe('CHECK_IN_GYM_DAY_UNRESOLVED');
+
+      // A plain Error, deliberately: errors.ts makes PilotError the type that
+      // says "this message was written for the caller to read". An
+      // unresolvable clock is an internal fault, so the athlete gets the
+      // route's opaque server error rather than this string.
+      expect(writeFailure).toBeInstanceOf(Error);
+      expect(writeFailure).not.toBeInstanceOf(PilotError);
+
+      // Nothing was written. Falling through to the column default would have
+      // filed the check-in under the database's UTC day -- the exact defect.
+      const rows = await client.query(`select count(*)::int as n from pilot.athlete_check_ins`);
+      expect(rows.rows[0].n).toBe(0);
+
+      // And the read refuses in the same way instead of reporting "no
+      // check-in today", which is an answer it has not established.
+      const readFailure = await getTodayCheckIn(ORG_ID, ATHLETE_ID, 'not-an-instant')
+        .catch((error: unknown) => error);
+      expect((readFailure as Error).message).toBe('CHECK_IN_GYM_DAY_UNRESOLVED');
+      expect(readFailure).not.toBeInstanceOf(PilotError);
     } finally {
       await client.end();
     }

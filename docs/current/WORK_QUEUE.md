@@ -14,7 +14,9 @@ the owner's request.
 What this file still is, and is good at: the detailed state machine, deployment
 evidence, digests and run ids, collision notes, and shipped history. Read it to
 answer "what happened, and what proved it". Do not read it to decide what to
-build next, and do not treat a row here as an instruction.
+build next, and do not treat a row here as an instruction. Nor the prose after
+the table: its collision rules, emergency path and "next item" notes describe
+the retired gatekeeper model (relabelled 2026-09-21).
 
 It still supersedes [docs/WORK_QUEUE.md](../WORK_QUEUE.md) and
 [docs/WORK_QUEUE_2026-08-01.md](../WORK_QUEUE_2026-08-01.md), both marked
@@ -244,7 +246,7 @@ route uses the bypass variant). The narrower real gap underneath it —
 gap-register claims get a row here only after a human or gatekeeper spot-
 check, not straight from an audit agent's output.
 
-## Filling this table
+## Filling this table (historical: the table is closed)
 
 The gap register comes from an adversarially-verified audit run (7 parallel
 readers over capabilities/markers/API/UI/queues/contrib-docs/open-PRs, each
@@ -253,7 +255,13 @@ Do not hand-add items ahead of that without marking them `BACKLOG` and citing
 where they came from — the whole point of this queue is that a row means
 something was checked, not assumed.
 
-## Collision rules (unchanged from the prior queue, still in force)
+## Collision rules (historical, no longer in force)
+
+*Relabelled 2026-09-21. Rules 1, 3, 4 and 6 live on in `AGENT_KERNEL.md`
+(invariants 1-3). Rule 2 is retired: a draft PR is the claim. Rule 5 is
+retired: the gatekeeper role no longer exists, and merging follows the kernel's
+Lane model. Rule 7 is not carried into the kernel; treat deliberate overlap as
+an owner decision.*
 
 1. One capability = one branch = one PR = one row in this table.
 2. Claim before implementing — set `CLAIMED` and name the builder before any
@@ -272,7 +280,10 @@ something was checked, not assumed.
 7. Deliberate overlap requires the owner's approval, recorded in this
    table's Blocker column.
 
-## Emergency release blocker
+## Emergency release blocker (historical: it ran through the retired gatekeeper)
+
+*The current release path is `docs/AI_DELIVERY_PIPELINE.md`. Production still
+needs Jason's approval click.*
 
 A safety or data-integrity issue found in production does not wait for the
 queue's normal cadence. It still goes through the gatekeeper — never a

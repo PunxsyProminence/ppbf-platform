@@ -2,20 +2,19 @@
 
 This file governs staging and production release work only. Ordinary building follows `AGENT_KERNEL.md` and `docs/AI_COLLABORATION.md`.
 
-## No standing production bot
+## Who releases (OD-2026-08-29-006)
 
 There is no permanent production bot, deploy coordinator, gatekeeper model, or model-specific release owner.
 
 - Jason is the sole human production approval authority.
-- Release work runs in the release-control lane. Jason names which session holds
-  that role, and the authority is task-scoped and ends when the release is
-  completed, stopped, or handed back. A build lane does not dispatch
-  `apply-migrations`, `deploy-staging` or `deploy-production` -- see
-  AGENT_KERNEL.md's Lane model. The older wording here read "any current
-  repo-capable AI/session may temporarily prepare or operate one release",
-  which a build lane handed a release request could read as permission the
-  kernel denies.
-- That authority is task-scoped and ends when the release is completed, stopped, or handed back.
+- **Staging:** a build lane may dispatch `deploy-staging` and staging
+  migrations through `.github/workflows/apply-migrations.yml`.
+- **Production:** `deploy-production` and production migrations are prepared
+  and verified by the lane, then dispatched only on Jason's explicit word. That
+  authority is task-scoped and ends when the release is completed, stopped, or
+  handed back.
+- **GitHub requires a separate approval for every run** of a protected
+  workflow. Approving two runs does not carry to later dispatches.
 - No AI may approve the protected GitHub `production` environment, invent a migration attestation, authorize a rollback, weaken a failed gate, or claim live verification from source reading.
 
 The deployment workflows are the control plane. The AI is only a temporary operator of those controls.
@@ -40,7 +39,8 @@ For the exact candidate SHA:
 
 1. Confirm it is current on `main` and inspect open PRs and active deployment runs for collisions or stale releases.
 2. Confirm the required CI result is green.
-3. Diff the candidate against the SHA currently observed in production. Determine whether the range includes schema, migration-runner, environment-variable, auth, organization-isolation, safeguarding, or SHADOW safety changes.
+3. Diff the candidate against the SHA currently observed in production (live
+   evidence, not `docs/current/PRODUCTION_STATE.json`). Determine whether the range includes schema, migration-runner, environment-variable, auth, organization-isolation, safeguarding, or SHADOW safety changes.
 4. Apply required staging migrations through `.github/workflows/apply-migrations.yml`. Never apply them from a laptop or ad hoc AI shell.
 5. Dispatch `.github/workflows/deploy-staging.yml` for the exact SHA and the applicable gates.
 6. Capture the immutable `sha256:` image digest produced by staging.
@@ -68,7 +68,16 @@ Stop instead of producing `RELEASE READY` when any item is unknown or failed.
 Production promotion requires a separate explicit instruction from Jason, such as `Promote that release`.
 
 1. If migrations are required, dispatch the production migration workflow first and verify its result. Do not type `CONFIRMED` from assumption or from a merged SQL file alone.
-2. Dispatch `.github/workflows/deploy-production.yml` from `main` using:
+2. If the release introduces or changes reference data the new code depends
+   on, seed it **before** `deploy-production`, after the migrations: read
+   **production's own** seed account fresh (`check-database`, seed-identity,
+   production), run `seed-reference-data` as a dry-run, then apply with that
+   account. Never reuse staging's: staging used a lowercase admin address, and
+   production is a different, capital-A account. Deploying first leaves
+   production serving code whose catalogs are empty, which the archived
+   2026-08-24/25 release record shows, and whose planned sequence was
+   migrations, seed identity, seed dry-run and apply, then deploy.
+3. Dispatch `.github/workflows/deploy-production.yml` from `main` using:
 
 ```text
 confirm_sha: <exact prepared SHA>
@@ -77,8 +86,13 @@ migrations_complete: CONFIRMED
 allow_rollback: NO
 ```
 
-3. GitHub must halt at the protected `production` environment for Jason's approval. No AI approves that checkpoint.
-4. The workflow must verify the production schema, digest availability, rollback direction, deployment, and smoke checks.
+4. GitHub must halt at the protected `production` environment for Jason's approval. No AI approves that checkpoint.
+5. The workflow must verify the production schema, digest availability, rollback direction, deployment, and smoke checks.
+
+A schema check is verified by running it, not by searching its source.
+`pilot-verify-schema.mjs` derives its expected objects from the migration SQL at
+deploy time, so a string search of the script says nothing about what it checks
+(a 2026-08-24 claim built on such a search was wrong).
 
 The SHA and digest must describe the same staged artifact. If `main` moves after staging, re-validate the release rather than pairing an old digest with a new SHA.
 
@@ -95,6 +109,11 @@ After the workflow completes, read back the live environment rather than relying
 - unauthenticated SHADOW probe (`401`)
 - release-specific acceptance probes
 
+The three smoke probes are unauthenticated and would pass against the previous
+image too. What ties the new image to the serving revision is the
+revision-digest assertion inside the deploy workflow's wait step, so read that
+step, not only the smoke results.
+
 Only then report `PRODUCTION_RUNTIME_VERIFIED`.
 
 ## Failure and rollback
@@ -107,7 +126,7 @@ A release operator does not repair product code inside the release lane.
 
 ## Production-state records
 
-Live Azure state and current GitHub workflow evidence outrank `docs/current/PRODUCTION_STATE.json`. That JSON file is an audit snapshot, not a controller and not bot-owned.
+Live Azure state and current GitHub workflow evidence outrank `docs/current/PRODUCTION_STATE.json`. That JSON file is an audit snapshot, not a controller and not bot-owned. It was last updated 2026-08-28 and did not record the September releases (checked 2026-09-21).
 
 Any authorized release verifier may propose an update only after directly observing the relevant environment. Use `null` or `not_verified` when live evidence is unavailable. Historical references to a named gatekeeper or VS Code Claude session describe an old operating model and grant no current authority.
 
@@ -115,11 +134,11 @@ Any authorized release verifier may propose an update only after directly observ
 
 ```text
 Jason requests preparation
-→ current AI/session validates and stages exact SHA
+→ the lane validates and stages the exact SHA
 → AI returns RELEASE READY packet
 → Jason authorizes promotion
 → workflow queues protected production deployment
 → Jason approves GitHub environment
 → workflow deploys and probes
-→ current AI/session reads back live state
+→ the lane reads back live state
 ```
