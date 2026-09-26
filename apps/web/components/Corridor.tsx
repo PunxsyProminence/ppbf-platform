@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
+import ChromeLink from './ChromeLink';
 import { usePathname } from 'next/navigation';
 import { useSyncExternalStore } from 'react';
 
@@ -120,15 +120,22 @@ export default function Corridor() {
                 <ul className="corridor-doors">
                   {group.doors.map((door) => {
                     const current = door.href === pathname;
+                    /*
+                     * ChromeLink, not Link. The corridor is mounted on the
+                     * recorders as well as on every other surface, and a soft
+                     * navigation in either direction breaks the document-
+                     * scoped camera policy -- shut on the way in, still open
+                     * on the way out. See components/cameraDocuments.ts.
+                     */
                     return (
                       <li key={door.href}>
-                        <Link
+                        <ChromeLink
                           href={door.href}
                           className={`corridor-door${current ? ' is-current' : ''}`}
                           aria-current={current ? 'page' : undefined}
                         >
                           {door.label}
-                        </Link>
+                        </ChromeLink>
                       </li>
                     );
                   })}

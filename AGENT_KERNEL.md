@@ -209,6 +209,18 @@ something being prevented, a test nobody has watched go red is a hypothesis.
 Where the claim is about a deployed environment, the run has to have been
 against the state that makes the change observable.
 
+**Search locates candidate code; it never establishes returned, persisted,
+authorized or rendered behaviour.** Trace the producing query, route or render
+path, or execute it, before claiming what a surface shows or an endpoint
+returns. A grep proves a token is absent, nothing more: on 2026-09-24 "the
+sessions list route contains the word notes zero times" was true and the route
+returned that column on every call, because the query is `select *`.
+
+Where the claim is that a guard bites, break it and watch the test die --
+`npm run mutation:prove -- --spec <spec.json>` runs mutants in a throwaway
+worktree so the branch you are about to push is never the thing being mutated.
+A mutant that survives is a finding about the test.
+
 `docs/current/EVIDENCE_APPLICABILITY.md` carries the record format, the
 evidence ladder, which instrument fits which claim, and the worked cases.
 `apps/web/scripts/check-evidence-applicability.mjs` grades a record's FORM in

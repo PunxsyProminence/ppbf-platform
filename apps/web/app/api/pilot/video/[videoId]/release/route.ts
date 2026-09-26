@@ -8,6 +8,7 @@ import {
   getVideoReleasePolicy,
   releasableScanStates,
 } from '@/src/server/pilot/videoReleasePolicy';
+import { assertActorHoldsCurrentReviewLink } from '@/src/server/pilot/videoScanReview';
 
 export const runtime = 'nodejs';
 
@@ -107,16 +108,44 @@ export async function POST(
       );
     }
 
-    // The state predicate is repeated on the write so a video that left
-    // quarantine between the read and the write is never dragged back to
-    // 'ready', and so two simultaneous releases produce one audit record.
+    /*
+     * AND THE PERSON DOING IT HOLDS A CURRENT REVIEW LINK FOR THIS FOOTAGE.
+     *
+     * Checked here, after the entitlement and state refusals, so a caller who
+     * may not touch this video at all is told that rather than being sent to
+     * open a link they still could not act on.
+     *
+     * Until now this was page state: the console disabled Release until a
+     * review link succeeded, and a direct POST was accepted with nothing
+     * opened. The footage this guards is a minor's quarantined video that no
+     * scanner could clear.
+     */
+    await assertActorHoldsCurrentReviewLink(principal, videoId, row.scan_state);
+
+    /*
+     * COMPARE AND SET ON THE EXACT STATE THAT WAS REVIEWED.
+     *
+     * The state predicate is repeated on the write so a video that left
+     * quarantine between the read and the write is never dragged back to
+     * 'ready', and so two simultaneous releases produce one audit record.
+     *
+     * AND ON row.scan_state, NOT ON THE RELEASABLE SET, which is the half
+     * this was missing. The prerequisite above proves the actor holds a review
+     * link issued against the verdict this row carried when it was read. If a
+     * re-scan changes that verdict before the write, `any(releasable)` would
+     * still accept it -- the release would go through on a review of a
+     * verdict that no longer holds, which is precisely what binding the link
+     * to the scan state was for. Narrowing it to the inspected value closes
+     * the window: the release either applies to what was reviewed, or it
+     * fails and the coach is asked to look again.
+     */
     const released = await queryOne<{ status: string }>(
       `update pilot.video_sessions
        set status = 'ready', updated_at = now()
        where video_session_id = $1 and organization_id = $2 and status = 'quarantined'
-         and scan_state = any($3::text[])
+         and scan_state = $3
        returning status`,
-      [videoId, principal.organizationId, releasable],
+      [videoId, principal.organizationId, row.scan_state],
     );
 
     if (!released) {

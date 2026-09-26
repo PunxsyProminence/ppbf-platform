@@ -1,9 +1,9 @@
 'use client';
 
-import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import ChromeLink from './ChromeLink';
 import { CONTROL_QUIET } from './sessionBarControls';
 
 /**
@@ -144,14 +144,14 @@ export default function SafetyAttentionBadge({ role }: { readonly role: string |
 
   if (readState === 'unavailable') {
     return (
-      <Link
+      <ChromeLink
         href="/admin/escalations"
         className={CONTROL_QUIET}
         aria-label="Open safety escalations. The count of unacknowledged escalations could not be read."
         title="Safety escalations could not be read. This is not a statement that there are none."
       >
         Safety: unread
-      </Link>
+      </ChromeLink>
     );
   }
 
@@ -194,7 +194,7 @@ export default function SafetyAttentionBadge({ role }: { readonly role: string |
      coach acknowledges something. */
 
   return (
-    <Link
+    <ChromeLink
       href="/admin/escalations"
       className="inline-flex min-h-[var(--tap)] items-center no-underline"
       aria-label={`Safety escalations needing acknowledgement: ${label}. Open the escalation records.`}
@@ -217,7 +217,7 @@ export default function SafetyAttentionBadge({ role }: { readonly role: string |
             to a bare number, and its target does not shrink -- the tap area is
             the Link's own min-h-[var(--tap)] and neither variant touches it.
 
-            THE FULL BREAKDOWN SURVIVES AT EVERY WIDTH. aria-label on the Link
+            THE FULL BREAKDOWN SURVIVES AT EVERY WIDTH. aria-label on the ChromeLink
             above supplies that link's accessible name outright, and visible
             text does not contribute to a name that is given that way, so a
             screen reader hears "1 critical, 1 high" on the 412px phone this
@@ -241,6 +241,6 @@ export default function SafetyAttentionBadge({ role }: { readonly role: string |
         <span className="sm:hidden">{`SAFETY ${total} · ${worst}`}</span>
         <span className="hidden sm:inline">Safety {label}</span>
       </span>
-    </Link>
+    </ChromeLink>
   );
 }

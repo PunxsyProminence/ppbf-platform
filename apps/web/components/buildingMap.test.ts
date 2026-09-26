@@ -77,17 +77,31 @@ describe('previously-orphaned admin/parent consoles are now doors', () => {
     for (const href of expected) expect(hrefs).toContain(href);
   });
 
-  it('an org-admin-only console (portrait/video review, media-consent audit) is not shown to a coach', () => {
+  it('an org-admin-only console (portrait/video review) is not shown to a coach', () => {
     const hrefs = visibleDoors('coach').map((d) => d.href);
     expect(hrefs).not.toContain('/admin/portrait-review');
     expect(hrefs).not.toContain('/admin/video-compliance');
-    expect(hrefs).not.toContain('/admin/athlete-consent');
   });
 
-  it('a coach can still reach the escalations and consent queues admin/coach share', () => {
+  /*
+   * THE MEDIA-CONSENT AUDIT MOVED, BY OWNER DECISION, and this assertion
+   * moved with it rather than being deleted.
+   *
+   * It was pinned as org-admin-only when it was READ-ONLY. It is now also the
+   * screen where a signed paper consent form is recorded, and the club's
+   * consent is collected on paper at the gym -- so the people holding those
+   * forms are the ones who need the screen. A split where a coach can see
+   * that consent is missing but only an admin can record the form that fixes
+   * it is how a finding sits unactioned.
+   *
+   * The two above stay closed: deciding a portrait or retracting published
+   * media is not the same act as recording that a form exists.
+   */
+  it('a coach reaches the queues admin/coach share, including the media-consent audit', () => {
     const hrefs = visibleDoors('coach').map((d) => d.href);
     expect(hrefs).toContain('/admin/escalations');
     expect(hrefs).toContain('/admin/consent');
+    expect(hrefs).toContain('/admin/athlete-consent');
   });
 
   it('the guardian media-consent console is parent-only, not shown to an athlete', () => {
@@ -355,6 +369,35 @@ describe('the Operations hub is offered to the admin desks only', () => {
       '/schedule',
     ]) {
       expect({ href, offered: coachDoors.includes(href) }).toEqual({ href, offered: true });
+    }
+  });
+});
+
+/* A-FIN-06 REVIEW FIX. Progression Intelligence carries the only surface where
+   issued work can be cancelled, and the cancel route admits an organization
+   admin. The door advertised it to a coach alone, so an admin the server
+   authorizes was never shown the way in -- a capability with no journey.
+   `roles` is a visibility hint and never a gate, which is precisely why this
+   one had to move: hiding the door protected nothing and hid a control. */
+describe('the Progression Intelligence door after the A-FIN-06 review', () => {
+  const PROGRESSION = '/coach/progression-intelligence';
+
+  it('is still a coach door', () => {
+    expect(visibleDoors('coach').map((d) => d.href)).toContain(PROGRESSION);
+  });
+
+  it('is now advertised to an admin, in the corridor and in the catalog', () => {
+    expect(visibleDoors('admin').map((d) => d.href)).toContain(PROGRESSION);
+    expect(searchDoors('admin', 'progression').map((d) => d.href)).toContain(PROGRESSION);
+  });
+
+  it('opened to that one role and to no other', () => {
+    expect(doorForPath(PROGRESSION)?.roles).toEqual(['coach', 'admin']);
+    // platform_owner and board are refused BY NAME in
+    // assertActorCanAccessAthlete, which every athlete-scoped read behind this
+    // surface passes through, so a door reaching them would be a bounce.
+    for (const role of ['platform_owner', 'board', 'athlete', 'parent', 'staff', 'volunteer'] as ClubRole[]) {
+      expect(visibleDoors(role).map((d) => d.href)).not.toContain(PROGRESSION);
     }
   });
 });

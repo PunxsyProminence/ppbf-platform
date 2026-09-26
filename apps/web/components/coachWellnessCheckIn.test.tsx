@@ -33,8 +33,11 @@ const NO_CHECK_IN_TODAY = 'No wellness check-in recorded today.';
 const NOT_REPORTED = 'Not reported';
 const READ_FAILED =
   'Today’s wellness check-in could not be loaded. This is not a statement that the athlete did not check in -- try again in a minute.';
+/** The refusal sentence as A-FIN-03R1 leaves it: the audience, with no claim
+ *  about assignment or coverage. Pinned as a literal for the same reason as
+ *  the rest -- imported copy would pass whatever the component said. */
 const NO_ACCESS =
-  'You don’t have access to this athlete’s wellness check-ins. They are shown to the athlete’s coach, a coach covering for them, and organization admins.';
+  'You don’t have access to this athlete’s wellness check-ins. They are shown to coaches and organization admins in the athlete’s own organization.';
 
 /** The coach-facing name of every 1-5 measure, as the owner listed them. */
 const MEASURE_LABELS: Readonly<Record<WellnessScaleKey, string>> = {
@@ -432,7 +435,9 @@ describe('an empty day, a failed read and a refusal are three different answers'
   });
 
   it('a refusal says only that this coach has no access, and shows no wellness data', async () => {
-    await renderWorkspace(() => jsonResponse({ error: 'Forbidden: coach not assigned to athlete' }, { ok: false, status: 403 }));
+    // The message the route now refuses with: the athlete is not a live
+    // athlete in this session's organization.
+    await renderWorkspace(() => jsonResponse({ error: 'Forbidden: athlete does not belong to organization' }, { ok: false, status: 403 }));
     await pickAthlete('Jordan P.');
 
     expect(within(panel()).getByText(NO_ACCESS)).not.toBeNull();
@@ -440,6 +445,21 @@ describe('an empty day, a failed read and a refusal are three different answers'
     expect(within(panel()).queryByText(READ_FAILED)).toBeNull();
     expect(within(panel()).queryAllByRole('term')).toHaveLength(0);
     expect(panel().textContent).not.toMatch(/Forbidden|403/);
+  });
+
+  it('the refusal does not restate the obsolete coach-of-record / coverage rule', async () => {
+    /* A-FIN-03R1: wellness is no longer limited to the athlete's own coach or
+       a coach covering for them, so a refusal that still explained the rule
+       that way would send a coach off to ask for an assignment that would not
+       have helped -- a true refusal behind a false explanation. The words are
+       checked, not just the sentence, so the old wording cannot return in a
+       paraphrase. */
+    await renderWorkspace(() => jsonResponse({ error: 'Forbidden: athlete does not belong to organization' }, { ok: false, status: 403 }));
+    await pickAthlete('Jordan P.');
+
+    const text = panel().textContent ?? '';
+    expect(text).toContain(NO_ACCESS);
+    expect(text).not.toMatch(/coach of record|covering|coverage|assigned/i);
   });
 
   it('a failed read can be tried again, and the retry reads the same athlete', async () => {
