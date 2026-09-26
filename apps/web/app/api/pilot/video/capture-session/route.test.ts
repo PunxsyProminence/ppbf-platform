@@ -1,4 +1,6 @@
 import { NextRequest } from 'next/server';
+import { assertTeachShadowConsent } from '@/src/server/pilot/guardianConsent';
+import { ensureCaptureParticipant, linkParticipantToSession } from '@/src/server/pilot/captureParticipants';
 
 import { GET, POST } from './route';
 import {
@@ -26,6 +28,27 @@ jest.mock('@/src/server/pilot/captureSessions', () => {
   };
 });
 
+/*
+ * TS-ANON-01 clearance. Starting a session now proves the actor may film
+ * this athlete and that every guardian has current Teach Shadow consent,
+ * then establishes the restricted participant. Doubled so these tests stay
+ * about the route; access, consent and the participant store each have
+ * their own suites.
+ */
+jest.mock('@/src/server/pilot/access', () => {
+  const actual = jest.requireActual('@/src/server/pilot/access');
+  return { ...actual, assertActorCanAccessAthlete: jest.fn(async () => undefined) };
+});
+jest.mock('@/src/server/pilot/guardianConsent', () => {
+  const actual = jest.requireActual('@/src/server/pilot/guardianConsent');
+  return { ...actual, assertTeachShadowConsent: jest.fn(async () => undefined) };
+});
+jest.mock('@/src/server/pilot/captureParticipants', () => ({
+  ensureCaptureParticipant: jest.fn(async () => ({
+    capture_participant_id: 'cp-1', organization_id: 'org-1', athlete_id: 'ath-1',
+  })),
+  linkParticipantToSession: jest.fn(async () => undefined),
+}));
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
@@ -39,6 +62,9 @@ const mockGetOpenTake = jest.mocked(getOpenTake);
 const mockAdvance = jest.mocked(advanceTake);
 const mockClose = jest.mocked(closeRecordingSession);
 const mockListFiles = jest.mocked(listTakeFiles);
+const mockedAssertTeachConsent = jest.mocked(assertTeachShadowConsent);
+const mockedEnsureParticipant = jest.mocked(ensureCaptureParticipant);
+const mockedLinkSession = jest.mocked(linkParticipantToSession);
 
 const SESSION = {
   recordingSessionId: 'rs-1',
@@ -95,7 +121,7 @@ describe('who may reach the recording session', () => {
   test('a coach and an organization admin may both start a session', async () => {
     for (const role of ['coach', 'organization_admin']) {
       mockRequirePrincipal.mockResolvedValueOnce(principal(role));
-      const response = await POST(jsonRequest({ action: 'create', training_context: 'heavy_bag' }));
+      const response = await POST(jsonRequest({ action: 'create', training_context: 'heavy_bag', athlete_id: 'ath-1' }));
       expect(response.status).toBe(200);
     }
     expect(mockCreate).toHaveBeenCalledTimes(2);
@@ -104,7 +130,7 @@ describe('who may reach the recording session', () => {
   test('everyone else is refused and no session is created', async () => {
     for (const role of ['athlete', 'parent', 'board', 'platform_owner']) {
       mockRequirePrincipal.mockResolvedValueOnce(principal(role));
-      const response = await POST(jsonRequest({ action: 'create', training_context: 'heavy_bag' }));
+      const response = await POST(jsonRequest({ action: 'create', training_context: 'heavy_bag', athlete_id: 'ath-1' }));
       expect(response.status).toBe(403);
     }
     expect(mockCreate).not.toHaveBeenCalled();
@@ -280,10 +306,52 @@ describe('multi-person contexts are withheld until a take can name everyone in i
   test.each(['shadowboxing', 'heavy_bag'])('a %s session is allowed', async (context) => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
 
-    const response = await POST(jsonRequest({ action: 'create', training_context: context }));
+    const response = await POST(
+      jsonRequest({ action: 'create', training_context: context, athlete_id: 'ath-1' }),
+    );
 
     expect(response.status).toBe(200);
     expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ trainingContext: context }));
+  });
+
+  test('TS-ANON-01 -- a session cannot start without clearing who it is filming', async () => {
+    /*
+     * Teaching media names nobody, which makes it impossible to ask afterwards
+     * whose guardian to check. So the question is asked ONCE, before any
+     * footage exists, and a session that skipped it can never be started
+     * rather than producing footage nobody can account for.
+     */
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+    const response = await POST(jsonRequest({ action: 'create', training_context: 'heavy_bag' }));
+
+    expect(response.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test('TS-ANON-01 -- clearance happens, and then nothing it returns names the athlete', async () => {
+    /*
+     * THE HANDOVER FROM NAMED TO ANONYMOUS, asserted at the boundary. The
+     * clearance step may see the athlete; everything downstream of it must
+     * not. A session payload carrying the id would put the name back into the
+     * capture surface, the join code screen and every device that joins.
+     */
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+    const response = await POST(
+      jsonRequest({ action: 'create', training_context: 'heavy_bag', athlete_id: 'ath-1' }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockedAssertTeachConsent).toHaveBeenCalledWith('org-a', 'ath-1');
+    expect(mockedEnsureParticipant).toHaveBeenCalledWith(
+      expect.objectContaining({ athleteId: 'ath-1' }),
+    );
+    expect(mockedLinkSession).toHaveBeenCalled();
+
+    const raw = JSON.stringify(await response.json());
+    expect(raw).not.toContain('ath-1');
+    expect(raw).not.toContain('athlete');
   });
 
   test('the refusal says why, so a coach is not left guessing which contexts work', async () => {
