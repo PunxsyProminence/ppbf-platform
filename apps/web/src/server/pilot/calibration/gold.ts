@@ -1,4 +1,5 @@
 import { query, queryOne, withTransaction } from '../db';
+import { assertTeachingUseAllowed } from '../captureParticipants';
 import { isInVocabulary } from './ontology';
 
 // Gold / reference-dataset governance -- the deliberate act by which one
@@ -228,6 +229,22 @@ export async function nominateGoldCandidate(
         + 'so it cannot become reference data',
       );
     }
+
+    /*
+     * TS-ANON-01: AND THE GUARDIAN MUST STILL AGREE, for the same reason the
+     * take check is here rather than left to assertVideoClippable -- that gate
+     * does not reach this path either.
+     *
+     * A gold record is the reference data a recognizer is taught and scored
+     * against, which makes nominating one the most consequential teaching use
+     * in the platform. The promise made to a guardian who withdraws is that
+     * existing footage stops being eligible for exactly this, not merely that
+     * no more is filmed.
+     *
+     * Existing records stay as history. They do not become eligible again, and
+     * they do not become eligible now.
+     */
+    await assertTeachingUseAllowed(organizationId, source.video_session_id);
 
     if (source.resolution_type === 'unresolvable' || source.missed_event_verdict === 'unresolvable') {
       throw new Error(

@@ -1,4 +1,5 @@
 import { query, queryOne } from '../db';
+import { assertTeachingUseAllowed } from '../captureParticipants';
 import { getVideoSessionById } from '../videoSessions';
 import {
   BOXING_ONTOLOGY_VERSION,
@@ -311,6 +312,36 @@ export async function assertVideoClippable(
     throw new VideoNotClippableError(video.status, 'not_teaching_footage');
   }
 
+  /*
+   * TS-ANON-01: AND THE GUARDIAN MUST STILL AGREE.
+   *
+   * A take proves the footage was filmed to teach Shadow. It does not prove
+   * anyone still permits it to be used that way. Consent is separately
+   * withdrawable, and the promise made to a guardian who withdraws is that
+   * existing footage stops being eligible for annotation, corpus use,
+   * training and evaluation -- not merely that no more is collected.
+   *
+   * THIS IS WHERE THAT PROMISE IS KEPT, and it works because of the property
+   * the rest of this function already has: the gate runs on every READ, not
+   * only when a clip is cut. A clip cut while consent was live keeps being
+   * refused the moment it is withdrawn, rather than going on producing corpus
+   * labels from a pointer that remembers a permission nobody holds any more.
+   *
+   * Eligibility is derived from the current waiver rows every time. A stored
+   * `eligible` flag would need sweeping on withdrawal, and anything the sweep
+   * missed would keep teaching from footage whose guardian had said stop --
+   * a failure that would look exactly like success.
+   */
+  await assertTeachingUseAllowed(organizationId, videoSessionId);
+
+  /*
+   * NULL for teaching footage, and that is correct rather than a loss. The
+   * video no longer names an athlete, so neither does a clip cut from it --
+   * calibration_clips.athlete_id is nullable precisely because this column
+   * was always "recorded for scoping", never athlete truth. The person behind
+   * the footage remains resolvable through the restricted participant link,
+   * which is where identity lives now.
+   */
   return { videoSessionId: video.video_session_id, athleteId: video.athlete_id };
 }
 
