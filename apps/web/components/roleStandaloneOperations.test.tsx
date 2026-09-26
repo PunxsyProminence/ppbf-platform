@@ -99,12 +99,43 @@ it.each(REFUSED)('does not offer %s a control that would only bounce them', asyn
 });
 
 /* The band still has to be a band. Removing one control from a row is exactly
-   the change that quietly takes its neighbour with it, and Bell is the exit
-   every refused role still has from here. */
-it.each(REFUSED)('leaves %s the rest of the band', async (role) => {
+   the change that quietly takes its neighbour with it.
+
+   WHY THIS ASSERTS THE CLASSES AND NOT ONLY THE LINK. Until 2026-09-23 this
+   test's comment read "Bell is the exit every refused role still has from
+   here", and a bare getByRole presence check was a fair reading of that. It is
+   not a fair reading any more: RoleStandaloneView.tsx:298 now renders that Bell
+   inside a `hidden items-center sm:flex` wrapper, so below Tailwind's sm
+   breakpoint (640px) it is display:none -- gone from the picture AND from the
+   accessibility tree. jsdom compiles no CSS, so a presence check goes on
+   passing at every width, including the widths where the sentence it was
+   guarding is false.
+
+   The contract the markup actually carries is: the link is still in this band,
+   and it is there from 640px up. Asserting both class names holds both halves
+   and fails in either direction -- a removal, a width change that puts it back
+   on the phone, or one that hides it everywhere -- none of which a presence
+   check can see.
+
+   THE PHONE IS NOT LEFT WITHOUT A BELL, and this file cannot be the one that
+   says so. GlobalRoleHeader.tsx:280 keeps the original on the sticky bar at
+   every width -- one row nearer the thumb than this copy was -- and
+   globalRoleHeader.test.tsx:137 holds it there for exactly this REFUSED set.
+   That bar is mounted by app/layout.tsx, not by the shell under test here, so
+   this file asserts what it renders and leaves that claim to the file that
+   renders it. */
+it.each(REFUSED)('leaves %s the rest of the band, with Bell from 640px up', async (role) => {
   await renderBandAs(role);
 
-  expect(screen.getByRole('link', { name: 'Bell' })).toBeTruthy();
+  const bell = screen.getByRole('link', { name: 'Bell' });
+  expect(bell.getAttribute('href')).toBe('/dashboard');
+
+  const wrapper = bell.closest('div');
+  expect(wrapper).not.toBeNull();
+  const visibility = (wrapper as HTMLElement).className.split(/\s+/);
+  expect(visibility).toContain('hidden');
+  expect(visibility).toContain('sm:flex');
+
   expect(screen.getByText('Session Scripts')).toBeTruthy();
 });
 
