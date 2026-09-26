@@ -33,7 +33,7 @@ Do not preload archived audits, the historical queue, superseded plans, old buil
 
 ## Working channel
 
-### Lanes (owner decision 2026-09-21, OD-2026-09-21-001)
+### Lanes (owner decisions OD-2026-09-21-001 and OD-2026-09-25-002)
 
 - **Jason** -- final authority: priorities, scope, mutation approval, design
   and visual approval, production authorization, acceptance, conflict
@@ -76,6 +76,14 @@ Do not preload archived audits, the historical queue, superseded plans, old buil
 "Designer", in the owner's words, means product and system design; visual
 design stays Grok's. Several Claude lanes may run at once, each in its own
 session. The **Lane model** below governs who merges.
+
+### Work domains (owner decision OD-2026-09-25-002)
+
+WORK DOMAINS are subject areas, not agent roles or authority boundaries:
+visual design; ML training; AI/ML; app build.
+
+LANES remain the agent-role model above. A work domain does not create,
+transfer, narrow, or expand an agent's authority.
 
 ### Repository writes
 
