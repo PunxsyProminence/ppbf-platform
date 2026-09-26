@@ -108,15 +108,16 @@ export default function CaptureClearancePage() {
         <h1 className="t-gothic" style={{ fontSize: 'var(--t-3xl)' }}>Clear a participant</h1>
 
         <p className="t-body mt-[var(--s3)]">
-          Say who is being filmed before you start. This is the only step that records who
-          the footage is of &mdash; the recording itself, and everything Teach Shadow shows
-          afterwards, names nobody.
+          Optional. If you say who is being filmed, it is recorded here and nowhere else
+          &mdash; the footage itself, and everything Teach Shadow shows afterwards, names
+          nobody. Leave it blank and recording still starts.
         </p>
 
         <div className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s4)]">
           <p role="note" className="t-body">
-            Their guardian must have given Teach Shadow consent. That is separate from photo
-            and video consent for gym publications, and giving one does not give the other.
+            Naming someone does not restrict filming. It records who was on camera so that if
+            a content scan flags something in the footage, the concern can reach a real
+            person &mdash; nothing else reads it.
           </p>
         </div>
 
@@ -163,10 +164,10 @@ export default function CaptureClearancePage() {
           <button
             type="button"
             className="btn mt-[var(--s4)]"
-            disabled={busy || !athleteId}
+            disabled={busy}
             onClick={() => { void clearAndStart(); }}
           >
-            {busy ? 'Clearing…' : 'Clear and start recording'}
+            {busy ? 'Starting…' : athleteId ? 'Clear and start recording' : 'Start recording'}
           </button>
         </section>
 
