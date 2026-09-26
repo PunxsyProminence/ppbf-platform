@@ -142,14 +142,25 @@ the repository reads "admin" and matches `GET /near-misses` exactly, but it is
 a reading of "a", not a distinction the owner drew. If he meant
 `organization_admin` only, this entry is the thing to correct.
 
-### What it does not decide
+### The already-delivered question, and the owner's answer
 
-Near-miss text **already delivered** to athlete and parent conversations before
-the gate existed. It is still visible in those conversations and is re-fed into
-later prompts by the conversation-history loader, so the model can repeat it
-after the gate ships. That is carried as the remaining blocked row in
-`docs/current/ACTIVE_WORK.md` and is still **OWNER DECISION REQUIRED**. Do not
-read this entry as authorizing deletion, rewriting or purging of anything.
+This entry was first drafted carrying text delivered before the gate existed as
+an open question, because the conversation-history loader re-feeds recent turns
+and delivered text would keep resurfacing after the gate. It was put to the
+owner the same day as question A. His answer, verbatim:
+
+> A NONE HAS BEEN SENT
+
+So there is nothing to remediate: on the owner's statement, no near-miss text
+has reached an athlete or parent conversation.
+
+**This rests on the owner's knowledge of who has used SHADOW, not on a
+measurement.** No database, environment, conversation or log was read, and none
+was authorized. It is recorded here as his statement rather than as a verified
+fact, because it is the kind of claim that a later data pull could contradict.
+If it ever is contradicted, the remediation question re-opens and this section
+is the thing to correct. Nothing here authorizes deletion, rewriting or purging
+of stored conversations.
 
 ### The evidence it rested on
 
