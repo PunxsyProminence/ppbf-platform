@@ -45,6 +45,7 @@ const EXCLUDED: Record<string, string> = {
   '/change-pin': 'the way in',
   '/auth/link': 'the way in -- magic-link landing, arrived at from an email',
   '/launch': 'a one-line re-export of /operations, not a second surface',
+  '/coach/calibration': 'compatibility redirect to /teach-shadow/annotation, where Clip Annotation now lives -- not a second annotation surface',
 
   // Reads no data. Door goes in when it is wired to something real.
   '/admin/communications': 'prototype: MediaAndCommsHub holds 13 useState hooks and performs no fetch or query -- nothing it shows or accepts is persisted',

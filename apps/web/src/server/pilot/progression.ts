@@ -1,5 +1,5 @@
 import { query, queryOne, withTransaction } from './db';
-import { ValidationError } from './errors';
+import { ConflictError, ValidationError } from './errors';
 import { randomUUID } from 'node:crypto';
 
 // severity is a text column, so `order by severity desc` sorts alphabetically
@@ -373,6 +373,21 @@ async function touchAssignmentProgress(
   );
 }
 
+/**
+ * A new completion was sent for work a coach has cancelled.
+ *
+ * Owner decision 2026-09-22 (A-FIN-06): the athlete cannot log new
+ * completions on cancelled work. A 409 rather than a 400: nothing is wrong
+ * with the request itself -- the work it points at has been closed by
+ * somebody else. The message is written for the athlete to read.
+ */
+export function completionOnCancelledWork(): ConflictError {
+  return new ConflictError(
+    'This work was cancelled, so a new completion cannot be logged against it. Completions already logged are kept.',
+    'ASSIGNMENT_CANCELLED',
+  );
+}
+
 export async function recordCompletion(params: {
   organizationId: string;
   assignmentId: string;
@@ -387,6 +402,32 @@ export async function recordCompletion(params: {
   // Insert and percentage update must commit together: a completion that does
   // not move the parent gauge leaves the product surface lying about progress.
   return withTransaction(async (client) => {
+    // NO NEW LOGS ON CANCELLED WORK (A-FIN-06). The assignment row is locked
+    // and read BEFORE the insert, inside this transaction, so a cancellation
+    // cannot land between the check and the write: one that committed first
+    // is seen here and refused, and one that arrives while this transaction
+    // holds the row waits, then finds the work in whatever state this log
+    // left it (cancelDrillAssignment's update is conditional on the status).
+    //
+    // The completions route refuses the same case first, from the read it
+    // already makes, so its refusal is legible. This is what makes the rule
+    // true for every caller and every interleaving -- the same split
+    // assignDrill uses for drill identity.
+    //
+    // Only a NEW log is refused. Completions already logged against the work
+    // are its history and are not read or touched here. A missing row is left
+    // to the insert's foreign key, exactly as before this check existed.
+    const locked = await client.query<{ status: string }>(
+      `select status
+       from pilot.drill_assignments
+       where organization_id = $1 and assignment_id = $2
+       for update`,
+      [params.organizationId, params.assignmentId],
+    );
+    if (locked.rows[0]?.status === 'cancelled') {
+      throw completionOnCancelledWork();
+    }
+
     const result = await client.query<AssignmentCompletion>(
       `insert into pilot.assignment_completions (
         completion_id, organization_id, assignment_id, athlete_id, completed_at, reps_completed, notes, verification_status
@@ -564,6 +605,116 @@ export async function getDrillAssignmentById(
      where a.organization_id = $1 and a.assignment_id = $2`,
     [organizationId, assignmentId],
   );
+}
+
+// ---------------------------------------------------------------------------
+// CANCELLING OPEN WORK -- A-FIN-06, owner decisions 2026-09-22.
+//
+// A coach (or organization admin) can take back work the athlete is still
+// expected to do: 'assigned' or 'in_progress' becomes 'cancelled'. Completed
+// and incomplete work is already closed and is refused. Cancel is the ONLY
+// change this adds -- there is no edit, no delete and no reopen, here or
+// anywhere else. The CHECK constraint on pilot.drill_assignments.status has
+// allowed 'cancelled' since the progression migration; until now nothing
+// wrote it.
+//
+// "KEEP HISTORY" IS THE STATEMENT, LITERALLY. The update sets status and
+// nothing else. The dose (reps, duration, frequency), the due date, the drill
+// anchor and the wording snapshotted from it, who assigned the work and when,
+// completion_percentage and updated_at all stay exactly as they were, and
+// pilot.assignment_completions is not named at all -- every log the athlete
+// already made stays, verification state included. updated_at is left alone
+// by instruction: no assignment writer sets it today (touchAssignmentProgress
+// does not either), so a cancel that did would be the only thing moving it.
+//
+// "Open" is the same two statuses assignmentDrillInstruction.ts's isOpenWork
+// names (OD-2026-09-19-002). Restated here rather than imported because that
+// module imports this one.
+// ---------------------------------------------------------------------------
+
+/** The work is closed already, so there is nothing left to cancel. */
+function assignmentClosed(status: 'completed' | 'incomplete'): ConflictError {
+  return new ConflictError(
+    status === 'completed'
+      ? 'This work is already completed, so it cannot be cancelled.'
+      : 'This work is already closed as incomplete, so it cannot be cancelled.',
+    'ASSIGNMENT_CLOSED',
+  );
+}
+
+export interface CancelDrillAssignmentResult {
+  assignment: DrillAssignment;
+  // True when the work was cancelled before this call and nothing was
+  // written: a retry after a dropped response, or a second coach pressing the
+  // same button. Both get the success they asked for, and the row as it is.
+  alreadyCancelled: boolean;
+}
+
+/**
+ * Cancels one open assignment inside one organization.
+ *
+ * Returns null when there is no such assignment for this athlete in this
+ * organization -- unknown id, another gym's id, or an id belonging to a
+ * different athlete all look the same, so the route can render every one of
+ * them as hiddenNotFound(). Throws a 409 for completed or incomplete work.
+ *
+ * AUTHORIZATION IS THE CALLER'S. This decides only whether the work can move;
+ * the route has already decided the actor may touch this athlete, from the
+ * assignment's own athlete_id, before calling here.
+ *
+ * THE WRITE IS CONDITIONAL, NOT CHECK-THEN-WRITE. The status test is part of
+ * the UPDATE, so a completion that closes the work concurrently cannot be
+ * overwritten: Postgres re-evaluates the WHERE against the row a concurrent
+ * writer committed, and completed work no longer matches. Only when nothing
+ * matched does the row get re-read, to say WHY -- which is also what makes a
+ * retry safe: already-cancelled work matches nothing, so nothing is written.
+ */
+export async function cancelDrillAssignment(params: {
+  organizationId: string;
+  assignmentId: string;
+  athleteId: string;
+}): Promise<CancelDrillAssignmentResult | null> {
+  // The updated row comes back through the same drill join every other read
+  // uses, so the caller gets exactly the shape the assignments list renders.
+  // The RETURNING list mirrors assignDrill's, organization_id included for the
+  // join.
+  const cancelled = await query<DrillAssignment>(
+    `with a as (
+      update pilot.drill_assignments
+      set status = 'cancelled'
+      where organization_id = $1 and assignment_id = $2 and athlete_id = $3
+        and status in ('assigned', 'in_progress')
+      returning assignment_id, organization_id, gap_id, athlete_id, drill_id, drill_name,
+               drill_description, drill_difficulty, rep_count, duration_minutes,
+               frequency_per_week, due_date, status, completion_percentage,
+               assigned_by_account_id, assigned_at, created_at
+    )
+    select ${ASSIGNMENT_FIELDS}
+    from a
+    ${ASSIGNMENT_DRILL_JOIN}`,
+    [params.organizationId, params.assignmentId, params.athleteId],
+  );
+  if (cancelled.length > 0) {
+    return { assignment: cancelled[0], alreadyCancelled: false };
+  }
+
+  // Nothing matched. Read the row as it stands to tell the outcomes apart.
+  const current = await getDrillAssignmentById(params.organizationId, params.assignmentId);
+  if (!current || current.athlete_id !== params.athleteId) {
+    return null;
+  }
+  if (current.status === 'cancelled') {
+    return { assignment: current, alreadyCancelled: true };
+  }
+  if (current.status === 'completed' || current.status === 'incomplete') {
+    throw assignmentClosed(current.status);
+  }
+
+  // Open, yet the conditional update matched nothing. No writer moves work
+  // from closed back to open, so this is not an outcome anyone can cause on
+  // purpose. A plain Error, so the route answers with the generic 500 rather
+  // than a message claiming to know what happened.
+  throw new Error('Assignment was open on re-read after a cancel matched no row');
 }
 
 export async function getAssignmentCompletions(

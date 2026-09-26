@@ -59,7 +59,25 @@ import type { ClubRole } from './roleRoutes';
  * ---------------------------------------------------------------------------
  */
 
-export type Room = 'office' | 'floor' | 'board' | 'file' | 'clinic' | 'night';
+export type Room =
+  | 'office'
+  | 'floor'
+  | 'board'
+  | 'file'
+  | 'clinic'
+  /*
+   * TEACHING THE RECOGNIZER, kept apart from the gym floor on the owner's
+   * ruling. In a boxing gym "training" already means what an athlete does, so
+   * machine teaching living beside Film Study made one journey read as two
+   * halves of another. The corridor groups strictly by room, so a genuinely
+   * separate area has to BE a room -- anything else is three doors filed under
+   * the floor with the separation written only in their labels.
+   *
+   * Structural metadata, not a wall: no screen paints this one. Rooms were
+   * retired as a visual concept, and these surfaces are new work.
+   */
+  | 'teach'
+  | 'night';
 
 /** Every role, for surfaces that carry no gate. */
 export const OPEN = 'open' as const;
@@ -325,8 +343,14 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/recognition', label: 'Recognition', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'praise credit caught being good character mentorship pairing well done',
     hint: 'Tell an athlete they did well — two taps. And pair mentors with newer athletes.' },
+  /* A-FIN-06 review: the pair, not ['coach'] alone. The page admits both (its
+     own allowedRoles), and an admin who is never shown the door has no route
+     to the cancellation control the cancel API already authorizes them for.
+     Not ADMIN_GATE, for the reason the Athlete Intelligence door below writes
+     out: platform_owner is refused by name in assertActorCanAccessAthlete,
+     which every athlete-scoped read behind this surface passes through. */
   { href: '/coach/progression-intelligence', label: 'Progression Intelligence', room: 'floor',
-    roles: ['coach'], keywords: 'athlete progress load profiles cohort' },
+    roles: ['coach', 'admin'], keywords: 'athlete progress load profiles cohort' },
   { href: '/coach/cards', label: 'Coach Cards', room: 'floor', roles: ['coach'],
     keywords: 'card issue assign work homework drill program group athlete verify dispute',
     hint: 'Issue work to one athlete or a whole program, then verify what comes back.' },
@@ -335,8 +359,27 @@ export const BUILDING: readonly Door[] = [
     hint: 'Roster rollup: sessions, RPE, readiness trend, training days, drill completion. Read-only.' },
   { href: '/coach/video-analysis', label: 'Video Analysis', room: 'floor',
     roles: ['coach', 'admin'], keywords: 'film breakdown footage' },
-  { href: '/coach/calibration', label: 'Clip Annotation', room: 'floor',
-    roles: ['coach', 'admin'], keywords: 'calibration annotate label clip punch defense ontology agreement study',
+  { href: '/coach/video-analysis/capture', label: 'Record for Film Study', room: 'floor',
+    roles: ['coach', 'admin'], keywords: 'record camera film study footage review athlete coaching',
+    hint: 'Film an athlete with this device for coaching review. Stays in Film Study; it cannot be moved into Teach Shadow.' },
+  /*
+   * TEACH SHADOW. Its own room because the owner ruled it a separate area, and
+   * because the corridor has no other way to express one: it groups by room and
+   * nothing else. Clip Annotation moved here rather than being duplicated --
+   * /coach/calibration is now a compatibility redirect with no door of its own,
+   * listed in buildingMapCoverage.test.ts's EXCLUDED for that reason.
+   *
+   * None of these three paints a room. They are new work, and rooms are retired
+   * as a visual concept.
+   */
+  { href: '/teach-shadow', label: 'Teach Shadow', room: 'teach',
+    roles: ['coach', 'admin'], keywords: 'machine learning recognition shadow teach educate examples corpus coverage vocabulary ontology model',
+    hint: 'Teaching Shadow to recognise punches, defense and movement. Nothing here trains or scores an athlete.' },
+  { href: '/teach-shadow/capture', label: 'Capture Examples', room: 'teach',
+    roles: ['coach', 'admin'], keywords: 'record camera capture angles multi device join code take example teaching shadow recognition',
+    hint: 'Film an example for Shadow. Several coaches can join one session and record it from different angles.' },
+  { href: '/teach-shadow/annotation', label: 'Clip Annotation', room: 'teach',
+    roles: ['coach', 'admin'], keywords: 'calibration annotate label clip punch defense ontology agreement study verify',
     hint: 'Label what you saw in a study clip. Two coaches label it separately; nothing here scores an athlete.' },
   { href: '/coach/video-publications', label: 'Video Publications', room: 'floor',
     roles: ['coach'], keywords: 'publish film share video' },
@@ -547,9 +590,9 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/safety-escalations', label: 'Safety Escalations', room: 'clinic', roles: ['admin', 'coach'],
     keywords: 'safety escalations admin queue legacy alias safeguarding',
     hint: 'Alias for the escalations queue that preserves the safety-escalations route.' },
-  { href: '/admin/athlete-consent', label: 'Media Consent Audit', room: 'clinic', roles: ['admin'],
-    keywords: 'guardian photo video consent audit safeguarding',
-    hint: 'Which athletes have full guardian consent for photo/video use.' },
+  { href: '/admin/athlete-consent', label: 'Media Consent Audit', room: 'clinic', roles: ['admin', 'coach'],
+    keywords: 'guardian photo video consent audit safeguarding record paper form',
+    hint: 'Which athletes have full guardian consent for photo/video use, and where a signed paper form is recorded.' },
   { href: '/admin/waiver-status', label: 'Waiver Compliance', room: 'clinic', roles: ['admin'],
     keywords: 'waiver consent audit compliance general medical travel missing',
     hint: 'Which athletes are missing a signed general/medical/travel/media waiver.' },
@@ -588,7 +631,7 @@ export const BUILDING: readonly Door[] = [
 ];
 
 /** The rooms, in the order a corridor should present them. */
-export const ROOM_ORDER: readonly Room[] = ['office', 'floor', 'board', 'file', 'clinic', 'night'];
+export const ROOM_ORDER: readonly Room[] = ['office', 'floor', 'board', 'file', 'clinic', 'teach', 'night'];
 
 export const ROOM_LABEL: Record<Room, string> = {
   office: 'Front Office',
@@ -596,6 +639,7 @@ export const ROOM_LABEL: Record<Room, string> = {
   board: 'Board Room',
   file: 'File Room',
   clinic: 'Clinic',
+  teach: 'Teach Shadow',
   night: 'After Hours',
 };
 
@@ -606,6 +650,7 @@ export const ROOM_BLURB: Record<Room, string> = {
   board: 'Governance and the eight seats.',
   file: 'Research, evidence, the ledger.',
   clinic: 'Medical clearance and compliance.',
+  teach: 'Teaching Shadow to recognise boxing. Not athlete training.',
   night: 'Shadow, and anything after hours.',
 };
 
@@ -687,11 +732,18 @@ export function doorForPath(pathname: string): Door | null {
 /* ==========================================================================
    WHERE AN EASTER EGG MAY STAND
 
-   docs/shadow-ui/ROOM-PURPOSE-DNA.md answers "Easter eggs?" for all six rooms
-   and the answer is only twice yes: the gym floor is their PRIMARY HOME, and
-   the front office takes them as chalk, notices and photographs. The other
-   four say NEVER in capitals -- board, file, clinic, and after hours on a
-   deny. docs/shadow-ui/EGGS-LOAD-FIRST-12.md says the same thing from the
+   docs/shadow-ui/ROOM-PURPOSE-DNA.md answers "Easter eggs?" for the six rooms
+   that existed when it was written, and the answer is only twice yes: the gym
+   floor is their PRIMARY HOME, and the front office takes them as chalk,
+   notices and photographs. The other four say NEVER in capitals -- board,
+   file, clinic, and after hours on a deny.
+
+   TEACH SHADOW HAS NO ENTRY IN THAT DOCUMENT because it is newer, and it is
+   not listed below. That is the default answering rather than an omission:
+   the surfaces there are a coach deciding what the recognizer has been shown
+   too little of, and a flourish on one would sit beside a figure somebody is
+   about to act on. If the owner wants eggs there, the DNA document is where
+   that decision belongs, and this list follows it. docs/shadow-ui/EGGS-LOAD-FIRST-12.md says the same thing from the
    other end: "Never load onto: board, file, clinic, shadow deny."
 
    This matters here rather than only in the pages because the two components
@@ -711,7 +763,7 @@ export function roomAllowsEggs(room: Room | null | undefined): boolean {
 /**
  * May the surface at this path carry an egg?
  *
- * A path with no door answers NO, deliberately. Four of the six rooms forbid
+ * A path with no door answers NO, deliberately. Five of the seven rooms forbid
  * eggs outright, so "somewhere the map has never heard of" is much more likely
  * to be one of those than one of the two that allow them; and the cost of the
  * two answers is not symmetric — a missing flourish is nothing, a joke in a

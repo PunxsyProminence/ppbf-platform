@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { BUILDING, type Room } from './buildingMap';
+import { BUILDING, ROOM_ORDER, type Room } from './buildingMap';
 import {
   PLATE_SPLITS,
   PLATE_VARIANT_ATTRIBUTE,
@@ -54,7 +54,24 @@ const SELECTOR_SOURCE = readFileSync(join(__dirname, 'plateVariant.ts'), 'utf8')
    real gym pictures). The declaration in the locked inventory below is still
    in the archive and still the right answer for every other room; the floor's
    answer is now "no photograph", and resolvePlate reports that as url: null. */
-const DEFAULT_PLATE: Record<Room, string | null> = {
+/*
+ * ROOMS NOBODY PAINTS, which is a THIRD state and not a third plate.
+ *
+ * `floor` has a rule that declares no photograph -- resolvePlate finds it and
+ * reports url: null. `teach` has no `.room--*` rule in the sheet at all, so
+ * resolvePlate finds nothing and returns null for the WHOLE resolution -- not
+ * an entry whose url happens to be null, which is a different answer and the
+ * one `floor` gives. Writing null in the map below would assert the sheet
+ * declares a plate of none, which it does not.
+ *
+ * The room arrived after rooms were retired as a visual concept: buildingMap
+ * still files Teach Shadow's doors under it as structural metadata, and no
+ * screen in that area renders a wall. `no plate rule at all` is asserted by
+ * its own test below rather than left unchecked.
+ */
+const UNPAINTED_ROOMS: ReadonlySet<Room> = new Set<Room>(['teach']);
+
+const DEFAULT_PLATE: Partial<Record<Room, string | null>> = {
   office: '/plates/plate-01-office-01.jpg',
   floor: null,
   board: '/plates/plate-04-board-01.jpg',
@@ -62,6 +79,23 @@ const DEFAULT_PLATE: Record<Room, string | null> = {
   clinic: '/plates/plate-03-clinic-01.jpg',
   night: '/plates/plate-06-night-01.jpg',
 };
+
+/*
+ * Partial is a hole unless something closes it. Without this, a new painted
+ * room left out of the inventory would be silently exempt from every
+ * assertion that iterates it, which is exactly the shape of guard that passes
+ * while checking nothing.
+ */
+it('names every painted room, so a new one cannot slip past the inventory', () => {
+  const painted = ROOM_ORDER.filter((room) => !UNPAINTED_ROOMS.has(room));
+  expect(Object.keys(DEFAULT_PLATE).sort()).toEqual([...painted].sort());
+});
+
+it('finds no plate rule at all for a room no screen paints', () => {
+  for (const room of UNPAINTED_ROOMS) {
+    expect(resolvePlate(CSS, roomOn(room, null), SCREEN)).toBeNull();
+  }
+});
 
 const FLOOR_LANDSCAPE_PLATE = '/plates/plate-02a-floor-landscape-01.jpg';
 const FLOOR_PORTRAIT_PLATE = '/plates/plate-02b-floor-portrait-01.jpg';

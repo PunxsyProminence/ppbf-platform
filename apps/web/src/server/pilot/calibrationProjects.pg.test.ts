@@ -31,6 +31,8 @@ import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
+import { seedCaptureTake } from '../../testing/captureFixture';
+
 jest.setTimeout(180_000);
 
 const PG_USER = 'postgres';
@@ -60,9 +62,17 @@ const READY_TEAM_VIDEO_ID = 'vs-calib-team';
 const QUARANTINED_VIDEO_ID = 'vs-calib-quarantined';
 /** Ready, but belongs to the other organization. */
 const OTHER_ORG_VIDEO_ID = 'vs-calib-other-org';
+/** Ready, same organization, no capture take: an upload that was not filmed
+ *  to teach Shadow. The one video the calibration gate must refuse. */
+const UNGROUPED_VIDEO_ID = 'vs-calib-ungrouped';
 
 const BASE_SQL = 'pilot_slice_postgres.sql';
 const VIDEO_SESSIONS_SQL = 'pilot_slice_postgres_video_sessions_migration.sql';
+/* Applied because these suites now seed a recording session and a take: a
+   study cuts its clips from teaching footage, and assertVideoClippable
+   refuses anything else. It also adds capture_take_id to pilot.video_sessions,
+   so it must run after the video-sessions migration, never before. */
+const CAPTURE_SESSIONS_SQL = 'pilot_slice_postgres_capture_sessions_migration.sql';
 const CALIBRATION_SQL = 'pilot_slice_postgres_calibration_projects_migration.sql';
 
 // Jest's CJS transform rewrites a bare `import()` into `require()`, which
@@ -143,20 +153,49 @@ async function seedTenancy(client: Client): Promise<void> {
     [OTHER_ORG_ID, OTHER_ORG_ATHLETE_ID, OTHER_ORG_COACH_ID],
   );
 
-  const videos: Array<[string, string, string | null, string, string]> = [
-    [READY_VIDEO_ID, ORG_ID, ATHLETE_ID, 'ready', COACH_ID],
-    [READY_TEAM_VIDEO_ID, ORG_ID, null, 'ready', COACH_ID],
-    [QUARANTINED_VIDEO_ID, ORG_ID, ATHLETE_ID, 'quarantined', COACH_ID],
-    [OTHER_ORG_VIDEO_ID, OTHER_ORG_ID, OTHER_ORG_ATHLETE_ID, 'ready', OTHER_ORG_COACH_ID],
+  /*
+   * TEACHING FOOTAGE, BECAUSE THAT IS WHAT A STUDY CUTS CLIPS FROM.
+   *
+   * assertVideoClippable refuses a video with no capture take: only footage
+   * recorded to teach Shadow may become evidence a recognizer is taught from,
+   * and a take is what says a recording was. These fixtures predate takes, so
+   * they described their videos as ungrouped uploads -- which is not what a
+   * calibration study films. Giving them a take makes them accurate.
+   *
+   * UNGROUPED_VIDEO_ID is the exception and is deliberately left without one:
+   * it is how the refusal itself is tested.
+   */
+  const takes = new Map<string, string>();
+  for (const [orgId, uploader] of [[ORG_ID, COACH_ID], [OTHER_ORG_ID, OTHER_ORG_COACH_ID]] as const) {
+    const { recordingSessionId, captureTakeId } = await seedCaptureTake(client, {
+      organizationId: orgId,
+      createdByAccountId: uploader,
+    });
+    takes.set(orgId, captureTakeId);
+    takes.set(`${orgId}:session`, recordingSessionId);
+  }
+
+  const videos: Array<[string, string, string | null, string, string, boolean]> = [
+    [READY_VIDEO_ID, ORG_ID, ATHLETE_ID, 'ready', COACH_ID, true],
+    [READY_TEAM_VIDEO_ID, ORG_ID, null, 'ready', COACH_ID, true],
+    [QUARANTINED_VIDEO_ID, ORG_ID, ATHLETE_ID, 'quarantined', COACH_ID, true],
+    [OTHER_ORG_VIDEO_ID, OTHER_ORG_ID, OTHER_ORG_ATHLETE_ID, 'ready', OTHER_ORG_COACH_ID, true],
+    // Ready, in this organization, and NOT teaching footage.
+    [UNGROUPED_VIDEO_ID, ORG_ID, ATHLETE_ID, 'ready', COACH_ID, false],
   ];
-  for (const [videoId, orgId, athleteId, status, uploader] of videos) {
+  for (const [videoId, orgId, athleteId, status, uploader, grouped] of videos) {
     await client.query(
       `insert into pilot.video_sessions
          (video_session_id, organization_id, uploaded_by_account_id, athlete_id, title,
-          blob_path, file_name, file_size_bytes, mime_type, status)
-       values ($1, $2, $3, $4, 'Sparring round', $5, 'round.mp4', 1024, 'video/mp4', $6)
+          blob_path, file_name, file_size_bytes, mime_type, status,
+          recording_session_id, capture_take_id)
+       values ($1, $2, $3, $4, 'Sparring round', $5, 'round.mp4', 1024, 'video/mp4', $6, $7, $8)
        on conflict do nothing`,
-      [videoId, orgId, uploader, athleteId, `${orgId}/${videoId}.mp4`, status],
+      [
+        videoId, orgId, uploader, athleteId, `${orgId}/${videoId}.mp4`, status,
+        grouped ? takes.get(`${orgId}:session`) : null,
+        grouped ? takes.get(orgId) : null,
+      ],
     );
   }
 }
@@ -180,6 +219,7 @@ async function runnerDatabase(name: string): Promise<Client> {
   await client.connect();
   await client.query(await readMigration(BASE_SQL));
   await client.query(await readMigration(VIDEO_SESSIONS_SQL));
+  await client.query(await readMigration(CAPTURE_SESSIONS_SQL));
   return client;
 }
 
@@ -238,6 +278,7 @@ beforeAll(async () => {
   await migrateClient.connect();
   await migrateClient.query(await readMigration(BASE_SQL));
   await migrateClient.query(await readMigration(VIDEO_SESSIONS_SQL));
+  await migrateClient.query(await readMigration(CAPTURE_SESSIONS_SQL));
   await migrateClient.query(await readMigration(CALIBRATION_SQL));
   await seedTenancy(migrateClient);
   await migrateClient.end();
@@ -613,6 +654,47 @@ describe('quarantine is not opened by calibration', () => {
     }
   });
 
+  test('footage that was not recorded to teach Shadow cannot be cut into a study clip', async () => {
+    /*
+     * THE NO-PROMOTION RULING, AT THE ONLY GATE THAT CAN ENFORCE IT.
+     *
+     * Cutting a clip and labelling it IS promotion into the recognition
+     * corpus -- the labels become the evidence a recognizer is taught from --
+     * so "Film Study media cannot be moved into Teach Shadow" has to be
+     * refused here rather than left to the absence of a button. There is no
+     * coach-facing clip cutter today; there is an operator script, and "no UI
+     * for it yet" is not an invariant.
+     *
+     * A take is the discriminator because Teach Shadow capture always sends
+     * one and Film Study never does.
+     */
+    await expect(calibration.assertVideoClippable(ORG_ID, UNGROUPED_VIDEO_ID)).rejects.toThrow(
+      /not recorded to teach Shadow/,
+    );
+
+    // And the refusal is about the SOURCE, not about the video being unusable:
+    // the same organization's teaching footage, at the same status, passes.
+    await expect(calibration.assertVideoClippable(ORG_ID, READY_VIDEO_ID)).resolves.toBeDefined();
+  });
+
+  test('a clip cannot be created from footage the gate refuses', async () => {
+    // The gate is called by createCalibrationClip, so the refusal reaches the
+    // write path without the caller having to remember it.
+    const projectId = await newProject('refuses film study source');
+
+    await expect(calibration.createCalibrationClip({
+      organizationId: ORG_ID,
+      calibrationClipId: crypto.randomUUID(),
+      calibrationProjectId: projectId,
+      videoSessionId: UNGROUPED_VIDEO_ID,
+      clipCode: 'NOPE-1',
+      startMs: 0,
+      endMs: 1000,
+      primarySamplingReason: 'other',
+      createdByAccountId: COACH_ID,
+    })).rejects.toThrow(/not recorded to teach Shadow/);
+  });
+
   test('a video in another organization reads as absent, not as refused', async () => {
     // No existence oracle: the answer for "another gym's video" is the same
     // as for "no such video", so calibration cannot be used to enumerate
@@ -724,12 +806,15 @@ describe('calibration data never outranks a deletion request', () => {
     const projectId = await newProject('Deletion cascade study');
     const client = await freshClient();
     try {
+      // Teaching footage, like every other video a study clips. See the seed.
+      const doomedTake = await seedCaptureTake(client, { organizationId: ORG_ID, createdByAccountId: COACH_ID });
       await client.query(
         `insert into pilot.video_sessions
            (video_session_id, organization_id, uploaded_by_account_id, athlete_id, title,
-            blob_path, file_name, file_size_bytes, mime_type, status)
-         values ('vs-calib-doomed', $1, $2, null, 'Doomed', 'p/doomed.mp4', 'd.mp4', 10, 'video/mp4', 'ready')`,
-        [ORG_ID, COACH_ID],
+            blob_path, file_name, file_size_bytes, mime_type, status,
+            recording_session_id, capture_take_id)
+         values ('vs-calib-doomed', $1, $2, null, 'Doomed', 'p/doomed.mp4', 'd.mp4', 10, 'video/mp4', 'ready', $3, $4)`,
+        [ORG_ID, COACH_ID, doomedTake.recordingSessionId, doomedTake.captureTakeId],
       );
 
       const clipId = crypto.randomUUID();

@@ -47,7 +47,7 @@ import { formatDurationMs, formatMediaOffset } from '@/src/lib/clipTime';
  * THE VOCABULARIES COME FROM THE SERVER, and are not retyped into <option>
  * tags here. adjudication.ts imports ./db, so importing its arrays as values
  * into a 'use client' component would pull the Postgres driver into the
- * browser bundle -- the same reason coach/calibration/page.tsx restates its
+ * browser bundle -- the same reason teach-shadow/annotation/page.tsx restates its
  * wire shapes and imports only ontology.ts, which has no imports at all.
  * Retyping five controlled vocabularies is how a vocabulary drifts the moment
  * a second surface renders it, so the GET carries them instead.

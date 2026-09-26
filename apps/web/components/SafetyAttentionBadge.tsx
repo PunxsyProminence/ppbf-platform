@@ -1,9 +1,9 @@
 'use client';
 
-import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import ChromeLink from './ChromeLink';
 import { CONTROL_QUIET } from './sessionBarControls';
 
 /**
@@ -144,14 +144,14 @@ export default function SafetyAttentionBadge({ role }: { readonly role: string |
 
   if (readState === 'unavailable') {
     return (
-      <Link
+      <ChromeLink
         href="/admin/escalations"
         className={CONTROL_QUIET}
         aria-label="Open safety escalations. The count of unacknowledged escalations could not be read."
         title="Safety escalations could not be read. This is not a statement that there are none."
       >
         Safety: unread
-      </Link>
+      </ChromeLink>
     );
   }
 
@@ -173,7 +173,7 @@ export default function SafetyAttentionBadge({ role }: { readonly role: string |
     : `${highCount} high`;
 
   return (
-    <Link
+    <ChromeLink
       href="/admin/escalations"
       className="inline-flex min-h-[var(--tap)] items-center no-underline"
       aria-label={`Safety escalations needing acknowledgement: ${label}. Open the escalation records.`}
@@ -182,6 +182,6 @@ export default function SafetyAttentionBadge({ role }: { readonly role: string |
         <i>{glyph}</i>
         Safety {label}
       </span>
-    </Link>
+    </ChromeLink>
   );
 }

@@ -56,7 +56,10 @@ import {
   ShadowRateLimitExceeded,
 } from '@/src/server/pilot/shadowRateLimit';
 import { getShadowChatCapabilities } from '@/src/server/pilot/shadowChatCapabilities';
-import { MANUAL_OVERRIDE_ROLES as MANUAL_OVERRIDE_ROLE_LIST } from '@/src/server/pilot/shadowRoleSets';
+import {
+  BOARD_SUMMARY_ROLES as BOARD_SUMMARY_ROLE_LIST,
+  MANUAL_OVERRIDE_ROLES as MANUAL_OVERRIDE_ROLE_LIST,
+} from '@/src/server/pilot/shadowRoleSets';
 import {
   PLATFORM_SCOPE_UNAVAILABLE_CONTEXT,
   formatPlatformRollup,
@@ -469,6 +472,9 @@ const HEAVY_BAG_UNCAPPED_ROLES = new Set<PilotRole>([
   'admin',
   'platform_owner',
 ]);
+// The same authority the executor enforces, read from the one list, so the
+// request boundary and executeBoardSummaryJob cannot drift apart.
+const BOARD_SUMMARY_ROLES = new Set<PilotRole>(BOARD_SUMMARY_ROLE_LIST);
 const SESSION_TYPE_OVERRIDES = new Set<import('@/src/server/pilot/shadowRouter').ShadowSessionType>([
   'quick_round',
   'heavy_bag',
@@ -640,6 +646,149 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // and refused session types have no tier and keep the classifier's.
     const effectiveTier = sessionTypeToTier(sessionType) ?? classification.tier;
 
+    // Step 2: Validate request first (blocks diagnosis, clearance, prescription
+    // for non-educational queries). COMPUTED HERE, HANDLED BELOW, and the order
+    // is the point: a request carrying an urgent personal symptom must reach the
+    // high-risk handoff even when it also fails an authorization check. A 403
+    // that pre-empts "chest pain" answers the wrong question about the wrong
+    // thing. The refusal below therefore defers to it.
+    const requestValidation = validateShadowRequest(message, userRole, organizationId);
+
+    // A board summary the executor would refuse is refused HERE, before the
+    // worker-readiness probe, the context build, the enqueue and any provider
+    // call. executeBoardSummaryJob has always rejected anyone outside
+    // BOARD_SUMMARY_ROLES with SHADOW_JOB_SCOPE_FORBIDDEN, but a coach could
+    // reach it: MANUAL_OVERRIDE_ROLES includes coach, so the override was
+    // honored at the boundary and the refusal arrived later, in a background
+    // worker, against a job row that had already been written. The authority
+    // was correct and the timing was wrong.
+    //
+    // THE REQUESTED TYPE, NOT ONLY THE RESOLVED ONE. resolveSessionType silently
+    // discards requestedSessionType for any role outside MANUAL_OVERRIDE_ROLES,
+    // so an athlete, parent, staff member or volunteer asking explicitly for a
+    // board summary resolved to quick_round and was answered as ordinary chat.
+    // Gating on the resolved type alone would refuse the coach and keep
+    // downgrading everyone else -- the same silent substitution this refusal
+    // exists to prevent, just for the roles further from the data.
+    //
+    // The refusal is explicit rather than a downgrade to Quick Round or Heavy
+    // Bag. Silently answering a different, less governed question than the one
+    // asked is worse than saying no: the caller asked for a governance summary
+    // and would have received ordinary chat without being told.
+    // The safety boundary's one response implementation. It is a local helper
+    // rather than an inline block because the chokepoint below is the single
+    // call site and should read as one statement, not as thirty lines of
+    // response construction sitting in the middle of the control flow.
+    //
+    // It briefly had TWO call sites -- a board-only early invocation plus a
+    // generic one further down -- and that arrangement is what the chokepoint
+    // replaced. If a second call site ever appears here again, the precedence
+    // contract has been reintroduced as a per-branch reminder, which is the
+    // thing that decayed three times.
+    const respondWithSafetyBoundary = async (): Promise<NextResponse<ShadowChatResponse>> => {
+      const messageId = `msg_${Date.now()}`;
+      await queueHumanReview({
+        organizationId,
+        accountId: userId,
+        conversationId: requestedConversationId,
+        category: requestValidation.topic ?? 'safety_boundary',
+        severity: ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom']
+          .includes(requestValidation.classification ?? '')
+          ? 'critical'
+          : 'high',
+        summary: 'A SHADOW chat request was withheld by the pre-generation safety boundary.',
+        metadata: {
+          sessionType,
+          athleteScoped: Boolean(athleteId),
+          validationClassification: requestValidation.classification ?? null,
+        },
+      }).catch(() => {
+        console.error('SHADOW human-review queue write failed');
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          state: 'filtered',
+          response: requestValidation.error || 'Request validation failed',
+          messageId,
+          createdAt: new Date().toISOString(),
+          filtered: true,
+          requiresHumanReview: true,
+          highRiskTopic: requestValidation.topic,
+          evidenceTier: 'RESEARCH_NEEDED',
+          handoff: resolveHandoff({ requiresHumanReview: true, topic: requestValidation.topic }),
+          tier: effectiveTier,
+          complexity: classification.complexity,
+          error: requestValidation.error,
+        },
+        { status: 400 },
+      );
+    };
+
+    const boardSummaryRequested = sessionType === 'board_summary'
+      || requestedSessionType === 'board_summary';
+
+    // ===================================================================
+    // SAFETY CHOKEPOINT
+    //
+    // Everything ABOVE this line may refuse a request without consulting the
+    // safety boundary: authentication, structural validation of the body, core
+    // runtime readiness, the global chat and daily abuse limits, and
+    // athlete/conversation authorization. Those are either "there is no usable
+    // request" or "this caller may not be here at all", and safety must not
+    // become a way around a tenant boundary or a throttle -- a caller could
+    // otherwise buy an exemption by typing a symptom.
+    //
+    // Everything BELOW this line is a capability or cost refusal: which SHADOW
+    // mode you may run, whether the worker for it is configured, whether you
+    // have spent your Heavy Bag allowance. None of those may answer someone
+    // reporting an urgent symptom. The caller passed every gate that decides
+    // whether they are allowed to talk to SHADOW at all; what is left is a
+    // question about features, and a feature answer is the wrong reply to
+    // chest pain.
+    //
+    // WHY THIS IS ONE LINE RATHER THAN A RULE PER BRANCH. It was a rule per
+    // branch, and the rule was forgotten twice. The board-summary refusal
+    // (#970) jumped the safety handler; the fix for it jumped the worker
+    // readiness probe too, so an unconfigured worker still answered chest pain
+    // with "this background mode is not active". Auditing the rest then found
+    // the same defect already sitting on main in two more places -- the Film
+    // Study / Recovery Round refusal, and the Scout worker probe. Three
+    // authors, three misses, same shape. A contract every new refusal has to
+    // remember is a contract that decays; this one is structural, so a branch
+    // added below it is behind it by construction.
+    //
+    // The classification behind the split is recorded in
+    // app/api/pilot/shadow/chat/route.test.ts, in the describe named
+    // "SHADOW pre-generation safety precedence", which is the
+    // executable half of this comment: every branch below is exercised twice,
+    // once with a benign message to prove the branch really fires and once with
+    // an urgent one to prove this line beats it.
+    // ===================================================================
+    if (!requestValidation.valid) {
+      return respondWithSafetyBoundary();
+    }
+
+    if (boardSummaryRequested && !BOARD_SUMMARY_ROLES.has(userRole as PilotRole)) {
+      return NextResponse.json(
+        {
+          success: false,
+          state: 'filtered',
+          response: 'Board summaries are generated for organization administrators. Ask an administrator to run one.',
+          messageId: `msg_${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          filtered: true,
+          requiresHumanReview: false,
+          evidenceTier: 'RESEARCH_NEEDED',
+          handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
+          tier: effectiveTier,
+          complexity: classification.complexity,
+          error: 'Not authorized to generate a board summary.',
+        },
+        { status: 403 },
+      );
+    }
+
     // The Heavy Bag cap is enforced here rather than beside the `chat` limits
     // above because it depends on sessionType, which is not known until the
     // classifier and any honored override have both run. A refused session
@@ -700,48 +849,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           error: 'Background worker unavailable.',
         },
         { status: 503 },
-      );
-    }
-
-    // Step 2: Validate request first (blocks diagnosis, clearance, prescription for non-educational queries)
-    const requestValidation = validateShadowRequest(message, userRole, organizationId);
-    if (!requestValidation.valid) {
-      const messageId = `msg_${Date.now()}`;
-      await queueHumanReview({
-        organizationId,
-        accountId: userId,
-        conversationId: requestedConversationId,
-        category: requestValidation.topic ?? 'safety_boundary',
-        severity: ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom']
-          .includes(requestValidation.classification ?? '')
-          ? 'critical'
-          : 'high',
-        summary: 'A SHADOW chat request was withheld by the pre-generation safety boundary.',
-        metadata: {
-          sessionType,
-          athleteScoped: Boolean(athleteId),
-          validationClassification: requestValidation.classification ?? null,
-        },
-      }).catch(() => {
-        console.error('SHADOW human-review queue write failed');
-      });
-      return NextResponse.json(
-        {
-          success: false,
-          state: 'filtered',
-          response: requestValidation.error || 'Request validation failed',
-          messageId,
-          createdAt: new Date().toISOString(),
-          filtered: true,
-          requiresHumanReview: true,
-          highRiskTopic: requestValidation.topic,
-          evidenceTier: 'RESEARCH_NEEDED',
-          handoff: resolveHandoff({ requiresHumanReview: true, topic: requestValidation.topic }),
-          tier: effectiveTier,
-          complexity: classification.complexity,
-          error: requestValidation.error,
-        },
-        { status: 400 },
       );
     }
 
