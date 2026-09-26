@@ -2061,22 +2061,76 @@
    the intent rather than leaving a room with no wall relying on a fallback
    nobody reading this block can see.
 
-   The ground is the cabinet's back boards: dark walnut running vertically, the
-   way the reference's panel does. */
+   THE WALL IS THE REAL GYM, AND THE CABINET STANDS ON IT. Owner ruling
+   2026-09-26: mix the two. Until now this rule painted an opaque walnut ground
+   across the whole surface, which is the "pure leather-and-brass set with no
+   Iron City DNA" that docs/REAL-GYM-REFERENCE-LOCK.md lists under Forbidden,
+   and it set `--plate: none` so the photograph behind it had nothing to paint.
+
+   The photograph is 220 N Jefferson St. It is already in this repository --
+   apps/web/public/plates/, byte-gated by src/design/plateBinaries.test.ts --
+   and the two floor plates have been committed but unpainted since the
+   2026-09-22 direction that the app is not tied to real gym pictures. That
+   direction is the one being revisited here; the plates never left.
+
+   HOW THE TWO LAYERS SIT. `.room::after` paints `var(--plate)` at z-index -1,
+   BEHIND this element's own background (legacy:3591-3603), and `.room` isolates
+   so the stack cannot escape. So an opaque background here hides the gym, and
+   a transparent one shows it raw and unreadable. What is painted instead is a
+   SCRIM: heaviest over the middle, thinning to the edges.
+
+   THAT SHAPE IS THE REFERENCE LOCK'S OWN INSTRUCTION, not a taste: "quiet
+   centre for UI; real gym interest only in outer thirds / edges". The bags,
+   the beams and the blue ceiling read down the sides of a wide screen; the
+   middle stays calm enough to put type on. The grain stays, because it is what
+   ties the photograph to the materials standing on it.
+
+   IF THE FILE IS MISSING the plate layer simply does not paint and the scrim
+   becomes the ground on its own -- legacy:3578-3583 designed that fallback on
+   purpose, so a gym tablet offline or a 404 degrades to a dark warm wall
+   rather than to nothing. */
 .ge-drillcase.room {
-  --plate: none;
+  --plate: url("/plates/plate-02a-floor-landscape-01.jpg");
+  background-color: transparent;
+  background-image:
+    var(--grain),
+    radial-gradient(125% 95% at 50% 42%,
+      rgba(17,11,6,.93) 0%,
+      rgba(17,11,6,.88) 34%,
+      rgba(19,13,7,.62) 68%,
+      rgba(21,14,8,.26) 100%);
+  background-size: 180px 180px, 100% 100%;
+  background-blend-mode: overlay, normal;
+}
+
+/* The gym tablet stands upright, and a landscape wall cropped to a portrait
+   viewport loses the beams and the ceiling that make it read as this gym.
+   Same reasoning, and the same pairing, the floor room used (legacy:3666). */
+@media (orientation: portrait) {
+  .ge-drillcase.room {
+    --plate: url("/plates/plate-02b-floor-portrait-01.jpg");
+  }
+}
+
+/* THE CABINET ITSELF, now that the ground is no longer pretending to be it.
+   The back boards moved off the room and onto the work surface, which is the
+   object they always described: dark walnut running vertically, the way the
+   reference's panel does. The wall behind it is a photograph of the room the
+   cabinet stands in. */
+.ge-drillcase .ge-drillcase__surface {
   background-color: var(--wood-900);
   background-image:
     var(--grain),
-    /* board seams down the back panel */
     repeating-linear-gradient(90deg,
       rgba(0,0,0,.42) 0 3px, rgba(156,107,58,.10) 3px 5px, transparent 5px 96px),
-    /* long vertical grain inside each board */
     repeating-linear-gradient(90deg,
       transparent 0 11px, rgba(0,0,0,.10) 11px 13px, transparent 13px 29px),
     linear-gradient(174deg, #3A2412 0%, #2A1A0C 55%, #1A1108 100%);
   background-size: 180px 180px, 100% 100%, 100% 100%, 100% 100%;
   background-blend-mode: overlay, normal, normal, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.10),
+    0 18px 44px rgba(0,0,0,.62);
 }
 
 /* The light comes through the open door, not from ceiling fixtures. The room's
@@ -2115,17 +2169,120 @@
    None of the three panel hooks below sets one; this comment is what stops the
    next person adding it.
    ========================================================================== */
+/* THE ROOM'S PLAN: a stile down the left, the work surface filling the rest,
+   and no column anywhere.
+
+   Owner ruling 2026-09-26, after measuring ChatGPT's and Grok's shells in a
+   browser rather than describing them: ChatGPT runs a 340px labelled rail
+   against main at 1100px of a 1440px viewport, with a 0px border between them;
+   Grok runs a 57px icon stile with its strongest edge at rgba(15,13,10,0.04).
+   What both actually share, and what is taken here, is that the SHELL fills the
+   viewport while the CONTENT keeps a reading measure, and that panes are told
+   apart by tone rather than by rules or card edges.
+
+   This surface used to be `mx-auto max-w-6xl`: a 1152px column with dead ground
+   down both sides of any real screen. The column is gone. What is left of it is
+   a measure on the prose inside, which is where a measure belongs.
+
+   THE RAIL IS TRANSPARENT ON PURPOSE. It stands ON the wall -- the photograph
+   of the gym -- rather than covering it, so the bags and beams in the outer
+   third of the plate are what the stile is nailed to. Only the drawer fronts
+   are material. That is the mix stated in one rule: real gym at layer 0,
+   golden-era furniture standing on it. */
+.ge-drillcase .ge-drillcase__room {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
 .ge-drillcase .ge-drillcase__rail {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: var(--s5) var(--s4);
+}
+
+/* NO PANEL INSIDE A PANEL. The library section carries .ge-drillcase__cabinet,
+   which painted the carcass back when <main> was the whole cabinet interior.
+   The surface IS the carcass now, so leaving that rule in place framed a walnut
+   box inside a walnut box -- two borders, two shadows, and the card-stack
+   reading this layout exists to get away from. The hook stays (the scope test
+   and the e2e sweep both name it); what it paints inside the surface does not. */
+.ge-drillcase .ge-drillcase__surface > .ge-drillcase__cabinet {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  margin-top: 0;
+}
+
+.ge-drillcase .ge-drillcase__stations {
+  display: flex;
+  flex-direction: column;
   gap: var(--s3);
 }
 
+/* The way out sits at the foot of the stile, pushed there rather than placed:
+   the stile is a column and this is the only thing in it that belongs at the
+   bottom whatever the height. */
+.ge-drillcase .ge-drillcase__leave {
+  margin-top: auto;
+  text-align: center;
+}
+
+.ge-drillcase .ge-drillcase__surface {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--s5) var(--s4);
+}
+
+/* The reading measure, on the prose and nothing else. A paragraph 1400px wide
+   is unreadable however handsome the room is; a cabinet 1400px wide is just a
+   cabinet. */
+.ge-drillcase .ge-drillcase__surface p {
+  max-width: 78ch;
+}
+
+@media (min-width: 1024px) {
+  .ge-drillcase .ge-drillcase__room {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .ge-drillcase .ge-drillcase__rail {
+    flex: 0 0 auto;
+    width: clamp(16.5rem, 22vw, 21rem);
+    padding: var(--s6) var(--s4) var(--s6) var(--s5);
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    max-height: 100vh;
+    overflow-y: auto;
+  }
+
+  /* THE CABINET IS INSET FROM BOTH EDGES, not flush to the right one. The first
+     build ran the surface to the right edge and the photograph survived only as
+     a strip behind the stile -- the gym on one side of the screen and nowhere
+     else, which is a margin, not a room. Inset on three sides, the wall carries
+     the outer thirds the reference lock asks for and the cabinet reads as a
+     thing standing IN the room rather than as the room itself. */
+  .ge-drillcase .ge-drillcase__surface {
+    margin: var(--s5) var(--s5) var(--s5) 0;
+    padding: var(--s6);
+    border-radius: var(--r-lg);
+  }
+}
+
+/* A drawer front, now stacked down the stile rather than laid across the top.
+   Full width of the stile at every size: the 412px screenshot that produced the
+   earlier full-width rule was showing the same defect a narrow stile would,
+   and a column of fronts that do not line up does not read as one cabinet. */
 .ge-drillcase .ge-drillcase__station {
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: var(--s1);
+  width: 100%;
   min-height: var(--tap);
   padding: var(--s3) var(--s4);
   text-align: left;
@@ -2139,18 +2296,6 @@
   box-shadow:
     inset 0 1px 0 rgba(231,200,138,.13),
     0 4px 10px rgba(0,0,0,.52);
-}
-
-/* ON A PHONE THE DRAWER FRONTS RUN THE FULL WIDTH OF THE CARCASS. Sized to
-   their own text they stack into a ragged left-aligned staircase -- three
-   different widths down the screen, which reads as three leftover buttons
-   rather than the front of one cabinet. Seen in a 412px screenshot of the built
-   room, not predicted. Above 640px they keep their natural widths, where a row
-   of unequal drawer fronts is exactly what a cabinet looks like. */
-@media (max-width: 639px) {
-  .ge-drillcase .ge-drillcase__station {
-    flex: 1 1 100%;
-  }
 }
 
 .ge-drillcase .ge-drillcase__station .ge-drillcase__station-name {

@@ -700,20 +700,31 @@ function CoachDrillLibrary() {
   // and what it is dressed in, changed. The three section headings gained ids
   // so each section is a region named by its heading.
   return (
-    <main className="ge-drillcase room min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
-      <div className="mx-auto max-w-6xl">
-        <header className="ge-drillcase__masthead flex flex-col gap-[var(--s4)] md:flex-row md:items-end md:justify-between">
-          <div>
+    /* NO `bg-[var(--hide-950)]` AND NO `max-w-6xl` ANY MORE.
+
+       The opaque utility background was painting over the room's own ground,
+       which since the 2026-09-26 mix ruling is a photograph of this gym behind
+       a scrim -- an unlayered Tailwind background on <main> would have hidden
+       it and the failure would have looked like "the plate does not work".
+
+       The column is gone with it. It was `mx-auto max-w-6xl`: 1152px of content
+       with dead ground down both sides of any real screen. The reading measure
+       moved onto the prose, where a measure belongs, and the room now runs wall
+       to wall the way the two shells measured for this ruling do. */
+    <main className="ge-drillcase room min-h-screen text-[color:var(--bone-200)]">
+      <div className="ge-drillcase__room">
+        <div className="ge-drillcase__rail">
+          {/* The nameplate, on the stile rather than across the top. A masthead
+              band spanning the full width is the column's last habit: it costs
+              the same vertical space on a phone as on a 27in monitor and tells
+              the coach nothing they did not already know from the door. */}
+          <header className="ge-drillcase__masthead">
             <p className="t-eyebrow">Coach</p>
-            <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Drill Library</h1>
-            <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
+            <h1 className="t-command mt-[var(--s2)] text-[length:var(--t-xl)]">Drill Library</h1>
+            <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
               Find, inspect and adopt drills for this gym.
             </p>
-          </div>
-          <Link href="/coach/environment/intake-router" className="btn btn--ghost self-start md:self-auto">
-            Back to Coach Workspace
-          </Link>
-        </header>
+          </header>
 
         {/* THE RAIL: the equipment standing in this room, and walking to one.
             BUTTONS WITH `aria-current`, NOT role="tablist". role="tablist"
@@ -722,12 +733,12 @@ function CoachDrillLibrary() {
             rail does not implement -- claiming the role without them tells a
             screen reader to expect a keyboard contract that is not there.
             CoachWorkspace made this same call for its own rail. */}
-        <nav aria-label="Equipment in this room" className="ge-drillcase__rail mt-[var(--s5)]">
-          {STATIONS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setStation(item.id)}
+          <nav aria-label="Equipment in this room" className="ge-drillcase__stations">
+            {STATIONS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setStation(item.id)}
               /* THE RAIL IS INSIDE THE ACTION LOCK. W-D4C binds the coach to a
                  drill until its action and every re-read after it have finished,
                  so that nothing it reports can land on another drill. Walking to
@@ -737,15 +748,25 @@ function CoachDrillLibrary() {
                  Disabled rather than hidden: the row is the coach's map of the
                  room, and a map that loses an entry while a save is in flight is
                  worse than one that is briefly untouchable. */
-              disabled={actionInFlight}
-              aria-current={station === item.id ? 'true' : undefined}
-              className="ge-drillcase__station"
-            >
-              <span className="ge-drillcase__station-name t-command">{item.label}</span>
-              <span className="ge-drillcase__station-note t-label">{item.note}</span>
-            </button>
-          ))}
-        </nav>
+                disabled={actionInFlight}
+                aria-current={station === item.id ? 'true' : undefined}
+                className="ge-drillcase__station"
+              >
+                <span className="ge-drillcase__station-name t-command">{item.label}</span>
+                <span className="ge-drillcase__station-note t-label">{item.note}</span>
+              </button>
+            ))}
+          </nav>
+
+          {/* The way out, at the foot of the stile. It was beside the title in
+              the masthead band, which put "leave" at the same weight as the
+              room's own name. */}
+          <Link href="/coach/environment/intake-router" className="btn btn--ghost ge-drillcase__leave">
+            Back to Coach Workspace
+          </Link>
+        </div>
+
+        <div className="ge-drillcase__surface">
 
         {/* 1. THE REFERENCE LIBRARY -- the primary workspace: the drill cabinet. */}
         <section
@@ -1124,6 +1145,7 @@ function CoachDrillLibrary() {
             {saving ? 'Saving...' : 'Add drill'}
           </button>
         </section>
+        </div>
       </div>
     </main>
   );
