@@ -2141,6 +2141,18 @@
     0 4px 10px rgba(0,0,0,.52);
 }
 
+/* ON A PHONE THE DRAWER FRONTS RUN THE FULL WIDTH OF THE CARCASS. Sized to
+   their own text they stack into a ragged left-aligned staircase -- three
+   different widths down the screen, which reads as three leftover buttons
+   rather than the front of one cabinet. Seen in a 412px screenshot of the built
+   room, not predicted. Above 640px they keep their natural widths, where a row
+   of unequal drawer fronts is exactly what a cabinet looks like. */
+@media (max-width: 639px) {
+  .ge-drillcase .ge-drillcase__station {
+    flex: 1 1 100%;
+  }
+}
+
 .ge-drillcase .ge-drillcase__station .ge-drillcase__station-name {
   color: color-mix(in srgb, var(--brass-200) 58%, var(--bone-200));
   font-size: var(--t-md);

@@ -388,7 +388,13 @@ export const BUILDING: readonly Door[] = [
    * it is three stations on one surface, and the corridor has no vocabulary for
    * a station. A coach walks between them on the page's own rail.
    */
-  { href: '/coach/drills', label: 'Drill Cabinet', room: 'cabinet', roles: ['coach', 'admin'],
+  /* THE DOOR SAYS WHAT THE PAGE SAYS, and the ROOM is what is named separately.
+   * Labelling this door 'Drill Cabinet' made the session bar read
+   * "DRILL CABINET | Drill Cabinet", because that bar prints the room and then
+   * the door -- seen in a screenshot of the built room, not reasoned about.
+   * 'Drill Library' is the page's own <h1>, which is the thing a door is
+   * supposed to agree with. */
+  { href: '/coach/drills', label: 'Drill Library', room: 'cabinet', roles: ['coach', 'admin'],
     keywords: 'drills exercises techniques practice assign library catalogue cabinet reference workbench shelf',
     hint: 'The drill reference, the drills this gym runs, and the bench where a new one is written.' },
 
