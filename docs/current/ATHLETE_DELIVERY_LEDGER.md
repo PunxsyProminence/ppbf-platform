@@ -218,34 +218,67 @@ Goals (became Slice 9), activation handoff (became Slice 2). All of #675, #676,
 
 ### Slice 4 — Notes and checkout
 
-- **Status:** `PARTIAL_BY_OTHER_WORK` — was `NOT_STARTED`. A-FIN-01 and A-FIN-05
-  landed most of it.
-- **Discharged:** notes survive the tab on a 1200ms debounce (`:1313-1379`);
-  check-out persists the note and closes the session (`:1628-1717`); a draft
-  save can no longer land after check-out and reopen the session — every session
-  write joins one serialized chain (`:746-773`, PR #947). Check-out is the only
-  writer of RPE and records `null` / `UNKNOWN` when skipped, never a default
-  (`:1662-1671`). An empty pre-check-in note stores one fixed placeholder that is
-  recognised on the way back and rendered as "No notes on this one."
-  (`:333`, `:350-352`, `:2423-2425`). Runtime-confirmed 2026-09-24.
+- **Status:** `PARTIAL_BY_OTHER_WORK` — was `NOT_STARTED`. A-FIN-01, A-FIN-05
+  and A-FIN-08 landed most of it. Reconciled against main 2026-09-26; the
+  entry below replaced one that had gone materially false (see *What this
+  entry used to say*).
+- **Discharged:** an empty pre-session note stores one fixed system placeholder
+  that is recognised on the way back, so it never reads as the athlete's own
+  words (A-FIN-01; `sessionNoteSemantics.ts:55`). Check-out is the only writer
+  of session RPE and records `null` / `UNKNOWN` when the athlete skips the
+  question, never a default (A-FIN-05). A-FIN-08 (#973, merged as
+  `dc787dd1`) added the rest: the notes box is a PRIVATE DRAFT and nothing
+  reaches a coach until the athlete deliberately shares it
+  (`AthleteWorkspace.tsx:1396`, `:1454-1455`); withdrawal is explicit and
+  stores the no-note sentinel rather than an empty string, so the coach's view
+  empties with no schema change (`:1455`); check-in creates the session holding
+  the sentinel and never publishes the draft (`:1635`), and check-out replays
+  the last SHARED value rather than reading the box (`:1764`). A coach or
+  admin in the athlete's own organization reads today's note through a
+  dedicated route gated on organization membership
+  (`app/api/pilot/coach/athlete-session-note/route.ts:53`, `:62`), and can
+  re-read the selected athlete's current state without switching athletes
+  (`CoachWorkspace.tsx:3516`) — so a withdrawal reaches a screen already open.
+  "Today" is the gym's day taken from `created_at`, not the UTC `date` column
+  (`sessionNotes.ts:89`), and the athlete's own active-session selection uses
+  the same reduction, so a prior-gym-day open session is no longer mistaken
+  for today's (`AthleteWorkspace.tsx:1326`). The linked-guardian passbook omits
+  `sessions.notes` entirely — absent, not null (`passbook.ts:341`, `:464`).
+  System note forms are suppressed for every reader server-side. No surface
+  names a writer: the row records no author and coach and `organization_admin`
+  can write it too (`CoachWorkspace.tsx:749`). Owner decisions
+  OD-2026-09-25-001 and OD-2026-09-25-003 record the rules; #974 landed them
+  first as `5bc72a31`.
+- **Evidence:** 9 suites / 476 tests, typecheck and eslint clean, and a
+  permanent mutation matrix A/B/C/D/E/F/G1/G2/H, every mutant RED as declared.
+  UNIT level. The read's SQL has never executed against Postgres and no
+  authenticated journey has run, so this is merged-and-unit-proven, NOT
+  staging-verified.
 - **Remains — MEDIUM:**
-  - **[re-verified] The note never reaches a coach.** The box is labelled
-    "Session notes for your coach" (`:2301-2302`), but
-    `/api/pilot/sessions/list/route.ts` contains the word `notes` **zero times**,
-    `CoachWorkspace`'s `ReviewableSession` type is
-    `{sessionId, date, rpe, completed, createdAt}` with no notes field
-    (`CoachWorkspace.tsx:444-450`), and the only `.notes` that component renders
-    is `review.notes`, a coach's own review note (`:521`, `:3939`). This is the
-    unfinished half of the owner decision the slice came from.
-  - `rpe_method` has no reader. `contracts.ts:79` says "Read this field only
-    alongside `rpe_method`"; `performanceAnalytics.ts:117` averages every
-    `pilot.sessions` row with no method filter and renders it as "Avg RPE".
-  - A session nobody checks out of is never closed, and blocks the next day's
-    check-in (`:1271`, `:1525-1527`; no server-side stale-session close exists).
-  - No e2e covers the Session Log path at all.
+  - **`rpe_method` has no reader.** `contracts.ts:79` says "Read this field
+    only alongside `rpe_method`"; `performanceAnalytics.ts:117` averages every
+    `pilot.sessions` row with no method predicate and renders it as "Avg RPE".
+    Pre-migration rows carry the old pre-session readiness value under
+    `UNKNOWN`, so that number averages two different measurements and labels
+    them as one. This is the next slice (A-FIN-09).
+  - No e2e covers the Session Log / check-out path at all.
   - Check-out records no duration or end time, so SHADOW Session Load cannot be
-    computed (`:1722-1729`). Whether that belongs here or to a SHADOW slice is
-    an open scoping call.
+    computed. Whether that belongs here or to a SHADOW slice is an OPEN SCOPING
+    CALL, not pre-authorized work.
+  - A session nobody checks out of still remains open in storage indefinitely.
+    A-FIN-08 stopped a prior-gym-day row being selected as today's active
+    session, so it no longer blocks today's check-in through that client path,
+    but nothing closes it. Auto-close is NOT required here; it remains a
+    separate product decision.
+- **What this entry used to say, and why it was wrong.** It listed "the note
+  never reaches a coach" as the headline remaining item, cited the 1200ms
+  autosave debounce as discharged behaviour, and said a stale open session
+  blocks the next day's check-in. A-FIN-08 closed the first, deliberately
+  removed the second — a box that published itself would put half-typed
+  sentences in front of a coach — and changed the third. The lines are recorded
+  here rather than silently deleted, because this file is what a later session
+  resumes from, and a work list that is confidently false is worse than one
+  that is merely incomplete.
 
 ### Slice 5 — Sparring integrity
 
