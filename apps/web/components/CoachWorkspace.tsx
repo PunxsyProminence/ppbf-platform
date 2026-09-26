@@ -45,6 +45,13 @@ import {
   wellnessAnchor,
   type WellnessScaleKey,
 } from '@/src/shared/wellnessScales';
+// Which stored session notes are the system's rather than a person's.
+// getTodaySessionNote already turns both system forms into note: null before
+// the response leaves the server; this screen is where a server regression
+// would land as "Auto check-in readiness GREEN" read to a coach as something
+// a child said about themselves, so it recognises them too -- from the same
+// definition, not a second one.
+import { isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 
 type TabID = 'dashboard' | 'floor' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
@@ -660,6 +667,122 @@ function sleepHoursText(value: number | null): string {
   return `${value} ${value === 1 ? 'hour' : 'hours'}`;
 }
 
+/**
+ * Today's session note for the selected athlete, as GET
+ * /api/pilot/coach/athlete-session-note returns it in `today`. Mirrors
+ * TodaySessionNote in src/server/pilot/sessionNotes.ts.
+ *
+ * THREE ANSWERS, NOT TWO, and the difference is a different thing to say to
+ * someone standing in front of a child:
+ *
+ *   today null            no session was started during the gym's day
+ *   today { note: null }  a session exists, nobody wrote a human note on it
+ *   today { note: text }  what was shared, exactly as stored
+ *
+ * The server draws that distinction deliberately and says so; collapsing it
+ * here would undo it on the only screen that shows it.
+ */
+interface TodaySessionNote {
+  readonly note: string | null;
+}
+
+/**
+ * The read of the selected athlete's session note.
+ *
+ * KEPT WHOLLY APART FROM WellnessCheckInRead, on its own state and its own
+ * request, because the two subsections of this panel are two independent
+ * facts about one day. A wellness read that failed says nothing about whether
+ * a note was written, and a note read that failed says nothing about whether
+ * the athlete checked in. One shared status would make either failure speak
+ * for both, which is the same class of defect the wellness statuses were
+ * split up to avoid.
+ *
+ * `unavailable` is every way the read did not land, INCLUDING a 403. The
+ * wellness read gives a refusal its own sentence; this one does not, because
+ * the refusal is the same refusal -- both routes gate on organization
+ * membership -- and the wellness block in this same panel already carries the
+ * sentence that names the audience. A second wording for one server answer
+ * would be this screen inventing copy nobody ruled, and the failure sentence
+ * is true of a refusal: the note could not be loaded, and nothing is claimed
+ * about whether one exists.
+ *
+ * Every state carries the athlete it was asked about. It has to be carried
+ * here rather than read back off the response: the body is {note} alone, with
+ * no athlete id in it, so the identity of the child a note belongs to exists
+ * only in the request that asked for it.
+ */
+type SessionNoteRead =
+  | { readonly status: 'loading'; readonly athleteId: string }
+  | { readonly status: 'loaded'; readonly athleteId: string; readonly today: TodaySessionNote | null }
+  | { readonly status: 'unavailable'; readonly athleteId: string };
+
+/* The subsection's sentences, named once so the component and its tests agree
+   on the exact words and so no outcome borrows another's.
+
+   THE HEADING IS "Session note" AND NOTHING MORE. pilot.sessions.notes records
+   no author and no last editor, and a coach or an organization_admin can write
+   the column through /api/pilot/sessions/update -- so "Athlete's note",
+   "Written by the athlete" or "Self-reported by the athlete" would be this
+   screen asserting an authorship the database cannot establish. The wellness
+   record above IS athlete-owned and keeps its own caption; this one does not
+   borrow it. */
+const SESSION_NOTE_HEADING = 'Session note';
+/* One empty state for the whole panel, naming both things a pick reveals. The
+   wellness-only sentence it replaces would have stood beside a second "select
+   an athlete" line once the note arrived -- one panel telling a coach the same
+   thing twice, in two wordings, about one roster. */
+const SESSION_NOTE_NO_SELECTION =
+  'Select an athlete in the roster to see today’s wellness check-in and session note.';
+const SESSION_NOTE_LOADING = 'Loading today’s session note...';
+/* "No session started today" and "no session note written today" are two
+   different facts about a child's day and neither may wear the other's words:
+   the first says nobody has begun a session, the second that a session is
+   under way and carries no message. */
+const SESSION_NOTE_NO_SESSION_TODAY = 'No session started today.';
+const SESSION_NOTE_NONE_WRITTEN = 'No session note written today.';
+const SESSION_NOTE_READ_FAILED =
+  'Today’s session note could not be loaded. This is not a statement that no note was written -- try again.';
+/* Where the text lives, and the limit of what is known about it. Both halves
+   are load-bearing: a coach acting on a note needs to know it is on the
+   session record, and needs NOT to be told a person wrote it when the row
+   cannot say who did. */
+const SESSION_NOTE_ATTRIBUTION =
+  'Recorded on this session. The session row does not record who wrote or last edited this text.';
+
+/**
+ * `today` must be PRESENT to mean anything, and so must `note` inside it.
+ * `payload.today ?? null` would turn a body this screen cannot read into "no
+ * session started today", which is a claim about a child's day that nothing
+ * made -- the same trap parseCoachCheckIn documents above.
+ */
+function parseSessionNote(value: unknown): TodaySessionNote | null | 'unreadable' {
+  if (value === null) {
+    return null;
+  }
+  if (!value || typeof value !== 'object') {
+    return 'unreadable';
+  }
+  const note = (value as Record<string, unknown>).note;
+  if (note === null) {
+    return { note: null };
+  }
+  if (typeof note !== 'string') {
+    return 'unreadable';
+  }
+  /* THE SECOND GATE ON TEXT NOBODY WROTE. getTodaySessionNote already turns
+     the A-FIN-01 placeholder, the historical "Auto check-in readiness GREEN"
+     rows and an empty note into note: null. Repeated here because this is the
+     surface where a server regression stops being a data bug and becomes a
+     coach reading system text as a child's own words -- and that cannot be
+     undone by fixing the server afterwards. Same imported definition, so the
+     two gates cannot drift apart. */
+  if (note.trim() === '' || isSystemCheckInNote(note)) {
+    return { note: null };
+  }
+  // Exactly as stored: the spacing and the line breaks are the writer's own.
+  return { note };
+}
+
 /* READINESS RED IS NOT THE LOCKED RUNG.
    readinessBoard defines its own bands as operational triage and says so:
    "GREEN = train as planned, YELLOW = check in with the athlete first,
@@ -892,6 +1015,24 @@ export default function CoachWorkspace() {
   const [wellnessRead, setWellnessRead] = useState<WellnessCheckInRead | null>(null);
   const wellnessAthleteRef = useRef('');
   const wellnessAbortRef = useRef<AbortController | null>(null);
+
+  /* THE SELECTED ATHLETE'S SESSION NOTE (A-FIN-08).
+     The athlete has been answering "Anything your coach should know before
+     you start?" since A-FIN-01 and no coach screen has ever shown the answer.
+     This is that read.
+
+     SAME TRIGGER AS THE WELLNESS READ, FOR THE SAME REASON: a coach's actual
+     click on a roster row, never the seeded `selectedAthleteId`. The roster is
+     the whole gym, so reading the first child's note on every dashboard load
+     would be opening a message a child addressed to a coach, for nobody.
+
+     SEPARATE STATE, SEPARATE CONTROLLER, SEPARATE REF -- not a second field on
+     the wellness state. The two reads hit two routes and either can fail on
+     its own; sharing a status would let a wellness outage report a note as
+     unreadable, and a note outage report a check-in as missing. */
+  const [sessionNoteRead, setSessionNoteRead] = useState<SessionNoteRead | null>(null);
+  const sessionNoteAthleteRef = useRef('');
+  const sessionNoteAbortRef = useRef<AbortController | null>(null);
 
   const workoutBlocks = useMemo<WorkoutBlock[]>(() => {
     if (sessionMode === 'One-on-One') {
@@ -1152,6 +1293,16 @@ export default function CoachWorkspace() {
   const wellnessAthleteName = wellnessShown
     ? athletes.find((athlete) => athlete.id === wellnessShown.athleteId)?.name ?? 'this athlete'
     : '';
+
+  /* The session note the panel may draw: its own check, on its own state. The
+     note subsection must not go blank because the wellness read happens to be
+     for somebody else, and must not draw because the wellness read happens to
+     be current -- so the two are never derived from one another. This is the
+     last of the three guards, at the point where a child's message to their
+     coach and a name meet on screen. */
+  const sessionNoteShown = athleteChosenByCoach && sessionNoteRead && sessionNoteRead.athleteId === selectedAthleteId
+    ? sessionNoteRead
+    : null;
 
   // Athlete pain reports. The write path refuses to store a pain report it
   // could not raise a coach-visible record for, so anything returned here is a
@@ -1892,6 +2043,87 @@ export default function CoachWorkspace() {
   // rather than left to resolve into a component that no longer exists.
   useEffect(() => {
     const aborts = wellnessAbortRef;
+    return () => {
+      aborts.current?.abort();
+    };
+  }, []);
+
+  /* GET /api/pilot/coach/athlete-session-note decides, server-side, whether
+     this staff member may read this athlete's note at all: any coach or
+     organization admin in the athlete's own organization may (Jason
+     2026-09-25, "any coach or admin in the organization" -- the same rule
+     A-FIN-03R1 settled for the wellness check-in, and settled for the same
+     reason, that the roster a coach works from is the whole gym).
+
+     NOT /api/pilot/sessions/list. That route carries the whole session record
+     behind the narrower coach-of-record-or-coverage gate, so widening it for
+     one note would have widened RPE and completion state with it. It is
+     untouched, and this screen does not ask it for the note.
+
+     EVERY FAILURE IS ONE STATE, including a 403 -- see SessionNoteRead for
+     why the refusal is not given a second sentence here. The status goes to
+     the console rather than the screen: a bare "500" is nothing a coach on
+     the floor can act on, and it is exactly what someone diagnosing the read
+     needs. */
+  const loadSessionNote = useCallback(async (athleteId: string) => {
+    sessionNoteAbortRef.current?.abort();
+    const controller = new AbortController();
+    sessionNoteAbortRef.current = controller;
+    sessionNoteAthleteRef.current = athleteId;
+    setSessionNoteRead({ status: 'loading', athleteId });
+
+    /* THE SECOND CONJUNCT IS REDUNDANT TODAY, AND THAT IS LOAD-BEARING.
+       sessionNoteAthleteRef is written in exactly one place -- the line above,
+       inside this loader -- and this loader aborts its predecessor before
+       reaching it. So the ref cannot move without an abort, and
+       signal.aborted is already true wherever the identity check would fire.
+       A mutation that removes the identity half alone therefore survives: no
+       test can distinguish them, and none should be contrived to.
+
+       It stays as defence in depth, but the redundancy depends entirely on
+       that one-writer invariant. If a second writer to the ref ever appears,
+       or the abort stops preceding it, this check becomes the only thing
+       standing between a late response for one child and another child's name
+       on screen -- and it will need a test of its own that day. */
+    const superseded = () => controller.signal.aborted || sessionNoteAthleteRef.current !== athleteId;
+
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/coach/athlete-session-note?athlete_id=${encodeURIComponent(athleteId)}`,
+        { method: 'GET', credentials: 'include', signal: controller.signal },
+      );
+      if (superseded()) {
+        return;
+      }
+      if (!response.ok) {
+        throw new Error('session note read failed', { cause: { status: response.status } });
+      }
+      const payload = (await response.json()) as unknown;
+      // The second suspension point: the coach may have picked someone else
+      // while the body was being read, and a note is the one thing on this
+      // panel that is addressed to a person rather than measured about one.
+      if (superseded()) {
+        return;
+      }
+      const parsed = payload && typeof payload === 'object' && 'today' in payload
+        ? parseSessionNote((payload as { today: unknown }).today)
+        : 'unreadable';
+      if (parsed === 'unreadable') {
+        throw new Error('session note response unreadable');
+      }
+      setSessionNoteRead({ status: 'loaded', athleteId, today: parsed });
+    } catch (error) {
+      if (superseded()) {
+        return;
+      }
+      console.error({ event: 'coach-session-note-load-failed', error });
+      setSessionNoteRead({ status: 'unavailable', athleteId });
+    }
+  }, []);
+
+  // Its own cleanup, because it is its own request.
+  useEffect(() => {
+    const aborts = sessionNoteAbortRef;
     return () => {
       aborts.current?.abort();
     };
@@ -2859,6 +3091,16 @@ export default function CoachWorkspace() {
                           // A deliberate pick, so this is where the wellness
                           // read starts -- never from the seeded selection.
                           void loadWellnessCheckIn(athlete.id);
+                          // The session note comes from the same click and
+                          // nowhere else. (Not "the note the athlete wrote":
+                          // this file says twice that the row cannot
+                          // establish who wrote it, and a comment that
+                          // asserts otherwise is what licenses somebody to
+                          // "fix" the honest copy later.) Two reads
+                          // rather than one: they are two routes, they fail
+                          // separately, and neither may report the other's
+                          // outcome.
+                          void loadSessionNote(athlete.id);
                         }}
                         /* The highlight and the wellness read follow the same
                            signal: `athleteChosenByCoach`, a coach's actual
@@ -3081,8 +3323,12 @@ export default function CoachWorkspace() {
                 >
                   <h3 id="coach-wellness-check-in-heading" className="t-eyebrow">Wellness Check-In</h3>
 
-                  {!wellnessShown && (
-                    <p className="t-muted">Select an athlete in the roster to see their wellness check-in for today.</p>
+                  {/* One empty state for the panel, not one per subsection:
+                      both the check-in and the note appear on the same
+                      deliberate click, so there is one thing to tell a coach
+                      who has not made it. */}
+                  {!wellnessShown && !sessionNoteShown && (
+                    <p className="t-muted">{SESSION_NOTE_NO_SELECTION}</p>
                   )}
 
                   {wellnessShown?.status === 'loading' && (
@@ -3167,6 +3413,110 @@ export default function CoachWorkspace() {
                       </div>
                       <p className="t-muted">Self-reported by the athlete.</p>
                     </div>
+                  )}
+
+                  {/* SESSION NOTE (A-FIN-08): the text on today's session row,
+                      which until this subsection existed no coach screen had
+                      ever shown. An athlete answered "Anything your coach
+                      should know before you start?" and the answer went into
+                      the database and stopped.
+
+                      Inside this panel rather than beside it: it arrives on
+                      the same click as the check-in, it is the same coach
+                      looking at the same athlete for the same reason, and a
+                      second panel would be a second place to remember to look.
+
+                      NOT .mat-leather. This is a block within a panel, not a
+                      panel of its own, and the golden-era sheet paints the
+                      leather class as a surface.
+
+                      IT CLAIMS NO AUTHOR. Everything about the wording of this
+                      block is constrained by one fact: pilot.sessions.notes
+                      records no writer and no last editor, and coaches and
+                      organization admins can write it too. See
+                      SESSION_NOTE_HEADING. */}
+                  {sessionNoteShown && (
+                    <section
+                      aria-labelledby="coach-session-note-heading"
+                      className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] space-y-[var(--s2)]"
+                    >
+                      <h4 id="coach-session-note-heading" className="t-label">{SESSION_NOTE_HEADING}</h4>
+
+                      {sessionNoteShown.status === 'loading' && (
+                        <p className="t-muted">{SESSION_NOTE_LOADING}</p>
+                      )}
+
+                      {/* --restricted, not --locked, for the same reason the
+                          wellness failure above uses it: a read that did not
+                          land is a request problem, and the safeguarding red
+                          is reserved for a person who may not participate. */}
+                      {sessionNoteShown.status === 'unavailable' && (
+                        <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] p-[var(--s3)] space-y-[var(--s2)]">
+                          <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                            {SESSION_NOTE_READ_FAILED}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => void loadSessionNote(sessionNoteShown.athleteId)}
+                            className="btn btn--ghost"
+                            aria-label="Try loading the session note again"
+                          >
+                            Try again
+                          </button>
+                        </div>
+                      )}
+
+                      {sessionNoteShown.status === 'loaded' && sessionNoteShown.today === null && (
+                        <p className="t-muted">{SESSION_NOTE_NO_SESSION_TODAY}</p>
+                      )}
+
+                      {sessionNoteShown.status === 'loaded' && sessionNoteShown.today !== null && (
+                        sessionNoteShown.today.note === null ? (
+                          <p className="t-muted">{SESSION_NOTE_NONE_WRITTEN}</p>
+                        ) : (
+                          <>
+                            {/* pre-wrap because "exactly as stored" includes
+                                where the writer pressed return: a note that
+                                lists three things on three lines stops being a
+                                list the moment it is reflowed into a
+                                paragraph. */}
+                            <p className="t-body whitespace-pre-wrap">{sessionNoteShown.today.note}</p>
+                            {/* Only under text there is. "this text" has no
+                                referent beside "no session note written
+                                today". */}
+                            <p className="t-muted">{SESSION_NOTE_ATTRIBUTION}</p>
+                          </>
+                        )
+                      )}
+
+                      {/* A RE-READ LIVES IN THE SUCCESSFUL STATES, not only the
+                          failed one. This panel reads once, on the coach's
+                          deliberate click, and nothing revalidated it
+                          afterwards -- so an athlete who shared a note, thought
+                          again and withdrew it (the owner decision of
+                          2026-09-25 exists to let them) left the withdrawn
+                          words sitting on an already-open coach screen for as
+                          long as it stayed open. The database had retracted it;
+                          this screen had not, and the only route back to the
+                          server was to click away and click back.
+
+                          Manual, not polled: no interval is invented here. It
+                          goes through the same loader, so the abort and the
+                          supersession checks still hold, and a refresh that
+                          FAILS lands in the unavailable branch above -- which
+                          says the read did not land. That distinction is the
+                          point: a network failure must never be dressed up as
+                          a withdrawal. */}
+                      {sessionNoteShown.status === 'loaded' && (
+                        <button
+                          type="button"
+                          onClick={() => void loadSessionNote(sessionNoteShown.athleteId)}
+                          className="btn btn--ghost"
+                        >
+                          Refresh session note
+                        </button>
+                      )}
+                    </section>
                   )}
                 </section>
 

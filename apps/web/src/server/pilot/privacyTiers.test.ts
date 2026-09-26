@@ -278,3 +278,55 @@ describe('the development-block entries: routes reach these rows only through th
     }
   });
 });
+
+/* A-FIN-08 corrected this entry. The old one said sessions.notes was
+   athlete_record and described it as "Free text a coach typed about a child",
+   and both halves were wrong: every writer is the athlete, and the read is
+   organization-scoped, not per-relationship. A registry that misdescribes a
+   column about children is worse than no registry, so the correction is
+   pinned rather than trusted. ('every enforcedBy names real code' above
+   already proves the four paths below resolve to real files.) */
+describe('sessions.notes is recorded as what it actually is', () => {
+  const entry = FIELD_TIERS['sessions.notes'];
+
+  it('is classified at the tier the code actually enforces', () => {
+    expect(entry.tier).toBe('organization');
+    // The narrower claim is the dangerous one: it would tell an auditor the
+    // per-relationship gate applies when organization membership is what runs.
+    expect(entry.tier).not.toBe('athlete_record');
+  });
+
+  it('names the dedicated staff read as an enforcer', () => {
+    expect(entry.enforcedBy).toContain('../../../app/api/pilot/coach/athlete-session-note/route.ts#GET');
+    expect(entry.enforcedBy).toContain('sessionNotes.ts#getTodaySessionNote');
+  });
+
+  it('names the projection that closes the guardian exposure', () => {
+    expect(entry.enforcedBy).toContain('passbook.ts#mapSession');
+  });
+
+  // sessions/list was deliberately NOT widened, so the gate it carries is
+  // still part of this column's enforcement story.
+  it('still names the relationship gate that sessions/list kept', () => {
+    expect(entry.enforcedBy).toContain('access.ts#assertActorCanAccessAthlete');
+  });
+
+  it('no longer claims a coach wrote it', () => {
+    expect(entry.note).toBeDefined();
+    expect(entry.note).not.toContain('Free text a coach typed about a child.');
+    expect(entry.note).toContain('ATHLETE');
+  });
+
+  it('records that authorship is not established', () => {
+    expect(entry.note).toContain('AUTHORSHIP IS NOT ESTABLISHED');
+    expect(entry.note).toContain('no author or last-editor column');
+  });
+
+  it('records that linked guardians are excluded', () => {
+    expect(entry.note).toContain('LINKED GUARDIANS ARE EXCLUDED');
+  });
+
+  it('records that system text is not note text', () => {
+    expect(entry.note).toContain('SYSTEM TEXT IS NOT NOTE TEXT');
+  });
+});
