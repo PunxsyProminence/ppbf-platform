@@ -313,8 +313,9 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
   // chats that GET /near-misses denies those roles".
   //
   // These tests live HERE and not in the chat route's suite because that suite
-  // mocks retrieveShadowContext wholesale -- no route-level test can prove this
-  // gate. This file is the only place it is provable.
+  // mocks retrieveShadowContext wholesale, so no test there can prove this gate.
+  // This is the only EXISTING place it is provable -- a route-level test with a
+  // partial mock could also do it; one simply was not written.
   //
   // EVERY EXCLUDED-ROLE CASE RETURNS SEVERE ROWS FROM THE MOCK. The default in
   // beforeEach is an empty list, so a gate that had silently stopped working
@@ -339,6 +340,12 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
     // whole PilotRole union makes the claim one about THIS gate: nothing
     // outside the decision loop receives these records, whatever access.ts
     // does or later stops doing.
+    //
+    // This list is hand-written and the type system does not check it against
+    // PilotRole, so a role added later would not be enumerated here. The gate
+    // still fails closed for it -- the allow-list is what grants, so an
+    // unknown role is refused by construction -- but this suite would stop
+    // being the exhaustive proof it is today.
     describe.each([
       ['athlete', 'account-athlete-self'],
       ['parent', 'account-parent-linked'],

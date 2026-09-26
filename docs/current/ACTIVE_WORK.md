@@ -129,6 +129,7 @@ arbitrary. The queue as recorded at 2026-08-29, with each item's state on
 
 | Item | Why it is parked | Re-open when |
 |---|---|---|
+| SHADOW near-miss text delivered before the audience gate | Closed on the owner's statement of 2026-09-26, quoted in OD-2026-09-26-001: "NONE HAS BEEN SENT". That is his knowledge of who has used SHADOW, not a measurement -- no conversation, database or log was read, and the OD entry says so. Parked rather than deleted because a closure resting on an unmeasured statement leaves nothing to prompt a re-check, and the conversation-history loader re-feeds recent turns, so any delivered text would keep resurfacing after the gate. | Any data pull, audit or report indicates an athlete or parent conversation did receive near-miss content. Then the remediation question re-opens as an owner decision. |
 | `BACKLOG-activity-log-backfill` | Legacy attendance sources cannot support a trustworthy synthetic history. Do not invent a backfill. `pilot.activity_log` is go-forward evidence. | A specific requirement appears for importing legacy history with an explicit provenance/conflict policy. |
 | `BACKLOG-triage-keyboard` | A one-key approval path is not meaningful until the queue exposes a review-complete/eligible action. | The review queue has a deterministic eligibility signal. |
 | `BACKLOG-offline-write-queue` | Persisting minors' check-ins on a shared tablet creates identity, attribution, and data-at-rest problems. | A concrete identity-scoped encrypted/offline storage design is selected. |
