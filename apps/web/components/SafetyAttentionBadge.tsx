@@ -166,11 +166,32 @@ export default function SafetyAttentionBadge({ role }: { readonly role: string |
      the design system's own ladder and matches what /admin/escalations puts on
      the individual rows, so the summary and the record cannot describe the
      same escalation at two different severities. */
-  const rung = criticalCount > 0 ? 'badge--locked' : 'badge--restricted';
-  const glyph = criticalCount > 0 ? '✕' : '▲';
-  const label = criticalCount > 0
+  const critical = criticalCount > 0;
+  const rung = critical ? 'badge--locked' : 'badge--restricted';
+  const glyph = critical ? '✕' : '▲';
+  /* The worst severity as one word, taken off the SAME predicate that chose
+     the rung and the glyph on the two lines above. Deriving it a second time
+     is how a badge ends up wearing the critical rung while its own summary
+     says HIGH, and the two would then be describing one set of escalations at
+     two different severities -- the thing the paragraph above exists to
+     prevent between this summary and /admin/escalations. */
+  const worst = critical ? 'CRITICAL' : 'HIGH';
+  const label = critical
     ? `${criticalCount} critical${highCount > 0 ? `, ${highCount} high` : ''}`
     : `${highCount} high`;
+
+  /* NO FIXED WIDTH CAN BE CLAIMED FOR THIS BADGE, at either density or any
+     breakpoint. Both summaries below are composed from counts fetched at
+     runtime -- setCriticalCount / setHighCount above, off the rows
+     /api/pilot/escalations returned -- so the string grows with the live
+     escalation set: "1 critical" and "3 critical, 11 high" are the same code
+     path, and the compact form's number is as wide as the total happens to
+     be. The unavailable branch further up renders a different string again
+     ("Safety: unread"), and a confirmed-clear read renders no element at all.
+     So a layout argument that rests on one particular rendering of this label
+     is describing one sample of the escalation data on one day, not a
+     property of this component, and it will stop being true the next time a
+     coach acknowledges something. */
 
   return (
     <Link
@@ -180,7 +201,45 @@ export default function SafetyAttentionBadge({ role }: { readonly role: string |
     >
       <span className={`badge ${rung}`}>
         <i>{glyph}</i>
-        Safety {label}
+        {/* TWO DENSITIES OF THE SAME SUMMARY, and the narrow one is what lets
+            this badge stay on the phone bar rather than step off it.
+
+            Below 640px: the glyph, the word SAFETY, the REAL total and the
+            worst REAL severity -- "✕ SAFETY 2 · CRITICAL". From 640px up: the
+            breakdown this badge has always carried -- "Safety 1 critical,
+            1 high". The only thing the narrow form drops is the SPLIT between
+            the two rungs. It cannot understate either half of what is waiting:
+            the number is criticalCount + highCount, and the word is the worst
+            severity actually present, off the same predicate as the rung.
+
+            WHAT IS NOT DONE HERE, because the order that opened this slice
+            names each one: the badge is not hidden on the phone, not reduced
+            to a bare number, and its target does not shrink -- the tap area is
+            the Link's own min-h-[var(--tap)] and neither variant touches it.
+
+            THE FULL BREAKDOWN SURVIVES AT EVERY WIDTH. aria-label on the Link
+            above supplies that link's accessible name outright, and visible
+            text does not contribute to a name that is given that way, so a
+            screen reader hears "1 critical, 1 high" on the 412px phone this
+            slice was measured on, while the eye reads "✕ SAFETY 2 · CRITICAL".
+            That sentence does not move with the breakpoint, because it was
+            never rendered from the visible text in the first place.
+
+            `hidden` rather than a clip or an sr-only, which is the same call
+            GlobalRoleHeader.tsx:231 writes down for the controls that step off
+            that bar: display:none takes a node out of the accessibility tree
+            as well as the picture, so exactly ONE of these two spans exists
+            for assistive technology at any given width and nothing announces
+            the count twice.
+
+            The compact string is written in the case it renders in. `.badge`
+            uppercases its whole content already (design-system/legacy/
+            ppbf-leather-brass.css:807, reached from app/globals.css:42 via
+            ppbf.css -> current/ppbf-theme.css -> ppbf-golden-era.css:60), so
+            the two agree today, and the summary still reads as the design
+            lane specified it if that transform ever moves. */}
+        <span className="sm:hidden">{`SAFETY ${total} · ${worst}`}</span>
+        <span className="hidden sm:inline">Safety {label}</span>
       </span>
     </Link>
   );

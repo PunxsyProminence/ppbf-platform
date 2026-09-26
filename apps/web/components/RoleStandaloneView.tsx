@@ -40,9 +40,13 @@ interface RoleStandaloneViewProps {
    on Fibonacci rather than p-8/md:p-10, and every link at --tap instead of the
    26px the px-3 py-1 pair produced.
 
-   The Bell link is deliberately left in place even though the sticky bar above
-   carries the same one. Removing duplicate navigation is a behaviour change,
-   not a restyle, so it is raised rather than taken.
+   The Bell link duplicates the one on the sticky bar above, and it sat here
+   untouched for a long time on the rule that removing duplicate navigation is
+   a behaviour change, not a restyle, so it is raised rather than taken. It was
+   raised, and the visual owner's design lane ruled on 2026-09-23 that the
+   duplicate may not go on spending phone vertical space: it now renders from
+   640px up only, and below that the bar's copy is the Bell. The comment on the
+   wrapper itself carries the rest of that reasoning.
 
    Operations is the exception, and it is a behaviour change made on purpose:
    the owner decision of 2026-08-26 restricts the hub to administrators and the
