@@ -2465,6 +2465,15 @@ export default function CoachWorkspace() {
             <button
               key={mode}
               onClick={() => setSessionMode(mode)}
+              /* Which mode is running was carried by ui.modeButtonActive's
+                 background alone -- one Tailwind arbitrary -- and the
+                 golden-era sheet paints every button inside a `.mat-leather`
+                 panel from an unlayered rule, which beats Tailwind's utility
+                 layer. So both plaques painted identically and the toggle
+                 showed nothing at all: no colour difference, and no state for
+                 a screen reader to read either. Same defect the tab row below
+                 fixed with aria-current, answered the same way. */
+              aria-pressed={sessionMode === mode}
               className={cx(
                 ui.modeButtonBase,
                 sessionMode === mode ? ui.modeButtonActive : ui.modeButtonInactive,

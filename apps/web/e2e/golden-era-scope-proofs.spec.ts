@@ -333,15 +333,19 @@ const KNOWN_LEAKS: Readonly<Record<string, readonly KnownLeak[]>> = {
       why: FROZEN_ALIAS,
     },
   ],
-  '.ge-floorboard': [
-    {
-      key: 'button | background-color | rgb(169, 129, 38)',
-      source:
-        'apps/web/app/globals.css -- `--accent: var(--brass-600)` on :root, painted by the coach '
-        + 'workspace\'s current tab and mode buttons (`bg-[var(--accent)]`)',
-      why: FROZEN_ALIAS,
-    },
-  ],
+  /* `.ge-floorboard` HAD ONE ENTRY AND NOW HAS NONE. It was
+     `button | background-color | rgb(169, 129, 38)`: `--accent: var(--brass-600)`
+     aliased on :root in apps/web/app/globals.css and painted straight onto the
+     coach workspace's current tab and mode buttons through `bg-[var(--accent)]`
+     -- root gold reaching a bronze scope through a frozen alias nobody could
+     re-skin. The material pass did not set out to fix it. It fell out of the
+     rule that ordinary controls on this route are steel and brass means the
+     thing you have SELECTED: the steel rule paints background-color from the
+     scope, so the alias no longer reaches the screen, and the chosen tab takes
+     its brass from the scope's own ramp. Measured set on the route is now `[]`.
+     The ledger is checked in BOTH directions, so leaving this entry here after
+     fixing it would fail exactly as loudly as a new leak -- which is how it
+     came to be deleted rather than quietly kept. */
   /* `.ge-afterhours` HAD TWO ENTRIES AND NOW HAS NONE. Both were
      `border-[color:rgba(212,175,74,…)]` in apps/web/app/admin/shadow/page.tsx
      -- the console masthead rule, the evidence divider and the dashed upload
@@ -412,8 +416,19 @@ const SCOPES: readonly ScopeCase[] = [
     session: { role: 'coach' },
     routes: { '/api/pilot/athletes/list': { ok: true, items: ATHLETES } },
     components: [
-      { selector: '.mat-leather button', property: 'background-image', note: 'a tab plaque screwed to the slate board' },
-      { selector: '.mat-leather', property: 'border-top-color', note: 'the aged wood surround of the board' },
+      /* THE WITNESS IS THE CHOSEN TAB, not any tab. It used to be
+         `.mat-leather button` -- every button in a panel on this route painted
+         a bronze plaque, so the first one the reader found was brass whatever
+         it was. That is no longer true and should not be: brass now marks the
+         thing you have SELECTED, and an ordinary control is steel, so the
+         reader's first match on this route is a ghost button whose
+         background-image is `none` -- a witness that proves nothing.
+         `[aria-current="page"]` is the element the scope's bronze ramp is
+         actually supposed to reach, it is a real shared component on a real
+         route, and it cannot be satisfied by an element that happens to be
+         brass by default. */
+      { selector: '.mat-leather button[aria-current="page"]', property: 'background-image', note: 'the chosen tab plaque on the board' },
+      { selector: '.mat-leather', property: 'border-top-color', note: 'the lit top arris of the board panel, where the fixture catches the metal' },
     ],
   },
   {

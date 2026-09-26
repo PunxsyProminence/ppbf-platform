@@ -204,6 +204,438 @@
    ========================================================================== */
 
 /* ==========================================================================
+   MATERIALS, ELEVATION AND THE FEEL OF A CONTROL
+   --------------------------------------------------------------------------
+   The second half of the owner's 2026-09-22 direction: intuitive, user
+   friendly and fun to use, still looking like it belongs in the gym. The floor
+   below stopped being a photograph; this is what stands ON it.
+
+   WHAT WAS WRONG, measured on the coach workspace before this rule existed:
+   every panel on the route wore a 26px riveted brass corner bracket at two
+   corners -- eighteen on one page, from a rule whose own comment says it is
+   for the tab rail -- and no PANEL cast a shadow, because every box-shadow
+   this scope declared for a panel was an inset one.
+
+   THIS COMMENT USED TO SAY "the skin declares only INSET shadows", and that
+   absolute is false. In this same scope on origin/main, ppbf-golden-era.css
+   :2495-2498 gives the active tab plaque `inset 0 1px 0 rgba(255,244,214,0.6),
+   inset 0 -2px 4px rgba(0,0,0,0.42), 0 2px 4px rgba(0,0,0,0.45)` -- and the
+   third layer is not inset. It casts. So one small brass plaque threw a shadow
+   and none of the surfaces it sat on did, which is a stranger page than the
+   one the absolute described and is the finding that actually holds. A flat
+   shape with a gold bracket in each corner and no contact with the surface
+   behind it is how a slide template draws a placeholder, which is what the
+   owner was reacting to.
+
+   So: ordinary working surfaces become blackened steel that sits ON the room
+   and casts a short contact shadow; the brackets go back to the tab rail; and
+   brass stops being the default state of every click target, becoming what it
+   should be -- the mark of the thing you have selected. Nothing here changes a
+   word of copy, a control, a state or a route.                               */
+:root {
+  /* TWO elevations, each with a job, and each with a reader. There were four.
+
+     --shadow-shell was declared here and read by NOTHING: `grep -rn
+     shadow-shell` over the whole repository matches this declaration and no
+     other line. --shadow-lift had exactly one reader, the `.catalog-sheet,
+     .commands-sheet, .corridor-panel` rule that used to sit below, and that
+     rule is gone for the reason written where it stood -- those three elements
+     belong to the shell, not to either route this PR owns.
+
+     A shadow token nobody reads is worse than no token: it is a name that
+     looks decided, so the next rule that needs an elevation picks it up rather
+     than choosing one, and gets a value nobody has ever looked at on a screen.
+     They come back when a surface in these two rooms needs them. */
+  --shadow-contact: 0 1px 1px rgba(0, 0, 0, .42), 0 3px 8px rgba(0, 0, 0, .24);
+  --shadow-inset:
+    inset 0 1px 0 rgba(255, 255, 255, .045),
+    inset 0 -1px 0 rgba(0, 0, 0, .58),
+    inset 0 0 0 1px rgba(0, 0, 0, .22);
+
+  /* Edges that owe nothing to the brass ramp live here. */
+  --edge-dark: rgba(7, 8, 9, .72);
+  --edge-paper: rgba(95, 72, 44, .36);
+}
+
+/* The brass-derived edges are declared at the foot of each scope's own ramp
+   block below -- `.ge-floorboard` and `.ge-locker` -- and NOT here, which is
+   not a tidiness choice. A custom property whose value contains var() has that
+   var() substituted at computed-value time ON THE ELEMENT THAT DECLARES IT,
+   and what inherits downward is the already-substituted string. Declared on
+   :root, `rgb(var(--brass-500-rgb) / .38)` bakes the LEGACY ramp's #B8912F and
+   carries root gold into every golden-era scope -- measured in Chromium while
+   it was here: the floor board's panel arris computed rgba(184,145,47,0.38) on
+   a route whose whole scope exists to be bronze, and the e2e leak sweep reads
+   border colours. Declared beside the rungs they read, they resolve bronze. */
+
+/* CONTROLS ARE STEEL; BRASS IS FOR THE ONE YOU CHOSE. The skin repainted every
+   button inside a leather panel as a bronze plaque -- and it matches no anchor,
+   so on the coach dashboard "Open Scheduler" (a link) was the brightest control
+   on the page while "Open Live Floor" (a button) was dimmer, decided by tag
+   name rather than by importance. Measured fill luminance across the nine peer
+   Quick Actions before this change: 179, 174, 78, 78, 65, 22, 22, 22, 22.
+
+   THIS IS THE ONLY PLACE THAT PAINT IS WRITTEN NOW. The same eight
+   declarations stood a second time about 2,500 lines below, in the floor
+   board's own route block beside the tab-rail brackets, for a SUBSET of these
+   selectors -- `.ge-floorboard .tab-rail button, .ge-floorboard .mat-leather
+   button` and nothing from the locker. Two sources of truth for one surface,
+   with the later copy silently winning: a colour edited here would have landed
+   on the athlete route and not on the coach's, which is the kind of split that
+   gets found on a screen months later rather than in a diff. The copy is
+   deleted, its measured evidence is the paragraph above, and the wider
+   selector list stays here so both rooms and the `.btn` anchors are painted
+   from one rule.
+
+   `.ge-floorboard .tab-rail button` was in this list and is gone with it.
+   apps/web/components/uiStyles.ts:46 puts `mat-leather` and `tab-rail` on the
+   same element (`tabContainer: 'mat-leather tab-rail ...'`), so at equal
+   specificity that entry could never match a button the `.mat-leather` entry
+   beside it did not already match. The rail's plates are a different matter
+   and still hang on `.tab-rail` -- see the bracket rule below. */
+.ge-floorboard .mat-leather button,
+.ge-locker .mat-leather button,
+.ge-floorboard .btn,
+.ge-locker .btn {
+  background-color: #1B1F21;
+  background-image: linear-gradient(180deg, #24282A 0%, #1A1D1F 62%, #141719 100%);
+  border: 1px solid var(--edge-dark);
+  border-radius: 5px;
+  color: var(--bone-200);
+  text-transform: none;
+  letter-spacing: 0;
+  box-shadow: var(--shadow-inset);
+}
+.ge-floorboard .btn--ghost,
+.ge-locker .btn--ghost,
+.ge-floorboard .mat-leather .btn--ghost,
+.ge-locker .mat-leather .btn--ghost {
+  background-image: none;
+  background-color: transparent;
+  border-color: var(--edge-light);
+  box-shadow: none;
+}
+.ge-floorboard .mat-leather button:hover,
+.ge-locker .mat-leather button:hover,
+.ge-floorboard .btn:hover,
+.ge-locker .btn:hover {
+  border-color: var(--edge-brass);
+  color: var(--bone-100);
+}
+.ge-floorboard .mat-leather button[aria-current="page"],
+.ge-locker .mat-leather button[aria-current="page"] {
+  background-color: var(--brass-800);
+  background-image: linear-gradient(180deg,
+    var(--brass-600) 0%, var(--brass-700) 30%, var(--brass-800) 66%, var(--brass-900) 100%);
+  border-color: var(--edge-brass);
+  color: var(--bone-100);
+  box-shadow: var(--shadow-contact);
+}
+
+/* CREAM RECORD PAPER keeps its own edge and a contact shadow, so a record
+   reads as a sheet put down on the surface rather than a pale rectangle. */
+.ge-floorboard .mat-paper,
+.ge-locker .mat-paper {
+  border: 1px solid var(--edge-paper);
+  border-radius: 5px;
+  box-shadow: var(--shadow-contact);
+}
+
+/* THE COUNT TILES ARE STEEL OBJECTS STANDING ON THE ROOM. Four leather plaques
+   in a row under a steel panel were the last thing on either route still
+   wearing the retired material, and the brightest surface on the page: the
+   skin paints `.stat` at --hide-700 (#3B2C21, relative luminance 0.0284), so
+   ATHLETES / INJURIES / REVIEWS / DUE out-shouted the panels above them while
+   carrying the least information. Steel seats them at 0.0221 -- darker than
+   what they replace, so the big `.stat-val` figure and the `.t-eyebrow` label
+   over it both gain contrast rather than lose it.
+
+   THE BUILDING STAYS LEATHER. The two chrome bars above -- the session bar and
+   the role masthead -- are deliberately NOT converted here: they are the gym,
+   and the surfaces a coach works on are the equipment in it. That split is a
+   decision for the visual owner to keep or overturn, and it is on the PR as
+   one, not buried as an oversight. */
+.ge-floorboard .stat,
+.ge-locker .stat {
+  background-color: #141719;
+  background-image:
+    radial-gradient(110% 80% at 24% -10%,
+      rgba(178,130,82,0.08) 0%,
+      rgba(178,130,82,0) 55%),
+    linear-gradient(180deg, #25292B 0%, #1C1F21 38%, #171A1C 62%, #101214 100%);
+  background-blend-mode: screen, normal;
+  border: 1px solid var(--edge-dark);
+  border-radius: 5px;
+  box-shadow: var(--shadow-contact), inset 0 1px 0 var(--edge-light);
+}
+
+/* THE TRANSIENT SURFACES ARE NOT THIS PR'S TO PAINT, AND THE RULE THAT USED TO
+   PAINT THEM WAS PAINTING THE WHOLE APPLICATION. It read
+
+       .catalog-sheet, .commands-sheet, .corridor-panel
+         { box-shadow: var(--shadow-lift); }
+
+   with no `.ge-floorboard` or `.ge-locker` in front of it. All three of those
+   elements come from GlobalRoleHeader, which apps/web/app/layout.tsx:75 mounts
+   on EVERY route: Corridor.tsx:97 renders `.corridor-panel`, CommandsOverlay
+   .tsx:71 renders `.commands-sheet`. So a rule filed under a two-route skin was
+   lifting the application's shell on every screen in the product.
+
+   SCOPING IT WOULD NOT HAVE SAVED IT, which is why it is deleted rather than
+   prefixed. In that layout GlobalRoleHeader is a SIBLING of {children}, and
+   both scope classes live inside children -- coach/environment/intake-router/
+   page.tsx:15 and athlete/dashboard/page.tsx:25. `.ge-floorboard
+   .corridor-panel` is a descendant selector reaching upward past its own
+   ancestor, so it can never match anything, and this sheet has no other way to
+   express it: there is not one `:has()` anywhere in design-system/. A rule that
+   cannot match is not a narrower rule, it is litter with a scope on it. The
+   shell is the shell slice's; the elevation goes there with it.
+
+   `.catalog-sheet` was deleted outright rather than handed over, because it is
+   not a real class: `grep -rn catalog-sheet` over the whole repository matches
+   this sheet and nothing else -- no component renders it, no test names it, no
+   other stylesheet defines it. The catalog's own panel is `.catalog-field` and
+   its rows are `.catalog-row` (CardCatalog.tsx:569, :604). This change
+   introduced the name and this change takes it back out. */
+
+/* THE FOCUS RING IS DRAWN WITH box-shadow, SO ANY RULE ABOVE THAT SETS
+   box-shadow ON A CONTROL HAS TO GIVE IT BACK. src/design/goldenEraContrast
+   .test.ts caught exactly this on the rules above, and it is not theoretical:
+   the same defect shipped once on this route and Tab measured byte-identical
+   with and without the focus style. Every control selector that overrides
+   box-shadow restates var(--focus) first, so the ring wins while the material
+   underneath is kept. */
+.ge-floorboard .mat-leather button:focus-visible,
+.ge-locker .mat-leather button:focus-visible,
+.ge-floorboard .btn:focus-visible,
+.ge-locker .btn:focus-visible {
+  box-shadow: var(--focus), var(--shadow-inset);
+}
+.ge-floorboard .btn--ghost:focus-visible,
+.ge-locker .btn--ghost:focus-visible,
+.ge-floorboard .mat-leather .btn--ghost:focus-visible,
+.ge-locker .mat-leather .btn--ghost:focus-visible {
+  box-shadow: var(--focus);
+}
+.ge-floorboard .mat-leather button[aria-current="page"]:focus-visible,
+.ge-locker .mat-leather button[aria-current="page"]:focus-visible,
+.ge-floorboard [aria-pressed="true"]:focus-visible,
+.ge-locker [aria-pressed="true"]:focus-visible,
+.ge-floorboard [aria-current="page"]:focus-visible,
+.ge-locker [aria-current="page"]:focus-visible,
+.ge-floorboard .mat-leather button[aria-pressed="true"]:focus-visible,
+.ge-locker .mat-leather button[aria-pressed="true"]:focus-visible {
+  box-shadow: var(--focus), var(--shadow-contact);
+}
+
+/* ==========================================================================
+   THE FEEL
+   --------------------------------------------------------------------------
+   THREE behaviours, all on capability that already exists, all inside the two
+   rooms this change owns. No new control, no new state, no celebration, and
+   nothing that delays an action.
+
+   There were five. Two are gone and the reasons are written where they stood:
+   a stamp transition that had nothing to interpolate, and a catalog/corridor
+   highlight that was unscoped shell and half of which had never matched any
+   element. What is left is scoped, and every duration and easing in it is a
+   foundation token rather than a number somebody liked -- Law 8 governs time
+   the same way it governs space (design-system/foundation/ppbf-foundation.css
+   :76-102).                                                                  */
+
+/* 1. A control moves under the finger and comes back.
+
+   IT IS SCOPED NOW, AND IT WAS PRESSING THE WHOLE APP TWICE. The selector was
+   a bare `.btn`, which is every button in the product -- including the three
+   on apps/web/app/activate/page.tsx:235, :297 and :343, a route that carries
+   no golden-era class anywhere on it. And legacy/ppbf-leather-brass.css:845
+   already presses `.btn` down:
+
+       .btn:active { box-shadow: inset 0 2px 5px rgba(0,0,0,.55);
+                     translate: 0 1px; }
+
+   `translate` and `transform` are different properties. Both apply, and they
+   compose, so the unscoped rule was adding a SECOND 1px of travel on top of
+   the legacy one, on every button on every screen: two presses for one click.
+
+   SO THE TRAVEL IS SPELLED `translate` HERE TOO. The individual transform
+   properties are this system's idiom and always have been -- legacy:845 and
+   legacy:2322 press with `translate: 0 1px`, legacy:2494 lifts the corridor
+   door with `translate: 0 -1px`, legacy:2270 presses a stamp with `scale:
+   .96`, and `.stamp` itself tilts with `rotate: -6deg` (legacy:717-727).
+   `git grep -n "transform:" origin/main -- design-system` returns exactly two
+   lines that are not `text-transform`, and both are static: legacy:704 tilts
+   `.t-painted` with `rotate(-0.6deg)` and this sheet resets it inside `.ge-bell`.
+   Nothing in this system has ever ANIMATED `transform`, which is why the
+   composition above went unnoticed. Written as `translate`, `.ge-floorboard
+   .btn:active` at (0,3,0) OVERRIDES legacy's
+   (0,2,0) declaration of the same property instead of stacking beside it, so a
+   `.btn` inside these two rooms travels exactly 1px -- the same distance it
+   travels everywhere else in the building.
+
+   LAW 8 GOVERNS THE CLOCK. --m-base (144ms) is "the default: buttons, tags,
+   tiles" in foundation/ppbf-foundation.css:87, which is this rule described in
+   the foundation's own words; --m-quick (89ms) at :86 is "hover, focus ring,
+   small colour shift", which is the other three properties described in
+   theirs. --e-stamp (:92-94) is "driven and stopped ... No overshoot", the
+   pairing legacy:2490-2492 already uses for the corridor door's hover. None of
+   these were picked by measuring against the 140/120 they replace.
+
+   BOX-SHADOW IS NOT IN THIS LIST, AND THAT IS THE POINT. The focus ring on
+   this platform is drawn with box-shadow (`outline: 0; box-shadow:
+   var(--focus)`), so transitioning box-shadow fades the ring in over its
+   duration -- a keyboard user moving fast tabs past controls whose ring has
+   not arrived yet. Measured while it was in the list: reading the focused
+   control immediately after Tab gave `rgba(0,0,0,0) 0 0 0 0, rgba(0,0,0,0)
+   0 0 0 0 inset` -- the interpolation from `none`, which reads exactly like a
+   control with no ring at all. The ring is instant; the material moves. */
+.ge-floorboard .btn,
+.ge-locker .btn,
+.ge-floorboard button,
+.ge-locker button {
+  transition:
+    translate var(--m-base) var(--e-stamp),
+    background-color var(--m-quick) var(--e-stamp),
+    border-color var(--m-quick) var(--e-stamp),
+    color var(--m-quick) var(--e-stamp);
+}
+/* The press itself is --m-instant (55ms): "state flip -- pressed, checked.
+   Perceived as 'now'" (foundation:85). The RETURN is the --m-base above,
+   because `transition-duration` here only shortens the going-down half. Driven
+   down by a hand and stopped dead, coming back with the weight of the thing --
+   the relationship the hand-picked 90ms / 140ms pair was reaching for and
+   could not name. */
+.ge-floorboard .btn:active,
+.ge-locker .btn:active,
+.ge-floorboard button:active,
+.ge-locker button:active {
+  translate: 0 1px;
+  transition-duration: var(--m-instant);
+}
+
+/* 2. Selection is a change of material, not a thin line. This is also what
+   finally makes the Group / One-on-One mode toggle show which mode is on: it
+   marked the running mode with `bg-[var(--accent)]` alone, and the steel
+   control rule in MATERIALS above -- unlayered, so it beats Tailwind's utility
+   layer -- repainted both plaques identically, which left the toggle showing
+   nothing at all. CoachWorkspace
+   gives those buttons aria-pressed in the same change, so the state exists to
+   be painted and to be announced. */
+.ge-floorboard [aria-pressed="true"],
+.ge-locker [aria-pressed="true"],
+.ge-floorboard [aria-current="page"],
+.ge-locker [aria-current="page"] {
+  box-shadow: inset 0 1px 0 rgb(var(--brass-200-rgb) / .28), var(--shadow-contact);
+}
+.ge-floorboard .mat-leather button[aria-pressed="true"],
+.ge-locker .mat-leather button[aria-pressed="true"] {
+  background-image: linear-gradient(180deg,
+    var(--brass-600) 0%, var(--brass-700) 30%, var(--brass-800) 66%, var(--brass-900) 100%);
+  border-color: var(--edge-brass);
+  color: var(--bone-100);
+}
+
+/* THE STAMP RULE IS DELETED, NOT REPAIRED, BECAUSE IT NEVER RAN. It read
+
+       .ge-locker .stamp { transition: opacity 180ms ease,
+                                       transform 180ms cubic-bezier(...); }
+
+   under the claim "a stamp lands on the training card rather than appearing",
+   and three separate things were wrong with it.
+
+   THERE IS NOTHING TO INTERPOLATE. The only `.stamp` this room renders arrives
+   through AthleteWorkspace.tsx:1878 -> TrainingHoldBanner.tsx:74 ->
+   RefusalStamp.tsx:150, where `<span className="stamp stamp--brass
+   stamp--kiosk">` is mounted already at its final opacity and its final
+   geometry and never changes either. A transition needs two values and there
+   is only ever one, so the declaration did nothing at any moment in the
+   component's life -- an animation in the sheet, a hard cut on the screen.
+
+   `transform` IS NOT THE PROPERTY A STAMP MOVES IN. The stamp's tilt is
+   `rotate: -6deg` (legacy:717-727), `.stamp--flat` is `rotate: 0deg`
+   (legacy:741), and the existing long-press reward is `scale: .96`
+   (legacy:2269-2270). Nothing in this system sets `transform` on a stamp, so
+   that half could not have moved even if a state change had arrived to move
+   it.
+
+   THE OBJECT WAS WRONG. The training card's marks are `.tcard-stamp`
+   (legacy:2717-2730) -- a different class, on a different component, with its
+   own deterministic per-position rotation. `.stamp` is the refusal-and-hold
+   mark. The comment named a surface this rule has never touched.
+
+   A REAL MOUNT ANIMATION IS POSSIBLE -- @starting-style would give the browser
+   the second value this rule was missing, in CSS, with no JavaScript. It is
+   also a new behaviour: a chosen distance, a chosen easing, and someone
+   watching it land on a gym tablet before it ships to a kid who is being told
+   he cannot train. That is design work, not a repair, so it is not smuggled in
+   under a bug fix. An inert declaration plus a comment claiming it works is
+   worse than neither, so both go. */
+
+/* 3. Progress moves to its new position rather than jumping to it.
+   --m-settle (233ms) is "something with mass arriving" (foundation/ppbf-
+   foundation.css:88) and --e-settle is "Mass arriving under friction --
+   decelerates long, never quite bounces" (:95-96): a bar that travels to a new
+   value and stops there without overshooting it, which is the whole behaviour.
+   The 220ms it replaces was reaching for the same thing without a name for it.
+
+   NOTHING IN apps/web RENDERS role="progressbar" TODAY, so this rule currently
+   paints nothing. `grep -rn progressbar apps/web` returns twenty lines and
+   every one of them is a test asserting there is NONE -- e2e/athlete-journey
+   .spec.ts:505, e2e/coach-journey.spec.ts:391, app/athlete/development-blocks/
+   page.test.tsx:173 and so on. It is kept rather than deleted because, unlike
+   the two selectors this change removed, it is not misspelled and does not aim
+   at the wrong element: it names a standard role correctly for a control the
+   athlete's room does not have yet. That is a different kind of nothing, and
+   which way it should go is the visual owner's call, not a repair's. */
+.ge-locker [role="progressbar"] > * {
+  transition: width var(--m-settle) var(--e-settle);
+}
+
+/* THE CATALOG AND CORRIDOR HIGHLIGHT IS GONE FROM THIS CHANGE. It read
+
+       .catalog-row.is-active, .corridor-door.is-active { ... }
+
+   unscoped -- so, exactly like the lift rule further up, it was painting on
+   every route in the application from a sheet that owns two.
+
+   HALF OF IT HAD NEVER MATCHED ANYTHING. Corridor.tsx:127 renders
+   `corridor-door${current ? ' is-current' : ''}` -- `is-current`, never
+   `is-active` -- and legacy:2496 is already where `.corridor-door.is-current`
+   gets its brass. The catalog half was real (CardCatalog.tsx:569 and :604 do
+   emit `catalog-row is-active`), and legacy:2559 already paints that too.
+
+   THE :focus-visible REPAIR BELONGS IN THE SHELL SLICE, NOT HERE. A corridor
+   door is an `<a>` that takes real DOM focus, so a keyboard highlight on it is
+   a focus companion -- `box-shadow: var(--focus), ...` with var(--focus)
+   restated FIRST, the way every control rule in this sheet does it. But both
+   components are rendered by GlobalRoleHeader from apps/web/app/layout.tsx:75,
+   a sibling of {children}, and `.ge-floorboard` / `.ge-locker` live inside
+   children -- so a scoped version could never match, and an unscoped version
+   is this change reaching into the shell again. It goes where the rest of the
+   chrome goes. */
+
+/* Scoped with the rules it answers -- a reduced-motion rule wider than the
+   motion it switches off is the same app-wide reach in reverse. `.stamp` is
+   out of the list because the transition it was cancelling no longer exists,
+   and the travel is `translate: none` because that is the property the press
+   is written in now. */
+@media (prefers-reduced-motion: reduce) {
+  .ge-floorboard .btn,
+  .ge-locker .btn,
+  .ge-floorboard button,
+  .ge-locker button,
+  .ge-locker [role="progressbar"] > * {
+    transition: none;
+  }
+  .ge-floorboard .btn:active,
+  .ge-locker .btn:active,
+  .ge-floorboard button:active,
+  .ge-locker button:active {
+    translate: none;
+  }
+}
+
+/* ==========================================================================
    THE FLOOR IS A MATERIAL, NOT A PHOTOGRAPH
    --------------------------------------------------------------------------
    Owner direction, 2026-09-22: "im not tied down to actual gym pictures, the
@@ -2341,20 +2773,53 @@
   --brass-800-rgb:  83  61  24;
   --brass-900: #392910;
   --brass-900-rgb:  57  41  16;
+  /* The edges of a steel surface in this room, read through the ramp above so
+     a re-skin moves them with it. --edge-lit is the lit top arris of a panel:
+     the one place the gym's brass still touches an ordinary working surface,
+     where the fixture overhead catches the metal, and the witness
+     e2e/golden-era-scope-proofs.spec.ts reads to prove this ramp reaches a
+     real shared component on a real route. */
+  --edge-light: rgb(var(--brass-300-rgb) / .10);
+  --edge-brass: rgb(var(--brass-500-rgb) / .72);
+  --edge-lit: rgb(var(--brass-500-rgb) / .38);
 }
 
 /* The locker carcass: dark wood with a warm interior wash, so panels read as
    the inside of an open locker rather than floating cards. */
 .ge-locker .mat-leather {
-  background-color: var(--wood-800);
+  /* The athlete's surfaces are the same blackened steel as the coach's: one
+     material language, so a kid and a coach are demonstrably in one building.
+     The locker's own brass ramp above still tints everything brass-coloured on
+     this route. */
+  background-color: #141719;
   background-image:
-    linear-gradient(178deg, rgba(255,238,208,0.06) 0%, transparent 38%),
-    repeating-linear-gradient(90deg,
-      rgba(0,0,0,0.14) 0 3px, transparent 3px 11px);
-  border-color: color-mix(in srgb, var(--brass-700) 48%, transparent);
+    radial-gradient(110% 80% at 24% -10%,
+      rgba(178,130,82,0.08) 0%,
+      rgba(178,130,82,0) 55%),
+    linear-gradient(180deg, #25292B 0%, #1C1F21 38%, #171A1C 62%, #101214 100%);
+  background-blend-mode: screen, normal;
+  border-color: var(--edge-dark);
+  border-top-color: var(--edge-lit);
+  border-radius: 5px;
+  box-shadow: var(--shadow-contact), inset 0 1px 0 var(--edge-light);
+}
+
+/* A ROW IS A WELL CUT INTO THE PANEL. Same treatment as the coach's rows, for
+   the same reason: one material language, so a kid and a coach are
+   demonstrably in one building. */
+.ge-locker .mat-leather--raised {
+  background-color: #141719;
+  background-image:
+    radial-gradient(120% 90% at 26% -8%,
+      rgba(178,130,82,0.09) 0%,
+      rgba(178,130,82,0) 52%),
+    linear-gradient(168deg, #191D1F 0%, #14181A 55%, #101315 100%);
+  background-blend-mode: screen, normal;
+  border-color: var(--edge-dark);
+  border-radius: 5px;
   box-shadow:
-    inset 0 1px 0 rgba(226,196,146,0.14),
-    inset 0 -3px 7px rgba(0,0,0,0.5);
+    inset 0 2px 4px rgba(0,0,0,.42),
+    inset 0 -1px 0 var(--edge-light);
 }
 
 /* Brass nameplate voice for the section eyebrows -- the engraved plate above
@@ -2419,6 +2884,15 @@
   --brass-800-rgb:  83  61  24;
   --brass-900: #392910;
   --brass-900-rgb:  57  41  16;
+  /* The edges of a steel surface in this room, read through the ramp above so
+     a re-skin moves them with it. --edge-lit is the lit top arris of a panel:
+     the one place the gym's brass still touches an ordinary working surface,
+     where the fixture overhead catches the metal, and the witness
+     e2e/golden-era-scope-proofs.spec.ts reads to prove this ramp reaches a
+     real shared component on a real route. */
+  --edge-light: rgb(var(--brass-300-rgb) / .10);
+  --edge-brass: rgb(var(--brass-500-rgb) / .72);
+  --edge-lit: rgb(var(--brass-500-rgb) / .38);
 }
 
 /* The board: slate in an aged-wood surround. The tab rail is the top edge of
@@ -2426,22 +2900,69 @@
    Unlayered sheet vs Tailwind's @layer utilities means these win without
    !important. */
 .ge-floorboard .mat-leather {
-  background-color: var(--wood-800);
+  /* BLACKENED STEEL, not a wood plaque. This rule used to paint every panel on
+     the route as a plank and give it two INSET shadows, so nothing on the page
+     cast anything onto the wall behind it -- flat shapes with gold brackets at
+     their corners, which is what made the route read as a slide rather than an
+     application. It is a working surface now: it sits on the room, it has one
+     lit top edge, and it throws a short contact shadow. */
+  background-color: #141719;
   background-image:
-    linear-gradient(176deg, rgba(255,238,208,0.05) 0%, transparent 42%),
-    repeating-linear-gradient(93deg,
-      rgba(0,0,0,0.16) 0 2px, transparent 2px 7px, rgba(0,0,0,0.10) 7px 9px);
-  border-color: color-mix(in srgb, var(--brass-700) 52%, transparent);
-  box-shadow:
-    inset 0 1px 0 rgba(226,196,146,0.16),
-    inset 0 -2px 5px rgba(0,0,0,0.5);
+    radial-gradient(110% 80% at 24% -10%,
+      rgba(178,130,82,0.08) 0%,
+      rgba(178,130,82,0) 55%),
+    linear-gradient(180deg, #25292B 0%, #1C1F21 38%, #171A1C 62%, #101214 100%);
+  background-blend-mode: screen, normal;
+  border-color: var(--edge-dark);
+  border-top-color: var(--edge-lit);
+  border-radius: 5px;
+  box-shadow: var(--shadow-contact), inset 0 1px 0 var(--edge-light);
 }
 
 /* Brass corner brackets on the tab rail -- the reference's riveted L-plates.
-   Decorative only, never a pointer target. */
+   Decorative only, never a pointer target.
+
+   THEY NOW LAND ON THE RAIL, WHICH IS WHAT THIS COMMENT ALWAYS CLAIMED. The
+   selector was `.ge-floorboard .mat-leather::before/::after`, which is every
+   panel on the route: eighteen riveted plates on the coach dashboard, a frame
+   around every thought on the page, and the single biggest reason the route
+   read as a slide template.
+
+   AIMING THEM AT `[role="tablist"]` WOULD HAVE DELETED THEM INSTEAD -- but the
+   two sentences this comment used to give as the evidence for that were both
+   untrue, and they are corrected here rather than quietly dropped.
+
+   It said "all ten of those selectors were dead". The sheet held ONE.
+   `git show origin/main:design-system/current/ppbf-golden-era.css
+   | grep -c 'role="tablist"'` prints 1, and the single hit is line 2468,
+   `.ge-floorboard [role="tablist"] button`. One selector reached for the role,
+   not ten, and its exemption in src/design/goldenEraContrast.test.ts was the
+   only other trace of it.
+
+   It also said `grep -rn tablist apps/web` "returns nothing outside this
+   sheet". That is not what that command returns and never was: on origin/main
+   it returns one line, src/design/goldenEraContrast.test.ts:387 -- the NOT_OWED
+   entry excusing the dead rule. On this branch it returns five, in two files:
+   components/uiStyles.ts:39, :42, :44 and src/design/goldenEraContrast.test.ts
+   :386, :388, all of them prose in this change's own comments explaining why
+   the role is not used. The command and its output agree now.
+
+   WHAT IS ACTUALLY TRUE is the thing those comments say, and it is the whole
+   point: no ELEMENT carries the role. Every hit above is a comment or a
+   selector string in a test; `grep -rn 'role="tablist"' apps/web --include=*.tsx`
+   returns nothing at all, on either side of this change. A rule aimed at the
+   role could therefore only ever paint nothing.
+
+   `ui.tabContainer` carries `tab-rail` now (components/uiStyles.ts:46), and
+   that is the one element these plates draw on. Their containing block is the
+   `position: relative` on the line below: uiStyles.ts:46 puts `mat-leather`
+   and `tab-rail` on that same element, so the `.ge-floorboard .tab-rail
+   { position: relative }` that used to sit beside it was setting, at equal
+   specificity, a value the element already had. It is gone with the other
+   inert `.tab-rail` twins. */
 .ge-floorboard .mat-leather { position: relative; }
-.ge-floorboard .mat-leather::before,
-.ge-floorboard .mat-leather::after {
+.ge-floorboard .tab-rail::before,
+.ge-floorboard .tab-rail::after {
   content: "";
   position: absolute;
   width: 26px;
@@ -2454,31 +2975,32 @@
   border: 3px solid var(--brass-700);
   border-radius: 3px;
 }
-.ge-floorboard .mat-leather::before {
+.ge-floorboard .tab-rail::before {
   top: -3px; left: -3px; border-right: 0; border-bottom: 0;
 }
-.ge-floorboard .mat-leather::after {
+.ge-floorboard .tab-rail::after {
   bottom: -3px; right: -3px; border-left: 0; border-top: 0;
 }
 
 /* Tab plaques. The active tab is a raised brass plate; the rest sit flush and
    darker, exactly as the reference stacks them. aria-current already carries
    the state for assistive tech and is what this hangs on, so the styling and
-   the announced state cannot drift apart. */
-.ge-floorboard [role="tablist"] button,
-.ge-floorboard .mat-leather button {
-  border-radius: 4px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  border: 1px solid color-mix(in srgb, var(--brass-900) 66%, #000);
-  background-image: linear-gradient(180deg,
-    var(--brass-700) 0%, var(--brass-800) 58%, var(--brass-900) 100%);
-  color: color-mix(in srgb, var(--bone-200) 82%, var(--brass-300));
-  box-shadow: inset 0 1px 0 rgba(226,196,146,0.22);
-}
+   the announced state cannot drift apart.
+
+   THE RESTING PLAQUE IS NOT PAINTED HERE ANY MORE. A copy of the steel control
+   declarations stood at this spot on `.ge-floorboard .tab-rail button,
+   .ge-floorboard .mat-leather button` -- the same eight properties, in a
+   different order and byte-identical in value, as the MATERIALS block near the
+   top of this sheet, for a subset of that block's selectors, about 2,500 lines
+   away from it. Two rules painting one surface, this one winning purely by
+   position: a colour edited at the source would have moved the athlete's
+   controls and left the coach's alone, and nothing in the build would have
+   said so. It is deleted, and the luminance measurements that justified the
+   repaint moved up to the rule that does the painting. */
 /* Same knocked-out ring as `.ge-bell .btn--kiosk` below, from the same cause:
-   the rule above is (0,2,1) and catches every `.btn` that happens to sit in a
-   .mat-leather panel -- which on this route is "Refresh athlete pain reports",
+   the MATERIALS block's `.ge-floorboard .mat-leather button` is (0,2,1) and
+   catches every `.btn` that happens to sit in a .mat-leather panel -- which on
+   this route is "Refresh athlete pain reports",
    "Acknowledge" (the escalation inbox) and "Open Live Floor". `.btn:focus-
    visible` is (0,2,0), so its `box-shadow: var(--focus)` lost while its
    `outline: 0` stood, and all three focused with nothing drawn (measured
@@ -2586,10 +3108,38 @@
 }
 
 .ge-floorboard .mat-leather--raised {
+  /* THE ROW IS A WELL CUT INTO THE PANEL, NOT A TILE SITTING ON IT. The panel
+     around it became blackened steel; this rule went on painting its rows in
+     hide tones, so a row read as a brown card floating on a grey one. It was
+     also printing them near-white: background-image was coming from here and
+     background-blend-mode from the scope rule above, and a two-value blend
+     list repeated across a three-layer image put `screen` under the grain.
+
+     THE CEILING THIS RULE WAS WRITTEN FOR IS KEPT AND BEATEN, which is the
+     only ground on which an approved contrast repair may be repainted at all.
+     goldenEraContrast holds every stop of the last gradient no lighter than
+     --hide-800 (#2A1F18, relative luminance 0.0154); the steel stops below
+     measure 0.0118, 0.0088 and 0.0063, the lightest of them roughly a quarter
+     darker than the ceiling. The warm wash over them also drops from .30 to
+     .09 alpha, so the PAINTED sheen the 2026-08-25 audit actually measured --
+     the thing the cascade could not see -- falls with it. Nothing here
+     lightens anything.
+
+     The lift comes from the lit bottom edge and the inset shadow rather than
+     from being brighter than its surround, which is what a slot cut into a
+     steel face does. */
+  background-color: #141719;
   background-image:
-    var(--grain),
-    radial-gradient(120% 100% at 30% 4%, rgba(186,143,86,.30), transparent 56%),
-    linear-gradient(168deg, var(--hide-800) 0%, var(--hide-900) 55%, var(--hide-950) 100%);
+    radial-gradient(120% 90% at 26% -8%,
+      rgba(178,130,82,0.09) 0%,
+      rgba(178,130,82,0) 52%),
+    linear-gradient(168deg, #191D1F 0%, #14181A 55%, #101315 100%);
+  background-blend-mode: screen, normal;
+  border-color: var(--edge-dark);
+  border-radius: 5px;
+  box-shadow:
+    inset 0 2px 4px rgba(0,0,0,.42),
+    inset 0 -1px 0 var(--edge-light);
 }
 
 /* Brass spelled at the CALL SITE as ink. Two live examples on this route --

@@ -34,7 +34,16 @@
  */
 
 export const ui = {
-  tabContainer: 'mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)]',
+  /* `tab-rail` is a HANDLE, not a look: the golden-era sheet wants to put the
+     reference's riveted brass corner plates on the tab rail and nothing else,
+     and until this class existed it aimed at `[role="tablist"]`, which appears
+     nowhere in this application -- so the plates landed on every `.mat-leather`
+     panel instead, eighteen of them on the coach dashboard. The rail is not
+     given role="tablist" to suit a stylesheet: these buttons swap a panel and
+     say so with aria-current="page", which is the state CoachWorkspace already
+     chose deliberately, and a real tablist would owe every child role="tab"
+     and aria-selected. */
+  tabContainer: 'mat-leather tab-rail rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)]',
   tabRow: 'flex flex-wrap gap-1 p-2',
   tabButtonBase:
     'inline-flex min-h-[44px] items-center px-3 py-2 text-xs font-semibold uppercase transition border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]',
