@@ -332,10 +332,21 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       nearMissRow({ severity: 'high' as const }),
     ];
 
+    // EVERY role outside DECISION_LOOP_ROLES, not just the two the owner named.
+    // "It excludes exactly athlete and parent" was true only because
+    // assertActorCanAccessAthlete refuses the others first -- which is a fact
+    // about a DIFFERENT module, read and not executed here. Enumerating the
+    // whole PilotRole union makes the claim one about THIS gate: nothing
+    // outside the decision loop receives these records, whatever access.ts
+    // does or later stops doing.
     describe.each([
       ['athlete', 'account-athlete-self'],
       ['parent', 'account-parent-linked'],
-    ] as const)('%s is authorized for the athlete but not for the records', (userRole, userId) => {
+      ['platform_owner', 'account-platform-owner'],
+      ['board', 'account-board'],
+      ['volunteer', 'account-volunteer'],
+      ['staff', 'account-staff'],
+    ] as const)('%s receives no near-miss records', (userRole, userId) => {
       const scoped = { userRole, userId, organizationId: 'org-456', athleteId: 'athlete-789' };
 
       test('the records are never read, never cited, never rendered', async () => {
@@ -356,6 +367,17 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         expect(result.context).not.toContain(SENTINEL_ID);
         expect(result.context).not.toContain('[E:');
         expect(result.evidenceIds).toEqual([]);
+
+        // Pins the WHOLE context, not merely the absence of records. The gate
+        // is an early return; if anything else the role is entitled to were
+        // built after the near-miss block, an absence-only check would still
+        // pass while the early return silently dropped it.
+        expect(result.context).toBe(
+          `Authorized role: ${userRole}. Authorized organization: org-456. `
+          + `Authorized athlete scope: athlete-789.\n`
+          + `Recorded safety events are not available in this context. `
+          + `For intensity, contact, or progression questions, defer to the athlete's coach.`,
+        );
       });
 
       test('the reply is identical whether or not events are on file', async () => {

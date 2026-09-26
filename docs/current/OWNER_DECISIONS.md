@@ -128,9 +128,19 @@ His answer, verbatim:
 3. **Redaction was on the table as (b) and was not chosen.** A later lane
    should not reach for "show the athlete their own record with names removed"
    as an obvious middle path. It was offered and declined.
-4. `platform_owner` and `board` never reach this context at all --
-   `assertActorCanAccessAthlete` refuses them earlier -- so this decision does
-   not change their position.
+4. `platform_owner` and `board` do not reach this context, because
+   `assertActorCanAccessAthlete` refuses them earlier. That is READ FROM
+   `access.ts`, not executed in the gate's own tests, which mock the
+   authorization check. The gate itself refuses every role outside
+   `DECISION_LOOP_ROLES`, and its tests enumerate the whole `PilotRole` union,
+   so the ruling does not depend on that reading holding.
+
+INTERPRETATION, marked because the owner's answer did not spell it out:
+"coaches/admins" was implemented as `DECISION_LOOP_ROLES`, which carries legacy
+`admin` alongside `organization_admin`. That matches how every other route in
+the repository reads "admin" and matches `GET /near-misses` exactly, but it is
+a reading of "a", not a distinction the owner drew. If he meant
+`organization_admin` only, this entry is the thing to correct.
 
 ### What it does not decide
 
