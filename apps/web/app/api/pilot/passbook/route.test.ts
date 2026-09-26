@@ -158,4 +158,56 @@ describe('GET /api/pilot/passbook', () => {
     expect(response.status).toBe(403);
     expect(mockGetPassbook).not.toHaveBeenCalled();
   });
+
+  /* A-FIN-08 guardian closure, at the boundary this suite can actually see.
+     getAthletePassbook is mocked here, so these do NOT prove the SQL or the
+     projection -- passbook.test.ts owns those, against the real module. What
+     they prove is the two things this route is responsible for: that a
+     guardian's own role is what gets handed down (so the closure engages at
+     all), and that the route serializes the book it was given without
+     reinstating a key the module deliberately left out. */
+  describe('a linked guardian receives no session-note key over the wire', () => {
+    /** The book as the real module builds it for a parent: sessions present,
+     *  the notes key absent rather than null. */
+    const guardianBook = {
+      athlete: { athlete_id: 'ath-1', full_name: 'Avery Boxer' },
+      pages: {
+        attendance: [],
+        sessions: [
+          { session_id: 'session-1', date: '2026-08-03', rpe: 6, completed_flag: true },
+        ],
+        readiness: [],
+        goals: [],
+        corner: { coach: {}, guardians: [], observations: [] },
+        progression_gaps: [],
+      },
+    };
+
+    test('the guardian role itself is what reaches the reader', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
+      mockAssertAccess.mockResolvedValueOnce(undefined);
+      mockGetPassbook.mockResolvedValueOnce(guardianBook);
+
+      await GET(request());
+
+      expect(mockGetPassbook).toHaveBeenCalledWith('org-1', 'ath-1', 'parent');
+    });
+
+    test('the serialized body carries the session without a notes key', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
+      mockAssertAccess.mockResolvedValueOnce(undefined);
+      mockGetPassbook.mockResolvedValueOnce(guardianBook);
+
+      const response = await GET(request());
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      const session = body.passbook.pages.sessions[0];
+      expect(session).toMatchObject({ session_id: 'session-1', date: '2026-08-03' });
+      expect(Object.keys(session)).not.toContain('notes');
+      // Absent, not null: JSON.stringify drops an absent key entirely, and
+      // "notes":null would be a claim that no note exists.
+      expect(JSON.stringify(body)).not.toContain('"notes"');
+    });
+  });
 });

@@ -38,7 +38,10 @@ let sessionListFails = false;
 let sessionUpdateFails = false;
 let persistSessionUpdates = false;
 let holdDraftSaves = false;
-// Draft saves held on the wire, oldest first. A test releases them in the order it wants to prove against.
+// Note writes held on the wire, oldest first. A test releases them in the order
+// it wants to prove against. Named for the draft autosave these used to hold;
+// what they hold now is the athlete's deliberate Share, which is the same write
+// on the same route (see the publication contract in AthleteWorkspace.tsx).
 let heldDraftSaves: Array<() => void> = [];
 let storedGoals: Array<Record<string, unknown>> = [];
 let goalUpdateFails = false;
@@ -72,6 +75,20 @@ let assignmentsPending = false;
 // separated the two. The tests below are about what the app does with such a
 // row now, which is: replay it untouched on a notes save, and never promote it
 // to a session RPE at check-out.
+/* AN OPEN SESSION IS ONE THAT STARTED TODAY AT THE GYM.
+   A-FIN-08 stopped a previous day's uncompleted row being mistaken for the
+   session the athlete is standing in, so a fixture that wants to BE the open
+   session has to carry a created_at on the current gym day. These are
+   computed rather than written as literals for that reason: a hard-coded
+   instant stops being today the moment the suite is run on another date, and
+   the failure would look like a bug in the component rather than a stale
+   fixture. The stale-session cases pass STALE_CREATED_AT explicitly.
+
+   36 hours back is far enough to land on a different gym day whatever the
+   clock says when the suite runs. */
+const OPEN_SESSION_CREATED_AT = new Date().toISOString();
+const STALE_CREATED_AT = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString();
+
 function openSessionRow(overrides: Record<string, unknown> = {}) {
   return {
     session_id: 'session_1754000000000',
@@ -80,8 +97,8 @@ function openSessionRow(overrides: Record<string, unknown> = {}) {
     rpe: '8',
     notes: 'Left hook felt slow all session, right shoulder tight.',
     completed_flag: false,
-    created_at: '2026-08-01T17:05:00.000Z',
-    updated_at: '2026-08-01T17:05:00.000Z',
+    created_at: OPEN_SESSION_CREATED_AT,
+    updated_at: OPEN_SESSION_CREATED_AT,
     ...overrides,
   };
 }
@@ -272,7 +289,9 @@ beforeEach(() => {
           : row));
       };
       if (!sessionUpdateFails && holdDraftSaves && body.completed_flag === false) {
-        // A draft save held on the wire until the test lets it arrive.
+        // A note write held on the wire until the test lets it arrive. Keyed on
+        // completed_flag so a check-out is never held: the cases below need it
+        // to reach the server while a note write is still in flight.
         return new Promise<Response>((resolve) => {
           heldDraftSaves.push(() => {
             apply();
@@ -870,7 +889,13 @@ describe('athlete safety reporting', () => {
     expect(screen.queryByRole('checkbox', { name: /pain reported this session/i })).toBeNull();
   });
 
-  test('check-out puts the session notes on the session record', async () => {
+  // RE-POINTED IN A-FIN-08, same guarantee. This pinned "what the athlete
+  // wrote for their coach is on the session record once the session closes",
+  // and it read the box at check-out to prove it. Check-out no longer reads
+  // the box at all -- an unshared draft must not be published by the act of
+  // checking out -- so the trigger is now the athlete's own Share, and the
+  // check-out has to carry that shared note through unchanged.
+  test('check-out puts the note the athlete shared on the session record', async () => {
     await renderWorkspace();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Check In' }));
@@ -882,11 +907,21 @@ describe('athlete safety reporting', () => {
     expect(postedTo('/api/pilot/sessions')).toHaveLength(1);
 
     fireEvent.change(notes, { target: { value: 'my wrist hurts' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
-
+    fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(2));
+
     const [checkIn] = postedTo('/api/pilot/sessions');
-    const [checkOut] = postedTo('/api/pilot/sessions/update');
+    const [shared, checkOut] = postedTo('/api/pilot/sessions/update');
+    // On the record while the session is still open -- a coach reads it during
+    // the session, not after it.
+    expect(shared.body).toEqual(expect.objectContaining({
+      session_id: checkIn.body.session_id,
+      notes: 'my wrist hurts',
+      completed_flag: false,
+    }));
     expect(checkOut.body).toEqual(expect.objectContaining({
       session_id: checkIn.body.session_id,
       notes: 'my wrist hurts',
@@ -936,7 +971,12 @@ describe('an open session across a reload', () => {
       session_id: 'session_1754000000000',
       completed_flag: true,
       date: '2026-08-01',
-      created_at: '2026-08-01T17:05:00.000Z',
+      // Read off the fixture, not written as a literal. The instant is
+      // computed now (see OPEN_SESSION_CREATED_AT) because an open session has
+      // to be on TODAY'S gym day to be selected at all; what this line pins is
+      // unchanged -- created_at is replayed exactly as the row carried it,
+      // never re-derived from the clock at check-out.
+      created_at: OPEN_SESSION_CREATED_AT,
       notes: 'Left hook felt slow all session, right shoulder tight.',
     }));
   });
@@ -986,7 +1026,17 @@ describe('an open session across a reload', () => {
     // Nor anywhere else on the open session: the system's sentence is not
     // on screen at all.
     expect(screen.queryByText(stored)).toBeNull();
-    expect(screen.getByText('Anything you write here saves as you go.')).toBeTruthy();
+    // RE-POINTED IN A-FIN-08. The line used to read "Anything you write here
+    // saves as you go.", which was true of an autosaving box and is now false:
+    // the box is a private draft. The statement it makes about a system note is
+    // the same one -- nothing here has been sent to anybody -- and since a
+    // system note IS "nothing shared", the screen must not claim a coach can
+    // read it.
+    expect(screen.getByText('Only you can see this until you share it.')).toBeTruthy();
+    expect(screen.queryByText('Your coach can read this.')).toBeNull();
+    // And nothing to withdraw: there is no shared note behind the sentinel, so
+    // no action is offered on an empty box.
+    expect(screen.queryByRole('button', { name: /Share with coach|Update coach|Withdraw from coach/ })).toBeNull();
   });
 
   // The suppression must not over-reach: a note that merely mentions the
@@ -1000,21 +1050,36 @@ describe('an open session across a reload', () => {
       .toBe('Auto check-in readiness GREEN -- actually my knee hurts');
   });
 
-  test('notes reach the session record before any check-out happens', async () => {
+  // RE-POINTED IN A-FIN-08, same guarantee: a note reaches the session record
+  // while the session is still OPEN, so it does not wait on a check-out that
+  // may never come. What changed is the trigger. This used to happen on a
+  // 1200ms timer, and the first half of the case now pins the removal of that
+  // timer as hard as the second half pins the write -- an autosave that came
+  // back would put half-typed sentences in front of a coach.
+  test('a shared note reaches the session record before any check-out happens', async () => {
     storedSessions = [openSessionRow({ notes: 'Auto check-in readiness GREEN' })];
     await renderWorkspace();
 
     const notes = await screen.findByPlaceholderText(/Session notes for your coach/);
     fireEvent.change(notes, { target: { value: 'Head is ringing a bit after the last round.' } });
 
+    // Well past the removed draft delay: typing alone sends nothing anywhere.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1600));
+    });
+    expect(postedTo('/api/pilot/sessions/update')).toHaveLength(0);
+    expect(screen.getByText('Only you can see this until you share it.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
+
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1), { timeout: 5000 });
-    const [draftSave] = postedTo('/api/pilot/sessions/update');
-    expect(draftSave.body).toEqual(expect.objectContaining({
+    const [shared] = postedTo('/api/pilot/sessions/update');
+    expect(shared.body).toEqual(expect.objectContaining({
       notes: 'Head is ringing a bit after the last round.',
-      // Still open: this is a draft save, not an early check-out.
+      // Still open: this is a note write, not an early check-out.
       completed_flag: false,
     }));
-    expect(await screen.findByText(/What you wrote stays put/)).toBeTruthy();
+    expect(await screen.findByText('Your coach can read this.')).toBeTruthy();
   });
 
   test('a failed check-out leaves the session open and the notes on screen', async () => {
@@ -1049,6 +1114,175 @@ describe('an open session across a reload', () => {
     expect(screen.queryByRole('button', { name: 'Check Out' })).toBeNull();
     expect(screen.queryByText(/You are not checked in right now/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Try Again' })).toBeTruthy();
+  });
+});
+
+/* A-FIN-08: YESTERDAY'S OPEN ROW IS NOT TODAY'S SESSION.
+   Nothing closes a session an athlete never checked out of, and the open
+   session was "the first uncompleted row in the list" -- so Tuesday's
+   abandoned row came back on Wednesday as "Session active", and everything
+   typed wrote through to it. That was invisible while the athlete was the only
+   reader of pilot.sessions.notes. Once a coach reads it, it is a child told
+   their coach can see today's note while the coach's read of TODAY finds
+   nothing: the athlete believes it was sent and the coach is told there is
+   nothing there.
+
+   Selection compares the GYM's day on created_at -- the same reduction
+   src/server/pilot/sessionNotes.ts uses for the coach's read, so the two
+   cannot disagree about which day it is. The stale row is left exactly as it
+   is: not closed, not rewritten, no migration. It simply stops being mistaken
+   for the session the athlete is standing in. */
+describe('an uncompleted session from a previous gym day is not today\'s session', () => {
+  const STALE_SESSION_ID = 'session_1753000000000';
+  const STALE_NOTE = 'Tuesday: shoulder was tight the whole way through.';
+
+  /** An open session left behind on an earlier gym day. */
+  function staleRow(): Record<string, unknown> {
+    return openSessionRow({
+      session_id: STALE_SESSION_ID,
+      notes: STALE_NOTE,
+      completed_flag: false,
+      created_at: STALE_CREATED_AT,
+      updated_at: STALE_CREATED_AT,
+    });
+  }
+
+  test('the stale row is in the list, and the workspace does not check the athlete in to it', async () => {
+    storedSessions = [staleRow()];
+    await renderWorkspace();
+
+    // The athlete is offered a check-IN, not a check-out of the session they
+    // walked away from yesterday.
+    expect(await screen.findByText(/You are not checked in right now/)).toBeTruthy();
+
+    // The row really is there and really is open, and the list really was read,
+    // so this cannot pass on an empty session list or a read that never ran.
+    expect(storedSessions[0]).toEqual(expect.objectContaining({
+      session_id: STALE_SESSION_ID,
+      completed_flag: false,
+      created_at: STALE_CREATED_AT,
+    }));
+    expect(fetchCalls.some((call) => call.url.includes('/api/pilot/sessions/list'))).toBe(true);
+
+    expect(screen.queryByRole('button', { name: 'Check Out' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Check In' })).toBeTruthy();
+    // Nor is yesterday's note handed back as something to send today: there is
+    // no open-session box at all, and the note is nowhere on screen as a draft.
+    expect(screen.queryByPlaceholderText(/Session notes for your coach/)).toBeNull();
+    expect((screen.getByLabelText(PRE_CHECK_IN_NOTE) as HTMLTextAreaElement).value).toBe('');
+    expect(screen.queryByText(STALE_NOTE)).toBeNull();
+  });
+
+  test('today\'s share cannot write yesterday\'s row', async () => {
+    // Writes are applied the way pilot.sessions applies them, so a write aimed
+    // at the stale row would show up in it rather than being invisible.
+    persistSessionUpdates = true;
+    storedSessions = [staleRow()];
+    await renderWorkspace();
+
+    const checkIn = await checkInFromSessionLog('Right hand is sore today.');
+    expect(checkIn.session_id).not.toBe(STALE_SESSION_ID);
+    openTab('Dashboard');
+    await screen.findByRole('button', { name: 'Check Out' });
+    fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+
+    // EVERY session write this screen makes names today's session. Asserted
+    // over all of them rather than the first, so a second write aimed
+    // elsewhere cannot hide behind a correct one.
+    const written = postedTo('/api/pilot/sessions/update');
+    expect(written).not.toHaveLength(0);
+    for (const call of written) {
+      expect(call.body.session_id).toBe(checkIn.session_id);
+      expect(call.body.session_id).not.toBe(STALE_SESSION_ID);
+    }
+    expect(written[0].body.notes).toBe('Right hand is sore today.');
+
+    // Nothing anywhere named the stale row, by any route or method -- it was
+    // not closed, not rewritten, not touched.
+    expect(fetchCalls.filter((call) => JSON.stringify(call.body).includes(STALE_SESSION_ID))).toEqual([]);
+    expect(storedSessions).toEqual([expect.objectContaining({
+      session_id: STALE_SESSION_ID,
+      completed_flag: false,
+      notes: STALE_NOTE,
+      updated_at: STALE_CREATED_AT,
+    })]);
+  });
+
+  /* THE CASE THAT CAN ACTUALLY FAIL A REVERSION TO THE UTC DAY.
+     The cases above use a row 36 hours back, which BOTH a gym-day and a
+     UTC-day comparison reject -- so they prove the stale row is skipped, but
+     they would all stay green if someone swapped gymDayIso for
+     toISOString().slice(0, 10). On CI, which runs in UTC, they would pass
+     every time. A test that cannot fail for the bug it names is not a guard.
+
+     This one stands on the boundary. The clock is frozen at 20:30 in
+     Punxsutawney, already 00:30 TOMORROW in UTC, and the session started at
+     18:00 that same evening. At the gym both are the 25th, so the athlete is
+     mid-session and must be offered their check-out. Read in UTC, today is the
+     26th and the session is on the 25th -- so a UTC implementation finds
+     nothing and offers a check-IN to somebody already on the floor. */
+  test('an evening session the gym still calls today is selected, though UTC has rolled over', async () => {
+    jest.useFakeTimers({ now: new Date('2026-09-26T00:30:00Z'), advanceTimers: true });
+    try {
+      const EVENING = '2026-09-25T22:00:00.000Z';
+      storedSessions = [openSessionRow({
+        session_id: 'session_gym_evening',
+        completed_flag: false,
+        created_at: EVENING,
+        updated_at: EVENING,
+      })];
+      await renderWorkspace();
+
+      expect(await screen.findByRole('button', { name: 'Check Out' })).toBeTruthy();
+      expect(screen.queryByText(/You are not checked in right now/)).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  /* The other half of the boundary, at the same frozen instant: the previous
+     gym evening is still not today. Read together the pair says one thing --
+     the 25th is today at the gym, the 24th is not. */
+  test('the previous gym evening is still not today, at the same instant', async () => {
+    jest.useFakeTimers({ now: new Date('2026-09-26T00:30:00Z'), advanceTimers: true });
+    try {
+      const NIGHT_BEFORE = '2026-09-24T22:00:00.000Z';
+      storedSessions = [openSessionRow({
+        session_id: STALE_SESSION_ID,
+        completed_flag: false,
+        created_at: NIGHT_BEFORE,
+        updated_at: NIGHT_BEFORE,
+      })];
+      await renderWorkspace();
+
+      expect(await screen.findByText(/You are not checked in right now/)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Check Out' })).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('the athlete can still check in to today\'s session and check out of it', async () => {
+    persistSessionUpdates = true;
+    storedSessions = [staleRow()];
+    await renderWorkspace();
+
+    const checkIn = await checkInFromSessionLog();
+    openTab('Dashboard');
+    fireEvent.click(await screen.findByRole('button', { name: 'Check Out' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+
+    const [checkOut] = postedTo('/api/pilot/sessions/update');
+    expect(checkOut.body.session_id).toBe(checkIn.session_id);
+    expect(checkOut.body.session_id).not.toBe(STALE_SESSION_ID);
+    expect(checkOut.body.completed_flag).toBe(true);
+    // Today's check-out did not close yesterday's row on the way past.
+    expect(storedSessions).toEqual([expect.objectContaining({
+      session_id: STALE_SESSION_ID,
+      completed_flag: false,
+      notes: STALE_NOTE,
+    })]);
   });
 });
 
@@ -2170,12 +2404,20 @@ describe('tabs with nothing behind them are not offered', () => {
 // tested BEFORE Number(), because Number(null) is 0, 0 is a real RPE, and
 // coercing first turns "not rated yet" into "rated it zero".
 describe('a rehydrated session keeps the RPE it was actually stored with', () => {
-  async function draftSaveBodyFor(row: Record<string, unknown>): Promise<Record<string, unknown>> {
+  /* The body of the write the app sends when the athlete SHARES a note.
+     There is no autosave to wait for any more: A-FIN-08 made publication
+     deliberate, so the write leaves when the button is pressed. What these
+     cases are about is unchanged -- whatever else that write carries, the
+     stored RPE and its method are replayed exactly as they were found, and
+     the session does not close. */
+  async function noteWriteBodyFor(row: Record<string, unknown>): Promise<Record<string, unknown>> {
     storedSessions = [row];
     await renderWorkspace();
 
     const notes = await screen.findByPlaceholderText(/Session notes for your coach/);
     fireEvent.change(notes, { target: { value: 'Ribs sore on the left side.' } });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Share with coach|Update coach/ }));
 
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1), { timeout: 5000 });
     return postedTo('/api/pilot/sessions/update')[0].body;
@@ -2184,13 +2426,13 @@ describe('a rehydrated session keeps the RPE it was actually stored with', () =>
   test('a stored 0 is replayed as 0, not as null', async () => {
     // numeric 0 arrives from node-postgres as the string '0'. It is a reading
     // the athlete gave, and dropping it would erase a real self-report.
-    const body = await draftSaveBodyFor(openSessionRow({ rpe: '0' }));
+    const body = await noteWriteBodyFor(openSessionRow({ rpe: '0' }));
     expect(body.rpe).toBe(0);
     expect(body.rpe).not.toBeNull();
   });
 
   test('a stored null is replayed as null, not as 0', async () => {
-    const body = await draftSaveBodyFor(openSessionRow({ rpe: null }));
+    const body = await noteWriteBodyFor(openSessionRow({ rpe: null }));
     expect(body.rpe).toBeNull();
     expect(body.rpe).not.toBe(0);
   });
@@ -2198,29 +2440,29 @@ describe('a rehydrated session keeps the RPE it was actually stored with', () =>
   test('a missing rpe key is replayed as null, not as 0', async () => {
     const withoutRpe = openSessionRow();
     delete (withoutRpe as Record<string, unknown>).rpe;
-    const body = await draftSaveBodyFor(withoutRpe);
+    const body = await noteWriteBodyFor(withoutRpe);
     expect(body.rpe).toBeNull();
   });
 
   test('a stored numeric string is replayed as the number it names', async () => {
-    const body = await draftSaveBodyFor(openSessionRow({ rpe: '8' }));
+    const body = await noteWriteBodyFor(openSessionRow({ rpe: '8' }));
     expect(body.rpe).toBe(8);
   });
 
   // A row predating the method column genuinely has unknown provenance, and
   // that is what it must claim -- not the one honest method the app has.
   test('an absent rpe_method is replayed as UNKNOWN', async () => {
-    const body = await draftSaveBodyFor(openSessionRow());
+    const body = await noteWriteBodyFor(openSessionRow());
     expect(body.rpe_method).toBe('UNKNOWN');
   });
 
   test('an unrecognised rpe_method is replayed as UNKNOWN rather than trusted', async () => {
-    const body = await draftSaveBodyFor(openSessionRow({ rpe_method: 'coach_estimate' }));
+    const body = await noteWriteBodyFor(openSessionRow({ rpe_method: 'coach_estimate' }));
     expect(body.rpe_method).toBe('UNKNOWN');
   });
 
   test('a genuine post-session self-report keeps its method', async () => {
-    const body = await draftSaveBodyFor(openSessionRow({
+    const body = await noteWriteBodyFor(openSessionRow({
       rpe: '4',
       rpe_method: 'athlete_post_session_self_report',
     }));
@@ -2229,8 +2471,8 @@ describe('a rehydrated session keeps the RPE it was actually stored with', () =>
   });
 
   // A notes save is not a rating, and must not close the session either.
-  test('a notes save does not complete the session', async () => {
-    const body = await draftSaveBodyFor(openSessionRow({ rpe: null }));
+  test('sharing a note does not complete the session', async () => {
+    const body = await noteWriteBodyFor(openSessionRow({ rpe: null }));
     expect(body.completed_flag).toBe(false);
   });
 });
@@ -2347,8 +2589,19 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     const checkIn = await checkInFromSessionLog('9');
     expect(checkIn.rpe).toBeNull();
     expect(checkIn.rpe_method).toBe('UNKNOWN');
+    // ARRIVING IS NOT SENDING (A-FIN-08): the number is carried into the open
+    // session's box as a draft, and the session is created holding the
+    // sentinel. Sharing is what puts it on the record -- and it goes on as a
+    // NOTE, which is the half of this case the trigger change moved.
+    expect(checkIn.notes).toBe(NO_NOTE_PLACEHOLDER);
     openTab('Dashboard');
     await screen.findByRole('button', { name: 'Check Out' });
+    fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+    const shared = postedTo('/api/pilot/sessions/update')[0].body;
+    expect(shared.notes).toBe('9');
+    expect(shared.rpe).toBeNull();
+    expect(shared.rpe_method).toBe('UNKNOWN');
     const untouched = await checkOut();
     expect(untouched.notes).toBe('9');
     expect(untouched.rpe).toBeNull();
@@ -2370,6 +2623,11 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     await openSession();
 
     fireEvent.change(screen.getByPlaceholderText(/Session notes for your coach/), { target: { value: '8' } });
+    // Shared deliberately (A-FIN-08): an unshared draft is not on the record at
+    // all, so the case only bites once the number really IS the stored note.
+    // The fixture already carries a note, so the action offered is Update.
+    fireEvent.click(screen.getByRole('button', { name: 'Update coach' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
     const body = await checkOut();
 
     expect(body.notes).toBe('8');
@@ -2377,17 +2635,18 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     expect(body.rpe_method).toBe('UNKNOWN');
   });
 
-  test('the notes draft save never carries the answer -- only check-out does', async () => {
+  test('the note write never carries the answer -- only check-out does', async () => {
     await openSession();
 
     fireEvent.click(effortButton(7));
     fireEvent.change(screen.getByPlaceholderText(/Session notes for your coach/), { target: { value: 'Jab felt sharp.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update coach' }));
 
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1), { timeout: 5000 });
-    const [draft] = postedTo('/api/pilot/sessions/update');
-    expect(draft.body.completed_flag).toBe(false);
-    expect(draft.body.rpe).toBeNull();
-    expect(draft.body.rpe_method).toBe('UNKNOWN');
+    const [noteWrite] = postedTo('/api/pilot/sessions/update');
+    expect(noteWrite.body.completed_flag).toBe(false);
+    expect(noteWrite.body.rpe).toBeNull();
+    expect(noteWrite.body.rpe_method).toBe('UNKNOWN');
   });
 
   test('a refused check-out keeps the answer and the session, and claims nothing', async () => {
@@ -2409,17 +2668,19 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     expect(await screen.findByText(/Your effort, 7 of 10, is on it too/)).toBeTruthy();
   });
 
-  // The notes draft save and check-out both send the whole session row, and the
+  // The note write and check-out both send the whole session row, and the
   // server applies whichever ARRIVES last (the fixture does the same when
-  // persistSessionUpdates is on). A draft held on the wire past the check-out
-  // click is the ordering that used to reopen the session and erase the answer.
-  test('a notes save already in flight cannot land after check-out and undo it', async () => {
+  // persistSessionUpdates is on). A note write held on the wire past the
+  // check-out click is the ordering that used to reopen the session and erase
+  // the answer.
+  test('a note write already in flight cannot land after check-out and undo it', async () => {
     persistSessionUpdates = true;
     holdDraftSaves = true;
     await openSession();
 
     fireEvent.change(screen.getByPlaceholderText(/Session notes for your coach/), { target: { value: 'Jab felt sharp.' } });
-    // The draft save has left and is being held by the "server".
+    fireEvent.click(screen.getByRole('button', { name: 'Update coach' }));
+    // The note write has left and is being held by the "server".
     await waitFor(() => expect(heldDraftSaves).toHaveLength(1), { timeout: 5000 });
 
     fireEvent.click(effortButton(7));
@@ -2427,7 +2688,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     await act(async () => {
       await Promise.resolve();
     });
-    // Check-out waits for the draft on the wire instead of racing it.
+    // Check-out waits for the note write on the wire instead of racing it.
     expect(checkOutBodies()).toHaveLength(0);
 
     await act(async () => {
@@ -2435,7 +2696,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     });
     await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
 
-    // What the server holds at the end is the check-out, not the draft.
+    // What the server holds at the end is the check-out, not the note write.
     await waitFor(() => expect(storedSessions[0]).toEqual(expect.objectContaining({
       completed_flag: true,
       rpe: '7',
@@ -2445,25 +2706,39 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     expect(await screen.findByText(/Your effort, 7 of 10, is on it too/)).toBeTruthy();
   });
 
-  // Two drafts overlapping is the case remembering only the latest one missed:
-  // check-out would wait for the second while the first could still arrive
-  // last. Every held write is released NEWEST FIRST -- the worst order -- and
-  // the row must still end as the check-out.
-  test('overlapping notes saves are queued, and none can land after check-out', async () => {
+  /* RE-POINTED IN A-FIN-08. Two overlapping note writes is the case that
+     remembering only the latest one missed: check-out would wait for the
+     second while the first could still arrive last.
+
+     Overlap is no longer REACHABLE, and that is what this now proves. The old
+     overlap came from a timer firing again while the first save was on the
+     wire; with publication on a button, the control is disabled for as long as
+     a write is in flight, so a second one cannot be started at all. Typing
+     more starts nothing either, which is the timer's removal restated.
+
+     The rest of the case is unchanged -- everything held is released NEWEST
+     FIRST, the worst order, and the row must still end as the check-out.
+     What DID change is the note the row ends with: the athlete's later edit
+     was never shared, and an unshared edit is not on the record. */
+  test('a second note write cannot be started while one is in flight, and none can land after check-out', async () => {
     persistSessionUpdates = true;
     holdDraftSaves = true;
     await openSession();
 
     const box = screen.getByPlaceholderText(/Session notes for your coach/);
     fireEvent.change(box, { target: { value: 'Jab felt sharp.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update coach' }));
     await waitFor(() => expect(heldDraftSaves).toHaveLength(1), { timeout: 5000 });
 
-    // Keep typing, and let the second draft's delay run out while the first is on the wire.
+    // Keep typing while the first write is on the wire. Nothing follows it:
+    // there is no timer to fire, and the control that would send it is held
+    // shut until the one in flight lands.
     fireEvent.change(box, { target: { value: 'Jab felt sharp. Hook was late.' } });
+    expect((screen.getByRole('button', { name: 'Update coach' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Update coach' }));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 1600));
     });
-    // Queued behind the first, not racing it.
     expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1);
 
     fireEvent.click(effortButton(7));
@@ -2484,18 +2759,28 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
       completed_flag: true,
       rpe: '7',
       rpe_method: 'athlete_post_session_self_report',
-      notes: 'Jab felt sharp. Hook was late.',
+      // What the athlete SHARED, not what was left in the box. The later edit
+      // is a draft and a coach never saw it, so check-out may not publish it.
+      notes: 'Jab felt sharp.',
     })));
     // And nothing reached the server after the check-out did.
     const updates = postedTo('/api/pilot/sessions/update');
     expect(updates[updates.length - 1].body.completed_flag).toBe(true);
   });
 
-  // Write ORDER is not enough on its own: check-out's empty-box fallback used
-  // the note captured when Check Out was pressed, which predates the wait.
-  // A draft that lands during the wait is newer than that capture, and the
-  // fallback must not put the older note back over it.
-  test('a note saved while check-out waits is kept, not replaced by the older one', async () => {
+  /* Write ORDER is not enough on its own: what check-out WRITES has to be read
+     after the wait, not captured when Check Out was pressed. When the button
+     went down the record still held 'old'; a note that lands during the wait
+     is newer than that, and must not be overwritten by it.
+
+     RE-POINTED IN A-FIN-08, same read. The older capture used to be the notes
+     box, whose contents were check-out's fallback; check-out no longer reads
+     the box at all. The value it reads is storedNoteRef, still read after the
+     wait -- so emptying the box before pressing Check Out, which is what the
+     old case did to force the fallback, now has to change nothing at all. That
+     is the retraction rule from the other side: an emptied box is not a
+     withdrawal, and check-out is not a way to make it one. */
+  test('a note shared while check-out waits is kept, not replaced by the older one', async () => {
     persistSessionUpdates = true;
     holdDraftSaves = true;
     await openSession({ notes: 'old' });
@@ -2503,10 +2788,15 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     const box = screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement;
     expect(box.value).toBe('old');
     fireEvent.change(box, { target: { value: 'new' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update coach' }));
     await waitFor(() => expect(heldDraftSaves).toHaveLength(1), { timeout: 5000 });
 
-    // Empty box at the moment of Check Out: the fallback decides the note.
+    // Emptied at the moment of Check Out. It offers a withdrawal and sends
+    // nothing on its own, so only the held 'new' is still in flight.
     fireEvent.change(box, { target: { value: '' } });
+    expect(screen.getByRole('button', { name: 'Withdraw from coach' })).toBeTruthy();
+    expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1);
+
     fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
     await act(async () => {
       await Promise.resolve();
@@ -2531,6 +2821,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
 
     const box = screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: 'Jab felt sharp.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update coach' }));
     await waitFor(() => expect(heldDraftSaves).toHaveLength(1), { timeout: 5000 });
 
     sessionUpdateFails = true;
@@ -2538,7 +2829,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     await act(async () => {
       await Promise.resolve();
     });
-    // Waiting on the draft: anything typed now could not reach the session.
+    // Waiting on the note write: anything typed now could not reach the session.
     expect(box.disabled).toBe(true);
 
     await act(async () => {
@@ -2550,20 +2841,27 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     expect(box.value).toBe('Jab felt sharp.');
   });
 
-  test('no notes save starts once check-out has begun', async () => {
+  test('no note write starts once check-out has begun', async () => {
     await openSession();
 
-    fireEvent.change(screen.getByPlaceholderText(/Session notes for your coach/), { target: { value: 'Last round was rough.' } });
-    // Pressed inside the draft save's delay, so its timer has not fired yet.
+    const box = screen.getByPlaceholderText(/Session notes for your coach/);
+    fireEvent.change(box, { target: { value: 'Last round was rough.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update coach' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+
+    // And then kept typing without sharing again. That edit is a draft: what
+    // check-out carries is what the coach could already read.
+    fireEvent.change(box, { target: { value: 'Last round was rough. Ribs too.' } });
     fireEvent.click(effortButton(5));
     const body = await checkOut();
     expect(body.notes).toBe('Last round was rough.');
 
-    // Past the draft delay: the only session update ever sent is the check-out.
+    // Past the removed draft delay: nothing else ever leaves. The only session
+    // updates are the one the athlete asked for and the check-out.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 1600));
     });
-    expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1);
+    expect(postedTo('/api/pilot/sessions/update')).toHaveLength(2);
   });
 
   test('clearing the answer puts it back to not answered, and check-out then records none', async () => {
@@ -2660,8 +2958,22 @@ describe('check-in records no session RPE at all', () => {
     const numeric = await checkInFromSessionLog('8');
     expect(typeof numeric.rpe).not.toBe('number');
     expect(numeric.rpe_method).toBe('UNKNOWN');
-    // The note stays a note: stored as the words typed, not read as a rating.
-    expect(numeric.notes).toBe('8');
+    // ARRIVING IS NOT SENDING (A-FIN-08): the session is created holding the
+    // sentinel whatever is in the box, so the check-in body no longer carries
+    // the number in any field at all.
+    expect(numeric.notes).toBe(NO_NOTE_PLACEHOLDER);
+
+    // And when the athlete does share it, it stays a NOTE -- stored as the
+    // words typed, never read as a rating. That is the half this case has
+    // always been about, moved to where the words now reach the record.
+    openTab('Dashboard');
+    await screen.findByRole('button', { name: 'Check Out' });
+    fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+    const shared = postedTo('/api/pilot/sessions/update')[0].body;
+    expect(shared.notes).toBe('8');
+    expect(typeof shared.rpe).not.toBe('number');
+    expect(shared.rpe_method).toBe('UNKNOWN');
   });
 });
 
@@ -2716,14 +3028,28 @@ describe('nothing said before the session can change the work', () => {
     expect(lowPlanCalls).toBe(0);
     expect(floorPlanCalls()).toHaveLength(0);
 
-    // The note is the athlete's words or the placeholder -- never a band, and
-    // never anything read off the wellness answers.
+    // THE CHECK-IN ITSELF SHARES NOTHING (A-FIN-08). Both sessions are created
+    // holding the placeholder -- what was typed is a draft until the athlete
+    // sends it -- so neither check-in body can carry a band however the
+    // wellness answers went.
     expect(low.session.notes).toBe(NO_NOTE_PLACEHOLDER);
-    expect(high.session.notes).toBe('Feeling sharp today.');
+    expect(high.session.notes).toBe(NO_NOTE_PLACEHOLDER);
     for (const body of [low.session, high.session]) {
       expect(JSON.stringify(body)).not.toMatch(/\b(GREEN|YELLOW|RED)\b|Auto check-in readiness/);
       expect(body.rpe).toBeNull();
     }
+
+    // And the note the athlete DOES send is their own words -- never a band,
+    // and never anything read off the wellness answers, which is the half this
+    // case has always held. Asserted on the high-wellness pass, where a band
+    // would have been GREEN.
+    openTab('Dashboard');
+    await screen.findByRole('button', { name: 'Check Out' });
+    fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+    const shared = postedTo('/api/pilot/sessions/update')[0].body;
+    expect(shared.notes).toBe('Feeling sharp today.');
+    expect(JSON.stringify(shared)).not.toMatch(/\b(GREEN|YELLOW|RED)\b|Auto check-in readiness/);
   });
 
   // A mutation audit (2026-08-25) found a task appended only to the DISPLAYED
@@ -3007,7 +3333,7 @@ describe('the pre-session self-report presents as a self-report, not a clearance
 
     // The shape of a check-in, pinned whole: no tenth field carrying a
     // readiness, a band, or anything else read off a control.
-    expect(Object.keys(body).sort()).toEqual([
+    const SESSION_WRITE_FIELDS = [
       'athlete_id',
       'completed_flag',
       'created_at',
@@ -3017,10 +3343,27 @@ describe('the pre-session self-report presents as a self-report, not a clearance
       'rpe_method',
       'session_id',
       'updated_at',
-    ]);
-    expect(body.notes).toBe('Left hand is stiff.');
+    ];
+    expect(Object.keys(body).sort()).toEqual(SESSION_WRITE_FIELDS);
+    // ARRIVING IS NOT SENDING (A-FIN-08). Every control in the panel was
+    // answered and the session is still created holding the placeholder:
+    // nothing any control holds reaches the check-in, the athlete's own words
+    // included, until they choose to send them.
+    expect(body.notes).toBe(NO_NOTE_PLACEHOLDER);
     expect(body.rpe).toBeNull();
     expect(body.rpe_method).toBe('UNKNOWN');
+
+    // What they DO send is pinned the same way -- the same nine fields, and
+    // their words are the only thing of theirs in it.
+    openTab('Dashboard');
+    await screen.findByRole('button', { name: 'Check Out' });
+    fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+    const shared = postedTo('/api/pilot/sessions/update')[0].body;
+    expect(Object.keys(shared).sort()).toEqual(SESSION_WRITE_FIELDS);
+    expect(shared.notes).toBe('Left hand is stiff.');
+    expect(shared.rpe).toBeNull();
+    expect(shared.rpe_method).toBe('UNKNOWN');
   });
 
   test('the summary says the wellness check is not a clearance', async () => {
@@ -3104,20 +3447,31 @@ describe('the pre-session self-report presents as a self-report, not a clearance
 //     session -- no wellness record, no readiness row;
 //   - the Floor gate is still today's wellness check and nothing else.
 describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder that says so', () => {
-  test('a note written before check-in is stored exactly as the athlete wrote it, trimmed', async () => {
+  // RE-POINTED IN A-FIN-08. The trimming guarantee is untouched -- the stored
+  // note is the athlete's words exactly, trimmed and otherwise as written --
+  // but the moment it is stored has moved off the check-in. Arriving is not
+  // sending: check-in creates the session holding the placeholder, the words
+  // carry over into the open session's box as a draft, and the athlete's own
+  // Share is what puts them on the record.
+  test('a note written before check-in is a draft, and sharing it stores the words exactly, trimmed', async () => {
     await renderWorkspace();
 
     const body = await checkInFromSessionLog('   Left wrist still sore from Tuesday.  \n');
-    expect(body.notes).toBe('Left wrist still sore from Tuesday.');
+    expect(body.notes).toBe(NO_NOTE_PLACEHOLDER);
     expect(body.rpe).toBeNull();
     expect(body.rpe_method).toBe('UNKNOWN');
 
-    // The same words are the open session's notes, already saved -- nothing
-    // written before pressing Check In is lost at it.
+    // The same words are in the open session's box -- nothing written before
+    // pressing Check In is lost at it -- and the screen says where they stand.
     openTab('Dashboard');
     const box = (await screen.findByPlaceholderText(/Session notes for your coach/)) as HTMLTextAreaElement;
     expect(box.value.trim()).toBe('Left wrist still sore from Tuesday.');
-    expect(screen.getByText(/What you wrote stays put/)).toBeTruthy();
+    expect(screen.getByText('Only you can see this until you share it.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Share with coach' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+    expect(postedTo('/api/pilot/sessions/update')[0].body.notes).toBe('Left wrist still sore from Tuesday.');
+    expect(await screen.findByText('Your coach can read this.')).toBeTruthy();
   });
 
   test('check-in without a note stores the fixed placeholder and invents no readiness', async () => {
@@ -3137,7 +3491,11 @@ describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder t
     const box = (await screen.findByPlaceholderText(/Session notes for your coach/)) as HTMLTextAreaElement;
     expect(box.value).toBe('');
     expect(screen.queryByText(NO_NOTE_PLACEHOLDER)).toBeNull();
-    expect(screen.getByText('Anything you write here saves as you go.')).toBeTruthy();
+    // A-FIN-08: the line that used to say the box saves as it goes. An empty
+    // box with nothing shared has nothing to send and nothing to take back, so
+    // no publication action is offered either.
+    expect(screen.getByText('Only you can see this until you share it.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Share with coach|Update coach|Withdraw from coach/ })).toBeNull();
   });
 
   test('a note of only spaces is no note: the placeholder, not an empty string', async () => {
@@ -3490,5 +3848,80 @@ describe('the wellness check-in', () => {
     expect(panel).not.toBeNull();
     expect(within(panel!).queryByText('0')).toBeNull();
     expect(within(panel!).queryByText('3')).toBeNull();
+  });
+});
+
+/* RETRACTION (owner decision, Jason 2026-09-25: RETRACTABLE).
+   The button's EXISTENCE was already asserted in two places. Nothing pressed
+   it, which is not coverage: a capability nobody exercises is a capability
+   nobody has proved. These press it.
+
+   What has to hold. The withdrawal writes the no-note SENTINEL and never an
+   empty string -- pilot.sessions.notes is `text not null`, and the sentinel is
+   the form every reader already reads as "no note", which is what makes the
+   coach's view empty with no schema change. Taking a note back is not checking
+   out. And the screen must stop telling a child their coach can read something
+   the coach can no longer read. */
+describe('an athlete can take a shared note back', () => {
+  const SHARED = 'My wrist hurts when I jab.';
+
+  async function openSharedSession() {
+    storedSessions = [openSessionRow({ rpe: null, notes: SHARED })];
+    await renderWorkspace();
+    await screen.findByRole('button', { name: 'Check Out' });
+  }
+
+  test('withdrawing writes the no-note sentinel, never an empty string', async () => {
+    await openSharedSession();
+    expect(screen.getByText('Your coach can read this.')).toBeTruthy();
+
+    const box = screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: '' } });
+
+    // Emptying the box alone sends nothing. An accidental clear is not a
+    // withdrawal -- it only offers one.
+    expect(postedTo('/api/pilot/sessions/update')).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw from coach' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+
+    const [withdrawal] = postedTo('/api/pilot/sessions/update');
+    expect(withdrawal.body.notes).toBe(NO_NOTE_PLACEHOLDER);
+    expect(withdrawal.body.notes).not.toBe('');
+    expect(withdrawal.body.completed_flag).toBe(false);
+    expect(JSON.stringify(withdrawal.body)).not.toContain('wrist');
+  });
+
+  test('after withdrawing, the screen stops saying the coach can read it', async () => {
+    await openSharedSession();
+    const box = screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement;
+
+    fireEvent.change(box, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw from coach' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+
+    await waitFor(() => expect(screen.queryByText('Your coach can read this.')).toBeNull());
+    expect(screen.getByText('Only you can see this until you share it.')).toBeTruthy();
+    // Nothing is shared any more, so there is nothing left to withdraw.
+    expect(screen.queryByRole('button', { name: 'Withdraw from coach' })).toBeNull();
+  });
+
+  test('a withdrawn note does not come back at check-out', async () => {
+    persistSessionUpdates = true;
+    await openSharedSession();
+    const box = screen.getByPlaceholderText(/Session notes for your coach/) as HTMLTextAreaElement;
+
+    fireEvent.change(box, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw from coach' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check Out' }));
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(2));
+
+    const checkOut = postedTo('/api/pilot/sessions/update')[1];
+    expect(checkOut.body.completed_flag).toBe(true);
+    // Check-out replays what is STORED, and what is stored is the sentinel.
+    expect(checkOut.body.notes).toBe(NO_NOTE_PLACEHOLDER);
+    expect(JSON.stringify(checkOut.body)).not.toContain('wrist');
   });
 });
