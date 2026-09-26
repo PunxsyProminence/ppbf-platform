@@ -319,6 +319,7 @@
     "test:migrations:competence-cohorts": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/competenceCohorts.pg.test.ts --testTimeout=180000",
     "test:migrations:video-sessions": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoSessionsMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:video-scan": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoScanPromotion.pg.test.ts --testTimeout=180000",
+    "test:migrations:capture-participants": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/captureParticipants.pg.test.ts --testTimeout=180000",
     "pilot:apply-film-study-proposals": "node scripts/pilot-apply-film-study-proposals-migration.mjs",
     "pilot:apply-film-study-coach-reported": "node scripts/pilot-apply-film-study-coach-reported-migration.mjs",
     "test:migrations:film-proposals": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/filmStudyProposals.pg.test.ts --testTimeout=180000",

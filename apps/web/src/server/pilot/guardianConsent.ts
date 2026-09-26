@@ -69,13 +69,14 @@ interface CurrentConsentRow {
 async function currentConsentByGuardian(
   organizationId: string,
   athleteId: string,
+  waiverType: string,
 ): Promise<Map<string, CurrentConsentRow>> {
   const rows = await query<CurrentConsentRow>(
     `select distinct on (parent_id) parent_id, status, covers_video, public_use_allowed, created_at
      from pilot.waivers
      where organization_id = $1 and athlete_id = $2 and waiver_type = $3 and parent_id is not null
      order by parent_id, created_at desc`,
-    [organizationId, athleteId, MEDIA_CONSENT_WAIVER_TYPE],
+    [organizationId, athleteId, waiverType],
   );
 
   const map = new Map<string, CurrentConsentRow>();
@@ -104,6 +105,27 @@ export async function checkGuardianMediaConsent(
   organizationId: string,
   athleteId: string,
 ): Promise<ConsentCheckResult> {
+  return checkGuardianConsentOfType(organizationId, athleteId, MEDIA_CONSENT_WAIVER_TYPE);
+}
+
+/*
+ * ONE IMPLEMENTATION, TWO PURPOSES.
+ *
+ * Teach Shadow consent and publication consent are different permissions and
+ * must be separately grantable and withdrawable -- but "which guardians does
+ * this athlete have", "which of their rows is current" and "does this status
+ * read as signed" are the same questions for both. The normalisation comment
+ * below records a real defect caused by two gates reading that column
+ * differently; copying this function for a second waiver type would recreate
+ * exactly that asymmetry, one waiver type at a time.
+ *
+ * So the waiver TYPE is the only thing that varies.
+ */
+async function checkGuardianConsentOfType(
+  organizationId: string,
+  athleteId: string,
+  waiverType: string,
+): Promise<ConsentCheckResult> {
   const guardianIds = await query<{ parent_id: string }>(
     `select parent_id from pilot.guardian_links where organization_id = $1 and athlete_id = $2`,
     [organizationId, athleteId],
@@ -113,7 +135,7 @@ export async function checkGuardianMediaConsent(
     return { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] };
   }
 
-  const current = await currentConsentByGuardian(organizationId, athleteId);
+  const current = await currentConsentByGuardian(organizationId, athleteId, waiverType);
   const perGuardian = guardianIds.map((parentId) => {
     const row = current.get(parentId);
     return {
@@ -158,6 +180,51 @@ export async function assertGuardianMediaConsent(organizationId: string, athlete
   const result = await checkGuardianMediaConsent(organizationId, athleteId);
   if (!result.ok) {
     throw new GuardianConsentMissingError(athleteId, result.missingParentIds);
+  }
+}
+
+/*
+ * TEACH SHADOW CONSENT -- a different permission, deliberately not the same row.
+ *
+ * The guardian-facing consent page describes photo_media as controlling
+ * whether media may be used in gym publications. It says nothing about
+ * teaching software to recognise punches, so treating that signature as
+ * permission for this would be using an answer to a question nobody asked.
+ * The owner-approved wording for THIS purpose is carried on the consent
+ * surface; what matters here is that it is its own waiver_type, so granting
+ * one never grants the other and withdrawing one never withdraws the other.
+ *
+ * pilot.waivers.waiver_type is plain text with no check constraint, so this
+ * needed no schema change -- the ledger already supported a new purpose.
+ */
+export const TEACH_SHADOW_CONSENT_WAIVER_TYPE = 'teach_shadow_ml';
+export const TEACH_SHADOW_CONSENT_VERSION = 'v1';
+
+export class TeachShadowConsentMissingError extends Error {
+  constructor(readonly athleteId: string, readonly missingParentIds: string[]) {
+    super(
+      missingParentIds.length > 0
+        ? `Blocked: Teach Shadow consent is missing or withdrawn for ${missingParentIds.length} of this athlete's guardians. Teaching consent is separate from photo and video consent for publications, and every guardian must have a current, signed one on file.`
+        : 'Blocked: this athlete has no guardians on file, so Teach Shadow consent cannot be verified. Link a guardian before filming them to teach Shadow.',
+    );
+    this.name = 'TeachShadowConsentMissingError';
+  }
+}
+
+export async function checkTeachShadowConsent(
+  organizationId: string,
+  athleteId: string,
+): Promise<ConsentCheckResult> {
+  return checkGuardianConsentOfType(organizationId, athleteId, TEACH_SHADOW_CONSENT_WAIVER_TYPE);
+}
+
+export async function assertTeachShadowConsent(
+  organizationId: string,
+  athleteId: string,
+): Promise<void> {
+  const result = await checkTeachShadowConsent(organizationId, athleteId);
+  if (!result.ok) {
+    throw new TeachShadowConsentMissingError(athleteId, result.missingParentIds);
   }
 }
 

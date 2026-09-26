@@ -15,6 +15,21 @@ jest.mock('@/src/server/pilot/db', () => ({
   queryOne: jest.fn(),
 }));
 
+/*
+ * TS-ANON-01. Teaching uploads resolve their subject server-side from the
+ * capture session and re-check consent before the footage is accepted.
+ * Doubled here so these tests exercise the route's rules; the resolver and
+ * the consent gate each have their own suites.
+ */
+jest.mock('@/src/server/pilot/captureParticipants', () => ({
+  participantsForSession: jest.fn(async () => ['cp-1']),
+  athleteIdsForParticipants: jest.fn(async () => ['ath-1']),
+  linkParticipantToVideo: jest.fn(async () => undefined),
+}));
+jest.mock('@/src/server/pilot/guardianConsent', () => {
+  const actual = jest.requireActual('@/src/server/pilot/guardianConsent');
+  return { ...actual, assertTeachShadowConsent: jest.fn(async () => undefined) };
+});
 jest.mock('@/src/server/pilot/blob', () => ({
   uploadPilotVideoFile: jest.fn().mockResolvedValue(undefined),
 }));
@@ -190,14 +205,27 @@ describe('a capture recording carries its take and its subject', () => {
    * unattributed would therefore enter the vision content screen with that
    * check skipped. Refused on the server, so a client cannot simply omit it.
    */
-  test('a recording with a take but no athlete is refused, and nothing is stored', async () => {
+  test('TS-ANON-01 -- a recording that NAMES an athlete is refused, because teaching media is anonymous', async () => {
+    /*
+     * THE RULE INVERTED BY OWNER DECISION. This test previously asserted the
+     * opposite: that a take-backed recording without an athlete was refused.
+     * Teaching media now names nobody, and the identifier is refused rather
+     * than quietly stripped -- silently accepting it would leave a stale
+     * client believing it had attributed the footage, and an identifier
+     * arriving at this boundary with nothing to say it was ignored.
+     */
     mockRequirePrincipal.mockResolvedValueOnce(principal({}));
     assignedAthlete();
     mockQuery.mockResolvedValueOnce(OPEN_TAKE);
 
-    const response = await POST(uploadRequest({ file: videoFile(), capture_take_id: 'take-1' }));
+    const response = await POST(uploadRequest({
+      file: videoFile(),
+      capture_take_id: 'take-1',
+      athlete_id: 'ath-1',
+    }));
 
     expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: expect.stringMatching(/anonymous/i) });
     expect(mockQuery.mock.calls.some(([sql]) => String(sql).includes('insert into pilot.video_sessions'))).toBe(false);
   });
 
@@ -291,7 +319,6 @@ describe('a capture recording carries its take and its subject', () => {
       uploadRequest({
         file: videoFile(),
         capture_take_id: 'take-1',
-        athlete_id: 'ath-1',
         capture_source: 'file_upload',
       }),
     );
@@ -327,7 +354,6 @@ describe('a capture recording carries its take and its subject', () => {
       uploadRequest({
         file: videoFile(),
         capture_take_id: 'take-1',
-        athlete_id: 'ath-1',
         capture_source: 'in_app_recording',
         recording_session_id: 'rs-somebody-elses',
       }),

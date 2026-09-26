@@ -35,6 +35,10 @@ const MIGRATION_PATH = path.resolve(
   __dirname,
   '../../../../../infra/azure/pilot_slice_postgres_video_sessions_migration.sql',
 );
+const CAPTURE_SESSIONS_PATH = path.resolve(
+  __dirname,
+  '../../../../../infra/azure/pilot_slice_postgres_capture_sessions_migration.sql',
+);
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -133,6 +137,21 @@ beforeAll(async () => {
   await client.connect();
   await client.query('create schema if not exists pilot');
   await client.query(await fs.readFile(MIGRATION_PATH, 'utf8'));
+  /*
+   * TS-ANON-01: the sweep now asks which DESTINATION a video belongs to
+   * before it asks whose consent to check, because a teaching video carries
+   * no athlete_id and "no athlete" no longer means "nobody to ask". That
+   * question reads video_sessions.capture_take_id, so this fixture needs the
+   * migration that adds the column.
+   *
+   * The restricted participant tables are deliberately NOT applied here. The
+   * resolver only reaches them when a video actually carries a take, and every
+   * video in this suite is a plain upload -- so applying them would add a
+   * base-schema dependency (they carry foreign keys to athletes and accounts)
+   * to a suite that exercises the claim/settle SQL and nothing else. The
+   * teaching path has its own coverage in captureParticipants.pg.test.ts.
+   */
+  await client.query(await fs.readFile(CAPTURE_SESSIONS_PATH, 'utf8'));
 
   // Env before import: db.ts reads the connection string when its pool is
   // first built, so the dynamic import has to come after this.
