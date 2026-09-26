@@ -274,7 +274,16 @@ export default function SchedulerPage() {
           The globals.css floor covers button / select / the named input types.
           It deliberately does not reach `a` or `textarea`, so those state
           min-h-[var(--tap)] at the call site, the way
-          CoachRecognitionPad.tsx already does. */}
+          CoachRecognitionPad.tsx already does.
+
+          The TYPE half of the same law now comes from the same attribute:
+          design-system/foundation/ppbf-foundation.css floors every control
+          inside this subtree at --t-md. Three review controls below carried
+          `text-[length:var(--t-xs)]` -- 11.8px, on the surface Law 5 sets at
+          19.1px. That utility is in `@layer utilities` and the floor is
+          unlayered, so it stopped rendering the moment the floor landed; it is
+          removed rather than left to tell a reader of this file a size the
+          page does not use. The floor is the one place the figure is stated. */}
       {/* ge-scheduler -- GOLDEN ERA 005, THE SCHEDULE BOARD. One class, on the
           element the whole page already passes through, and the only markup
           change in that pass: the material identity itself lives in
@@ -631,7 +640,7 @@ export default function SchedulerPage() {
                               )
                             }
                             disabled={actionInFlight}
-                            className="mt-1 min-h-[var(--tap)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[length:var(--t-xs)] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                            className="mt-1 min-h-[var(--tap)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                           >
                             Mark Parent Reviewed
                           </button>
@@ -701,7 +710,7 @@ export default function SchedulerPage() {
                                 );
                               }}
                               disabled={actionInFlight}
-                              className="min-h-[var(--tap)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[length:var(--t-xs)] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                              className="min-h-[var(--tap)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                             >
                               Approve &amp; Assign
                             </button>
@@ -718,7 +727,7 @@ export default function SchedulerPage() {
                                 )
                               }
                               disabled={actionInFlight}
-                              className="min-h-[var(--tap)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 text-[length:var(--t-xs)] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
+                              className="min-h-[var(--tap)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-2 font-bold uppercase tracking-[0.08em] disabled:opacity-50"
                             >
                               Decline
                             </button>
