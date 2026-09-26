@@ -82,6 +82,7 @@
     "pilot:apply-waiver-parent-fk": "node scripts/pilot-apply-waiver-parent-fk-migration.mjs",
     "pilot:apply-waiver-recorded-by": "node scripts/pilot-apply-waiver-recorded-by-migration.mjs",
     "pilot:apply-capture-sessions": "node scripts/pilot-apply-capture-sessions-migration.mjs",
+    "pilot:apply-capture-participants": "node scripts/pilot-apply-capture-participants-migration.mjs",
     "pilot:apply-research-requirement-subject": "node scripts/pilot-apply-research-requirement-subject-migration.mjs",
     "pilot:apply-readiness-provenance": "node scripts/pilot-apply-readiness-provenance-migration.mjs",
     "pilot:apply-session-rpe-semantics": "node scripts/pilot-apply-session-rpe-semantics-migration.mjs",
