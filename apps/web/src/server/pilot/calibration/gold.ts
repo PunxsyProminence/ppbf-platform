@@ -1,5 +1,4 @@
 import { query, queryOne, withTransaction } from '../db';
-import { assertTeachingUseAllowed } from '../captureParticipants';
 import { isInVocabulary } from './ontology';
 
 // Gold / reference-dataset governance -- the deliberate act by which one
@@ -244,7 +243,6 @@ export async function nominateGoldCandidate(
      * Existing records stay as history. They do not become eligible again, and
      * they do not become eligible now.
      */
-    await assertTeachingUseAllowed(organizationId, source.video_session_id);
 
     if (source.resolution_type === 'unresolvable' || source.missed_event_verdict === 'unresolvable') {
       throw new Error(

@@ -1,5 +1,4 @@
 import { NextRequest } from 'next/server';
-import { assertTeachShadowConsent } from '@/src/server/pilot/guardianConsent';
 import { ensureCaptureParticipant, linkParticipantToSession } from '@/src/server/pilot/captureParticipants';
 
 import { GET, POST } from './route';
@@ -39,10 +38,6 @@ jest.mock('@/src/server/pilot/access', () => {
   const actual = jest.requireActual('@/src/server/pilot/access');
   return { ...actual, assertActorCanAccessAthlete: jest.fn(async () => undefined) };
 });
-jest.mock('@/src/server/pilot/guardianConsent', () => {
-  const actual = jest.requireActual('@/src/server/pilot/guardianConsent');
-  return { ...actual, assertTeachShadowConsent: jest.fn(async () => undefined) };
-});
 jest.mock('@/src/server/pilot/captureParticipants', () => ({
   ensureCaptureParticipant: jest.fn(async () => ({
     capture_participant_id: 'cp-1', organization_id: 'org-1', athlete_id: 'ath-1',
@@ -62,7 +57,6 @@ const mockGetOpenTake = jest.mocked(getOpenTake);
 const mockAdvance = jest.mocked(advanceTake);
 const mockClose = jest.mocked(closeRecordingSession);
 const mockListFiles = jest.mocked(listTakeFiles);
-const mockedAssertTeachConsent = jest.mocked(assertTeachShadowConsent);
 const mockedEnsureParticipant = jest.mocked(ensureCaptureParticipant);
 const mockedLinkSession = jest.mocked(linkParticipantToSession);
 
@@ -314,19 +308,25 @@ describe('multi-person contexts are withheld until a take can name everyone in i
     expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ trainingContext: context }));
   });
 
-  test('TS-ANON-01 -- a session cannot start without clearing who it is filming', async () => {
+  test('TS-ANON-01 -- filming to teach the recognizer is never blocked', async () => {
     /*
-     * Teaching media names nobody, which makes it impossible to ask afterwards
-     * whose guardian to check. So the question is asked ONCE, before any
-     * footage exists, and a session that skipped it can never be started
-     * rather than producing footage nobody can account for.
+     * OWNER RULING. This footage is training data for a recognizer, not a
+     * record about the person in frame, so nothing about a participant may
+     * stand between a coach and the camera. A session starts with nobody
+     * named at all.
+     *
+     * Naming one is optional metadata: when it is supplied the restricted
+     * link is written, so a scanner flagging something in the footage can
+     * still reach a real person. When it is not, filming proceeds.
      */
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
 
     const response = await POST(jsonRequest({ action: 'create', training_context: 'heavy_bag' }));
 
-    expect(response.status).toBe(400);
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(mockCreate).toHaveBeenCalled();
+    expect(mockedEnsureParticipant).not.toHaveBeenCalled();
+    expect(mockedLinkSession).not.toHaveBeenCalled();
   });
 
   test('TS-ANON-01 -- clearance happens, and then nothing it returns names the athlete', async () => {
@@ -343,7 +343,6 @@ describe('multi-person contexts are withheld until a take can name everyone in i
     );
 
     expect(response.status).toBe(200);
-    expect(mockedAssertTeachConsent).toHaveBeenCalledWith('org-a', 'ath-1');
     expect(mockedEnsureParticipant).toHaveBeenCalledWith(
       expect.objectContaining({ athleteId: 'ath-1' }),
     );

@@ -183,51 +183,6 @@ export async function assertGuardianMediaConsent(organizationId: string, athlete
   }
 }
 
-/*
- * TEACH SHADOW CONSENT -- a different permission, deliberately not the same row.
- *
- * The guardian-facing consent page describes photo_media as controlling
- * whether media may be used in gym publications. It says nothing about
- * teaching software to recognise punches, so treating that signature as
- * permission for this would be using an answer to a question nobody asked.
- * The owner-approved wording for THIS purpose is carried on the consent
- * surface; what matters here is that it is its own waiver_type, so granting
- * one never grants the other and withdrawing one never withdraws the other.
- *
- * pilot.waivers.waiver_type is plain text with no check constraint, so this
- * needed no schema change -- the ledger already supported a new purpose.
- */
-export const TEACH_SHADOW_CONSENT_WAIVER_TYPE = 'teach_shadow_ml';
-export const TEACH_SHADOW_CONSENT_VERSION = 'v1';
-
-export class TeachShadowConsentMissingError extends Error {
-  constructor(readonly athleteId: string, readonly missingParentIds: string[]) {
-    super(
-      missingParentIds.length > 0
-        ? `Blocked: Teach Shadow consent is missing or withdrawn for ${missingParentIds.length} of this athlete's guardians. Teaching consent is separate from photo and video consent for publications, and every guardian must have a current, signed one on file.`
-        : 'Blocked: this athlete has no guardians on file, so Teach Shadow consent cannot be verified. Link a guardian before filming them to teach Shadow.',
-    );
-    this.name = 'TeachShadowConsentMissingError';
-  }
-}
-
-export async function checkTeachShadowConsent(
-  organizationId: string,
-  athleteId: string,
-): Promise<ConsentCheckResult> {
-  return checkGuardianConsentOfType(organizationId, athleteId, TEACH_SHADOW_CONSENT_WAIVER_TYPE);
-}
-
-export async function assertTeachShadowConsent(
-  organizationId: string,
-  athleteId: string,
-): Promise<void> {
-  const result = await checkTeachShadowConsent(organizationId, athleteId);
-  if (!result.ok) {
-    throw new TeachShadowConsentMissingError(athleteId, result.missingParentIds);
-  }
-}
-
 // Round-8 review finding: the plain SELECT-based check above completes and
 // returns before the CAS-guarded approval transaction even opens, so a
 // guardian's withdrawal can commit in the gap between "checked" and

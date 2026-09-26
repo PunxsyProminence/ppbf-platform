@@ -14,12 +14,7 @@
 
 import { fileEscalation, type SafetyEscalationSeverity } from './escalationLadder';
 import { resolveScanSubject } from './captureParticipants';
-import {
-  assertGuardianMediaConsent,
-  assertTeachShadowConsent,
-  GuardianConsentMissingError,
-  TeachShadowConsentMissingError,
-} from './guardianConsent';
+import { assertGuardianMediaConsent, GuardianConsentMissingError } from './guardianConsent';
 import { emitShadowEvent } from './shadowEvents';
 import { scanVideoSession } from './videoScan';
 import {
@@ -188,17 +183,10 @@ export async function sweepQuarantinedVideos(options: {
     let contentSkippedForConsent = false;
     if (config.content === 'vision') {
       if (subject.isTeaching) {
-        if (subject.athleteIds.length === 0) {
-          contentSkippedForConsent = true;
-        }
-        for (const athleteId of subject.athleteIds) {
-          try {
-            await assertTeachShadowConsent(claim.organization_id, athleteId);
-          } catch (error) {
-            if (!(error instanceof TeachShadowConsentMissingError)) throw error;
-            contentSkippedForConsent = true;
-          }
-        }
+        // Nothing to ask. Teaching footage is training data for a recognizer,
+        // not a record about the person in frame, and the owner ruled it
+        // carries no per-athlete permission. The restricted link is kept for
+        // safeguarding escalation below, not as a gate.
       } else if (claim.athlete_id) {
         try {
           await assertGuardianMediaConsent(claim.organization_id, claim.athlete_id);

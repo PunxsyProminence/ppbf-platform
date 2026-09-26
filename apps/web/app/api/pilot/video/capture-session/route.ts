@@ -19,7 +19,6 @@ import {
   type CaptureTake,
 } from '@/src/server/pilot/captureSessions';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { assertTeachShadowConsent } from '@/src/server/pilot/guardianConsent';
 
 export const runtime = 'nodejs';
 
@@ -109,20 +108,16 @@ export async function POST(request: NextRequest) {
        * other redundant.
        */
       const clearedAthleteId = typeof body?.athlete_id === 'string' ? body.athlete_id.trim() : '';
-      if (!clearedAthleteId) {
-        throw new Error(
-          'Unsupported: a capture session must clear the participant it is filming before it can start.',
-        );
-      }
-
-      await assertActorCanAccessAthlete(principal, clearedAthleteId);
-      await assertTeachShadowConsent(principal.organizationId, clearedAthleteId);
-
-      const participant = await ensureCaptureParticipant({
-        organizationId: principal.organizationId,
-        athleteId: clearedAthleteId,
-        createdByAccountId: principal.accountId,
-      });
+      const participant = clearedAthleteId
+        ? await (async () => {
+          await assertActorCanAccessAthlete(principal, clearedAthleteId);
+          return ensureCaptureParticipant({
+            organizationId: principal.organizationId,
+            athleteId: clearedAthleteId,
+            createdByAccountId: principal.accountId,
+          });
+        })()
+        : null;
 
       const { session, take } = await createRecordingSession({
         organizationId: principal.organizationId,
@@ -139,11 +134,13 @@ export async function POST(request: NextRequest) {
        * so the worst outcome is a dead session the coach starts again, never
        * footage stored without a guardian behind it.
        */
-      await linkParticipantToSession({
-        organizationId: principal.organizationId,
-        recordingSessionId: session.recordingSessionId,
-        captureParticipantId: participant.capture_participant_id,
-      });
+      if (participant) {
+        await linkParticipantToSession({
+          organizationId: principal.organizationId,
+          recordingSessionId: session.recordingSessionId,
+          captureParticipantId: participant.capture_participant_id,
+        });
+      }
 
       return NextResponse.json({ ok: true, session: await sessionPayload(session, take) });
     }

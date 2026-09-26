@@ -1,5 +1,4 @@
 import { query, queryOne } from '../db';
-import { assertTeachingUseAllowed } from '../captureParticipants';
 import { getVideoSessionById } from '../videoSessions';
 import {
   BOXING_ONTOLOGY_VERSION,
@@ -332,7 +331,6 @@ export async function assertVideoClippable(
    * missed would keep teaching from footage whose guardian had said stop --
    * a failure that would look exactly like success.
    */
-  await assertTeachingUseAllowed(organizationId, videoSessionId);
 
   /*
    * NULL for teaching footage, and that is correct rather than a loss. The

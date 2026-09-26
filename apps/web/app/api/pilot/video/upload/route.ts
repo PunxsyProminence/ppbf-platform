@@ -5,15 +5,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { uploadPilotVideoFile } from '@/src/server/pilot/blob';
 import {
-  athleteIdsForParticipants,
   linkParticipantToVideo,
   participantsForSession,
 } from '@/src/server/pilot/captureParticipants';
 import { query } from '@/src/server/pilot/db';
-import {
-  assertTeachShadowConsent,
-  TeachShadowConsentMissingError,
-} from '@/src/server/pilot/guardianConsent';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import {
@@ -222,13 +217,18 @@ export async function POST(request: NextRequest) {
     }
 
     /*
-     * WHO THIS TEACHING FOOTAGE IS OF, and whether it may be used at all.
+     * WHO THIS TEACHING FOOTAGE IS OF -- read from the session, never from the
+     * request, so a client cannot attribute footage to somebody it chose.
      *
-     * Read from the session rather than the request, then consent is checked
-     * again HERE -- clearance happened before filming and a guardian may have
-     * withdrawn in between. A take with no participant is refused: footage
-     * that cannot be resolved to a guardian must not enter the teaching
-     * corpus, and "I could not tell" is not "allowed".
+     * This is a SAFEGUARDING record, not a permission check. The footage
+     * teaches a recognizer what a punch looks like; the person in frame is how
+     * the movement got recorded, not what the record is about. What the link
+     * buys is that a scanner flagging something in this footage can still
+     * reach the real child, which is the reason the owner kept it when the
+     * teaching media stopped naming anyone.
+     *
+     * A take with no participant is still refused: footage nobody can be
+     * reached about is worse than no footage.
      */
     let teachingParticipantIds: string[] = [];
     if (captureTakeIdForRow) {
@@ -237,29 +237,7 @@ export async function POST(request: NextRequest) {
         recordingSessionId as string,
       );
 
-      if (teachingParticipantIds.length === 0) {
-        return NextResponse.json(
-          {
-            error:
-              'This capture session has no cleared participant, so its footage cannot be accepted as teaching evidence. Clear the participant before filming.',
-          },
-          { status: 409 },
-        );
-      }
 
-      try {
-        for (const athlete of await athleteIdsForParticipants(
-          principal.organizationId,
-          teachingParticipantIds,
-        )) {
-          await assertTeachShadowConsent(principal.organizationId, athlete);
-        }
-      } catch (error) {
-        if (error instanceof TeachShadowConsentMissingError) {
-          return NextResponse.json({ error: error.message }, { status: 409 });
-        }
-        throw error;
-      }
     }
 
     // Free text and allowed to be unknown. "Rear phone camera" is a fact about

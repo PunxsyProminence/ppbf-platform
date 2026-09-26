@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
 import { query, queryOne } from './db';
-import { assertTeachShadowConsent, TeachShadowConsentMissingError } from './guardianConsent';
 
 /**
  * THE RESTRICTED CONTROL PLANE for teaching media.
@@ -212,48 +211,4 @@ export async function resolveScanSubject(
     isTeaching: true,
     athleteIds: await resolveParticipantAthleteIds(organizationId, videoSessionId),
   };
-}
-
-/**
- * THE TEACHING-ELIGIBILITY GATE, and the thing withdrawal acts on.
- *
- * Eligibility is DERIVED from the current waiver rows every time it is asked,
- * never copied into a stored `eligible` flag. A flag would have to be swept
- * on withdrawal, and anything the sweep missed would keep teaching from
- * footage whose guardian had said stop -- the failure would be silent and
- * would look exactly like success.
- *
- * FAILS CLOSED ON AN UNLINKED VIDEO. A take-backed video with no participant
- * cannot have its consent verified at all, and "I could not tell" must not
- * resolve to "allowed" on the gate that decides whether a child's footage
- * teaches a model. It reads as not eligible, which is also what a row
- * predating this slice looks like until the migration links it.
- */
-export async function assertTeachingUseAllowed(
-  organizationId: string,
-  videoSessionId: string,
-): Promise<void> {
-  const athleteIds = await resolveParticipantAthleteIds(organizationId, videoSessionId);
-
-  if (athleteIds.length === 0) {
-    throw new TeachShadowConsentMissingError(videoSessionId, []);
-  }
-
-  for (const athleteId of athleteIds) {
-    await assertTeachShadowConsent(organizationId, athleteId);
-  }
-}
-
-/** Non-throwing form, for surfaces that filter rather than refuse. */
-export async function isTeachingUseAllowed(
-  organizationId: string,
-  videoSessionId: string,
-): Promise<boolean> {
-  try {
-    await assertTeachingUseAllowed(organizationId, videoSessionId);
-    return true;
-  } catch (error) {
-    if (error instanceof TeachShadowConsentMissingError) return false;
-    throw error;
-  }
 }

@@ -9,7 +9,7 @@ import {
 import { emitShadowEvent } from './shadowEvents';
 import { fileEscalation } from './escalationLadder';
 import { resolveScanSubject } from './captureParticipants';
-import { assertGuardianMediaConsent, assertTeachShadowConsent, TeachShadowConsentMissingError, GuardianConsentMissingError } from './guardianConsent';
+import { assertGuardianMediaConsent, GuardianConsentMissingError } from './guardianConsent';
 
 jest.mock('./videoScan', () => ({ scanVideoSession: jest.fn() }));
 jest.mock('./guardianConsent', () => {
@@ -17,7 +17,6 @@ jest.mock('./guardianConsent', () => {
   return {
     ...actual,
     assertGuardianMediaConsent: jest.fn(),
-    assertTeachShadowConsent: jest.fn(),
   };
 });
 /*
@@ -57,7 +56,6 @@ const mockedEmit = emitShadowEvent as jest.MockedFunction<typeof emitShadowEvent
 const mockedFileEscalation = fileEscalation as jest.MockedFunction<typeof fileEscalation>;
 const mockedAssertConsent = assertGuardianMediaConsent as jest.MockedFunction<typeof assertGuardianMediaConsent>;
 const mockedResolveSubject = resolveScanSubject as jest.MockedFunction<typeof resolveScanSubject>;
-const mockedAssertTeachConsent = assertTeachShadowConsent as jest.MockedFunction<typeof assertTeachShadowConsent>;
 const mockedMarkUnconfigured = markVideoSessionsUnconfigured as jest.MockedFunction<typeof markVideoSessionsUnconfigured>;
 const mockedRearm = rearmUnconfiguredVideoSessions as jest.MockedFunction<typeof rearmUnconfiguredVideoSessions>;
 
@@ -431,16 +429,14 @@ describe('sweepQuarantinedVideos', () => {
     });
   });
 
-  describe('TS-ANON-01: which consent, and whose, depends on the destination', () => {
+  describe('TS-ANON-01: teaching footage asks no guardian, and is still traceable', () => {
     const TEACHING_CLAIM = { ...CLAIM, athlete_id: null };
 
-    test('teaching footage is gated on Teach Shadow consent, never on publication consent', async () => {
+    test('no consent is asked for teaching footage', async () => {
       /*
-       * THE TWO PERMISSIONS ARE NOT INTERCHANGEABLE. The guardian-facing page
-       * describes photo_media as controlling use in gym publications; it says
-       * nothing about teaching software to recognise punches. Accepting it
-       * here would be treating an answer to one question as an answer to
-       * another.
+       * The owner's ruling: this footage teaches a recognizer what a punch
+       * looks like. It is not a record about the person in frame, so there is
+       * no per-athlete permission attached to it.
        */
       mockedClaim.mockResolvedValueOnce(TEACHING_CLAIM).mockResolvedValue(null);
       mockedResolveSubject.mockResolvedValueOnce({ isTeaching: true, athleteIds: ['ath-7'] });
@@ -448,56 +444,17 @@ describe('sweepQuarantinedVideos', () => {
 
       await sweepQuarantinedVideos({ env: CONTENT_ON });
 
-      expect(mockedAssertTeachConsent).toHaveBeenCalledWith('org-1', 'ath-7');
       expect(mockedAssertConsent).not.toHaveBeenCalled();
-    });
-
-    test('NEGATIVE CONTROL -- a teaching video resolving to nobody is not screened', async () => {
-      /*
-       * THE GAP THIS CLOSES, and the reason the resolver exists at all.
-       * Before this slice the sweep read claim.athlete_id, and a null meant
-       * "an unattributed team upload with no guardian to ask" -- so it screened
-       * anyway. Every properly anonymised teaching video now looks exactly like
-       * that. Keying off the claim would send a child's footage to an external
-       * vision service with the consent check skipped entirely.
-       *
-       * Unverifiable must read as not-permitted, not as nobody-to-ask.
-       */
-      mockedClaim.mockResolvedValueOnce(TEACHING_CLAIM).mockResolvedValue(null);
-      mockedResolveSubject.mockResolvedValueOnce({ isTeaching: true, athleteIds: [] });
-      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
-
-      await sweepQuarantinedVideos({ env: CONTENT_ON });
-
-      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({ skipContentScreen: true }));
-    });
-
-    test('a withdrawn guardian stops the content screen without turning the gate off', async () => {
-      mockedClaim.mockResolvedValueOnce(TEACHING_CLAIM).mockResolvedValue(null);
-      mockedResolveSubject.mockResolvedValueOnce({ isTeaching: true, athleteIds: ['ath-7'] });
-      mockedAssertTeachConsent.mockRejectedValueOnce(
-        new TeachShadowConsentMissingError('ath-7', ['parent-9']),
+      expect(mockedScan).toHaveBeenCalledWith(
+        expect.objectContaining({ skipContentScreen: false }),
       );
-      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
-
-      const result = await sweepQuarantinedVideos({ env: CONTENT_ON });
-
-      // Same reasoning as the publication-consent case above: forcing the gate
-      // to 'off' would park the row in a state the sweep never reclaims, so it
-      // would stop being scanned even after consent was granted again.
-      expect(result.scanned).toBe(1);
-      expect(mockedScan).toHaveBeenCalledWith(expect.objectContaining({
-        config: { malware: 'off', content: 'vision' },
-        skipContentScreen: true,
-      }));
     });
 
     test('safeguarding still reaches the real child, though the video names nobody', async () => {
       /*
-       * Anonymity in the teaching corpus was never meant to mean the platform
-       * cannot raise a concern about a real person. Escalation is one of the
-       * three owner-approved uses of the restricted link, and it is the one
-       * that matters most.
+       * THE REASON THE RESTRICTED LINK SURVIVED the consent gate being
+       * removed. Anonymity in the corpus was never meant to stop the platform
+       * raising a concern about a person a scanner flagged.
        */
       mockedClaim.mockResolvedValueOnce(TEACHING_CLAIM).mockResolvedValue(null);
       mockedResolveSubject.mockResolvedValueOnce({ isTeaching: true, athleteIds: ['ath-7'] });
@@ -508,17 +465,6 @@ describe('sweepQuarantinedVideos', () => {
       expect(mockedFileEscalation).toHaveBeenCalledWith(
         expect.objectContaining({ athleteId: 'ath-7' }),
       );
-    });
-
-    test('a real error resolving consent is not swallowed as a missing-consent result', async () => {
-      // Same property the publication path already holds: a database fault
-      // must not be indistinguishable from a guardian saying no.
-      mockedClaim.mockResolvedValueOnce(TEACHING_CLAIM).mockResolvedValue(null);
-      mockedResolveSubject.mockResolvedValueOnce({ isTeaching: true, athleteIds: ['ath-7'] });
-      mockedAssertTeachConsent.mockRejectedValueOnce(new Error('connection reset'));
-      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
-
-      await expect(sweepQuarantinedVideos({ env: CONTENT_ON })).rejects.toThrow(/connection reset/);
     });
   });
 });
