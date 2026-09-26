@@ -91,6 +91,95 @@ and should not try to.
 
 ---
 
+## OD-2026-09-26-001 -- Near-miss records are coach and organization-admin chat context only
+
+**Provenance: PRIMARY.** The owner's answer is recorded verbatim below, and the
+options are reproduced exactly as they were put to him, because the word alone
+does not carry the decision.
+
+**Date:** 2026-09-26. **Governs:** which roles receive recorded near-miss
+events in SHADOW chat prompt context. **Supersedes** nothing -- no prior entry
+addressed near-miss audience. It does not change `assertActorCanAccessAthlete`
+or any other authorization rule.
+
+### The decision
+
+Put to him as question 1 of three, verbatim as asked:
+
+> **1. Near-miss text in chat** -- athletes/parents currently get coach-written
+> near-miss descriptions (free text, can name another child). The API refuses
+> them the same records.
+> -> **(a)** coaches/admins only *(my recommendation)* . **(b)** own record,
+> names redacted . **(c)** leave as is
+
+His answer, verbatim:
+
+> a
+
+### What that means
+
+1. Near-miss records reach SHADOW prompt context only for `DECISION_LOOP_ROLES`
+   -- `coach`, `organization_admin` and legacy `admin`. That is the same set
+   `GET /api/pilot/shadow/near-misses` already requires, so the decision closes
+   a gap between two surfaces rather than creating a new rule.
+2. Athlete and parent keep ordinary athlete-scoped context. They lose the
+   near-miss descriptions, the evidence ids, and any signal that records exist
+   or do not exist.
+3. **Redaction was on the table as (b) and was not chosen.** A later lane
+   should not reach for "show the athlete their own record with names removed"
+   as an obvious middle path. It was offered and declined.
+4. `platform_owner` and `board` do not reach this context, because
+   `assertActorCanAccessAthlete` refuses them earlier. That is READ FROM
+   `access.ts`, not executed in the gate's own tests, which mock the
+   authorization check. The gate itself refuses every role outside
+   `DECISION_LOOP_ROLES`, and its tests enumerate the whole `PilotRole` union,
+   so the ruling does not depend on that reading holding.
+
+INTERPRETATION, marked because the owner's answer did not spell it out:
+"coaches/admins" was implemented as `DECISION_LOOP_ROLES`, which carries legacy
+`admin` alongside `organization_admin`. That matches how every other route in
+the repository reads "admin" and matches `GET /near-misses` exactly, but it is
+a reading of "a", not a distinction the owner drew. If he meant
+`organization_admin` only, this entry is the thing to correct.
+
+### The already-delivered question, and the owner's answer
+
+This entry was first drafted carrying text delivered before the gate existed as
+an open question, because the conversation-history loader re-feeds recent turns
+and delivered text would keep resurfacing after the gate. It was put to the
+owner the same day as question A. His answer, verbatim:
+
+> A NONE HAS BEEN SENT
+
+So there is nothing to remediate: on the owner's statement, no near-miss text
+has reached an athlete or parent conversation.
+
+**This rests on the owner's knowledge of who has used SHADOW, not on a
+measurement.** No database, environment, conversation or log was read, and none
+was authorized. It is recorded here as his statement rather than as a verified
+fact, because it is the kind of claim that a later data pull could contradict.
+If it ever is contradicted, the remediation question re-opens and this section
+is the thing to correct. Nothing here authorizes deletion, rewriting or purging
+of stored conversations.
+
+### The evidence it rested on
+
+- `retrieveShadowContext` called `listRecentNearMisses` with no role gate for
+  every role that cleared athlete authorization, injecting a whitespace-collapsed
+  240-character slice of `description` with a citable `[E:<near_miss_id>]`.
+  Read at `c15b9644a8a184f111974d04c2af07175ad3110c`.
+- `GET /api/pilot/shadow/near-misses` requires `DECISION_LOOP_ROLES`, at the
+  same SHA.
+- `docs/current/ACTIVE_WORK.md` had carried the mismatch as FOR THE OWNER since
+  2026-08-28 -- open for a month before it was put to him.
+- No environment, database or log was read. Whether any athlete or parent has
+  actually received near-miss text is UNVERIFIED, and no affected population
+  was estimated.
+
+Built to on branch `local/shadow-near-miss-audience`.
+
+---
+
 ## OD-2026-09-25-003 -- Any coach or admin in the organization may read an athlete's session note
 
 **Provenance: PRIMARY** for the owner's quoted words, as carried in the

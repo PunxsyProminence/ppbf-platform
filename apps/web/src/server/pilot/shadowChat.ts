@@ -4,6 +4,7 @@
 import { assertActorCanAccessAthlete } from './access';
 import type { PilotRole } from './contracts';
 import { listRecentNearMisses } from './shadowNearMisses';
+import { DECISION_LOOP_ROLES } from './shadowRoleSets';
 
 // 5-minute org-level context cache — avoids 3 DB queries per request
 const contextCache = new Map<string, { value: string; expiresAt: number }>();
@@ -376,6 +377,19 @@ export function validateShadowRequest(
   return { valid: true, highRisk: false, topic: 'none' };
 }
 
+// The one line excluded roles get in place of near-miss records.
+//
+// It is a statement about THIS CONTEXT, never about the athlete's records,
+// and it is returned identically whether or not events exist. The three
+// strings below it are all traps if reused here: "No near-miss events
+// recorded" is a false statement for an athlete who has them; the
+// retrieval-failed line is worse, because its conservative-progression
+// directive would appear only when there was something to withhold, so the
+// model's own caution would signal that events exist. Withholding that
+// leaks by implication is not withholding.
+const NEAR_MISS_CONTEXT_WITHHELD =
+  'Recorded safety events are not available in this context. For intensity, contact, or progression questions, defer to the athlete\'s coach.';
+
 // Retrieve context based on user role and authorization
 export async function retrieveShadowContext(params: {
   userRole: PilotRole;
@@ -428,6 +442,37 @@ export async function retrieveShadowContext(params: {
   // pattern, so the model can reference recorded events without the response
   // validator discarding them as uncited claims.
   const header = `Authorized role: ${userRole}. Authorized organization: ${organizationId}. Authorized athlete scope: ${athleteId}.`;
+
+  // AUDIENCE GATE -- owner decision 2026-09-26, recorded open since 2026-08-28.
+  //
+  // Near-miss `description` is unsanitised coach free text about a youth
+  // roster. Every role that cleared assertActorCanAccessAthlete above used to
+  // reach the read below, so the path COULD place that text into athlete and
+  // parent prompt context even though GET /api/pilot/shadow/near-misses
+  // denies those roles -- the same records, the same organization, one
+  // surface gated and the other not. Whether it ever actually did is not
+  // asserted here and was not measured: no conversation, database or log was
+  // read, and the owner states none was sent.
+  //
+  // DECISION_LOOP_ROLES is the list that route already requires, so this is
+  // the same rule expressed once rather than a second literal that can drift
+  // away from it. The gate refuses every role outside that set. access.ts
+  // additionally refuses platform_owner and board before this point, which is
+  // READ FROM that module rather than exercised here -- which is why the
+  // tests enumerate the whole PilotRole union instead of relying on it.
+  //
+  // The gate is BEFORE the query, not a filter after it: an excluded role
+  // must not cause the read, carry an evidence id, or learn from the shape of
+  // the answer whether anything is on file. Ordinary athlete context is
+  // unchanged for them -- this removes the safety records, not the access.
+  if (!DECISION_LOOP_ROLES.includes(userRole)) {
+    return {
+      context: `${header}\n${NEAR_MISS_CONTEXT_WITHHELD}`,
+      authorized: true,
+      evidenceIds: [],
+    };
+  }
+
   try {
     const nearMisses = await listRecentNearMisses(organizationId, athleteId);
     if (nearMisses.length === 0) {
