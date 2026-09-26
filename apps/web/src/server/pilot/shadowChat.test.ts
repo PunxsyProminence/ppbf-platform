@@ -12,6 +12,7 @@ import {
 } from './shadowChat';
 import { assertActorCanAccessAthlete } from './access';
 import { listRecentNearMisses } from './shadowNearMisses';
+import { DECISION_LOOP_ROLES } from './shadowRoleSets';
 
 jest.mock('./access', () => ({
   assertActorCanAccessAthlete: jest.fn(),
@@ -323,8 +324,10 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
   // carry a sentinel that could only have come from the records.
   // -------------------------------------------------------------------------
   describe('Near-Miss Audience Gate', () => {
-    // description is unsanitised coach free text about a youth roster, so the
-    // realistic leak is another child named in a note about this one.
+    // description is unsanitised coach free text about a youth roster. A note
+    // about one child naming another is the RISK MODEL this sentinel stands
+    // in for -- it is invented for the test, not an observed incident, and
+    // nothing here asserts any such record exists.
     const SENTINEL = 'Marcus Webb was the other athlete in the ring.';
     const SENTINEL_ID = 'dddddddd-eeee-4fff-8aaa-bbbbbbbbbbbb';
 
@@ -434,9 +437,7 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       });
     });
 
-    test('the withheld line matches what GET /near-misses already enforces', async () => {
-      // The gate reuses DECISION_LOOP_ROLES, the list that route requires, so
-      // the two surfaces cannot drift apart into the state this slice fixed.
+    test('an excluded role is given the withheld line', async () => {
       mockListRecentNearMisses.mockResolvedValue(severeRows());
 
       const athlete = await retrieveShadowContext({
@@ -448,6 +449,51 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
 
       expect(athlete.context).toContain('Recorded safety events are not available in this context.');
       expect(athlete.context).toContain("defer to the athlete's coach");
+    });
+
+    // THE ACTUAL PARITY CHECK, and it replaces one that only looked like one.
+    // The old test asserted that an athlete's context contained the withheld
+    // line, under a comment claiming the two surfaces "cannot drift apart".
+    // It never touched the route or its role list, so it could not have
+    // detected drift at all.
+    //
+    // The two sides also decide membership DIFFERENTLY. GET /near-misses calls
+    // requireRole, which treats legacy `admin` and `organization_admin` as the
+    // same role; this gate uses a strict DECISION_LOOP_ROLES.includes. Today
+    // they agree only because both roles happen to be listed. Sharing a
+    // constant is not the same as sharing a decision, so pin the decision --
+    // for every role in the union, against the REAL requireRole.
+    test('this gate admits exactly the roles GET /near-misses admits', () => {
+      const { requireRole } = jest.requireActual<typeof import('./access')>('./access');
+
+      const ALL_PILOT_ROLES = [
+        'platform_owner', 'organization_admin', 'admin', 'coach',
+        'athlete', 'parent', 'board', 'volunteer', 'staff',
+      ] as const;
+
+      const gate = ALL_PILOT_ROLES.map((role) => ({
+        role,
+        admitted: DECISION_LOOP_ROLES.includes(role),
+      }));
+
+      const route = ALL_PILOT_ROLES.map((role) => {
+        let admitted = true;
+        try {
+          requireRole(
+            { accountId: 'account-1', role, organizationId: 'org-456', athleteId: null },
+            [...DECISION_LOOP_ROLES],
+          );
+        } catch {
+          admitted = false;
+        }
+        return { role, admitted };
+      });
+
+      expect(gate).toEqual(route);
+
+      // And the answer is not vacuous in either direction.
+      expect(gate.filter((r) => r.admitted).map((r) => r.role))
+        .toEqual(['organization_admin', 'admin', 'coach']);
     });
   });
 

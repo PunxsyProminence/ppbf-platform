@@ -116,6 +116,17 @@ His answer, verbatim:
 
 > a
 
+**The premise of that question was overstated, and the record should say so.**
+It told him athletes and parents "currently get" those descriptions. That was
+a statement about what the code ALLOWED -- every role clearing the athlete
+check reached the read -- not about anything observed. No conversation,
+database or log had been read, and he later stated none had been sent. The
+"can name another child" clause is likewise a risk model, not a reported
+incident. The recommendation marked in the options was the builder's, not an
+independent one. The ruling stands on the reachability alone, which is
+sufficient and was verified in source; a reader should not conclude it rested
+on observed leaks.
+
 ### What that means
 
 1. Near-miss records reach SHADOW prompt context only for `DECISION_LOOP_ROLES`
