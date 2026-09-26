@@ -466,6 +466,23 @@ const SCOPES: readonly ScopeCase[] = [
     components: [
       { selector: '.btn', property: 'background-image', note: 'the ghost button back to the coach workspace' },
       { selector: '.input', property: 'border-top-color', note: 'the name-search field keyline (first field since the cabinet redesign)' },
+      {
+        /* The equipment rail, added by the 2026-09-26 room ruling. New surface
+           the scope paints, so it earns a probe like any other.
+
+           NO WALK STEP WAS ADDED TO THIS HARNESS FOR THE HIDDEN STATIONS, and
+           that is a measured decision rather than an omission. Two of the three
+           stations carry the `hidden` attribute, but nothing this sweep does is
+           blind to that: the probes read getComputedStyle off querySelector, and
+           a display:none element still resolves its colours; `renders` is matched
+           against textContent, which includes hidden text (its own docblock says
+           why it is not innerText); and `ready` names .ge-drillcase .mat-leather,
+           the discovery panel inside the station that IS open. So every existing
+           probe on this surface still measures what it always did. */
+        selector: '.ge-drillcase__station',
+        property: 'background-image',
+        note: 'a drawer front on the equipment rail',
+      },
       { selector: '.ge-drillcase__boundary', property: 'border-left-color', note: 'the brass edge of "Promoting does not assign the drill to any athlete."' },
       { selector: '.ge-drillcase__state', property: 'border-top-color', note: 'the lifecycle stamp on a cream index card' },
       { selector: '.ge-drillcase__provenance--reference', property: 'border-top-color', note: 'a promoted drill\'s provenance stamp on its ledger card' },

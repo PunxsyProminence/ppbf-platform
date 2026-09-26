@@ -87,7 +87,16 @@ const ALIAS_CEILINGS: Readonly<Record<string, number>> = {
  *
  * `room--*` is counted as OCCURRENCES rather than files, because a file that
  * swaps one room for two has grown the debt while keeping its file count. 143
- * across 88 files, measured 2026-08-23 by the same walk this test performs.
+ * across 88 files, measured 2026-08-23 by the same walk this test performs; 142
+ * across 87 since 2026-09-26, when /coach/drills stopped wearing `room--floor`.
+ *
+ * THE CEILING COMES DOWN WITH EVERY REMOVAL, and that is the owner's 2026-09-26
+ * ruling applied to this guard: finish the retirement by deleting the vocabulary
+ * rather than carrying it at a fixed ceiling. Leaving this at 143 after a removal
+ * would bank one occurrence of slack -- and this docblock already records what
+ * slack does here, because a ceiling 24 above the real count let a deliberate new
+ * `room--office` through. So a removal is not merely permitted, it is the point:
+ * lower the number by what was removed, in the same change.
  *
  * Measured that way ON PURPOSE. The first figure here was 167, taken from a
  * shell grep that filtered out matching LINES containing "test" rather than
@@ -101,7 +110,7 @@ const ALIAS_CEILINGS: Readonly<Record<string, number>> = {
  * this is the assertion that makes that real rather than advisory.
  */
 const CLASS_CEILINGS: Readonly<Record<string, number>> = {
-  'room--': 143,
+  'room--': 142,
 };
 
 /**

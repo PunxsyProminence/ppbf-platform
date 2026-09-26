@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- The drill cabinet at favicon scale: the walnut carcass and three brass
+       drawer fronts, which is the same reading the equipment rail gives inside
+       the room. Three bars is what survives 16px; the nameplate lettering does
+       not, so it is not drawn.
+
+       NO #A81E22 ANYWHERE. The platform seal in app/icon.svg spends the
+       safeguarding red on its rings, and that colour is reserved for
+       MEDICALLY_NOT_ALLOWED — a room icon is exactly the decorative place it may
+       not be spent. Brass on walnut is this room's own metal instead. -->
+  <rect width="64" height="64" rx="12" fill="#1F1409"/>
+  <rect x="8" y="8" width="48" height="48" rx="6" fill="none" stroke="#6E5220" stroke-width="2"/>
+  <rect x="15" y="16" width="34" height="9" rx="2" fill="#BE9440"/>
+  <rect x="15" y="29" width="34" height="9" rx="2" fill="#9F7A30"/>
+  <rect x="15" y="42" width="34" height="9" rx="2" fill="#6E5220"/>
+</svg>

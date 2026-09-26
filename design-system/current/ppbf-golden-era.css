@@ -2037,14 +2037,34 @@
   --brass-900-rgb:  57  41  16;
 }
 
-/* The carcass. .room--floor paints brick, which is the wall the gym's floor
-   room stands in -- but this surface is the INSIDE of a cabinet, so the ground
-   becomes its back boards: dark walnut running vertically, the way the
-   reference's panel does. (0,2,0) against .room--floor's (0,1,0), and later in
-   source order, so it wins both ways without !important. The --plate custom
-   property is deliberately NOT touched; that cascade is a shared room
-   inventory with its own guard. */
-.ge-drillcase.room--floor {
+/* The carcass, and THIS ROOM'S OWN GROUND.
+
+   This block used to key off `.room--floor` -- the page wore `room room--floor`
+   and the cabinet painted over the gym floor's brick. The paint and the class
+   disagreed: the door in buildingMap.ts filed the surface under the Gym Floor,
+   the class said floor, and what came up was walnut. That is exactly the drift
+   buildingMap.ts's own header warns about ("the catalog said Front Office, the
+   wall came up clinic green"), and it is why the owner's 2026-09-26 ruling makes
+   the drill cabinet a room of its own rather than a cabinet standing in someone
+   else's.
+
+   So the selector is `.ge-drillcase.room` now. Same specificity it had, (0,2,0)
+   against bare `.room`'s (0,1,0), and still later in source order, so it wins
+   both ways without !important -- but it no longer borrows another room's
+   identity to get there.
+
+   `--plate: none` IS RESTATED HERE, and it is not redundant. It was arriving
+   from `.room--floor`'s golden-era override, which this page no longer wears;
+   the legacy PLATES block would otherwise be the only thing with an opinion,
+   and it binds `--plate` per room class. The painter reads `var(--plate, none)`
+   (legacy:3598), so an unset token already resolves to nothing -- this states
+   the intent rather than leaving a room with no wall relying on a fallback
+   nobody reading this block can see.
+
+   The ground is the cabinet's back boards: dark walnut running vertically, the
+   way the reference's panel does. */
+.ge-drillcase.room {
+  --plate: none;
   background-color: var(--wood-900);
   background-image:
     var(--grain),
@@ -2069,6 +2089,94 @@
     radial-gradient(72% 88% at 8% 2%, rgba(255,231,182,.30), transparent 68%),
     radial-gradient(110% 58% at 46% 30%, rgba(255,227,176,.10), transparent 76%),
     radial-gradient(120% 74% at 50% 108%, rgba(0,0,0,.70), transparent 66%);
+}
+
+/* ==========================================================================
+   THE EQUIPMENT RAIL -- three drawer fronts, not a row of tabs.
+
+   The owner's 2026-09-26 direction for this room: "the tabs in the room is
+   different equipment", and a coach should know where they are standing from
+   the layout and the materials alone. So the rail is built as the fronts of the
+   cabinet's own drawers -- walnut faces with engraved bronze nameplates -- and
+   the one the coach is standing at is THE ONLY BRASS IN THE ROW. That is the
+   same rule the rest of the material system follows: brass means "the thing you
+   have chosen", never "this is a control".
+
+   THE TARGET IS --tap (55px), STATED ON THE FRONT ITSELF. Three side-by-side
+   controls at the head of a room are exactly where a thumb arrives first, and
+   padding alone does not make a promise a guard can read. The nameplate sits at
+   --t-md rather than a label size, because this is the thing that answers
+   "which equipment am I at" and the answer should not be the smallest type on
+   the screen.
+
+   NO `display` ON THE PANELS. The three stations are hidden with the `hidden`
+   ATTRIBUTE, whose UA rule is `display: none`, and an unlayered `display` on a
+   panel hook here would out-rank it and leave every station visible at once.
+   None of the three panel hooks below sets one; this comment is what stops the
+   next person adding it.
+   ========================================================================== */
+.ge-drillcase .ge-drillcase__rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+}
+
+.ge-drillcase .ge-drillcase__station {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--s1);
+  min-height: var(--tap);
+  padding: var(--s3) var(--s4);
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--brass-700) 54%, transparent);
+  border-radius: var(--r-md);
+  background-color: #1B130C;
+  background-image:
+    var(--grain-fine),
+    linear-gradient(178deg, #2C1E12 0%, #1C130B 62%, #130D08 100%);
+  background-blend-mode: overlay, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(231,200,138,.13),
+    0 4px 10px rgba(0,0,0,.52);
+}
+
+.ge-drillcase .ge-drillcase__station .ge-drillcase__station-name {
+  color: color-mix(in srgb, var(--brass-200) 58%, var(--bone-200));
+  font-size: var(--t-md);
+  text-shadow: 0 1px 0 rgba(0,0,0,.62);
+}
+
+.ge-drillcase .ge-drillcase__station .ge-drillcase__station-note {
+  color: var(--bone-300);
+  letter-spacing: 0.11em;
+}
+
+/* The drawer that is open. Brass face, the nameplate cut into it, and the front
+   sits PROUD of the others rather than merely brighter -- a coach reading the
+   row at a glance gets the answer from the shape as well as the metal, which is
+   what a colour-blind coach reading it gets too. */
+.ge-drillcase .ge-drillcase__station[aria-current='true'] {
+  border-color: color-mix(in srgb, var(--brass-300) 82%, transparent);
+  background-color: var(--brass-800);
+  background-image:
+    var(--grain-fine),
+    linear-gradient(178deg,
+      color-mix(in srgb, var(--brass-500) 88%, #000) 0%,
+      var(--brass-700) 58%,
+      color-mix(in srgb, var(--brass-800) 92%, #000) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,232,186,.34),
+    0 7px 16px rgba(0,0,0,.6);
+}
+
+.ge-drillcase .ge-drillcase__station[aria-current='true'] .ge-drillcase__station-name {
+  color: #17110A;
+  text-shadow: 0 1px 0 rgba(255,232,186,.34);
+}
+
+.ge-drillcase .ge-drillcase__station[aria-current='true'] .ge-drillcase__station-note {
+  color: color-mix(in srgb, #17110A 76%, var(--brass-900));
 }
 
 /* The engraved header plaque inside the lid: near-black lacquer, a bronze

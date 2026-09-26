@@ -248,6 +248,22 @@ async function openReference(name = 'Seeded jab return') {
   return screen.findByRole('article', { name });
 }
 
+/* WALKS TO A PIECE OF EQUIPMENT IN THE ROOM.
+ *
+ * The three stations are hidden with the `hidden` ATTRIBUTE, so only the one the
+ * coach is standing at is in the accessibility tree -- which is why every *ByRole
+ * query below finds one station's controls and not the other two's. That is the
+ * contract, not an inconvenience: it is the same in a browser, and asserting it
+ * through the class instead would pass here while the room was broken there.
+ *
+ * Matched on the nameplate alone: each button's accessible name is its nameplate
+ * plus the note under it ("Workbench Write a new one"), and the note is the part
+ * most likely to be reworded.
+ */
+function walkTo(nameplate: 'Reference cabinet' | 'This gym' | 'Workbench') {
+  fireEvent.click(screen.getByRole('button', { name: new RegExp('^' + nameplate) }));
+}
+
 /** A reference card: the article holding that drill's "View drill" control. */
 function referenceCard(name: string) {
   return screen.getByRole('button', { name: `View drill: ${name}` }).closest('article') as HTMLElement;
@@ -368,6 +384,8 @@ it('keeps drill creation on the operational drills endpoint', async () => {
   render(<CoachDrillLibraryPage />);
   await screen.findByText('Seeded jab return');
 
+  // Writing a drill happens at the workbench, so that is where the coach stands.
+  walkTo('Workbench');
   fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Slip line' } });
   // The reference filters have a "Category" too; this is the form's text field.
   fireEvent.change(screen.getByRole('textbox', { name: 'Category' }), { target: { value: 'Defense' } });
@@ -1548,6 +1566,9 @@ describe('reference discovery', () => {
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search by name' }), { target: { value: 'zzz' } });
     expect(screen.getByText('No reference drills match this search and these filters.')).toBeInTheDocument();
 
+    // The operational card stands on the gym's shelf; opening it walks the coach
+    // back to the cabinet, which is where the detail renders.
+    walkTo('This gym');
     fireEvent.click(screen.getByRole('button', { name: 'View instructions: Seeded jab return' }));
     await screen.findByRole('article', { name: 'Seeded jab return' });
 
@@ -1597,27 +1618,56 @@ describe('the page order', () => {
     render(<CoachDrillLibraryPage />);
     await screen.findByText('Corner exit');
 
+    /* THE ROOM'S ORDER IS NOW THE RAIL'S ORDER, not document order. The three
+       parts stopped being sections you scroll past and became three pieces of
+       equipment standing in a room, one of which you are at -- so what is
+       asserted is the row you read across, and then that exactly one station is
+       reachable at a time. Document order still decides the rail itself. */
+    expect(screen.getAllByRole('button', { name: /Read and adopt|What we run|Write a new one/ })
+      .map((button) => button.textContent)).toEqual([
+      'Reference cabinetRead and adopt',
+      'This gym\u2019s shelfWhat we run',
+      'WorkbenchWrite a new one',
+    ]);
+    // Standing at the cabinet: its heading, and neither of the other two.
     expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual([
       'Reference library',
+    ]);
+    walkTo('This gym');
+    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual([
       'In this gym',
+    ]);
+    walkTo('Workbench');
+    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual([
       'Create a gym drill',
     ]);
-    // The whole create form -- every field and its button -- comes after the
-    // gym's drills, not before the library.
-    const gymDrills = screen.getByRole('heading', { name: 'In this gym' });
-    const form = ['drill-name', 'drill-category', 'drill-focus', 'drill-cues', 'drill-difficulty']
-      .map((id) => document.getElementById(id) as HTMLElement);
-    for (const control of [...form, screen.getByRole('button', { name: 'Add drill' })]) {
-      expect(gymDrills.compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    }
-    // Each part is a named region holding its own controls.
+    walkTo('Reference cabinet');
+    /* DOCUMENT ORDER IS READ OFF THE STATIONS THEMSELVES, NOT THROUGH ROLES.
+       A station the coach is not standing at carries the `hidden` attribute, and
+       a hidden <section> loses its accessible name -- the heading that names it
+       is not rendered either -- and a <section> with no name is not a `region`
+       at all. So no role query can reach it, however `hidden: true` is passed;
+       that was measured here, not assumed. The attribute survives, so the order
+       is asserted on it. */
+    expect(Array.from(document.querySelectorAll('[data-station]'))
+      .map((station) => station.getAttribute('data-station'))).toEqual(['library', 'gym', 'workbench']);
+
+    // Each piece of equipment is a named region holding its own controls, read
+    // from where the coach is standing -- which is the only place it exists.
     const library = screen.getByRole('region', { name: 'Reference library' });
     expect(library).toContainElement(screen.getByRole('searchbox', { name: 'Search by name' }));
     expect(library).toContainElement(screen.getByRole('button', { name: 'View drill: Seeded jab return' }));
+
+    walkTo('This gym');
     expect(screen.getByRole('region', { name: 'In this gym' }))
       .toContainElement(screen.getByRole('button', { name: 'View instructions: Seeded jab return' }));
-    expect(screen.getByRole('region', { name: 'Create a gym drill' }))
-      .toContainElement(screen.getByRole('button', { name: 'Add drill' }));
+
+    walkTo('Workbench');
+    const workbench = screen.getByRole('region', { name: 'Create a gym drill' });
+    expect(workbench).toContainElement(screen.getByRole('button', { name: 'Add drill' }));
+    for (const id of ['drill-name', 'drill-category', 'drill-focus', 'drill-cues', 'drill-difficulty']) {
+      expect(workbench).toContainElement(document.getElementById(id) as HTMLElement);
+    }
   });
 
   it('says adopting is not assigning in a sentence of its own, not the tail of a paragraph', async () => {
@@ -1647,6 +1697,7 @@ describe('the in-this-gym section', () => {
 
     render(<CoachDrillLibraryPage />);
     await screen.findByText('Corner exit');
+    walkTo('This gym');
 
     expect(screen.getByRole('heading', { name: 'In this gym' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Operational drills' })).not.toBeInTheDocument();
@@ -1668,6 +1719,7 @@ describe('the in-this-gym section', () => {
 
     render(<CoachDrillLibraryPage />);
     await screen.findByText('Corner exit');
+    walkTo('This gym');
 
     const written = screen.getByRole('heading', { name: 'Corner exit' }).closest('article') as HTMLElement;
     const adopted = screen.getByRole('button', { name: 'View instructions: Seeded jab return' }).closest('article') as HTMLElement;
@@ -1688,6 +1740,11 @@ describe('the in-this-gym section', () => {
     // The operational card's control is named for what it opens -- the drill's
     // instructions -- so it is not a second "View drill" with the same name.
     expect(screen.getAllByRole('button', { name: 'View drill: Seeded jab return' })).toHaveLength(1);
+
+    // The operational cards stand on the gym's shelf, so that is where their
+    // controls are read -- and the count above was taken at the cabinet, which
+    // is the half of this claim that the two stations now separate cleanly.
+    walkTo('This gym');
     const instructions = screen.getByRole('button', { name: 'View instructions: Seeded jab return' });
     expect(screen.queryByRole('button', { name: 'View instructions: Corner exit' })).not.toBeInTheDocument();
 
@@ -1763,22 +1820,38 @@ describe('while an action is running', () => {
   const otherOperational = { ...promoted, drill_id: 'authored-3', reference_drill_id: 'reference-2', name: 'Other promoted drill' };
   const ACTION_NAMES = ['Promote', 'Retire', 'Restore', 'Saving...', 'Promoting...'];
 
-  /** The Create a gym drill form -- every field and its button -- is never part of the lock. */
+  /* The Create a gym drill form -- every field and its button -- is never part of
+     the lock, and it is READ WHERE IT STANDS rather than walked to.
+     The rail is inside the lock (walking away is starting something else), so
+     while an action is running the workbench cannot be reached. That does not
+     make its controls disabled, and this is the distinction being asserted: the
+     form is still usable, the coach simply finishes the action before arriving at
+     it. `hidden: true` is what lets the button be read from another station. */
   function expectAddDrillFormUsable() {
     for (const id of ['drill-name', 'drill-category', 'drill-focus', 'drill-cues', 'drill-difficulty']) {
       expect(document.getElementById(id)).toBeEnabled();
     }
-    expect(screen.getByRole('button', { name: 'Add drill' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Add drill', hidden: true })).toBeEnabled();
   }
 
   /** Every navigation and action control the lock covers, by the name it has now. */
   function lockedControls(detail: HTMLElement) {
     const own = within(detail).queryAllByRole('button').filter((button) => ACTION_NAMES.includes(button.textContent ?? ''));
     expect(own.length).toBeGreaterThan(0);
+    /* THE RAIL REPLACED THE SHELF'S CARD IN THIS LIST, and the reason is the
+       point of the change. "View instructions: Other promoted drill" stands on
+       the gym's shelf; the coach is at the reference cabinet while a drill is
+       open, so that control is not merely disabled, it is not in the room's
+       accessibility tree at all -- a stronger guarantee than the one this list
+       was written to check, and not one this list can express.
+
+       What CAN start something else from here is the rail, so that is what is
+       asserted instead: all three stations, locked, including the one the coach
+       is standing at. */
     return [
       screen.getByRole('button', { name: 'Back to the reference library' }),
-      screen.getByRole('button', { name: 'View instructions: Other promoted drill' }),
       screen.getByRole('button', { name: 'View drill: Other reference drill' }),
+      ...screen.getAllByRole('button', { name: /Read and adopt|What we run|Write a new one/ }),
       ...own,
     ];
   }

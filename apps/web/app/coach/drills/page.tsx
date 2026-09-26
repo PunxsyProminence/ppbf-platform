@@ -210,6 +210,36 @@ function ReferenceActions({
   return label;
 }
 
+/* THE EQUIPMENT IN THIS ROOM.
+ *
+ * The drill cabinet is a room, not a document, so its three parts are three
+ * pieces of equipment standing in it rather than three sections you scroll
+ * past: the cabinet you read from, the shelf of drills this gym actually runs,
+ * and the workbench where a new one gets written. Walking to one is what the
+ * rail below does.
+ *
+ * `hidden` IS THE ATTRIBUTE, NOT THE TAILWIND CLASS, and that is the whole
+ * reason this is testable. The utility class is CSS, jsdom compiles none, and a
+ * class-hidden panel stays in the accessibility tree here while disappearing in
+ * a browser -- so every query in page.test.tsx would go on passing at exactly
+ * the configuration where the contract is false. The attribute is honoured by
+ * the UA sheet AND by the accessibility tree jsdom builds, so one station is
+ * reachable at a time in both, and no scope rule below sets `display` on these
+ * three hooks to out-rank it.
+ *
+ * THE PANELS STAY MOUNTED. Switching station hides a panel, it does not unmount
+ * it, so a half-typed drill on the workbench and a chosen filter on the shelf
+ * are both still there when the coach walks back. Unmounting would have made
+ * the rail quietly destructive.
+ */
+type Station = 'library' | 'gym' | 'workbench';
+
+const STATIONS: readonly { readonly id: Station; readonly label: string; readonly note: string }[] = [
+  { id: 'library', label: 'Reference cabinet', note: 'Read and adopt' },
+  { id: 'gym', label: 'This gym’s shelf', note: 'What we run' },
+  { id: 'workbench', label: 'Workbench', note: 'Write a new one' },
+];
+
 function CoachDrillLibrary() {
   const [drills, setDrills] = useState<Drill[]>([]);
   const [loading, setLoading] = useState(true);
@@ -217,6 +247,10 @@ function CoachDrillLibrary() {
   const [referenceDrills, setReferenceDrills] = useState<ReferenceDrill[]>([]);
   const [referenceLoading, setReferenceLoading] = useState(true);
   const [referenceLoadError, setReferenceLoadError] = useState('');
+  /* Which station the coach is standing at. 'library' because the cabinet is
+     what this room is for; the workbench opened the page once and put the rare
+     path in front of the usual one. */
+  const [station, setStation] = useState<Station>('library');
 
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
@@ -372,8 +406,10 @@ function CoachDrillLibrary() {
     setOpenReferenceError('');
     setOpenReferenceLoading(true);
     setPromoteError('');
-    // The detail renders in the reference section; an operational card far
-    // below it opens it too, so bring the coach to where it appears.
+    // The detail renders at the reference cabinet; a card on the gym's shelf
+    // opens it too, so walk the coach to the equipment it appears on before
+    // scrolling -- otherwise the scroll targets a panel the attribute hides.
+    setStation('library');
     referenceSectionRef.current?.scrollIntoView?.({ block: 'start' });
     try {
       const response = await fetch(
@@ -417,13 +453,34 @@ function CoachDrillLibrary() {
     setPromoteError('');
     const openerId = openerRef.current;
     if (openerId && typeof window !== 'undefined') {
+      /* THE CONTROL SAYS "BACK TO THE REFERENCE LIBRARY", SO THAT IS WHERE THIS
+         LANDS. The card that opened the detail can be on the gym's shelf, and an
+         earlier draft of this walked the coach back to that shelf so focus could
+         return to the exact card -- which contradicted the only promise the
+         button makes, and moved a coach to a station they had not asked for.
+         page.test.tsx said so immediately: the search and filters did not come
+         back.
+
+         So the station is always the cabinet, and the opener gets focus only if
+         it STANDS at the cabinet. When it does not -- or has been filtered away
+         -- the fallbacks below take it, and both of those stand here too.
+
+         SYNCHRONOUSLY, not inside the frame: the frame below is the one that
+         focuses, React flushes this before it runs, and doing it in the frame
+         would have needed a second one -- silently changing the contract every
+         caller that counts frames is measuring. */
+      setStation('library');
       window.requestAnimationFrame(() => {
         // The card that opened it can be gone by now -- filtered out by the
         // state an action just changed, or retired off the operational list --
         // and then the search box, at the head of the list, takes focus rather
         // than the page body; if the library itself failed to load, so there is
         // no search box either, the section's heading does.
-        const opener = document.getElementById(openerId)
+        const openedFrom = document.getElementById(openerId);
+        const atTheCabinet = openedFrom?.closest('[data-station]')?.getAttribute('data-station') === 'library'
+          ? openedFrom
+          : null;
+        const opener = atTheCabinet
           ?? document.getElementById('reference-search')
           ?? document.getElementById('reference-library-heading');
         opener?.scrollIntoView?.({ block: 'center' });
@@ -643,7 +700,7 @@ function CoachDrillLibrary() {
   // and what it is dressed in, changed. The three section headings gained ids
   // so each section is a region named by its heading.
   return (
-    <main className="ge-drillcase room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
+    <main className="ge-drillcase room min-h-screen bg-[var(--hide-950)] px-[var(--s4)] py-[var(--s6)] text-[color:var(--bone-200)] sm:px-[var(--s5)]">
       <div className="mx-auto max-w-6xl">
         <header className="ge-drillcase__masthead flex flex-col gap-[var(--s4)] md:flex-row md:items-end md:justify-between">
           <div>
@@ -658,9 +715,43 @@ function CoachDrillLibrary() {
           </Link>
         </header>
 
+        {/* THE RAIL: the equipment standing in this room, and walking to one.
+            BUTTONS WITH `aria-current`, NOT role="tablist". role="tablist"
+            appears nowhere in this application, and a real tablist owes every
+            child role="tab", aria-selected and arrow-key ownership that this
+            rail does not implement -- claiming the role without them tells a
+            screen reader to expect a keyboard contract that is not there.
+            CoachWorkspace made this same call for its own rail. */}
+        <nav aria-label="Equipment in this room" className="ge-drillcase__rail mt-[var(--s5)]">
+          {STATIONS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setStation(item.id)}
+              /* THE RAIL IS INSIDE THE ACTION LOCK. W-D4C binds the coach to a
+                 drill until its action and every re-read after it have finished,
+                 so that nothing it reports can land on another drill. Walking to
+                 another piece of equipment is exactly the kind of "something
+                 else" that lock exists to stop -- it was the first thing this
+                 rail broke, and page.test.tsx's own lock cases are what said so.
+                 Disabled rather than hidden: the row is the coach's map of the
+                 room, and a map that loses an entry while a save is in flight is
+                 worse than one that is briefly untouchable. */
+              disabled={actionInFlight}
+              aria-current={station === item.id ? 'true' : undefined}
+              className="ge-drillcase__station"
+            >
+              <span className="ge-drillcase__station-name t-command">{item.label}</span>
+              <span className="ge-drillcase__station-note t-label">{item.note}</span>
+            </button>
+          ))}
+        </nav>
+
         {/* 1. THE REFERENCE LIBRARY -- the primary workspace: the drill cabinet. */}
         <section
           ref={referenceSectionRef}
+          data-station="library"
+          hidden={station !== 'library'}
           aria-labelledby="reference-library-heading"
           className="ge-drillcase__cabinet mt-[var(--s6)] rounded-[var(--r-lg)] p-[var(--s4)] md:p-[var(--s5)]"
         >
@@ -860,7 +951,12 @@ function CoachDrillLibrary() {
             (OD-2026-09-19-001), so each card says which kind it is. Working
             ledger cards rather than index cards, so a drill the gym runs never
             reads as one it is only browsing. */}
-        <section aria-labelledby="gym-drills-heading" className="mt-[var(--s7)]">
+        <section
+          data-station="gym"
+          hidden={station !== 'gym'}
+          aria-labelledby="gym-drills-heading"
+          className="mt-[var(--s7)]"
+        >
           <div className="ge-drillcase__shelf-head">
             <p className="t-eyebrow">Operational drills</p>
             <h2 id="gym-drills-heading" className="t-command mt-[var(--s2)] text-[length:var(--t-lg)]">In this gym</h2>
@@ -937,6 +1033,8 @@ function CoachDrillLibrary() {
             the athlete on the assignment, but it has no reference instructions
             to read in Learn. */}
         <section
+          data-station="workbench"
+          hidden={station !== 'workbench'}
           aria-labelledby="create-drill-heading"
           className="ge-drillcase__workbench mat-leather mt-[var(--s7)] rounded-[var(--r-lg)] p-[var(--s4)] md:p-[var(--s5)]"
         >

@@ -77,6 +77,25 @@ export type Room =
    * retired as a visual concept, and these surfaces are new work.
    */
   | 'teach'
+  /*
+   * THE DRILL CABINET, made a room of its own by owner ruling on 2026-09-26:
+   * every screen should read as another room of the gym, and the tabs inside one
+   * are the equipment standing in it. The drill library had been filed under the
+   * floor while painting a walnut cabinet interior, so the door and the wall
+   * disagreed -- the drift this file's header opens by warning about.
+   *
+   * Same reason Teach Shadow above is a room: the corridor groups by room and by
+   * nothing else, so an area that is genuinely separate has to BE one. Anything
+   * less leaves it as a door filed under the floor with the separation written
+   * only in its label.
+   *
+   * It paints no `room--*` class. The 2026-08-23 decision retired that vocabulary
+   * and the owner's 2026-09-26 ruling is to finish the retirement by deletion
+   * rather than carry it as a capped ceiling -- so this room's identity is in its
+   * `.ge-drillcase` scope, which is the live visual system, and the page wears no
+   * room modifier at all.
+   */
+  | 'cabinet'
   | 'night';
 
 /** Every role, for surfaces that carry no gate. */
@@ -363,6 +382,17 @@ export const BUILDING: readonly Door[] = [
     roles: ['coach', 'admin'], keywords: 'record camera film study footage review athlete coaching',
     hint: 'Film an athlete with this device for coaching review. Stays in Film Study; it cannot be moved into Teach Shadow.' },
   /*
+   * THE DRILL CABINET. One surface, and a room, for the reason set out on the
+   * `cabinet` member of the Room union above. The equipment inside it -- the
+   * reference cabinet, this gym's shelf, the workbench -- is not three doors:
+   * it is three stations on one surface, and the corridor has no vocabulary for
+   * a station. A coach walks between them on the page's own rail.
+   */
+  { href: '/coach/drills', label: 'Drill Cabinet', room: 'cabinet', roles: ['coach', 'admin'],
+    keywords: 'drills exercises techniques practice assign library catalogue cabinet reference workbench shelf',
+    hint: 'The drill reference, the drills this gym runs, and the bench where a new one is written.' },
+
+  /*
    * TEACH SHADOW. Its own room because the owner ruled it a separate area, and
    * because the corridor has no other way to express one: it groups by room and
    * nothing else. Clip Annotation moved here rather than being duplicated --
@@ -400,9 +430,6 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/passbook-gaps', label: 'Passbook Gaps', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'passbook gap retention stopped coming absent last seen queue triage book athlete record',
     hint: 'Open gaps in your athletes\u2019 books, worst attendance first \u2014 last seen, and absent days since.' },
-  { href: '/coach/drills', label: 'Drills', room: 'floor', roles: ['coach', 'admin'],
-    keywords: 'drills exercises techniques practice assign library catalogue',
-    hint: 'Drill library and programming.' },
   { href: '/coach/cue-library', label: 'Cue Library', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'cues coaching cues external focus analogy constraint families',
     hint: 'Every cue written into the drill library, searchable in one place. Read-only.' },
@@ -631,7 +658,9 @@ export const BUILDING: readonly Door[] = [
 ];
 
 /** The rooms, in the order a corridor should present them. */
-export const ROOM_ORDER: readonly Room[] = ['office', 'floor', 'board', 'file', 'clinic', 'teach', 'night'];
+/* Cabinet sits next to the floor because that is where it stands in the gym:
+   a coach walks off the floor into it and back out with a drill. */
+export const ROOM_ORDER: readonly Room[] = ['office', 'floor', 'cabinet', 'board', 'file', 'clinic', 'teach', 'night'];
 
 export const ROOM_LABEL: Record<Room, string> = {
   office: 'Front Office',
@@ -640,6 +669,7 @@ export const ROOM_LABEL: Record<Room, string> = {
   file: 'File Room',
   clinic: 'Clinic',
   teach: 'Teach Shadow',
+  cabinet: 'Drill Cabinet',
   night: 'After Hours',
 };
 
@@ -651,6 +681,7 @@ export const ROOM_BLURB: Record<Room, string> = {
   file: 'Research, evidence, the ledger.',
   clinic: 'Medical clearance and compliance.',
   teach: 'Teaching Shadow to recognise boxing. Not athlete training.',
+  cabinet: 'The drill reference, this gym’s shelf, and the workbench.',
   night: 'Shadow, and anything after hours.',
 };
 
