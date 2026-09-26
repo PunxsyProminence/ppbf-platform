@@ -307,6 +307,121 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // AUDIENCE GATE. Owner decision 2026-09-26; recorded open in ACTIVE_WORK.md
+  // since 2026-08-28 as "SHADOW injects near-miss text into athlete/parent
+  // chats that GET /near-misses denies those roles".
+  //
+  // These tests live HERE and not in the chat route's suite because that suite
+  // mocks retrieveShadowContext wholesale -- no route-level test can prove this
+  // gate. This file is the only place it is provable.
+  //
+  // EVERY EXCLUDED-ROLE CASE RETURNS SEVERE ROWS FROM THE MOCK. The default in
+  // beforeEach is an empty list, so a gate that had silently stopped working
+  // would still produce an empty, innocent-looking context and pass. The rows
+  // carry a sentinel that could only have come from the records.
+  // -------------------------------------------------------------------------
+  describe('Near-Miss Audience Gate', () => {
+    // description is unsanitised coach free text about a youth roster, so the
+    // realistic leak is another child named in a note about this one.
+    const SENTINEL = 'Marcus Webb was the other athlete in the ring.';
+    const SENTINEL_ID = 'dddddddd-eeee-4fff-8aaa-bbbbbbbbbbbb';
+
+    const severeRows = () => [
+      nearMissRow({ near_miss_id: SENTINEL_ID, severity: 'critical' as const, description: SENTINEL }),
+      nearMissRow({ severity: 'high' as const }),
+    ];
+
+    describe.each([
+      ['athlete', 'account-athlete-self'],
+      ['parent', 'account-parent-linked'],
+    ] as const)('%s is authorized for the athlete but not for the records', (userRole, userId) => {
+      const scoped = { userRole, userId, organizationId: 'org-456', athleteId: 'athlete-789' };
+
+      test('the records are never read, never cited, never rendered', async () => {
+        mockListRecentNearMisses.mockResolvedValue(severeRows());
+
+        const result = await retrieveShadowContext(scoped);
+
+        // Ordinary athlete context is untouched. This removes the safety
+        // records from the prompt, not the role's access to the athlete.
+        expect(mockAssertActorCanAccessAthlete).toHaveBeenCalled();
+        expect(result.authorized).toBe(true);
+        expect(result.context).toContain('Authorized athlete scope: athlete-789');
+
+        // Gated BEFORE the query, not filtered after it: a filter would still
+        // have pulled the free text of a youth roster into this process.
+        expect(mockListRecentNearMisses).not.toHaveBeenCalled();
+        expect(result.context).not.toContain(SENTINEL);
+        expect(result.context).not.toContain(SENTINEL_ID);
+        expect(result.context).not.toContain('[E:');
+        expect(result.evidenceIds).toEqual([]);
+      });
+
+      test('the reply is identical whether or not events are on file', async () => {
+        mockListRecentNearMisses.mockResolvedValue(severeRows());
+        const withRows = await retrieveShadowContext(scoped);
+        mockListRecentNearMisses.mockResolvedValue([]);
+        const withNone = await retrieveShadowContext(scoped);
+
+        // The reason for a single constant line rather than reusing either
+        // existing string. "No near-miss events recorded" is simply false for
+        // an athlete who has them. The retrieval-failed line is worse: its
+        // conservative-progression directive would surface only when there was
+        // something to withhold, so the model's own caution would announce
+        // that events exist. Withholding that leaks by implication is not
+        // withholding, and a difference of one clause is enough to leak.
+        expect(withRows.context).toBe(withNone.context);
+        expect(withRows.context).not.toContain('No near-miss events recorded');
+        expect(withRows.context).not.toContain('advise conservative progression');
+        expect(withRows.context).not.toContain('could not be retrieved');
+      });
+    });
+
+    describe.each([
+      ['coach', 'coach-123'],
+      ['organization_admin', 'orgadmin-1'],
+      ['admin', 'legacy-admin-1'],
+    ] as const)('%s still receives them', (userRole, userId) => {
+      // POSITIVE CONTROL. Without these, a gate that excluded everyone would
+      // pass every assertion above. DECISION_LOOP_ROLES carries legacy 'admin'
+      // alongside 'organization_admin', and both are exercised here for the
+      // same reason the shared role set exists: the copies used to drift.
+      test('POSITIVE CONTROL: the read happens and the events are cited', async () => {
+        mockListRecentNearMisses.mockResolvedValue(severeRows());
+
+        const result = await retrieveShadowContext({
+          userRole,
+          userId,
+          organizationId: 'org-456',
+          athleteId: 'athlete-789',
+        });
+
+        expect(mockListRecentNearMisses).toHaveBeenCalledWith('org-456', 'athlete-789');
+        expect(result.context).toContain('RECORDED NEAR-MISS EVENTS');
+        expect(result.context).toContain(SENTINEL);
+        expect(result.context).toContain(`[E:${SENTINEL_ID}]`);
+        expect(result.evidenceIds).toEqual([SENTINEL_ID, '11111111-2222-4333-8444-555555555555']);
+      });
+    });
+
+    test('the withheld line matches what GET /near-misses already enforces', async () => {
+      // The gate reuses DECISION_LOOP_ROLES, the list that route requires, so
+      // the two surfaces cannot drift apart into the state this slice fixed.
+      mockListRecentNearMisses.mockResolvedValue(severeRows());
+
+      const athlete = await retrieveShadowContext({
+        userRole: 'athlete',
+        userId: 'account-athlete-self',
+        organizationId: 'org-456',
+        athleteId: 'athlete-789',
+      });
+
+      expect(athlete.context).toContain('Recorded safety events are not available in this context.');
+      expect(athlete.context).toContain("defer to the athlete's coach");
+    });
+  });
+
   describe('Response Validation and Filtering', () => {
     // Test 9: Recommendation includes human review language
     test('validates recommendation includes human review language', () => {

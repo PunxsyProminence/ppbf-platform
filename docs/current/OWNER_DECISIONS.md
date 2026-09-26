@@ -91,6 +91,72 @@ and should not try to.
 
 ---
 
+## OD-2026-09-26-001 -- Near-miss records are coach and organization-admin chat context only
+
+**Provenance: PRIMARY.** The owner's answer is recorded verbatim below, and the
+options are reproduced exactly as they were put to him, because the word alone
+does not carry the decision.
+
+**Date:** 2026-09-26. **Governs:** which roles receive recorded near-miss
+events in SHADOW chat prompt context. **Supersedes** nothing -- no prior entry
+addressed near-miss audience. It does not change `assertActorCanAccessAthlete`
+or any other authorization rule.
+
+### The decision
+
+Put to him as question 1 of three, verbatim as asked:
+
+> **1. Near-miss text in chat** -- athletes/parents currently get coach-written
+> near-miss descriptions (free text, can name another child). The API refuses
+> them the same records.
+> -> **(a)** coaches/admins only *(my recommendation)* . **(b)** own record,
+> names redacted . **(c)** leave as is
+
+His answer, verbatim:
+
+> a
+
+### What that means
+
+1. Near-miss records reach SHADOW prompt context only for `DECISION_LOOP_ROLES`
+   -- `coach`, `organization_admin` and legacy `admin`. That is the same set
+   `GET /api/pilot/shadow/near-misses` already requires, so the decision closes
+   a gap between two surfaces rather than creating a new rule.
+2. Athlete and parent keep ordinary athlete-scoped context. They lose the
+   near-miss descriptions, the evidence ids, and any signal that records exist
+   or do not exist.
+3. **Redaction was on the table as (b) and was not chosen.** A later lane
+   should not reach for "show the athlete their own record with names removed"
+   as an obvious middle path. It was offered and declined.
+4. `platform_owner` and `board` never reach this context at all --
+   `assertActorCanAccessAthlete` refuses them earlier -- so this decision does
+   not change their position.
+
+### What it does not decide
+
+Near-miss text **already delivered** to athlete and parent conversations before
+the gate existed. It is still visible in those conversations and is re-fed into
+later prompts by the conversation-history loader, so the model can repeat it
+after the gate ships. That is carried as the remaining blocked row in
+`docs/current/ACTIVE_WORK.md` and is still **OWNER DECISION REQUIRED**. Do not
+read this entry as authorizing deletion, rewriting or purging of anything.
+
+### The evidence it rested on
+
+- `retrieveShadowContext` called `listRecentNearMisses` with no role gate for
+  every role that cleared athlete authorization, injecting a whitespace-collapsed
+  240-character slice of `description` with a citable `[E:<near_miss_id>]`.
+  Read at `c15b9644a8a184f111974d04c2af07175ad3110c`.
+- `GET /api/pilot/shadow/near-misses` requires `DECISION_LOOP_ROLES`, at the
+  same SHA.
+- `docs/current/ACTIVE_WORK.md` had carried the mismatch as FOR THE OWNER since
+  2026-08-28 -- open for a month before it was put to him.
+- No environment, database or log was read. Whether any athlete or parent has
+  actually received near-miss text is UNVERIFIED, and no affected population
+  was estimated.
+
+Built to on branch `local/shadow-near-miss-audience`.
+
 ## OD-2026-09-21-001 -- Claude builds, ChatGPT designs and enforces standards; product direction; minors' limits are coach-set data
 
 **Provenance: PRIMARY** for the owner's quoted words and the options as put.
