@@ -337,6 +337,7 @@
     "test:migrations:local-findings": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/localFindings.pg.test.ts --testTimeout=180000",
     "test:migrations:workout-templates-v2": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/workoutTemplates.pg.test.ts --testTimeout=180000",
     "test:migrations:shadow-research-import": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath scripts/import-shadow-research.pg.test.ts --testTimeout=180000",
+    "test:migrations:embedded-pg-server-cleanup": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath scripts/embedded-pg-server-cleanup.pg.test.ts --testTimeout=180000",
     "test:migrations:feedback": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/feedback.pg.test.ts --testTimeout=180000",
     "test:migrations:compliance": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/complianceMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:progression": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/progressionMigration.pg.test.ts --testTimeout=180000",
