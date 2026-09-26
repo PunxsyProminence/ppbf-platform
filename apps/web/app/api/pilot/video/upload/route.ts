@@ -4,6 +4,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { uploadPilotVideoFile } from '@/src/server/pilot/blob';
+import {
+  linkParticipantToVideo,
+  participantsForSession,
+} from '@/src/server/pilot/captureParticipants';
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
@@ -169,7 +173,40 @@ export async function POST(request: NextRequest) {
      * it needs a participant model that says who is in the frame, which is an
      * owner decision and is not invented here.
      */
-    if (!athleteId && (captureTakeIdForRow || captureSource === 'in_app_recording')) {
+    /*
+     * TS-ANON-01: THE RULE NOW BRANCHES BY DESTINATION, because the two
+     * recorders have opposite requirements.
+     *
+     * TEACHING MEDIA NAMES NOBODY. A take-backed upload is Teach Shadow
+     * footage, and its row must carry no athlete. A client that sends one is
+     * REFUSED rather than quietly stripped: silently accepting it would let a
+     * stale client keep believing it had attributed the footage, and would
+     * leave an identifier arriving at this boundary with nothing to say it was
+     * ignored. Refusing is how a stale client finds out.
+     *
+     * The participant is resolved SERVER-SIDE from the capture session, which
+     * is where clearance recorded it. It is never taken from the request: a
+     * client that could name its own participant could attribute one child's
+     * footage to another child's consent.
+     *
+     * FILM STUDY STILL NAMES ITS ATHLETE, and its recorder still refuses an
+     * unnamed recording. The original reasoning holds unchanged there: the
+     * scan sweep only asserts consent when a video carries an identity, so a
+     * dedicated recorder storing an unattributed minor would enter the content
+     * screen with the check skipped. What changed is only that teaching
+     * footage now carries that identity on the restricted side instead.
+     */
+    if (captureTakeIdForRow && athleteId) {
+      return NextResponse.json(
+        {
+          error:
+            'Teach Shadow footage is anonymous and must not name an athlete. The participant is established at capture clearance, not sent with the upload.',
+        },
+        { status: 400 },
+      );
+    }
+
+    if (!athleteId && !captureTakeIdForRow && captureSource === 'in_app_recording') {
       return NextResponse.json(
         {
           error:
@@ -177,6 +214,30 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 },
       );
+    }
+
+    /*
+     * WHO THIS TEACHING FOOTAGE IS OF -- read from the session, never from the
+     * request, so a client cannot attribute footage to somebody it chose.
+     *
+     * This is a SAFEGUARDING record, not a permission check. The footage
+     * teaches a recognizer what a punch looks like; the person in frame is how
+     * the movement got recorded, not what the record is about. What the link
+     * buys is that a scanner flagging something in this footage can still
+     * reach the real child, which is the reason the owner kept it when the
+     * teaching media stopped naming anyone.
+     *
+     * A take with no participant is still refused: footage nobody can be
+     * reached about is worse than no footage.
+     */
+    let teachingParticipantIds: string[] = [];
+    if (captureTakeIdForRow) {
+      teachingParticipantIds = await participantsForSession(
+        principal.organizationId,
+        recordingSessionId as string,
+      );
+
+
     }
 
     // Free text and allowed to be unknown. "Rear phone camera" is a fact about
@@ -232,7 +293,9 @@ export async function POST(request: NextRequest) {
         videoSessionId,
         principal.organizationId,
         principal.accountId,
-        athleteId,
+        // NULL for teaching media, by the rule above. The identity for a
+        // take-backed video lives on the restricted side and is linked below.
+        captureTakeIdForRow ? null : athleteId,
         title,
         notes,
         blobPath,
@@ -252,6 +315,20 @@ export async function POST(request: NextRequest) {
       ],
     );
 
+    /*
+     * The restricted link, written after the row exists because its foreign
+     * key points at it. Every participant on the session is attached: a device
+     * that joined by code is filming the same person from another angle, and
+     * its file has to be resolvable to the same guardian.
+     */
+    for (const captureParticipantId of teachingParticipantIds) {
+      await linkParticipantToVideo({
+        organizationId: principal.organizationId,
+        videoSessionId,
+        captureParticipantId,
+      });
+    }
+
     await emitShadowEvent({
       organizationId: principal.organizationId,
       eventName: 'video.uploaded',
@@ -261,7 +338,10 @@ export async function POST(request: NextRequest) {
       actorRole: principal.role,
       payload: {
         title,
-        athlete_id: athleteId,
+        // Absent for teaching media. An event stream carrying the athlete
+        // would reintroduce the identity this slice just removed, in the one
+        // place nobody thinks to look.
+        athlete_id: captureTakeIdForRow ? null : athleteId,
         file_name: uploadDescriptor.safeOriginalName,
         file_size_bytes: file.size,
         status: 'quarantined',

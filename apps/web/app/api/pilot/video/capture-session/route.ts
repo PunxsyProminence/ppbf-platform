@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { requireRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import {
+  ensureCaptureParticipant,
+  linkParticipantToSession,
+} from '@/src/server/pilot/captureParticipants';
 import {
   advanceTake,
   closeRecordingSession,
@@ -65,7 +69,7 @@ export async function POST(request: NextRequest) {
     requireRole(principal, ['organization_admin', 'coach']);
 
     const body = (await request.json().catch(() => null)) as
-      | { action?: unknown; join_code?: unknown; training_context?: unknown; recording_session_id?: unknown }
+      | { action?: unknown; join_code?: unknown; training_context?: unknown; recording_session_id?: unknown; athlete_id?: unknown }
       | null;
 
     const action = typeof body?.action === 'string' ? body.action : '';
@@ -88,6 +92,33 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      /*
+       * TS-ANON-01: CLEARANCE. The one place in the teaching flow where a real
+       * athlete is named, and it happens BEFORE any teaching asset exists.
+       *
+       * Its whole job is identity and consent control: prove this actor may
+       * film this athlete, prove every guardian has current Teach Shadow
+       * consent, and establish the restricted participant. After this returns,
+       * nothing downstream carries the name -- the session payload does not,
+       * the video row does not, and the capture surface never asks for one.
+       *
+       * Consent is checked HERE as well as at upload. Here it stops a coach
+       * filming footage that could never be used; at upload it catches a
+       * guardian who withdrew while filming was in progress. Neither makes the
+       * other redundant.
+       */
+      const clearedAthleteId = typeof body?.athlete_id === 'string' ? body.athlete_id.trim() : '';
+      const participant = clearedAthleteId
+        ? await (async () => {
+          await assertActorCanAccessAthlete(principal, clearedAthleteId);
+          return ensureCaptureParticipant({
+            organizationId: principal.organizationId,
+            athleteId: clearedAthleteId,
+            createdByAccountId: principal.accountId,
+          });
+        })()
+        : null;
+
       const { session, take } = await createRecordingSession({
         organizationId: principal.organizationId,
         createdByAccountId: principal.accountId,
@@ -95,6 +126,21 @@ export async function POST(request: NextRequest) {
         // narrowed to a real TrainingContext by the refusal above.
         trainingContext: rawContext,
       });
+
+      /*
+       * Not in the same transaction as the session insert, and that is
+       * acceptable because the failure is safe: a session with no participant
+       * link cannot accept uploads at all -- the upload route refuses it --
+       * so the worst outcome is a dead session the coach starts again, never
+       * footage stored without a guardian behind it.
+       */
+      if (participant) {
+        await linkParticipantToSession({
+          organizationId: principal.organizationId,
+          recordingSessionId: session.recordingSessionId,
+          captureParticipantId: participant.capture_participant_id,
+        });
+      }
 
       return NextResponse.json({ ok: true, session: await sessionPayload(session, take) });
     }

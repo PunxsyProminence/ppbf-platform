@@ -8,13 +8,27 @@ import {
 } from './videoSessions';
 import { emitShadowEvent } from './shadowEvents';
 import { fileEscalation } from './escalationLadder';
+import { resolveScanSubject } from './captureParticipants';
 import { assertGuardianMediaConsent, GuardianConsentMissingError } from './guardianConsent';
 
 jest.mock('./videoScan', () => ({ scanVideoSession: jest.fn() }));
 jest.mock('./guardianConsent', () => {
   const actual = jest.requireActual('./guardianConsent');
-  return { ...actual, assertGuardianMediaConsent: jest.fn() };
+  return {
+    ...actual,
+    assertGuardianMediaConsent: jest.fn(),
+  };
 });
+/*
+ * TS-ANON-01: the sweep resolves the SUBJECT before it asks whose consent to
+ * check, because a teaching video carries no athlete_id. Doubled so this suite
+ * keeps testing the sweep rather than the resolver, which has its own
+ * database-backed coverage. Film Study by default -- the destination each test
+ * needs is set explicitly.
+ */
+jest.mock('./captureParticipants', () => ({
+  resolveScanSubject: jest.fn(async () => ({ isTeaching: false, athleteIds: ['ath-1'] })),
+}));
 jest.mock('./videoSessions', () => {
   // Only the two database functions are doubled. scanRetryBackoffSeconds and
   // isTerminalScanDecision are pure and are used FOR REAL here, so a backoff or
@@ -41,6 +55,7 @@ const mockedSettle = settleVideoSessionScan as jest.MockedFunction<typeof settle
 const mockedEmit = emitShadowEvent as jest.MockedFunction<typeof emitShadowEvent>;
 const mockedFileEscalation = fileEscalation as jest.MockedFunction<typeof fileEscalation>;
 const mockedAssertConsent = assertGuardianMediaConsent as jest.MockedFunction<typeof assertGuardianMediaConsent>;
+const mockedResolveSubject = resolveScanSubject as jest.MockedFunction<typeof resolveScanSubject>;
 const mockedMarkUnconfigured = markVideoSessionsUnconfigured as jest.MockedFunction<typeof markVideoSessionsUnconfigured>;
 const mockedRearm = rearmUnconfiguredVideoSessions as jest.MockedFunction<typeof rearmUnconfiguredVideoSessions>;
 
@@ -224,7 +239,14 @@ describe('sweepQuarantinedVideos', () => {
   test('skips escalation for a blocked/infected video with no athlete_id (unattributed team upload)', async () => {
     // pilot.safety_escalations.athlete_id is not-null with a foreign key to
     // pilot.athletes -- an unattributed upload has nothing to file against.
+    //
+    // TS-ANON-01: the resolver has to say so too. "No athlete" is now two
+    // different situations -- this one, and a properly anonymised teaching
+    // video whose subject lives on the restricted side -- and the resolver is
+    // what tells them apart. A test that only nulled the claim would be
+    // describing a row that cannot exist.
     mockedClaim.mockResolvedValueOnce({ ...CLAIM, athlete_id: null }).mockResolvedValue(null);
+    mockedResolveSubject.mockResolvedValueOnce({ isTeaching: false, athleteIds: [] });
     mockedScan.mockResolvedValue(scanResult({ decision: 'blocked', reason: 'CONTENT_SCREEN_REFUSED' }));
 
     const result = await sweepQuarantinedVideos({ env: CONTENT_ON });
@@ -404,6 +426,45 @@ describe('sweepQuarantinedVideos', () => {
       await sweepQuarantinedVideos({ env: MALWARE_ONLY });
 
       expect(mockedAssertConsent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('TS-ANON-01: teaching footage asks no guardian, and is still traceable', () => {
+    const TEACHING_CLAIM = { ...CLAIM, athlete_id: null };
+
+    test('no consent is asked for teaching footage', async () => {
+      /*
+       * The owner's ruling: this footage teaches a recognizer what a punch
+       * looks like. It is not a record about the person in frame, so there is
+       * no per-athlete permission attached to it.
+       */
+      mockedClaim.mockResolvedValueOnce(TEACHING_CLAIM).mockResolvedValue(null);
+      mockedResolveSubject.mockResolvedValueOnce({ isTeaching: true, athleteIds: ['ath-7'] });
+      mockedScan.mockResolvedValue(scanResult({ decision: 'retry' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedAssertConsent).not.toHaveBeenCalled();
+      expect(mockedScan).toHaveBeenCalledWith(
+        expect.objectContaining({ skipContentScreen: false }),
+      );
+    });
+
+    test('safeguarding still reaches the real child, though the video names nobody', async () => {
+      /*
+       * THE REASON THE RESTRICTED LINK SURVIVED the consent gate being
+       * removed. Anonymity in the corpus was never meant to stop the platform
+       * raising a concern about a person a scanner flagged.
+       */
+      mockedClaim.mockResolvedValueOnce(TEACHING_CLAIM).mockResolvedValue(null);
+      mockedResolveSubject.mockResolvedValueOnce({ isTeaching: true, athleteIds: ['ath-7'] });
+      mockedScan.mockResolvedValue(scanResult({ decision: 'blocked', reason: 'CONTENT_SCREEN_REFUSED' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedFileEscalation).toHaveBeenCalledWith(
+        expect.objectContaining({ athleteId: 'ath-7' }),
+      );
     });
   });
 });

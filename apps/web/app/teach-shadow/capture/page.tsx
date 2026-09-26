@@ -82,7 +82,6 @@ interface SessionState {
  */
 interface TakeContext {
   captureTakeId: string;
-  athleteId: string;
   cameraView: string;
 }
 
@@ -91,8 +90,6 @@ export default function TeachShadowCapturePage() {
   const [trainingContext, setTrainingContext] = useState('shadowboxing');
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [cameraView, setCameraView] = useState('');
-  const [athletes, setAthletes] = useState<Array<{ athlete_id: string; full_name: string }>>([]);
-  const [athleteId, setAthleteId] = useState('');
   const [busy, setBusy] = useState(false);
   /*
    * A CHOSEN FILE CAN BE 45 MB ON GYM WIFI. Without this the only sign
@@ -128,7 +125,6 @@ export default function TeachShadowCapturePage() {
       const form = new FormData();
       form.append('file', file);
       form.append('capture_take_id', context.captureTakeId);
-      form.append('athlete_id', context.athleteId);
       form.append('capture_source', 'in_app_recording');
       if (context.cameraView) form.append('camera_view', context.cameraView);
       form.append('recorded_at', recordedAt);
@@ -151,24 +147,47 @@ export default function TeachShadowCapturePage() {
   const { phase, errorMessage, setErrorMessage, videoRef, recordedBytes, stoppedAtLimit, stop } = recorder;
 
   /*
-   * The roster, because a capture MUST name the athlete it is of. That is not
-   * a form nicety: the scan sweep only asks for guardian consent when a video
-   * carries an athlete_id, so an unattributed recording of a minor would reach
-   * the vision screen with that check skipped. The server refuses it too.
+   * THE HAND-OFF FROM CLEARANCE. That page establishes the participant, then
+   * loads this document with the session id -- a full navigation, because a
+   * soft one would carry its camera=() policy in here and the camera could
+   * never open.
+   *
+   * Only the id crosses. The session it reads back names nobody, so this page
+   * learns which take to attach angles to and nothing about who is in them.
    */
   useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get('recording_session_id');
+    if (!requested) return;
     void (async () => {
       try {
-        const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include' });
+        const response = await fetch(
+          `${apiBase()}/api/pilot/video/capture-session?recording_session_id=${encodeURIComponent(requested)}`,
+          { credentials: 'include' },
+        );
         const payload = (await response.json().catch(() => ({}))) as {
-          items?: Array<{ athlete_id: string; full_name: string }>;
+          error?: string;
+          session?: unknown;
         };
-        setAthletes(payload.items ?? []);
-      } catch {
-        setErrorMessage('The athlete list could not be loaded, so recording is unavailable.');
+        if (!response.ok || !payload.session) {
+          throw new Error(payload.error || 'That recording session could not be opened.');
+        }
+        setSession(payload.session as SessionState);
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error ? error.message : 'That recording session could not be opened.',
+        );
       }
     })();
   }, [setErrorMessage]);
+
+  /*
+   * NO ROSTER IS READ HERE, and that absence is the point of the slice.
+   * Who is being filmed was settled at clearance, before this document
+   * existed, and the server resolves it from the capture session. A picker on
+   * this screen would put the name back on the one surface that must not
+   * carry it -- and the upload route now REFUSES a take-backed upload that
+   * names an athlete, so it could not work anyway.
+   */
 
   async function post(body: unknown): Promise<Record<string, unknown>> {
     const response = await fetch(`${apiBase()}/api/pilot/video/capture-session`, {
@@ -215,13 +234,8 @@ export default function TeachShadowCapturePage() {
       setErrorMessage('Start or join a recording session first.');
       return;
     }
-    if (!athleteId) {
-      setErrorMessage('Choose which athlete this is of before recording.');
-      return;
-    }
     void recorder.start({
       captureTakeId: currentTake.capture_take_id,
-      athleteId,
       cameraView: cameraView.trim(),
     });
   }
@@ -240,7 +254,6 @@ export default function TeachShadowCapturePage() {
       const form = new FormData();
       form.append('file', chosen);
       form.append('capture_take_id', captureTakeId);
-      form.append('athlete_id', athleteId);
       form.append('capture_source', 'file_upload');
       if (cameraView.trim()) form.append('camera_view', cameraView.trim());
 
@@ -319,25 +332,22 @@ export default function TeachShadowCapturePage() {
             <section className="mt-[var(--s5)] flex flex-col gap-[var(--s5)]">
               <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
                 <h2 className="t-eyebrow">Start a session</h2>
-                <label className="t-eyebrow mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
-                  What is being filmed
-                  <select className="input" value={trainingContext} onChange={(e) => setTrainingContext(e.target.value)}>
-                    {TRAINING_CONTEXTS.map((context) => (
-                      <option key={context.value} value={context.value}>{context.label}</option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  className="btn mt-[var(--s4)]"
-                  disabled={busy}
-                  onClick={() => guarded(async () => {
-                    const payload = await post({ action: 'create', training_context: trainingContext });
-                    setSession(payload.session as SessionState);
-                  })}
-                >
-                  Start recording session
-                </button>
+                {/* A SESSION CANNOT BE STARTED FROM HERE ANY MORE. Starting one
+                    means saying who is being filmed, and this document is the
+                    anonymous surface -- asking here would put the name back on
+                    the one screen the slice exists to keep clear of it. The
+                    clearance page asks once, and what comes back names nobody.
+
+                    A plain anchor, not a Link: leaving a camera document has to
+                    be a document load, or the next page inherits this one's
+                    camera policy. */}
+                <p className="t-body mt-[var(--s2)]">
+                  Who is being filmed is settled before recording starts. Nothing on this
+                  screen names them, and neither does the footage.
+                </p>
+                <p className="mt-[var(--s4)]">
+                  <a className="btn" href="/coach/capture-clearance">Clear a participant and start</a>
+                </p>
               </div>
 
               <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
@@ -385,20 +395,6 @@ export default function TeachShadowCapturePage() {
               </div>
 
               <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
-                {/* REQUIRED, and the server refuses without it. An
-                    unattributed recording would reach the vision content
-                    screen with the guardian-consent check skipped, because
-                    that check only runs for a video that names an athlete. */}
-                <label className="t-eyebrow flex flex-col gap-[var(--s2)]">
-                  Which athlete is this of
-                  <select className="input" value={athleteId} onChange={(e) => setAthleteId(e.target.value)}>
-                    <option value="">Choose an athlete…</option>
-                    {athletes.map((athlete) => (
-                      <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
-                    ))}
-                  </select>
-                </label>
-
                 <label className="t-eyebrow mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
                   This camera&rsquo;s view (optional)
                   {/* Free text and allowed to stay empty. Only a human in the
@@ -458,7 +454,7 @@ export default function TeachShadowCapturePage() {
                   <button
                     type="button"
                     className="btn btn--ghost"
-                    disabled={phase !== 'idle' || busy || !take || !athleteId}
+                    disabled={phase !== 'idle' || busy || !take}
                     onClick={() => fileInputRef.current?.click()}
                   >
                     {attaching ? 'Adding…' : 'Add an angle from a file'}

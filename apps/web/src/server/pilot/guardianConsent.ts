@@ -69,13 +69,14 @@ interface CurrentConsentRow {
 async function currentConsentByGuardian(
   organizationId: string,
   athleteId: string,
+  waiverType: string,
 ): Promise<Map<string, CurrentConsentRow>> {
   const rows = await query<CurrentConsentRow>(
     `select distinct on (parent_id) parent_id, status, covers_video, public_use_allowed, created_at
      from pilot.waivers
      where organization_id = $1 and athlete_id = $2 and waiver_type = $3 and parent_id is not null
      order by parent_id, created_at desc`,
-    [organizationId, athleteId, MEDIA_CONSENT_WAIVER_TYPE],
+    [organizationId, athleteId, waiverType],
   );
 
   const map = new Map<string, CurrentConsentRow>();
@@ -104,6 +105,27 @@ export async function checkGuardianMediaConsent(
   organizationId: string,
   athleteId: string,
 ): Promise<ConsentCheckResult> {
+  return checkGuardianConsentOfType(organizationId, athleteId, MEDIA_CONSENT_WAIVER_TYPE);
+}
+
+/*
+ * ONE IMPLEMENTATION, TWO PURPOSES.
+ *
+ * Teach Shadow consent and publication consent are different permissions and
+ * must be separately grantable and withdrawable -- but "which guardians does
+ * this athlete have", "which of their rows is current" and "does this status
+ * read as signed" are the same questions for both. The normalisation comment
+ * below records a real defect caused by two gates reading that column
+ * differently; copying this function for a second waiver type would recreate
+ * exactly that asymmetry, one waiver type at a time.
+ *
+ * So the waiver TYPE is the only thing that varies.
+ */
+async function checkGuardianConsentOfType(
+  organizationId: string,
+  athleteId: string,
+  waiverType: string,
+): Promise<ConsentCheckResult> {
   const guardianIds = await query<{ parent_id: string }>(
     `select parent_id from pilot.guardian_links where organization_id = $1 and athlete_id = $2`,
     [organizationId, athleteId],
@@ -113,7 +135,7 @@ export async function checkGuardianMediaConsent(
     return { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] };
   }
 
-  const current = await currentConsentByGuardian(organizationId, athleteId);
+  const current = await currentConsentByGuardian(organizationId, athleteId, waiverType);
   const perGuardian = guardianIds.map((parentId) => {
     const row = current.get(parentId);
     return {
