@@ -454,9 +454,15 @@ export async function retrieveShadowContext(params: {
   // asserted here and was not measured: no conversation, database or log was
   // read, and the owner states none was sent.
   //
-  // DECISION_LOOP_ROLES is the list that route already requires, so this is
-  // the same rule expressed once rather than a second literal that can drift
-  // away from it. The gate refuses every role outside that set. access.ts
+  // DECISION_LOOP_ROLES is the list that route already requires, so neither
+  // surface carries its own literal. That is worth something, but it is NOT
+  // proof the two cannot diverge: the route decides membership with
+  // requireRole, which treats legacy `admin` and `organization_admin` as one
+  // role, while this uses a strict .includes. Sharing a constant is not
+  // sharing a decision. The equivalence is pinned by an executable test
+  // against the real requireRole, and that test -- not this comment -- is
+  // what would catch the drift. The gate refuses every role outside the set.
+  // access.ts
   // additionally refuses platform_owner and board before this point, which is
   // READ FROM that module rather than exercised here -- which is why the
   // tests enumerate the whole PilotRole union instead of relying on it.

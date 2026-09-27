@@ -173,6 +173,46 @@ If it ever is contradicted, the remediation question re-opens and this section
 is the thing to correct. Nothing here authorizes deletion, rewriting or purging
 of stored conversations.
 
+### Re-ratified 2026-09-26, after the cost was put to him
+
+A review found that the options put to the owner never named what the rule
+costs: an athlete asking about progression used to get their recorded events
+plus a directive to weigh them, and a HIGH or CRITICAL event added a line
+recommending the coach review before any load increase. After the gate the
+model cannot see the event, so it gives one fixed deferral sentence instead.
+The record had said he decided "knowing" the position; he had not been shown
+that.
+
+It was put to him in those terms the same day, with the options to re-ratify,
+to soften the withheld line, or to re-open. He chose, verbatim:
+
+> Re-ratify as-is
+
+So the rule stands, now on a record that names its cost. Whether the model
+actually defers on a progression question is still untested -- it needs a
+model call, not a unit test.
+
+### Stored job payloads: OUT OF SCOPE, 2026-09-26
+
+The async Heavy Bag path persists the assembled context, near-miss block
+included, into `pilot.shadow_jobs` (`shadowHeavyBag.ts`, 12,000-character
+slice). Athletes and parents can reach that path: the MANUAL heavy-tier
+request is role-gated, but organic escalation by complexity score is not
+(`shadowClassifier.ts`), and `preferAsync` is a client-supplied boolean. So
+near-miss text may sit in job rows written before this gate.
+
+This is a different question from the delivered-text one above, and the
+owner's "NONE HAS BEEN SENT" does not answer it -- he can know who used
+SHADOW, not what a stored prompt contained. Put to him separately with the
+options to authorize a read-only count, to log it as a blocked item, or to
+rule it out of scope. He chose, verbatim:
+
+> Out of scope -- leave it
+
+No count was run, no rows were read, and none are to be deleted or modified.
+The gate stops new rows carrying this content; existing rows stay as they are.
+UNVERIFIED throughout: whether any such row exists was never measured.
+
 ### The evidence it rested on
 
 - `retrieveShadowContext` called `listRecentNearMisses` with no role gate for

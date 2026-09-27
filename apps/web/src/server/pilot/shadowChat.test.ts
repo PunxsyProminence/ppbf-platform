@@ -463,7 +463,10 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
     // they agree only because both roles happen to be listed. Sharing a
     // constant is not the same as sharing a decision, so pin the decision --
     // for every role in the union, against the REAL requireRole.
-    test('this gate admits exactly the roles GET /near-misses admits', () => {
+    // Named for what it proves: the two MEMBERSHIP CHECKS agree over the
+    // shared constant. It would not catch the route swapping in a
+    // different role list, and no test here would.
+    test('the gate and requireRole agree on DECISION_LOOP_ROLES for every role', () => {
       const { requireRole } = jest.requireActual<typeof import('./access')>('./access');
 
       const ALL_PILOT_ROLES = [
