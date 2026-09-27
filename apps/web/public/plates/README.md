@@ -36,8 +36,8 @@ Every call is **reference-guided**: an image goes in with the prompt, so a new
 plate is another corner of the same building rather than a stock gym assembled
 from a sentence.
 
-**Plates 09 and 12-13 were referenced off earlier plates; plate-10 and plate-11
-were referenced off the owner's own photographs**, and the difference is visible.
+**Plates 09 and 12-13 were referenced off earlier plates; plate-10, plate-11 and
+plate-14 were referenced off the owner's own photographs**, and the difference is visible.
 Everything generated before those photographs arrived had the building wrong in
 ways no amount of prompting would have caught: dark block walls instead of honey
 plank, ceiling chains instead of the timber-and-pipe frames somebody built, one
@@ -90,6 +90,7 @@ portrait variant goes inside the orientation block, per "Adding a variant" below
 | `plate-11-floor-portrait-01.jpg` | 810×1440 | 195,227 | the gym floor upright, for the tablet that stands on the counter |
 | `plate-12-locker-landscape-01.jpg` | 1280×720 | 200,442 | the athletes corner: grey lockers with a red bank, benches |
 | `plate-13-scripts-landscape-01.jpg` | 1280×720 | 201,153 | the coaches corner: desk, timing clock, empty boards |
+| `plate-14-frontdesk-landscape-01.jpg` | 1280×720 | 203,244 | the Front Desk room: counter, stool, key box, the floor beyond |
 | `plate-04-board-portrait-01.jpg` | 810×1440 | 104,274 | a portrait crop the board room does not have today |
 | `plate-05-file-portrait-01.jpg` | 810×1440 | 222,851 | a portrait crop the file room does not have today |
 | `plate-06-night-02.jpg` | 1280×720 | 86,167 | a **second landscape** night plate — wiring it changes a merged, reviewed room |
