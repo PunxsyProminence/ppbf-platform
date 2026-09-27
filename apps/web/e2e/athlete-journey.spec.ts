@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Request } from '@playwright/test';
 import { installPilotApi, signInAtTheAthleteDoor, LOGIN_ROUTE } from './support/signIn';
 
 /* An athlete, from the tablet by the door to the work their coach set.
@@ -707,48 +707,101 @@ function openSessionRow(notes: string) {
  * practice means no database: every caller turns that into a skip with the
  * reason attached rather than asserting against a login form.
  */
+/** What the real POST /api/pilot/auth/login did, which is the only thing that
+    can tell an ABSENT backend apart from a REFUSING one. */
+interface LoginAttempt {
+  /** The request never reached a server at all. */
+  readonly transportFailed: boolean;
+  readonly status: number | null;
+  readonly body: string;
+}
+
+/**
+ * The athlete's real door, then the workspace.
+ *
+ * Returns false ONLY where the missing server/database prerequisite is
+ * positively identified. Everything else raises.
+ */
 async function openAthleteWorkspace(page: Page): Promise<boolean> {
   await page.goto('/athlete/sign-in');
   await page.getByLabel(/Athlete Account ID/i).fill(OFFLINE_ATHLETE_ACCOUNT);
   await page.getByLabel(/^PIN/i).fill(OFFLINE_ATHLETE_PIN);
-  await page.getByRole('button', { name: /Sign In/i }).click();
 
-  /* A MISSING DATABASE HAS TO BE RECOGNISED, NOT INFERRED FROM FAILURE.
-     This used to catch every navigation timeout and report it as 'no
-     database', so a real regression in the login POST, the session
-     cookie, role routing or server rendering would have SKIPPED in the
-     documented on-demand mode -- a broken door reported as an absent
-     one. Only the two shapes the missing prerequisite actually takes
-     may skip, and everything else raises with what was observed. */
+  /* Armed BEFORE the click, because a response cannot be waited for after it
+     has already arrived. A transport failure is recorded separately: it
+     produces no response at all, and it is the strongest evidence there is
+     that nothing was listening. */
+  const attempt: { transportFailed: boolean } = { transportFailed: false };
+  const onFailed = (request: Request) => {
+    if (new URL(request.url()).pathname === LOGIN_ROUTE) attempt.transportFailed = true;
+  };
+  page.on('requestfailed', onFailed);
+  const pendingLogin = page
+    .waitForResponse((response) => new URL(response.url()).pathname === LOGIN_ROUTE, { timeout: 25000 })
+    .catch(() => null);
+
+  await page.getByRole('button', { name: /Sign In/i }).click();
+  const response = await pendingLogin;
+  const login: LoginAttempt = {
+    transportFailed: attempt.transportFailed,
+    status: response ? response.status() : null,
+    body: response ? await response.text().catch(() => '') : '',
+  };
+  page.off('requestfailed', onFailed);
+
+  /* A MISSING DATABASE MUST BE RECOGNISED, NEVER INFERRED FROM FAILURE.
+     Two earlier shapes of this were both too broad. Catching every navigation
+     timeout reported a broken door as an absent one; then reading any sign-in
+     alert did the same thing more quietly, because SignInPanel shows that one
+     alert for a wrong PIN, a rate limit, a lost session and a server fault
+     alike. So the decision is made on the login RESPONSE, which is the only
+     evidence that distinguishes them. */
+  if (login.transportFailed) return false;
+  if (isMissingBackendBody(login.body)) return false;
+
+  if (login.status !== null && login.status !== 200) {
+    throw new Error(
+      'the athlete door refused the synthetic sign-in for a reason that is NOT a missing database, '
+      + `so this is a finding rather than a skip. status=${login.status} body=${login.body.slice(0, 300)}`,
+    );
+  }
+
+  /* The login itself succeeded, so the remaining question is only whether the
+     page guard can resolve the cookie it set. */
   const deadline = Date.now() + 25000;
   for (;;) {
     const path = new URL(page.url()).pathname;
     if (path === '/athlete/dashboard') return true;
-    // The server guard turned away a session it could not resolve.
+    // requirePageRole could not resolve the session it was just handed, which
+    // is the documented no-database behaviour of a SERVER_GUARDED_ROUTE.
     if (path === '/login') return false;
-    // Or the login route itself could not reach a database, so the door
-    // never opened. Read from the page's own refusal, not from a timeout.
-    if (path === '/athlete/sign-in' && await signInRefusedForMissingBackend(page)) return false;
     if (Date.now() > deadline) {
       const body = (await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300);
       throw new Error(
-        'the athlete sign-in reached neither the workspace nor a recognised missing-database '
-        + `refusal. url=${page.url()} body=${body}`,
+        'the login succeeded but the browser reached neither the workspace nor the server guard. '
+        + `url=${page.url()} body=${body}`,
       );
     }
     await page.waitForTimeout(250);
   }
 }
 
-/** The sign-in screen's own statement that it could not reach its backend.
-    Matched on the screen's text rather than on a status code because that
-    is what a person at the tablet is actually told, and a silent failure
-    with no message would be a finding in itself rather than a skip. */
-async function signInRefusedForMissingBackend(page: Page): Promise<boolean> {
-  const alert = page.getByRole('alert');
-  if (await alert.count() === 0) return false;
-  const text = await alert.first().innerText().catch(() => '');
-  return text.trim().length > 0;
+/** The backend is ABSENT, as opposed to present and refusing. Matched on the
+    shapes this stack actually produces, both observed rather than assumed:
+
+      * the unset connection string, which is what a checkout with no
+        .env.local and no offline runtime answers -- verified here, and note
+        that it arrives as a 400, not a 5xx, so a status-range test would have
+        missed it entirely;
+      * a connection that could not be made or was dropped, which is what a
+        configured-but-unreachable database answers.
+
+    Deliberately NOT matched: a wrong PIN, a rate limit, a lost session, or any
+    other refusal. Those mean the door is there and said no, which is a finding
+    about the application, never a reason to skip a proof. */
+function isMissingBackendBody(body: string): boolean {
+  return /Missing required environment variable: AZURE_POSTGRES_CONNECTION_STRING/i.test(body)
+    || /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|Connection terminated|connection refused|could not connect|database (is )?(unavailable|unreachable)/i.test(body);
 }
 
 /* CI CREATES THE PREREQUISITE, SO CI MAY NOT SKIP.
