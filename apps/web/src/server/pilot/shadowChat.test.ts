@@ -464,15 +464,22 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
     // they agree only because both roles happen to be listed. Sharing a
     // constant is not the same as sharing a decision, so pin the decision --
     // for every role in the union, against the REAL requireRole.
-    // What this proves: the GATE's observed behaviour matches what
-    // requireRole would decide, for every role in the union. It runs the real
-    // retrieveShadowContext and reads whether the near-miss query happened,
-    // so rewriting the gate's condition breaks it.
+    // What this proves: the GATE's observed behaviour matches what requireRole
+    // decides over DECISION_LOOP_ROLES, for every role in the union. It runs
+    // the real retrieveShadowContext and reads whether the near-miss query
+    // happened, so rewriting the gate's condition breaks it.
     //
-    // What it still does NOT prove: that the route keeps using this same list.
-    // If GET /near-misses swapped in a different role set, both sides of this
-    // comparison would move together and nothing here would notice.
-    test('the gate admits exactly the roles GET /near-misses admits', async () => {
+    // WHAT THE NAME MUST NOT SAY. An earlier name claimed the gate "admits
+    // exactly the roles GET /near-misses admits". This test never reads the
+    // route -- it passes DECISION_LOOP_ROLES into requireRole itself. The
+    // route does call requireRole(principal, [...DECISION_LOOP_ROLES]) today,
+    // so that claim happens to be true, but nothing here proves it and
+    // nothing here would notice the route swapping in a different list.
+    //
+    // The role list below is hand-written and the type system does not check
+    // it against PilotRole, so a role added later would not be enumerated.
+    // The gate still fails closed for it, because the allow-list grants.
+    test('the gate admits exactly the roles requireRole admits for DECISION_LOOP_ROLES', async () => {
       const { requireRole } = jest.requireActual<typeof import('./access')>('./access');
 
       const ALL_PILOT_ROLES = [
@@ -491,12 +498,11 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         mockListRecentNearMisses.mockReset();
         mockListRecentNearMisses.mockResolvedValue(severeRows());
         await retrieveShadowContext({
-          role,
           userRole: role,
           userId: 'account-1',
           organizationId: 'org-456',
           athleteId: 'athlete-789',
-        } as unknown as Parameters<typeof retrieveShadowContext>[0]);
+        });
         gate.push({ role, admitted: mockListRecentNearMisses.mock.calls.length > 0 });
       }
 

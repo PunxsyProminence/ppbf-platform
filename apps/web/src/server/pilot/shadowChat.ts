@@ -437,7 +437,12 @@ export async function retrieveShadowContext(params: {
   //
   // Near misses are the one athlete record where silence is dangerous: an
   // intensity question answered blind to yesterday's critical event is the
-  // repeat incident the table exists to prevent. Each event carries its
+  // repeat incident the table exists to prevent. SCOPE OF THAT SENTENCE
+  // CHANGED 2026-09-26 and it is no longer true of every caller: under
+  // OD-2026-09-26-001 athletes and parents no longer receive these records,
+  // so for them the model IS answering blind, by owner decision, and gets a
+  // fixed instruction to defer to the coach instead. The reasoning below
+  // still governs the roles that do receive them. Each event carries its
   // near_miss_id as a citable evidence id, mirroring the platform-rollup
   // pattern, so the model can reference recorded events without the response
   // validator discarding them as uncited claims.
@@ -471,8 +476,11 @@ export async function retrieveShadowContext(params: {
   //
   // The gate is BEFORE the query, not a filter after it: an excluded role
   // must not cause the read, carry an evidence id, or learn from the shape of
-  // the answer whether anything is on file. Ordinary athlete context is
-  // unchanged for them -- this removes the safety records, not the access.
+  // the answer whether anything is on file. Their ACCESS is unchanged -- this
+  // removes the safety records, not the athlete scope -- but their context
+  // string is not: an athlete with no events on record used to be told so
+  // explicitly, and now gets the same deferral line as everyone excluded.
+  // Only the authorization header survives untouched.
   if (!DECISION_LOOP_ROLES.includes(userRole)) {
     return {
       context: `${header}\n${NEAR_MISS_CONTEXT_WITHHELD}`,
