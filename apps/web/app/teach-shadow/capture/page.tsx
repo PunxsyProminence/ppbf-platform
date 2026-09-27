@@ -147,40 +147,6 @@ export default function TeachShadowCapturePage() {
   const { phase, errorMessage, setErrorMessage, videoRef, recordedBytes, stoppedAtLimit, stop } = recorder;
 
   /*
-   * THE HAND-OFF FROM CLEARANCE. That page establishes the participant, then
-   * loads this document with the session id -- a full navigation, because a
-   * soft one would carry its camera=() policy in here and the camera could
-   * never open.
-   *
-   * Only the id crosses. The session it reads back names nobody, so this page
-   * learns which take to attach angles to and nothing about who is in them.
-   */
-  useEffect(() => {
-    const requested = new URLSearchParams(window.location.search).get('recording_session_id');
-    if (!requested) return;
-    void (async () => {
-      try {
-        const response = await fetch(
-          `${apiBase()}/api/pilot/video/capture-session?recording_session_id=${encodeURIComponent(requested)}`,
-          { credentials: 'include' },
-        );
-        const payload = (await response.json().catch(() => ({}))) as {
-          error?: string;
-          session?: unknown;
-        };
-        if (!response.ok || !payload.session) {
-          throw new Error(payload.error || 'That recording session could not be opened.');
-        }
-        setSession(payload.session as SessionState);
-      } catch (error) {
-        setErrorMessage(
-          error instanceof Error ? error.message : 'That recording session could not be opened.',
-        );
-      }
-    })();
-  }, [setErrorMessage]);
-
-  /*
    * NO ROSTER IS READ HERE, and that absence is the point of the slice.
    * Who is being filmed was settled at clearance, before this document
    * existed, and the server resolves it from the capture session. A picker on
@@ -332,22 +298,29 @@ export default function TeachShadowCapturePage() {
             <section className="mt-[var(--s5)] flex flex-col gap-[var(--s5)]">
               <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
                 <h2 className="t-eyebrow">Start a session</h2>
-                {/* A SESSION CANNOT BE STARTED FROM HERE ANY MORE. Starting one
-                    means saying who is being filmed, and this document is the
-                    anonymous surface -- asking here would put the name back on
-                    the one screen the slice exists to keep clear of it. The
-                    clearance page asks once, and what comes back names nobody.
-
-                    A plain anchor, not a Link: leaving a camera document has to
-                    be a document load, or the next page inherits this one's
-                    camera policy. */}
-                <p className="t-body mt-[var(--s2)]">
-                  Who is being filmed is settled before recording starts. Nothing on this
-                  screen names them, and neither does the footage.
-                </p>
-                <p className="mt-[var(--s4)]">
-                  <a className="btn" href="/coach/capture-clearance">Clear a participant and start</a>
-                </p>
+                {/* NOTHING STANDS IN FRONT OF THIS. Filming to teach the
+                    recognizer is not gated: no consent, no clearance, no
+                    participant, no page to pass through first. Choose what is
+                    being filmed and record. */}
+                <label className="t-eyebrow mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
+                  What is being filmed
+                  <select className="input" value={trainingContext} onChange={(e) => setTrainingContext(e.target.value)}>
+                    {TRAINING_CONTEXTS.map((context) => (
+                      <option key={context.value} value={context.value}>{context.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="btn mt-[var(--s4)]"
+                  disabled={busy}
+                  onClick={() => guarded(async () => {
+                    const payload = await post({ action: 'create', training_context: trainingContext });
+                    setSession(payload.session as SessionState);
+                  })}
+                >
+                  Start recording session
+                </button>
               </div>
 
               <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">

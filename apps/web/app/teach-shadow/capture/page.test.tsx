@@ -115,15 +115,11 @@ async function renderPage() {
   render(<TeachShadowCapturePage />);
 }
 
-/*
- * A session now arrives from CLEARANCE rather than being started here: that
- * page names the athlete, establishes the restricted participant, and hands
- * this document the session id in the URL. Only the id crosses -- what comes
- * back names nobody.
- */
 async function openSession() {
-  window.history.replaceState({}, '', '/teach-shadow/capture?recording_session_id=rs-1');
   await renderPage();
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Start recording session' }));
+  });
   await screen.findByText('H7K2QP');
 }
 
@@ -236,20 +232,30 @@ test('the camera view is the one that was typed when filming started', async () 
   expect(uploads[0]!.get('camera_view')).toBe('front');
 });
 
-test('TS-ANON-01 -- this page cannot start a session, and offers no way to name anyone', async () => {
+test('nothing stands between a coach and recording', async () => {
   /*
-   * THE INVERSION. This suite previously asserted the camera REFUSED to open
-   * until a recording could name its athlete. Teaching media names nobody now,
-   * so the question moved to clearance -- before any footage exists -- and
-   * this document must offer no way to ask it. The context picker went with
-   * it, because choosing one is part of starting a session.
+   * THE OWNER RULE, PINNED. Filming to teach the recognizer is not gated: no
+   * consent, no clearance, no participant, and no page to pass through first.
+   * A session starts from this screen, and nobody is named anywhere on it.
+   *
+   * This suite has held the opposite twice -- first that the camera refused
+   * until a recording named its athlete, then that a session could only come
+   * from a clearance page. Both were restrictions the owner removed.
    */
   await renderPage();
 
+  expect(screen.getByRole('button', { name: 'Start recording session' })).toBeEnabled();
   expect(screen.queryByLabelText(/which athlete/i)).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Start recording session' })).toBeNull();
-  expect(screen.getAllByRole('link').map((el) => el.getAttribute('href')))
-    .toContain('/coach/capture-clearance');
+  expect(document.body.textContent ?? '').not.toMatch(/clearance|consent/i);
+});
+
+test('offers only the contexts with one person in frame', async () => {
+  await renderPage();
+
+  // Mitts and sparring put a second person in frame. The server refuses them
+  // too; this is the half a coach can see.
+  const options = screen.getAllByRole('option').map((option) => option.textContent);
+  expect(options).toEqual(['Shadowboxing', 'Heavy bag']);
 });
 
 test('TS-ANON-01 -- the camera opens with nobody named', async () => {
