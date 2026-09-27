@@ -605,6 +605,56 @@ jobs:
             exit 1
           fi
 
+      # ─────────────────────────────────────────────────────────────────────
+      # Refuse the deploy while SHADOW background jobs are still waiting.
+      #
+      # A queued job carries its own copy of the context it will be answered
+      # from: shadowHeavyBag.ts stores the assembled context on the job row,
+      # and shadowJobProcessor.ts reads payload.authorizedContext at EXECUTION
+      # time rather than at enqueue. Its allowed-role set includes athlete and
+      # parent. So a release that changes WHAT GOES INTO that context does not
+      # reach a job that was already queued -- the worker answers it from the
+      # payload written under the old rules and appends the answer to that
+      # athlete's or parent's conversation.
+      #
+      # Owner ruling, 2026-09-26, on where that precondition should live:
+      #
+      #   "Nothing is real if anything is waiting"
+      #
+      # He was offered the option of recording it as a note for whoever
+      # deploys, and declined it. This is the enforced form.
+      #
+      # PLACED HERE, IMMEDIATELY BEFORE THE DEPLOY, ON PURPOSE. Earlier would
+      # fail faster, but the queue can gain work during the image build and
+      # the digest checks above it. The guarantee is only worth what the gap
+      # between the check and the update is, so the gap is made as small as
+      # the workflow allows.
+      #
+      # The script opens a READ ONLY transaction, so Postgres itself refuses
+      # any write it could attempt, and it reads the connection string from the
+      # Container App secret the same way the schema check above does -- no
+      # production connection string reaches a laptop. A check that cannot run
+      # exits non-zero: not looking is not the same as nothing waiting.
+      #
+      # IF THIS BLOCKS YOU: it is not a failure to route around. Let the worker
+      # drain -- it ticks every 30 seconds -- and re-dispatch. If it stays
+      # non-empty, jobs are stuck, and that is worth knowing before a deploy
+      # rather than after.
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Refuse To Deploy While SHADOW Jobs Are Waiting
+        run: |
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          if ! AZURE_POSTGRES_CONNECTION_STRING="$CONN" node apps/web/scripts/pilot-check-shadow-job-queue.mjs; then
+            echo "::error::SHADOW background jobs are still pending or running. Each holds the context it will be answered from, written before this release, so deploying now leaves them to deliver the old behaviour afterwards. Let the worker drain and re-dispatch."
+            exit 1
+          fi
+
       - name: Deploy Tested Digest to Azure Container App (Production)
         env:
           PPBF_APP_ORIGIN: ${{ vars.PPBF_APP_ORIGIN }}
