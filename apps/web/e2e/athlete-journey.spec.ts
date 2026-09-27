@@ -697,13 +697,42 @@ async function openAthleteWorkspace(page: Page): Promise<boolean> {
   }
 }
 
+/* CI CREATES THE PREREQUISITE, SO CI MAY NOT SKIP.
+   Locally the offline runtime is optional, and a missing database is an
+   honest skip with the reason attached. In a workflow step that has just
+   STARTED one, the same skip would report green for ten proofs that never
+   ran -- which is the exact failure a gate exists to prevent, and worse than
+   having no gate because it looks like coverage. PPBF_E2E_REQUIRE_ATHLETE_DB
+   turns that condition into a failure, and the step that sets it is the step
+   that owns the runtime. */
+const ATHLETE_DB_REQUIRED = process.env.PPBF_E2E_REQUIRE_ATHLETE_DB === '1';
+
+async function enterWorkspaceOrSkip(page: Page): Promise<void> {
+  if (await openAthleteWorkspace(page)) return;
+  if (ATHLETE_DB_REQUIRED) {
+    throw new Error(
+      'PPBF_E2E_REQUIRE_ATHLETE_DB=1 declares that a database was provided for this run, but the '
+      + 'athlete workspace did not render. ' + SERVER_GUARDED_SKIP,
+    );
+  }
+  test.skip(true, SERVER_GUARDED_SKIP);
+}
+
 const createsIn = (writes: SessionWrite[]) => writes.filter((write) => write.path === SESSION_CREATE);
 const updatesIn = (writes: SessionWrite[]) => writes.filter((write) => write.path === SESSION_UPDATE);
 
 test.describe('A-FIN-10 the session lifecycle on the wire', () => {
+  // Which contract this run is under, said out loud, so a green summary can
+  // never be read as ten executed proofs when it was ten skips.
+  test.beforeAll(() => {
+    console.log(ATHLETE_DB_REQUIRED
+      ? '[A-FIN-10] PPBF_E2E_REQUIRE_ATHLETE_DB=1 -- these proofs MUST execute; an absent database fails the run.'
+      : '[A-FIN-10] no database declared for this run -- these proofs skip, with the reason attached, if one is absent.');
+  });
+
   test('opening the workspace starts no session', async ({ page }) => {
     const writes = await recordSessionWrites(page);
-    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+    await enterWorkspaceOrSkip(page);
 
     await expect(page.getByText('You are not checked in right now.')).toBeVisible();
     /* Waited out rather than read on arrival: a create fired by a mount effect
@@ -717,7 +746,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
 
   test('check-in creates one session and sends the sentinel, never the draft', async ({ page }) => {
     const writes = await recordSessionWrites(page);
-    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+    await enterWorkspaceOrSkip(page);
 
     const draft = 'my left wrist is sore from Tuesday';
     await page.locator('#pre-check-in-note').fill(draft);
@@ -748,7 +777,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
 
   test('typing does not publish after the interval it used to autosave on', async ({ page }) => {
     const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
-    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+    await enterWorkspaceOrSkip(page);
 
     const box = page.getByLabel('Session notes for your coach');
     await expect(box).toBeVisible();
@@ -762,7 +791,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
   test('Share with coach sends exactly one update carrying the note', async ({ page }) => {
     const row = openSessionRow(NO_ATHLETE_NOTE);
     const writes = await recordSessionWrites(page, { initialRows: [row] });
-    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+    await enterWorkspaceOrSkip(page);
 
     const note = 'my left wrist is sore from Tuesday';
     await page.getByLabel('Session notes for your coach').fill(note);
@@ -784,7 +813,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
 
   test('editing after a share does not send the changed draft', async ({ page }) => {
     const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
-    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+    await enterWorkspaceOrSkip(page);
 
     const box = page.getByLabel('Session notes for your coach');
     await box.fill('wrist is sore');
@@ -802,7 +831,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
 
   test('clearing the box is not a withdrawal, and Withdraw is', async ({ page }) => {
     const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
-    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+    await enterWorkspaceOrSkip(page);
 
     const box = page.getByLabel('Session notes for your coach');
     await box.fill('wrist is sore');
@@ -824,7 +853,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
 
   test('check-out sends an answered effort as the athlete self-report', async ({ page }) => {
     const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
-    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+    await enterWorkspaceOrSkip(page);
 
     await page.getByLabel('How hard was the session you just finished? 7').click();
     await page.getByRole('button', { name: 'Check Out' }).click();
@@ -839,7 +868,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
 
   test('check-out leaves an unanswered effort unrecorded rather than defaulting it', async ({ page }) => {
     const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
-    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+    await enterWorkspaceOrSkip(page);
 
     await page.getByRole('button', { name: 'Check Out' }).click();
     await expect(page.getByText('You are not checked in right now.')).toBeVisible();
@@ -852,7 +881,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
 
   test('check-out preserves the last shared note and never publishes the open draft', async ({ page }) => {
     const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
-    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+    await enterWorkspaceOrSkip(page);
 
     const shared = 'wrist is sore';
     const unsent = 'and something I decided not to send';
@@ -878,7 +907,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
       initialRows: [openSessionRow(NO_ATHLETE_NOTE)],
       refuseUpdates: true,
     });
-    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+    await enterWorkspaceOrSkip(page);
 
     await page.getByLabel('Session notes for your coach').fill('wrist is sore');
     await page.getByRole('button', { name: 'Share with coach' }).click();

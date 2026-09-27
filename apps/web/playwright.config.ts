@@ -56,7 +56,14 @@ export default defineConfig({
   webServer: {
     command: `npm run dev -- --port ${port}`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    /* WHO OWNS SERVER STARTUP, which is a different question from where the
+       server is -- PPBF_E2E_HOST answers that one. A step that has already
+       started the offline runtime (docs/OFFLINE_RUNTIME.md) says so
+       explicitly here, rather than having it inferred from the host: CI
+       stays strict by default, and only a step that owns a server opts out.
+       Coupling the two would mean any host override silently disabled the
+       guarantee that CI starts the server it tests. */
+    reuseExistingServer: !process.env.CI || process.env.PPBF_E2E_REUSE_EXISTING_SERVER === '1',
     timeout: 120000,
   },
 });
