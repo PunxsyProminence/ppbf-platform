@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { installPilotApi, signInAtTheAthleteDoor, LOGIN_ROUTE } from './support/signIn';
 
 /* An athlete, from the tablet by the door to the work their coach set.
@@ -514,5 +514,378 @@ test.describe('Athlete journey', () => {
     // And no control: reading is not writing, on a page with no write verb
     // behind it.
     await expect(page.locator('form, select, textarea')).toHaveCount(0);
+  });
+});
+
+/* A-FIN-10 -- THE SESSION LIFECYCLE, IN A REAL BROWSER.
+   ------------------------------------------------------------------------
+
+   WHAT THIS LAYER OWNS, AND THE ONE THING IT MUST NOT CLAIM. A-FIN-01,
+   A-FIN-05 and A-FIN-08 put a publication contract on the athlete's session
+   note: the box is a private draft, only a deliberate act publishes or
+   withdraws it, and check-out replays what was SHARED rather than what is in
+   the box. Every one of those rules is currently proven by jsdom and by route
+   tests. Neither runs a browser, so neither can fail if the contract breaks
+   in the real event loop -- a restored autosave timer, a check-out that reads
+   the textarea, a clear that publishes itself.
+
+   These tests drive the real component in a real browser and assert on the
+   WIRE: which request fires, how many, and with what body. That is the whole
+   claim. A stubbed browser e2e proves NOTHING about Postgres persistence,
+   about server authorization, or about staging behaviour; the `.pg` suites,
+   the route tests and the 2026-09-26 authenticated staging run cover those,
+   separately and by name.
+
+   WHY THIS ONE NEEDS A DATABASE WHEN THE REST OF THIS FILE DOES NOT.
+   AthleteWorkspace is mounted on exactly one route -- app/athlete/dashboard
+   -- and that page calls requirePageRole(['athlete']), which resolves the
+   session cookie against Postgres INSIDE the Next server. A browser-level
+   stub cannot reach it, which is the limit stated at the top of this file.
+   So the session lifecycle cannot be driven anywhere else, and these tests
+   sign in for real: the login POST is deliberately NOT stubbed, only the
+   three session endpoints are, so the cookie the server issues is the
+   genuine article and the page renders as an athlete's.
+
+   Run it against the offline runtime, which is a real embedded Postgres with
+   the full schema, synthetic personas and no route to production:
+
+     npm --workspace web run offline -- --reset --port 3100
+     npm --workspace web run test:e2e:athlete
+
+   With no database present the sign-in cannot mint a session, /athlete/
+   dashboard answers 307 -> /login, and each test below SKIPS with that reason
+   attached to the run rather than passing on an empty page. The proofs are
+   written in full and run unchanged wherever a database is -- the same shape
+   golden-era-scope-proofs.spec.ts uses for `.ge-locker`, which is the same
+   route and the same limit. */
+
+/** The offline runtime's synthetic athlete persona, documented in
+    docs/OFFLINE_RUNTIME.md. Not a credential: it exists only inside a local
+    embedded Postgres that the launcher creates, and the launcher's network
+    guard rejects every non-loopback socket. */
+const OFFLINE_ATHLETE_ACCOUNT = 'offline-athlete';
+const OFFLINE_ATHLETE_PIN = '246810';
+
+const SESSION_CREATE = '/api/pilot/sessions';
+const SESSION_UPDATE = '/api/pilot/sessions/update';
+const SESSION_LIST = '/api/pilot/sessions/list';
+
+/** Restated rather than imported from src/shared/sessionNoteSemantics.ts, for
+    the reason ROLE_DESTINATION is restated in support/signIn.ts: a test that
+    imports the app's own constant agrees with the code by construction, and
+    would keep passing if the sentinel changed under it. */
+const NO_ATHLETE_NOTE = 'No athlete note provided at check-in.';
+
+/** The interval the note box used to autosave on, before A-FIN-08 made
+    publication deliberate. Waited PAST, not up to: the property under test is
+    that nothing is sent BECAUSE time passed, so the window has to close with
+    the test still watching. */
+const HISTORICAL_AUTOSAVE_MS = 1200;
+const PAST_THE_AUTOSAVE_WINDOW_MS = HISTORICAL_AUTOSAVE_MS * 2 + 600;
+
+const SERVER_GUARDED_SKIP =
+  '/athlete/dashboard resolves its role inside the Next server (requirePageRole -> resolvePrincipal '
+  + '-> Postgres), so with no database present it answers 307 -> /login and the athlete workspace '
+  + 'never renders. The proof in this test is complete and runs unchanged against the offline '
+  + 'runtime (docs/OFFLINE_RUNTIME.md) or any environment with a database.';
+
+interface SessionWrite {
+  readonly path: string;
+  readonly body: Record<string, unknown>;
+}
+
+interface RecorderOptions {
+  /** Rows GET /sessions/list answers with before this test writes anything. */
+  readonly initialRows?: Record<string, unknown>[];
+  /** Refuse every POST /sessions/update, to prove the screen does not lie
+      about what reached the coach. */
+  readonly refuseUpdates?: boolean;
+}
+
+/**
+ * Holds the three session endpoints still and records what the browser sent.
+ *
+ * Only those three. /api/pilot/auth/login and /api/pilot/auth/session are
+ * deliberately left alone so the session cookie is minted by the real server
+ * -- a stub there would put the page back behind the guard it cannot pass.
+ * Everything else on the surface answers from the real offline database,
+ * which is also why nothing here asserts on it.
+ */
+async function recordSessionWrites(
+  page: Page,
+  options: RecorderOptions = {},
+): Promise<SessionWrite[]> {
+  const writes: SessionWrite[] = [];
+  const rows: Record<string, unknown>[] = [...(options.initialRows ?? [])];
+
+  const json = (body: unknown, status = 200) => ({
+    status,
+    contentType: 'application/json',
+    body: JSON.stringify(body),
+  });
+
+  await page.route('**/api/pilot/sessions**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const method = request.method();
+
+    if (path === SESSION_LIST && method === 'GET') {
+      await route.fulfill(json({ items: rows }));
+      return;
+    }
+
+    if (path === SESSION_CREATE && method === 'POST') {
+      const body = JSON.parse(request.postData() ?? '{}') as Record<string, unknown>;
+      writes.push({ path, body });
+      rows.push({ ...body });
+      await route.fulfill(json({ ok: true, session_id: body.session_id }));
+      return;
+    }
+
+    if (path === SESSION_UPDATE && method === 'POST') {
+      const body = JSON.parse(request.postData() ?? '{}') as Record<string, unknown>;
+      writes.push({ path, body });
+      if (options.refuseUpdates) {
+        await route.fulfill(json({ error: 'refused by the test' }, 500));
+        return;
+      }
+      const index = rows.findIndex((row) => row.session_id === body.session_id);
+      if (index >= 0) rows[index] = { ...rows[index], ...body };
+      await route.fulfill(json({ ok: true }));
+      return;
+    }
+
+    await route.continue();
+  });
+
+  return writes;
+}
+
+/** An open session as /sessions/list returns one, created just now so that the
+    gym-day reduction in loadStoredSessions selects it as today's. */
+function openSessionRow(notes: string) {
+  const now = new Date();
+  return {
+    session_id: 'session_e2e_open',
+    athlete_id: OFFLINE_ATHLETE_ACCOUNT,
+    date: now.toISOString().slice(0, 10),
+    rpe: null,
+    rpe_method: 'UNKNOWN',
+    notes,
+    completed_flag: false,
+    created_at: now.toISOString(),
+  };
+}
+
+/**
+ * The athlete's real door, then the workspace.
+ *
+ * Returns false when the sign-in does not land on /athlete/dashboard, which in
+ * practice means no database: every caller turns that into a skip with the
+ * reason attached rather than asserting against a login form.
+ */
+async function openAthleteWorkspace(page: Page): Promise<boolean> {
+  await page.goto('/athlete/sign-in');
+  await page.getByLabel(/Athlete Account ID/i).fill(OFFLINE_ATHLETE_ACCOUNT);
+  await page.getByLabel(/^PIN/i).fill(OFFLINE_ATHLETE_PIN);
+  await page.getByRole('button', { name: /Sign In/i }).click();
+  try {
+    await page.waitForURL('**/athlete/dashboard', { timeout: 20000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const createsIn = (writes: SessionWrite[]) => writes.filter((write) => write.path === SESSION_CREATE);
+const updatesIn = (writes: SessionWrite[]) => writes.filter((write) => write.path === SESSION_UPDATE);
+
+test.describe('A-FIN-10 the session lifecycle on the wire', () => {
+  test('opening the workspace starts no session', async ({ page }) => {
+    const writes = await recordSessionWrites(page);
+    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+
+    await expect(page.getByText('You are not checked in right now.')).toBeVisible();
+    /* Waited out rather than read on arrival: a create fired by a mount effect
+       would land after the first paint, so an assertion taken immediately
+       would pass whether or not one was coming. */
+    await page.waitForTimeout(PAST_THE_AUTOSAVE_WINDOW_MS);
+
+    expect(createsIn(writes), 'merely loading the workspace must not create a session').toHaveLength(0);
+    expect(updatesIn(writes), 'merely loading the workspace must not write a session').toHaveLength(0);
+  });
+
+  test('check-in creates one session and sends the sentinel, never the draft', async ({ page }) => {
+    const writes = await recordSessionWrites(page);
+    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+
+    const draft = 'my left wrist is sore from Tuesday';
+    await page.locator('#pre-check-in-note').fill(draft);
+    await page.getByRole('button', { name: 'Start check-in' }).first().click();
+
+    /* Check-in deliberately moves the athlete off the Session Log -- to
+       Wellness when today's wellness is missing, to the Floor when it is not
+       -- so the confirmation is read where it is shown and the Session Log is
+       returned to for the rest. Asserted loosely on purpose: which of the two
+       lines appears is a property of the wellness gate, not of check-in. */
+    await expect(page.getByText(/You are checked in\./)).toBeVisible();
+    await page.getByRole('button', { name: 'Dashboard', exact: true }).first().click();
+    await expect(page.getByText(/Session active since/)).toBeVisible();
+
+    const creates = createsIn(writes);
+    expect(creates, 'check-in is exactly one session create').toHaveLength(1);
+    expect(creates[0].body.notes, 'check-in stores the sentinel, not the athlete draft').toBe(NO_ATHLETE_NOTE);
+    expect(creates[0].body.notes).not.toBe(draft);
+    expect(creates[0].body.rpe, 'the session has not happened, so there is no effort to rate').toBeNull();
+    expect(creates[0].body.rpe_method).toBe('UNKNOWN');
+    expect(creates[0].body.completed_flag).toBe(false);
+
+    // The draft survives check-in as a draft, and the screen says so.
+    await expect(page.getByLabel('Session notes for your coach')).toHaveValue(draft);
+    await expect(page.getByText('Only you can see this until you share it.')).toBeVisible();
+    expect(updatesIn(writes), 'checking in must not publish the draft afterwards either').toHaveLength(0);
+  });
+
+  test('typing does not publish after the interval it used to autosave on', async ({ page }) => {
+    const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
+    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+
+    const box = page.getByLabel('Session notes for your coach');
+    await expect(box).toBeVisible();
+    await box.fill('thinking out loud, not finished');
+    await page.waitForTimeout(PAST_THE_AUTOSAVE_WINDOW_MS);
+
+    expect(updatesIn(writes), 'time passing is not a decision to publish').toHaveLength(0);
+    await expect(page.getByText('Only you can see this until you share it.')).toBeVisible();
+  });
+
+  test('Share with coach sends exactly one update carrying the note', async ({ page }) => {
+    const row = openSessionRow(NO_ATHLETE_NOTE);
+    const writes = await recordSessionWrites(page, { initialRows: [row] });
+    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+
+    const note = 'my left wrist is sore from Tuesday';
+    await page.getByLabel('Session notes for your coach').fill(note);
+    await page.getByRole('button', { name: 'Share with coach' }).click();
+    await expect(page.getByText('Your coach can read this.')).toBeVisible();
+
+    const updates = updatesIn(writes);
+    expect(updates, 'sharing is one write').toHaveLength(1);
+    expect(updates[0].body.notes).toBe(note);
+    expect(updates[0].body.completed_flag, 'sharing a note does not close the session').toBe(false);
+    /* Replayed, not fabricated: /sessions/update replaces the whole record, so
+       a field this write invents is a field it destroys. */
+    expect(updates[0].body.session_id).toBe(row.session_id);
+    expect(updates[0].body.date).toBe(row.date);
+    expect(updates[0].body.created_at).toBe(row.created_at);
+    expect(updates[0].body.rpe, 'an open session has no effort rating yet').toBeNull();
+    expect(updates[0].body.rpe_method).toBe('UNKNOWN');
+  });
+
+  test('editing after a share does not send the changed draft', async ({ page }) => {
+    const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
+    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+
+    const box = page.getByLabel('Session notes for your coach');
+    await box.fill('wrist is sore');
+    await page.getByRole('button', { name: 'Share with coach' }).click();
+    await expect(page.getByText('Your coach can read this.')).toBeVisible();
+
+    await box.fill('wrist is sore and my shoulder too');
+    await page.waitForTimeout(PAST_THE_AUTOSAVE_WINDOW_MS);
+
+    expect(updatesIn(writes), 'a second thought is not a second publication').toHaveLength(1);
+    await expect(
+      page.getByText('Your coach can still read what you shared before. This change is not shared yet.'),
+    ).toBeVisible();
+  });
+
+  test('clearing the box is not a withdrawal, and Withdraw is', async ({ page }) => {
+    const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
+    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+
+    const box = page.getByLabel('Session notes for your coach');
+    await box.fill('wrist is sore');
+    await page.getByRole('button', { name: 'Share with coach' }).click();
+    await expect(page.getByText('Your coach can read this.')).toBeVisible();
+
+    await box.fill('');
+    await page.waitForTimeout(PAST_THE_AUTOSAVE_WINDOW_MS);
+    expect(updatesIn(writes), 'a stray backspace must not erase what a coach can already read').toHaveLength(1);
+
+    await page.getByRole('button', { name: 'Withdraw from coach' }).click();
+    await expect(page.getByText('Only you can see this until you share it.')).toBeVisible();
+
+    const updates = updatesIn(writes);
+    expect(updates, 'withdrawal is the second write, and a deliberate one').toHaveLength(2);
+    expect(updates[1].body.notes, 'withdrawal stores the no-note sentinel, not an empty string').toBe(NO_ATHLETE_NOTE);
+    expect(updates[1].body.completed_flag).toBe(false);
+  });
+
+  test('check-out sends an answered effort as the athlete self-report', async ({ page }) => {
+    const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
+    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+
+    await page.getByLabel('How hard was the session you just finished? 7').click();
+    await page.getByRole('button', { name: 'Check Out' }).click();
+    await expect(page.getByText('You are not checked in right now.')).toBeVisible();
+
+    const updates = updatesIn(writes);
+    expect(updates, 'check-out is one write').toHaveLength(1);
+    expect(updates[0].body.completed_flag).toBe(true);
+    expect(updates[0].body.rpe).toBe(7);
+    expect(updates[0].body.rpe_method).toBe('athlete_post_session_self_report');
+  });
+
+  test('check-out leaves an unanswered effort unrecorded rather than defaulting it', async ({ page }) => {
+    const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
+    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+
+    await page.getByRole('button', { name: 'Check Out' }).click();
+    await expect(page.getByText('You are not checked in right now.')).toBeVisible();
+
+    const updates = updatesIn(writes);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].body.rpe, 'skipping the question is not an answer of any number').toBeNull();
+    expect(updates[0].body.rpe_method).toBe('UNKNOWN');
+  });
+
+  test('check-out preserves the last shared note and never publishes the open draft', async ({ page }) => {
+    const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
+    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+
+    const shared = 'wrist is sore';
+    const unsent = 'and something I decided not to send';
+
+    const box = page.getByLabel('Session notes for your coach');
+    await box.fill(shared);
+    await page.getByRole('button', { name: 'Share with coach' }).click();
+    await expect(page.getByText('Your coach can read this.')).toBeVisible();
+
+    await box.fill(unsent);
+    await page.getByRole('button', { name: 'Check Out' }).click();
+    await expect(page.getByText('You are not checked in right now.')).toBeVisible();
+
+    const updates = updatesIn(writes);
+    expect(updates, 'the share, then the check-out -- nothing in between').toHaveLength(2);
+    expect(updates[1].body.completed_flag).toBe(true);
+    expect(updates[1].body.notes, 'check-out replays what was SHARED').toBe(shared);
+    expect(updates[1].body.notes, 'checking out must not publish an unsent draft').not.toBe(unsent);
+  });
+
+  test('a refused publication does not let the screen claim it reached the coach', async ({ page }) => {
+    const writes = await recordSessionWrites(page, {
+      initialRows: [openSessionRow(NO_ATHLETE_NOTE)],
+      refuseUpdates: true,
+    });
+    test.skip(!(await openAthleteWorkspace(page)), SERVER_GUARDED_SKIP);
+
+    await page.getByLabel('Session notes for your coach').fill('wrist is sore');
+    await page.getByRole('button', { name: 'Share with coach' }).click();
+
+    await expect(page.getByText('That did not reach your coach -- try again.')).toBeVisible();
+    await expect(page.getByText('Your coach can read this.')).toHaveCount(0);
+    await expect(page.getByText('Only you can see this until you share it.')).toBeVisible();
+    expect(updatesIn(writes), 'the write was attempted once, and refused once').toHaveLength(1);
   });
 });

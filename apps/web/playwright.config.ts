@@ -15,7 +15,15 @@ const localChromium = process.env.PPBF_CHROMIUM_PATH;
    is already up. One variable moves both the server and the baseURL together,
    which is the only way they cannot disagree. */
 const port = process.env.PPBF_E2E_PORT ?? '3100';
-const baseURL = `http://localhost:${port}`;
+/* The dev server's host, for the same reason as the port above and moving
+   with it. The offline runtime (docs/OFFLINE_RUNTIME.md) starts Next with
+   `--hostname 127.0.0.1`, and on Windows `localhost` resolves to ::1 first,
+   so a suite pointed at localhost cannot see that server at all -- it probes
+   a dead address, declines to reuse, and tries to start a second Next on a
+   port already in use. CI leaves this unset and keeps `localhost`, so the
+   pipeline is unchanged. */
+const host = process.env.PPBF_E2E_HOST ?? 'localhost';
+const baseURL = `http://${host}:${port}`;
 
 export default defineConfig({
   testDir: './e2e',
