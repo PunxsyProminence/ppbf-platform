@@ -256,7 +256,12 @@ export async function sweepQuarantinedVideos(options: {
     // the video itself names nobody -- anonymity in the teaching corpus was
     // never meant to mean the platform cannot raise a concern about a real
     // person.
-    const escalationAthleteId = subject.athleteIds[0] ?? claim.athlete_id;
+    //
+    // TS-ANON-01: teaching footage resolves to nobody, so it escalates against
+    // nobody. The owner's rule is that this media names no one; an escalation
+    // filed from a restricted link would be that name arriving by a side door.
+    // Film Study is untouched and still escalates against its own athlete.
+    const escalationAthleteId = subject.isTeaching ? null : claim.athlete_id;
     if (terminal && isEscalatingScanDecision(scan.decision) && escalationAthleteId) {
       await fileEscalation({
         organizationId: claim.organization_id,

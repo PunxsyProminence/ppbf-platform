@@ -4,10 +4,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { uploadPilotVideoFile } from '@/src/server/pilot/blob';
-import {
-  linkParticipantToVideo,
-  participantsForSession,
-} from '@/src/server/pilot/captureParticipants';
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
@@ -217,28 +213,10 @@ export async function POST(request: NextRequest) {
     }
 
     /*
-     * WHO THIS TEACHING FOOTAGE IS OF -- read from the session, never from the
-     * request, so a client cannot attribute footage to somebody it chose.
-     *
-     * This is a SAFEGUARDING record, not a permission check. The footage
-     * teaches a recognizer what a punch looks like; the person in frame is how
-     * the movement got recorded, not what the record is about. What the link
-     * buys is that a scanner flagging something in this footage can still
-     * reach the real child, which is the reason the owner kept it when the
-     * teaching media stopped naming anyone.
-     *
-     * A take with no participant is still refused: footage nobody can be
-     * reached about is worse than no footage.
+     * TS-ANON-01: NOBODY IS RESOLVED, because teaching footage is of nobody.
+     * A take-backed upload carries its take and no identity at all -- the
+     * refusal above is the whole of the rule.
      */
-    let teachingParticipantIds: string[] = [];
-    if (captureTakeIdForRow) {
-      teachingParticipantIds = await participantsForSession(
-        principal.organizationId,
-        recordingSessionId as string,
-      );
-
-
-    }
 
     // Free text and allowed to be unknown. "Rear phone camera" is a fact about
     // hardware; "rear view of the athlete" is a fact about the gym. Only a
@@ -314,20 +292,6 @@ export async function POST(request: NextRequest) {
         captureSource,
       ],
     );
-
-    /*
-     * The restricted link, written after the row exists because its foreign
-     * key points at it. Every participant on the session is attached: a device
-     * that joined by code is filming the same person from another angle, and
-     * its file has to be resolvable to the same guardian.
-     */
-    for (const captureParticipantId of teachingParticipantIds) {
-      await linkParticipantToVideo({
-        organizationId: principal.organizationId,
-        videoSessionId,
-        captureParticipantId,
-      });
-    }
 
     await emitShadowEvent({
       organizationId: principal.organizationId,
