@@ -217,7 +217,16 @@ from a context containing near-miss records, and the answer is appended to that
 conversation. That is a delivery path, not merely storage, and it was NOT named
 in the out-of-scope question above. Put to the owner separately on 2026-09-26,
 he directed that the job queue be confirmed empty before the gate reaches
-production. The read-only count could not be run from the build machine --
+production. Asked where that precondition should live so it could not be
+missed, he ruled it must be ENFORCED rather than recorded, verbatim:
+
+> Nothing is real if anything is waiting
+
+So it is not a note anyone has to remember: `docs/current/ACTIVE_WORK.md`
+carries it as a BLOCKED row against the production deploy, and a separate PR
+adds an executable queue-empty check to `deploy-production.yml` that fails
+the deploy while anything is pending. Recording it in prose alone was the
+option he refused. The read-only count could not be run from the build machine --
 production PostgreSQL refused the connection (timeout, firewalled) -- so it is
 recorded as a PRODUCTION-DEPLOY PRECONDITION rather than a merge precondition.
 Merging changes nothing in production: `deploy-production.yml` is manual
