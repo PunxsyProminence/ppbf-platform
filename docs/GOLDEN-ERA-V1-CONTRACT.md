@@ -265,8 +265,8 @@ If YES → ship the staging candidate for Jason’s live review.
 
 ## 17. Change control
 
-- This contract is amended only by owner decision or by a Grok PR that updates it as part of a visual release.
-- Claude does not redesign this document’s visual decisions.
+- This contract is amended only by owner decision, or by a visual PR from any lane that updates it as part of a visual release (OD-2026-09-26-001).
+- No lane rewrites another lane's approved visual decisions out of preference. Any lane may propose a change to them, and the owner decides.
 - ChatGPT audits claims against this contract and the actual PR diff.
 
 Tagline remains: **OBSERVE. DECIDE. EXECUTE. REPEAT.**
