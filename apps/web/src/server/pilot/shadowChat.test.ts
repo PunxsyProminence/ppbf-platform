@@ -13,6 +13,7 @@ import {
 import { assertActorCanAccessAthlete } from './access';
 import { listRecentNearMisses } from './shadowNearMisses';
 import { DECISION_LOOP_ROLES } from './shadowRoleSets';
+import type { PilotRole } from './contracts';
 
 jest.mock('./access', () => ({
   assertActorCanAccessAthlete: jest.fn(),
@@ -463,10 +464,15 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
     // they agree only because both roles happen to be listed. Sharing a
     // constant is not the same as sharing a decision, so pin the decision --
     // for every role in the union, against the REAL requireRole.
-    // Named for what it proves: the two MEMBERSHIP CHECKS agree over the
-    // shared constant. It would not catch the route swapping in a
-    // different role list, and no test here would.
-    test('the gate and requireRole agree on DECISION_LOOP_ROLES for every role', () => {
+    // What this proves: the GATE's observed behaviour matches what
+    // requireRole would decide, for every role in the union. It runs the real
+    // retrieveShadowContext and reads whether the near-miss query happened,
+    // so rewriting the gate's condition breaks it.
+    //
+    // What it still does NOT prove: that the route keeps using this same list.
+    // If GET /near-misses swapped in a different role set, both sides of this
+    // comparison would move together and nothing here would notice.
+    test('the gate admits exactly the roles GET /near-misses admits', async () => {
       const { requireRole } = jest.requireActual<typeof import('./access')>('./access');
 
       const ALL_PILOT_ROLES = [
@@ -474,10 +480,25 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         'athlete', 'parent', 'board', 'volunteer', 'staff',
       ] as const;
 
-      const gate = ALL_PILOT_ROLES.map((role) => ({
-        role,
-        admitted: DECISION_LOOP_ROLES.includes(role),
-      }));
+      // Derive the gate's answer FROM THE GATE. The first version of this
+      // test evaluated DECISION_LOOP_ROLES.includes inline -- a copy of the
+      // gate's own expression -- and compared that to requireRole. It would
+      // have passed with the gate in shadowChat.ts rewritten to any other
+      // check, because it never called it. The observable for "admitted" is
+      // whether the read happened.
+      const gate: Array<{ role: PilotRole; admitted: boolean }> = [];
+      for (const role of ALL_PILOT_ROLES) {
+        mockListRecentNearMisses.mockReset();
+        mockListRecentNearMisses.mockResolvedValue(severeRows());
+        await retrieveShadowContext({
+          role,
+          userRole: role,
+          userId: 'account-1',
+          organizationId: 'org-456',
+          athleteId: 'athlete-789',
+        } as unknown as Parameters<typeof retrieveShadowContext>[0]);
+        gate.push({ role, admitted: mockListRecentNearMisses.mock.calls.length > 0 });
+      }
 
       const route = ALL_PILOT_ROLES.map((role) => {
         let admitted = true;

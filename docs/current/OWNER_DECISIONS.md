@@ -178,7 +178,8 @@ of stored conversations.
 A review found that the options put to the owner never named what the rule
 costs: an athlete asking about progression used to get their recorded events
 plus a directive to weigh them, and a HIGH or CRITICAL event added a line
-recommending the coach review before any load increase. After the gate the
+recommending the coach review before any load increase -- "used to get"
+describes what the code produced for that role, not an observed delivery. After the gate the
 model cannot see the event, so it gives one fixed deferral sentence instead.
 The record had said he decided "knowing" the position; he had not been shown
 that.
@@ -196,10 +197,31 @@ model call, not a unit test.
 
 The async Heavy Bag path persists the assembled context, near-miss block
 included, into `pilot.shadow_jobs` (`shadowHeavyBag.ts`, 12,000-character
-slice). Athletes and parents can reach that path: the MANUAL heavy-tier
-request is role-gated, but organic escalation by complexity score is not
-(`shadowClassifier.ts`), and `preferAsync` is a client-supplied boolean. So
-near-miss text may sit in job rows written before this gate.
+slice). Athletes and parents are not blocked from that path by role: the MANUAL
+heavy-tier request is role-gated, but organic escalation by complexity score is
+not (`shadowClassifier.ts`), and `preferAsync` is a client-supplied boolean.
+**Stated with its preconditions, which an earlier draft omitted:** the enqueue
+branch also requires `isShadowWorkerEnabled()` -- `PPBF_SHADOW_WORKER_ENABLED`
+set to `true` -- and passage of the Heavy Bag rate limit (`chat/route.ts`). No
+environment state was read, so whether that flag was ever on where athletes
+used SHADOW is UNVERIFIED, and "near-miss text may sit in job rows" rests on
+that unchecked condition. Framing a question to the owner from code paths
+without their preconditions is the same error as the "currently get" premise
+above, and it is recorded rather than quietly corrected.
+
+**A stored row is not inert.** `shadowJobProcessor.ts` reads
+`payload.authorizedContext` at EXECUTION time, not at enqueue, and interpolates
+it into the prompt; its allowed-role set includes `athlete` and `parent`. So a
+job queued before this gate and processed after it deploys would still generate
+from a context containing near-miss records, and the answer is appended to that
+conversation. That is a delivery path, not merely storage, and it was NOT named
+in the out-of-scope question above. Put to the owner separately on 2026-09-26,
+he directed that the job queue be confirmed empty before the gate reaches
+production. The read-only count could not be run from the build machine --
+production PostgreSQL refused the connection (timeout, firewalled) -- so it is
+recorded as a PRODUCTION-DEPLOY PRECONDITION rather than a merge precondition.
+Merging changes nothing in production: `deploy-production.yml` is manual
+dispatch only. The window opens when the gate deploys, not when it merges.
 
 This is a different question from the delivered-text one above, and the
 owner's "NONE HAS BEEN SENT" does not answer it -- he can know who used
@@ -210,7 +232,8 @@ rule it out of scope. He chose, verbatim:
 > Out of scope -- leave it
 
 No count was run, no rows were read, and none are to be deleted or modified.
-The gate stops new rows carrying this content; existing rows stay as they are.
+The gate stops new rows carrying this content. Existing rows are not modified
+by this slice -- and, per the paragraph above, are not inert either.
 UNVERIFIED throughout: whether any such row exists was never measured.
 
 ### The evidence it rested on

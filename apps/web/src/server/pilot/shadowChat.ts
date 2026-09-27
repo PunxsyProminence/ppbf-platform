@@ -459,9 +459,11 @@ export async function retrieveShadowContext(params: {
   // proof the two cannot diverge: the route decides membership with
   // requireRole, which treats legacy `admin` and `organization_admin` as one
   // role, while this uses a strict .includes. Sharing a constant is not
-  // sharing a decision. The equivalence is pinned by an executable test
-  // against the real requireRole, and that test -- not this comment -- is
-  // what would catch the drift. The gate refuses every role outside the set.
+  // sharing a decision. An executable test runs this gate for every role and
+  // compares the observed result with the real requireRole, so rewriting the
+  // condition below breaks it. What no test here catches is the route
+  // swapping in a DIFFERENT list -- both sides would move together.
+  // The gate refuses every role outside the set.
   // access.ts
   // additionally refuses platform_owner and board before this point, which is
   // READ FROM that module rather than exercised here -- which is why the
