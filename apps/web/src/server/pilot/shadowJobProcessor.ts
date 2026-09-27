@@ -34,7 +34,7 @@ import { createFilmStudyProposal } from './shadowFilmStudyProposals';
 import type { PilotRole } from './contracts';
 import { BOARD_SUMMARY_ROLES } from './shadowRoleSets';
 import { queryOne } from './db';
-import { claimNextJob, completeJob, failJob, type JobType } from './shadowJobQueue';
+import { claimNextJob, completeJob, failJob, SHADOW_CONTEXT_CONTRACT_VERSION, type JobType } from './shadowJobQueue';
 import { composeShadowSystemPrompt, SHADOW_SYSTEM_PROMPT, validateShadowResponse } from './shadowChat';
 import { appendAssistantMessage, queueHumanReview } from './shadowConversations';
 import {
@@ -351,7 +351,7 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
     // This matters for rows queued BEFORE the request-boundary gate above
     // existed: those jobs are unreachable by any authorized actor and would
     // otherwise burn their full retry budget proving it.
-    if (errorCode === 'SHADOW_JOB_SCOPE_FORBIDDEN') {
+    if (errorCode === 'SHADOW_JOB_SCOPE_FORBIDDEN' || errorCode === 'SHADOW_JOB_CONTEXT_CONTRACT_STALE') {
       await failJob(job, errorCode, { retryable: false });
     } else {
       await failJob(job, errorCode);
@@ -691,6 +691,27 @@ function requireAsyncTrustContext(payload: Record<string, unknown>): {
     'volunteer',
     'platform_owner',
   ]);
+  // THE CONTEXT ON THIS ROW WAS ASSEMBLED BY THE REQUEST THAT ENQUEUED IT,
+  // under whatever rules were in force then. If those rules have since
+  // changed, answering from it delivers the old behaviour after the change is
+  // live -- and for the near-miss audience gate that means near-miss records
+  // reaching an athlete or parent, both of which are in allowedRoles above.
+  //
+  // A missing stamp is a job enqueued before this check existed, which is
+  // exactly the population the gate was worried about, so absence is refused
+  // rather than defaulted.
+  // FAILS CLOSED ON ITS OWN CONSTANT, not only on the payload. A bare
+  // `payload.x !== CONSTANT` passes every unstamped job the moment the
+  // constant is undefined -- a module mock, a circular import, a bad merge --
+  // because undefined !== undefined is false. A guard that disables itself
+  // when its own wiring breaks is worse than no guard, because it reports
+  // green. The type check is the guard on the guard.
+  if (
+    typeof SHADOW_CONTEXT_CONTRACT_VERSION !== 'number'
+    || payload.contextContractVersion !== SHADOW_CONTEXT_CONTRACT_VERSION
+  ) {
+    throw new Error('SHADOW_JOB_CONTEXT_CONTRACT_STALE');
+  }
   if (
     typeof role !== 'string'
     || !allowedRoles.has(role as PilotRole)

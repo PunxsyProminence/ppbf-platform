@@ -8,7 +8,7 @@ import type { ShadowContextOutput } from './shadowContextBuilder';
 import type { ShadowClassification } from './shadowClassifier';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from './azureAiRuntime';
 import { routeRequest, type ShadowSessionType, type RoutingDecision } from './shadowRouter';
-import { enqueueJob } from './shadowJobQueue';
+import { enqueueJob, SHADOW_CONTEXT_CONTRACT_VERSION } from './shadowJobQueue';
 import type { ProfileTierResult } from './shadowProfiling';
 import { budgetConversationHistory } from './shadowConversationHistory';
 
@@ -177,6 +177,9 @@ export async function executeHeavyBagAsync(input: HeavyBagInput): Promise<HeavyB
       topic: input.classification.topic,
       authenticatedRole: input.role,
       authorizedContext: input.contextOutput.context.slice(0, 12_000),
+      // Which context rules assembled the string above. The worker refuses
+      // anything it does not recognise rather than answering from it.
+      contextContractVersion: SHADOW_CONTEXT_CONTRACT_VERSION,
       profileTier: input.tierResult.tier,
       ...(input.conversationId ? { conversationId: input.conversationId } : {}),
       ...(input.evidenceSnapshot
