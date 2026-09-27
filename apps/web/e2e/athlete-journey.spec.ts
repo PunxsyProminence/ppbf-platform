@@ -550,7 +550,23 @@ test.describe('Athlete journey', () => {
    the full schema, synthetic personas and no route to production:
 
      npm --workspace web run offline -- --reset --port 3100
+
+   and then point the suite AT it. The three variables are not optional
+   here: the runtime binds 127.0.0.1, so a run left on the default host
+   reproduces the exact failure PPBF_E2E_HOST exists to fix. In PowerShell
+   (Windows), which has no inline assignment:
+
+     $env:PPBF_E2E_HOST='127.0.0.1'; $env:PPBF_E2E_PORT='3100'
+     $env:PPBF_E2E_REUSE_EXISTING_SERVER='1'
      npm --workspace web run test:e2e:athlete
+
+   In a POSIX shell:
+
+     PPBF_E2E_HOST=127.0.0.1 PPBF_E2E_PORT=3100 \n       PPBF_E2E_REUSE_EXISTING_SERVER=1 \n       npm --workspace web run test:e2e:athlete
+
+   PPBF_E2E_REQUIRE_ATHLETE_DB is deliberately NOT set there: local runs
+   are the optional-runtime mode, and only a step that started a runtime
+   may promise one is present.
 
    With no database present the sign-in cannot mint a session, /athlete/
    dashboard answers 307 -> /login, and each test below SKIPS with that reason
@@ -565,6 +581,13 @@ test.describe('Athlete journey', () => {
     guard rejects every non-loopback socket. */
 const OFFLINE_ATHLETE_ACCOUNT = 'offline-athlete';
 const OFFLINE_ATHLETE_PIN = '246810';
+/** The athlete RECORD that account resolves to, which is a different
+    identifier and the one every session row carries -- `offline-runtime.mjs`
+    seeds the pair explicitly (`['offline-athlete', 'athlete',
+    'offline-athlete-record']`). Writing the account id into a synthetic
+    session would build payloads the real /sessions/update could never
+    accept, and a stub would take them anyway. */
+const OFFLINE_ATHLETE_ID = 'offline-athlete-record';
 
 const SESSION_CREATE = '/api/pilot/sessions';
 const SESSION_UPDATE = '/api/pilot/sessions/update';
@@ -667,7 +690,7 @@ function openSessionRow(notes: string) {
   const now = new Date();
   return {
     session_id: 'session_e2e_open',
-    athlete_id: OFFLINE_ATHLETE_ACCOUNT,
+    athlete_id: OFFLINE_ATHLETE_ID,
     date: now.toISOString().slice(0, 10),
     rpe: null,
     rpe_method: 'UNKNOWN',
@@ -689,12 +712,43 @@ async function openAthleteWorkspace(page: Page): Promise<boolean> {
   await page.getByLabel(/Athlete Account ID/i).fill(OFFLINE_ATHLETE_ACCOUNT);
   await page.getByLabel(/^PIN/i).fill(OFFLINE_ATHLETE_PIN);
   await page.getByRole('button', { name: /Sign In/i }).click();
-  try {
-    await page.waitForURL('**/athlete/dashboard', { timeout: 20000 });
-    return true;
-  } catch {
-    return false;
+
+  /* A MISSING DATABASE HAS TO BE RECOGNISED, NOT INFERRED FROM FAILURE.
+     This used to catch every navigation timeout and report it as 'no
+     database', so a real regression in the login POST, the session
+     cookie, role routing or server rendering would have SKIPPED in the
+     documented on-demand mode -- a broken door reported as an absent
+     one. Only the two shapes the missing prerequisite actually takes
+     may skip, and everything else raises with what was observed. */
+  const deadline = Date.now() + 25000;
+  for (;;) {
+    const path = new URL(page.url()).pathname;
+    if (path === '/athlete/dashboard') return true;
+    // The server guard turned away a session it could not resolve.
+    if (path === '/login') return false;
+    // Or the login route itself could not reach a database, so the door
+    // never opened. Read from the page's own refusal, not from a timeout.
+    if (path === '/athlete/sign-in' && await signInRefusedForMissingBackend(page)) return false;
+    if (Date.now() > deadline) {
+      const body = (await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300);
+      throw new Error(
+        'the athlete sign-in reached neither the workspace nor a recognised missing-database '
+        + `refusal. url=${page.url()} body=${body}`,
+      );
+    }
+    await page.waitForTimeout(250);
   }
+}
+
+/** The sign-in screen's own statement that it could not reach its backend.
+    Matched on the screen's text rather than on a status code because that
+    is what a person at the tablet is actually told, and a silent failure
+    with no message would be a finding in itself rather than a skip. */
+async function signInRefusedForMissingBackend(page: Page): Promise<boolean> {
+  const alert = page.getByRole('alert');
+  if (await alert.count() === 0) return false;
+  const text = await alert.first().innerText().catch(() => '');
+  return text.trim().length > 0;
 }
 
 /* CI CREATES THE PREREQUISITE, SO CI MAY NOT SKIP.
@@ -768,6 +822,10 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     expect(creates[0].body.rpe, 'the session has not happened, so there is no effort to rate').toBeNull();
     expect(creates[0].body.rpe_method).toBe('UNKNOWN');
     expect(creates[0].body.completed_flag).toBe(false);
+    /* The ATHLETE RECORD, not the account that signed in. The client reads it
+       off the real session response, so this is the one identifier in the
+       payload that the stub did not supply. */
+    expect(creates[0].body.athlete_id, 'the create names the seeded athlete record').toBe(OFFLINE_ATHLETE_ID);
 
     // The draft survives check-in as a draft, and the screen says so.
     await expect(page.getByLabel('Session notes for your coach')).toHaveValue(draft);
@@ -805,6 +863,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     /* Replayed, not fabricated: /sessions/update replaces the whole record, so
        a field this write invents is a field it destroys. */
     expect(updates[0].body.session_id).toBe(row.session_id);
+    expect(updates[0].body.athlete_id, 'a payload the real route could accept').toBe(OFFLINE_ATHLETE_ID);
     expect(updates[0].body.date).toBe(row.date);
     expect(updates[0].body.created_at).toBe(row.created_at);
     expect(updates[0].body.rpe, 'an open session has no effort rating yet').toBeNull();
@@ -848,6 +907,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     const updates = updatesIn(writes);
     expect(updates, 'withdrawal is the second write, and a deliberate one').toHaveLength(2);
     expect(updates[1].body.notes, 'withdrawal stores the no-note sentinel, not an empty string').toBe(NO_ATHLETE_NOTE);
+    expect(updates[1].body.athlete_id).toBe(OFFLINE_ATHLETE_ID);
     expect(updates[1].body.completed_flag).toBe(false);
   });
 
@@ -864,6 +924,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     expect(updates[0].body.completed_flag).toBe(true);
     expect(updates[0].body.rpe).toBe(7);
     expect(updates[0].body.rpe_method).toBe('athlete_post_session_self_report');
+    expect(updates[0].body.athlete_id).toBe(OFFLINE_ATHLETE_ID);
   });
 
   test('check-out leaves an unanswered effort unrecorded rather than defaulting it', async ({ page }) => {
@@ -900,6 +961,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     expect(updates[1].body.completed_flag).toBe(true);
     expect(updates[1].body.notes, 'check-out replays what was SHARED').toBe(shared);
     expect(updates[1].body.notes, 'checking out must not publish an unsent draft').not.toBe(unsent);
+    expect(updates[1].body.athlete_id).toBe(OFFLINE_ATHLETE_ID);
   });
 
   test('a refused publication does not let the screen claim it reached the coach', async ({ page }) => {
