@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** recommendations written against the retired Leather & Brass system at `15bf902`, not a build order; the no-streaks constraint still holds (`achievementPaths.test.ts`). Current source: `docs/ROOM-MAP.md` (Build order).
+
 # PPBF Visuals: Ease of Use, Engagement, and Flow Recommendations
 
 Grounded in the current codebase (post golden-era overhaul, commit `15bf902`) — the design system, the achievement/notice logic, and the actual page structure. Not guesses about a generic app; specific to what this platform already does and deliberately does not do.

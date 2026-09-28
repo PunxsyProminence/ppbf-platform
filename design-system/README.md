@@ -1,23 +1,34 @@
-# PPBF Design System — "Leather & Brass"
+# PPBF Design System
 
-Visual foundation for the PPBF Platform. The platform looks like a boxing gym that has
-been run properly for forty years — leather, brass, slate, cork, paper, stained wood,
-brick. That solves a real problem: one spectrum of users, from a nine-year-old at a
-floor kiosk to a grant officer reading impact. Physical objects give each surface an
-obvious identity and weight — a chalkboard is today and gets erased; a stamped paper is
-a decision and does not.
+**The look is Golden Era: `docs/GOLDEN-ERA-V1-CONTRACT.md`**, the active visual
+authority since 2026-08-24. "Leather & Brass" is retired and kept in `legacy/`. Of
+the eight laws below, 2, 3, 5 and 7 still bind; 1, 4, 6 and 8 are retired
+(OD-2026-09-28-009). The visual build order is `docs/ROOM-MAP.md`.
+
+This folder holds the CSS the app loads, the previews, and the laws with the checks
+that enforce them.
 
 ## Source of truth
 
-**[`ppbf.css`](ppbf.css)** — tokens, materials, type, rooms, and components in one
-unlayered sheet. Every preview in this folder consumes it, and `apps/web` imports it via
-`globals.css`. **The current CSS is the implementation authority**; this README states
-the laws and points to the checks — it does not restate what the sheet already says.
+**[`ppbf.css`](ppbf.css)** is the entry point: `apps/web` imports it via `globals.css`,
+and every preview in this folder consumes it. It is two imports, in this order:
+
+1. `foundation/ppbf-foundation.css` — structure, accessibility and the scales
+   (`--t-*`, `--s*`, `--r-*`, `--tap`, motion). No look.
+2. `current/ppbf-theme.css` — the seam. It imports `current/ppbf-golden-era.css`,
+   which imports the retired `legacy/ppbf-leather-brass.css` for continuity and
+   overrides on top of it. Most tokens, materials and components, and the PLATES
+   block (`legacy/ppbf-leather-brass.css:3560-3680`), therefore still live in the
+   legacy sheet.
+
+None of it is in a cascade layer. **The current CSS is the implementation authority**;
+this README states the laws and points to the checks — it does not restate what the
+sheets already say.
 
 | What | Where |
 |---|---|
-| Tokens (116: `--hide-*`, `--brass-*`, `--t-*`, `--s1..s8`, …) | top of `ppbf.css` |
-| Self-hosted faces (SIL OFL 1.1, 5 woff2, no CDN) | `fonts.css` + `fonts/` |
+| Tokens (`--t-*`, `--s1..s8`, `--tap`, motion; `--hide-*`, `--brass-*`, …) | `:root` blocks of `foundation/ppbf-foundation.css` and `legacy/ppbf-leather-brass.css`; Golden Era overrides in `current/ppbf-golden-era.css` |
+| Self-hosted faces (SIL OFL 1.1, 5 woff2, no CDN) — retired 2026-08-23 | `legacy/legacy-fonts.css` + `fonts/` |
 | Room photo plates (JPEG, `--plate` per room) | `apps/web/public/plates/` |
 | Synthesized sound (Web Audio, classic script, `window.PPBFSound`) | `ppbf-sound.js` |
 | Machine-readable index — **generated, never hand-edited** | `manifest.json` (`npm run design:manifest`) |
@@ -25,47 +36,44 @@ the laws and points to the checks — it does not restate what the sheet already
 
 Raw fetch for tools: `https://raw.githubusercontent.com/PunxsyProminence/ppbf-platform/main/design-system/manifest.json`
 
-**Token count corrected 2026-08-22, and the two figures still disagree on
-purpose.** The row above said **93**; `manifest.json` says **101**; counted
-directly, the first `:root` block of `ppbf.css` declares **116** distinct custom
-properties. The README's 93 was simply stale. The gap between 101 and 116 is a
-generator artefact, not a disagreement about the system: `build-manifest.mjs`
-extracts tokens with a line-anchored regex (`/^\s*(--[\w-]+):\s*([^;]+);/gm`),
-so where the sheet packs several declarations onto one line it records only the
-first. Fifteen tokens are invisible to it that way — `--s2`, `--s3`, `--s4`,
-`--s6`, `--s7`, `--s8` (lines 224-225), `--r-md`, `--r-lg`, `--r-xl`,
-`--r-pill` (line 226), and the five `*-ink` pairs `--cleared-ink`,
-`--monitor-ink`, `--restricted-ink`, `--locked-ink`, `--filed-ink`.
-`tokenCounts.space` is loose for a second reason: `byPrefix('--s')` also
-catches `--slate`, `--split-*` and `--stamp-*`.
+**Token count, measured at `bbf299fe` (2026-09-28).** `build-manifest.mjs` reads every
+`:root` block of `foundation/ppbf-foundation.css` and `legacy/ppbf-leather-brass.css`
+(not `current/ppbf-golden-era.css`). The committed `manifest.json` says **117**;
+regenerating it gives **125**, so the committed file is stale. The generator's
+line-anchored regex (`/^\s*(--[\w-]+):\s*([^;]+);/gm`) also records only the first
+of several declarations packed onto one line, which hides 19 more (`--s2`…`--s8`
+except `--s5`, `--r-md`, `--r-lg`, `--r-xl`, `--r-pill`, the five `*-ink` pairs, and
+`--sy`, `--sh-len`, `--sh-blur`, `--sh-op`). The manifest is generated and must not
+be hand-edited: fix the generator, then re-run `npm run design:manifest`.
 
-The manifest is generated and must not be hand-edited, so it is **not** patched
-here. Fixing it means fixing the generator — a one-line regex change in
-`design-system/build-manifest.mjs` plus a re-run of `npm run design:manifest` —
-which is code, and belongs to whoever owns that file. Until then: 116 is the
-measured count, 101 is what the manifest reports, and the reason is written
-down rather than left for the next reader to rediscover.
+## The eight laws — four bind, four are retired
 
-## The eight laws
+Laws 1, 4, 6 and 8 are **retired** (OD-2026-09-28-009): they described the Leather &
+Brass look. Their text is kept below, marked, so the checks that still carry their
+names can be read; a retired law's check still runs until someone removes it. Each
+law names the executable check that enforces it, where one exists. Paths are relative
+to `apps/web/`.
 
-Each law names the executable check that enforces it, where one exists. Paths are
-relative to `apps/web/`.
-
-1. **Brass is the chassis, never the message.** Frames, rivets, bezels, button faces.
-   Brass never reports a status. *(Review + contrast sweep; no dedicated test.)*
+1. **RETIRED.** *Brass is the chassis, never the message.* Frames, rivets, bezels,
+   button faces. Brass never reports a status. *(Review + contrast sweep; no dedicated
+   test.)*
 2. **Saturated colour means safety or status — nothing else.** Green/blue/orange/red
-   belong to the safety ladder and queue outcomes only. `--red-primary` aliases
+   belong to the safety ladder and queue outcomes only. `--safety-locked` aliases
    `--locked`; it never paints chrome. → `src/design/cornerColor.test.ts` (a member's
    red/blue corner tint can never be mistaken for a safety state).
 3. **Colour is never the only channel.** Every state carries a glyph (`✓ ◉ ▲ ✕`) and an
    uppercase label; the ladder survives greyscale and colour blindness. A bare spinner is
    colour-and-motion-only and therefore banned — pair `.skeleton`/`aria-busy` with `.working` text.
-4. **Voices, each with a job.** Display (Alfa Slab One) commands, bone sans informs,
-   chalk schedules, hand annotates, gothic is the clinic masthead only, typed is
-   back-office prose, mono records anything auditable. `--font-stencil` is a legacy alias.
+4. **RETIRED.** *Voices, each with a job.* Display (Alfa Slab One) commands, bone sans
+   informs, chalk schedules, hand annotates, gothic is the clinic masthead only, typed
+   is back-office prose, mono records anything auditable. `--font-stencil` is a legacy
+   alias. The five faces were retired 2026-08-23; what renders today is in
+   `docs/GOLDEN-ERA-V1-CONTRACT.md` §8.
 5. **Kiosk-first sizing.** Anything an athlete touches on the floor: `--tap` (55px)
-   targets, `--t-md` (19.1px) type. → `src/design/kioskTapFloor.test.tsx`.
-6. **Every screen is a room; every panel is a real material.** A room supplies wall,
+   targets, `--t-md` (19.1px) type. → `src/design/kioskTapFloor.test.tsx` (targets),
+   `src/design/kioskTypeFloor.test.ts` (type).
+6. **RETIRED** — Golden Era's seven materials (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4)
+   replace it. *Every screen is a room; every panel is a real material.* A room supplies wall,
    light, and floor shadow (`.room` + `.room--office/floor/board/file/clinic/night` —
    both classes, always); a ground (`.on-canvas` or default ink) decides the ink. Family
    surfaces stay on the warm ground and take no room. →
@@ -75,7 +83,7 @@ relative to `apps/web/`.
    (every class the app references must exist in `ppbf.css`).
 7. **Refusal is a stamp, not an error toast** — `RESEARCH NEEDED`, `REDACTED`:
    permanent, attributable, not dismissible. → `components/refusalStamp.test.tsx`.
-8. **Proportion descends from φ; nothing is sized by eye.** Type climbs by √φ from 15px;
+8. **RETIRED.** *Proportion descends from φ; nothing is sized by eye.* Type climbs by √φ from 15px;
    space and radius are Fibonacci; layout splits 38.2/61.8; motion durations are
    Fibonacci milliseconds through the `--m-*`/`--e-*` tokens. →
    `src/design/typeLadder.test.ts`.
@@ -97,8 +105,9 @@ relative to `apps/web/`.
 
 Read **`docs/FRONTEND_STYLE_CONTRACT.md`** — the binding contract for app code (done
 criteria, drift guardrails, Tailwind `text-[length:var(--x)]` gotcha). Short version:
-write new work against the ppbf tokens directly; use the components the sheet ships
-before inventing anything; fix gaps in `ppbf.css`, not in the page. `RoleStandaloneView`
+write new work against the ppbf tokens directly; use the components the sheets ship
+before inventing anything; fix gaps in the design-system sheets (`current/` for the
+look, `foundation/` for mechanics), not in the page. `RoleStandaloneView`
 takes a `room` prop (ignored on the family branch by design); pages with their own
 `<main>` carry `room room--*` directly. Because `ppbf.css` is unlayered it beats
 Tailwind's layered utilities on any shared property — `scripts/css-layer-collisions.mjs`
@@ -110,19 +119,13 @@ help card cannot list an unbound key → `components/commandsOverlay.test.tsx`. 
 
 ## Asset rules (these prevented real failures)
 
-- **Plates are gated on the bytes.** `src/design/plateBinaries.test.ts` opens each JPEG
-  in `apps/web/public/plates/`: SOI and a real EOI trailer, >8KB, ≤400KB, 4:4:4, one of
-  the declared geometries, orientation matching the filename. Never relay image binaries
-  through chat/base64 sidecars — truncated files pass every check short of reading the
-  last two bytes.
-- **A binary is delivered when a real `git add` of the file lands on a branch** — not by
-  a manifest, a link, a drive folder, or a zip. Producers push the bytes (Grok on its own
-  branch, or Jason drag-dropping onto it); Claude may land a binary when the owner directs
-  it, but **cannot fetch bytes out of SharePoint/OneDrive** at all, so a handoff written
-  that way cannot run. `apps/web/public/plates/README.md` has the contract and the record
-  of the four rounds that produced it.
-- **Fonts are self-hosted woff2 only** (offline kiosk); swapping the display voice is one
-  token in `ppbf.css`. No CDN links.
+- **Plates:** the plate laws and the delivery rule are stated once, in `AGENT_KERNEL.md`
+  "Binary assets (plates)", and `src/design/plateBinaries.test.ts` enforces them on the
+  bytes. `apps/web/public/plates/README.md` has the record of the rounds that produced
+  them and how to add a variant.
+- **Fonts are self-hosted woff2 only** (offline kiosk). No CDN links. The five Leather &
+  Brass faces were retired 2026-08-23 (`src/design/legacyVisualVocabulary.test.ts`);
+  `docs/GOLDEN-ERA-V1-CONTRACT.md` §8 records what renders today.
 - **No audio files.** Sound is synthesized in `ppbf-sound.js`, a classic script (ES
   modules break under `file://`, which is how previews are browsed).
 - Previews are portable: every reference is relative; the folder works from disk, a

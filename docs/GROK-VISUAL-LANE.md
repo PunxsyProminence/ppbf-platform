@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** Grok no longer has a lane (OD-2026-09-28-001); its plate and variant facts still in force are in the plates README. Current source: `apps/web/public/plates/README.md`.
+
 # Grok visual lane
 
 **Agreed 20 Aug 2026. Substantially amended 22 Aug 2026 by owner decision.

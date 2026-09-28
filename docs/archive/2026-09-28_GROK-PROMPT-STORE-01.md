@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- the Grok prompt for order 01 (#573, closed unmerged as RETIRED 2026-08-25); the 3,575-line `ppbf.css` it cites is now two imports, and nothing cites this file. Current source: none.
+
 # Grok prompt — order 01, the public store (Mode A)
 
 Paste the block below into Grok. It is self-contained; everything else it needs

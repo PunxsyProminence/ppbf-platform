@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** measured against the 3,498-line Leather & Brass `ppbf.css` at `a11ea7c1` (2026-08-20); that look is retired and `ppbf.css` is now two imports. Current source: `docs/GOLDEN-ERA-V1-CONTRACT.md`.
+
 # 02 — What `design-system/ppbf.css` DRAWS
 
 **Baseline commit:** `a11ea7c166f7659e4c5bb63337d44323069febaa` (`origin/main`)

@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** its visual rules describe the retired Leather & Brass look. Current source: `docs/GOLDEN-ERA-V1-CONTRACT.md`.
+
 # PPBF Canvas Context Pack
 
 **Purpose:** Everything Canvas (or any design/build tool) needs to know to design

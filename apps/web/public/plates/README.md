@@ -4,8 +4,9 @@ Layer 0 only: the photographed wall a room stands in. Real UI composites on
 top in code; no plate carries lettering or substitutes for a stamp, ticket, or
 passbook content. A plate is a `background-image` layer on `.room::after` /
 `.on-canvas::after` — never an `<img>`. Missing files are safe by design: with
-this directory empty, the gradient wall in `design-system/ppbf.css` renders
-every room with no network.
+this directory empty, the gradient wall in the design-system sheets
+(`design-system/legacy/ppbf-leather-brass.css`, loaded through
+`design-system/ppbf.css`) renders every room with no network.
 
 ## Installed set — declared, and therefore live
 
@@ -27,7 +28,7 @@ the second table is legal and simply unpainted.
 ## The generated set — plates 09 and up
 
 `plate-09` onward were made with `scripts/make-plate.mjs` rather than supplied by
-the image lane. Owner instruction, 2026-09-26: "work with the connectors to make
+Grok. Owner instruction, 2026-09-26: "work with the connectors to make
 one", then "let's shift to making and filling the plate library".
 
 They run on Azure Foundry — FLUX.1-Kontext-pro, deployed as `flux-kontext-plates`
@@ -45,7 +46,7 @@ floor colour instead of the painted red / blue / grey / carpet zones. The script
 DNA block was rewritten from the photographs on 2026-09-26 and now carries that.
 
 **None of these is declared by the stylesheet on this branch**, which is why they
-sit in the table above rather than the first one. Binding one is a single
+sit in the "Landed but not declared" table below rather than the first one. Binding one is a single
 `--plate` declaration in the scope that wants it.
 
 **Known imperfection, recorded rather than hidden:** the no-lettering rule is
@@ -76,8 +77,9 @@ take the floor's dark ground without being re-inked in the same change.
 
 These passed the byte gate and sit on disk. No CSS points at any of them, so no
 route paints them and nothing 404s. Wiring one is a variant/room decision, and
-it is one declaration in the PLATES block of `design-system/ppbf.css` — a
-portrait variant goes inside the orientation block, per "Adding a variant" below.
+it is one declaration in the PLATES block (`design-system/legacy/ppbf-leather-brass.css:3560-3680`,
+loaded through `design-system/ppbf.css`) — a portrait variant goes inside the
+orientation block, per "Adding a variant" below.
 
 | File | Dimensions | Bytes | What it would replace or add |
 |---|---|---|---|
@@ -98,19 +100,12 @@ portrait variant goes inside the orientation block, per "Adding a variant" below
 
 ## Requirements — enforced by `apps/web/src/design/plateBinaries.test.ts`
 
-- Complete JPEG: start-of-image **and** end-of-image markers, and > 8 KB.
-  (Truncated files and relay stubs pass header-only checks; this one doesn't.)
-- **≤ 400 KB** per plate. The budget is per-plate: each route fetches only its
-  own plate and it caches.
-- **No chroma subsampling (4:4:4).** Dark leather and ink wells band under 4:2:0.
-- Geometry is one of **1280×720 / 2560×1440** (landscape) or **405×720 /
-  810×1440** (portrait); orientation must match the filename (`-portrait-` in
-  the name means taller than wide; never square).
-- Every `/plates/` URL declared in `design-system/ppbf.css` exists here.
-
-Binary assets enter this repository **by a real `git add` of the actual file on
-a feature branch, never re-encoded through a chat channel** (`AGENT_KERNEL.md`,
-"Working channel"; `docs/GROK-VISUAL-LANE.md`).
+The plate laws and the delivery rule are stated once, in `AGENT_KERNEL.md`
+"Binary assets (plates)"; the numbers the gate reads are in
+`design-system/plate-contract.json`. Two reasons the list does not carry: the
+400 KB budget is per plate, because each route fetches only its own plate and it
+caches; and 4:4:4 is required because dark leather and ink wells band under
+4:2:0.
 
 ## What counts as a delivery
 
@@ -119,87 +114,29 @@ spent on things that resemble it: **a plate is delivered when its bytes are in
 a commit on a branch.** `git show <sha>:apps/web/public/plates/<name>.jpg | wc
 -c` prints a photograph's worth of bytes, or nothing was delivered.
 
-None of these is a delivery, whatever the covering note says:
-
-- a README, a manifest, or a table naming files that live somewhere else;
-- a link, a folder path, or a zip in a drive;
-- a base64 block, a data URI, or bytes pasted into a chat channel;
-- a `.jpg`-named placeholder standing in for the real file.
-
-The distinction is not pedantry and it is not a filing preference. Each of
-those arrives looking like progress, closes a round, and leaves this directory
+What is not a delivery is listed in `AGENT_KERNEL.md` "Binary assets (plates)".
+The distinction is not pedantry and it is not a filing preference. Each
+non-delivery arrives looking like progress, closes a round, and leaves this directory
 exactly as it was. The reason the byte gate above reads as fussy is that every
 line of it was written after one of them got past a weaker check.
 
-## Who ships the real JPEG (owner decision 2026-08-24, amended 2026-08-25)
+## Who places a plate
 
-**Grok owns the complete approved visual implementation path, including the
-real JPEG wall-plate binaries.**
+Anyone may produce a plate; the plate is judged, not its author
+(OD-2026-09-26-001). Claude places approved images in this repository
+(OD-2026-09-28-001). "Approved" means both: it passes the byte gate above, and a
+human has opened the image and checked it against
+`docs/REAL-GYM-REFERENCE-LOCK.md` — the gate cannot tell whether the room is
+this gym.
 
-```
-Jason approves plate/design
-  → Grok generates the exact ordered asset
-  → Grok prepares/verifies the actual JPEG
-  → Grok uploads the REAL JPEG directly to its own feature branch
-    under apps/web/public/plates/
-  → Grok makes only the required approved visual/CSS/test changes
-  → Grok opens the PR
-  → Claude independently reviews function/security boundaries
-  → ChatGPT independently audits PR scope, binary evidence, claims, SHA, CI
-  → required CI green on the exact PR head
-  → merge → staging
-  → Jason live visual review
-  → separate release decision
-```
+A delivered image is committed as received — never re-encoded, never
+reconstructed; the reasons are in `AGENT_KERNEL.md` "Binary assets (plates)",
+and what Claude can fetch from a drive is in its capability table.
 
-### Amendment, 2026-08-25 — the courier ban is lifted; the capability limit is not
+### Images from Grok or Canva, when Jason asks
 
-Owner ruling, verbatim: *“the document that gets it live, accept the binary, is
-correct.”* The blanket prohibition recorded below is therefore **superseded as
-policy**. Where Jason directs it, Claude may accept a plate binary and land it
-on a branch like any other file, and nobody has to argue about whose job it is.
-
-**Policy was never what failed, though, and this is the part no document
-recorded until now: Claude cannot retrieve bytes out of SharePoint or OneDrive
-in this environment.** The Microsoft 365 connector *renders* an image for
-viewing; it does not return file contents. There is no download action, no
-unzip capability, and `downloadUrl` comes back null. A zip is not slow or
-awkward from here — it is completely inaccessible.
-
-That is a capability fact, checked rather than preferred, and it is written
-down because leaving it unwritten is what allowed round after round of handoffs
-to be authored against it. “Claude downloads the package from OneDrive and
-commits it” is not a permission to grant or withhold. It cannot be executed, so
-a handoff resting on it is not a slow route — it is a scheduled failure. Anyone
-can still write that instruction; it will not run.
-
-The routes that do exist:
-
-- **Grok pushes the bytes** onto its own feature branch — the path above.
-- **Jason pushes the bytes** — drag-and-drop onto the branch in the GitHub web
-  UI, or a local `git add`. Two minutes, and it is the only route that has
-  never failed.
-- **Claude lands bytes it can actually read** — a file already in the working
-  tree, in a commit, on a branch, or otherwise reachable from this sandbox.
-  Directed by the owner, that is ordinary work and needs no ceremony.
-
-**Superseded 2026-08-24 text, kept for provenance:** *“Retired: Grok → OneDrive
-Grok-Plates-Inbox → Claude picks up / relays / commits the binary. Claude is
-not the binary courier. Do not ask Claude to retrieve, reconstruct, re-encode,
-or commit plate binaries on Grok's behalf.”*
-
-Two clauses in that sentence outlived the ruling, for reasons that have nothing
-to do with who carries a file. **Re-encode:** this sandbox has no `cjpeg`, no
-`jpegtran`, no ImageMagick and no Pillow, so a subsampled or malformed plate is
-refused and named for the law it broke rather than quietly corrected on the way
-in — silently fixing a bad input hides that the producer's pipeline is wrong,
-and the next file has the same fault. **Reconstruct:** an image rebuilt from a
-rendering is a new picture, not the producer's approved file, and it would sail
-through the byte gate while being the wrong plate.
-
-The OneDrive folder `Documents / PPBF-AI-Lanes / Grok-Plates-Inbox /` may remain
-for provenance/archive. It is not a shipping step, and it could never have been
-one from this side.
+Grok and Canva make images when Jason asks; neither opens pull requests. Claude
+places the approved image here (OD-2026-09-28-001).
 
 ## Why the byte gate reads the way it does — the delivery record
 
@@ -230,12 +167,20 @@ should happen to it.
 ## Adding a variant
 
 The `-01` suffix is the variant slot. Selection is deterministic from the
-route: `apps/web/components/PlateVariantGround.tsx` (one `display: contents`
-marker in the root layout) hashes the route and writes
-`data-plate-variant="2of2 1of3 …"`; the PLATES section of
-`design-system/ppbf.css` states how many plates a room has. To add a second
-office plate, drop `plate-01-office-02.jpg` here on a Grok feature branch and
-add one rule to the route-derived variants block:
+route, never random (built in #541): `apps/web/components/plateVariant.ts`
+hashes the pathname, and `apps/web/components/PlateVariantGround.tsx` (one
+`display: contents` marker in the root layout) writes the slot tokens as
+`data-plate-variant="2of2 1of3 …"`. A screen that changed appearance between
+loads would break screenshot comparison, print reproducibility, and a coach's
+sense of being on the page they were on a moment ago, so
+`plateVariant.test.ts` fails if the selector reads a clock or randomness
+(`Math.random`, `Date`, `performance.now`, `crypto`) or keeps a module-level
+counter.
+
+The PLATES section (`design-system/legacy/ppbf-leather-brass.css:3560-3680`)
+states how many plates a room has. To add a second office plate, commit
+`plate-01-office-02.jpg` here and add one rule to that section's route-derived
+variants block:
 
 ```css
 :where([data-plate-variant~="2of2"]) .room--office {
@@ -248,12 +193,24 @@ variant rule that drops `:where()` (it must stay at specificity (0,1,0) so the
 portrait override still wins) or that lands after the orientation block. A
 portrait variant goes *inside* the orientation block, after its generic rule.
 
+**What #541 does not provide.** It gives deterministic route → *slot*
+selection, not route → *named plate*. The attribute carries slot tokens only
+and no route identity, so a rule can say "whichever office doors land in slot
+2-of-2 take `plate-01-office-02.jpg`" and cannot say "`/coach/session-scripts`
+takes the chalkboard wall." Which plate a route receives is decided by the
+hash, not by intent. A brief asking for a **named** wall on a **named** route
+needs either a new mechanism or a room reassignment; establish which before the
+plate is made.
+
 ## Authoritative locations
 
-- Plate URLs and all plate styling: **PLATES section of
-  `design-system/ppbf.css`** — the single source of truth; no override sheets.
+- Room plate URLs and variants: **the PLATES section of
+  `design-system/legacy/ppbf-leather-brass.css`** (`:3560-3680`), loaded
+  through `design-system/ppbf.css`. Golden Era overrides a room's plate in
+  `design-system/current/ppbf-golden-era.css` (the floor's `--plate: none`;
+  The Bell's own plate on `.ge-bell.on-canvas::after`).
 - Byte gate: `apps/web/src/design/plateBinaries.test.ts` (do not weaken)
 - Variant-rule gate: `apps/web/components/plateVariant.test.ts`
 - T7 (family surfaces take the warm plate or none):
   `apps/web/components/familyPlateGround.test.ts`
-- Producer contract: `docs/GROK-VISUAL-LANE.md`
+- What a plate must show: `docs/REAL-GYM-REFERENCE-LOCK.md`

@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- build prompt for a retired builder channel; archived by OD-2026-09-28-010 item 24, and nothing in it carries forward unless Jason names it. Current source: `docs/SHADOW_AUTHORITY_MODEL.md`.
+
 # SHADOW v1 Build Prompt For VS
 
 You are building SHADOW.

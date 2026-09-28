@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- The pre-ship retro design proposal, already marked SUPERSEDED; only history documents still cited it (the stamp-ledger set retired by OD-2026-09-28-008, `docs/GROK-APP-BUILD-MAP.md`, and files archived the same day). Current source: `docs/GOLDEN-ERA-V1-CONTRACT.md` and `design-system/README.md`.
+
 # PPBF Retro Golden-Era Design System
 
 **Version:** 1.0  

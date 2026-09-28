@@ -26,7 +26,7 @@ Outcome counts for program reporting: sessions completed, goals completed, activ
 - [ ] Outcome counts visible to allowed role
 - [ ] Match source aggregates
 - [ ] No athlete identifiers
-- [ ] ManualVerification=PASSED
+- [ ] ManualVerification=SIGNED_OFF
 
 ## Audit log
 | Date | Actor | Note |

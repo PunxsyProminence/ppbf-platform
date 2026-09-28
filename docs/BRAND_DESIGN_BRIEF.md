@@ -1,5 +1,7 @@
 # PPBF Brand & Visual Design Brief
 
+> **Look (2026-09-28):** Golden Era, `docs/GOLDEN-ERA-V1-CONTRACT.md`; this brief still transcribes the retired Leather & Brass sheet. Of the eight laws, 2, 3, 5 and 7 still bind; 1, 4, 6 and 8 are retired (OD-2026-09-28-009).
+
 A copy-paste-ready reference for generating **on-brand external visuals** — posters,
 social cards, flyers, grant-packet covers — in Canva or any design/image tool that
 cannot read the app's CSS.
@@ -105,7 +107,10 @@ never be mistaken for a safety state.
 | Restricted | `--restricted` | `#C05A1E` | `▲` |
 | Locked | `--locked` | `#A81E22` | `✕` |
 
-Stamps: `--stamp-red` `#A81E22` (refusal, redaction, destructive) ·
+Stamps: `--stamp-red` is the same `#A81E22` as `--locked`, and that red means
+**MEDICALLY_NOT_ALLOWED only** — never refusal, redaction, or a destructive
+action (owner decision 2026-08-19; `docs/GOLDEN-ERA-V1-CONTRACT.md` §7; guarded by
+`apps/web/src/design/safeguardingRedReservation.test.ts`) ·
 `--stamp-green` `#2F7A3E` (approved, compliant).
 
 These four are chosen to sit correctly on leather while staying clearly separate
@@ -180,11 +185,14 @@ scale. Nothing is sized by eye.
 - **Stamps are permanent ink** (Law 7): refusals and redactions are stamped on the
   page — `RESEARCH NEEDED`, `REDACTED` — not floated as a dismissible notice.
 - **The seal is the ceremonial mark.** A circular rubber-stamp roundel
-  (`.seal` in `ppbf.css`): stamp-red `#A81E22`, rotated −7°, double circular
+  (`.seal` in the design system): use the `.seal--ink` variant (dark ink
+  `#2A2116`); the default `.seal` still paints `#A81E22`, which
+  `docs/GOLDEN-ERA-V1-CONTRACT.md` §7 reserves for MEDICALLY_NOT_ALLOWED
+  (this brief's §4) — GE §7 debt, not a colour to copy — rotated −7°, double circular
   rule, curved uppercase text following the rim, a large slab-serif monogram
   centered, worn/eroded ink at the edge — pressed by hand, not placed by a
   designer. Use it as the one ceremonial element a piece is allowed; it is
-  where the polished-brass budget or the red budget gets spent, never both.
+  where the polished-brass budget gets spent.
 - **Hand-painted signage** (`.t-painted`): display face, uppercase, −0.6°
   rotation, rust-brown offset shadow under the ink, edges slightly worn — the
   board over the door, for hero headlines on public pieces.
@@ -213,12 +221,13 @@ scale. Nothing is sized by eye.
 > Where a headline is wanted, prefer the gym's own line: "BOXING IS THE
 > ENGAGEMENT PLATFORM. YOUTH DEVELOPMENT IS THE OBJECTIVE." on a slight −0.6°
 > rotation like hand-painted signage. One ceremonial mark permitted: a circular
-> rubber-stamp seal in `#A81E22`, rotated ~−7°, curved rim text, worn ink edge.
+> rubber-stamp seal in dark ink `#2A2116`, rotated ~−7°, curved rim text, worn ink edge.
 > **Hard blur-free offset drop shadows** (`4px 4px 0` black) on square panels — no
 > soft shadows, no glossy gradients, no rounded SaaS cards, no blue or cyan.
 >
 > **Use saturated colour for one thing only:** a safety or status mark — olive-green
-> `#3F7D4E` cleared, orange `#C05A1E` restricted, crimson `#A81E22` locked — and
+> `#3F7D4E` cleared, orange `#C05A1E` restricted, crimson `#A81E22` locked (medically
+> not allowed to participate, and nothing else) — and
 > always pair it with a glyph (`✓ ▲ ✕`) and an uppercase word, never colour alone.
 > Everything else stays leather, patina, and bone.
 >

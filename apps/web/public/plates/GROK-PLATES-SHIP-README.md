@@ -7,8 +7,8 @@ two ever disagree, `README.md` wins.
 This file previously carried a Google Drive link, a OneDrive path, and a "land
 command" that unzipped a package and copied the plates in. Those instructions
 are retired: the bytes are now committed here, and by the standard `README.md`
-states, a delivery is bytes on a branch — a link to a zip is not one, and no AI
-lane in this project can read a drive from its sandbox anyway.
+states, a delivery is bytes on a branch — a link to a zip is not one. (What an AI
+can read from a drive is recorded in the capability table in `AGENT_KERNEL.md`.)
 
 What is kept is the producer's own manifest, because it is the independent
 statement of what each file was supposed to be. Every row below was confirmed

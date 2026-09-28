@@ -1,5 +1,7 @@
 # DesignSystem_PPBF — the app-layer binding
 
+> **Look (2026-09-28):** Golden Era, `docs/GOLDEN-ERA-V1-CONTRACT.md`. Of the eight laws, 2, 3, 5 and 7 still bind; 1, 4, 6 and 8 are retired (OD-2026-09-28-009).
+
 **This is not the design system.** `design-system/README.md` is, and it stays
 canonical for the visual language: the eight Laws, the six rooms, the type
 ladder, the palette, motion, sound, the paper and light systems. Nothing about
@@ -18,18 +20,20 @@ If you are describing how the app binds to it, edit this file.
 
 ## 1. The import chain
 
-One line does all of it — `apps/web/app/globals.css:15`:
+One line does all of it — `apps/web/app/globals.css:42`:
 
 ```css
 @import "tailwindcss";                       /* line 1 */
-@import "../../../design-system/ppbf.css";   /* line 15 */
+@import "../../../design-system/ppbf.css";   /* line 42 */
 ```
 
 So the sheet the design-system previews render against and the sheet the app
 ships are **the same file**. A token value cannot drift between them, because
-there is only one copy. `ppbf.css` itself `@import`s `fonts.css`, which resolves
-the five self-hosted `.woff2` faces — no CDN, and the floor kiosk renders
-offline.
+there is only one copy. `ppbf.css` is two imports (`foundation/`, then
+`current/ppbf-theme.css` → `ppbf-golden-era.css` → `legacy/ppbf-leather-brass.css`),
+and the legacy sheet `@import`s `legacy/legacy-fonts.css`, which resolves the five
+self-hosted `.woff2` faces retired on 2026-08-23 — no CDN, and the floor kiosk
+renders offline.
 
 ### The cascade-layer interaction, which is load-bearing
 
@@ -87,8 +91,8 @@ switcher without revisiting that decision.
 
 ## 3. The shells — and a documented one that does not exist
 
-`design-system/README.md:139-151` lists three shells that wire rooms into pages.
-**Only two of them are real.**
+`design-system/README.md` used to list three shells that wire rooms into pages
+(its app-wiring table, removed in #544). **Only two of them were real.**
 
 | Shell | Path | Status |
 |---|---|---|
@@ -97,7 +101,7 @@ switcher without revisiting that decision.
 | `BoardMemberDashboard` | `apps/web/components/BoardMemberDashboard.tsx` | Real, sets `.room--board` on its `<main>` |
 | `FeatureSurface` | — | **DOES NOT EXIST IN THE REPO** |
 
-`FeatureSurface` is named twice in the canonical README (lines 130 and 145) as
+`FeatureSurface` was named twice in that table as
 the shell carrying `room="file"` for research and knowledge-graph. It is not in
 the repo, and three pages reference it in past tense as scaffolding they *used
 to* borrow:
@@ -106,9 +110,8 @@ to* borrow:
 - `app/source-control/page.tsx:86` — "the FeatureSurface cream scaffold it launched on"
 - `app/source-control/publication-workflow/page.tsx:80`
 
-It was removed and the README was not updated. **The README's app-wiring table
-is stale on this row** — a correction that belongs in `design-system/README.md`,
-not here, and is left for whoever owns that file.
+It was removed; the README's app-wiring table has since been removed too (#544),
+so nothing there names it any more.
 
 ### Rooms are mostly *not* applied through the prop
 
@@ -221,7 +224,7 @@ currently polices into something the type system enforces at the call site.
 
 | Kind of change | File |
 |---|---|
-| A Law, a room, a token value, a material, a type or motion decision | `design-system/README.md` + `design-system/ppbf.css` |
+| A Law, a room, a token value, a material, a type or motion decision | `design-system/README.md` + the sheets `design-system/ppbf.css` imports (`foundation/` for mechanics, `current/` for the look) |
 | How `apps/web` consumes any of that; drift; extraction candidates | this file |
 | A new preview | `design-system/foundations/` or `components/`, then `npm run design:manifest` |
 

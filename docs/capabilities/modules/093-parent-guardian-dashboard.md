@@ -8,6 +8,8 @@
 | Parent | 15 Guardian Portal |
 | Vertical slice | guardian dashboard shows linked athletes + open tasks only |
 
+> **Alias (2026-09-28):** Module 167 has the same name ("Parent / Guardian Dashboard") under Dashboards / Reporting. One capability listed twice; count it once.
+
 ## Boundaries
 - No invented metrics
 - No board individual PII

@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- the Grok order queue at `27711faa`: #573, #556 and #534 all closed unmerged, Grok now only makes images on request (OD-2026-09-28-001), and nothing cites this file. Current source: `docs/ROOM-MAP.md`.
+
 # Grok ready queue — what is buildable now
 
 **Against `main` @ `27711faa`, 2026-08-23.** Companion to

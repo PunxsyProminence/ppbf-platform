@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** Grok's visual work list, measured at `27711faa` (2026-08-23); Grok now only makes images on request (OD-2026-09-28-001), the PRs it waits on are closed, and `ppbf.css` is now two imports. Current source: `docs/ROOM-MAP.md` (Build order).
+
 # Grok App Build Map
 
 **Built against `main` @ `27711faa` ("Record the 2026-08-23 release in the production state file (#571)"), 2026-08-23.**
@@ -14,9 +16,15 @@ document is wrong.**
 
 ---
 
-## 0. THE OWNER-APPROVED PRODUCT CONSTITUTION IS NOT IN THIS REPOSITORY
+## 0. THE OWNER-APPROVED PRODUCT CONSTITUTION WAS NOT IN THIS REPOSITORY AT `27711faa`
 
 Stated first because everything downstream depends on it.
+
+**Corrected 2026-09-28.** `PRODUCT_CAPABILITIES.json` has been at the repository
+root since `ff86d7d9` (#575, 2026-08-24), the day after this map was measured,
+and it is the approved product list (OD-2026-09-28-010 item 21).
+`PRODUCT_VISION.md` is still not in the repository. The rest of this section
+describes `27711faa`.
 
 `PRODUCT_VISION.md` and `PRODUCT_CAPABILITIES.json` — the two canonical files
 named as the approved product constitution — **do not exist anywhere on `main`.**
@@ -62,7 +70,7 @@ Do not confuse the two. These are on `main` and are owner-approved:
 | `apps/web/components/RefusalStamp.tsx` | The seven-stamp family, "Jason-approved design doc, locked art policy 2026-08-19". |
 
 **One trap, named because it is in the same folder as the real law:**
-`docs/DESIGN_LAWS_PROPOSAL.md` is a competing eight-law set. Its own line 3
+`docs/archive/2026-09-28_DESIGN_LAWS_PROPOSAL.md` is a competing eight-law set. Its own line 3
 reads *"Status: PROPOSAL. Not adopted. Not wired into `design-system/ppbf.css`"*
 and it self-reports *"This rewrite has had no audit at all."* It is written to
 un-cage designers and is therefore the most attractive document in the
@@ -770,7 +778,7 @@ Ranked by how badly each would misdirect. All OBSERVED.
 
 | # | File | Stale in what way |
 |---|---|---|
-| 1 | `docs/DESIGN_LAWS_PROPOSAL.md` | **Not adopted** (says so on line 3), un-audited, and the most attractive law text in the repo. Never cite it. |
+| 1 | `docs/archive/2026-09-28_DESIGN_LAWS_PROPOSAL.md` | **Not adopted** (says so on line 3), un-audited, and the most attractive law text in the repo. Never cite it. |
 | 2 | `docs/shadow-ui/PLATE-CSS-PATCH.md` | Orders a `.png`→`.jpg` swap **that was completed long ago**. Reads as pending work. |
 | 3 | `docs/visual-inventory/04-room-coverage.md` | Every room count (40/31/13/9/7/3 = 103; actual 44/34/12/10/7/3 = 110). It is the *ranked order-of-work* doc, so wrong denominators produce a wrong ranking. |
 | 4 | `docs/visual-inventory/00-GROK-ORDER-BRIEF.md` | Orders 2, 3 and 5 carry 40 / 31 / "nine" routes. Its #541 section **is** correct. |
@@ -781,7 +789,7 @@ Ranked by how badly each would misdirect. All OBSERVED.
 | 9 | `design-system/README.md` Law 2 | Same dead `--red-primary` reference. |
 | 10 | `apps/web/src/design/PAGE_MAP.md` | Self-declared stale; covers 61-65 of 133 routes and redirects readers to `buildingMap.ts`. |
 | 11 | `docs/VISUAL_BUILD_MAP.md` | Dated 2026-08-06 against PR #240, "68 routes". Its Layer 1 is now substantially **done** — `.stat`, `.alert--tight`, `.t-data--lg/--xl`, `.stamp--sm`, `.on-plaster`, `.range--kiosk` all ship. Parked per `docs/current/ACTIVE_WORK.md`. |
-| 12 | `docs/RETRO_DESIGN_SYSTEM.md` + `USABILITY_SPEC_RETRO.md` | Retro is banner-marked SUPERSEDED with its hexes called dead; the usability spec depends on it and carries **no banner of its own**. |
+| 12 | `docs/archive/2026-09-28_RETRO_DESIGN_SYSTEM.md` + `docs/archive/2026-09-28_USABILITY_SPEC_RETRO.md` | Retro is banner-marked SUPERSEDED with its hexes called dead; the usability spec depends on it and carries **no banner of its own**. |
 | 13 | `docs/MOCKUP_TO_REPO_MAP.md` | Division-of-labour half retired 2026-08-22; drift table marked "do not use as a work list". Both halves are banner-marked, so low risk. Its motif→class table is current and useful. |
 
 ---

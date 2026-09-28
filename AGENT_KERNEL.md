@@ -24,8 +24,7 @@ Read additional documents only when the task actually touches their domain:
 - SHADOW safety/model behavior -> relevant SHADOW contract/spec plus the applicable sections of `docs/AI_CONTRIBUTOR_GUARDRAILS.md`
 - authentication/roles -> `AUTH_CONTRACT.md` and `ORGANIZATION_ROLE_MODEL.md`
 - database/schema/migrations -> database rules in `docs/AI_CONTRIBUTOR_GUARDRAILS.md` and the existing migration/runner pattern
-- visual design -> `docs/GOLDEN-ERA-V1-CONTRACT.md` (the active visual authority since 2026-08-24, named in `design-system/current/ppbf-theme.css`), `design-system/ppbf.css` and `design-system/README.md`; Grok's process contract is `docs/GROK-VISUAL-LANE.md`
-- ChatGPT's lane and capabilities -> `docs/CHATGPT-AUDIT-LANE.md`
+- visual design -> `docs/GOLDEN-ERA-V1-CONTRACT.md` (the active visual authority since 2026-08-24, named in `design-system/current/ppbf-theme.css`), `design-system/ppbf.css` and `design-system/README.md`; the visual build order is `docs/ROOM-MAP.md` (OD-2026-09-28-009), and plates are judged against `docs/REAL-GYM-REFERENCE-LOCK.md`
 - audit/provenance/history -> `docs/current/WORK_QUEUE.md` and `docs/archive/`
 - writing an evidence claim in a PR body, status report or handoff -> `docs/current/EVIDENCE_APPLICABILITY.md`
 
@@ -33,69 +32,58 @@ Do not preload archived audits, the historical queue, superseded plans, old buil
 
 ## Working channel
 
-### Lanes (owner decisions OD-2026-09-21-001 and OD-2026-09-25-002)
+### Roles (OD-2026-09-28-001)
 
-- **Jason** -- final authority: priorities, scope, mutation approval, design
-  and visual approval, production authorization, acceptance, conflict
-  resolution. No lane turns an idea into a product decision on its own.
-- **ChatGPT** -- designer (product and system specs, work orders; Jason
-  approves a design before it is built) and standards enforcer (reviews). Also
-  research, full-spectrum audit, documentation, storage inventory and
-  reconciliation, the decision/handoff ledger, exact-head SHA and CI
-  verification, and deployed-versus-specification checks. **Read-only on this
-  repository:** no branches, commits, pushes, merges, deploys, or migrations.
-- **Claude** -- builder: implements approved work orders. Functional and
-  security engineering: backend, APIs, schema, migrations, authentication,
-  authorization, organization isolation, safeguarding, medical/hold
-  enforcement, business logic, SHADOW functional architecture, functional and
-  migration tests, release engineering. Branches, PRs, CI, staging, and
-  explicitly authorized production deployment. Writes to storage or the ledger
-  only when a ChatGPT write fails, and records that it did.
-  **Visual design is not owned by one lane** (OD-2026-09-26-001). Claude may
-  design and implement visual work -- layout, CSS, typography, presentation
-  structure, and generated background plates -- and so may Grok. The plate is
-  judged, not its author.
+- **Jason** -- owner and final authority: priorities, scope, mutation
+  approval, design and visual approval, production authorization, acceptance,
+  conflict resolution. No AI turns an idea into a product decision on its own.
+- **Claude Code** -- the only builder: branches, commits, pull requests and
+  merges, unless Jason overrides that for a specific piece of work. Implements
+  approved work orders and Jason's direct requests: backend, APIs, schema,
+  migrations, authentication, authorization, organization isolation,
+  safeguarding, medical/hold enforcement, business logic, SHADOW functional
+  architecture, visual work, tests, and release engineering -- CI, staging,
+  and explicitly authorized production deployment. Records Jason's decisions
+  in `docs/current/OWNER_DECISIONS.md`, quoting him (OD-2026-09-28-003).
+- **ChatGPT** -- the architect: plans, specifications and work orders, which
+  Jason approves before anything is built. Approved work orders arrive in one
+  OneDrive inbox folder, `PPBF-AI-Lanes/ChatGPT-Handoffs` (admin@), which Claude reads
+  (OD-2026-09-28-003). Also the reviewer, once its instructions are set up;
+  until then no merge waits on a ChatGPT review. It plans from the capability
+  table below and assumes nothing that is not on it (OD-2026-09-28-002). It
+  writes nothing to this repository.
+- **Grok and Canva** -- make images when Jason asks. Neither opens pull
+  requests. Claude places the approved images.
+- **Codex** -- no role. A Codex review that appears on a pull request is
+  evidence, not approval.
 
-  **What "a good one" means is the whole of the standard, and it did not
-  change.** The work passes its guards; it alters no function, role gate,
-  organization boundary or safety rule; it invents nothing the data does not
-  support; it removes no existing action; its tests stay meaningful. For a
-  plate: it passes `apps/web/src/design/plateBinaries.test.ts` on its bytes AND
-  somebody has opened the image and looked at it against
-  `docs/REAL-GYM-REFERENCE-LOCK.md`. The byte gate cannot tell whether the room
-  is this gym -- on 2026-09-26 two plates were bound to a room by filename
-  without being opened, and both were the generic brick wall that lock forbids.
+No other AI holds a standing role, and there is no release role: merging and
+releasing are Claude's, under "Merging and releasing" below. Several Claude
+Code sessions may run at once; a session is not a role.
 
-  **Reviewing another lane's visual work is still reviewing.** Rewriting
-  someone else's approved design because you prefer yours is not the same as
-  being permitted to design, and remains out of order.
-- **Grok** -- visual design and visual implementation, on its own feature
-  branches and PRs, per `docs/GROK-VISUAL-LANE.md`. Reads current source before
-  designing; explores and proposes freely; implements only what Jason
-  approved. May change presentation: JSX visual structure, design-system
-  classes, CSS, responsive layout, typography, visual assets,
-  presentation-related accessibility markup, and the visual tests that cover
-  them. May **not** change schema, migrations, API behaviour, auth,
-  authorization, organization scoping, guardian/athlete access rules,
-  safeguarding, medical or hold semantics, role vocabulary, business logic,
-  SHADOW or progression algorithms, data models, audit semantics, or server
-  security boundaries without a separate owner-approved functional task.
-  Invents nothing: no roles, athlete data, metrics, statuses, navigation
-  destinations, medical information, security claims, or buttons with no
-  backing behaviour.
-- **Codex** -- no lane. Its PR reviews are evidence, not approval.
+**Visual work** (OD-2026-09-26-001, narrowed by OD-2026-09-28-001). Anyone may
+design or generate an image; implementing it in this repository is Claude's.
+The work is judged, not its author.
 
-"Designer", in the owner's words, means product and system design; visual
-design stays Grok's. Several Claude lanes may run at once, each in its own
-session. The **Lane model** below governs who merges.
+**What "a good one" means is the whole of the standard, and it did not
+change.** The work passes its guards; it alters no function, role gate,
+organization boundary or safety rule; it invents nothing the data does not
+support; it removes no existing action; its tests stay meaningful. For a
+plate: it passes `apps/web/src/design/plateBinaries.test.ts` on its bytes AND
+somebody has opened the image and looked at it against
+`docs/REAL-GYM-REFERENCE-LOCK.md`. The byte gate cannot tell whether the room
+is this gym -- on 2026-09-26 two plates were bound to a room by filename
+without being opened, and both were the generic brick wall that lock forbids.
 
-### Work domains (owner decision OD-2026-09-25-002)
+**Reviewing someone else's visual work is still reviewing.** Rewriting an
+approved design because you prefer yours is not the same as being permitted to
+design, and remains out of order.
 
-WORK DOMAINS are subject areas, not agent roles or authority boundaries:
-visual design; ML training; AI/ML; app build.
+### Work domains (OD-2026-09-25-002)
 
-LANES remain the agent-role model above. A work domain does not create,
-transfer, narrow, or expand an agent's authority.
+Work domains are subject areas, not roles or authority boundaries: visual
+design; ML training; AI/ML; app build. A work domain does not create,
+transfer, narrow, or expand anyone's authority. Roles are the list above.
 
 ### Repository writes
 
@@ -105,12 +93,20 @@ transfer, narrow, or expand an agent's authority.
   bytes to 327 and left `main` unable to build; a docs-only CI fast path then
   painted it green.)
 - Work that starts elsewhere -- designs, research, generated assets -- enters
-  as a branch or PR and is reviewed before merge.
+  as a branch or PR that Claude opens, and is reviewed before merge.
 - No force-push without the owner's explicit permission and a documented
   reason. (Carried from the retired `docs/archive/AGENT_EXECUTION_POLICY.md`,
   where it was the only copy.)
-- Written policy reports; branch protection enforces. Only the owner can set
-  the required status checks that make this rule technical.
+- These are policy. What GitHub enforces on `main` is narrower (read
+  2026-09-28 with `gh api` on the branch protection and the two rulesets):
+  a pull request is required and force-push and deletion are refused; the
+  only required status check is `validate`; admin enforcement is off
+  (`enforce_admins: false`), and the ruleset lets repository role id 5
+  (GitHub's admin role) bypass it on a pull request. Sessions act through the
+  owner's account, which has admin on this repository, so for them green CI is
+  a rule they keep, not one GitHub forces. `declaration` is not a
+  required check; OD-2026-09-28-010 item 11 decides it becomes one, with admin
+  enforcement left off. Only the owner can change these settings.
 
 ### Binary assets (plates)
 
@@ -127,31 +123,62 @@ transfer, narrow, or expand an agent's authority.
   branch.** A README, manifest, folder path, link, zip in a drive, base64
   payload, or `.jpg`-named placeholder is not a delivery, however complete its
   covering note reads.
-- **Working routes:** Grok pushes the real binary to its own visual branch;
-  Jason drag-drops the real files onto the branch; or Claude lands bytes it can
-  actually read, when the owner directs it (ruling 2026-08-25) -- never a
-  handoff asking Claude to fetch the binary from a drive. Claude never
-  re-encodes or reconstructs an image. An image rebuilt from a rendering is a
-  new picture that could pass the byte gate while being the wrong plate, and
-  silently correcting a bad input hides that the producer's pipeline is wrong.
-- `Grok-Plates-Inbox` in OneDrive is a provenance and archive drop, not a
-  transport hop. Nobody polls it as a prerequisite for a Grok visual PR.
+- **Working routes:** Claude lands the real file on a branch -- an image Grok
+  or Canva made at Jason's request and he approved, one Jason supplies, or a
+  plate Claude generated with `scripts/make-plate.mjs` (OD-2026-09-26-001) --
+  or Jason drag-drops the real files onto the branch. A route that needs
+  Claude to fetch the binary out of a drive rests on a capability the table
+  below marks NOT SURE on Jason's PC and CAN'T in a cloud container. A
+  delivered image is committed as received: nobody re-encodes or reconstructs
+  it. An image rebuilt from a rendering is a new picture that could pass the
+  byte gate while being the wrong plate, and silently correcting a bad input
+  hides that the producer's pipeline is wrong.
+- A drive folder, `Grok-Plates-Inbox` included, holds an archive copy, not a
+  delivery. Nobody polls one as a prerequisite for a pull request.
 
 ### Capabilities, by where they were checked
 
 A capability is a fact about an environment, not a rule anyone can waive or
 grant. Scope every capability claim to where it was measured.
 
-| Capability | Claude Code on Jason's Windows PC (checked 2026-09-21) | Cloud container lanes (checked 2026-08-20..25; not re-checked) |
-|---|---|---|
-| Read SharePoint/OneDrive **text-file** contents | Yes -- Microsoft 365 connector `read_resource` | No -- the connector rendered for viewing; `downloadUrl` null |
-| Retrieve **binary** bytes (plates, zips) from SharePoint/OneDrive | Not checked | No |
-| Load a deployed page | Public pages: yes (`curl` HTTP 200; the desktop app's browser pane loaded the site). Signed-in pages need Jason to sign in; no lane enters credentials. | No -- outbound HTTPS refused |
-| Re-encode a JPEG | Not checked, and forbidden by the plate laws either way | No -- `cjpeg`, `jpegtran`, ImageMagick and Pillow absent |
+This table is the one list of what each AI can do (OD-2026-09-28-002). Other
+documents point here instead of restating it, and ChatGPT plans from it and
+assumes nothing that is not on it. **NOT SURE** means no check is recorded:
+run the smallest test named before relying on the capability, then update the
+row with the date and method.
 
-ChatGPT, per `docs/CHATGPT-AUDIT-LANE.md`: reads this repository; could not
-load a deployed page (2026-08-20); writes to OneDrive -- observed 2026-09-21,
-when ChatGPT wrote ledger entry LEDGER-0010 and Claude read it back.
+| Who, where | Capability | Answer | Checked: date, method |
+|---|---|---|---|
+| Claude Code, Jason's Windows PC | Read SharePoint/OneDrive **text-file** contents | CAN | 2026-09-21, re-checked 2026-09-28: the Microsoft 365 connector's `read_resource` returned the full text of the OneDrive decision ledger file (`PPBF_DECISION_HANDOFF_LEDGER.md`, LEDGER-0001..0019) |
+| Claude Code, Jason's PC | Retrieve **binary** bytes (plates, zips) from SharePoint/OneDrive | NOT SURE | Never checked here. Smallest test: fetch the drive copy of one committed plate and compare its SHA-256 with the file in `apps/web/public/plates/` |
+| Claude Code, Jason's PC | Load a public deployed page | CAN | 2026-09-21: `curl` returned HTTP 200 from `https://www.punxsyprominence.org/`, and the desktop app's browser pane loaded the site |
+| Claude Code, Jason's PC | Load a signed-in page | CAN'T alone | Jason signs in; no AI enters credentials (recorded 2026-09-21) |
+| Claude Code, Jason's PC | Generate a plate and encode it to the plate laws | CAN | 2026-09-26, as reported in the #982 commit (`ef47c977`): `scripts/make-plate.mjs` (an Azure Foundry image model, encoded with `sharp`) made plates 09-13, and `plateBinaries.test.ts` passed on them |
+| Claude Code, Jason's PC | Read-only production database query | CAN | 2026-09-28: `BEGIN READ ONLY` queries with `current_database() = postgres`, recorded as evidence in OD-2026-09-28-007 and -010. Run only when Jason says so, per run (OD-2026-09-28-010 item 8) |
+| Claude Code, Jason's PC | Make an image through a Canva connector | NOT SURE | Not checked. Jason named the connector on 2026-09-28 (OD-2026-09-28-001). Smallest test: list the session's connectors, then make one image he asks for |
+| Claude Code, cloud container sessions | Read SharePoint/OneDrive files, text or binary | CAN'T | 2026-08-20..25, not re-checked: the connector rendered files for viewing; `downloadUrl` came back null |
+| Claude Code, cloud container sessions | Load a deployed page | CAN'T | 2026-08-20..25, not re-checked: outbound HTTPS refused |
+| Claude Code, cloud container sessions | Re-encode a JPEG | CAN'T | 2026-08-20..25, not re-checked: `cjpeg`, `jpegtran`, ImageMagick and Pillow absent |
+| ChatGPT | Read this repository | CAN | 2026-08-20: reported `main` at `cd6a7335` and #524 as the latest merge, both correct at the time; not re-checked |
+| ChatGPT | Load a deployed page | CAN'T | 2026-08-20: its browser tool could not load the staging URL; not re-checked |
+| ChatGPT | Read SharePoint, OneDrive and Google Drive | CAN | 2026-08-20: as separate connector calls, not one query; not re-checked |
+| ChatGPT | Write to OneDrive | NOT SURE | Mixed record: 2026-09-21 it wrote ledger entry LEDGER-0010 and Claude read it back; the same day its exact-item write was blocked on its side (LEDGER-0009), and on 2026-09-22 its direct write failed (LEDGER-0015). Each write raises a permission prompt that someone must allow. Smallest test: write one file to the work-order inbox folder and have Claude read it back |
+| Grok | Make an image Jason asks for | CAN | 2026-08-19..25, not re-checked since: all 18 plate-01..08 files on `main` are Grok's -- Plate Set v1-g in #506 (`51e77b54`; Grok's own status note, commit `311e4dc6`, since deleted) and the `grok/plates-full-ship` delivery landed by #666 (`d04dde68`). 4:4:4 was measured on them (`docs/GROK-VISUAL-LANE.md`, "The amendment: 4:4:4"; the gate table in #666), and `plateBinaries.test.ts` passed on the committed plates on 2026-09-28 |
+| Grok | Guarantee 4:4:4 JPEG output | CAN'T | Grok's own statement, recorded 2026-08-20 in #524 (`docs/GROK-VISUAL-LANE.md`, "The amendment: 4:4:4"). The same day Grok accepted re-encoding to 4:4:4 in its own pipeline before shipping (same section); not re-checked since |
+
+Test-running limits per environment are under "Running the tests" below.
+
+### Before building a work order: CAN / CAN'T / NOT SURE (OD-2026-09-28-002)
+
+Before building any work order, answer it step by step:
+
+- **CAN** -- with the evidence: a row of the table above, or a check named
+  with its date.
+- **CAN'T** -- and why.
+- **NOT SURE** -- and the smallest test that settles it, run before building.
+
+When a test settles a NOT SURE, update the table above with its date and
+method.
 
 ### Governance outside this repository
 
@@ -197,7 +224,7 @@ at it (see Capabilities).
 ## Independent verification duties
 
 Self-review does not catch what an independent measurement catches. Any
-reviewing lane, and every lane of its own work, holds these five:
+reviewer, and every session reviewing its own work, holds these five:
 
 1. **Re-measure every number.** Never accept a count, ratio, size, or SHA
    because it was stated.
@@ -212,8 +239,8 @@ reviewing lane, and every lane of its own work, holds these five:
    in their head.
 
 Pushback against one of these is a review issue, not a debate to win. Duty 5
-needs a lane that can load the deployed page (see Capabilities). Where none
-can, it rests on Jason opening the page, and no lane may imply that deployed
+needs an AI that can load the deployed page (see Capabilities). Where none
+can, it rests on Jason opening the page, and no AI may imply that deployed
 behaviour is being independently watched.
 
 ## Evidence is applicable, or it is not evidence
@@ -292,23 +319,26 @@ This matches what the code already enforces: `docs/SHADOW_AUTHORITY_MODEL.md`
 keeps final authority human, and AI drafts never set `approved_flag` or a final
 decision.
 
-## Lane model
+## Parallel sessions (formerly "Lane model")
 
-Work runs in parallel lanes, each its own session. The rules below exist
-because running that way produced failures a single lane cannot have.
+Work runs in parallel Claude Code sessions. The rules below exist because
+running that way produced failures a single session cannot have.
 
-### Merging and releasing (OD-2026-08-29-006)
+### Merging and releasing (OD-2026-08-29-006; OD-2026-09-28-010 items 8 and 9)
 
-A build lane MAY: create branches, write code and tests, open pull requests,
-investigate and report findings; merge its OWN pull requests to `main` once CI
-is green and they are mergeable; and dispatch `deploy-staging` and staging
-migrations.
+A Claude session MAY: create branches, write code and tests, open pull
+requests, investigate and report findings; merge its own pull requests to
+`main` once CI is green and they are mergeable; merge another session's green,
+mergeable pull request (OD-2026-09-28-010 item 9); dispatch `deploy-staging`
+and staging migrations; and run a read-only production check -- a query or a
+check run that changes nothing -- when Jason says so, for that run (item 8,
+which supersedes OD-2026-08-28-001 on that point).
 
-A build lane MAY NOT: merge ANOTHER lane's pull request; dispatch
-`deploy-production` or production migrations without Jason's word (the lane
-prepares and verifies them, then asks); decide product scope; remove or
-disable a feature because it looks out of scope; fix unrelated defects inside
-its PR; or act on a scoping question as though it were a decision.
+A Claude session MAY NOT: dispatch `deploy-production` or production
+migrations without Jason's word (the session prepares and verifies them, then
+asks); decide product scope; remove or disable a feature because it looks out
+of scope; fix unrelated defects inside its PR; or act on a scoping question as
+though it were a decision.
 
 Production is where the split is because an applied migration is not undone by
 re-running a workflow. **Green CI is a precondition, never an authorization**:
@@ -316,7 +346,9 @@ do not merge over an open review finding, and do not merge while `main` is
 frozen for a gated release candidate, because a merge during a freeze
 invalidates it. Per-PR CI cannot see a semantic conflict between two green
 branches, and a cancelled required check reads as "never validated", not as a
-failure. Merging fast is what hid both on 2026-08-27 (#716/#718; #736).
+failure. Merging fast is what hid both on 2026-08-27 (#716/#718; #736). Until
+ChatGPT's reviewer instructions exist, no merge waits on a ChatGPT review
+(OD-2026-09-28-001).
 
 ### Pull-request state is its own permission ladder
 
@@ -324,27 +356,27 @@ Treat each of these as separately authorized:
 
 | Action | Who |
 |---|---|
-| read, review, report | any lane |
-| comment on a PR | the lane that owns the PR, or a reviewing lane reporting a finding |
-| request a reviewer | owner, or a lane he directs |
-| edit title, body or base | the lane that owns the PR |
-| open a PR (draft or ready) | the lane that owns the work |
-| mark draft ready for review | owner, or a lane he directs |
-| submit an APPROVED review | owner or a human delegate only -- no AI lane |
+| read, review, report | any session or reviewer |
+| comment on a PR | the session that owns the PR, or a reviewer reporting a finding |
+| request a reviewer | owner, or a session he directs |
+| edit title, body or base | the session that owns the PR |
+| open a PR (draft or ready) | the Claude session that owns the work |
+| mark draft ready for review | owner, or a session he directs |
+| submit an APPROVED review | owner or a human delegate only -- no AI |
 | merge | per "Merging and releasing" above |
-| delete a branch | owner, or a lane he directs, and never while the branch is audit evidence |
+| delete a branch | owner, or a session he directs, and never while the branch is audit evidence |
 
 Authorization to review something is not authorization to change its state.
 Authorization for one mutation is not authorization for the next one in the
 sequence: opening a PR does not carry marking it ready, and marking it ready
-does not carry merging it. A lane that performs one of these on the owner's
-instruction records that instruction as its authority. A lane that cannot name
-the authority for a mutation it made has already found the defect.
+does not carry merging it. A session that performs one of these on the owner's
+instruction records that instruction as its authority. A session that cannot
+name the authority for a mutation it made has already found the defect.
 
-Lanes act through the owner's GitHub account, so a timeline event's `actor` is
-the account, not the lane. Do not cite it as proof that a particular lane did
-or did not act; the authorizing instruction and the lane's own record are what
-attribute it.
+Sessions act through the owner's GitHub account, so a timeline event's `actor`
+is the account, not the session. Do not cite it as proof that a particular
+session did or did not act; the authorizing instruction and the session's own
+record are what attribute it.
 
 ### A question is not an instruction
 
@@ -354,7 +386,9 @@ branch that answers it. Report the finding. Build when told to build.
 ### A decision already made is written down
 
 `docs/current/OWNER_DECISIONS.md` carries the decisions the owner has actually
-made, in his own words, with the evidence each rested on. **Read it before
+made, in his own words, with the evidence each rested on. His decisions are
+recorded only there, by Claude, quoting him; the OneDrive decision ledger takes
+no new entries and stays as history (OD-2026-09-28-003). **Read it before
 writing a test, gate, migration, or policy constant that asserts who may do
 what.** If the policy is recorded there, build to it. If it is not, that is
 **OWNER DECISION REQUIRED**: say so and stop. Inventing the answer is the
@@ -366,17 +400,22 @@ That file records decisions, not environment state.
 ### Brief header -- required on every PR and status report
 
 ```
-LANE:        <thread name / branch prefix>
+SESSION:     <thread name / branch prefix>
 MIGRATIONS:  NONE | <slug list>          <-- never omit
 STACKED ON:  NONE | #NNN (state the order)
-CONTESTED:   files other lanes may also touch
+CONTESTED:   files other sessions may also touch
 SCOPE:       what the owner authorized, in his words
 ```
 
 `MIGRATIONS` matters most. A release is sized and sequenced from it, and a
 missing or wrong value produces a code deploy against a schema that does not
 have the tables. `NONE` is a real answer and must be written; an omitted line
-is not read as `NONE`. CI's `declaration` check enforces the line.
+is not read as `NONE`. CI's `declaration` check
+(`apps/web/scripts/check-migration-declaration.mjs`) fails a PR that changes a
+migration file with the line missing, empty or `NONE`, or that names a slug
+with no `pilot:apply-*` script. It does not catch an omitted line when no
+migration file changes, and it is not a required check (see "Repository
+writes"), so writing the line is the rule, not something CI guarantees.
 
 ### Stacked work is declared, not discovered
 
@@ -413,11 +452,11 @@ every commit in the range has been verified to belong to the same concern.
 Open the PR. Report the brief header and the evidence. Merge only as
 "Merging and releasing" allows.
 
-### Your lane's state is not the system's state
+### Your session's state is not the system's state
 
-"This lane applied no migrations" is a fact about the lane. "No migrations are
-applied anywhere" is a claim about production, and no build lane can check it
-from its own record.
+"This session applied no migrations" is a fact about the session. "No
+migrations are applied anywhere" is a claim about production, and no session
+can check it from its own record.
 
 Before writing any statement about what is deployed, applied, live, or merged,
 either verify it from an authoritative source in that moment, or mark it
@@ -439,7 +478,7 @@ brings it current.
 3. **Keep scope bounded.** One concern per branch/PR. Do not drive-by fix adjacent work. If another open PR owns the same files or contract, sequence instead of colliding.
 4. **Preserve hard safety boundaries.** Do not weaken authorization, organization isolation, safeguarding, evidence validation, destructive-data protections, or fail-closed controls merely to make a task pass.
 5. **Claims need evidence.** Prefer the smallest relevant executable check while iterating; run the required final gate before claiming completion. Code-reading alone is not runtime proof.
-6. **Authority stays external to the model.** Do not deploy, approve production, make destructive data decisions, or invent owner policy without explicit authority. A direct owner/user request is sufficient authority to implement and **open** ordinary bounded repo changes unless a protected environment or domain policy requires a separate human gate. Merging follows the Lane model; a request to build is not a licence to land.
+6. **Authority stays external to the model.** Do not deploy, approve production, make destructive data decisions, or invent owner policy without explicit authority. A direct owner/user request is sufficient authority to implement and **open** ordinary bounded repo changes unless a protected environment or domain policy requires a separate human gate. Merging follows "Merging and releasing"; a request to build is not a licence to land.
 
 ## Execution loop
 
@@ -518,7 +557,7 @@ inferred. Where a claim has an obvious way to check it, the check is named.
   wired into the `test:migrations` chain in `apps/web/package.json` or
   `pgTestCoverage.test.ts` reds the build -- naming the file, but only after
   you have pushed. The agent container has only the `psql` client, no
-  Postgres, so a build lane there cannot run `.pg.test.ts` or
+  Postgres, so a session there cannot run `.pg.test.ts` or
   `npm run test:migrations`; `pre-release-migrations.yml` is that gate.
 - **Windows (Jason's PC):** embedded-Postgres suites run locally, but a killed
   jest run skips cleanup for every suite, orphaning `postgres.exe` and leaving
@@ -567,12 +606,14 @@ it renders begins reading the session store.
 When sources disagree:
 
 1. current executable code and enforced infrastructure describe current behavior;
-2. the current user request, approved work order, or assigned ticket defines implementation intent/scope;
-3. `docs/current/ACTIVE_WORK.md` records only blocked and intentionally parked work;
-4. domain contracts govern their specific boundary;
-5. `docs/current/WORK_QUEUE.md`, dated audits, `docs/archive/`, superseded plans, and old local branches are historical/provenance evidence only.
+2. Jason's rules and decisions outrank every repository document below, in this order: his user-level rules, then his workspace rules (both kept outside this repository; for Claude Code, `~/.claude/CLAUDE.md` and `~/.claude/rules/ppbf-workspace.md`), then `docs/current/OWNER_DECISIONS.md`. A lower one may narrow a higher one. Where a recorded decision says explicitly that it supersedes a rule line -- OD-2026-09-28-001 supersedes the lane list (OD-2026-09-25-002, which the workspace rules' LANES line cites) and OD-2026-09-28-003 supersedes ChatGPT's storage and ledger duties in the workspace rules -- that decision governs on that point and the rule file is due an update; every other contradiction between them goes to Jason;
+3. the current request from Jason, an approved work order, or an assigned ticket defines implementation intent/scope. A new decision from Jason is recorded in `docs/current/OWNER_DECISIONS.md` (OD-2026-09-28-003). Jason's own current instruction is his newest decision and governs; where it changes a recorded decision, say which entry, and it is recorded there as a new one. A recorded decision wins over a newer work order until Jason records a new one, and a work order must name the decision it replaces (OD-2026-09-28-010 item 10) -- that rule governs work orders, not Jason's own word;
+4. this file governs how AI work is done;
+5. `docs/current/ACTIVE_WORK.md` records blocked and intentionally parked work, open owner questions, and the build list;
+6. domain contracts govern their specific boundary;
+7. `docs/current/WORK_QUEUE.md`, dated audits, `docs/archive/`, superseded plans, and old local branches are historical/provenance evidence only.
 
-For deployed-state claims, use live/gatekeeper-observed evidence rather than source inference.
+For deployed-state claims, use live evidence -- the latest successful deploy run and the Container App's active revision (see "Your session's state is not the system's state") -- rather than source inference.
 
 ## Output
 

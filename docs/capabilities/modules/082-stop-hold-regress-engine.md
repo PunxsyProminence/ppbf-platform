@@ -59,7 +59,9 @@ review), a stale-hold review surface for indefinite holds, guardian
 full-fidelity visibility (#84), and the pre-existing unaccountable coach
 `gym_status` write (its own ticket). The #34 tracker marks Return-to-Training
 DONE with no code behind it — flagged for owner correction; this module's
-boundary assumes #34 is unbuilt.
+boundary assumes #34 is unbuilt. (2026-09-28: since 2026-08-07 #34 has
+return-to-training plans and steps in `safetyFlags.ts`, with no route or page;
+see module 034.)
 
 ## Audit log
 | Date | Actor | Note |

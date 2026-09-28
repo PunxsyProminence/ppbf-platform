@@ -10,6 +10,8 @@
 | Source | `2.0.0-draft-merged` |
 | Parent original-25 | _unmapped_ |
 
+> **Alias (2026-09-28):** Module 166 has the same name ("Coach Dashboard") under Dashboards / Reporting. One capability listed twice; count it once.
+
 ## Intent
 _One paragraph: what this module owns and what it must never do._
 

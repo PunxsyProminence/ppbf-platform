@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- archived as history by OD-2026-09-28-010 item 14; it takes no new entries, and items it records as open or unactioned may since have been resolved. Current source: live GitHub; docs/current/ACTIVE_WORK.md for blocked and parked work; docs/current/OWNER_DECISIONS.md for decisions.
+
 # Cross-session notes
 
 An append-only running log for the many parallel AI sessions working this

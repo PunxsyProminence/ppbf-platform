@@ -266,7 +266,12 @@ approval.** `shadowLearningLoop.ts:157` parameterizes it
 `:543` writes the literal `true` into `shadow_learning_events` in the same
 call. No test asserts the column. One of the two is wrong.
 
-**D10 — ESCALATION: the medical gate is armed by the client.**
+**D10 — CLOSED: the medical gate was armed by the client.** Decided and fixed in
+`ed3637e2` (merged by #362, 2026-08-15): the flag is gone from both route contracts,
+and `assertMedicalStatusAllowsRecommendation` now runs on every recommendation and
+decision write (`shadowRecommendations.ts:101`, `shadowDecisions.ts:48`). The finding
+as filed follows.
+
 `assertMedicalStatusAllowsRecommendation` is the fail-closed guard that blocks
 medically sensitive recommendations and decisions unless the athlete has an
 explicit `cleared` status. It runs only when the caller sets
@@ -336,7 +341,9 @@ a live source of confusion when reading the tree.
    currently consumes the proposal, deliberately.
 7. **Bless or strike the three `2` floors** in `assertPatternFormationPolicy`
    (§3). They are the only number this module ships as live behavior.
-6. **D10 — decide whether the medical gate should stay client-armed.** Not a
+6. **D10 — CLOSED by `ed3637e2` (#362).** The guard now runs on every recommendation and
+   decision write, and the flag is gone (see D10 in §6). As filed: *decide whether the medical gate should stay
+   client-armed.* Not a
    pattern-formation question, but it surfaced during this audit and is the
    highest-severity item found. The options are: keep the current explicit-flag
    design; add server-side inference using the existing
@@ -364,8 +371,10 @@ validation, and any generalization to methodology.
 
 ## 9. Evaluation harness
 
-`apps/web/src/server/pilot/patterns/*.test.ts` — 66 tests, 4 suites, all
-passing, no database required.
+`apps/web/src/server/pilot/patterns/**/*.test.ts` — 180 tests in 13 suites at
+`bbf299fe` (2026-09-28), including the `patterns/inference/` layer this document
+does not describe; all passing, no database required. (66 tests in 4 suites when
+this was written.)
 
 Adversarial scenarios covered: one bad rep · one spectacular success ·
 counterexamples only · repeated in exactly one drill · genuinely repeated

@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** glyph and photo-slot inventory measured at `a11ea7c1` (2026-08-20) for a Grok image role that OD-2026-09-28-001 replaced. Current source: `apps/web/src/shared/gymPhotos.ts` (photo slots).
+
 # Visual inventory 03 — glyphs and photo slots
 
 **Scope.** Two questions for the Grok image lane: *what iconography does this

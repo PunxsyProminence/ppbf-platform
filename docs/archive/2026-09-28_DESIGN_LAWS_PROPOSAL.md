@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- A design-law proposal that was never adopted; Golden Era's seven materials replaced the "five materials" rule and this proposal is archived by OD-2026-09-28-009 #7. Current source: `design-system/README.md` (the laws) and `docs/GOLDEN-ERA-V1-CONTRACT.md` (the look).
+
 # The Weigh-In — proposed design laws
 
 **Status: PROPOSAL. Not adopted. Not wired into `design-system/ppbf.css`.**

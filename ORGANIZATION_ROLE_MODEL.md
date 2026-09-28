@@ -69,6 +69,8 @@ Still gated regardless of the above:
 
 ### Organization Admin
 
+Gym work for `punxsy_prominence` uses its organization-admin account, `ppbf@punxsyprominence.org` (OD-2026-09-28-005; the owner's workspace rules), not the platform-owner account.
+
 Allowed inside own organization:
 
 - create users

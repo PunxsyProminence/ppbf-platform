@@ -1,27 +1,23 @@
+> **HISTORY (2026-09-28):** the mockups, motif table and Grok prompt below describe the retired Leather & Brass look; several of those classes now exist only in `design-system/legacy/`. Current source: `docs/GOLDEN-ERA-V1-CONTRACT.md`.
+
 # Mockup → Repo Map
 
 Working doc for turning the reference mockups into real pages.
 
 ## Division of labor
 
-**Superseded in part, 2026-08-22.** The Claude-engineers / Grok-decorates split
-below was retired by owner decision — Grok now owns visual design *and* visual
-implementation, per `docs/GROK-VISUAL-LANE.md` and the lanes in
-`AGENT_KERNEL.md`. What survives is everything about how to read a mockup
-against real code, which is the useful half of this document.
+**Superseded 2026-09-28 (OD-2026-09-28-001).** Both earlier splits are retired:
+the Claude-engineers / Grok-decorates split, and the 2026-08-22 arrangement in
+which Grok designed and implemented while Claude reviewed. Claude Code is the
+only builder; Grok and Canva make images when Jason asks, and Claude places
+approved ones. What survives is everything about how to read a mockup against
+real code, which is the useful half of this document.
 
 - **The mockups are layout references.** They establish where things sit and what
   objects a screen is built from — not a pixel spec to be traced.
-- **Layout and decoration are one lane now (Grok):** structure, hierarchy,
-  presentation of real routes and real fields, the design-system classes that
-  already exist, and the visual treatment on top — textures, imagery,
-  atmosphere.
-- **Claude reviews rather than engineers** the presentation layer: that no
-  function, gate, boundary or safety rule moved, and that nothing was invented.
 
-Layout still comes before decoration, and that ordering did not change with the
-lane: a page that is well laid out and undecorated is finishable; a decorated
-page with the wrong layout is not.
+Layout still comes before decoration: a page that is well laid out and
+undecorated is finishable; a decorated page with the wrong layout is not.
 
 ---
 
@@ -107,6 +103,8 @@ running it before a visual batch is cheap. The verdict column is history.
 ---
 
 ## The Grok prompt (decoration)
+
+> **HISTORY (2026-09-28):** this prompt binds the retired Leather & Brass palette and laws 1, 4, 6 and 8 (retired by OD-2026-09-28-009 item 1); do not reuse it. Current source: `docs/GOLDEN-ERA-V1-CONTRACT.md`.
 
 For generating **decorative treatment** over a layout that has already been engineered.
 Reusable for any page, not just the twelve. Paste the block below, then fill the three

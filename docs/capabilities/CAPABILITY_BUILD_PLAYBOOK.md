@@ -12,8 +12,7 @@
 - Role checks via existing auth helpers
 - Org isolation (organization_id) enforced
 - At least one automated test OR documented live smoke steps
-- docs/capabilities/modules/NNN-*.md updated with Status, slice, audit log
-- expanded-200-backlog.csv Status + ManualVerification
+- docs/capabilities/modules/NNN-*.md updated with Status, ManualVerification, slice, audit log (the CSV is history; see README.md)
 
 ## Priority order (build in this order)
 
@@ -43,7 +42,7 @@
 2. Gap only: missing field, list, or gate
 3. Implement smallest change
 4. Test happy path + forbidden role
-5. Update module md + CSV
+5. Update module md
 6. Smoke on https://www.punxsyprominence.org if deployable
 
 ## Promotion

@@ -1,13 +1,17 @@
 # Frontend Style Contract (PPBF)
 
+> **Look (2026-09-28):** Golden Era, `docs/GOLDEN-ERA-V1-CONTRACT.md`. Of the eight laws cited below, 2, 3, 5 and 7 still bind; 1, 4, 6 and 8 are retired (OD-2026-09-28-009).
+
 ## Purpose
 Lock visual consistency for all current and upcoming frontend work.
 
 ## Source of Truth
-- **`design-system/ppbf.css`** — tokens, materials, and components, in one sheet.
-  Everything else derives from it. Read `design-system/README.md` for the Eight
-  Laws and the reasoning; the previews under `design-system/` render against
-  this exact file, so a value cannot drift between the showroom and the app.
+- **`design-system/ppbf.css`** — the entry point for tokens, materials, and
+  components; it imports `foundation/` and the `current/` theme, which is where
+  the rules live (`design-system/README.md`, "Source of truth"). Read
+  `design-system/README.md` for the laws and the reasoning; the previews under
+  `design-system/` render against this exact file, so a value cannot drift
+  between the showroom and the app.
 - `apps/web/app/globals.css` — imports the sheet above and aliases the app's
   legacy variable names onto it. The aliases exist to carry the pages that
   predate the design system. **Write new work against the ppbf tokens
@@ -21,17 +25,17 @@ Skeuomorphic, not flat: every surface is a real object found in a boxing gym's
 back office. The Eight Laws in the design-system README are the contract. The
 four that get broken most often:
 
-1. **Brass is the chassis, never the message** (Law 1). Frames, rivets, rope,
+1. **Brass is the chassis, never the message** (Law 1, retired OD-2026-09-28-009). Frames, rivets, rope,
    button faces, the "on" state of a control. Brass never reports a status.
 2. **Saturated colour means safety or status, and nothing else** (Law 2).
    Green, blue, orange and red belong to a participant's safety state or a
-   queue outcome. In particular `--red-primary` aliases to `--locked` — the
+   queue outcome. In particular `--safety-locked` aliases to `--locked` — the
    safety gate's red — so it must not paint tabs, panel borders, links, or
    emphasis. Chrome accents use brass.
 3. **Colour is never the only channel** (Law 3). Every state carries a glyph
    (`✓ ◉ ▲ ✕`) and an uppercase label, so it survives greyscale board packets
    and every form of colour blindness. Use `.badge`, not an emoji.
-4. **Nothing is sized by eye** (Law 8). Type climbs by √φ (`--t-xs`…`--t-4xl`),
+4. **Nothing is sized by eye** (Law 8, retired OD-2026-09-28-009). Type climbs by √φ (`--t-xs`…`--t-4xl`),
    space and radius follow Fibonacci (`--s1`…`--s8`, `--r-sm`…`--r-xl`),
    layout splits at `--split-minor` / `--split-major`.
 
@@ -44,8 +48,8 @@ four that get broken most often:
 
 `.on-canvas` paints a ground of its own, so put it on the full-bleed wrapper,
 not as a scoping hook on children. It restates every component that was tuned
-against leather; if you find one it has missed, **add the restatement to
-`ppbf.css` next to the others** rather than patching the colour in the page.
+against leather; if you find one it has missed, **add the restatement to the
+design-system sheets** (`current/` for the look) rather than patching the colour in the page.
 
 ## Components and Patterns
 
@@ -105,7 +109,8 @@ silently emits neither. Use `text-[length:var(--x)]` / `text-[color:var(--x)]`.
    pages as a starting point for new work — see Drift Guardrails below for
    the broader legacy-token count. New work starts from the contract, not
    from git archaeology.
-4. **`--red-primary` chrome misuse is purged.** That token aliases to
+4. **`--red-primary` chrome misuse is purged.** The token is now named
+   `--safety-locked` (`apps/web/app/globals.css`); it aliases to
    `--locked` — the safety gate's red — and it no longer paints tabs, borders,
    eyebrows, banners, or "planned" markers anywhere. Planned/not-implemented
    markers are `.stamp--brass`. Any new saturated red must be the safety gate
@@ -133,14 +138,17 @@ regression rather than a cosmetic one.
 
 ## Done Criteria for New UI Work
 
-1. Every surface is one of the five materials, or it does not ship (Law 6).
+1. Every surface is one of Golden Era's seven materials
+   (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4), which replaced the old five-material
+   rule (OD-2026-09-28-009).
 2. Saturated colour appears only for safety state or queue outcome (Law 2);
-   chrome accents are brass (Law 1).
+   chrome accents are brass (Law 1, retired OD-2026-09-28-009).
 3. Every state carries a glyph and an uppercase label, not colour alone (Law 3).
 4. Sizes come from the √φ type ladder and the Fibonacci space/radius scales —
-   no eyeballed values (Law 8).
+   no eyeballed values (Law 8, retired OD-2026-09-28-009).
 5. Gym-floor targets clear `--tap` and `--t-md` (Law 5).
 6. Keyboard focus states are visible and consistent.
 7. No horizontal overflow at 412px.
 8. `npm run sweep` shows no new low-contrast nodes against the base branch.
-9. A design-system gap is fixed in `ppbf.css`, not worked around in the page.
+9. A design-system gap is fixed in the design-system sheets (`current/` for the look,
+   `foundation/` for mechanics), not worked around in the page.

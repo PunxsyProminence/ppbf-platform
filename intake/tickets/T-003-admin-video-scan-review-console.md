@@ -1,6 +1,6 @@
 # T-003 — Admin console for the quarantined-video review escalation
 
-> Status: READY
+> Status: **RESOLVED — shipped as #237, merged 2026-08-06 (`88db4bf3`); evidence in the T-003 row of `docs/current/WORK_QUEUE.md`**
 > Lane: A (git-capable AI) or B (chat-only AI) — either
 > Priority: P0 safety — a safeguarding decision path exists with no way to use it
 

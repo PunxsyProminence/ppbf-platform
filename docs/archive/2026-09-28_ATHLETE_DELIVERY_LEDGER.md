@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- archived as history by OD-2026-09-28-010 item 14; its slice status and next-build notes are not maintained. Current source: live GitHub PRs for build state; docs/current/ACTIVE_WORK.md for blocked and parked work.
+
 # Athlete Workspace — Delivery Ledger
 
 Per-slice delivery state for the athlete workspace program. One slice at a

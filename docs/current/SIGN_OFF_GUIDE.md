@@ -1,8 +1,16 @@
 # Owner Sign-Off Walkthrough Guide
 
-This guide is for manually verifying the 82 modules in
-`docs/capabilities/expanded-200-backlog.csv` that are marked `Status: DONE`
-but `ManualVerification: PENDING_SIGN_OFF`. "DONE" in the tracker means a
+This guide was written on 2026-08-18 (#406) for manually verifying 82 of the
+89 modules that `docs/capabilities/expanded-200-backlog.csv` then marked
+`Status: DONE` but `ManualVerification: PENDING_SIGN_OFF`; 53, 121, 123, 125,
+127, 128 and 129 (promoted 2026-08-16) are not covered. Status now lives only
+in the module files under `docs/capabilities/modules/`, and the CSV is history
+(see `docs/capabilities/README.md`). As those files stand on 2026-09-28, 46 of
+the 82 modules below record `SIGNED_OFF` (one blanket owner sign-off on
+2026-08-28, not 46 inspections), the other 36 carry no ManualVerification row,
+and none records `PENDING_SIGN_OFF`. Seven of the no-route modules below (7,
+13, 14, 28, 37, 64 and 65) are now labelled `claimed, no code`. "DONE" in the
+tracker means a
 slice of code was written and passed automated tests — it does **not** mean
 a human has confirmed it works in the running app. That confirmation is
 what this guide walks you through, module by module: the page to open, what
@@ -17,13 +25,13 @@ correct the tracker) rather than a click. Several modules share one real
 page because that is literally how they were built — the entry says so
 where it applies.
 
-**One honesty note before you start:** the training-attempts API
-(`/api/pilot/training-attempts`) and the intervention-tracking API
-(module 26, three routes below) have merged database migrations that are
-**not yet deployed** to staging or production. If those surfaces show an
-empty state, an error, or a 404 today, that is the **correct, passing**
-result — it is not a bug to report. They'll be re-checked once the
-migrations actually run.
+**One honesty note before you start:** when this guide was written
+(2026-08-18), the training-attempts API (`/api/pilot/training-attempts`) and
+the intervention-tracking API (module 26, three routes below) had merged
+database migrations that were **not yet deployed** to staging or production,
+so an empty state, an error or a 404 on those surfaces was the expected
+result. That has not been re-checked since. If those migrations have run, an
+error or a 404 there is a real failure to report.
 
 ---
 
@@ -103,8 +111,8 @@ Workspace roster.
 `/coach/intervention-executions`, `/coach/intervention-review`. Create a
 protocol, log an execution against it, then file an outcome review. **See
 the migration note at the top of this guide: these routes' database
-migrations are not yet deployed, so an absent or empty result today is the
-honest, passing outcome, not a bug.**
+migrations were not yet deployed on 2026-08-18, and that has not been
+re-checked since.**
 
 **22. Injury-Risk Engine** — No route found. No coach-settable injury-risk
 flag exists anywhere in the code.
@@ -438,7 +446,9 @@ should see roster counts and open compliance counts on the hub's KPI row.
 **169. Readiness Dashboard** — Route: `/coach/environment/intake-router`
 (the Coach Workspace roster dots and "Readiness Alerts" tile). Open as a
 coach. You should see green/yellow/red readiness bands from each athlete's
-latest check-in within the last 24 hours; an athlete with no fresh reading
+latest `pilot.readiness` score within the last 24 hours -- a score typed by
+staff during intake review, not an athlete check-in (see
+`docs/capabilities/READINESS_PROVENANCE_FACTS.md`); an athlete with no fresh reading
 is omitted, never shown as a fabricated zero.
 
 **170. Safety Dashboard** — Route: `/admin/safety-flags`. Open as
@@ -481,8 +491,9 @@ own, so there is nothing to click by design, not by omission.
 
 ## Summary
 
-- **Modules documented:** 82 of 82 `PENDING_SIGN_OFF` rows in
-  `docs/capabilities/expanded-200-backlog.csv`.
+- **Modules documented:** 82 of the 89 `PENDING_SIGN_OFF` rows that
+  `docs/capabilities/expanded-200-backlog.csv` held on 2026-08-18 (see the top
+  of this guide for where sign-off status lives now).
 - **No reachable route:** 22 modules — 1, 7, 13, 14, 22, 27, 28, 34, 37,
   64, 65, 70, 85, 131, 135, 200 have no UI at all to click; 82 and 45 have
   a route for the *read* side only (placing/lifting a hold is API-only);
@@ -492,9 +503,10 @@ own, so there is nothing to click by design, not by omission.
   the missing screen, or formally accept API-only and correct the
   tracker) rather than a sign-off click.
 - **Hardest three to verify:** (1) **Module 26, Intervention Tracking
-  Engine** — three real pages, but gated behind migrations that are not
-  yet deployed, so today's honest result (empty/absent) looks identical
-  to a broken one unless you already know to expect it. (2) **Modules 39/42/104
+  Engine** — three real pages, but gated behind migrations that were not
+  yet deployed on 2026-08-18 (not re-checked since), so the honest result
+  then (empty/absent) looked identical to a broken one unless you already
+  knew to expect it. (2) **Modules 39/42/104
   (Punch Quality, Round Performance, Bodyweight Tracking)** — all three
   let you log real data on the same sparring form, but none of the three
   computed results have anywhere to display, so "working" can only be

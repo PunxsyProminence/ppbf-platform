@@ -27,7 +27,7 @@ Board reporting is the existing organization aggregate + compliance summary — 
 - [ ] Board hub shows aggregate tiles
 - [ ] Suppressed / No records language correct
 - [ ] No athlete identifiers in network payload
-- [ ] ManualVerification=PASSED
+- [ ] ManualVerification=SIGNED_OFF
 
 ## Audit log
 | Date | Actor | Note |

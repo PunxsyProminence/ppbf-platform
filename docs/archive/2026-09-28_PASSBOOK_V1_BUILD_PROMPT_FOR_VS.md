@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- a build prompt resting on the stamp-ledger design, which OD-2026-09-28-008 retired; the stamp ledger and offline check-in it called for were NOT BUILT; the live Passbook read model and gap queue are unaffected. Current source: docs/current/ATTENDANCE_PRECEDENCE.md.
+
 # Passbook v1 Build Prompt For VS
 
 You are building the Passbook.

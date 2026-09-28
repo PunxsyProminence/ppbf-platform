@@ -1,6 +1,8 @@
+> **HISTORY (2026-09-28):** 2026-08-01 audit snapshot at `5cd79c4`; its open items (B2-B4) were not re-checked in this pass. Kept because `apps/web/scripts/pilot-check-runtime-claims.mjs` cites it. Current source: the code on `main`.
+
 # SHADOW Sibling Surfaces + Spec Conformance Audit — 2026-08-01
 
-Completes the last two dimensions `SHADOW_CHAT_FUNCTIONALITY_AUDIT_2026-07-28.md` §6 listed as
+Completes the last two dimensions `docs/archive/2026-09-28_SHADOW_CHAT_FUNCTIONALITY_AUDIT_2026-07-28.md` §6 listed as
 uncovered. Audited at `5cd79c4`. Every finding established against source with file:line
 evidence; nothing inferred from PR titles or prior docs.
 

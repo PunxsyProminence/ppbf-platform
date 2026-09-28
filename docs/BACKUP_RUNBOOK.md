@@ -48,8 +48,8 @@ into a fresh environment:
 4. Run `apps/web/scripts/pilot-export-verify-dump.mjs verify` against the *restored* database
    (not the dump file) to confirm the row counts match what the dump's own verification step
    recorded in that backup run's job summary.
-5. Point the application at the restored database and re-run the smoke checks in
-   `docs/PRODUCTION_READINESS.md` before serving real traffic from it.
+5. Point the application at the restored database and run the read-back checks in
+   `docs/AI_DELIVERY_PIPELINE.md` ("Verify production") before serving real traffic from it.
 
 To get the dump itself:
 - **From automated backups**: download the blob from `ppbf-pilot-backups` in the Azure Portal, or

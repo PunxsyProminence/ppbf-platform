@@ -1,5 +1,9 @@
 # THE ROOM MAP
 
+**This is the single visual build order** (OD-2026-09-28-009): other visual work
+lists are history. The look is `docs/GOLDEN-ERA-V1-CONTRACT.md`; what a
+training-room plate must show is `docs/REAL-GYM-REFERENCE-LOCK.md`.
+
 **Status:** APPROVED IN SHAPE · Owner: Jason Neale · Drafted by Claude 2026-09-26
 **Not yet built.** `apps/web/components/buildingMap.ts` is still the live
 structure; this is the shape it is being moved to, one room at a time.
@@ -13,13 +17,15 @@ Owner decisions, 2026-09-26, on the three questions this document closed with:
 
 ## Why a split at all
 
-The building map files 106 doors under eight rooms. Two of those rooms are not
-rooms:
+The building map files 125 doors under seven `room` values (counted in
+`apps/web/components/buildingMap.ts` at `bbf299fe`); the table shows the Drill
+Cabinet, which has its own scope (`.ge-drillcase`) but is filed under `floor`,
+as an eighth. Two of those rooms are not rooms:
 
 | Room | Doors |
 |---|---|
 | Front Office | **49** |
-| Gym Floor | **38** |
+| Gym Floor | **39** |
 | Board Room | 13 |
 | Clinic | 10 |
 | File Room | 7 |
@@ -184,9 +190,11 @@ already said it was — structural metadata for the corridor and the catalog —
 each room's LOOK comes from its `.ge-*` scope and its plate, which is the live
 visual system.
 
-That is one sweep of 143 occurrences across 88 files, a ceiling that drops to
-zero, and the drift half of `buildingMapRooms.test.ts` retiring with the thing it
-compared. It is the change that makes a seventeen-room building possible at all.
+Across all the rooms that is 143 `room--*` occurrences in 88 files (the ceiling in
+`legacyVisualVocabulary.test.ts`; still 143 in 88 at `bbf299fe`), removed room by
+room until the ceiling reaches zero and the drift half of `buildingMapRooms.test.ts`
+retires with the thing it compared. It is the change that makes a seventeen-room
+building possible at all.
 
 ## Build order
 
@@ -194,7 +202,9 @@ The Bell and the Drill Cabinet already exist. The rest follow the path through
 the building, because a room is easier to judge next to the room you reach it
 from:
 
-1. **The Floor** — the largest room a coach stands in, and its plate exists.
+1. **The Floor** — the largest room a coach stands in, and its plates exist
+   (`plate-10` and `plate-11`, committed but not yet declared; today the floor
+   paints no plate — `apps/web/public/plates/README.md`).
 2. **Front Desk** — the room everyone passes through.
 3. **The Family Room** — already behaves as a room; the map catches up.
 4. **Coach's Office**, then **The Book**.

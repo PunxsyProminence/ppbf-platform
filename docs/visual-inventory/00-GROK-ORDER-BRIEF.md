@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** a Grok order list compiled 2026-08-20; Grok now only makes images on request (OD-2026-09-28-001) and this is not a build order (OD-2026-09-28-009 item 3). Current source: `docs/ROOM-MAP.md` (Build order).
+
 # Grok order brief — the visual inventory, compiled
 
 **20 Aug 2026.** Compiled from four independent inventory passes:

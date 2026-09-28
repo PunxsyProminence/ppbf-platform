@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- SHADOW Phase 1 hardening checklist; only an archived document cites it. Current source: `docs/SHADOW_AUTHORITY_MODEL.md` §20.
+
 # SHADOW Phase 1 Hardening Checklist
 
 Purpose: convert SHADOW doctrine into an execution-ready hardening sequence without building unrelated features.
@@ -146,7 +148,7 @@ Exit criteria:
 ### Multi-Gym Reservation
 
 - [x] organization_id required in all SHADOW spine records
-- [ ] gym_id and program_id reserved as nullable fields for staged rollout
+- ~~[ ] gym_id and program_id reserved as nullable fields for staged rollout~~ Struck: `organization_id` is the gym identifier (`docs/SHADOW_AUTHORITY_MODEL.md` §20 item 6).
 - [ ] no single-gym assumptions introduced in new contracts
 
 ### Source Confidence

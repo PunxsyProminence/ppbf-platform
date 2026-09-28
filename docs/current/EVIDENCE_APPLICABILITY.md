@@ -75,11 +75,10 @@ it**. A run against staging is evidence at that level for what the run
 executed, and evidence of nothing at all for the rest of the release.
 
 The last rung sits where it does because it is the one instrument no automated
-run supplies: a person looking. Where an AI lane can load a deployed page, a
-screenshot of the running page is evidence at the environment's own rung --
-from Jason's PC Claude can load public pages (checked 2026-09-21; the kernel's
-Capabilities table), ChatGPT could not load the staging URL (2026-08-20), and
-signed-in pages still need Jason. A visual claim with neither a screenshot nor
+run supplies: a person looking. Where an AI can load a deployed page, a
+screenshot of the running page is evidence at the environment's own rung;
+which AI can load which pages, and where that was checked, is in the capability
+table in `AGENT_KERNEL.md`. A visual claim with neither a screenshot nor
 a person opening the page is unverified, and must be written that way without
 being asked.
 
