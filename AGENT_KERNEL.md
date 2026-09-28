@@ -33,7 +33,7 @@ Do not preload archived audits, the historical queue, superseded plans, old buil
 
 ## Working channel
 
-### Lanes (owner decision 2026-09-21, OD-2026-09-21-001)
+### Lanes (owner decisions OD-2026-09-21-001 and OD-2026-09-25-002)
 
 - **Jason** -- final authority: priorities, scope, mutation approval, design
   and visual approval, production authorization, acceptance, conflict
@@ -51,12 +51,24 @@ Do not preload archived audits, the historical queue, superseded plans, old buil
   migration tests, release engineering. Branches, PRs, CI, staging, and
   explicitly authorized production deployment. Writes to storage or the ledger
   only when a ChatGPT write fails, and records that it did.
-  **On a visual PR Claude reviews; it does not redesign.** It checks that no
-  function, role gate, organization boundary or safety rule changed, that
-  nothing unsupported was invented, that no existing action disappeared, and
-  that tests stayed meaningful. It may independently verify a committed plate
-  against the byte gate. A visual preference that is not a defect is not
-  grounds to rewrite another lane's approved work.
+  **Visual design is not owned by one lane** (OD-2026-09-26-001). Claude may
+  design and implement visual work -- layout, CSS, typography, presentation
+  structure, and generated background plates -- and so may Grok. The plate is
+  judged, not its author.
+
+  **What "a good one" means is the whole of the standard, and it did not
+  change.** The work passes its guards; it alters no function, role gate,
+  organization boundary or safety rule; it invents nothing the data does not
+  support; it removes no existing action; its tests stay meaningful. For a
+  plate: it passes `apps/web/src/design/plateBinaries.test.ts` on its bytes AND
+  somebody has opened the image and looked at it against
+  `docs/REAL-GYM-REFERENCE-LOCK.md`. The byte gate cannot tell whether the room
+  is this gym -- on 2026-09-26 two plates were bound to a room by filename
+  without being opened, and both were the generic brick wall that lock forbids.
+
+  **Reviewing another lane's visual work is still reviewing.** Rewriting
+  someone else's approved design because you prefer yours is not the same as
+  being permitted to design, and remains out of order.
 - **Grok** -- visual design and visual implementation, on its own feature
   branches and PRs, per `docs/GROK-VISUAL-LANE.md`. Reads current source before
   designing; explores and proposes freely; implements only what Jason
@@ -76,6 +88,14 @@ Do not preload archived audits, the historical queue, superseded plans, old buil
 "Designer", in the owner's words, means product and system design; visual
 design stays Grok's. Several Claude lanes may run at once, each in its own
 session. The **Lane model** below governs who merges.
+
+### Work domains (owner decision OD-2026-09-25-002)
+
+WORK DOMAINS are subject areas, not agent roles or authority boundaries:
+visual design; ML training; AI/ML; app build.
+
+LANES remain the agent-role model above. A work domain does not create,
+transfer, narrow, or expand an agent's authority.
 
 ### Repository writes
 

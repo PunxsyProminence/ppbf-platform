@@ -26,6 +26,15 @@ jest.mock('@/src/server/pilot/captureSessions', () => {
   };
 });
 
+/*
+ * Doubled so these tests stay about the ROUTE. Access control has its own
+ * suite; nothing about a participant or a consent is involved in starting a
+ * teaching session any more.
+ */
+jest.mock('@/src/server/pilot/access', () => {
+  const actual = jest.requireActual('@/src/server/pilot/access');
+  return { ...actual, assertActorCanAccessAthlete: jest.fn(async () => undefined) };
+});
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
@@ -280,10 +289,56 @@ describe('multi-person contexts are withheld until a take can name everyone in i
   test.each(['shadowboxing', 'heavy_bag'])('a %s session is allowed', async (context) => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
 
-    const response = await POST(jsonRequest({ action: 'create', training_context: context }));
+    const response = await POST(
+      jsonRequest({ action: 'create', training_context: context }),
+    );
 
     expect(response.status).toBe(200);
     expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ trainingContext: context }));
+  });
+
+  test('TS-ANON-01 -- filming to teach the recognizer is never blocked', async () => {
+    /*
+     * OWNER RULING. This footage is training data for a recognizer, not a
+     * record about the person in frame, so nothing about a participant may
+     * stand between a coach and the camera. A session starts with nobody
+     * named at all.
+     *
+     * Nothing about a participant is asked for, accepted, or written.
+     */
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+    const response = await POST(jsonRequest({ action: 'create', training_context: 'heavy_bag' }));
+
+    expect(response.status).toBe(200);
+    expect(mockCreate).toHaveBeenCalled();
+
+    const raw = JSON.stringify(await response.json());
+    expect(raw).not.toContain('athlete');
+  });
+
+  test('NEGATIVE CONTROL -- naming an athlete is REFUSED, not quietly ignored', async () => {
+    /*
+     * THE SIDE DOOR THIS CLOSES. When clearance was deleted the capture screen
+     * stopped sending an athlete, but this route went on ACCEPTING one -- so
+     * the invariant held on the surface and not on the server, and a direct
+     * caller could still attach a person to teaching footage.
+     *
+     * Refused rather than ignored: a request carrying an athlete was written
+     * against a rule that no longer holds, and silently dropping it would
+     * leave the caller believing the footage had been attributed.
+     */
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+    const response = await POST(
+      jsonRequest({ action: 'create', training_context: 'heavy_bag', athlete_id: 'ath-1' }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: expect.stringMatching(/names nobody/i),
+    });
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
   test('the refusal says why, so a coach is not left guessing which contexts work', async () => {

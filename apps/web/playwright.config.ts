@@ -15,7 +15,15 @@ const localChromium = process.env.PPBF_CHROMIUM_PATH;
    is already up. One variable moves both the server and the baseURL together,
    which is the only way they cannot disagree. */
 const port = process.env.PPBF_E2E_PORT ?? '3100';
-const baseURL = `http://localhost:${port}`;
+/* The dev server's host, for the same reason as the port above and moving
+   with it. The offline runtime (docs/OFFLINE_RUNTIME.md) starts Next with
+   `--hostname 127.0.0.1`, and on Windows `localhost` resolves to ::1 first,
+   so a suite pointed at localhost cannot see that server at all -- it probes
+   a dead address, declines to reuse, and tries to start a second Next on a
+   port already in use. CI leaves this unset and keeps `localhost`, so the
+   pipeline is unchanged. */
+const host = process.env.PPBF_E2E_HOST ?? 'localhost';
+const baseURL = `http://${host}:${port}`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -48,7 +56,14 @@ export default defineConfig({
   webServer: {
     command: `npm run dev -- --port ${port}`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    /* WHO OWNS SERVER STARTUP, which is a different question from where the
+       server is -- PPBF_E2E_HOST answers that one. A step that has already
+       started the offline runtime (docs/OFFLINE_RUNTIME.md) says so
+       explicitly here, rather than having it inferred from the host: CI
+       stays strict by default, and only a step that owns a server opts out.
+       Coupling the two would mean any host override silently disabled the
+       guarantee that CI starts the server it tests. */
+    reuseExistingServer: !process.env.CI || process.env.PPBF_E2E_REUSE_EXISTING_SERVER === '1',
     timeout: 120000,
   },
 });

@@ -169,7 +169,43 @@ export async function POST(request: NextRequest) {
      * it needs a participant model that says who is in the frame, which is an
      * owner decision and is not invented here.
      */
-    if (!athleteId && (captureTakeIdForRow || captureSource === 'in_app_recording')) {
+    /*
+     * TS-ANON-01: THE RULE NOW BRANCHES BY DESTINATION, because the two
+     * recorders have opposite requirements.
+     *
+     * TEACHING MEDIA NAMES NOBODY. A take-backed upload is Teach Shadow
+     * footage, and its row must carry no athlete. A client that sends one is
+     * REFUSED rather than quietly stripped: silently accepting it would let a
+     * stale client keep believing it had attributed the footage, and would
+     * leave an identifier arriving at this boundary with nothing to say it was
+     * ignored. Refusing is how a stale client finds out.
+     *
+     * The participant is resolved SERVER-SIDE from the capture session, which
+     * is where clearance recorded it. It is never taken from the request: a
+     * client that could name its own participant could attribute one child's
+     * footage to another child's consent.
+     *
+     * FILM STUDY STILL NAMES ITS ATHLETE, and its recorder still refuses an
+     * unnamed recording. The original reasoning holds unchanged there: the
+     * scan sweep only asserts consent when a video carries an identity, so a
+     * dedicated recorder storing an unattributed minor would enter the content
+     * screen with the check skipped.
+     *
+     * Teaching footage does not carry that identity anywhere. It is training
+     * data for a recognizer rather than a record about the person filmed, so
+     * it names nobody and no consent is asked of anybody.
+     */
+    if (captureTakeIdForRow && athleteId) {
+      return NextResponse.json(
+        {
+          error:
+            'Teach Shadow footage is anonymous and must not name an athlete.',
+        },
+        { status: 400 },
+      );
+    }
+
+    if (!athleteId && !captureTakeIdForRow && captureSource === 'in_app_recording') {
       return NextResponse.json(
         {
           error:
@@ -178,6 +214,12 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+
+    /*
+     * TS-ANON-01: NOBODY IS RESOLVED, because teaching footage is of nobody.
+     * A take-backed upload carries its take and no identity at all -- the
+     * refusal above is the whole of the rule.
+     */
 
     // Free text and allowed to be unknown. "Rear phone camera" is a fact about
     // hardware; "rear view of the athlete" is a fact about the gym. Only a
@@ -232,7 +274,9 @@ export async function POST(request: NextRequest) {
         videoSessionId,
         principal.organizationId,
         principal.accountId,
-        athleteId,
+        // NULL for teaching media, by the rule above -- and nowhere else
+        // either. Teaching footage names nobody at all.
+        captureTakeIdForRow ? null : athleteId,
         title,
         notes,
         blobPath,
@@ -261,7 +305,10 @@ export async function POST(request: NextRequest) {
       actorRole: principal.role,
       payload: {
         title,
-        athlete_id: athleteId,
+        // Absent for teaching media. An event stream carrying the athlete
+        // would reintroduce the identity this slice just removed, in the one
+        // place nobody thinks to look.
+        athlete_id: captureTakeIdForRow ? null : athleteId,
         file_name: uploadDescriptor.safeOriginalName,
         file_size_bytes: file.size,
         status: 'quarantined',
