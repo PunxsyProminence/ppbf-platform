@@ -34,7 +34,9 @@
      Same room ≠ same atmosphere.
 
    PLATES: Layer 0 only (the wall the room stands in). Real UI composites
-     on top in code. Quiet centre, outer-thirds interest, zero lettering,
+     on top in code. Quiet centre, outer-thirds interest, zero lettering
+     (except the ring canvas's IRON CITY lettering, OD-2026-09-28-013; see
+     docs/REAL-GYM-REFERENCE-LOCK.md Mode A item 4),
      4:4:4, complete SOI/EOI. Real gym DNA required — no stock gym.
      Type B producer set lives under apps/web/public/plates/ (see apps/web/public/plates/README.md).
 

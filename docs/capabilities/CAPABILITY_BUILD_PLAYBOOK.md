@@ -1,7 +1,7 @@
 # Capability Build Playbook
 
 ## Rules
-1. PPBF_CAPABILITIES.json governance.active stays false until promotion review.
+1. `Active` stays false in every module file (modules/NNN-*.md) until promotion review. PPBF_CAPABILITIES.json is an old draft (OD-2026-09-28-010 item 21); its governance.active also stays false. The approved product list is PRODUCT_CAPABILITIES.json (see README.md).
 2. Tracker Status=DONE means slice shipped in code, not CSV updated.
 3. Prefer reuse existing tables/APIs over new schema (see issue #156).
 4. One vertical slice per PR: read or write path + role gate + test + short module note.
@@ -14,7 +14,11 @@
 - At least one automated test OR documented live smoke steps
 - docs/capabilities/modules/NNN-*.md updated with Status, ManualVerification, slice, audit log (the CSV is history; see README.md)
 
-## Priority order (build in this order)
+## Priority order (history, 2026-08-03; not the current order)
+
+Checked 2026-09-28: every numbered module under P0-P2 has Status DONE in its
+module file (Passbook v1 is module 001, also DONE), and 176-192 are DRAFT. Work to build now is the Build list in
+docs/current/ACTIVE_WORK.md.
 
 ### P0 - Live pilot hardening
 - Passbook v1 (issue #156): assemble one athlete read model

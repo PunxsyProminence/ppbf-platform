@@ -37,7 +37,9 @@ method was ever established.
 ## Who writes it
 
 **Exactly one production write path**: `intake.ts#createReadiness`
-(`apps/web/src/server/pilot/intake.ts:561`). It computes nothing. It inserts
+(`apps/web/src/server/pilot/intake.ts`; line 561 at
+[`5f19bd68`](https://github.com/PunxsyProminence/ppbf-platform/blob/5f19bd68ef389c0935a2b097de7adcfb3d5fd39d/apps/web/src/server/pilot/intake.ts#L561),
+the parent of #410, which added this file). It computes nothing. It inserts
 whatever `score` and `category` its caller hands it.
 
 Two callers, both staff-driven intake surfaces:
@@ -52,6 +54,11 @@ Two callers, both staff-driven intake surfaces:
 2. **`POST /api/pilot/intake/review-action`** promotion (`route.ts:435`),
    taking `promotion.readiness.{score,category,measured_at}` from a payload an
    administrator hand-types as JSON in `admin/shadow/page.tsx`.
+
+Note added 2026-09-28: the two `route.ts` line numbers are as of `5f19bd68`.
+#423 (`af0ba932`, 2026-08-18) later made both paths refuse a score that is not
+a finite number (`requireFiniteNumber` in each route), so the silent `0`
+default described in item 1 is gone.
 
 No self-service athlete path writes here. `athleteCheckIns.ts` deliberately
 writes its own table instead (see the false claims below).
@@ -72,7 +79,13 @@ Two facts about it:
   (`readinessMath.test.ts`). It never executes in production and it never
   writes to `pilot.readiness`.
 
-## Two false claims currently in the source
+## Two false claims that were in the source
+
+Note added 2026-09-28: both comments were fixed in #410 (`41395c86`), the same
+change that added this file, and now say the scores are typed in by staff (the
+header comments of `readinessBoard.ts` and `athleteCheckIns.ts`). The line
+numbers below are as of `5f19bd68`. What follows is the record of what they
+said.
 
 Both should be read as evidence of how easily an unauditable number acquires
 assumed authority -- these comments were written by people who believed the
@@ -89,9 +102,18 @@ table was formula-backed:
 
 ## Who reads it, and what turns on it
 
+Note added 2026-09-28: line numbers in this section are as of `5f19bd68`.
+Items 1 and 3 had already moved by then, so they are named by symbol. #581
+(`39379a52`, 2026-08-24) later changed items 1, 3 and 4 for a reading whose
+method was never established or whose score is outside 1-10: an evidence link
+citing it is kept but marked inadmissible (`computeSourceAdmissible`), and it
+no longer counts as a RED day or in the average
+(`isReadinessUsableAsMeasurement` and `readinessValidatedScopeSql` in
+`apps/web/src/server/pilot/readinessProvenance.ts`).
+
 Six consumers. Ranked by how much authority the number acquires:
 
-1. **`interventionEvidence.ts:39`** -- `readiness` is an admissible
+1. **`interventionEvidence.ts#EVIDENCE_SOURCE_KINDS`** -- `readiness` is an admissible
    `EvidenceSourceKind` for intervention outcome review. An unauditable number
    is currently admissible as evidence that an intervention on a child worked.
    This is the sharpest edge.
@@ -101,7 +123,7 @@ Six consumers. Ranked by how much authority the number acquires:
    tells coaches to "Use readiness color to adjust coaching intensity" and
    lists "Ignoring RED readiness plans during live coaching" as a mistake. The
    thresholds assume a 1-10 scale that nothing enforces at write time.
-3. **`coachIntelligence.ts:69`** -- counts days whose latest reading fell below
+3. **`coachIntelligence.ts#getCoachIntelligence`** (its RED-day query) -- counts days whose latest reading fell below
    the YELLOW threshold and flags athletes exceeding a RED-day count.
 4. **`performanceAnalytics.ts:126`** -- averages the score and splits it
    early-vs-late to report a trend direction.

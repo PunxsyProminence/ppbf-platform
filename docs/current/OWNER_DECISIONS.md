@@ -4,7 +4,7 @@ The record of decisions Jason has actually made, in his own words, with the
 evidence each was made on.
 
 This file exists because a decision that lives only in a chat log is not a
-decision any lane can check. On 2026-08-27 the drill/cue read policy was
+decision any session can check. On 2026-08-27 the drill/cue read policy was
 ratified and written down nowhere. #754 merged the next day as `81e27e72`
 carrying test expectations that asserted the opposite -- `board` admitted to
 the drill library -- and `main` shipped code contradicting a ruling that had
@@ -15,15 +15,18 @@ unmerged branch. That is the cost this file is here to stop paying.
 
 ## What belongs here
 
-A decision the owner made that governs code, schema, policy, or lane
-behaviour, where a lane could otherwise build the opposite in good faith.
-
-Not here: work assignments, scope for a single ticket, or anything a lane may
-decide for itself. `docs/current/ACTIVE_WORK.md` holds blocked and parked work.
-Release decisions -- what was frozen, refused, or abandoned -- were recorded in
-`docs/current/AI_RELEASE_CONTROL.md` until 2026-09-21; that record is now in
-`docs/archive/2026-09-21_AI_RELEASE_CONTROL_before_condense.md`, and release
+A decision the owner made that governs code, schema, policy, or how AI work is
+done, where a session could otherwise build the opposite in good faith.
+Jason's decisions are recorded only here, by Claude, quoting him
+(OD-2026-09-28-003). That includes release decisions -- what was frozen,
+refused, or abandoned. Until 2026-09-21 those were recorded in
+`docs/current/AI_RELEASE_CONTROL.md`; that record is now in
+`docs/archive/2026-09-21_AI_RELEASE_CONTROL_before_condense.md`. Release
 procedure is `docs/AI_DELIVERY_PIPELINE.md`.
+
+Not here: work assignments, scope for a single ticket, or anything a session
+may decide for itself. `docs/current/ACTIVE_WORK.md` holds blocked and parked
+work.
 
 ## How to use it
 
@@ -61,6 +64,28 @@ the source.
   2026-08-29: portrait review stays admin-only".
 - `docs/design/CHECKIN_API_CONTRACT.md` -- resting heart rate, HRV and blood
   pressure deferred, not dropped.
+- `AGENT_KERNEL.md`, "Authority doctrine (owner decision, 2026-08-20)" -- the
+  coach decides inside clearance and policy, and may not override a medical
+  hold, consent, safeguarding, law or an authorization boundary.
+- `docs/SHADOW_ML_ARCHITECTURE_SPEC.md` -- §2.3 "SUPERSEDED IN PART --
+  2026-08-23. Owner decision." (learning styles and personality scores
+  withdrawn), and the Heavy Bag cap being per user, not per organization
+  (owner decision, 2026-08-01).
+- `docs/capabilities/modules/036-periodization-block-planning-engine.md`,
+  audit log -- two owner decisions of 2026-08-28 (nutrition_body_composition
+  admitted; "Admin and coaches" author blocks and objectives).
+- `docs/capabilities/proposals/engine-unlock/036a-plan-vs-actual-execution-design.md`,
+  §5 -- "ANSWERED -- owner, 2026-08-28".
+- Module audit logs, for example `docs/capabilities/modules/008-coach-review-system.md`
+  and `130-evidence-quality-engine.md` -- the one blanket manual-verification
+  sign-off of 2026-08-28 (not 47 separate inspections).
+- `docs/HANDOFF_VISUALS.md`, "Job 3" (owner decision, 2026-08-17), restated in
+  `docs/AGENT_BRIEFING_PROMPT.md` -- the six Capability Console pages stay
+  unstyled, because they show fabricated data.
+- `apps/web/app/api/pilot/progression/assignments/cancel/route.ts`, header
+  comment -- owner decisions of 2026-09-22 on cancelling assigned work: cancel
+  only (no edit, no delete, no undo or reopen), open work only, and "Coaches
+  with access" may cancel. See the Status line on OD-2026-09-19-002.
 - Test headers that carry the ruling they enforce:
   `apps/web/src/design/safeguardingRedReservation.test.ts` (2026-08-19, the
   safety red is reserved) and `apps/web/src/design/legacyVisualVocabulary.test.ts`
@@ -89,7 +114,13 @@ These follow "Report the check, not the conclusion" in `AGENT_KERNEL.md`.
 - **Record it at ratification, not at merge.** The gap between the two is
   exactly where #754 went wrong.
 - **Do not edit a decision.** Supersede it with a new entry that says what it
-  replaces and why.
+  replaces and why. When later facts change what an entry reports, append a
+  dated `Status (YYYY-MM-DD):` line under it; the decision text stays as
+  written.
+- **One id, once.** Before adding an entry, grep `## OD-<date>-` for the next
+  free number. `scripts/check-owner-decision-ids.mjs` fails if a heading id
+  repeats or is malformed; CI runs it on every change, docs-only included
+  (`.github/workflows/ci.yml`, "Check owner decision ids are unique").
 
 Newest first.
 
@@ -104,11 +135,13 @@ correction:
 | OD-2026-08-27-001 (board denied) | #754, merged `81e27e72` | #755, merged `61b20e9d` | ~75 minutes |
 | OD-2026-08-28-005 (content class) | #811, merged `948f6d18` | #817 | open at time of writing |
 
+Status (2026-09-28): #817 merged 2026-08-28 as `d08ca4dd`.
+
 The two are not the same failure and should not be filed as one.
 
 #754 is the one this file was written after. Its expectations were already
 wrong when it merged, and nothing in the repository recorded the ruling that
-made them wrong, so no lane could have known.
+made them wrong, so no session could have known.
 
 #811 is the honest version. It was written BEFORE the ruling, its body said in
 terms that the posture was open and unsettled, and its tests pinned the current
@@ -121,9 +154,128 @@ The defect is a test that asserts a posture while claiming, in a comment, to
 pin a decision it cannot detect a change to -- which is what #811 was itself
 written to fix in two other files.
 
-What this file can shorten is only the first shape: a lane about to assert a
+What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-09-28-014 -- Panels may be aged paper, dark glass, or both, each where it fits
+
+**Provenance: PRIMARY.** **Date:** 2026-09-28. Jason's words are verbatim; the
+question is as the Claude session summarized it (its exact wording is not in
+this repository).
+
+**Asked.** Which panel material the merged look (OD-2026-09-28-012) uses: aged
+paper, or dark glass -- the dark translucent dashboard panels over the real gym
+in Jason's Grok board. **Jason's answer, verbatim:** *"its can use all types
+where appropriate"*.
+
+**What this decides.** Panels may use aged paper, dark glass, or both, each
+where it fits. This is owner approval of dark glass as a material.
+`docs/GOLDEN-ERA-V1-CONTRACT.md` at `10da14c9` lists seven core materials, none
+of them glass, and admits "No new invented materials without owner approval";
+this entry is that approval.
+
+---
+
+## OD-2026-09-28-013 -- The ring canvas keeps its IRON CITY lettering in plates
+
+**Provenance: PRIMARY.** **Date:** 2026-09-28. Jason's words are verbatim; the
+question is as the Claude session summarized it.
+
+**Asked.** Whether the IRON CITY lettering on the ring canvas (the canvas reads
+IRON CITY BREWERY, `docs/REAL-GYM-REFERENCE-LOCK.md` section 1) should be kept
+out of plates and backgrounds, as the zero-lettering rule requires -- the lock's
+"Zero lettering on the plate itself (UI text lives in code)" and
+`docs/GOLDEN-ERA-V1-CONTRACT.md` section 9, both at `10da14c9`. **Jason's
+answer, verbatim:** *"no i like that you can leave it"*.
+
+**What this decides.** The ring canvas's IRON CITY lettering stays in plates
+and backgrounds. It is an exception to the zero-lettering rule for that
+lettering only; UI text still lives in code. Where the lock, the Golden Era
+contract, `apps/web/public/plates/README.md` or the no-text prompt in
+`scripts/make-plate.mjs` say otherwise, this entry governs until they are
+corrected.
+
+---
+
+## OD-2026-09-28-012 -- One merged look: the real gym in the early gritty style, starting with a look board built around The Floor
+
+**Provenance: PRIMARY.** **Date:** 2026-09-28. Jason's words and the option
+headings are verbatim, checked character for character against the Claude
+session's transcript (2026-09-28, 18:31-18:44 UTC); the gloss after each
+heading is summarized.
+
+**The early look.** Jason's early "LOOKS AND FEELS" set -- the Canva folder
+"PPBF LOOKS AND FEELS" (found through the Canva connector, 2026-09-28), with
+the same images in his Grok library as the session saw it -- is a dark, gritty
+style: dark iron, aged tan paper, brass, old oxidized-blood stains, gauze and
+tape. Describing it, he said: *"it had blood
+stains guaze the  the logos and things will need to be updated thos were kinda
+mock ups"*.
+
+**How it relates to the real gym.** Put to him: A, *"Real gym, drawn in this
+look (recommended)"*; B, *"This look replaces the real-gym rules"*; C, *"Split:
+screens take this look, backgrounds stay real"*. **Jason's answer, verbatim:**
+*"these were early work too, yes we can work the gym look into it the UI and
+these images do have some of the gym feel, i never got the two merged"*.
+
+What this decides: the two looks merge. The real gym
+(`docs/REAL-GYM-REFERENCE-LOCK.md`) is drawn in the early gritty style, for
+both screens and images. The early set's logos were mock-ups, not the brand.
+
+**Where to start.** Put to him: A, *"A look board first (recommended)"* -- one
+page that fixes the merged style (colours, textures, fonts, one sample room
+background drawn from the real gym, one sample panel) before any screen
+changes, and every room then follows it; B, *"Pilot on The Bell (the sign-in
+screen)"*; C, *"Start with The Floor"*. **Jason's answer, verbatim:** *"kinda a
+cross between a and c"*.
+
+What this decides: a look board built around The Floor. Its samples are The
+Floor's own background and one Floor panel. `docs/ROOM-MAP.md` stays the
+build order (OD-2026-09-28-009 item 3).
+
+---
+
+## OD-2026-09-28-011 -- Operations answers: the policy shelf move, the Companion check, placeholders, end-of-build items, and two admin screens
+
+**Provenance: PRIMARY.** **Date:** 2026-09-28. Jason answered a numbered list
+of follow-up questions from the documentation clean-up in one message. His
+words for each item are verbatim; what each item asked is as the Claude session
+summarized it (the full question text is not in this repository).
+
+6. **Move the misfiled policy shelf.** *"6yes"*. The 22 approved
+   `internal_policy` library sources (7 documents, 49 chunks) found under
+   `ppbf-default-org` (OD-2026-09-28-007) move to `punxsy_prominence` in
+   production. This is not the same set as the `ppbf_policy` import scope,
+   which asserts 21 sources, 6 documents and 20 chunks
+   (`apps/web/scripts/import-shadow-research.mjs:200-202`); the move tool
+   selects the production rows, not the scope. No tool makes that move today
+   (`apps/web/scripts/pilot-rescope-library-baseline.mjs` moves a corpus onto
+   the platform baseline only), so one is built first, and Jason approves the
+   production run in GitHub. (Claude's plan, not part of the answer: a dry run
+   before any production run.)
+7. **The retired Technical Companion.** *"7 yes"*, to a read-only production
+   check of whether `docs/SHADOW_AI_TECHNICAL_COMPANION.md` is in the Shadow
+   library (OD-2026-09-28-010 items 8 and 23). The check was run on 2026-09-28:
+   it is not in the library, so there is nothing to remove. (Reported by the
+   session that ran the query; the query and its output are not reproduced
+   here.)
+8. **Placeholder people.** *"8 those are place holder and can be removed or
+   left for later"*. The 22 athletes and 15 parents under `ppbf-default-org`
+   are placeholders; they may be removed, or left for later. (Counts as put
+   to him; not re-counted for this entry.)
+9. **PIN rotation.** *"9 we will do that after the whole app is built"*.
+   `PILOT_ADMIN_PIN` and `PILOT_SHADOW_ATHLETE_PIN` are rotated at the end of
+   the build (OD-2026-09-28-004).
+10. **Public repository and licensed extracts.** *"10 keep as is well do that
+    at the end aswell"*. The repository stays public and the licensed extracts
+    stay where they are until the end of the build (OD-2026-09-28-004).
+11. **Deletion screen and roster-import door.** *"11 build ask questions if you
+    need to"*. Build the `/admin/data-deletion` screen (OD-2026-09-28-008,
+    "c") and a building-map door for `/admin/import` (OD-2026-09-28-010 item
+    26). Open questions on either go to Jason before they are built.
 
 ---
 
@@ -219,6 +371,11 @@ OD-2026-09-28-010 (*"all defaults"*). The visual defaults, as put:
 7. Golden Era's seven materials replace the old "five materials" rule;
    `docs/DESIGN_LAWS_PROPOSAL.md` is archived.
 
+Status (2026-09-28): dark glass is approved as a panel material alongside
+Golden Era's seven (OD-2026-09-28-014), and the ring canvas's IRON CITY
+lettering is an exception to the plates' zero-lettering rule
+(OD-2026-09-28-013).
+
 ---
 
 ## OD-2026-09-28-008 -- Attendance has one system of record; retention describes what exists
@@ -262,6 +419,10 @@ misfiled content, with any move needing his per-run yes. **Jason's answer:**
 (`apps/web/src/server/pilot/platformLibraryScope.ts:36-38`), so the gym does
 not currently see those sources. Moving them is a production write and waits
 for Jason's per-run approval.
+
+Status (2026-09-28): Jason said yes to the move (OD-2026-09-28-011 item 6). The
+move tool is not built yet, and its production run still needs his approval in
+GitHub.
 
 ---
 
@@ -340,6 +501,9 @@ was private. It is public. Option C, as put: *"Keep it public for now, accept
 the risk, fix the false 'private' wording"*; making the repository private, or
 moving the extracts out, is a later decision. **Jason's answer:** *"c"*.
 
+Status (2026-09-28): both are scheduled for the end of the build
+(OD-2026-09-28-011 items 9 and 10).
+
 ---
 
 ## OD-2026-09-28-003 -- One record of decisions; merge and check rules
@@ -367,6 +531,11 @@ merge other lanes if needed"*, made standing by item 9 of OD-2026-09-28-010.
 
 **Supersedes** the storage and ledger duties given to ChatGPT in the workspace
 rules and in OD-2026-09-21-001.
+
+Status (2026-09-28): ChatGPT cannot write to `PPBF-AI-Lanes/ChatGPT-Handoffs`
+itself -- tested that day, its upload failed and no file was created
+(`AGENT_KERNEL.md` capability table). How an approved work order reaches the
+inbox is not decided; that is Jason's call.
 
 ---
 
@@ -944,6 +1113,13 @@ assigned work has none of the three today (no edit, no cancel, no delete, no
 undo; completion logs have only the coach's Verify / Dispute). Any of them would
 join the same follow-up slice.
 
+Status (2026-09-28): the coach cancel is built. `POST
+/api/pilot/progression/assignments/cancel` (#951, merged 2026-09-23 as
+`71f98122`) writes `cancelled` through `cancelDrillAssignment`
+(`apps/web/src/server/pilot/progression.ts:672`). Its route header records the
+owner decisions of 2026-09-22: cancel only -- no edit, no delete, no undo or
+reopen -- and only open work.
+
 ---
 
 ## OD-2026-09-19-001 -- Drills are progressive instructional objects (W-D4 product ruling)
@@ -1372,6 +1548,11 @@ The free-text-only path was observed in both route handlers and all three
 writer INSERTs at that SHA. The zero-operational-drills premise of clause 2 is
 the owner's, stated in the ruling.
 
+Status (2026-09-28): the clause 2 gate was met when W-D3 reached production;
+the evidence is recorded under OD-2026-09-28-010 item 13. #922 and #929,
+parked in clause 6, were both closed unmerged on 2026-09-28; the #929 design
+stays on the build list (OD-2026-09-28-010 item 12).
+
 ---
 
 ## OD-2026-09-17-001 -- Athlete active-learning visibility for reference drills
@@ -1657,48 +1838,6 @@ Open questions rather than decided here by implication.
 
 ---
 
-## OD-2026-08-29-007 -- A nomination is deleted with the athlete it names
-
-**Provenance: PRIMARY.** The decision was put to the owner as a choice between
-two options, and he selected one by label. The label is recorded verbatim
-because the words alone are what he chose:
-
-> Delete it with the athlete (Recommended)
-
-The alternative offered was to keep the nomination and detach it from the
-athlete, matching OD-2026-08-29-005's treatment of a barrier report.
-
-**What was asked.** `pilot_one_percent_nominations_athlete_fk` does not
-cascade from `pilot.athletes`. The retention purge hard-deletes an athlete two
-years after withdrawal, and a restricting foreign key aborts that delete. The
-question was what should happen to a One Percent Club nomination naming a
-child whose family has fully withdrawn.
-
-**What is true today, measured.** The retention purge was proved
-non-functional and then repaired in #862 (`apps/web/scripts/pilot-cleanup-deleted-data.mjs`),
-which now isolates each athlete behind a savepoint and REPORTS what blocked it
-rather than failing the whole sweep. `one_percent_nominations` is named in
-that report as a blocker. So this is not a hypothetical: the purge already
-tells an operator this row is in the way.
-
-**The decision.** The nomination row is deleted with the athlete. A nomination
-is a claim about a child who trains here; once the family has withdrawn and
-the two-year retention window has closed, there is no child for it to be about.
-
-**What a lane must NOT infer.** This says nothing about the retention
-treatment of any other One Percent Club table, and nothing about nominations
-whose athlete is still enrolled.
-
-**IMPLEMENTATION IS NOT THIS LANE'S.** `pilot.one_percent_nominations` is a
-coach-facing One Percent Club table. The parent/guardian lane established the
-defect while repairing the purge, put the question to the owner, and recorded
-the answer here -- it did not build the migration, and deliberately did not,
-because a build lane fixing an unrelated table inside its own PR is the drive-by
-`AGENT_KERNEL.md` forbids. **The One Percent Club lane owns the change.** As of
-this entry no migration implements it, and the purge still reports the block.
-
----
-
 ## OD-2026-08-29-008 -- `pilot.waivers.status` is measured before it is constrained
 
 **Provenance: PRIMARY.** Put to the owner as a choice of options; he selected
@@ -1755,6 +1894,48 @@ REQUIRED.**
 
 ---
 
+## OD-2026-08-29-007 -- A nomination is deleted with the athlete it names
+
+**Provenance: PRIMARY.** The decision was put to the owner as a choice between
+two options, and he selected one by label. The label is recorded verbatim
+because the words alone are what he chose:
+
+> Delete it with the athlete (Recommended)
+
+The alternative offered was to keep the nomination and detach it from the
+athlete, matching OD-2026-08-29-005's treatment of a barrier report.
+
+**What was asked.** `pilot_one_percent_nominations_athlete_fk` does not
+cascade from `pilot.athletes`. The retention purge hard-deletes an athlete two
+years after withdrawal, and a restricting foreign key aborts that delete. The
+question was what should happen to a One Percent Club nomination naming a
+child whose family has fully withdrawn.
+
+**What is true today, measured.** The retention purge was proved
+non-functional and then repaired in #862 (`apps/web/scripts/pilot-cleanup-deleted-data.mjs`),
+which now isolates each athlete behind a savepoint and REPORTS what blocked it
+rather than failing the whole sweep. `one_percent_nominations` is named in
+that report as a blocker. So this is not a hypothetical: the purge already
+tells an operator this row is in the way.
+
+**The decision.** The nomination row is deleted with the athlete. A nomination
+is a claim about a child who trains here; once the family has withdrawn and
+the two-year retention window has closed, there is no child for it to be about.
+
+**What a lane must NOT infer.** This says nothing about the retention
+treatment of any other One Percent Club table, and nothing about nominations
+whose athlete is still enrolled.
+
+**IMPLEMENTATION IS NOT THIS LANE'S.** `pilot.one_percent_nominations` is a
+coach-facing One Percent Club table. The parent/guardian lane established the
+defect while repairing the purge, put the question to the owner, and recorded
+the answer here -- it did not build the migration, and deliberately did not,
+because a build lane fixing an unrelated table inside its own PR is the drive-by
+`AGENT_KERNEL.md` forbids. **The One Percent Club lane owns the change.** As of
+this entry no migration implements it, and the purge still reports the block.
+
+---
+
 ## OD-2026-08-29-006 -- The build lane merges its own green work and drives staging; production stays the owner's
 
 **Provenance:** PRIMARY. Owner, 2026-08-29: **"its all on you to get to
@@ -1803,6 +1984,12 @@ practice, which is the drift this file exists to stop.
 **Evidence this rests on.** `AGENT_KERNEL.md` lines 408-411 at `31ea99c1`; the
 2026-08-29 queue, where #890, #894, #897, #900 and #901 were green and
 unmergeable from roughly 06:00 to 12:29 UTC.
+
+Status (2026-09-28): two of the open points are settled. A session may merge
+another session's green pull request (OD-2026-09-28-010 item 9). The
+calibration migrations have been applied: `apply-migrations` runs 33269702024
+(staging) and 33280673339 (production), both 2026-08-29, as recorded in
+`docs/current/ACTIVE_WORK.md`, "The calibration migrations are applied".
 
 ---
 
@@ -2051,6 +2238,11 @@ admitting `organization_admin`; PR #900, which reported the overlap and pinned
 the permissive behaviour rather than deciding it; and the measurement that
 `adjudication.ts` has zero non-test importers on `main`, so nothing has been
 written through this path yet.
+
+Status (2026-09-28): the correction landed. #903 (`7bfd1a35`, 2026-08-29)
+gave the primitive the actor's account id, and
+`apps/web/src/server/pilot/calibration/blinding.ts:304-305` now refuses an
+adjudicator who annotated the clip (`adjudicator_annotated_this_clip`).
 
 ---
 
@@ -2325,6 +2517,14 @@ substitution was MORE conservative than B2 asked for, not less: enforcement
 began immediately on both sides, and the precheck B2 wanted was performed
 afterwards and came back clean.
 
+Status (2026-09-28): "Implemented in: deferred behind PR #788" is out of date.
+#853 (`40cc66c4`, merged 2026-08-29) added the validation as its own migration,
+`infra/azure/pilot_slice_postgres_discipline_fk_validation_migration.sql`;
+whether it has been applied to production is not recorded here. The paragraph
+just above saying the B2 substitution "has not been ratified" conflicts with
+this entry's own "This also ratifies the B2 substitution". Both were written in
+the same commit (`4e36547d`, #791). OD-2026-09-28-010 item 16 settles it: B2 is
+closed out.
 
 ---
 
@@ -2453,6 +2653,10 @@ registry's `active` flag should block writes. See Open questions.
 
 **Implemented in:** PR #788.
 
+Status (2026-09-28): both questions were since decided -- validating the FKs
+by OD-2026-08-28-006, and the `active` flag by OD-2026-08-28-009 (it stays a
+browse filter).
+
 ---
 
 ## OD-2026-08-28-001 -- Production `run-checks` dispatch belongs to the release lane
@@ -2474,6 +2678,13 @@ production.** Read-only is not an exemption.
 been approved and had completed at 14:17Z, roughly forty minutes before the
 instruction arrived, and GitHub returned `409 Cannot cancel a workflow run
 that is completed`. The result is recorded under OD-2026-08-28-002.
+
+Status (2026-09-28): SUPERSEDED by OD-2026-09-28-010 item 8. A Claude session
+may run a read-only production check -- a query or a check run that changes
+nothing -- when Jason says so, for that run. The kernel lines cited above
+("line 363", "lines 369-370") are as `AGENT_KERNEL.md` stood at `4e36547d`
+(#791, 2026-08-28, the commit that added this entry); the kernel has been
+rewritten since, and those line numbers no longer point there.
 
 ---
 

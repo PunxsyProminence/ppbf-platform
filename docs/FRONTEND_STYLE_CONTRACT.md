@@ -14,16 +14,22 @@ Lock visual consistency for all current and upcoming frontend work.
   between the showroom and the app.
 - `apps/web/app/globals.css` — imports the sheet above and aliases the app's
   legacy variable names onto it. The aliases exist to carry the pages that
-  predate the design system. **Write new work against the ppbf tokens
-  directly** (`--hide-*`, `--brass-*`, `--t-*`, `--s1`…`--s8`).
+  predate the design system; they are a closed vocabulary, and
+  `legacyVisualVocabulary.test.ts` caps 18 of them by name (`ALIAS_CEILINGS`,
+  `legacyVisualVocabulary.test.ts:64-83`, counting .tsx under `app/` and
+  `components/` only); the rest are uncapped, so do not extend them. **Write new work
+  against the foundation's mechanics** (`--t-*`, `--s*`, `--r-*`, `--tap`)
+  **and the current theme's own tokens** (`globals.css:28-33`).
 - `apps/web/components/uiStyles.ts` — pre-design-system helper, still consumed
   by unconverted pages. Not a second vocabulary; do not extend it.
 
 ## Visual Language
 
-Skeuomorphic, not flat: every surface is a real object found in a boxing gym's
-back office. The Eight Laws in the design-system README are the contract. The
-four that get broken most often:
+Skeuomorphic, not flat. The look is Golden Era: its materials sit on the real
+gym (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4). Of the Eight Laws in the
+design-system README, 2, 3, 5 and 7 are the contract; 1, 4, 6 and 8 are
+retired (OD-2026-09-28-009). The four this file used to single out, retired
+ones marked:
 
 1. **Brass is the chassis, never the message** (Law 1, retired OD-2026-09-28-009). Frames, rivets, rope,
    button faces, the "on" state of a control. Brass never reports a status.
@@ -31,7 +37,7 @@ four that get broken most often:
    Green, blue, orange and red belong to a participant's safety state or a
    queue outcome. In particular `--safety-locked` aliases to `--locked` — the
    safety gate's red — so it must not paint tabs, panel borders, links, or
-   emphasis. Chrome accents use brass.
+   emphasis. (Chrome accents used brass under Law 1, retired OD-2026-09-28-009.)
 3. **Colour is never the only channel** (Law 3). Every state carries a glyph
    (`✓ ◉ ▲ ✕`) and an uppercase label, so it survives greyscale board packets
    and every form of colour blindness. Use `.badge`, not an emoji.
@@ -39,7 +45,7 @@ four that get broken most often:
    space and radius follow Fibonacci (`--s1`…`--s8`, `--r-sm`…`--r-xl`),
    layout splits at `--split-minor` / `--split-major`.
 
-### Two grounds, one system (Law 6)
+### Two grounds, one system (was Law 6, retired OD-2026-09-28-009; the two grounds still ship in the CSS)
 
 | Ground | Where | How |
 |---|---|---|
@@ -62,7 +68,7 @@ Use what the sheet already ships before inventing anything:
 - Status — `.badge` with its four rungs; `.stamp` for a governance refusal
   (Law 7 — refusal is a stamp, never a dismissible toast); `.redacted` for
   k-anonymity withholding.
-- Type — four voices (Law 4): `.t-command` orders, `.t-body` informs, `.chalk`
+- Type — four voices (Law 4, retired OD-2026-09-28-009; the classes still ship): `.t-command` orders, `.t-body` informs, `.chalk`
   schedules, `.t-data` records anything auditable.
 
 Tailwind v4 cannot tell whether `text-[var(--x)]` is a size or a colour and
@@ -87,7 +93,7 @@ silently emits neither. Use `text-[length:var(--x)]` / `text-[color:var(--x)]`.
    the app was.
 2. No slate/emerald/cyan fragments, and no second palette — there is one look,
    and no `[data-theme]` toggle. Ground is a per-surface material choice.
-3. Radii come off the Fibonacci scale; arbitrary values like `rounded-[28px]`
+3. (Law 8, retired OD-2026-09-28-009.) Radii come off the Fibonacci scale; arbitrary values like `rounded-[28px]`
    are drift.
 4. Before styling a new route, open the nearest `design-system/screens/*.html`
    preview and build from that, rather than copying a neighbouring page that
@@ -138,14 +144,15 @@ regression rather than a cosmetic one.
 
 ## Done Criteria for New UI Work
 
-1. Every surface is one of Golden Era's seven materials
-   (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4), which replaced the old five-material
-   rule (OD-2026-09-28-009).
-2. Saturated colour appears only for safety state or queue outcome (Law 2);
-   chrome accents are brass (Law 1, retired OD-2026-09-28-009).
+1. Every surface is one of Golden Era's materials
+   (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4: seven core materials plus dark glass,
+   owner-approved 2026-09-28, OD-2026-09-28-014), which replaced the old
+   five-material rule (OD-2026-09-28-009).
+2. Saturated colour appears only for safety state or queue outcome (Law 2).
+   (The "chrome accents are brass" half was Law 1, retired OD-2026-09-28-009.)
 3. Every state carries a glyph and an uppercase label, not colour alone (Law 3).
-4. Sizes come from the √φ type ladder and the Fibonacci space/radius scales —
-   no eyeballed values (Law 8, retired OD-2026-09-28-009).
+4. RETIRED with Law 8 (OD-2026-09-28-009): sizes from the √φ type ladder and
+   the Fibonacci space/radius scales. No longer a done criterion.
 5. Gym-floor targets clear `--tap` and `--t-md` (Law 5).
 6. Keyboard focus states are visible and consistent.
 7. No horizontal overflow at 412px.

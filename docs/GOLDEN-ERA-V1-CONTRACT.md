@@ -1,7 +1,7 @@
 # GOLDEN ERA V1 — Real-Gym Visual Contract
 **Version:** 1.1 · **Date:** 2026-08-24 · **Author:** Grok · **Owner:** Jason Neale  
 **Status:** Active authority for the usable-app visual release.  
-**Amended 2026-09-28** (OD-2026-09-28-001, OD-2026-09-28-009): owner-first authority order (§2); §3 points to the lock; §8 records the fonts as built; §9 points to the plates README; §13 shows the seam as built; Claude places plate binaries.  
+**Amended 2026-09-28** (OD-2026-09-28-001, OD-2026-09-28-009): owner-first authority order (§2); §3 points to the lock; §8 records the fonts as built; §9 points to the plates README; §13 shows the seam as built; Claude places plate binaries. Later the same day, by owner decision: §4 adds dark glass as a panel material (OD-2026-09-28-014); §9 lets the ring canvas keep its IRON CITY lettering (OD-2026-09-28-013).  
 **Related:** this file (look & feel) · `docs/REAL-GYM-REFERENCE-LOCK.md` (environmental DNA) · `docs/ROOM-MAP.md` (the visual build order) · `design-system/README.md` (the laws that still bind) · `apps/web/public/plates/README.md` (plates)
 
 > This document is the durable visual authority.  
@@ -67,11 +67,14 @@ Golden Era is the **rendered visual authority**. The old Leather & Brass sheet i
 6. **Cork / file** — file-room only.
 7. **Varnished cabinetry + cooler green tint** — clinic only.
 
+### Dark glass (owner-approved 2026-09-28, OD-2026-09-28-014)
+**Dark glass** — the dark translucent dashboard panels over the real gym in Jason's Grok board. Jason's words: *"its can use all types where appropriate"* (OD-2026-09-28-014): a panel may be aged paper, dark glass, or both, each where it fits. The core list above is otherwise unchanged; the answer did not rank the materials. Not built yet: no glass material exists in the `design-system/` sheets or `apps/web/app/globals.css` at `10da14c9`.
+
 ### Surface rules
-- Cards and panels sit *on* the room (paper/leather on the wall plate), never fight the plate.
+- Cards and panels sit *on* the room (aged paper, leather or dark glass on the wall plate), never fight the plate.
 - Quiet centre of every plate; UI panels land in the quiet zone.
 - Text over photographs or textured grounds must remain readable (overlay or material treatment required). Jason has already caught unreadable text that tests missed — treat contrast as first-class.
-- No skeuomorphic “room-*” classes beyond the six declared rooms. No new invented materials without owner approval.
+- No skeuomorphic “room-*” classes beyond the six declared rooms. No new invented materials without owner approval (dark glass has it, above).
 
 ---
 
@@ -134,7 +137,7 @@ Unknown / missing values must look **unknown**, never zero or “normal complete
 ## 9. Photographic / plate rules
 
 - Layer 0 only (the wall the room stands in). Real UI composites on top in code.
-- Quiet centre, outer-thirds interest, zero lettering.
+- Quiet centre, outer-thirds interest, zero lettering — except the IRON CITY lettering on the ring canvas, which stays when the ring is in frame (owner, 2026-09-28: *"no i like that you can leave it"*; OD-2026-09-28-013; `docs/REAL-GYM-REFERENCE-LOCK.md` Mode A item 4).
 - Variants from a shared root reference (one building, one day) derived from the Real Gym Reference Lock.
 - The byte laws, the delivery rule and who places images are stated once, in `AGENT_KERNEL.md` "Binary assets (plates)"; `apps/web/src/design/plateBinaries.test.ts` enforces them on the bytes and is the hard gate. Do not weaken it. The delivery record (PR #643, 2026-08-25, is the worked example) is in `apps/web/public/plates/README.md`.
 

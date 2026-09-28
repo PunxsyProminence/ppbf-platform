@@ -7,10 +7,11 @@ This file governs staging and production release work only. Ordinary building fo
 There is no permanent production bot, deploy coordinator, gatekeeper model, or model-specific release owner.
 
 - Jason is the sole human production approval authority.
-- **Staging:** a build lane may dispatch `deploy-staging` and staging
-  migrations through `.github/workflows/apply-migrations.yml`.
+- **Staging:** a Claude session (the only builder, OD-2026-09-28-001) may
+  dispatch `deploy-staging` and staging migrations through
+  `.github/workflows/apply-migrations.yml`.
 - **Production:** `deploy-production` and production migrations are prepared
-  and verified by the lane, then dispatched only on Jason's explicit word. That
+  and verified by that session, then dispatched only on Jason's explicit word. That
   authority is task-scoped and ends when the release is completed, stopped, or
   handed back.
 - **GitHub requires a separate approval for every run** of a protected
@@ -70,14 +71,27 @@ Production promotion requires a separate explicit instruction from Jason, such a
 
 1. If migrations are required, dispatch the production migration workflow first and verify its result. Do not type `CONFIRMED` from assumption or from a merged SQL file alone.
 2. If the release introduces or changes reference data the new code depends
-   on, seed it **before** `deploy-production`, after the migrations: read
-   **production's own** seed account fresh (`check-database`, seed-identity,
-   production), run `seed-reference-data` as a dry-run, then apply with that
-   account. In both runs pass `organization_id=punxsy_prominence` explicitly --
-   the gym's organization (OD-2026-09-28-007); do not leave it blank, which
-   resolves to the app's default-org secret. Never reuse staging's account:
-   staging used a lowercase admin address, and production is a different,
-   capital-A account. Deploying first leaves
+   on, seed it **before** `deploy-production`, after the migrations. The seed
+   account for gym content is an organization admin of `punxsy_prominence`
+   (`ppbf@punxsyprominence.org`), never the platform-owner account (Admin@):
+   gym work uses the organization-admin account (`ORGANIZATION_ROLE_MODEL.md`,
+   Organization Admin; OD-2026-09-28-005; the owner's workspace rules). Read
+   its exact `account_id` fresh from **production** (`check-database`,
+   seed-identity, production), run `seed-reference-data` as a dry-run, then
+   apply with that account. In both runs pass
+   `organization_id=punxsy_prominence` -- the gym's organization
+   (OD-2026-09-28-007); the workflow requires it. Never reuse an id from
+   staging: `account_id` is case-sensitive, and staging's seed account was a
+   different, lowercase admin address. The drill-library and workout-template
+   seed files stamp `created_by_role` as `platform_owner` on every row, and
+   their loaders write it as given
+   (`apps/web/scripts/seed-drill-library.mjs:269`,
+   `apps/web/scripts/seed-workout-templates.mjs:214`). Until those loaders take
+   the role from the account, as `import-shadow-research.mjs` does (:127,
+   :509-517), do not apply a gym seed that writes new drill-library or
+   workout-template rows: it would record the wrong role. The fix is a BLOCKED
+   row in `docs/current/ACTIVE_WORK.md`, where Jason decides whether the next
+   gym seed waits for it. Deploying first leaves
    production serving code whose catalogs are empty, which the archived
    2026-08-24/25 release record shows, and whose planned sequence was
    migrations, seed identity, seed dry-run and apply, then deploy.
@@ -122,7 +136,7 @@ Only then report `PRODUCTION_RUNTIME_VERIFIED`.
 
 ## Failure and rollback
 
-A release operator does not repair product code inside the release lane.
+A release operator does not repair product code as part of the release.
 
 - Before deployment: stop at the failed gate and return the exact run, step, input, and evidence.
 - After deployment: read the actual running SHA/digest, preserve failure evidence, and prepare either a retry or rollback packet.
@@ -138,11 +152,11 @@ Any authorized release verifier may propose an update only after directly observ
 
 ```text
 Jason requests preparation
-→ the lane validates and stages the exact SHA
+→ a Claude session validates and stages the exact SHA
 → AI returns RELEASE READY packet
 → Jason authorizes promotion
 → workflow queues protected production deployment
 → Jason approves GitHub environment
 → workflow deploys and probes
-→ the lane reads back live state
+→ that session reads back live state
 ```

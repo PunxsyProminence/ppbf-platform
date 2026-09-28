@@ -1,7 +1,9 @@
 # SHADOW: Total Best ML Build Specification
 
 **Version:** 1.1  
-**Status:** Production Design  
+**Status:** Design reference, partly built — not a production design (corrected 2026-09-28; it read
+"Production Design"). The sections checked against code are listed below; much of the rest is
+marked NOT BUILT, struck, or parked where it appears. The code on `main` wins.  
 **Last Updated:** 2026-09-28  
 **Verified against code:** `main` @ `2aa2ded` — §1, §2.1, §4.2, §5, and §7 were
 rewritten on 2026-08-03 to match `shadowRouter.ts` / `shadowClassifier.ts` as
@@ -233,6 +235,17 @@ SHADOW accepts and processes:
 - Policy queries
 
 #### 2.2.2 Video Intelligence
+
+**NOT BUILT, and parked (checked 2026-09-28).** No pose-estimation, scoring or
+drill-classification code exists; `apps/web/src/server/pilot/calibration/ontology.ts:17-23`
+lists "technique score" among concepts deliberately absent, and no recognition model has
+been trained (`apps/web/src/server/pilot/teachShadow/coverage.ts:13-15`). Per-skill video
+scoring, including the 0-100 technique score below, is parked under
+`BACKLOG-video-skill-scoring` in `docs/current/ACTIVE_WORK.md`. Teach Shadow teaches
+recognition only and does not re-open it (OD-2026-09-28-006, ruling 5). What exists for
+video today is the upload path, Film Study (Phase 4, §7), and Teach Shadow capture and
+labelling (`apps/web/app/teach-shadow/`, governed by OD-2026-09-28-006).
+
 - **Pose Estimation:** OpenAI Vision API detects key points (15 points per frame)
 - **Movement Quality Scoring:** ML classifier evaluates technique quality (0-100)
 - **Drill Classification:** Matches video to known drills ~~(confidence threshold 0.85+)~~ — STRUCK 2026-09-28, OD-2026-09-28-010 #22
@@ -1300,7 +1313,10 @@ SHADOW escalates to human review when:
 - 🔄 Video Intelligence — upload → content scan → promote path is **live**;
   Film Study executor runs behind a mandatory human proposals gate; per-frame
   cost measurement still required before general availability. Pose estimation
-  and drill classification are **aspirational, not in scope**.
+  and drill classification are **aspirational, not in scope**. (2026-09-28: neither is built.
+  Teach Shadow, which collects labelled footage to teach recognition, is governed by
+  OD-2026-09-28-006; per-skill scoring stays parked under `BACKLOG-video-skill-scoring`, see
+  §2.2.2.)
 - 🔄 Document Intelligence — document-intake pipeline exists (classify, review,
   link); OCR/fact-extraction depth is future work
 - ⏳ Biometric Integration — **deferred; nothing built**
@@ -1326,6 +1342,17 @@ SHADOW escalates to human review when:
 
 **Recommended project structure for future development:**
 
+> **NOT BUILT as laid out (checked 2026-09-28).** None of the `src/server/pilot/shadow*/`
+> folders and none of the `src/client/components/` or `src/client/pages/` entries exist:
+> shipped SHADOW code is mostly flat files in `apps/web/src/server/pilot/` (`shadowRouter.ts`,
+> `shadowClassifier.ts`, `shadowJobQueue.ts`, `shadowLearningLoop.ts`, `shadowLibrary.ts` and
+> others) plus the subfolders `patterns/`, `formulas/`, `calibration/` and `teachShadow/`, and
+> pages under `apps/web/app/shadow/` (including `scout/`) and `apps/web/app/admin/shadow/`.
+> Under `app/api/pilot/shadow/`, `chat`, `feedback`, `jobs` (with `process` and `[jobId]`) and `upload` exist; `scout-reports`,
+> `migrate` and `debug` do not (§3.5, §3.7), nor do the three docs listed beside this one.
+> Read the tree as an old proposal, not a map. The confidence-scoring and readiness entries
+> are struck (OD-2026-09-28-010 #22).
+
 ```
 apps/web/
 ├── src/
@@ -1336,14 +1363,14 @@ apps/web/
 │   │       │   ├── theCorner.ts          # Complexity classifier
 │   │       │   ├── contextAssembler.ts   # Builds optimal context window
 │   │       │   ├── responseFilter.ts     # Post-response safety filtering
-│   │       │   ├── confidentceMarker.ts  # Confidence scoring
+│   │       │   ├── confidentceMarker.ts  # Confidence scoring — STRUCK 2026-09-28, OD-2026-09-28-010 #22
 │   │       │   └── chainOfThought.ts     # Explainability generation
 │   │       │
 │   │       ├── shadowPersonalization/
 │   │       │   ├── userProfile.ts        # Tier management, memory
 │   │       │   ├── adaptiveGeneration.ts # Tone, complexity, format adaptation
 │   │       │   ├── learningStyleDetector.ts  # WITHDRAWN 2026-08-23 (§2.3)
-│   │       │   └── readinessSignal.ts
+│   │       │   └── readinessSignal.ts        # STRUCK 2026-09-28, OD-2026-09-28-010 #22 (readiness)
 │   │       │
 │   │       ├── shadowLearningLoop/
 │   │       │   ├── index.ts
@@ -1394,7 +1421,7 @@ apps/web/
 │       │   ├── ShadowMessage.tsx          # Message with feedback
 │       │   ├── FeedbackButtons.tsx        # 👍 👎 escalate
 │       │   ├── ScoutReportCard.tsx        # Report display
-│       │   └── ConfidenceMarker.tsx       # Confidence indicator
+│       │   └── ConfidenceMarker.tsx       # Confidence indicator (HIGH/MEDIUM/LOW, §6.2; not a number, so not struck; not built)
 │       │
 │       └── pages/
 │           ├── shadow/
@@ -1634,7 +1661,7 @@ tier, §4.2.)
 - **Effectiveness Score:** 0-1 value per outcome signal (§2.4.3)
 - **Learning Loop:** Recommendation → Outcome → Score → Library Update → Profile Update
 - **Tier:** Bronze (< 10 interactions), Silver (10-50), Gold (50+)
-- **Confidence Marker:** HIGH/MEDIUM/LOW label on responses
+- **Confidence Marker:** HIGH/MEDIUM/LOW label on responses — not built (§6.2)
 - **Chain-of-Thought:** Step-by-step reasoning explanation
 - **Fire-and-Forget:** Async operation that doesn't block request
 
@@ -1659,4 +1686,4 @@ tier, §4.2.)
 
 ---
 
-This specification is **production-ready** and can be used immediately for Phase 3+ development planning. It includes concrete API contracts, database schemas, file structure, and implementation timelines.
+This specification is **production-ready** and can be used immediately for Phase 3+ development planning. It includes concrete API contracts, database schemas, file structure, and implementation timelines. (Corrected 2026-09-28: it is not production-ready; see **Status** at the top.)

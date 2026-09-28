@@ -67,7 +67,7 @@ The Bags row above records that.
 1. Always pass **at least 2–4 of the owner reference photos** into the image model when generating page mockups or new plate concepts. **The photographs live at `C:\Users\jason\PPBF-Gym-Reference\` on Jason's machine** (owner decision 2026-09-26: "where is it at now use it"). Ten frames, named for what they show. They are deliberately NOT committed — faces and minors — and that has not changed.
 2. Prompt must name the DNA in section 2 above: the brewery-roundel ring with red and blue posts and white pads, honey plank and blackboard-paint walls, the painted red / blue / grey floor zones, the homemade timber and pipe bag frames, flat fluorescent light.
 3. Quiet centre for UI; real gym interest only in outer thirds / edges.
-4. Zero lettering on the plate itself (UI text lives in code).
+4. Zero lettering on the plate itself (UI text lives in code), with one exception: the IRON CITY lettering on the ring canvas stays when the ring is in frame. Owner, 2026-09-28: *"no i like that you can leave it"* (OD-2026-09-28-013). No other lettering is allowed.
 
 ### Mode B (shipped plates)
 1. Plates are layer-0 only (the wall the room stands in).
@@ -79,7 +79,7 @@ The Bags row above records that.
 5. **Images from Grok or Canva** are made when Jason asks; Claude places the approved file (OD-2026-09-28-001). What Claude can fetch from a drive is in the capability table in `AGENT_KERNEL.md`, not restated here.
 
 ### Code / theme
-1. `design-system/current/ppbf-theme.css` is the seam; Golden Era materials (paper/brass/leather) sit **on** the real-gym plate.
+1. `design-system/current/ppbf-theme.css` is the seam; Golden Era materials (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4: paper, brass, leather and the rest, plus dark glass where it fits) sit **on** the real-gym plate.
 2. Never reintroduce stock-gym gradients or fake brick as the rendered authority.
 
 ---

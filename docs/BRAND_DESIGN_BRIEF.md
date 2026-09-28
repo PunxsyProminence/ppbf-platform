@@ -33,8 +33,11 @@ cannot read the app's CSS.
 for forty years. Oiled leather, cast brass, a slate board with today's sessions on
 it, a cork wall of pinned notes, and a stamp pad for anything official.
 
-Not a flat "tactical" look and not glossy skeuomorphism: **every surface is one of
-five real materials** — leather, brass, slate, cork, paper (Law 6). Most hardware in
+Not a flat "tactical" look and not glossy skeuomorphism: **every surface is a real
+material**. The five this brief was written around (leather, brass, slate, cork,
+paper) were Law 6, now retired (OD-2026-09-28-009); Golden Era's materials replace
+them (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4, plus dark glass where it
+fits, owner-approved 2026-09-28, OD-2026-09-28-014). Most hardware in
 a gym run forty years on donations is *oxidized, not polished* — so patina is
 load-bearing and polished brass is reserved for the few things that would actually
 see a polishing rag.

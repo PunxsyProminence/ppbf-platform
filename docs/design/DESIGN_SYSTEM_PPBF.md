@@ -2,9 +2,10 @@
 
 > **Look (2026-09-28):** Golden Era, `docs/GOLDEN-ERA-V1-CONTRACT.md`. Of the eight laws, 2, 3, 5 and 7 still bind; 1, 4, 6 and 8 are retired (OD-2026-09-28-009).
 
-**This is not the design system.** `design-system/README.md` is, and it stays
-canonical for the visual language: the eight Laws, the six rooms, the type
-ladder, the palette, motion, sound, the paper and light systems. Nothing about
+**This is not the design system.** The look is Golden Era
+(`docs/GOLDEN-ERA-V1-CONTRACT.md`). `design-system/README.md` holds the laws
+that still bind (2, 3, 5 and 7; 1, 4, 6 and 8 are retired, OD-2026-09-28-009)
+and points to the CSS, which is the implementation authority. Nothing about
 *what the language is* belongs in this file.
 
 This file covers the one thing that document does not: **how `apps/web`
@@ -58,32 +59,35 @@ that room's ground. Do not expect a Tailwind background utility to override one.
 ## 2. What `globals.css` adds on top, and why
 
 Almost all of it is **aliases**, and that is the single most useful thing to
-know about this file. Its own header (lines 3–14) says so:
+know about this file. Its own header (lines 21–26) says so:
 
-> Everything in the `:root` block that follows is an ALIAS. The app's ~61 pages
-> style themselves with Tailwind arbitrary values reading these legacy names
-> (`bg-[var(--canvas-tan)]`, `text-[var(--safety-locked)]`), so pointing the old
-> names at design-system values re-themes the whole app without editing a single
-> page.
+> THE :root BLOCK BELOW IS A CLOSED VOCABULARY. Everything in it is an ALIAS.
+> The app's pages style themselves with Tailwind arbitrary values reading these
+> legacy names (`bg-[var(--canvas-tan)]`), so pointing the old names at
+> design-system values re-themes the whole app without editing a single page …
 
 | Addition | Where | Why it is not in `ppbf.css` |
 |---|---|---|
-| Legacy token aliases (`--canvas-tan`, `--safety-locked`, `--status-*`, `--skeleton-bg`, …) | `globals.css:17`–~220 | They carry the ~61 pages written *before* the design system. They are a migration shim, not a second vocabulary. |
-| `--status-danger`, `--status-info` | `globals.css:61-62` | `uiStyles.ts` had always referenced these and **neither existed in either sheet**. Anything reaching for them got an invalid substitution — a badge rendering white on transparent. Latent only because the affected exports were unused. |
-| Interactive tap floor | `globals.css:223`–`327` | `ppbf.css` sets `min-height` only on `.btn`. The app needed a default across every interactive target, in `@layer base`. |
-| Gym-floor 55px targets | `globals.css:296` | Law 5 applied to the app's own components: a child in gloves, a cracked screen. |
-| Hard-offset shadows | `globals.css:175` | No design-system equivalent exists, so these stay app-local. |
-| Tailwind spacing-step generation | `globals.css:838`–`920` | Maps Fibonacci space onto Tailwind's `--spacing-*` so `.p-4` resolves to a system value. The comment notes the steps **left out** matter more than the ones included. |
-| Button hierarchy | `globals.css:920`–`1160` | `ppbf.css` defines `.btn`; the app adds the tier system (ghost / danger / middle / canvas restatement / press / disabled) on top. |
-| Retro components, Wall of Names, chalkboard, gym wall, printed paper | `globals.css:489`, `1162`, `1363`, `1500`, `1631` | App-specific compositions built *from* system materials rather than new materials. |
+| Legacy token aliases (`--canvas-tan`, `--safety-locked`, `--status-*`, `--skeleton-bg`, …) | `globals.css:44`–`231` | They carry the ~61 pages written *before* the design system. They are a migration shim, not a second vocabulary. |
+| `--status-danger`, `--status-info` | `globals.css:88-89` | `uiStyles.ts` had always referenced these and **neither existed in either sheet**. Anything reaching for them got an invalid substitution — a badge rendering white on transparent. Latent only because the affected exports were unused. |
+| Interactive tap floor | `globals.css:259`–`365` | `ppbf.css` sets `min-height` only on `.btn`. The app needed a default across every interactive target, in `@layer base`. |
+| Gym-floor 55px targets | `globals.css:332`–`361` | Law 5 applied to the app's own components: a child in gloves, a cracked screen. |
+| Hard-offset shadows | `globals.css:203` | No design-system equivalent exists, so these stay app-local. |
+| Tailwind spacing-step generation | `globals.css:883`–`963` | Maps Fibonacci space onto Tailwind's `--spacing-*` so `.p-4` resolves to a system value. The comment notes the steps **left out** matter more than the ones included. |
+| Button hierarchy | `globals.css:965`–`1205` | `ppbf.css` defines `.btn`; the app adds the tier system (ghost / danger / middle / canvas restatement / press / disabled) on top. |
+| Retro components, Wall of Names, chalkboard, gym wall, printed paper | `globals.css:534`, `1207`, `1408`, `1545`, `1676` | App-specific compositions built *from* system materials rather than new materials. |
 
-**Adding new work:** use the `ppbf.css` tokens directly (`--hide-*`, `--brass-*`,
-`--t-*`, `--s*`). The aliases exist to carry legacy pages, not to be extended.
+**Adding new work:** write against the foundation's mechanics (`--t-*`, `--s*`,
+`--r-*`, `--tap`) and the current theme's own tokens (`globals.css:28-33`). The
+aliases exist to carry legacy pages, not to be extended.
+`legacyVisualVocabulary.test.ts` caps 18 of them by name (`ALIAS_CEILINGS`,
+`legacyVisualVocabulary.test.ts:64-83`, counting .tsx under `app/` and
+`components/` only); the rest are uncapped, so do not extend them.
 
 ### One theme, deliberately
 
-`globals.css:22-25` — there is no second palette and no `[data-theme]` override.
-Law 6's ink ground is available per-surface via `.mat-leather` / `.on-canvas`,
+`globals.css:49-52` — there is no second palette and no `[data-theme]` override.
+The ink ground (from Law 6, now retired) is available per-surface via `.mat-leather` / `.on-canvas`,
 but that is a material choice per screen, not a user toggle. Do not add a theme
 switcher without revisiting that decision.
 
@@ -224,7 +228,7 @@ currently polices into something the type system enforces at the call site.
 
 | Kind of change | File |
 |---|---|
-| A Law, a room, a token value, a material, a type or motion decision | `design-system/README.md` + the sheets `design-system/ppbf.css` imports (`foundation/` for mechanics, `current/` for the look) |
+| A Law, a room, a token value, a material, a type or motion decision | `design-system/README.md` + the sheets `design-system/ppbf.css` imports (`foundation/` for mechanics, `current/` for the look); the look and its materials are `docs/GOLDEN-ERA-V1-CONTRACT.md` (§4) |
 | How `apps/web` consumes any of that; drift; extraction candidates | this file |
 | A new preview | `design-system/foundations/` or `components/`, then `npm run design:manifest` |
 

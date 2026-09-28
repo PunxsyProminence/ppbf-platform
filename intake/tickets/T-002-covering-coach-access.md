@@ -24,11 +24,13 @@ Non-negotiable conventions:
 
 ## Verified problem
 
-`apps/web/src/server/pilot/access.ts:34-42` (`assertCoachAssignedToAthlete`)
+`apps/web/src/server/pilot/access.ts:34-42` at
+[`7a07032b`](https://github.com/PunxsyProminence/ppbf-platform/blob/7a07032b01bf0fae6b982099111452996243bbf7/apps/web/src/server/pilot/access.ts#L34-L42),
+the commit that added this ticket (`assertCoachAssignedToAthlete`)
 does an exact-match query: `athlete_id = $1 and coach_id = $2 and
 organization_id = $3`. There is no concept of a substitute/covering coach
-anywhere in this file or its callers (`assertActorCanAccessAthlete`,
-line 71). A coach who is not the athlete's `coach_id` of record gets
+anywhere in this file or its callers (`assertActorCanAccessAthlete`, which
+calls it at line 71 of the same commit). A coach who is not the athlete's `coach_id` of record gets
 `Forbidden: coach not assigned to athlete` on every athlete-scoped route,
 full stop — including a coach covering a session for the regular coach who
 is out sick.
@@ -95,7 +97,7 @@ scheme without justifying it against these two.
 
 - `npm test -- --runTestsByPath apps/web/src/server/pilot/access.test.ts`
   passes, including the three new cases above.
-- `access.test.ts:90`'s existing "Forbidden for non-assigned athlete" case
+- `access.test.ts:90`'s (at `7a07032b`) existing "Forbidden for non-assigned athlete" case
   still passes unmodified in its assertion (you may add setup, not weaken
   the assertion).
 - If you add the migration: state in your PR that it was NOT applied to

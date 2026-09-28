@@ -65,6 +65,11 @@ jobs:
       - name: Verify package integrity
         run: node scripts/verify-package-integrity.mjs
 
+      # Also above the docs-only fast path: a new owner decision is usually a
+      # docs-only change, and that path skips `npm test`. No node_modules.
+      - name: Check owner decision ids are unique
+        run: node scripts/check-owner-decision-ids.mjs
+
       - name: Test CI surface classifier
         shell: bash
         run: |

@@ -1,4 +1,4 @@
-> **HISTORY (2026-09-28):** Grok no longer has a lane (OD-2026-09-28-001); its plate and variant facts still in force are in the plates README. Current source: `apps/web/public/plates/README.md`.
+> **HISTORY (2026-09-28):** Grok no longer has a lane (OD-2026-09-28-001); its plate and variant facts still in force are in the plates README, and `ppbf.css` is now two imports (#574, `ed755ab7`); its `ppbf.css` line numbers (3480, 3508) are as of `a2e90771`, the commit before. Current source: `apps/web/public/plates/README.md`.
 
 # Grok visual lane
 

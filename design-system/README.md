@@ -72,8 +72,8 @@ to `apps/web/`.
 5. **Kiosk-first sizing.** Anything an athlete touches on the floor: `--tap` (55px)
    targets, `--t-md` (19.1px) type. → `src/design/kioskTapFloor.test.tsx` (targets),
    `src/design/kioskTypeFloor.test.ts` (type).
-6. **RETIRED** — Golden Era's seven materials (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4)
-   replace it. *Every screen is a room; every panel is a real material.* A room supplies wall,
+6. **RETIRED** — Golden Era's materials (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4: seven core
+   materials, plus dark glass approved by OD-2026-09-28-014) replace it. *Every screen is a room; every panel is a real material.* A room supplies wall,
    light, and floor shadow (`.room` + `.room--office/floor/board/file/clinic/night` —
    both classes, always); a ground (`.on-canvas` or default ink) decides the ink. Family
    surfaces stay on the warm ground and take no room. →
