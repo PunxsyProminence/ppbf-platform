@@ -19,7 +19,7 @@ Before editing, check current `main`, `docs/current/ACTIVE_WORK.md`, and open PR
 4. Draft PRs are early visibility, not an approval ceremony.
 5. Re-derive or close materially stale branches instead of repeatedly patching them forward.
 
-Across AI products the agent-role LANES are fixed by OD-2026-09-21-001 and OD-2026-09-25-002 (Jason final; Claude builder; ChatGPT designs and enforces standards, read-only here; Grok visual; see `AGENT_KERNEL.md`, Working channel). Jason's four subject areas are WORK DOMAINS -- visual design, ML training, AI/ML, app build -- not agent lanes and not authority boundaries. Among parallel Claude sessions no permanent Builder/Gatekeeper identity is required: one session may build one change and review another. Independent review is useful for higher-risk work, but executable evidence outranks model agreement.
+Across AI products the agent-role LANES are fixed by OD-2026-09-21-001, OD-2026-09-25-002 and OD-2026-09-26-001 (Jason final; Claude builder; ChatGPT designs and enforces standards, read-only here; Grok visual -- and since OD-2026-09-26-001 visual design is not reserved to one lane: anyone may design and implement it, judged on the work; see `AGENT_KERNEL.md`, Working channel). Jason's four subject areas are WORK DOMAINS -- visual design, ML training, AI/ML, app build -- not agent lanes and not authority boundaries. Among parallel Claude sessions no permanent Builder/Gatekeeper identity is required: one session may build one change and review another. Independent review is useful for higher-risk work, but executable evidence outranks model agreement.
 
 ## Reviewers are separate signals
 
