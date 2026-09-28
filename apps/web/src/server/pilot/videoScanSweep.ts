@@ -172,21 +172,16 @@ export async function sweepQuarantinedVideos(options: {
     // consent check skipped entirely. That is the failure this slice exists to
     // prevent, arriving through the gate meant to stop it.
     //
-    // So the subject is resolved first, and the two destinations ask for
-    // different permissions: Film Study for publication media consent, Teach
-    // Shadow for teaching consent. Neither satisfies the other.
-    //
-    // A teaching video that resolves to NOBODY is treated as consent-missing
-    // rather than as having no guardian to ask. Unverifiable must not read as
-    // permitted here.
+    // So the destination is resolved first. Film Study asks publication media
+    // consent, exactly as before. Teach Shadow asks nobody -- that footage is
+    // training data for a recognizer rather than a record about the person in
+    // frame, and the owner ruled it carries no per-athlete permission and that
+    // filming for it is never restricted.
     const subject = await resolveScanSubject(claim.organization_id, claim.video_session_id);
     let contentSkippedForConsent = false;
     if (config.content === 'vision') {
       if (subject.isTeaching) {
-        // Nothing to ask. Teaching footage is training data for a recognizer,
-        // not a record about the person in frame, and the owner ruled it
-        // carries no per-athlete permission. The restricted link is kept for
-        // safeguarding escalation below, not as a gate.
+        // Nothing to ask, and nobody to ask it of.
       } else if (claim.athlete_id) {
         try {
           await assertGuardianMediaConsent(claim.organization_id, claim.athlete_id);
@@ -245,18 +240,16 @@ export async function sweepQuarantinedVideos(options: {
     // like it succeeded. The row itself is already durably settled by this
     // point, so a failure here costs a delayed escalation, never data loss.
     //
-    // Skipped only when NOBODY can be resolved -- safety_escalations.athlete_id
-    // is not-null with a foreign key to pilot.athletes, so there is nothing to
-    // file against. That is still the unattributed team upload; it is NOT the
-    // teaching case any more.
+    // Skipped when nobody can be resolved -- safety_escalations.athlete_id is
+    // not-null with a foreign key to pilot.athletes, so there is nothing to
+    // file against.
     //
-    // TS-ANON-01: safeguarding is one of the three owner-approved uses of the
-    // restricted link, and it is the use that matters most. A scanner finding
-    // something in a child's footage must still reach that child even though
-    // the video itself names nobody -- anonymity in the teaching corpus was
-    // never meant to mean the platform cannot raise a concern about a real
-    // person.
-    const escalationAthleteId = subject.athleteIds[0] ?? claim.athlete_id;
+    // TEACHING FOOTAGE ALWAYS RESOLVES TO NOBODY, so it never escalates. That
+    // is the cost of the owner's rule that this media names no one, recorded
+    // here rather than argued: an escalation carrying an athlete would be that
+    // identity arriving by a side door, and there is no identity to carry.
+    // Film Study is untouched and still escalates against its own athlete.
+    const escalationAthleteId = subject.isTeaching ? null : claim.athlete_id;
     if (terminal && isEscalatingScanDecision(scan.decision) && escalationAthleteId) {
       await fileEscalation({
         organizationId: claim.organization_id,
