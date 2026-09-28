@@ -494,13 +494,28 @@ export default function TeachShadowHomePage() {
               </div>
             ) : null}
 
+            {/*
+                THREE STATES, AND THE ORDER OF THE TESTS IS THE POINT.
+                Rows first: an error from a failed RELEASE or review-link must
+                not take the queue off the screen, or "that footage could not be
+                released" would be advice about a row that had just vanished.
+                Then the error: a READ that did not come back is not an empty
+                queue, so the empty state is suppressed rather than merely
+                accompanied by the alert. "Nothing is waiting" under a failed
+                read tells a coach the footage they uploaded is gone -- and this
+                queue exists precisely to stop uploads disappearing silently.
+                Same wrong claim the coverage read above refuses to make by
+                falling back to zeros.
+            */}
             {!heldLoaded ? (
               <p className="t-body mt-[var(--s3)]">Reading held footage&hellip;</p>
             ) : held.length === 0 ? (
-              <p className="t-body mt-[var(--s3)]">
-                Nothing is waiting. Footage the content screen clears on its own never
-                appears here &mdash; only takes it could not decide about.
-              </p>
+              heldError ? null : (
+                <p className="t-body mt-[var(--s3)]">
+                  Nothing is waiting. Footage the content screen clears on its own never
+                  appears here &mdash; only takes it could not decide about.
+                </p>
+              )
             ) : (
               <ul className="mt-[var(--s4)] flex flex-col gap-[var(--s3)]">
                 {held.map((item) => (
