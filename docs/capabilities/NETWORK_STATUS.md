@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** a 2026-08-18 status log, not the live handoff surface; its claim lists, holds and "do not implement" items are stale. Current source: `docs/current/ACTIVE_WORK.md` (blocked and parked work) and the live open PR list.
+
 # Capability network — status
 
 What the capability audit found, and what has happened to each finding since.
@@ -136,35 +138,25 @@ the file yourself before acting on any row below.
 
 ---
 
-## URGENT — two credentials are still readable in this repository's git history
+## CORRECTED 2026-09-28 — two PINs remain in this repository's git history; rotation deferred by owner decision
 
-Actionable today, and the action is **rotation**, not a code change.
+An earlier version of this section was headed URGENT and said the credentials survived
+only on stale branches left beside a squash-rewritten `main`, so that deleting or
+rewriting those branches would remove them. That was wrong.
 
-`.github/workflows/deploy-staging.yml` twice carried a PIN as a literal. Both were
-fixed on `main` — but neither fix removed the credential from `origin`, because
-`main`'s history was squash-rewritten while the pre-fix branch commits were left
-in place. **The repository is public, so a plain `git clone` still fetches them.**
+`.github/workflows/deploy-staging.yml` once carried `PILOT_ADMIN_PIN` and
+`PILOT_SHADOW_ATHLETE_PIN` as literals. Both were replaced on `main` (`7745489c`,
+2026-07-18, and `79a18771`, 2026-07-30), but all seven commits that carry them
+(`4422ba35`; `07df1b92`, `3e29fa93`, `909a1e4f`, `b4180e7f`, `3febdd29`, `7d43d594`)
+are ancestors of `main` through the merge `86968226` (2026-07-30). Checked 2026-09-28:
+`git merge-base --is-ancestor` against `bbf299fe` for each, and a count (no values
+printed) of PIN literal lines in each commit's `deploy-staging.yml` -- one or two in
+every one, none at `bbf299fe`. **The repository is
+public, so every clone contains them, and deleting branches does not remove them.**
 
-- `PILOT_ADMIN_PIN` — a 5-digit literal, introduced 2026-07-18, replaced on `main`
-  by `7745489c` the same day.
-- `PILOT_SHADOW_ATHLETE_PIN` — a 6-digit literal, across six commits 2026-07-29 to
-  2026-07-30, replaced on `main` by `79a18771`.
-
-Exact commit SHAs and line numbers are in
-`docs/audit-2026-08-18/PASS-11-infra-secrets.md`. **The values are withheld there
-and are not written anywhere in these audit files, not even partially** — the SHAs
-are enough for the owner to retrieve and rotate them, and a reader without
-repository access learns nothing usable.
-
-The second one is doubly worth acting on because the fix commit's own message
-already described the risk exactly: *"the gate athlete PIN was a literal in a
-public repo"*, against *"a publicly reachable staging login, on an account the
-provisioner writes as active with `must_change_pin=false`"*. The fix was right;
-it just did not reach the history.
-
-**What to do:** rotate both PINs, and delete or rewrite the stale remote branches
-carrying those commits. Removing them from `main` has already been done and is not
-sufficient.
+Rotation is deferred by owner decision OD-2026-09-28-004
+(`docs/current/OWNER_DECISIONS.md`), which records the accepted risk and what was
+checked when it was made. The values are not written in this file.
 
 ## CORRECTED — the video content screen sends frames to a vision service with no consent check
 

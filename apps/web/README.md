@@ -38,10 +38,13 @@ npm start        # serve the production build
 
 ## Database and migrations
 
-Schema changes are applied only through the controlled operator scripts —
-`npm --workspace web run pilot:apply-schema` and the other `pilot:apply-*`
-scripts — from an operator's shell or the manually dispatched
-`apply-migrations` workflow. **No HTTP route ever carries DDL**;
+Schema changes are applied only through the manually dispatched
+`apply-migrations` workflow (`.github/workflows/apply-migrations.yml`), which
+runs this package's `pilot:apply-*` scripts (`pilot:apply-schema` and the rest)
+with the connection string read from the target Container App. Never apply them
+from a laptop or an operator's shell; see
+[`../../docs/AI_DELIVERY_PIPELINE.md`](../../docs/AI_DELIVERY_PIPELINE.md).
+**No HTTP route ever carries DDL**;
 `src/server/pilot/httpRoutesCarryNoDdl.test.ts` fails the build if one does.
 `npm --workspace web run pilot:preflight` verifies environment and config.
 

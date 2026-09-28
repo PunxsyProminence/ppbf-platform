@@ -4,16 +4,16 @@ A standing brief for an agent that owns the questions in this platform that no
 amount of coding can close. Sibling of `docs/EXTERNAL_AUDIT_PROMPTS.md` and
 `docs/HANDOFF_VISUALS.md`.
 
-Read `AGENT_KERNEL.md` first, then `docs/capabilities/NETWORK_STATUS.md` (what
-has already merged, and which items below are blocked on your output rather
-than on code; for what is in flight, query open PRs live with
-`gh pr list --state open`), then `docs/AI_COLLABORATION.md` for collision
+Read `AGENT_KERNEL.md` first, then `docs/current/ACTIVE_WORK.md` (blocked and
+parked work, including items waiting on research rather than on code; for what
+is in flight, query open PRs live with `gh pr list --state open`), then
+`docs/AI_COLLABORATION.md` for collision
 control, then `apps/web/src/server/pilot/formulas/registry.ts` and
 `docs/RESEARCH_EVIDENCE_REGISTRY.md`.
 
 ## Before you start
 
-Private repository, nonprofit serving minors. Never commit or paste
+Public repository, nonprofit serving minors. Never commit or paste
 `apps/web/.env.local`, any connection string, any `AZURE_*` value,
 `PPBF_MS_CLIENT_SECRET`, `PPBF_PILOT_BOOTSTRAP_KEY`, any real athlete or
 guardian name, any real PIN or account id, or anything from `scripts/data/`.

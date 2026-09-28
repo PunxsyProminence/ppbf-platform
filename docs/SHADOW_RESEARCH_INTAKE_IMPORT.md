@@ -51,8 +51,10 @@ These are derived records, and "derived" is doing real work: the chunk rows carr
 publisher **content** as extracted claim text. Whole publisher PDFs stay in the governed archive
 and must never be committed here — but the absence of `.pdf` files in this repository is not
 evidence that licensed content is absent from it. Govern by content, not by file extension.
-This is a private repository; that is why the extracts are currently tolerable, not why they are
-unlimited.
+This repository is **public** (`gh repo view`: `PUBLIC`, checked 2026-09-28), so these extracts
+are publicly readable. The owner accepted that exposure for now in OD-2026-09-28-004
+(`docs/current/OWNER_DECISIONS.md`); making the repository private, or moving the extracts out,
+is a later decision.
 
 ## Safety boundaries
 
@@ -86,33 +88,23 @@ The validation succeeds without a database connection. Expected output ends with
 
 ## Database migration
 
-Apply the read-only triage view through the normal migration workflow or locally:
-
-```bash
-AZURE_POSTGRES_CONNECTION_STRING=<connection-string> \
-PPBF_EXPECTED_POSTGRES_HOSTNAME=<hostname> \
-PPBF_EXPECTED_POSTGRES_DATABASE=<database> \
-npm run pilot:apply-research-triage-view
-```
+Apply the read-only triage view only through the `apply-migrations` workflow
+(`.github/workflows/apply-migrations.yml`, `migration: research-triage-view`), staging first.
+Never from a laptop or a shell.
 
 The view uses `security_invoker=true`, so it does not acquire the view owner's privileges.
 
 ## Import
 
-From `apps/web`:
-
-```bash
-PPBF_ORG_ID=<organization-id> \
-SEED_ACCOUNT_ID=<privileged-account-id> \
-AZURE_POSTGRES_CONNECTION_STRING=<connection-string> \
-PPBF_EXPECTED_POSTGRES_HOSTNAME=<hostname> \
-PPBF_EXPECTED_POSTGRES_DATABASE=<database> \
-npm run seed:shadow:research -- --apply
-```
+Import only through the `import-shadow-research` workflow
+(`.github/workflows/import-shadow-research.yml`). Its inputs, including `scope`,
+`organization_id` and `seed_account_id`, and the order of the steps are in
+[SHADOW_RESEARCH_IMPORT_RUNBOOK.md](SHADOW_RESEARCH_IMPORT_RUNBOOK.md). Never from a laptop or a
+shell.
 
 The five table loads and their post-import verification run in one transaction. Any failure rolls back the full import. Re-running is idempotent on the package IDs and the research-requirement natural key.
 
-The GitHub Actions workflow `.github/workflows/import-shadow-research.yml` provides the same process for staging or production. Apply mode requires the target to be retyped and the phrase `IMPORT RESEARCH` to be entered exactly. Production environment protection rules apply normally.
+Apply mode requires the target to be retyped and the phrase `IMPORT RESEARCH` to be entered exactly. Production environment protection rules apply normally.
 
 ## Make imported evidence retrievable
 
@@ -120,7 +112,7 @@ Import is only the first stage. Retrieval requires all of the following:
 
 1. Generate chunk embeddings with the same embedding deployment used by SHADOW retrieval. Repeat the existing `pilot:backfill-chunk-embeddings` process until no eligible chunks remain.
 2. Index each document so `ingest_state = 'indexed'` and `index_completed_at` is populated.
-3. A qualified evidence reviewer verifies and approves selected sources and documents in `/evidence`.
+3. A qualified evidence reviewer verifies and approves selected sources and documents: in `/evidence` for a gym's own shelf, or with the `approve-library-baseline` workflow for the `__platform__` baseline, which `/evidence` cannot reach (see the runbook).
 4. Confirm active, non-suppressed sources; approved/verified sources and documents; indexed documents; and current-model, non-null chunk embeddings before claiming citations are live.
 
 The SHADOW Library reads the requesting organization's approved shelf plus the reserved `__platform__` baseline. The governed archive is upstream custody; it is not a competing retrieval authority.

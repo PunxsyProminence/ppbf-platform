@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** step 2's shell apply is forbidden -- migrations run only through the `apply-migrations` workflow (`migration: multiorg`), never from a laptop or shell. Current source: [AI_DELIVERY_PIPELINE.md](AI_DELIVERY_PIPELINE.md).
+
 # Multi-Organization Migration Runbook
 
 ## Objective
@@ -14,10 +16,10 @@ Apply multi-organization schema changes, seed bootstrap organization ownership, 
 - Application deployed with multi-org pilot API code.
 
 ## Migration artifacts
-- Base schema: [infra/azure/pilot_slice_postgres.sql](infra/azure/pilot_slice_postgres.sql)
-- Additive migration: [infra/azure/pilot_slice_postgres_multiorg_migration.sql](infra/azure/pilot_slice_postgres_multiorg_migration.sql)
-- Migration runner: [apps/web/scripts/pilot-apply-multiorg-migration.mjs](apps/web/scripts/pilot-apply-multiorg-migration.mjs)
-- Multi-org gate: [apps/web/scripts/pilot-multiorg-gate.mjs](apps/web/scripts/pilot-multiorg-gate.mjs)
+- Base schema: [infra/azure/pilot_slice_postgres.sql](../infra/azure/pilot_slice_postgres.sql)
+- Additive migration: [infra/azure/pilot_slice_postgres_multiorg_migration.sql](../infra/azure/pilot_slice_postgres_multiorg_migration.sql)
+- Migration runner: [apps/web/scripts/pilot-apply-multiorg-migration.mjs](../apps/web/scripts/pilot-apply-multiorg-migration.mjs)
+- Multi-org gate: [apps/web/scripts/pilot-multiorg-gate.mjs](../apps/web/scripts/pilot-multiorg-gate.mjs)
 
 ## Step-by-step execution
 1. Run preflight checks.
@@ -43,7 +45,7 @@ Apply multi-organization schema changes, seed bootstrap organization ownership, 
   This migration originally also created `pilot.staff`, `pilot.messages`, and
   `pilot.skills`. A later audit found zero application code reading or
   writing any of the three, and
-  [infra/azure/pilot_slice_postgres_dead_schema_removal_migration.sql](infra/azure/pilot_slice_postgres_dead_schema_removal_migration.sql)
+  [infra/azure/pilot_slice_postgres_dead_schema_removal_migration.sql](../infra/azure/pilot_slice_postgres_dead_schema_removal_migration.sql)
   dropped all three (and removed their `create table` statements from this
   migration's SQL). They are no longer expected outcomes of running this
   runbook.

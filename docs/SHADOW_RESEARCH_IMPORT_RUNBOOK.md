@@ -6,6 +6,15 @@ embeddings**, then **index and approve**. Import must come first. The other two 
 each other and may be done in either order, but **both are required** — importing alone leaves the
 corpus loaded and invisible, and that is the part most easily missed.
 
+**Updated 2026-09-28.** Since this was written the corpus is split by `scope` (the platform
+baseline in the reserved `__platform__` organization, PPBF's own policy documents in one gym
+organization -- today `ppbf-default-org`, which is not the gym (OD-2026-09-28-007); moving them to
+`punxsy_prominence` is a production write that waits for Jason's per-run approval), and the baseline
+is approved by the `approve-library-baseline` workflow, not on `/evidence` (step 3).
+`docs/PLATFORM_EVIDENCE_BASELINE_HANDOFF.md` records the 2026-08-12/13 production runs;
+`gh run view` shows runs 31649800404, 31652990026, 31653129529 and 31653933104 as successful
+(checked 2026-09-28; their inputs were not re-read). Use the steps below for any re-import.
+
 Rehearsed end to end before this was written: `npm --prefix apps/web run rehearse:shadow:research`
 runs the real importer with `--apply` over the real corpus against a disposable local Postgres. It
 passed. Re-run it any time; it touches nothing remote.
@@ -61,8 +70,10 @@ Dispatch inputs:
 | `confirm_target` | retype the target exactly |
 | `mode` | `dry-run` first, then `apply` |
 | `confirm_import` | for apply mode, exactly `IMPORT RESEARCH` |
-| `organization_id` | **leave blank.** #284 makes the workflow resolve it from the target app's own `ppbf-pilot-default-org-id` secret, masked. Set it only to import for some other organization deliberately. |
-| `seed_account_id` | an **active** account whose role is `platform_owner`, `organization_admin` or `admin`, in that organization |
+| `tables` | `all` (default) writes sources, documents, chunks, the capability map and requirements. `capability_map_only` writes just the capability map -- for backfilling `feeder_tracks` on a baseline that is already approved, where a full import would fail on the review-pair constraint. |
+| `scope` | `platform_baseline` (default) imports everything except PPBF's own house documents, always into `__platform__`; a conflicting `organization_id` is refused. `ppbf_policy` imports only those house documents, for one gym. `whole_corpus` is the pre-split behaviour: everything into one organization. |
+| `organization_id` | Not used for `platform_baseline` (any value other than `__platform__` is refused; the run is forced to `__platform__`). For gym content (`ppbf_policy`), pass **`punxsy_prominence`** explicitly -- the gym's organization (OD-2026-09-28-007). Do not leave it blank: blank resolves to the target app's `ppbf-pilot-default-org-id` secret (#284), and OD-2026-09-28-007 records where the existing policy shelf sits. |
+| `seed_account_id` | an **active** account whose role is `platform_owner`, `organization_admin` or `admin`, in the target organization unless it is a platform owner (`import-shadow-research.mjs`, `SEED_ACCOUNT_TENANT_MISMATCH`). Nobody belongs to `__platform__`, so `platform_baseline` needs a platform-owner account; for `ppbf_policy` use an `organization_admin` of `punxsy_prominence`. |
 
 **Finding `seed_account_id`:** dispatch `check-database` with `check: seed-identity` (#283) and read
 it off the log. It lists organizations and privileged accounts only — never athletes or parents —
@@ -83,7 +94,7 @@ Run dry-run first. It validates the entire package and touches no database.
 **This is the step that is easy to miss, and skipping it makes step 1 look broken.**
 
 The importer reports `embeddings_generated: false` and means it. `searchShadowLibrary` requires
-*both* of these (`shadowLibrary.ts:1013-1014`):
+*both* of these (`shadowLibrary.ts:1087-1088` at `bbf299fe`):
 
 ```sql
 and c.embedding is not null
@@ -117,17 +128,25 @@ that exits cleanly is not the same as a finished backfill.
 Also re-run it after any embedding-model change: the script re-embeds rows whose model has drifted,
 not only `NULL` rows (#232).
 
-### 3. Index, then approve — on `/evidence`, not `/admin/shadow`
+### 3. Index, then approve — `approve-library-baseline` for the baseline, `/evidence` for a gym's shelf
 
 Two corrections to what an earlier draft of this runbook said.
 
-**The controls are on `/evidence`** (`app/evidence/page.tsx`), which holds both the indexing action
-and the evidence-approval action.
+**For a gym's own shelf the controls are on `/evidence`** (`app/evidence/page.tsx`), which holds
+both the indexing action and the evidence-approval action -- not `/admin/shadow`.
+
+**The `__platform__` baseline cannot be approved there.** `/evidence` writes through
+`PATCH /api/pilot/shadow/evidence/review`, which scopes every write to the signed-in account's
+organization, and no account belongs to `__platform__`. Dispatch the `approve-library-baseline`
+workflow instead: `dry-run` first, then `apply` with `APPROVE EVIDENCE`; a blank `organization_id`
+there means `__platform__`. It indexes the pending documents and approves the pending sources and
+documents in one transaction, recording one named platform owner as approver and verifier
+(`apps/web/scripts/pilot-approve-library-baseline.mjs`).
 
 **Indexing comes before approval, and it is not optional.** All 14 imported documents land
 `ingest_state = 'pending'`, while `reviewShadowLibraryDocument` refuses approval until a document is
 indexed with an `index_completed_at`, and retrieval enforces the same predicate
-(`shadowLibrary.ts:561` — `and d.ingest_state = 'indexed'`). Skip it and every document is
+(`searchShadowLibrary`, `shadowLibrary.ts:1083` at `bbf299fe` — `and d.ingest_state = 'indexed'`). Skip it and every document is
 permanently unapprovable and the corpus stays uncitable, with nothing obviously wrong on screen.
 
 Every source and document lands `approval_state = 'pending_review'`, `verification_state =
