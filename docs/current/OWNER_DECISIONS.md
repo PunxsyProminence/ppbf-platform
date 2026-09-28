@@ -91,7 +91,7 @@ and should not try to.
 
 ---
 
-## OD-2026-09-26-001 -- Near-miss records are coach and organization-admin chat context only
+## OD-2026-09-26-002 -- Near-miss records are coach and organization-admin chat context only
 
 **Provenance: PRIMARY.** The owner's answer is recorded verbatim below, and the
 options are reproduced exactly as they were put to him, because the word alone
@@ -262,6 +262,53 @@ UNVERIFIED throughout: whether any such row exists was never measured.
 Built to on branch `local/shadow-near-miss-audience`.
 
 ---
+
+---
+
+## OD-2026-09-26-001 -- Visual design is not one lane's; anyone who makes a good one owns it
+
+**Asked.** Whether a durable, reusable plate generator could land in the
+repository at all, given that `AGENT_KERNEL.md` and `docs/GROK-VISUAL-LANE.md`
+both reserved visual design -- and `GROK-VISUAL-LANE.md` specifically reserved
+*image generation* -- to Grok. ChatGPT's standards review of PR #982 had raised
+it as a blocker: a one-off owner-directed generation is legitimate, but a
+permanent non-Grok production mechanism needs the authority source to say so.
+
+**Jason's answer, verbatim:** *"anyone the makes a good one"*.
+
+Asked in the same exchange whether the stale reference lock should be corrected
+and where his photographs should live, he answered *"let's fix it"* and *"where
+is it at now use it"*.
+
+**What this decides.** Visual design and visual implementation are not reserved
+to Grok. Any lane may design, implement and generate; the work is judged on
+what it is, not on who made it. Grok's lane is unchanged in what it may do --
+nothing is taken away from it.
+
+**What it does not decide.** The standard. "A good one" still means: passes its
+guards, alters no function or role gate or organization boundary or safety
+rule, invents nothing unsupported, removes no existing action, keeps its tests
+meaningful. For a plate, it passes the byte gate AND a human has opened the
+image and checked it against `docs/REAL-GYM-REFERENCE-LOCK.md`. Rewriting
+another lane's approved design out of preference is still out of order; that
+restriction was protecting something real and it survives.
+
+**Supersedes** the third numbered item of OD-2026-09-21-001 ("Grok keeps visual
+design and visual implementation") and its interpretation note ("Visual design
+stays Grok's"), to the extent those read as an exclusive grant. Per this file's
+supersession rule the earlier entry is left standing as written.
+
+**Evidence.** Jason's answers in the build thread, 2026-09-26. The blocker that
+prompted the question is recorded in ChatGPT's standards review of PR #982.
+Amended the same day: `AGENT_KERNEL.md`, `docs/GROK-VISUAL-LANE.md`,
+`docs/GOLDEN-ERA-V1-CONTRACT.md`, `docs/AI_COLLABORATION.md`.
+
+**Why this is written down at all.** It was already the working practice for a
+full day before it was recorded, and the drift that caused was measurable: the
+agent kept reverting to preserving the existing look, because the instruction it
+re-reads every session said visual work was not its to do, while the owner's
+instruction to design lived only in chat. This file's own preamble names that
+failure mode.
 
 ## OD-2026-09-25-003 -- Any coach or admin in the organization may read an athlete's session note
 

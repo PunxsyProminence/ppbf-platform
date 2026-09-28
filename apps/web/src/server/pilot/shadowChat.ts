@@ -439,7 +439,7 @@ export async function retrieveShadowContext(params: {
   // intensity question answered blind to yesterday's critical event is the
   // repeat incident the table exists to prevent. SCOPE OF THAT SENTENCE
   // CHANGED 2026-09-26 and it is no longer true of every caller: under
-  // OD-2026-09-26-001 athletes and parents no longer receive these records,
+  // OD-2026-09-26-002 athletes and parents no longer receive these records,
   // so for them the model IS answering blind, by owner decision, and gets a
   // fixed instruction to defer to the coach instead. The reasoning below
   // still governs the roles that do receive them. Each event carries its
