@@ -133,7 +133,8 @@ on observed leaks.
    -- `coach`, `organization_admin` and legacy `admin`. That is the same set
    `GET /api/pilot/shadow/near-misses` already requires, so the decision closes
    a gap between two surfaces rather than creating a new rule.
-2. Athlete and parent keep ordinary athlete-scoped context. They lose the
+2. Athlete and parent keep ordinary athlete-scoped CHAT PROMPT context -- this
+   decision reaches that path and no other surface. They lose the
    near-miss descriptions, the evidence ids, and any signal that records exist
    or do not exist.
 3. **Redaction was on the table as (b) and was not chosen.** A later lane
