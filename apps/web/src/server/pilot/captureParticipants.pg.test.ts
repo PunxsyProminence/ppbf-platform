@@ -127,6 +127,14 @@ async function seedSessionAndTake(sessionId: string, takeId: string, takeNumber 
   );
 }
 
+async function readRowById(id: string): Promise<Record<string, unknown>> {
+  const result = await client.query(
+    'select * from pilot.video_sessions where video_session_id = $1',
+    [id],
+  );
+  return result.rows[0];
+}
+
 /** Drops everything this migration creates or changes, so each test starts clean. */
 async function resetToPreMigrationState(): Promise<void> {
   await client.query('drop table if exists pilot.video_capture_participants');
@@ -370,6 +378,61 @@ test('the post-migration guard refuses to report success while any teaching row 
   await seedSessionAndTake('rs-1', 'take-1');
   await seedVideo({ id: 'vs-1', athleteId: 'ath-1', takeId: 'take-1', sessionId: 'rs-1' });
   await expect(client.query(participantsSql)).resolves.toBeDefined();
+});
+
+test('the migration is still re-runnable once anonymous teaching footage exists', async () => {
+  /*
+   * THE TRAP THIS REMOVES, and it was one I laid.
+   *
+   * The runner used to assert that at least as many participant links existed
+   * as take-backed videos -- correct while every capture cleared a named
+   * participant first. The owner then ruled that filming to teach the
+   * recognizer is never restricted and names nobody, so teaching videos are
+   * now created with NO link, by design.
+   *
+   * Left in place, that check inverted: each correctly anonymous video pushed
+   * the count further out of balance, so the FIRST teaching upload would make
+   * this migration fail forever after -- including through `migration=all`,
+   * which is how an environment gets rebuilt. Fail-closed rather than
+   * corrupting, but a migration that can never be re-run is a trap for
+   * whoever rebuilds next.
+   *
+   * This seeds exactly the state that used to break it: a take-backed video
+   * with no athlete and no participant link.
+   */
+  await seedSessionAndTake('rs-anon', 'take-anon');
+  await seedVideo({ id: 'vs-anon', athleteId: null, takeId: 'take-anon', sessionId: 'rs-anon' });
+
+  await expect(client.query(participantsSql)).resolves.toBeDefined();
+
+  // Untouched: still take-backed, still nameless, still unlinked.
+  const row = await readRowById('vs-anon');
+  expect(row.capture_take_id).toBe('take-anon');
+  expect(row.athlete_id).toBeNull();
+
+  const links = await client.query(
+    `select count(*)::int as n from pilot.video_capture_participants where video_session_id = 'vs-anon'`,
+  );
+  expect(links.rows[0].n).toBe(0);
+});
+
+test('the runner no longer carries the inverted readiness check', async () => {
+  /*
+   * A SOURCE ASSERTION, and deliberately labelled as one. The runner is an
+   * .mjs module this suite's Node cannot import, so this reads its text
+   * rather than executing it -- it proves the invariant was removed and
+   * cannot be quietly restored, not that the runner behaves. The test above
+   * is what proves the behaviour, against a real database.
+   */
+  const runner = await fs.readFile(
+    path.resolve(__dirname, '../../../scripts/pilot-apply-capture-participants-migration.mjs'),
+    'utf8',
+  );
+
+  expect(runner).not.toMatch(/video_capture_participants\s*\)\s*$/m);
+  expect(runner).toMatch(/teaching_media_anonymous/);
+  // The count comparison itself, in any spacing.
+  expect(runner.replace(/\s+/g, ' ')).not.toMatch(/<= \( select count\(\*\) from pilot\.video_capture_participants/);
 });
 
 test('re-running changes nothing, because a rebuild applies every migration', async () => {

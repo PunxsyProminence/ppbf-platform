@@ -249,18 +249,36 @@ Goals (became Slice 9), activation handoff (became Slice 2). All of #675, #676,
   can write it too (`CoachWorkspace.tsx:749`). Owner decisions
   OD-2026-09-25-001 and OD-2026-09-25-003 record the rules; #974 landed them
   first as `5bc72a31`.
-- **Evidence:** 9 suites / 476 tests, typecheck and eslint clean, and a
-  permanent mutation matrix A/B/C/D/E/F/G1/G2/H, every mutant RED as declared.
-  UNIT level. The read's SQL has never executed against Postgres and no
-  authenticated journey has run, so this is merged-and-unit-proven, NOT
-  staging-verified.
+  A-FIN-09 (#979, merged as `e9bc6d24`; change `2c1a6e3d`) then discharged the
+  one remaining read-path defect in this slice: "Avg RPE" now averages only
+  rows whose `rpe_method` is `athlete_post_session_self_report`
+  (`performanceAnalytics.ts:157`), so a pre-migration readiness answer is never
+  averaged together with a post-session effort answer. `UNKNOWN` rows still
+  count in `sessions_total` and `sessions_completed` because they are real
+  sessions; only their RPE is unusable, and an average over no qualifying rows
+  stays `null` rather than becoming `0`.
+- **Evidence:** UNIT + AUTHENTICATED STAGING PARTIAL.
+  - **Unit.** 9 suites / 476 tests, typecheck and eslint clean, and a permanent
+    mutation matrix A/B/C/D/E/F/G1/G2/H, every mutant RED as declared.
+  - **Authenticated staging, partial, 2026-09-26.** Staging revision
+    `app-ppbf-staging--0000229`, source `9f4d5264`. A real
+    `GET /api/pilot/coach/athlete-session-note` executed against staging
+    Postgres and returned `200 {"today":null}` for an in-organization athlete;
+    a missing `athlete_id` returned 400; an unknown or out-of-organization
+    athlete returned the indistinguishable 403 after the staff role gate; a
+    caller-supplied `organization_id` did not redirect the read; a full page
+    load with seeded roster selection caused zero note reads; one deliberate
+    roster click caused exactly one note read for the chosen athlete, alongside
+    the independent wellness read; the coach UI rendered "SESSION NOTE", "No
+    session started today" and the successful-state refresh control; wellness
+    and note empty states rendered independently; and no "before you start"
+    wording appeared on the coach surface.
+  - **Still NOT staging-verified.** No athlete session or note existed during
+    that check, so Share, Update, Withdraw, rendering of real note text,
+    line-break preservation, attribution copy, and withdrawal propagation to an
+    already open coach panel remain unverified at runtime. Slice 4 is not
+    `STAGED_VERIFIED`.
 - **Remains — MEDIUM:**
-  - **`rpe_method` has no reader.** `contracts.ts:79` says "Read this field
-    only alongside `rpe_method`"; `performanceAnalytics.ts:117` averages every
-    `pilot.sessions` row with no method predicate and renders it as "Avg RPE".
-    Pre-migration rows carry the old pre-session readiness value under
-    `UNKNOWN`, so that number averages two different measurements and labels
-    them as one. This is the next slice (A-FIN-09).
   - No e2e covers the Session Log / check-out path at all.
   - Check-out records no duration or end time, so SHADOW Session Load cannot be
     computed. Whether that belongs here or to a SHADOW slice is an OPEN SCOPING

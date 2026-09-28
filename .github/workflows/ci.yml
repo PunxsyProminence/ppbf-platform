@@ -468,9 +468,58 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.coach_e2e == 'true'
         run: npm --workspace web run test:e2e:coach
 
+      # A-FIN-10's ten session-lifecycle proofs need a DATABASE, and the rest of
+      # this job deliberately has none. AthleteWorkspace is mounted on exactly
+      # one route, /athlete/dashboard, whose role check runs inside the Next
+      # server against Postgres (requirePageRole -> resolvePrincipal), so a
+      # browser-level stub cannot reach it -- see SERVER_GUARDED_ROUTES in
+      # e2e/support/signIn.ts. Without one, those ten tests SKIP, and ten skips
+      # in a green job read as coverage that does not exist.
+      #
+      # The offline runtime (docs/OFFLINE_RUNTIME.md) supplies one: embedded
+      # Postgres with every checked-in migration, synthetic personas, cleared
+      # credentials and a process-level guard that rejects every non-loopback
+      # socket. It is started for THIS step and stopped after it, on its own
+      # port, so no other suite inherits it and none of them change shape.
+      #
+      # Readiness is polled rather than slept on: the first request compiles the
+      # route, and a fixed sleep is either a flake or wasted minutes. Failing to
+      # come up is a FAILURE here, never a reason to fall back to skipping.
+      - name: Start the offline runtime for the athlete journey
+        if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.athlete_e2e == 'true'
+        run: |
+          npm --workspace web run offline -- --reset --port 3120 > "$RUNNER_TEMP/offline-runtime.log" 2>&1 &
+          for attempt in $(seq 1 180); do
+            if curl -sf -o /dev/null http://127.0.0.1:3120/login; then
+              echo "offline runtime ready after ${attempt}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo '::error::the offline runtime did not become ready, so the A-FIN-10 session-lifecycle proofs cannot execute'
+          cat "$RUNNER_TEMP/offline-runtime.log" || true
+          exit 1
+
+      # PPBF_E2E_REQUIRE_ATHLETE_DB is the promise this step makes to the spec:
+      # a database WAS provided, so the ten proofs must run. If the workspace
+      # still does not render, the spec raises instead of skipping.
       - name: Run athlete journey E2E
         if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.athlete_e2e == 'true'
+        env:
+          PPBF_E2E_HOST: 127.0.0.1
+          PPBF_E2E_PORT: '3120'
+          PPBF_E2E_REUSE_EXISTING_SERVER: '1'
+          PPBF_E2E_REQUIRE_ATHLETE_DB: '1'
         run: npm --workspace web run test:e2e:athlete
+
+      # continue-on-error because a runner that is about to be destroyed cannot
+      # leak anything that matters, and a cleanup failure must not turn a real
+      # test result into a red job or a green one. It still prints, so a runtime
+      # that refuses to stop is visible rather than silent.
+      - name: Stop the offline runtime
+        if: always() && steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.athlete_e2e == 'true'
+        continue-on-error: true
+        run: npm --workspace web run offline -- stop
 
       - name: Run guardian journey E2E
         if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.guardian_e2e == 'true'

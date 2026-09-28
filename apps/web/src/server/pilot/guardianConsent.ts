@@ -109,17 +109,18 @@ export async function checkGuardianMediaConsent(
 }
 
 /*
- * ONE IMPLEMENTATION, TWO PURPOSES.
+ * PARAMETERISED BY WAIVER TYPE, though only one type uses it today.
  *
- * Teach Shadow consent and publication consent are different permissions and
- * must be separately grantable and withdrawable -- but "which guardians does
- * this athlete have", "which of their rows is current" and "does this status
- * read as signed" are the same questions for both. The normalisation comment
- * below records a real defect caused by two gates reading that column
- * differently; copying this function for a second waiver type would recreate
- * exactly that asymmetry, one waiver type at a time.
+ * It was split out when Teach Shadow briefly had its own consent, and that
+ * consent has since been removed by owner ruling -- teaching footage is
+ * training data rather than a record about the person filmed, so it asks
+ * nobody. publication media consent is the only caller now.
  *
- * So the waiver TYPE is the only thing that varies.
+ * Kept parameterised rather than folded back in: the normalisation comment
+ * below records a real defect caused by two gates reading the status column
+ * differently, and a copied version of this function for a second purpose
+ * would recreate that asymmetry one waiver type at a time. If another
+ * permission is ever added, it goes through here.
  */
 async function checkGuardianConsentOfType(
   organizationId: string,

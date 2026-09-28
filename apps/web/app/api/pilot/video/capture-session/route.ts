@@ -1,10 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
-import {
-  ensureCaptureParticipant,
-  linkParticipantToSession,
-} from '@/src/server/pilot/captureParticipants';
+import { requireRole } from '@/src/server/pilot/access';
 import {
   advanceTake,
   closeRecordingSession,
@@ -80,11 +76,19 @@ export async function POST(request: NextRequest) {
     if (action === 'create') {
       const rawContext = typeof body?.training_context === 'string' ? body.training_context : '';
       /*
-       * REFUSED SERVER-SIDE, not merely absent from the form's dropdown. A
-       * capture names ONE athlete and the scan sweep checks consent for
-       * exactly that athlete, so a context with a second person in frame would
-       * record two people and ask about one. Withheld until a participant
-       * model can name everyone in a take.
+       * REFUSED SERVER-SIDE, not merely absent from the form's dropdown.
+       *
+       * The original reason was that a capture named one athlete whose consent
+       * was then checked. That reason is gone -- teaching footage names nobody
+       * and asks nobody. What remains is a dataset reason: a take is the unit
+       * that groups angles of ONE attempt, and mitts or sparring put a second
+       * person in frame doing something different, so a single take would
+       * contain two subjects' movement labelled as one. The grouping is what
+       * keeps alternate views of the same punch on the same side of a
+       * train/test split, and it stops meaning that the moment a take holds
+       * two people.
+       *
+       * Withheld until the model can describe more than one subject in a take.
        */
       if (!isSingleSubjectContext(rawContext)) {
         throw new Error(
@@ -93,31 +97,24 @@ export async function POST(request: NextRequest) {
       }
 
       /*
-       * TS-ANON-01: CLEARANCE. The one place in the teaching flow where a real
-       * athlete is named, and it happens BEFORE any teaching asset exists.
+       * TS-ANON-01: THIS SESSION IS OF NOBODY.
        *
-       * Its whole job is identity and consent control: prove this actor may
-       * film this athlete, prove every guardian has current Teach Shadow
-       * consent, and establish the restricted participant. After this returns,
-       * nothing downstream carries the name -- the session payload does not,
-       * the video row does not, and the capture surface never asks for one.
+       * Teaching footage is training data for a recognizer, not a record about
+       * the person in frame, so nothing here names anyone. An athlete_id is
+       * REFUSED rather than accepted-and-ignored: a request carrying one was
+       * written against a rule that no longer holds, and silently dropping it
+       * would leave the caller believing the footage had been attributed.
        *
-       * Consent is checked HERE as well as at upload. Here it stops a coach
-       * filming footage that could never be used; at upload it catches a
-       * guardian who withdrew while filming was in progress. Neither makes the
-       * other redundant.
+       * This closes a side door. The capture screen stopped sending an athlete
+       * when the clearance step was deleted, but the route went on accepting
+       * one -- so the invariant held on the surface and not on the server,
+       * which is where invariants have to hold.
        */
-      const clearedAthleteId = typeof body?.athlete_id === 'string' ? body.athlete_id.trim() : '';
-      const participant = clearedAthleteId
-        ? await (async () => {
-          await assertActorCanAccessAthlete(principal, clearedAthleteId);
-          return ensureCaptureParticipant({
-            organizationId: principal.organizationId,
-            athleteId: clearedAthleteId,
-            createdByAccountId: principal.accountId,
-          });
-        })()
-        : null;
+      if (typeof body?.athlete_id === 'string' && body.athlete_id.trim()) {
+        throw new Error(
+          'Unsupported: Teach Shadow footage names nobody, so a capture session cannot be started against an athlete.',
+        );
+      }
 
       const { session, take } = await createRecordingSession({
         organizationId: principal.organizationId,
@@ -134,13 +131,6 @@ export async function POST(request: NextRequest) {
        * so the worst outcome is a dead session the coach starts again, never
        * footage stored without a guardian behind it.
        */
-      if (participant) {
-        await linkParticipantToSession({
-          organizationId: principal.organizationId,
-          recordingSessionId: session.recordingSessionId,
-          captureParticipantId: participant.capture_participant_id,
-        });
-      }
 
       return NextResponse.json({ ok: true, session: await sessionPayload(session, take) });
     }
