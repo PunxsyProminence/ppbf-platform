@@ -7,6 +7,35 @@ import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import type { ShadowSessionType } from './shadowRouter';
 
+/**
+ * The version of the CONTEXT CONTRACT a job payload was written under.
+ *
+ * A background job does not re-derive the context it is answered from. The
+ * enqueuing request assembles it, stores it on the row, and the worker reads
+ * `payload.authorizedContext` at EXECUTION time -- possibly long after, and
+ * possibly under code that assembles context by different rules. Nothing in
+ * the payload recorded which rules applied, so a job written before a change
+ * and executed after it was answered from the old context with no way for the
+ * worker to know.
+ *
+ * That is not hypothetical. The near-miss audience gate (OD-2026-09-26-001)
+ * removed athlete and parent access to recorded near-miss events in prompt
+ * context; a Heavy Bag job enqueued before it and executed after would still
+ * have carried those records into the answer, and the worker's allowed-role
+ * set includes athlete and parent.
+ *
+ * BUMP THIS whenever a change alters WHAT GOES INTO `authorizedContext` for
+ * any role. Jobs stamped with an older version -- and jobs carrying no stamp
+ * at all, which means they were enqueued before this existed -- are refused
+ * at execution rather than answered from stale context.
+ *
+ * The owner's instruction that produced it, 2026-09-26: "Nothing is real if
+ * anything is waiting." A deploy-time queue check can only look once and
+ * cannot see a job enqueued a second later; this makes the guarantee a
+ * property of the payload instead of a property of timing.
+ */
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 1;
+
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export type JobType =

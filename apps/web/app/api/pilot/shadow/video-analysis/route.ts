@@ -17,7 +17,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { assertGuardianMediaConsent } from '@/src/server/pilot/guardianConsent';
 import { hiddenNotFound, isUuid, jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { enqueueJob, getJobStatusForActor } from '@/src/server/pilot/shadowJobQueue';
+import { enqueueJob, getJobStatusForActor, SHADOW_CONTEXT_CONTRACT_VERSION } from '@/src/server/pilot/shadowJobQueue';
 import { isFilmStudyVisionConfigured } from '@/src/server/pilot/shadowFilmStudy';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 import { assertVideoIsFilmStudyMedia } from '@/src/server/pilot/videoDestination';
@@ -132,6 +132,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         // context string exists to satisfy the same trust envelope every
         // other job type carries.
         authorizedContext: `Film study requested for video session ${video.video_session_id}.`,
+        contextContractVersion: SHADOW_CONTEXT_CONTRACT_VERSION,
       },
     });
 

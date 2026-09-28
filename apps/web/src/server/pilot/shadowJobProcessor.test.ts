@@ -12,6 +12,12 @@ jest.mock('./shadowJobQueue', () => ({
   claimNextJob: jest.fn(),
   completeJob: jest.fn(),
   failJob: jest.fn(),
+  // The real value, not a copy. The worker refuses a payload whose
+  // contract stamp does not match this, and fails closed when the
+  // constant itself is missing, so a mock that omitted it would refuse
+  // every job in this suite for a reason unrelated to what is under test.
+  SHADOW_CONTEXT_CONTRACT_VERSION:
+    jest.requireActual('./shadowJobQueue').SHADOW_CONTEXT_CONTRACT_VERSION,
 }));
 jest.mock('./db', () => ({
   queryOne: jest.fn(),
@@ -51,6 +57,7 @@ function heavyBagJob(): ShadowJob {
     inputPayload: {
       message: 'How can our footwork rotation improve?',
       authorizedContext: 'Recorded gym context for this coach.',
+      contextContractVersion: 1,
       conversationId: 'c0ffee00-1111-4222-8333-444444444444',
       evidenceSnapshot: {
         bundleId: BUNDLE_ID,
@@ -293,6 +300,109 @@ describe('background jobs ask for a budget a real answer fits in', () => {
 // scope refusal must not be retried.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// STALE CONTEXT CONTRACT
+//
+// A background job does not re-derive its context. The enqueuing request
+// assembles it, stores it on the row, and this worker answers from the stored
+// copy at execution time -- under whatever code is deployed by then.
+//
+// So a change to WHAT GOES INTO that context does not reach a job that was
+// already queued. The near-miss audience gate (OD-2026-09-26-001) is the case
+// that produced this: it removed athlete and parent access to recorded
+// near-miss events, and the worker's allowed-role set includes athlete and
+// parent, so a Heavy Bag job enqueued before it and run after would still have
+// carried those records into an answer appended to that conversation.
+//
+// A deploy-time queue check cannot close that: it looks once and cannot see a
+// job enqueued a second later. The stamp makes the guarantee a property of the
+// payload instead of a property of timing.
+//
+// The owner's instruction, 2026-09-26: "Nothing is real if anything is
+// waiting."
+// ---------------------------------------------------------------------------
+describe('a job whose context predates the current contract', () => {
+  // The SAME setup the parity suite above uses. Without it the actor
+  // revalidation fires first and every case here returns
+  // SHADOW_JOB_AUTHORIZATION_REVOKED -- the refusals would have looked right
+  // while proving nothing about the contract stamp, and the positive control
+  // is what exposed it.
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockQueryOne.mockResolvedValue({
+      role: 'coach',
+      athlete_id: null,
+      is_platform_owner: false,
+      organization_status: 'active',
+    });
+    mockCompleteJob.mockResolvedValue(undefined);
+    mockFailJob.mockResolvedValue(undefined);
+    mockAppendAssistantMessage.mockResolvedValue('assistant-msg-1');
+    mockQueueHumanReview.mockResolvedValue('review-1');
+    llmReply('Footwork drill progression for the athlete.');
+  });
+
+  function staleJob(overrides: Record<string, unknown>): ShadowJob {
+    const job = heavyBagJob();
+    return {
+      ...job,
+      inputPayload: { ...(job.inputPayload as Record<string, unknown>), ...overrides },
+    } as ShadowJob;
+  }
+
+  // The population this exists for. A job enqueued before the stamp existed
+  // has no stamp at all, so absence is refused rather than treated as "fine,
+  // this one predates the rule".
+  test('an UNSTAMPED payload is refused and never reaches the model', async () => {
+    const job = staleJob({});
+    delete (job.inputPayload as Record<string, unknown>).contextContractVersion;
+    mockClaimNextJob.mockResolvedValue(job);
+
+    const result = await processNextShadowJob();
+
+    expect(result.error).toBe('SHADOW_JOB_CONTEXT_CONTRACT_STALE');
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockAppendAssistantMessage).not.toHaveBeenCalled();
+  });
+
+  test('a payload stamped with an older contract is refused', async () => {
+    mockClaimNextJob.mockResolvedValue(staleJob({ contextContractVersion: 0 }));
+
+    const result = await processNextShadowJob();
+
+    expect(result.error).toBe('SHADOW_JOB_CONTEXT_CONTRACT_STALE');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  // Terminal, not retried. Re-running a job whose stored context is stale
+  // produces the same stale answer three times and burns the retry budget
+  // proving it -- the same reasoning the scope-forbidden case already uses.
+  test('the refusal is TERMINAL, not retried', async () => {
+    const job = staleJob({});
+    delete (job.inputPayload as Record<string, unknown>).contextContractVersion;
+    mockClaimNextJob.mockResolvedValue(job);
+
+    await processNextShadowJob();
+
+    expect(mockFailJob).toHaveBeenCalledWith(
+      expect.anything(),
+      'SHADOW_JOB_CONTEXT_CONTRACT_STALE',
+      { retryable: false },
+    );
+  });
+
+  // POSITIVE CONTROL. Without it, a guard that refused every job would satisfy
+  // all three assertions above and look correct.
+  test('POSITIVE CONTROL: a currently-stamped payload is answered normally', async () => {
+    mockClaimNextJob.mockResolvedValue(heavyBagJob());
+
+    const result = await processNextShadowJob();
+
+    expect(result.error).toBeUndefined();
+    expect(global.fetch).toHaveBeenCalled();
+  });
+});
+
 function boardSummaryJob(role: ShadowJob['role']): ShadowJob {
   return {
     ...heavyBagJob(),
@@ -303,6 +413,7 @@ function boardSummaryJob(role: ShadowJob['role']): ShadowJob {
       requestMode: 'chat',
       authenticatedRole: role,
       authorizedContext: 'Authorized organization context for this board summary.',
+      contextContractVersion: 1,
       message: 'Summarize governance items for the board.',
       conversationId: 'c0ffee00-1111-4222-8333-444444444444',
     },
