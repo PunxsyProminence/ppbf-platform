@@ -94,10 +94,10 @@ on:
         type: string
       organization_id:
         description: >-
-          organization_id that will own the rows. Leave BLANK to use the target
-          app's own default org secret, which is what you want in almost every
-          case. Only set it to seed a different organization on purpose.
-        required: false
+          organization_id that will own the rows. For gym content pass
+          punxsy_prominence (OD-2026-09-28-007). ppbf-default-org is the
+          platform root organization, not the gym.
+        required: true
         type: string
       seed_account_id:
         description: Existing privileged account_id recorded as the seeder (drill-library and session-scripts)
@@ -135,7 +135,8 @@ jobs:
       # PPBF_SEED_ORG_ID is NOT set here. It is resolved in a step below, because
       # when the operator leaves organization_id blank the value has to be read
       # from the target app's own secret at run time. Setting it at job level too
-      # would leave two sources for one name.
+      # would leave two sources for one name. (The blank case is superseded:
+      # organization_id is now required -- see Resolve Owning Organization.)
       PPBF_SEED_ACCOUNT_ID: ${{ inputs.seed_account_id }}
     steps:
       - name: Confirm Explicit Target And Apply Intent
@@ -234,6 +235,10 @@ jobs:
       # exact secret to answer requests, and the staging E2E gate resolves it
       # the same way -- so the pipeline reads it too, and the operator supplies
       # nothing unless they mean to override it.
+      #
+      # SUPERSEDED 2026-09-28: organization_id is now a required input
+      # (OD-2026-09-28-007: the gym is punxsy_prominence; pass it explicitly).
+      # The blank branch below only runs if a dispatch arrives without a value.
       - name: Resolve Owning Organization
         env:
           SUPPLIED: ${{ inputs.organization_id }}

@@ -97,12 +97,9 @@ const fontBytes = fontFiles.reduce((n, f) => n + statSync(join(ROOT, 'fonts', f)
 /* ---- assemble ------------------------------------------------------------ */
 const manifest = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
-  name: 'PPBF Design System — Leather & Brass',
+  name: 'PPBF Design System — Golden Era V1',
   description:
-    'A skeuomorphic design system for the Punxsutawney Prominence Boxing Foundation platform. '
-    + 'The platform is a building; every screen is a room, and every panel in it is a real object. '
-    + 'Zero external assets: all texture is generated from SVG feTurbulence data URIs and layered '
-    + 'gradients, so a floor kiosk renders with no network.',
+    "The design system for the Punxsy Prominence Boxing and Fitness platform. The active look is Golden Era V1 (../docs/GOLDEN-ERA-V1-CONTRACT.md): current/ppbf-theme.css imports current/ppbf-golden-era.css, which imports the retired Leather & Brass sheet (legacy/ppbf-leather-brass.css) as its base and overrides part of it. Laws 1, 4, 6 and 8 below are retired (OD-2026-09-28-009); laws 2, 3, 5 and 7 stand. build-manifest.mjs hardcodes the laws and the display voice, and generates the rooms, type and token entries from the foundation and legacy sheets only; it never reads the Golden Era sheet, so tokens declared only there are missing here.",
   license: 'MIT',
   generatedBy: 'design-system/build-manifest.mjs',
 

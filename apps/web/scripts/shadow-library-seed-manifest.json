@@ -18,15 +18,6 @@
       "publication_date": "2026-07-15",
       "doctrine_kind": "shadow-event-model",
       "file": "docs/SHADOW_EVENT_MODEL.md"
-    },
-    {
-      "title": "SHADOW AI Technical Companion",
-      "publisher": "Punxsy Prominence",
-      "source_type": "internal_policy",
-      "authority_tier": 2,
-      "publication_date": "2026-07-15",
-      "doctrine_kind": "shadow-ai-technical-companion",
-      "file": "docs/SHADOW_AI_TECHNICAL_COMPANION.md"
     }
   ]
 }
