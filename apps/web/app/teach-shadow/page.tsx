@@ -124,6 +124,17 @@ export default function TeachShadowHomePage() {
   const [released, setReleased] = useState<ReleasedFootage[]>([]);
   const [releasedLoaded, setReleasedLoaded] = useState(false);
   const [releasedError, setReleasedError] = useState('');
+  /*
+   * WHICH ROW IS BEING ARCHIVED RIGHT NOW, and what has been typed for it.
+   *
+   * ONE ID AND ONE STRING, not a map keyed by video. Only one row can be
+   * mid-archive at a time, and a map would let half-written reasons
+   * accumulate against rows nobody went on to archive -- state that then has
+   * to be cleaned up on every list re-read, or quietly attaches an old
+   * sentence to a later decision.
+   */
+  const [archivingId, setArchivingId] = useState('');
+  const [archiveReason, setArchiveReason] = useState('');
 
   /*
    * A CALLBACK RATHER THAN AN INLINE EFFECT BODY, because archiving footage
@@ -309,26 +320,41 @@ export default function TeachShadowHomePage() {
   /*
    * WITHDRAW FOOTAGE FROM THE CORPUS, OR PUT IT BACK.
    *
-   * NO CONFIRMATION DIALOG, and that is a decision rather than an omission:
-   * archive is reversible from this same list, the row stays, and the media is
-   * not deleted. A modal in front of a reversible action trains people to
-   * dismiss modals. The row shows the clip and label counts BEFORE the button,
-   * which is the information a confirmation step would have carried anyway.
+   * STILL NO CONFIRMATION DIALOG. Archiving now asks for a reason first, and
+   * that is NOT a confirmation step wearing a different hat -- the difference
+   * is what the extra moment produces. A modal produces a click, which is why
+   * people learn to dismiss them. This produces a sentence that lands on the
+   * row and stays there for whoever finds the footage missing later.
+   *
+   * Which is why the reason is OPTIONAL. Blocking a reversible housekeeping
+   * action on a text box would turn it into the gate this deliberately is not,
+   * and a required field on a reversible action is answered with "x" within a
+   * week. Archive proceeds empty; the prompt is an invitation, not a toll.
+   *
+   * The counts still sit above the button, so the information a confirmation
+   * step would have carried is still read before anything happens.
+   *
+   * RESTORE STAYS ONE CLICK. Putting footage back needs no justification, and
+   * a form in front of an undo is friction pointing the wrong way.
    *
    * Re-reads both lists afterwards. Archiving changes the coverage counts as
    * well as this list -- that is the point of it -- so a page that refreshed
    * only the row would leave the figures above stating what was true before
    * the click.
    */
-  async function setArchived(videoSessionId: string, action: 'archive' | 'restore') {
+  async function setArchived(videoSessionId: string, action: 'archive' | 'restore', reason?: string) {
     setBusyVideoId(videoSessionId);
     setReleasedError('');
     try {
+      const trimmed = reason?.trim();
       const response = await fetch(`${apiBase()}/api/pilot/video/${videoSessionId}/archive`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
+        // An empty box sends NO reason rather than an empty string. The route
+        // stores what it is given, and '' on the row would read as "a reason
+        // was recorded" to every later reader of scan_detail.
+        body: JSON.stringify(trimmed ? { action, reason: trimmed } : { action }),
       });
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
@@ -337,6 +363,11 @@ export default function TeachShadowHomePage() {
           || (action === 'archive' ? 'That footage could not be archived.' : 'That footage could not be restored.'),
         );
       }
+      // Closed only on success. A failed archive leaves the prompt open with
+      // what was typed in it, so a 409 that says "reload and check" does not
+      // also cost the reason somebody just wrote.
+      setArchivingId('');
+      setArchiveReason('');
       await loadReleased();
       await loadCoverage();
     } catch (error) {
@@ -807,18 +838,81 @@ export default function TeachShadowHomePage() {
                         {item.archive_reason ? ` Reason given: ${item.archive_reason}` : null}
                       </p>
                     ) : null}
-                    <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
-                      <button
-                        type="button"
-                        className={item.archived ? 'btn' : 'btn btn--ghost'}
-                        disabled={busyVideoId === item.video_session_id}
-                        onClick={() => {
-                          void setArchived(item.video_session_id, item.archived ? 'restore' : 'archive');
+                    {archivingId === item.video_session_id ? (
+                      /* THE PROMPT, IN PLACE OF THE BUTTON rather than beside
+                         it. A reason box that sat on every row would be noise
+                         on a list nobody is archiving from, and would be left
+                         empty by everybody who is. Here it is the only thing
+                         to look at, on the row already being acted on.
+
+                         A FORM, so Enter submits. Somebody typing a sentence
+                         should not have to reach for the mouse to finish. */
+                      <form
+                        className="mt-[var(--s3)]"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void setArchived(item.video_session_id, 'archive', archiveReason);
                         }}
                       >
-                        {item.archived ? 'Restore to the corpus' : 'Archive'}
-                      </button>
-                    </div>
+                        <label className="t-eyebrow block" htmlFor={`archive-reason-${item.video_session_id}`}>
+                          Why is this being withdrawn? (optional)
+                        </label>
+                        <input
+                          id={`archive-reason-${item.video_session_id}`}
+                          className="input mt-[var(--s2)]"
+                          type="text"
+                          maxLength={2000}
+                          autoFocus
+                          placeholder="Bad take, wrong subject, test footage&hellip;"
+                          value={archiveReason}
+                          onChange={(event) => { setArchiveReason(event.target.value); }}
+                          disabled={busyVideoId === item.video_session_id}
+                        />
+                        <p className="t-body mt-[var(--s2)]">
+                          Whatever you write here stays on the footage, so the next person to wonder where
+                          it went can read it without asking anybody.
+                        </p>
+                        <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+                          <button
+                            type="submit"
+                            className="btn"
+                            disabled={busyVideoId === item.video_session_id}
+                          >
+                            Archive
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            disabled={busyVideoId === item.video_session_id}
+                            onClick={() => { setArchivingId(''); setArchiveReason(''); }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+                        <button
+                          type="button"
+                          className={item.archived ? 'btn' : 'btn btn--ghost'}
+                          disabled={busyVideoId === item.video_session_id}
+                          onClick={() => {
+                            if (item.archived) {
+                              // Restore takes no reason: an undo needs no
+                              // justification, and a form in front of one is
+                              // friction pointing the wrong way.
+                              void setArchived(item.video_session_id, 'restore');
+                              return;
+                            }
+                            setReleasedError('');
+                            setArchiveReason('');
+                            setArchivingId(item.video_session_id);
+                          }}
+                        >
+                          {item.archived ? 'Restore to the corpus' : 'Archive'}
+                        </button>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
