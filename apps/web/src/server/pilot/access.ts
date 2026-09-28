@@ -84,8 +84,8 @@ export function requireRole(actor: ActorIdentity, allowed: PilotRole[]): void {
    per-route filter can.
 
    WHAT STILL SEES DELETED ATHLETES, deliberately. The compliance path does not
-   pass through here: /api/pilot/admin/data-deletion calls getDeletionStatus,
-   which queries `pilot.athletes where deleted_at is not null` directly and is
+   pass through here: getDeletionStatus (dataDeletion.ts; no route calls it yet --
+   corrected 2026-09-28, this comment said the data-deletion route did) queries `pilot.athletes where deleted_at is not null` directly and is
    untouched by this change (it references none of these helpers -- verified by
    grep, not assumed). Retention reporting keeps working precisely because it
    never asked this file's permission. */

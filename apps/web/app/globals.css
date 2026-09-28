@@ -117,8 +117,9 @@
 
   /* Golden-era pass: the app now speaks the design system's own faces.
 
-     Every family named here is SHIPPED BY THIS REPO — ppbf.css @imports
-     fonts.css, whose @font-face rules resolve to design-system/fonts/*.woff2
+     Every family named here is SHIPPED BY THIS REPO — ppbf.css reaches
+     legacy/legacy-fonts.css (ppbf.css -> current/ppbf-theme.css ->
+     current/ppbf-golden-era.css -> legacy/ppbf-leather-brass.css), whose @font-face rules resolve to design-system/fonts/*.woff2
      and ride the same bundle as the sheet itself. So the determinism argument
      that used to justify the Oswald/Roboto stand-ins now points the other way:
      Alfa Slab One (wood-type display), Oswald (bone-sans UI), Special Elite

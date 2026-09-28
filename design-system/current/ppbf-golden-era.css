@@ -2,17 +2,14 @@
    PPBF GOLDEN ERA V1 — CURRENT VISUAL THEME
    ---------------------------------------------------------------------------
    Status: ACTIVE rendered visual authority for the usable-app release.
-   Date: 2026-08-24 · Lane: Grok visual · Owner: Jason Neale
+   Date: 2026-08-24 · Author: Grok · Owner: Jason Neale
 
-   Authority order (docs/GOLDEN-ERA-V1-CONTRACT.md):
-     1. Functional  — current main source + real APIs (no invented functions)
-     2. Visual      — this sheet + Golden Era contract
-     3. Environmental — docs/REAL-GYM-REFERENCE-LOCK.md + owner photos
-     4. Owner       — Jason's explicit choices
+   Authority order: docs/GOLDEN-ERA-V1-CONTRACT.md (owner decisions govern;
+     docs/current/OWNER_DECISIONS.md).
 
    IDENTITY: When Jason opens the app it must be unmistakably
      - Punxsy Prominence (the real nonprofit)
-     - The real Punxsy Prominence gym (Iron City / blue foam / wood / bags)
+     - The real Punxsy Prominence gym (training-room DNA: docs/REAL-GYM-REFERENCE-LOCK.md §2)
      - Golden Era interface (paper / brass / leather / iron-city feel)
      - Real current PPBF functions
 
@@ -30,8 +27,7 @@
      Never ordinary network failures, loading, empty, form rejection,
      generic overdue, normal validation, ordinary destructive buttons,
      or generic unavailable. Restricted is visually distinct from Locked.
-     Claude's safeguarding-red-guard owns CI enforcement; Grok does not
-     touch those three reserved files.
+     apps/web/src/design/safeguardingRedReservation.test.ts enforces it.
 
    PAGE DNA: Every page has its own feel while flowing from the previous
      (same building, same day, same Golden Era chassis, same Iron City DNA).
@@ -40,7 +36,7 @@
    PLATES: Layer 0 only (the wall the room stands in). Real UI composites
      on top in code. Quiet centre, outer-thirds interest, zero lettering,
      4:4:4, complete SOI/EOI. Real gym DNA required — no stock gym.
-     Type B producer set lives under apps/web/public/plates/ (see contract §9).
+     Type B producer set lives under apps/web/public/plates/ (see apps/web/public/plates/README.md).
 
    IMPLEMENTATION NOTE:
      The full visual implementation (tokens, materials, rooms, stamps, badges,
@@ -92,8 +88,9 @@
    Real-gym plate authority (already wired in legacy PLATES block)
    --------------------------------------------------------------------------
    room--* --plate URLs and plate-07 warm ground remain the layer-0 walls.
-   Drift test before any Mode B plate ship: Iron City / blue-foam / rough-wood
-   / bag DNA visible in the outer thirds; no stock grey brick. */
+   Drift test before any Mode B plate ship: the training-room DNA in
+   docs/REAL-GYM-REFERENCE-LOCK.md §2 visible in the outer thirds (other rooms:
+   docs/ROOM-MAP.md); no stock grey brick. */
 
 /* ==========================================================================
    GOLDEN ERA 008 — THE BOARD (Board Hub)
