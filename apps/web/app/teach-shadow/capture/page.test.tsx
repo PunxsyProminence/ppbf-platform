@@ -77,13 +77,13 @@ const sessionPosts: Array<Record<string, unknown>> = [];
 function mockFetch() {
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.includes('/api/pilot/athletes/list')) {
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ items: [{ athlete_id: 'ath-1', full_name: 'Neeko Neale' }] }),
-      } as Response;
-    }
+    /*
+     * TS-ANON-01: DELIBERATELY NOT ANSWERED. This page must not read the
+     * roster any more -- who is being filmed is settled at clearance, and a
+     * picker here would put the name back on the anonymous surface. The
+     * throw below turns a reintroduced roster fetch into a failing test
+     * rather than a silently passing one.
+     */
     if (url.includes('/api/pilot/video/capture-session')) {
       if (init?.method === 'POST') sessionPosts.push(JSON.parse(String(init.body)));
       return { ok: true, status: 200, json: async () => ({ session: SESSION }) } as Response;
@@ -113,7 +113,6 @@ beforeEach(() => {
 
 async function renderPage() {
   render(<TeachShadowCapturePage />);
-  await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 }
 
 async function openSession() {
@@ -156,7 +155,6 @@ test('the destination is stated before a session even exists', async () => {
 test('a recording carries the take it was started against', async () => {
   await openSession();
 
-  fireEvent.change(screen.getByLabelText(/which athlete/i), { target: { value: 'ath-1' } });
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Record Example for Shadow' }));
   });
@@ -172,14 +170,15 @@ test('a recording carries the take it was started against', async () => {
   // Without this the angles of one attempt cannot be kept on the same side of
   // a train/test split, which is the single property the grouping exists for.
   expect(form.get('capture_take_id')).toBe('take-1');
-  expect(form.get('athlete_id')).toBe('ath-1');
+  // TS-ANON-01: teaching media names nobody, and the server REFUSES an upload
+  // that does. Absence here is the contract, not an omission.
+  expect(form.get('athlete_id')).toBeNull();
   expect(form.get('capture_source')).toBe('in_app_recording');
   expect(form.get('recorded_at')).toEqual(expect.any(String));
 });
 
 test('the take is fixed when recording starts, not when it stops', async () => {
   await openSession();
-  fireEvent.change(screen.getByLabelText(/which athlete/i), { target: { value: 'ath-1' } });
 
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Record Example for Shadow' }));
@@ -216,7 +215,6 @@ test('the camera view is the one that was typed when filming started', async () 
    * tell: a wrong camera_view is a plausible-looking label nobody checks.
    */
   await openSession();
-  fireEvent.change(screen.getByLabelText(/which athlete/i), { target: { value: 'ath-1' } });
   fireEvent.change(screen.getByLabelText(/this camera/i), { target: { value: 'front' } });
 
   await act(async () => {
@@ -234,33 +232,47 @@ test('the camera view is the one that was typed when filming started', async () 
   expect(uploads[0]!.get('camera_view')).toBe('front');
 });
 
+test('nothing stands between a coach and recording', async () => {
+  /*
+   * THE OWNER RULE, PINNED. Filming to teach the recognizer is not gated: no
+   * consent, no clearance, no participant, and no page to pass through first.
+   * A session starts from this screen, and nobody is named anywhere on it.
+   *
+   * This suite has held the opposite twice -- first that the camera refused
+   * until a recording named its athlete, then that a session could only come
+   * from a clearance page. Both were restrictions the owner removed.
+   */
+  await renderPage();
+
+  expect(screen.getByRole('button', { name: 'Start recording session' })).toBeEnabled();
+  expect(screen.queryByLabelText(/which athlete/i)).toBeNull();
+  expect(document.body.textContent ?? '').not.toMatch(/clearance|consent/i);
+});
+
 test('offers only the contexts with one person in frame', async () => {
   await renderPage();
 
+  // Mitts and sparring put a second person in frame. The server refuses them
+  // too; this is the half a coach can see.
   const options = screen.getAllByRole('option').map((option) => option.textContent);
-  /*
-   * Mitts and sparring put a second person in frame whom the row never names
-   * and nothing ever asks consent about. The server refuses them too; this is
-   * the half a coach can see. They come back when a take can name everyone in
-   * it, which is a separate slice.
-   */
   expect(options).toEqual(['Shadowboxing', 'Heavy bag']);
 });
 
-test('refuses to open the camera until the recording can name its athlete', async () => {
+test('TS-ANON-01 -- the camera opens with nobody named', async () => {
+  // The old refusal is gone, and its absence is asserted rather than assumed:
+  // recording starts, and the recorder is actually constructed.
   await openSession();
 
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Record Example for Shadow' }));
   });
 
-  expect(await screen.findByRole('alert')).toHaveTextContent(/choose which athlete/i);
-  expect(recorderInstances).toHaveLength(0);
+  expect(recorderInstances).toHaveLength(1);
+  expect(screen.queryByRole('alert')).toBeNull();
 });
 
 test('an angle chosen from a file joins the same take, and says it was not recorded here', async () => {
   await openSession();
-  fireEvent.change(screen.getByLabelText(/which athlete/i), { target: { value: 'ath-1' } });
 
   const input = document.querySelector('input[type="file"]') as HTMLInputElement;
   await act(async () => {

@@ -106,7 +106,6 @@ const COVERAGE = {
     capture_takes: 19,
     captured_files: 37,
     takes_with_multiple_files: 11,
-    athletes_captured: 23,
   },
   labelling: {
     clips_cut: 64,
@@ -163,7 +162,7 @@ async function renderLoaded() {
   render(<TeachShadowHomePage />);
   // Only rendered once the coverage payload has landed, so awaiting it means
   // every later assertion is against the loaded page, not the loading one.
-  await screen.findByText('Athletes filmed');
+  await screen.findByText('Takes with more than one file');
 }
 
 test('the loaded page makes no model-performance claim: no percentage anywhere, and no figure in the model section', async () => {
@@ -245,7 +244,7 @@ test('every coverage count is rendered from the payload, not from a constant in 
   const fetchMock = mockCoverageFetch(() => jsonResponse({ ok: true, coverage: COVERAGE }));
 
   render(<TeachShadowHomePage />);
-  await screen.findByText('Athletes filmed');
+  await screen.findByText('Takes with more than one file');
 
   // credentials:'include' is what makes this read org-scoped from the session
   // rather than from anything the caller could name. Dropping it would send an
@@ -264,7 +263,10 @@ test('every coverage count is rendered from the payload, not from a constant in 
   expect(valueFor('Files captured')).toBe('37');
   expect(valueFor('Takes recorded')).toBe('19 in 5 sessions');
   expect(valueFor('Takes with more than one file')).toBe('11');
-  expect(valueFor('Athletes filmed')).toBe('23');
+  // TS-ANON-01: removed on purpose. An anonymous corpus cannot honestly
+  // report how many unique people are in it, and a number that looked
+  // authoritative would be worse than no number.
+  expect(screen.queryByText('Athletes filmed')).toBeNull();
   expect(valueFor('Clips cut for labelling')).toBe('64');
   expect(valueFor('Annotation sets submitted')).toBe('41');
   expect(valueFor('Clips with two submitted sets')).toBe('17');
