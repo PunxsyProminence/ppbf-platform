@@ -672,6 +672,25 @@ function releasedSection(): HTMLElement {
   return section as HTMLElement;
 }
 
+function reasonBox(): HTMLElement {
+  return within(releasedSection()).getByLabelText(/why is this being withdrawn/i);
+}
+
+/**
+ * The whole archive gesture: open the prompt, optionally type, submit.
+ *
+ * A helper rather than three lines repeated, because the SHAPE is the thing
+ * under test in several places and a test that inlined it would go on passing
+ * if the prompt silently stopped appearing -- getByRole would just find the
+ * outer button twice.
+ */
+async function archiveWithReason(reason?: string) {
+  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Archive' }));
+  const box = await within(releasedSection()).findByLabelText(/why is this being withdrawn/i);
+  if (reason !== undefined) fireEvent.change(box, { target: { value: reason } });
+  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Archive' }));
+}
+
 test('what archiving would cost is stated before the button, not discovered afterwards', async () => {
   /*
    * A coverage figure that dropped after the click is not a warning, it is a
@@ -735,7 +754,7 @@ test('archiving posts the action and re-reads the figures, not just the row', as
   render(<TeachShadowHomePage />);
 
   await screen.findByText('take-2-front.webm');
-  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Archive' }));
+  await archiveWithReason();
 
   await waitFor(() => {
     expect(requestedUrls(fetchMock).filter((url) => url === COVERAGE_URL)).toHaveLength(2);
@@ -743,6 +762,8 @@ test('archiving posts the action and re-reads the figures, not just the row', as
 
   const archiveCall = fetchMock.mock.calls.find(([input]) => String(input) === ARCHIVE_URL('vs-live'));
   expect(archiveCall).toBeDefined();
+  // No reason typed, so none is SENT -- not an empty string, which would read
+  // as "a reason was recorded" to every later reader of scan_detail.
   expect(JSON.parse(String(archiveCall?.[1]?.body))).toEqual({ action: 'archive' });
   expect(requestedUrls(fetchMock).filter((url) => url === RELEASED_URL)).toHaveLength(2);
 });
@@ -773,9 +794,13 @@ test('a refused archive shows the server reason and leaves the row alone', async
   render(<TeachShadowHomePage />);
 
   await screen.findByText('take-2-front.webm');
-  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Archive' }));
+  await archiveWithReason('wrong subject in frame');
 
   expect(await screen.findByRole('alert')).toHaveTextContent(/changed state while you were looking at it/i);
+  // THE PROMPT STAYS OPEN AND KEEPS WHAT WAS TYPED. A 409 that says "reload
+  // and check" must not also cost somebody the sentence they just wrote --
+  // they would retype it, or more likely not bother.
+  expect(reasonBox()).toHaveValue('wrong subject in frame');
   expect(within(releasedSection()).getByRole('button', { name: 'Archive' })).toBeInTheDocument();
 });
 
@@ -804,4 +829,152 @@ test('no athlete name appears in this section', async () => {
 
   await screen.findByText('take-2-front.webm');
   expect(releasedSection().textContent?.toLowerCase()).not.toContain('athlete');
+});
+
+/*
+ * THE REASON A WITHDRAWAL WAS MADE.
+ *
+ * Archive shipped without this and four files were withdrawn from production
+ * with no answer to "why" beyond a timestamp and an account id. The API always
+ * accepted a reason and the list always rendered one; there was simply no field.
+ *
+ * What these pin is the shape, because the shape is the whole argument: a
+ * prompt that produces a sentence rather than a modal that produces a click,
+ * optional so it never becomes a gate, and on archive only.
+ */
+
+test('Archive opens a prompt rather than withdrawing immediately', async () => {
+  const fetchMock = mockWithReleased([RELEASED_LIVE]);
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-2-front.webm');
+  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Archive' }));
+
+  expect(await within(releasedSection()).findByLabelText(/why is this being withdrawn/i)).toBeInTheDocument();
+  // NOTHING HAS HAPPENED YET. The first click is where somebody realises they
+  // picked the wrong row, so it must not be the click that withdraws it.
+  expect(requestedUrls(fetchMock)).not.toContain(ARCHIVE_URL('vs-live'));
+});
+
+test('the reason reaches the server, trimmed', async () => {
+  const fetchMock = mockWithReleased([RELEASED_LIVE]);
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-2-front.webm');
+  await archiveWithReason('   filmed the wrong athlete   ');
+
+  await waitFor(() => {
+    expect(requestedUrls(fetchMock)).toContain(ARCHIVE_URL('vs-live'));
+  });
+
+  const call = fetchMock.mock.calls.find(([input]) => String(input) === ARCHIVE_URL('vs-live'));
+  expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+    action: 'archive',
+    reason: 'filmed the wrong athlete',
+  });
+});
+
+test('whitespace alone sends no reason at all', async () => {
+  /*
+   * '' and '   ' on the row would both read as "a reason was recorded" to
+   * anybody later querying scan_detail for withdrawals that were explained.
+   * Absent and blank are different facts and must stay different.
+   */
+  const fetchMock = mockWithReleased([RELEASED_LIVE]);
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-2-front.webm');
+  await archiveWithReason('    ');
+
+  await waitFor(() => {
+    expect(requestedUrls(fetchMock)).toContain(ARCHIVE_URL('vs-live'));
+  });
+
+  const call = fetchMock.mock.calls.find(([input]) => String(input) === ARCHIVE_URL('vs-live'));
+  expect(JSON.parse(String(call?.[1]?.body))).toEqual({ action: 'archive' });
+});
+
+test('the reason is optional -- an empty box still archives', async () => {
+  /*
+   * A REQUIRED FIELD ON A REVERSIBLE ACTION IS ANSWERED WITH "x" WITHIN A WEEK.
+   * The point of the prompt is that a useful sentence is easy to write, not
+   * that the platform refuses to act without one.
+   */
+  const fetchMock = mockWithReleased([RELEASED_LIVE]);
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-2-front.webm');
+  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Archive' }));
+  await within(releasedSection()).findByLabelText(/why is this being withdrawn/i);
+  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Archive' }));
+
+  await waitFor(() => {
+    expect(requestedUrls(fetchMock)).toContain(ARCHIVE_URL('vs-live'));
+  });
+});
+
+test('Enter submits, so a typed sentence does not need the mouse', async () => {
+  const fetchMock = mockWithReleased([RELEASED_LIVE]);
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-2-front.webm');
+  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Archive' }));
+  const box = await within(releasedSection()).findByLabelText(/why is this being withdrawn/i);
+  fireEvent.change(box, { target: { value: 'test footage of a desk' } });
+  fireEvent.submit(box.closest('form')!);
+
+  await waitFor(() => {
+    expect(requestedUrls(fetchMock)).toContain(ARCHIVE_URL('vs-live'));
+  });
+  const call = fetchMock.mock.calls.find(([input]) => String(input) === ARCHIVE_URL('vs-live'));
+  expect(JSON.parse(String(call?.[1]?.body)).reason).toBe('test footage of a desk');
+});
+
+test('Cancel withdraws nothing and forgets what was typed', async () => {
+  const fetchMock = mockWithReleased([RELEASED_LIVE]);
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-2-front.webm');
+  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Archive' }));
+  fireEvent.change(await within(releasedSection()).findByLabelText(/why is this being withdrawn/i), {
+    target: { value: 'changed my mind halfway through' },
+  });
+  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Cancel' }));
+
+  expect(requestedUrls(fetchMock)).not.toContain(ARCHIVE_URL('vs-live'));
+  expect(within(releasedSection()).getByRole('button', { name: 'Archive' })).toBeInTheDocument();
+
+  // Reopening starts clean: a sentence abandoned on one row must not arrive
+  // attached to a decision made later.
+  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Archive' }));
+  expect(await within(releasedSection()).findByLabelText(/why is this being withdrawn/i)).toHaveValue('');
+});
+
+test('restore is still one click, with nothing to fill in', async () => {
+  // An undo needs no justification, and a form in front of one is friction
+  // pointing the wrong way.
+  const fetchMock = mockWithReleased([RELEASED_ARCHIVED]);
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-9-desk.webm');
+  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Restore to the corpus' }));
+
+  await waitFor(() => {
+    expect(requestedUrls(fetchMock)).toContain(ARCHIVE_URL('vs-gone'));
+  });
+  expect(within(releasedSection()).queryByLabelText(/why is this being withdrawn/i)).not.toBeInTheDocument();
+  const call = fetchMock.mock.calls.find(([input]) => String(input) === ARCHIVE_URL('vs-gone'));
+  expect(JSON.parse(String(call?.[1]?.body))).toEqual({ action: 'restore' });
+});
+
+test('the prompt says the reason outlives the click', async () => {
+  // Somebody deciding whether to bother typing needs to know who reads it.
+  mockWithReleased([RELEASED_LIVE]);
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-2-front.webm');
+  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Archive' }));
+  await within(releasedSection()).findByLabelText(/why is this being withdrawn/i);
+
+  expect(releasedSection().textContent).toContain('stays on the footage');
 });
