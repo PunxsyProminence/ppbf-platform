@@ -47,7 +47,8 @@ const FEEDBACK_TRIAGE_ROLES = ["admin", "platform_owner"];
 const SHELL =
   "mat-leather sticky top-0 z-50 border-b-2 border-[var(--brass-700)] shadow-[0_3px_10px_rgba(0,0,0,.45)]";
 const BAR =
-  "mx-auto flex w-full max-w-[1600px] flex-wrap items-center justify-between gap-[var(--s4)] px-[var(--s5)] py-[var(--s3)]";
+  "mx-auto flex w-full max-w-[1600px] flex-wrap items-center justify-between gap-[var(--s3)] px-[var(--s4)] py-[var(--s2)] "
+  + "sm:gap-[var(--s4)] sm:px-[var(--s5)] sm:py-[var(--s3)]";
 const EYEBROW =
   "font-mono text-[length:var(--t-xs)] uppercase tracking-[0.32em] text-[color:var(--bone-400)]";
 
@@ -237,7 +238,30 @@ export default function GlobalRoleHeader() {
               anyone who wants it can find it, and saying one short thing
               rather than advertising itself. Nothing in this app needs sound
               to be understood — see useGymSound.ts. */}
-          <SoundToggle />
+          {/* SOUND AND THE BELL LINK STEP OFF THE PHONE BAR, and neither is
+              hidden: both are ACTS or DOORS in the Card Catalog, whose own
+              control -- Jump -- stays on this bar at every width, one tap
+              away. `hidden` rather than a visual clip on purpose: a control
+              that is present to a screen reader and absent to the eye is a
+              worse answer than one that is consistently somewhere else.
+
+              MEASURED, and the reason this is the shape of the fix: at 412px
+              this bar wrapped onto four rows and stood 267px tall, the role
+              masthead under it another 163px, and the first line of the page
+              began at 516px -- 56% of a 915px screen spent before the coach
+              reaches what they opened the page to do.
+
+              WHAT DELIBERATELY DOES NOT STEP OFF. Logout stays: on a tablet
+              bolted to a gym wall, signing out is the control a person needs
+              to find without knowing a palette exists, and burying it is how
+              a shared device keeps somebody else's session. Tell Us stays
+              because it is the control a child taps to say someone hurt them
+              and it has no catalog act to fall back to. The safety badge,
+              the role plate and the room stay because they are the reason
+              this bar is on every route at all. */}
+          <div className="hidden items-center gap-[var(--s3)] sm:flex">
+            <SoundToggle />
+          </div>
           <FeedbackBox />
           {FEEDBACK_TRIAGE_ROLES.includes(session.role) ? (
             <ChromeLink href="/admin/feedback" className={CONTROL_QUIET}>
@@ -256,6 +280,15 @@ export default function GlobalRoleHeader() {
               Operations
             </ChromeLink>
           ) : null}
+          {/* THE BAR'S BELL STAYS AT EVERY WIDTH. It went behind the catalog
+              on the phone in the first draft of this slice and e2e/coach-
+              journey.spec.ts turned red twice for it, correctly: one test
+              asserts the bar is still there by looking for this link -- its
+              own comment calls that "the half that catches a removal that took
+              its neighbours with it" -- and a second uses it as the signal
+              that the chassis has mounted. Re-reading the ruling, it names the
+              duplicate in RoleStandaloneView, not this one. This is the
+              original; the copy one band down is what goes. */}
           <ChromeLink href="/dashboard" className={CONTROL_QUIET}>
             Bell
           </ChromeLink>
