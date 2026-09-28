@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** teaches the retired Leather & Brass look and an old job list. Current source: `docs/GOLDEN-ERA-V1-CONTRACT.md` (look) and `docs/ROOM-MAP.md` (build order, OD-2026-09-28-009).
+
 # Handoff: visual layer
 
 A standing brief for an agent that owns this platform's visual layer. Sibling of
@@ -5,15 +7,15 @@ A standing brief for an agent that owns this platform's visual layer. Sibling of
 access, pasted code, and no stake in believing us. This one assumes the opposite:
 you can read the tree, run the checks, and open a PR.
 
-Read `AGENT_KERNEL.md` first, then `docs/capabilities/NETWORK_STATUS.md` (what
-has already merged, what is in flight, and what is parked — it points you at the
-open PR list for whose files are spoken for rather than copying it), then
+Read `AGENT_KERNEL.md` first, then `docs/current/ACTIVE_WORK.md` (what is
+blocked or parked; what is in flight is the live open PR list,
+`gh pr list --state open`, which also shows whose files are spoken for), then
 `docs/AI_COLLABORATION.md` for collision control, then `design-system/ppbf.css`
 and `design-system/README.md`.
 
 ## Before you start
 
-Private repository, nonprofit serving minors. Never commit or paste
+Public repository, nonprofit serving minors. Never commit or paste
 `apps/web/.env.local`, any connection string, any `AZURE_*` value,
 `PPBF_MS_CLIENT_SECRET`, `PPBF_PILOT_BOOTSTRAP_KEY`, any real athlete or
 guardian name, any real PIN or account id, or anything from `scripts/data/`.
@@ -135,8 +137,7 @@ an athlete's Floor Card: a locker and bench where earned gear hangs on a brass
 hook rail. Seven pieces of kit are **placeholder geometry** — a rectangle
 standing in for hand wraps, a blob for gloves.
 
-> **This file is not on `main`.** It arrives with the `feat/public-login-merge`
-> branch. Work from that branch, or wait for it to merge.
+> **Corrected 2026-09-28:** this file is on `main` (added by #417, `6974bbe1`).
 
 Spec, identical for all seven, taken from the live file:
 

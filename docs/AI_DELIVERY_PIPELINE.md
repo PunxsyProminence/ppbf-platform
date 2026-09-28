@@ -16,6 +16,7 @@ There is no permanent production bot, deploy coordinator, gatekeeper model, or m
 - **GitHub requires a separate approval for every run** of a protected
   workflow. Approving two runs does not carry to later dispatches.
 - No AI may approve the protected GitHub `production` environment, invent a migration attestation, authorize a rollback, weaken a failed gate, or claim live verification from source reading.
+- The one exception, from the owner's workspace rules (L2): when Jason has personally opened the authenticated production-approval page in Claude's in-app browser and explicitly instructs Claude to approve that specific run, Claude may perform the reviewer click. It is not standing approval and never covers a run without his instruction for that run.
 
 The deployment workflows are the control plane. The AI is only a temporary operator of those controls.
 
@@ -43,7 +44,7 @@ For the exact candidate SHA:
    evidence, not `docs/current/PRODUCTION_STATE.json`). Determine whether the range includes schema, migration-runner, environment-variable, auth, organization-isolation, safeguarding, or SHADOW safety changes.
 4. Apply required staging migrations through `.github/workflows/apply-migrations.yml`. Never apply them from a laptop or ad hoc AI shell.
 5. Dispatch `.github/workflows/deploy-staging.yml` for the exact SHA and the applicable gates.
-6. Capture the immutable `sha256:` image digest produced by staging.
+6. Capture the immutable `sha256:` image digest produced by staging, from that run's `staging-image-digest` artifact (`staging-image-digest.txt`) -- never by grepping a run log.
 7. Verify the staging revision, traffic, smoke checks, and any release-specific acceptance probe.
 8. Return one compact release packet:
 
@@ -72,8 +73,11 @@ Production promotion requires a separate explicit instruction from Jason, such a
    on, seed it **before** `deploy-production`, after the migrations: read
    **production's own** seed account fresh (`check-database`, seed-identity,
    production), run `seed-reference-data` as a dry-run, then apply with that
-   account. Never reuse staging's: staging used a lowercase admin address, and
-   production is a different, capital-A account. Deploying first leaves
+   account. In both runs pass `organization_id=punxsy_prominence` explicitly --
+   the gym's organization (OD-2026-09-28-007); do not leave it blank, which
+   resolves to the app's default-org secret. Never reuse staging's account:
+   staging used a lowercase admin address, and production is a different,
+   capital-A account. Deploying first leaves
    production serving code whose catalogs are empty, which the archived
    2026-08-24/25 release record shows, and whose planned sequence was
    migrations, seed identity, seed dry-run and apply, then deploy.
@@ -86,7 +90,7 @@ migrations_complete: CONFIRMED
 allow_rollback: NO
 ```
 
-4. GitHub must halt at the protected `production` environment for Jason's approval. No AI approves that checkpoint.
+4. GitHub must halt at the protected `production` environment for Jason's approval. No AI approves that checkpoint, except as stated once under *Who releases* above.
 5. The workflow must verify the production schema, digest availability, rollback direction, deployment, and smoke checks.
 
 A schema check is verified by running it, not by searching its source.

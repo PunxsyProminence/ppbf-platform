@@ -1,8 +1,15 @@
 # PPBF Data Retention and Deletion Policy
 
 **Effective date:** 2026-08-06  
-**Last updated:** 2026-08-06  
+**Last updated:** 2026-09-28  
 **Policy owner:** Organization Admin (enforcement), Platform Owner (policy changes)
+
+**What is built (checked 2026-09-28 at `bbf299fe`, OD-2026-09-28-008).** Deletion is an
+organization-admin API, `DELETE /api/pilot/admin/data-deletion`
+(`apps/web/app/api/pilot/admin/data-deletion/route.ts`), plus the nightly cleanup job in
+Method 1. No screen calls the API. The `/admin/data-deletion` screen, cascade-marking of
+photos, videos and notes, a 1-year restore, and a compliance report are **NOT BUILT**;
+OD-2026-09-28-008 puts the deletion screen on the build list.
 
 ## Overview
 
@@ -17,6 +24,11 @@ This policy defines how long PPBF retains data about minors and their families, 
 - State-level education and youth-serving organization privacy laws
 
 ## Data Categories and Retention Windows
+
+**What enforces these today:** two windows only. The cleanup job hard-deletes athlete rows
+2 years after `deleted_at` (the table below says 1 year for the athlete record) and guardian
+accounts 1 year after (`apps/web/scripts/pilot-cleanup-deleted-data.mjs:47-48`). No job
+enforces the other windows below, and nothing sets `deleted_at` at age 18.
 
 ### Athletes
 
@@ -57,7 +69,7 @@ This policy defines how long PPBF retains data about minors and their families, 
 ### Method 1: Automatic Deletion (Background Process)
 
 A GitHub Actions workflow (`.github/workflows/retention-cleanup.yml`) runs the
-script `npm run pilot:cleanup-deleted-data` (`scripts/pilot-cleanup-deleted-data.mjs`)
+script `npm run pilot:cleanup-deleted-data` (`apps/web/scripts/pilot-cleanup-deleted-data.mjs`)
 every night at 07:40 UTC. The scheduled run is always a **dry run**: it
 reports what it would delete and hard-deletes nothing. Actually deleting
 requires a human to manually dispatch the same workflow with the `apply`
@@ -75,7 +87,7 @@ unrecoverable.
 
 **Process:**
 1. Query for rows where `deleted_at + retention_window <= now()`
-2. Log the deletion to the audit trail: `event_type: 'DATA_PURGED'`
+2. Log the deletion to the audit trail: `event_type: 'data_purged'`
 3. Hard-delete the row from the database (only when dispatched with `apply=APPLY`; the nightly schedule always dry-runs this step)
 4. Log success with count of rows deleted
 
@@ -84,26 +96,30 @@ hard-delete requires a person with repo access to dispatch the workflow with
 `apply=APPLY`  
 **Audit trail:** ✅ Logged with timestamp, data type, count deleted
 
-### Method 2: Manual Deletion by Admin (On Demand)
+### Method 2: Manual Deletion by an Organization Admin (On Demand)
 
-An organization admin can request immediate deletion of a guardian's account or an athlete's record via the admin console.
+An organization admin deletes a guardian's account or an athlete's record through the API
+`DELETE /api/pilot/admin/data-deletion`. **There is no screen:** `/admin/data-deletion` is NOT
+BUILT, and nothing in the app calls this API.
 
-**Process:**
-1. Admin navigates to `/admin/data-deletion`
-2. Admin selects "Delete guardian account" or "Delete athlete record"
-3. Admin enters the account ID or athlete ID
-4. System displays what will be deleted (summary of linked records)
-5. Admin confirms with reason (optional notes field)
-6. System marks the account/athlete as deleted:
-   - Sets `accounts.deleted_at = now()` for guardian account
-   - Sets `athletes.deleted_at = now()` for athlete record
-7. Cascade-delete all linked photos, videos, training notes
-8. Log to audit trail: `event_type: 'DATA_DELETION_INITIATED'` with actor, target, reason
-9. Display confirmation to admin: "Deletion complete. 14 records marked for purging."
+**Request body:** `{ "entityType": "athlete" | "guardian", "entityId": "<athlete id or guardian account id>", "reason": "<optional>" }`
 
-**Who can trigger:** Organization Admin only  
-**Audit trail:** ✅ Logged with actor, deletion reason, what was deleted  
-**Timing:** Marked for deletion immediately, hard-deleted by background process after retention window
+**What it does** (`apps/web/src/server/pilot/dataDeletion.ts`), in one transaction:
+- Guardian: sets `accounts.deleted_at = now()` and `active_flag = false`, deactivates the
+  guardian's organization membership and revokes their live sessions. The database trigger
+  then withdraws each linked athlete this guardian was the last guardian of (Method 3).
+- Athlete: sets `athletes.deleted_at = now()`; if the athlete has an account, sets its
+  `deleted_at`, clears `active_flag` and revokes its live sessions. Coach observations are
+  retained, not deleted; their count is recorded.
+- Writes one `data_deletion_initiated` audit event with actor, target and reason, and returns
+  counts of what it marked.
+
+**NOT BUILT:** a preview of what will be deleted, a confirmation step, and cascade-marking of
+photos, videos or training notes (the API marks none of them).
+
+**Who can trigger:** `organization_admin` or `admin`, in their own organization only  
+**Audit trail:** ✅ `data_deletion_initiated`, with actor, target and reason  
+**Timing:** Marked deleted immediately; hard-deleted after its window by a Method 1 run dispatched with `apply=APPLY`
 
 ### Method 3: Automatic Cascade on Parent Deletion
 
@@ -132,38 +148,35 @@ Parent account deleted
   → Linked athlete records with no remaining guardian marked deleted
     → That athlete's own account deactivated and marked deleted
     → That athlete's live sessions revoked
-    → All athlete photos marked deleted
-    → All athlete videos marked deleted
-    → All training notes marked deleted
+    → Photos, videos and training notes: NOT BUILT (nothing marks them)
 ```
 
-**Audit trail:** ✅ Parent deletion logged; cascade logged separately
+**Audit trail:** ✅ The guardian's `data_deletion_initiated` event records how many athletes
+the cascade withdrew (`cascade_deleted_athletes`); the cascade writes no event of its own.
 
 ## Data Deletion Workflow
 
 ### Guardian Requests Their Own Deletion
 
-1. Parent contacts the organization (email, phone, or in-app request)
+1. Parent contacts the organization (email or phone; there is no in-app request for account deletion)
 2. Organization admin verifies the request (identity confirmation)
-3. Admin uses the deletion console to initiate: "Delete parent account ID: parent-123"
+3. Admin calls the API with `entityType: "guardian"` and the guardian's account id (no screen yet)
 4. System soft-deletes the account, and any linked athlete record left with no other guardian
-5. Background process hard-deletes after 1-year retention window
+5. Background process hard-deletes the account after the 1-year window (withdrawn athlete rows after 2 years)
 
 ### Athlete Withdraws
 
-1. Coach or admin initiates athlete withdrawal via athlete record UI
-2. System sets `athletes.deleted_at = now()`
-3. All athlete-linked data (photos, videos, notes) is cascade-marked for deletion
-4. Audit logged: "Athlete ath-456 withdrawn by coach-123"
-5. Background process hard-deletes after 2-year retention window
+1. An organization admin calls the API with `entityType: "athlete"` (no screen; a coach cannot -- the server refuses every role but `organization_admin` and `admin`)
+2. System sets `athletes.deleted_at = now()` and closes the athlete's own login, if there is one
+3. Photos, videos and notes are NOT cascade-marked (NOT BUILT); coach observations are retained
+4. Audit logged: `data_deletion_initiated`, with the admin as actor
+5. Background process hard-deletes the athlete row after the 2-year window
 
 ### Age of Majority (18th Birthday)
 
 System has no automatic trigger for age-of-majority. The organization must manually delete when they become aware:
-1. Admin opens `/admin/data-deletion`
-2. Admin manually searches for athlete by name/DOB
-3. Admin confirms: "This athlete is now 18, delete their account"
-4. Same workflow as "Athlete Withdraws" above
+1. Find the athlete's id (the API takes an id; a name/DOB search screen is NOT BUILT)
+2. Same workflow as "Athlete Withdraws" above
 
 **Note:** Future version could automate this via DOB comparison.
 
@@ -171,7 +184,10 @@ System has no automatic trigger for age-of-majority. The organization must manua
 
 ### Database Schema
 
-Every table that holds minor data has deletion tracking:
+Deletion tracking (`deleted_at`) exists on `pilot.athletes` and `pilot.accounts`, added by
+`infra/azure/pilot_slice_postgres_data_retention_deletion_migration.sql`, and on
+`pilot.shadow_chat_sessions` (SHADOW history, a separate path). The other tables holding
+minors' data have none. The pattern, as an example:
 
 ```sql
 -- Example: athletes table
@@ -189,11 +205,13 @@ SELECT * FROM pilot.athletes
 
 ### Audit Trail
 
-Every deletion writes to `pilot.audit_events`:
+Every API deletion writes one `data_deletion_initiated` row to `pilot.audit_events` (an athlete
+deletion shown; a guardian deletion uses `entity_type: "parent_account"` and records
+`cascade_deleted_athletes`). The cleanup job writes one `data_purged` row per applied run.
 
 ```json
 {
-  "event_type": "DATA_DELETION_INITIATED",
+  "event_type": "data_deletion_initiated",
   "actor_account_id": "admin-123",
   "actor_role": "organization_admin",
   "organization_id": "org-1",
@@ -201,12 +219,10 @@ Every deletion writes to `pilot.audit_events`:
   "entity_id": "ath-456",
   "details": {
     "reason": "Athlete withdrew",
-    "deleted_records": {
-      "athletes": 1,
-      "athlete_photos": 3,
-      "athlete_videos": 2,
-      "coach_observations": 8
-    }
+    "observations_retained": 8,
+    "account_deactivated": true,
+    "sessions_revoked": 1,
+    "deleted_at": "2026-09-28T12:00:00.000Z"
   }
 }
 ```
@@ -215,23 +231,22 @@ Every deletion writes to `pilot.audit_events`:
 
 1. **Organization scoping:** A deletion request only affects records in that organization
 2. **Admin-only:** Only users with `role = 'organization_admin'` or `role = 'admin'` can initiate deletions
-3. **Confirmation required:** Admin must explicitly click "Delete" twice (standard confirm flow)
-4. **Audit logged:** Every deletion is logged before it happens
-5. **Reversible for 1 year:** If a deletion was a mistake, the organization can request restoration within 1 year (admin privilege, not self-serve)
+3. **Confirmation required:** NOT BUILT -- there is no screen, so no confirm step
+4. **Audit logged:** the audit event is written in the same transaction as the soft delete, so neither commits without the other
+5. **Reversible for 1 year:** NOT BUILT -- no restore path exists
 
 ## Compliance Verification
 
 The organization can verify compliance by:
 
-1. **Running the audit:** Admin console reports "Data deletion status"
-   - Show count of soft-deleted records pending hard-delete
-   - Show count of hard-deleted records (past 1 year)
-   - Show timeline of last 10 deletions
+1. **Running the audit:** NOT BUILT -- there is no "Data deletion status" report. A server
+   function, `getDeletionStatus` (`apps/web/src/server/pilot/dataDeletion.ts`), computes
+   soft-deleted counts and recent deletions, but no route or screen calls it.
 
 2. **Querying the audit log:**
    ```sql
    SELECT * FROM pilot.audit_events 
-     WHERE event_type LIKE 'DATA_DELETION%' 
+     WHERE event_type IN ('data_deletion_initiated', 'data_purged') 
      AND created_at > now() - interval '1 year'
      ORDER BY created_at DESC;
    ```
@@ -247,7 +262,7 @@ The organization can verify compliance by:
 ## Policy Changes
 
 Changes to retention windows require:
-1. Written approval by organization owner and legal counsel
+1. Written approval by the Platform Owner (the policy owner for changes, above) and legal counsel
 2. Notification to all parents/guardians (email or in-app)
 3. 30-day transition period (new policy applies to new data; old policy applies to existing data for 30 days)
 4. Audit log entry documenting the policy change

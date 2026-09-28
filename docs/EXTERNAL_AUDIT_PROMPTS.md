@@ -14,7 +14,7 @@ An outside model is worth the trouble precisely where it has no stake in believi
 
 ## Before you paste anything
 
-This is a private repository for a nonprofit serving minors. Sending code to an external model
+This is a public repository for a nonprofit serving minors. Sending code to an external model
 sends it to that vendor.
 
 **Never paste:** `apps/web/.env.local`, any connection string, `AZURE_*` values,
