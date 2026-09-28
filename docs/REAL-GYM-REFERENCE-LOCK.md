@@ -66,6 +66,18 @@ photographs show. Resolve before treating either as settled.
 2. Prompt must name the DNA in section 2 above: the brewery-roundel ring with red and blue posts and white pads, honey plank and blackboard-paint walls, the painted red / blue / grey floor zones, the homemade timber and pipe bag frames, flat fluorescent light.
 3. Quiet centre for UI; real gym interest only in outer thirds / edges.
 4. Zero lettering on the plate itself (UI text lives in code).
+5. **THE RING'S ROUNDEL IS A FACT ABOUT THE BUILDING AND MUST NOT APPEAR IN A
+   PLATE.** Section 2 records that the canvas carries a red-and-white circular
+   brewery roundel, and that is true of the room. But a roundel is lettering,
+   and rule 4 forbids lettering, so the two rules were in direct conflict and
+   the conflict was resolved every time in favour of the roundel: an image model
+   given "faded red-and-white circular brewery roundel" paints one, in garbled
+   pseudo-text, usually near the middle of the frame where the UI goes.
+   Discovered 2026-09-26 after three rejected generations of the gym-floor
+   plate. So: where the ring appears in a plate, it appears with the canvas
+   plain, cropped out of frame, or turned away. The same applies to the
+   chalk-written walls, the Everlast banners and the workout boards -- real, and
+   not for plates. A plate is the quiet corner of this gym, not its noticeboard.
 
 ### Mode B (shipped plates)
 1. Plates are layer-0 only (the wall the room stands in).
