@@ -76,7 +76,6 @@ export interface TeachShadowCoverage {
      * file.
      */
     takes_with_multiple_files: number;
-    athletes_captured: number;
   };
   labelling: {
     clips_cut: number;
@@ -166,7 +165,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
       capture_takes: number;
       captured_files: number;
       takes_with_multiple_files: number;
-      athletes_captured: number;
+
     }>(
       `select
          (select count(*)::int from pilot.recording_sessions where organization_id = $1)
@@ -183,10 +182,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
              group by capture_take_id
             having count(*) >= 2
           ) t)
-           as takes_with_multiple_files,
-         (select count(distinct athlete_id)::int from pilot.video_sessions
-           where organization_id = $1 and capture_take_id is not null and athlete_id is not null)
-           as athletes_captured`,
+           as takes_with_multiple_files`,
       [organizationId],
     ),
     query<{
@@ -304,7 +300,6 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
       capture_takes: 0,
       captured_files: 0,
       takes_with_multiple_files: 0,
-      athletes_captured: 0,
     },
     labelling: labelling[0] ?? {
       clips_cut: 0,

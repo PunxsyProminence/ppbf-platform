@@ -31,9 +31,10 @@ import { fromAthleteDrillDetail, type DrillDetailView } from './drills/drillDeta
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
-import { formatGymStamp } from '@/src/lib/gymTime';
+import { formatGymStamp, gymDayIso } from '@/src/lib/gymTime';
 import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
 import type { AthleteDrillDetail } from '@/src/server/pilot/drillLibraryV3';
+import { NO_ATHLETE_NOTE_PLACEHOLDER, isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'attempt-log' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'messages' | 'shadow';
@@ -313,43 +314,6 @@ interface StoredSession {
 type StoredSessionLoadState = 'loading' | 'loaded' | 'unavailable';
 type NotesSaveState = 'idle' | 'saving' | 'saved' | 'failed';
 type AthleteIdentityState = 'loading' | 'resolved' | 'unavailable';
-
-// How long the athlete stops typing before the draft is written to their open
-// session. Short enough that a tablet recycling the tab loses a phrase at
-// worst, long enough that ordinary typing is not one request per keystroke.
-const NOTES_DRAFT_SAVE_DELAY_MS = 1200;
-
-/**
- * The note stored when the athlete wrote nothing before checking in (A-FIN-01).
- *
- * pilot.sessions requires a non-empty note, so something has to be written --
- * and this is that something, solely to satisfy the contract. It is ONE fixed
- * sentence on purpose: it says nothing about the athlete, is built from no
- * input (no wellness answer, no effort, no inferred feeling, no coach text),
- * and is recognised on the way back so it never lands in the athlete's own
- * notes box or reads in their history as a sentence they wrote. See
- * isSystemCheckInNote.
- */
-const NO_ATHLETE_NOTE_PLACEHOLDER = 'No athlete note provided at check-in.';
-
-/**
- * The note check-in stored in the same situation BEFORE A-FIN-01: "Auto
- * check-in readiness GREEN", the band of a 1-10 slider that started at 8 -- so
- * an athlete who touched nothing had "GREEN" written on their session as if
- * they had said it. Nothing writes this form any more. Rows that already carry
- * it are deliberately not rewritten (no migration, no cleanup), so it is still
- * recognised here: read, never written.
- */
-const AUTO_CHECK_IN_NOTE_PATTERN = /^Auto check-in readiness (GREEN|YELLOW|RED)$/;
-
-/**
- * Whether a stored session note is the system's, not the athlete's: today's
- * placeholder or the historical readiness marker. Either one is "no note" to
- * every surface that shows the athlete their own words.
- */
-function isSystemCheckInNote(notes: string): boolean {
-  return notes === NO_ATHLETE_NOTE_PLACEHOLDER || AUTO_CHECK_IN_NOTE_PATTERN.test(notes);
-}
 
 /**
  * The post-session effort question an athlete answers at check-out, on the
@@ -756,6 +720,14 @@ export default function AthleteWorkspace() {
   const [checkInNotes, setCheckInNotes] = useState('');
   const [activeSessionRecord, setActiveSessionRecord] = useState<ActiveSessionRecord | null>(null);
   const [notesSaveState, setNotesSaveState] = useState<NotesSaveState>('idle');
+  /* WHICH DRAFT THE 'failed' STATE IS ABOUT. A send error describes one attempt
+     on one draft; it is not a property of the box. Held so the screen can stop
+     saying "try again" once the athlete has changed what is in the box -- that
+     attempt is no longer retryable, and there may be no button left to retry
+     with. Meaningful only while notesSaveState is 'failed'. For a withdrawal it
+     is the EMPTY box, not the sentinel being written: what the message has to
+     be checked against is what the athlete can see. */
+  const [notesFailedDraft, setNotesFailedDraft] = useState<string | null>(null);
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
@@ -774,33 +746,33 @@ export default function AthleteWorkspace() {
      no Session Load to send. */
   const [postSessionEffort, setPostSessionEffort] = useState<{ sessionId: string; value: number } | null>(null);
 
-  /* ONE SESSION WRITE AT A TIME. The notes draft save and check-out both send
+  /* ONE SESSION WRITE AT A TIME. A note publication and check-out both send
      the WHOLE session row to /api/pilot/sessions/update, and the server applies
-     each one as it arrives with no ordering check -- so a draft save already in
-     flight when check-out is pressed could land after it and put back
+     each one as it arrives with no ordering check -- so a publication already
+     in flight when check-out is pressed could land after it and put back
      completed_flag false and the old rpe, reopening a session the athlete had
-     just closed and erasing their effort answer. Cancelling the draft TIMER
-     (the effect cleanup) cannot stop a request that has already left.
+     just closed and erasing their effort answer. Nothing on this side can
+     recall a request that has already left.
 
-     So every session write joins ONE chain. A draft save does not leave until
+     So every session write joins ONE chain. A publication does not leave until
      every earlier one has landed, and check-out waits for the whole chain
-     before it sends -- remembering only the latest draft is not enough, since
-     two drafts can overlap and the older one could still arrive last. A draft
-     still queued when check-out starts is dropped, which only saves a write:
-     the chain already lands it before check-out, and check-out carries the
-     notes itself. From the moment check-out starts no new draft may join; the
-     effect cleanup already cancels a pending timer once isCheckingOut
-     re-renders, and checkingOutRef makes that refusal independent of render
-     timing. */
+     before it sends -- remembering only the latest is not enough, since two
+     publications can overlap and the older one could still arrive last. A
+     publication still queued when check-out starts is dropped: check-out
+     replays what was last PUBLISHED, so what a coach can read is never
+     something the athlete did not finish sending. From the moment check-out
+     starts no new publication may join -- publishSessionNote refuses while
+     isCheckingOut, and checkingOutRef makes that refusal independent of render
+     timing, because a queued write may not run for several renders. */
   const sessionWriteChainRef = useRef<Promise<void>>(Promise.resolve());
   const checkingOutRef = useRef(false);
-  /* The note the session row holds right now, as far as this tab knows. A
-     draft save that lands WHILE check-out is waiting on the chain updates it
-     here, synchronously, so check-out's empty-box fallback is the latest
-     stored note and not the one captured when Check Out was pressed -- that
-     capture predates the wait and would overwrite the newer note with an
-     older one. Kept in step with activeSessionRecord for every other way the
-     record changes (check-in, rehydrate). */
+  /* The note the session row holds right now, as far as this tab knows -- what
+     a coach can read. A publication that lands WHILE check-out is waiting on
+     the chain updates it here, synchronously, so the note check-out replays is
+     the latest PUBLISHED one and not the one captured when Check Out was
+     pressed -- that capture predates the wait and would overwrite the newer
+     note with an older one. Kept in step with activeSessionRecord for every
+     other way the record changes (check-in, rehydrate). */
   const storedNoteRef = useRef<{ sessionId: string; note: string } | null>(null);
   useEffect(() => {
     storedNoteRef.current = activeSessionRecord
@@ -849,7 +821,45 @@ export default function AthleteWorkspace() {
     return TAB_GROUPS.find((entry) => entry.id === group)?.tabs[0]?.id ?? 'my-dashboard';
   };
   const notesDraft = checkInNotes.trim();
-  const notesStored = notesDraft.length > 0 && notesDraft === activeSessionRecord?.checkInNote;
+  /* WHAT A COACH CAN ACTUALLY SEE RIGHT NOW. The stored note, unless it is the
+     system's sentinel -- which is what an unshared or withdrawn session holds,
+     and means nothing was shared. Not the same thing as the box: the box is a
+     private draft until the athlete shares it. */
+  /* THIS PREDICATE MUST MATCH THE SERVER'S. getTodaySessionNote treats an
+     empty or whitespace-only note as no note, on top of the two system forms
+     -- the column is `text not null` but nothing forbids '' , and the CSV
+     seeder writes around the validator that would reject it. If this screen
+     filtered only the system forms, a whitespace-only row would have the
+     athlete told "your coach can read this" while the coach's read reports
+     nothing there. Two screens disagreeing about whether a child said
+     something is worse than either answer. */
+  const rawStoredNote = activeSessionRecord ? activeSessionRecord.checkInNote : '';
+  const sharedNote = rawStoredNote.trim() !== '' && !isSystemCheckInNote(rawStoredNote)
+    ? rawStoredNote
+    : '';
+  const notesStored = notesDraft.length > 0 && notesDraft === sharedNote;
+  /* The single deliberate action the box offers, or null when there is nothing
+     to do. Emptying the box does NOT withdraw on its own -- it offers the
+     withdrawal, which is what keeps an accidental clear from erasing what a
+     coach can see while still letting an athlete take it back. */
+  const noteAction: 'share' | 'update' | 'withdraw' | null = !activeSessionRecord
+    ? null
+    : notesDraft.length > 0
+      ? (notesDraft === sharedNote ? null : (sharedNote ? 'update' : 'share'))
+      : (sharedNote ? 'withdraw' : null);
+  /* THE SEND ERROR, shown only while it is both TRUE of what is in the box and
+     RETRYABLE: the draft it was sent for is still there, and the action that
+     failed is still on offer. The state alone is not enough for either -- it
+     used to be permanent, so an athlete who cleared the box after a failed
+     Share was told to try again with no button left to try with, and an
+     athlete whose second publication failed was told only "try again" while
+     their coach could still read the version shared before. That last one is
+     the screen misstating what a coach can see, which is the defect this whole
+     slice exists to end. So: what the coach can read is said first and on its
+     own line, and this is added under it, never in place of it. */
+  const noteSendFailed = notesSaveState === 'failed'
+    && notesFailedDraft === notesDraft
+    && noteAction !== null;
   const recentSessions = storedSessions.filter((session) => session.completed).slice(0, 5);
   // The answer for the session that is open now, or null. See postSessionEffort.
   const answeredEffort = postSessionEffort !== null && activeSessionRecord !== null
@@ -1299,7 +1309,24 @@ export default function AthleteWorkspace() {
         .filter((session): session is StoredSession => session !== null)
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 
-      const open = sessions.find((session) => !session.completed) ?? null;
+      /* AN UNCOMPLETED SESSION FROM A PREVIOUS GYM DAY IS NOT TODAY'S.
+         Nothing closes a session the athlete never checked out of, so this
+         used to pick up Tuesday's row on Wednesday and present it as "Session
+         active". Everything typed then wrote through to Tuesday -- including,
+         once a coach can read these, a note the athlete believed they were
+         sending about today. The coach's read asks for today and finds
+         nothing, so the athlete is told their coach can see it and the coach
+         is told there is nothing there.
+
+         Compared in the GYM's day, the same reduction the coach read uses:
+         created_at is an instant, and after about 8pm the UTC date is already
+         tomorrow. Stale rows are left exactly as they are -- not closed, not
+         rewritten -- they simply stop being mistaken for the session the
+         athlete is standing in. */
+      const gymToday = gymDayIso(new Date());
+      const open = sessions.find((session) => (
+        !session.completed && gymDayIso(session.createdAt) === gymToday
+      )) ?? null;
 
       setStoredSessions(sessions);
       setActiveSessionRecord(open
@@ -1339,75 +1366,93 @@ export default function AthleteWorkspace() {
   }, [loadStoredSessions]);
 
   /**
-   * Write the notes box through to the open session while it is still open.
+   * Publish the notes box to the open session -- or withdraw what was
+   * published -- only when the athlete says so.
    *
-   * Notes typed here used to exist only in this tab until check-out, so a
-   * reload, a navigation, or a tablet recycling the tab threw away everything
-   * the athlete had written for their coach. The session record is updated in
-   * place instead, which is also what makes those notes survive a check-out
-   * that never happens.
+   * This used to write through every 1200ms, which was harmless while nothing
+   * read the column: the box and the stored note were the same thing, and the
+   * only reader was the athlete. A-FIN-08 gives it a coach, and a
+   * continuously saved box would put half-typed sentences in front of one --
+   * a child thinking out loud, read as something they meant to say.
+   *
+   * So the box is now a DRAFT, and the stored note is what was SHARED. The
+   * two are reconciled only by a deliberate action:
+   *
+   *   nothing shared, box has text  ->  Share with coach
+   *   shared, box changed           ->  Update coach
+   *   shared, box emptied           ->  Withdraw from coach
+   *
+   * Backspacing to empty still writes nothing. The rule the old comment
+   * protected -- "an emptied box is not a write" -- is kept exactly: an
+   * accidental clear must not erase what a coach can already see. What is new
+   * is that the athlete now has a way to MEAN it, which is what the owner
+   * decision (Jason, 2026-09-25: retractable) requires.
+   *
+   * Withdrawal stores the existing no-note sentinel rather than an empty
+   * string: pilot.sessions.notes is `text not null`, and every reader already
+   * reads that sentence as "no note" (src/shared/sessionNoteSemantics.ts), so
+   * the coach's view empties with no schema change.
    */
-  useEffect(() => {
+  const publishSessionNote = async (value: string) => {
     const record = activeSessionRecord;
-    if (!record || isCheckingOut) {
-      return;
-    }
+    if (!record || isCheckingOut || checkingOutRef.current) return;
 
-    const draft = checkInNotes.trim();
-    // pilot.sessions requires a non-empty note, so an emptied box is not a
-    // write -- clearing it must not erase what was already stored.
-    if (!draft || draft === record.checkInNote) {
-      return;
-    }
+    // The draft this attempt is for, so a failure can be tied to it rather
+    // than left standing over whatever the athlete types next.
+    const attemptedDraft = notesDraft;
+    setNotesSaveState('saving');
+    setNotesFailedDraft(null);
 
-    const timer = setTimeout(() => {
-      // Check-out has started since this timer was set: its write carries the
-      // notes, and a draft save now could only race it. See sessionWriteChainRef.
+    const write = async () => {
+      // Queued behind an earlier publish, and check-out began meanwhile.
       if (checkingOutRef.current) return;
-      const save = async () => {
-        // Queued behind an earlier draft, and check-out began meanwhile.
-        if (checkingOutRef.current) return;
-        setNotesSaveState('saving');
-        try {
-          const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              session_id: record.sessionId,
-              athlete_id: record.athleteId,
-              date: record.date,
-              // Replayed unchanged: this is a notes save, not a rating. For an
-              // open session both are still null/UNKNOWN.
-              rpe: record.rpe,
-              rpe_method: record.rpeMethod,
-              notes: draft,
-              completed_flag: false,
-              created_at: record.createdAt,
-              updated_at: new Date().toISOString(),
-            }),
-          });
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/sessions/update`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: record.sessionId,
+            athlete_id: record.athleteId,
+            date: record.date,
+            // Replayed unchanged: this is a note write, not a rating. For an
+            // open session both are still null/UNKNOWN.
+            rpe: record.rpe,
+            rpe_method: record.rpeMethod,
+            notes: value,
+            completed_flag: false,
+            created_at: record.createdAt,
+            updated_at: new Date().toISOString(),
+          }),
+        });
 
-          if (!response.ok) throw new Error('Notes were not saved.');
+        if (!response.ok) throw new Error('That did not reach your coach.');
 
-          storedNoteRef.current = { sessionId: record.sessionId, note: draft };
-          setActiveSessionRecord((current) => (
-            current && current.sessionId === record.sessionId
-              ? { ...current, checkInNote: draft }
-              : current
-          ));
-          setNotesSaveState('saved');
-        } catch {
-          setNotesSaveState('failed');
-        }
-      };
-      // Chained, never raced: this draft leaves only after every earlier one
-      // has landed. save() records its own failure, so the chain never rejects.
-      sessionWriteChainRef.current = sessionWriteChainRef.current.then(save);
-    }, NOTES_DRAFT_SAVE_DELAY_MS);
+        storedNoteRef.current = { sessionId: record.sessionId, note: value };
+        setActiveSessionRecord((current) => (
+          current && current.sessionId === record.sessionId
+            ? { ...current, checkInNote: value }
+            : current
+        ));
+        setNotesSaveState('saved');
+      } catch {
+        /* Only the UI state fails here. activeSessionRecord and storedNoteRef
+           still hold what the server took last, which is what a coach can
+           read, and nothing in this state machine may overwrite that. */
+        setNotesSaveState('failed');
+        setNotesFailedDraft(attemptedDraft);
+      }
+    };
 
-    return () => clearTimeout(timer);
-  }, [checkInNotes, activeSessionRecord, isCheckingOut]);
+    // Chained, never raced: this write leaves only after every earlier one has
+    // landed, so check-out cannot overwrite it with an older value. write()
+    // records its own failure, so the chain never rejects.
+    sessionWriteChainRef.current = sessionWriteChainRef.current.then(write);
+    await sessionWriteChainRef.current;
+  };
+
+  const handleShareNote = () => publishSessionNote(checkInNotes.trim());
+  const handleWithdrawNote = () => publishSessionNote(NO_ATHLETE_NOTE_PLACEHOLDER);
 
   const handleCreateGoal = async () => {
     if (isCreatingGoal) return;
@@ -1573,16 +1618,21 @@ export default function AthleteWorkspace() {
 
     const sessionId = `session_${Date.now()}`;
     const sessionDate = now.toISOString().slice(0, 10);
-    // The note is the athlete's own words, exactly as typed (trimmed), or --
-    // when they wrote nothing -- the fixed system placeholder, which exists
-    // only because pilot.sessions requires a non-empty note. Until A-FIN-01
-    // the empty case stored "Auto check-in readiness <band>" from a slider
-    // that started at 8, which put an answer on the session that nobody had
-    // given. Nothing the athlete did not write may stand in for their note:
-    // not a wellness answer, not an effort rating, not a guess at how they
-    // feel.
-    const athleteNote = checkInNotes.trim();
-    const checkInNote = athleteNote || NO_ATHLETE_NOTE_PLACEHOLDER;
+    // What this write stores is the fixed system placeholder, always -- see
+    // CHECK-IN SHARES NOTHING below. It exists only because pilot.sessions
+    // requires a non-empty note. Until A-FIN-01 the empty case stored "Auto
+    // check-in readiness <band>" from a slider that started at 8, which put an
+    // answer on the session that nobody had given. Nothing the athlete did not
+    // write may stand in for their note: not a wellness answer, not an effort
+    // rating, not a guess at how they feel -- and since A-FIN-08, not their own
+    // unshared draft either.
+    /* CHECK-IN SHARES NOTHING. Arriving is not sending: the session is
+       created holding the no-note sentinel, and whatever is already in the
+       box stays a draft until the athlete deliberately shares it. It used to
+       publish the box's contents here, which under the old always-saving
+       model was invisible -- now it would put text in front of a coach that
+       the athlete had not chosen to send. */
+    const checkInNote = NO_ATHLETE_NOTE_PLACEHOLDER;
 
     try {
       const sessionResponse = await fetch(`${apiBase()}/api/pilot/sessions`, {
@@ -1620,7 +1670,8 @@ export default function AthleteWorkspace() {
           checkInNote,
           createdAt: now.toISOString(),
         });
-        setNotesSaveState(athleteNote ? 'saved' : 'idle');
+        // Nothing has been shared with a coach yet, whatever is in the box.
+        setNotesSaveState('idle');
         // Where a stored check-in takes the athlete depends on the one gate
         // this screen has (floorLockedPendingCheckIn): with today's wellness
         // recorded, straight to their coach's work; without it, to Wellness,
@@ -1665,7 +1716,11 @@ export default function AthleteWorkspace() {
 
     const record = activeSessionRecord;
     const now = new Date();
-    const notes = checkInNotes.trim();
+    /* The DRAFT is deliberately not read here any more. Check-out used to
+       send `notes || storedNote`, which promoted whatever was sitting in the
+       box into the stored note -- and once a coach reads that column, an
+       unshared draft would be published by the act of checking out. What is
+       stored is what the athlete shared, and check-out preserves it. */
     // Read once, so the value and its method cannot disagree in the body.
     const rpe = answeredEffort;
 
@@ -1673,9 +1728,10 @@ export default function AthleteWorkspace() {
     setIsCheckingOut(true);
 
     try {
-      // Every draft save already on the wire, or queued, lands first, so none
+      // Every publication already on the wire, or queued, lands first, so none
       // can land after this write and undo it. The chain never rejects -- each
-      // draft records its own failure in notesSaveState -- so this only waits.
+      // publication records its own failure in notesSaveState -- so this only
+      // waits.
       await sessionWriteChainRef.current;
       const storedNote = storedNoteRef.current?.sessionId === record.sessionId
         ? storedNoteRef.current.note
@@ -1699,13 +1755,13 @@ export default function AthleteWorkspace() {
           // readiness slider, and promoting it here is the old defect.
           rpe,
           rpe_method: rpe === null ? ('UNKNOWN' as const) : ('athlete_post_session_self_report' as const),
-          // The stored note is the fallback because the session record
-          // requires a note and an empty box must not erase what is already
-          // stored. Read AFTER the wait above, so a draft that landed during
-          // it counts -- see storedNoteRef. On a session nobody wrote a note
-          // for, that is the no-note placeholder, replayed as it was stored
-          // and still recognised as the system's in history.
-          notes: notes || storedNote,
+          // The last PUBLISHED value, replayed unchanged: check-out never
+          // reads the box, so checking out neither publishes a draft nor
+          // erases what was shared. Read AFTER the wait above, so a
+          // publication that landed during it counts -- see storedNoteRef. On
+          // a session nobody shared a note for, that is the no-note sentinel,
+          // still recognised as the system's in history and by the coach read.
+          notes: storedNote,
           completed_flag: true,
           created_at: record.createdAt,
           updated_at: now.toISOString(),
@@ -1724,9 +1780,12 @@ export default function AthleteWorkspace() {
       // keeps the answer on screen for the retry (see the catch below).
       setPostSessionEffort(null);
       const effortLine = rpe === null ? '' : ` Your effort, ${rpe} of 10, is on it too.`;
-      setBackendSyncMessage((notes
-        ? "Logged. What you wrote is on the session for your coach to read."
-        : "Logged. That one is on your card.") + effortLine);
+      // Says what is true of the SHARED note, not of the box. Telling an
+      // athlete their coach can read something they only drafted would be the
+      // same lie in the other direction.
+      setBackendSyncMessage((isSystemCheckInNote(storedNote)
+        ? "Logged. That one is on your card."
+        : "Logged. What you shared is on the session for your coach to read.") + effortLine);
       // Re-read rather than trust the write: the recent list below and the
       // "are you still checked in" question are both answered from the server.
       await loadStoredSessions();
@@ -2382,34 +2441,84 @@ export default function AthleteWorkspace() {
                   <div className="space-y-[var(--s4)]">
                     <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Session active since {checkInTime}</p>
                     {/* Held while check-out is in progress: check-out has already
-                        taken the notes, and no draft save may start now, so
-                        anything typed here would be silently dropped. A refused
-                        check-out releases it again. */}
+                        read what was published, and no publication may start
+                        now, so anything typed here could not be shared before
+                        the session closed. A refused check-out releases it
+                        again. */}
                     <textarea
                       value={checkInNotes}
-                      onChange={(e) => setCheckInNotes(e.target.value)}
+                      onChange={(e) => {
+                        setCheckInNotes(e.target.value);
+                        /* THE FAILURE BELONGS TO THE DRAFT IT WAS SENT FOR.
+                           Change the draft and that attempt cannot be retried,
+                           so its message goes. Only this flag is reset: what
+                           the coach can read lives in the session record, and
+                           no UI state may erase it. */
+                        if (notesSaveState === 'failed' && e.target.value.trim() !== notesFailedDraft) {
+                          setNotesSaveState('idle');
+                        }
+                      }}
                       disabled={isCheckingOut}
                       placeholder="Session notes for your coach..."
                       aria-label="Session notes for your coach"
                       className="textarea input--kiosk h-[89px] disabled:opacity-60"
                     />
-                    <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]" role="status">
-                      {notesSaveState === 'failed'
-                        ? 'Your notes are not saved yet -- this screen could not reach your session. Keep the tab open and keep writing; it will keep trying.'
-                        : notesSaveState === 'saving'
-                          ? 'Saving your notes...'
-                          : notesStored
-                            ? 'Saved. What you wrote stays put, even if this tab closes.'
-                            : notesDraft
-                              ? 'Not saved yet.'
-                              : 'Anything you write here saves as you go.'}
-                    </p>
+                    {/* WHAT THE COACH CAN READ COMES FIRST, always, and a send
+                        error is added under it rather than replacing it: after
+                        a failed Update the coach can still read the version
+                        shared before, and a screen saying only "try again"
+                        hides that. 'Sending...' does replace the line, because
+                        it is this tab's own momentary state and the athlete is
+                        watching the button they just pressed; a failure
+                        persists until something is done about it, so it may
+                        not. One live region, so both lines are announced
+                        together in this order. */}
+                    <div role="status" className="space-y-[var(--s2)]">
+                      <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                        {notesSaveState === 'saving'
+                          ? 'Sending...'
+                          : sharedNote
+                            ? (notesStored
+                                ? 'Your coach can read this.'
+                                : 'Your coach can still read what you shared before. This change is not shared yet.')
+                            : 'Only you can see this until you share it.'}
+                      </p>
+                      {/* Rendered only while the action button below is still
+                          on screen (noteSendFailed requires noteAction), so
+                          "try again" always names something pressable. */}
+                      {noteSendFailed ? (
+                        <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                          That did not reach your coach -- try again.
+                        </p>
+                      ) : null}
+                    </div>
+                    {/* One action at a time, and only when there is something
+                        to do. Sharing is deliberate because a coach reads the
+                        result: a box that published itself would hand a coach
+                        half-formed sentences. Withdrawing is deliberate for
+                        the same reason in reverse -- an athlete who changes
+                        their mind can take it back (owner decision, Jason
+                        2026-09-25), but a stray backspace cannot. */}
+                    {noteAction ? (
+                      <button
+                        type="button"
+                        onClick={() => void (noteAction === 'withdraw' ? handleWithdrawNote() : handleShareNote())}
+                        disabled={isCheckingOut || notesSaveState === 'saving'}
+                        className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
+                      >
+                        {noteAction === 'share'
+                          ? 'Share with coach'
+                          : noteAction === 'update'
+                            ? 'Update coach'
+                            : 'Withdraw from coach'}
+                      </button>
+                    ) : null}
                     {/* POST-SESSION EFFORT (A-FIN-05). Eleven choices, 0 to 10,
                         rather than a slider, for the reason the Wellness panel
                         gives: a range input always has a position, so it
                         records an answer nobody gave. Nothing is selected until
                         the athlete selects it, skipping is said out loud, and
-                        only Check Out writes it -- the notes draft save above
+                        only Check Out writes it -- the note publication above
                         never carries it. */}
                     <fieldset className="space-y-[var(--s2)]">
                       <legend className="t-label mb-[var(--s2)]">{POST_SESSION_EFFORT_QUESTION}</legend>
@@ -2463,12 +2572,16 @@ export default function AthleteWorkspace() {
                     <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">You are not checked in right now.</p>
                     {/* THE PRE-CHECK-IN NOTE (A-FIN-01), where the defaulted
                         readiness slider used to be the only pre-session input.
-                        Optional and empty until the athlete writes in it: what
-                        they write is stored on the session exactly (trimmed),
-                        and leaving it empty stores the fixed no-note
-                        placeholder, which no screen shows back as theirs. It is
-                        the same text the open session's notes box then holds,
-                        so nothing written here is lost at check-in. */}
+                        Optional and empty until the athlete writes in it.
+
+                        A-FIN-08 changed what happens to it. The session is
+                        always created holding the fixed no-note placeholder,
+                        which no screen shows back as theirs; whatever is in
+                        this box carries over into the open session's notes box
+                        as a DRAFT, and is shared with a coach only when the
+                        athlete chooses to share it. Nothing typed here is
+                        lost at check-in, and nothing typed here is sent by
+                        checking in. */}
                     <div className="field">
                       <label className="t-label block mb-[var(--s2)]" htmlFor="pre-check-in-note">
                         Anything your coach should know before you start?
@@ -2481,7 +2594,7 @@ export default function AthleteWorkspace() {
                         className="textarea input--kiosk h-[89px]"
                       />
                       <p id="pre-check-in-note-help" className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
-                        Optional. You can leave it empty. What you write goes on your session when you check in.
+                        Optional. You can leave it empty. Nobody sees this until you check in and choose to share it.
                       </p>
                     </div>
                     <button

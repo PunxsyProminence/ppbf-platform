@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     requireRole(principal, ['organization_admin', 'coach']);
 
     const body = (await request.json().catch(() => null)) as
-      | { action?: unknown; join_code?: unknown; training_context?: unknown; recording_session_id?: unknown }
+      | { action?: unknown; join_code?: unknown; training_context?: unknown; recording_session_id?: unknown; athlete_id?: unknown }
       | null;
 
     const action = typeof body?.action === 'string' ? body.action : '';
@@ -76,15 +76,43 @@ export async function POST(request: NextRequest) {
     if (action === 'create') {
       const rawContext = typeof body?.training_context === 'string' ? body.training_context : '';
       /*
-       * REFUSED SERVER-SIDE, not merely absent from the form's dropdown. A
-       * capture names ONE athlete and the scan sweep checks consent for
-       * exactly that athlete, so a context with a second person in frame would
-       * record two people and ask about one. Withheld until a participant
-       * model can name everyone in a take.
+       * REFUSED SERVER-SIDE, not merely absent from the form's dropdown.
+       *
+       * The original reason was that a capture named one athlete whose consent
+       * was then checked. That reason is gone -- teaching footage names nobody
+       * and asks nobody. What remains is a dataset reason: a take is the unit
+       * that groups angles of ONE attempt, and mitts or sparring put a second
+       * person in frame doing something different, so a single take would
+       * contain two subjects' movement labelled as one. The grouping is what
+       * keeps alternate views of the same punch on the same side of a
+       * train/test split, and it stops meaning that the moment a take holds
+       * two people.
+       *
+       * Withheld until the model can describe more than one subject in a take.
        */
       if (!isSingleSubjectContext(rawContext)) {
         throw new Error(
           `Unsupported training_context: capture currently records one athlete at a time, so it accepts only ${SINGLE_SUBJECT_TRAINING_CONTEXTS.join(' and ')}`,
+        );
+      }
+
+      /*
+       * TS-ANON-01: THIS SESSION IS OF NOBODY.
+       *
+       * Teaching footage is training data for a recognizer, not a record about
+       * the person in frame, so nothing here names anyone. An athlete_id is
+       * REFUSED rather than accepted-and-ignored: a request carrying one was
+       * written against a rule that no longer holds, and silently dropping it
+       * would leave the caller believing the footage had been attributed.
+       *
+       * This closes a side door. The capture screen stopped sending an athlete
+       * when the clearance step was deleted, but the route went on accepting
+       * one -- so the invariant held on the surface and not on the server,
+       * which is where invariants have to hold.
+       */
+      if (typeof body?.athlete_id === 'string' && body.athlete_id.trim()) {
+        throw new Error(
+          'Unsupported: Teach Shadow footage names nobody, so a capture session cannot be started against an athlete.',
         );
       }
 
@@ -95,6 +123,14 @@ export async function POST(request: NextRequest) {
         // narrowed to a real TrainingContext by the refusal above.
         trainingContext: rawContext,
       });
+
+      /*
+       * Not in the same transaction as the session insert, and that is
+       * acceptable because the failure is safe: a session with no participant
+       * link cannot accept uploads at all -- the upload route refuses it --
+       * so the worst outcome is a dead session the coach starts again, never
+       * footage stored without a guardian behind it.
+       */
 
       return NextResponse.json({ ok: true, session: await sessionPayload(session, take) });
     }

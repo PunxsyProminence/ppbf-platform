@@ -1,5 +1,7 @@
 import { isOrganizationAdminRole } from './access';
 import type { PilotRole } from './contracts';
+import { isSystemCheckInNote } from '../../shared/sessionNoteSemantics';
+
 import { query, queryOne } from './db';
 
 export const PASSBOOK_ATTENDANCE_STATUSES = ['present', 'late', 'absent'] as const;
@@ -273,6 +275,15 @@ export interface PassbookAttendanceEntry extends Omit<AttendanceRow, 'organizati
   domain_status: 'canonical' | 'unsupported';
 }
 
+export interface PassbookSessionEntry extends Omit<SessionRow, 'organization_id' | 'notes'> {
+  // Absent, not null, for a reader this text is not addressed to -- the same
+  // distinction attendance already draws. `notes: null` would assert "no note
+  // was written on this session", which is a different fact from "one was and
+  // it is not yours to read", and the first is a lie whenever the second is
+  // true. For a linked guardian the key simply does not appear.
+  notes?: string;
+}
+
 export interface AthletePassbook {
   athlete: Omit<AthleteRow, 'organization_id' | 'coach_id'> & {
     coach_id?: string;
@@ -281,7 +292,7 @@ export interface AthletePassbook {
   };
   pages: {
     attendance: PassbookAttendanceEntry[];
-    sessions: Array<Omit<SessionRow, 'organization_id'>>;
+    sessions: PassbookSessionEntry[];
     readiness: Array<Omit<ReadinessRow, 'organization_id'>>;
     goals: Array<Omit<GoalRow, 'organization_id'>>;
     corner: {
@@ -325,6 +336,37 @@ function normalizeAttendanceStatus(rawStatus: string): PassbookAttendanceStatus 
 
 function attendanceStampCode(status: PassbookAttendanceStatus | null): PassbookAttendanceStampCode | null {
   return status ? status.toUpperCase() as PassbookAttendanceStampCode : null;
+}
+
+function mapSession(row: SessionRow, notesReader: boolean): PassbookSessionEntry {
+  // Second gate on a rule the SQL above already applies, in the shape this
+  // module already uses for attendance: the query is what keeps the column
+  // off the wire, this is what keeps the guarantee independent of the query
+  // text staying correct.
+  //
+  // System text is dropped for EVERY reader, including the athlete whose
+  // session it is. "No athlete note provided at check-in." and the historical
+  // "Auto check-in readiness GREEN" were written by the check-in form, not by
+  // a person, and reading either back as somebody's own words is the thing
+  // isSystemCheckInNote exists to stop.
+  //
+  // A BLANK note is NOT dropped here, deliberately, and this is the one place
+  // that differs from the coach read. There, the shape is { note: string |
+  // null } and an empty note becomes null, which says exactly what it means.
+  // Here the only way to express "nothing" is to omit the key -- and omission
+  // already carries a different meaning in this book: "not in your audience".
+  // Collapsing an empty note into that would tell a guardian and an athlete
+  // the same thing for two different reasons. So an in-audience reader is
+  // handed the empty string and decides how to render it.
+  const stored = typeof row.notes === 'string' ? row.notes : '';
+  const human = notesReader && !isSystemCheckInNote(stored);
+  return {
+    session_id: row.session_id,
+    date: row.date,
+    rpe: row.rpe,
+    ...(human ? { notes: stored } : {}),
+    completed_flag: row.completed_flag,
+  };
 }
 
 function mapAttendance(row: AttendanceRow, staffReader: boolean): PassbookAttendanceEntry {
@@ -405,6 +447,22 @@ export async function getAthletePassbook(
    */
   const staffReader = isOrganizationAdminRole(viewerRole) || viewerRole === 'coach';
 
+  // WHO MAY BE HANDED pilot.sessions.notes AT ALL (A-FIN-08, owner decision
+  // 2026-09-25: close the guardian exposure "in this slice").
+  //
+  // An ALLOWLIST, not `!== 'parent'`. The athlete's own note is theirs and
+  // staff already read it through the dedicated coach route; every other
+  // reader -- starting with the linked guardian this closes -- gets no note
+  // key. Written this way round so a role added later is silently excluded
+  // rather than silently included, which is the direction a mistake here
+  // should fail.
+  //
+  // A guardian is not a lesser reader of their child's record generally; this
+  // one column is free text written for a coach -- in practice by the child,
+  // though the row cannot prove it -- and nobody has
+  // decided a parent is its audience.
+  const sessionNotesReader = staffReader || viewerRole === 'athlete';
+
   const athlete = await queryOne<AthleteRow>(
     `select organization_id, athlete_id, full_name, dob, weight_class, gym_status, active_flag, coach_id, created_at
      from pilot.athletes
@@ -418,7 +476,7 @@ export async function getAthletePassbook(
 
   const [sessionRows, attendanceRows, readinessRows, goalRows, observationRows, guardianRows, progressionGapRows] = await Promise.all([
     query<SessionRow>(
-      `select organization_id, session_id, date, rpe::float8 as rpe, notes, completed_flag
+      `select organization_id, session_id, date, rpe::float8 as rpe${sessionNotesReader ? ', notes' : ''}, completed_flag
        from pilot.sessions
        where organization_id = $1 and athlete_id = $2
        order by date desc, created_at desc`,
@@ -478,13 +536,7 @@ export async function getAthletePassbook(
 
   const sessions = sessionRows
     .filter((row) => belongsToOrganization(row, organizationId))
-    .map((row) => ({
-      session_id: row.session_id,
-      date: row.date,
-      rpe: row.rpe,
-      notes: row.notes,
-      completed_flag: row.completed_flag,
-    }));
+    .map((row) => mapSession(row, sessionNotesReader));
   const attendance = attendanceRows
     .filter((row) => belongsToOrganization(row, organizationId))
     .map((row) => mapAttendance(row, staffReader));
