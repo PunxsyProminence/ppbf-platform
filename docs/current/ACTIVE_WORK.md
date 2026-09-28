@@ -6,7 +6,7 @@ standing owner directions that shape what gets built next.
 
 **Not tracked here: current build work.** That is the live open PRs on GitHub
 and the work orders Jason approves, which arrive in one OneDrive inbox folder
-(name to be set; OD-2026-09-28-003). Query PR state live; do not copy it
+(`PPBF-AI-Lanes/ChatGPT-Handoffs` in admin@'s OneDrive; OD-2026-09-28-003). Query PR state live; do not copy it
 here. Deployed state: see "Your session's state is not the system's state" in
 `AGENT_KERNEL.md`.
 

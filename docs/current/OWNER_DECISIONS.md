@@ -353,6 +353,10 @@ which Claude reads; the OneDrive decision ledger takes no new entries and stays
 as history; the duplicate `Documents/PPBF-AI-Lanes` folder is archived.
 **Jason's answer:** *"A"*.
 
+**Which folder.** Option A, as put: *"Use the existing
+`PPBF-AI-Lanes/ChatGPT-Handoffs`"*, with its older contents moved into a
+`_before-2026-09-28` subfolder. **Jason's answer:** *"A"*.
+
 **Merging during the 2026-09-28 cleanup.** *"lets not worru about chat gpt for
 this, we will need to redo instructions for both claude and chat gpt to get on
 the same page again"* -- the cleanup's PRs merge on green checks plus Claude's

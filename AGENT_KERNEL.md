@@ -47,7 +47,7 @@ Do not preload archived audits, the historical queue, superseded plans, old buil
   in `docs/current/OWNER_DECISIONS.md`, quoting him (OD-2026-09-28-003).
 - **ChatGPT** -- the architect: plans, specifications and work orders, which
   Jason approves before anything is built. Approved work orders arrive in one
-  OneDrive inbox folder (name to be set), which Claude reads
+  OneDrive inbox folder, `PPBF-AI-Lanes/ChatGPT-Handoffs` (admin@), which Claude reads
   (OD-2026-09-28-003). Also the reviewer, once its instructions are set up;
   until then no merge waits on a ChatGPT review. It plans from the capability
   table below and assumes nothing that is not on it (OD-2026-09-28-002). It
