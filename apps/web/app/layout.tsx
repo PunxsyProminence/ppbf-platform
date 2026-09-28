@@ -11,7 +11,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
    builds on machines that cannot reach fonts.googleapis.com. Oswald here is
    the same variable file the design system ships; Roboto Condensed and Geist
    Mono are the Fontsource latin variable builds. Alfa Slab One, Special Elite
-   and Caveat ride in through ppbf.css → fonts.css @font-face as before. */
+   and Caveat ride in through the ppbf.css import chain to legacy/legacy-fonts.css @font-face. */
 const tacticalDisplay = localFont({
   src: "./fonts/oswald-var.woff2",
   variable: "--font-tactical-display",

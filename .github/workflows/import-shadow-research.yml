@@ -53,10 +53,10 @@ on:
           - whole_corpus
       organization_id:
         description: >-
-          Owning organization. Ignored for platform_baseline, which is forced to the reserved
-          platform organization. Otherwise leave blank to resolve it from the target app's own
-          ppbf-pilot-default-org-id secret; set it only to import for some other organization
-          deliberately.
+          Owning organization. For platform_baseline leave it blank or set __platform__ (any
+          other value is refused). For ppbf_policy, gym content, pass punxsy_prominence
+          (OD-2026-09-28-007); blank resolves to the target app's ppbf-pilot-default-org-id
+          secret, whose value this file does not know.
         required: false
         type: string
       seed_account_id:

@@ -38,7 +38,8 @@ const CONTRACT = JSON.parse(
  * renders as a partial image or not at all, and every check short of reading
  * to the last two bytes says it is fine.
  *
- * The Grok visual lane (docs/GROK-VISUAL-LANE.md) makes this a gate rather
+ * The plate laws (AGENT_KERNEL.md, "Binary assets (plates)"; formerly stated
+ * by the Grok visual lane, docs/GROK-VISUAL-LANE.md) make this a gate rather
  * than a habit: a plate that does not satisfy every law below does not enter
  * the repository, and the producer is told which law it broke rather than
  * having it silently corrected here.

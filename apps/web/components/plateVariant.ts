@@ -7,7 +7,7 @@
  * decision, and it is made from the route and from nothing else.
  *
  * DETERMINISTIC, NEVER RANDOM. `apps/web/public/plates/README.md` and
- * `docs/GROK-VISUAL-LANE.md` both state the rule and both state the reason: a
+ * `docs/GROK-VISUAL-LANE.md` (history since 2026-09-28) both state the rule and both state the reason: a
  * screen that changes appearance between loads breaks screenshot comparison,
  * breaks print reproducibility, and breaks a coach's sense of being on the page
  * they were on a moment ago. So there is no Math.random here, no Date, no

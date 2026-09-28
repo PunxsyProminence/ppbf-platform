@@ -25,7 +25,7 @@ export interface DeletionResult {
 
 /**
  * Deletes a guardian/parent account and cascade-marks all linked athletes for deletion.
- * Organization-admin only. Logs to audit trail before deletion.
+ * Organization-admin only. Writes the audit event in the same transaction, after the soft delete.
  */
 export async function deleteGuardianAccount(
   actor: ActorIdentity,
@@ -159,7 +159,7 @@ export async function deleteGuardianAccount(
 
 /**
  * Deletes an athlete record and marks all linked data (photos, videos, observations) for deletion.
- * Organization-admin only. Logs to audit trail before deletion.
+ * Organization-admin only. Writes the audit event in the same transaction, after the soft delete.
  */
 export async function deleteAthleteRecord(
   actor: ActorIdentity,
