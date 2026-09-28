@@ -354,6 +354,18 @@ const HELD_ITEM = {
   refused_by_scan: false,
 };
 
+/*
+ * Scoped rather than searched page-wide, and it THROWS when the section is
+ * missing: the read-failure assertion below is a negative one, and against a
+ * section that had not rendered at all it would pass for the wrong reason.
+ * Same shape as releasedSection() further down.
+ */
+function heldSection(): HTMLElement {
+  const section = screen.getByRole('heading', { name: 'Held teaching footage' }).closest('section');
+  if (!section) throw new Error('test bug: the held section did not render');
+  return section as HTMLElement;
+}
+
 test('held footage is listed by take and angle, and Release waits on opening it', async () => {
   /*
    * THE REGRESSION THIS SECTION EXISTS FOR. Every upload is held, and the only
@@ -537,6 +549,24 @@ test('nothing held says so, rather than looking broken', async () => {
   // queue describing itself as the destination for all footage would describe
   // an environment the gym does not run.
   expect(pageText()).toContain('Footage the content screen clears on its own never appears here');
+});
+
+test('a failed read of the held queue is an alert, not an empty queue', async () => {
+  /*
+   * Same rule the coverage and released reads hold, and it bit hardest here.
+   * loadHeld leaves `held` at [] and sets heldLoaded in its finally, so a read
+   * that did not come back used to render the alert AND "Nothing is waiting"
+   * together -- which a coach reads as "my footage is gone". Stopping uploads
+   * from silently disappearing is the whole reason this queue is on the screen.
+   */
+  mockCoverageFetch(
+    () => jsonResponse({ ok: true, coverage: COVERAGE }),
+    () => jsonResponse({ error: 'Held footage could not be read.' }, false),
+  );
+  render(<TeachShadowHomePage />);
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Held footage could not be read.');
+  expect(heldSection().textContent).not.toContain('Nothing is waiting');
 });
 
 test('the held section never claims anybody watched anything', async () => {
