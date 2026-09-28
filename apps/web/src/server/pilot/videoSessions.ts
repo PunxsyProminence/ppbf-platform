@@ -107,6 +107,7 @@ export async function reviewVideoSessionScan(params: {
      where organization_id = $1
        and video_session_id = $2
        and status = 'quarantined'
+       and scan_state = $5
      returning video_session_id, organization_id, athlete_id, blob_path, status,
                title, file_name, scan_state, scan_detail, uploaded_by_account_id`,
     [
@@ -124,6 +125,18 @@ export async function reviewVideoSessionScan(params: {
           notes: params.notes ?? null,
         },
       }),
+      /*
+       * $5 -- THE STATE THE REVIEWER ACTUALLY INSPECTED, as a predicate and
+       * not merely as a note in the audit detail.
+       *
+       * The approve path requires the actor to hold a review link issued
+       * against this verdict. Without this term the write would still apply
+       * if a re-scan changed the verdict in between, so the decision would
+       * land on evidence the reviewer never saw. Returning null instead lets
+       * the route report the same reload-and-try-again conflict it already
+       * raises when the row leaves quarantine underneath it.
+       */
+      params.priorScanState,
     ],
   );
 }

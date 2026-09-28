@@ -45,6 +45,8 @@ import type { Readable } from 'node:stream';
 
 import { Client } from 'pg';
 
+import { seedCaptureTake } from '../../testing/captureFixture';
+
 jest.setTimeout(180_000);
 
 const PG_USER = 'postgres';
@@ -56,6 +58,11 @@ const TEST_DB_NAME = 'ppbf_test_calib_blind';
 
 const BASE_SQL = 'pilot_slice_postgres.sql';
 const VIDEO_SESSIONS_SQL = 'pilot_slice_postgres_video_sessions_migration.sql';
+/* Applied because these suites now seed a recording session and a take: a
+   study cuts its clips from teaching footage, and assertVideoClippable
+   refuses anything else. It also adds capture_take_id to pilot.video_sessions,
+   so it must run after the video-sessions migration, never before. */
+const CAPTURE_SESSIONS_SQL = 'pilot_slice_postgres_capture_sessions_migration.sql';
 const PROJECTS_SQL = 'pilot_slice_postgres_calibration_projects_migration.sql';
 const ANNOTATIONS_SQL = 'pilot_slice_postgres_calibration_annotations_migration.sql';
 
@@ -153,13 +160,21 @@ async function seedTenancy(client: Client): Promise<void> {
     [VIDEO_ID, ORG_ID, ANNOTATOR_A],
     [FOREIGN_VIDEO_ID, OTHER_ORG_ID, FOREIGN_ANNOTATOR],
   ] as const) {
+    /* Teaching footage: assertVideoClippable refuses a video with no capture
+       take, because only footage recorded to teach Shadow may become evidence
+       a recognizer is taught from. These fixtures predate takes, and a study
+       cuts its clips from teaching footage, so this is the accurate
+       description rather than a way around the guard. Idempotent, and one
+       session per organization is all these suites need. */
+    const take = await seedCaptureTake(client, { organizationId, createdByAccountId: uploader });
     await client.query(
       `insert into pilot.video_sessions
          (video_session_id, organization_id, uploaded_by_account_id, athlete_id, title,
-          blob_path, file_name, file_size_bytes, mime_type, status)
-       values ($1, $2, $3, null, 'Sparring', 'p/blind.mp4', 'blind.mp4', 2048, 'video/mp4', 'ready')
+          blob_path, file_name, file_size_bytes, mime_type, status,
+          recording_session_id, capture_take_id)
+       values ($1, $2, $3, null, 'Sparring', 'p/blind.mp4', 'blind.mp4', 2048, 'video/mp4', 'ready', $4, $5)
        on conflict do nothing`,
-      [videoId, organizationId, uploader],
+      [videoId, organizationId, uploader, take.recordingSessionId, take.captureTakeId],
     );
   }
 }
@@ -304,6 +319,7 @@ beforeAll(async () => {
   await migrateClient.connect();
   await migrateClient.query(await readMigration(BASE_SQL));
   await migrateClient.query(await readMigration(VIDEO_SESSIONS_SQL));
+  await migrateClient.query(await readMigration(CAPTURE_SESSIONS_SQL));
   await migrateClient.query(await readMigration(PROJECTS_SQL));
   await migrateClient.query(await readMigration(ANNOTATIONS_SQL));
   await seedTenancy(migrateClient);

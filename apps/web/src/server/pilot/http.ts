@@ -75,6 +75,46 @@ export function requireRole(principal: PilotPrincipal, allowedRoles: PilotRole[]
   }
 }
 
+/**
+ * A consent scope flag: absent takes the documented default, present must be
+ * an actual boolean. `undefined` alone is absence -- `null` is a value the
+ * caller sent and could not have meant, so it is refused rather than silently
+ * read as the default.
+ *
+ * "Unsupported" is jsonError's recognized 400 prefix; anything else falls into
+ * the generic 500 branch, which would tell a caller the server broke when what
+ * actually happened is that their client sent a string.
+ *
+ * WHY THIS LIVES HERE AND NOT AT EITHER CALL SITE. Two routes now write the
+ * same two columns -- the guardian's own console and the admin/coach writer
+ * that records a paper signature -- and they are read by the same gate. Two
+ * copies of a coercion rule is exactly the drift normalizeWaiverStatusText was
+ * extracted to fix on this very column, where one reader trimmed and the other
+ * did not and a guardian's signature meant different things to each.
+ *
+ * WHAT WAS ACTUALLY WRONG, kept with the helper because it is the reason the
+ * helper is strict. The original derivation was `body?.covers_video !== false`,
+ * and the string "false", 0, "no" and null are all `!== false` -- so a guardian
+ * unticking video through any client that sends form values as strings had
+ * their choice stored as FULL VIDEO CONSENT. The gate at video/[videoId] then
+ * never fires, and a 60-minute bearer credential for a minor's footage is
+ * minted against a consent nobody gave. A value the server has to guess at is
+ * refused rather than coerced: this record is read as a guardian's decision by
+ * every gate downstream. public_use_allowed is held to the same rule -- its
+ * `=== true` failed the safe way (the string "true" under-granted), but it
+ * still misrecorded the answer, and one rule for both flags is one rule to
+ * keep right.
+ */
+export function requireOptionalBoolean(value: unknown, field: string, fallback: boolean): boolean {
+  if (value === undefined) {
+    return fallback;
+  }
+  if (typeof value !== 'boolean') {
+    throw new Error(`Unsupported ${field}: must be true or false`);
+  }
+  return value;
+}
+
 // Used for per-record lookups where a distinct 403 would disclose that a
 // record exists but the caller can't access it. Every "doesn't exist" and
 // "exists but forbidden" case for these routes must return this exact

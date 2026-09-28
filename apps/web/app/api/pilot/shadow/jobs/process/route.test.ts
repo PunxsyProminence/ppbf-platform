@@ -198,6 +198,14 @@ describe('SHADOW job processor fail-closed modes', () => {
     // Board summaries carry their own role requirement at EXECUTION time --
     // enablement did not loosen it. A coach-owned job dies with a terminal
     // scope error before any provider call could happen.
+    //
+    // TERMINAL IS NOW ASSERTED, NOT JUST DESCRIBED. This comment always said
+    // "terminal" while the assertion below checked only the error code, and
+    // the code underneath was retryable: the row went back to 'pending' and
+    // the same verdict was recomputed on every retry. The request boundary
+    // now refuses a coach before a job is ever created, so the rows this path
+    // still sees are the ones queued before that gate existed -- unreachable
+    // by any authorized actor, and pointless to retry.
     const job = claimedJob('board_summary');
     job.inputPayload = {
       requestMode: 'chat',
@@ -219,7 +227,7 @@ describe('SHADOW job processor fail-closed modes', () => {
       processed: true,
       error: 'SHADOW_JOB_SCOPE_FORBIDDEN',
     });
-    expect(mockFailJob).toHaveBeenCalledWith(job, 'SHADOW_JOB_SCOPE_FORBIDDEN');
+    expect(mockFailJob).toHaveBeenCalledWith(job, 'SHADOW_JOB_SCOPE_FORBIDDEN', { retryable: false });
     expect(mockCompleteJob).not.toHaveBeenCalled();
   });
 

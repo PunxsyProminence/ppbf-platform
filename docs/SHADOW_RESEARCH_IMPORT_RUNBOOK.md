@@ -31,9 +31,9 @@ Those expected counts are hardcoded in `import-shadow-research.mjs` and it refus
 reality disagrees — so a file edited without updating the constant fails loudly rather than
 importing a partial corpus.
 
-**This is not the same thing as the doctrine corpus.** `seed:shadow:library` loads four SHADOW
-design documents from `shadow-library-seed-manifest.json` (authority model, specification, event
-model, AI technical companion) and needs an interactive admin session cookie. That teaches SHADOW
+**This is not the same thing as the doctrine corpus.** `seed:shadow:library` loads three SHADOW
+design documents from `shadow-library-seed-manifest.json` (authority model, event model, AI
+technical companion) and needs an interactive admin session cookie. That teaches SHADOW
 about itself. The research corpus below is the evidence base for coaching and safety claims. They
 are different commands, different inputs, and different prerequisites. A single work-queue line
 calling for "ingesting the corpus" conflates them.

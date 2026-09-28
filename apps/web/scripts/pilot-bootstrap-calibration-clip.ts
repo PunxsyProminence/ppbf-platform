@@ -6,7 +6,7 @@ import { closePool } from '../src/server/pilot/db';
 import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mjs';
 
 // Establishes one existing 'ready' video as a calibration study and clip, so
-// the /coach/calibration annotation workflow has something to open.
+// the /teach-shadow/annotation workflow has something to open.
 //
 // usage:
 //   PPBF_EXPECTED_POSTGRES_HOSTNAME=... PPBF_EXPECTED_POSTGRES_DATABASE=... \

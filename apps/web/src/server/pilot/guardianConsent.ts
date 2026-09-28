@@ -1,4 +1,4 @@
-import { query, withTransaction } from './db';
+import { query, queryOne, withTransaction } from './db';
 import { guardianAthleteIds, guardianParentIdForAthlete, guardianParentIds } from './guardianAccess';
 import { upsertWaiver, upsertWaiverWithClient, type UpsertWaiverParams } from './intake';
 import { normalizeWaiverStatusText } from './waiverCompliance';
@@ -69,13 +69,14 @@ interface CurrentConsentRow {
 async function currentConsentByGuardian(
   organizationId: string,
   athleteId: string,
+  waiverType: string,
 ): Promise<Map<string, CurrentConsentRow>> {
   const rows = await query<CurrentConsentRow>(
     `select distinct on (parent_id) parent_id, status, covers_video, public_use_allowed, created_at
      from pilot.waivers
      where organization_id = $1 and athlete_id = $2 and waiver_type = $3 and parent_id is not null
      order by parent_id, created_at desc`,
-    [organizationId, athleteId, MEDIA_CONSENT_WAIVER_TYPE],
+    [organizationId, athleteId, waiverType],
   );
 
   const map = new Map<string, CurrentConsentRow>();
@@ -104,6 +105,28 @@ export async function checkGuardianMediaConsent(
   organizationId: string,
   athleteId: string,
 ): Promise<ConsentCheckResult> {
+  return checkGuardianConsentOfType(organizationId, athleteId, MEDIA_CONSENT_WAIVER_TYPE);
+}
+
+/*
+ * PARAMETERISED BY WAIVER TYPE, though only one type uses it today.
+ *
+ * It was split out when Teach Shadow briefly had its own consent, and that
+ * consent has since been removed by owner ruling -- teaching footage is
+ * training data rather than a record about the person filmed, so it asks
+ * nobody. publication media consent is the only caller now.
+ *
+ * Kept parameterised rather than folded back in: the normalisation comment
+ * below records a real defect caused by two gates reading the status column
+ * differently, and a copied version of this function for a second purpose
+ * would recreate that asymmetry one waiver type at a time. If another
+ * permission is ever added, it goes through here.
+ */
+async function checkGuardianConsentOfType(
+  organizationId: string,
+  athleteId: string,
+  waiverType: string,
+): Promise<ConsentCheckResult> {
   const guardianIds = await query<{ parent_id: string }>(
     `select parent_id from pilot.guardian_links where organization_id = $1 and athlete_id = $2`,
     [organizationId, athleteId],
@@ -113,7 +136,7 @@ export async function checkGuardianMediaConsent(
     return { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [] };
   }
 
-  const current = await currentConsentByGuardian(organizationId, athleteId);
+  const current = await currentConsentByGuardian(organizationId, athleteId, waiverType);
   const perGuardian = guardianIds.map((parentId) => {
     const row = current.get(parentId);
     return {
@@ -289,16 +312,39 @@ export async function grantMediaConsent(params: {
      enters what a guardian signed on paper -- but the column still records
      only the former, because that is the one thing it can mean everywhere. */
   recordedByAccountId: string;
+  /* THE PAPER'S DATE, when there is a paper. Optional because the guardian
+     console has no paper: it signs now, and omitting this keeps that path
+     byte-identical to what it did before. The admin/coach writer supplies the
+     date printed on the form held in the office.
+
+     BACK-DATING IS SAFE: "current consent" is decided by created_at, not by
+     signed_at (currentConsentByGuardian above orders by created_at desc), so a
+     back-dated row can never make an older row win.
+
+     BACK-DATING IS ALSO INVISIBLE TO THE AUDIT SCREEN: checkGuardianMediaConsent
+     maps signedAt from row.created_at, not from this column. The paper date is
+     stored durably and the screen shows when it was entered. Changing that
+     mapping would also change what the parent console reports, so it is a
+     separate decision and is deliberately not made here. */
+  signedAt?: string;
+  notes?: string;
 }): Promise<string> {
   return writeMediaConsentUnderLock(params.organizationId, params.athleteId, params.parentId, {
     recordedByAccountId: params.recordedByAccountId,
     signedByName: params.signedByName,
+    /* NOT widened into a parameter, deliberately. Owner decision: an
+       admin-entered consent does not need to be distinguishable from a
+       guardian-entered one as a STORED value -- who entered it is already on
+       every audit row (actor_account_id, actor_role). Making this a parameter
+       would add that distinction to the data and is the one change that would
+       have cost a migration to undo. */
     signedByRole: 'parent',
-    signedAt: new Date().toISOString(),
+    signedAt: params.signedAt ?? new Date().toISOString(),
     consentVersion: 'v1',
     status: 'signed',
     coversVideo: params.coversVideo,
     publicUseAllowed: params.publicUseAllowed,
+    notes: params.notes,
   });
 }
 
@@ -308,16 +354,21 @@ export async function withdrawMediaConsent(params: {
   parentId: string;
   signedByName: string;
   recordedByAccountId: string;
+  /* See grantMediaConsent: the paper's date, and free text, when a staff
+     member is recording what a guardian signed off-platform. */
+  signedAt?: string;
+  notes?: string;
 }): Promise<string> {
   return writeMediaConsentUnderLock(params.organizationId, params.athleteId, params.parentId, {
     recordedByAccountId: params.recordedByAccountId,
     signedByName: params.signedByName,
     signedByRole: 'parent',
-    signedAt: new Date().toISOString(),
+    signedAt: params.signedAt ?? new Date().toISOString(),
     consentVersion: 'v1',
     status: 'withdrawn',
     coversVideo: false,
     publicUseAllowed: false,
+    notes: params.notes,
   });
 }
 
@@ -376,10 +427,59 @@ export async function callerParentIdSet(organizationId: string, accountId: strin
   return new Set(parentIds);
 }
 
+export interface OrganizationGuardian {
+  parentId: string;
+  fullName: string;
+}
+
+/*
+ * PARENT_ID -> NAME, FOR THE WHOLE ORGANIZATION, IN ONE QUERY.
+ *
+ * DOES NOT TOUCH pilot.accounts, and that is the whole point. pilot.parents
+ * has `account_id text null` -- a guardian who signed on paper and never
+ * signed in has NULL there. Every read in guardianAccess.ts is viewer-scoped
+ * and filters on account_id, so reusing any of them would return an empty
+ * picker for exactly the population an admin is recording consent FOR.
+ *
+ * It does not live in guardianAccess.ts either: that module's header says in
+ * writing that the athlete->guardians direction is staff-facing roster data
+ * and deliberately does not live there.
+ *
+ * One query for the org rather than one per athlete -- the caller below
+ * resolves hundreds of athletes and would otherwise issue a query per row.
+ * (organization_id, parent_id) is the primary key, so this is a prefix scan.
+ */
+export async function listOrganizationGuardianNames(organizationId: string): Promise<Map<string, string>> {
+  const rows = await query<{ parent_id: string; full_name: string }>(
+    `select parent_id, full_name from pilot.parents where organization_id = $1`,
+    [organizationId],
+  );
+  return new Map(rows.map((row) => [row.parent_id, row.full_name]));
+}
+
+// ONE guardian's name. The map above is for the audit, which resolves hundreds
+// of athletes in a page and would otherwise issue a query per row; a caller
+// holding a single parent_id should not read the whole roster's guardians to
+// render one word. Same deliberate absence of an account_id predicate, for the
+// same reason: the guardian who signed on paper has none.
+export async function guardianDisplayName(organizationId: string, parentId: string): Promise<string | null> {
+  const row = await queryOne<{ full_name: string }>(
+    `select full_name from pilot.parents where organization_id = $1 and parent_id = $2`,
+    [organizationId, parentId],
+  );
+  return row?.full_name ?? null;
+}
+
 export interface OrganizationConsentRow {
   athleteId: string;
   athleteName: string;
   consent: ConsentCheckResult;
+  /* Names for consent.guardianIds, so the admin screen can offer "Dana Reyes"
+     rather than a bare parent_id. Added HERE and not to ConsentCheckResult:
+     that interface is consumed by the parent console, the video playback gate
+     and the scan sweep, none of which needs a name, and widening it would
+     make three unrelated readers carry this screen's concern. */
+  guardians: OrganizationGuardian[];
 }
 
 // Admin-facing, org-wide: every athlete in the org WITH at least one
@@ -411,11 +511,25 @@ export async function listOrganizationConsentStatus(
         [organizationId],
       );
 
+  // Resolved ONCE for the whole org, before the per-athlete fan-out below.
+  const guardianNames = await listOrganizationGuardianNames(organizationId);
+
   return Promise.all(
-    athletes.map(async (athlete) => ({
-      athleteId: athlete.athlete_id,
-      athleteName: athlete.full_name,
-      consent: await checkGuardianMediaConsent(organizationId, athlete.athlete_id),
-    })),
+    athletes.map(async (athlete) => {
+      const consent = await checkGuardianMediaConsent(organizationId, athlete.athlete_id);
+      return {
+        athleteId: athlete.athlete_id,
+        athleteName: athlete.full_name,
+        consent,
+        // The `?? parentId` is cheap defensiveness, not a reachable state:
+        // pilot.guardian_links has a foreign key onto pilot.parents, so every
+        // parent_id here has a row in the map. Nothing should be built on top
+        // of the fallback.
+        guardians: consent.guardianIds.map((parentId) => ({
+          parentId,
+          fullName: guardianNames.get(parentId) ?? parentId,
+        })),
+      };
+    }),
   );
 }

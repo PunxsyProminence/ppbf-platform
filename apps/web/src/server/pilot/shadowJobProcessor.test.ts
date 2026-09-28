@@ -280,3 +280,130 @@ describe('background jobs ask for a budget a real answer fits in', () => {
     expect(result.error).toBe('SHADOW_AI_EMPTY_RESPONSE');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Board summary: the authority gate, and what a refusal costs.
+//
+// executeBoardSummaryJob has always refused anyone outside BOARD_SUMMARY_ROLES.
+// What it could not do was refuse them EARLY: MANUAL_OVERRIDE_ROLES includes
+// coach, so a coach's board_summary request was honored at the chat boundary
+// and the refusal arrived here, in a background worker, against a job row that
+// had already been written. The request boundary now refuses first -- these
+// tests cover the rows that were queued before it did, and are the reason a
+// scope refusal must not be retried.
+// ---------------------------------------------------------------------------
+
+function boardSummaryJob(role: ShadowJob['role']): ShadowJob {
+  return {
+    ...heavyBagJob(),
+    jobId: '9f1d5a21-0c44-4c7e-9a2b-8f3e6d705c11',
+    jobType: 'board_summary',
+    role,
+    inputPayload: {
+      requestMode: 'chat',
+      authenticatedRole: role,
+      authorizedContext: 'Authorized organization context for this board summary.',
+      message: 'Summarize governance items for the board.',
+      conversationId: 'c0ffee00-1111-4222-8333-444444444444',
+    },
+  };
+}
+
+describe('board summary scope refusal', () => {
+  // processNextShadowJob revalidates the actor's CURRENT role against the role
+  // stored on the job and throws SHADOW_JOB_AUTHORIZATION_CHANGED when they
+  // differ. A fixed 'coach' revalidation here made the admin /
+  // organization_admin / platform_owner cases die at that earlier gate, so they
+  // passed "not refused by the scope gate" without ever reaching the scope gate
+  // -- green for the wrong reason, proving nothing. The revalidated role now
+  // matches the job's role, and each test asserts it got past that gate.
+  function revalidateAs(role: ShadowJob['role']): void {
+    mockQueryOne.mockResolvedValue({
+      role,
+      athlete_id: null,
+      is_platform_owner: role === 'platform_owner',
+      organization_status: 'active',
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    revalidateAs('coach');
+    mockCompleteJob.mockResolvedValue(undefined);
+    mockFailJob.mockResolvedValue(undefined);
+    global.fetch = jest.fn() as unknown as typeof fetch;
+  });
+
+  test('a queued coach board summary fails TERMINALLY, not into the retry budget', async () => {
+    mockClaimNextJob.mockResolvedValue(boardSummaryJob('coach'));
+
+    const result = await processNextShadowJob();
+
+    expect(result.error).toBe('SHADOW_JOB_SCOPE_FORBIDDEN');
+    // The third argument is the whole point. Without it the row goes back to
+    // 'pending' and the same verdict is recomputed on every retry, each one
+    // re-claiming a lease the worker could spend on real work.
+    expect(mockFailJob).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: '9f1d5a21-0c44-4c7e-9a2b-8f3e6d705c11' }),
+      'SHADOW_JOB_SCOPE_FORBIDDEN',
+      { retryable: false },
+    );
+    expect(mockCompleteJob).not.toHaveBeenCalled();
+  });
+
+  test('a refused board summary never reaches the model', async () => {
+    mockClaimNextJob.mockResolvedValue(boardSummaryJob('coach'));
+
+    await processNextShadowJob();
+
+    // A scope refusal that still paid for a completion would be a refusal in
+    // name only -- the governance content would have been generated and then
+    // thrown away, and the organization billed for it.
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test.each(['admin', 'organization_admin', 'platform_owner'] as const)(
+    '%s reaches board summary execution rather than the scope gate',
+    async (role) => {
+      mockClaimNextJob.mockResolvedValue(boardSummaryJob(role));
+      revalidateAs(role);
+      llmReply('Board summary: nothing requires board attention.');
+
+      const result = await processNextShadowJob();
+
+      expect(result.error).not.toBe('SHADOW_JOB_SCOPE_FORBIDDEN');
+      // The gate that used to swallow these. Asserting its absence is what
+      // makes the assertion above mean "passed the scope gate" rather than
+      // "died before it".
+      expect(result.error).not.toBe('SHADOW_JOB_AUTHORIZATION_CHANGED');
+      // Positive proof of reach: an authorized board summary actually calls
+      // the provider and completes.
+      expect(global.fetch).toHaveBeenCalled();
+      expect(mockCompleteJob).toHaveBeenCalled();
+      expect(mockFailJob).not.toHaveBeenCalled();
+    },
+  );
+
+  // The other half of the classification, and the one a careless fix breaks:
+  // marking every failure terminal would turn one flaky provider call into a
+  // permanently dead job. Only the scope verdict is terminal.
+  test('a transient provider failure on an AUTHORIZED board summary stays retryable', async () => {
+    mockClaimNextJob.mockResolvedValue(boardSummaryJob('admin'));
+    revalidateAs('admin');
+    const fetchSpy = jest.fn().mockRejectedValue(new Error('socket hang up'));
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    await processNextShadowJob();
+
+    // The failure must be the PROVIDER's, not an earlier gate's -- otherwise
+    // this proves retryability of the wrong error.
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(mockFailJob).toHaveBeenCalledTimes(1);
+    const [, errorCode, options] = mockFailJob.mock.calls[0];
+    expect(errorCode).not.toBe('SHADOW_JOB_SCOPE_FORBIDDEN');
+    expect(errorCode).not.toBe('SHADOW_JOB_AUTHORIZATION_CHANGED');
+    // Either no options at all, or retryable left true. What must NOT happen
+    // is retryable:false arriving on an ordinary execution failure.
+    expect(options?.retryable).not.toBe(false);
+  });
+});

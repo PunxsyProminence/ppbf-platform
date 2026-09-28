@@ -1,4 +1,5 @@
 import type { PilotRole } from './contracts';
+import { NO_ATHLETE_NOTE_PLACEHOLDER } from '../../shared/sessionNoteSemantics';
 import { query, queryOne } from './db';
 import {
   getAthletePassbook,
@@ -541,6 +542,9 @@ describe('getCoachPassbookGapQueue', () => {
 describe('the passbook withholds staff-only fields from a family reader', () => {
   const FAMILY_READERS: PilotRole[] = ['athlete', 'parent'];
   const STAFF_READERS: PilotRole[] = ['coach', 'organization_admin', 'admin'];
+  /** Free text a child wrote for their coach. Distinctive so it can be hunted
+   *  for in the serialized response, which is how it would actually escape. */
+  const HUMAN_SESSION_NOTE = 'My wrist hurts when I jab.';
 
   function arrange(): void {
     mockQueryOne.mockResolvedValueOnce({
@@ -577,8 +581,55 @@ describe('the passbook withholds staff-only fields from a family reader', () => 
           created_at: '2026-08-01T12:00:00.000Z',
         },
       ]);
+      if (sql.includes('from pilot.sessions')) return Promise.resolve([
+        {
+          organization_id: 'org-1', session_id: 'session-human', date: '2026-08-03',
+          rpe: 6, notes: HUMAN_SESSION_NOTE, completed_flag: true,
+        },
+        {
+          organization_id: 'org-1', session_id: 'session-placeholder', date: '2026-08-02',
+          rpe: null, notes: NO_ATHLETE_NOTE_PLACEHOLDER, completed_flag: true,
+        },
+        {
+          organization_id: 'org-1', session_id: 'session-auto', date: '2026-08-01',
+          rpe: 4, notes: 'Auto check-in readiness GREEN', completed_flag: false,
+        },
+        {
+          organization_id: 'org-1', session_id: 'session-blank', date: '2026-07-31',
+          rpe: 3, notes: '   ', completed_flag: true,
+        },
+      ]);
       return Promise.resolve([]);
     });
+  }
+
+  const sessionSql = () => String(
+    mockQuery.mock.calls.find(([sql]) => String(sql).includes('from pilot.sessions'))?.[0] ?? '',
+  );
+  const sessionById = (result: Awaited<ReturnType<typeof getAthletePassbook>>, id: string) =>
+    result?.pages.sessions.find((entry) => entry.session_id === id);
+
+  /* REACH A REAL ENTRY BEFORE ASSERTING ABOUT ITS KEYS.
+     sessionById returns undefined for a session that is not in the book, and
+     expect(undefined).not.toHaveProperty('notes') PASSES. So an assertion
+     about an absent key, taken on its own, also passes for a book that lost
+     every session -- a regression that empties the sessions page would leave
+     the system-text cases below green while telling a coach nothing happened
+     at the gym. This pins the entry down first: the page has rows, this
+     session is one of them, and it is recognisable by the fields a reader
+     would identify it by. Only then is the key assertion worth anything. */
+  function presentSession(
+    result: Awaited<ReturnType<typeof getAthletePassbook>>,
+    id: string,
+    identity: { date: string },
+  ) {
+    const sessions = result?.pages.sessions;
+    expect(Array.isArray(sessions)).toBe(true);
+    expect(sessions?.length ?? 0).toBeGreaterThan(0);
+    const entry = sessionById(result, id);
+    expect(entry).toBeDefined();
+    expect(entry).toMatchObject(identity);
+    return entry;
   }
 
   test('the reader tables are not empty', () => {
@@ -670,5 +721,134 @@ describe('the passbook withholds staff-only fields from a family reader', () => 
 
     expect(attendanceSql).toContain('notes');
     expect(observationSql).toContain('coach_account_id');
+  });
+
+  /* A-FIN-08 guardian closure. pilot.sessions.notes is free text a child wrote
+     for their coach, and until this slice every linked guardian received it
+     through this book. Jason's decision on 2026-09-25 was to "close it in this
+     slice" -- which is about the GUARDIAN, not about taking an athlete's own
+     note away from them. So the three readers below are deliberately three
+     different answers. */
+  describe('session notes reach the reader they were written for, and stop there', () => {
+    test('a linked guardian is never sent the column at all', async () => {
+      arrange();
+
+      const result = await getAthletePassbook('org-1', 'ath-1', 'parent');
+      const entry = presentSession(result, 'session-human', { date: '2026-08-03' });
+
+      // Both halves: the query does not ask for it, and the projection does
+      // not map it even though the mocked row carries it anyway.
+      expect(sessionSql()).not.toContain('notes');
+      // `?? {}` here is type narrowing only. presentSession has already
+      // failed the test if there is no entry -- which matters, because
+      // Object.keys({}) contains nothing either, so this line on its own
+      // would have read as a pass for a book that lost every session.
+      expect(Object.keys(entry ?? {})).not.toContain('notes');
+      expect(JSON.stringify(result?.pages.sessions)).not.toContain('wrist hurts');
+    });
+
+    test('a guardian still receives the session itself', async () => {
+      arrange();
+
+      const result = await getAthletePassbook('org-1', 'ath-1', 'parent');
+
+      // Closing the note did not close the page: date, effort and completion
+      // are still a guardian's to see.
+      expect(sessionById(result, 'session-human')).toMatchObject({
+        date: '2026-08-03', rpe: 6, completed_flag: true,
+      });
+    });
+
+    // ABSENT, NOT NULL. `notes: null` asserts "no note was written on this
+    // session", which is a different fact from "one was, and it is not yours
+    // to read" -- and the first is a lie whenever the second is true.
+    test('the guardian entry omits the key rather than nulling it', async () => {
+      arrange();
+
+      const result = await getAthletePassbook('org-1', 'ath-1', 'parent');
+      const entry = sessionById(result, 'session-human');
+
+      expect(entry).not.toHaveProperty('notes');
+      expect(JSON.stringify(entry)).not.toContain('"notes":null');
+    });
+
+    test('the athlete still reads their own words', async () => {
+      arrange();
+
+      const result = await getAthletePassbook('org-1', 'ath-1', 'athlete');
+
+      expect(sessionSql()).toContain('notes');
+      expect(sessionById(result, 'session-human')?.notes).toBe(HUMAN_SESSION_NOTE);
+    });
+
+    test.each(STAFF_READERS)('%s still reads a real note', async (role) => {
+      arrange();
+
+      const result = await getAthletePassbook('org-1', 'ath-1', role);
+
+      expect(sessionSql()).toContain('notes');
+      expect(sessionById(result, 'session-human')?.notes).toBe(HUMAN_SESSION_NOTE);
+    });
+
+    /* System text is not a human note for ANYBODY, including the athlete whose
+       session it is. The check-in form wrote both of these, not a person. */
+    test.each<[PilotRole]>([['athlete'], ['parent'], ['coach'], ['organization_admin'], ['admin']])(
+      'the no-note placeholder never reaches %s as written text',
+      async (role) => {
+        arrange();
+
+        const result = await getAthletePassbook('org-1', 'ath-1', role);
+        // The session the placeholder was stored on is really in the book, and
+        // it is the note that is missing from it -- not the session.
+        const entry = presentSession(result, 'session-placeholder', { date: '2026-08-02' });
+
+        expect(entry).not.toHaveProperty('notes');
+        expect(JSON.stringify(result?.pages.sessions)).not.toContain('No athlete note provided');
+      },
+    );
+
+    test.each<[PilotRole]>([['athlete'], ['parent'], ['coach'], ['organization_admin'], ['admin']])(
+      'the historical Auto check-in readiness text never reaches %s',
+      async (role) => {
+        arrange();
+
+        const result = await getAthletePassbook('org-1', 'ath-1', role);
+        // Same discipline: a real session from 2026-08-01, with the readiness
+        // marker filtered off it rather than the session filtered away.
+        const entry = presentSession(result, 'session-auto', { date: '2026-08-01' });
+
+        expect(entry).not.toHaveProperty('notes');
+        expect(JSON.stringify(result?.pages.sessions)).not.toContain('Auto check-in readiness');
+      },
+    );
+
+    /* A BLANK note is treated differently here than on the coach read, and
+       the difference is deliberate. The coach endpoint returns
+       { note: string | null } and maps an empty note to null, which states
+       plainly that nothing was written. This book has no null to use: the
+       only way to say "nothing" is to omit the key, and omission already
+       means "not in your audience". Collapsing the two would give a guardian
+       and an athlete the same shape for opposite reasons, so an in-audience
+       reader still receives the empty string. */
+    test.each<[PilotRole]>([['athlete'], ['coach'], ['organization_admin'], ['admin']])(
+      'a blank note still reaches %s as an empty string, not as an absent key',
+      async (role) => {
+        arrange();
+
+        const entry = sessionById(await getAthletePassbook('org-1', 'ath-1', role), 'session-blank');
+
+        expect(entry).toHaveProperty('notes');
+        expect(entry?.notes?.trim()).toBe('');
+      },
+    );
+
+    test('a guardian gets no key for the blank note either, for the usual reason', async () => {
+      arrange();
+
+      const entry = sessionById(await getAthletePassbook('org-1', 'ath-1', 'parent'), 'session-blank');
+
+      expect(entry).not.toHaveProperty('notes');
+      expect(entry).toMatchObject({ date: '2026-07-31', rpe: 3 });
+    });
   });
 });

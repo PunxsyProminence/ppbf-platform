@@ -11,15 +11,6 @@
       "file": "docs/SHADOW_AUTHORITY_MODEL.md"
     },
     {
-      "title": "SHADOW Platform Specification",
-      "publisher": "Punxsy Prominence",
-      "source_type": "internal_policy",
-      "authority_tier": 1,
-      "publication_date": "2026-07-15",
-      "doctrine_kind": "shadow-specification",
-      "file": "docs/SHADOW_SPECIFICATION.md"
-    },
-    {
       "title": "SHADOW Event Model",
       "publisher": "Punxsy Prominence",
       "source_type": "internal_policy",

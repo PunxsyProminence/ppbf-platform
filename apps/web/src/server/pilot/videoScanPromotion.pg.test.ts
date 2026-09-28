@@ -35,6 +35,10 @@ const MIGRATION_PATH = path.resolve(
   __dirname,
   '../../../../../infra/azure/pilot_slice_postgres_video_sessions_migration.sql',
 );
+const CAPTURE_SESSIONS_PATH = path.resolve(
+  __dirname,
+  '../../../../../infra/azure/pilot_slice_postgres_capture_sessions_migration.sql',
+);
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -133,6 +137,21 @@ beforeAll(async () => {
   await client.connect();
   await client.query('create schema if not exists pilot');
   await client.query(await fs.readFile(MIGRATION_PATH, 'utf8'));
+  /*
+   * TS-ANON-01: the sweep now asks which DESTINATION a video belongs to
+   * before it asks whose consent to check, because a teaching video carries
+   * no athlete_id and "no athlete" no longer means "nobody to ask". That
+   * question reads video_sessions.capture_take_id, so this fixture needs the
+   * migration that adds the column.
+   *
+   * The restricted participant tables are deliberately NOT applied here. The
+   * resolver only reaches them when a video actually carries a take, and every
+   * video in this suite is a plain upload -- so applying them would add a
+   * base-schema dependency (they carry foreign keys to athletes and accounts)
+   * to a suite that exercises the claim/settle SQL and nothing else. The
+   * teaching path has its own coverage in captureParticipants.pg.test.ts.
+   */
+  await client.query(await fs.readFile(CAPTURE_SESSIONS_PATH, 'utf8'));
 
   // Env before import: db.ts reads the connection string when its pool is
   // first built, so the dynamic import has to come after this.
@@ -496,6 +515,11 @@ describe('reviewVideoSessionScan (human attestation)', () => {
 
   test('blocking leaves the video exactly as unwatchable as it was', async () => {
     await insertQuarantined('vs-1');
+    // The row must actually HOLD the verdict this reviewer claims to have
+    // inspected. insertQuarantined leaves scan_state at its column default
+    // ('pending'), so without this the call asserts a review of a state the
+    // row was never in -- and the compare-and-set below correctly refuses it.
+    await client.query("update pilot.video_sessions set scan_state = 'needs_human_review'");
 
     const updated = await videoSessions.reviewVideoSessionScan({
       organizationId: 'org-1',
@@ -508,6 +532,41 @@ describe('reviewVideoSessionScan (human attestation)', () => {
 
     expect(updated).toMatchObject({ status: 'quarantined', scan_state: 'blocked' });
     expect((await readRow('vs-1')).status).toBe('quarantined');
+  });
+
+  test('NEGATIVE CONTROL -- a re-scan under the reviewer voids the decision', async () => {
+    /*
+     * COMPARE-AND-SET ON THE EXACT INSPECTED VERDICT.
+     *
+     * priorScanState used to be recorded in the audit detail and nothing more,
+     * so a decision still landed if the machine changed its mind between the
+     * reviewer reading the row and acting on it -- the person would be
+     * releasing footage on evidence they never saw. It is now a predicate.
+     *
+     * Returning null rather than throwing lets the route raise the same
+     * reload-and-try-again conflict it already raises when the row leaves
+     * quarantine underneath the reviewer.
+     */
+    await insertQuarantined('vs-1');
+    await client.query("update pilot.video_sessions set scan_state = 'needs_human_review'");
+
+    const updated = await videoSessions.reviewVideoSessionScan({
+      organizationId: 'org-1',
+      videoSessionId: 'vs-1',
+      decision: 'approve',
+      // What the reviewer saw. The row has since moved on.
+      priorScanState: 'unconfigured',
+      reviewedByAccountId: 'coach-1',
+      reviewedByRole: 'coach',
+    });
+
+    expect(updated).toBeNull();
+
+    const row = await readRow('vs-1');
+    expect(row.status).toBe('quarantined');
+    expect(row.scan_state).toBe('needs_human_review');
+    // Nothing was written -- not even the attestation.
+    expect(JSON.stringify(row.scan_detail ?? {})).not.toContain('human_review');
   });
 
   test('a human override of a blocked verdict is recorded as such', async () => {
@@ -531,6 +590,10 @@ describe('reviewVideoSessionScan (human attestation)', () => {
     // Same claim-to-settle window the sweep has. An archived video must not
     // become streamable because a review was in flight.
     await insertQuarantined('vs-1', { status: 'archived' });
+    // Set so the STATUS guard is the only thing that can refuse this write.
+    // Left at the default, the scan-state compare-and-set would refuse it too
+    // and the test would pass without proving what it claims.
+    await client.query("update pilot.video_sessions set scan_state = 'needs_human_review'");
 
     const updated = await videoSessions.reviewVideoSessionScan({
       organizationId: 'org-1',
@@ -547,6 +610,9 @@ describe('reviewVideoSessionScan (human attestation)', () => {
 
   test('is scoped to the organization', async () => {
     await insertQuarantined('vs-1');
+    // Same reason as above: the ORGANIZATION guard must be the only thing
+    // refusing this, or the assertion proves nothing about tenant separation.
+    await client.query("update pilot.video_sessions set scan_state = 'needs_human_review'");
 
     const updated = await videoSessions.reviewVideoSessionScan({
       organizationId: 'someone-elses-org',

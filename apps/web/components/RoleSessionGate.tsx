@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   clearRoleSession,
@@ -8,6 +8,7 @@ import {
   isRoleSessionAllowed,
   loadAuthoritativeRoleSession,
 } from './roleSession';
+import { requiresDocumentLoad } from './cameraDocuments';
 import type { ClubRole } from './roleRoutes';
 import { groundClasses } from './roleGround';
 import { apiBase } from '@/lib/apiBase';
@@ -19,6 +20,36 @@ interface RoleSessionGateProps {
 
 export default function RoleSessionGate({ allowedRoles, children }: RoleSessionGateProps) {
   const router = useRouter();
+
+  /*
+   * THE GATE ITSELF CAN LEAVE A CAMERA DOCUMENT, and it does so more often
+   * than any link.
+   *
+   * This component wraps both recorders. When it finds an expired session, a
+   * starting PIN, or a role that may not be here, it redirects -- and
+   * router.replace is a SOFT navigation, so the login page it sends the coach
+   * to would run inside the document that was served camera=(self). The
+   * capability would outlive the session that was just cleared.
+   *
+   * Every redirect out of here therefore goes through this, which loads a
+   * document when either end is a camera route and otherwise behaves exactly
+   * as before. See components/cameraDocuments.ts.
+   *
+   * The current path is read from window.location rather than from
+   * usePathname, and that is the more correct of the two as well as the less
+   * invasive: what decides which Permissions-Policy is in force is the
+   * DOCUMENT that was served, and window.location is that document. The
+   * router's pathname is the route it believes it is showing, which after a
+   * soft navigation is a different thing.
+   */
+  const leaveFor = useCallback((destination: string) => {
+    const here = typeof window === 'undefined' ? null : window.location.pathname;
+    if (requiresDocumentLoad(here, destination)) {
+      window.location.replace(destination);
+      return;
+    }
+    router.replace(destination);
+  }, [router]);
   const [accessResult, setAccessResult] = useState<{
     verificationKey: string;
     state: 'authorized' | 'retryable';
@@ -64,13 +95,13 @@ export default function RoleSessionGate({ allowedRoles, children }: RoleSessionG
           // would only arrive back in the same state. Send them to the one
           // page the server still allows.
           if (resolution.reason === 'pin_change_required') {
-            router.replace('/change-pin');
+            leaveFor('/change-pin');
             return;
           }
 
           if (resolution.reason === 'unauthenticated' || resolution.statusCode === 401) {
             clearRoleSession();
-            router.replace('/login');
+            leaveFor('/login');
             return;
           }
 
@@ -80,13 +111,13 @@ export default function RoleSessionGate({ allowedRoles, children }: RoleSessionG
             : resolution.reason === 'unsupported_role'
               ? '/login?error=unsupported_role'
               : '/login';
-          router.replace(errorPath);
+          leaveFor(errorPath);
           return;
         }
 
         const session = persistAuthoritativeRoleSession(resolution.session);
         if (!isRoleSessionAllowed(session, expectedRoles)) {
-          router.replace(resolution.destination);
+          leaveFor(resolution.destination);
           return;
         }
 

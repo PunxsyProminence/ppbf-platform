@@ -9,8 +9,10 @@
 // rubber stamp, exactly as intake/document-link says about documents.
 //
 // Same 15-minute expiry and same audit posture as document-link: these are
-// unscanned or screen-refused videos of youth athletes, and who watched what
-// has to be answerable afterwards.
+// unscanned or screen-refused videos of youth athletes, so who was ISSUED a
+// link to what has to be answerable afterwards. That is the limit of what the
+// audit row proves. The browser fetches the footage straight from storage, so
+// this platform never sees the read and must not claim it knows who watched.
 //
 // Both reviewing roles get this. #149 gave the coach a Release button with no
 // way to look at what they were releasing; this is that missing half, and it

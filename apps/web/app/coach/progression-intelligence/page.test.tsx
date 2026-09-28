@@ -13,15 +13,25 @@ import type { ReactNode } from 'react';
 
 import type { RabbitHoleLessonItem } from '@/components/RabbitHole';
 import type { AssignmentInstructionResponse } from '@/components/drills/drillInstructionRead';
-import type { CoachRosterAthlete } from '@/src/server/pilot/contracts';
+import type { ClubRole } from '@/components/roleRoutes';
+import type { CoachRosterAthlete, PilotAthlete } from '@/src/server/pilot/contracts';
 import type { DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
 import type { PilotDrill } from '@/src/server/pilot/drills';
-import type { DrillAssignment } from '@/src/server/pilot/progression';
+import type { AssignmentCompletion, DrillAssignment } from '@/src/server/pilot/progression';
 import CoachProgressionIntelligencePage from './page';
+
+/* The role list the page hands its shell, captured on every render. The shell
+   is stubbed out here -- it fetches a session and would gate every test in
+   this file -- and a stub that drops `allowedRoles` also drops the only
+   evidence in this suite of WHO the page admits. */
+const shellGate: ClubRole[][] = [];
 
 jest.mock('@/components/RoleStandaloneView', () => ({
   __esModule: true,
-  default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
+  default: ({ allowedRoles, children }: { readonly allowedRoles: ClubRole[]; readonly children: ReactNode }) => {
+    shellGate.push(allowedRoles);
+    return <div>{children}</div>;
+  },
 }));
 
 jest.mock('next/link', () => ({
@@ -1759,5 +1769,548 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
       ['GET', '/api/pilot/drill-library?drill_id=reference-jab-v1'],
       ['GET', '/api/pilot/progression/drill-instruction?assignment_id=assign-linked'],
     ]);
+  });
+});
+
+// A-FIN-06, owner decisions 2026-09-22. A coach can cancel work that is still
+// open -- 'assigned' or 'in progress' -- and nothing else: no edit, no delete,
+// no undo or reopen. The first press only asks; backing out sends nothing; a
+// failed cancel leaves the card exactly as the server last described it; and
+// the cancelled state on screen is always the server's answer to a re-read,
+// never the page's own guess.
+describe('A-FIN-06: a coach cancels open assigned work', () => {
+  // Typed against the producers, for the reason the fixtures above are: a
+  // hand-written mock free to invent a key is a mock that can agree with a bug.
+  // No drill_id, so no instruction toggle shares the cards with the controls
+  // under test.
+  const BASE: Omit<
+    DrillAssignment,
+    'assignment_id' | 'drill_name' | 'drill_display_name' | 'status' | 'completion_percentage'
+  > = {
+    gap_id: 'gap-1',
+    athlete_id: 'athlete-001',
+    drill_id: null,
+    drill_description: 'Three rounds.',
+    drill_display_description: 'Three rounds.',
+    drill_category: null,
+    drill_cues: null,
+    drill_difficulty: 'intermediate',
+    rep_count: null,
+    duration_minutes: null,
+    frequency_per_week: 3,
+    due_date: null,
+    assigned_by_account_id: 'acct-coach-1',
+    assigned_at: '2026-09-18T12:00:00.000Z',
+    created_at: '2026-09-18T12:00:00.000Z',
+  };
+
+  const work = (
+    assignmentId: string,
+    name: string,
+    status: DrillAssignment['status'],
+    completionPercentage = 0,
+  ): DrillAssignment => ({
+    ...BASE,
+    assignment_id: assignmentId,
+    drill_name: name,
+    drill_display_name: name,
+    status,
+    completion_percentage: completionPercentage,
+  });
+
+  const ASSIGNED = work('assign-open', 'Jab return', 'assigned');
+  const IN_PROGRESS = work('assign-going', 'Lead hook check', 'in_progress', 33);
+  const COMPLETED = work('assign-done', 'Rear-foot pivot', 'completed', 100);
+  const INCOMPLETE = work('assign-lapsed', 'Shadowbox the cross', 'incomplete', 50);
+  const CANCELLED = work('assign-dropped', 'Slip line', 'cancelled');
+  const EVERY_STATUS = [ASSIGNED, IN_PROGRESS, COMPLETED, INCOMPLETE, CANCELLED];
+
+  // A log the athlete made before the work was cancelled: its history.
+  const LOGGED: AssignmentCompletion = {
+    completion_id: 'c-1',
+    assignment_id: IN_PROGRESS.assignment_id,
+    completed_at: '2026-09-20T15:00:00.000Z',
+    reps_completed: 12,
+    notes: 'Kept the elbow level',
+    verification_status: 'pending',
+    verified_at: null,
+  };
+
+  const CANCEL_PATH = '/api/pilot/progression/assignments/cancel';
+
+  interface Sent {
+    path: string;
+    method: string;
+    body: unknown;
+  }
+
+  const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
+  const failed = (status: number, body: unknown) => ({ ok: false, status, json: async () => body }) as Response;
+
+  type CancelBody = { assignment_id: string; athlete_id: string };
+  type CancelAnswer = (body: CancelBody) => Response | Promise<Response>;
+
+  /**
+   * A small stand-in for the server: it holds the assignment rows, answers
+   * the list read from them, and by default cancels by changing the row it
+   * holds -- so what the page shows after a cancel is what the next read
+   * returned, not anything the page decided. Every request is recorded.
+   */
+  function gymServer(sent: Sent[], options: { assignments: DrillAssignment[]; cancel?: CancelAnswer }) {
+    const server = { rows: options.assignments.map((row) => ({ ...row })) };
+    const cancelRow = (assignmentId: string) => {
+      server.rows = server.rows.map((row) =>
+        row.assignment_id === assignmentId ? { ...row, status: 'cancelled' as const } : row,
+      );
+    };
+    const cancel: CancelAnswer =
+      options.cancel ??
+      ((body) => {
+        cancelRow(body.assignment_id);
+        return ok({
+          assignment: server.rows.find((row) => row.assignment_id === body.assignment_id),
+          already_cancelled: false,
+        });
+      });
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const path = url.slice(url.indexOf('/api/'));
+      const method = (init?.method ?? 'GET').toUpperCase();
+      const body: unknown = init?.body ? JSON.parse(String(init.body)) : undefined;
+      sent.push({ path, method, body });
+
+      if (path === CANCEL_PATH && method === 'POST') return cancel(body as CancelBody);
+      if (path.startsWith('/api/pilot/progression/assignments?')) {
+        return ok({ items: server.rows.filter((row) => path.endsWith(`?athlete_id=${row.athlete_id}`)) });
+      }
+      if (path.startsWith('/api/pilot/progression/completions?')) {
+        return ok({ items: path.endsWith(`?assignment_id=${LOGGED.assignment_id}`) ? [LOGGED] : [] });
+      }
+      if (path.includes('/progression/gaps')) return ok({ items: [GAP] });
+      if (path.includes('/api/pilot/training-holds')) return ok({ ok: true, holds: [] });
+      if (path.includes('/rabbit-holes/get')) return ok({ ok: true, rabbit_holes: [] });
+      return ok({ items: [] });
+    });
+    return { fetchMock, cancelRow };
+  }
+
+  async function openBoard(sent: Sent[], options: { assignments: DrillAssignment[]; cancel?: CancelAnswer }) {
+    const { fetchMock, cancelRow } = gymServer(sent, options);
+    await renderWithAthlete(fetchMock);
+    await screen.findByRole('heading', { name: `Assigned Drills (${options.assignments.length})` });
+    return { cancelRow };
+  }
+
+  async function click(element: HTMLElement) {
+    await act(async () => {
+      fireEvent.click(element);
+    });
+  }
+
+  const nextFrame = () =>
+    act(async () => {
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    });
+
+  /** The card an assignment renders in, found from its name. */
+  function cardOf(name: string): HTMLElement {
+    const card = screen.getByText(name).closest('.mat-leather');
+    if (!(card instanceof HTMLElement)) throw new Error(`no card for ${name}`);
+    return card;
+  }
+
+  const question = (name: string) => screen.getByRole('group', { name: `Cancel ${name}?` });
+
+  async function askToCancel(name: string) {
+    await click(screen.getByRole('button', { name: `Cancel assignment: ${name}` }));
+    return question(name);
+  }
+
+  async function confirmCancel(name: string) {
+    await click(within(question(name)).getByRole('button', { name: 'Yes, cancel assignment' }));
+  }
+
+  async function selectAthlete(id: string) {
+    await act(async () => {
+      fireEvent.change(screen.getByPlaceholderText(/Enter athlete ID/), { target: { value: id } });
+    });
+  }
+
+  /**
+   * Every write the page sent. The rabbit-hole reads are POSTs by transport
+   * but read-only by contract (they fetch lessons for the gap cards), so they
+   * are not writes.
+   */
+  const writes = (sent: Sent[]) =>
+    sent.filter((request) => request.method !== 'GET' && !request.path.includes('/rabbit-holes/get'));
+
+  const listReads = (sent: Sent[]) =>
+    sent.filter((request) => request.method === 'GET' && request.path.startsWith('/api/pilot/progression/assignments?'));
+
+  test('only open work offers "Cancel assignment"; closed and cancelled work offer nothing', async () => {
+    await openBoard([], { assignments: EVERY_STATUS });
+
+    const offered = screen.getAllByRole('button', { name: /^Cancel assignment: / });
+    expect(offered.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Cancel assignment: Jab return',
+      'Cancel assignment: Lead hook check',
+    ]);
+    // The words on the button are the words the spec names.
+    expect(offered.map((button) => button.textContent)).toEqual(['Cancel assignment', 'Cancel assignment']);
+
+    for (const name of ['Rear-foot pivot', 'Shadowbox the cross', 'Slip line']) {
+      expect(within(cardOf(name)).queryByRole('button', { name: /cancel/i })).toBeNull();
+    }
+    // Work the server reports as cancelled says so in words, not only in the
+    // raw status.
+    expect(within(cardOf('Slip line')).getByText(/^Cancelled\. The athlete is no longer expected to do this work/)).toBeTruthy();
+    expect(within(cardOf('Rear-foot pivot')).queryByText(/^Cancelled\./)).toBeNull();
+  });
+
+  test('the first press only asks, and says the athlete is released and the history stays', async () => {
+    const sent: Sent[] = [];
+    await openBoard(sent, { assignments: [ASSIGNED] });
+    const before = sent.length;
+
+    const asked = await askToCancel('Jab return');
+
+    expect(within(asked).getByText(/The athlete will no longer be expected to do this work\./)).toBeTruthy();
+    expect(
+      within(asked).getByText(/Its history stays: completions already logged are kept, and nothing is deleted\./),
+    ).toBeTruthy();
+    // Asking is not acting: nothing at all was sent.
+    expect(sent.slice(before)).toEqual([]);
+    // Focus lands on the safe answer.
+    await nextFrame();
+    expect(document.activeElement).toBe(within(asked).getByRole('button', { name: 'Keep assignment' }));
+  });
+
+  test('backing out of the question sends nothing, leaves the work as it was, and hands focus back', async () => {
+    const sent: Sent[] = [];
+    await openBoard(sent, { assignments: [ASSIGNED] });
+    const before = sent.length;
+
+    const asked = await askToCancel('Jab return');
+    await click(within(asked).getByRole('button', { name: 'Keep assignment' }));
+
+    expect(screen.queryByRole('group', { name: 'Cancel Jab return?' })).toBeNull();
+    expect(sent.slice(before)).toEqual([]);
+    expect(within(cardOf('Jab return')).getByText('0% complete · assigned')).toBeTruthy();
+    await nextFrame();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel assignment: Jab return' }));
+  });
+
+  test('confirming sends one cancel for that assignment and athlete, re-reads the list, and shows what the server now says', async () => {
+    const sent: Sent[] = [];
+    await openBoard(sent, { assignments: [ASSIGNED, IN_PROGRESS] });
+    await askToCancel('Lead hook check');
+    const before = sent.length;
+
+    await confirmCancel('Lead hook check');
+
+    await waitFor(() =>
+      expect(within(cardOf('Lead hook check')).getByText('33% complete · cancelled')).toBeTruthy(),
+    );
+    const since = sent.slice(before);
+    expect(writes(since)).toEqual([
+      { path: CANCEL_PATH, method: 'POST', body: { assignment_id: 'assign-going', athlete_id: 'athlete-001' } },
+    ]);
+    // The list was read again AFTER the write, and that read is what the card
+    // now shows.
+    const postAt = since.findIndex((request) => request.path === CANCEL_PATH);
+    expect(listReads(since.slice(postAt + 1))).toHaveLength(1);
+
+    const card = cardOf('Lead hook check');
+    expect(within(card).getByText(/^Cancelled\. The athlete is no longer expected to do this work/)).toBeTruthy();
+    expect(within(card).queryByRole('button', { name: /Cancel assignment/ })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Cancel Lead hook check?' })).toBeNull();
+    // Its history stays on the card, and a pending log can still be reviewed:
+    // verify and dispute are untouched by the cancel.
+    expect(within(card).getByText('Kept the elbow level')).toBeTruthy();
+    expect(within(card).getByRole('button', { name: 'Verify' })).toBeTruthy();
+    expect(within(card).getByRole('button', { name: 'Dispute' })).toBeTruthy();
+    // The other open work is left alone.
+    expect(within(cardOf('Jab return')).getByText('0% complete · assigned')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Cancel assignment: Jab return' })).toBeTruthy();
+    // And the result is said, in the section's polite live region.
+    const notice = screen.getByText(/^Lead hook check is cancelled\./);
+    expect(notice.closest('[role="status"][aria-live="polite"]')).not.toBeNull();
+  });
+
+  test("the cancelled state on screen is the server's re-read, never the page's own guess", async () => {
+    // The cancel answers success but the next list read still says the work
+    // is in progress. The page shows what the read says: it does not paint
+    // "cancelled" on the strength of its own request.
+    const sent: Sent[] = [];
+    await openBoard(sent, { assignments: [IN_PROGRESS], cancel: () => ok({}) });
+    await askToCancel('Lead hook check');
+    const readsBefore = listReads(sent).length;
+
+    await confirmCancel('Lead hook check');
+
+    await waitFor(() => expect(listReads(sent).length).toBe(readsBefore + 1));
+    expect(within(cardOf('Lead hook check')).getByText('33% complete · in_progress')).toBeTruthy();
+    expect(within(cardOf('Lead hook check')).queryByText(/^Cancelled\./)).toBeNull();
+  });
+
+  describe('a cancel that fails', () => {
+    // A 5xx or a request that never came back: the page cannot know which side
+    // of the server's write it failed on, so the sentence says exactly that.
+    const UNCONFIRMED =
+      'The cancel could not be confirmed, so it may or may not have gone through. The work is shown as it was before you asked. Reload this athlete to see where it stands before trying again.';
+
+    test.each<[string, CancelAnswer, string]>([
+      ['on the server', () => failed(500, { error: 'Internal server error' }), UNCONFIRMED],
+      ['at a gateway in front of the server', () => failed(502, { error: 'Bad gateway' }), UNCONFIRMED],
+      [
+        'on the network',
+        () => {
+          throw new TypeError('Failed to fetch');
+        },
+        UNCONFIRMED,
+      ],
+      [
+        'because the work closed first',
+        () =>
+          failed(409, {
+            error: 'This work is already completed, so it cannot be cancelled.',
+            code: 'ASSIGNMENT_CLOSED',
+          }),
+        'This work is already closed, so it can no longer be cancelled. Nothing was cancelled. Reload this athlete to see where it stands.',
+      ],
+      [
+        'because the work is not reachable',
+        () => failed(404, { error: 'Not found' }),
+        'This work could not be found for this athlete, or your access to their work has ended. Nothing was cancelled.',
+      ],
+    ])('%s leaves the card as it was and says so in plain words', async (_label, cancel, message) => {
+      const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const sent: Sent[] = [];
+      await openBoard(sent, { assignments: [ASSIGNED], cancel });
+      await askToCancel('Jab return');
+      const before = sent.length;
+
+      await confirmCancel('Jab return');
+
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toBe(message);
+      // Said on the card it is about, inside the question, which stays open
+      // so the coach can try again or keep the work.
+      expect(question('Jab return').contains(alert)).toBe(true);
+      expect(within(question('Jab return')).getByRole('button', { name: 'Yes, cancel assignment' })).toBeTruthy();
+      // The card still shows what the server last said, and nothing claims a
+      // cancel happened.
+      expect(within(cardOf('Jab return')).getByText('0% complete · assigned')).toBeTruthy();
+      expect(screen.queryByText(/^Cancelled\./)).toBeNull();
+      expect(screen.queryByText(/is cancelled\./)).toBeNull();
+      // No re-read: nothing changed that the page knows of.
+      expect(listReads(sent.slice(before))).toEqual([]);
+      // The status code and the server's words go to the console, not the coach.
+      expect(document.body.textContent).not.toMatch(/\b(500|502|409|404)\b/);
+      expect(document.body.textContent).not.toContain('Internal server error');
+      expect(document.body.textContent).not.toContain('Bad gateway');
+      expect(document.body.textContent).not.toContain('Failed to fetch');
+      expect(logged).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'assignment-cancel-failed', assignmentId: 'assign-open' }),
+      );
+    });
+
+    test('an unconfirmed cancel claims neither outcome, and trying again is safe', async () => {
+      // The worst case the sentence has to be honest about: the server's
+      // update committed, then the answer was lost (a gateway 5xx after the
+      // write). The work IS cancelled; the page cannot know it.
+      jest.spyOn(console, 'error').mockImplementation(() => {});
+      const sent: Sent[] = [];
+      // Filled in once the stand-in server exists; the answer below runs later.
+      const onServer: { cancelRow?: (assignmentId: string) => void } = {};
+      let attempts = 0;
+      const { cancelRow } = await openBoard(sent, {
+        assignments: [ASSIGNED],
+        cancel: (body) => {
+          attempts += 1;
+          onServer.cancelRow?.(body.assignment_id);
+          // The retry meets work that is already cancelled, and the real route
+          // answers that with success and nothing written.
+          return attempts === 1
+            ? failed(502, { error: 'Bad gateway' })
+            : ok({ assignment: { ...ASSIGNED, status: 'cancelled' }, already_cancelled: true });
+        },
+      });
+      onServer.cancelRow = cancelRow;
+      await askToCancel('Jab return');
+
+      await confirmCancel('Jab return');
+
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toBe(UNCONFIRMED);
+      // It must not say the cancel failed -- here it did not -- nor that it
+      // happened: both would be a guess.
+      expect(alert.textContent).not.toMatch(/Nothing was cancelled|did not go through|failed/i);
+      expect(alert.textContent).not.toMatch(/\bis cancelled\b|\bwas cancelled\b/i);
+      expect(within(cardOf('Jab return')).getByText('0% complete · assigned')).toBeTruthy();
+
+      // Trying again from the same question reaches the same work and ends in
+      // what the server now says.
+      const before = sent.length;
+      await confirmCancel('Jab return');
+
+      await waitFor(() => expect(within(cardOf('Jab return')).getByText('0% complete · cancelled')).toBeTruthy());
+      expect(writes(sent.slice(before))).toEqual([
+        { path: CANCEL_PATH, method: 'POST', body: { assignment_id: 'assign-open', athlete_id: 'athlete-001' } },
+      ]);
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(screen.getByText(/^Jab return is cancelled\./)).toBeTruthy();
+    });
+  });
+
+  test('no edit, delete, undo or reopen is offered anywhere, before or after a cancel', async () => {
+    await openBoard([], { assignments: EVERY_STATUS });
+    const forbidden = /\b(edit|delete|remove|undo|reopen|restore|uncancel)\b/i;
+    const offered = () =>
+      screen
+        .getAllByRole('button')
+        .map((button) => `${button.getAttribute('aria-label') ?? ''} ${button.textContent ?? ''}`)
+        .filter((label) => forbidden.test(label));
+
+    expect(offered()).toEqual([]);
+
+    await askToCancel('Jab return');
+    expect(offered()).toEqual([]);
+
+    await confirmCancel('Jab return');
+    await waitFor(() => expect(within(cardOf('Jab return')).getByText('0% complete · cancelled')).toBeTruthy());
+    expect(offered()).toEqual([]);
+    // In particular, cancelled work -- the two now on screen -- offers no way back.
+    for (const name of ['Jab return', 'Slip line']) {
+      expect(within(cardOf(name)).queryAllByRole('button')).toEqual([]);
+    }
+  });
+
+  test('moving to another athlete closes an open question, and it does not come back', async () => {
+    const sent: Sent[] = [];
+    await openBoard(sent, { assignments: [ASSIGNED] });
+    await askToCancel('Jab return');
+
+    await selectAthlete('athlete-002');
+    await screen.findByRole('heading', { name: 'Assigned Drills (0)' });
+    await selectAthlete('athlete-001');
+    await screen.findByRole('heading', { name: 'Assigned Drills (1)' });
+
+    expect(screen.queryByRole('group', { name: 'Cancel Jab return?' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Cancel assignment: Jab return' })).toBeTruthy();
+    expect(writes(sent)).toEqual([]);
+  });
+
+  test("a cancel that lands after the coach moved on does not draw the previous athlete's work under the new one", async () => {
+    let answerCancel: () => void = () => {};
+    let cancelled: (assignmentId: string) => void = () => {};
+    const sent: Sent[] = [];
+    const board = await openBoard(sent, {
+      assignments: [ASSIGNED],
+      cancel: (body) =>
+        new Promise<Response>((resolve) => {
+          answerCancel = () => {
+            cancelled(body.assignment_id);
+            resolve(ok({ already_cancelled: false }));
+          };
+        }),
+    });
+    cancelled = board.cancelRow;
+    await askToCancel('Jab return');
+    await confirmCancel('Jab return');
+
+    await selectAthlete('athlete-002');
+    await screen.findByRole('heading', { name: 'Assigned Drills (0)' });
+    const before = sent.length;
+
+    await act(async () => {
+      answerCancel();
+    });
+
+    // athlete-002's screen stays athlete-002's: no reload of the first
+    // athlete's list, and no notice about somebody else's work.
+    expect(screen.getByRole('heading', { name: 'Assigned Drills (0)' })).toBeTruthy();
+    expect(screen.queryByText('Jab return')).toBeNull();
+    expect(screen.queryByText(/is cancelled\./)).toBeNull();
+    expect(listReads(sent.slice(before))).toEqual([]);
+  });
+
+  // THE REVIEW FINDING THIS ANSWERS. The cancel route admits coach, admin and
+  // organization_admin, and so does every read this page makes -- but the
+  // surface was gated to ['coach'] and the building map advertised it to a
+  // coach alone. An Admin was authorized by the server and had no route to the
+  // control through the product: a backend-only permission with no journey.
+  //
+  // The gate is the entire fix. Nothing on this page branches on role, so
+  // these are the coach's own controls, reached by the one role the APIs were
+  // already answering -- which is why the journey below is driven through the
+  // same helpers every test above uses, and not through a second surface.
+  describe('an organization admin reaches the same control', () => {
+    /* What /api/pilot/athletes/list hands an ORGANIZATION ADMIN: the org-wide
+       row, not the coach's redacted roster row (getAthletesByOrganization
+       returns PilotAthlete; getAthletesForCoach returns CoachRosterAthlete).
+       Typed against that producer for the reason the fixtures above are --
+       a mock free to invent a key is a mock that can agree with a bug. */
+    const ORG_ROSTER: Pick<PilotAthlete, 'athlete_id' | 'full_name'>[] = [
+      { athlete_id: 'athlete-001', full_name: 'Rosa Delgado' },
+    ];
+
+    /** The same stand-in server, answering the roster read an admin gets. */
+    async function openBoardAsAdmin(sent: Sent[], assignments: DrillAssignment[]) {
+      const { fetchMock } = gymServer(sent, { assignments });
+      global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('/api/pilot/athletes/list')) return ok({ items: ORG_ROSTER });
+        return fetchMock(input, init);
+      }) as unknown as typeof fetch;
+      await act(async () => {
+        render(<CoachProgressionIntelligencePage />);
+      });
+      // A roster that answered replaces the free-text fallback with the picker.
+      const picker = await screen.findByRole('combobox', { name: 'Select Athlete' });
+      await act(async () => {
+        fireEvent.change(picker, { target: { value: 'athlete-001' } });
+      });
+      await screen.findByRole('heading', { name: `Assigned Drills (${assignments.length})` });
+      return picker;
+    }
+
+    test('the surface is gated to coach AND admin, so neither is bounced off it', async () => {
+      await openBoard([], { assignments: [] });
+
+      // Both, and only both: platform_owner and board are refused by name in
+      // assertActorCanAccessAthlete, so advertising them here would be a door
+      // onto a page whose every read fails.
+      expect(shellGate[shellGate.length - 1]).toEqual(['coach', 'admin']);
+    });
+
+    test('an admin picks an athlete off the org roster and cancels open work', async () => {
+      const sent: Sent[] = [];
+      const picker = await openBoardAsAdmin(sent, [ASSIGNED]);
+
+      // What makes this an ADMIN's journey and not a second coach's: the gate
+      // this page hands its shell. Asserted here as well as on its own above,
+      // because a page that no longer admits an admin would otherwise carry on
+      // passing every step below -- nothing here branches on role, which is
+      // the whole reason the gate was the only thing that needed to move.
+      expect(shellGate[shellGate.length - 1]).toContain('admin');
+      // The selection is a real choice off the admin's own roster read, by
+      // name -- not a typed-in id.
+      expect(within(picker).getByRole('option', { name: 'Rosa Delgado' })).toBeTruthy();
+
+      await askToCancel('Jab return');
+      const before = sent.length;
+      await confirmCancel('Jab return');
+
+      await waitFor(() =>
+        expect(within(cardOf('Jab return')).getByText('0% complete · cancelled')).toBeTruthy(),
+      );
+      // One cancel, for that assignment and that athlete -- the identical
+      // request the coach's own confirmation sends.
+      expect(writes(sent.slice(before))).toEqual([
+        { path: CANCEL_PATH, method: 'POST', body: { assignment_id: 'assign-open', athlete_id: 'athlete-001' } },
+      ]);
+      expect(screen.getByText(/^Jab return is cancelled\./)).toBeTruthy();
+    });
   });
 });

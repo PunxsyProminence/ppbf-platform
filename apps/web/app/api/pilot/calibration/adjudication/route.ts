@@ -283,7 +283,7 @@ const PRIVATE_NO_STORE = { 'Cache-Control': 'private, no-store, max-age=0' } as 
  * THE VOCABULARIES TRAVEL WITH THE PAYLOAD, and that is deliberate.
  * `adjudication.ts` imports ./db, so importing its arrays as VALUES into a
  * 'use client' page would pull the Postgres driver into the browser bundle --
- * the reason coach/calibration/page.tsx restates its wire shapes and imports
+ * the reason teach-shadow/annotation/page.tsx restates its wire shapes and imports
  * only ontology.ts, which has no imports at all. The remaining choices were to
  * retype five controlled vocabularies into <option> tags, or to serve them
  * from the one module that defines them. ontology.ts's own header says why the

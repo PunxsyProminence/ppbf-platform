@@ -23,7 +23,8 @@ import {
 //
 // WHY THERE IS ANYTHING HERE AT ALL. createCalibrationProject and
 // createCalibrationClip have been shipped and tested since the calibration
-// foundation landed, and /coach/calibration has been able to annotate a clip
+// foundation landed, and the annotation surface (now /teach-shadow/annotation)
+// has been able to annotate a clip
 // for just as long -- but nothing outside a .pg.test.ts had ever called the
 // two creators, so no study existed for that page to open. The routes under
 // app/api/pilot/calibration are read-only by deliberate design, and say so:

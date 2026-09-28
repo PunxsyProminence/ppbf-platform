@@ -918,6 +918,18 @@ Classification legend:
 
 ### Alignment Matrix
 
+Point-in-time matrix, not doctrine. Where this matrix and section 20 disagree
+about what exists, section 20 and the code win.
+
+ROWS 9, 11, 12, 14, 15, 16 AND 17 were reconciled against `main` a1506d2e on
+2026-09-24, and every path and table they cite resolves on that commit. Four of
+them read MISSING for capabilities that were already implemented, and a builder
+trusting them would have rebuilt working subsystems.
+
+EVERY OTHER ROW carries its original, undated evidence and was NOT re-audited.
+Do not read this header as a warrant for the whole matrix -- an unreconciled row
+is evidence of what someone once observed, not a current claim.
+
 1. current auth and role checks: ALIGNS
 Evidence:
 - apps/web/src/server/pilot/http.ts
@@ -984,22 +996,29 @@ Evidence:
 - write usage across domain/intake routes under apps/web/app/api/pilot
 Notes: broad coverage exists, but canonical SHADOW event types are not yet emitted.
 
-9. telemetry: MISSING
+9. telemetry: ALIGNS
 Evidence:
-- no dedicated server telemetry writer or telemetry table in apps/web/src/server/pilot.
+- writer: apps/web/src/server/pilot/shadowTelemetry.ts
+- table: pilot.shadow_telemetry_events (infra/azure/pilot_slice_postgres.sql)
+- read surface: apps/web/app/api/pilot/shadow/telemetry/route.ts
 
 10. promotion workflow: PARTIAL
 Evidence:
 - intake promotion with organization_admin gate: apps/web/app/api/pilot/intake/review-action/route.ts
 Notes: promotion exists for intake path; no generalized SHADOW promotion spine for all domains.
 
-11. research gap workflow: MISSING
+11. research gap workflow: ALIGNS
 Evidence:
-- no backend research requirement creation workflow under apps/web/src/server/pilot.
+- creation: apps/web/src/server/pilot/shadowResearch.ts (createShadowResearchRequirement)
+- table: pilot.shadow_research_requirements (infra/azure/pilot_slice_postgres.sql)
+- routes: apps/web/app/api/pilot/shadow/research-requirements/route.ts and
+  apps/web/app/api/pilot/shadow/research-submissions/route.ts
 
 12. multi-gym support: PARTIAL
 Evidence:
-- organization scope and migration: apps/web/app/api/pilot/admin/migrate-multiorg/route.ts
+- organization scope and migration: infra/azure/pilot_slice_postgres_multiorg_migration.sql,
+  applied by apps/web/scripts/pilot-apply-multiorg-migration.mjs. There is no
+  migrate-multiorg HTTP route; the migration is script-and-SQL only.
 - organization-aware writes and checks in pilot routes and services.
 Notes: organization-level scale exists; gym and program partition model is not yet present.
 
@@ -1008,22 +1027,66 @@ Evidence:
 - organization boundary strongly present via organization_id in pilot services and migrations.
 - gym_id boundary not present in current pilot schema/services.
 
-14. source confidence: MISSING
+14. source confidence: PARTIAL
 Evidence:
-- no confidence taxonomy or verification state model persisted in pilot backend.
+- response-level evidence tier: apps/web/src/server/pilot/shadowEvidenceTier.ts
+  (PROVEN / EMERGING / EXPERIMENTAL / RESEARCH_NEEDED). Its own header scopes it
+  to how much verified evidence backed ONE chat response, and distinguishes it
+  from explainability.confidence and the formula engine's ConfidenceState.
+- library source authority: authority_tier on pilot.shadow_library_sources
+  (infra/azure/pilot_slice_postgres.sql:186-192)
+- persisted verification state, per table rather than general: verification_state
+  on pilot.shadow_recommendation_effectiveness and pilot.shadow_learning_events,
+  checked against ('unverified', 'durable_client', 'human_reviewed')
+Notes: these are three separate per-purpose models, not one taxonomy. The
+generalized source-confidence property across all evidence-bearing objects is
+not implemented. Section 20 item 5 records the same conclusion, and this row
+must not contradict it.
 
-15. recommendation accountability: MISSING
+15. recommendation accountability: ALIGNS
 Evidence:
-- no backend recommendation life-cycle tracking pipeline found in pilot services.
+- life cycle: apps/web/src/server/pilot/shadowRecommendations.ts
+  (createProvisionalRecommendation, decideOnRecommendation)
+- outcome grading: apps/web/src/server/pilot/shadowDecisionOutcomes.ts
+  (evaluateDecisionOutcome)
+- tables: pilot.shadow_recommendations and pilot.shadow_decisions
+  (infra/azure/pilot_slice_postgres_shadow_decision_loop_migration.sql)
+Notes: apps/web/app/api/pilot/shadow/recommendations/route.ts is the production
+creation boundary and calls createProvisionalRecommendation. What is missing is
+a producer for it: no production client posts to that creation route. The Coach
+Decision Loop reads recommendations and accepts or rejects them; nothing
+originates one. What may originate a recommendation is an open owner decision.
 
-16. failure learning: MISSING
+16. failure learning: PARTIAL
 Evidence:
-- no explicit failure-intelligence workflow (root cause, corrective goal, lesson capture) in pilot backend.
+- near-miss capture: apps/web/src/server/pilot/shadowNearMisses.ts, table
+  pilot.shadow_near_misses
+- outcome grading: apps/web/src/server/pilot/shadowDecisionOutcomes.ts, match
+  states match / partial / miss / confounded
+- learning signal: apps/web/src/server/pilot/shadowLearningLoop.ts, promoted to
+  durable learning only after human review
+- intervention learning record: apps/web/src/server/pilot/interventionEvidence.ts,
+  learning_signal and learning_notes on pilot.intervention_outcome_reviews
+  (infra/azure/pilot_slice_postgres_intervention_evidence_migration.sql)
+Notes: failure and outcome evidence IS retained, including near misses,
+human-reviewed outcome states, and human-reviewed intervention learning signals
+and notes. What is absent is the canonical failure-intelligence workflow of
+section 10 connecting failure -> root-cause investigation -> corrective goal ->
+progress tracking -> knowledge-base update.
 
 17. video and sensor readiness: PARTIAL
 Evidence:
-- planned UI placeholders: apps/web/app/coach/video-analysis/page.tsx and apps/web/app/athlete/video-analysis/page.tsx
-- no production video or sensor ingestion/analysis backend in pilot services.
+- video is a real production path, not a placeholder. Producer:
+  apps/web/app/api/pilot/shadow/video-analysis/route.ts, which fails closed on an
+  unset vision deployment, then checks video state, assertActorCanAccessAthlete
+  and assertGuardianMediaConsent before enqueueing a film_study job.
+- processing: apps/web/src/server/pilot/shadowJobProcessor.ts
+- human acceptance gate: apps/web/src/server/pilot/shadowFilmStudyProposals.ts,
+  which writes vision output about an identifiable minor as a PROPOSAL that never
+  reaches an athlete record until a coach accepts it
+- sensor ingestion: no production path found.
+Notes: the PARTIAL is now about SENSORS. Video analysis is implemented and
+human-gated end to end.
 
 ### Conflict Notes
 

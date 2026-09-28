@@ -27,6 +27,9 @@ interface VideoSessionRow {
   blob_path: string;
   uploaded_by_account_id: string;
   created_at: string;
+  /** Null for Film Study and for anything uploaded before grouping existed.
+   *  Non-null means the footage was recorded to teach Shadow. */
+  capture_take_id: string | null;
 }
 
 /**
@@ -61,13 +64,21 @@ interface VideoSessionRow {
  * Those two are the WHOLE gate-visible status population, not a subset of it.
  * currentConsentByGuardian filters `parent_id is not null`, and the only two
  * writers of a row with parent_id set are grantMediaConsent ('signed') and
- * withdrawMediaConsent ('withdrawn') in guardianConsent.ts -- both reached
- * only from POST /api/pilot/parent/consent. 'declined' is a status the schema
- * and waiverCompliance.ts both admit, but no writer can put it on a row this
- * gate can see, so it is not handled here rather than being handled
- * speculatively. If an admin-side writer that passes parentId is ever added,
- * this gate needs revisiting for that status -- checked 2026-08-28 across
- * every upsertWaiver caller in apps/web.
+ * withdrawMediaConsent ('withdrawn') in guardianConsent.ts. 'declined' is a
+ * status the schema and waiverCompliance.ts both admit, but no writer can put
+ * it on a row this gate can see, so it is not handled here rather than being
+ * handled speculatively.
+ *
+ * THE REVISIT THIS COMMENT ASKED FOR HAS HAPPENED, and the answer is that
+ * nothing changes. POST /api/pilot/admin/athlete-consent is now a second
+ * caller of both writers -- staff recording a signature collected on paper --
+ * so those two functions are no longer reached only from the guardian's own
+ * console. But it calls the SAME two functions, which emit the same two
+ * literals, and it grew no status parameter precisely so that stays true. The
+ * gate-visible population is unchanged. This would stop holding only if
+ * intake/domain-upsert, which accepts an arbitrary status string, were later
+ * allowed to pass parentId -- checked 2026-08-28 and re-checked when the
+ * staff writer landed, across every upsertWaiver caller in apps/web.
  *
  * WHO THE REFUSAL APPLIES TO: everyone, the athlete and the guardian
  * included. That is not new reach invented for withdrawal -- the photo-only
@@ -113,17 +124,26 @@ interface VideoSessionRow {
  *
  * That is the whole reason this is shaped as a scope check rather than as a
  * call to assertGuardianMediaConsent. Missing consent is not a rare edge on
- * this platform, it is THE DEFAULT STATE OF THE ROSTER. The only writer of a
- * row this gate can see is POST /api/pilot/parent/consent (requireRole
- * ['parent']): it is the sole caller that passes parentId to upsertWaiver, and
- * currentConsentByGuardian filters `parent_id is not null`. scripts/seed-data.ts,
- * which bulk-imports athletes and guardian_links, writes no waiver row at all;
- * both intake writers (intake/domain-upsert, intake/review-action) call
- * upsertWaiver without parentId, so even an admin recording "photo and media --
- * signed" through app/admin/consent lands a row with parent_id NULL that this
- * gate cannot see. A roster-imported athlete therefore reads as "consent
- * missing" until every one of their guardians has personally signed in and
- * granted, and no admin-side path exists to record it for them.
+ * this platform, it is THE DEFAULT STATE OF THE ROSTER. Two writers now put a
+ * row this gate can see: POST /api/pilot/parent/consent (requireRole
+ * ['parent']), the guardian's own console, and POST
+ * /api/pilot/admin/athlete-consent (admin, organization_admin, coach), which
+ * records a signature collected on paper. Both pass parentId to upsertWaiver;
+ * currentConsentByGuardian filters `parent_id is not null`.
+ *
+ * WHAT IS STILL INVISIBLE HERE, and it is the majority of waiver rows.
+ * scripts/seed-data.ts, which bulk-imports athletes and guardian_links, writes
+ * no waiver row at all; both intake writers (intake/domain-upsert,
+ * intake/review-action) call upsertWaiver without parentId, so an admin
+ * recording "photo and media -- signed" through app/admin/consent still lands
+ * a row with parent_id NULL that this gate cannot see.
+ *
+ * So a roster-imported athlete still reads as "consent missing" by default.
+ * What changed is that it is no longer UNFIXABLE without the guardian
+ * personally signing in: staff can now record the paper on their behalf. The
+ * decision below is unchanged by that -- absence still plays -- because
+ * absence remains the ordinary state of a roster nobody has worked through
+ * yet.
  *
  * Refusing on absence would have taken every coach's footage away on the day
  * it shipped -- and taken it from the athlete's own view and their guardian's
@@ -231,11 +251,14 @@ async function assertConsentCoversVideo(organizationId: string, athleteId: strin
    * the only writers that set parent_id are grantMediaConsent ('signed') and
    * withdrawMediaConsent ('withdrawn'), both literals. The two intake writers
    * accept arbitrary strings but pass no parentId, so their rows are
-   * invisible here. This refusal therefore changes nothing today and becomes
-   * load-bearing the moment an admin-side writer that passes parentId is
-   * added -- which is precisely the revisit trigger the header above already
-   * names. It is written now because the alternative is that such a writer
-   * lands and this gate silently starts serving.
+   * invisible here.
+   *
+   * THE ADMIN-SIDE WRITER THIS ANTICIPATED HAS SINCE LANDED, and it did not
+   * make this branch live: POST /api/pilot/admin/athlete-consent calls those
+   * same two functions rather than writing a row itself, and deliberately took
+   * no status parameter. The branch stays a no-op. It becomes load-bearing
+   * only if a writer that passes BOTH parentId and a free-form status is ever
+   * added -- which is why it is written now rather than after.
    */
   const unreadable = consent.perGuardian.filter(
     (guardian) =>
@@ -261,7 +284,7 @@ export async function GET(
     const { videoId } = await params;
 
     const row = await queryOne<VideoSessionRow>(
-      `select video_session_id, organization_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, blob_path, uploaded_by_account_id, created_at
+      `select video_session_id, organization_id, title, notes, file_name, file_size_bytes, mime_type, status, athlete_id, blob_path, uploaded_by_account_id, created_at, capture_take_id
        from pilot.video_sessions
        where video_session_id = $1 and organization_id = $2`,
       [videoId, principal.organizationId],
@@ -274,6 +297,23 @@ export async function GET(
       return hiddenNotFound();
     }
     if (row.status !== 'ready') {
+      return hiddenNotFound();
+    }
+    /*
+     * ORDINARY PLAYBACK IS A FILM STUDY SURFACE. Once held teaching footage
+     * can be released, it reaches 'ready' and this route would mint it a
+     * playback SAS like any other video -- reopening on the single-video read
+     * exactly what separating the list read closed.
+     *
+     * Teach Shadow's own review goes through /api/pilot/video/review-link,
+     * which is the path built for quarantined footage and is unaffected.
+     *
+     * hiddenNotFound, not a named refusal, because this route answers every
+     * "does not exist" and "exists but forbidden" case identically on purpose;
+     * saying "that is teaching footage" here would be the disclosure oracle
+     * the rest of the function is written to avoid.
+     */
+    if (row.capture_take_id !== null) {
       return hiddenNotFound();
     }
 

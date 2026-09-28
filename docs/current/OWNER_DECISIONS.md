@@ -91,6 +91,157 @@ and should not try to.
 
 ---
 
+## OD-2026-09-25-003 -- Any coach or admin in the organization may read an athlete's session note
+
+**Provenance: PRIMARY** for the owner's quoted words, as carried in the
+A-FIN-08 work order and its handoff. The words were given in the owner's
+session on 2026-09-25 and are quoted here; this entry was written on
+2026-09-26.
+
+**Date:** 2026-09-25. **Governs:** who may read `pilot.sessions.notes`, the
+free-text an athlete writes for their coach at check-in. **Does not supersede**
+OD-2026-09-21-001 or any relationship rule elsewhere.
+
+THIS ENTRY IS LATE, AND THAT IS THE POINT. The gate was built and opened as
+PR #973 before the decision was recorded here. `AGENT_KERNEL.md` says to read
+this file before writing anything that asserts who may do what, and to stop as
+OWNER DECISION REQUIRED when the policy is not in it. Codex caught the
+omission on the pull request and ChatGPT's standards review agreed. The ruling
+itself was never in doubt -- the record was.
+
+### The decision
+
+The owner, on who may read it:
+
+> Any coach or admin in the organization.
+
+And on the linked-guardian exposure:
+
+> Close it in this slice.
+
+### What that means
+
+1. A coach, `organization_admin` or legacy `admin` in the athlete's OWN
+   organization may read that athlete's session note for the current gym day.
+2. Assignment and coverage DO NOT participate. A coach of record, an active
+   covering coach, a coach whose coverage lapsed and a coach with no
+   relationship at all are all treated identically, and `pilot.coach_coverage`
+   is never queried on this path.
+3. Athlete, parent, board and `platform_owner` are refused. Cross-organization
+   and soft-deleted athletes are refused with the same indistinguishable
+   message, so a refusal says nothing about whether the id names a real child.
+4. Linked guardians are excluded from `sessions.notes` in the passbook. The key
+   is ABSENT rather than null, because `null` would assert that no note exists,
+   which is a different fact from "one does and it is not yours to read".
+
+### What it does NOT govern
+
+This rule covers the dedicated session-note projection and nothing else.
+
+- It does NOT widen `/api/pilot/sessions/list`, which still carries the
+  narrower coach-of-record-or-coverage gate for the whole session record.
+- It does NOT widen generic `athlete_record` access or
+  `assertActorCanAccessAthlete`, which is untouched and still decides every
+  other athlete-scoped capability.
+- It is not a precedent for any other column. It was decided about this one
+  field, on the reasoning below.
+
+### Why the wider audience
+
+The roster a coach works from is the whole gym by design. So what decides whose
+note a coach ends up reading is their deliberate selection of an athlete on
+that roster, not an assignment record -- the same reasoning the owner applied
+to the wellness check-in on 2026-09-22 (A-FIN-03R1), which this follows. A
+child writing "my wrist hurts before we start" is of no use if the only person
+permitted to read it is an assigned coach who is not in the building.
+
+The trade, stated plainly: a coach with no connection to that child can read
+what they wrote. What bounds it is organization membership, the refusal of
+soft-deleted athletes, and that nothing is read until a coach deliberately
+picks that athlete.
+
+### Still open
+
+Who may EDIT a note after an athlete creates it is NOT decided. `POST
+/api/pilot/sessions` and `/sessions/update` both accept `organization_admin`
+and `coach` as well as `athlete`, and the row carries no author or last-editor
+column -- which is why no surface may name a writer. That is a separate owner
+decision and A-FIN-08 deliberately left it open.
+
+---
+
+## OD-2026-09-25-002 -- LANES are agent roles; the four subject areas are WORK DOMAINS
+
+**Provenance: PRIMARY.**
+
+**Date:** 2026-09-25. **Governs:** terminology for agent roles and subject
+areas across PPBF AI coordination. **Clarifies** OD-2026-09-21-001; it does not
+change the authorities assigned there.
+
+The owner selected:
+
+> LANES + WORK DOMAINS, exactly as you framed it.
+
+The framing selected was:
+
+> LANES stays the agent-role list (Jason owner/final, Claude builder, ChatGPT
+> design/specification/standards/research, Grok visual). His four subject areas
+> become WORK DOMAINS: visual design, ML training, AI/ML, app build.
+
+### What that means
+
+1. **LANES** names agent roles and their authority boundaries.
+2. **WORK DOMAINS** names subject areas: visual design, ML training, AI/ML,
+   app build.
+3. A work domain is not an agent role and creates no authority by itself.
+4. The detailed lane responsibilities in `AGENT_KERNEL.md` remain in force
+   except where a later owner decision expressly supersedes them.
+
+Evidence at decision: `AGENT_KERNEL.md` at `c15b9644` already carried the
+detailed Jason / ChatGPT / Claude / Grok agent-role model, and
+`docs/AI_COLLABORATION.md` used "lanes" for that same model. The decision
+resolves the separate four-subject-area vocabulary without changing those
+authorities.
+
+---
+
+## OD-2026-09-25-001 -- A session note is retractable from the coach's view
+
+**Provenance: PRIMARY.**
+
+**Date:** 2026-09-25. **Governs:** whether a session note already visible to a
+coach can be withdrawn by the athlete.
+
+The owner selected:
+
+> RETRACTABLE.
+
+And:
+
+> Clearing a session note withdraws it from the coach view.
+
+The choice was put against an irreversible alternative after review found that
+the athlete surface did not write an emptied notes box, so text already stored
+could remain coach-visible after the athlete reconsidered and deleted it.
+
+### What that means
+
+1. A coach-visible session note is not irrevocable.
+2. The athlete must have an intentional way to withdraw one.
+3. After a successful withdrawal the coach-readable contract returns no note.
+4. The implementation may distinguish an intentional withdrawal from an
+   accidental empty edit. The decision requires the CAPABILITY, not a
+   destructive write on every keystroke.
+5. A-FIN-08 implements it using the existing session model and the existing
+   no-note representation. This decision does not authorize a schema
+   migration.
+6. Withdrawal has to reach a coach screen that is already open. A note read
+   once and never revalidated leaves withdrawn words on that screen for as
+   long as it stays there, which would make the retraction true of the
+   database and false of the person reading it.
+
+---
+
 ## OD-2026-09-21-001 -- Claude builds, ChatGPT designs and enforces standards; product direction; minors' limits are coach-set data
 
 **Provenance: PRIMARY** for the owner's quoted words and the options as put.

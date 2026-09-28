@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import {
+  completionOnCancelledWork,
   recordCompletion,
   verifyCompletion,
   getAssignmentCompletions,
@@ -103,6 +104,17 @@ export async function POST(request: NextRequest) {
     const assignment = await getDrillAssignmentById(principal.organizationId, body.assignment_id);
     if (!assignment || assignment.athlete_id !== body.athlete_id) {
       return NextResponse.json({ error: 'Assignment does not belong to the specified athlete' }, { status: 400 });
+    }
+
+    // NO NEW LOGS ON CANCELLED WORK (A-FIN-06, owner decision 2026-09-22).
+    // Refused here, from the read just made and before any write, so the
+    // athlete gets a sentence rather than a silent log against work nobody
+    // expects any more. recordCompletion re-checks under a row lock, which is
+    // what closes the gap between this read and its insert. Verifying or
+    // disputing a completion that already exists is the branch above and is
+    // deliberately untouched: those logs are the work's history.
+    if (assignment.status === 'cancelled') {
+      throw completionOnCancelledWork();
     }
 
     // Record the completion (also recomputes assignment percentage/status).

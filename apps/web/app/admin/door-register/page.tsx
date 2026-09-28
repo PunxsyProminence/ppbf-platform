@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
+import ChromeLink from '@/components/ChromeLink';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import {
@@ -306,10 +307,16 @@ export default function DoorRegisterPage() {
                                    is not decoration: it is the channel that
                                    separates a door you can open from one you
                                    cannot, which must not rest on colour alone
-                                   (Law 3). */
-                                <Link href={door.href} className="underline">
+                                   (Law 3).
+
+                                   ChromeLink, not Link: this list renders EVERY
+                                   door the reader can open, and that includes
+                                   both camera documents. A soft navigation into
+                                   one lands the recorder inside this page's own
+                                   document, which was served camera=(). */
+                                <ChromeLink href={door.href} className="underline">
                                   {door.label}
-                                </Link>
+                                </ChromeLink>
                               ) : (
                                 door.label
                               )}

@@ -13,6 +13,7 @@
 // rather than of a message somebody had to successfully send.
 
 import { fileEscalation, type SafetyEscalationSeverity } from './escalationLadder';
+import { resolveScanSubject } from './captureParticipants';
 import { assertGuardianMediaConsent, GuardianConsentMissingError } from './guardianConsent';
 import { emitShadowEvent } from './shadowEvents';
 import { scanVideoSession } from './videoScan';
@@ -162,17 +163,32 @@ export async function sweepQuarantinedVideos(options: {
     // 'pending'/retry path an ordinary not-yet-arrived verdict already takes:
     // reclaimable, backed off, and re-checked against consent on every retry.
     //
-    // A video with no athlete_id (the unattributed team-upload case this
-    // sweep already treats specially for escalation filing) has no guardian
-    // to ask, so it is unaffected here -- closing that gap is its own,
-    // separate piece of work.
+    // TS-ANON-01: WHICH CONSENT, AND WHOSE, NOW DEPENDS ON THE DESTINATION.
+    //
+    // claim.athlete_id can no longer answer this. A teaching video carries
+    // none by design, and "no athlete_id" used to mean "an unattributed team
+    // upload with no guardian to ask" -- so keying off it would send every
+    // properly anonymised child's footage to the content screen with the
+    // consent check skipped entirely. That is the failure this slice exists to
+    // prevent, arriving through the gate meant to stop it.
+    //
+    // So the destination is resolved first. Film Study asks publication media
+    // consent, exactly as before. Teach Shadow asks nobody -- that footage is
+    // training data for a recognizer rather than a record about the person in
+    // frame, and the owner ruled it carries no per-athlete permission and that
+    // filming for it is never restricted.
+    const subject = await resolveScanSubject(claim.organization_id, claim.video_session_id);
     let contentSkippedForConsent = false;
-    if (config.content === 'vision' && claim.athlete_id) {
-      try {
-        await assertGuardianMediaConsent(claim.organization_id, claim.athlete_id);
-      } catch (error) {
-        if (!(error instanceof GuardianConsentMissingError)) throw error;
-        contentSkippedForConsent = true;
+    if (config.content === 'vision') {
+      if (subject.isTeaching) {
+        // Nothing to ask, and nobody to ask it of.
+      } else if (claim.athlete_id) {
+        try {
+          await assertGuardianMediaConsent(claim.organization_id, claim.athlete_id);
+        } catch (error) {
+          if (!(error instanceof GuardianConsentMissingError)) throw error;
+          contentSkippedForConsent = true;
+        }
       }
     }
 
@@ -224,16 +240,22 @@ export async function sweepQuarantinedVideos(options: {
     // like it succeeded. The row itself is already durably settled by this
     // point, so a failure here costs a delayed escalation, never data loss.
     //
-    // Skipped when the video has no athlete_id (an unattributed team upload,
-    // the same case videoScanReview.ts documents) -- safety_escalations.athlete_id
-    // is not-null with a foreign key to pilot.athletes, so there is nothing to
+    // Skipped when nobody can be resolved -- safety_escalations.athlete_id is
+    // not-null with a foreign key to pilot.athletes, so there is nothing to
     // file against.
-    if (terminal && isEscalatingScanDecision(scan.decision) && claim.athlete_id) {
+    //
+    // TEACHING FOOTAGE ALWAYS RESOLVES TO NOBODY, so it never escalates. That
+    // is the cost of the owner's rule that this media names no one, recorded
+    // here rather than argued: an escalation carrying an athlete would be that
+    // identity arriving by a side door, and there is no identity to carry.
+    // Film Study is untouched and still escalates against its own athlete.
+    const escalationAthleteId = subject.isTeaching ? null : claim.athlete_id;
+    if (terminal && isEscalatingScanDecision(scan.decision) && escalationAthleteId) {
       await fileEscalation({
         organizationId: claim.organization_id,
         sourceType: 'video_scan',
         sourceId: claim.video_session_id,
-        athleteId: claim.athlete_id,
+        athleteId: escalationAthleteId,
         severity: escalationSeverityForScanDecision(scan.decision),
         reason: escalationReasonForScanDecision(scan.decision, scan.reason),
         triggeredBy: 'system',

@@ -1,5 +1,6 @@
 import { requireRole, type ActorIdentity } from './access';
 import {
+  BOARD_SUMMARY_ROLES,
   DECISION_LOOP_ROLES,
   MANUAL_OVERRIDE_ROLES,
   ORGANIZATION_MEMBER_ROLES,
@@ -18,6 +19,38 @@ function actor(role: ActorIdentity['role']): ActorIdentity {
 }
 
 describe('SHADOW role sets', () => {
+  // Choosing a session type and being allowed to RUN that session type are
+  // separate permissions. For board summaries they were the same permission
+  // until the executor disagreed -- one process too late, after the job row
+  // had already been written.
+  describe('board summary authority', () => {
+    it('is exactly the authority the executor enforces', () => {
+      expect([...BOARD_SUMMARY_ROLES].sort())
+        .toEqual(['admin', 'organization_admin', 'platform_owner']);
+    });
+
+    it('excludes coach, who could previously request one the executor would refuse', () => {
+      expect(BOARD_SUMMARY_ROLES).not.toContain('coach');
+    });
+
+    // The guard against closing the mismatch from the wrong end. Coach was
+    // never able to EXECUTE a board summary; widening this list to match the
+    // override list would hand governance data to the whole coaching staff,
+    // which is the opposite of what closing the gap means.
+    it.each(['coach', 'athlete', 'parent', 'staff', 'volunteer', 'board'] as const)(
+      'refuses %s at the same chokepoint the executor uses',
+      (role) => {
+        expect(BOARD_SUMMARY_ROLES).not.toContain(role);
+      },
+    );
+
+    // Coach keeps every other manual override, Heavy Bag among them. This
+    // narrowed one session type, not the concept.
+    it('does not take manual override away from coach', () => {
+      expect(MANUAL_OVERRIDE_ROLES).toContain('coach');
+    });
+  });
+
   describe('platform_owner (Omega) breadth', () => {
     // The platform owner was omitted from these lists, which made every
     // /admin/shadow request it issued return 403 while the UI still admitted it
@@ -102,6 +135,7 @@ describe('SHADOW role sets', () => {
       ['DECISION_LOOP_ROLES', DECISION_LOOP_ROLES],
       ['MANUAL_OVERRIDE_ROLES', MANUAL_OVERRIDE_ROLES],
       ['SHADOW_LIBRARY_CURATOR_ROLES', SHADOW_LIBRARY_CURATOR_ROLES],
+      ['BOARD_SUMMARY_ROLES', BOARD_SUMMARY_ROLES],
     ])('names both admin spellings in %s', (_name, roles) => {
       expect(roles.includes('admin')).toBe(roles.includes('organization_admin'));
     });

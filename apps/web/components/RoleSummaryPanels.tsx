@@ -13,12 +13,36 @@ export type AthleteCountRead =
   | { status: 'unavailable' }
   | { status: 'read'; count: number };
 
+/**
+ * Whether today's wellness check-in is on record, as the wellness read says.
+ *
+ * Four states and no score, on purpose. 'not_recorded' is something only a
+ * read that answered may say; 'loading' and 'unavailable' are not absence --
+ * "you have not done your wellness check" said about a request still in
+ * flight, or one that failed, tells a child to redo something they may
+ * already have done. No answer from the check-in travels in this type, so the
+ * tile cannot read back, average or band one.
+ */
+export type AthleteWellnessTodayRead =
+  | { status: 'loading' }
+  | { status: 'unavailable' }
+  | { status: 'recorded' }
+  | { status: 'not_recorded' };
+
+/** What the Today's Wellness tile says for each state. See AthleteWellnessTodayRead. */
+const WELLNESS_TODAY_TEXT: Record<AthleteWellnessTodayRead['status'], string> = {
+  recorded: 'Recorded today',
+  not_recorded: 'Not recorded today',
+  loading: 'Checking...',
+  unavailable: 'Unavailable',
+};
+
 interface AthleteSummaryPanelProps {
-  readiness: 'GREEN' | 'YELLOW' | 'RED';
-  // The 1-10 number the athlete actually set on the slider. Shown so the tile
-  // reads back what they said instead of translating it into something the
-  // platform does not claim (see the tile comment below).
-  readinessValue: number;
+  // Today's wellness check-in, as a state. It replaced `readiness` and
+  // `readinessValue` (A-FIN-01), which carried the check-in slider's band and
+  // number -- and the number started at 8, so the tile showed an answer the
+  // athlete had not given (see the tile comment below).
+  wellnessToday: AthleteWellnessTodayRead;
   // The coach-assigned work still open, as the Floor lists it. A state, not a
   // bare number, because a bare number made "still loading" and "the read
   // failed" render as 0 -- which tells a child their coach set them nothing.
@@ -143,43 +167,31 @@ function getAttendanceGlyph(attendancePercent: number): string {
 
 // ATHLETE SUMMARY PANEL
 export function AthleteSummaryPanel({
-  readiness,
-  readinessValue,
+  wellnessToday,
   openCoachWork,
   goalsActive,
   upcomingSession
 }: Readonly<AthleteSummaryPanelProps>) {
-  const readinessColor = {
-    GREEN: 'bg-[color-mix(in_srgb,var(--cleared)_16%,transparent)] border-[color:var(--cleared)]',
-    YELLOW: 'bg-[color-mix(in_srgb,var(--monitor)_16%,transparent)] border-[color:var(--monitor)]',
-    // Not --locked. This is the CHILD'S OWN screen, and the rung reserved for
-    // "a clinician said no" was being painted from a triage number a staff
-    // member typed at intake. --restricted keeps it serious and ordered
-    // without claiming a medical refusal nobody made. See readinessDotClass in
-    // CoachWorkspace.tsx for the full reasoning.
-    RED: 'bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] border-[color:var(--restricted)]'
-  }[readiness];
-
   return (
     <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-4">
-      {/* Self-report, not a clearance. Until 2026-08-24 this tile translated
-          the band into an instruction -- GREEN said "READY FOR TRAINING",
-          YELLOW "MODIFY TRAINING", RED "COACH REVIEW REQUIRED". #597 removed
-          the slider's authority over training, so an instruction here claimed
-          a decision the platform no longer makes from this input, on the
-          strength of a child's own unvalidated 1-10. What survives is the
-          read-back: the number they chose, and the band word -- the same
-          descriptor check-in records on the session note -- never a
-          direction. Colour is never the only carrier (Law 3): the band is
-          spelled out in text. */}
-      <div className={`rounded-[var(--r-md)] border-2 p-[var(--s4)] ${readinessColor}`}>
-        <p className="t-label">Your Self-Report</p>
-        <p className="t-command mt-[var(--s3)]">
-          {readinessValue}/10 · {readiness}
-        </p>
-        <p className="t-muted mt-[var(--s2)]">
-          How you say you feel. Not a clearance -- your workout does not change with it.
-        </p>
+      {/* TODAY'S WELLNESS (A-FIN-01). This tile was "Your Self-Report" over
+          "8/10 · GREEN", and the 8 was the check-in slider's starting
+          position: before the athlete touched anything, their own summary
+          said they had reported 8/10. The slider is gone. What the tile says
+          now is whether the pre-session self-report that IS stored -- today's
+          wellness check -- is on record: a state from the wellness read, and
+          nothing from inside it. No score, no average, no band, and so no
+          colour: a neutral tile, because none of the four states is a safety
+          state.
+
+          It had already stopped giving instructions (2026-08-24: GREEN said
+          "READY FOR TRAINING", YELLOW "MODIFY TRAINING", RED "COACH REVIEW
+          REQUIRED" until #597), and the "not a clearance" line it carried then
+          is kept, because the wellness check is not one either. */}
+      <div className={KPI_TILE}>
+        <p className="t-label">Today&apos;s Wellness</p>
+        <p className="t-body mt-[var(--s3)]">{WELLNESS_TODAY_TEXT[wellnessToday.status]}</p>
+        <p className="t-muted mt-[var(--s2)]">Your own check. Not a clearance.</p>
       </div>
 
       {/* Open coach work: every assigned or in-progress row a coach set,

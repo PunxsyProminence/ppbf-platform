@@ -25,6 +25,7 @@
 
 import { assertActorCanAccessAthlete, isOrganizationAdminRole } from './access';
 import type { PilotPrincipal } from './auth';
+import { query } from './db';
 import { getVideoSessionForReview, type VideoSessionReviewRecord } from './videoSessions';
 
 // Watching is the wider set: a coach must be able to see their own footage
@@ -132,4 +133,78 @@ export async function authorizeVideoScanReview(
   }
 
   return video;
+}
+
+/*
+ * THE REVIEW A RELEASE RESTS ON, CHECKED ON THE SERVER.
+ *
+ * WHAT THIS PROVES, EXACTLY: that this platform issued THIS actor a review
+ * link for THIS video, against the scan verdict the video carries NOW, within
+ * the last fifteen minutes.
+ *
+ * WHAT IT DOES NOT PROVE, AND MUST NEVER BE DESCRIBED AS PROVING: that anybody
+ * watched anything. review-link mints a read-only SAS and the browser fetches
+ * the bytes from Azure Storage directly, so this application never observes
+ * the footage being played. Proving viewing would need a record of the read
+ * that nothing here creates. Every message on this path therefore says "review
+ * link" and never "watched", "viewed" or "reviewed".
+ *
+ * WHY IT WAS ONLY A UI GATE BEFORE. The Film Study console disables Release
+ * until a review link succeeds, but that is page state: a direct POST to the
+ * release route was accepted with nothing opened. The footage most likely to
+ * need a human look is a minor's quarantined video that no scanner could
+ * clear, so the check belongs on the server.
+ *
+ * THE FIFTEEN MINUTES ARE THE CREDENTIAL'S OWN LIFETIME, not a number chosen
+ * here: review-link issues a SAS that expires in fifteen. Without a bound, a
+ * link issued months ago would satisfy this forever.
+ *
+ * THE SCAN STATE IS BOUND FOR THE SAME REASON. A link issued while a video was
+ * 'unconfigured' must not authorise a release after a re-scan moved it to
+ * 'blocked': the actor would be acting on a verdict that no longer holds.
+ *
+ * NOT SINGLE USE, and that limit is real. Any qualifying row satisfies the
+ * check until it ages out, and there is nowhere to mark one consumed without
+ * persistence this slice may not add.
+ */
+export const REVIEW_LINK_VALID_MINUTES = 15;
+
+export async function assertActorHoldsCurrentReviewLink(
+  principal: PilotPrincipal,
+  videoSessionId: string,
+  currentScanState: string,
+): Promise<void> {
+  const held = await query<{ audit_id: string }>(
+    `select audit_id from pilot.audit_events
+      where organization_id = $1
+        and actor_account_id = $2
+        and entity_type = 'video_session'
+        and entity_id = $3
+        and details->>'action' = 'video_review_link_issued'
+        and details->>'scan_state' = $4
+        and created_at >= now() - ($5 || ' minutes')::interval
+      limit 1`,
+    [
+      principal.organizationId,
+      principal.accountId,
+      videoSessionId,
+      currentScanState,
+      String(REVIEW_LINK_VALID_MINUTES),
+    ],
+  );
+
+  if (held.length === 0) {
+    /*
+     * PER ACTOR, INCLUDING ADMINISTRATORS. A link opened by the coach who
+     * filmed it does not stand in for the admin who releases it: admin
+     * authority decides WHOSE footage may be resolved, not whether the person
+     * taking the irreversible action looked first.
+     *
+     * 'Forbidden' so http.ts maps it to 403, and worded as an instruction
+     * because it is one -- the caller can satisfy it immediately.
+     */
+    throw new Error(
+      'Forbidden: open the review link for this footage before releasing it',
+    );
+  }
 }

@@ -5,6 +5,10 @@ import { query, queryOne } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
+jest.mock('@/src/server/pilot/videoDestination', () => ({
+  ...jest.requireActual('@/src/server/pilot/videoDestination'),
+  assertVideoIsFilmStudyMedia: jest.fn(),
+}));
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };

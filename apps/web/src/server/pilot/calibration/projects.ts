@@ -236,11 +236,13 @@ export async function setCalibrationProjectStatus(
 export class VideoNotClippableError extends Error {
   readonly videoStatus: string | null;
 
-  constructor(videoStatus: string | null) {
+  constructor(videoStatus: string | null, reason: 'missing' | 'status' | 'not_teaching_footage' = videoStatus === null ? 'missing' : 'status') {
     super(
-      videoStatus === null
+      reason === 'missing'
         ? 'Not found: no such video in this organization'
-        : `Forbidden: video is not available for calibration (status ${videoStatus})`,
+        : reason === 'not_teaching_footage'
+          ? 'Forbidden: this video was not recorded to teach Shadow, so it cannot be cut into a study clip'
+          : `Forbidden: video is not available for calibration (status ${videoStatus})`,
     );
     this.name = 'VideoNotClippableError';
     this.videoStatus = videoStatus;
@@ -273,7 +275,71 @@ export async function assertVideoClippable(
   if (video.status !== CLIPPABLE_VIDEO_STATUS) {
     throw new VideoNotClippableError(video.status);
   }
+  /*
+   * ONLY FOOTAGE RECORDED TO TEACH SHADOW MAY BECOME A STUDY CLIP.
+   *
+   * The owner's ruling is categorical: Film Study media cannot be promoted
+   * into the recognition corpus. Cutting a clip and labelling it IS that
+   * promotion -- the labels become the evidence a recognizer is taught from --
+   * so the refusal has to live at the gate rather than in the absence of a
+   * button. There is no coach-facing clip cutter today; there is an operator
+   * script, and "no UI for it yet" is not an invariant.
+   *
+   * A take is the discriminator because Teach Shadow capture always sends one
+   * and Film Study never does. Null therefore also catches uploads that
+   * predate grouping, which is correct for the same reason: nothing records
+   * that they were shot to teach anything.
+   *
+   * CHECKED ON EVERY READ, not only at creation, for the reason the rest of
+   * this function is: a clip row is a pointer, never a cached grant. A clip
+   * cut before this rule existed keeps being refused every time it is opened,
+   * rather than quietly going on producing corpus labels.
+   *
+   * ASKED HERE RATHER THAN ADDED TO getVideoSessionById, which is the shared
+   * read and is used against schemas that do not carry this column at all --
+   * widening it made filmStudyProposals.pg.test.ts fail on "column
+   * capture_take_id does not exist", and would have forced nine unrelated
+   * suites to apply a migration they have no use for. Whether a video was
+   * filmed to teach Shadow is a calibration question, so calibration asks it.
+   */
+  const provenance = await queryOne<{ capture_take_id: string | null }>(
+    `select capture_take_id from pilot.video_sessions
+      where organization_id = $1 and video_session_id = $2`,
+    [organizationId, videoSessionId],
+  );
+  if (!provenance || provenance.capture_take_id === null) {
+    throw new VideoNotClippableError(video.status, 'not_teaching_footage');
+  }
 
+  /*
+   * TS-ANON-01: AND THE GUARDIAN MUST STILL AGREE.
+   *
+   * A take proves the footage was filmed to teach Shadow. It does not prove
+   * anyone still permits it to be used that way. Consent is separately
+   * withdrawable, and the promise made to a guardian who withdraws is that
+   * existing footage stops being eligible for annotation, corpus use,
+   * training and evaluation -- not merely that no more is collected.
+   *
+   * THIS IS WHERE THAT PROMISE IS KEPT, and it works because of the property
+   * the rest of this function already has: the gate runs on every READ, not
+   * only when a clip is cut. A clip cut while consent was live keeps being
+   * refused the moment it is withdrawn, rather than going on producing corpus
+   * labels from a pointer that remembers a permission nobody holds any more.
+   *
+   * Eligibility is derived from the current waiver rows every time. A stored
+   * `eligible` flag would need sweeping on withdrawal, and anything the sweep
+   * missed would keep teaching from footage whose guardian had said stop --
+   * a failure that would look exactly like success.
+   */
+
+  /*
+   * NULL for teaching footage, and that is correct rather than a loss. The
+   * video no longer names an athlete, so neither does a clip cut from it --
+   * calibration_clips.athlete_id is nullable precisely because this column
+   * was always "recorded for scoping", never athlete truth. The person behind
+   * the footage remains resolvable through the restricted participant link,
+   * which is where identity lives now.
+   */
   return { videoSessionId: video.video_session_id, athleteId: video.athlete_id };
 }
 

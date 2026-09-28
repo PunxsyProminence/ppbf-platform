@@ -33,7 +33,7 @@ Do not preload archived audits, the historical queue, superseded plans, old buil
 
 ## Working channel
 
-### Lanes (owner decision 2026-09-21, OD-2026-09-21-001)
+### Lanes (owner decisions OD-2026-09-21-001 and OD-2026-09-25-002)
 
 - **Jason** -- final authority: priorities, scope, mutation approval, design
   and visual approval, production authorization, acceptance, conflict
@@ -76,6 +76,14 @@ Do not preload archived audits, the historical queue, superseded plans, old buil
 "Designer", in the owner's words, means product and system design; visual
 design stays Grok's. Several Claude lanes may run at once, each in its own
 session. The **Lane model** below governs who merges.
+
+### Work domains (owner decision OD-2026-09-25-002)
+
+WORK DOMAINS are subject areas, not agent roles or authority boundaries:
+visual design; ML training; AI/ML; app build.
+
+LANES remain the agent-role model above. A work domain does not create,
+transfer, narrow, or expand an agent's authority.
 
 ### Repository writes
 
@@ -208,6 +216,18 @@ ran and what the evidence does **not** establish. Where the claim is about
 something being prevented, a test nobody has watched go red is a hypothesis.
 Where the claim is about a deployed environment, the run has to have been
 against the state that makes the change observable.
+
+**Search locates candidate code; it never establishes returned, persisted,
+authorized or rendered behaviour.** Trace the producing query, route or render
+path, or execute it, before claiming what a surface shows or an endpoint
+returns. A grep proves a token is absent, nothing more: on 2026-09-24 "the
+sessions list route contains the word notes zero times" was true and the route
+returned that column on every call, because the query is `select *`.
+
+Where the claim is that a guard bites, break it and watch the test die --
+`npm run mutation:prove -- --spec <spec.json>` runs mutants in a throwaway
+worktree so the branch you are about to push is never the thing being mutated.
+A mutant that survives is a finding about the test.
 
 `docs/current/EVIDENCE_APPLICABILITY.md` carries the record format, the
 evidence ladder, which instrument fits which claim, and the worked cases.
