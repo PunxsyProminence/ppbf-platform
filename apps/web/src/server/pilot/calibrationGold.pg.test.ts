@@ -1195,3 +1195,100 @@ describe('the shipped migration runner', () => {
     }
   });
 });
+
+/*
+ * ARCHIVING A SOURCE VIDEO IS HOW SOMEBODY SAYS IT SHOULD NOT BE IN THE
+ * CORPUS, and a gold record is the most consequential teaching use there is:
+ * the reference data a recognizer is scored against.
+ *
+ * NEITHER GATE IS REACHED BY assertVideoClippable. That refuses to cut a clip
+ * or reopen one, and never runs on nomination or promotion -- so without these
+ * two checks an adjudication that already existed when the footage was
+ * withdrawn could still be turned into reference data afterwards, which is
+ * strictly worse than reopening a clip.
+ */
+describe('withdrawn footage cannot become reference data', () => {
+  async function setVideoStatus(videoId: string, status: string): Promise<void> {
+    const client = await freshClient();
+    try {
+      await client.query(
+        `update pilot.video_sessions set status = $2 where video_session_id = $1`,
+        [videoId, status],
+      );
+    } finally {
+      await client.end();
+    }
+  }
+
+  /*
+   * PUT THE SHARED VIDEO BACK. stage() reuses one video per organization, and
+   * every clip is cut through assertVideoClippable, which refuses a source that
+   * is not 'ready'. A test here that left the row archived would therefore
+   * break every later test in the file -- by relying on exactly the property
+   * these tests exist to assert.
+   */
+  afterEach(async () => { await setVideoStatus(VIDEO_ID, 'ready'); });
+
+  test('an adjudication whose footage has been archived cannot be nominated', async () => {
+    const staged = await stage({ clipCode: 'G-ARCHIVED-NOM' });
+    await setVideoStatus(staged.videoId, 'archived');
+
+    await expect(
+      gold.nominateGoldCandidate({
+        organizationId: ORG_ID,
+        goldRecordId: crypto.randomUUID(),
+        adjudicationId: staged.adjudicationId,
+        eligibility: 'TRAINING_ELIGIBLE',
+      }),
+    ).rejects.toThrow(/Forbidden: the footage this reading came from has been archived/);
+  });
+
+  test('a candidate whose footage is archived afterwards cannot be promoted, and the refusal says why', async () => {
+    const staged = await stage({ clipCode: 'G-ARCHIVED-PROMOTE' });
+    const candidate = await gold.nominateGoldCandidate({
+      organizationId: ORG_ID,
+      goldRecordId: crypto.randomUUID(),
+      adjudicationId: staged.adjudicationId,
+      eligibility: 'TRAINING_ELIGIBLE',
+    });
+
+    await setVideoStatus(staged.videoId, 'archived');
+
+    /*
+     * THE MESSAGE MATTERS AS MUCH AS THE REFUSAL. The UPDATE's WHERE clause
+     * now has three ways to miss, and the fallback used to report every miss
+     * as a governance_state problem -- which on this path read "only a
+     * candidate can be promoted, and this record is 'candidate'". A refusal
+     * that contradicts itself sends the reader to the wrong field.
+     */
+    await expect(
+      gold.promoteGoldRecord({
+        organizationId: ORG_ID,
+        goldRecordId: candidate.gold_record_id,
+        promotedByAccountId: PROMOTER,
+      }),
+    ).rejects.toThrow(/Forbidden: the footage this candidate came from has been archived/);
+  });
+
+  test('restoring the footage makes promotion available again', async () => {
+    // Archive is reversible, so every consequence of it has to be.
+    const staged = await stage({ clipCode: 'G-ARCHIVED-RESTORED' });
+    const candidate = await gold.nominateGoldCandidate({
+      organizationId: ORG_ID,
+      goldRecordId: crypto.randomUUID(),
+      adjudicationId: staged.adjudicationId,
+      eligibility: 'TRAINING_ELIGIBLE',
+    });
+
+    await setVideoStatus(staged.videoId, 'archived');
+    await setVideoStatus(staged.videoId, 'ready');
+
+    const promoted = await gold.promoteGoldRecord({
+      organizationId: ORG_ID,
+      goldRecordId: candidate.gold_record_id,
+      promotedByAccountId: PROMOTER,
+    });
+
+    expect(promoted.governance_state).toBe('gold');
+  });
+});

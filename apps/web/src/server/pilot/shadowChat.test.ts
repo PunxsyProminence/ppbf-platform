@@ -12,6 +12,8 @@ import {
 } from './shadowChat';
 import { assertActorCanAccessAthlete } from './access';
 import { listRecentNearMisses } from './shadowNearMisses';
+import { DECISION_LOOP_ROLES } from './shadowRoleSets';
+import type { PilotRole } from './contracts';
 
 jest.mock('./access', () => ({
   assertActorCanAccessAthlete: jest.fn(),
@@ -304,6 +306,224 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       });
       expect(result.authorized).toBe(true);
       expect(mockListRecentNearMisses).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // AUDIENCE GATE. Owner decision 2026-09-26; recorded open in ACTIVE_WORK.md
+  // since 2026-08-28 as "SHADOW injects near-miss text into athlete/parent
+  // chats that GET /near-misses denies those roles".
+  //
+  // These tests live HERE and not in the chat route's suite because that suite
+  // mocks retrieveShadowContext wholesale, so no test there can prove this gate.
+  // This is the only EXISTING place it is provable -- a route-level test with a
+  // partial mock could also do it; one simply was not written.
+  //
+  // EVERY EXCLUDED-ROLE CASE RETURNS SEVERE ROWS FROM THE MOCK. The default in
+  // beforeEach is an empty list, so a gate that had silently stopped working
+  // would still produce an empty, innocent-looking context and pass. The rows
+  // carry a sentinel that could only have come from the records.
+  // -------------------------------------------------------------------------
+  describe('Near-Miss Audience Gate', () => {
+    // description is unsanitised coach free text about a youth roster. A note
+    // about one child naming another is the RISK MODEL this sentinel stands
+    // in for -- it is invented for the test, not an observed incident, and
+    // nothing here asserts any such record exists.
+    const SENTINEL = 'Marcus Webb was the other athlete in the ring.';
+    const SENTINEL_ID = 'dddddddd-eeee-4fff-8aaa-bbbbbbbbbbbb';
+
+    const severeRows = () => [
+      nearMissRow({ near_miss_id: SENTINEL_ID, severity: 'critical' as const, description: SENTINEL }),
+      nearMissRow({ severity: 'high' as const }),
+    ];
+
+    // EVERY role outside DECISION_LOOP_ROLES, not just the two the owner named.
+    // "It excludes exactly athlete and parent" was true only because
+    // assertActorCanAccessAthlete refuses the others first -- which is a fact
+    // about a DIFFERENT module, read and not executed here. Enumerating the
+    // whole PilotRole union makes the claim one about THIS gate: nothing
+    // outside the decision loop receives these records, whatever access.ts
+    // does or later stops doing.
+    //
+    // This list is hand-written and the type system does not check it against
+    // PilotRole, so a role added later would not be enumerated here. The gate
+    // still fails closed for it -- the allow-list is what grants, so an
+    // unknown role is refused by construction -- but this suite would stop
+    // being the exhaustive proof it is today.
+    describe.each([
+      ['athlete', 'account-athlete-self'],
+      ['parent', 'account-parent-linked'],
+      ['platform_owner', 'account-platform-owner'],
+      ['board', 'account-board'],
+      ['volunteer', 'account-volunteer'],
+      ['staff', 'account-staff'],
+    ] as const)('%s receives no near-miss records', (userRole, userId) => {
+      const scoped = { userRole, userId, organizationId: 'org-456', athleteId: 'athlete-789' };
+
+      test('the records are never read, never cited, never rendered', async () => {
+        mockListRecentNearMisses.mockResolvedValue(severeRows());
+
+        const result = await retrieveShadowContext(scoped);
+
+        // Ordinary athlete context is untouched. This removes the safety
+        // records from the prompt, not the role's access to the athlete.
+        expect(mockAssertActorCanAccessAthlete).toHaveBeenCalled();
+        expect(result.authorized).toBe(true);
+        expect(result.context).toContain('Authorized athlete scope: athlete-789');
+
+        // Gated BEFORE the query, not filtered after it: a filter would still
+        // have pulled the free text of a youth roster into this process.
+        expect(mockListRecentNearMisses).not.toHaveBeenCalled();
+        expect(result.context).not.toContain(SENTINEL);
+        expect(result.context).not.toContain(SENTINEL_ID);
+        expect(result.context).not.toContain('[E:');
+        expect(result.evidenceIds).toEqual([]);
+
+        // Pins the WHOLE context, not merely the absence of records. The gate
+        // is an early return; if anything else the role is entitled to were
+        // built after the near-miss block, an absence-only check would still
+        // pass while the early return silently dropped it.
+        expect(result.context).toBe(
+          `Authorized role: ${userRole}. Authorized organization: org-456. `
+          + `Authorized athlete scope: athlete-789.\n`
+          + `Recorded safety events are not available in this context. `
+          + `For intensity, contact, or progression questions, defer to the athlete's coach.`,
+        );
+      });
+
+      test('the reply is identical whether or not events are on file', async () => {
+        mockListRecentNearMisses.mockResolvedValue(severeRows());
+        const withRows = await retrieveShadowContext(scoped);
+        mockListRecentNearMisses.mockResolvedValue([]);
+        const withNone = await retrieveShadowContext(scoped);
+
+        // The reason for a single constant line rather than reusing either
+        // existing string. "No near-miss events recorded" is simply false for
+        // an athlete who has them. The retrieval-failed line is worse: its
+        // conservative-progression directive would surface only when there was
+        // something to withhold, so the model's own caution would announce
+        // that events exist. Withholding that leaks by implication is not
+        // withholding, and a difference of one clause is enough to leak.
+        expect(withRows.context).toBe(withNone.context);
+        expect(withRows.context).not.toContain('No near-miss events recorded');
+        expect(withRows.context).not.toContain('advise conservative progression');
+        expect(withRows.context).not.toContain('could not be retrieved');
+      });
+    });
+
+    describe.each([
+      ['coach', 'coach-123'],
+      ['organization_admin', 'orgadmin-1'],
+      ['admin', 'legacy-admin-1'],
+    ] as const)('%s still receives them', (userRole, userId) => {
+      // POSITIVE CONTROL. Without these, a gate that excluded everyone would
+      // pass every assertion above. DECISION_LOOP_ROLES carries legacy 'admin'
+      // alongside 'organization_admin', and both are exercised here for the
+      // same reason the shared role set exists: the copies used to drift.
+      test('POSITIVE CONTROL: the read happens and the events are cited', async () => {
+        mockListRecentNearMisses.mockResolvedValue(severeRows());
+
+        const result = await retrieveShadowContext({
+          userRole,
+          userId,
+          organizationId: 'org-456',
+          athleteId: 'athlete-789',
+        });
+
+        expect(mockListRecentNearMisses).toHaveBeenCalledWith('org-456', 'athlete-789');
+        expect(result.context).toContain('RECORDED NEAR-MISS EVENTS');
+        expect(result.context).toContain(SENTINEL);
+        expect(result.context).toContain(`[E:${SENTINEL_ID}]`);
+        expect(result.evidenceIds).toEqual([SENTINEL_ID, '11111111-2222-4333-8444-555555555555']);
+      });
+    });
+
+    test('an excluded role is given the withheld line', async () => {
+      mockListRecentNearMisses.mockResolvedValue(severeRows());
+
+      const athlete = await retrieveShadowContext({
+        userRole: 'athlete',
+        userId: 'account-athlete-self',
+        organizationId: 'org-456',
+        athleteId: 'athlete-789',
+      });
+
+      expect(athlete.context).toContain('Recorded safety events are not available in this context.');
+      expect(athlete.context).toContain("defer to the athlete's coach");
+    });
+
+    // THE ACTUAL PARITY CHECK, and it replaces one that only looked like one.
+    // The old test asserted that an athlete's context contained the withheld
+    // line, under a comment claiming the two surfaces "cannot drift apart".
+    // It never touched the route or its role list, so it could not have
+    // detected drift at all.
+    //
+    // The two sides also decide membership DIFFERENTLY. GET /near-misses calls
+    // requireRole, which treats legacy `admin` and `organization_admin` as the
+    // same role; this gate uses a strict DECISION_LOOP_ROLES.includes. Today
+    // they agree only because both roles happen to be listed. Sharing a
+    // constant is not the same as sharing a decision, so pin the decision --
+    // for every role in the union, against the REAL requireRole.
+    // What this proves: the GATE's observed behaviour matches what requireRole
+    // decides over DECISION_LOOP_ROLES, for every role in the union. It runs
+    // the real retrieveShadowContext and reads whether the near-miss query
+    // happened, so rewriting the gate's condition breaks it.
+    //
+    // WHAT THE NAME MUST NOT SAY. An earlier name claimed the gate "admits
+    // exactly the roles GET /near-misses admits". This test never reads the
+    // route -- it passes DECISION_LOOP_ROLES into requireRole itself. The
+    // route does call requireRole(principal, [...DECISION_LOOP_ROLES]) today,
+    // so that claim happens to be true, but nothing here proves it and
+    // nothing here would notice the route swapping in a different list.
+    //
+    // The role list below is hand-written and the type system does not check
+    // it against PilotRole, so a role added later would not be enumerated.
+    // The gate still fails closed for it, because the allow-list grants.
+    test('the gate admits exactly the roles requireRole admits for DECISION_LOOP_ROLES', async () => {
+      const { requireRole } = jest.requireActual<typeof import('./access')>('./access');
+
+      const ALL_PILOT_ROLES = [
+        'platform_owner', 'organization_admin', 'admin', 'coach',
+        'athlete', 'parent', 'board', 'volunteer', 'staff',
+      ] as const;
+
+      // Derive the gate's answer FROM THE GATE. The first version of this
+      // test evaluated DECISION_LOOP_ROLES.includes inline -- a copy of the
+      // gate's own expression -- and compared that to requireRole. It would
+      // have passed with the gate in shadowChat.ts rewritten to any other
+      // check, because it never called it. The observable for "admitted" is
+      // whether the read happened.
+      const gate: Array<{ role: PilotRole; admitted: boolean }> = [];
+      for (const role of ALL_PILOT_ROLES) {
+        mockListRecentNearMisses.mockReset();
+        mockListRecentNearMisses.mockResolvedValue(severeRows());
+        await retrieveShadowContext({
+          userRole: role,
+          userId: 'account-1',
+          organizationId: 'org-456',
+          athleteId: 'athlete-789',
+        });
+        gate.push({ role, admitted: mockListRecentNearMisses.mock.calls.length > 0 });
+      }
+
+      const route = ALL_PILOT_ROLES.map((role) => {
+        let admitted = true;
+        try {
+          requireRole(
+            { accountId: 'account-1', role, organizationId: 'org-456', athleteId: null },
+            [...DECISION_LOOP_ROLES],
+          );
+        } catch {
+          admitted = false;
+        }
+        return { role, admitted };
+      });
+
+      expect(gate).toEqual(route);
+
+      // And the answer is not vacuous in either direction.
+      expect(gate.filter((r) => r.admitted).map((r) => r.role))
+        .toEqual(['organization_admin', 'admin', 'coach']);
     });
   });
 

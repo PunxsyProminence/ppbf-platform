@@ -46,6 +46,11 @@ const HELD_URL = '/api/pilot/teach-shadow/held';
 // rather than have these tests follow it.
 const REVIEW_LINK_URL = '/api/pilot/video/review-link';
 const RELEASE_URL = (id: string) => `/api/pilot/video/${id}/release`;
+// The third read, and the write it offers. The released list is the inventory
+// behind the coverage figures and the only surface that withdraws footage from
+// them; archiving is the only thing on this page that makes a count go DOWN.
+const RELEASED_URL = '/api/pilot/teach-shadow/released';
+const ARCHIVE_URL = (id: string) => `/api/pilot/video/${id}/archive`;
 
 // A catch-all fetch mock that answers ok:true to anything is a known hazard in
 // this repo (app/coach/video-analysis/page.test.tsx:156): a fetch added later is
@@ -60,13 +65,24 @@ function mockCoverageFetch(
   respond: () => Response,
   held: () => Response = () => jsonResponse({ ok: true, items: [] }),
   reviewLink: () => Response = () => jsonResponse({ ok: true, url: REVIEW_SAS }),
+  released: () => Response = () => jsonResponse({ ok: true, items: [] }),
+  archive: () => Response = () => jsonResponse({ ok: true }),
 ) {
-  const mock = jest.fn(async (input: RequestInfo | URL) => {
+  // The init is captured as well as the URL: the archive control sends its
+  // action in the body, and a suite that only saw the path could not tell
+  // "archive" from "restore".
+  const mock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const requested = String(input);
+    // Declared so the RECORDED calls carry the request body; no responder reads
+    // it. The archive assertions below need it, and a one-parameter mock records
+    // only the URL -- which cannot tell "archive" from "restore".
+    void init;
     if (requested === COVERAGE_URL) return respond();
     if (requested === HELD_URL) return held();
+    if (requested === RELEASED_URL) return released();
     if (requested === REVIEW_LINK_URL) return reviewLink();
     if (requested === RELEASE_URL('vs-1')) return jsonResponse({ ok: true });
+    if (requested === ARCHIVE_URL('vs-live') || requested === ARCHIVE_URL('vs-gone')) return archive();
     unexpectedRequests.push(requested);
     throw new Error(`Unexpected fetch: ${requested}`);
   });
@@ -221,6 +237,10 @@ test('the sections run in the order of the teaching loop, not in tool-directory 
     'Corpus coverage',
     'Current vocabulary',
     'Model performance',
+    // LAST, AND OUTSIDE THE LOOP. Withdrawing footage is housekeeping, not a
+    // stage of teaching, and it reads as the inventory behind the figures
+    // rather than as a step somebody is meant to take each session.
+    'Footage in the corpus',
   ]);
 });
 
@@ -333,6 +353,18 @@ const HELD_ITEM = {
   releasable: true,
   refused_by_scan: false,
 };
+
+/*
+ * Scoped rather than searched page-wide, and it THROWS when the section is
+ * missing: the read-failure assertion below is a negative one, and against a
+ * section that had not rendered at all it would pass for the wrong reason.
+ * Same shape as releasedSection() further down.
+ */
+function heldSection(): HTMLElement {
+  const section = screen.getByRole('heading', { name: 'Held teaching footage' }).closest('section');
+  if (!section) throw new Error('test bug: the held section did not render');
+  return section as HTMLElement;
+}
 
 test('held footage is listed by take and angle, and Release waits on opening it', async () => {
   /*
@@ -519,6 +551,24 @@ test('nothing held says so, rather than looking broken', async () => {
   expect(pageText()).toContain('Footage the content screen clears on its own never appears here');
 });
 
+test('a failed read of the held queue is an alert, not an empty queue', async () => {
+  /*
+   * Same rule the coverage and released reads hold, and it bit hardest here.
+   * loadHeld leaves `held` at [] and sets heldLoaded in its finally, so a read
+   * that did not come back used to render the alert AND "Nothing is waiting"
+   * together -- which a coach reads as "my footage is gone". Stopping uploads
+   * from silently disappearing is the whole reason this queue is on the screen.
+   */
+  mockCoverageFetch(
+    () => jsonResponse({ ok: true, coverage: COVERAGE }),
+    () => jsonResponse({ error: 'Held footage could not be read.' }, false),
+  );
+  render(<TeachShadowHomePage />);
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Held footage could not be read.');
+  expect(heldSection().textContent).not.toContain('Nothing is waiting');
+});
+
 test('the held section never claims anybody watched anything', async () => {
   /*
    * THE HONESTY CONSTRAINT ON A SAFEGUARDING CONTROL. The server can prove it
@@ -568,4 +618,190 @@ test('a 200 with no coverage body is an alert too, not a silently empty corpus',
   const alert = await screen.findByRole('alert');
   expect(alert).toHaveTextContent('The coverage figures could not be read.');
   expect(screen.queryByText('Athletes filmed')).not.toBeInTheDocument();
+});
+
+/*
+ * FOOTAGE IN THE CORPUS -- the inventory behind the coverage figures, and the
+ * only place footage can be taken back out.
+ *
+ * WHY THIS SECTION EXISTS AT ALL. Released teaching footage appeared on no
+ * screen anywhere: the held queue reads quarantined rows only, the Film Study
+ * list refuses take-backed ones, and coverage COUNTED this footage without
+ * naming it. So the first unwanted capture was unremovable through the app, and
+ * the only way to withdraw it was an UPDATE typed against the production
+ * database. An archive button with nowhere to live is not a feature.
+ */
+const RELEASED_LIVE = {
+  video_session_id: 'vs-live',
+  file_name: 'take-2-front.webm',
+  take_number: 2,
+  camera_view: 'front',
+  created_at: '2026-01-01T00:00:00.000Z',
+  status: 'ready',
+  clips_cut: 7,
+  clips_labelled: 3,
+  archived: false,
+  archive_reason: null,
+};
+
+const RELEASED_ARCHIVED = {
+  ...RELEASED_LIVE,
+  video_session_id: 'vs-gone',
+  file_name: 'take-9-desk.webm',
+  take_number: 9,
+  clips_cut: 0,
+  clips_labelled: 0,
+  status: 'archived',
+  archived: true,
+  archive_reason: 'test footage of a desk',
+};
+
+function mockWithReleased(items: unknown[], archive?: () => Response) {
+  return mockCoverageFetch(
+    () => jsonResponse({ ok: true, coverage: COVERAGE }),
+    () => jsonResponse({ ok: true, items: [] }),
+    () => jsonResponse({ ok: true, url: REVIEW_SAS }),
+    () => jsonResponse({ ok: true, items }),
+    archive,
+  );
+}
+
+function releasedSection(): HTMLElement {
+  const section = screen.getByRole('heading', { name: 'Footage in the corpus' }).closest('section');
+  if (!section) throw new Error('test bug: the released section did not render');
+  return section as HTMLElement;
+}
+
+test('what archiving would cost is stated before the button, not discovered afterwards', async () => {
+  /*
+   * A coverage figure that dropped after the click is not a warning, it is a
+   * surprise. Labelled clips are called out separately from clips merely cut
+   * because they are two coaches' finished work.
+   */
+  mockWithReleased([RELEASED_LIVE]);
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-2-front.webm');
+  const section = releasedSection();
+
+  expect(section.textContent).toContain('7 study clips cut, 3 labelled');
+  expect(within(section).getByRole('button', { name: 'Archive' })).toBeEnabled();
+});
+
+test('footage with nothing cut from it says so, rather than showing a bare zero', async () => {
+  mockWithReleased([RELEASED_ARCHIVED]);
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-9-desk.webm');
+  expect(releasedSection().textContent).toContain('No study clips cut from this yet.');
+});
+
+test('archived footage stays listed, marked, with its reason and a way back', async () => {
+  /*
+   * A reversible action whose result vanishes from the only screen that offers
+   * it cannot be reversed by anybody unwilling to write SQL. So the row stays,
+   * says what happened to it, and offers the undo.
+   */
+  mockWithReleased([RELEASED_ARCHIVED]);
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-9-desk.webm');
+  const section = releasedSection();
+
+  expect(section.textContent).toContain('Archived');
+  expect(section.textContent).toContain('Reason given: test footage of a desk');
+  expect(within(section).getByRole('button', { name: 'Restore to the corpus' })).toBeEnabled();
+  expect(within(section).queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument();
+});
+
+test('the page never claims archiving deletes anything', async () => {
+  // videoArchive.ts keeps the row and the media on purpose, and a surface that
+  // implied otherwise would be a false statement about what the button did --
+  // the difference between a decision somebody can undo and one they cannot.
+  mockWithReleased([RELEASED_LIVE]);
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-2-front.webm');
+  expect(releasedSection().textContent).toContain('Nothing is deleted');
+});
+
+test('archiving posts the action and re-reads the figures, not just the row', async () => {
+  /*
+   * Archiving retracts this footage's clips and labels from the coverage counts
+   * above -- that IS the point of it. A page that refreshed only its own list
+   * would leave those figures stating what was true before the click.
+   */
+  const fetchMock = mockWithReleased([RELEASED_LIVE]);
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-2-front.webm');
+  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Archive' }));
+
+  await waitFor(() => {
+    expect(requestedUrls(fetchMock).filter((url) => url === COVERAGE_URL)).toHaveLength(2);
+  });
+
+  const archiveCall = fetchMock.mock.calls.find(([input]) => String(input) === ARCHIVE_URL('vs-live'));
+  expect(archiveCall).toBeDefined();
+  expect(JSON.parse(String(archiveCall?.[1]?.body))).toEqual({ action: 'archive' });
+  expect(requestedUrls(fetchMock).filter((url) => url === RELEASED_URL)).toHaveLength(2);
+});
+
+test('restoring posts restore, and never archive', async () => {
+  const fetchMock = mockWithReleased([RELEASED_ARCHIVED]);
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-9-desk.webm');
+  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Restore to the corpus' }));
+
+  await waitFor(() => {
+    expect(requestedUrls(fetchMock)).toContain(ARCHIVE_URL('vs-gone'));
+  });
+
+  const call = fetchMock.mock.calls.find(([input]) => String(input) === ARCHIVE_URL('vs-gone'));
+  expect(JSON.parse(String(call?.[1]?.body))).toEqual({ action: 'restore' });
+});
+
+test('a refused archive shows the server reason and leaves the row alone', async () => {
+  // The 409 this most often is says the footage changed underneath the reader.
+  // Replacing it with a generic failure would hide the one instruction that
+  // helps: reload and look again.
+  mockWithReleased(
+    [RELEASED_LIVE],
+    () => jsonResponse({ error: 'This footage changed state while you were looking at it. Reload and check before deciding again.' }, false),
+  );
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-2-front.webm');
+  fireEvent.click(within(releasedSection()).getByRole('button', { name: 'Archive' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent(/changed state while you were looking at it/i);
+  expect(within(releasedSection()).getByRole('button', { name: 'Archive' })).toBeInTheDocument();
+});
+
+test('a failed read of the released list is an alert, not an empty corpus', async () => {
+  /*
+   * Same rule the coverage read holds. "Nothing released yet" on a read that
+   * did not come back would tell a coach their footage had vanished.
+   */
+  mockCoverageFetch(
+    () => jsonResponse({ ok: true, coverage: COVERAGE }),
+    () => jsonResponse({ ok: true, items: [] }),
+    () => jsonResponse({ ok: true, url: REVIEW_SAS }),
+    () => jsonResponse({ error: 'Released footage could not be read.' }, false),
+  );
+  render(<TeachShadowHomePage />);
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Released footage could not be read.');
+  expect(releasedSection().textContent).not.toContain('Nothing released yet');
+});
+
+test('no athlete name appears in this section', async () => {
+  // Teaching media names nobody. The route does not send an athlete id and the
+  // page has no field for one; this is what stops a later "helpful" addition.
+  mockWithReleased([RELEASED_LIVE, RELEASED_ARCHIVED]);
+  render(<TeachShadowHomePage />);
+
+  await screen.findByText('take-2-front.webm');
+  expect(releasedSection().textContent?.toLowerCase()).not.toContain('athlete');
 });
