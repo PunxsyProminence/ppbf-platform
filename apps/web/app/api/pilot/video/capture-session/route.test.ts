@@ -1,5 +1,4 @@
 import { NextRequest } from 'next/server';
-import { ensureCaptureParticipant, linkParticipantToSession } from '@/src/server/pilot/captureParticipants';
 
 import { GET, POST } from './route';
 import {
@@ -28,22 +27,14 @@ jest.mock('@/src/server/pilot/captureSessions', () => {
 });
 
 /*
- * TS-ANON-01 clearance. Starting a session now proves the actor may film
- * this athlete and that every guardian has current Teach Shadow consent,
- * then establishes the restricted participant. Doubled so these tests stay
- * about the route; access, consent and the participant store each have
- * their own suites.
+ * Doubled so these tests stay about the ROUTE. Access control has its own
+ * suite; nothing about a participant or a consent is involved in starting a
+ * teaching session any more.
  */
 jest.mock('@/src/server/pilot/access', () => {
   const actual = jest.requireActual('@/src/server/pilot/access');
   return { ...actual, assertActorCanAccessAthlete: jest.fn(async () => undefined) };
 });
-jest.mock('@/src/server/pilot/captureParticipants', () => ({
-  ensureCaptureParticipant: jest.fn(async () => ({
-    capture_participant_id: 'cp-1', organization_id: 'org-1', athlete_id: 'ath-1',
-  })),
-  linkParticipantToSession: jest.fn(async () => undefined),
-}));
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
@@ -57,8 +48,6 @@ const mockGetOpenTake = jest.mocked(getOpenTake);
 const mockAdvance = jest.mocked(advanceTake);
 const mockClose = jest.mocked(closeRecordingSession);
 const mockListFiles = jest.mocked(listTakeFiles);
-const mockedEnsureParticipant = jest.mocked(ensureCaptureParticipant);
-const mockedLinkSession = jest.mocked(linkParticipantToSession);
 
 const SESSION = {
   recordingSessionId: 'rs-1',
@@ -115,7 +104,7 @@ describe('who may reach the recording session', () => {
   test('a coach and an organization admin may both start a session', async () => {
     for (const role of ['coach', 'organization_admin']) {
       mockRequirePrincipal.mockResolvedValueOnce(principal(role));
-      const response = await POST(jsonRequest({ action: 'create', training_context: 'heavy_bag', athlete_id: 'ath-1' }));
+      const response = await POST(jsonRequest({ action: 'create', training_context: 'heavy_bag' }));
       expect(response.status).toBe(200);
     }
     expect(mockCreate).toHaveBeenCalledTimes(2);
@@ -124,7 +113,7 @@ describe('who may reach the recording session', () => {
   test('everyone else is refused and no session is created', async () => {
     for (const role of ['athlete', 'parent', 'board', 'platform_owner']) {
       mockRequirePrincipal.mockResolvedValueOnce(principal(role));
-      const response = await POST(jsonRequest({ action: 'create', training_context: 'heavy_bag', athlete_id: 'ath-1' }));
+      const response = await POST(jsonRequest({ action: 'create', training_context: 'heavy_bag' }));
       expect(response.status).toBe(403);
     }
     expect(mockCreate).not.toHaveBeenCalled();
@@ -301,7 +290,7 @@ describe('multi-person contexts are withheld until a take can name everyone in i
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
 
     const response = await POST(
-      jsonRequest({ action: 'create', training_context: context, athlete_id: 'ath-1' }),
+      jsonRequest({ action: 'create', training_context: context }),
     );
 
     expect(response.status).toBe(200);
@@ -315,9 +304,7 @@ describe('multi-person contexts are withheld until a take can name everyone in i
      * stand between a coach and the camera. A session starts with nobody
      * named at all.
      *
-     * Naming one is optional metadata: when it is supplied the restricted
-     * link is written, so a scanner flagging something in the footage can
-     * still reach a real person. When it is not, filming proceeds.
+     * Nothing about a participant is asked for, accepted, or written.
      */
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
 
@@ -325,16 +312,21 @@ describe('multi-person contexts are withheld until a take can name everyone in i
 
     expect(response.status).toBe(200);
     expect(mockCreate).toHaveBeenCalled();
-    expect(mockedEnsureParticipant).not.toHaveBeenCalled();
-    expect(mockedLinkSession).not.toHaveBeenCalled();
+
+    const raw = JSON.stringify(await response.json());
+    expect(raw).not.toContain('athlete');
   });
 
-  test('TS-ANON-01 -- clearance happens, and then nothing it returns names the athlete', async () => {
+  test('NEGATIVE CONTROL -- naming an athlete is REFUSED, not quietly ignored', async () => {
     /*
-     * THE HANDOVER FROM NAMED TO ANONYMOUS, asserted at the boundary. The
-     * clearance step may see the athlete; everything downstream of it must
-     * not. A session payload carrying the id would put the name back into the
-     * capture surface, the join code screen and every device that joins.
+     * THE SIDE DOOR THIS CLOSES. When clearance was deleted the capture screen
+     * stopped sending an athlete, but this route went on ACCEPTING one -- so
+     * the invariant held on the surface and not on the server, and a direct
+     * caller could still attach a person to teaching footage.
+     *
+     * Refused rather than ignored: a request carrying an athlete was written
+     * against a rule that no longer holds, and silently dropping it would
+     * leave the caller believing the footage had been attributed.
      */
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
 
@@ -342,15 +334,11 @@ describe('multi-person contexts are withheld until a take can name everyone in i
       jsonRequest({ action: 'create', training_context: 'heavy_bag', athlete_id: 'ath-1' }),
     );
 
-    expect(response.status).toBe(200);
-    expect(mockedEnsureParticipant).toHaveBeenCalledWith(
-      expect.objectContaining({ athleteId: 'ath-1' }),
-    );
-    expect(mockedLinkSession).toHaveBeenCalled();
-
-    const raw = JSON.stringify(await response.json());
-    expect(raw).not.toContain('ath-1');
-    expect(raw).not.toContain('athlete');
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: expect.stringMatching(/names nobody/i),
+    });
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
   test('the refusal says why, so a coach is not left guessing which contexts work', async () => {

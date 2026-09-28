@@ -241,10 +241,10 @@ describe('sweepQuarantinedVideos', () => {
     // pilot.athletes -- an unattributed upload has nothing to file against.
     //
     // TS-ANON-01: the resolver has to say so too. "No athlete" is now two
-    // different situations -- this one, and a properly anonymised teaching
-    // video whose subject lives on the restricted side -- and the resolver is
-    // what tells them apart. A test that only nulled the claim would be
-    // describing a row that cannot exist.
+    // different situations -- this one, and an anonymous teaching video, which
+    // never resolves to anyone. The resolver is what tells them apart, so a
+    // test that only nulled the claim would be describing a row that cannot
+    // exist.
     mockedClaim.mockResolvedValueOnce({ ...CLAIM, athlete_id: null }).mockResolvedValue(null);
     mockedResolveSubject.mockResolvedValueOnce({ isTeaching: false, athleteIds: [] });
     mockedScan.mockResolvedValue(scanResult({ decision: 'blocked', reason: 'CONTENT_SCREEN_REFUSED' }));
@@ -450,20 +450,32 @@ describe('sweepQuarantinedVideos', () => {
       );
     });
 
-    test('safeguarding still reaches the real child, though the video names nobody', async () => {
+    test('teaching footage escalates against nobody, because it names nobody', async () => {
       /*
-       * THE REASON THE RESTRICTED LINK SURVIVED the consent gate being
-       * removed. Anonymity in the corpus was never meant to stop the platform
-       * raising a concern about a person a scanner flagged.
+       * THE CONSEQUENCE OF THE OWNER RULING, asserted rather than assumed.
+       * This footage names no one, so a refused scan has no athlete to file
+       * against -- and an escalation carrying one would be that identity
+       * arriving by a side door.
        */
       mockedClaim.mockResolvedValueOnce(TEACHING_CLAIM).mockResolvedValue(null);
-      mockedResolveSubject.mockResolvedValueOnce({ isTeaching: true, athleteIds: ['ath-7'] });
+      mockedResolveSubject.mockResolvedValueOnce({ isTeaching: true, athleteIds: [] });
+      mockedScan.mockResolvedValue(scanResult({ decision: 'blocked', reason: 'CONTENT_SCREEN_REFUSED' }));
+
+      await sweepQuarantinedVideos({ env: CONTENT_ON });
+
+      expect(mockedFileEscalation).not.toHaveBeenCalled();
+    });
+
+    test('Film Study still escalates against its own athlete', async () => {
+      // The other half of the rule: only TEACHING footage lost its identity.
+      mockedClaim.mockResolvedValueOnce(CLAIM).mockResolvedValue(null);
+      mockedResolveSubject.mockResolvedValueOnce({ isTeaching: false, athleteIds: ['ath-1'] });
       mockedScan.mockResolvedValue(scanResult({ decision: 'blocked', reason: 'CONTENT_SCREEN_REFUSED' }));
 
       await sweepQuarantinedVideos({ env: CONTENT_ON });
 
       expect(mockedFileEscalation).toHaveBeenCalledWith(
-        expect.objectContaining({ athleteId: 'ath-7' }),
+        expect.objectContaining({ athleteId: 'ath-1' }),
       );
     });
   });

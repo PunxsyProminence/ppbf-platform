@@ -4,10 +4,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { uploadPilotVideoFile } from '@/src/server/pilot/blob';
-import {
-  linkParticipantToVideo,
-  participantsForSession,
-} from '@/src/server/pilot/captureParticipants';
 import { query } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
@@ -193,14 +189,17 @@ export async function POST(request: NextRequest) {
      * unnamed recording. The original reasoning holds unchanged there: the
      * scan sweep only asserts consent when a video carries an identity, so a
      * dedicated recorder storing an unattributed minor would enter the content
-     * screen with the check skipped. What changed is only that teaching
-     * footage now carries that identity on the restricted side instead.
+     * screen with the check skipped.
+     *
+     * Teaching footage does not carry that identity anywhere. It is training
+     * data for a recognizer rather than a record about the person filmed, so
+     * it names nobody and no consent is asked of anybody.
      */
     if (captureTakeIdForRow && athleteId) {
       return NextResponse.json(
         {
           error:
-            'Teach Shadow footage is anonymous and must not name an athlete. The participant is established at capture clearance, not sent with the upload.',
+            'Teach Shadow footage is anonymous and must not name an athlete.',
         },
         { status: 400 },
       );
@@ -217,28 +216,10 @@ export async function POST(request: NextRequest) {
     }
 
     /*
-     * WHO THIS TEACHING FOOTAGE IS OF -- read from the session, never from the
-     * request, so a client cannot attribute footage to somebody it chose.
-     *
-     * This is a SAFEGUARDING record, not a permission check. The footage
-     * teaches a recognizer what a punch looks like; the person in frame is how
-     * the movement got recorded, not what the record is about. What the link
-     * buys is that a scanner flagging something in this footage can still
-     * reach the real child, which is the reason the owner kept it when the
-     * teaching media stopped naming anyone.
-     *
-     * A take with no participant is still refused: footage nobody can be
-     * reached about is worse than no footage.
+     * TS-ANON-01: NOBODY IS RESOLVED, because teaching footage is of nobody.
+     * A take-backed upload carries its take and no identity at all -- the
+     * refusal above is the whole of the rule.
      */
-    let teachingParticipantIds: string[] = [];
-    if (captureTakeIdForRow) {
-      teachingParticipantIds = await participantsForSession(
-        principal.organizationId,
-        recordingSessionId as string,
-      );
-
-
-    }
 
     // Free text and allowed to be unknown. "Rear phone camera" is a fact about
     // hardware; "rear view of the athlete" is a fact about the gym. Only a
@@ -293,8 +274,8 @@ export async function POST(request: NextRequest) {
         videoSessionId,
         principal.organizationId,
         principal.accountId,
-        // NULL for teaching media, by the rule above. The identity for a
-        // take-backed video lives on the restricted side and is linked below.
+        // NULL for teaching media, by the rule above -- and nowhere else
+        // either. Teaching footage names nobody at all.
         captureTakeIdForRow ? null : athleteId,
         title,
         notes,
@@ -314,20 +295,6 @@ export async function POST(request: NextRequest) {
         captureSource,
       ],
     );
-
-    /*
-     * The restricted link, written after the row exists because its foreign
-     * key points at it. Every participant on the session is attached: a device
-     * that joined by code is filming the same person from another angle, and
-     * its file has to be resolvable to the same guardian.
-     */
-    for (const captureParticipantId of teachingParticipantIds) {
-      await linkParticipantToVideo({
-        organizationId: principal.organizationId,
-        videoSessionId,
-        captureParticipantId,
-      });
-    }
 
     await emitShadowEvent({
       organizationId: principal.organizationId,
