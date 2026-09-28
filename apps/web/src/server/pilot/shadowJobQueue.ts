@@ -18,7 +18,8 @@ import type { ShadowSessionType } from './shadowRouter';
  * and executed after it was answered from the old context with no way for the
  * worker to know.
  *
- * That is not hypothetical. The near-miss audience gate (OD-2026-09-26-001)
+ * That is not hypothetical. The near-miss audience gate (OD-2026-09-26-002, "Near-miss records are
+ * coach and organization-admin chat context only")
  * removed athlete and parent access to recorded near-miss events in prompt
  * context; a Heavy Bag job enqueued before it and executed after would still
  * have carried those records into the answer, and the worker's allowed-role

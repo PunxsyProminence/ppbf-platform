@@ -308,7 +308,8 @@ describe('background jobs ask for a budget a real answer fits in', () => {
 // copy at execution time -- under whatever code is deployed by then.
 //
 // So a change to WHAT GOES INTO that context does not reach a job that was
-// already queued. The near-miss audience gate (OD-2026-09-26-001) is the case
+// already queued. The near-miss audience gate (OD-2026-09-26-002, "Near-miss records are
+// coach and organization-admin chat context only") is the case
 // that produced this: it removed athlete and parent access to recorded
 // near-miss events, and the worker's allowed-role set includes athlete and
 // parent, so a Heavy Bag job enqueued before it and run after would still have
