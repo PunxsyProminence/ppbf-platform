@@ -71,7 +71,7 @@ function filmStudyJob(): ShadowJob {
       organizationId: 'org-1',
       authenticatedRole: 'coach',
       authorizedContext: 'Film study requested for video session vs-1.',
-      contextContractVersion: 1,
+      contextContractVersion: SHADOW_CONTEXT_CONTRACT_VERSION,
     },
     outputPayload: null,
     errorCode: null,

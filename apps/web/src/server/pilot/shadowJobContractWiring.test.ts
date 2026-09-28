@@ -9,8 +9,8 @@
 //   if (payload.contextContractVersion !== SHADOW_CONTEXT_CONTRACT_VERSION)
 //
 // which is correct only while the constant is defined. It was written that
-// way, and filmStudyExecutor.test.ts mocks the whole queue module without the
-// constant -- so inside that suite the comparison became
+// way, and filmStudyExecutor.test.ts then mocked the whole queue module
+// without the constant -- so inside that suite the comparison became
 // `undefined !== undefined`, which is false, and every unstamped payload
 // sailed through. Twenty-six tests went green with the guard silently
 // disabled, and the run looked like evidence that it worked.
@@ -38,6 +38,11 @@ jest.mock('./shadowConversations', () => ({
   queueHumanReview: jest.fn(),
 }));
 
+// The real value, reached past this file's own deliberately-incomplete mock.
+const REAL_CONTRACT_VERSION: number =
+  jest.requireActual<typeof import('./shadowJobQueue')>('./shadowJobQueue')
+    .SHADOW_CONTEXT_CONTRACT_VERSION;
+
 const mockClaimNextJob = jest.mocked(claimNextJob);
 const mockCompleteJob = jest.mocked(completeJob);
 const mockFailJob = jest.mocked(failJob);
@@ -60,10 +65,12 @@ function heavyBagJob(payloadOverrides: Record<string, unknown> = {}): ShadowJob 
       sessionType: 'heavy_bag',
       authenticatedRole: 'coach',
       authorizedContext: 'Authorized role: coach. Authorized organization: org-1.',
-      // Correctly stamped for the CURRENT contract. The payload is not what is
-      // wrong here -- the worker's own constant is -- so a guard that only
-      // inspected the payload would answer this job.
-      contextContractVersion: 1,
+      // Correctly stamped for the CURRENT contract, read from the real module
+      // rather than written as a literal -- this suite's mock omits the
+      // constant on purpose, so it cannot import it the ordinary way. The
+      // payload is not what is wrong here; the worker's own constant is. A
+      // guard that only inspected the payload would answer this job.
+      contextContractVersion: REAL_CONTRACT_VERSION,
       ...payloadOverrides,
     },
     outputPayload: null,
