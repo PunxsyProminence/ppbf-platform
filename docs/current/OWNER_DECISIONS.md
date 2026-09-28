@@ -91,6 +91,180 @@ and should not try to.
 
 ---
 
+## OD-2026-09-26-002 -- Near-miss records are coach and organization-admin chat context only
+
+**Provenance: PRIMARY.** The owner's answer is recorded verbatim below, and the
+options are reproduced exactly as they were put to him, because the word alone
+does not carry the decision.
+
+**Date:** 2026-09-26. **Governs:** which roles receive recorded near-miss
+events in SHADOW chat prompt context. **Supersedes** nothing -- no prior entry
+addressed near-miss audience. It does not change `assertActorCanAccessAthlete`
+or any other authorization rule.
+
+### The decision
+
+Put to him as question 1 of three, verbatim as asked:
+
+> **1. Near-miss text in chat** -- athletes/parents currently get coach-written
+> near-miss descriptions (free text, can name another child). The API refuses
+> them the same records.
+> -> **(a)** coaches/admins only *(my recommendation)* . **(b)** own record,
+> names redacted . **(c)** leave as is
+
+His answer, verbatim:
+
+> a
+
+**The premise of that question was overstated, and the record should say so.**
+It told him athletes and parents "currently get" those descriptions. That was
+a statement about what the code ALLOWED -- every role clearing the athlete
+check reached the read -- not about anything observed. No conversation,
+database or log had been read, and he later stated none had been sent. The
+"can name another child" clause is likewise a risk model, not a reported
+incident. The recommendation marked in the options was the builder's, not an
+independent one. The ruling stands on the reachability alone, which is
+sufficient and was verified in source; a reader should not conclude it rested
+on observed leaks.
+
+### What that means
+
+1. Near-miss records reach SHADOW prompt context only for `DECISION_LOOP_ROLES`
+   -- `coach`, `organization_admin` and legacy `admin`. That is the same set
+   `GET /api/pilot/shadow/near-misses` already requires, so the decision closes
+   a gap between two surfaces rather than creating a new rule.
+2. Athlete and parent keep ordinary athlete-scoped context. They lose the
+   near-miss descriptions, the evidence ids, and any signal that records exist
+   or do not exist.
+3. **Redaction was on the table as (b) and was not chosen.** A later lane
+   should not reach for "show the athlete their own record with names removed"
+   as an obvious middle path. It was offered and declined.
+4. `platform_owner` and `board` do not reach this context, because
+   `assertActorCanAccessAthlete` refuses them earlier. That is READ FROM
+   `access.ts`, not executed in the gate's own tests, which mock the
+   authorization check. The gate itself refuses every role outside
+   `DECISION_LOOP_ROLES`, and its tests enumerate the whole `PilotRole` union,
+   so the ruling does not depend on that reading holding.
+
+INTERPRETATION, marked because the owner's answer did not spell it out:
+"coaches/admins" was implemented as `DECISION_LOOP_ROLES`, which carries legacy
+`admin` alongside `organization_admin`. That matches how every other route in
+the repository reads "admin" and matches `GET /near-misses` exactly, but it is
+a reading of "a", not a distinction the owner drew. If he meant
+`organization_admin` only, this entry is the thing to correct.
+
+### The already-delivered question, and the owner's answer
+
+This entry was first drafted carrying text delivered before the gate existed as
+an open question, because the conversation-history loader re-feeds recent turns
+and delivered text would keep resurfacing after the gate. It was put to the
+owner the same day as question A. His answer, verbatim:
+
+> A NONE HAS BEEN SENT
+
+So there is nothing to remediate: on the owner's statement, no near-miss text
+has reached an athlete or parent conversation.
+
+**This rests on the owner's knowledge of who has used SHADOW, not on a
+measurement.** No database, environment, conversation or log was read, and none
+was authorized. It is recorded here as his statement rather than as a verified
+fact, because it is the kind of claim that a later data pull could contradict.
+If it ever is contradicted, the remediation question re-opens and this section
+is the thing to correct. Nothing here authorizes deletion, rewriting or purging
+of stored conversations.
+
+### Re-ratified 2026-09-26, after the cost was put to him
+
+A review found that the options put to the owner never named what the rule
+costs: an athlete asking about progression used to get their recorded events
+plus a directive to weigh them, and a HIGH or CRITICAL event added a line
+recommending the coach review before any load increase -- "used to get"
+describes what the code produced for that role, not an observed delivery. After the gate the
+model cannot see the event, so it gives one fixed deferral sentence instead.
+The record had said he decided "knowing" the position; he had not been shown
+that.
+
+It was put to him in those terms the same day, with the options to re-ratify,
+to soften the withheld line, or to re-open. He chose, verbatim:
+
+> Re-ratify as-is
+
+So the rule stands, now on a record that names its cost. Whether the model
+actually defers on a progression question is still untested -- it needs a
+model call, not a unit test.
+
+### Stored job payloads: OUT OF SCOPE, 2026-09-26
+
+The async Heavy Bag path persists the assembled context, near-miss block
+included, into `pilot.shadow_jobs` (`shadowHeavyBag.ts`, 12,000-character
+slice). Athletes and parents are not blocked from that path by role: the MANUAL
+heavy-tier request is role-gated, but organic escalation by complexity score is
+not (`shadowClassifier.ts`), and `preferAsync` is a client-supplied boolean.
+**Stated with its preconditions, which an earlier draft omitted:** the enqueue
+branch also requires `isShadowWorkerEnabled()` -- `PPBF_SHADOW_WORKER_ENABLED`
+set to `true` -- and passage of the Heavy Bag rate limit (`chat/route.ts`). No
+environment state was read, so whether that flag was ever on where athletes
+used SHADOW is UNVERIFIED, and "near-miss text may sit in job rows" rests on
+that unchecked condition. Framing a question to the owner from code paths
+without their preconditions is the same error as the "currently get" premise
+above, and it is recorded rather than quietly corrected.
+
+**A stored row is not inert.** `shadowJobProcessor.ts` reads
+`payload.authorizedContext` at EXECUTION time, not at enqueue, and interpolates
+it into the prompt; its allowed-role set includes `athlete` and `parent`. So a
+job queued before this gate and processed after it deploys would still generate
+from a context containing near-miss records, and the answer is appended to that
+conversation. That is a delivery path, not merely storage, and it was NOT named
+in the out-of-scope question above. Put to the owner separately on 2026-09-26,
+he directed that the job queue be confirmed empty before the gate reaches
+production. Asked where that precondition should live so it could not be
+missed, he ruled it must be ENFORCED rather than recorded, verbatim:
+
+> Nothing is real if anything is waiting
+
+So it is not a note anyone has to remember: `docs/current/ACTIVE_WORK.md`
+carries it as a BLOCKED row against the production deploy, and a separate PR
+adds an executable queue-empty check to `deploy-production.yml` that fails
+the deploy while anything is pending. Recording it in prose alone was the
+option he refused. The read-only count could not be run from the build machine --
+production PostgreSQL refused the connection (timeout, firewalled) -- so it is
+recorded as a PRODUCTION-DEPLOY PRECONDITION rather than a merge precondition.
+Merging changes nothing in production: `deploy-production.yml` is manual
+dispatch only. The window opens when the gate deploys, not when it merges.
+
+This is a different question from the delivered-text one above, and the
+owner's "NONE HAS BEEN SENT" does not answer it -- he can know who used
+SHADOW, not what a stored prompt contained. Put to him separately with the
+options to authorize a read-only count, to log it as a blocked item, or to
+rule it out of scope. He chose, verbatim:
+
+> Out of scope -- leave it
+
+No count was run, no rows were read, and none are to be deleted or modified.
+The gate stops new rows carrying this content. Existing rows are not modified
+by this slice -- and, per the paragraph above, are not inert either.
+UNVERIFIED throughout: whether any such row exists was never measured.
+
+### The evidence it rested on
+
+- `retrieveShadowContext` called `listRecentNearMisses` with no role gate for
+  every role that cleared athlete authorization, injecting a whitespace-collapsed
+  240-character slice of `description` with a citable `[E:<near_miss_id>]`.
+  Read at `c15b9644a8a184f111974d04c2af07175ad3110c`.
+- `GET /api/pilot/shadow/near-misses` requires `DECISION_LOOP_ROLES`, at the
+  same SHA.
+- `docs/current/ACTIVE_WORK.md` had carried the mismatch as FOR THE OWNER since
+  2026-08-28 -- open for a month before it was put to him.
+- No environment, database or log was read. Whether any athlete or parent has
+  actually received near-miss text is UNVERIFIED, and no affected population
+  was estimated.
+
+Built to on branch `local/shadow-near-miss-audience`.
+
+---
+
+---
+
 ## OD-2026-09-26-001 -- Visual design is not one lane's; anyone who makes a good one owns it
 
 **Asked.** Whether a durable, reusable plate generator could land in the
