@@ -113,6 +113,16 @@ test.describe('Coach room light objects stay legible', () => {
         '.rm-clip-t', '.rm-clip-v', '.rm-clip-d',
         '.rm-clip-line', '.rm-clip-caveat',
         '.rm-peg-n', '.rm-peg-l',
+        /* THE CLOCK AND THE SIGN, added the day they became light objects.
+           They were dark-on-dark before and correctly outside this guard's
+           scope. The moment the dial turned cream, every ink on it was
+           suddenly ink-on-bone -- and all three were still set for a dark
+           face: --cb-led green measured 1.34:1, --cb-chalk-3 2.66:1,
+           --cb-chalk-warn 1.95:1. That is an unreadable running clock, and
+           the guard could not see it because these selectors were not listed.
+           A contrast regression only covers what it is pointed at, so it gets
+           pointed at each object on the day that object turns light. */
+        '.rm-clock-n', '.rm-clock-s', '.rm-state',
       ];
 
       /* Named, because the two arms below return different shapes -- a

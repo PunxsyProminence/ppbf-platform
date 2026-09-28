@@ -40,9 +40,20 @@
   /* The board's own vocabulary. Values read off the owner's photographs of
      the building; they are deliberately local to this scope so no other
      surface inherits a gym-specific colour. */
-  --cb-slate: #1B211E;
-  --cb-slate-lit: #232A26;
-  --cb-slate-deep: #141916;
+  /* THE BOARD FACE IS NOT A CHALKBOARD, and these three values are where it
+     was one. They were #1B211E / #232A26 / #141916 -- the cold green-grey of
+     slate -- and with the dust texture below they made the interface itself
+     into a chalkboard. That interpretation was corrected once already: "I only
+     wanted th backround wall black like a chalk board". The WALL is the
+     chalkboard; this is the painted face of an object hanging on it, so it is
+     warm and timber-adjacent rather than cold and slate-adjacent, and it sits
+     a step lighter than the wall so the board reads as an object ON the wall
+     rather than a hole in it.
+     The variable names are left alone deliberately: renaming them touches 77
+     call sites of unrelated work, and this correction is not a cleanup. */
+  --cb-slate: #241C14;
+  --cb-slate-lit: #2E2419;
+  --cb-slate-deep: #1A140D;
   --cb-chalk: #EAE6D9;
   --cb-chalk-2: #C6C2B2;
   --cb-chalk-3: #8F8C7E;
@@ -103,9 +114,12 @@
   position: relative;
   margin: 10px;
   padding: 34px 40px 38px;
+  /* Warm light on a painted face. These two pools were chalk-white
+     (rgba(234,230,217,...)) which, over cold slate, read as chalk haze; they
+     are now the room's own warm lamp falling on paint. */
   background:
-    radial-gradient(70% 48% at 22% 8%, rgba(234, 230, 217, .055), rgba(0, 0, 0, 0) 62%),
-    radial-gradient(55% 40% at 82% 78%, rgba(234, 230, 217, .04), rgba(0, 0, 0, 0) 60%),
+    radial-gradient(70% 48% at 22% 8%, rgba(255, 224, 170, .05), rgba(0, 0, 0, 0) 62%),
+    radial-gradient(55% 40% at 82% 78%, rgba(255, 224, 170, .03), rgba(0, 0, 0, 0) 60%),
     linear-gradient(174deg, var(--cb-slate-lit), var(--cb-slate) 52%, var(--cb-slate-deep));
   box-shadow:
     inset 0 0 0 1px rgba(0, 0, 0, .6),
@@ -113,17 +127,56 @@
     inset 0 -8px 24px rgba(0, 0, 0, .6);
 }
 
-/* chalk dust that never fully wipes off. Decorative only, never over text. */
-.ge-floorboard .cb-face::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: .5;
-  background:
-    radial-gradient(38% 15% at 26% 34%, rgba(234, 230, 217, .055), rgba(0, 0, 0, 0) 70%),
-    radial-gradient(30% 12% at 68% 62%, rgba(234, 230, 217, .045), rgba(0, 0, 0, 0) 70%),
-    radial-gradient(44% 10% at 48% 86%, rgba(234, 230, 217, .04), rgba(0, 0, 0, 0) 70%);
+/* THE CHALK DUST IS GONE, and its removal is the literal content of this
+   correction. Three smears of chalk-white that "never fully wipe off" are only
+   correct on a chalkboard, and the approved brief says in as many words that
+   the interface does NOT become chalk. Dust on the board face is the single
+   most chalkboard-ish thing on the screen, so it is deleted rather than
+   dimmed -- a faint wrong material is still the wrong material.
+   Nothing replaces it. The face is a painted board; painted boards are plain,
+   and the light that falls on it is already in .cb-face's own background. */
+
+/* ===========================================================================
+   ROOM IS NOT A BOARD.
+
+   Two compositions were approved on one matte black chalkboard wall. BOARD is
+   a timber-framed control board mounted on that wall. ROOM is the wall itself,
+   carrying separate objects -- a clock, a peg board, clipboards on nails --
+   with NO enclosing frame around them.
+
+   Only the first was built. ROOM was rendered inside BOARD's carcass, which
+   made it "the board with different things inside it": the timber, the painted
+   trim and the slate all still drew a container around objects that were
+   supposed to be hanging on a wall. That is the drift the owner saw.
+
+   So the carcass is switched off rather than a second tree being grown. The
+   markup, the landmarks and the toggle stay exactly where they are; only the
+   painting stops. Everything here is a removal -- no new material is invented,
+   because the wall these objects stand on is the wall, and it is painted by
+   .ge-coach-floor-room, not by this scope.
+   ========================================================================== */
+/* CHAINED, not because it reads better but because it has to outrank a later
+   rule. `.ge-floorboard .coach-board { padding: 14px }` sits in a narrow-screen
+   media query further down this file, and at equal specificity the later rule
+   wins -- so an unchained version of this block would work on a desktop and
+   quietly restore the frame's padding on the tablet the board is actually for.
+   Chaining the modifier onto the base class settles it by specificity instead
+   of by source order, which no future reordering can undo. */
+.ge-floorboard .coach-board.coach-board--unframed {
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  clip-path: none;
+}
+/* the painted inner trim, and the chalk dust, have nothing to sit on now */
+.ge-floorboard .coach-board.coach-board--unframed::before,
+.ge-floorboard .cb-face.cb-face--unframed::before { content: none; }
+
+.ge-floorboard .cb-face.cb-face--unframed {
+  margin: 0;
+  padding: 0;
+  background: none;
+  box-shadow: none;
 }
 
 .ge-floorboard .cb-screw {
@@ -156,33 +209,138 @@
   align-items: center;
   margin-bottom: 14px;
 }
+/* Sits on the same line as the board's name, with a separator, so the two read
+   as one quiet label instead of two stacked headings. */
 .ge-floorboard .cb-eyebrow {
+  display: inline;
+  margin: 0;
   font-family: var(--font-stencil, var(--font-display));
-  font-size: 13px;
-  letter-spacing: .40em;
+  font-size: var(--t-sm);
+  letter-spacing: .16em;
   text-transform: uppercase;
   color: var(--cb-chalk-3);
 }
+.ge-floorboard .cb-eyebrow::after {
+  content: " \00B7 ";
+  color: var(--cb-chalk-3);
+}
+/* THE BOARD'S OWN NAME, now a quiet line under the signs rather than the
+   loudest type on the wall. It was var(--t-2xl) with a glow, which made the
+   page shout its own filename at a coach above the club's plate and above the
+   day's work. It is still the h1; it is simply no longer the hero. */
 .ge-floorboard .cb-sign {
-  margin: 2px 0 0;
+  display: inline;
+  margin: 0;
   font-family: var(--font-stencil, var(--font-display));
-  font-size: var(--t-2xl);
+  font-size: var(--t-sm);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-2);
+  font-weight: 700;
+  line-height: 1.2;
+}
+/* THE PAINTED RULE, not a chalk smear. This was authored as an underline
+   "drawn with the side of the stick" -- a ragged clip-path meant to look like
+   chalk -- which is the interface-as-chalkboard reading, on the most prominent
+   element of the screen. The reference paints a straight red bar under the
+   sign's name, so that is what it is. */
+.ge-floorboard .cb-rule-under {
+  height: 5px;
+  margin-top: 7px;
+  width: 100%;
+  background: linear-gradient(180deg, #C4402A, #8E2A17);
+  box-shadow: inset 0 1px 0 rgba(255, 190, 170, .35);
+}
+
+/* ===========================================================================
+   THE TWO SIGNS ON THE WALL.
+
+   The club's own plate and the motto banner beside it. These are the objects
+   that carry identity: the wall behind them is deliberately plain, because
+   anything written on a wall competes with everything hung in front of it. Put
+   the identity on the objects and the wall can stay a wall.
+
+   Both are painted enamel: dark ground, a cream keyline inset from the edge,
+   and a dark margin outside it -- which is what makes a sign read as a sign
+   rather than as a bordered div.
+   ========================================================================== */
+.ge-floorboard .cb-plates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.ge-floorboard .cb-idplate,
+.ge-floorboard .cb-banner {
+  padding: 12px 22px 13px;
+  background: linear-gradient(178deg, #241C14, #14100A);
+  box-shadow:
+    inset 0 0 0 2px rgba(234, 230, 217, .82),
+    inset 0 0 0 7px #14100A,
+    0 5px 14px rgba(0, 0, 0, .6);
+}
+
+/* THE CLUB PLATE. The town small above the name, the discipline small below --
+   the proportions a real enamel club sign uses, where the name is the object
+   and the rest is setting. */
+.ge-floorboard .cb-idplate { text-align: center; }
+.ge-floorboard .cb-id-town {
+  margin: 0;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: 11px;
+  letter-spacing: .34em;
+  text-transform: uppercase;
+  color: var(--cb-trim);
+}
+.ge-floorboard .cb-id-name {
+  margin: 1px 0 0;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-xl);
+  line-height: 1;
   letter-spacing: .05em;
   text-transform: uppercase;
   color: var(--cb-chalk);
-  font-weight: 700;
-  line-height: 1;
-  text-shadow: 0 0 14px rgba(234, 230, 217, .14);
 }
-/* chalk underline, drawn with the side of the stick */
-.ge-floorboard .cb-rule-under {
-  height: 6px;
-  margin-top: 5px;
-  width: 92%;
-  background: var(--cb-chalk-warn);
-  opacity: .85;
-  clip-path: polygon(0 44%, 6% 10%, 18% 60%, 31% 16%, 45% 64%, 59% 12%,
-    72% 58%, 86% 18%, 96% 56%, 100% 32%, 100% 100%, 0 100%);
+.ge-floorboard .cb-id-disc {
+  margin: 3px 0 0;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: 10px;
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-3);
+}
+
+/* THE MOTTO BANNER. Stars, the name of the thing, the painted rule, and the
+   four words under it -- the order the reference sets them in. */
+.ge-floorboard .cb-banner {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-width: 260px;
+}
+.ge-floorboard .cb-banner-t {
+  margin: 0;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-lg);
+  line-height: 1.05;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+  color: var(--cb-chalk);
+  text-align: center;
+}
+.ge-floorboard .cb-star {
+  color: var(--cb-chalk-2);
+  margin: 0 12px;
+  font-size: .8em;
+  vertical-align: .12em;
+}
+.ge-floorboard .cb-banner .cb-motto {
+  justify-self: unset;
+  margin: 7px 0 0;
+  text-align: center;
+  color: var(--cb-chalk-2);
 }
 
 /* The timer housing copies the wall unit in the gym: green LED on black.
@@ -645,43 +803,101 @@
 }
 
 /* ===========================================================================
-   THE ROOM THE BOARD STANDS IN.
+   THE WALL THE BOARD HANGS ON.
 
    Route-local, applied through RoleStandaloneView's mainClassName seam and
-   nowhere else. .room--floor keeps its material ground for every other floor
-   route -- the owner's 2026-09-22 direction was that the floor is a material,
-   not a photograph, and that stands. This one surface answers his newer
-   direction instead, after he supplied photographs of the building and said
-   the pages should feel like a room in the gym, tied to what the page is
-   about. The coach board is the open floor, so it stands on the open floor.
+   nowhere else.
 
-   The plate carries its own light, so the room's synthetic lamp pools are
-   turned off over it rather than double-lighting the photograph. Reduced-data
-   drops the image and the procedural floor underneath is what renders, which
-   is the plate system's existing failure mode and needs no new branch.
+   THIS USED TO BE A PHOTOGRAPH OF THE GYM FLOOR, and the comment that stood
+   here argued for it: "the coach board is the open floor, so it stands on the
+   open floor." That reasoning was never approved. What was approved is a pair
+   of compositions on a wall -- the owner's words were "our gym has black chalk
+   board paint walls, can we make it so that the coach can toggle between the
+   two" -- and then, after an earlier pass spread chalkboard across the whole
+   interface, the correction that narrowed it: "I only wanted th backround wall
+   black like a chalk board."
 
-   PROVENANCE: these are photographs of the club's own premises, supplied by
-   the owner on 2026-09-23, cropped to the plate geometry and darkened one
-   step so chalk stays legible over them. No person appears in any of them --
-   a candidate frame was rejected for containing a child -- and no other
-   organisation's marks appear in any of them.
+   So the background is the WALL, it is matte black chalkboard paint, and it is
+   a MATERIAL rather than a plate. That matters beyond fidelity: a photograph
+   of a working gym carries shelving, equipment and the club's own whiteboards,
+   and every one of them competes with the instruments a coach is trying to
+   read across a floor. It is also the surface Option B's objects hang on, so
+   it cannot be busy -- with the frame correctly removed, a peg board sitting
+   on a photograph of a peg board is the whole problem in one image.
+
+   MATTE, NOT GLOSS. Chalkboard paint has no specular highlight; the two very
+   soft pools below are the room's own lighting falling on a flat surface, not
+   a sheen on the paint. There is no chalk written on this wall and no dust
+   texture: the wall is the ground, the instruments are the content, and the
+   moment the wall carries marks of its own it starts competing with them --
+   which is exactly the over-application that had to be corrected once already.
+
+   The plate hooks are deliberately left OFF rather than deleted, so no other
+   floor route inherits a change, and the reduced-data branch is gone with the
+   image it existed to drop.
    ========================================================================== */
 .ge-coach-floor-room.room::after {
-  background-image: url("/plates/plate-09-ppbf-floor-landscape-01.jpg");
-  background-position: center top;
-  background-size: cover;
+  background-image: none;
 }
 .ge-coach-floor-room.room::before {
   background-image: none;
 }
-@media (orientation: portrait) {
-  .ge-coach-floor-room.room::after {
-    background-image: url("/plates/plate-09-ppbf-floor-portrait-01.jpg");
-  }
+.ge-coach-floor-room.room {
+  /* #0C0C0B rather than #000: chalkboard paint reads as a very dark warm grey,
+     and true black would make the timber and bone objects on it look like
+     cut-outs. The two pools are barely there on purpose. */
+  background-color: #0C0C0B;
+  /* GRAIN, so the paint is paint. Flat colour is the giveaway that this is a
+     screen rather than a wall, and matte chalkboard paint in particular has a
+     visible tooth. This is the same --grain-fine token, 120px tile, soft-light
+     blend that .room--floor already uses for its material ground -- the token
+     is read by 31 other rules and is not redefined here. It costs no asset and
+     no network, which matters because the whole point of this wall being a
+     material rather than a photograph is that it can never fail to load. */
+  /* THE ROOM IS THE GYM'S OWN ROOM, and that is the point of it.
+
+     THIS PHOTOGRAPH WAS REMOVED ONCE, as Drift A, and the removal was half
+     right. What was wrong then was the composition: the board hung on it as a
+     framed slate, the room's objects were card grids, and nothing on the
+     picture was dark enough to sit in front of it -- so a peg board sat on a
+     photograph of a peg board. What was NOT wrong was using the building.
+
+     The owner's correction: "the id is in both but the wall is what makes room
+     feel like they belong to the gym". The plates carry the club; the WALL is
+     what makes a coach recognise the place. A generated block texture is a
+     wall. It is not THIS wall -- it has no timber posts, no low ceiling, no
+     strip lights, none of the room.
+
+     THE SCRIM IS WHAT MAKES IT USABLE. The photograph is taken down hard so it
+     reads as depth behind the objects rather than as content competing with
+     them: the posts, the ceiling line and the lights survive, the whiteboards
+     and equipment fall away. Every object hung in front carries its own opaque
+     ground, so none of their contrast depends on what the wall is doing.
+
+     Reduced-data still drops it and the material below renders, which is the
+     plate system's own failure mode and needs no new branch. */
+  background-image:
+    radial-gradient(120% 70% at 22% -10%, rgba(255, 250, 235, .04), rgba(0, 0, 0, 0) 62%),
+    radial-gradient(90% 60% at 82% 108%, rgba(255, 250, 235, .022), rgba(0, 0, 0, 0) 58%),
+    var(--grain-fine),
+    url("/textures/gym-block-wall-384.png");
+  background-size: auto, auto, 120px 120px, 384px 192px;
+  background-repeat: no-repeat, no-repeat, repeat, repeat;
+  background-blend-mode: normal, normal, soft-light, normal;
 }
+/* IF THE TEXTURE DOES NOT LOAD, THE WALL IS STILL A WALL. background-color and
+   both light pools are declared above and do not depend on it, so a failed
+   request costs tooth and nothing else -- which is the same failure-safety the
+   plate system was built with ("missing files are safe by design"). That is
+   the whole reason the wall is a material carrying a texture rather than a
+   photograph that has to arrive. */
 @media (prefers-reduced-data: reduce) {
-  .ge-coach-floor-room.room::after {
-    background-image: none;
+  .ge-coach-floor-room.room {
+    background-image:
+      radial-gradient(120% 70% at 22% -10%, rgba(255, 250, 235, .038), rgba(0, 0, 0, 0) 62%),
+      radial-gradient(90% 60% at 82% 108%, rgba(255, 250, 235, .022), rgba(0, 0, 0, 0) 58%);
+    background-size: auto;
+    background-blend-mode: normal;
   }
 }
 
@@ -1167,36 +1383,117 @@
    --unread takes the warning chalk and an outline, and neither can be mistaken
    for the confident rendering.
    ========================================================================== */
+/* ===========================================================================
+   THE WALL, PLACED -- not a grid things fall into.
+
+   THIS IS THE CORRECTION THE OWNER HAD TO MAKE THREE TIMES. The first pass
+   built card-shaped objects. The second gave them physical silhouettes -- tags
+   with holes, clipboards with clips -- and left this rule exactly as it was:
+   `grid-template-columns: auto minmax(0, 1fr)` with three sections flowing
+   into it in source order. So the objects changed and the ARRANGEMENT did not,
+   and what came out was a row of four and a row of three: the column format,
+   wearing better silhouettes. "you keep producing the old collums style."
+
+   The distinction that actually matters, and the one I kept missing: the
+   defect was never that CSS grid is used. It is AUTO-FLOW -- objects handed to
+   a track system that decides where they go and makes them share a width. A
+   wall is the opposite: every object has a size of its own and a place it was
+   hung. So each area is named and assigned here, the tracks size to their
+   contents rather than splitting the space, and nothing is placed implicitly.
+
+   The arrangement mirrors the approved Option B: the clock high on the left,
+   the attendance sign under it, the clipboards hung to the right across both.
+   ========================================================================== */
 .ge-floorboard .rm {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 18px 22px;
+  grid-template-areas:
+    "clock  nameplate"
+    "clock  clips"
+    "attend clips";
+  /* Tracks hug their objects instead of dividing the wall between them. */
+  justify-content: start;
   align-items: start;
+  column-gap: 24px;
+  row-gap: 15px;
   margin: 4px 0 18px;
   padding-bottom: 16px;
   border-bottom: 1px solid rgb(234 230 217 / .14);
+}
+@media (max-width: 900px) {
+  .ge-floorboard .rm {
+    grid-template-columns: auto;
+    grid-template-areas: "clock" "nameplate" "attend" "clips";
+  }
+}
+
+/* THE NEXT-UP PLATE. Small, painted, screwed to the wall beside the clock --
+   the reference hangs it next to the bell, and the bell is not built. */
+.ge-floorboard .rm-nameplate {
+  grid-area: nameplate;
+  justify-self: start;
+  align-self: start;
+  max-width: 260px;
+  padding: 10px 16px 12px;
+  background: linear-gradient(178deg, #241C14, #14100A);
+  box-shadow:
+    inset 0 0 0 2px rgba(234, 230, 217, .72),
+    inset 0 0 0 6px #14100A,
+    0 4px 11px rgba(0, 0, 0, .55);
+}
+.ge-floorboard .rm-np-t {
+  margin: 0;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-xs);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--cb-chalk-3);
+}
+.ge-floorboard .rm-np-v {
+  margin: 3px 0 0;
+  font-family: var(--font-stencil, var(--font-display));
+  font-size: var(--t-lg);
+  line-height: 1.1;
+  color: var(--cb-chalk);
+}
+.ge-floorboard .rm-np-v--quiet { color: var(--cb-chalk-2); }
+.ge-floorboard .rm-np-v--unread { color: var(--cb-trim-2); }
+.ge-floorboard .rm-np-d {
+  margin: 4px 0 0;
+  font-size: var(--t-xs);
+  line-height: 1.35;
+  color: var(--cb-chalk-3);
 }
 @media (max-width: 900px) {
   .ge-floorboard .rm { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ---- the wall clock ---------------------------------------------------- */
-.ge-floorboard .rm-clockwrap { grid-row: span 2; }
+/* Each object is ASSIGNED its place. `grid-row: span 2` stood here, which is
+   auto-flow with a hint -- it said how much room to take, never where to be. */
+.ge-floorboard .rm-clockwrap { grid-area: clock; }
 .ge-floorboard .rm-clock {
   position: relative;
-  width: 186px;
-  height: 186px;
+  width: 156px;
+  height: 156px;
   border-radius: 50%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  background: radial-gradient(circle at 42% 34%, #26302B, #141916 70%);
+  /* A CREAM DIAL IN A DARK RIM, which is what the reference shows and what a
+     wall clock in a gym actually is. This was a dark face with light figures
+     on it -- readable, but it made the one genuinely round object on the wall
+     recede into the black paint instead of reading as the enamel dial it is
+     supposed to be. The rim keeps the timber. */
+  background:
+    radial-gradient(circle at 40% 30%, #FBF6E7, #EDE4CB 62%, #DCD1B4 100%);
   box-shadow:
-    inset 0 0 0 7px #2A1B0E,
-    inset 0 0 0 9px rgba(190, 146, 92, .30),
-    0 6px 18px rgba(0, 0, 0, .6);
+    inset 0 0 0 7px #241A0E,
+    inset 0 0 0 9px rgba(190, 146, 92, .34),
+    inset 0 3px 10px rgba(90, 74, 48, .25),
+    0 7px 20px rgba(0, 0, 0, .65);
 }
 /* Twelve marks, so it reads as a dial rather than a circle with a number in
    it. A conic gradient rather than twelve elements: this is a texture, and a
@@ -1205,9 +1502,11 @@
   position: absolute;
   inset: 14px;
   border-radius: 50%;
+  /* Dark ticks, because the dial went cream. Light ticks on a cream face is
+     the chalk-on-bone failure again, in a different object. */
   background: repeating-conic-gradient(
     from 0deg,
-    rgba(234, 230, 217, .34) 0deg 1.1deg,
+    rgba(36, 26, 14, .55) 0deg 1.1deg,
     transparent 1.1deg 30deg
   );
   -webkit-mask: radial-gradient(circle, transparent 66%, #000 67%);
@@ -1219,85 +1518,206 @@
     inset 0 0 0 9px rgba(217, 174, 90, .5),
     0 6px 18px rgba(0, 0, 0, .6);
 }
+/* THE DIAL WENT CREAM, SO EVERY INK ON IT HAD TO TURN OVER. Measured against
+   the dial's mid-tone #EDE4CB, the three colours that were here scored 1.34
+   (--cb-led green), 2.66 (--cb-chalk-3) and 1.95 (--cb-chalk-warn) against a
+   4.5 floor. The LED green is the one that matters: it was the running time,
+   the single most-read number on the wall, and it would have been very nearly
+   invisible. The face change alone would have shipped an unreadable clock. */
 .ge-floorboard .rm-clock-n {
   font-family: var(--font-stencil, var(--font-display));
   font-size: 2.05rem;
   letter-spacing: .02em;
-  color: var(--cb-led);
+  color: #241A0E;   /* 13.47:1 */
   line-height: 1;
 }
-.ge-floorboard .rm-clock-n--quiet { color: var(--cb-chalk-3); }
+.ge-floorboard .rm-clock-n--quiet { color: #5C564A; }   /* 5.74:1 on the dial */
 .ge-floorboard .rm-clock-s {
   font-size: var(--t-xs);
   letter-spacing: .1em;
   text-transform: uppercase;
-  color: var(--cb-chalk-2);
+  /* Ink on the dial, not chalk. --cb-chalk-2 is #C6C2B2 and would have been
+     pale grey on cream -- legible enough to ship and faint enough that nobody
+     would call it a bug, which is exactly how the register heading got
+     through the first time. */
+  color: #3A2E1C;
   text-align: center;
   max-width: 128px;
 }
-.ge-floorboard .rm-clock-s--warn { color: var(--cb-chalk-warn); }
+.ge-floorboard .rm-clock-s--warn { color: #9C3418; }    /* 5.68:1 on the dial */
 
 /* ---- the peg board ------------------------------------------------------ */
+/* ===========================================================================
+   THE ATTENDANCE SIGN.
+
+   A framed board with a painted header band and the tags hanging under it,
+   which is what the approved Option B actually shows. The first pass hung the
+   tags off a bare rail with a plain word above it -- closer than the card grid
+   it replaced, but still not the object: in the reference this is a MOUNTED
+   SIGN, edge, frame, band and all.
+   ========================================================================== */
+.ge-floorboard .rm-pegs {
+  grid-area: attend;
+  align-self: start;
+  /* SIZED BY ITS TAGS, not by the column it happens to sit in. A grid item
+     stretches to its track by default, which made the sign a full-width plank
+     with the four tags huddled at one end and an empty field of timber beside
+     them. A sign is as big as what is written on it. */
+  justify-self: start;
+  padding: 0 0 4px;
+  /* A LIGHT BOARD IN A TIMBER EDGE, with the dark band across the top. The
+     first pass made the whole sign dark timber, so the only light thing on it
+     was the tags and it read as a shelf they were sitting on. In the reference
+     the sign is a pale board -- the tags hang against it, which is what gives
+     them an edge to read against at a distance. */
+  background: linear-gradient(178deg, #C9BFA1, #B4A988);
+  box-shadow:
+    0 5px 14px rgba(0, 0, 0, .6),
+    inset 0 0 0 4px #5C4229,
+    inset 0 0 0 6px rgba(36, 26, 14, .55);
+}
+/* The painted header band. It spans the sign rather than floating above it,
+   because a band is part of the object and a floating word is a page heading
+   -- which is what it was. */
 .ge-floorboard .rm-h {
   font-family: var(--font-stencil, var(--font-display));
   font-size: var(--t-sm);
   letter-spacing: .14em;
   text-transform: uppercase;
-  color: var(--cb-chalk-2);
-  margin: 0 0 8px;
+  color: #EFE7D2;
+  margin: 0;
+  padding: 9px 14px 8px;
+  background: linear-gradient(178deg, #2A2119, #191209);
+  box-shadow: inset 0 -1px 0 rgba(214, 176, 120, .28);
 }
+/* ===========================================================================
+   THE ATTENDANCE RACK, AND TAGS THAT ACTUALLY HANG.
+
+   WHAT THIS REPLACED, and why it was wrong. It was
+   `grid-template-columns: repeat(4, minmax(0, 1fr))` holding four equal
+   rounded rectangles. That is a four-column card row wearing the word "peg".
+   The owner called it on sight -- "we spent all day yesterday getting away
+   from the column and square format ... and now you are back to it again" --
+   and he was right: this stylesheet has a whole DE-PANELLING section devoted
+   to removing exactly this shape, and new objects were written straight back
+   into it.
+
+   THE TEST THAT DECIDES THIS, from the design lane, and it is better than any
+   "no rectangles" law: strip the label off -- would a coach still recognise
+   what physical object this is? A clipboard is allowed to be rectangular,
+   because a real clipboard is. What is not allowed is generic panel geometry
+   named after an object it never takes the form of.
+
+   So a tag is a TAG: narrow, taller than wide, top corners cut, a punched hole
+   with a hook through it, hanging off a timber rail at its own height. Four of
+   them hang at slightly different drops, because four identical drops is a
+   grid again by another route. The rail carries them; it is not a container
+   they sit inside.
+   ========================================================================== */
 .ge-floorboard .rm-pegrow {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  padding: 12px 10px 10px;
-  border-radius: 3px;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 12px 13px 20px;
+  /* THE RAIL, and nothing else. The old panel background is gone: a rail is a
+     length of timber the tags hang from, not a tray they sit in. */
   background:
-    repeating-linear-gradient(90deg, #3A2917 0 2px, transparent 2px 26px),
-    linear-gradient(178deg, #4A331D, #2A1B0E);
-  box-shadow: inset 0 1px 0 rgba(190, 146, 92, .26), inset 0 -3px 0 rgba(0, 0, 0, .55);
+    repeating-linear-gradient(90deg, rgba(58, 41, 23, .55) 0 2px, rgba(0, 0, 0, 0) 2px 26px) 0 0 / 100% 13px no-repeat,
+    linear-gradient(178deg, #5C4229 0 6px, #3A2917 6px 13px, rgba(0, 0, 0, 0) 13px);
+  box-shadow: inset 0 1px 0 rgba(190, 146, 92, .3);
 }
 .ge-floorboard .rm-peg {
   position: relative;
-  padding: 14px 6px 8px;
+  width: 66px;
+  flex: 0 0 auto;
+  /* Taller than wide is the whole silhouette. A tag that fills a quarter of a
+     row is a card; a tag is a small thing on a string. */
+  min-height: 76px;
+  margin-top: 13px;
+  padding: 16px 3px 8px;
   text-align: center;
-  border-radius: 2px;
+  /* Overridden per tone below. A bone tag with a coloured edge was the first
+     pass; the reference paints the whole tag, which is how a coach reads the
+     column at a glance from across a floor rather than squinting at a 4px
+     stripe. */
   background: linear-gradient(178deg, #E7DFC8, #C9BE9F);
-  box-shadow: 0 2px 5px rgba(0, 0, 0, .5);
+  box-shadow: 0 3px 7px rgba(0, 0, 0, .55);
+  /* The cut top corners of a luggage tag, deterministic so two machines draw
+     the same tag. */
+  clip-path: polygon(0 12%, 26% 0, 74% 0, 100% 12%, 100% 100%, 0 100%);
 }
-/* The hook the tag hangs from. */
+/* Hanging at four identical heights is a grid wearing string, so they do not.
+   Deterministic offsets, not generated -- the board must draw the same twice. */
+.ge-floorboard .rm-peg:nth-child(2) { margin-top: 21px; }
+.ge-floorboard .rm-peg:nth-child(3) { margin-top: 16px; }
+.ge-floorboard .rm-peg:nth-child(4) { margin-top: 25px; }
+
+/* The punched hole, with the rail showing through it. A filled dot read as a
+   screw head -- a hole is what a tag has, and it is why the corners are cut. */
 .ge-floorboard .rm-peg-hook {
   position: absolute;
-  top: -5px;
+  top: 6px;
   left: 50%;
   margin-left: -4px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: radial-gradient(circle at 34% 30%, var(--cb-screw), #8C8577 55%, #3B382F);
+  background: #241A0E;
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, .9), 0 1px 0 rgba(255, 255, 255, .22);
 }
+/* The string from the rail to the hole. Thin, dark, and behind the tag. */
+.ge-floorboard .rm-peg::before {
+  content: "";
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  width: 2px;
+  height: 17px;
+  margin-left: -1px;
+  background: linear-gradient(180deg, #2A1B0E, #4A3B24);
+}
+/* Cream on paint, because the tags are painted now. Measured against all four
+   fills at 5.10:1 or better. */
 .ge-floorboard .rm-peg-n {
   display: block;
   font-family: var(--font-stencil, var(--font-display));
   font-size: 1.5rem;
   line-height: 1;
-  color: #22180C;
+  color: #F4EEDC;
 }
 .ge-floorboard .rm-peg-l {
   display: block;
   margin-top: 3px;
-  font-size: var(--t-xs);
-  letter-spacing: .08em;
+  font-size: 9.5px;
+  letter-spacing: .01em;
   text-transform: uppercase;
-  color: #4A3B24;
+  color: #F4EEDC;
 }
-/* The four columns are told apart by a painted edge, not by four fills: the
-   tags are one object and the paint is the marking on them. */
-.ge-floorboard .rm-peg--in  { border-bottom: 4px solid var(--cleared, #3F7D4E); }
-.ge-floorboard .rm-peg--out { border-bottom: 4px solid var(--cb-trim); }
-.ge-floorboard .rm-peg--ex  { border-bottom: 4px solid var(--cb-chalk-amber); }
-.ge-floorboard .rm-peg--un  { border-bottom: 4px solid #6E6A5C; }
+/* PAINTED TAGS, one colour each. These four fills are measured, not picked:
+   against cream ink they run 5.10:1 to 6.34:1, all clear of the 4.5 floor the
+   contrast regression holds them to, so a coach reading the rack across a gym
+   floor is reading colour AND legible type rather than one or the other.
+   ABSENT does NOT borrow --cb-trim. That variable is the building's painted
+   trim and is used for safety-severity marks; a tag colour that tracks it
+   would drift the day someone retunes the woodwork. */
+.ge-floorboard .rm-peg--in  { background: linear-gradient(178deg, #38774B, #2E6B43); }
+.ge-floorboard .rm-peg--out { background: linear-gradient(178deg, #B0392B, #A33124); }
+.ge-floorboard .rm-peg--ex  { background: linear-gradient(178deg, #97651A, #8A5A12); }
+.ge-floorboard .rm-peg--un  { background: linear-gradient(178deg, #635F53, #59564B); }
 
+/* The not-covered note lives on the sign, under the tags, so it is read as
+   part of the register rather than as a caption floating on the wall.
+   ITS INK IS OVERRIDDEN HERE because the sign is a light board: the base rule
+   sets --cb-chalk-3 (#8F8C7E), which is chalk for a dark wall and measures
+   about 2.4:1 on this one. Same failure as the register heading, same cause --
+   a light object placed inside a scope whose inks assume darkness. */
+.ge-floorboard .rm-pegs .rm-state {
+  margin: 0;
+  padding: 2px 14px 9px;
+  max-width: 100%;
+  line-height: 1.35;
+  color: #3A2E1C;
+}
 .ge-floorboard .rm-state {
   margin: 8px 0 0;
   font-size: var(--t-xs);
@@ -1318,41 +1738,83 @@
 
 /* ---- the clipboards ----------------------------------------------------- */
 .ge-floorboard .rm-clips {
-  grid-column: 2;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
-  gap: 14px;
-}
-@media (max-width: 900px) {
-  .ge-floorboard .rm-clips { grid-column: 1; }
+  grid-area: clips;
+  /* THREE OBJECTS HANGING, NOT A THREE-COLUMN ROW. auto-fit columns stood here
+     and tied the clipboards into one dashboard strip -- equal widths, one
+     baseline, one alignment grid. A clipboard is allowed to be rectangular,
+     because a real one is; what it may not be is a third of a row. */
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 18px;
+  /* Hung level with the sign beneath the clock rather than floating at the top
+     of the wall, which is where a stretched track had been putting them. */
+  align-self: end;
 }
 .ge-floorboard .rm-clip {
   position: relative;
-  padding: 20px 14px 14px;
-  border-radius: 2px;
-  background: linear-gradient(178deg, #EDE6D2, #D6CCB0);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, .55);
+  width: 172px;
+  flex: 0 0 auto;
+  /* THE BACKING BOARD, which is the part that was missing. The whole component
+     used to be one cream rectangle, so there was nothing for the paper to sit
+     ON -- and a clipboard read as a card with a dot above it. Hardboard here,
+     paper inside, clip across the top. */
+  padding: 22px 9px 11px;
+  border-radius: 2px 2px 3px 3px;
+  background: linear-gradient(178deg, #6B5334, #47341E);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(214, 176, 120, .3);
 }
+/* The paper on the board. It stops short of the bottom edge so the backing
+   shows all the way round, which is the thing the eye reads as "clipboard". */
+.ge-floorboard .rm-clip-paper {
+  display: block;
+  position: relative;
+  padding: 14px 11px 13px;
+  background: linear-gradient(178deg, #F4EEDC, #E2DAC3);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .45);
+}
+/* THE SHADOW QUEUE IS A STACK, not a fourth identical sheet. It is a queue of
+   things waiting, and the reference draws it as a thicker pad -- so the extra
+   sheets are real offset layers behind the top one, not a shadow pretending. */
+.ge-floorboard .rm-clip--stack .rm-clip-paper {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, .45),
+    2px 3px 0 -1px #D9D1B8,
+    4px 6px 0 -2px #C8C0A6,
+    5px 8px 5px -2px rgba(0, 0, 0, .45);
+}
+/* Hung by hand, so they neither hang level NOR match each other. Three equal
+   widths at three heights is still three equal shares of a row -- the width is
+   the part the eye reads as "grid", and it was the last one left. These are
+   deterministic, because the board must draw the same twice. */
+.ge-floorboard .rm-clips > *:nth-child(1) { width: 156px; }
+.ge-floorboard .rm-clips > *:nth-child(2) { width: 142px; margin-top: 13px; }
+.ge-floorboard .rm-clips > *:nth-child(3) { width: 130px; margin-top: 6px; }
+
 .ge-floorboard .rm-clip-nail {
   position: absolute;
-  top: -6px;
+  top: -7px;
   left: 50%;
   margin-left: -5px;
   width: 10px;
   height: 10px;
   border-radius: 50%;
   background: radial-gradient(circle at 34% 30%, var(--cb-screw), #7E786A 55%, #33302A);
+  box-shadow: 0 2px 3px rgba(0, 0, 0, .6);
 }
-/* The steel clamp across the top. */
+/* The steel spring clip, which PROTRUDES above the board rather than sitting
+   inside it -- that overhang is most of what makes the silhouette readable. */
 .ge-floorboard .rm-clip-clamp {
   position: absolute;
-  top: 4px;
-  left: 22%;
-  width: 56%;
-  height: 9px;
-  border-radius: 2px;
-  background: linear-gradient(178deg, #B9B3A4, #6F6A5E);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 1px 2px rgba(0, 0, 0, .45);
+  top: -5px;
+  left: 27%;
+  width: 46%;
+  height: 16px;
+  border-radius: 3px 3px 1px 1px;
+  background: linear-gradient(178deg, #CFC9BA 0 6px, #9A9486 6px 11px, #615C51 11px 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .55),
+    0 2px 3px rgba(0, 0, 0, .5);
 }
 .ge-floorboard .rm-clip-t {
   margin: 0;
@@ -1386,12 +1848,16 @@
 /* Nothing waiting. Dimmed and de-weighted so it cannot be misread at a glance
    as a count -- but still legible, because "nothing open" is the good news the
    coach came for and it used to be silence. */
-.ge-floorboard .rm-clip--quiet { background: linear-gradient(178deg, #CFC8B5, #B6AF9B); }
+/* The dimming belongs to the PAPER now, not the board. Dimming the hardboard
+   would have quietly changed what kind of object it is; a quiet clipboard is
+   the same clipboard with a paler sheet on it. */
+.ge-floorboard .rm-clip--quiet .rm-clip-paper { background: linear-gradient(178deg, #CFC8B5, #B6AF9B); }
 .ge-floorboard .rm-clip--quiet .rm-clip-v { color: #4E4A3D; }
 /* Could not be read. Warning outline, so it is never mistaken for a confident
-   zero. */
+   zero. On the board rather than the paper, because it is the whole object
+   that is in doubt. */
 .ge-floorboard .rm-clip--unread {
-  box-shadow: 0 3px 8px rgba(0, 0, 0, .55), inset 0 0 0 2px var(--cb-trim);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, .6), inset 0 0 0 2px var(--cb-trim);
 }
 .ge-floorboard .rm-clip--unread .rm-clip-v { color: var(--cb-trim-2); }
 
@@ -1414,9 +1880,13 @@
 /* The peg board, now a control. It has to read as pressable without becoming
    a button-shaped thing: the wood is the affordance, so the change is a lift
    and a cursor, not a new border. */
+/* A DOOR RESETS A BUTTON, IT DOES NOT SET THE LAYOUT. These two lines used to
+   say `display: grid` and `width: 100%`, which silently outranked the rack
+   geometry above and stacked the tags into a single column -- a button's
+   default styling quietly deciding what shape the object is. The reset keeps
+   only what a <button> needs neutralising; the layout stays where it is
+   declared, once. */
 .ge-floorboard .rm-pegrow--door {
-  display: grid;
-  width: 100%;
   border: 0;
   cursor: pointer;
   text-align: inherit;
@@ -1598,7 +2068,12 @@
 .ge-floorboard .coach-board .rm-clip--quiet .rm-clip-v { color: #4E4A3D; }
 .ge-floorboard .coach-board .rm-clip--unread .rm-clip-v { color: var(--cb-trim-2); }
 .ge-floorboard .coach-board .rm-sev li { color: #4A3B24; }
-.ge-floorboard .coach-board .rm-peg-l { color: #4A3B24; }
+/* The tags are painted, not bone, so their ink goes the other way. This line
+   said #4A3B24 -- dark ink, correct while the tag was cream, and dark-on-dark
+   the moment the fills went solid. It is here rather than only in the base
+   rule because this block outranks it. */
+.ge-floorboard .coach-board .rm-peg-l,
+.ge-floorboard .coach-board .rm-peg-n { color: #F4EEDC; }
 
 /* AND EVERY ELEMENT INSIDE A LIGHT OBJECT, not only the ones that exist today.
    The rules above name a class each, which means they protect the markup that
@@ -1638,17 +2113,46 @@
    now measures these surfaces.
    ========================================================================== */
 .ge-floorboard .coach-board .rg { background-color: #E4DCC6; }
-.ge-floorboard .coach-board .rm-clip { background-color: #E2DAC3; }
-.ge-floorboard .coach-board .rm-clip--quiet { background-color: #C2BBA8; }
-.ge-floorboard .coach-board .rm-peg { background-color: #D8D0B6; }
+/* THE CLIPBOARD'S GROUND MOVED, and this line had to move with it. .rm-clip
+   used to BE the bone surface; it is now the hardboard backing, and the paper
+   the text sits on is .rm-clip-paper. Leaving the bone colour on .rm-clip
+   would have told the contrast regression that dark ink sits on a light ground
+   when it actually sits on timber -- a guard reading the wrong surface, which
+   passes and means nothing. */
+.ge-floorboard .coach-board .rm-clip { background-color: #47341E; }
+.ge-floorboard .coach-board .rm-clip-paper { background-color: #E2DAC3; }
+.ge-floorboard .coach-board .rm-clip--quiet .rm-clip-paper { background-color: #C2BBA8; }
+/* ONE SOLID GROUND PER TAG COLOUR. A single #D8D0B6 stood here for all four
+   while the tags were bone. With painted fills that would hand the contrast
+   regression a pale ground for tags that are actually dark green, red, ochre
+   and grey -- it would measure cream ink against cream and report a failure on
+   text that is in fact perfectly legible, or miss a real one. The fills live
+   in background-image, so without these the computed colour is transparent and
+   the ground walks up to the sign's timber instead. */
+/* THE CLOCK DIAL AND THE ATTENDANCE SIGN, added the moment the guard was
+   pointed at them and immediately reported both sitting on #0C0C0B -- the
+   WALL. Neither is: they paint a gradient, gradients live in background-image,
+   and a computed background-color of transparent sends the ground walk
+   straight past them to the black paint behind. The render was fine; the
+   MEASUREMENT was reading the wrong surface, which is the more dangerous of
+   the two failures because it can equally hide a real one. */
+.ge-floorboard .coach-board .rm-clock { background-color: #EDE4CB; }
+.ge-floorboard .coach-board .rm-pegs { background-color: #BEB394; }
+.ge-floorboard .coach-board .rm-peg { background-color: #59564B; }
+.ge-floorboard .coach-board .rm-peg--in { background-color: #2E6B43; }
+.ge-floorboard .coach-board .rm-peg--out { background-color: #A33124; }
+.ge-floorboard .coach-board .rm-peg--ex { background-color: #8A5A12; }
+.ge-floorboard .coach-board .rm-peg--un { background-color: #59564B; }
 
 /* A clipboard that opens. The nail and the clamp stay exactly where they were;
    only the element changed, because a door has to BE a button rather than look
    like one -- a coach on a keyboard finds it that way, and finds nothing on the
    clipboards that are still only readouts. */
+/* Same correction as the rack's door: `display: block; width: 100%` here made
+   the one clipboard that happens to be a door stretch the full width of the
+   wall, so NEED ATTENTION rendered as a banner beside two small clipboards.
+   Whether an object opens is not allowed to change what object it is. */
 .ge-floorboard .coach-board .rm-clip--door {
-  display: block;
-  width: 100%;
   border: 0;
   cursor: pointer;
   text-align: left;

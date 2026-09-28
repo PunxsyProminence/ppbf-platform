@@ -1256,6 +1256,39 @@ export default function CoachWorkspace() {
      that state is four zeroes wearing the typography of a real count. */
   const attendanceCounts = useMemo(() => attendanceGlance(athletes), [athletes]);
 
+  /* WHAT IS ON NEXT, and it is a real read rather than a caption.
+
+     The approved room reference hangs a NEXT UP nameplate beside the bell. The
+     only honest source for it in this workspace is todayClasses -- the
+     scheduler's own list, already scoped server-side to the classes this coach
+     teaches, covers or is scheduled for. So this picks the next class today
+     that has not already ended, and shows its title and start time.
+
+     WHAT IT DELIBERATELY DOES NOT DO is invent the rest of the reference's
+     instrument cluster. The image also shows "BELL IN 00:10" and "ROUND 3 of
+     6"; CoachLiveRun carries run_id, script_id, script_version, started_at,
+     elapsed_seconds, is_paused, athletes_present and delivered_on, and not one
+     round, interval or block among them. A countdown drawn from nothing is the
+     failure this file already carries a warning about, where a prior version
+     fabricated readiness and attendance and attached them to real athlete
+     names. A plate that says a bell is ten seconds away is the same class of
+     lie, on a surface a coach uses to run a room full of children.
+
+     Nothing is interpolated: the time shown is the scheduled start, not a
+     countdown, for the same reason the elapsed readout never ticks. */
+  const nextUpClass = useMemo(() => {
+    if (todayClassesState !== 'loaded') return null;
+    const now = Date.now();
+    const upcoming = todayClasses
+      .filter((cls) => cls.status !== 'cancelled')
+      .filter((cls) => {
+        const ends = Date.parse(cls.end_at);
+        return Number.isFinite(ends) && ends > now;
+      })
+      .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at));
+    return upcoming[0] ?? null;
+  }, [todayClasses, todayClassesState]);
+
   /* The register behind the peg board. Closed by default: it is the DETAIL of
      a glance, and a detail that arrives already open is just the column again. */
   const [registerOpen, setRegisterOpen] = useState(false);
@@ -2371,18 +2404,34 @@ export default function CoachWorkspace() {
 
   return (
     <div className="text-[color:var(--bone-200)]">
-      {/* THE FLOOR BOARD. The chalkboard the gym already uses, rather than a
-          page of panels: design-system/current/ppbf-floor-board.css carries the
-          whole material and explains why this scope does not wear the house
-          leather. The screws and the slate are decoration; every semantic
-          region below is a real landmark with no visible container, which is
-          what keeps the welfare stack from turning back into a row of cards. */}
-      <div className="coach-board">
-        <span className="cb-screw cb-screw--tl" aria-hidden="true" />
-        <span className="cb-screw cb-screw--tr" aria-hidden="true" />
-        <span className="cb-screw cb-screw--bl" aria-hidden="true" />
-        <span className="cb-screw cb-screw--br" aria-hidden="true" />
-        <div className="cb-face">
+      {/* THE FLOOR BOARD, AND THE ROOM THAT IS NOT ONE.
+
+          Two compositions were approved, on one matte black chalkboard wall:
+          BOARD is a rough timber-framed control board mounted on that wall,
+          and ROOM is the wall itself, carrying separate gym objects -- a
+          clock, a peg board, clipboards -- with NO enclosing frame.
+
+          Only the first was built. ROOM was mounted inside BOARD's carcass, so
+          what shipped was "the board with different things inside it" rather
+          than the room, and the owner read the render as "nothing like we
+          wanted". The frame is therefore conditional: one DOM structure, one
+          toggle, and the chrome stops painting when ROOM is showing. A second
+          tree would be two places for the toggle to drift.
+
+          The screws are part of the carcass, so they go with it. Every
+          semantic region below is a real landmark with no visible container,
+          which is what keeps the welfare stack from turning back into a row of
+          cards -- and that is true in both compositions. */}
+      <div className={cx('coach-board', coachLayout === 'room' && 'coach-board--unframed')}>
+        {coachLayout === 'board' && (
+          <>
+            <span className="cb-screw cb-screw--tl" aria-hidden="true" />
+            <span className="cb-screw cb-screw--tr" aria-hidden="true" />
+            <span className="cb-screw cb-screw--bl" aria-hidden="true" />
+            <span className="cb-screw cb-screw--br" aria-hidden="true" />
+          </>
+        )}
+        <div className={cx('cb-face', coachLayout === 'room' && 'cb-face--unframed')}>
         {/* THE SIGN AND THE INSTRUMENTS.
             The board names itself once. The old masthead repeated the role,
             the route and the active tab in three separate bands before any
@@ -2395,9 +2444,47 @@ export default function CoachWorkspace() {
             running while the page is being told nothing is a lie. */}
         <div className="cb-top">
           <div>
+            {/* THE NAMEPLATE IS AN OBJECT, not a heading with a line under it.
+                The approved reference hangs a painted enamel sign here and
+                carries the motto on the same plate; what stood here was chalk
+                type over a chalk-textured underline, which is the same
+                interpretation the owner corrected when he said he wanted the
+                WALL black like a chalkboard and not the interface. */}
+            {/* TWO SIGNS, as the approved wall hangs them: the club's own
+                plate, and the motto banner beside it. Between them they are
+                what makes this wall Punxsutawney Prominence's rather than any
+                dark wall with instruments on it -- the identity is carried by
+                objects hung ON the wall, which is how the reference does it.
+
+                NO MASCOT ARTWORK. The reference plate carries the boxing
+                groundhog, and there is no such asset in this repository. A
+                drawn-from-memory approximation of a club's own mark is worse
+                than none, so the plate is typographic until the real mark is
+                supplied. The words are the club's actual name and are not
+                invented. */}
+            <div className="cb-plates">
+              <div className="cb-idplate">
+                <p className="cb-id-town">Punxsutawney</p>
+                <p className="cb-id-name">Prominence</p>
+                <p className="cb-id-disc">Boxing &amp; Fitness</p>
+              </div>
+
+              <div className="cb-banner">
+                <p className="cb-banner-t">
+                  <span className="cb-star" aria-hidden="true">&#9733;</span>
+                  Adapt and Overcome
+                  <span className="cb-star" aria-hidden="true">&#9733;</span>
+                </p>
+                <div className="cb-rule-under" aria-hidden="true" />
+                <p className="cb-motto">Observe · Decide · Execute · Repeat</p>
+              </div>
+            </div>
+
+            {/* The board still names itself, quietly, under the signs. It is
+                the h1 and stays one: the club plate is the loudest thing on
+                the wall but it is not what this PAGE is. */}
             <p className="cb-eyebrow">Coach</p>
             <h1 className="cb-sign">The Floor Board</h1>
-            <div className="cb-rule-under" aria-hidden="true" />
             {/* THE LAYOUT TOGGLE. Deliberately outside every tab branch: it
                 changes how the whole board is drawn, not what any one tab
                 shows, and a control that moved or vanished per tab would read
@@ -2479,7 +2566,6 @@ export default function CoachWorkspace() {
             )}
           </div>
           )}
-          <p className="cb-motto">Observe · Decide · Execute · Repeat</p>
         </div>
 
         {/* THE ROOM GLANCE LAYER.
@@ -2508,6 +2594,9 @@ export default function CoachWorkspace() {
             readiness={readiness}
             readinessReadState={readinessReadState}
             shadowBadge={reviewQueueBadge}
+            nextUpTitle={nextUpClass?.title ?? null}
+            nextUpStartsAt={nextUpClass?.start_at ?? null}
+            nextUpState={todayClassesState}
             onOpenRegister={() => setRegisterOpen(true)}
             onOpenAttention={() => setAttentionOpen(true)}
           />

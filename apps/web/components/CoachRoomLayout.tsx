@@ -52,6 +52,12 @@ export interface CoachRoomLayoutProps {
    *  -- one is somebody to chase, the other is a read to retry. */
   readonly readinessReadState: 'loading' | 'loaded' | 'unavailable';
   readonly shadowBadge: GlanceBadge;
+  /** The next class today that has not ended, from the scheduler. Null both
+   *  when the day is clear and when the read failed -- `nextUpState` is what
+   *  tells those apart, and the plate says which. */
+  readonly nextUpTitle: string | null;
+  readonly nextUpStartsAt: string | null;
+  readonly nextUpState: 'loading' | 'loaded' | 'unavailable';
   /** Opens the register behind the peg board -- the first glance -> open ->
    *  work door in the room. */
   readonly onOpenRegister: () => void;
@@ -82,24 +88,39 @@ function Peg({ label, count, tone }: {
  *  the element -- a real button, with a real accessible name -- rather than in
  *  a cursor. A coach navigating by keyboard finds the doors that way, and finds
  *  nothing on the ones that are still only readouts. */
-function Clipboard({ title, value, detail, state, onOpen, openLabel }: {
+function Clipboard({ title, value, detail, state, onOpen, openLabel, stack }: {
   readonly title: string;
   readonly value: string;
   readonly detail?: React.ReactNode;
   readonly state?: 'ok' | 'quiet' | 'unread';
   readonly onOpen?: () => void;
   readonly openLabel?: string;
+  /** A pad of sheets rather than one. SHADOW is a QUEUE of things waiting, and
+   *  the approved reference draws it as a visibly thicker stack -- the one
+   *  place these three objects are deliberately not identical. Three identical
+   *  clipboards side by side is a three-column row again. */
+  readonly stack?: boolean;
 }) {
+  /* THE PAPER IS ITS OWN ELEMENT, and that is the whole fix.
+
+     This component used to be one cream rectangle with a dot above it, so
+     there was nothing for the paper to sit ON and the silhouette read as a
+     card. A clipboard is a dark backing board with a sheet clipped to it: the
+     board is .rm-clip, the sheet is .rm-clip-paper, and the board shows all
+     the way round the sheet. The nail and the clip stay outside the paper
+     because they are fixed to the board, not printed on the page. */
   const body = (
     <>
       <span className="rm-clip-nail" aria-hidden="true" />
       <span className="rm-clip-clamp" aria-hidden="true" />
-      <p className="rm-clip-t">{title}</p>
-      <b className="rm-clip-v">{value}</b>
-      {detail ? <div className="rm-clip-d">{detail}</div> : null}
+      <span className="rm-clip-paper">
+        <p className="rm-clip-t">{title}</p>
+        <b className="rm-clip-v">{value}</b>
+        {detail ? <div className="rm-clip-d">{detail}</div> : null}
+      </span>
     </>
   );
-  const cls = `rm-clip rm-clip--${state ?? 'ok'}`;
+  const cls = `rm-clip rm-clip--${state ?? 'ok'}${stack ? ' rm-clip--stack' : ''}`;
 
   if (!onOpen) return <div className={cls}>{body}</div>;
   return (
@@ -122,11 +143,60 @@ export default function CoachRoomLayout({
   readiness,
   readinessReadState,
   shadowBadge,
+  nextUpTitle,
+  nextUpStartsAt,
+  nextUpState,
   onOpenRegister,
   onOpenAttention,
 }: CoachRoomLayoutProps) {
+  /* The scheduled start, in the room's own words. Formatted here rather than
+     upstream because it is a LABEL, not a fact -- the fact is the ISO string
+     the scheduler returned, and it stays that until the moment it is written
+     on a wall. An unparseable timestamp yields null and the plate falls back
+     to the title alone rather than printing "Invalid Date" at a coach. */
+  const nextUpTime = (() => {
+    if (!nextUpStartsAt) return null;
+    const at = new Date(nextUpStartsAt);
+    if (Number.isNaN(at.getTime())) return null;
+    return at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  })();
+
   return (
     <div className="rm">
+      {/* THE NEXT-UP PLATE. A small painted nameplate, as the reference hangs
+          beside the bell.
+
+          IT HAS THREE STATES because the scheduler read has three, and a plate
+          that said "nothing next" when the read had failed would be the same
+          false-reassurance this layout corrects everywhere else. An empty
+          evening and an unreadable schedule are different facts about a
+          coach's night.
+
+          THE BELL AND ITS COUNTDOWN ARE NOT HERE. The reference shows a
+          "BELL IN 00:10" readout beside this plate, and there is no round,
+          interval or block timing anywhere in CoachLiveRun to drive it. It is
+          left unbuilt rather than filled with a plausible number. */}
+      <section className="rm-nameplate" aria-label="Next up">
+        <p className="rm-np-t">Next up</p>
+        {nextUpState === 'loading' ? (
+          <p className="rm-np-v rm-np-v--quiet">Checking</p>
+        ) : nextUpState === 'unavailable' ? (
+          <>
+            <p className="rm-np-v rm-np-v--unread">Unread</p>
+            <p className="rm-np-d">The schedule could not be read — not a statement that nothing is on.</p>
+          </>
+        ) : nextUpTitle ? (
+          <>
+            <p className="rm-np-v">{nextUpTitle}</p>
+            {nextUpTime ? <p className="rm-np-d">{nextUpTime}</p> : null}
+          </>
+        ) : (
+          <>
+            <p className="rm-np-v rm-np-v--quiet">Nothing else today</p>
+            <p className="rm-np-d">The schedule was read and the rest of the day is clear.</p>
+          </>
+        )}
+      </section>
       {/* THE CLOCK. A round face because that is what is screwed to the wall of
           a boxing gym, and because a coach glancing up from the floor reads a
           dial before they read a word.
@@ -349,6 +419,7 @@ export default function CoachRoomLayout({
           title="Shadow queue"
           value={shadowBadge.label}
           state={shadowBadge.tone === 'restricted' ? 'unread' : 'ok'}
+          stack
         />
       </section>
     </div>

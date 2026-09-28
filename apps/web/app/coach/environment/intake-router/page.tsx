@@ -21,13 +21,17 @@ export default function CoachIntakeRouterPage() {
       {/* ge-floorboard: Golden Era Visual 002 scope, and inside it the board
           itself (Visual 009, design-system/current/ppbf-floor-board.css).
 
-          THE FLOOR BOARD is a chalkboard in a dark timber carcass rather than
-          the house leather-and-brass panel, and that is a deliberate
-          exception: the owner rejected five versions of this screen as
-          rectangular and lacking gym identity, then sent photographs showing
-          that the gym's own information surfaces are already chalkboards and
-          whiteboards in rough timber frames. The board is the object the room
-          actually contains. */}
+          THE FLOOR BOARD is a hand-built board in a rough timber carcass,
+          hanging on a matte black chalkboard-painted wall, rather than the
+          house leather-and-brass panel. That is a deliberate exception: the
+          owner rejected five versions of this screen as rectangular and
+          lacking gym identity, then sent photographs of the building.
+
+          THIS COMMENT USED TO SAY THE BOARD "IS A CHALKBOARD", and that was
+          the drift, stated as rationale. The correction is on the record --
+          "I only wanted th backround wall black like a chalk board" -- and the
+          approved brief is explicit that the interface does not become chalk.
+          The WALL is the chalkboard. The board is an object on it. */}
       <div className="ge-floorboard">
         <CoachWorkspace />
       </div>
