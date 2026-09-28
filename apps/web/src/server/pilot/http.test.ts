@@ -3,6 +3,8 @@ import {
   ForbiddenError,
   NotFoundError,
   PilotError,
+  ServiceUnavailableError,
+  SERVICE_UNAVAILABLE_MESSAGE,
   ValidationError,
 } from './errors';
 import { jsonError, parseSafeLimit } from './http';
@@ -25,6 +27,7 @@ describe('jsonError', () => {
       ['ForbiddenError', new ForbiddenError('Only an organization admin may decide this'), 403],
       ['NotFoundError', new NotFoundError('That safety flag does not exist'), 404],
       ['ConflictError', new ConflictError('An external rule cannot be bypassed'), 409],
+      ['ServiceUnavailableError', new ServiceUnavailableError(SERVICE_UNAVAILABLE_MESSAGE), 503],
     ])('%s carries its own status and discloses its message', async (_name, error, status) => {
       const res = jsonError(error);
       expect(res.status).toBe(status);
@@ -75,6 +78,7 @@ describe('jsonError', () => {
       expect(new ForbiddenError('x')).toBeInstanceOf(PilotError);
       expect(new NotFoundError('x')).toBeInstanceOf(PilotError);
       expect(new ConflictError('x')).toBeInstanceOf(PilotError);
+    expect(new ServiceUnavailableError('x')).toBeInstanceOf(PilotError);
       expect(new ValidationError('x').name).toBe('ValidationError');
     });
   });
@@ -101,6 +105,20 @@ describe('jsonError', () => {
   // surfaced as a 400 because its message began with "Missing", which blamed the
   // caller for a deployment gap and is how the 400 on /api/pilot/shadow/metrics
   // went undiagnosed.
+  /* The same defect as the SHADOW case below, on the one path an
+     unauthenticated visitor can reach: POST /api/pilot/auth/login resolves a
+     database connection before it knows who is asking. An absent connection
+     string used to answer that caller with 400 and the variable's NAME,
+     because the message began with "Missing". Both halves are asserted here
+     -- the status, and the strings that must never appear in the body. */
+  test('an absent connection string is 503 and names nothing', async () => {
+    const res = jsonError(new ServiceUnavailableError(SERVICE_UNAVAILABLE_MESSAGE));
+    expect(res.status).toBe(503);
+    const body = JSON.stringify(await res.json());
+    expect(body).toContain(SERVICE_UNAVAILABLE_MESSAGE);
+    expect(body).not.toMatch(/AZURE_POSTGRES_CONNECTION_STRING|AZURE_STORAGE_CONNECTION_STRING|Postgres|Azure/i);
+  });
+
   test('maps an unmigrated SHADOW runtime to 503, not 400', async () => {
     const res = jsonError(new ShadowRuntimeUnavailableError({
       missingTables: ['shadow_chat_sessions', 'shadow_learning_events'],
