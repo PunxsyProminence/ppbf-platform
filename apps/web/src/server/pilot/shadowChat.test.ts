@@ -365,8 +365,10 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
 
         const result = await retrieveShadowContext(scoped);
 
-        // Ordinary athlete context is untouched. This removes the safety
-        // records from the prompt, not the role's access to the athlete.
+        // Their ACCESS is untouched -- this removes the safety records from
+        // the prompt, not the role's scope on the athlete. The CONTEXT STRING
+        // does change for them, and the whole-string assertion further down
+        // is what pins what it changes to.
         expect(mockAssertActorCanAccessAthlete).toHaveBeenCalled();
         expect(result.authorized).toBe(true);
         expect(result.context).toContain('Authorized athlete scope: athlete-789');

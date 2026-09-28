@@ -6,8 +6,7 @@ import {
   completeJob,
   failJob,
   type JobType,
-  type ShadowJob,
-} from '@/src/server/pilot/shadowJobQueue';
+  type ShadowJob, SHADOW_CONTEXT_CONTRACT_VERSION } from '@/src/server/pilot/shadowJobQueue';
 import { queryOne } from '@/src/server/pilot/db';
 import { appendAssistantMessage, queueHumanReview } from '@/src/server/pilot/shadowConversations';
 
@@ -127,7 +126,7 @@ describe('SHADOW job processor fail-closed modes', () => {
           organizationId: 'org-1',
           authenticatedRole: 'coach',
           authorizedContext: 'Film study requested for video session vs-1.',
-          contextContractVersion: 1,
+          contextContractVersion: SHADOW_CONTEXT_CONTRACT_VERSION,
         },
       };
       mockClaimNextJob.mockResolvedValueOnce(job);
@@ -174,7 +173,7 @@ describe('SHADOW job processor fail-closed modes', () => {
         requestMode: 'chat',
         message: 'Summarize this athlete cycle.',
         authorizedContext: 'Server-authorized context.',
-        contextContractVersion: 1,
+        contextContractVersion: SHADOW_CONTEXT_CONTRACT_VERSION,
       };
       mockClaimNextJob.mockResolvedValueOnce(job);
       mockQueryOne.mockResolvedValueOnce({
@@ -219,7 +218,7 @@ describe('SHADOW job processor fail-closed modes', () => {
       requestMode: 'chat',
       message: 'Summarize governance items.',
       authorizedContext: 'Server-authorized context.',
-      contextContractVersion: 1,
+      contextContractVersion: SHADOW_CONTEXT_CONTRACT_VERSION,
     };
     mockClaimNextJob.mockResolvedValueOnce(job);
     mockQueryOne.mockResolvedValueOnce({
@@ -275,7 +274,7 @@ describe('SHADOW job processor fail-closed modes', () => {
         message: 'Plan the next training block.',
         topic: 'training',
         authorizedContext: 'Use [E:e5a7c9d2-4b3f-4a21-8c6d-1f2e3a4b5c6d] for the approved excerpt.',
-        contextContractVersion: 1,
+        contextContractVersion: SHADOW_CONTEXT_CONTRACT_VERSION,
         conversationId: 'c0a80121-0000-4000-8000-000000000001',
         evidenceSnapshot: {
           bundleId: 'bundle-1',
@@ -416,7 +415,7 @@ describe('SHADOW job processor fail-closed modes', () => {
       requestMode: 'chat',
       message: 'Summarize governance items.',
       authorizedContext: 'Server-authorized context.',
-      contextContractVersion: 1,
+      contextContractVersion: SHADOW_CONTEXT_CONTRACT_VERSION,
     };
     mockClaimNextJob.mockResolvedValueOnce(job);
     mockQueryOne.mockResolvedValueOnce({

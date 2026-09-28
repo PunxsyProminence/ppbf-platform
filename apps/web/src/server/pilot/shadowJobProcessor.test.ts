@@ -4,7 +4,7 @@
 // worker persists, not what a mocked validator was told to say.
 
 import { processNextShadowJob } from './shadowJobProcessor';
-import { claimNextJob, completeJob, failJob, type ShadowJob } from './shadowJobQueue';
+import { claimNextJob, completeJob, failJob, type ShadowJob, SHADOW_CONTEXT_CONTRACT_VERSION } from './shadowJobQueue';
 import { queryOne } from './db';
 import { appendAssistantMessage, queueHumanReview } from './shadowConversations';
 
@@ -57,7 +57,7 @@ function heavyBagJob(): ShadowJob {
     inputPayload: {
       message: 'How can our footwork rotation improve?',
       authorizedContext: 'Recorded gym context for this coach.',
-      contextContractVersion: 1,
+      contextContractVersion: SHADOW_CONTEXT_CONTRACT_VERSION,
       conversationId: 'c0ffee00-1111-4222-8333-444444444444',
       evidenceSnapshot: {
         bundleId: BUNDLE_ID,
@@ -308,7 +308,8 @@ describe('background jobs ask for a budget a real answer fits in', () => {
 // copy at execution time -- under whatever code is deployed by then.
 //
 // So a change to WHAT GOES INTO that context does not reach a job that was
-// already queued. The near-miss audience gate (OD-2026-09-26-001) is the case
+// already queued. The near-miss audience gate (OD-2026-09-26-002, "Near-miss records are
+// coach and organization-admin chat context only") is the case
 // that produced this: it removed athlete and parent access to recorded
 // near-miss events, and the worker's allowed-role set includes athlete and
 // parent, so a Heavy Bag job enqueued before it and run after would still have
@@ -366,7 +367,7 @@ describe('a job whose context predates the current contract', () => {
   });
 
   test('a payload stamped with an older contract is refused', async () => {
-    mockClaimNextJob.mockResolvedValue(staleJob({ contextContractVersion: 0 }));
+    mockClaimNextJob.mockResolvedValue(staleJob({ contextContractVersion: SHADOW_CONTEXT_CONTRACT_VERSION - 1 }));
 
     const result = await processNextShadowJob();
 
@@ -391,6 +392,49 @@ describe('a job whose context predates the current contract', () => {
     );
   });
 
+  // THE OTHER DIRECTION, which the first version of this guard got wrong.
+  // A payload stamped NEWER than this worker is not stale -- the worker is
+  // behind. That is the ordinary state of a rollout: the new revision enqueues
+  // at the new version while the old revision is still serving, and
+  // claimNextJob has no version predicate, so the old worker claims it.
+  //
+  // Treating it as stale was TERMINAL, and failJob's non-retryable branch sets
+  // input_payload to '{}', so the job could never be re-run once a current
+  // worker existed -- the question sat in the conversation with no answer and
+  // no way to produce one.
+  describe('a payload stamped AHEAD of this worker', () => {
+    test('is refused with its own code, not as stale', async () => {
+      mockClaimNextJob.mockResolvedValue(
+        staleJob({ contextContractVersion: SHADOW_CONTEXT_CONTRACT_VERSION + 1 }),
+      );
+
+      const result = await processNextShadowJob();
+
+      expect(result.error).toBe('SHADOW_JOB_CONTEXT_CONTRACT_AHEAD');
+    });
+
+    // The assertion that matters. Retryable keeps input_payload, so a current
+    // worker can still take it; non-retryable would erase the context and end
+    // the job permanently.
+    test('stays RETRYABLE so a current worker can still take it', async () => {
+      mockClaimNextJob.mockResolvedValue(
+        staleJob({ contextContractVersion: SHADOW_CONTEXT_CONTRACT_VERSION + 1 }),
+      );
+
+      await processNextShadowJob();
+
+      expect(mockFailJob).toHaveBeenCalledWith(
+        expect.anything(),
+        'SHADOW_JOB_CONTEXT_CONTRACT_AHEAD',
+      );
+      expect(mockFailJob).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        { retryable: false },
+      );
+    });
+  });
+
   // POSITIVE CONTROL. Without it, a guard that refused every job would satisfy
   // all three assertions above and look correct.
   test('POSITIVE CONTROL: a currently-stamped payload is answered normally', async () => {
@@ -413,7 +457,7 @@ function boardSummaryJob(role: ShadowJob['role']): ShadowJob {
       requestMode: 'chat',
       authenticatedRole: role,
       authorizedContext: 'Authorized organization context for this board summary.',
-      contextContractVersion: 1,
+      contextContractVersion: SHADOW_CONTEXT_CONTRACT_VERSION,
       message: 'Summarize governance items for the board.',
       conversationId: 'c0ffee00-1111-4222-8333-444444444444',
     },
