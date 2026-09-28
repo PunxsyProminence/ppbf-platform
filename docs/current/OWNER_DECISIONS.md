@@ -91,6 +91,376 @@ and should not try to.
 
 ---
 
+## OD-2026-09-26-002 -- Near-miss records are coach and organization-admin chat context only
+
+**Provenance: PRIMARY.** The owner's answer is recorded verbatim below, and the
+options are reproduced exactly as they were put to him, because the word alone
+does not carry the decision.
+
+**Date:** 2026-09-26. **Governs:** which roles receive recorded near-miss
+events in SHADOW chat prompt context. **Supersedes** nothing -- no prior entry
+addressed near-miss audience. It does not change `assertActorCanAccessAthlete`
+or any other authorization rule.
+
+### The decision
+
+Put to him as question 1 of three, verbatim as asked:
+
+> **1. Near-miss text in chat** -- athletes/parents currently get coach-written
+> near-miss descriptions (free text, can name another child). The API refuses
+> them the same records.
+> -> **(a)** coaches/admins only *(my recommendation)* . **(b)** own record,
+> names redacted . **(c)** leave as is
+
+His answer, verbatim:
+
+> a
+
+**The premise of that question was overstated, and the record should say so.**
+It told him athletes and parents "currently get" those descriptions. That was
+a statement about what the code ALLOWED -- every role clearing the athlete
+check reached the read -- not about anything observed. No conversation,
+database or log had been read, and he later stated none had been sent. The
+"can name another child" clause is likewise a risk model, not a reported
+incident. The recommendation marked in the options was the builder's, not an
+independent one. The ruling stands on the reachability alone, which is
+sufficient and was verified in source; a reader should not conclude it rested
+on observed leaks.
+
+### What that means
+
+1. Near-miss records reach SHADOW prompt context only for `DECISION_LOOP_ROLES`
+   -- `coach`, `organization_admin` and legacy `admin`. That is the same set
+   `GET /api/pilot/shadow/near-misses` already requires, so the decision closes
+   a gap between two surfaces rather than creating a new rule.
+2. Athlete and parent keep ordinary athlete-scoped context. They lose the
+   near-miss descriptions, the evidence ids, and any signal that records exist
+   or do not exist.
+3. **Redaction was on the table as (b) and was not chosen.** A later lane
+   should not reach for "show the athlete their own record with names removed"
+   as an obvious middle path. It was offered and declined.
+4. `platform_owner` and `board` do not reach this context, because
+   `assertActorCanAccessAthlete` refuses them earlier. That is READ FROM
+   `access.ts`, not executed in the gate's own tests, which mock the
+   authorization check. The gate itself refuses every role outside
+   `DECISION_LOOP_ROLES`, and its tests enumerate the whole `PilotRole` union,
+   so the ruling does not depend on that reading holding.
+
+INTERPRETATION, marked because the owner's answer did not spell it out:
+"coaches/admins" was implemented as `DECISION_LOOP_ROLES`, which carries legacy
+`admin` alongside `organization_admin`. That matches how every other route in
+the repository reads "admin" and matches `GET /near-misses` exactly, but it is
+a reading of "a", not a distinction the owner drew. If he meant
+`organization_admin` only, this entry is the thing to correct.
+
+### The already-delivered question, and the owner's answer
+
+This entry was first drafted carrying text delivered before the gate existed as
+an open question, because the conversation-history loader re-feeds recent turns
+and delivered text would keep resurfacing after the gate. It was put to the
+owner the same day as question A. His answer, verbatim:
+
+> A NONE HAS BEEN SENT
+
+So there is nothing to remediate: on the owner's statement, no near-miss text
+has reached an athlete or parent conversation.
+
+**This rests on the owner's knowledge of who has used SHADOW, not on a
+measurement.** No database, environment, conversation or log was read, and none
+was authorized. It is recorded here as his statement rather than as a verified
+fact, because it is the kind of claim that a later data pull could contradict.
+If it ever is contradicted, the remediation question re-opens and this section
+is the thing to correct. Nothing here authorizes deletion, rewriting or purging
+of stored conversations.
+
+### Re-ratified 2026-09-26, after the cost was put to him
+
+A review found that the options put to the owner never named what the rule
+costs: an athlete asking about progression used to get their recorded events
+plus a directive to weigh them, and a HIGH or CRITICAL event added a line
+recommending the coach review before any load increase -- "used to get"
+describes what the code produced for that role, not an observed delivery. After the gate the
+model cannot see the event, so it gives one fixed deferral sentence instead.
+The record had said he decided "knowing" the position; he had not been shown
+that.
+
+It was put to him in those terms the same day, with the options to re-ratify,
+to soften the withheld line, or to re-open. He chose, verbatim:
+
+> Re-ratify as-is
+
+So the rule stands, now on a record that names its cost. Whether the model
+actually defers on a progression question is still untested -- it needs a
+model call, not a unit test.
+
+### Stored job payloads: OUT OF SCOPE, 2026-09-26
+
+The async Heavy Bag path persists the assembled context, near-miss block
+included, into `pilot.shadow_jobs` (`shadowHeavyBag.ts`, 12,000-character
+slice). Athletes and parents are not blocked from that path by role: the MANUAL
+heavy-tier request is role-gated, but organic escalation by complexity score is
+not (`shadowClassifier.ts`), and `preferAsync` is a client-supplied boolean.
+**Stated with its preconditions, which an earlier draft omitted:** the enqueue
+branch also requires `isShadowWorkerEnabled()` -- `PPBF_SHADOW_WORKER_ENABLED`
+set to `true` -- and passage of the Heavy Bag rate limit (`chat/route.ts`). No
+environment state was read, so whether that flag was ever on where athletes
+used SHADOW is UNVERIFIED, and "near-miss text may sit in job rows" rests on
+that unchecked condition. Framing a question to the owner from code paths
+without their preconditions is the same error as the "currently get" premise
+above, and it is recorded rather than quietly corrected.
+
+**A stored row is not inert.** `shadowJobProcessor.ts` reads
+`payload.authorizedContext` at EXECUTION time, not at enqueue, and interpolates
+it into the prompt; its allowed-role set includes `athlete` and `parent`. So a
+job queued before this gate and processed after it deploys would still generate
+from a context containing near-miss records, and the answer is appended to that
+conversation. That is a delivery path, not merely storage, and it was NOT named
+in the out-of-scope question above. Put to the owner separately on 2026-09-26,
+he directed that the job queue be confirmed empty before the gate reaches
+production. Asked where that precondition should live so it could not be
+missed, he ruled it must be ENFORCED rather than recorded, verbatim:
+
+> Nothing is real if anything is waiting
+
+So it is not a note anyone has to remember: `docs/current/ACTIVE_WORK.md`
+carries it as a BLOCKED row against the production deploy, and a separate PR
+adds an executable queue-empty check to `deploy-production.yml` that fails
+the deploy while anything is pending. Recording it in prose alone was the
+option he refused. The read-only count could not be run from the build machine --
+production PostgreSQL refused the connection (timeout, firewalled) -- so it is
+recorded as a PRODUCTION-DEPLOY PRECONDITION rather than a merge precondition.
+Merging changes nothing in production: `deploy-production.yml` is manual
+dispatch only. The window opens when the gate deploys, not when it merges.
+
+This is a different question from the delivered-text one above, and the
+owner's "NONE HAS BEEN SENT" does not answer it -- he can know who used
+SHADOW, not what a stored prompt contained. Put to him separately with the
+options to authorize a read-only count, to log it as a blocked item, or to
+rule it out of scope. He chose, verbatim:
+
+> Out of scope -- leave it
+
+No count was run, no rows were read, and none are to be deleted or modified.
+The gate stops new rows carrying this content. Existing rows are not modified
+by this slice -- and, per the paragraph above, are not inert either.
+UNVERIFIED throughout: whether any such row exists was never measured.
+
+### The evidence it rested on
+
+- `retrieveShadowContext` called `listRecentNearMisses` with no role gate for
+  every role that cleared athlete authorization, injecting a whitespace-collapsed
+  240-character slice of `description` with a citable `[E:<near_miss_id>]`.
+  Read at `c15b9644a8a184f111974d04c2af07175ad3110c`.
+- `GET /api/pilot/shadow/near-misses` requires `DECISION_LOOP_ROLES`, at the
+  same SHA.
+- `docs/current/ACTIVE_WORK.md` had carried the mismatch as FOR THE OWNER since
+  2026-08-28 -- open for a month before it was put to him.
+- No environment, database or log was read. Whether any athlete or parent has
+  actually received near-miss text is UNVERIFIED, and no affected population
+  was estimated.
+
+Built to on branch `local/shadow-near-miss-audience`.
+
+---
+
+---
+
+## OD-2026-09-26-001 -- Visual design is not one lane's; anyone who makes a good one owns it
+
+**Asked.** Whether a durable, reusable plate generator could land in the
+repository at all, given that `AGENT_KERNEL.md` and `docs/GROK-VISUAL-LANE.md`
+both reserved visual design -- and `GROK-VISUAL-LANE.md` specifically reserved
+*image generation* -- to Grok. ChatGPT's standards review of PR #982 had raised
+it as a blocker: a one-off owner-directed generation is legitimate, but a
+permanent non-Grok production mechanism needs the authority source to say so.
+
+**Jason's answer, verbatim:** *"anyone the makes a good one"*.
+
+Asked in the same exchange whether the stale reference lock should be corrected
+and where his photographs should live, he answered *"let's fix it"* and *"where
+is it at now use it"*.
+
+**What this decides.** Visual design and visual implementation are not reserved
+to Grok. Any lane may design, implement and generate; the work is judged on
+what it is, not on who made it. Grok's lane is unchanged in what it may do --
+nothing is taken away from it.
+
+**What it does not decide.** The standard. "A good one" still means: passes its
+guards, alters no function or role gate or organization boundary or safety
+rule, invents nothing unsupported, removes no existing action, keeps its tests
+meaningful. For a plate, it passes the byte gate AND a human has opened the
+image and checked it against `docs/REAL-GYM-REFERENCE-LOCK.md`. Rewriting
+another lane's approved design out of preference is still out of order; that
+restriction was protecting something real and it survives.
+
+**Supersedes** the third numbered item of OD-2026-09-21-001 ("Grok keeps visual
+design and visual implementation") and its interpretation note ("Visual design
+stays Grok's"), to the extent those read as an exclusive grant. Per this file's
+supersession rule the earlier entry is left standing as written.
+
+**Evidence.** Jason's answers in the build thread, 2026-09-26. The blocker that
+prompted the question is recorded in ChatGPT's standards review of PR #982.
+Amended the same day: `AGENT_KERNEL.md`, `docs/GROK-VISUAL-LANE.md`,
+`docs/GOLDEN-ERA-V1-CONTRACT.md`, `docs/AI_COLLABORATION.md`.
+
+**Why this is written down at all.** It was already the working practice for a
+full day before it was recorded, and the drift that caused was measurable: the
+agent kept reverting to preserving the existing look, because the instruction it
+re-reads every session said visual work was not its to do, while the owner's
+instruction to design lived only in chat. This file's own preamble names that
+failure mode.
+
+## OD-2026-09-25-003 -- Any coach or admin in the organization may read an athlete's session note
+
+**Provenance: PRIMARY** for the owner's quoted words, as carried in the
+A-FIN-08 work order and its handoff. The words were given in the owner's
+session on 2026-09-25 and are quoted here; this entry was written on
+2026-09-26.
+
+**Date:** 2026-09-25. **Governs:** who may read `pilot.sessions.notes`, the
+free-text an athlete writes for their coach at check-in. **Does not supersede**
+OD-2026-09-21-001 or any relationship rule elsewhere.
+
+THIS ENTRY IS LATE, AND THAT IS THE POINT. The gate was built and opened as
+PR #973 before the decision was recorded here. `AGENT_KERNEL.md` says to read
+this file before writing anything that asserts who may do what, and to stop as
+OWNER DECISION REQUIRED when the policy is not in it. Codex caught the
+omission on the pull request and ChatGPT's standards review agreed. The ruling
+itself was never in doubt -- the record was.
+
+### The decision
+
+The owner, on who may read it:
+
+> Any coach or admin in the organization.
+
+And on the linked-guardian exposure:
+
+> Close it in this slice.
+
+### What that means
+
+1. A coach, `organization_admin` or legacy `admin` in the athlete's OWN
+   organization may read that athlete's session note for the current gym day.
+2. Assignment and coverage DO NOT participate. A coach of record, an active
+   covering coach, a coach whose coverage lapsed and a coach with no
+   relationship at all are all treated identically, and `pilot.coach_coverage`
+   is never queried on this path.
+3. Athlete, parent, board and `platform_owner` are refused. Cross-organization
+   and soft-deleted athletes are refused with the same indistinguishable
+   message, so a refusal says nothing about whether the id names a real child.
+4. Linked guardians are excluded from `sessions.notes` in the passbook. The key
+   is ABSENT rather than null, because `null` would assert that no note exists,
+   which is a different fact from "one does and it is not yours to read".
+
+### What it does NOT govern
+
+This rule covers the dedicated session-note projection and nothing else.
+
+- It does NOT widen `/api/pilot/sessions/list`, which still carries the
+  narrower coach-of-record-or-coverage gate for the whole session record.
+- It does NOT widen generic `athlete_record` access or
+  `assertActorCanAccessAthlete`, which is untouched and still decides every
+  other athlete-scoped capability.
+- It is not a precedent for any other column. It was decided about this one
+  field, on the reasoning below.
+
+### Why the wider audience
+
+The roster a coach works from is the whole gym by design. So what decides whose
+note a coach ends up reading is their deliberate selection of an athlete on
+that roster, not an assignment record -- the same reasoning the owner applied
+to the wellness check-in on 2026-09-22 (A-FIN-03R1), which this follows. A
+child writing "my wrist hurts before we start" is of no use if the only person
+permitted to read it is an assigned coach who is not in the building.
+
+The trade, stated plainly: a coach with no connection to that child can read
+what they wrote. What bounds it is organization membership, the refusal of
+soft-deleted athletes, and that nothing is read until a coach deliberately
+picks that athlete.
+
+### Still open
+
+Who may EDIT a note after an athlete creates it is NOT decided. `POST
+/api/pilot/sessions` and `/sessions/update` both accept `organization_admin`
+and `coach` as well as `athlete`, and the row carries no author or last-editor
+column -- which is why no surface may name a writer. That is a separate owner
+decision and A-FIN-08 deliberately left it open.
+
+---
+
+## OD-2026-09-25-002 -- LANES are agent roles; the four subject areas are WORK DOMAINS
+
+**Provenance: PRIMARY.**
+
+**Date:** 2026-09-25. **Governs:** terminology for agent roles and subject
+areas across PPBF AI coordination. **Clarifies** OD-2026-09-21-001; it does not
+change the authorities assigned there.
+
+The owner selected:
+
+> LANES + WORK DOMAINS, exactly as you framed it.
+
+The framing selected was:
+
+> LANES stays the agent-role list (Jason owner/final, Claude builder, ChatGPT
+> design/specification/standards/research, Grok visual). His four subject areas
+> become WORK DOMAINS: visual design, ML training, AI/ML, app build.
+
+### What that means
+
+1. **LANES** names agent roles and their authority boundaries.
+2. **WORK DOMAINS** names subject areas: visual design, ML training, AI/ML,
+   app build.
+3. A work domain is not an agent role and creates no authority by itself.
+4. The detailed lane responsibilities in `AGENT_KERNEL.md` remain in force
+   except where a later owner decision expressly supersedes them.
+
+Evidence at decision: `AGENT_KERNEL.md` at `c15b9644` already carried the
+detailed Jason / ChatGPT / Claude / Grok agent-role model, and
+`docs/AI_COLLABORATION.md` used "lanes" for that same model. The decision
+resolves the separate four-subject-area vocabulary without changing those
+authorities.
+
+---
+
+## OD-2026-09-25-001 -- A session note is retractable from the coach's view
+
+**Provenance: PRIMARY.**
+
+**Date:** 2026-09-25. **Governs:** whether a session note already visible to a
+coach can be withdrawn by the athlete.
+
+The owner selected:
+
+> RETRACTABLE.
+
+And:
+
+> Clearing a session note withdraws it from the coach view.
+
+The choice was put against an irreversible alternative after review found that
+the athlete surface did not write an emptied notes box, so text already stored
+could remain coach-visible after the athlete reconsidered and deleted it.
+
+### What that means
+
+1. A coach-visible session note is not irrevocable.
+2. The athlete must have an intentional way to withdraw one.
+3. After a successful withdrawal the coach-readable contract returns no note.
+4. The implementation may distinguish an intentional withdrawal from an
+   accidental empty edit. The decision requires the CAPABILITY, not a
+   destructive write on every keystroke.
+5. A-FIN-08 implements it using the existing session model and the existing
+   no-note representation. This decision does not authorize a schema
+   migration.
+6. Withdrawal has to reach a coach screen that is already open. A note read
+   once and never revalidated leaves withdrawn words on that screen for as
+   long as it stays there, which would make the retraction true of the
+   database and false of the person reading it.
+
+---
+
 ## OD-2026-09-21-001 -- Claude builds, ChatGPT designs and enforces standards; product direction; minors' limits are coach-set data
 
 **Provenance: PRIMARY** for the owner's quoted words and the options as put.

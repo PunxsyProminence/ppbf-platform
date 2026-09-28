@@ -82,7 +82,6 @@ interface SessionState {
  */
 interface TakeContext {
   captureTakeId: string;
-  athleteId: string;
   cameraView: string;
 }
 
@@ -91,8 +90,6 @@ export default function TeachShadowCapturePage() {
   const [trainingContext, setTrainingContext] = useState('shadowboxing');
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [cameraView, setCameraView] = useState('');
-  const [athletes, setAthletes] = useState<Array<{ athlete_id: string; full_name: string }>>([]);
-  const [athleteId, setAthleteId] = useState('');
   const [busy, setBusy] = useState(false);
   /*
    * A CHOSEN FILE CAN BE 45 MB ON GYM WIFI. Without this the only sign
@@ -128,7 +125,6 @@ export default function TeachShadowCapturePage() {
       const form = new FormData();
       form.append('file', file);
       form.append('capture_take_id', context.captureTakeId);
-      form.append('athlete_id', context.athleteId);
       form.append('capture_source', 'in_app_recording');
       if (context.cameraView) form.append('camera_view', context.cameraView);
       form.append('recorded_at', recordedAt);
@@ -151,24 +147,13 @@ export default function TeachShadowCapturePage() {
   const { phase, errorMessage, setErrorMessage, videoRef, recordedBytes, stoppedAtLimit, stop } = recorder;
 
   /*
-   * The roster, because a capture MUST name the athlete it is of. That is not
-   * a form nicety: the scan sweep only asks for guardian consent when a video
-   * carries an athlete_id, so an unattributed recording of a minor would reach
-   * the vision screen with that check skipped. The server refuses it too.
+   * NO ROSTER IS READ HERE, and that absence is the point of the slice.
+   * Who is being filmed was settled at clearance, before this document
+   * existed, and the server resolves it from the capture session. A picker on
+   * this screen would put the name back on the one surface that must not
+   * carry it -- and the upload route now REFUSES a take-backed upload that
+   * names an athlete, so it could not work anyway.
    */
-  useEffect(() => {
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, { credentials: 'include' });
-        const payload = (await response.json().catch(() => ({}))) as {
-          items?: Array<{ athlete_id: string; full_name: string }>;
-        };
-        setAthletes(payload.items ?? []);
-      } catch {
-        setErrorMessage('The athlete list could not be loaded, so recording is unavailable.');
-      }
-    })();
-  }, [setErrorMessage]);
 
   async function post(body: unknown): Promise<Record<string, unknown>> {
     const response = await fetch(`${apiBase()}/api/pilot/video/capture-session`, {
@@ -215,13 +200,8 @@ export default function TeachShadowCapturePage() {
       setErrorMessage('Start or join a recording session first.');
       return;
     }
-    if (!athleteId) {
-      setErrorMessage('Choose which athlete this is of before recording.');
-      return;
-    }
     void recorder.start({
       captureTakeId: currentTake.capture_take_id,
-      athleteId,
       cameraView: cameraView.trim(),
     });
   }
@@ -240,7 +220,6 @@ export default function TeachShadowCapturePage() {
       const form = new FormData();
       form.append('file', chosen);
       form.append('capture_take_id', captureTakeId);
-      form.append('athlete_id', athleteId);
       form.append('capture_source', 'file_upload');
       if (cameraView.trim()) form.append('camera_view', cameraView.trim());
 
@@ -319,6 +298,10 @@ export default function TeachShadowCapturePage() {
             <section className="mt-[var(--s5)] flex flex-col gap-[var(--s5)]">
               <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
                 <h2 className="t-eyebrow">Start a session</h2>
+                {/* NOTHING STANDS IN FRONT OF THIS. Filming to teach the
+                    recognizer is not gated: no consent, no clearance, no
+                    participant, no page to pass through first. Choose what is
+                    being filmed and record. */}
                 <label className="t-eyebrow mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
                   What is being filmed
                   <select className="input" value={trainingContext} onChange={(e) => setTrainingContext(e.target.value)}>
@@ -385,20 +368,6 @@ export default function TeachShadowCapturePage() {
               </div>
 
               <div className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
-                {/* REQUIRED, and the server refuses without it. An
-                    unattributed recording would reach the vision content
-                    screen with the guardian-consent check skipped, because
-                    that check only runs for a video that names an athlete. */}
-                <label className="t-eyebrow flex flex-col gap-[var(--s2)]">
-                  Which athlete is this of
-                  <select className="input" value={athleteId} onChange={(e) => setAthleteId(e.target.value)}>
-                    <option value="">Choose an athlete…</option>
-                    {athletes.map((athlete) => (
-                      <option key={athlete.athlete_id} value={athlete.athlete_id}>{athlete.full_name}</option>
-                    ))}
-                  </select>
-                </label>
-
                 <label className="t-eyebrow mt-[var(--s3)] flex flex-col gap-[var(--s2)]">
                   This camera&rsquo;s view (optional)
                   {/* Free text and allowed to stay empty. Only a human in the
@@ -458,7 +427,7 @@ export default function TeachShadowCapturePage() {
                   <button
                     type="button"
                     className="btn btn--ghost"
-                    disabled={phase !== 'idle' || busy || !take || !athleteId}
+                    disabled={phase !== 'idle' || busy || !take}
                     onClick={() => fileInputRef.current?.click()}
                   >
                     {attaching ? 'Adding…' : 'Add an angle from a file'}

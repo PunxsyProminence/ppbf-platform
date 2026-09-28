@@ -11,7 +11,7 @@
 import fs from 'node:fs/promises';
 
 import { processNextShadowJob } from './shadowJobProcessor';
-import { claimNextJob, completeJob, failJob, type ShadowJob } from './shadowJobQueue';
+import { claimNextJob, completeJob, failJob, SHADOW_CONTEXT_CONTRACT_VERSION, type ShadowJob } from './shadowJobQueue';
 import { queryOne } from './db';
 import { downloadPilotVideoFile } from './blob';
 import { analyzeFramesWithVision, extractFrames } from './shadowFilmStudy';
@@ -21,6 +21,12 @@ jest.mock('./shadowJobQueue', () => ({
   claimNextJob: jest.fn(),
   completeJob: jest.fn(),
   failJob: jest.fn(),
+  // The real value, not a copy. The worker refuses a payload whose
+  // contract stamp does not match this, and fails closed when the
+  // constant itself is missing, so a mock that omitted it would refuse
+  // every job in this suite for a reason unrelated to what is under test.
+  SHADOW_CONTEXT_CONTRACT_VERSION:
+    jest.requireActual('./shadowJobQueue').SHADOW_CONTEXT_CONTRACT_VERSION,
 }));
 jest.mock('./db', () => ({ queryOne: jest.fn() }));
 jest.mock('./shadowConversations', () => ({
@@ -65,6 +71,7 @@ function filmStudyJob(): ShadowJob {
       organizationId: 'org-1',
       authenticatedRole: 'coach',
       authorizedContext: 'Film study requested for video session vs-1.',
+      contextContractVersion: 1,
     },
     outputPayload: null,
     errorCode: null,

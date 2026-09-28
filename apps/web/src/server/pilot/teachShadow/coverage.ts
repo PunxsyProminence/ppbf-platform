@@ -76,7 +76,6 @@ export interface TeachShadowCoverage {
      * file.
      */
     takes_with_multiple_files: number;
-    athletes_captured: number;
   };
   labelling: {
     clips_cut: number;
@@ -108,7 +107,7 @@ export interface TeachShadowCoverage {
 }
 
 /*
- * WHAT COUNTS AS CORPUS EVIDENCE, AND THE THREE THINGS THAT NARROW IT.
+ * WHAT COUNTS AS CORPUS EVIDENCE, AND THE FOUR THINGS THAT NARROW IT.
  *
  * SUBMITTED SETS ONLY. An in-progress set is one coach's unfinished work,
  * still editable, and invisible to the other annotator by design. Counting it
@@ -139,6 +138,27 @@ export interface TeachShadowCoverage {
  * destination is chosen before the media exists rather than reconstructed
  * afterwards. Those rows stay in the database as history; they stop being
  * counted as evidence.
+ *
+ * AND NOT ARCHIVED, which is the fourth and the newest. Archiving a video is
+ * how somebody says this footage should not be in the corpus -- bad take,
+ * wrong subject, test material, a decision reconsidered. It is precisely the
+ * case the paragraph above describes: assertVideoClippable already refuses to
+ * REOPEN clips cut from an archived source, and if these counts ignored the
+ * status then withdrawing footage would change nothing a coach can see. The
+ * figures would keep reporting its labels as evidence the recognizer will be
+ * taught from, and archive would be a gesture.
+ *
+ * SO THE COUNTS MOVE BACKWARDS WHEN FOOTAGE IS ARCHIVED, and that is intended
+ * even though the SUBMITTED SETS ONLY paragraph above argues against numbers
+ * that go down. The two are not in tension: that argument is about a figure
+ * dropping with nothing to explain it. This one drops because a person
+ * deliberately withdrew footage, the archive route records who and why on the
+ * row, and it emits video.archived so the step is on the timeline. A retraction
+ * that left the totals untouched would be the dishonest option here.
+ *
+ * REVERSIBLE, because archive is: restoring the video brings its clips and
+ * labels back into these counts exactly as they were. Nothing is deleted to
+ * make a number move.
  */
 const TEACHING_SOURCE_JOIN = (alias: string) => `
   join pilot.calibration_clips cc
@@ -147,7 +167,8 @@ const TEACHING_SOURCE_JOIN = (alias: string) => `
   join pilot.video_sessions cv
     on cv.video_session_id = cc.video_session_id
    and cv.organization_id = cc.organization_id
-   and cv.capture_take_id is not null`;
+   and cv.capture_take_id is not null
+   and cv.status <> 'archived'`;
 
 const SUBMITTED_EVENTS_FROM = `
   from pilot.calibration_annotation_events e
@@ -166,27 +187,32 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
       capture_takes: number;
       captured_files: number;
       takes_with_multiple_files: number;
-      athletes_captured: number;
+
     }>(
       `select
          (select count(*)::int from pilot.recording_sessions where organization_id = $1)
            as recording_sessions,
          (select count(*)::int from pilot.capture_takes where organization_id = $1)
            as capture_takes,
+         -- Held footage ('quarantined', 'infected') IS counted here, and only
+         -- here: it was captured, it is what a coach is waiting on, and this
+         -- section is the capture ledger. Archived footage is not, for the
+         -- reason the header gives -- it was withdrawn, and a withdrawal that
+         -- left the file count unchanged would say the platform still holds it
+         -- as teaching material.
          (select count(*)::int from pilot.video_sessions
-           where organization_id = $1 and capture_take_id is not null)
+           where organization_id = $1 and capture_take_id is not null
+             and status <> 'archived')
            as captured_files,
          (select count(*)::int from (
             select capture_take_id
               from pilot.video_sessions
              where organization_id = $1 and capture_take_id is not null
+               and status <> 'archived'
              group by capture_take_id
             having count(*) >= 2
           ) t)
-           as takes_with_multiple_files,
-         (select count(distinct athlete_id)::int from pilot.video_sessions
-           where organization_id = $1 and capture_take_id is not null and athlete_id is not null)
-           as athletes_captured`,
+           as takes_with_multiple_files`,
       [organizationId],
     ),
     query<{
@@ -205,6 +231,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
               on v.video_session_id = c.video_session_id
              and v.organization_id = c.organization_id
              and v.capture_take_id is not null
+             and v.status <> 'archived'
            where c.organization_id = $1)
            as clips_cut,
          (select count(*)::int from pilot.calibration_annotation_sets s
@@ -231,6 +258,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
               on v.video_session_id = g.video_session_id
              and v.organization_id = g.organization_id
              and v.capture_take_id is not null
+             and v.status <> 'archived'
            where g.organization_id = $1 and g.ontology_version = $2
              and g.governance_state = 'gold')
            as gold_records,
@@ -239,6 +267,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
               on v.video_session_id = g.video_session_id
              and v.organization_id = g.organization_id
              and v.capture_take_id is not null
+             and v.status <> 'archived'
            where g.organization_id = $1 and g.ontology_version = $2
              and g.governance_state = 'candidate')
            as gold_candidates`,
@@ -304,7 +333,6 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
       capture_takes: 0,
       captured_files: 0,
       takes_with_multiple_files: 0,
-      athletes_captured: 0,
     },
     labelling: labelling[0] ?? {
       clips_cut: 0,

@@ -62,7 +62,7 @@ which of the imagined routes actually exists.
 |---|---|---|
 | **ChatGPT** | SharePoint, OneDrive, Google Drive taxonomy; independent audit of diffs, CI, scope | the repository (read-only), image generation |
 | **Grok** | visual design **and** visual implementation: image files, JSX presentation structure, design-system usage, CSS, responsive layout, typography, visual tests; **real JPEG plate binaries on Grok feature branches** | functional/security code (see the two lists below), drive reorganisation |
-| **Claude** | functional and security engineering, migrations, release engineering; **independent review of Grok's visual PRs** (function/security boundaries only); landing a binary the owner directs it to land, from bytes it can actually read | drive taxonomy, image generation, redesigning approved visual work, **re-encoding or reconstructing a plate**; and it *cannot* pull bytes out of SharePoint/OneDrive at all — a capability limit, not a rule |
+| **Claude** | functional and security engineering, migrations, release engineering; **visual design and implementation on the same terms as any lane** (OD-2026-09-26-001: "anyone that makes a good one") — layout, CSS, typography, presentation structure, and generated plates; **independent review of another lane's visual PRs**; landing a binary the owner directs it to land, from bytes it can actually read | drive taxonomy, **rewriting another lane's approved design out of preference**, **re-encoding or reconstructing someone else's plate**; and it *cannot* pull bytes out of SharePoint/OneDrive at all — a capability limit, not a rule |
 
 Nobody pushes to `main`. Everything lands by PR with green CI, including
 Claude's own work and Grok's. This is not a hierarchy — it is the rule in
@@ -354,7 +354,7 @@ Jason approves plate/design (exact ordered filename + room + size/variant)
   → Grok uploads the REAL JPEG directly to its own feature branch under apps/web/public/plates/
   → Grok makes only the required approved visual/CSS/test changes (e.g. one PLATES line if new variant)
   → Grok opens the PR
-  → Claude independently reviews function/security boundaries (not redesign, not binary courier)
+  → Claude independently reviews function/security boundaries (reviewing another lane's work is not redesigning it)
   → ChatGPT independently audits PR scope, binary evidence, claims, SHA and CI
   → required CI is green on the exact PR head
   → merge → staging
