@@ -189,14 +189,17 @@ export async function POST(request: NextRequest) {
      * unnamed recording. The original reasoning holds unchanged there: the
      * scan sweep only asserts consent when a video carries an identity, so a
      * dedicated recorder storing an unattributed minor would enter the content
-     * screen with the check skipped. What changed is only that teaching
-     * footage now carries that identity on the restricted side instead.
+     * screen with the check skipped.
+     *
+     * Teaching footage does not carry that identity anywhere. It is training
+     * data for a recognizer rather than a record about the person filmed, so
+     * it names nobody and no consent is asked of anybody.
      */
     if (captureTakeIdForRow && athleteId) {
       return NextResponse.json(
         {
           error:
-            'Teach Shadow footage is anonymous and must not name an athlete. The participant is established at capture clearance, not sent with the upload.',
+            'Teach Shadow footage is anonymous and must not name an athlete.',
         },
         { status: 400 },
       );
@@ -271,8 +274,8 @@ export async function POST(request: NextRequest) {
         videoSessionId,
         principal.organizationId,
         principal.accountId,
-        // NULL for teaching media, by the rule above. The identity for a
-        // take-backed video lives on the restricted side and is linked below.
+        // NULL for teaching media, by the rule above -- and nowhere else
+        // either. Teaching footage names nobody at all.
         captureTakeIdForRow ? null : athleteId,
         title,
         notes,

@@ -27,11 +27,9 @@ jest.mock('@/src/server/pilot/captureSessions', () => {
 });
 
 /*
- * TS-ANON-01 clearance. Starting a session now proves the actor may film
- * this athlete and that every guardian has current Teach Shadow consent,
- * then establishes the restricted participant. Doubled so these tests stay
- * about the route; access, consent and the participant store each have
- * their own suites.
+ * Doubled so these tests stay about the ROUTE. Access control has its own
+ * suite; nothing about a participant or a consent is involved in starting a
+ * teaching session any more.
  */
 jest.mock('@/src/server/pilot/access', () => {
   const actual = jest.requireActual('@/src/server/pilot/access');

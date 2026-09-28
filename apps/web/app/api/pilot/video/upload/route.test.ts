@@ -21,15 +21,7 @@ jest.mock('@/src/server/pilot/db', () => ({
  * Doubled here so these tests exercise the route's rules; the resolver and
  * the consent gate each have their own suites.
  */
-jest.mock('@/src/server/pilot/captureParticipants', () => ({
-  participantsForSession: jest.fn(async () => ['cp-1']),
-  athleteIdsForParticipants: jest.fn(async () => ['ath-1']),
-  linkParticipantToVideo: jest.fn(async () => undefined),
-}));
-jest.mock('@/src/server/pilot/guardianConsent', () => {
-  const actual = jest.requireActual('@/src/server/pilot/guardianConsent');
-  return { ...actual, assertTeachShadowConsent: jest.fn(async () => undefined) };
-});
+
 jest.mock('@/src/server/pilot/blob', () => ({
   uploadPilotVideoFile: jest.fn().mockResolvedValue(undefined),
 }));
