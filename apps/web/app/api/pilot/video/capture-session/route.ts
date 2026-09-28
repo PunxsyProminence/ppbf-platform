@@ -76,11 +76,19 @@ export async function POST(request: NextRequest) {
     if (action === 'create') {
       const rawContext = typeof body?.training_context === 'string' ? body.training_context : '';
       /*
-       * REFUSED SERVER-SIDE, not merely absent from the form's dropdown. A
-       * capture names ONE athlete and the scan sweep checks consent for
-       * exactly that athlete, so a context with a second person in frame would
-       * record two people and ask about one. Withheld until a participant
-       * model can name everyone in a take.
+       * REFUSED SERVER-SIDE, not merely absent from the form's dropdown.
+       *
+       * The original reason was that a capture named one athlete whose consent
+       * was then checked. That reason is gone -- teaching footage names nobody
+       * and asks nobody. What remains is a dataset reason: a take is the unit
+       * that groups angles of ONE attempt, and mitts or sparring put a second
+       * person in frame doing something different, so a single take would
+       * contain two subjects' movement labelled as one. The grouping is what
+       * keeps alternate views of the same punch on the same side of a
+       * train/test split, and it stops meaning that the moment a take holds
+       * two people.
+       *
+       * Withheld until the model can describe more than one subject in a take.
        */
       if (!isSingleSubjectContext(rawContext)) {
         throw new Error(

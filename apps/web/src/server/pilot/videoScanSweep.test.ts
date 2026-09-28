@@ -241,10 +241,10 @@ describe('sweepQuarantinedVideos', () => {
     // pilot.athletes -- an unattributed upload has nothing to file against.
     //
     // TS-ANON-01: the resolver has to say so too. "No athlete" is now two
-    // different situations -- this one, and a properly anonymised teaching
-    // video whose subject lives on the restricted side -- and the resolver is
-    // what tells them apart. A test that only nulled the claim would be
-    // describing a row that cannot exist.
+    // different situations -- this one, and an anonymous teaching video, which
+    // never resolves to anyone. The resolver is what tells them apart, so a
+    // test that only nulled the claim would be describing a row that cannot
+    // exist.
     mockedClaim.mockResolvedValueOnce({ ...CLAIM, athlete_id: null }).mockResolvedValue(null);
     mockedResolveSubject.mockResolvedValueOnce({ isTeaching: false, athleteIds: [] });
     mockedScan.mockResolvedValue(scanResult({ decision: 'blocked', reason: 'CONTENT_SCREEN_REFUSED' }));
