@@ -62,15 +62,25 @@ function resolveSslConfig() {
 // on that condition too; this is the check that refuses a database where
 // somebody applied the DDL by hand and skipped the data half.
 //
-// `identity_recoverable` is its necessary twin. Anonymising without a
-// surviving restricted link would not be privacy, it would be losing the only
-// record of whose footage this is -- so the consent check and any safeguarding
-// escalation would silently have nobody to resolve. Asserting that at least as
-// many participant links exist as there are take-backed videos is what
-// distinguishes "identity moved" from "identity destroyed". It is written as a
-// comparison rather than an equality because a video may legitimately predate
-// any participant only if it also has no athlete to derive one from, and that
-// case is already refused by teaching_media_anonymous.
+// THERE IS NO `identity_recoverable` CHECK ANY MORE, and removing it was a
+// repair rather than a relaxation.
+//
+// It asserted that at least as many participant links existed as take-backed
+// videos, on the reasoning that anonymising without a surviving link would be
+// losing the only record of whose footage this is. That belonged to a design
+// where every teaching capture cleared a named participant first. The owner
+// then ruled that filming to teach the recognizer is never restricted and
+// names nobody, so clearance was deleted and teaching videos are created with
+// no link at all -- by design, not by omission.
+//
+// Left in place, the check would have inverted: every correctly anonymous
+// video would push the count further out of balance, so the FIRST teaching
+// upload would make this migration fail forever after, including through
+// `migration=all`. Fail-closed rather than corrupting, but a migration that
+// can never be re-run is a trap laid for whoever rebuilds an environment.
+//
+// What remains is teaching_media_anonymous, which is now the whole of the
+// invariant: no take-backed video may carry an athlete_id.
 //
 // EVERY FOREIGN-KEY CHECK ALSO PINS ITS ARITY, for the same tenant reason the
 // capture-sessions runner gives: a single-column reference would let a
@@ -131,12 +141,6 @@ const READINESS_QUERY = `
       where capture_take_id is not null
         and athlete_id is not null
     ) as teaching_media_anonymous,
-    (
-      select
-        (select count(*) from pilot.video_sessions where capture_take_id is not null)
-        <= (select count(*) from pilot.video_capture_participants)
-        or (select count(*) from pilot.video_sessions where capture_take_id is not null) = 0
-    ) as identity_recoverable,
     exists (
       select 1
       from information_schema.columns
