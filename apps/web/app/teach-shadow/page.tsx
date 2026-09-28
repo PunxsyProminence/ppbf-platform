@@ -53,6 +53,19 @@ interface HeldFootage {
   refused_by_scan: boolean;
 }
 
+interface ReleasedFootage {
+  video_session_id: string;
+  file_name: string;
+  take_number: number | null;
+  camera_view: string | null;
+  created_at: string;
+  status: string;
+  clips_cut: number;
+  clips_labelled: number;
+  archived: boolean;
+  archive_reason: string | null;
+}
+
 interface Coverage {
   ontology_version: string;
   capture: {
@@ -108,31 +121,44 @@ export default function TeachShadowHomePage() {
    */
   const [openedForReview, setOpenedForReview] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/teach-shadow/coverage`, {
-          credentials: 'include',
-        });
-        const payload = (await response.json().catch(() => ({}))) as {
-          coverage?: Coverage;
-          error?: string;
-        };
-        if (!response.ok) throw new Error(payload.error || 'The coverage figures could not be read.');
-        /*
-         * A MISSING PAYLOAD IS AN ERROR, NOT AN EMPTY CORPUS. Treating an
-         * unanswered read as zeros would paint a gym that has filmed nothing,
-         * which is a specific and wrong claim about their work.
-         */
-        if (!payload.coverage) throw new Error('The coverage figures could not be read.');
-        setCoverage(payload.coverage);
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'The coverage figures could not be read.');
-      } finally {
-        setLoaded(true);
-      }
-    })();
+  const [released, setReleased] = useState<ReleasedFootage[]>([]);
+  const [releasedLoaded, setReleasedLoaded] = useState(false);
+  const [releasedError, setReleasedError] = useState('');
+
+  /*
+   * A CALLBACK RATHER THAN AN INLINE EFFECT BODY, because archiving footage
+   * changes these figures and the page has to be able to read them again. Same
+   * reasoning as loadHeld: whoever acts re-reads, rather than the page editing
+   * numbers it did not compute.
+   */
+  const loadCoverage = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/teach-shadow/coverage`, {
+        credentials: 'include',
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        coverage?: Coverage;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || 'The coverage figures could not be read.');
+      /*
+       * A MISSING PAYLOAD IS AN ERROR, NOT AN EMPTY CORPUS. Treating an
+       * unanswered read as zeros would paint a gym that has filmed nothing,
+       * which is a specific and wrong claim about their work.
+       */
+      if (!payload.coverage) throw new Error('The coverage figures could not be read.');
+      setCoverage(payload.coverage);
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'The coverage figures could not be read.');
+    } finally {
+      setLoaded(true);
+    }
   }, []);
+
+  useEffect(() => {
+    void (async () => { await loadCoverage(); })();
+  }, [loadCoverage]);
 
   const loadHeld = useCallback(async () => {
     try {
@@ -163,6 +189,32 @@ export default function TeachShadowHomePage() {
   useEffect(() => {
     void (async () => { await loadHeld(); })();
   }, [loadHeld]);
+
+  const loadReleased = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/teach-shadow/released`, {
+        credentials: 'include',
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        items?: ReleasedFootage[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || 'Released footage could not be read.');
+      // A missing payload is an error, not an empty corpus -- same reason the
+      // coverage read above refuses to fall back to zeros.
+      if (!payload.items) throw new Error('Released footage could not be read.');
+      setReleased(payload.items);
+      setReleasedError('');
+    } catch (error) {
+      setReleasedError(error instanceof Error ? error.message : 'Released footage could not be read.');
+    } finally {
+      setReleasedLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void (async () => { await loadReleased(); })();
+  }, [loadReleased]);
 
   /*
    * OPENS THE FOOTAGE IN A NEW TAB, and records that this page asked.
@@ -249,6 +301,50 @@ export default function TeachShadowHomePage() {
       await loadHeld();
     } catch (error) {
       setHeldError(error instanceof Error ? error.message : 'That footage could not be released.');
+    } finally {
+      setBusyVideoId('');
+    }
+  }
+
+  /*
+   * WITHDRAW FOOTAGE FROM THE CORPUS, OR PUT IT BACK.
+   *
+   * NO CONFIRMATION DIALOG, and that is a decision rather than an omission:
+   * archive is reversible from this same list, the row stays, and the media is
+   * not deleted. A modal in front of a reversible action trains people to
+   * dismiss modals. The row shows the clip and label counts BEFORE the button,
+   * which is the information a confirmation step would have carried anyway.
+   *
+   * Re-reads both lists afterwards. Archiving changes the coverage counts as
+   * well as this list -- that is the point of it -- so a page that refreshed
+   * only the row would leave the figures above stating what was true before
+   * the click.
+   */
+  async function setArchived(videoSessionId: string, action: 'archive' | 'restore') {
+    setBusyVideoId(videoSessionId);
+    setReleasedError('');
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/video/${videoSessionId}/archive`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(
+          payload.error
+          || (action === 'archive' ? 'That footage could not be archived.' : 'That footage could not be restored.'),
+        );
+      }
+      await loadReleased();
+      await loadCoverage();
+    } catch (error) {
+      setReleasedError(
+        error instanceof Error
+          ? error.message
+          : action === 'archive' ? 'That footage could not be archived.' : 'That footage could not be restored.',
+      );
     } finally {
       setBusyVideoId('');
     }
@@ -611,6 +707,107 @@ export default function TeachShadowHomePage() {
               there is one, it will be reported per punch, per stance and per camera position rather than as a
               single number &mdash; one overall figure can hide a recognizer that fails completely on southpaws.
             </p>
+          </section>
+
+          {/* 7. FOOTAGE IN THE CORPUS.
+              The inventory behind the counts above, and the only place footage
+              can be taken back out. Housekeeping rather than a stage of the
+              teaching loop, so it sits after the figures rather than inside
+              them. Before this existed, released teaching footage appeared on
+              no screen at all: the held queue reads quarantined rows only, the
+              Film Study list refuses take-backed ones, and coverage counted
+              this footage without naming it. The first unwanted capture was
+              therefore unremovable through the app. */}
+          <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Footage in the corpus</h2>
+            <p className="t-body mt-[var(--s2)] max-w-3xl">
+              Every released take, and what has been cut and labelled from it. Archiving one withdraws it: it stops
+              being playable, stops being clippable, and its clips and labels stop counting in the figures above.
+              Nothing is deleted &mdash; the file stays in storage and the decision can be undone here.
+              You archive what you filmed; an administrator can archive anyone&rsquo;s.
+            </p>
+
+            {releasedError ? (
+              <div role="alert" className="alert alert--warning mt-[var(--s4)]">
+                <span className="alert-icon" aria-hidden="true">&#9650;</span>
+                <div className="alert-body">
+                  <p className="alert-title">Attention</p>
+                  <p className="alert-msg">{releasedError}</p>
+                </div>
+              </div>
+            ) : null}
+
+            {/*
+                THREE STATES, AND THE ORDER OF THE TESTS IS THE POINT.
+                Rows first: an error from a failed ARCHIVE must not take the
+                footage off the screen, or the refusal "reload and check before
+                deciding again" would be advice about a list that had just
+                disappeared.
+                Then the error: a READ that did not come back is not an empty
+                corpus, so the empty state is suppressed rather than merely
+                accompanied by the alert. "Nothing released yet" under a failed
+                read tells a coach their footage has vanished -- the same wrong
+                claim the coverage read refuses to make by falling back to
+                zeros.
+            */}
+            {!releasedLoaded ? (
+              <p className="t-body mt-[var(--s3)]">Reading released footage&hellip;</p>
+            ) : released.length === 0 ? (
+              releasedError ? null : (
+                <p className="t-body mt-[var(--s3)]">
+                  Nothing released yet. Footage appears here once it has cleared the content screen or
+                  been released by hand.
+                </p>
+              )
+            ) : (
+              <ul className="mt-[var(--s4)] flex flex-col gap-[var(--s3)]">
+                {released.map((item) => (
+                  <li
+                    key={item.video_session_id}
+                    className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]"
+                  >
+                    <p className="t-data uppercase tracking-[0.12em] text-[color:var(--brass-300)]">
+                      {item.take_number === null ? 'Take not recorded' : `Take ${item.take_number}`}
+                      {' · '}
+                      {item.camera_view ?? 'View not described'}
+                      {item.archived ? ' · Archived' : null}
+                    </p>
+                    <p className="t-body mt-[var(--s2)]">{item.file_name}</p>
+                    {/* WHAT ARCHIVING THIS ROW WOULD COST, stated before the
+                        button rather than discovered from a coverage figure
+                        that dropped afterwards. Labelled clips are called out
+                        separately from clips cut because they represent two
+                        coaches' finished work, not just a cut. */}
+                    <p className="t-body mt-[var(--s2)]">
+                      {item.clips_cut === 0
+                        ? 'No study clips cut from this yet.'
+                        : item.clips_labelled === 0
+                          ? `${item.clips_cut} study ${item.clips_cut === 1 ? 'clip' : 'clips'} cut, none labelled yet.`
+                          : `${item.clips_cut} study ${item.clips_cut === 1 ? 'clip' : 'clips'} cut, ${item.clips_labelled} labelled.`}
+                    </p>
+                    {item.archived ? (
+                      <p className="t-body mt-[var(--s2)]">
+                        Withdrawn from the corpus. It cannot be played, clipped or labelled, and nothing
+                        cut from it counts as evidence.
+                        {item.archive_reason ? ` Reason given: ${item.archive_reason}` : null}
+                      </p>
+                    ) : null}
+                    <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+                      <button
+                        type="button"
+                        className={item.archived ? 'btn' : 'btn btn--ghost'}
+                        disabled={busyVideoId === item.video_session_id}
+                        onClick={() => {
+                          void setArchived(item.video_session_id, item.archived ? 'restore' : 'archive');
+                        }}
+                      >
+                        {item.archived ? 'Restore to the corpus' : 'Archive'}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
