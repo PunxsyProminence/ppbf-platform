@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- the Go-Live contract rule is deleted (OD-2026-09-28-010 item 19); no contract was ever written under it. Current source: none.
+
 # Go-Live Contract — <capability name>
 
 One contract per meaningful product capability. Fill only what applies; do not

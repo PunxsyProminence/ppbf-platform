@@ -5,7 +5,7 @@
 > PostgreSQL. Its checked boxes record what was true then, not what production
 > runs now: there is no Supabase client, no PIN 15715 demo auth, and the
 > "Batch N" numbering refers to a build sequence that ended. For current
-> readiness, see [MULTI_ORG_SMOKE_TEST_PLAN.md](MULTI_ORG_SMOKE_TEST_PLAN.md)
+> readiness, see [AI_DELIVERY_PIPELINE.md, "Verify production"](AI_DELIVERY_PIPELINE.md#verify-production)
 > and the deploy workflows themselves. Kept because knowing what was claimed
 > complete, and when, is worth more than a deleted file.
 

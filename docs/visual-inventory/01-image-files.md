@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** image inventory measured at `a11ea7c1` (2026-08-20): 8 plate JPEGs then, 24 at `bbf299fe`. Current source: `apps/web/public/plates/README.md`.
+
 # Visual inventory 01 — image files
 
 **Scope:** every committed binary/vector image FILE in this repository. One of four
@@ -108,7 +110,7 @@ building that does not exist, presented on the page a parent reads before decidi
 whether to trust this gym with their child.
 
 The release mechanism confirms it. A gym slot fills when a person who *can see the
-picture* commits the file or uploads it at `/admin/gym-photos` — the module calls
+picture* commits the file or uploads it at `/admin/customize` — the module calls
 that act "the only review a photograph can honestly get." Generated output has no
 such person behind it.
 
@@ -231,7 +233,7 @@ reasoning). Reaches the page via `GymWallModule.tsx`, `app/page.tsx`,
 gym's name as drawn lettering, which is fine for an illustration and is exactly what
 disqualifies this class of file from the plate lane.
 
-An admin upload at `/admin/gym-photos` overrides the manifest per slot with an
+An admin upload at `/admin/customize` overrides the manifest per slot with an
 org-scoped private blob, so a real photograph can land without a git client.
 
 ### `apps/web/app/` — 3 chrome assets

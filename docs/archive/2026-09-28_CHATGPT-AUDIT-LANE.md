@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- describes a ChatGPT lane (designer, standards enforcer, storage and ledger) that OD-2026-09-28-001 and -003 superseded; nothing active cites it; ChatGPT's reviewer instructions are to be written separately. Current source: `docs/current/OWNER_DECISIONS.md` (roles, records) and `AGENT_KERNEL.md` (capabilities).
+
 # ChatGPT lane
 
 **Agreed 2026-08-20; widened by the owner 2026-09-21** (OD-2026-09-21-001):

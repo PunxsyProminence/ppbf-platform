@@ -2,7 +2,7 @@
 
 This document covers the deterministic import of a **derived GitHub research corpus** into the SHADOW Library. It does not define original-file custody or replace the governed Microsoft archive.
 
-Start with [SHADOW_RESEARCH_ARCHITECTURE.md](SHADOW_RESEARCH_ARCHITECTURE.md) for the controlling archive, provenance, taxonomy, and source-of-truth boundaries.
+For the archive, provenance, taxonomy, and source-of-truth boundaries, start with §1.0 of [SHADOW_RESEARCH_ARCHITECTURE.md](SHADOW_RESEARCH_ARCHITECTURE.md), the section verified on 2026-08-24; the rest of that document is PROPOSED (OD-2026-09-28-010 item 25).
 
 ## Source layers
 

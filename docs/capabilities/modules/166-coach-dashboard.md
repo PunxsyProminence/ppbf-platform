@@ -8,6 +8,8 @@
 | Parent | 10 Coach |
 | Vertical slice | coach dashboard open reviews + assigned athlete count |
 
+> **Alias (2026-09-28):** Module 113 has the same name ("Coach Dashboard") under Coach System. One capability listed twice; count it once.
+
 ## Boundaries
 - Dashboards show only role-allowed data
 - Board stays aggregate-only (not these dashboards)

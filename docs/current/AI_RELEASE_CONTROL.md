@@ -5,8 +5,8 @@ This was the release-control lane's coordination record for 2026-08-19 to
 `docs/archive/2026-09-21_AI_RELEASE_CONTROL_before_condense.md`. Nothing in it
 describes current state: production has deployed several times since
 (successful `deploy-production` runs on 2026-09-17, 09-18 and 09-19, checked
-2026-09-21), and the separate release-control lane is not staffed
-(OD-2026-08-29-006).
+2026-09-21), and there is no separate release-control role
+(OD-2026-08-29-006; OD-2026-09-28-001).
 
 Where its live content went:
 
@@ -15,16 +15,11 @@ Where its live content went:
   its own approval; the smoke probes do not tie the image to the revision, the
   revision-digest assertion does; production seeding reads production's own seed
   account; a schema check is run, not grepped.
-- **Deployed state** -> live evidence (`AGENT_KERNEL.md`, "Your lane's state is
-  not the system's state").
+- **Deployed state** -> live evidence (`AGENT_KERNEL.md`, on deployed state).
 - **Two open owner questions** (training holds at check-in and drill
   assignment; SHADOW near-miss text in athlete/parent chats) ->
-  `docs/current/ACTIVE_WORK.md`, BLOCKED.
-
-Deferred items it listed on 2026-08-28, carried here without re-checking:
-
-- coach roster row click (held for #606, which has since closed);
-- #602's `path.relative` Windows separators (the guard fails loud, not open;
-  CI runs on ubuntu-latest);
-- rendering of UNKNOWN-method historical RPE (measure production data first),
-  the track-assignments silent autosave, and the athlete "Messages 0" tile.
+  `docs/current/ACTIVE_WORK.md`, BLOCKED. The near-miss question has since been
+  ruled on (OD-2026-09-26-002).
+- **Deferred items it listed on 2026-08-28** -> `docs/current/ACTIVE_WORK.md`,
+  PARKED row `BACKLOG-release-deferred-2026-08`; their original wording is in
+  the archive copy named above.

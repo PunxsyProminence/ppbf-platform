@@ -1,9 +1,9 @@
 # Work queue — 2026-08-01
 
-> **Superseded.** The current queue is
-> [docs/current/WORK_QUEUE.md](current/WORK_QUEUE.md), which generalizes this
-> file's Remote/VS Code split into the Owner/Builder/Gatekeeper roles used by
-> [docs/AI_DELIVERY_PIPELINE.md](AI_DELIVERY_PIPELINE.md). Kept for its
+> **Superseded.** Current work is the open PRs on GitHub and the work orders
+> Jason approves; blocked and parked work is
+> [docs/current/ACTIVE_WORK.md](current/ACTIVE_WORK.md). The later history is
+> [docs/current/WORK_QUEUE.md](current/WORK_QUEUE.md). Kept for its
 > collision-rule history — do not claim an item from it.
 
 A shared queue for two agents working the same repository: **Remote** (Claude Code on the

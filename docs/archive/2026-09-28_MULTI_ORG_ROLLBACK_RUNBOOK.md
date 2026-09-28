@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- a July 2026 multi-organization rollout rollback plan; nothing cites it. Current source: docs/AI_DELIVERY_PIPELINE.md ("Failure and rollback").
+
 # Multi-Organization Rollback Runbook
 
 ## Objective

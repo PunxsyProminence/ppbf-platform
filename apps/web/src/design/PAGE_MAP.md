@@ -45,6 +45,10 @@ top-level sections have no row anywhere in this document, including
 `print/`, `notices/`, and `names/`. Do not treat the tables below as a
 complete route list or use their absence as evidence a route doesn't exist.
 
+Measured at `bbf299fe` (2026-09-28): 149 `page.tsx` files under `apps/web/app`
+(`git ls-tree -r --name-only HEAD apps/web/app | grep -c '/page\.tsx$'`). The
+tables below were not re-checked.
+
 For current, self-correcting route coverage, use
 [`apps/web/components/buildingMap.ts`](../../components/buildingMap.ts) and
 its test,

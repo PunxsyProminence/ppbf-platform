@@ -1,8 +1,10 @@
+> **HISTORY (2026-09-28):** retired by OD-2026-09-28-008; the ledger-stamped flows and offline check-in storage were NOT BUILT; the live sparring page (`/athlete/dashboard/sparring`) and Passbook are unaffected. Current source: the attendance system of record is [docs/current/ATTENDANCE_PRECEDENCE.md](current/ATTENDANCE_PRECEDENCE.md).
+
 # Floor Flows — Live Sparring Log & Attendance
 
 **Version:** 1.0  
 **Status:** P0  
-**Depends on:** `RETRO_DESIGN_SYSTEM.md`, `USABILITY_SPEC_RETRO.md`, `STAMP_AND_LEDGER_SCHEMA.md`  
+**Depends on:** `archive/2026-09-28_RETRO_DESIGN_SYSTEM.md`, `archive/2026-09-28_USABILITY_SPEC_RETRO.md`, `STAMP_AND_LEDGER_SCHEMA.md`  
 **Primary devices:** Phone (portrait) and tablet (landscape)
 
 These two flows are the highest-frequency actions on the gym floor. They must be completable with gloves on, one-handed, in under 20 seconds for a full sparring round entry.

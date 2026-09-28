@@ -1,0 +1,1 @@
+> **ARCHIVED 2026-09-28** -- the 2026-08 capability wave scaffolding (per-module IN_PROGRESS/DONE notes and wave status reports), moved here as one unit from `docs/capabilities/work/`; nothing reads it. Current source: docs/capabilities/modules/.

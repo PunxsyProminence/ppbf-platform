@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** a 2026-07-18 snapshot; its counts and "currently" statements are not maintained. Current source: current code; [docs/current/ACTIVE_WORK.md](current/ACTIVE_WORK.md) for open work.
+
 # PPBF Deep Critical App Audit (2026-07-18)
 
 ## Scope

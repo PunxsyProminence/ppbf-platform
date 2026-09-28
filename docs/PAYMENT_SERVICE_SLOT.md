@@ -130,7 +130,7 @@ marking the account disconnected and refusing new charges against it — an
 integration that only handles connection is one that keeps trying to charge
 through a revoked account.
 
-## What is reserved (names only — nothing exists)
+## Reserved names (the connect flow is built; charging is not — see the status at the top)
 
 Reserving names now prevents the later build from colliding with five
 months of other people's naming choices:
@@ -179,9 +179,10 @@ months of other people's naming choices:
    anywhere — the flow returns account IDs.
 3. Compliance sign-off recorded — the same explicit human gate the capability
    description names today.
-4. The thin backend lane: the connect round trip and `pilot.payment_accounts`,
-   checkout-session, one webhook route with signature verification and
-   deauthorization handling, mirror tables + migration, receipts carrying the
+4. The thin backend lane. Built by 2026-08-15 (see the status at the top): the
+   connect round trip and `pilot.payment_accounts`, one webhook route with
+   signature verification and deauthorization handling, mirror tables +
+   migration. Still to build: checkout-session, and receipts carrying the
    right language for the lane (deductible, no-goods-or-services for giving;
    ordinary receipt for program).
 5. Staging-first rollout behind `PPBF_PAYMENTS_ENABLED`, exactly like the

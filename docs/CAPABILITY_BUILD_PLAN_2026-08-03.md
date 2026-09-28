@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** 2026-08-03 plan; its claim-by-edit queue, VS Code merge/deploy split and `PPBF_CAPABILITIES.json` master list are retired. Current source: docs/capabilities/README.md.
+
 # Capability Build Plan — mapping the 200 and sequencing the rest of the app
 
 **Date:** 2026-08-03 · **Built against:** `main` @ `2aa2ded` ·

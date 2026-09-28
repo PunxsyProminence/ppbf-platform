@@ -1,7 +1,8 @@
 # The briefing prompt
 
-Paste this whole file to any agent joining the build -- Claude, Grok, or
-anything else. Fill in the one blank at the bottom. Everything above the blank
+Paste this whole file to any agent joining the build -- a Claude Code session
+(the only builder, OD-2026-09-28-001), or another AI Jason asks to research or
+review. Fill in the one blank at the bottom. Everything above the blank
 is identical for every agent on purpose: they all need the same picture of who
 else is working and what will collide. Re-paste it when an agent's context
 resets.
@@ -43,8 +44,9 @@ value never leaves.
 If you have repository access:
 
 1. `AGENT_KERNEL.md` -- the single execution contract, including who does what
-   (lanes) and who merges. Everything else is subordinate to it.
-2. `docs/current/ACTIVE_WORK.md` -- work lanes, blocked and parked work, and
+   (roles) and who merges. Everything else in this repository is subordinate
+   to it except Jason's recorded decisions (item 4).
+2. `docs/current/ACTIVE_WORK.md` -- work areas, blocked and parked work, and
    standing owner directions.
 3. `docs/AI_COLLABORATION.md` -- collision control.
 4. `docs/current/OWNER_DECISIONS.md` before you write any test, gate or
@@ -54,25 +56,25 @@ If you have repository access:
 If you do not have repository access, your role block tells you what you get
 instead and where your output goes.
 
-### How we divide work: by lane, not by role
+### How we divide work: by work area, not by role
 
 Your **role** is your job -- researching, designing, wiring, integrating. Your
-**lane** is your territory -- the set of files you are allowed to change.
+**work area** is your territory -- the set of files you are allowed to change.
 Coordinating by role does not prevent collisions: a researcher, a designer and
 a wirer can all edit the same file on the same afternoon, each doing their own
 job correctly. Role sequencing (Architect → Implementer → Reviewer → QA) was
 tried and retired; `docs/MULTI_AI_EXECUTION_PLAN.md` is SUPERSEDED and says not
 to reconstruct it.
 
-So: staffed by role, coordinated by lane. The standing work lanes are in
-`docs/current/ACTIVE_WORK.md`. Pick one lane and work one bounded branch at a
-time inside it. **Do not drive-by fix another lane's surface** -- if you spot
-something broken outside your lane, write it down and hand it over.
+So: staffed by role, coordinated by work area. The standing work areas are in
+`docs/current/ACTIVE_WORK.md`. Pick one and work one bounded branch at a
+time inside it. **Do not drive-by fix another work area's surface** -- if you
+spot something broken outside yours, write it down and hand it over.
 
-Research and audit are ChatGPT's lane (OD-2026-09-21-001), and ChatGPT is
-read-only here, so neither role collides with anyone. What reaches the
-repository is only what an approved work order or Jason's promotion authorizes;
-Claude commits it. The two role blocks below say where the output goes.
+ChatGPT is the architect and the reviewer (OD-2026-09-28-001) and writes
+nothing to this repository, so neither role collides with anyone. What reaches
+the repository is only what an approved work order or Jason's promotion
+authorizes; Claude commits it. The role blocks below say where the output goes.
 
 ### Claim your work in GitHub, not in a document
 
@@ -90,8 +92,8 @@ git diff --name-only origin/main...origin/<branch>
 
 ### Merging
 
-Who may merge, and what production needs, is in `AGENT_KERNEL.md` under
-**Lane model** -- read it there, not in any older note. Per-PR review and
+Who may merge, and what production needs, is in `AGENT_KERNEL.md`'s merge
+and release rules -- read it there, not in any older note. Per-PR review and
 per-PR CI cannot see a defect that exists only in the combination of two green
 PRs (on one day three PRs each added a member to an exhaustive union, and
 `main` broke three times). Two habits follow, for everyone:
@@ -134,8 +136,8 @@ Stop and ask the owner -- do not implement, however obviously right it looks:
 - Anything that **reverses a recorded owner decision.** Several things here are
   parked deliberately.
 - Anything touching **production**: production deploys and production
-  migrations. (Staging deploys and staging migrations are a build lane's, per
-  OD-2026-08-29-006.)
+  migrations. (Staging deploys and staging migrations are a Claude session's,
+  per OD-2026-08-29-006.)
 - Any finding you believe means **a child is currently unsafe.** Raise that
   immediately and separately, not at the end of your work.
 
@@ -157,18 +159,21 @@ Find yourself below.
 names six items and their priority order (corrected there on 2026-08-24).
 Research stays in the Admin@ OneDrive folder `Library Intake/_CONTROL - Registers and Coverage Maps/AI_GOVERNANCE/REVIEW_REQUIRED/PPBF_FULL_APP_RESEARCH_BACKLOG_NOT_BUILD_SOURCE/`, marked NOT APP SOURCE, until it has
 been crosswalked, checked for duplicates and drift, and promoted by Jason.
-Only promoted build input reaches Claude: the artifact through drive-root `PPBF-AI-Lanes/ChatGPT-Handoffs/` in the Admin@ OneDrive,
-with the ledger carrying a summary, status and pointer, never the whole
-artifact. Claude commits it (to `docs/research/`, created on first use) only
-under the approved work order or promotion. You change no application code, no migrations, no
+Only promoted build input reaches Claude: an approved work order (work orders
+arrive in one OneDrive inbox folder, OD-2026-09-28-003) or Jason's own
+promotion. The OneDrive ledger is history and takes no new entries. Claude
+commits it (to `docs/research/`, created on first use) only under the approved
+work order or promotion. You change no application code, no migrations, no
 coefficients, no thresholds. You recommend; you do not implement. Carry
 citations inline. "We could not establish this" is a complete and valuable
 answer -- an uncited plausible answer is worse than nothing, because code gets
 built on it.
 
-**UI / UX and flow (design & visuals lane).** Grok's contract,
-`docs/GROK-VISUAL-LANE.md`, governs this lane; your brief is
-`docs/HANDOFF_VISUALS.md`. The active look is **Golden Era V1**:
+**UI / UX and flow (visual work).** Claude Code builds visual work like any
+other; Grok and Canva make images only when Jason asks, and Claude places the
+approved ones (OD-2026-09-28-001). The visual build order is
+`docs/ROOM-MAP.md` (OD-2026-09-28-009); older visual work lists, including the
+jobs in `docs/HANDOFF_VISUALS.md`, are history. The active look is **Golden Era V1**:
 `docs/GOLDEN-ERA-V1-CONTRACT.md` is its authority (named in
 `design-system/current/ppbf-theme.css`, 2026-08-24). "Leather & Brass" is
 retired as visual authority and kept in `design-system/legacy/` for reference
@@ -177,28 +182,32 @@ assets: no font CDN, no
 raw hex, no Tailwind `slate-*`/`zinc-*`/`gray-*`; off-system colour utilities
 stand at 0 across the route files -- keep it there. Draft PRs only, and **do
 not mark them ready for review** -- the owner checks visual work page by page.
-One job in your brief is "do not do
-this": the six unstyled Capability Console pages stay unstyled by owner
-decision, because they show fabricated data and styling them would make
-invented figures look more authoritative without making them true.
+One job in `docs/HANDOFF_VISUALS.md` records a
+"do not do this" owner decision (2026-08-17, Job 3): the six unstyled
+Capability Console pages stay unstyled, because they show fabricated data and
+styling them would make invented figures look more authoritative without
+making them true.
 
-**Wiring (product build lane).** Application code, routes, server domain
-modules under `apps/web/src/server/pilot/`, migrations.
-`docs/capabilities/NETWORK_STATUS.md` lists what is unclaimed and what is
-blocked on someone else's output -- start from "Unclaimed", and check the
-blocked items are still blocked before assuming. One concern per branch. Your
+**Wiring (product build).** Application code, routes, server domain
+modules under `apps/web/src/server/pilot/`, migrations. Current build work is
+the live open PRs and the work orders Jason approves; blocked and parked work
+is in `docs/current/ACTIVE_WORK.md` -- check a blocked item is still blocked
+before assuming. One concern per branch. Your
 PR is your claim; open it as a draft on your first commit. Merge only as the
-kernel's Lane model allows. Keep the two habits above -- they are the two
+kernel's merge rules allow. Keep the two habits above -- they are the two
 defect classes that have actually hurt this project.
 
-**Auditing.** ChatGPT's lane. Read-only and collision-free: you can read any
-lane. Findings go to Claude as a handoff through drive-root `PPBF-AI-Lanes/ChatGPT-Handoffs/` in the Admin@ OneDrive, with
-the ledger carrying a summary and pointer -- record the **shape** of what you
-found, not just that it was fixed. A finding is a lead, not authorization for a
-repository change: Claude records it in `docs/capabilities/NETWORK_STATUS.md`
-or acts on it only when a work order or Jason authorizes that. **Auditing carries no merge rights**: no
-branches, commits, pushes, merges, deploys or migrations. If you find something
-broken outside the lane you are reading, write it up and route it; do not fix
-it in passing.
+**Reviewing and auditing.** ChatGPT is the reviewer (OD-2026-09-28-001). Its
+reviewer instructions are written separately, not in this brief; its reviews
+start once they exist, and until then no merge waits on one. Any review or
+audit is read-only and collision-free: you can read any work area. Record the
+**shape** of what you found, not just that it was fixed. A finding is a lead,
+not authorization for a repository change: Claude records it in
+`docs/current/ACTIVE_WORK.md` or acts on it only when a work order or Jason
+authorizes that. **A review carries no merge rights of its own**: merging
+follows the kernel's merge rules, and a reviewer that is not a Claude Code
+session makes no branches, commits, pushes, merges, deploys or migrations. If
+you find something broken outside what you were asked to read, write it up and
+route it; do not fix it in passing.
 
 ## COPY TO HERE

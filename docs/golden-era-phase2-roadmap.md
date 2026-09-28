@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** an unlocked idea list from the Leather & Brass era, not a build order (OD-2026-09-28-009 item 3); code comments still cite it as "the Phase 2 roadmap". Current source: `docs/ROOM-MAP.md`.
+
 # Golden Era Phase 2 — Engagement, Authenticity & Belonging Roadmap
 
 *Working document — add to this as new ideas come up. Nothing here is locked until we move it into execution phases.*

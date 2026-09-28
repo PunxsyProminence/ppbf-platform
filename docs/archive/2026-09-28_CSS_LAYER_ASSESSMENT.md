@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- Assessment (2026-08-20) of moving the single-sheet `ppbf.css` into a cascade layer; that sheet was split into foundation / current / legacy on 2026-08-23 (#574), and nothing cites this file. Current source: none.
+
 # Can `design-system/ppbf.css` move into `@layer components`?
 
 **Assessment only. No CSS and no application code was changed by this work.**

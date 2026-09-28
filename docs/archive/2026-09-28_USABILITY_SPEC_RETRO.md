@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- Usability spec built on the superseded `RETRO_DESIGN_SYSTEM.md`; only history documents still cited it (the stamp-ledger set retired by OD-2026-09-28-008, `docs/GROK-APP-BUILD-MAP.md`, and files archived the same day). Current source: `docs/GOLDEN-ERA-V1-CONTRACT.md` and `design-system/README.md`.
+
 # PPBF Retro Interface — Usability Spec + Floor-Use Spec
 
 **Version:** 1.0  

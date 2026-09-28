@@ -27,7 +27,7 @@ Staff can file and list incident reports linked to an athlete (or org-only). Not
 - [ ] Staff can create
 - [ ] Staff can list
 - [ ] Public cannot access
-- [ ] ManualVerification=PASSED
+- [ ] ManualVerification=SIGNED_OFF
 
 ## Audit log
 | Date | Actor | Note |

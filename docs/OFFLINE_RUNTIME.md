@@ -6,10 +6,13 @@ Run a full local schema plus synthetic demo data:
 npm --workspace web run offline -- --reset --port 3111
 ```
 
-Open `http://127.0.0.1:3111`. The seeded accounts cover every current account
-role: `offline-owner`, `offline-admin`, `offline-program-admin`,
+Open `http://127.0.0.1:3111`. The seeded accounts cover every account role
+except `board`: `offline-owner` (platform owner), `offline-admin`
+(organization admin), `offline-program-admin` (legacy `admin`),
 `offline-coach`, `offline-athlete`, `offline-parent`, `offline-volunteer`, and
-`offline-staff`; all use the synthetic PIN `246810`.
+`offline-staff`, plus `offline-coach-2` and `offline-athlete-2`, a second
+coach and athlete so the denied coach-review path can be exercised locally.
+All use the synthetic PIN `246810`.
 
 ## Lifecycle
 
@@ -96,7 +99,7 @@ remains the final boundary. It never modifies that file.
 | Azure Blob Storage | Profile, video, credential, and SHADOW blob paths expect a configured Azure service. | Configuration is blank and non-loopback calls are rejected. |
 | Microsoft/Google/OAuth, Azure AI, payments | These features are configured from environment values and may call external providers. | Credentials are cleared and the process-level guard blocks every external socket/request. |
 | Existing normal dev server | Next's default `.next` directory conflicted with an active app server. | Offline mode uses `.next-offline` only. |
-| Real tenant data and sessions | The live app has no portable local fixture. | One synthetic organization, five role personas, one synthetic athlete, a goal, and a session; the normal local PIN login flow remains in use. |
+| Real tenant data and sessions | The live app has no portable local fixture. | One synthetic organization (`ppbf-offline-demo`), ten accounts across eight roles (no `board`), two synthetic athletes, a goal, and a session; the normal local PIN login flow remains in use. |
 | Multiple local checkouts | A process killer keyed to one machine path would stop the wrong replica, or fail to stop this one. | Start/stop/status match this checkout's path and write state under its `.ppbf-offline/`. |
 
 The runtime intentionally does not simulate an external provider, and it does

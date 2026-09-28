@@ -11,7 +11,15 @@ observed deployed state beat prose everywhere.
 2. [AGENT_KERNEL.md](AGENT_KERNEL.md) — execution contract for AI work,
    including its read path for domain documents.
 3. [docs/current/ACTIVE_WORK.md](docs/current/ACTIVE_WORK.md) — current
-   blockers and parked work.
+   blockers and parked work, open owner questions, and the build list.
+4. [docs/current/OWNER_DECISIONS.md](docs/current/OWNER_DECISIONS.md) — the
+   decisions Jason has made, in his words. Read it before writing a test,
+   gate, migration or policy that asserts who may do what.
+
+Roles (who builds, plans, reviews and merges) are set by OD-2026-09-28-001 in
+[docs/current/OWNER_DECISIONS.md](docs/current/OWNER_DECISIONS.md) and stated
+in [AGENT_KERNEL.md](AGENT_KERNEL.md), "Roles", with what each AI can do in
+its capability table.
 
 ## Domain contracts (read when the task touches them)
 
@@ -19,12 +27,16 @@ observed deployed state beat prose everywhere.
   [ORGANIZATION_ROLE_MODEL.md](ORGANIZATION_ROLE_MODEL.md),
   [ORGANIZATION_ARCHITECTURE.md](ORGANIZATION_ARCHITECTURE.md),
   [ORGANIZATION_ADMIN_WORKFLOW.md](ORGANIZATION_ADMIN_WORKFLOW.md)
-- Capabilities and go-live: [docs/capabilities/](docs/capabilities/README.md)
-  (lifecycle, contracts, [GATES.md](docs/capabilities/GATES.md))
+- Capabilities: [docs/capabilities/](docs/capabilities/README.md); build
+  status lives in the module files under `docs/capabilities/modules/`
+  (OD-2026-09-28-010 item 17); [GATES.md](docs/capabilities/GATES.md)
 - SHADOW: [docs/SHADOW_AUTHORITY_MODEL.md](docs/SHADOW_AUTHORITY_MODEL.md) and
   the SHADOW documents AGENT_KERNEL's read path names
-- Design: [design-system/README.md](design-system/README.md),
-  [docs/FRONTEND_STYLE_CONTRACT.md](docs/FRONTEND_STYLE_CONTRACT.md)
+- Design: [docs/GOLDEN-ERA-V1-CONTRACT.md](docs/GOLDEN-ERA-V1-CONTRACT.md)
+  (the active look), [design-system/README.md](design-system/README.md) (the
+  design laws OD-2026-09-28-009 keeps),
+  [docs/FRONTEND_STYLE_CONTRACT.md](docs/FRONTEND_STYLE_CONTRACT.md); the
+  visual build order is [docs/ROOM-MAP.md](docs/ROOM-MAP.md)
 - Release/deploy/migrations:
   [docs/AI_DELIVERY_PIPELINE.md](docs/AI_DELIVERY_PIPELINE.md) plus the
   relevant runbook under `docs/`
@@ -42,6 +54,7 @@ repository. No HTTP route changes the schema.
 
 - [docs/current/WORK_QUEUE.md](docs/current/WORK_QUEUE.md) — provenance ledger
 - [docs/current/PRODUCTION_STATE.json](docs/current/PRODUCTION_STATE.json) —
-  observed deployment truth
+  audit snapshot, last changed 2026-08-29 (`1e087898`); history, not current
+  deployed state (see `AGENT_KERNEL.md` on deployed state)
 - [docs/archive/](docs/archive/README.md) — point-in-time snapshots, never
   current authority

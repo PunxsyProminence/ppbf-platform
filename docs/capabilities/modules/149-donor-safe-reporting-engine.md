@@ -27,7 +27,7 @@ Public and donor-facing copy must not include athlete names, medical detail, or 
 - [ ] Public page shows no athlete PII
 - [ ] Board aggregate unchanged (still suppressed correctly)
 - [ ] No medical narrative on public surface
-- [ ] ManualVerification=PASSED
+- [ ] ManualVerification=SIGNED_OFF
 
 ## Audit log
 | Date | Actor | Note |

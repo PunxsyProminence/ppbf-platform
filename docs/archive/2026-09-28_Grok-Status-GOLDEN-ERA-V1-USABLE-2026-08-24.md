@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- a 2026-08-24 Grok status snapshot: #586 closed unmerged, Grok now only makes images on request (OD-2026-09-28-001), and nothing cites this file. Current source: `docs/GOLDEN-ERA-V1-CONTRACT.md`.
+
 # Grok Status — Golden Era V1 usable-app (HANDS-OFF FINAL — LIVE)
 
 > **Superseded in one respect, 2026-08-25 — kept as the 2026-08-24 status

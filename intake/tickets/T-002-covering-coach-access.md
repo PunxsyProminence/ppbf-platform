@@ -1,6 +1,6 @@
 # T-002 — Covering coach cannot access an athlete they don't own
 
-> Status: READY
+> Status: **RESOLVED — shipped as #242, merged 2026-08-06 (`83c57289`); evidence in the T-002 row of `docs/current/WORK_QUEUE.md`**
 > Lane: A (git-capable AI) or B (chat-only AI) — either
 > Priority: P1 pilot-blocking
 

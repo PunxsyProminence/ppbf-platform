@@ -61,13 +61,15 @@ const MODULE_DIR = path.join(REPO, 'docs/capabilities/modules');
 const INDEX_FILE = path.join(REPO, 'docs/capabilities/expanded-200-index.json');
 
 /**
- * Measured 2026-08-28 by running this file against the catalogue as it stood.
+ * Measured 2026-08-28 by running this file against the catalogue as it stood;
+ * lowered 2026-09-28 (59 -> 51, 91 -> 84) after DONE claims with no code were
+ * relabelled "claimed, no code" (OD-2026-09-28-010 item 18).
  * These are floors-to-not-exceed, not targets. Lowering one as modules get
  * evidenced is the point; raising one is an admission that has to be argued
  * for in the same change.
  */
-const CEILING_UNEVIDENCED_DONE = 59;
-const CEILING_TRACKER_DISAGREEMENTS = 91;
+const CEILING_UNEVIDENCED_DONE = 51;
+const CEILING_TRACKER_DISAGREEMENTS = 84;
 
 interface Module {
   file: string;

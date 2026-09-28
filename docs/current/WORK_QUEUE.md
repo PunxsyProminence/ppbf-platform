@@ -25,7 +25,9 @@ file wins — all three are history, and this is the current history.
 
 Process: [docs/AI_DELIVERY_PIPELINE.md](../AI_DELIVERY_PIPELINE.md). Rules of
 conduct: [docs/AI_CONTRIBUTOR_GUARDRAILS.md](../AI_CONTRIBUTOR_GUARDRAILS.md).
-Current production truth:
+Production audit snapshot, not live truth (last changed 2026-08-29 in
+`1e087898`, which left its `last_updated_at` at 2026-08-28; live evidence outranks it, per "Production-state records" in
+[docs/AI_DELIVERY_PIPELINE.md](../AI_DELIVERY_PIPELINE.md)):
 [docs/current/PRODUCTION_STATE.json](PRODUCTION_STATE.json).
 
 ## State machine

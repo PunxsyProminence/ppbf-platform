@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-09-28** -- 2026-07-28 audit snapshot, closed out by its two follow-up audits (2026-07-31 and 2026-08-01), which are the only documents citing it. Current source: none.
+
 # SHADOW Chat Functionality Audit — 2026-07-28
 
 Scope: every SHADOW chat surface and the ML/learning layer behind it.

@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** a 2026-06-17 planning blueprint, not maintained: its capability list is the old `PPBF_CAPABILITIES.json` draft (OD-2026-09-28-010 item 21) and its "Layer 0" governance predates the current process. Current source: [PRODUCT_CAPABILITIES.json](../PRODUCT_CAPABILITIES.json) for the product list; [AGENT_KERNEL.md](../AGENT_KERNEL.md) for how work is governed.
+
 # PPBF Master Blueprint (Unified)
 
 ## Overview

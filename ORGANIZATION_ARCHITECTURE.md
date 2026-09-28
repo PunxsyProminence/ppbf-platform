@@ -15,9 +15,11 @@ Transform PPBF into a multi-organization platform with strict organization isola
 ## Core architecture principles
 
 1. Every private record is organization-owned.
-2. Organization data is invisible outside its organization to every role except
-   Platform Owner (see Platform owner boundary below for the pilot-phase
-   exception and its de-identification requirement).
+2. Organization data is invisible outside its organization to every role.
+   Platform Owner sees de-identified, aggregate data across organizations and
+   never an individual athlete record (OD-2026-09-28-005; see Platform owner
+   boundary below, and the enforcement in
+   [ORGANIZATION_ROLE_MODEL.md](ORGANIZATION_ROLE_MODEL.md#enforcement-model)).
 3. Organization membership is authoritative and required for every authenticated user.
 4. Authorization is role + organization scoped, with Platform Owner scoped to
    the platform as a whole.
@@ -40,7 +42,8 @@ Boundary is enforced in three layers:
 ## Platform owner boundary
 
 **Current intent (pilot phase):** Platform Owner has standing cross-organization
-visibility into platform data, bounded by law rather than an internal
+visibility into de-identified, aggregate platform data -- never an individual
+athlete record (OD-2026-09-28-005) -- bounded by law rather than an internal
 org-isolation wall. This is deliberate, for two reasons:
 
 1. Operational — Jason needs to navigate and fix issues across organizations
@@ -81,6 +84,8 @@ Two analytics planes:
    - visible to organization admins and permitted roles only
 
 ## Reuse strategy from current codebase
+
+> **`platform_role` NOT BUILT (checked 2026-09-28 at `bbf299fe`):** `git grep -i platform_role` finds no code, only this file; the principal (`ActorIdentity` in `apps/web/src/server/pilot/access.ts`) carries `role` and `organizationId`. The roles as built are in [ORGANIZATION_ROLE_MODEL.md](ORGANIZATION_ROLE_MODEL.md).
 
 Reuse existing pilot service structure:
 

@@ -1020,12 +1020,14 @@ Evidence:
   applied by apps/web/scripts/pilot-apply-multiorg-migration.mjs. There is no
   migrate-multiorg HTTP route; the migration is script-and-SQL only.
 - organization-aware writes and checks in pilot routes and services.
-Notes: organization-level scale exists; gym and program partition model is not yet present.
+Notes: organization-level scale exists, and organization_id is the gym identifier (§20 item 6);
+no gym_id is planned. No program partition model is present.
 
 13. organization and gym boundaries: PARTIAL
 Evidence:
 - organization boundary strongly present via organization_id in pilot services and migrations.
-- gym_id boundary not present in current pilot schema/services.
+- the gym boundary is the organization boundary: organization_id is the gym identifier
+  (§20 item 6); no gym_id is planned.
 
 14. source confidence: PARTIAL
 Evidence:
@@ -1162,9 +1164,8 @@ Minimum additive schema reservation path (documented only, not implemented here)
 
 Mandatory scoping on SHADOW spine tables:
 
-- organization_id required
-- gym_id nullable reservation
-- program_id nullable reservation
+- organization_id required (it is the gym identifier)
+- no gym_id or program_id reservation: struck by item 6 above
 
 ## Operational Limits for This Pass
 

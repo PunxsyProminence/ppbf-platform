@@ -61,15 +61,10 @@ Magic-link sign-in -- required in every environment real families use:
   value here fails silently. See .env.example's own comment on this variable.)
 
 ## Step 4: Governance
-A direct owner/user request may go straight to a bounded branch/PR after
-checking current source and open PRs; a ticket is optional unless the work
-needs coordination, handoff, scheduling, or a durable decision record. A build
-lane opens the PR and stops there; one release-control lane merges it. See
-AGENT_KERNEL.md's Lane model, which is authoritative -- the older wording
-here said the authoring session could merge, and was written when one session
-held both roles. Green CI is a precondition, not an authorization. Merging
-was never the widest thing withheld: production deployment and migrations
-against protected environments remain behind a separate human gate.
+Roles, scope, and who may merge are in [AGENT_KERNEL.md](AGENT_KERNEL.md);
+staging and production release work follows
+[docs/AI_DELIVERY_PIPELINE.md](docs/AI_DELIVERY_PIPELINE.md). This step does
+not restate them.
 
 ## Step 5: Start Development
 From the repository root:
