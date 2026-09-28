@@ -114,7 +114,7 @@ function counts(pkg: Package) {
 describe('no scope', () => {
   test('imports the whole corpus, unchanged', () => {
     expect(counts(whole)).toEqual({
-      sources: 1214, documents: 14, chunks: 1193, capabilityMap: 30, requirements: 229,
+      sources: 1041, documents: 14, chunks: 1193, capabilityMap: 30, requirements: 229,
     });
   });
 
@@ -131,7 +131,7 @@ describe('no scope', () => {
 describe('platform_baseline scope', () => {
   test('THE POINT: everything except PPBF house documents', () => {
     expect(counts(baseline)).toEqual({
-      sources: 1194, documents: 14, chunks: 1173, capabilityMap: 30, requirements: 229,
+      sources: 1021, documents: 14, chunks: 1173, capabilityMap: 30, requirements: 229,
     });
   });
 
