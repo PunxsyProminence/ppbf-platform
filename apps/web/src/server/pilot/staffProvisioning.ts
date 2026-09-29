@@ -1,6 +1,7 @@
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
+import { ConflictError } from './errors';
 // The waiver_type string only, not the readers. Imported rather than
 // re-typed because a second copy of 'photo_media' is exactly how one of the
 // two later stops matching the other.
@@ -196,6 +197,52 @@ export function requireGuardianLinkForParentInvite(
 }
 
 /**
+ * The refusal for naming an existing non-parent login as a guardian during
+ * intake (Jason 2026-09-29, R5 "A": intake refuses it).
+ *
+ * Provisioning re-roles an existing account to whatever role it is given --
+ * that is how the invite surfaces change a role on purpose. Intake promotion
+ * gives it `parent`, so a guardian email that happened to belong to a coach,
+ * a staff member or an admin turned that person's login into a parent login as
+ * a side effect of promoting a child's intake form. Intake refuses instead and
+ * leaves the account exactly as it was.
+ */
+function existingRoleConflict(
+  named: { email: string } | { accountId: string },
+  existingRole: PilotRole,
+  role: InvitableStaffRole,
+): ConflictError {
+  const [subject, remedy] = 'email' in named
+    ? [named.email, 'Use a different email address.']
+    : [`account_id "${named.accountId}"`, 'Use a different account_id.'];
+
+  return new ConflictError(
+    `Conflict: ${subject} already belongs to an existing ${existingRole} account in this organization. `
+    + `Intake does not change an existing account's role, so it cannot make that account a ${role} login. `
+    + remedy,
+    'EXISTING_ACCOUNT_ROLE_CONFLICT',
+  );
+}
+
+/**
+ * The refusal for naming a deleted guardian login during intake.
+ *
+ * Provisioning's upsert sets active_flag and the membership back to true and
+ * reads nothing about deleted_at, so a family whose guardian login was deleted
+ * came back to life as a side effect of promoting a new child with the old
+ * email: the guardian could sign in again and see the new child, and the
+ * retention purge, which reads deleted_at and role but not active_flag, later
+ * hard-deleted that live login and its guardian records, the new child's link
+ * included.
+ */
+function deletedGuardianLoginConflict(loginEmail: string): ConflictError {
+  return new ConflictError(
+    `Conflict: ${loginEmail} belongs to a guardian login that was deleted. Intake does not restore a deleted login.`,
+    'DELETED_GUARDIAN_LOGIN',
+  );
+}
+
+/**
  * Creates or updates a Microsoft-authenticated staff account and its
  * organization membership.
  *
@@ -227,6 +274,17 @@ export function requireGuardianLinkForParentInvite(
  * pilot.parents and pilot.guardian_links rows itself in the same request; see
  * requireGuardianLinkForParentInvite for why that is enforced by the invite
  * surfaces rather than here.
+ *
+ * `refuseRoleChange` is for intake promotion's guardian login only: an
+ * existing account holding a different role is refused (409) rather than
+ * re-roled. The invite surfaces leave it unset, because re-inviting at a new
+ * role is how they change a role deliberately.
+ *
+ * `refuseDeletedLogin` is also intake promotion's only: an existing account
+ * whose deleted_at is set is refused (409) rather than reactivated. The invite
+ * surfaces leave it unset; what they should do with a deleted login is not
+ * decided. It reads deleted_at in a query of its own, only when set, so the
+ * invite path does not depend on the column.
  */
 export async function createOrUpdateMicrosoftStaffAccount(params: {
   loginEmail: string;
@@ -236,6 +294,8 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
   callerInvitableRoles?: readonly InvitableStaffRole[];
   guardian?: GuardianAthleteLink;
   volunteer?: VolunteerRosterAssignment;
+  refuseRoleChange?: boolean;
+  refuseDeletedLogin?: boolean;
 }): Promise<StaffProvisionResult> {
   const loginEmail = normalizeEmail(params.loginEmail);
   const organizationId = params.organizationId.trim();
@@ -296,6 +356,23 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     // re-pointed at another by whoever invites that email next.
     if (existing.organization_id && existing.organization_id !== organizationId) {
       throw new Error('Forbidden: account already exists in another organization');
+    }
+
+    // Intake's guardian login (R5). After the cross-organization guard, so an
+    // account in another gym is refused without its role being named here.
+    if (params.refuseRoleChange && existing.role !== role) {
+      throw existingRoleConflict({ email: loginEmail }, existing.role, role);
+    }
+
+    if (params.refuseDeletedLogin) {
+      const deletion = await queryOne<{ deleted_at: string | null }>(
+        'select deleted_at::text as deleted_at from pilot.accounts where account_id = $1',
+        [existing.account_id],
+      );
+
+      if (deletion?.deleted_at) {
+        throw deletedGuardianLoginConflict(loginEmail);
+      }
     }
 
     // An athlete authenticates by PIN. Converting that row to a Microsoft
@@ -580,6 +657,109 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     guardianLink,
     volunteerLink,
   };
+}
+
+/**
+ * Refuses, before anything is written, every guardian login that intake
+ * promotion's call to createOrUpdateMicrosoftStaffAccount (role parent,
+ * refuseRoleChange, refuseDeletedLogin) would refuse or would not use as named.
+ *
+ * Intake promotion has no transaction around its writes and provisions the
+ * guardian's login after the athlete record and the athlete's account. A
+ * refusal from provisioning therefore used to land with those already
+ * written. This runs the same lookups, writes nothing, and refuses in the same
+ * order, so the caller can refuse first. Provisioning keeps every check it
+ * has; this only moves the refusals earlier.
+ *
+ * Refused:
+ *  - the platform owner's account, and an account in another organization --
+ *    provisioning's own messages, word for word;
+ *  - an existing account whose role is not parent (R5, Jason 2026-09-29) --
+ *    409, and the account is left exactly as it was;
+ *  - an existing parent login that was deleted (deleted_at set) -- 409.
+ *    Provisioning would reactivate it; see deletedGuardianLoginConflict;
+ *  - an existing parent account that signs in with a PIN, which provisioning
+ *    refuses to convert;
+ *  - an account_id hint the email's existing login would override.
+ *    Provisioning resolves by email first and keeps the login an email already
+ *    has, ignoring the hint, so a caller that went on using its own hint --
+ *    intake linking the guardian record to it -- pointed at an account the
+ *    email does not belong to, possibly another family's parent login;
+ *  - for a new email, an account_id another identity already holds. When
+ *    that identity is a non-parent account in this organization, the R5
+ *    refusal names it.
+ */
+export async function assertGuardianLoginProvisionable(params: {
+  loginEmail: string;
+  organizationId: string;
+  accountIdHint: string;
+}): Promise<void> {
+  const role: InvitableStaffRole = 'parent';
+  const loginEmail = normalizeEmail(params.loginEmail);
+  const organizationId = params.organizationId.trim();
+  const hint = params.accountIdHint.trim();
+
+  const existing = await queryOne<{
+    account_id: string;
+    organization_id: string | null;
+    role: PilotRole;
+    auth_provider: AuthProvider;
+    is_platform_owner: boolean;
+    deleted_at: string | null;
+  }>(
+    `select account_id, organization_id, role, auth_provider, is_platform_owner,
+            deleted_at::text as deleted_at
+     from pilot.accounts
+     where lower(login_email) = $1`,
+    [loginEmail],
+  );
+
+  if (existing) {
+    if (existing.is_platform_owner || existing.role === 'platform_owner') {
+      throw new Error('Forbidden: cannot modify a platform owner account');
+    }
+
+    if (existing.organization_id && existing.organization_id !== organizationId) {
+      throw new Error('Forbidden: account already exists in another organization');
+    }
+
+    if (existing.role !== role) {
+      throw existingRoleConflict({ email: loginEmail }, existing.role, role);
+    }
+
+    if (existing.deleted_at) {
+      throw deletedGuardianLoginConflict(loginEmail);
+    }
+
+    if (existing.auth_provider === 'ppbf_local') {
+      throw new Error(
+        'Forbidden: this email is already used by a PIN-based account, which cannot be provisioned as a Microsoft login',
+      );
+    }
+
+    if (hint && existing.account_id !== hint) {
+      throw new ConflictError(
+        `Conflict: ${loginEmail} already belongs to a different login account than "${hint}". `
+        + 'Send the account_id that email already has, or the email that belongs to this account_id.',
+        'ACCOUNT_ID_HINT_NOT_KEPT',
+      );
+    }
+    return;
+  }
+
+  const accountIdCollision = await queryOne<{ account_id: string; organization_id: string; role: PilotRole }>(
+    'select account_id, organization_id, role from pilot.accounts where account_id = $1',
+    [hint || loginEmail],
+  );
+
+  if (accountIdCollision) {
+    if (accountIdCollision.organization_id === organizationId && accountIdCollision.role !== role) {
+      throw existingRoleConflict({ accountId: accountIdCollision.account_id }, accountIdCollision.role, role);
+    }
+
+    // Provisioning's own message for the same refusal, word for word.
+    throw new Error('Forbidden: account_id is already in use by another identity');
+  }
 }
 
 /**
