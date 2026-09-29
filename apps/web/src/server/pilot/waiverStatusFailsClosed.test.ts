@@ -3,12 +3,14 @@
  *
  *   A STATUS THIS PLATFORM DOES NOT RECOGNISE NEVER MEANS YES.
  *
- * WHY THIS FILE EXISTS. pilot.waivers.status is freeform text -- no CHECK
- * constraint on the column, and /api/pilot/intake/domain-upsert stores
- * `asString(body.payload.status, 'signed')`, which accepts any string a
- * caller sends. waiverCompliance.ts records a waiver stored as ' Signed ' as
- * something that ACTUALLY HAPPENED, in those words: "this is reachable rather
- * than theoretical".
+ * WHY THIS FILE EXISTS. pilot.waivers.status was freeform text -- no CHECK
+ * constraint on the column, and /api/pilot/intake/domain-upsert stored
+ * `asString(body.payload.status, 'signed')`, which accepted any string a
+ * caller sent. pilot_waivers_status_check and requireWaiverStatus refuse such
+ * values on write now, but rows written before them, or on a database the
+ * migration has not reached, can still hold anything. waiverCompliance.ts
+ * records a waiver stored as ' Signed ' as something that ACTUALLY HAPPENED,
+ * in those words: "this was reachable rather than theoretical".
  *
  * Every reader below already fails closed on such a value, and each does it
  * its own way -- one normalises then tests membership, two test `!== 'signed'`

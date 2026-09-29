@@ -25,8 +25,8 @@ import { expect, test } from '@playwright/test';
    undersized target -- none of which needs pixels to detect, and all of which
    are computed-style facts that hold across browser revisions. So the checks
    below assert the design system's own laws on the page a stranger sees first:
-   Law 2 (saturated colour means safety, nothing else), the AA contrast floor,
-   and Law 5's target floor.
+   the AA contrast floor and Law 5's target floor. (A third check refused the
+   safety gate's red here until red stopped being reserved, OD-2026-09-29-001.)
 
    Two dead theories, recorded so they are not retried. Chromium rasterisation
    was raised first and dismissed as too small to matter -- it was right, by way
@@ -71,7 +71,6 @@ test.describe('Public homepage', () => {
     await expect(page.getByRole('heading', { name: /Boxing is the engagement platform/i })).toBeVisible();
 
     const audit = await page.evaluate(() => {
-      const painted: string[] = [];
       const lowContrast: string[] = [];
       const smallTargets: string[] = [];
 
@@ -103,18 +102,6 @@ test.describe('Public homepage', () => {
         const cs = getComputedStyle(el);
         const label = `<${el.tagName.toLowerCase()}> ${(el.textContent || '').trim().slice(0, 30)}`;
 
-        // rgb(168,30,34) is #A81E22, --locked. Written when Law 2 reserved it
-        // for the safety gate, on a page whose entire audience is strangers
-        // with no athlete to be locked. STATUS 2026-09-29: red is not
-        // reserved (OD-2026-09-29-001); this check predates that ruling and
-        // still runs. The literal is inlined
-        // because this callback is serialised into the browser and cannot close
-        // over anything declared out here.
-        const isSafetyRed = (c: string) => /rgba?\(168,\s*30,\s*34/.test(c);
-        if (isSafetyRed(cs.color) || isSafetyRed(cs.backgroundColor)) {
-          painted.push(label);
-        }
-
         // Only where the element owns its text and sits on a nameable colour.
         const ownsText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent!.trim());
         const bg = ownsText ? backdrop(el) : null;
@@ -136,12 +123,8 @@ test.describe('Public homepage', () => {
           }
         }
       }
-      return { painted, lowContrast, smallTargets };
+      return { lowContrast, smallTargets };
     });
-
-    // Law 2 as it stood before OD-2026-09-29-001 (red is not reserved): the
-    // safety gate's red belonged to the safety gate. Still enforced here.
-    expect(audit.painted, 'elements painted the safety red on a public page').toEqual([]);
 
     // WCAG 1.4.3.
     const failures = audit.lowContrast

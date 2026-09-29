@@ -941,10 +941,13 @@ describe('assertAthleteUpdateAllowed', () => {
     athleteId: 'ath-1',
   });
 
-  const record = (overrides: Partial<{ coach_id: string; active_flag: boolean; gym_status: string }> = {}) => ({
+  const record = (
+    overrides: Partial<{ coach_id: string; active_flag: boolean; gym_status: string; dob: string | Date }> = {},
+  ) => ({
     coach_id: 'coach-assigned',
     active_flag: true,
     gym_status: 'active',
+    dob: '2012-04-17',
     ...overrides,
   });
 
@@ -1006,6 +1009,57 @@ describe('assertAthleteUpdateAllowed', () => {
 
     test('allows an athlete to submit an unchanged record', () => {
       expect(() => assertAthleteUpdateAllowed(actor('athlete'), record(), record())).not.toThrow();
+    });
+  });
+
+  // Jason 2026-09-29, Q2 A. Age is read from dob, so a minor who writes an
+  // adult date of birth steps out of every rule that applies to minors,
+  // including the circle their photograph stays inside.
+  describe('date of birth -- athletes may not change their own', () => {
+    test('refuses an athlete changing their date of birth', () => {
+      expect(() =>
+        assertAthleteUpdateAllowed(actor('athlete'), record(), record({ dob: '2000-04-17' })),
+      ).toThrow('Forbidden: athlete cannot change date of birth');
+    });
+
+    test('refuses the change when the stored value is a Date', () => {
+      expect(() =>
+        assertAthleteUpdateAllowed(actor('athlete'), record({ dob: new Date(2012, 3, 17) }), record({ dob: '2000-04-17' })),
+      ).toThrow('Forbidden: athlete cannot change date of birth');
+    });
+
+    // The trap a raw !== falls into: the stored dob can be a Date at local
+    // midnight while the request carries a string. Treating those as
+    // different would refuse every athlete save, including ones that never
+    // touched dob.
+    test('allows an athlete save whose dob matches the stored Date', () => {
+      expect(() =>
+        assertAthleteUpdateAllowed(actor('athlete'), record({ dob: new Date(2012, 3, 17) }), record({ dob: '2012-04-17' })),
+      ).not.toThrow();
+    });
+
+    test('allows an athlete save whose dob differs from the stored string only by surrounding space', () => {
+      expect(() =>
+        assertAthleteUpdateAllowed(actor('athlete'), record({ dob: '2012-04-17' }), record({ dob: ' 2012-04-17 ' })),
+      ).not.toThrow();
+    });
+
+    test('allows an organization admin to correct a date of birth', () => {
+      expect(() =>
+        assertAthleteUpdateAllowed(actor('organization_admin'), record(), record({ dob: '2012-04-07' })),
+      ).not.toThrow();
+    });
+
+    test('allows the legacy admin role to correct a date of birth', () => {
+      expect(() =>
+        assertAthleteUpdateAllowed(actor('admin'), record(), record({ dob: '2012-04-07' })),
+      ).not.toThrow();
+    });
+
+    test('allows a coach to correct a date of birth, as before', () => {
+      expect(() =>
+        assertAthleteUpdateAllowed(actor('coach'), record(), record({ dob: '2012-04-07' })),
+      ).not.toThrow();
     });
   });
 });

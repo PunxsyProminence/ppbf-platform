@@ -20,6 +20,7 @@ import {
   createOrUpdateMicrosoftStaffAccount,
 } from '@/src/server/pilot/staffProvisioning';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
+import { requireWaiverStatus, type WaiverStatus } from '@/src/server/pilot/waiverCompliance';
 import {
   assertActorCanAccessIntakeCase,
   assertAthleteAccountIdProvisionable,
@@ -403,6 +404,14 @@ export async function POST(request: NextRequest) { // NOSONAR
     const validatedReadinessScore = promotion.readiness
       ? requireFiniteNumber(promotion.readiness.score, 'promotion.readiness.score')
       : undefined;
+    // The waiver status for the same reason: pilot_waivers_status_check refuses
+    // anything outside the vocabulary, and down at upsertWaiver that refusal
+    // would arrive as a 500 after the athlete, account, guardian, emergency
+    // contact and medical writes had already committed. No default -- the
+    // payload declares status as required.
+    const validatedWaiverStatus = promotion.waiver
+      ? requireWaiverStatus(promotion.waiver.status, 'promotion.waiver.status')
+      : undefined;
 
     // Same reasoning for every other refusal this promotion can raise: each is
     // checked here, before upsertAthlete, so a refused promotion writes no
@@ -632,7 +641,8 @@ export async function POST(request: NextRequest) { // NOSONAR
         signedByRole: promotion.waiver.signed_by_role,
         signedAt: promotion.waiver.signed_at,
         consentVersion: promotion.waiver.consent_version,
-        status: promotion.waiver.status,
+        // Checked above, before the first promotion write.
+        status: validatedWaiverStatus as WaiverStatus,
         notes: promotion.waiver.notes,
         // The reviewer promoting the case, not the guardian who signed the
         // paper it came from.

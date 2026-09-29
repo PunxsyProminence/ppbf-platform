@@ -14,6 +14,7 @@ import {
   linkGuardianAthlete,
   updateIntakeCaseStatus,
   upsertGuardian,
+  upsertWaiver,
 } from '@/src/server/pilot/intake';
 import { ConflictError } from '@/src/server/pilot/errors';
 import { queryOne } from '@/src/server/pilot/db';
@@ -102,6 +103,7 @@ const mockAssertGuardianUnchanged = assertGuardianAccountUnchanged as jest.Mocke
 const mockUpsertGuardian = upsertGuardian as jest.MockedFunction<typeof upsertGuardian>;
 const mockLinkGuardianAthlete = linkGuardianAthlete as jest.MockedFunction<typeof linkGuardianAthlete>;
 const mockQueryOne = queryOne as jest.Mock;
+const mockUpsertWaiver = upsertWaiver as jest.MockedFunction<typeof upsertWaiver>;
 
 function principal(): PilotPrincipal {
   return {
@@ -787,6 +789,72 @@ describe('promotion readiness is validated before it reaches pilot.readiness', (
   });
 });
 
+
+// promotion.waiver.status reached pilot.waivers unread. With
+// pilot_waivers_status_check in place a bad value would fail at upsertWaiver
+// as a 500 -- after the athlete, account, guardian, emergency contact and
+// medical writes had already committed, since promotion has no transaction.
+// It is checked before the first write instead, like the readiness score.
+describe('promotion waiver status is validated before any promotion write', () => {
+  function waiverPromoteRequest(waiver: Record<string, unknown>) {
+    return new NextRequest('http://localhost/api/pilot/intake/review-action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        intake_case_id: 'case-1',
+        action: 'promote',
+        promotion: {
+          athlete: {
+            athlete_id: 'ath-1',
+            full_name: 'Gate Athlete',
+            dob: '2011-02-10',
+            weight_class: '119',
+            gym_status: 'active',
+            emergency_contact: 'Guardian 555-0102',
+            coach_id: 'acct-admin',
+          },
+          waiver,
+        },
+      }),
+    });
+  }
+
+  const WAIVER = {
+    waiver_type: 'general',
+    signed_by_name: 'Pat Guardian',
+    signed_by_role: 'guardian',
+    signed_at: '2026-09-29T12:00:00.000Z',
+    consent_version: 'v1',
+  };
+
+  test.each(['signed', 'declined', 'withdrawn', 'missing'])('%p promotes and is written as given', async (status) => {
+    const response = await POST(waiverPromoteRequest({ ...WAIVER, status }));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertWaiver).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-real',
+      athleteId: 'ath-1',
+      status,
+      recordedByAccountId: 'acct-admin',
+    }));
+  });
+
+  test.each([
+    ['padded and capitalised', ' Signed '],
+    ['outside the vocabulary', 'active'],
+    ['null', null],
+    ['absent', undefined],
+  ])('a status that is %s is refused 400 before the athlete write', async (_label, status) => {
+    const response = await POST(waiverPromoteRequest({ ...WAIVER, status }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(String(payload.error)).toMatch(/^Unsupported promotion\.waiver\.status/);
+    expect(mockUpsertAthlete).not.toHaveBeenCalled();
+    expect(mockUpsertWaiver).not.toHaveBeenCalled();
+    expect(mockUpdateStatus).not.toHaveBeenCalled();
+  });
+});
 
 describe('review-action authorizes the actor against the case before mutating it', () => {
   // The bug: the only case-authority gate was

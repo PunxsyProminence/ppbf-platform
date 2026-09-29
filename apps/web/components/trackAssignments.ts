@@ -69,7 +69,7 @@ export const trackManifests: Record<TrackID, TrackManifest> = {
   },
   collegiate: {
     name: 'Collegiate Track',
-    desc: 'Tailored for student-athletes. Enforces academic passing standards as a requirement for on-floor training access.',
+    desc: 'Tailored for student-athletes; its focus workout includes a study or homework block. It reads no grades and does not gate on-floor training access.',
     focusWorkout: [
       'Agility ladder footwork drills maintaining balance-width',
       'Dynamic high-guard partner counter-movement drills',
