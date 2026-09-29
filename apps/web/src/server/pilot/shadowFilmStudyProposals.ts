@@ -200,27 +200,57 @@ export async function createCoachReportedObservation(input: {
  * correction is a pass rather than an exit -- a proposal being reworked has
  * not left the queue, and dropping it after the first pass would make
  * "correct until it is right" impossible to actually do.
+ *
+ * ATHLETES ARE REQUIRED. Every proposal is an observation about one athlete,
+ * usually a minor, so the caller names the athletes whose proposals it may
+ * return -- already authorized against the reader -- and the filter runs in
+ * SQL, before the limit. There is no "whole organization" value: without an
+ * athlete the GET route used to list every proposal in the gym, so a coach saw
+ * observations about other coaches' athletes. An empty list returns nothing.
  */
 export async function listFilmStudyProposals(input: {
   organizationId: string;
   state?: 'pending' | 'all';
-  athleteId?: string | null;
+  athleteIds: readonly string[];
   limit?: number;
 }): Promise<FilmStudyProposalRow[]> {
+  if (input.athleteIds.length === 0) {
+    return [];
+  }
   const limit = Math.min(Math.max(input.limit ?? 100, 1), 200);
   return query<FilmStudyProposalRow>(
     `select ${PROPOSAL_COLUMNS}
      from pilot.shadow_film_study_proposals
      where organization_id = $1
        and ($2::text = 'all' or review_state in ('pending_review', 'corrected'))
-       and ($3::text is null or athlete_id = $3)
+       and athlete_id = any($3::text[])
      order by
        case when review_state in ('pending_review', 'corrected') then 0 else 1 end,
        case when review_state in ('pending_review', 'corrected') then created_at end asc,
        created_at desc
      limit ${limit}`,
-    [input.organizationId, input.state ?? 'pending', input.athleteId ?? null],
+    [input.organizationId, input.state ?? 'pending', [...input.athleteIds]],
   );
+}
+
+/**
+ * The athletes the queue holds proposals about, in the same view
+ * listFilmStudyProposals reads. The GET route authorizes these against the
+ * reader (accessibleAthleteIds -- the same answer assertActorCanAccessAthlete
+ * gives, batched) and lists only the ones that pass.
+ */
+export async function listFilmStudyProposalAthleteIds(input: {
+  organizationId: string;
+  state?: 'pending' | 'all';
+}): Promise<string[]> {
+  const rows = await query<{ athlete_id: string }>(
+    `select distinct athlete_id
+     from pilot.shadow_film_study_proposals
+     where organization_id = $1
+       and ($2::text = 'all' or review_state in ('pending_review', 'corrected'))`,
+    [input.organizationId, input.state ?? 'pending'],
+  );
+  return rows.map((row) => row.athlete_id);
 }
 
 export async function getFilmStudyProposal(

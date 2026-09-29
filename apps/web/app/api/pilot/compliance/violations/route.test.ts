@@ -235,6 +235,293 @@ describe('POST /api/pilot/compliance/violations', () => {
     );
     expect(res.status).toBe(201);
   });
+
+  // Filing a violation now has a screen behind it, so the create writes the
+  // same audit row every lifecycle transition on this route already writes.
+  test('a filed violation is audited with who filed it, against what, and at what severity', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // assertCoachAssignedToAthlete
+      .mockResolvedValueOnce({ rule_id: 'r1' }); // getComplianceRuleById
+    mockTxQuery.mockResolvedValueOnce({ rows: [{ violation_id: 'v1', severity: 'high' }] });
+
+    const res = await POST(postRequest({ rule_id: 'r1', athlete_id: 'ath-1', severity: 'high' }));
+
+    expect(res.status).toBe(201);
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: 'create',
+      actor_account_id: 'acct-1',
+      actor_role: 'coach',
+      organization_id: 'org-1',
+      entity_type: 'compliance_violation',
+      entity_id: 'v1',
+      details: expect.objectContaining({
+        action: 'violation_filed',
+        rule_id: 'r1',
+        athlete_id: 'ath-1',
+        severity: 'high',
+        // A hand filing has no provenance for the audit row to name.
+        source: null,
+        proposal_id: null,
+      }),
+    }));
+  });
+
+  // details.source is provenance. A hand-filed violation must not be able to
+  // call itself a machine detection, in the stored row or in the audit row.
+  test.each(['automated_detection', 'Film_Study_Proposal', '', null])(
+    'a claimed details.source of %p is refused as a 400, and nothing is filed or audited',
+    async (source) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+      mockQueryOne
+        .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // assertCoachAssignedToAthlete
+        .mockResolvedValueOnce({ rule_id: 'r1' }); // getComplianceRuleById
+
+      const res = await POST(postRequest({ rule_id: 'r1', athlete_id: 'ath-1', details: { source } }));
+
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toMatch(/^Unsupported details\.source/);
+      expect(mockWithTransaction).not.toHaveBeenCalled();
+      expect(mockAudit).not.toHaveBeenCalled();
+    },
+  );
+
+  // A proposal cited with no source would be stored unchecked beside a
+  // filing that never went through the proposal check.
+  test('a details.proposal_id with no Film Study source is refused as a 400, and nothing is filed', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+      .mockResolvedValueOnce({ rule_id: 'r1' });
+
+    const res = await POST(postRequest({
+      rule_id: 'r1',
+      athlete_id: 'ath-1',
+      details: { proposal_id: '11111111-2222-4333-8444-555555555555' },
+    }));
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/^Unsupported details\.proposal_id/);
+    // Refused before any proposal lookup: only the access and rule reads ran.
+    expect(mockQueryOne).toHaveBeenCalledTimes(2);
+    expect(mockWithTransaction).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a failed audit write does not report an already-committed filing as failed', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+    mockQueryOne
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+      .mockResolvedValueOnce({ rule_id: 'r1' });
+    mockTxQuery.mockResolvedValueOnce({ rows: [{ violation_id: 'v1', severity: 'medium' }] });
+    mockAudit.mockRejectedValueOnce(Object.assign(new Error('audit down'), { code: '57P01' }));
+
+    const res = await POST(postRequest({ rule_id: 'r1', athlete_id: 'ath-1' }));
+
+    expect(res.status).toBe(201);
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  // Escalate to Compliance on the Film Study review queue files with
+  // details { source: 'film_study_proposal', proposal_id }. That citation is
+  // provenance an admin will follow, so the route holds it to the truth.
+  describe('a violation escalated from a Film Study proposal', () => {
+    const PROPOSAL_ID = '11111111-2222-4333-8444-555555555555';
+
+    // clearAllMocks does not drop queued mockResolvedValueOnce values, so a
+    // lookup one test staged and the route never made would otherwise answer
+    // the next test's first query. Each case here starts and ends empty.
+    beforeEach(() => { mockQueryOne.mockReset(); });
+    afterEach(() => { mockQueryOne.mockReset(); mockTxQuery.mockReset(); });
+
+    // The create transaction for a Film Study filing: lock the proposal row,
+    // look for the same proposal already filed under the same rule, then (only
+    // if there is none) insert. The rule lookup for auto-escalation after the
+    // insert falls through to the { rows: [] } default.
+    function stageFilingTransaction(existingViolationId?: string) {
+      mockTxQuery
+        .mockResolvedValueOnce({ rows: [{ proposal_id: PROPOSAL_ID }] }) // proposal row lock
+        .mockResolvedValueOnce({ rows: existingViolationId ? [{ violation_id: existingViolationId }] : [] });
+      if (!existingViolationId) {
+        mockTxQuery.mockResolvedValueOnce({ rows: [{ violation_id: 'v1', severity: 'critical' }] }); // insert
+      }
+    }
+
+    function violationInsert(): [string, unknown[]] | undefined {
+      return mockTxQuery.mock.calls.find(([sql]) => String(sql).includes('insert into pilot.compliance_violations')) as
+        | [string, unknown[]]
+        | undefined;
+    }
+
+    function filmStudyPost(overrides: Record<string, unknown> = {}) {
+      return postRequest({
+        rule_id: 'r1',
+        athlete_id: 'ath-1',
+        video_session_id: 'vid-1',
+        severity: 'critical',
+        details: { source: 'film_study_proposal', proposal_id: PROPOSAL_ID },
+        ...overrides,
+      });
+    }
+
+    function stageUpToProposal() {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+      mockQueryOne
+        .mockResolvedValueOnce({ athlete_id: 'ath-1' }) // assertCoachAssignedToAthlete
+        .mockResolvedValueOnce({ rule_id: 'r1' }) // getComplianceRuleById
+        .mockResolvedValueOnce({ video_session_id: 'vid-1', organization_id: 'org-1', athlete_id: 'ath-1' });
+    }
+
+    test('201 when the proposal is in this organization, about this athlete and this video', async () => {
+      stageUpToProposal();
+      mockQueryOne.mockResolvedValueOnce({
+        proposal_id: PROPOSAL_ID,
+        athlete_id: 'ath-1',
+        video_session_id: 'vid-1',
+      });
+      stageFilingTransaction();
+
+      const res = await POST(filmStudyPost());
+
+      expect(res.status).toBe(201);
+      // Looked up inside the caller's organization, never by id alone.
+      const proposalLookup = mockQueryOne.mock.calls[3] as [string, unknown[]];
+      expect(proposalLookup[0]).toContain('pilot.shadow_film_study_proposals');
+      expect(proposalLookup[1]).toEqual(['org-1', PROPOSAL_ID]);
+      // The duplicate check is org-scoped and keyed on this rule and proposal.
+      const [lockSql, lockParams] = mockTxQuery.mock.calls[0] as [string, unknown[]];
+      expect(lockSql).toContain('for update');
+      expect(lockParams).toEqual(['org-1', PROPOSAL_ID]);
+      const [dupSql, dupParams] = mockTxQuery.mock.calls[1] as [string, unknown[]];
+      expect(dupSql).toContain("details->>'proposal_id'");
+      expect(dupParams).toEqual(['org-1', 'r1', 'film_study_proposal', PROPOSAL_ID]);
+      // The citation is stored on the violation.
+      const insert = violationInsert();
+      expect(insert).toBeDefined();
+      expect(JSON.parse(String(insert?.[1][8]))).toEqual({ source: 'film_study_proposal', proposal_id: PROPOSAL_ID });
+      expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+        details: expect.objectContaining({ source: 'film_study_proposal', proposal_id: PROPOSAL_ID }),
+      }));
+    });
+
+    // Anything else the request put in details would sit beside a verified
+    // citation and read as backed by the proposal. Only the pair is stored.
+    test('only the verified citation is stored: other details keys sent with it are dropped', async () => {
+      stageUpToProposal();
+      mockQueryOne.mockResolvedValueOnce({ proposal_id: PROPOSAL_ID, athlete_id: 'ath-1', video_session_id: 'vid-1' });
+      stageFilingTransaction();
+
+      const res = await POST(filmStudyPost({
+        details: {
+          source: 'film_study_proposal',
+          proposal_id: PROPOSAL_ID,
+          observation_text: 'Made-up words the model never wrote.',
+          confidence: 0.99,
+        },
+      }));
+
+      expect(res.status).toBe(201);
+      const stored = JSON.parse(String(violationInsert()?.[1][8])) as Record<string, unknown>;
+      expect(stored).toEqual({ source: 'film_study_proposal', proposal_id: PROPOSAL_ID });
+      const audited = (mockAudit.mock.calls[0][0] as { details: Record<string, unknown> }).details;
+      expect(audited).not.toHaveProperty('observation_text');
+      expect(audited).not.toHaveProperty('confidence');
+    });
+
+    // Reload the queue, pick the same rule on the same pending proposal, and
+    // click Escalate again: that must not add a second register row, nor a
+    // second escalation on the ladder (the insert is what files it).
+    test('the same proposal filed again under the same rule is a 409 naming the existing violation, and nothing is inserted', async () => {
+      stageUpToProposal();
+      mockQueryOne.mockResolvedValueOnce({ proposal_id: PROPOSAL_ID, athlete_id: 'ath-1', video_session_id: 'vid-1' });
+      stageFilingTransaction('violation-existing');
+
+      const res = await POST(filmStudyPost());
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({
+        error: 'This observation is already filed under this rule.',
+        violation_id: 'violation-existing',
+      });
+      expect(violationInsert()).toBeUndefined();
+      expect(mockTxQuery.mock.calls.some(([sql]) => String(sql).includes('pilot.safety_escalations'))).toBe(false);
+      expect(mockAudit).not.toHaveBeenCalled();
+    });
+
+    test('a proposal gone between the check and the transaction is a hidden 404, and nothing is inserted', async () => {
+      stageUpToProposal();
+      mockQueryOne.mockResolvedValueOnce({ proposal_id: PROPOSAL_ID, athlete_id: 'ath-1', video_session_id: 'vid-1' });
+      mockTxQuery.mockResolvedValueOnce({ rows: [] }); // proposal row lock finds nothing
+
+      const res = await POST(filmStudyPost());
+
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: 'Not found' });
+      expect(violationInsert()).toBeUndefined();
+      expect(mockAudit).not.toHaveBeenCalled();
+    });
+
+    test('a proposal from another organization (or none at all) is a hidden 404, and nothing is filed', async () => {
+      stageUpToProposal();
+      mockQueryOne.mockResolvedValueOnce(null);
+
+      const res = await POST(filmStudyPost());
+
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: 'Not found' });
+      expect(mockTxQuery).not.toHaveBeenCalled();
+      expect(mockAudit).not.toHaveBeenCalled();
+    });
+
+    test('a proposal about a different athlete is a hidden 404, and nothing is filed', async () => {
+      stageUpToProposal();
+      mockQueryOne.mockResolvedValueOnce({ proposal_id: PROPOSAL_ID, athlete_id: 'ath-2', video_session_id: 'vid-1' });
+
+      const res = await POST(filmStudyPost());
+
+      expect(res.status).toBe(404);
+      expect(mockTxQuery).not.toHaveBeenCalled();
+    });
+
+    test('a proposal about a different video is a hidden 404, and nothing is filed', async () => {
+      stageUpToProposal();
+      mockQueryOne.mockResolvedValueOnce({ proposal_id: PROPOSAL_ID, athlete_id: 'ath-1', video_session_id: 'vid-9' });
+
+      const res = await POST(filmStudyPost());
+
+      expect(res.status).toBe(404);
+      expect(mockTxQuery).not.toHaveBeenCalled();
+    });
+
+    test('a Film Study source with no video cannot match its proposal', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach' }));
+      mockQueryOne
+        .mockResolvedValueOnce({ athlete_id: 'ath-1' })
+        .mockResolvedValueOnce({ rule_id: 'r1' })
+        .mockResolvedValueOnce({ proposal_id: PROPOSAL_ID, athlete_id: 'ath-1', video_session_id: 'vid-1' });
+
+      const res = await POST(filmStudyPost({ video_session_id: undefined }));
+
+      expect(res.status).toBe(404);
+      expect(mockTxQuery).not.toHaveBeenCalled();
+    });
+
+    test.each([undefined, '', 'not-a-uuid', 42])(
+      'a Film Study source whose proposal_id is %p is a 400 before any proposal lookup',
+      async (proposalId) => {
+        stageUpToProposal();
+
+        const res = await POST(filmStudyPost({ details: { source: 'film_study_proposal', proposal_id: proposalId } }));
+
+        expect(res.status).toBe(400);
+        expect(mockQueryOne).toHaveBeenCalledTimes(3);
+        expect(mockTxQuery).not.toHaveBeenCalled();
+      },
+    );
+  });
 });
 
 function patchRequest(body: Record<string, unknown> | string) {

@@ -629,12 +629,15 @@ export async function getShadowKnowledgeProjection(
       const reviewState = toReviewState(event.event_name);
       let type: ShadowKnowledgeProjectionItem['type'];
 
+      // An approved or promoted intake case is still an observation -- a
+      // reviewer accepted it, nothing validated it as a lesson. It used to be
+      // filed under 'Validated Lesson' on its review state alone. The review
+      // outcome travels in review_state, which the page shows as a badge; the
+      // Validated Lesson stream stays empty until something real feeds it.
       if (event.event_name.toUpperCase().includes('PATTERN')) {
         type = 'Pattern';
       } else if (event.event_name.toUpperCase().includes('FINDING')) {
         type = 'Finding';
-      } else if (reviewState === 'approved' || reviewState === 'promoted') {
-        type = 'Validated Lesson';
       } else {
         type = 'Observation';
       }

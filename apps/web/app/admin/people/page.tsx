@@ -292,11 +292,37 @@ function PeopleConsoleContent() {
 
   const load = useCallback(async () => {
     setError('');
+    // Whether THIS call replaced the roster. A reload that fails part way must
+    // not leave the previous roster standing as though it were current: the
+    // record-ID suggestion is worked out from it, and a stale one names the id
+    // an admin has just used as the gym's next free one.
+    let rosterRefreshed = false;
     try {
       const [membersResponse, rosterResponse] = await Promise.all([
         fetch(`${apiBase()}/api/pilot/admin/staff`, { method: 'GET', credentials: 'include' }),
         fetch(`${apiBase()}/api/pilot/admin/athlete-pin-directory`, { method: 'GET', credentials: 'include' }),
       ]);
+
+      // The roster directory is what lets an admin pick an existing athlete
+      // instead of typing an id from memory, and it is also how this page
+      // catches an athlete_id collision before the create is sent. If it is
+      // unavailable the tab degrades to a text box rather than losing the
+      // ability to add anyone.
+      //
+      // Read before the staff check below, and on its own: that check throws,
+      // and a throw used to skip this block entirely, keeping an old roster
+      // marked available after the reload that should have replaced it.
+      const rosterPayload = (await rosterResponse.json().catch(() => ({}))) as {
+        ok?: boolean;
+        items?: RosterAthlete[];
+      };
+      if (rosterResponse.ok && rosterPayload.ok) {
+        setRoster(rosterPayload.items || []);
+        setRosterAvailable(true);
+        rosterRefreshed = true;
+      } else {
+        setRosterAvailable(false);
+      }
 
       const membersPayload = (await membersResponse.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -322,23 +348,13 @@ function PeopleConsoleContent() {
         setGuardianLinks([]);
         setGuardianLinksAvailable(false);
       }
-
-      // The roster directory is what lets an admin pick an existing athlete
-      // instead of typing an id from memory, and it is also how this page
-      // catches an athlete_id collision before the create is sent. If it is
-      // unavailable the tab degrades to a text box rather than losing the
-      // ability to add anyone.
-      const rosterPayload = (await rosterResponse.json().catch(() => ({}))) as {
-        ok?: boolean;
-        items?: RosterAthlete[];
-      };
-      if (rosterResponse.ok && rosterPayload.ok) {
-        setRoster(rosterPayload.items || []);
-        setRosterAvailable(true);
-      } else {
+    } catch (loadError) {
+      // A rejected request (the network, not a refusal) lands here without the
+      // roster having been read at all. Same treatment as a refused roster
+      // read: unavailable, which is what it is for this load.
+      if (!rosterRefreshed) {
         setRosterAvailable(false);
       }
-    } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load your gym roster');
     } finally {
       setLoading(false);
@@ -416,8 +432,16 @@ function PeopleConsoleContent() {
    * admin typing numbers until one sticks. Ids that do not fit the pattern are
    * ignored rather than parsed, so a gym mixing conventions still gets a usable
    * suggestion instead of NaN.
+   *
+   * Empty when the roster could not be read (or has not arrived yet). An empty
+   * roster state then means "unknown", not "no athletes", and highest+1 over
+   * nothing is ath-001 -- which the field used to present as the next free id
+   * for the gym. The box stays empty and the copy under the label says why.
    */
   const suggestedAthleteId = useMemo(() => {
+    if (!rosterAvailable) {
+      return '';
+    }
     let highest = 0;
     for (const athlete of roster) {
       const match = /^ath-(\d+)$/i.exec(athlete.athlete_id.trim());
@@ -426,7 +450,7 @@ function PeopleConsoleContent() {
       }
     }
     return `ath-${String(highest + 1).padStart(3, '0')}`;
-  }, [roster]);
+  }, [roster, rosterAvailable]);
 
   /**
    * The id actually in the field: the suggestion until the admin touches it,
@@ -725,6 +749,17 @@ function PeopleConsoleContent() {
     // submitting the raw value here would post an empty athlete_id against a
     // form that visibly reads ath-005. Same value the button gated on.
     const recordId = trimmedAthleteId;
+
+    // Pin a suggested id before anything is written. While untouched, the
+    // field is DERIVED from the roster, and the failure path below reloads the
+    // roster -- which by then holds this very record. The suggestion moves on
+    // to the next number, the field stops matching rosterCreatedFor, the lock
+    // lets go, and the retry writes a second record for the same child. Pinned,
+    // the field keeps the id that was written and the retry links that record.
+    if (athleteMode === 'new' && !athleteIdTouched) {
+      setAthleteId(recordId);
+      setAthleteIdTouched(true);
+    }
 
     // Tracked locally as well as in state because the catch below runs before
     // React has applied setRosterCreatedFor, and it needs to know whether the
@@ -1492,13 +1527,21 @@ function PeopleConsoleContent() {
                   </label>
                   <p className="t-muted mb-[var(--s2)]">
                     Permanent id for their record in your roster — every session, goal, and review hangs off it.
-                    {athleteIdTouched ? (
+                    {/* "Next free" is only said when there is a roster it was
+                        worked out from; while it loads nothing is claimed. */}
+                    {!athleteIdTouched && suggestedAthleteId ? (
+                      ` Filled in with the next free one for your gym (${suggestedAthleteId}). Change it if your gym numbers differently.`
+                    ) : !athleteIdTouched && !loading ? (
+                      <>
+                        {' '}
+                        Your gym roster could not be read, so no ID was filled in. Reload this page to try again,
+                        or type one yourself — short and unique, like <code>ath-001</code>.
+                      </>
+                    ) : (
                       <>
                         {' '}
                         Short and unique, like <code>ath-001</code>.
                       </>
-                    ) : (
-                      ` Filled in with the next free one for your gym (${suggestedAthleteId}). Change it if your gym numbers differently.`
                     )}
                   </p>
                   <input

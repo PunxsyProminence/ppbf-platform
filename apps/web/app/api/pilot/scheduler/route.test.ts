@@ -14,8 +14,10 @@ import {
   bulkUpsertSchedulerAttendance,
   getSchedulerClassById,
   getSchedulerCoachingRequestById,
+  getSchedulerRegistrationById,
   listRegisteredAthleteIdsForClass,
   listSchedulerStore,
+  markSchedulerRegistrationReviewed,
   registerForClassTransactionally,
   resolveSchedulerCoachingRequest,
   upsertSchedulerAttendance,
@@ -50,6 +52,8 @@ jest.mock('@/src/server/pilot/guardianAccess', () => ({
 jest.mock('@/src/server/pilot/schedulerDb', () => ({
   registerForClassTransactionally: jest.fn(),
   getSchedulerClassById: jest.fn(),
+  getSchedulerRegistrationById: jest.fn(),
+  markSchedulerRegistrationReviewed: jest.fn(),
   getSchedulerCoachingRequestById: jest.fn(),
   resolveSchedulerCoachingRequest: jest.fn(),
   upsertSchedulerAttendance: jest.fn(),
@@ -1047,5 +1051,235 @@ describe('GET /api/pilot/scheduler withholds staff fields from a family reader',
     expect(body.coaching_requests).toEqual([]);
     // The catalogue is still there: it is not athlete-linked.
     expect(body.classes).toHaveLength(1);
+  });
+});
+
+/**
+ * THE SEAT COUNT IS ONE FACT ABOUT THE CLASS, not a count of the rows this
+ * reader may see.
+ *
+ * decorateClasses used to count registrations on the actor-filtered store, so
+ * a parent's "Seats: n/20" counted only their own children: a full class read
+ * as 0/20, they registered, and were waitlisted. A coach covering a class saw
+ * only their own roster's share of it. The count now comes from the whole
+ * organization's store while the rows stay filtered -- and the count is a
+ * bare integer, so it names nobody.
+ */
+describe('GET /api/pilot/scheduler reports the true seat count without widening the rows', () => {
+  const mockListStore = listSchedulerStore as jest.Mock;
+  const mockGuardianAthleteIds = guardianAthleteIds as jest.Mock;
+  const mockAthleteIdsForCoach = athleteIdsForCoach as jest.Mock;
+
+  function registration(id: string, athleteId: string, status: 'registered' | 'waitlisted' | 'cancelled') {
+    return {
+      registration_id: id,
+      class_id: 'class-full',
+      athlete_id: athleteId,
+      requested_by_role: 'parent',
+      requested_by_account_id: `${athleteId}-guardian@example.com`,
+      parent_reviewed: true,
+      parent_reviewed_at: 'now',
+      parent_reviewer_account_id: `${athleteId}-guardian@example.com`,
+      status,
+      created_at: 'now',
+      updated_at: 'now',
+    };
+  }
+
+  /** Two seats, both taken -- one by this family's child, one by another family's. */
+  function arrangeFullClass(): void {
+    mockListStore.mockResolvedValue({
+      classes: [{
+        class_id: 'class-full',
+        title: 'Evening Sparring Prep',
+        start_at: '2026-09-01T22:00:00.000Z',
+        end_at: '2026-09-01T23:00:00.000Z',
+        location: 'Ring',
+        capacity: 2,
+        scheduled_by_account_id: 'acct-coach',
+        coach_account_id: 'acct-coach',
+        status: 'full',
+        created_at: 'now',
+        updated_at: 'now',
+      }],
+      registrations: [
+        registration('reg-mine', 'ath-mine', 'registered'),
+        registration('reg-other-family', 'ath-other-family', 'registered'),
+        // Neither of these holds a seat, so neither may be counted.
+        registration('reg-waiting', 'ath-waiting', 'waitlisted'),
+        registration('reg-cancelled', 'ath-cancelled', 'cancelled'),
+      ],
+      coaching_requests: [],
+      attendance: [],
+    });
+  }
+
+  function schedulerGet() {
+    return GET(new NextRequest('http://localhost/api/pilot/scheduler'));
+  }
+
+  test("a parent sees every taken seat, not just their own child's", async () => {
+    arrangeFullClass();
+    mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
+    mockRequirePrincipal.mockResolvedValue(principal('parent', { accountId: 'mine-guardian@example.com' }));
+
+    const body = await (await schedulerGet()).json();
+
+    expect(body.classes[0].registered_count).toBe(2);
+    expect(body.classes[0].capacity).toBe(2);
+  });
+
+  test('a parent with no child on the class still sees it as full', async () => {
+    arrangeFullClass();
+    mockGuardianAthleteIds.mockResolvedValue(['ath-somebody-else']);
+    mockRequirePrincipal.mockResolvedValue(principal('parent', { accountId: 'new-guardian@example.com' }));
+
+    const body = await (await schedulerGet()).json();
+
+    // The exact case from the defect: this used to read 0/2.
+    expect(body.classes[0].registered_count).toBe(2);
+    expect(body.registrations).toEqual([]);
+  });
+
+  test('the count widens nothing else: a parent still receives only their own registration row', async () => {
+    arrangeFullClass();
+    mockGuardianAthleteIds.mockResolvedValue(['ath-mine']);
+    mockRequirePrincipal.mockResolvedValue(principal('parent', { accountId: 'mine-guardian@example.com' }));
+
+    const body = await (await schedulerGet()).json();
+
+    expect(body.registrations.map((row: { registration_id: string }) => row.registration_id)).toEqual(['reg-mine']);
+    // No trace of the other families anywhere in the body -- not their
+    // athlete ids, not their registration ids, not their guardians.
+    const serialized = JSON.stringify(body);
+    for (const other of ['ath-other-family', 'reg-other-family', 'ath-waiting', 'ath-cancelled', 'other-family-guardian']) {
+      expect(serialized).not.toContain(other);
+    }
+  });
+
+  test('an athlete sees the true count too', async () => {
+    arrangeFullClass();
+    mockRequirePrincipal.mockResolvedValue(principal('athlete', { accountId: 'athlete@example.com', athleteId: 'ath-mine' }));
+
+    const body = await (await schedulerGet()).json();
+
+    expect(body.classes[0].registered_count).toBe(2);
+    expect(body.registrations).toHaveLength(1);
+  });
+
+  test('a coach sees the true count, while their rows stay limited to athletes they can reach', async () => {
+    arrangeFullClass();
+    mockAthleteIdsForCoach.mockResolvedValue(['ath-mine']);
+    mockRequirePrincipal.mockResolvedValue(principal('coach', { accountId: 'acct-coach' }));
+
+    const body = await (await schedulerGet()).json();
+
+    expect(body.classes[0].registered_count).toBe(2);
+    expect(body.registrations.map((row: { athlete_id: string }) => row.athlete_id)).toEqual(['ath-mine']);
+  });
+});
+
+/**
+ * parent_review_registration MUST NOT BE AN ID ORACLE.
+ *
+ * It answered 400 "Missing registration record" for an id that does not exist
+ * and 403 "Forbidden: parent not linked to athlete" for another family's --
+ * so a guardian could tell a real registration id from a made-up one. Both now
+ * answer the same 404.
+ */
+describe("POST parent_review_registration answers a missing id and another family's id the same way", () => {
+  const mockGetRegistration = getSchedulerRegistrationById as jest.Mock;
+  const mockMarkReviewed = markSchedulerRegistrationReviewed as jest.Mock;
+
+  const otherFamilyRegistration = {
+    registration_id: 'reg-other-family',
+    class_id: 'class-1',
+    athlete_id: 'ath-other-family',
+    requested_by_role: 'athlete',
+    requested_by_account_id: 'other@example.com',
+    parent_reviewed: false,
+    status: 'registered',
+    created_at: 'now',
+    updated_at: 'now',
+  };
+
+  function reviewRequest(registrationId: string) {
+    return jsonRequest({ action: 'parent_review_registration', registration_id: registrationId });
+  }
+
+  beforeEach(() => {
+    mockMarkReviewed.mockResolvedValue(undefined);
+  });
+
+  test('a missing id answers 404 Not found', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('parent'));
+    mockGetRegistration.mockResolvedValue(null);
+
+    const res = await POST(reviewRequest('reg-does-not-exist'));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
+    expect(mockMarkReviewed).not.toHaveBeenCalled();
+  });
+
+  test("another family's id answers the same 404, and nothing is written", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('parent'));
+    mockGetRegistration.mockResolvedValue(otherFamilyRegistration);
+    mockAssertCanAct.mockRejectedValue(new Error('Forbidden: parent not linked to athlete'));
+
+    const res = await POST(reviewRequest('reg-other-family'));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Not found' });
+    expect(mockMarkReviewed).not.toHaveBeenCalled();
+  });
+
+  test('the two answers are byte-identical', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('parent'));
+
+    mockGetRegistration.mockResolvedValueOnce(null);
+    const missing = await POST(reviewRequest('reg-does-not-exist'));
+
+    mockGetRegistration.mockResolvedValueOnce(otherFamilyRegistration);
+    mockAssertCanAct.mockRejectedValueOnce(new Error('Forbidden: parent not linked to athlete'));
+    const foreign = await POST(reviewRequest('reg-other-family'));
+
+    expect(foreign.status).toBe(missing.status);
+    expect(await foreign.text()).toBe(await missing.text());
+  });
+
+  test("a guardian reviewing their own child's registration still succeeds", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('parent', { accountId: 'mine-guardian@example.com' }));
+    mockGetRegistration.mockResolvedValue({ ...otherFamilyRegistration, registration_id: 'reg-mine', athlete_id: 'ath-mine' });
+
+    const res = await POST(reviewRequest('reg-mine'));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, registration_id: 'reg-mine' });
+    expect(mockAssertCanAct).toHaveBeenCalledWith(expect.objectContaining({ role: 'parent' }), 'ath-mine');
+    expect(mockMarkReviewed).toHaveBeenCalledWith('org-1', 'reg-mine', 'mine-guardian@example.com', expect.any(String));
+  });
+
+  test('a database fault in the access check stays a fault, not a "not found"', async () => {
+    // Only the access REFUSAL is folded into the 404. Telling a guardian a
+    // record does not exist because the database fell over would be false.
+    mockRequirePrincipal.mockResolvedValue(principal('parent'));
+    mockGetRegistration.mockResolvedValue(otherFamilyRegistration);
+    mockAssertCanAct.mockRejectedValue(new Error('connection terminated unexpectedly'));
+
+    const res = await POST(reviewRequest('reg-other-family'));
+
+    expect(res.status).toBe(500);
+    expect(mockMarkReviewed).not.toHaveBeenCalled();
+  });
+
+  test('a coach is still refused before any lookup', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+
+    const res = await POST(reviewRequest('reg-other-family'));
+
+    expect(res.status).toBe(403);
+    expect(mockGetRegistration).not.toHaveBeenCalled();
+    expect(mockMarkReviewed).not.toHaveBeenCalled();
   });
 });

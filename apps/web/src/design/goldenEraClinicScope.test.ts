@@ -90,6 +90,40 @@ const BRASS_RUNGS = ['200', '300', '400', '500', '600', '700', '800', '900'] as 
 
 const css = readDesignSystemCss(DESIGN_SYSTEM_ENTRY);
 
+/* THE MEDICAL-STOP NAMES: --locked, its --locked-* rungs, and every custom
+   property whose every declaration resolves to one of them. Read from the
+   sheets rather than listed, because app/globals.css aliases --locked as
+   --safety-locked, --status-critical and --status-danger, and a check on the
+   bare name waves all three through. ("Every declaration", so a slot such as
+   `--badge`, which only the locked variant of .badge fills with --locked, is
+   not counted.) */
+const GLOBALS_CSS = readFileSync(path.resolve(__dirname, '../../app/globals.css'), 'utf8');
+const MEDICAL_STOP_TOKENS: readonly string[] = (() => {
+  const values = new Map<string, string[]>();
+  for (const [, name, value] of `${css}\n${GLOBALS_CSS}`
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .matchAll(/(?<![\w-])(--[\w-]+)\s*:\s*([^;{}]*)/g)) {
+    values.set(name, [...(values.get(name) ?? []), value]);
+  }
+  const tokens = new Set([...values.keys()].filter((name) => /^--locked(?:-|$)/.test(name)));
+  const resolvesToStop = (value: string) =>
+    [...value.matchAll(/var\(\s*(--[\w-]+)/g)].some(([, ref]) => tokens.has(ref));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [name, all] of values) {
+      if (tokens.has(name) || !all.every(resolvesToStop)) continue;
+      tokens.add(name);
+      grew = true;
+    }
+  }
+  return [...tokens].sort();
+})();
+
+/** The medical-stop names `text` refers to, matched as whole property names. */
+function medicalStopReferences(text: string): string[] {
+  return MEDICAL_STOP_TOKENS.filter((token) => new RegExp(`(?<![\\w-])${token}(?![\\w-])`).test(text));
+}
+
 /** The Golden Era sheet on its own, for assertions about THIS block's text. */
 const THEME = readFileSync(
   path.resolve(__dirname, '../../../../design-system/current/ppbf-golden-era.css'),
@@ -310,15 +344,16 @@ describe('the 009 block stays inside its scope and off what it may not touch', (
     }
   });
 
-  // STATUS 2026-09-29: red itself is not reserved (OD-2026-09-29-001). This
-  // check was written under the reservation and still runs; --locked still
-  // means a medical stop.
-  test('the scoped block never uses reserved medical red', () => {
+  // --locked means a medical stop, and on this surface it is the not_cleared
+  // badge's alone. Red itself is not reserved (OD-2026-09-29-001), so the hue
+  // and --stamp-red are not refused here.
+  test('the scoped block never uses the --locked medical-stop tokens', () => {
     const block = clinicBlock();
-    expect(block).not.toMatch(/#A81E22/i);
     expect(block).not.toMatch(/--locked\b/);
     expect(block).not.toMatch(/--locked-ink\b/);
-    expect(block).not.toMatch(/--stamp-red\b/);
+    expect(MEDICAL_STOP_TOKENS)
+      .toEqual(expect.arrayContaining(['--locked', '--safety-locked', '--status-critical', '--status-danger']));
+    expect(medicalStopReferences(block)).toEqual([]);
   });
 
   test('the block never restates the room, its wall, its light or its fixture', () => {
@@ -424,7 +459,7 @@ describe('the 009 mockup did not delete or invent clinic controls', () => {
     expect(PAGE).not.toContain("value: 'conditioning_only'");
   });
 
-  test('the reserved red still marks not_cleared, and nothing else on the page', () => {
+  test('badge--locked still marks not_cleared, and nothing else on the page', () => {
     // The one safety semantic this surface turns on. `not_cleared` means a
     // clinician looked at this child and said no, and it is the only state that
     // wears `badge--locked`. Every other action state sits one rung down on

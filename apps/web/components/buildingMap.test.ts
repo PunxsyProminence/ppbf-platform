@@ -104,6 +104,17 @@ describe('previously-orphaned admin/parent consoles are now doors', () => {
     expect(hrefs).toContain('/admin/athlete-consent');
   });
 
+  // Jason, 2026-09-29, "9d. B" (OD-2026-09-29-002 item 9d): organization admins and
+  // coaches load rosters into their own gym. The route refuses the platform
+  // owner (OD-2026-09-28-005), so the corridor does not advertise it there.
+  it('the roster import is shown to an admin and a coach, and to nobody else', () => {
+    expect(visibleDoors('admin').map((d) => d.href)).toContain('/admin/import');
+    expect(visibleDoors('coach').map((d) => d.href)).toContain('/admin/import');
+    for (const role of ['platform_owner', 'athlete', 'parent', 'staff', 'volunteer', 'board'] as const) {
+      expect(visibleDoors(role).map((d) => d.href)).not.toContain('/admin/import');
+    }
+  });
+
   it('the guardian media-consent console is parent-only, not shown to an athlete', () => {
     expect(visibleDoors('parent').map((d) => d.href)).toContain('/parent/consent');
     expect(visibleDoors('athlete').map((d) => d.href)).not.toContain('/parent/consent');

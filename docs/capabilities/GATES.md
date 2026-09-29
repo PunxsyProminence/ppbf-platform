@@ -515,7 +515,7 @@ text of each entry is in this file's git history.
   `training-holds/route.ts:POST` refuses it and the sports-medicine form does
   not show it. Holds placed with it before #548 still read and render, and
   `/parent/safety` still labels them "Conditioning is paused right now"
-  (`app/parent/safety/page.tsx:40`). See the section 7 row.
+  (`SCOPE_HEADLINE.conditioning_only` in `app/parent/safety/page.tsx`). See the section 7 row.
 - **GAP-8** (three coach reads gated on role, not on the child) -- closed by
   PR #563 (`d8236558`): `transfer-check`, `competence-cohorts` and
   `multidiscipline` call `assertActorCanAccessAthlete` before any data call.

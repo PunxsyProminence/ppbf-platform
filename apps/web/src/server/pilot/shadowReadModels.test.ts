@@ -1,5 +1,5 @@
 import { query } from './db';
-import { listShadowEvents, listShadowTelemetry, listShadowAuthorityChecks, getShadowReviewProjection, getShadowResearchProjection } from './shadowReadModels';
+import { listShadowEvents, listShadowTelemetry, listShadowAuthorityChecks, getShadowReviewProjection, getShadowResearchProjection, getShadowKnowledgeProjection } from './shadowReadModels';
 import type { ShadowReadContext } from './shadowReadModels';
 
 jest.mock('./db', () => ({
@@ -485,5 +485,55 @@ describe('listShadowAuthorityChecks athlete scoping', () => {
     expect(sql).toContain(
       "or ( $9::boolean and metadata->>'athlete_id' is null and metadata->>'owner_entity_id' is null and metadata->>'entity_type' is distinct from 'athlete' )",
     );
+  });
+});
+
+describe('getShadowKnowledgeProjection stream placement', () => {
+  function intakeEvent(eventName: string) {
+    return {
+      shadow_event_id: 1,
+      organization_id: 'org-1',
+      event_name: eventName,
+      entity_type: 'intake_case',
+      entity_id: 'case-1',
+      actor_account_id: 'acct-1',
+      actor_role: 'coach',
+      payload: {},
+      created_at: '2026-08-17T00:00:00.000Z',
+    };
+  }
+
+  // A reviewer approving or promoting an intake case accepts the observation;
+  // nothing has validated it as a lesson. It used to be filed under
+  // 'Validated Lesson' on its review state alone, a label every member read.
+  test.each([
+    ['SHADOW_INTAKE_CASE_APPROVED', 'approved'],
+    ['SHADOW_INTAKE_CASE_PROMOTED', 'promoted'],
+  ])('%s stays an Observation, carrying its review outcome as %s', async (eventName, reviewState) => {
+    answerCoachRoster([]);
+    mockQuery.mockResolvedValueOnce([intakeEvent(eventName)]);
+
+    const items = await getShadowKnowledgeProjection(context({}));
+
+    expect(items).toHaveLength(1);
+    expect(items[0].type).toBe('Observation');
+    expect(items[0].review_state).toBe(reviewState);
+  });
+
+  test('nothing an event name can say puts it in the Validated Lesson stream', async () => {
+    answerCoachRoster([]);
+    mockQuery.mockResolvedValueOnce([
+      intakeEvent('SHADOW_INTAKE_CASE_APPROVED'),
+      intakeEvent('SHADOW_INTAKE_CASE_PROMOTED'),
+      intakeEvent('SHADOW_INTAKE_CASE_PENDING'),
+      intakeEvent('SHADOW_PATTERN_DETECTED'),
+      intakeEvent('SHADOW_FINDING_RECORDED'),
+    ]);
+
+    const items = await getShadowKnowledgeProjection(context({}));
+
+    expect(items.map((item) => item.type)).toEqual([
+      'Observation', 'Observation', 'Observation', 'Pattern', 'Finding',
+    ]);
   });
 });
