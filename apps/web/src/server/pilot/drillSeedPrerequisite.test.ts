@@ -26,6 +26,9 @@ const DOES_NOT_SEED: Record<string, string> = {
     'inserts minimal drill_library rows directly, deliberately avoiding seedAll -- '
     + 'that loader\'s single transaction would also seed the scale levels this suite '
     + 'is not testing, and roll them back together on any failure',
+  'referenceContentCensus.pg.test.ts':
+    'names the loader only in a comment (its grounding split) and plants its own rows '
+    + 'directly; the census it tests reads tables, it never runs seedAll',
 };
 
 function pgTestsReferencingSeedLoader(): string[] {
