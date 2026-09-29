@@ -164,6 +164,64 @@ and should not try to.
 
 ---
 
+## OD-2026-09-29-004 -- Second "all recommended" and the P answers: research coverage, gap tickets, seat counts, guardian logins, the stale deploy, coaches and birth dates, guardian waivers, the waiver rule
+
+**Provenance: PRIMARY.** **Date:** 2026-09-29. Two sets of questions from the
+Claude session, each with options and one marked recommended; what each asked
+is as that session summarized it. **Jason's answers, verbatim:** to R1-R5,
+*"all recommended"*; to P1-P4, *"P2 B the rest your recomendation"*.
+
+- **R1 Research coverage and the shared shelf.** Coverage counted only
+  servable evidence from the gym's own shelf, while search also serves the
+  shared platform shelf. A, count the shared shelf too (recommended); B, the
+  gym's own shelf only. **A.**
+- **R2 Gap tickets.** Should the coverage check close its own gap tickets once
+  a topic becomes covered? A, yes (recommended); B, a person closes them. **A.**
+- **R3 Seat counts.** Families see the true number of seats taken (a number
+  only, no names). A, keep the number (recommended); B, only Open or Full.
+  **A.**
+- **R4 A parent changing their email.** Intake now refuses to move a guardian
+  record to another login. A, add a deliberate "move guardian to a new login"
+  admin action to the build list (recommended); B, never allow it. **A**
+  (build list; not built).
+- **R5 Accidental role change.** If the intake form names an existing coach or
+  staff account as a guardian, intake turned that account into a parent
+  account. A, intake refuses it (recommended); B, leave it. **A.**
+- **P1 A production deploy waiting since 2026-09-28** (run 36437627933, commit
+  `45e27881`, older than that day's work). A, reject it and prepare a fresh
+  release (recommended); B, leave it waiting. **A**: the run was cancelled on
+  2026-09-29.
+- **P2 Coaches and birth dates.** Coaches, including a covering coach, can
+  change a child's birth date through the server; no coach screen offers it.
+  A, coaches cannot, only admins (recommended); B, coaches keep it. **B**:
+  coaches keep it. Only the athlete's own change is refused (item 2 of
+  OD-2026-09-29-003).
+- **P3 Guardian waivers on the parent page.** In production every waiver row
+  is `program_consent`, which the page does not list, so every child reads
+  Missing on the four tracked waivers. A, show them with a line saying what
+  Missing means (recommended); B, hide the section until real waivers exist.
+  **A.**
+- **P4 The waiver status rule** (a database CHECK). A, go ahead: staging
+  first, then production with Jason's approval in GitHub (recommended); B,
+  hold it. **A.**
+
+Also recorded here, answered earlier the same day and not yet in this file:
+
+- **Install the new ChatGPT instructions** (the "More about you" workspace
+  facts and the "PPBF — App Build Review" project's architect and reviewer
+  instructions). **Jason:** *"A and yes turn on auto fix"*. Installed: Jason
+  saved both in ChatGPT, and later the WRITES-audit line (OD-2026-09-29-003
+  item 8); each was read back after a reload. The texts live outside this
+  repository.
+- **Make `declaration` a required check on `main`** (decided in
+  OD-2026-09-28-010 item 11). **Jason:** *"A also ask me the rest of the
+  questions, I am on a remote tablet so after I answer the questions you will
+  execute the tasks that dont require a physical click from me"*. Done
+  2026-09-29: required checks on `main` are `validate` and `declaration`;
+  admin enforcement stays off.
+
+---
+
 ## OD-2026-09-29-003 -- "all recommended": the missing documents, athletes' birth dates, the waiver CHECK, guardian waiver statuses, the 20% floor, school grades, the Floor Card, the WRITES audit, deleted accounts at sign-in
 
 **Provenance: PRIMARY.** **Date:** 2026-09-29. The Claude session put nine
