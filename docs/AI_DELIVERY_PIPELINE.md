@@ -83,15 +83,10 @@ Production promotion requires a separate explicit instruction from Jason, such a
    (OD-2026-09-28-007); the workflow requires it. Never reuse an id from
    staging: `account_id` is case-sensitive, and staging's seed account was a
    different, lowercase admin address. The drill-library and workout-template
-   seed files stamp `created_by_role` as `platform_owner` on every row, and
-   their loaders write it as given
-   (`apps/web/scripts/seed-drill-library.mjs:269`,
-   `apps/web/scripts/seed-workout-templates.mjs:214`). Until those loaders take
-   the role from the account, as `import-shadow-research.mjs` does (:127,
-   :509-517), do not apply a gym seed that writes new drill-library or
-   workout-template rows: it would record the wrong role. The fix is a BLOCKED
-   row in `docs/current/ACTIVE_WORK.md`, where Jason decides whether the next
-   gym seed waits for it. Deploying first leaves
+   loaders record that account's own role as `created_by_role`, read from
+   `pilot.accounts` (`apps/web/scripts/lib/seed-account-role.mjs`), and refuse
+   an id that matches no account -- the dry-run shows the role it will record.
+   Deploying first leaves
    production serving code whose catalogs are empty, which the archived
    2026-08-24/25 release record shows, and whose planned sequence was
    migrations, seed identity, seed dry-run and apply, then deploy.

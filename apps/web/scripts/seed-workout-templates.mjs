@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { Client } from 'pg';
 
+import { resolveSeedAccountRole } from './lib/seed-account-role.mjs';
+
 /**
  * Loads the 12 workout templates / 82 items (README_DRILL_LIBRARY_V3.md's
  * sibling package) into pilot.workout_templates / workout_template_items,
@@ -22,6 +24,10 @@ import { Client } from 'pg';
  * Placeholders: every row in the CSVs carries the literal strings
  * {{PPBF_ORG_ID}} and {{SEED_ACCOUNT_ID}}, substituted here at load time --
  * never commit a real organization or account id into a seed CSV.
+ *
+ * created_by_role is NOT in the CSV: it is the seed account's own role, read
+ * from pilot.accounts before anything is written -- the same lookup
+ * seed-drill-library.mjs makes, for the reason recorded there.
  */
 
 function required(name) {
@@ -178,7 +184,7 @@ function toTextOrNull(value) {
   return trimmed ? trimmed : null;
 }
 
-async function seedWorkoutTemplates(client, records, { dryRun }) {
+async function seedWorkoutTemplates(client, records, { dryRun, createdByRole }) {
   let inserted = 0;
   let skipped = 0;
 
@@ -211,7 +217,7 @@ async function seedWorkoutTemplates(client, records, { dryRun }) {
         toBool(record.requires_coach_authorization),
         record.active === '' ? true : toBool(record.active),
         toTextOrNull(record.created_by_account_id),
-        toTextOrNull(record.created_by_role),
+        createdByRole,
       ],
     );
 
@@ -272,13 +278,16 @@ export async function seedAll(client, seedDir, placeholders, { dryRun = false } 
     items: 'seed_workout_template_items.csv',
   };
 
+  const createdByRole = await resolveSeedAccountRole(client, placeholders.seedAccountId);
+  console.log(`seed account role (recorded as created_by_role): ${createdByRole}`);
+
   await client.query('BEGIN');
   try {
     const templateRecords = await loadCsvRecords(path.join(seedDir, files.templates), placeholders);
     if (templateRecords === null) {
       console.log(`${files.templates} not found in ${seedDir} -- nothing to seed for workout_templates.`);
     } else {
-      await seedWorkoutTemplates(client, templateRecords, { dryRun });
+      await seedWorkoutTemplates(client, templateRecords, { dryRun, createdByRole });
     }
 
     const itemRecords = await loadCsvRecords(path.join(seedDir, files.items), placeholders);
