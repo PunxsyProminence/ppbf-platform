@@ -2,9 +2,10 @@ name: evidence-corpus
 
 # The SHADOW evidence corpus is 1,193 scored chunks, and
 # EVIDENCE_TIER_SPEC.md publishes the distribution they are supposed to
-# form: 115 PROVEN / 796 EMERGING / 227 EXPERIMENTAL / 55 RESEARCH_NEEDED.
+# form: 122 PROVEN / 821 EMERGING / 195 EXPERIMENTAL / 55 RESEARCH_NEEDED,
+# each claim graded on its source row's authority_tier as runtime grades it.
 # verify-evidence-tier-corpus.mjs recomputes that distribution from the
-# chunk CSV and fails when the two disagree.
+# chunk and source CSVs and fails when the two disagree.
 #
 # Nothing ran it. `grep -rn "verify:evidence-tier" .github/` returned
 # nothing before this file, so the script that exists to catch corpus/spec
@@ -19,7 +20,7 @@ name: evidence-corpus
 # apps/web/src/server/pilot/shadowEvidenceTier.ts, the one
 # shadowJobProcessor.ts actually labels chat responses with, and a change
 # to IT could move the real distribution while this workflow went on
-# reporting 115/796/227/55 from the duplicate. So the second step runs
+# reporting the published numbers from the duplicate. So the second step runs
 # shadowEvidenceTierCorpus.test.ts, which scores the same committed CSV
 # with the production export and compares it against the script's copy row
 # by row. Both implementations are pinned to the same corpus, and neither
@@ -106,7 +107,7 @@ jobs:
       - name: Install locked dependencies (web workspace only)
         run: npm ci --workspace web --include-workspace-root=false
 
-      # Offline and deterministic: it reads the committed chunk CSV and
+      # Offline and deterministic: it reads the committed chunk and source CSVs and
       # compares the distribution it computes against the spec's published
       # numbers. No network, no database, no arguments.
       - name: Verify evidence tier corpus matches the published spec

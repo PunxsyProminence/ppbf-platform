@@ -171,20 +171,43 @@ export interface StartSessionScriptRunInput {
 
 // Starting a run pins the script's CURRENT version onto the row. A script edited mid-season must
 // not retroactively change what a coach was following on a night already delivered.
+//
+// ONLY THE HEAD VERSION CAN BE STARTED. A revision is a new row in the same lineage
+// (session_scripts migration :59), so a script_id can name a plan that has since been replaced --
+// from a list loaded before the revision, or an old link. Starting it would run tonight's session
+// from the superseded plan. "Superseded" is derived exactly as listSessionScripts derives it (a
+// higher version exists in the lineage), so the list and this refusal cannot disagree.
+//
+// This is a START check only. A run already live on the older version keeps its pinned script_id
+// and script_version: cursor, pause, resume and finish below never consult the lineage, because
+// the coach on the floor is mid-session on the plan they started, and switching plans under them
+// would be the retroactive rewrite this pinning exists to prevent.
 export async function startSessionScriptRun(
   organizationId: string,
   accountId: string,
   input: StartSessionScriptRunInput,
 ): Promise<LiveSessionScriptRun> {
   return withTransaction(async (client) => {
-    const script = await client.query<{ script_id: string; version: number }>(
-      `select script_id, version
-         from pilot.session_scripts
-        where organization_id = $1 and script_id = $2`,
+    const script = await client.query<{ script_id: string; version: number; is_head: boolean }>(
+      `select s.script_id, s.version,
+              not exists (
+                select 1
+                  from pilot.session_scripts newer
+                 where newer.organization_id = s.organization_id
+                   and newer.lineage_id = s.lineage_id
+                   and newer.version > s.version
+              ) as is_head
+         from pilot.session_scripts s
+        where s.organization_id = $1 and s.script_id = $2`,
       [organizationId, input.scriptId],
     );
     if (script.rowCount === 0) {
       throw new SessionScriptRunError('SESSION_SCRIPT_NOT_FOUND', 404);
+    }
+    // 409, not 404: the script exists and is readable, it is just no longer the one to run. Checked
+    // before the blocks, because the remedy (start the newer version) is the same either way.
+    if (!script.rows[0].is_head) {
+      throw new SessionScriptRunError('SESSION_SCRIPT_SUPERSEDED', 409);
     }
 
     // The cursor opens on the first block in running order. A live run with a null cursor would
@@ -399,6 +422,13 @@ export async function finishSessionScriptRun(
 
 // History for a script. Excludes live runs: a session still on the floor is not yet a record of
 // what happened, and mixing the two is how a half-finished night gets counted as a delivery.
+//
+// The history is the whole LINEAGE's, not just this version's. The browse list shows only the head
+// (sessionScripts.ts listSessionScripts), and this read is reached only from a plan opened there
+// (coach/session-scripts/page.tsx loadDeliveries). Reading by exact script_id would drop every
+// night delivered from v1 off the screen the moment v2 loaded. Each row still carries its own
+// script_version, which the page prints, so versions stay told apart. The lineage is resolved
+// inside the caller's organization, so another gym's same-id lineage never adds rows.
 export async function listSettledRunsForScript(
   organizationId: string,
   scriptId: string,
@@ -408,7 +438,15 @@ export async function listSettledRunsForScript(
     `select ${RUN_COLUMNS}
        from pilot.session_script_runs
       where organization_id = $1
-        and script_id = $2
+        and script_id in (
+          select version_row.script_id
+            from pilot.session_scripts requested
+            join pilot.session_scripts version_row
+              on version_row.organization_id = requested.organization_id
+             and version_row.lineage_id = requested.lineage_id
+           where requested.organization_id = $1
+             and requested.script_id = $2
+        )
         and (run_state is null or run_state in ('completed', 'abandoned'))
       order by delivered_on desc, created_at desc
       limit $3`,

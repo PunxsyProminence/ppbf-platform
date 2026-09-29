@@ -54,8 +54,9 @@ is generated and must not be hand-edited: change the generator, then re-run
 ## The eight laws — four bind, four are retired
 
 Laws 1, 4, 6 and 8 are **retired** (OD-2026-09-28-009): they described the Leather &
-Brass look. Their text is kept below, marked, so the checks that still carry their
-names can be read; a retired law's check still runs until someone removes it. Each
+Brass look. Their text is kept below, marked, as history. The checks once filed
+under laws 6 and 8 still run, because what they catch is still live; they are listed
+under what they protect in "Checks that outlived laws 6 and 8" below. Each binding
 law names the executable check that enforces it, where one exists. Paths are relative
 to `apps/web/`.
 
@@ -83,17 +84,30 @@ to `apps/web/`.
    materials, plus dark glass approved by OD-2026-09-28-014) replace it. *Every screen is a room; every panel is a real material.* A room supplies wall,
    light, and floor shadow (`.room` + `.room--office/floor/board/file/clinic/night` —
    both classes, always); a ground (`.on-canvas` or default ink) decides the ink. Family
-   surfaces stay on the warm ground and take no room. →
-   `components/roomBaseClass.test.ts`, `components/buildingMapRooms.test.ts`,
-   `components/familyPlateGround.test.ts`, `src/design/darkPanelMaterials.test.ts`,
-   `src/design/lightGroundVoices.test.ts`, and `components/designSystemClasses.test.ts`
-   (every class the app references must exist in `ppbf.css`).
+   surfaces stay on the warm ground and take no room.
 7. **Refusal is a stamp, not an error toast** — `RESEARCH NEEDED`, `REDACTED`:
    permanent, attributable, not dismissible. → `components/refusalStamp.test.tsx`.
 8. **RETIRED.** *Proportion descends from φ; nothing is sized by eye.* Type climbs by √φ from 15px;
    space and radius are Fibonacci; layout splits 38.2/61.8; motion durations are
-   Fibonacci milliseconds through the `--m-*`/`--e-*` tokens. →
-   `src/design/typeLadder.test.ts`.
+   Fibonacci milliseconds through the `--m-*`/`--e-*` tokens.
+
+## Checks that outlived laws 6 and 8
+
+Each of these was filed under law 6 or law 8 and was kept when those laws were
+retired, because the defect it catches is not a Leather & Brass rule.
+
+- **Rooms** (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4 and §6; `docs/ROOM-MAP.md`):
+  `components/roomBaseClass.test.ts` (a room is `.room` plus `.room--X`, or its wall is
+  unlit), `components/buildingMapRooms.test.ts` (a page paints the room its door files it
+  under), `components/designSystemClasses.test.ts` (every class the app references
+  exists in `ppbf.css`, the six rooms by name).
+- **The family ground** (T7, Plate Set v1; `components/roleGround.ts`):
+  `components/familyPlateGround.test.ts` (family routes declare no room).
+- **Legible on every ground** (contract §4: "treat contrast as first-class"):
+  `src/design/darkPanelMaterials.test.ts` (every list of dark materials agrees),
+  `src/design/lightGroundVoices.test.ts` (paper answers every voice canvas does).
+- **Type never shrinks as the step grows:** `src/design/typeLadder.test.ts`; the wall's
+  biggest type stays above the top named rung: `src/design/wallSurface.test.tsx`.
 
 ## Accessibility floor
 

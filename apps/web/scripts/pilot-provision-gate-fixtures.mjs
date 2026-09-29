@@ -203,6 +203,50 @@ async function run() {
   try {
     await client.query('begin');
 
+    // A FIXTURE MARKED DELETED IS REFUSED HERE, BY NAME, BEFORE ANY WRITE.
+    //
+    // Sign-in refuses any account marked deleted (OD-2026-09-29-003 Q9,
+    // src/server/pilot/deletedAccountSignIn.ts). The upserts below set
+    // active_flag = true and never touch deleted_at, so a deleted fixture would
+    // leave this step looking provisioned and then fail the gate somewhere
+    // else. The athlete is the likely one: --deactivate-athlete leaves it
+    // inactive after every gate run, and pilot-cleanup-accounts.mjs retires
+    // inactive residue by setting deleted_at (lib/account-cleanup-plan.mjs,
+    // rule 10, INACTIVE_RESIDUE). Its PIN sign-in is then refused, and all the
+    // gate can report is that activation "did not sign the athlete in".
+    //
+    // deleted_at is NOT cleared here: that reopens a deleted login, which is
+    // the owner's call, not a provisioning step's. Same expression as
+    // accountDeletedSql in deletedAccountSignIn.ts, which this .mjs cannot
+    // import; anything but an explicit false refuses. A fixture with no row
+    // yet is created below with deleted_at null, as before.
+    const fixtureAccountIds = [
+      adminAccountId,
+      athleteAccountId,
+      probeCoachAccountId,
+      probeOwnerAccountId,
+      ...(provisionSplitHousehold ? [probeGuardianAAccountId, probeGuardianBAccountId] : []),
+    ].filter(Boolean);
+    const existingFixtures = await client.query(
+      `select account_id, (deleted_at is not null) as account_deleted
+         from pilot.accounts
+        where account_id = any($1::text[])
+        order by account_id`,
+      [fixtureAccountIds],
+    );
+    const deletedFixtureIds = existingFixtures.rows
+      .filter((row) => row.account_deleted !== false)
+      .map((row) => `"${row.account_id}"`);
+    if (deletedFixtureIds.length > 0) {
+      throw new Error(
+        `Gate fixture account ${deletedFixtureIds.join(', ')} is marked deleted `
+        + '(pilot.accounts.deleted_at is set). Sign-in refuses a deleted account, so the gate '
+        + 'cannot sign in as it. Nothing was written. This step does not clear deleted_at, '
+        + 'because that would reopen a deleted login; which way to go is an owner decision '
+        + '(docs/current/ACTIVE_WORK.md, "Open owner questions").',
+      );
+    }
+
     await client.query(
       `insert into pilot.organizations (organization_id, organization_name, status)
        values ($1, 'PPBF Gate Default Organization', 'active')
