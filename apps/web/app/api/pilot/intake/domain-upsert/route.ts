@@ -11,6 +11,7 @@ import {
 } from '@/src/server/pilot/shadowAuthority';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
+import { requireWaiverStatus } from '@/src/server/pilot/waiverCompliance';
 import {
   createAssessment,
   createAttendance,
@@ -136,7 +137,11 @@ export async function POST(request: NextRequest) { // NOSONAR
         signedByRole: asString(body.payload.signed_by_role, 'guardian'),
         signedAt: asString(body.payload.signed_at, new Date().toISOString()),
         consentVersion: asString(body.payload.consent_version, 'v1'),
-        status: asString(body.payload.status, 'signed'),
+        // Held to pilot_waivers_status_check's vocabulary before the write, so
+        // a bad value is a 400 naming the field rather than a 500 from the
+        // constraint. Absent still means 'signed', unchanged; null or any
+        // other non-vocabulary value is refused instead of becoming 'signed'.
+        status: requireWaiverStatus(body.payload.status, 'payload.status', 'signed'),
         notes: typeof body.payload.notes === 'string' ? body.payload.notes : undefined,
         // signed_by_name is whatever the caller typed off the paper form. This
         // is the account that typed it -- the only party to this row the

@@ -205,6 +205,156 @@ export async function listShadowResearchRequirements(
   );
 }
 
+/**
+ * THE CAPABILITY-COVERAGE GAP TICKET.
+ *
+ * recomputeShadowCapabilityCoverage opens one of these for a rule that grades
+ * uncovered or partial, and -- Jason 2026-09-29, R2: "the coverage check
+ * closes its own gap tickets once a topic becomes covered" -- closes it again
+ * once the rule grades covered. The unique index on (organization_id,
+ * source_event_name, source_entity_type, source_entity_id) makes this at most
+ * ONE row per capability per organization, ever; source_entity_id is the
+ * capability_key.
+ */
+export const CAPABILITY_GAP_SOURCE_EVENT_NAME = 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED';
+export const CAPABILITY_GAP_SOURCE_ENTITY_TYPE = 'shadow_library_capability_map';
+
+/**
+ * The metadata.resolution a coverage closure writes. It marks the closure as
+ * the coverage check's own, which is what lets the same check reopen that row
+ * when the gap comes back -- and ONLY that row: a ticket a person resolved by
+ * hand carries no such marker and is never reopened automatically.
+ */
+export const CAPABILITY_COVERED_RESOLUTION = 'capability_covered';
+
+/**
+ * "This row names no athlete", in SQL, resolved exactly as
+ * resolveShadowResearchRequirement resolves a row's subject: the subject_id
+ * column, then metadata.subject_id, then metadata.athlete_id. A coverage gap is
+ * org-wide by construction; the automatic close and reopen touch nothing else,
+ * whatever the other columns say.
+ */
+const NAMES_NO_ATHLETE_SQL = `coalesce(
+             nullif(btrim(subject_id), ''),
+             nullif(btrim(metadata->>'subject_id'), ''),
+             nullif(btrim(metadata->>'athlete_id'), '')
+           ) is null`;
+
+/**
+ * Closes the organization's OPEN coverage gap ticket for every capability that
+ * just graded covered. One statement for the whole pass.
+ *
+ * "Closed" is this table's own vocabulary: status 'resolved' with resolved_at
+ * stamped, and resolved_by_account_id / resolved_by_role merged into metadata
+ * -- the same record resolveShadowResearchRequirement leaves for a manual
+ * close. The actor is whoever ran the recompute; the attribution keys go LAST
+ * in the merge so nothing already in metadata can overwrite them.
+ *
+ * Returns the rows it closed, so the caller can record them.
+ */
+export async function resolveCoveredCapabilityGapRequirements(input: {
+  organizationId: string;
+  covered: ReadonlyArray<{ capabilityKey: string; matchedSources: number }>;
+  resolvedByAccountId: string;
+  resolvedByRole: string;
+}): Promise<Array<{ research_requirement_id: number; capability_key: string }>> {
+  if (input.covered.length === 0) {
+    return [];
+  }
+
+  return query<{ research_requirement_id: number; capability_key: string }>(
+    `update pilot.shadow_research_requirements
+     set status = 'resolved',
+         resolved_at = now(),
+         metadata = metadata || jsonb_build_object(
+           'resolved_matched_sources', v.matched_sources,
+           'resolution', $6::text,
+           'resolved_by_account_id', $7::text,
+           'resolved_by_role', $8::text
+         )
+     from unnest($4::text[], $5::int[]) as v(capability_key, matched_sources)
+     where organization_id = $1
+       and source_event_name = $2
+       and source_entity_type = $3
+       and source_entity_id = v.capability_key
+       and status = 'open'
+       and ${NAMES_NO_ATHLETE_SQL}
+     returning research_requirement_id, source_entity_id as capability_key`,
+    [
+      input.organizationId,
+      CAPABILITY_GAP_SOURCE_EVENT_NAME,
+      CAPABILITY_GAP_SOURCE_ENTITY_TYPE,
+      input.covered.map((item) => item.capabilityKey),
+      input.covered.map((item) => item.matchedSources),
+      CAPABILITY_COVERED_RESOLUTION,
+      input.resolvedByAccountId,
+      input.resolvedByRole,
+    ],
+  );
+}
+
+/**
+ * Reopens a capability's gap ticket that the coverage check itself closed,
+ * when the same capability grades uncovered or partial again (a source
+ * retracted, a document withdrawn, a rule tightened).
+ *
+ * Without this the automatic close would lose every recurrence: the unique
+ * index allows one ticket per capability, so createShadowResearchRequirement
+ * lands on the resolved row and leaves it resolved -- a gap with no open
+ * ticket. The ticket's text and metadata are refreshed to the gap as it
+ * stands now; the closure's own keys are removed so an open row does not
+ * name who resolved it, and when that closure happened is kept as
+ * metadata.reopened_after_resolution_at.
+ *
+ * Returns the reopened id, or null when there was no such row -- including a
+ * ticket a person resolved by hand, which stays resolved.
+ */
+export async function reopenCoverageResolvedGapRequirement(input: {
+  organizationId: string;
+  capabilityKey: string;
+  researchRequirement: string;
+  knowledgeGap: string;
+  sourceStatus: string;
+  metadata: Record<string, unknown>;
+}): Promise<number | null> {
+  const row = await queryOne<{ research_requirement_id: number }>(
+    `update pilot.shadow_research_requirements
+     set status = 'open',
+         resolved_at = null,
+         research_requirement = $5,
+         knowledge_gap = $6,
+         source_status = $7,
+         metadata = (
+           metadata
+             - 'resolution'
+             - 'resolved_by_account_id'
+             - 'resolved_by_role'
+             - 'resolved_matched_sources'
+         ) || $8::jsonb || jsonb_build_object('reopened_after_resolution_at', resolved_at)
+     where organization_id = $1
+       and source_event_name = $2
+       and source_entity_type = $3
+       and source_entity_id = $4
+       and status = 'resolved'
+       and metadata->>'resolution' = $9
+       and ${NAMES_NO_ATHLETE_SQL}
+     returning research_requirement_id`,
+    [
+      input.organizationId,
+      CAPABILITY_GAP_SOURCE_EVENT_NAME,
+      CAPABILITY_GAP_SOURCE_ENTITY_TYPE,
+      input.capabilityKey,
+      input.researchRequirement,
+      input.knowledgeGap,
+      input.sourceStatus,
+      JSON.stringify(input.metadata),
+      CAPABILITY_COVERED_RESOLUTION,
+    ],
+  );
+
+  return row?.research_requirement_id ?? null;
+}
+
 export async function resolveShadowResearchRequirement(input: {
   organizationId: string;
   researchRequirementId: number;

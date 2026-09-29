@@ -1,4 +1,4 @@
-import { formatCalendarDay } from './calendarDay';
+import { calendarDayKey, formatCalendarDay } from './calendarDay';
 
 /**
  * The bug this replaced: an athlete's drill due date rendered one day early.
@@ -51,5 +51,22 @@ describe('formatCalendarDay', () => {
     expect(formatCalendarDay(null)).toBe('');
     expect(formatCalendarDay(undefined)).toBe('');
     expect(formatCalendarDay('')).toBe('');
+  });
+});
+
+describe('calendarDayKey', () => {
+  it('reads a Date at local midnight as the day it was parsed from', () => {
+    expect(calendarDayKey(new Date(2012, 3, 17))).toBe('2012-04-17');
+    expect(calendarDayKey(new Date(2026, 0, 1))).toBe('2026-01-01');
+  });
+
+  it('trims a string and otherwise leaves it as written', () => {
+    expect(calendarDayKey(' 2012-04-17 ')).toBe('2012-04-17');
+    expect(calendarDayKey('2012-04-17T00:00:00.000Z')).toBe('2012-04-17T00:00:00.000Z');
+  });
+
+  it('stringifies anything else', () => {
+    expect(calendarDayKey(true)).toBe('true');
+    expect(calendarDayKey(null)).toBe('null');
   });
 });

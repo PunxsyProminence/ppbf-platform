@@ -93,8 +93,14 @@ export interface FilmStudyAcceptanceMetric {
    *
    * `corrected` is not terminal -- the update guard in shadowFilmStudyProposals
    * admits `in ('pending_review','corrected')` and each pass appends a
-   * revision -- so a corrected proposal is genuinely still in the queue. This
-   * is the number that agrees with listFilmStudyProposals.
+   * revision -- so a corrected proposal is genuinely still in the queue.
+   *
+   * GYM-WIDE. It counts every outstanding proposal in the organization, while
+   * the queue the proposals GET returns holds only athletes the reader may
+   * reach. So it matches that queue only for an organization admin, and only
+   * while every athlete it names is still on the roster (accessibleAthleteIds
+   * drops deleted athletes); for a coach it is the whole gym's backlog, not
+   * theirs.
    */
   outstandingCount: number;
   /**
