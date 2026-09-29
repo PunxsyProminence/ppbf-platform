@@ -373,7 +373,8 @@ function DataDeletionScreen() {
                       </li>
                       <li className="border-l-2 border-[color:var(--brass-700)] pl-[var(--s3)]">
                         Not changed: the admin safety screens (escalations, safety flags, training
-                        holds, failing safety gates, video compliance, feedback) still show their items.
+                        holds, failing safety gates, compliance violations, feedback) still show their
+                        items.
                       </li>
                     </>
                   ) : (
