@@ -27,7 +27,9 @@ import path from 'node:path';
  * runs it -- `Active` is false on all 201, and 47 carry
  * ManualVerification -- signed off in one blanket owner decision on 2026-08-28,
  * which each of those modules records as a blanket decision rather than as 47
- * inspections. The defect is not that the waves lied;
+ * inspections. (Since 2026-09-29 another 48 carry PENDING_SIGN_OFF: built,
+ * not yet tried by a person, OD-2026-09-29-002; listed in
+ * docs/capabilities/SIGN_OFF_WALKTHROUGH.md.) The defect is not that the waves lied;
  * it is that a reader cannot tell a wave-marking from a shipped slice, and the
  * word DONE invites the second reading.
  *
@@ -47,7 +49,17 @@ import path from 'node:path';
  *    because retro-evidencing 54 modules is a body of work, not a line edit,
  *    and blocking the suite until it is done would just get the guard deleted.
  *
- * 3. THE TWO TRACKERS MAY NOT DRIFT FURTHER APART. Also a measured ceiling.
+ * 3. A ManualVerification ROW, WHERE PRESENT, CARRIES A RECOGNISED VALUE.
+ *
+ * REMOVED 2026-09-29: the check that the module files and
+ * expanded-200-index.json did not drift further apart (its ceiling was
+ * CEILING_TRACKER_DISAGREEMENTS, last 83). OD-2026-09-28-010 item 17 made the
+ * module files the only place build status lives and the index history, so
+ * the comparison was measuring against a file nobody keeps current, and it
+ * was the stated reason modules 084 and 094 were left DRAFT on 2026-09-28
+ * (their audit logs). Jason's answer "11A" (OD-2026-09-29-002): remove it,
+ * keep the checks that DONE modules cite code. The index file itself is left
+ * in place as history.
  *
  * WHAT IT DELIBERATELY DOES NOT DO. It does not decide whether a capability
  * WORKS. A cited file existing is not a working feature, and this guard never
@@ -58,24 +70,22 @@ import path from 'node:path';
 
 const REPO = path.resolve(__dirname, '../../../..');
 const MODULE_DIR = path.join(REPO, 'docs/capabilities/modules');
-const INDEX_FILE = path.join(REPO, 'docs/capabilities/expanded-200-index.json');
 
 /**
  * Measured 2026-08-28 by running this file against the catalogue as it stood;
- * lowered 2026-09-28 (59 -> 51, 91 -> 84) after DONE claims with no code were
+ * lowered 2026-09-28 (59 -> 51) after DONE claims with no code were
  * relabelled "claimed, no code" (OD-2026-09-28-010 item 18); lowered again the
- * same day (51 -> 48, 84 -> 83) after module 022 was relabelled and modules
- * 070 and 082 cited their code.
- * These are floors-to-not-exceed, not targets. Lowering one as modules get
- * evidenced is the point; raising one is an admission that has to be argued
+ * same day (51 -> 48) after module 022 was relabelled and modules 070 and 082
+ * cited their code. Unchanged 2026-09-29: module 084 became DONE citing its
+ * route, page and tests, so it did not join the unevidenced pile.
+ * This is a floor-to-not-exceed, not a target. Lowering it as modules get
+ * evidenced is the point; raising it is an admission that has to be argued
  * for in the same change.
  */
 const CEILING_UNEVIDENCED_DONE = 48;
-const CEILING_TRACKER_DISAGREEMENTS = 83;
 
 interface Module {
   file: string;
-  id: number | null;
   status: string | null;
   manualVerification: string | null;
   claimsDone: boolean;
@@ -117,12 +127,10 @@ function loadModules(): Module[] {
     .map((file) => {
       const text = readFileSync(path.join(MODULE_DIR, file), 'utf8');
       const status = tableField(text, 'Status');
-      const idMatch = /^(\d+)/.exec(file);
       const citations = new Set<string>();
       for (const m of text.matchAll(CITATION)) citations.add(m[1].replace(/[.,;]$/, ''));
       return {
         file,
-        id: idMatch ? Number(idMatch[1]) : null,
         status,
         manualVerification: tableField(text, 'ManualVerification'),
         claimsDone: /\bDONE\b/.test(status ?? ''),
@@ -175,27 +183,6 @@ describe('the capability catalogue is readable as evidence', () => {
       );
     }
     expect(unevidenced.length).toBeLessThanOrEqual(CEILING_UNEVIDENCED_DONE);
-  });
-
-  test('the markdown and the JSON index do not drift further apart', () => {
-    const index = JSON.parse(readFileSync(INDEX_FILE, 'utf8')) as {
-      modules: { ModuleId: number; Status: string }[];
-    };
-    const byId = new Map(index.modules.map((m) => [m.ModuleId, m.Status]));
-    const disagreements = modules.filter((m) => {
-      if (m.id === null || !byId.has(m.id)) return false;
-      return m.claimsDone !== (byId.get(m.id) === 'DONE');
-    });
-    if (disagreements.length > CEILING_TRACKER_DISAGREEMENTS) {
-      throw new Error(
-        `${disagreements.length} modules disagree with expanded-200-index.json about DONE, ` +
-          `above the ceiling of ${CEILING_TRACKER_DISAGREEMENTS} measured 2026-08-28. ` +
-          `The index was generated 2026-08-03 and the module files have moved since; ` +
-          `regenerating it is the fix, not raising this number.\n` +
-          disagreements.slice(0, 20).map((d) => `${d.file}: md=${d.status}`).join('\n'),
-      );
-    }
-    expect(disagreements.length).toBeLessThanOrEqual(CEILING_TRACKER_DISAGREEMENTS);
   });
 
   test('a DONE module that has been signed off says so, rather than leaving it blank', () => {

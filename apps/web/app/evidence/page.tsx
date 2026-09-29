@@ -115,8 +115,9 @@ export default function EvidenceReviewPage() {
               approvalState,
             })}
             /* Law 2: the reject control is a control, not a status -- it stays
-               off the safety red and wears the ghost chassis. The outcome it
-               produces is what gets the stamp. */
+               off the status rungs and wears the ghost chassis. The outcome it
+               produces is what gets the stamp. (Red itself is not reserved,
+               OD-2026-09-29-001.) */
             className={`${approvalState === 'approved' ? 'btn' : 'btn btn--ghost'} disabled:cursor-not-allowed disabled:opacity-60`}
           >
             {approvalState === 'approved' ? 'Approve + verify' : 'Reject'}

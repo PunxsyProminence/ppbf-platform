@@ -5,6 +5,7 @@
 | Status | **DONE** (Wave 9 reconciliation) |
 | Vertical slice | Central requireRole()/isOrganizationAdminRole() primitives used by essentially every API route in the platform |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | Governance / Admin / Nonprofit (`governanceAdminNonprofit`) |
 | Source | `2.0.0-draft-merged` |
@@ -39,3 +40,4 @@ _Scaffold only. Do not mark active until promotion review._
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/src/server/pilot/access.ts; apps/web/src/server/pilot/staffProvisioning.ts; apps/web/app/admin/people/page.tsx. Test: apps/web/src/server/pilot/access.test.ts ('requireRole', 'isOrganizationAdminRole' describe blocks); [the rest of this cell was cut off; rewritten 2026-09-28 by Claude from the test files, stating only what they assert:] those blocks assert `organization_admin` and legacy `admin` are organization admins and coach, athlete and board are not; `requireRole` admits a listed role, refuses an unlisted one with Forbidden, treats `admin` and `organization_admin` as each other, and never lets board pass as admin or coach. `apps/web/app/api/pilot/admin/staff/route.test.ts` (the staff route behind `/admin/people`) asserts a non-admin caller is refused on GET and DELETE, a parent invite must name an athlete, a guardian link cannot attach to a non-parent role, and an organization admin cannot invite another organization admin. |
+| 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |

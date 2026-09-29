@@ -1,15 +1,19 @@
 # PPBF Data Retention and Deletion Policy
 
 **Effective date:** 2026-08-06  
-**Last updated:** 2026-09-28  
+**Last updated:** 2026-09-29  
 **Policy owner:** Organization Admin (enforcement), Platform Owner (policy changes)
 
-**What is built (checked 2026-09-28 at `bbf299fe`, OD-2026-09-28-008).** Deletion is an
-organization-admin API, `DELETE /api/pilot/admin/data-deletion`
-(`apps/web/app/api/pilot/admin/data-deletion/route.ts`), plus the nightly cleanup job in
-Method 1. No screen calls the API. The `/admin/data-deletion` screen, cascade-marking of
-photos, videos and notes, a 1-year restore, and a compliance report are **NOT BUILT**;
-OD-2026-09-28-008 puts the deletion screen on the build list.
+**What is built (checked 2026-09-29; OD-2026-09-28-008; Jason 2026-09-29, "10 C" and "1A").**
+Deletion is an organization-admin API, `DELETE /api/pilot/admin/data-deletion`
+(`apps/web/app/api/pilot/admin/data-deletion/route.ts`), the `/admin/data-deletion` screen
+over it (`apps/web/app/admin/data-deletion/page.tsx`, door "Data Deletion" in the office),
+and the cleanup job in Method 1. The screen does scope A only, which is what the API already
+did: the person's record is marked deleted, their login closes and anyone signed in as them is
+signed out; their videos, photos and notes stay on file. **Next, as a separate change (B):**
+marking everything tied to the athlete deleted at the same moment. Still **NOT BUILT**: a
+preview of what will be deleted, a 1-year restore, and a compliance report. Whether stored
+video and photo files are erased when a record is permanently removed is **UNVERIFIED**.
 
 ## Overview
 
@@ -25,9 +29,10 @@ This policy defines how long PPBF retains data about minors and their families, 
 
 ## Data Categories and Retention Windows
 
-**What enforces these today:** two windows only. The cleanup job hard-deletes athlete rows
-2 years after `deleted_at` (the table below says 1 year for the athlete record) and guardian
-accounts 1 year after (`apps/web/scripts/pilot-cleanup-deleted-data.mjs:47-48`). No job
+**What enforces these today:** two windows only. The cleanup job, when a person dispatches it
+with `apply=APPLY` (the nightly run is a dry run, Method 1), hard-deletes athlete rows 2 years
+after `deleted_at` (the table below says 1 year for the athlete record) and guardian accounts
+1 year after (`apps/web/scripts/pilot-cleanup-deleted-data.mjs:47-48`). No job
 enforces the other windows below, and nothing sets `deleted_at` at age 18.
 
 ### Athletes
@@ -98,24 +103,50 @@ hard-delete requires a person with repo access to dispatch the workflow with
 
 ### Method 2: Manual Deletion by an Organization Admin (On Demand)
 
-An organization admin deletes a guardian's account or an athlete's record through the API
-`DELETE /api/pilot/admin/data-deletion`. **There is no screen:** `/admin/data-deletion` is NOT
-BUILT, and nothing in the app calls this API.
+An organization admin deletes a guardian's account or an athlete's record on the
+`/admin/data-deletion` screen, which calls the API `DELETE /api/pilot/admin/data-deletion`.
+The screen: choose an athlete or a guardian of your own organization (athletes already deleted
+are not offered), enter a reason, press **Review deletion**, then confirm a second time on a
+button that names the person. It then shows the API's answer: when the record was marked
+deleted, whether a login was closed ("closed and signed out everywhere" or "had no login"),
+the coach notes kept or the children withdrawn, and the audit record number, or the API's own
+error. The page and its door are for `organization_admin` / `admin` only; the platform owner
+is refused by the page and by the API (OD-2026-09-28-005).
 
 **Request body:** `{ "entityType": "athlete" | "guardian", "entityId": "<athlete id or guardian account id>", "reason": "<optional>" }`
 
 **What it does** (`apps/web/src/server/pilot/dataDeletion.ts`), in one transaction:
 - Guardian: sets `accounts.deleted_at = now()` and `active_flag = false`, deactivates the
   guardian's organization membership and revokes their live sessions. The database trigger
-  then withdraws each linked athlete this guardian was the last guardian of (Method 3).
+  then withdraws each linked athlete this guardian was the last guardian of (Method 3), and
+  the API cancels any activation code still outstanding for those athletes' logins.
 - Athlete: sets `athletes.deleted_at = now()`; if the athlete has an account, sets its
-  `deleted_at`, clears `active_flag` and revokes its live sessions. Coach observations are
-  retained, not deleted; their count is recorded.
+  `deleted_at`, clears `active_flag`, revokes its live sessions and cancels any activation code
+  still outstanding for it (a code issued before the deletion would otherwise reopen the
+  login). Coach observations are retained, not deleted; their count is recorded.
 - Writes one `data_deletion_initiated` audit event with actor, target and reason, and returns
-  counts of what it marked.
+  counts of what it marked. It does not return how many sessions it ended. An athlete deletion
+  records that number in its audit event (`sessions_revoked`); a guardian deletion records none.
+- Refuses a person already deleted (owner decision 2026-09-29, "1A"): HTTP 409, "This athlete
+  was already deleted on <date>. Nothing was changed." (or "This guardian ..."), with no second
+  `deleted_at` and no second audit row. Before this, a repeat reset `deleted_at` to now and so
+  restarted the person's retention clock. The existence check locks the row (`for update`) so
+  that two deletions racing each other should end with one deletion and one 409; no test runs
+  two at once.
 
-**NOT BUILT:** a preview of what will be deleted, a confirmation step, and cascade-marking of
-photos, videos or training notes (the API marks none of them).
+**NOT BUILT:** a preview of what will be deleted, and cascade-marking of photos, videos or
+training notes (the API marks none of them; that is B, the next change). The screen's two
+confirmations are the confirmation step; the API itself does not ask for one.
+
+**Open gap (checked 2026-09-29, not closed by this change):** an admin can still turn a
+deleted login back on. Issuing a new activation code, resetting an athlete's PIN, or creating
+an account for a deleted athlete (`apps/web/src/server/pilot/activation.ts`), and re-inviting a
+deleted guardian's email (`createOrUpdateMicrosoftStaffAccount` in
+`apps/web/src/server/pilot/staffProvisioning.ts`) do not read `deleted_at`; nor do the
+platform owner's user-status and membership routes (`setAccountActiveStatus`,
+`upsertOrganizationMembership` in `apps/web/src/server/pilot/auth.ts`). The record stays marked
+deleted while the login works, and a person reopened this way cannot be deleted again from the
+screen (409).
 
 **Who can trigger:** `organization_admin` or `admin`, in their own organization only  
 **Audit trail:** ✅ `data_deletion_initiated`, with actor, target and reason  
@@ -160,22 +191,22 @@ the cascade withdrew (`cascade_deleted_athletes`); the cascade writes no event o
 
 1. Parent contacts the organization (email or phone; there is no in-app request for account deletion)
 2. Organization admin verifies the request (identity confirmation)
-3. Admin calls the API with `entityType: "guardian"` and the guardian's account id (no screen yet)
+3. Admin opens `/admin/data-deletion`, chooses the guardian, enters the reason and confirms twice
 4. System soft-deletes the account, and any linked athlete record left with no other guardian
-5. Background process hard-deletes the account after the 1-year window (withdrawn athlete rows after 2 years)
+5. A cleanup run dispatched with `apply=APPLY` hard-deletes the account once it is past the 1-year window (withdrawn athlete rows past 2 years); the nightly run is a dry run
 
 ### Athlete Withdraws
 
-1. An organization admin calls the API with `entityType: "athlete"` (no screen; a coach cannot -- the server refuses every role but `organization_admin` and `admin`)
+1. An organization admin opens `/admin/data-deletion`, chooses the athlete, enters the reason and confirms twice (a coach cannot -- the page and the server admit only `organization_admin` and `admin`)
 2. System sets `athletes.deleted_at = now()` and closes the athlete's own login, if there is one
-3. Photos, videos and notes are NOT cascade-marked (NOT BUILT); coach observations are retained
+3. Photos, videos and notes are NOT cascade-marked (NOT BUILT; B, the next change); coach observations are retained
 4. Audit logged: `data_deletion_initiated`, with the admin as actor
-5. Background process hard-deletes the athlete row after the 2-year window
+5. A cleanup run dispatched with `apply=APPLY` hard-deletes the athlete row once it is past the 2-year window; the nightly run is a dry run
 
 ### Age of Majority (18th Birthday)
 
 System has no automatic trigger for age-of-majority. The organization must manually delete when they become aware:
-1. Find the athlete's id (the API takes an id; a name/DOB search screen is NOT BUILT)
+1. Find the athlete in the `/admin/data-deletion` picker, listed by name and id (a date-of-birth search is NOT BUILT)
 2. Same workflow as "Athlete Withdraws" above
 
 **Note:** Future version could automate this via DOB comparison.
@@ -231,9 +262,10 @@ deletion shown; a guardian deletion uses `entity_type: "parent_account"` and rec
 
 1. **Organization scoping:** A deletion request only affects records in that organization
 2. **Admin-only:** Only users with `role = 'organization_admin'` or `role = 'admin'` can initiate deletions
-3. **Confirmation required:** NOT BUILT -- there is no screen, so no confirm step
-4. **Audit logged:** the audit event is written in the same transaction as the soft delete, so neither commits without the other
-5. **Reversible for 1 year:** NOT BUILT -- no restore path exists
+3. **Confirmation required:** on the screen only -- a review step, then a second confirmation on a button that names the person, before it calls the API. The API itself takes no confirmation.
+4. **No repeat deletion:** a person already deleted is refused with 409 and nothing changes, so a second click cannot restart the retention clock
+5. **Audit logged:** the audit event is written in the same transaction as the soft delete, so neither commits without the other
+6. **Reversible for 1 year:** NOT BUILT -- no restore path exists
 
 ## Compliance Verification
 

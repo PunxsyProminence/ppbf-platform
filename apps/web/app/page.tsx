@@ -138,7 +138,9 @@ export default function HomePage() {
                   The border it replaces was --red-primary, which aliases to
                   --locked — the safety gate's red. Law 2 spends saturated colour
                   on a participant's safety state and nothing else, and this
-                  sentence is the opposite of a warning. */}
+                  sentence is the opposite of a warning. (That is about the
+                  --locked token. Red itself is not reserved,
+                  OD-2026-09-29-001.) */}
               <div className="frame">
                 <span className="rivet rivet--tl" />
                 <span className="rivet rivet--tr" />

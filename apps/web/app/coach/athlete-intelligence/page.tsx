@@ -54,8 +54,8 @@ interface AthleteOption {
 /**
  * Validation state -> badge.
  *
- * `badge--locked` is ABSENT ON PURPOSE. That red is reserved for the top of
- * the safety ladder -- a person who may not participate -- and an invalid
+ * `badge--locked` is ABSENT ON PURPOSE. It means the top of the safety
+ * ladder -- a person who may not participate -- and an invalid
  * formula result is an arithmetic fact about a calculation, not a safeguarding
  * one. `invalid` takes the restricted rung instead.
  */

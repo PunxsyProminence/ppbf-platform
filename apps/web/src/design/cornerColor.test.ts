@@ -9,7 +9,9 @@ import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
  * safety ladder -- which is red (--locked, "may not participate"), blue
  * (--monitor), orange (--restricted) and green (--cleared). So a literal red
  * corner in a literal red is, on this platform, indistinguishable from a
- * medical hold on a child.
+ * medical hold on a child. (Written before OD-2026-09-29-001: red itself is
+ * no longer reserved. This check still runs; --locked still means a medical
+ * stop.)
  *
  * The corner tokens are the answer, and this file is the proof that they are
  * still the answer after somebody edits them. Every value below is read out of

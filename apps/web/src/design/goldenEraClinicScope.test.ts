@@ -31,17 +31,17 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  *        repaint a voice on a ground it was never measured against;
  *      - no rule names `.stamp` or `.badge`. Every athlete row carries both:
  *        the training-hold stamp, the refusal stamp a bounced write leaves,
- *        and a `.badge` whose `--locked` variant is the reserved safeguarding
+ *        and a `.badge` whose `--locked` variant is the safeguarding
  *        red that means MEDICALLY_NOT_ALLOWED and nothing else. `.badge` is
  *        included because the BASE rule is how `badge--locked` composes its
- *        ground — restyling `.badge` reaches the reserved red without ever
+ *        ground — restyling `.badge` reaches the locked red without ever
  *        naming it;
  *      - no rule names `.room` or `.lamp`, and the block never names `--plate`.
  *        The plate carries the room. The wall, the light and the hung banker's
  *        shade are the photograph's, and a visual scope that starts relighting
  *        a room has left its own surface;
  *      - the block declares no `--bone-*`, `--hide-*`, `--paper`, `--plate` or
- *        reserved-red token. A bone rung is a platform-wide promise about
+ *        locked-red token. A bone rung is a platform-wide promise about
  *        contrast (cornerColor.test.ts reads the LAST declaration of a token as
  *        its value), and `--plate` is a locked room inventory with its own
  *        guard. Only the brass ramp and the scope-local `--ge-*` helpers move;
@@ -117,7 +117,7 @@ function legacyRung(source: string, rung: string): string | null {
  * The 009 block's DECLARATIONS, comments removed.
  *
  * Comments come out FIRST, before the block is located, because the block's own
- * header names the reserved red and the classes it refuses to touch in order to
+ * header names the locked red and the classes it refuses to touch in order to
  * say it does not touch them, and because "GOLDEN ERA 009" itself sits inside
  * that header — slicing first would strand an unterminated comment.
  *
@@ -286,7 +286,7 @@ describe('the 009 block stays inside its scope and off what it may not touch', (
     // Safeguarding ink is not a visual pass's to restyle, and the status it
     // carries is not decorative. `.badge` is here with `.stamp` because
     // `badge--locked` composes its ground from the BASE rule: restyling
-    // `.badge` reaches the reserved red without ever naming it.
+    // `.badge` reaches the locked red without ever naming it.
     const offenders = clinicRules()
       .map(([selector]) => selector)
       .filter((selector) => /\.stamp|\.badge/.test(selector));
@@ -310,6 +310,9 @@ describe('the 009 block stays inside its scope and off what it may not touch', (
     }
   });
 
+  // STATUS 2026-09-29: red itself is not reserved (OD-2026-09-29-001). This
+  // check was written under the reservation and still runs; --locked still
+  // means a medical stop.
   test('the scoped block never uses reserved medical red', () => {
     const block = clinicBlock();
     expect(block).not.toMatch(/#A81E22/i);

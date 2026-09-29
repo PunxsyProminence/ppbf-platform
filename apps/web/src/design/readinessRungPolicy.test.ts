@@ -8,8 +8,9 @@ import path from 'node:path';
  * in the same sentence: "GREEN = train as planned, YELLOW = check in with the
  * athlete first, RED = adjust the plan", explicitly "not clinical judgments".
  *
- * `--locked` / `#A81E22` is reserved by Jason's locked decision of 2026-08-19
- * for MEDICALLY_NOT_ALLOWED alone -- a clinician saying no. Until 2026-08-24
+ * `--locked` means MEDICALLY_NOT_ALLOWED alone -- a clinician saying no. (Red
+ * itself is not reserved, OD-2026-09-29-001; the token's meaning stands, and
+ * it is the token this file checks.) Until 2026-08-24
  * three surfaces painted readiness RED with it, including the child's own
  * status tile: "adjust tonight's plan" wearing the same red as "a doctor has
  * barred this athlete", off a number a staff member typed at intake.
@@ -82,7 +83,7 @@ function bandLinesOf(file: string, name: string): string {
 
      Three bands, so three lines; the floor is that the window found any of them.
      Its sibling assertion (`still distinguishes the three bands`) would go red
-     too, but only because it happens to be positive -- the reservation this file
+     too, but only because it happens to be positive -- the rule this file
      exists for should not depend on that. */
   expect({ site: `${file} / ${name}`, bandLines: lines.length > 0 })
     .toEqual({ site: `${file} / ${name}`, bandLines: true });
