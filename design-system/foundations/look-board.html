@@ -159,6 +159,31 @@
   .voice p { margin: var(--s3) 0 0; color: var(--bone-200); }
   .voice code { font: var(--t-xs)/1.6 var(--font-data); color: var(--brass-400); letter-spacing: .05em; }
 
+  /* The early set's own values, read out of the Canva design rather than guessed. */
+  .recovered { display: grid; gap: var(--s5); grid-template-columns: 1.15fr 1fr; align-items: start; }
+  @media (max-width: 760px) { .recovered { grid-template-columns: 1fr; } }
+  .hexes { display: grid; gap: var(--s4); grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .hex .chip { height: 66px; border-radius: var(--r-md); border: 1px solid var(--edge-dark); }
+  .hex b { display: block; margin-top: var(--s3); font-family: var(--font-display); text-transform: uppercase;
+           letter-spacing: .07em; font-size: 13px; color: var(--bone-100); }
+  .hex code { display: block; font: var(--t-xs)/1.6 var(--font-data); color: var(--brass-400); letter-spacing: .06em; }
+  .hex p { margin: var(--s2) 0 0; font-size: 12.4px; line-height: 1.55; color: var(--bone-400); }
+
+  /* His actual early layout, as a skeleton: dark rail + dark header + a dense
+     grid of bordered cards on kraft graph paper, with red draughting lines. */
+  .skel { position: relative; aspect-ratio: 16 / 11; border-radius: var(--r-md); overflow: hidden;
+          border: 1px solid var(--edge-dark);
+          background-color: #C8A87A;
+          background-image:
+            linear-gradient(to right, rgba(90,66,38,.20) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(90,66,38,.20) 1px, transparent 1px);
+          background-size: 14px 14px; }
+  .skel i { position: absolute; display: block; background: #1A1714; border: 1px solid rgba(0,0,0,.55); }
+  .skel .rail { left: 3%; top: 4%; width: 15%; height: 92%; }
+  .skel .bar  { left: 20%; top: 4%; width: 77%; height: 9%; }
+  .skel .cell { background: rgba(23,20,17,.92); }
+  .skel .rule { background: #E83C3C; opacity: .85; border: 0; }
+
   .open { background: rgba(168,30,34,.10); border: 1px solid rgba(168,30,34,.42);
           border-radius: var(--r-lg); padding: var(--s5); }
   .open li { font-size: 13px; line-height: 1.72; color: var(--bone-200); }
@@ -339,11 +364,66 @@
     built". <b>Replacing the faces is a separate decision and this board does not make it.</b>
   </p>
 
+  <h2>The early set's own values, recovered</h2>
+  <div class="recovered">
+    <div>
+      <div class="hexes">
+        <div class="hex"><div class="chip" style="background:#E8C488"></div>
+          <b>Label gold</b><code>#E8C488</code>
+          <p>Every label and the PPBF wordmark in his early dashboard. Not brass — lighter, flatter, tan-gold.</p></div>
+        <div class="hex"><div class="chip" style="background:#E83C3C"></div>
+          <b>Draughting red</b><code>#E83C3C</code>
+          <p>His annotation lists and the rules ruled across the grid. Brighter than <code>--locked</code>.</p></div>
+        <div class="hex"><div class="chip" style="background:#191919"></div>
+          <b>Ink</b><code>#191919</code>
+          <p>Type on the light panels. Near-black, not the page ground.</p></div>
+      </div>
+      <p class="floor-note" style="margin-top: var(--s5)">
+        These are <b>read out of the design, not matched by eye</b>: Canva design
+        <code>DAHQv6NIUUY</code>, "Athlete Dashboard Inspired by Military Aesthetics",
+        elements read 2026-09-29. Its wording is Canva template filler
+        ("Borcelle", "Fasila Pompetert"), so it is a <em>layout and colour study</em> and
+        nothing in it is content.
+        <b>The correction this forces:</b> the early ground is not warm leather-brown — it is
+        <b>kraft graph paper</b>, ruled, with the chassis in near-black and the type in
+        <code>#E8C488</code>. That is closer to a draughtsman's board than to aged leather, and it is
+        where the panel material above should end up once Jason has looked.
+      </p>
+    </div>
+    <div>
+      <div class="skel">
+        <i class="rail"></i>
+        <i class="bar"></i>
+        <i class="cell" style="left:21%; top:16%; width:23%; height:24%"></i>
+        <i class="cell" style="left:47%; top:16%; width:23%; height:24%"></i>
+        <i class="cell" style="left:73%; top:16%; width:23%; height:24%"></i>
+        <i class="cell" style="left:21%; top:43%; width:23%; height:24%"></i>
+        <i class="cell" style="left:47%; top:43%; width:23%; height:24%"></i>
+        <i class="cell" style="left:73%; top:43%; width:23%; height:24%"></i>
+        <i class="cell" style="left:21%; top:70%; width:23%; height:24%"></i>
+        <i class="cell" style="left:47%; top:70%; width:23%; height:24%"></i>
+        <i class="cell" style="left:73%; top:70%; width:23%; height:24%"></i>
+        <i class="rule" style="left:21%; top:41.5%; width:75%; height:1px"></i>
+        <i class="rule" style="left:45.5%; top:16%; width:1px; height:78%"></i>
+      </div>
+      <p class="floor-note">
+        His actual early arrangement, as a skeleton: a dark rail down the left, a dark header band,
+        and a <b>three-by-three grid of bordered cards</b> on ruled kraft, with red lines ruled
+        straight across it. Nine equal cells — not one column, and not a hero. This is the shape the
+        rooms should inherit; the materials above are what fills it.
+      </p>
+    </div>
+  </div>
+
   <h2>What this board does not decide</h2>
   <div class="open">
     <ul>
-      <li><b>The four floor-zone colours.</b> Read off photographs by eye. They need Jason's eye on
-          a gym tablet before they become tokens.</li>
+      <li><b>The four floor-zone colours.</b> Still read off photographs by eye — the recovered
+          values above are his <em>type and accent</em> colours, not his floor. They need Jason's eye
+          on a gym tablet before they become tokens.</li>
+      <li><b>Kraft graph paper versus aged canvas.</b> The panel above is aged canvas; his early
+          design's ground is ruled kraft. They are close but not the same, and which one the panels
+          take is his call, not a detail to settle quietly.</li>
       <li><b>The typefaces.</b> The early set is military stencil; the live tokens still point at the
           retired faces. Whether the merged look keeps them, and which face carries
           <em>ADAPT AND OVERCOME</em>, is open.</li>
