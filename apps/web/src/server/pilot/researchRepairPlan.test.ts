@@ -197,53 +197,92 @@ describe('pre_repair_values.csv is the seed production imported', () => {
     expect(wrong).toEqual([]);
   });
 
-  it('every difference between the imported seed and today\'s is in the plan, except #1003\'s two sentences', () => {
+  type Rows = Map<string, Record<string, string>>;
+
+  /**
+   * Every difference between an imported seed and a current one that the plan
+   * does not carry (`unplanned`), and the #1003 sentences it lets through
+   * (`excepted`). Takes the rows as arguments so the negative control below can
+   * hand it a seed with differences injected.
+   */
+  function seedDiff(imported: { sources: Rows; chunks: Rows }, current: { sources: Rows; chunks: Rows }) {
     const plannedSource = new Map(plan.sources.map((s) => [s.source_id, new Set(s.fields.filter((f) => f.before !== f.after).map((f) => f.field))]));
     const plannedChunk = new Map(plan.chunks.map((c) => [c.chunk_id, new Set(c.fields.filter((f) => f.before !== f.after).map((f) => f.field))]));
     const unplanned: string[] = [];
     const excepted: string[] = [];
 
-    for (const [id, imported] of importedSources) {
-      const current = currentSources.get(id);
-      if (!current) {
+    for (const [id, importedRow] of imported.sources) {
+      const currentRow = current.sources.get(id);
+      if (!currentRow) {
         if (!plan.retireIds.includes(id)) unplanned.push(`source ${id} removed`);
         continue;
       }
       const fields = plannedSource.get(id) ?? new Set<string>();
-      for (const column of Object.keys(imported).filter((k) => k !== 'metadata')) {
-        const field = column === 'authority_tier' ? 'authority_tier' : column;
-        if (imported[column] !== current[column] && !fields.has(field)) unplanned.push(`source ${id} ${column}`);
+      for (const column of Object.keys(importedRow).filter((k) => k !== 'metadata')) {
+        if (importedRow[column] !== currentRow[column] && !fields.has(column)) unplanned.push(`source ${id} ${column}`);
       }
-      const a = JSON.parse(imported.metadata || '{}') as Record<string, unknown>;
-      const b = JSON.parse(current.metadata || '{}') as Record<string, unknown>;
+      const a = JSON.parse(importedRow.metadata || '{}') as Record<string, unknown>;
+      const b = JSON.parse(currentRow.metadata || '{}') as Record<string, unknown>;
       for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
         if (canonical(a[key] ?? null) !== canonical(b[key] ?? null) && !fields.has(`metadata.${key}`)) {
           unplanned.push(`source ${id} metadata.${key}`);
         }
       }
     }
-    for (const id of currentSources.keys()) if (!importedSources.has(id)) unplanned.push(`source ${id} added`);
+    for (const id of current.sources.keys()) if (!imported.sources.has(id)) unplanned.push(`source ${id} added`);
 
-    for (const [id, imported] of importedChunks) {
-      const current = currentChunks.get(id);
-      if (!current) { unplanned.push(`chunk ${id} removed`); continue; }
+    for (const [id, importedRow] of imported.chunks) {
+      const currentRow = current.chunks.get(id);
+      if (!currentRow) { unplanned.push(`chunk ${id} removed`); continue; }
       const fields = plannedChunk.get(id) ?? new Set<string>();
-      for (const column of Object.keys(imported).filter((k) => k !== 'metadata')) {
-        if (imported[column] === current[column] || fields.has(column)) continue;
+      for (const column of Object.keys(importedRow).filter((k) => k !== 'metadata')) {
+        if (importedRow[column] === currentRow[column] || fields.has(column)) continue;
         if (column === 'text_content' && TEXT_ONLY_CHANGES.includes(id)) { excepted.push(id); continue; }
         unplanned.push(`chunk ${id} ${column}`);
       }
-      const a = JSON.parse(imported.metadata || '{}') as Record<string, unknown>;
-      const b = JSON.parse(current.metadata || '{}') as Record<string, unknown>;
+      const a = JSON.parse(importedRow.metadata || '{}') as Record<string, unknown>;
+      const b = JSON.parse(currentRow.metadata || '{}') as Record<string, unknown>;
       for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
         if (canonical(a[key] ?? null) !== canonical(b[key] ?? null) && !fields.has(`metadata.${key}`)) {
           unplanned.push(`chunk ${id} metadata.${key}`);
         }
       }
     }
-    for (const id of currentChunks.keys()) if (!importedChunks.has(id)) unplanned.push(`chunk ${id} added`);
+    for (const id of current.chunks.keys()) if (!imported.chunks.has(id)) unplanned.push(`chunk ${id} added`);
 
+    return { unplanned, excepted };
+  }
+
+  it('every difference between the imported seed and today\'s is in the plan, except #1003\'s two sentences', () => {
+    const { unplanned, excepted } = seedDiff(
+      { sources: importedSources, chunks: importedChunks },
+      { sources: currentSources, chunks: currentChunks },
+    );
     expect(unplanned).toEqual([]);
+    // Positive control: the diff does see real differences. #1003's two
+    // sentences are the only text change, so it must have found exactly them.
+    expect([...excepted].sort()).toEqual([...TEXT_ONLY_CHANGES].sort());
+  });
+
+  it('negative control: a difference the plan does not carry is reported', () => {
+    // One unlisted source and one unlisted chunk, each changed where no log
+    // row reaches: the diff must name both, and nothing else.
+    const listedSources = new Set(plan.sources.map((s) => s.source_id));
+    const listedChunks = new Set(plan.chunks.map((c) => c.chunk_id));
+    const sourceId = [...currentSources.keys()].sort().find((id) => !listedSources.has(id))!;
+    const chunkId = [...currentChunks.keys()].sort().find((id) => !listedChunks.has(id) && !TEXT_ONLY_CHANGES.includes(id))!;
+    const sources = new Map(currentSources);
+    const chunks = new Map(currentChunks);
+    const source = sources.get(sourceId)!;
+    sources.set(sourceId, { ...source, authority_tier: source.authority_tier === '1' ? '2' : '1' });
+    const chunk = chunks.get(chunkId)!;
+    chunks.set(chunkId, { ...chunk, metadata: JSON.stringify({ ...JSON.parse(chunk.metadata || '{}'), authority_tier: 9 }) });
+
+    const { unplanned } = seedDiff(
+      { sources: importedSources, chunks: importedChunks },
+      { sources, chunks },
+    );
+    expect(unplanned.sort()).toEqual([`chunk ${chunkId} metadata.authority_tier`, `source ${sourceId} authority_tier`]);
   });
 
   it('the text-only exceptions are exactly #1003\'s, and still differ', () => {
