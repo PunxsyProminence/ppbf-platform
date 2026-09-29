@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
+import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
 
 /**
@@ -52,6 +53,11 @@ function RosterImportConsole() {
   const [result, setResult] = useState<ImportResult | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [isBusy, setIsBusy] = useState(false);
+  // The export is organization-admin only (its page and its API), so a coach
+  // following that link would be bounced away. Read the way the door register
+  // reads it: from the session store, deciding a link and nothing else.
+  const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
+  const canExport = session?.role === 'admin';
 
   async function send(commit: boolean) {
     setIsBusy(true);
@@ -108,6 +114,11 @@ function RosterImportConsole() {
           do and pressed Add. An athlete already on the roster is never overwritten, and nobody gets
           a sign-in from this screen &mdash; PINs are issued afterwards.
         </p>
+        <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
+          Every athlete needs a coach: put the account ID of an active coach in this gym in the
+          Coach account ID column. When a coach loads the file, a blank Coach cell means that
+          coach; when an admin loads it, the cell has to be filled in.
+        </p>
 
         <div className="mt-4 flex flex-wrap gap-3">
           <Link
@@ -116,12 +127,14 @@ function RosterImportConsole() {
           >
             Back to admin
           </Link>
-          <Link
-            href="/admin/export"
-            className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.12em]"
-          >
-            Export the roster first
-          </Link>
+          {canExport ? (
+            <Link
+              href="/admin/export"
+              className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.12em]"
+            >
+              Export the roster first
+            </Link>
+          ) : null}
         </div>
 
         <section className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
@@ -148,7 +161,7 @@ function RosterImportConsole() {
                 setCsv(event.target.value);
                 setResult(null);
               }}
-              placeholder={'Athlete ID,Full name,Date of birth,Weight class,Gym status\nath-001,A Name,2012-03-14,lightweight,training'}
+              placeholder={'Athlete ID,Full name,Date of birth,Weight class,Gym status,Coach account ID\nath-001,A Name,2012-03-14,lightweight,training,coach-001'}
               className="mt-1 h-40 w-full border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-3 py-2 font-mono text-xs normal-case tracking-normal"
             />
           </label>
@@ -246,11 +259,12 @@ function RosterImportConsole() {
 }
 
 export default function RosterImportPage() {
-  // Matches the route exactly: organization_admin only. A coach cannot load a
-  // roster, and neither can the platform owner -- creating this gym's children
-  // is the gym's own administrator's act.
+  // Matches the route: organization admins and coaches, each into their own
+  // gym (Jason, 2026-09-29, "9d. B", OD-2026-09-29-002 item 9d). The platform
+  // owner is not admitted -- it never opens a gym's athlete records
+  // (OD-2026-09-28-005).
   return (
-    <RoleSessionGate allowedRoles={['admin']}>
+    <RoleSessionGate allowedRoles={['admin', 'coach']}>
       <RosterImportConsole />
     </RoleSessionGate>
   );

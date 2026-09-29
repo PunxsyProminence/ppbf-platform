@@ -165,6 +165,13 @@ export const BUILDING: readonly Door[] = [
     keywords: 'activation codes onboarding invite new athlete' },
   { href: '/admin/attendance', label: 'Attendance', room: 'office', roles: ['admin', 'coach'],
     keywords: 'attendance rollup check-in reporting summary class' },
+  /* roles: ['admin', 'coach'], NOT ADMIN_GATE (Jason, 2026-09-29, "9d. B",
+     OD-2026-09-29-002 item 9d). Organization admins and coaches load rosters
+     into their own gym; /api/pilot/admin/roster-import refuses platform_owner
+     (OD-2026-09-28-005), so it is absent here. */
+  { href: '/admin/import', label: 'Load a Roster', room: 'office', roles: ['admin', 'coach'],
+    keywords: 'roster import load spreadsheet csv upload bulk add athletes members',
+    hint: 'Check a spreadsheet, see what it would do, then add. Nobody already on the roster is overwritten.' },
   { href: '/admin/volunteer-management', label: 'Volunteers', room: 'office', roles: ADMIN_GATE,
     keywords: 'volunteer hours coverage signup' },
   { href: '/admin/community-service', label: 'Community Service', room: 'office', roles: ['coach', 'admin'],
