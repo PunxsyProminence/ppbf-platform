@@ -64,8 +64,11 @@ function planBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// Two changes AND a blocking finding: Apply must be off because of the
+// finding, not because there is nothing to write. With changes: 0 here, a page
+// that ignored blocking findings still passed (mutation M6, 2026-09-29).
 const BLOCKED = planBody({
-  changes: 0,
+  changes: 2,
   blocking: [
     {
       code: 'literal_organization',
@@ -212,7 +215,7 @@ test('blocking findings are listed and Apply is disabled', async () => {
   expect(blocking.textContent).toContain('literal_organization · seed_drill_library.csv:2 organization_id (drl_0000000000000a)');
   expect(blocking.textContent).toContain("a real organization id ('org-2') is refused");
 
-  const apply = screen.getByRole('button', { name: /^Apply/ });
+  const apply = screen.getByRole('button', { name: 'Apply 2 changes' });
   expect((apply as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByText('Apply is off: 1 blocking finding above.')).not.toBeNull();
 
