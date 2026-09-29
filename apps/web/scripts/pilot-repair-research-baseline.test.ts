@@ -380,6 +380,11 @@ describe('the plan the files describe', () => {
     ['a log row moving a chunk from a source the pre-repair values disagree with', (i) => ({
       ...i, preRepairValues: i.preRepairValues.map((r) => (r.row_id === 'chk_b' && r.field === 'source_id' ? { ...r, before_json: '"src_other"' } : r)),
     }), /MOVE_FROM_DISAGREES_WITH_PRE_REPAIR_VALUE:chk_b/],
+    // The log names the destination too. src_tier is a listed, live seed row,
+    // so nothing else in the plan objects: only the destination check can.
+    ['a log row moving a chunk to a source the seed does not put it on', (i) => ({
+      ...i, logs: i.logs.map((l) => ({ ...l, rows: l.rows.map((r) => (r.action === 'REPOINT_MISRESOLVED' ? { ...r, target_source_id: 'src_tier' } : r)) })),
+    }), /MOVE_TO_DISAGREES_WITH_SEED:chk_a:src_tier/],
     ['a SET_TIER row whose tier_to is not the seed tier', (i) => ({
       ...i, logs: i.logs.map((l) => ({ ...l, rows: l.rows.map((r) => (r.action === 'SET_TIER_BY_SPEC' ? { ...r, tier_to: '2' } : r)) })),
     }), /SET_TIER_DISAGREES_WITH_SEED:src_tier/],

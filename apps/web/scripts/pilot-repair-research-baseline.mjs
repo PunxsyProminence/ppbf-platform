@@ -217,7 +217,7 @@ export function buildRepairPlan({ seedSources, seedChunks, logs, preRepairValues
   const listedSources = new Set();
   const listedChunks = new Set();
   const retiring = new Set();
-  const moves = new Map(); // chunk_id -> { from, log, action }
+  const moves = new Map(); // chunk_id -> { from, to, log, action }
   const tierRows = [];
   const clearRows = [];
 
@@ -237,7 +237,7 @@ export function buildRepairPlan({ seedSources, seedChunks, logs, preRepairValues
         listedChunks.add(chunkId);
         if (MOVING_LOG_ACTIONS.has(row.action)) {
           if (moves.has(chunkId)) problems.push(`CHUNK_MOVED_TWICE:${chunkId}`);
-          moves.set(chunkId, { from: row.source_id, log: name, action: row.action });
+          moves.set(chunkId, { from: row.source_id, to: row.target_source_id, log: name, action: row.action });
         }
       }
       if (row.action === 'SET_TIER_BY_SPEC') tierRows.push(row);
@@ -315,6 +315,12 @@ export function buildRepairPlan({ seedSources, seedChunks, logs, preRepairValues
         problems.push(`MOVE_FROM_DISAGREES_WITH_PRE_REPAIR_VALUE:${chunkId}:${move.from}`);
       }
       if (sourceField.before === sourceField.after) problems.push(`MOVED_CHUNK_NOT_MOVED_IN_SEED:${chunkId}`);
+      // The log is the reviewed plan: the chunk lands where the log says, and
+      // the seed must say the same, or the tool would write a destination
+      // nobody reviewed (a rebase onto a changed seed is when they drift).
+      if (sourceField.after !== canonicalJson(move.to)) {
+        problems.push(`MOVE_TO_DISAGREES_WITH_SEED:${chunkId}:${move.to}`);
+      }
     } else if (sourceField.before !== sourceField.after) {
       problems.push(`CHUNK_MOVED_WITHOUT_A_LOG_ROW:${chunkId}`);
     }
