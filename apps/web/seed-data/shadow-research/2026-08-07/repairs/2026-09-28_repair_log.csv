@@ -1,0 +1,244 @@
+action,claim_id,source_id,target_source_id,evidence,title,chunk_id
+REPOINT_MISRESOLVED,A1-008,src_c72976b03e995af5,src_3ca2059fb5ba13f6,pmid:27088370,The effects of attentional focus instructions on punching velocity and impact fo,chk_f88daa443b2ec260
+REPOINT_MISRESOLVED,A1-020,src_74451032f85ddc38,src_ae1a4594498309f6,doi:10.1080/02640414.2019.1647739,Enhancing skill transfer in tennis using representative learning design,chk_c5e27029c994e910
+REPOINT_MISRESOLVED,A1-021,src_3715053a02d91060,src_9c9f4b290773f51e,doi:10.1080/02640414.2017.1374684,Helping coaches apply the principles of representative learning design: validati,chk_5b260c255c431989
+REPOINT_MISRESOLVED,A1-028,src_8742ac8a28bb6423,src_1c5e3e2954e97434,pmid:10100339,Bandwidth knowledge of results enhances generalized motor program learning.,chk_423ed4eb677be7ec
+REPOINT_MISRESOLVED,A1-036,src_3b15d3e1a8c61e58,src_358e44c99587fa1e,pmid:34219609,Implicit motor learning in primary school children: A systematic review.,chk_435d93306de0cbc6
+REPOINT_MISRESOLVED,A1-041,src_14b92b9230039d74,src_a1cb6aeb15cedcd3,doi:10.1080/1750984x.2012.665076,Observation interventions for motor skill learning and performance: an applied m,chk_55937c3b3647c105
+REPOINT_MISRESOLVED,A1-043,src_1369cc003497a7dc,src_97333246f8a62651,doi:10.1080/1750984x.2020.1780627,The effects of imagery interventions in sports: a meta-analysis,chk_89447c981b328b51
+REPOINT_MISRESOLVED,A1-047,src_9b8580cf92f1f6fc,src_9ac66774d3c69d70,doi:10.1080/17461391.2014.957727,Perceptual‐cognitive skill training and its transfer to expert performance in th,chk_2b9f327eeab03eaf
+REPOINT_MISRESOLVED,A1-062,src_9b8580cf92f1f6fc,src_34ea234f0ea976a6,doi:10.1080/17461391.2022.2063072,"Acute physiological, endocrine, biochemical and performance responses associated",chk_9d9b5763b1fdc065
+REPOINT_MISRESOLVED,A1-065,src_33c6cbbd99767b20,src_757e89a1d447cfe4,pmid:29863966,False-performance feedback does not affect punching forces and pacing of elite b,chk_7d7c8e012a1fa945
+REPOINT_MISRESOLVED,A1-068,src_e8c16378e2da8f97,src_aa4d1fa6644c22e6,pmid:38419912,Motor learning in golf-a systematic review.,chk_c86585461e977632
+REPOINT_MISRESOLVED,A2-001,src_4f3d4c5506dd8ebf,src_14d360d7fede8056,doi:10.1080/14763141.2020.1778075,Force and velocity of impact during upper limb strikes in combat sports: a syste,chk_a152afb199f67e72
+REPOINT_MISRESOLVED,A2-012,src_9b8580cf92f1f6fc,src_c47aa4201d15c968,doi:10.1080/17461391.2021.1916085,The effect of fatiguing lower‐body exercise on punch forces in highly‐trained bo,chk_f63c9be2e087deb2
+REPOINT_MISRESOLVED,A2-032,src_7cca2c3d8f6290d6,src_42d9d00a6eadab00,doi:10.3389/fpsyg.2024.1377122,The effect of contextual interference on transfer in motor learning - a systemat,chk_34701ac3710e86c9
+REPOINT_MISRESOLVED,A2-034,src_9e3a19d4501918fa,src_a835e76a024851e8,doi:10.1080/02701367.1990.10608671,Specificity and Variability of Practice,chk_4ff7ede825a08b06
+REPOINT_MISRESOLVED,A2-040,src_7d883f79b9520654,src_2ed6fae07b77c8f4,doi:10.1080/02701367.1994.10607635,Effects of Physical Guidance and Knowledge of Results on Motor Learning: Support,chk_0a63b1cc7f519fbc
+REPOINT_MISRESOLVED,A2-044,src_c176903ef4a4522d,src_962b2b8b68fe3ff8,doi:10.1080/02701367.2023.2275801,Self-Controlled Video Feedback Facilitates the Learning of Tactical Skills in Te,chk_abb38c3fb81d91de
+REPOINT_MISRESOLVED,A2-046,src_74451032f85ddc38,src_ae1a4594498309f6,doi:10.1080/02640414.2019.1647739,Enhancing skill transfer in tennis using representative learning design,chk_76a3b541bd8f7e27
+REPOINT_MISRESOLVED,A2-047,src_3715053a02d91060,src_9c9f4b290773f51e,doi:10.1080/02640414.2017.1374684,Helping coaches apply the principles of representative learning design: validati,chk_4584bf23a41203a6
+REPOINT_MISRESOLVED,A2-048,src_fa5f255721135519,src_917d240ca1978865,doi:10.1371/journal.pone.0242336,Applications of a working framework for the measurement of representative learni,chk_5cfae6124c13c842
+REPOINT_MISRESOLVED,A2-049,src_9b8580cf92f1f6fc,src_9ac66774d3c69d70,doi:10.1080/17461391.2014.957727,Perceptual‐cognitive skill training and its transfer to expert performance in th,chk_5b2c56b50eb3f9cc
+REPOINT_MISRESOLVED,A2-050,src_48f15047e720c652,src_6e1ea32e7dec268e,doi:10.1080/02640414.2019.1621510,Visual-perceptual training with motor practice of the observed movement pattern ,chk_d3741e7f887d838b
+REPOINT_MISRESOLVED,A2-052,src_0d6c6dc1cdf11ac9,src_05a37ebe054ad989,doi:10.1080/02640414.2015.1122824,Do karate fighters use situational probability information to improve decision-m,chk_04a2898706ee08c0
+REPOINT_MISRESOLVED,A2-053,src_cb4a399b7a18e834,src_fc7c37501b9a5ae4,doi:10.1080/17470218.2013.807856,Expertise Facilitates the Transfer of Anticipation Skill across Domains,chk_efd01312fc75fbe3
+REPOINT_MISRESOLVED,A2-066,src_855ee690476fc86f,src_cbdad5b2df1ff019,doi:10.3389/fphys.2024.1429554,Relationship between visual ability assessment and punch performance in competit,chk_d0852c119fbee34f
+REPOINT_MISRESOLVED,A2-073,src_75c36832e73b03bb,src_a43f5d5523ba4e3b,doi:10.1080/00913847.2023.2242415,Headguard use in combat sports: position statement of the Association of Ringsid,chk_6f305d9ee71ad4e5
+REPOINT_MISRESOLVED,A2-076,src_35fc75290aae9e91,src_6af48c252690e58c,doi:10.1080/02640414.2021.2001175,Quantifying head impacts and neurocognitive performance in collegiate boxers,chk_695a91608f9c5ffb
+REPOINT_MISRESOLVED,A2-099,src_6747a9200dafc85f,src_2615bd0775b405ba,doi:10.3389/fpsyg.2026.1722743,A systematic review and meta-analysis of the effects of errorless motor learning,chk_33cf115748051dbc
+REPOINT_MISRESOLVED,A2-100,src_7cca2c3d8f6290d6,src_c9a9a3616bd67d7b,doi:10.1038/s41598-024-65753-3,High contextual interference improves retention in motor learning: systematic re,chk_1b01c2c59c9a9deb
+REPOINT_MISRESOLVED,A4-003,src_af18abb99437e0e7,src_e72e716be98b6afb,doi:10.1080/17437199.2020.1718529,A meta-analysis of self-determination theory-informed intervention studies in th,chk_ede9cb9b3477699b
+REPOINT_MISRESOLVED,A4-011,src_08a98da9096965b2,src_602118c409e4f793,doi:10.1080/02701367.2000.10608908,The Relation of Self-Efficacy Measures to Sport Performance: A Meta-Analytic Rev,chk_cff0d85e525a45eb
+REPOINT_MISRESOLVED,A4-014,src_edd8315aadf1427c,src_34239cfffe34deef,doi:10.1080/1750984x.2017.1381140,Stressing the relevance of resilience: a systematic review of resilience across ,chk_ed3ca1a0b9889c19
+REPOINT_MISRESOLVED,A4-022,src_1acc381bc76dde07,src_c740fb249ff4544a,doi:10.1080/1750984x.2017.1408134,Choking interventions in sports: A systematic review,chk_89c7c1d4589a6d4f
+REPOINT_MISRESOLVED,A4-023,src_d09d5ea01fabf897,src_74442147ceeb2f1b,doi:10.1080/1750984x.2021.1944271,The effectiveness of pre-performance routines in sports: a meta-analysis,chk_ead074eaf2a100d8
+REPOINT_MISRESOLVED,A4-024,src_df6ef82263ec60d2,src_4cbb9cce7be56a89,doi:10.1080/10413200.2010.491780,A Comparison of Different Pre-Performance Routines as Possible Choking Intervent,chk_2884cac2e09c3200
+REPOINT_MISRESOLVED,A4-026,src_1369cc003497a7dc,src_97333246f8a62651,doi:10.1080/1750984x.2020.1780627,The effects of imagery interventions in sports: a meta-analysis,chk_e8f52b0b9ce9f9e4
+REPOINT_MISRESOLVED,A4-032,src_8efb6586eed9ec53,src_76ac77b073eabe99,doi:10.1080/1750984x.2022.2116723,The performance and psychological effects of goal setting in sport: A systematic,chk_9cef12a3c806b639
+REPOINT_MISRESOLVED,A4-033,src_df6ef82263ec60d2,src_a5bcba72effc405c,doi:10.1080/10413200.2023.2185699,"The what, why, and how of goal setting: A review of the goal-setting process in ",chk_f6aad1788fe4e786
+REPOINT_MISRESOLVED,A4-034,src_c37f8d20faa0de0b,src_05f7ffab242829ca,doi:10.1080/1750984x.2021.1901298,The application of Goal Setting Theory to goal setting interventions in sport: a,chk_d529747cf0c9b456
+REPOINT_MISRESOLVED,A4-035,src_42a0c335bca19252,src_5f331ce983e664b5,doi:10.5465/amp.2009.37007999,Goals Gone Wild: The Systematic Side Effects of Overprescribing Goal Setting,chk_e69f05ad83a64483
+REPOINT_MISRESOLVED,A4-065,src_c4b46cb1f0db8c97,src_1a4c3b91f144c72d,doi:10.1080/17430437.2023.2268555,Telling adults about it: children’s experience of disclosing interpersonal viole,chk_9f50bc95d241b231
+REPOINT_MISRESOLVED,A4-068,src_211dcf9db38440b5,src_528520e59f6ab119,doi:10.1080/14413523.2021.1930951,Safeguarding culture: towards a new approach to preventing child maltreatment in,chk_e78da83aed38834b
+REPOINT_MISRESOLVED,A4-069,src_71ca14f2de879433,src_31f80dc5c323b5eb,doi:10.1080/21640629.2025.2487754,Implementing trauma-informed approaches to coaches’ workplaces in sport to enhan,chk_c33e7227b41fd25c
+REPOINT_MISRESOLVED,A4-070,src_213a114df6e6d202,src_b916bb20abce445c,doi:10.1080/1750984x.2016.1199727,Definition and model of life skills transfer,chk_8507403a756a89e4
+REPOINT_MISRESOLVED,A4-072,src_9fdd8f2c0085a037,src_6f96e88009764a18,doi:10.1080/1750984x.2016.1180704,A grounded theory of positive youth development through sport based on results f,chk_61cd04e862c72030
+REPOINT_MISRESOLVED,A4-073,src_74048a9ac3901b79,src_f61a1289da0b928c,doi:10.1080/00336297.2017.1348304,Transfer of Life Skills in Sport-Based Youth Development Programs: A Conceptual ,chk_796d594b26e492c7
+REPOINT_MISRESOLVED,A4-079,src_df6ef82263ec60d2,src_a3ab68bdf2b623a9,doi:10.1080/10413200.2015.1086447,Implicit Transfer of Life Skills Through Participation in Brazilian Jiu-Jitsu,chk_775973505330cb95
+REPOINT_MISRESOLVED,A4-080,src_7761542c81b6905d,src_843779de700fe44d,doi:10.1080/02701367.2017.1355527,A Systematic Review of Life Skill Development Through Sports Programs Serving So,chk_be47277d0e9669e3
+REPOINT_MISRESOLVED,A4-093,src_419cce35b3f57018,src_6e984a5737ab32fe,doi:10.1080/1612197x.2019.1611900,Preliminary psychometric validation of a brief screening tool for athlete mental,chk_c2de55b441cc86e3
+REPOINT_MISRESOLVED,A5-006,src_9b8580cf92f1f6fc,src_34ea234f0ea976a6,doi:10.1080/17461391.2022.2063072,"Acute physiological, endocrine, biochemical and performance responses associated",chk_add67b4cf797ec97
+REPOINT_MISRESOLVED,A5-016,src_3e555ea54c0d0758,src_9d404103dd997134,doi:10.3389/fphys.2025.1693271,Blood flow restriction training enhances punching force and upper body strength ,chk_dd722552e18fe1b6
+REPOINT_MISRESOLVED,A5-021,src_e31f8505a014033e,src_11f183ce629b8b03,doi:10.3389/fspor.2026.1839505,The effects of 4 weeks of sport-specific repeated sprint training on upper-body ,chk_c07e3b6ff5a14e5e
+REPOINT_MISRESOLVED,A5-022,src_c7b5d3d8c6e2047f,src_e44099f156ecf9e9,doi:10.3389/fphys.2025.1576676,Effects of high-intensity interval training on aerobic and anaerobic capacity in,chk_5060a08b65379108
+REPOINT_MISRESOLVED,A5-024,src_f0aff4bed6e26e44,src_ac16342790cff04e,doi:10.3389/fphys.2026.1810393,The effect of integrative neuromuscular training on physical fitness and punchin,chk_b55b9cd72a8c8adc
+REPOINT_MISRESOLVED,A5-032,src_4f3d4c5506dd8ebf,src_ea74936d27aeffa8,doi:10.1080/14763141.2019.1607542,Acute and longitudinal effects of weighted vest training on sprint-running perfo,chk_25a5df3caa774040
+REPOINT_MISRESOLVED,A5-050,src_15c85cdb41e183fd,src_500bf5dcb397d73f,doi:10.1080/24733938.2020.1765007,A systematic review on methodological variation in acute:chronic workload resear,chk_34d1620a6baabf4e
+REPOINT_MISRESOLVED,A5-063,src_9b8580cf92f1f6fc,src_4f5ef0cf948e998a,doi:10.1080/17461391.2020.1736183,Effects of tapering on neuromuscular and metabolic fitness in team sports: a sys,chk_e03be0d5ba3432e2
+REPOINT_MISRESOLVED,A5-074,src_ca9753a76f54c0fd,src_04799ac793776425,doi:10.1055/s-0034-1387764,Injuries in Competitive Boxing. A Prospective Study,chk_09f6f33430ccb838
+REPOINT_MISRESOLVED,A5-077,src_6597cd4231cd2db1,src_412dee7701bc32ab,doi:10.1080/00913847.2022.2083922,Neuroimaging in professional combat sports: consensus statement from the associa,chk_2285f8fdc85fb88b
+REPOINT_MISRESOLVED,A5-095,src_75c36832e73b03bb,src_a43f5d5523ba4e3b,doi:10.1080/00913847.2023.2242415,Headguard use in combat sports: position statement of the Association of Ringsid,chk_59512a637c9c67b9
+REPOINT_MISRESOLVED,A5-130,src_23484705cd4b71db,src_43614d5c172b8c97,doi:10.1080/15502783.2025.2467909,International society of sports nutrition position stand: nutrition and weight c,chk_aafde53779edb646
+REPOINT_MISRESOLVED,A5-132,src_7ef9d378d03ce854,src_0259314f28081a08,doi:10.1080/02640414.2016.1184302,Fluid balance and hydration assessment during the weight-stable preparation phas,chk_3ca9344108b270a1
+REPOINT_MISRESOLVED,A5-134,src_9b8580cf92f1f6fc,src_73e3bd0a9ccc0bcd,doi:10.1080/17461391.2019.1616826,Body composition of elite Olympic combat sport athletes,chk_48c3e4f4d5e9e0f0
+REPOINT_MISRESOLVED,A5-140,src_5bf01cb43a5c069e,src_2d1c35f12f31fad5,doi:10.3389/fphys.2025.1663590,"Are counter movement jump and isometric mid-thigh pull tests reliable, valid, an",chk_02b6e5828c181be6
+REPOINT_MISRESOLVED,A5-146,src_dc5216fc7085b90c,src_a6716135d70ac13a,doi:10.1080/02640414.2019.1597826,"Menstrual cycle alters training strain, monotony, and technical training length ",chk_5c14eb82fd72a883
+REPOINT_MISRESOLVED,B1-016,src_c4b46cb1f0db8c97,src_93af47d90fbfe018,doi:10.1080/17430437.2013.828902,"Volunteer roles, involvement and commitment in voluntary sport organizations: ev",chk_d46c89eb071947bd
+REPOINT_MISRESOLVED,B4-025,src_dd6c513cddcf5f85,src_4cd2670bc4fcaf22,doi:10.1080/01621459.1999.10474144,A Proportional Hazards Model for the Subdistribution of a Competing Risk,chk_35c0a46bac9bb390
+REPOINT_MISRESOLVED,B4-029,src_9fdd8f2c0085a037,src_6f96e88009764a18,doi:10.1080/1750984x.2016.1180704,A grounded theory of positive youth development through sport based on results f,chk_1622557cfed04fbf
+REPOINT_MISRESOLVED,B5-011,src_e5f2629cd452bbe3,src_bb46ace3c586be69,doi:10.1177/0899764018807080,The Impact of Revenue Diversification on Nonprofit Financial Health: A Meta-anal,chk_ee5caaea22500b15
+REPOINT_MISRESOLVED,B5-031,src_9a882d5b12123f21,src_ff46bfa0db1f065c,doi:10.1080/24704067.2020.1806493,"In Troubled Water? European Sports Clubs: Their Problems, Capacities and Opportu",chk_c8725cab0bb10688
+REPOINT_MISRESOLVED,B5-056,src_e5f2629cd452bbe3,src_bb46ace3c586be69,doi:10.1177/0899764018807080,The Impact of Revenue Diversification on Nonprofit Financial Health: A Meta-anal,chk_f61befee6746cb9d
+DELETE_DEAD_BOGUS_SOURCE,,src_35fc75290aae9e91,,zero claims after repair,Production of infectious particles from defective human immunodeficiency virus t,
+DELETE_DEAD_BOGUS_SOURCE,,src_08a98da9096965b2,,zero claims after repair,Participants' perceptions of dimensions of the therapeutic alliance over the cou,
+DELETE_DEAD_BOGUS_SOURCE,,src_3a50d0387cf4d088,,zero claims after repair,"[Pyeloureteral junction syndrome caused by ""anomalous vessel""].",
+DELETE_DEAD_BOGUS_SOURCE,,src_9a7499739532127d,,zero claims after repair,"Modulation of neutrophil activation by okadaic acid, a protein phosphatase inhib",
+DELETE_DEAD_BOGUS_SOURCE,,src_dc5216fc7085b90c,,zero claims after repair,NAPNAP president's message. Address unknown: the homeless.,
+DELETE_DEAD_BOGUS_SOURCE,,src_9fdd8f2c0085a037,,zero claims after repair,[Effect of the multiple administration of hydrocortisone on the ultrastructure o,
+DELETE_DEAD_BOGUS_SOURCE,,src_48f15047e720c652,,zero claims after repair,Primary leptomeningeal glioma: ultrastructural and laminin immunohistochemical s,
+DELETE_DEAD_BOGUS_SOURCE,,src_a014fe8406f20004,,zero claims after repair,[Isolated paralysis of the great hypoglossal nerve disclosing multiple myeloma].,
+DELETE_DEAD_BOGUS_SOURCE,,src_46571aaaedbe3970,,zero claims after repair,A high prevalence of hypothyroidism in association with endemic goitre in Zimbab,
+DELETE_DEAD_BOGUS_SOURCE,,src_855ee690476fc86f,,zero claims after repair,The stereospecific interaction between chlorophylls and chlorophyllase. Possible,
+DELETE_DEAD_BOGUS_SOURCE,,src_23484705cd4b71db,,zero claims after repair,A comparison of the modes of actions of human salivary and pancreatic alpha-amyl,
+DELETE_DEAD_BOGUS_SOURCE,,src_6597cd4231cd2db1,,zero claims after repair,"Effects of the 5-HT3 receptor antagonist, ICS 205-930, on oesophageal motor acti",
+DELETE_DEAD_BOGUS_SOURCE,,src_5bf01cb43a5c069e,,zero claims after repair,The role of nitric oxide in serotonin-induced relaxations in the canine terminal,
+DELETE_DEAD_BOGUS_SOURCE,,src_14b92b9230039d74,,zero claims after repair,[Clinical effect of recombinant human granulocyte colony-stimulating factor in b,
+DELETE_DEAD_BOGUS_SOURCE,,src_c176903ef4a4522d,,zero claims after repair,[Elements in the evaluation of some disinfectants for hospital use].,
+DELETE_DEAD_BOGUS_SOURCE,,src_6747a9200dafc85f,,zero claims after repair,Current topics in viral hepatitis.,
+DELETE_DEAD_BOGUS_SOURCE,,src_6e661ddd6c941776,,zero claims after repair,An analysis of traffic injuries in Taiwan in relation to alcohol use and economi,
+DELETE_DEAD_BOGUS_SOURCE,,src_33c6cbbd99767b20,,zero claims after repair,The youth rally experience!,
+DELETE_DEAD_BOGUS_SOURCE,,src_74451032f85ddc38,,zero claims after repair,Sequence comparison of the GABAA receptor alpha 1 subunit cDNA in long and short,
+DELETE_DEAD_BOGUS_SOURCE,,src_3e555ea54c0d0758,,zero claims after repair,Characterization of pregnancy-associated plasma protein-A: comparison with alpha,
+DELETE_DEAD_BOGUS_SOURCE,,src_5b4927731361e4d6,,zero claims after repair,Metabolism of prostaglandin F2 alpha in Zellweger syndrome. Peroxisomal beta-oxi,
+DELETE_DEAD_BOGUS_SOURCE,,src_80ac07a036bc4b85,,zero claims after repair,[Permanent pacemaker implantation. Indications and results].,
+DELETE_DEAD_BOGUS_SOURCE,,src_15a3c9b7f2dcc387,,zero claims after repair,Nicotine and Alzheimer's disease.,
+DELETE_DEAD_BOGUS_SOURCE,,src_42a0c335bca19252,,zero claims after repair,The in vivo study of cardiac mechano-electric and mechano-mechanical coupling du,
+DELETE_DEAD_BOGUS_SOURCE,,src_419cce35b3f57018,,zero claims after repair,Ofloxacin vs ciprofloxacin: a comparison.,
+DELETE_DEAD_BOGUS_SOURCE,,src_cb4a399b7a18e834,,zero claims after repair,Partners in health? Exploring resemblance in health between partners in married ,
+DELETE_DEAD_BOGUS_SOURCE,,src_e8c16378e2da8f97,,zero claims after repair,Atrial natriuretic peptide inhibits amiloride-sensitive sodium uptake in rat bra,
+DELETE_DEAD_BOGUS_SOURCE,,src_1369cc003497a7dc,,zero claims after repair,CO2 laser anterior turbinectomy in the treatment of non-allergic vasomotor rhino,
+DELETE_DEAD_BOGUS_SOURCE,,src_8742ac8a28bb6423,,zero claims after repair,Genotoxic markers among butadiene polymer workers in China.,
+DELETE_DEAD_BOGUS_SOURCE,,src_dd6c513cddcf5f85,,zero claims after repair,Meta-analysis by random effect modelling in generalized linear models.,
+DELETE_DEAD_BOGUS_SOURCE,,src_7cca2c3d8f6290d6,,zero claims after repair,Not all insulin-like growth factor-binding proteins (IGFBPs) are detectable by w,
+DELETE_DEAD_BOGUS_SOURCE,,src_e5f2629cd452bbe3,,zero claims after repair,The long-term hydriding and dehydriding stability of the nanoscale LiNH2+LiH hyd,
+DELETE_DEAD_BOGUS_SOURCE,,src_df6ef82263ec60d2,,zero claims after repair,Evolving spectrum of mortality and morbidity in SLE.,
+DELETE_DEAD_BOGUS_SOURCE,,src_76cd5098db4d4a9c,,zero claims after repair,Congenital atresia of left main coronary artery: proposed mechanism for severe d,
+DELETE_DEAD_BOGUS_SOURCE,,src_f1da1901cdbcc5ee,,zero claims after repair,[Splenic surgery].,
+DELETE_DEAD_BOGUS_SOURCE,,src_82fc37749a5bb0ea,,zero claims after repair,[Interferon and its use for treating hairy cell leukemia].,
+DELETE_DEAD_BOGUS_SOURCE,,src_3715053a02d91060,,zero claims after repair,Distinct phosphotyrosines on a growth factor receptor bind to specific molecules,
+DELETE_DEAD_BOGUS_SOURCE,,src_f3603fa4f98435b3,,zero claims after repair,Receptors for epidermal growth factor and steroid hormones in primary laryngeal ,
+DELETE_DEAD_BOGUS_SOURCE,,src_71ca14f2de879433,,zero claims after repair,Differential responses of infectious diseases to economic growth in China.,
+DELETE_DEAD_BOGUS_SOURCE,,src_b2e36bfb0f9843c9,,zero claims after repair,Techniques of valvular reoperation.,
+DELETE_DEAD_BOGUS_SOURCE,,src_1acc381bc76dde07,,zero claims after repair,Analysis of temperature-sensitive functions of Fos: lack of a correlation betwee,
+DELETE_DEAD_BOGUS_SOURCE,,src_67964d4ce0413cbb,,zero claims after repair,Leu-M1-positive small cell carcinoma.,
+DELETE_DEAD_BOGUS_SOURCE,,src_814bd713fe3f090a,,zero claims after repair,Evidence for the existence of a restriction-modification system common to severa,
+DELETE_DEAD_BOGUS_SOURCE,,src_0d6c6dc1cdf11ac9,,zero claims after repair,[Letter: Preventive chemotherapy of tuberculosis].,
+DELETE_DEAD_BOGUS_SOURCE,,src_7d883f79b9520654,,zero claims after repair,Neuromodulation during motor development and behavior.,
+DELETE_DEAD_BOGUS_SOURCE,,src_213a114df6e6d202,,zero claims after repair,Changes in vascular permeability in stroke-prone spontaneously hypertensive rats,
+DELETE_DEAD_BOGUS_SOURCE,,src_9a882d5b12123f21,,zero claims after repair,Surfactant-free coating of thiols on gold nanoparticles using sonochemistry: a s,
+DELETE_DEAD_BOGUS_SOURCE,,src_35f060fa5e73aa63,,zero claims after repair,Intercellular signalling in Stigmatella aurantiaca.,
+DELETE_DEAD_BOGUS_SOURCE,,src_d09d5ea01fabf897,,zero claims after repair,Genes for Drosophila small heat shock proteins are regulated differently by ecdy,
+DELETE_DEAD_BOGUS_SOURCE,,src_15c85cdb41e183fd,,zero claims after repair,Lipopolysaccharide O antigen size distribution is determined by a chain extensio,
+DELETE_DEAD_BOGUS_SOURCE,,src_4f3d4c5506dd8ebf,,zero claims after repair,[Radiotherapy and inhibitors of epidermal growth factor receptor: preclinical fi,
+DELETE_DEAD_BOGUS_SOURCE,,src_c37f8d20faa0de0b,,zero claims after repair,Estradiol modulation of plasminogen activator production in organ cultures of hu,
+DELETE_DEAD_BOGUS_SOURCE,,src_2ee85068f64e6ee2,,zero claims after repair,The prognostic role of left ventricular hypertrophy in patients with or without ,
+DELETE_DEAD_BOGUS_SOURCE,,src_8efb6586eed9ec53,,zero claims after repair,Systemic and renal fibrinolytic activity in a patient with anticardiolipin syndr,
+DELETE_DEAD_BOGUS_SOURCE,,src_94ae7e54205529de,,zero claims after repair,Oxidation of cyclopenta[cd]pyrene by human and mouse liver microsomes and select,
+DELETE_DEAD_BOGUS_SOURCE,,src_211dcf9db38440b5,,zero claims after repair,[An outstanding internist and medical historian (On the seventy-fifth anniversar,
+DELETE_DEAD_BOGUS_SOURCE,,src_ca9753a76f54c0fd,,zero claims after repair,DNA-testing for Huntington's disease in The Netherlands: a retrospective study o,
+DELETE_DEAD_BOGUS_SOURCE,,src_74048a9ac3901b79,,zero claims after repair,Orderly bone transport.,
+DELETE_DEAD_BOGUS_SOURCE,,src_c4b46cb1f0db8c97,,zero claims after repair,Chronic pain in the classroom: teachers' attributions about the causes of chroni,
+DELETE_DEAD_BOGUS_SOURCE,,src_9e3a19d4501918fa,,zero claims after repair,Lymphatic capillaries in the meninges of the human optic nerve.,
+DELETE_DEAD_BOGUS_SOURCE,,src_edd8315aadf1427c,,zero claims after repair,"A novel, non-nucleoside inhibitor of HIV-1 reverse transcriptase.",
+DELETE_DEAD_BOGUS_SOURCE,,src_350537cd40a36e45,,zero claims after repair,"BCL10 is rarely mutated in human prostate carcinoma, small-cell lung cancer, hea",
+DELETE_DEAD_BOGUS_SOURCE,,src_fa5f255721135519,,zero claims after repair,Quantitative assessment of interstitial implants.,
+DELETE_DEAD_BOGUS_SOURCE,,src_f0aff4bed6e26e44,,zero claims after repair,Regional brain perfusion changes in patients with primary generalized epilepsy a,
+DELETE_DEAD_BOGUS_SOURCE,,src_63260beb6a9d7b14,,zero claims after repair,A new tool for sampling airborne isocyanates.,
+DELETE_DEAD_BOGUS_SOURCE,,src_61669f3638700fac,,zero claims after repair,The feasibility of a percutaneous temporary pedal bypass.,
+DELETE_DEAD_BOGUS_SOURCE,,src_e061b3448c7b699e,,zero claims after repair,Hemolytic interactions of Dermatophilus congolensis.,
+DELETE_DEAD_BOGUS_SOURCE,,src_9b8580cf92f1f6fc,,zero claims after repair,[Prevalence of hereditary diseases in three-year-old Swiss Warmblood horses].,
+DELETE_DEAD_BOGUS_SOURCE,,src_81b346a2e987129a,,zero claims after repair,[Diagnosis and treatment with Marlex mesh of vaginal posterior hernia].,
+DELETE_DEAD_BOGUS_SOURCE,,src_75c36832e73b03bb,,zero claims after repair,A partially parametric estimator of survival in the presence of randomly censore,
+DELETE_DEAD_BOGUS_SOURCE,,src_c72976b03e995af5,,zero claims after repair,Analysis of the pancreatic-ribonuclease-digestion products of alfalfa-mosaic-vir,
+DELETE_DEAD_BOGUS_SOURCE,,src_c7b5d3d8c6e2047f,,zero claims after repair,"The interactions of (-)-(R)-2-aminomethylpyrrolidine (1,1-cyclobutanedicarboxyla",
+DELETE_DEAD_BOGUS_SOURCE,,src_7ef9d378d03ce854,,zero claims after repair,Youssef's syndrome.,
+DELETE_DEAD_BOGUS_SOURCE,,src_a748197438d9e9ff,,zero claims after repair,Cutaneous and coronary flow reserve in patients with microvascular angina.,
+DELETE_DEAD_BOGUS_SOURCE,,src_d1a3e85af755fe04,,zero claims after repair,[What are the cause and therapy of ear necrosis in swine?].,
+DELETE_DEAD_BOGUS_SOURCE,,src_f45667e8675ef9ae,,zero claims after repair,[Congenital left sinus of Valsalva aneurysm].,
+DELETE_DEAD_BOGUS_SOURCE,,src_af18abb99437e0e7,,zero claims after repair,Fetal ST segment heart rate analysis in labor: improvement of intervention crite,
+DELETE_DEAD_BOGUS_SOURCE,,src_de67a0e668d4c55b,,zero claims after repair,[Unilateral development of moyamoya vessels after contralateral cervical interna,
+DELETE_DEAD_BOGUS_SOURCE,,src_e31f8505a014033e,,zero claims after repair,The specific IL-1 inhibitor from the human M20 cell line is distinct from the IL,
+DELETE_DEAD_BOGUS_SOURCE,,src_3b15d3e1a8c61e58,,zero claims after repair,Hiroshima-like neutrons from A-bomb replica: physical basis for their use in bio,
+DELETE_DEAD_BOGUS_SOURCE,,src_1fcbea0f1d340109,,zero claims after repair,Macroglossia causing airway obstruction following cleft palate repair.,
+DELETE_DEAD_BOGUS_SOURCE,,src_ed7cc613172aed17,,zero claims after repair,Titrating with intravenous oxytocins.,
+DELETE_DEAD_BOGUS_SOURCE,,src_84d1105ce5ceace2,,zero claims after repair,Impact of the Banff '97 classification for histological diagnosis of rejection o,
+DELETE_DEAD_BOGUS_SOURCE,,src_7761542c81b6905d,,zero claims after repair,Excessive intracellular Ca2+ inhibits glutamate-induced Na(+)-K+ pump activation,
+MERGE_DUPLICATE,,src_854b2c2f7f82ea9e,src_101df6587d8f7ca0,same tier,Superiority of external attentional focus for motor performance and learning: Sy,chk_d363baf13fd04796
+MERGE_DUPLICATE,,src_6d114dbc7f6375eb,src_95772667b8cf700c,same tier,"Reporting bias, not external focus: A robust Bayesian meta-analysis and systemat",chk_c898366570a97015
+MERGE_DUPLICATE,,src_e2155bd5c9235927,src_c9a9a3616bd67d7b,same tier,High contextual interference improves retention in motor learning: systematic re,chk_67abef867e59ac4a
+MERGE_DUPLICATE,,src_9d39cb4978f391f4,src_dd1674cee9a6a64a,same tier,An Exploratory Meta-Analytic Review on the Empirical Evidence of Differential Le,chk_b2836da512cdfa0c
+MERGE_DUPLICATE,,src_86eacf00d0bbc85f,src_ae1a4594498309f6,"tiers [3, 4]",Enhancing skill transfer in tennis using representative learning design,
+MERGE_DUPLICATE,,src_05b34159ee4a15da,src_9c9f4b290773f51e,"tiers [3, 4]",Helping coaches apply the principles of representative learning design: validati,
+MERGE_DUPLICATE,,src_dcceb5c953deaaee,src_49578b521b2f6ddf,same tier,Effect of Implicit Perceptual-Motor Training on Decision-Making Skills and Under,chk_58154ff9ad365197|chk_1a851fd1df680d9f
+MERGE_DUPLICATE,,src_a1978cfbfb5a8fa9,src_49ce1140e323ce20,"tiers [3, 4]",Modified perceptual training in sport: A new classification framework,
+MERGE_DUPLICATE,,src_086fc22186a50994,src_0583a40df72113d0,same tier,Quiet Eye and Performance in Sport: A Meta-Analysis,chk_500bc9f93ee97bb6
+MERGE_DUPLICATE,,src_c03d1adb45f0d34c,src_360144ca30330cbd,"tiers [3, 4]","Individual differences in motor skill learning: Past, present and future",
+MERGE_DUPLICATE,,src_ce9ac60a970717fb,src_02ac7d718015f5fc,"tiers [3, 4]",The Role of Lower Limb Kinetics in Boxing Punches and the Impact of Fatigue on B,chk_99909b5069825b63
+MERGE_DUPLICATE,,src_fb3fb3d8e91931d9,src_56961b5f243e4125,same tier,Amateur Boxing: Activity Profile of Winners and Losers,chk_49c4b5f08fcb1f2e|chk_8bd0539fdc6dd3e7
+MERGE_DUPLICATE,,src_8b3d239425a3f9b5,src_2b13e10db18c4be2,"tiers [3, 4]",Amateur Boxing: Physical and Physiological Attributes,chk_69ed9e41eb310f50|chk_d0b1a1719b2adf46|chk_0dba4f8754809808
+MERGE_DUPLICATE,,src_669d131a78cdd0a1,src_34ea234f0ea976a6,same tier,"Acute physiological, endocrine, biochemical and performance responses associated",chk_ebec01eb9923f2df|chk_f435b79805d5df3d
+MERGE_DUPLICATE,,src_1a9398027142fdcb,src_ae3de7f6142d9be7,same tier,Defining the Phases of Boxing Punches: A Mixed-Method Approach,chk_8e754d945f8b78ac|chk_fca6ceac0c5f0326|chk_d5498bfaba228221
+MERGE_DUPLICATE,,src_19f669da38b4dc35,src_7383361f54acaff2,"tiers [3, 4]",Transfer of momentum from different arm segments to a light movable target durin,chk_5ab1ec9466262a5b
+MERGE_DUPLICATE,,src_29623301b0822dd4,src_83658722e5cff5d1,"tiers [1, 2]",A Systematic Review and Meta-Analysis Investigating Head Trauma in Boxing,chk_764c21a2bd0ac389|chk_c07ee8423c222d2e|chk_5a0fbc0272da9d0a|chk_48a06769d1bd9987
+MERGE_DUPLICATE,,src_f733eec74a878065,src_7caf5708772ec467,same tier,Consensus statement on concussion in sport: the 6th International Conference on ,chk_35bc28a3911ff569|chk_99cccb0201334af2|chk_323a328e64652606|chk_fd5e63885c492478|chk_5b3967aaa996185b
+MERGE_DUPLICATE,,src_1d6e6a7407ae2095,src_606873807a38d054,"tiers [1, 2]",Amateur boxing and risk of chronic traumatic brain injury: systematic review of ,chk_52387296e325eaad
+MERGE_DUPLICATE,,src_91170afd9903992a,src_14d360d7fede8056,same tier,Force and velocity of impact during upper limb strikes in combat sports: a syste,chk_2a68a1ccefda9afb|chk_740a267338f30565
+MERGE_DUPLICATE,,src_b811a6b342a8d8cf,src_1e9a92bf4787b14b,"tiers [3, 4]",The Role of Strength on Punch Impact Force in Boxing,chk_6256f627807b8f70
+MERGE_DUPLICATE,,src_9a2a9b956438b2f0,src_cb560c2237874d41,same tier,Wearable Sensor-Based Analysis of Punch Acceleration and Plantar Pressure Distri,chk_918dfe93aedc862c
+MERGE_DUPLICATE,,src_dc9277073f553443,src_9058491242d30445,same tier,Tests for the Assessment of Sport-Specific Performance in Olympic Combat Sports:,chk_d8845034c228fc96
+MERGE_DUPLICATE,,src_fa7fb7218e33e243,src_07a12a44088278f0,"tiers [3, 4]",Effect of Contextual Interference and Differential Learning on Motor Skill Devel,chk_69977396b88863ae
+MERGE_DUPLICATE,,src_bfffbe5d72b84e13,src_b1a9cc00322d4d1a,same tier,Self-control over combined video feedback and modeling facilitates motor learnin,chk_812c6f279da43a1c
+MERGE_DUPLICATE,,src_fb0214579f57f13b,src_a828ed5ecc14f662,same tier,What boxing-related stimuli reveal about response behaviour,chk_15cd191b5a76cbd5
+MERGE_DUPLICATE,,src_0223e0983fa51e51,src_8edf647ac010641b,same tier,The Activity Profile of Elite Male Amateur Boxing,chk_396675273b56a959|chk_29e3f8729f300d90
+MERGE_DUPLICATE,,src_927489d3ee0f96a4,src_fd9942c4f3b3d15d,same tier,Human behaviours associated with dominance in elite amateur boxing bouts: A comp,chk_172210808a22a63e|chk_15c2cd683b115a15
+MERGE_DUPLICATE,,src_01555200f22b350d,src_6909b61b439332f9,same tier,Notational Analysis of the Final Matches of the 2023 IBA Women’s World Boxing Ch,chk_ae4e9b1bb8bf474a
+MERGE_DUPLICATE,,src_102da638fcf4fd8b,src_2328d555a9e647c6,same tier,Comparison of amateur boxing before and after the 2013 rules change and the impa,chk_47128cf3dc70e0ad|chk_c9975c338388b768|chk_359836594695cce4
+MERGE_DUPLICATE,,src_05b97418e93ee4c8,src_33d8c3ad760480e0,same tier,Effects of Sparring Load on Reaction Speed and Punch Force During the Precompeti,chk_d8a49a0ab417614f|chk_232e70a254179d9e
+MERGE_DUPLICATE,,src_52ebf7760709b448,src_f0d1c520b2684f3f,same tier,Physical Response to Pad- and Bag-Based Boxing-Specific Training Modalities,chk_045c04899bd735a6|chk_88f05503f19b08b9
+MERGE_DUPLICATE,,src_89e59b9cf280f102,src_47ec5a3d778fd785,same tier,Boxing injury epidemiology in the Great Britain team: a 5-year surveillance stud,chk_0ef09e7a2d7505fe|chk_d86c125d8daaa61c|chk_d4014b86bbf576f7|chk_fddfa1e51c926d5c|chk_dd4663efcafeecc8
+MERGE_DUPLICATE,,src_e6e72128b88fbb96,src_68654d8d78f432e8,same tier,Epidemiology of injuries in amateur boxing: A systematic review and meta-analysi,chk_e278db295d6802bd|chk_499a1b0cde801bb5|chk_9a7fcb267a27e6c7|chk_c1737eaae45d7c49|chk_6f2ac1eafec7a81d|chk_cef95dc37ad37795|chk_c966f91c9a2100af
+MERGE_DUPLICATE,,src_fcff03b8ec1e918b,src_675e366f55b9b351,same tier,International Olympic Committee consensus statement: methods for recording and r,chk_d0ada02997616599|chk_0cb36aa6e2e82b9b
+MERGE_DUPLICATE,,src_f9afdc8771399484,src_a43f5d5523ba4e3b,"tiers [3, 4]",Headguard use in combat sports: position statement of the Association of Ringsid,chk_782e8ea60d7e6156|chk_952cdeeee8d13aae
+MERGE_DUPLICATE,,src_d7968561a73aa9ff,src_17628a57add3c0d6,same tier,Boxing headguard performance in punch machine tests,chk_7a2964d0af3fe280
+MERGE_DUPLICATE,,src_6584efb8d1c60bea,src_9fe2690355aaa819,"tiers [2, 4]",The Case for Protective Headguards in Amateur Boxing and Implications for Intern,chk_c15610571b7f049c
+MERGE_DUPLICATE,,src_2d63a905739f6a14,src_6af48c252690e58c,same tier,Quantifying head impacts and neurocognitive performance in collegiate boxers,chk_d3da633b08dcb2d6
+MERGE_DUPLICATE,,src_1bd38536cbb6f470,src_386a67d70b605542,same tier,Capturing Head Impacts in Boxing: A Video-Based Comparison of Three Wearable Sen,chk_2512b97744f6112c|chk_d6f460fd50b3d160
+MERGE_DUPLICATE,,src_f12b05a1a8657ab9,src_751165b92594161f,same tier,Quality Issues in Kinematic Traces from Three Head Impact Sensors in Boxing: Pre,chk_e6d529457f7c91e0|chk_2c7b74225a855b7f
+MERGE_DUPLICATE,,src_6ddcce8a95d622f4,src_f301cbfaade51380,same tier,Exploring the link between acute symptom changes and repetitive head impacts in ,chk_a973ce22bffe0ffc|chk_a656c31d818c171b
+MERGE_DUPLICATE,,src_7b419a624e6adf6d,src_abd02977676dd7f2,same tier,Pediatric Sport-Related Concussion: Recommendations From the Amsterdam Consensus,chk_bdf2a6823cb755a3|chk_a1936d7cff563259
+MERGE_DUPLICATE,,src_ceb50cb1a9822193,src_eb70c3805cb7415f,same tier,Examining later-in-life health risks associated with sport-related concussion an,chk_834ce042766975e1|chk_693229ec33be28a1
+MERGE_DUPLICATE,,src_9adb51c5adcf72a5,src_e6a82be5c8bf96db,same tier,The Practice of Weight Loss in Combat Sports Athletes: A Systematic Review,chk_2c65d5fc43e767e0|chk_30d7be25d6d0e940
+MERGE_DUPLICATE,,src_0d96cf0e3d582c26,src_12dcdbc04ea8e488,same tier,Biological maturation of youth athletes: assessment and implications,chk_af6514c62ce3c39d
+MERGE_DUPLICATE,,src_5cdafb754e8ca385,src_0ada4233fb93e7a8,same tier,The influence of trained peer tutoring on tutors' motivation and performance in ,chk_e14c73950bcdd2e1
+MERGE_DUPLICATE,,src_6a114cd3da2c1bc7,src_04762709068b6013,same tier,Metabolic and physiological demands of 3×3-min-round boxing fights in highly tra,chk_1bcd7e533c1f7b29
+MERGE_DUPLICATE,,src_89a7a554283eb52c,src_b61baf7ebebde173,same tier,Characterizing Head Impact Exposure in Men and Women During Boxing and Mixed Mar,chk_5b29988a29f99a18|chk_613c7d9e102c595d|chk_6afcb40cadf1d49c|chk_49cc77ddb6a7c8c1
+MERGE_DUPLICATE,,src_8463e4b740b194e2,src_01d47b0829102ed2,same tier,Sparring and the Brain: The Associations between Sparring and Regional Brain Vol,chk_4501e2b8569c903a
+MERGE_DUPLICATE,,src_56037c59eb7db7d9,src_541d0a9e8defc454,same tier,Incidence Rates and Pathology Types of Boxing-Specific Injuries: A Systematic Re,chk_27b03fec9a232bdb|chk_94ceaa74e94e7462|chk_b09415b9dba50119|chk_dab6e05f3a87f05c
+MERGE_DUPLICATE,,src_7adea294cbdd97c9,src_04799ac793776425,"tiers [3, 4]",Injuries in Competitive Boxing. A Prospective Study,chk_08117dc52c83bb2f
+MERGE_DUPLICATE,,src_f244e9a273e14b35,src_7c83077fe2582df8,"tiers [1, 2]",Prevention strategies and modifiable risk factors for sport-related concussions ,chk_58d60e19aa382422
+MERGE_DUPLICATE,,src_554b38a51bf33642,src_ab42a4b0b6f66b51,same tier,International Olympic Committee consensus statement on youth athletic developmen,chk_e7a253011ac8f9b2|chk_97b4429ecee55763|chk_11de2636b5b19fc5
+MERGE_DUPLICATE,,src_6be5ebf671472949,src_0f5b11a6ddf2ef1b,"tiers [3, 4]",Youth Resistance Training: Updated Position Statement Paper From the National St,chk_e8f37844318c2299|chk_4bf69bd31889d50c|chk_3be18c5145dc3b69|chk_0d71b4526a888cb4
+MERGE_DUPLICATE,,src_3c0d6488968bd07d,src_8e9201a67eff647b,same tier,Effects of tapering on performance in endurance athletes: A systematic review an,chk_6d9b7508447c3707
+MERGE_DUPLICATE,,src_b0e404a2d8aa7794,src_7f9342c1d418d5e5,same tier,Strength Training Practices in Amateur and Professional Boxing,chk_7a74fd3c4dff5d1b
+MERGE_DUPLICATE,,src_8499f9ae2c574ece,src_99765c9f681c7713,same tier,"Session-RPE Method for Training Load Monitoring: Validity, Ecological Usefulness",chk_ff091bb40b276bb8|chk_00724441bbe8f4ea
+MERGE_DUPLICATE,,src_05353985d506ebd7,src_42ad976698f90cdf,same tier,Is the Acute: Chronic Workload Ratio (ACWR) Associated with Risk of Time-Loss In,chk_2ce65451cdfa1e11
+MERGE_DUPLICATE,,src_f15da6589ac8fce3,src_8690f10602600ad4,same tier,2023 International Olympic Committee’s (IOC) consensus statement on Relative Ene,chk_0d63c7b7329ab356|chk_ef8f2adc861c4791|chk_ca91af34c20916a5
+MERGE_DUPLICATE,,src_b8de717543bec9bb,src_4215cbfcface6504,"tiers [2, 3]",The Effects of Menstrual Cycle Phase on Exercise Performance in Eumenorrheic Wom,chk_7d316cfd68506f86
+MERGE_DUPLICATE,,src_571f89ab1cfb3844,src_b1999e45c85bae34,"tiers [1, 3]",Overuse injuries and burnout in youth sports: a position statement from the Amer,chk_27ba941e8e2093a8
+MERGE_DUPLICATE,,src_5556e0a18073c8a0,src_b1999e45c85bae34,"tiers [1, 3]",Overuse injuries and burnout in youth sports: a position statement from the Amer,
+MERGE_DUPLICATE,,src_fef5fd676cada29a,src_b481f50c627b4170,same tier,International Olympic Committee consensus statement: harassment and abuse (non-a,chk_26e97f9e49c3d7b7|chk_38fc48fc3ed961a9
+MERGE_DUPLICATE,,src_12f9705eca563ce6,src_00c5cf14f2692175,"tiers [1, 3]","Safeguarding the child athlete in sport: a review, a framework and recommendatio",chk_5c408aead22b31ea|chk_566151a90a7d57c5|chk_b7b84d921fad55bd
+MERGE_DUPLICATE,,src_ae8d7695863bcc0c,src_0d103bfe6bedf7ca,same tier,Prevalence of interpersonal violence against children in sport in six European c,chk_55de6f3e229d7b18
+MERGE_DUPLICATE,,src_7f3259e5043df5d1,src_6f96e88009764a18,same tier,A grounded theory of positive youth development through sport based on results f,
+MERGE_DUPLICATE,,src_e0de4d3acf8c7812,src_d1df60b54a081957,same tier,Performance Aspects and Physiological Responses in Male Amateur Boxing Competiti,chk_a5c7c7cd5127c25c
+MERGE_DUPLICATE,,src_193a94c4c86b2eef,src_ff4314571f2ed238,same tier,Time–Motion Analysis of the 2023 Women’s World Boxing Championships Finals,chk_7a119f42d4f91dd2
+MERGE_DUPLICATE,,src_b68645756a889071,src_f176039eb7ccdcdd,"tiers [1, 2]",Monitoring the athlete training response: subjective self-reported measures trum,chk_170c95d71dc6eae8
+MERGE_DUPLICATE,,src_1b68715e773550e0,src_60eb0e214aeff64c,same tier,Monitoring Athlete Training Loads: Consensus Statement,chk_0cf56258c39dbe25
+MERGE_DUPLICATE,,src_c0a8252f6c30c1db,src_3d4df8639b311816,same tier,How much is too much? (Part 1) International Olympic Committee consensus stateme,chk_56353d44ed35cebb
+MERGE_DUPLICATE,,src_5f792aad39cb3b21,src_60c71dd82fe5eac5,same tier,How much is too much? (Part 2) International Olympic Committee consensus stateme,chk_884bed4b5a40aac0
+MERGE_DUPLICATE,,src_888ad02d93c5e0f4,src_d67ca31658547c89,same tier,A prospective cohort study of injury in amateur and professional boxing,chk_665a8ba211f740bf|chk_f140b82e6b6f6adf|chk_156e75c13455eff1|chk_f91cd59d4d3a2dfe
+MERGE_DUPLICATE,,src_1a48d1e5972cea2a,src_db1fbf900906f271,same tier,Injury Rates and Risk Factors in Competitive Professional Boxing,chk_2981aceed364e96a
+MERGE_DUPLICATE,,src_f1c965733818f75b,src_f89f458247bc0fa0,same tier,"Injury incidence, severity and profile in Olympic combat sports: a comparative a",chk_6d42cbbd4972b7ea
+MERGE_DUPLICATE,,src_0eac1438f8fbf658,src_8bee365757f7eafa,same tier,A systematic review of prospective epidemiological research into injury and illn,chk_9b900aa9b774e410
+MERGE_DUPLICATE,,src_bab6ca1eced51d2a,src_f0f72349d5029e9c,"tiers [3, 4]",Injury surveillance during elite women's national boxing championship in India,chk_13141d3a9cebb9e2
+MERGE_DUPLICATE,,src_f7503ac9301474de,src_9b44730ebb92f513,"tiers [1, 3]",Ocular complications of boxing,
+MERGE_DUPLICATE,,src_22c25776bffd353d,src_1595ad7d7a53440b,same tier,Boxing-related fatalities in Australia: A retrospective analysis of news media r,chk_80e5089384f464fc
+MERGE_DUPLICATE,,src_4b3d9fb41973b614,src_1f93a95cc72950c3,"tiers [3, 4]",Measurement of Head Kinematics Using Instrumented Mouthguards During Introductor,chk_0bc9498fb74d149e|chk_3178b759d015e899|chk_fff8b01b836b254b
+MERGE_DUPLICATE,,src_40a26d4b943ccd02,src_b6292c09e6883927,"tiers [3, 4]",Understanding the Consequences of Repetitive Subconcussive Head Impacts in Sport,chk_caba73ed2ca23478
+MERGE_DUPLICATE,,src_107806a99c912127,src_eacdd76be260882e,"tiers [3, 4]",Does Relative Energy Deficiency in Sport (REDs) Syndrome Exist?,chk_43acbedd427b4f2c
+MERGE_DUPLICATE,,src_f279189265596526,src_b422ef5f88866d11,same tier,Data Informing Governing Body Resistance-Training Guidelines Exhibit Sex Bias: A,chk_201275e73ea7015e
+MERGE_DUPLICATE,,src_b9547877534ee61f,src_a7952f0b2e21305e,same tier,Patterns of weight cycling in youth Olympic combat sports: a systematic review,chk_e5a7a177aa742e86|chk_fe94493a26b72469
+MERGE_DUPLICATE,,src_00ca4b7bd265e287,src_43614d5c172b8c97,same tier,International society of sports nutrition position stand: nutrition and weight c,chk_f4cf693a55fe0315
+MERGE_DUPLICATE,,src_7bd39277840d677c,src_cb463ba3400decc3,same tier,Acute-Weight-Loss Strategies for Combat Sports and Applications to Olympic Succe,chk_a671d4ef77381947
+MERGE_DUPLICATE,,src_fc4e3fc338613b5d,src_6dda270c33ec4fa6,same tier,IOC consensus statement: dietary supplements and the high-performance athlete.,
