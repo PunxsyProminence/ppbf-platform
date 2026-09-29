@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** batch notes from the 2026-08-03 Leather & Brass conversion pass (then called "golden era"), a retired look; comments in `design-system/legacy/ppbf-leather-brass.css` still quote them as "the batch notes". Current source: `docs/GOLDEN-ERA-V1-CONTRACT.md`.
+
 # Batch: admin-consoles
 
 ## Files converted (all under `apps/web/app`, all ink ground)

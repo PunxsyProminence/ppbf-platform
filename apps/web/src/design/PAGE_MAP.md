@@ -19,10 +19,12 @@ Two consequences worth knowing before you touch a page:
   `var(--t-md)`, `var(--s5)`, `var(--brass-500)`. The legacy aliases
   (`--canvas-tan`, `--safety-locked`, `--text-sm`) exist to carry pages written
   before the design system existed, not as a second vocabulary to write in.
-- **`--safety-locked` means what it says.** It is the safety gate's red, and
-  Law 2 reserves saturated colour for safety state. It is not a chrome accent —
-  active tabs, KPI labels and panel borders take `--accent` (brass). The token
-  was called `--red-primary` until it was renamed for exactly this reason.
+- **`--safety-locked` means what it says.** It is `--locked`, the safety gate's
+  medical stop, and Law 2 reserves saturated colour for safety state (red
+  itself is not reserved, OD-2026-09-29-001; this token is). It is not a
+  chrome accent — active tabs, KPI labels and panel borders take `--accent`
+  (brass). The token was called `--red-primary` until it was renamed for
+  exactly this reason.
 - **ppbf.css ships real component classes** — `.badge`, `.tile`, `.frame`,
   `.mat-leather`, `.mat-paper`, `.gauge`, `.plaque`. Use them instead of
   rebuilding a panel out of utilities. Its `.stamp` is a *static ink mark*
@@ -44,6 +46,10 @@ top-level sections have no row anywhere in this document, including
 `director/`, `store/`, `workspace/`, `chalkboard/`, `wall/`, `profile/`,
 `print/`, `notices/`, and `names/`. Do not treat the tables below as a
 complete route list or use their absence as evidence a route doesn't exist.
+
+Measured at `bbf299fe` (2026-09-28): 149 `page.tsx` files under `apps/web/app`
+(`git ls-tree -r --name-only HEAD apps/web/app | grep -c '/page\.tsx$'`). The
+tables below were not re-checked.
 
 For current, self-correcting route coverage, use
 [`apps/web/components/buildingMap.ts`](../../components/buildingMap.ts) and

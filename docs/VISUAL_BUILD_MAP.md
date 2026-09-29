@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** a 2026-08-06 layer plan for the retired Leather & Brass system, not a build order (OD-2026-09-28-009 item 3); the 2026-08-17 park of it is lifted (item 2). Current source: `docs/ROOM-MAP.md` (Build order).
+
 # Visual Build Map — the remaining visual work, ordered for efficiency
 
 **Date:** 2026-08-06 · **Built against:** `claude/page-visuals-display-7kaqiu` (PR #240)

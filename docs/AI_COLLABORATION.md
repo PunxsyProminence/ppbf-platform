@@ -1,11 +1,11 @@
 # Multi-AI Collaboration
 
-Use this only when more than one AI may touch nearby work.
+Use this only when more than one AI session may touch nearby work.
 
 ## Model
 
 - One human owner sets intent and retains final product/safety authority.
-- Multiple AI agents may build, review, audit, or integrate.
+- Several Claude Code sessions may build, review, or integrate at once; Claude Code is the only builder (OD-2026-09-28-001).
 - `main`, current source, and live GitHub PRs are coordination truth.
 - Tickets are optional; use them when a durable handoff or decision record adds value.
 
@@ -19,7 +19,7 @@ Before editing, check current `main`, `docs/current/ACTIVE_WORK.md`, and open PR
 4. Draft PRs are early visibility, not an approval ceremony.
 5. Re-derive or close materially stale branches instead of repeatedly patching them forward.
 
-Across AI products the agent-role LANES are fixed by OD-2026-09-21-001 and OD-2026-09-25-002 (Jason final; Claude builder; ChatGPT designs and enforces standards, read-only here; Grok visual; see `AGENT_KERNEL.md`, Working channel). Jason's four subject areas are WORK DOMAINS -- visual design, ML training, AI/ML, app build -- not agent lanes and not authority boundaries. Among parallel Claude sessions no permanent Builder/Gatekeeper identity is required: one session may build one change and review another. Independent review is useful for higher-risk work, but executable evidence outranks model agreement.
+Roles across AI products are set by OD-2026-09-28-001 in `docs/current/OWNER_DECISIONS.md`: Claude Code is the only builder; ChatGPT is the architect and the reviewer, and its reviews start once its reviewer instructions are set up; Grok and Canva make images when Jason asks and open no pull requests; no other AI holds a standing role. Jason's four subject areas are WORK DOMAINS -- visual design, ML training, AI/ML, app build -- not roles and not authority boundaries. Among parallel Claude sessions no permanent Builder/Gatekeeper identity is required: one session may build one change and review another. Independent review is useful for higher-risk work, but executable evidence outranks model agreement.
 
 ## Reviewers are separate signals
 
@@ -42,7 +42,7 @@ Never collapse them into "review passed" or "review failed". `AGENT_KERNEL.md`'s
 | check conclusion `neutral`, body says review skipped / credits exhausted / quota | reviewer did not run — TOOL/ENVIRONMENT unavailable | not a pass, and not a fail |
 | Codex "Code Review ✅ Completed" | that reviewer finished executing on the named SHA | not a GitHub approval |
 | no inline comments, no review posted | no findings on the surfaces inspected | not a formal approval, and not proof the reviewer ran |
-| green CI | the suites that ran, passed | not a code review — see the Lane model |
+| green CI | the suites that ran, passed | not a code review — see the merge rules in `AGENT_KERNEL.md` |
 
 A formal approval exists only when a submitted review object has state `APPROVED`. As of 2026-09-13 none of PRs #920, #921, #922, #924, #925, #926 or #927 carried one, and `reviewDecision` was empty on all of them. If a report says "approved", name the review object.
 
@@ -55,7 +55,7 @@ Absence of a reviewer's own success marker is not its success. Codex documents t
 3. **Control-plane technical verdict** — bounded independent review of source, diff and evidence.
 4. **Owner authorization** — Jason's explicit decision.
 
-None substitutes for another. A reviewer or an audit lane recommends; only Jason or a delegate he names supplies acceptance.
+None substitutes for another. A reviewer or an audit recommends; only Jason or a delegate he names supplies acceptance.
 
 ### A reviewer that could not run is not a defect
 
@@ -65,4 +65,4 @@ Credits, quota, an outage, permissions or a broken integration are TOOL/ENVIRONM
 
 `request or approved work order -> inspect current source/open PRs -> bounded branch -> implement -> targeted proof -> CI -> review if warranted -> merge`
 
-Agents without repository execution may still provide complete patches, files, tests, or findings. Their behavioral claims remain `UNVERIFIED` until applied to current source and executed by a repo-capable agent.
+Agents without repository execution may still provide complete patches, files, tests, or findings. Their behavioral claims remain `UNVERIFIED` until a Claude Code session applies them to current source and executes them.

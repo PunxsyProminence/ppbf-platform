@@ -1,6 +1,6 @@
 # T-001 — Admin console for issuing per-athlete activation codes
 
-> Status: READY
+> Status: **RESOLVED — shipped as #239, merged 2026-08-06 (`5dd0e811`); evidence in the T-001 row of `docs/current/WORK_QUEUE.md`**
 > Lane: A (git-capable AI) or B (chat-only AI) — either
 > Priority: P3 operator convenience
 

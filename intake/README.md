@@ -23,8 +23,9 @@ intake/
 ## Drops
 
 A drop is candidate material, never trusted repository state. Chat-only AIs
-save complete files or a patch under `drops/<ticket-or-task-id>/`; any
-repo-capable session reconciles it onto a bounded branch, runs targeted
-checks, and relies on CI. Stale output is fixed in normal development or
-discarded. Jason retains product, safety, destructive-data, rollback, and
-production-approval authority (release lane: `docs/AI_DELIVERY_PIPELINE.md`).
+save complete files or a patch under `drops/<ticket-or-task-id>/`; a Claude
+Code session (the only builder, OD-2026-09-28-001) reconciles it onto a bounded
+branch, runs targeted checks, and relies on CI. Stale output is fixed in normal
+development or discarded. Jason retains product, safety, destructive-data,
+rollback, and production-approval authority (release procedure:
+`docs/AI_DELIVERY_PIPELINE.md`).

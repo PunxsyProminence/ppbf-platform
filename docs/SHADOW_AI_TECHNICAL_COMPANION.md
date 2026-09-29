@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** 2026-07-17 build notes that describe features that do not exist; OD-2026-09-28-010 item 23 takes this file out of SHADOW's doctrine set at the next seed. Current source: `docs/SHADOW_AUTHORITY_MODEL.md` (doctrine) and `apps/web/app/api/pilot/shadow/chat/route.ts` (chat behaviour).
+
 # SHADOW AI Architecture — Technical Companion
 
 **Date:** 2026-07-17  

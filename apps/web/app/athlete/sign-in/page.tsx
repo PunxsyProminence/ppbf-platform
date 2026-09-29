@@ -98,7 +98,7 @@ export default function AthletePinSignInPage() {
 
      Ground is canvas rather than ink on purpose, and not only for warmth: a
      near-black panel under gym lights is a mirror. The card is paper, which is
-     also what Law 6 allows -- white is not one of the five materials, and the
+     also what Law 6 allows -- white is not one of Golden Era's materials, and the
      rounded-2xl/rounded-xl geometry it came with is off the Fibonacci radius
      scale entirely.
 

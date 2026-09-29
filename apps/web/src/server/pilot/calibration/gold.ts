@@ -115,6 +115,9 @@ interface AdjudicationProvenanceRow {
   /** Null when the clip's source was not recorded to teach Shadow, or when
    *  the video row is gone. Both mean the reading is not reference data. */
   capture_take_id: string | null;
+  /** The source video's status. Null only when the video row is gone, which
+   *  the capture_take_id refusal already catches. */
+  status: string | null;
 }
 
 function requireNonEmpty(value: unknown, field: string): string {
@@ -192,7 +195,8 @@ export async function nominateGoldCandidate(
          clip.video_session_id,
          -- LEFT, so a missing video row still reports as "no such
          -- adjudication" rather than as the wrong refusal below.
-         vid.capture_take_id
+         vid.capture_take_id,
+         vid.status
        from pilot.calibration_adjudications adj
        join pilot.calibration_clips clip
          on clip.organization_id = adj.organization_id
@@ -225,6 +229,25 @@ export async function nominateGoldCandidate(
     if (source.capture_take_id === null) {
       throw new Error(
         'Forbidden: this reading came from footage that was not recorded to teach Shadow, '
+        + 'so it cannot become reference data',
+      );
+    }
+
+    /*
+     * AND THE FOOTAGE MUST STILL BE IN CIRCULATION. Archiving a video is how
+     * somebody says it should not be in the corpus, and a gold record is the
+     * most consequential teaching use there is -- the reference data a
+     * recognizer is scored against.
+     *
+     * HERE FOR THE SAME REASON THE TAKE CHECK IS: assertVideoClippable stops
+     * clips being cut or reopened but does not reach this path, so an
+     * adjudication that already existed when the footage was withdrawn could
+     * otherwise still be nominated afterwards. Reversible, like the archive
+     * itself: restore the video and the nomination is available again.
+     */
+    if (source.status === 'archived') {
+      throw new Error(
+        'Forbidden: the footage this reading came from has been archived, '
         + 'so it cannot become reference data',
       );
     }
@@ -324,14 +347,19 @@ export async function promoteGoldRecord(input: PromoteGoldRecordInput): Promise<
         where organization_id = $1
           and gold_record_id = $2
           and governance_state = 'candidate'
-          -- AND ITS SOURCE IS TEACHING FOOTAGE. A candidate nominated before
-          -- that boundary existed must not be promotable into the reference
-          -- set now; it stays a historical row. See nominateGoldCandidate.
+          -- AND ITS SOURCE IS TEACHING FOOTAGE THAT IS STILL IN CIRCULATION.
+          -- A candidate nominated before that boundary existed must not be
+          -- promotable into the reference set now; it stays a historical row.
+          -- A candidate whose footage has since been ARCHIVED must not be
+          -- either -- promotion is the step that makes a reading reference
+          -- data, and withdrawn footage must not acquire a stronger standing
+          -- after it was pulled. See nominateGoldCandidate.
           and exists (
             select 1 from pilot.video_sessions v
              where v.organization_id = pilot.calibration_gold_records.organization_id
                and v.video_session_id = pilot.calibration_gold_records.video_session_id
                and v.capture_take_id is not null
+               and v.status <> 'archived'
           )
         returning ${GOLD_COLUMNS}`,
       [organizationId, goldRecordId, promotedByAccountId],
@@ -342,16 +370,47 @@ export async function promoteGoldRecord(input: PromoteGoldRecordInput): Promise<
       return row;
     }
 
-    // The UPDATE matched nothing. Say WHICH of the two reasons it was, rather
-    // than reporting a missing record for one that is merely already settled.
-    const existing = await client.query<{ governance_state: string }>(
-      `select governance_state from pilot.calibration_gold_records
-        where organization_id = $1 and gold_record_id = $2`,
+    /*
+     * The UPDATE matched nothing. Say WHICH reason it was, rather than
+     * reporting a missing record for one that is merely already settled.
+     *
+     * THERE ARE NOW THREE, not the two this comment used to claim: the record
+     * is absent, its governance_state is not 'candidate', or its SOURCE is
+     * ineligible. The source case was already reachable before archiving
+     * existed -- a candidate over pre-takes footage -- and fell through to the
+     * governance_state message, which then read "only a candidate can be
+     * promoted, and this record is 'candidate'". A refusal that contradicts
+     * itself sends the reader looking at the wrong field entirely, so the
+     * source reasons are diagnosed first and named.
+     */
+    const existing = await client.query<{
+      governance_state: string;
+      capture_take_id: string | null;
+      video_status: string | null;
+    }>(
+      `select g.governance_state, v.capture_take_id, v.status as video_status
+         from pilot.calibration_gold_records g
+         left join pilot.video_sessions v
+           on v.organization_id = g.organization_id
+          and v.video_session_id = g.video_session_id
+        where g.organization_id = $1 and g.gold_record_id = $2`,
       [organizationId, goldRecordId],
     );
     const current = existing.rows[0];
     if (!current) {
       throw new Error('Not found: no such gold record in this organization');
+    }
+    if (current.capture_take_id === null) {
+      throw new Error(
+        'Forbidden: this candidate came from footage that was not recorded to teach Shadow, '
+        + 'so it cannot become reference data',
+      );
+    }
+    if (current.video_status === 'archived') {
+      throw new Error(
+        'Forbidden: the footage this candidate came from has been archived, '
+        + 'so it cannot become reference data',
+      );
     }
     throw new Error(
       `Missing governance_state: only a candidate can be promoted, and this record is '${current.governance_state}'`,

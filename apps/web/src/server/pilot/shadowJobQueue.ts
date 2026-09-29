@@ -7,6 +7,49 @@ import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import type { ShadowSessionType } from './shadowRouter';
 
+/**
+ * The version of the CONTEXT CONTRACT a job payload was written under.
+ *
+ * A background job does not re-derive the context it is answered from. The
+ * enqueuing request assembles it, stores it on the row, and the worker reads
+ * `payload.authorizedContext` at EXECUTION time -- possibly long after, and
+ * possibly under code that assembles context by different rules. Nothing in
+ * the payload recorded which rules applied, so a job written before a change
+ * and executed after it was answered from the old context with no way for the
+ * worker to know.
+ *
+ * That is not hypothetical. The near-miss audience gate (OD-2026-09-26-002, "Near-miss records are
+ * coach and organization-admin chat context only")
+ * removed athlete and parent access to recorded near-miss events in prompt
+ * context; a Heavy Bag job enqueued before it and executed after would still
+ * have carried those records into the answer, and the worker's allowed-role
+ * set includes athlete and parent.
+ *
+ * BUMP THIS whenever a change alters WHAT GOES INTO `authorizedContext` for
+ * any role. Jobs stamped with an older version -- and jobs carrying no stamp
+ * at all, which means they were enqueued before this existed -- are refused
+ * at execution rather than answered from stale context.
+ *
+ * The owner's instruction that produced it, 2026-09-26: "Nothing is real if
+ * anything is waiting." A deploy-time queue check can only look once and
+ * cannot see a job enqueued a second later; this makes the guarantee a
+ * property of the payload instead of a property of timing.
+ */
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 2;
+//                                              ^ BUMPED for the near-miss
+// audience gate. It should have been bumped BY that change and was not: #975
+// altered what goes into `authorizedContext` for athlete and parent -- exactly
+// the trigger named above -- and touched only shadowChat.ts, its test and two
+// documents. The stamp had merged four hours earlier, so between the two
+// merges jobs were enqueued stamped 1 carrying pre-gate context, and a worker
+// also at 1 accepted them. The mechanism was correct and nobody pulled the
+// lever, which is the failure mode of any guard whose arming is a separate
+// human step.
+//
+// If that shape is unacceptable rather than merely noted, the fix is to derive
+// this from the context-assembling source rather than typing it -- then it
+// moves whenever the rules move. That is an owner call, not a builder one.
+
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export type JobType =

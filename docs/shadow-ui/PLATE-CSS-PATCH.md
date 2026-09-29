@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** a completed patch: no `.png` plate path remains in the sheets, and `ppbf.css` is now two imports. Current source: `apps/web/public/plates/README.md`.
+
 # One-line CSS plate path patch
 
 In `design-system/ppbf.css` around the Plate Set v1 block (~3398):

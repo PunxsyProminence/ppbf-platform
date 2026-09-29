@@ -118,9 +118,11 @@ column to the migration fails the readiness check with
 
 ## Not done here
 
-- **The migration has not been applied to any environment.** The deploy
-  coordinator (the VS Code session) owns dispatches. Staging first, then
-  production, `migration: gear-vendors` or `all`.
+- **Corrected 2026-09-28: the migration is applied.** This line used to say it
+  had not been applied anywhere. `apply-migrations` runs 33269702024 (staging,
+  2026-08-29), 33280673339 (production, 2026-08-29) and 34431216912
+  (production, 2026-09-10) each log `PILOT GEAR VENDORS MIGRATION PASS` (run
+  logs read 2026-09-28).
 - No SHADOW E2E gate step. The gate provisions no gym-commerce fixtures and
   this slice adds no athlete-facing behavior; the real-Postgres suite is the
   end-to-end proof available without one.

@@ -120,6 +120,7 @@ the batched `accessibleAthleteIds` used by `getJobsForActor` -- is the
 | Athlete cannot self-promote | an `athlete` actor may not change `coach_id`, `active_flag` or `gym_status` | `access.ts:assertAthleteUpdateAllowed` | 403 `Forbidden: athlete cannot change coach assignment` / `...status flags` / `...gym_status` | **LIVE** |
 | Guardian reach, one definition | `guardian_links` joined to `parents` **organization-scoped on both levels** | `guardianAccess.ts:isGuardianLinkedToAthlete`, `:guardianAthleteIds` | false / `[]` (callers must pass `[]` through, never widen to `undefined`) | **LIVE** |
 | No second guardian join | a build-time check that no route hand-writes the viewer-scoped guardian join again | `guardianAccess.test.ts` | a failing test | **LIVE** |
+| Three coach reads check the named child | `transfer-check`, `competence-cohorts` and `multidiscipline` take a caller-supplied `athlete_id` and run the actor/athlete gate on it before any data call | `coach/transfer-check/route.ts`, `competence-cohorts/route.ts`, `multidiscipline/route.ts` -> `access.ts:assertActorCanAccessAthlete` | the actor/athlete gate's 403s | **LIVE** -- PR #563 (`d8236558`), read at `bbf299fe` (was GAP-8) |
 
 The `coach_id` gate is not roster bookkeeping. `profileDb.ts` mints
 `coach_of_subject` straight from that column, and that relationship is one of the
@@ -174,20 +175,19 @@ order by created_at desc`) `photo_media` waiver with `status = 'signed'`.
 | Blocked attempts are audited | who tried to act on unconsented footage of this child, and when | video-compliance and publish routes | -- | **LIVE** |
 | Org-wide audit is unpaginated | a default page cap would hide the finding the screen exists to surface | `guardianConsent.ts:listOrganizationConsentStatus` (org-admin only, read-only) | -- | **LIVE** |
 | **Consent SCOPE enforcement** | `covers_video` / `public_use_allowed` are recorded and **never read by any gate** | -- | -- | **GAP** (see GAP-2) |
-| **Guardian identity on link creation** | nothing validates the `account_id` attached to a guardian record | -- | -- | **GAP** (see GAP-3) |
+| Guardian identity on link creation | the `guardian_link` branch is `organization_admin` only, and a supplied `account_id` must be an active parent-role account in the caller's organization | `intake/domain-upsert/route.ts:POST` -> `access.ts:assertActiveParentAccount` | 403 `Forbidden: role not allowed`; 400 `Missing account_id: must be an active parent account in this organization` | **LIVE** -- PR #456 (`5f19bd68`), read at `bbf299fe` (was GAP-3) |
 
 ---
 
 ## 5. A child's face and name
 
 Full detail: `profileVisibility.ts` (its header states the
-relationship-not-consent model). Two notes with no other home: a guardian's
+relationship-not-consent model). One note with no other home: a guardian's
 `photo_media` withdrawal never un-releases a portrait — guardians have no
 takedown route; they ask staff to block (`photo/review` admits admin+coach
-only). And the portrait-review POST accepts an approve with no attestation
-field (curl bypasses the console's view gate); the compensating control is
-that an approval lacking a matching `portrait_review_image_viewed` audit
-event for that reviewer+account is detectable after the fact.
+only). A second note, that the portrait-review POST accepted an approve with no
+attestation, is closed: see the "Approve is attested server-side" row below and
+Closed gaps.
 
 The strictest tier in the platform (`privacyTiers.ts` calls it `minor_circle`).
 It decides on **relationship**, not consent, because -- as
@@ -215,6 +215,7 @@ find.
 | Roster decides per row | `scope=organization` changes which rows come back, never what may be seen on one | `profile/roster/route.ts` | plate per row | **LIVE** |
 | Wall / wall-of-names privacy | public surfaces resolve every athlete to initials unless a guardian-signed waiver row says otherwise; opaque hashed keys, no `athlete_id`; org fixed; IP-budgeted | `wallDisplay.ts:resolveDisplayVisibility`, `wallRateLimit.ts`, `app/api/pilot/wall/route.ts` | 429 `Too many requests.`; 503 with **no** detail (deliberately not `jsonError` -- the response renders on a screen in a public room) | **LIVE** |
 | Reviewer must have seen the image | a narrow, audited, review-only route (mirrors `video/review-link`'s split from `video/[videoId]`) serves the pending photo only, organization-admin only, `pending_review` state only; the console's Approve stays disabled until the reviewer's own `<img>` has fired `onLoad` for that photo | `admin/portrait-review/photo/[accountId]/route.ts`, `profileVisibility.ts` boundary unchanged | hidden 404, same posture as the release path | **LIVE** -- merged as **PR #461** (`c78f181a`). Re-verified against current `main` (this file's 2026-08-17 version listed it as a not-yet-on-main branch; git log + `NETWORK_STATUS.md`'s Closed table confirm it merged.) |
+| Approve is attested server-side | an approve must match this reviewer's own `portrait_review_image_viewed` audit event for the photo's current `photo_uploaded_at`, and the release UPDATE requires that same value, so a photo replaced after the view is not released | `admin/portrait-review/route.ts:POST` -> `profileDb.ts:releasePhoto` | 403 `Forbidden: approve requires viewing the current photo first` | **LIVE** -- PR #548 (`9faf1c02`), read at `bbf299fe` |
 | Route-level tests for any of the above | -- | -- | -- | **GAP** (see GAP-4) |
 
 ---
@@ -272,7 +273,7 @@ doctrine in its own comments), and their tests.
 | Medical status is read-only to the model | the write function must never be imported by recommendation or decision logic | `shadowMedicalStatus.ts` (documented invariant) | -- | **LIVE** |
 | Per-org gate deactivation | an organization may set `safety_gates.active_flag=false` for a named gate -- a configuration, **not** a per-evaluation override (no such override exists) | `safetyGateMatrix.ts:getSafetyGateDefinition` | -- | **LIVE** |
 | Contact-event hold gate (competitions) | `all_training` + `contact_only` blocks a competition entry | `trainingHolds.ts:findContactEventBlockingHold` | 403 `TRAINING_HOLD_BLOCKS_COMPETITION` | **LIVE** (merged as PR #452) |
-| **`conditioning_only` enforcement** | the scope is storable, escalating and displayed -- and **no code path reads it** | -- | -- | **GAP** (see GAP-6) |
+| `conditioning_only` no longer offered | nothing enforces the scope, so no new hold may be placed with it and the sports-medicine form does not show it; holds placed with it earlier still read and render | `training-holds/route.ts:POST` (`OPERATIONAL_TRAINING_HOLD_SCOPES`) | 400 `Unsupported scope: conditioning_only is not offered because nothing enforces it -- use all_training or contact_only` | **LIVE** -- PR #548 (`9faf1c02`), read at `bbf299fe` (was GAP-6) |
 | Hold vs. medical record reconciliation | a `medical` hold is not tied to `shadow_medical_administrative_status`; lifting one does not clear the other | -- | -- | **GAP** |
 | Required note on lifting | -- | -- | -- | **GAP** (`lift_note` optional, unlike compliance's required closing note) |
 | Maximum hold duration | `expires_at` may be null = indefinite | -- | -- | **GAP** (deliberate for medical holds; contrast coverage's 336h cap) |
@@ -413,44 +414,6 @@ they have limited something they have not.
 The defaults compound it: `covers_video` defaults to **true**
 (`body?.covers_video !== false`).
 
-### GAP-3 -- nothing validates who is attached as a guardian
-
-`POST /api/pilot/intake/domain-upsert` with `entity_type: 'guardian_link'`
-(`organization_admin` or `coach`, behind `assertActorCanAccessAthlete` for the
-child) calls `intake.ts:upsertGuardian` with an `account_id` taken **straight
-from the request payload**. Nothing checks that the id names an account at all,
-that it is a `parent`-role account, or that it belongs to this organization.
-There is no analogue of `access.ts:assertActiveCoachAccount` -- the gate that
-exists on the coverage path for exactly this reason ("a typo'd id is not a bad
-reference -- it is access granted to whatever account the typo names").
-
-Because `upsertGuardian` runs
-`on conflict (organization_id, parent_id) do update set account_id = excluded.account_id, ...`,
-a caller may also **repoint an existing guardian record at a different account**,
-overwriting that guardian's name, phone and email in the same statement.
-
-What that account then gains, if its role is `parent`:
-`guardianAccess.ts:guardianAthleteIds` returns this child, so
-`assertActorCanAccessAthlete` admits them; `profileDb.ts:resolveRelationship`
-returns `guardian_of_subject`, which is inside `MINOR_CIRCLE`, so they see the
-child's **portrait and ring name**; they can read the child's training hold and
-video list; and they can **grant or withdraw media consent** for that child.
-
-The sibling path does not have this gap:
-`POST /api/pilot/intake/review-action` runs
-`createOrUpdateMicrosoftStaffAccount({ role: 'parent' })` before linking.
-
-*Scope note, so this is not overstated:* the actor must already hold standing
-with the child, and a `coach`-role account cannot grant *itself* guardian
-visibility -- both `resolveRelationship` and `assertActorCanAccessAthlete` key the
-guardian branch on `viewer.role === 'parent'`. The exposure is that an
-**arbitrary third account** can be made a guardian of a named child by one API
-call, with no check on that account.
-
-*Fix shape:* an `assertGuardianAccount`-style check on the
-`domain-upsert` guardian branch, mirroring `assertActiveCoachAccount`; plus a
-decision about whether `parent_id` should be caller-supplied at all.
-
 ### GAP-4 -- the portrait routes have no route-level tests
 
 There is no `app/api/pilot/profile/**/route.test.ts` anywhere in the tree.
@@ -472,41 +435,6 @@ which reconstructs the roster-wide grant the design deliberately rejected.
 Contained by the fact that the actor is already the role that can read every
 athlete record in the gym, but the bound is per-child, not per-coach, and no
 document said so before this one.
-
-### GAP-6 -- `conditioning_only` holds enforce nothing
-
-`conditioning_only` is a valid `TrainingHoldScope`: it is storable, it files an
-escalation, it shows on the athlete's banner and the staff list. **No code path
-reads it.** `findRegistrationBlockingHold` narrows to `all_training`;
-`flagContactDuringHold`'s scope set is `('all_training', 'contact_only')`; PR
-#452's `findContactEventBlockingHold` uses the same pair.
-
-A coach who places a `conditioning_only` hold has recorded an intention and
-notified an admin. Nothing in the platform will stop the conditioning.
-
-**Context that makes this fairer, and the finding sharper.** `trainingHolds.ts`'s
-header records an owner decision (2026-08-06) splitting the scopes into two
-different jobs: `all_training` is **STOP/HOLD** (training pauses until a person
-lifts it), while `contact_only` and `conditioning_only` are **REGRESS** --
-"training CONTINUES at reduced scope". So a scoped hold was never meant to stop
-a session outright, and reading this row as "a gate someone forgot to write"
-would be unfair to the design.
-
-The finding survives that context as an **asymmetry**, which is the honest
-version: `contact_only` did get an enforcement path -- it is in
-`flagContactDuringHold`'s scope set, and PR #452 (merged) added it to competition entry --
-while `conditioning_only` got none anywhere. Both are REGRESS scopes; only one
-of them regresses anything.
-
-It matters because the reduced scope is stated to a guardian as fact.
-`/parent/safety` renders `conditioning_only` as **"Conditioning is paused right
-now"**, which is the correct reading of the scope and is exactly what is not
-true. A parent is told a restriction is in force that no code enforces.
-
-The honest close is one of two decisions, not a patch: either give
-`conditioning_only` an enforcement surface (there is no conditioning-activity
-gate in the platform today to hang it on), or stop offering the scope until
-there is one. Both are owner calls.
 
 ### GAP-7 -- the manual escalation target is unvalidated free text
 
@@ -531,31 +459,6 @@ Related, smaller: `escalation_reason` **defaults** to
 `'Policy violation requires escalation'` when omitted, so an escalation can carry
 no human reasoning at all -- the opposite of the rule the same capability applies
 to closing verdicts.
-
-### GAP-8 -- coach reads that gate on role but not on the child
-
-Three routes accept a caller-supplied `athlete_id` and check **role only**
-(`coach` or `admin`), never standing with that particular child:
-
-- `app/api/pilot/competence-cohorts/route.ts` -- one athlete's assessed levels,
-  logged training and derived age.
-- `app/api/pilot/multidiscipline/route.ts` -- one athlete's grappling exposure
-  history and current participation level. The route's own comment calls this
-  "athlete safety data".
-- `app/api/pilot/coach/transfer-check/route.ts` -- one athlete's transfer
-  readout.
-
-Each is org-scoped, and each comments carefully about *not widening the role
-set* -- but any coach in the gym can name any athlete id. Compare
-`app/api/pilot/compliance/violations/route.ts`, which calls
-`assertActorCanAccessAthlete` for exactly this shape of read.
-
-This sits against a real, recorded doctrine: `app/api/pilot/athletes/list/route.ts`
-holds that "a coach plans a floor and picks up cover across the whole gym" and
-already exposes every athlete's name and gym status org-wide, restricting only
-`dob` and `emergency_contact`. Grappling exposure history is a different kind of
-field from a name. Whether these three should narrow is an owner decision, not a
-bug fix -- but nothing currently records that the decision was ever made.
 
 ### GAP-9 -- unfiltered coach violation list ignores coverage
 
@@ -590,6 +493,36 @@ indirection: a routing table doubles as an authentication policy, and adding
 a destination for a new role silently makes it signable-in. Related
 deliberate absences: no concurrent-session limit and no device binding — a
 stolen cookie works from anywhere within its 24-hour life.
+
+---
+
+## Closed gaps
+
+Moved here on 2026-09-28 after reading the code at `bbf299fe`. The ids are
+kept because `apps/web/app/coach/sports-medicine/page.tsx` cites GAP-6. The full original
+text of each entry is in this file's git history.
+
+- **GAP-3** (nothing validated who is attached as a guardian) -- closed by
+  PR #456 (`5f19bd68`). The `guardian_link` branch of `intake/domain-upsert` is
+  `organization_admin` only, and a supplied `account_id` must be an active
+  parent-role account in the caller's organization
+  (`access.ts:assertActiveParentAccount`). `parent_id` is still
+  caller-supplied, and an existing guardian record can still be pointed at a
+  different account (`intake.ts:upsertGuardian`); through this route, only by
+  an organization admin and only at such an account. See the section 4 row.
+- **GAP-6** (`conditioning_only` holds enforced nothing) -- closed by PR #548
+  (`9faf1c02`) the second way GAP-6 named: the scope is no longer offered.
+  `training-holds/route.ts:POST` refuses it and the sports-medicine form does
+  not show it. Holds placed with it before #548 still read and render, and
+  `/parent/safety` still labels them "Conditioning is paused right now"
+  (`app/parent/safety/page.tsx:40`). See the section 7 row.
+- **GAP-8** (three coach reads gated on role, not on the child) -- closed by
+  PR #563 (`d8236558`): `transfer-check`, `competence-cohorts` and
+  `multidiscipline` call `assertActorCanAccessAthlete` before any data call.
+  See the section 2 row.
+- **Section 5 attestation note** (a portrait approve carried no attestation)
+  -- closed by PR #548 (`9faf1c02`): the approve is checked against the
+  reviewer's own view event for the current photo. See the section 5 row.
 
 ---
 

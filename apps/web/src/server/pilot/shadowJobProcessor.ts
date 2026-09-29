@@ -34,7 +34,7 @@ import { createFilmStudyProposal } from './shadowFilmStudyProposals';
 import type { PilotRole } from './contracts';
 import { BOARD_SUMMARY_ROLES } from './shadowRoleSets';
 import { queryOne } from './db';
-import { claimNextJob, completeJob, failJob, type JobType } from './shadowJobQueue';
+import { claimNextJob, completeJob, failJob, SHADOW_CONTEXT_CONTRACT_VERSION, type JobType } from './shadowJobQueue';
 import { composeShadowSystemPrompt, SHADOW_SYSTEM_PROMPT, validateShadowResponse } from './shadowChat';
 import { appendAssistantMessage, queueHumanReview } from './shadowConversations';
 import {
@@ -351,7 +351,9 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
     // This matters for rows queued BEFORE the request-boundary gate above
     // existed: those jobs are unreachable by any authorized actor and would
     // otherwise burn their full retry budget proving it.
-    if (errorCode === 'SHADOW_JOB_SCOPE_FORBIDDEN') {
+    // CONTRACT_AHEAD is deliberately absent here: that job is fine and this
+    // worker is behind, so it must keep its payload and stay claimable.
+    if (errorCode === 'SHADOW_JOB_SCOPE_FORBIDDEN' || errorCode === 'SHADOW_JOB_CONTEXT_CONTRACT_STALE') {
       await failJob(job, errorCode, { retryable: false });
     } else {
       await failJob(job, errorCode);
@@ -691,6 +693,43 @@ function requireAsyncTrustContext(payload: Record<string, unknown>): {
     'volunteer',
     'platform_owner',
   ]);
+  // THE CONTEXT ON THIS ROW WAS ASSEMBLED BY THE REQUEST THAT ENQUEUED IT,
+  // under whatever rules were in force then. If those rules have since
+  // changed, answering from it delivers the old behaviour after the change is
+  // live -- and for the near-miss audience gate that means near-miss records
+  // reaching an athlete or parent, both of which are in allowedRoles above.
+  //
+  // A missing stamp is a job enqueued before this check existed, which is
+  // exactly the population the gate was worried about, so absence is refused
+  // rather than defaulted.
+  // FAILS CLOSED ON ITS OWN CONSTANT, not only on the payload. A bare
+  // `payload.x !== CONSTANT` passes every unstamped job the moment the
+  // constant is undefined -- a module mock, a circular import, a bad merge --
+  // because undefined !== undefined is false. A guard that disables itself
+  // when its own wiring breaks is worse than no guard, because it reports
+  // green. The type check is the guard on the guard.
+  const stamped = payload.contextContractVersion;
+  if (typeof SHADOW_CONTEXT_CONTRACT_VERSION !== 'number' || typeof stamped !== 'number') {
+    throw new Error('SHADOW_JOB_CONTEXT_CONTRACT_STALE');
+  }
+  if (stamped < SHADOW_CONTEXT_CONTRACT_VERSION) {
+    throw new Error('SHADOW_JOB_CONTEXT_CONTRACT_STALE');
+  }
+  // DIRECTION MATTERS, and the first version of this got it wrong by using a
+  // bare `!==`. A payload stamped NEWER than this worker is not stale -- the
+  // WORKER is behind. That happens on every rollout: the new revision enqueues
+  // at the new version while the old revision is still serving with its
+  // in-process worker enabled, and claimNextJob has no version predicate, so
+  // the old worker claims it.
+  //
+  // Treating that as stale was terminal, and failJob's non-retryable branch
+  // sets input_payload to '{}', so the job could not be re-run once a current
+  // worker existed: the question stayed in the conversation with no answer and
+  // no way to produce one. Leaving it retryable keeps the payload and lets a
+  // current worker take it on a later tick, which is what should happen.
+  if (stamped > SHADOW_CONTEXT_CONTRACT_VERSION) {
+    throw new Error('SHADOW_JOB_CONTEXT_CONTRACT_AHEAD');
+  }
   if (
     typeof role !== 'string'
     || !allowedRoles.has(role as PilotRole)

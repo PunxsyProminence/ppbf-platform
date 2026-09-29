@@ -4,6 +4,7 @@
 |-------|-------|
 | Status | **DONE** |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | Safety / Recovery / Health (`safetyRecoveryHealth`) |
 | Source | `2.0.0-draft-merged` |
@@ -18,6 +19,13 @@ transaction, with the hold's own explanation; **Hold** — training paused
 until a person lifts it or it expires, one active hold per athlete, linear
 history; **Regress** — a scope-restricted hold (`contact_only` /
 `conditioning_only`): training continues at reduced permitted intensity.
+(2026-09-28, checked against code: since #548, 2026-08-21, a new hold may be
+placed only as `all_training` or `contact_only`. `conditioning_only` is refused
+because nothing enforced it, and old rows carrying it still display
+(OPERATIONAL_TRAINING_HOLD_SCOPES in `apps/web/src/server/pilot/trainingHolds.ts`).
+Since #452, 2026-08-17, either scope also refuses competition entry
+(findContactEventBlockingHold, called from
+`apps/web/src/server/pilot/competitionSafetyGates.ts`).)
 What regresses is the intensity, **never the athlete's standing** — the
 platform has no athlete ranks, by recorded doctrine (the achievements
 migration: "a greyed-out rung is how a system tells somebody they are the
@@ -48,7 +56,7 @@ failure mode that hurts an athlete).
 - [x] Roles that may read / write — coaches place and lift for their own athletes (owner decision), org admins any; athletes and guardians read only the athlete-safe projection (explanation, lift condition, scope — never `reason_text`); board and platform_owner get nothing
 - [x] Safety / refusal cases — one active hold per athlete (partial unique index); blank `athlete_explanation` refused by the database; guarded lift transition (no silent re-lift); 42P01 pre-migration windows degrade to pre-#82 behavior on every read path; contact during a covering hold flags (never blocks) at `high`
 - [x] Audit events — `safety_hold_placed` / `safety_hold_lifted` (vocabulary widened in `auditEventTypes.ts` + both SQL homes)
-- [x] UI surface — athlete workspace banner (non-punitive, self-contained), `/admin/escalations` renders hold escalations; place/lift is API-only in v1
+- [x] UI surface — athlete workspace banner (non-punitive, self-contained), `/admin/escalations` renders hold escalations; place/lift is API-only in v1 (2026-09-28: no longer; since #467, 2026-08-18, coaches place and lift holds on `/coach/sports-medicine`, `apps/web/app/coach/sports-medicine/page.tsx`)
 
 ## Implementation notes
 Built 2026-08-06 on PR #238. Owner decisions recorded: all three rungs built
@@ -59,10 +67,13 @@ review), a stale-hold review surface for indefinite holds, guardian
 full-fidelity visibility (#84), and the pre-existing unaccountable coach
 `gym_status` write (its own ticket). The #34 tracker marks Return-to-Training
 DONE with no code behind it — flagged for owner correction; this module's
-boundary assumes #34 is unbuilt.
+boundary assumes #34 is unbuilt. (2026-09-28: since 2026-08-07 #34 has
+return-to-training plans and steps in `safetyFlags.ts`, with no route or page;
+see module 034.)
 
 ## Audit log
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-06 | session B (remote) | Built on PR #238: training_holds table, gate row, escalation wiring, registration block, contact flag, athlete banner. Scope decisions taken with owner. Status stays inactive pending promotion review. |
+| 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |

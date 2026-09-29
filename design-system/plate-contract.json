@@ -1,0 +1,9 @@
+{
+  "_why": "The single definition of what a valid background plate is. Read by apps/web/src/design/plateBinaries.test.ts, which enforces it on committed bytes, and by scripts/make-plate.mjs, which must not produce a plate the gate would reject. It was duplicated in both places until ChatGPT's standards review of PR #982 found the two copies had already diverged on day one: the gate allowed four geometries and the generator knew two, while calling itself a restatement of the gate.",
+  "geometries": ["1280x720", "2560x1440", "405x720", "810x1440"],
+  "minBytes": 8192,
+  "maxBytes": 409600,
+  "chromaSubsampling": "4:4:4",
+  "_producerNote": "A producer may support fewer geometries than the gate accepts; that is a producer limitation, not a narrowing of the contract, and it belongs in the producer rather than here.",
+  "producerOutputs": { "landscape": "1280x720", "portrait": "810x1440" }
+}

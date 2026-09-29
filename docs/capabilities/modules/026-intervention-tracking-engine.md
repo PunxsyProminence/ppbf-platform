@@ -5,6 +5,7 @@
 | Status | **DONE** (keystone build, 2026-08-16; owner-directed spec `InterventionExecutionLedger_TheWork`) |
 | Vertical slice | Three-table ledger + three coach surfaces: protocols (versioned intent), executions (planned-vs-actual, adherence, corrections), evidence links + outcome reviews (typed evidence, three-answer human verdicts). Migrations registered but **not yet applied to staging/production** — ships with the next release wave. |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | Physical Training System (`physicalTrainingSystem`) |
 | Source | `2.0.0-draft-merged` |
@@ -91,3 +92,4 @@ Fifteen pg contract tests across three embedded-Postgres suites (`interventionPr
 | 2026-08-16 | claude-session | Slice 1 of 3 shipped: `pilot.intervention_protocols` (versioned intent, structured exposure, hypothesis-before-hindsight). |
 | 2026-08-16 | claude-session | Slice 2 of 3 shipped: `pilot.intervention_executions` (planned-vs-actual snapshots, explicit adherence states, named deviations, correction lineage, org-bound decision links). |
 | 2026-08-16 | claude-session | Slice 3 of 3 shipped: `pilot.intervention_evidence_links` + `pilot.intervention_outcome_reviews` (typed semantic evidence, three-answer human review, miss-cannot-validate-success and confound-cannot-strengthen as database constraints), the What We Learned loop view, and this document rewritten from scaffold. Status promoted to DONE per the playbook rule (slice shipped in code) with ManualVerification PENDING_SIGN_OFF; migrations await the next release wave. |
+| 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. The 2026-08-16 entry above named PENDING_SIGN_OFF but wrote no row, and no SIGNED_OFF was recorded for this module on 2026-08-28. |

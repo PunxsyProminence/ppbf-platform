@@ -49,7 +49,7 @@ import { installPilotApi, SERVER_GUARDED_ROUTES, type PilotApiStubs, type PilotS
         in either serialisation the browser uses.
      4. A whole-scope sweep: every element under the scope plus its ::before
         and ::after, across fifteen paint properties, against every legacy
-        rung and against the reserved safeguarding red. Assertion 3 is the
+        rung and against the safeguarding red (#A81E22). Assertion 3 is the
         named catch; this is the wide net. See THE LEAK LEDGER below for the
         places it currently finds legacy gold and why.
 
@@ -144,11 +144,13 @@ const LEGACY_ROOT_RAMP: Readonly<Record<string, string>> = {
   '--brass-900': '#4a340b',
 };
 
-/** #A81E22 / --locked / --stamp-red. Law 2 reserves it for
-    MEDICALLY_NOT_ALLOWED, so it may not be spent on decorative chrome. This is
-    not a theoretical reservation on these surfaces: the legacy `.pap--ruled`
-    draws its margin rule in `rgba(168,30,34,.34)`, and the golden-era
-    `.mat-paper` override exists to replace exactly that. */
+/** #A81E22 / --locked / --stamp-red. Written when that red was reserved for
+    MEDICALLY_NOT_ALLOWED and kept off decorative chrome; the legacy
+    `.pap--ruled` then drew its margin rule in `rgba(168,30,34,.34)`, and the
+    golden-era `.mat-paper` override exists to replace exactly that.
+    STATUS 2026-09-29: red is not reserved (OD-2026-09-29-001). The red checks
+    in this file predate that ruling and still run; --locked still means a
+    medical stop. */
 const SAFEGUARDING_RED = '#a81e22';
 
 /* CANONICAL FORM, AND WHY MATCHING NEEDS ONE.
@@ -333,15 +335,19 @@ const KNOWN_LEAKS: Readonly<Record<string, readonly KnownLeak[]>> = {
       why: FROZEN_ALIAS,
     },
   ],
-  '.ge-floorboard': [
-    {
-      key: 'button | background-color | rgb(169, 129, 38)',
-      source:
-        'apps/web/app/globals.css -- `--accent: var(--brass-600)` on :root, painted by the coach '
-        + 'workspace\'s current tab and mode buttons (`bg-[var(--accent)]`)',
-      why: FROZEN_ALIAS,
-    },
-  ],
+  /* `.ge-floorboard` HAD ONE ENTRY AND NOW HAS NONE. It was
+     `button | background-color | rgb(169, 129, 38)`: `--accent: var(--brass-600)`
+     aliased on :root in apps/web/app/globals.css and painted straight onto the
+     coach workspace's current tab and mode buttons through `bg-[var(--accent)]`
+     -- root gold reaching a bronze scope through a frozen alias nobody could
+     re-skin. The material pass did not set out to fix it. It fell out of the
+     rule that ordinary controls on this route are steel and brass means the
+     thing you have SELECTED: the steel rule paints background-color from the
+     scope, so the alias no longer reaches the screen, and the chosen tab takes
+     its brass from the scope's own ramp. Measured set on the route is now `[]`.
+     The ledger is checked in BOTH directions, so leaving this entry here after
+     fixing it would fail exactly as loudly as a new leak -- which is how it
+     came to be deleted rather than quietly kept. */
   /* `.ge-afterhours` HAD TWO ENTRIES AND NOW HAS NONE. Both were
      `border-[color:rgba(212,175,74,…)]` in apps/web/app/admin/shadow/page.tsx
      -- the console masthead rule, the evidence divider and the dashed upload
@@ -412,8 +418,19 @@ const SCOPES: readonly ScopeCase[] = [
     session: { role: 'coach' },
     routes: { '/api/pilot/athletes/list': { ok: true, items: ATHLETES } },
     components: [
-      { selector: '.mat-leather button', property: 'background-image', note: 'a tab plaque screwed to the slate board' },
-      { selector: '.mat-leather', property: 'border-top-color', note: 'the aged wood surround of the board' },
+      /* THE WITNESS IS THE CHOSEN TAB, not any tab. It used to be
+         `.mat-leather button` -- every button in a panel on this route painted
+         a bronze plaque, so the first one the reader found was brass whatever
+         it was. That is no longer true and should not be: brass now marks the
+         thing you have SELECTED, and an ordinary control is steel, so the
+         reader's first match on this route is a ghost button whose
+         background-image is `none` -- a witness that proves nothing.
+         `[aria-current="page"]` is the element the scope's bronze ramp is
+         actually supposed to reach, it is a real shared component on a real
+         route, and it cannot be satisfied by an element that happens to be
+         brass by default. */
+      { selector: '.mat-leather button[aria-current="page"]', property: 'background-image', note: 'the chosen tab plaque on the board' },
+      { selector: '.mat-leather', property: 'border-top-color', note: 'the lit top arris of the board panel, where the fixture catches the metal' },
     ],
   },
   {
@@ -583,7 +600,7 @@ const SCOPES: readonly ScopeCase[] = [
       {
         selector: '.mat-paper',
         property: 'background-image',
-        note: 'the register sheet, whose margin rule is bronze ink and never the reserved red',
+        note: 'the register sheet, whose margin rule is bronze ink and never the #A81E22 red',
       },
     ],
   },
@@ -972,7 +989,8 @@ test.describe('Golden-era scopes resolve to bronze in a real browser', () => {
         ).toBe(true);
         expect(
           carries(value, RESERVED_RED_NEEDLES),
-          `${scopeCase.scope} ${component.selector} — ${component.property} paints the reserved safeguarding red: ${value}`,
+          `${scopeCase.scope} ${component.selector} — ${component.property} paints ${SAFEGUARDING_RED}, which this `
+          + `check still keeps off these surfaces (red itself is not reserved, OD-2026-09-29-001): ${value}`,
         ).toBe(false);
       }
 
@@ -985,11 +1003,13 @@ test.describe('Golden-era scopes resolve to bronze in a real browser', () => {
         + `must be deleted.`,
       ).toEqual(ledger);
 
-      // 4b. Law 2 — the safety gate's red is not chrome. No ledger, no exceptions.
+      // 4b. Written when Law 2 reserved the safety gate's red and kept it off
+      // chrome. Red itself is not reserved (OD-2026-09-29-001); this check
+      // predates that ruling and still runs, with no ledger.
       expect(
         reading.reservedRed,
-        `${SAFEGUARDING_RED} is reserved for MEDICALLY_NOT_ALLOWED and may not be painted as decorative `
-        + `chrome on ${scopeCase.route}`,
+        `${SAFEGUARDING_RED} painted as chrome on ${scopeCase.route}. This check predates OD-2026-09-29-001 `
+        + `(red is not reserved) and still runs; --locked still means a medical stop.`,
       ).toEqual([]);
     });
   }

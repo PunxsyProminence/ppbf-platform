@@ -3,6 +3,26 @@ import path from 'node:path';
 import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
 
 /**
+ * THE CONTRACT IS READ, NOT RESTATED.
+ *
+ * The geometries and the size window used to be literals in this file and
+ * literals again in scripts/make-plate.mjs, which called itself a restatement of
+ * this gate. ChatGPT's standards review of PR #982 found the two copies had
+ * already diverged on their first day: this file accepted four geometries and
+ * the generator knew two. A producer that believes a narrower contract than the
+ * gate enforces will refuse plates CI would accept, and the failure reads as
+ * green-here-red-there.
+ *
+ * So both sides now read design-system/plate-contract.json. This file stays the
+ * thing that ENFORCES the contract on committed bytes; it is no longer the thing
+ * that DEFINES it, and a change to the contract can no longer be made in one
+ * place only.
+ */
+const CONTRACT = JSON.parse(
+  readFileSync(path.resolve(__dirname, '../../../../design-system/plate-contract.json'), 'utf8'),
+) as { geometries: string[]; minBytes: number; maxBytes: number };
+
+/**
  * THE PLATE LAWS, ENFORCED ON THE BYTES.
  *
  * Three attempts were made to get background images into this repository.
@@ -18,7 +38,8 @@ import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
  * renders as a partial image or not at all, and every check short of reading
  * to the last two bytes says it is fine.
  *
- * The Grok visual lane (docs/GROK-VISUAL-LANE.md) makes this a gate rather
+ * The plate laws (AGENT_KERNEL.md, "Binary assets (plates)"; formerly stated
+ * by the Grok visual lane, docs/GROK-VISUAL-LANE.md) make this a gate rather
  * than a habit: a plate that does not satisfy every law below does not enter
  * the repository, and the producer is told which law it broke rather than
  * having it silently corrected here.
@@ -31,7 +52,7 @@ const SOI = Buffer.from([0xff, 0xd8]);
 const EOI = Buffer.from([0xff, 0xd9]);
 
 /** Per-plate budget. Each route fetches only its own plate and it caches. */
-const MAX_BYTES = 400 * 1024;
+const MAX_BYTES = CONTRACT.maxBytes;
 
 interface Sof {
   readonly width: number;
@@ -97,7 +118,7 @@ describe('every committed plate is a whole file', () => {
   /* The law the base64 relay broke. A stub can still carry both markers. */
   it.each(files)('%s is a plausible photograph, not a stub', (name) => {
     const bytes = readFileSync(path.join(PLATES_DIR, name));
-    expect(bytes.length).toBeGreaterThan(8 * 1024);
+    expect(bytes.length).toBeGreaterThan(CONTRACT.minBytes);
   });
 
   it.each(files)('%s stays inside the per-plate budget', (name) => {
@@ -130,7 +151,7 @@ describe('every committed plate is encoded for dark material', () => {
   it.each(files)('%s is one of the declared plate geometries', (name) => {
     const sof = readSof(readFileSync(path.join(PLATES_DIR, name)));
     const geometry = `${sof?.width}x${sof?.height}`;
-    expect(['1280x720', '2560x1440', '405x720', '810x1440']).toContain(geometry);
+    expect(CONTRACT.geometries).toContain(geometry);
   });
 
   /**

@@ -39,6 +39,11 @@ export default {
 };
 ```
 
+Seeds pass the organization explicitly: every row is written under
+`organizationId`, and there is no default. The gym is `punxsy_prominence`;
+`ppbf-default-org` is the PPBF Root Platform Organization, not the gym
+(OD-2026-09-28-007).
+
 ### 3. Test (Dry Run)
 
 ```bash
@@ -67,12 +72,23 @@ Total: Inserted 13 | Skipped 0 | Errors 0
 ✨ Dry run complete. No changes were made.
 ```
 
-### 4. Deploy
+### 4. Write
 
-Once satisfied with the dry run:
+A real run refuses with exit code 2 until both guards pass (`--dry-run` is
+exempt from both):
+
+- **Confirm the overwrite.** Every write is an upsert: a row whose id already
+  exists in that organization is replaced (athletes: name, dob, weight class,
+  gym status, emergency contact and coach; goals, sessions and guardian
+  records likewise). Pass `--i-understand-overwrite` or set
+  `PPBF_ALLOW_DESTRUCTIVE_SEED=true`.
+- **Declare the write target.** The script writes to
+  `AZURE_POSTGRES_CONNECTION_STRING`. `PPBF_EXPECTED_POSTGRES_HOSTNAME` and
+  `PPBF_EXPECTED_POSTGRES_DATABASE` must name that same host and database,
+  or it refuses.
 
 ```bash
-npm run seed:data
+npm run seed:data -- --i-understand-overwrite
 ```
 
 ### Reading the exit code
@@ -94,7 +110,7 @@ trust it.
 If you have read the errors and want the good rows anyway, say so explicitly:
 
 ```bash
-npx tsx scripts/seed-data.ts --config scripts/seed-data.config.ts --allow-partial-import
+npx tsx scripts/seed-data.ts --config scripts/seed-data.config.ts --allow-partial-import --i-understand-overwrite
 ```
 
 Exit codes: **0** every row imported (or `--allow-partial-import` was given);
@@ -279,7 +295,6 @@ export default {
   },
   options: {
     dryRun: false,
-    continueOnError: true,  // Skip rows with errors
   },
 };
 ```
@@ -293,7 +308,8 @@ Before running, ensure:
 - [ ] Session athlete_id's match athlete records
 - [ ] Goal athlete_id's match athlete records
 - [ ] No duplicate athlete_id values within a file
-- [ ] DATABASE_URL or connection is configured
+- [ ] `AZURE_POSTGRES_CONNECTION_STRING`, `PPBF_EXPECTED_POSTGRES_HOSTNAME` and
+      `PPBF_EXPECTED_POSTGRES_DATABASE` are set for the target database (Quick Start step 4)
 
 ### Step 6: Dry Run
 
@@ -306,12 +322,12 @@ This will **simulate** the seed without making any database changes. Check the o
 - ✅ Inserted count matches expected rows
 - ✅ Minimal or zero errors
 
-### Step 7: Deploy
+### Step 7: Write
 
-Once the dry run is clean:
+Once the dry run is clean, and with both guards satisfied (Quick Start step 4):
 
 ```bash
-npm run seed:data
+npm run seed:data -- --i-understand-overwrite
 ```
 
 ---
@@ -364,9 +380,10 @@ npm run seed:data:dry
 
 **Solution:**
 - Verify PostgreSQL is running
-- Check `DATABASE_URL` is set:
+- Check `AZURE_POSTGRES_CONNECTION_STRING` is set (the script reads no other
+  connection variable):
   ```bash
-  echo $DATABASE_URL
+  echo "${AZURE_POSTGRES_CONNECTION_STRING:+set}"
   ```
 - Verify database credentials are correct
 
@@ -378,7 +395,7 @@ npm run seed:data:dry
 
 ```bash
 # Edit config with different org:
-npx tsx scripts/seed-data.ts --config scripts/seed-prod.config.ts
+npx tsx scripts/seed-data.ts --config scripts/seed-prod.config.ts --i-understand-overwrite
 ```
 
 ### Seed Only Athletes
@@ -392,23 +409,19 @@ files: {
 }
 ```
 
-### Continue on Errors
+### Rows with errors
 
-```typescript
-options: {
-  continueOnError: true,  // Skip bad rows
-}
-```
+A row that fails validation or is rejected by the database is always skipped
+and logged, and the remaining rows still import. The run then exits 1 unless
+you pass `--allow-partial-import` (see "Reading the exit code").
+`continueOnError`, `skipValidation` and `batchSize` in a config are ignored:
+the script never reads them.
 
-If enabled, the script will log errors but continue seeding other rows.
+### Large files
 
-### Batch Processing
-
-For large datasets (10,000+ rows), the script automatically handles:
-- Connection pooling
-- Parameterized queries (safe from SQL injection)
-- Transaction management
-- Progress reporting
+Rows are written one at a time with parameterized queries over a pooled
+connection. There is no transaction: rows written before a failure stay
+written. Progress is reported once per file.
 
 ---
 
@@ -442,7 +455,7 @@ The seed script automatically:
 ✅ **Validates** all required fields  
 ✅ **Checks** foreign key references  
 ✅ **Prevents** SQL injection (parameterized queries)  
-✅ **Handles** duplicates (upsert pattern)  
+✅ **Overwrites** existing rows on conflict (upsert; see Quick Start step 4)  
 ✅ **Logs** all errors with row numbers  
 ✅ **Supports** dry runs (no database changes)  
 
@@ -492,8 +505,8 @@ cp scripts/seed-data.config.example.ts scripts/seed-data.config.ts
 # 5. Dry run
 npm run seed:data:dry
 
-# 6. If dry run looks good, deploy
-npm run seed:data
+# 6. If dry run looks good, write (both guards: Quick Start step 4)
+npm run seed:data -- --i-understand-overwrite
 
 # 7. Verify in database
 psql -c "SELECT COUNT(*) FROM pilot.athletes WHERE organization_id = 'ppbf-demo-org';"

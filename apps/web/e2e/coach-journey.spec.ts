@@ -477,7 +477,23 @@ test.describe('Coach journey', () => {
     const badge = page.getByRole('link', { name: /Safety escalations needing acknowledgement/i });
     await expect(badge).toBeVisible();
     await expect(badge).toHaveAttribute('href', '/admin/escalations');
-    await expect(page.getByText('Safety 1 critical')).toBeVisible();
+
+    /* THE FULL BREAKDOWN, AT EVERY WIDTH, READ WHERE IT ACTUALLY SURVIVES.
+       The link's accessible name is given outright by aria-label, so it does not
+       move with the breakpoint and it is the same sentence a screen reader hears
+       on the 412px phone this project also runs. That is the assertion that
+       matters: the coach is never told less than the whole count. */
+    await expect(badge).toHaveAttribute('aria-label', /1 critical/);
+
+    /* THE VISIBLE SUMMARY'S DENSITY FOLLOWS THE WIDTH, so this asserts the form
+       this project's own viewport shows rather than one of them at both. Below
+       640px the bar cannot hold the breakdown beside the controls it sits with,
+       so it reads the glyph, SAFETY, the real total and the worst real severity;
+       from 640px up it reads the breakdown unchanged. Asserting the wide form at
+       mobile width is what turned this test red, and it was right to: the string
+       on the phone genuinely changed. */
+    const onThePhone = (page.viewportSize()?.width ?? 1280) < 640;
+    await expect(page.getByText(onThePhone ? 'SAFETY 1 · CRITICAL' : 'Safety 1 critical')).toBeVisible();
 
     /* A COUNT, AND NOTHING ABOUT THE CHILD. This bar is on every screen in
        the building, including whichever one happens to be facing the room. */

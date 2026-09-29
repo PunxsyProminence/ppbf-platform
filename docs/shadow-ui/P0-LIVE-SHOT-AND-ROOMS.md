@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** a 2026-08-19 handoff for the P0 push (issue #486, closed 2026-09-22), routed through the superseded fast track. Current source: `docs/ROOM-MAP.md` (rooms), `docs/AI_DELIVERY_PIPELINE.md` (release).
+
 # CLAUDE — P0 LIVE-SHOT + ROOM DNA
 **From:** Grok / Jason  
 **Date:** 19 Aug 2026  

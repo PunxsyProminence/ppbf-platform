@@ -1,6 +1,19 @@
 # Module 036a — Plan-vs-actual: the execution row, designed
 
-**Status: DESIGN ONLY. Nothing here is built.** This document exists so the
+**Status (corrected 2026-09-28, checked against code): the coach half is
+BUILT.** This line used to say nothing here was built. The table §5 names,
+`pilot.athlete_development_block_reviews`
+(`infra/azure/pilot_slice_postgres_block_review_migration.sql`), is on `main`
+since `850b04b0` (2026-08-28). `apps/web/src/server/pilot/blockReview.ts`
+writes it (insert only, no update path) and reads it, through GET/POST
+`/api/pilot/coach/block-review` (coach, organization_admin, admin), which
+`/coach/development-blocks` calls. D3 was answered (a) on 2026-08-28: the
+family reads the verdict verbatim (§5). That family read is not built: no
+parent route or page reads the reviews. Production migration state was not
+checked. The rest of this document is the
+design as written.
+
+This document exists so the
 slice that builds it can be built correctly, and so the decisions it needs can
 be made before code rather than discovered during it — the order this module
 has kept through #759, #762, #789 and #794.

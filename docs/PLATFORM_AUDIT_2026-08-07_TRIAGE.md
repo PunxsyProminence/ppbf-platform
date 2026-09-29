@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** a 2026-08-07 snapshot; where it says the app deploys via Azure Static Web Apps, production deploys to Azure Container Apps (`deploy-production.yml`; the Static Web Apps workflow is legacy and manual-only). Current source: [docs/AI_DELIVERY_PIPELINE.md](AI_DELIVERY_PIPELINE.md).
+
 # Platform audit 2026-08-07 — triage
 
 An owner-supplied third-party audit report (`PPBF_PLATFORM_AUDIT_REPORT.md`,

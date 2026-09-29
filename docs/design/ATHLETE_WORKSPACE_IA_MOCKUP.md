@@ -1,10 +1,11 @@
 # Athlete workspace — IA mockup (for owner approval)
 
-Status: **PROPOSAL — no code written yet.** Approve or amend the IA below before any
-component work starts.
+Status: **APPROVED 2026-08-16 and implemented** -- the six groups are `TAB_GROUPS` in
+`apps/web/components/AthleteWorkspace.tsx` (commit `4e152e51`, #402). The code is
+current; this file is the design record.
 
 Target IA: `Today → Development → Learn → Schedule → Messages → SHADOW`.
-Today's workspace is 11 flat tabs in one 2,596-line component.
+Before this change the workspace was 11 flat tabs in one 2,596-line component.
 
 ## The mapping
 
@@ -185,10 +186,14 @@ parent CC is in force."
 
 ## Drift found against the coordinating prompt
 
+Recorded 2026-08-16. Since then `docs/design/TEST_PIN_MAP.md` (#406) and
+`docs/design/DESIGN_SYSTEM_PPBF.md` (#413) were both added on 2026-08-18, and
+`design-system/ppbf.css` became a two-import entry point on 2026-08-23 (#574).
+
 | Claim in the prompt | Reality | Impact |
 |---|---|---|
 | Design tokens live "in globals.css and existing pages" | Canonical source is `design-system/ppbf.css`, imported at `globals.css:15`. `t-command` and `t-label` are defined **only** in ppbf.css | Codification must point at ppbf.css |
 | Write a new `DESIGN_SYSTEM_PPBF.md` | `design-system/README.md` (477 lines) and `docs/BRAND_DESIGN_BRIEF.md` already exist | A new file would be the third design doc; consolidation decided instead |
-| Consult `TEST_PIN_MAP.md` before renaming | Does not exist — never committed on any branch | Test pins for this component are in `athleteWorkspace.test.tsx` (741 lines) and must be migrated in the same PR |
+| Consult `TEST_PIN_MAP.md` before renaming | Did not exist then; added 2026-08-18 (#406) | Test pins for this component are in `athleteWorkspace.test.tsx` (741 lines) and must be migrated in the same PR |
 | Stay "one build behind the primary session" | No open PRs from the primary session; branch is level with `origin/main` | Nothing is off-limits for cadence right now |
 | Message Coach copy needs the SafeSport warning kept | Already present and correct | Keep verbatim |

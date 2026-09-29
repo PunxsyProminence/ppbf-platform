@@ -2697,6 +2697,15 @@ export default function CoachWorkspace() {
             <button
               key={mode}
               onClick={() => setSessionMode(mode)}
+              /* Which mode is running was carried by ui.modeButtonActive's
+                 background alone -- one Tailwind arbitrary -- and the
+                 golden-era sheet paints every button inside a `.mat-leather`
+                 panel from an unlayered rule, which beats Tailwind's utility
+                 layer. So both plaques painted identically and the toggle
+                 showed nothing at all: no colour difference, and no state for
+                 a screen reader to read either. Same defect the tab row below
+                 fixed with aria-current, answered the same way. */
+              aria-pressed={sessionMode === mode}
               className={cx(
                 ui.modeButtonBase,
                 sessionMode === mode ? ui.modeButtonActive : ui.modeButtonInactive,
@@ -2927,12 +2936,10 @@ export default function CoachWorkspace() {
                   )}
 
                   {/* --restricted, not --locked, on this and the other two
-                      "could not be read" boxes added here. The safeguarding
-                      red is reserved for the top of the safety ladder -- a
-                      person who may not participate (owner decision
-                      2026-08-19) -- and a fetch that failed is not that.
-                      src/design/safeguardingRedReservation.test.ts enforces
-                      it and names the substitution. */}
+                      "could not be read" boxes added here. --locked means the
+                      top of the safety ladder -- a person who may not
+                      participate -- and a fetch that failed is not that.
+                      (Red itself is not reserved, OD-2026-09-29-001.) */}
                   {liveRunState === 'unavailable' && (
                     <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
                       <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
@@ -3267,15 +3274,14 @@ export default function CoachWorkspace() {
                             </button>
                           )}
                           {nicknameClearErrors[athlete.id] && (
-                            /* --restricted-ink, not --locked-ink. The
-                               safeguarding red is reserved for the top of the
-                               safety ladder -- a person who may not
-                               participate. A refused or failed takedown is a
-                               request that did not land, and painting it in
-                               the participation-block red teaches a coach to
-                               read that colour as "something went wrong".
-                               src/design/safeguardingRedReservation.test.ts
-                               caught this exact substitution here. */
+                            /* --restricted-ink, not --locked-ink. --locked
+                               means the top of the safety ladder -- a person
+                               who may not participate. A refused or failed
+                               takedown is a request that did not land, and
+                               painting it in the participation-block ink
+                               teaches a coach to read that mark as
+                               "something went wrong". (Red itself is not
+                               reserved, OD-2026-09-29-001.) */
                             <p className="mt-[var(--s2)] text-[color:var(--restricted-ink)]">
                               {nicknameClearErrors[athlete.id]}
                             </p>
@@ -3343,8 +3349,8 @@ export default function CoachWorkspace() {
                   )}
 
                   {/* --restricted, not --locked: a read that did not land is a
-                      request problem, and the safeguarding red is reserved for
-                      a person who may not participate. */}
+                      request problem, and --locked means a person who may not
+                      participate. */}
                   {wellnessShown?.status === 'unavailable' && (
                     <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] space-y-[var(--s2)]">
                       <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
@@ -3448,8 +3454,8 @@ export default function CoachWorkspace() {
 
                       {/* --restricted, not --locked, for the same reason the
                           wellness failure above uses it: a read that did not
-                          land is a request problem, and the safeguarding red
-                          is reserved for a person who may not participate. */}
+                          land is a request problem, and --locked means a
+                          person who may not participate. */}
                       {sessionNoteShown.status === 'unavailable' && (
                         <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] p-[var(--s3)] space-y-[var(--s2)]">
                           <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">

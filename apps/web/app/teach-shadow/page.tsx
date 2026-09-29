@@ -53,6 +53,19 @@ interface HeldFootage {
   refused_by_scan: boolean;
 }
 
+interface ReleasedFootage {
+  video_session_id: string;
+  file_name: string;
+  take_number: number | null;
+  camera_view: string | null;
+  created_at: string;
+  status: string;
+  clips_cut: number;
+  clips_labelled: number;
+  archived: boolean;
+  archive_reason: string | null;
+}
+
 interface Coverage {
   ontology_version: string;
   capture: {
@@ -108,31 +121,55 @@ export default function TeachShadowHomePage() {
    */
   const [openedForReview, setOpenedForReview] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/teach-shadow/coverage`, {
-          credentials: 'include',
-        });
-        const payload = (await response.json().catch(() => ({}))) as {
-          coverage?: Coverage;
-          error?: string;
-        };
-        if (!response.ok) throw new Error(payload.error || 'The coverage figures could not be read.');
-        /*
-         * A MISSING PAYLOAD IS AN ERROR, NOT AN EMPTY CORPUS. Treating an
-         * unanswered read as zeros would paint a gym that has filmed nothing,
-         * which is a specific and wrong claim about their work.
-         */
-        if (!payload.coverage) throw new Error('The coverage figures could not be read.');
-        setCoverage(payload.coverage);
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'The coverage figures could not be read.');
-      } finally {
-        setLoaded(true);
-      }
-    })();
+  const [released, setReleased] = useState<ReleasedFootage[]>([]);
+  const [releasedLoaded, setReleasedLoaded] = useState(false);
+  const [releasedError, setReleasedError] = useState('');
+  /*
+   * WHICH ROW IS BEING ARCHIVED RIGHT NOW, and what has been typed for it.
+   *
+   * ONE ID AND ONE STRING, not a map keyed by video. Only one row can be
+   * mid-archive at a time, and a map would let half-written reasons
+   * accumulate against rows nobody went on to archive -- state that then has
+   * to be cleaned up on every list re-read, or quietly attaches an old
+   * sentence to a later decision.
+   */
+  const [archivingId, setArchivingId] = useState('');
+  const [archiveReason, setArchiveReason] = useState('');
+
+  /*
+   * A CALLBACK RATHER THAN AN INLINE EFFECT BODY, because archiving footage
+   * changes these figures and the page has to be able to read them again. Same
+   * reasoning as loadHeld: whoever acts re-reads, rather than the page editing
+   * numbers it did not compute.
+   */
+  const loadCoverage = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/teach-shadow/coverage`, {
+        credentials: 'include',
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        coverage?: Coverage;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || 'The coverage figures could not be read.');
+      /*
+       * A MISSING PAYLOAD IS AN ERROR, NOT AN EMPTY CORPUS. Treating an
+       * unanswered read as zeros would paint a gym that has filmed nothing,
+       * which is a specific and wrong claim about their work.
+       */
+      if (!payload.coverage) throw new Error('The coverage figures could not be read.');
+      setCoverage(payload.coverage);
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'The coverage figures could not be read.');
+    } finally {
+      setLoaded(true);
+    }
   }, []);
+
+  useEffect(() => {
+    void (async () => { await loadCoverage(); })();
+  }, [loadCoverage]);
 
   const loadHeld = useCallback(async () => {
     try {
@@ -163,6 +200,32 @@ export default function TeachShadowHomePage() {
   useEffect(() => {
     void (async () => { await loadHeld(); })();
   }, [loadHeld]);
+
+  const loadReleased = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/teach-shadow/released`, {
+        credentials: 'include',
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        items?: ReleasedFootage[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || 'Released footage could not be read.');
+      // A missing payload is an error, not an empty corpus -- same reason the
+      // coverage read above refuses to fall back to zeros.
+      if (!payload.items) throw new Error('Released footage could not be read.');
+      setReleased(payload.items);
+      setReleasedError('');
+    } catch (error) {
+      setReleasedError(error instanceof Error ? error.message : 'Released footage could not be read.');
+    } finally {
+      setReleasedLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void (async () => { await loadReleased(); })();
+  }, [loadReleased]);
 
   /*
    * OPENS THE FOOTAGE IN A NEW TAB, and records that this page asked.
@@ -249,6 +312,70 @@ export default function TeachShadowHomePage() {
       await loadHeld();
     } catch (error) {
       setHeldError(error instanceof Error ? error.message : 'That footage could not be released.');
+    } finally {
+      setBusyVideoId('');
+    }
+  }
+
+  /*
+   * WITHDRAW FOOTAGE FROM THE CORPUS, OR PUT IT BACK.
+   *
+   * STILL NO CONFIRMATION DIALOG. Archiving now asks for a reason first, and
+   * that is NOT a confirmation step wearing a different hat -- the difference
+   * is what the extra moment produces. A modal produces a click, which is why
+   * people learn to dismiss them. This produces a sentence that lands on the
+   * row and stays there for whoever finds the footage missing later.
+   *
+   * Which is why the reason is OPTIONAL. Blocking a reversible housekeeping
+   * action on a text box would turn it into the gate this deliberately is not,
+   * and a required field on a reversible action is answered with "x" within a
+   * week. Archive proceeds empty; the prompt is an invitation, not a toll.
+   *
+   * The counts still sit above the button, so the information a confirmation
+   * step would have carried is still read before anything happens.
+   *
+   * RESTORE STAYS ONE CLICK. Putting footage back needs no justification, and
+   * a form in front of an undo is friction pointing the wrong way.
+   *
+   * Re-reads both lists afterwards. Archiving changes the coverage counts as
+   * well as this list -- that is the point of it -- so a page that refreshed
+   * only the row would leave the figures above stating what was true before
+   * the click.
+   */
+  async function setArchived(videoSessionId: string, action: 'archive' | 'restore', reason?: string) {
+    setBusyVideoId(videoSessionId);
+    setReleasedError('');
+    try {
+      const trimmed = reason?.trim();
+      const response = await fetch(`${apiBase()}/api/pilot/video/${videoSessionId}/archive`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        // An empty box sends NO reason rather than an empty string. The route
+        // stores what it is given, and '' on the row would read as "a reason
+        // was recorded" to every later reader of scan_detail.
+        body: JSON.stringify(trimmed ? { action, reason: trimmed } : { action }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(
+          payload.error
+          || (action === 'archive' ? 'That footage could not be archived.' : 'That footage could not be restored.'),
+        );
+      }
+      // Closed only on success. A failed archive leaves the prompt open with
+      // what was typed in it, so a 409 that says "reload and check" does not
+      // also cost the reason somebody just wrote.
+      setArchivingId('');
+      setArchiveReason('');
+      await loadReleased();
+      await loadCoverage();
+    } catch (error) {
+      setReleasedError(
+        error instanceof Error
+          ? error.message
+          : action === 'archive' ? 'That footage could not be archived.' : 'That footage could not be restored.',
+      );
     } finally {
       setBusyVideoId('');
     }
@@ -398,13 +525,28 @@ export default function TeachShadowHomePage() {
               </div>
             ) : null}
 
+            {/*
+                THREE STATES, AND THE ORDER OF THE TESTS IS THE POINT.
+                Rows first: an error from a failed RELEASE or review-link must
+                not take the queue off the screen, or "that footage could not be
+                released" would be advice about a row that had just vanished.
+                Then the error: a READ that did not come back is not an empty
+                queue, so the empty state is suppressed rather than merely
+                accompanied by the alert. "Nothing is waiting" under a failed
+                read tells a coach the footage they uploaded is gone -- and this
+                queue exists precisely to stop uploads disappearing silently.
+                Same wrong claim the coverage read above refuses to make by
+                falling back to zeros.
+            */}
             {!heldLoaded ? (
               <p className="t-body mt-[var(--s3)]">Reading held footage&hellip;</p>
             ) : held.length === 0 ? (
-              <p className="t-body mt-[var(--s3)]">
-                Nothing is waiting. Footage the content screen clears on its own never
-                appears here &mdash; only takes it could not decide about.
-              </p>
+              heldError ? null : (
+                <p className="t-body mt-[var(--s3)]">
+                  Nothing is waiting. Footage the content screen clears on its own never
+                  appears here &mdash; only takes it could not decide about.
+                </p>
+              )
             ) : (
               <ul className="mt-[var(--s4)] flex flex-col gap-[var(--s3)]">
                 {held.map((item) => (
@@ -611,6 +753,170 @@ export default function TeachShadowHomePage() {
               there is one, it will be reported per punch, per stance and per camera position rather than as a
               single number &mdash; one overall figure can hide a recognizer that fails completely on southpaws.
             </p>
+          </section>
+
+          {/* 7. FOOTAGE IN THE CORPUS.
+              The inventory behind the counts above, and the only place footage
+              can be taken back out. Housekeeping rather than a stage of the
+              teaching loop, so it sits after the figures rather than inside
+              them. Before this existed, released teaching footage appeared on
+              no screen at all: the held queue reads quarantined rows only, the
+              Film Study list refuses take-backed ones, and coverage counted
+              this footage without naming it. The first unwanted capture was
+              therefore unremovable through the app. */}
+          <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+            <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Footage in the corpus</h2>
+            <p className="t-body mt-[var(--s2)] max-w-3xl">
+              Every released take, and what has been cut and labelled from it. Archiving one withdraws it: it stops
+              being playable, stops being clippable, and its clips and labels stop counting in the figures above.
+              Nothing is deleted &mdash; the file stays in storage and the decision can be undone here.
+              You archive what you filmed; an administrator can archive anyone&rsquo;s.
+            </p>
+
+            {releasedError ? (
+              <div role="alert" className="alert alert--warning mt-[var(--s4)]">
+                <span className="alert-icon" aria-hidden="true">&#9650;</span>
+                <div className="alert-body">
+                  <p className="alert-title">Attention</p>
+                  <p className="alert-msg">{releasedError}</p>
+                </div>
+              </div>
+            ) : null}
+
+            {/*
+                THREE STATES, AND THE ORDER OF THE TESTS IS THE POINT.
+                Rows first: an error from a failed ARCHIVE must not take the
+                footage off the screen, or the refusal "reload and check before
+                deciding again" would be advice about a list that had just
+                disappeared.
+                Then the error: a READ that did not come back is not an empty
+                corpus, so the empty state is suppressed rather than merely
+                accompanied by the alert. "Nothing released yet" under a failed
+                read tells a coach their footage has vanished -- the same wrong
+                claim the coverage read refuses to make by falling back to
+                zeros.
+            */}
+            {!releasedLoaded ? (
+              <p className="t-body mt-[var(--s3)]">Reading released footage&hellip;</p>
+            ) : released.length === 0 ? (
+              releasedError ? null : (
+                <p className="t-body mt-[var(--s3)]">
+                  Nothing released yet. Footage appears here once it has cleared the content screen or
+                  been released by hand.
+                </p>
+              )
+            ) : (
+              <ul className="mt-[var(--s4)] flex flex-col gap-[var(--s3)]">
+                {released.map((item) => (
+                  <li
+                    key={item.video_session_id}
+                    className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]"
+                  >
+                    <p className="t-data uppercase tracking-[0.12em] text-[color:var(--brass-300)]">
+                      {item.take_number === null ? 'Take not recorded' : `Take ${item.take_number}`}
+                      {' · '}
+                      {item.camera_view ?? 'View not described'}
+                      {item.archived ? ' · Archived' : null}
+                    </p>
+                    <p className="t-body mt-[var(--s2)]">{item.file_name}</p>
+                    {/* WHAT ARCHIVING THIS ROW WOULD COST, stated before the
+                        button rather than discovered from a coverage figure
+                        that dropped afterwards. Labelled clips are called out
+                        separately from clips cut because they represent two
+                        coaches' finished work, not just a cut. */}
+                    <p className="t-body mt-[var(--s2)]">
+                      {item.clips_cut === 0
+                        ? 'No study clips cut from this yet.'
+                        : item.clips_labelled === 0
+                          ? `${item.clips_cut} study ${item.clips_cut === 1 ? 'clip' : 'clips'} cut, none labelled yet.`
+                          : `${item.clips_cut} study ${item.clips_cut === 1 ? 'clip' : 'clips'} cut, ${item.clips_labelled} labelled.`}
+                    </p>
+                    {item.archived ? (
+                      <p className="t-body mt-[var(--s2)]">
+                        Withdrawn from the corpus. It cannot be played, clipped or labelled, and nothing
+                        cut from it counts as evidence.
+                        {item.archive_reason ? ` Reason given: ${item.archive_reason}` : null}
+                      </p>
+                    ) : null}
+                    {archivingId === item.video_session_id ? (
+                      /* THE PROMPT, IN PLACE OF THE BUTTON rather than beside
+                         it. A reason box that sat on every row would be noise
+                         on a list nobody is archiving from, and would be left
+                         empty by everybody who is. Here it is the only thing
+                         to look at, on the row already being acted on.
+
+                         A FORM, so Enter submits. Somebody typing a sentence
+                         should not have to reach for the mouse to finish. */
+                      <form
+                        className="mt-[var(--s3)]"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void setArchived(item.video_session_id, 'archive', archiveReason);
+                        }}
+                      >
+                        <label className="t-eyebrow block" htmlFor={`archive-reason-${item.video_session_id}`}>
+                          Why is this being withdrawn? (optional)
+                        </label>
+                        <input
+                          id={`archive-reason-${item.video_session_id}`}
+                          className="input mt-[var(--s2)]"
+                          type="text"
+                          maxLength={2000}
+                          autoFocus
+                          placeholder="Bad take, wrong subject, test footage&hellip;"
+                          value={archiveReason}
+                          onChange={(event) => { setArchiveReason(event.target.value); }}
+                          disabled={busyVideoId === item.video_session_id}
+                        />
+                        <p className="t-body mt-[var(--s2)]">
+                          Whatever you write here stays on the footage, so the next person to wonder where
+                          it went can read it without asking anybody.
+                        </p>
+                        <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+                          <button
+                            type="submit"
+                            className="btn"
+                            disabled={busyVideoId === item.video_session_id}
+                          >
+                            Archive
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            disabled={busyVideoId === item.video_session_id}
+                            onClick={() => { setArchivingId(''); setArchiveReason(''); }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+                        <button
+                          type="button"
+                          className={item.archived ? 'btn' : 'btn btn--ghost'}
+                          disabled={busyVideoId === item.video_session_id}
+                          onClick={() => {
+                            if (item.archived) {
+                              // Restore takes no reason: an undo needs no
+                              // justification, and a form in front of one is
+                              // friction pointing the wrong way.
+                              void setArchived(item.video_session_id, 'restore');
+                              return;
+                            }
+                            setReleasedError('');
+                            setArchiveReason('');
+                            setArchivingId(item.video_session_id);
+                          }}
+                        >
+                          {item.archived ? 'Restore to the corpus' : 'Archive'}
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">

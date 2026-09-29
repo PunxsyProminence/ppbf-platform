@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** a one-release runbook for PR #238, written 2026-08-08 and not maintained. Current source: [docs/AI_DELIVERY_PIPELINE.md](../AI_DELIVERY_PIPELINE.md) for releases; [docs/current/ACTIVE_WORK.md](ACTIVE_WORK.md) for blocked and parked items. Its "leave `organization_id` blank" steps are superseded: the seed workflow now requires it, and gym content passes `punxsy_prominence` (OD-2026-09-28-007).
+
 # Deploy runbook — folder 06–09 work (PR #238)
 
 Written 2026-08-08 for the six migrations and three coach surfaces added on

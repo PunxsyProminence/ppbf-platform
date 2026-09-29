@@ -1,5 +1,27 @@
 <!-- PPBF PR template. Evidence-first: see docs/AI_CONTRIBUTOR_GUARDRAILS.md §1.
-     AI-built work must follow docs/AI_DELIVERY_PIPELINE.md. -->
+     AI-built work follows AGENT_KERNEL.md; staging and production release
+     work also follows docs/AI_DELIVERY_PIPELINE.md. -->
+
+## Brief header
+
+<!-- Required on every PR: the brief header in AGENT_KERNEL.md. Fill in every
+     line of the block below and keep it the first such block in the body --
+     the checks read the first one they find.
+       SESSION     the thread name or branch prefix
+       MIGRATIONS  NONE, or the pilot:apply-<slug> list. A blank value is not
+                   read as NONE, and CI's `declaration` check fails a PR that
+                   changes a migration file without naming it.
+       STACKED ON  NONE, or #NNN and the merge order
+       CONTESTED   files other open PRs may also touch
+       SCOPE       what the owner authorized, in his words -->
+
+```text
+SESSION:
+MIGRATIONS:
+STACKED ON:
+CONTESTED:
+SCOPE:
+```
 
 ## Ticket
 
@@ -49,8 +71,8 @@
 ## Scope declaration
 
 - Files touched match the ticket's allowed list: yes / no (explain)
-- Contested files (guardrails §3) touched: none / list + why
-- Safety invariants (guardrails §4) affected: none / list + how extended
+- Contested files (guardrails §2) touched: none / list + why
+- Safety invariants (guardrails §3) affected: none / list + how extended
 
 ## Out of scope / not done
 

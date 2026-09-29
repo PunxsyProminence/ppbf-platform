@@ -35,12 +35,12 @@ any decision an intelligence capability informs remains human.
 
 ## Capability Development
 
-Capabilities progress **DEVELOPMENT → VALIDATION → READY → ACTIVE**. A
-capability becomes ACTIVE only when its go-live contract is satisfied. Two
-additional statuses mark permanence rather than progress: **CORE** (required
-base functionality) and **FOUNDATION** (shared infrastructure other
-capabilities build on). **DEPRECATED** marks retired capabilities.
-Capability contracts live in [docs/capabilities/](docs/capabilities/).
+Each module file records its own status: **DRAFT**, **DONE**, or **claimed,
+no code** -- a DONE claim with no code behind it, relabelled on 2026-09-28
+until Jason walks through it (OD-2026-09-28-010 item 18).
+Capability build status lives in the module files under
+[docs/capabilities/modules/](docs/capabilities/modules/) (OD-2026-09-28-010
+item 17).
 
 ## Core Engineering Rules
 
@@ -51,7 +51,9 @@ Capability contracts live in [docs/capabilities/](docs/capabilities/).
 - Unfinished capabilities must not block unrelated core workflows.
 - Migrations are controlled — No HTTP route changes the schema.
 - Evidence must support claims; report the check that was actually run.
-- Protected `main`: every change lands by PR with green CI, no direct pushes.
+- `main`: every change lands by PR with green CI, and nobody pushes directly.
+  That is policy; what GitHub actually enforces is narrower (see
+  [AGENT_KERNEL.md](AGENT_KERNEL.md), "Repository writes").
 - Make the smallest safe change; one concern per branch/PR.
 - Executable tests beat duplicated prose.
 
@@ -64,17 +66,23 @@ Setup, environment variables, run, and test commands are documented once:
 
 ## Documentation
 
-The authoritative hierarchy is deliberately small:
+The authoritative hierarchy is deliberately small. The full order, including
+where a current request or work order sits and how a conflict is settled, is
+[AGENT_KERNEL.md](AGENT_KERNEL.md), "Source hierarchy".
 
 1. **Current executable source, tests, and config** — the only description of
    current behavior.
-2. **This README** — orientation: what the platform is and how it operates.
+2. **Jason's rules and decisions** — his user-level and workspace rules, kept
+   outside this repository, then
+   [docs/current/OWNER_DECISIONS.md](docs/current/OWNER_DECISIONS.md). They
+   outrank every document below.
 3. **[AGENT_KERNEL.md](AGENT_KERNEL.md)** — working rules for AI-assisted work.
-4. **Domain contracts** — [AUTH_CONTRACT.md](AUTH_CONTRACT.md),
+4. **This README** — orientation: what the platform is and how it operates.
+5. **Domain contracts** — [AUTH_CONTRACT.md](AUTH_CONTRACT.md),
    [ORGANIZATION_ROLE_MODEL.md](ORGANIZATION_ROLE_MODEL.md),
    [ORGANIZATION_ARCHITECTURE.md](ORGANIZATION_ARCHITECTURE.md), and peers —
    read when the task touches their boundary.
-5. **Capability contracts** in [docs/capabilities/](docs/capabilities/) — read
+6. **Capability contracts** in [docs/capabilities/](docs/capabilities/) — read
    for the capability being changed.
-6. **[docs/archive/](docs/archive/)** and research material — historical and
+7. **[docs/archive/](docs/archive/)** and research material — historical and
    research-only; never current authority.

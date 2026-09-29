@@ -1,15 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-// import-shadow-research.yml previously required organization_id as a typed input, while its
-// sibling seed-reference-data.yml resolves the same value from the target app's own
-// ppbf-pilot-default-org-id secret. #273 made that change on the grounds that the value is a secret
-// the operator cannot see from the dispatch form, and a typo seeds a live database under an
-// organization that does not exist. The argument applied identically here and had not been applied.
+// import-shadow-research.yml once resolved a blank organization_id from the target app's
+// ppbf-pilot-default-org-id secret (#284, following #273 in the sibling seed-reference-data.yml).
+// That fallback is how the gym's policy shelf came to sit under ppbf-default-org instead of the gym
+// (OD-2026-09-28-007), so it is gone: ppbf_policy and whole_corpus now need an explicit
+// organization_id, refused in the first step when blank, as #994 did for seed-reference-data.yml.
+// The input stays optional at the form level only because platform_baseline takes none.
 //
 // Source-level, like seedWorkflowContract.test.ts, so it runs in the fast suite rather than behind
-// the pg chain. It guards the two properties that can break while leaving the YAML completely valid
-// -- which is why neither would be caught by anything else.
+// the pg chain. It guards properties that can break while leaving the YAML completely valid --
+// which is why nothing else would catch them.
 
 const PILOT_DIR = __dirname;
 const REPO_ROOT = path.resolve(PILOT_DIR, '../../../../..');
@@ -26,13 +27,22 @@ function indexOfStep(name: string): number {
 }
 
 describe('import-shadow-research.yml resolves the owning organization', () => {
-  it('does not require organization_id from the operator', () => {
+  it('keeps organization_id optional on the form, because platform_baseline takes none', () => {
     const block = raw.slice(raw.indexOf('organization_id:'), raw.indexOf('seed_account_id:'));
     expect(block).toContain('required: false');
   });
 
-  it('resolves it from the app secret when the input is blank', () => {
-    expect(raw).toContain('--secret-name ppbf-pilot-default-org-id');
+  // The fallback that misfiled the policy shelf (OD-2026-09-28-007). It must not come back.
+  it('never falls back to the app default-org secret', () => {
+    expect(raw).not.toContain('ppbf-pilot-default-org-id');
+  });
+
+  it('refuses a blank organization_id for every scope except platform_baseline, in the first step', () => {
+    const first = raw.slice(indexOfStep('Confirm Explicit Target And Apply Intent'));
+    const block = first.slice(0, first.indexOf('- name:', 1));
+    expect(block).toContain('[ "$SCOPE" != "platform_baseline" ]');
+    expect(block).toContain('::error::scope $SCOPE needs an explicit organization_id');
+    expect(block).toContain('exit 1');
   });
 
   // The bug this exists to prevent. $GITHUB_ENV only reaches LATER steps, so a resolve step placed
@@ -42,7 +52,8 @@ describe('import-shadow-research.yml resolves the owning organization', () => {
     const resolve = indexOfStep('Resolve Owning Organization');
     expect(resolve).toBeLessThan(indexOfStep('Validate Research Package'));
     expect(resolve).toBeLessThan(indexOfStep('Import Research Package'));
-    // az is needed to read the secret, so the login has to come first.
+    // Login first: the resolve step once read a secret with az, and any az call it makes again
+    // must be authenticated.
     expect(indexOfStep('Authenticate via Azure OIDC')).toBeLessThan(resolve);
   });
 
@@ -57,7 +68,7 @@ describe('import-shadow-research.yml resolves the owning organization', () => {
   // the feature's headline path, in the mode an operator tries first.
   //
   // Asserting the ORDER of two steps says nothing about whether either RUNS.
-  it('does not gate the Azure login on mode, because dry-run needs az too', () => {
+  it('does not gate the Azure login on mode, so an az call in dry-run is never unauthenticated', () => {
     const loginAt = raw.indexOf('- name: Authenticate via Azure OIDC');
     expect(loginAt).toBeGreaterThan(-1);
 
@@ -96,7 +107,7 @@ describe('import-shadow-research.yml resolves the owning organization', () => {
     expect(raw).toContain('$ORG_SOURCE');
   });
 
-  it('fails closed when neither the input nor the secret yields a value', () => {
+  it('fails closed again in the resolve step when the input is blank', () => {
     expect(raw).toContain('Could not resolve an owning organization');
   });
 

@@ -26,7 +26,7 @@ Block or strip sensitive fields on writes that must not accept free-text medical
 - [ ] Forbidden payload rejected
 - [ ] Valid payload accepted
 - [ ] Audit has no raw secret dump
-- [ ] ManualVerification=PASSED
+- [ ] ManualVerification=SIGNED_OFF
 
 ## Audit log
 | Date | Actor | Note |

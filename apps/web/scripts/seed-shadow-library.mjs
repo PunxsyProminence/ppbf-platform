@@ -48,7 +48,9 @@ Optional environment variables:
 Note:
   Seeding does not make anything citable. Sources and documents are written
   as 'pending_review' and stay invisible to SHADOW retrieval until they are
-  approved through the evidence review queue at /admin/shadow.
+  approved through the evidence review queue at /evidence (the signed-in
+  organization's shelf). The __platform__ research baseline is approved with
+  the approve-library-baseline workflow instead.
 
 Example:
   PILOT_GATE_BASE_URL=https://www.punxsyprominence.org PILOT_SESSION_COOKIE=<cookie> npm --prefix apps/web run seed:shadow:library
@@ -362,7 +364,7 @@ async function run() {
     total_chunks: results.reduce((sum, entry) => sum + entry.chunk_count, 0),
     coverage_rules: coverageItems.length,
   }, null, 2));
-  console.log('Reminder: everything registered is pending_review. Approve it at /admin/shadow before SHADOW can cite it.');
+  console.log('Reminder: everything registered is pending_review. Approve it at /evidence before SHADOW can cite it.');
 }
 
 // Run only when this file IS the entry point. Without this the whole seed

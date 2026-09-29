@@ -27,8 +27,9 @@
 
    The aliases keep resolving, because the direction is explicit that existing
    pages are not converted in this pass. But the vocabulary is closed: NEW work
-   may not use these names, and src/design/legacyVisualVocabulary.test.ts fails
-   on any increase, naming the file and the token. Write new work against the
+   may not use these names. src/design/legacyVisualVocabulary.test.ts caps 18
+   of them by name (ALIAS_CEILINGS) and fails when one of those rises, naming
+   the file and the token; the rest are uncapped. Write new work against the
    foundation's mechanics (--t-*, --s*, --r-*, --tap) and the current theme's
    own tokens.
 
@@ -109,7 +110,12 @@
      control in the "on" position: chassis state, not a claim about a person.
      Law 1 still holds — brass is what the platform is built from, and it
      reports nothing about anyone's safety. The red stays for exactly two
-     things: safety state, and destructive actions. */
+     things: safety state, and destructive actions.
+
+     STATUS 2026-09-29: red itself is not reserved (OD-2026-09-29-001; the
+     club's colours are black, red and white). What stays is the token:
+     --safety-locked is --locked, the medical stop, so chrome still does not
+     borrow it. */
   --accent: var(--brass-600);
   --accent-strong: var(--brass-500);
   --accent-ink: var(--hide-950);
@@ -117,8 +123,9 @@
 
   /* Golden-era pass: the app now speaks the design system's own faces.
 
-     Every family named here is SHIPPED BY THIS REPO — ppbf.css @imports
-     fonts.css, whose @font-face rules resolve to design-system/fonts/*.woff2
+     Every family named here is SHIPPED BY THIS REPO — ppbf.css reaches
+     legacy/legacy-fonts.css (ppbf.css -> current/ppbf-theme.css ->
+     current/ppbf-golden-era.css -> legacy/ppbf-leather-brass.css), whose @font-face rules resolve to design-system/fonts/*.woff2
      and ride the same bundle as the sheet itself. So the determinism argument
      that used to justify the Oswald/Roboto stand-ins now points the other way:
      Alfa Slab One (wood-type display), Oswald (bone-sans UI), Special Elite
@@ -217,7 +224,8 @@
      Owner: RESTRICTED must not render in LOCKED red. It now sits on the
      restricted rung, beside --stamp-hold, which was already there: both names
      are mid-ladder restrictions, and neither is "may not participate".
-     safeguardingRedReservation.test.ts pins this. */
+     safeguardingRedReservation.test.ts pinned this until it was deleted
+     (OD-2026-09-29-001, red is not reserved); no test pins it now. */
   --stamp-cleared: var(--cleared);
   --stamp-hold: var(--restricted);
   --stamp-restricted: var(--restricted);

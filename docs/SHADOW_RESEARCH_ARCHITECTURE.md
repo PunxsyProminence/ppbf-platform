@@ -1,7 +1,7 @@
 # SHADOW Research Architecture and Archive Contract
 
-**Status:** PROPOSED — awaiting owner confirmation. Phase 1 architecture reconciliation.  
-**Owner (proposed):** Jason Neale — this document has not been countersigned; no sign-off artifact for it exists in this repository.  
+**Status:** §1.0 (the permanent archive, verified 2026-08-24) is CURRENT (OD-2026-09-28-010 item 25). Everything else is PROPOSED — awaiting owner confirmation. Phase 1 architecture reconciliation.  
+**Owner (proposed):** Jason Neale — apart from §1.0, this document has not been countersigned; no sign-off artifact for the rest exists in this repository.  
 **Drafted:** 2026-08-19  
 **Scope:** Research originals, provenance, intake, evidence review, and SHADOW retrieval. This document does not authorize algorithm, medical, safeguarding, contact, sparring, or production-policy changes.
 
@@ -37,7 +37,7 @@
 >   states its recursive enumeration is not exhausted. No bulk copy or move is
 >   authorized, here or by the task that produced this correction.
 
-### 1.0 The permanent archive — verified 2026-08-24
+### 1.0 The permanent archive — verified 2026-08-24 — CURRENT
 
 | Field | Value |
 |---|---|
@@ -57,6 +57,9 @@ These identifiers were established by a read-only audit on 2026-08-24 and are
 recorded here so the target can be addressed by stable Graph identity rather than
 by a path a reorganisation can break. **This repository does not use them yet** —
 no code, configuration value or test in this tree reads any of them.
+`apps/web/src/server/pilot/researchArchiveWrite.ts` (#589) is a create-only write into
+this archive that takes them as injected configuration; at `bbf299fe` nothing but its own
+test calls it.
 
 ### 1.1 The temporary migration source — OneDrive
 
@@ -78,8 +81,12 @@ no drive/item identity, no timestamped manifest — exists in this repository, s
 2026-08-24 audit verified the **SharePoint** archive above, not this tree.
 
 It is the migration SOURCE, not the destination, and the distinction is
-load-bearing: work that reads it is reading something being emptied, not the
-system of record.
+load-bearing: work that reads its research folders is reading something being
+emptied, not the system of record. What is being emptied is research originals
+only. `_CONTROL - Registers and Coverage Maps/` also holds the active AI governance
+source (`AI_GOVERNANCE/ACTIVE_APPROVED_SOURCE/`; see `AGENT_KERNEL.md`, "Governance
+outside this repository"). That is not research material, and nothing in this
+document moves it.
 
 ```text
 Library Intake/
@@ -112,21 +119,22 @@ An earlier draft of this document claimed to supersede "stale product-documentat
 pointers" naming `SHADOW AIML / 02 - Source Materials / Penn State Library Intake / ...`.
 That claim was wrong twice over and is withdrawn:
 
-- **That path is not in this repository.** It occurs zero times outside this sentence.
+- **That path is not a destination this repository uses.** Outside this section it occurs
+  only as a blob-path fixture string in `researchArchiveGating.pg.test.ts`.
   It comes from [issue #345](https://github.com/PunxsyProminence/ppbf-platform/issues/345),
-  which is **open**, **owner-authored**, and states of itself: "This issue should remain
-  the durable product reference." A draft PR's markdown cannot supersede an open,
+  which is **open**, **owner-authored**, and states of itself (as updated 2026-08-24): "This issue remains
+  the durable product reference". A draft PR's markdown cannot supersede an open,
   owner-authored specification.
 - **The two records name different stores, not just different paths.** Issue #345 says
-  **SharePoint**. This document says **OneDrive**. Those are different Microsoft
+  **SharePoint**. This document's earlier draft said **OneDrive**. Those are different Microsoft
   surfaces with different identity, permissioning, and Graph addressing — a store
   change, silently introduced, not a path correction.
 
 | | Store | Path | Evidence status |
 |---|---|---|---|
-| Issue #345 (owner-authored, open) | SharePoint | `SHADOW AIML / 02 - Source Materials / Penn State Library Intake / ...` | **The durable contract.** Governs until the owner updates it. |
+| Issue #345 (owner-authored, open; updated 2026-08-24) | SharePoint | The nonprofit SharePoint workspace, identified in §1.0. #345 keeps `SHADOW AIML / 02 - Source Materials / Penn State Library Intake / ...` only as "historical context, not as a verified final destination" | **The durable contract.** Governs until the owner updates it. |
 | Permanent archive (§1.0) | SharePoint | `/sites/PunxsyProminenceClubOperations` -> `Documents` -> `Research Archive` | **Verified 2026-08-24** by read-only audit. Drive and item identity recorded in §1.0. |
-| Temporary migration source (§1.1) | OneDrive | `admin@punxsyprominence.org / OneDrive / Library Intake/` | Unconfirmed agent-connector observation, 2026-08-19. No repository artifact. Being emptied, not the system of record. |
+| Temporary migration source (§1.1) | OneDrive | `admin@punxsyprominence.org / OneDrive / Library Intake/` | Unconfirmed agent-connector observation, 2026-08-19. No repository artifact. Its research folders are being emptied (§1.1); not the system of record. |
 
 **The store question is settled the way #345 said it was.** This document's earlier
 draft named OneDrive as the archive; #345 named SharePoint; the 2026-08-24 audit
@@ -160,8 +168,8 @@ to look like a single agreed system. They are not the same place.
 
 | Layer | Authority and purpose | What it does not do |
 |---|---|---|
-| **Microsoft — OneDrive `Library Intake` tree (§1)** | *Proposed* governed archive: durable originals, acquisition provenance, duplicate/lineage preservation | Unconfirmed. No repository artifact corroborates it, and no code reads or writes it. Does not currently govern anything. |
-| **Microsoft — SharePoint `SHADOW AIML / 02 - Source Materials / Penn State Library Intake`** | The governed original-source archive named by open owner-authored [issue #345](https://github.com/PunxsyProminence/ppbf-platform/issues/345) | Not addressed by any code in this repository either. Remains the durable contract on paper until the owner updates #345. |
+| **Microsoft — OneDrive `Library Intake` tree (§1.1)** | Temporary working and migration source for research originals (#345; §1.2) | Is not the governed archive and not the system of record. No repository artifact corroborates the listing, and no code reads or writes it. |
+| **Microsoft — SharePoint `Research Archive`, Club Operations site (§1.0)** | The permanent governed original-source archive: verified 2026-08-24, and the store open owner-authored [issue #345](https://github.com/PunxsyProminence/ppbf-platform/issues/345) names. #345 keeps its older SharePoint pointer only as historical context (§1.2) | No route or configuration writes to it; the create-only write in `researchArchiveWrite.ts` has no caller outside its own test (§1.0). |
 | **Microsoft — configurable generic SharePoint destination, defaulting to `PPBF/Intake`** | The **only** Microsoft destination this repository actually writes to: `apps/web/src/server/document-intake/sharepoint.ts` uploads to `/sites/{SHAREPOINT_SITE_ID}/drives/{SHAREPOINT_DRIVE_ID}/root:/{SHAREPOINT_FOLDER_PATH}`. The path is configuration, not a constant: `config.ts` reads `SHAREPOINT_FOLDER_PATH` and falls back to `PPBF/Intake` only when it is unset | Knows nothing called "Library Intake" and has no R00-R98 structure. It is a flat ingest drop, not the governed archive either document describes. |
 | `/research` | Research requirements, general research registration, source-to-requirement links, answer-state workflow | Does not approve evidence or resolve a gap from submission alone |
 | `/research/review` | Applicability review of a submission against the requirement it was filed against: `responsive`, `partially_responsive`, `not_responsive`, `duplicate` (`apps/web/app/research/review/page.tsx`) | Does not verify, approve, index, or make anything citable — that is `/evidence`. A `responsive` verdict does not resolve the requirement. |
@@ -169,7 +177,7 @@ to look like a single agreed system. They are not the same place.
 | `pilot.shadow_library_*` | Reviewed source, document, chunk, embedding, and retrieval records | Does not own licensed original files |
 | `__platform__` SHADOW shelf | Shared platform-wide evidence baseline | Must not contain one gym's private policy as universal evidence |
 | Organization SHADOW shelf | Organization-specific approved evidence and policy | Must not leak to another organization |
-| GitHub | Runtime implementation, contracts, derived evidence packages, import tooling, tests, and reproducible metadata | Must not become the original archive. This is a **private** repository; it holds extensive licensed extracts already (see §9) and that is a content-governance question, not a settled one. |
+| GitHub | Runtime implementation, contracts, derived evidence packages, import tooling, tests, and reproducible metadata | Must not become the original archive. This repository is **public**; it holds extensive licensed extracts already (see §9), accepted for now by OD-2026-09-28-004. |
 | Google Drive | Design-lab work, coaching/skill masters where explicitly designated, handoffs, and candidate source material | Is not a SHADOW evidence authority. **But it is not downstream of Microsoft custody either** — see the mirror note below. |
 
 **"Duplicate" means two unrelated things.** Do not conflate them:
@@ -218,7 +226,7 @@ Each transition below is marked **ENFORCED** (with the file that enforces it) or
 | 9 | -> index document | **PROCEDURAL** to perform, **ENFORCED** as a retrieval precondition — see row 10. |
 | 10 | -> human evidence verification and approval in `/evidence` | **ENFORCED.** `apps/web/src/server/pilot/shadowLibrary.ts`: `requireEvidenceReviewer` (~L241) restricts who may review, and `validateReviewState` (~L237-254) makes approved and verified mutually entailing — "Approved SHADOW evidence must also be verified" — so neither can be set without the other. |
 | 11 | -> SHADOW retrieval from organization shelf + `__platform__` shelf | **ENFORCED.** `shadowLibrary.ts` (~L1078-1099) gates every retrieved chunk on `s.status = 'active'`, `s.approval_state = 'approved'`, `s.verification_state = 'verified'`, `not retrieval_suppressed`, `d.ingest_state = 'indexed'`, `d.index_completed_at is not null`, `d.approval_state = 'approved'`, `d.verification_state = 'verified'`, `c.embedding is not null`, and `c.embedding_model = <current model>`. |
-| 12 | -> human resolution of the research requirement when evidence actually answers it | **ENFORCED that submission cannot do it.** Resolution lives only in `resolveShadowResearchRequirement` (`apps/web/src/server/pilot/shadowResearch.ts:125`), which requires an explicit `resolvedByAccountId`/`resolvedByRole` and is reached only from the deliberate `PATCH` on `app/api/pilot/shadow/research-requirements/route.ts`. No submission, review, approval, or import path calls it. **Whether the evidence actually answers the gap is PROCEDURAL** — the code enforces that a human acts, never that the human is right. |
+| 12 | -> human resolution of the research requirement when evidence actually answers it | **ENFORCED that submission cannot do it.** Resolution lives only in `resolveShadowResearchRequirement` (`apps/web/src/server/pilot/shadowResearch.ts:208`), which requires an explicit `resolvedByAccountId`/`resolvedByRole` and is reached only from the deliberate `PATCH` on `app/api/pilot/shadow/research-requirements/route.ts`. No submission, review, approval, or import path calls it. **Whether the evidence actually answers the gap is PROCEDURAL** — the code enforces that a human acts, never that the human is right. |
 
 No individual transition may be inferred from the previous one. In particular:
 
@@ -240,7 +248,7 @@ guarantee. Treat them as the standing gap, not as background text.
 
 The application classification taxonomy is defined in `apps/web/src/shared/researchClassification.ts`
 as `RESEARCH_CLASSIFICATION_DOMAINS`. The table below is the crosswalk between that constant
-and the archive subject folders proposed in §1.
+and the archive subject folders listed in §1, which exist in the permanent archive (§1.0).
 
 `apps/web/src/shared/researchClassification.test.ts` parses this exact table out of this file
 and asserts it equals the shipped constant, so the two cannot drift apart. **Keep the table's
@@ -384,9 +392,9 @@ artifact's own seed path.
   `apps/web/seed-data/shadow-research/2026-08-08/evidence_fragment_PS.csv`, whose rows record
   "Full text supplied by user (Penn State Library). Parsed text extraction", and the
   claim-level `text_content` in `seed_shadow_library_chunks.csv`. "No PDFs in the tree" must
-  never be read as "no licensed content in the tree". This is a **private** repository (see
-  `docs/EXTERNAL_AUDIT_PROMPTS.md`, `docs/HANDOFF_RESEARCH.md`, `docs/HANDOFF_VISUALS.md`),
-  which is why that is currently tolerable and not why it is unlimited.
+  never be read as "no licensed content in the tree". This repository is **public**; the
+  extracts are an accepted exposure for now, and making the repository private or moving the
+  extracts out is a later decision (OD-2026-09-28-004).
 
 ## 10. Phase 1 changes and remaining work
 

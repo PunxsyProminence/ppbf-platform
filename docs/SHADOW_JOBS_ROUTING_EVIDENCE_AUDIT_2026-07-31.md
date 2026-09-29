@@ -1,6 +1,8 @@
+> **HISTORY (2026-09-28):** 2026-07-31 audit snapshot; its "Still open" list is stale (F1-F3 were fixed by #132, `ecc84a9f`). Kept because code comments cite its finding ids. Current source: the code on `main`.
+
 # SHADOW Jobs / Feedback / Unlocks + Classification / Routing / Evidence Audit — 2026-07-31
 
-Completes the two dimensions `SHADOW_CHAT_FUNCTIONALITY_AUDIT_2026-07-28.md` §6 listed as
+Completes the two dimensions `docs/archive/2026-09-28_SHADOW_CHAT_FUNCTIONALITY_AUDIT_2026-07-28.md` §6 listed as
 uncovered, plus adversarial verification of its §4.2 leads. Audited at `22253f4` (the tree
 deployed to staging and production 2026-07-31). Every finding was established against source
 with file:line evidence; none are assumed from docs or PR titles.
