@@ -63,6 +63,19 @@ describe('the committed repair logs are the plan that was validated', () => {
     expect(log0928.some((r) => r.source_id === 'src_6dd70cf8a54ca4c8')).toBe(false);
   });
 
+  it('the README states the row count of every follow-up action the log holds', () => {
+    // The README is what a reviewer and the production tool's author read; a
+    // stale count there (it said 150 while the log held 149) sends the tool
+    // off a plan that is not the one committed.
+    const readme = fs.readFileSync(path.join(REPAIRS, 'README.md'), 'utf8');
+    const stated = Object.fromEntries(
+      [...readme.matchAll(/^\| `([A-Z_]+)` \| (\d+) \|/gm)].map((m) => [m[1], Number(m[2])]),
+    );
+    const counted: Record<string, number> = {};
+    for (const r of log0929) counted[r.action] = (counted[r.action] ?? 0) + 1;
+    expect(stated).toEqual(counted);
+  });
+
   it('uses only the actions the production tool knows', () => {
     expect([...new Set(log0928.map((r) => r.action))].sort())
       .toEqual(['DELETE_DEAD_BOGUS_SOURCE', 'MERGE_DUPLICATE', 'REPOINT_MISRESOLVED']);
@@ -141,6 +154,20 @@ describe('every repair the seed carries is in a log', () => {
     const logged = new Set(log0929.filter((r) => r.action === 'SET_TIER_BY_SPEC').map((r) => r.source_id));
     const unlogged = [...sources].filter(([id, s]) => s.metadata.tier_conflict && !logged.has(id)).map(([id]) => id);
     expect(unlogged).toEqual([]);
+  });
+
+  it('a title from the same work published elsewhere is not cleared as another paper\'s', () => {
+    // src_55c7d2ce4895507d: JAMA reprint of the CDC's MMWR report (PubMed
+    // 9515985), verified_title = the MMWR title. src_ad951938a95719ec: the
+    // J Acad Nutr Diet copy (26920240) of the joint AND/DC/ACSM position
+    // statement, verified_title = its Med Sci Sports Exerc copy (26891166);
+    // same first author, date and opening abstract sentence.
+    const cleared = new Set(log0929.filter((r) => r.action === 'CLEAR_MISRESOLVED_VERIFIED_TITLE').map((r) => r.source_id));
+    for (const id of ['src_55c7d2ce4895507d', 'src_ad951938a95719ec']) {
+      const metadata = sources.get(id)?.metadata;
+      expect([id, metadata?.verification_status, typeof metadata?.verified_title, cleared.has(id)])
+        .toEqual([id, 'RESOLVED', 'string', false]);
+    }
   });
 
   it('every MISRESOLVED source has a CLEAR_MISRESOLVED_VERIFIED_TITLE row', () => {

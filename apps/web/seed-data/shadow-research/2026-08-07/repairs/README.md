@@ -51,12 +51,19 @@ weaker tier is superseded by the follow-up's `SET_TIER_BY_SPEC` rows.
 | `SET_TIER_BY_SPEC` | 29 | the 25 tier-conflict groups #1008 recorded and the 4 merge targets below: the source row and every listed chunk go to `tier_to` |
 | `MERGE_DUPLICATE` | 4 | a PMID row whose own PubMed record carries the DOI of `target_source_id`: move the listed chunks, then retire `source_id` |
 | `DELETE_DEAD_BOGUS_SOURCE` | 37 | a wrong-paper row from a DOI fragment read as a PMID, referenced by nothing: retire |
-| `CLEAR_MISRESOLVED_VERIFIED_TITLE` | 150 | `metadata.verified_title` is provably another paper's title: move it to `misresolved_verified_title`, set `verification_status` to `MISRESOLVED` |
+| `CLEAR_MISRESOLVED_VERIFIED_TITLE` | 149 | `metadata.verified_title` is provably another paper's title: move it to `misresolved_verified_title`, set `verification_status` to `MISRESOLVED` |
 
 Columns: `chunk_id` / `claim_id` are `|`-separated lists; `tier_from` is the
 seed value this follow-up replaced; `tier_before_1008` is the value in the seed
 production was imported from; `verified_title_from` is the exact value being
 cleared (the precondition). `evidence` states the proof for each row.
+
+Production still holds the pre-#1008 tiers, so the tool applies all 29
+`SET_TIER_BY_SPEC` rows with `tier_before_1008` as the precondition, not
+`tier_from`. 11 of them change production's value (`tier_before_1008` differs
+from `tier_to`), including `src_9fe2690355aaa819` (2 -> 4) and
+`src_eacdd76be260882e` (3 -> 4), which #1008 lowered; the other 18 already hold
+`tier_to` in production.
 
 `src_00c5cf14f2692175`, `src_9b44730ebb92f513` and `src_b6292c09e6883927` carry
 `provisional: true` in `metadata.tier_conflict`: set by the spec, owner may
@@ -67,5 +74,11 @@ Not changed, because not provable from PubMed (only PubMed was consulted): the
 `src_920662617554b807`, `src_2172bfa496248f59`, `src_15be4a7b82a44e78`,
 `src_7897d71c0b325fec`, `src_71efc90a9c8269e4`, `src_4e7b16e450d24c9c` and
 `src_617353438eedc2ad` (each is the title of another corpus DOI row that PubMed
-does not index), and of `src_55c7d2ce4895507d` (the MMWR title of the CDC report
-this JAMA reprint carries -- the same work).
+does not index).
+
+Not changed, because the title is the same work published elsewhere:
+`src_55c7d2ce4895507d` (the MMWR title of the CDC report this JAMA reprint
+carries) and `src_ad951938a95719ec` (the Med Sci Sports Exerc title, PubMed
+26891166, of the joint Academy of Nutrition and Dietetics / Dietitians of Canada
+/ ACSM position statement this J Acad Nutr Diet row, PubMed 26920240, carries:
+same first author, same date, same opening sentence of the abstract).
