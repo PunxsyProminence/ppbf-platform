@@ -20,7 +20,26 @@ const directComponentName = (file) => {
 const isDocumentationPath = (file) =>
   file.startsWith('docs/') || file.endsWith('.md');
 
+/* THE REFERENCE DATA THE SEEDING SUITES LOAD. Five embedded-Postgres suites
+   read their rows straight out of apps/web/seed-data/ and load them into the
+   real schema -- drillLibraryV3.pg.test.ts:82, multidiscipline.pg.test.ts:63,
+   competenceCohorts.pg.test.ts:55, workoutTemplates.pg.test.ts:69-71 and
+   sessionScriptsTransfer.pg.test.ts:59-61 -- so an edited CSV is an edit to
+   what those suites prove. A row that breaks a CHECK constraint or a foreign
+   key is refused by the schema, and only those suites apply one: `npm test`
+   excludes every .pg suite. Before this predicate a PR carrying only seed
+   data classified `unknown_code` and ran none of them -- the exact shape a
+   content hand-off arrives in.
+
+   Documentation under the folder is left out by the same rule `docsOnly`
+   uses. A README there loads into nothing, and matching it would cost more
+   than a wasted run: carried alongside unrecognised code it would turn
+   `unknownCode` off and hide the path the report exists to name. */
+const isSeedDataPath = (file) =>
+  file.startsWith('apps/web/seed-data/') && !isDocumentationPath(file);
+
 const isMigrationPath = (file) =>
+  isSeedDataPath(file) ||
   startsWithAny(file, [
     'infra/azure/',
     'apps/web/src/server/pilot/',
