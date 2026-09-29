@@ -50,6 +50,16 @@ function badRequest(code: string) {
   return NextResponse.json({ error: code }, { status: 400 });
 }
 
+// Plain wording for refusals a coach can act on without knowing the code. `error` stays the code
+// (the page and the tests switch on it); `message` is what a person reads. Only codes whose remedy
+// is not obvious from the code are worded here.
+const START_REFUSAL_MESSAGES: ReadonlyMap<string, string> = new Map([
+  [
+    'SESSION_SCRIPT_SUPERSEDED',
+    'This plan has been replaced by a newer version, so no session was started. Reload the list and start the current version.',
+  ],
+]);
+
 // POST starts a run. The body is deliberately narrow: no run_state, no started_at, no elapsed
 // time. Those are the server's to set, and accepting them from a client is how a coach's clock
 // would become whatever their device believed.
@@ -125,7 +135,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ run }, { status: 201 });
   } catch (error) {
     if (error instanceof SessionScriptRunError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+      const message = START_REFUSAL_MESSAGES.get(error.message);
+      return NextResponse.json(
+        message ? { error: error.message, message } : { error: error.message },
+        { status: error.status },
+      );
     }
     return jsonError(error);
   }

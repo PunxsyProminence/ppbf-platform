@@ -171,20 +171,43 @@ export interface StartSessionScriptRunInput {
 
 // Starting a run pins the script's CURRENT version onto the row. A script edited mid-season must
 // not retroactively change what a coach was following on a night already delivered.
+//
+// ONLY THE HEAD VERSION CAN BE STARTED. A revision is a new row in the same lineage
+// (session_scripts migration :59), so a script_id can name a plan that has since been replaced --
+// from a list loaded before the revision, or an old link. Starting it would run tonight's session
+// from the superseded plan. "Superseded" is derived exactly as listSessionScripts derives it (a
+// higher version exists in the lineage), so the list and this refusal cannot disagree.
+//
+// This is a START check only. A run already live on the older version keeps its pinned script_id
+// and script_version: cursor, pause, resume and finish below never consult the lineage, because
+// the coach on the floor is mid-session on the plan they started, and switching plans under them
+// would be the retroactive rewrite this pinning exists to prevent.
 export async function startSessionScriptRun(
   organizationId: string,
   accountId: string,
   input: StartSessionScriptRunInput,
 ): Promise<LiveSessionScriptRun> {
   return withTransaction(async (client) => {
-    const script = await client.query<{ script_id: string; version: number }>(
-      `select script_id, version
-         from pilot.session_scripts
-        where organization_id = $1 and script_id = $2`,
+    const script = await client.query<{ script_id: string; version: number; is_head: boolean }>(
+      `select s.script_id, s.version,
+              not exists (
+                select 1
+                  from pilot.session_scripts newer
+                 where newer.organization_id = s.organization_id
+                   and newer.lineage_id = s.lineage_id
+                   and newer.version > s.version
+              ) as is_head
+         from pilot.session_scripts s
+        where s.organization_id = $1 and s.script_id = $2`,
       [organizationId, input.scriptId],
     );
     if (script.rowCount === 0) {
       throw new SessionScriptRunError('SESSION_SCRIPT_NOT_FOUND', 404);
+    }
+    // 409, not 404: the script exists and is readable, it is just no longer the one to run. Checked
+    // before the blocks, because the remedy (start the newer version) is the same either way.
+    if (!script.rows[0].is_head) {
+      throw new SessionScriptRunError('SESSION_SCRIPT_SUPERSEDED', 409);
     }
 
     // The cursor opens on the first block in running order. A live run with a null cursor would

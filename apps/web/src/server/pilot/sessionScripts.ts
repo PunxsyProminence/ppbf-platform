@@ -113,7 +113,24 @@ const RENDERING_FIELDS =
   'organization_id, rendering_id, script_id, format, audience_note, body, generated_from_blocks, created_at';
 
 /**
- * The coach-facing browse list.
+ * The coach-facing browse list: ONE row per lineage, the head version.
+ *
+ * A revised script is a new row (version + 1, same lineage_id; the
+ * lineage/version unique key is session_scripts migration :59). Listing every
+ * version put v1 and v2 side by side under the same name, and a coach could
+ * start tonight's session from the plan that was replaced. "Superseded" is
+ * derived -- a higher version exists in the lineage -- so no column is needed
+ * and nothing has to be kept in step when a revision loads.
+ *
+ * The head is chosen BEFORE any filter applies. Filtering first would let a
+ * superseded v1 surface whenever v2 no longer matched (say v2 moved to another
+ * phase, or was retired), which is exactly the old plan this list exists to
+ * hide. So retiring the head retires the script from the list; it does not
+ * resurrect the version before it.
+ *
+ * History is not served here: getSessionScriptLineage below returns every
+ * version, and getSessionScriptWithDetail still opens any version by id, which
+ * a run pinned to an older version needs (SessionScriptLiveDelivery.tsx:167).
  *
  * Retired scripts are excluded by default because a retired script is one the
  * gym has decided not to run; a coach browsing for tonight should not find it
@@ -132,8 +149,15 @@ export async function listSessionScripts(
 ): Promise<SessionScriptRow[]> {
   return query<SessionScriptRow>(
     `select ${SCRIPT_FIELDS}
-     from pilot.session_scripts
-     where organization_id = $1
+     from pilot.session_scripts s
+     where s.organization_id = $1
+       and not exists (
+         select 1
+         from pilot.session_scripts newer
+         where newer.organization_id = s.organization_id
+           and newer.lineage_id = s.lineage_id
+           and newer.version > s.version
+       )
        and ($2::boolean or authoring_state <> 'retired')
        and ($3::text is null or discipline = $3)
        and ($4::text is null or phase = $4)
