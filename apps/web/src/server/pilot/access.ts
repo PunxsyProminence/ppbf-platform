@@ -65,10 +65,10 @@ export function requireRole(actor: ActorIdentity, allowed: PilotRole[]): void {
 
    That claim is about the authorization queries, and only those.
    listActiveCoachCoverage is NOT one of them -- it is the admin's display of
-   which grants are currently in force, it decides nobody's access, and it is
-   deliberately left alone here. It joins pilot.athletes for the name only and
-   does not filter deleted_at, so a grant on a since-deleted athlete still
-   appears in that list. Do not read this header as covering it.
+   which grants are currently in force, and it decides nobody's access. It was
+   left alone by that change; deletion scope B (Jason, 2026-09-29, "10 C")
+   since filters it too, because a grant on a deleted athlete is in force for
+   nobody and is marked deleted with the athlete.
 
    Before this, deleting an athlete wrote `deleted_at` and nothing downstream
    read it -- the exact shape #690 fixed for guardians. An organization admin
@@ -354,6 +354,11 @@ export async function listActiveCoachCoverage(organizationId: string): Promise<A
        on granter.organization_id = cc.organization_id and granter.account_id = cc.granted_by_account_id
      where cc.organization_id = $1
        and cc.expires_at > now()
+       -- A grant on a deleted athlete gives nobody access (every
+       -- authorization query above demands a live athlete), so it is not
+       -- "who has access right now", and it is marked deleted with the
+       -- athlete (scope B).
+       and ath.deleted_at is null
      order by cc.expires_at asc`,
     [organizationId],
   );

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { query, queryOne } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 
 // pilot.activity_log is owned by
 // infra/azure/pilot_slice_postgres_activity_log_migration.sql, applied
@@ -176,6 +177,9 @@ export async function listActivityLog(
        and ($4::text is null or activity_domain = $4)
        and ($5::date is null or occurred_on >= $5)
        and ($6::date is null or occurred_on <= $6)
+       -- Scope B: a deleted athlete's activity is marked deleted with them.
+       -- Rows of people who are not athletes (athlete_id null) are untouched.
+       and ${athleteNotDeletedSql('pilot.activity_log')}
      order by occurred_on desc, created_at desc
      ${filter.limit ? 'limit $7' : ''}`,
     [

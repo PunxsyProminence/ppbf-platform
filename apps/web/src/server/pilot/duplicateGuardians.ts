@@ -1,4 +1,5 @@
 import { query } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 
 // Duplicate-guardian detection for the admin console (register module 134).
 // The same finding pilot-check-duplicate-guardians.mjs computes in CI,
@@ -63,6 +64,8 @@ export async function findDuplicateGuardianGroups(organizationId: string): Promi
        select parent_id, array_agg(distinct athlete_id order by athlete_id) as athlete_ids
        from pilot.guardian_links
        where organization_id = $1
+         -- Scope B: a link to a deleted child is marked deleted with them.
+         and ${athleteNotDeletedSql('pilot.guardian_links')}
        group by parent_id
      ),
      rows_with_links as (

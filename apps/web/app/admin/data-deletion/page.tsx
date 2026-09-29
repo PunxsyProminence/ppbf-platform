@@ -10,10 +10,11 @@ import { formatGymStamp } from '@/lib/gymTime';
 /**
  * The screen over DELETE /api/pilot/admin/data-deletion.
  *
- * Scope A (Jason, 2026-09-29, "10 C"): what the API does today, surfaced. The
- * person's record is marked deleted, their login closes and anyone signed in as
- * them is signed out. Marking everything tied to the athlete at the same moment
- * (B) is the next, separate change -- this screen claims none of it.
+ * Jason, 2026-09-29, "10 C": scope A -- the person's record is marked deleted,
+ * their login closes and anyone signed in as them is signed out -- and scope B:
+ * everything tied to the athlete is marked deleted at the same moment
+ * (dataDeletion.ts markAthleteTiedRecords, deletedAthletes.ts). Marked, not
+ * erased: this screen says which, and says what B leaves where it was.
  *
  * The gate is 'admin' only: the API admits organization_admin and admin, which
  * are exactly the client role 'admin', and refuses platform_owner
@@ -66,7 +67,11 @@ interface DeletionResult {
   deletedRecordsCounts?: {
     athletes?: number;
     accounts?: number;
-    coachObservationsRetained?: number;
+    athleteVideos?: number;
+    athletePhotos?: number;
+    coachNotes?: number;
+    sessionNotes?: number;
+    shadowConversations?: number;
   };
   deletedAt?: string;
   auditEventId?: number;
@@ -361,7 +366,14 @@ function DataDeletionScreen() {
                         Their login is closed, and anyone signed in as them is signed out.
                       </li>
                       <li className="border-l-2 border-[color:var(--brass-700)] pl-[var(--s3)]">
-                        Their videos, photos and coach notes are not deleted now. They stay on file.
+                        Everything tied to them is marked deleted at the same moment: their videos and
+                        what was made from them, their photo, coach notes, session notes, SHADOW
+                        conversations, attendance, plans, entries and the rest. No screen shows it
+                        after that. Nothing is erased; it stays in the database until permanent removal.
+                      </li>
+                      <li className="border-l-2 border-[color:var(--brass-700)] pl-[var(--s3)]">
+                        Not changed: the admin safety screens (escalations, safety flags, training
+                        holds, failing safety gates, video compliance, feedback) still show their items.
                       </li>
                     </>
                   ) : (
@@ -372,7 +384,8 @@ function DataDeletionScreen() {
                       </li>
                       <li className="border-l-2 border-[color:var(--brass-700)] pl-[var(--s3)]">
                         Any linked child with no other guardian is withdrawn at the same moment: the
-                        child&rsquo;s record is marked deleted and the child&rsquo;s own login is closed.
+                        child&rsquo;s record is marked deleted, the child&rsquo;s own login is closed, and
+                        everything tied to the child is marked deleted with them.
                       </li>
                     </>
                   )}
@@ -447,17 +460,22 @@ function DataDeletionScreen() {
                   <dd className="t-data">{formatGymStamp(outcome.result?.deletedAt) ?? NOT_REPORTED}</dd>
                   <dt>Login</dt>
                   <dd>{loginLine(outcome.result?.deletedRecordsCounts?.accounts)}</dd>
-                  {outcome.entityType === 'athlete' ? (
-                    <>
-                      <dt>Coach notes kept on file</dt>
-                      <dd className="t-data">{count(outcome.result?.deletedRecordsCounts?.coachObservationsRetained)}</dd>
-                    </>
-                  ) : (
+                  {outcome.entityType === 'guardian' ? (
                     <>
                       <dt>Children withdrawn with them</dt>
                       <dd className="t-data">{count(outcome.result?.deletedRecordsCounts?.athletes)}</dd>
                     </>
-                  )}
+                  ) : null}
+                  <dt>Videos marked deleted</dt>
+                  <dd className="t-data">{count(outcome.result?.deletedRecordsCounts?.athleteVideos)}</dd>
+                  <dt>Photos marked deleted</dt>
+                  <dd className="t-data">{count(outcome.result?.deletedRecordsCounts?.athletePhotos)}</dd>
+                  <dt>Coach notes marked deleted</dt>
+                  <dd className="t-data">{count(outcome.result?.deletedRecordsCounts?.coachNotes)}</dd>
+                  <dt>Session notes marked deleted</dt>
+                  <dd className="t-data">{count(outcome.result?.deletedRecordsCounts?.sessionNotes)}</dd>
+                  <dt>SHADOW conversations marked deleted</dt>
+                  <dd className="t-data">{count(outcome.result?.deletedRecordsCounts?.shadowConversations)}</dd>
                   <dt>Audit record</dt>
                   <dd className="t-data">{count(outcome.result?.auditEventId)}</dd>
                 </dl>
@@ -476,7 +494,9 @@ function DataDeletionScreen() {
               1 year for a guardian account.
             </li>
             <li className="border-l-2 border-[color:var(--hide-600)] pl-[var(--s3)]">
-              Whether stored video and photo files are erased at that point has not been verified.
+              Stored video and photo files are not erased, by this screen or by the permanent
+              removal: neither one deletes a stored file. Whether the storage account removes them
+              on its own has not been checked.
             </li>
             <li className="border-l-2 border-[color:var(--hide-600)] pl-[var(--s3)]">
               Every deletion is recorded with who did it, when, and the reason. A person already

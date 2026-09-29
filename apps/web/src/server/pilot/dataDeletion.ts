@@ -18,14 +18,97 @@ export interface DeletionResult {
   deletedRecordsCounts: {
     athletes?: number;
     accounts?: number;
-    athletePhotos?: number;
+    /* Scope B: rows tied to the athlete, marked deleted with them. Marked, not
+       removed -- every row stays in the database until the purge; the mark is
+       what takes it off every screen (see markAthleteTiedRecords). */
     athleteVideos?: number;
-    // Retained, not deleted -- a soft delete leaves observations in place.
-    coachObservationsRetained?: number;
-    medicalRecords?: number;
+    athletePhotos?: number;
+    coachNotes?: number;
+    sessionNotes?: number;
+    shadowConversations?: number;
   };
   deletedAt: string;
   auditEventId: number;
+}
+
+type TiedRecordCounts = Required<
+  Pick<
+    DeletionResult['deletedRecordsCounts'],
+    'athleteVideos' | 'athletePhotos' | 'coachNotes' | 'sessionNotes' | 'shadowConversations'
+  >
+>;
+
+/**
+ * Scope B (Jason, 2026-09-29, "10 C"): "everything tied to the athlete is
+ * marked deleted at the same moment". Runs inside the deletion transaction,
+ * after the athlete rows carry their deleted_at.
+ *
+ * WHAT MARKS THE ROWS. The athlete row's own deleted_at, written by the
+ * caller in this same transaction: every reader of a row tied to an athlete
+ * checks it (deletedAthletes.ts), so the videos, portrait, coach notes,
+ * session notes and every other tied row leave every screen at the moment
+ * this transaction commits, and not a moment before. No tied table other than
+ * shadow_chat_sessions has a deletion column of its own, and copying the mark
+ * onto seventy tables would only add seventy chances to disagree with it.
+ *
+ * shadow_chat_sessions.deleted_at DOES exist -- it is what "delete this
+ * conversation" and a completed SHADOW data-deletion request write -- so it is
+ * stamped here, for the athlete's own conversations and for staff
+ * conversations about the athlete, with the deletion's own timestamp. Never
+ * over an earlier stamp: a conversation the owner already deleted keeps its
+ * date.
+ *
+ * The counts are what the admin is told was marked: how many of each tied
+ * record the mark now covers. Counted, not removed -- nothing here deletes a
+ * row or a stored file.
+ */
+async function markAthleteTiedRecords(
+  client: PoolClient,
+  organizationId: string,
+  athleteIds: string[],
+  athleteAccountIds: string[],
+  deletionTime: string,
+): Promise<TiedRecordCounts> {
+  if (athleteIds.length === 0) {
+    return { athleteVideos: 0, athletePhotos: 0, coachNotes: 0, sessionNotes: 0, shadowConversations: 0 };
+  }
+
+  const conversations = await client.query(
+    `update pilot.shadow_chat_sessions
+        set deleted_at = $4::timestamptz, updated_at = now()
+      where organization_id = $1
+        and (athlete_id = any($2::text[]) or account_id = any($3::text[]))
+        and deleted_at is null`,
+    [organizationId, athleteIds, athleteAccountIds, deletionTime],
+  );
+
+  const counted = await client.query<{
+    videos: string;
+    photos: string;
+    coach_notes: string;
+    session_notes: string;
+  }>(
+    `select
+       (select count(*) from pilot.video_sessions
+         where organization_id = $1 and athlete_id = any($2::text[]))::text as videos,
+       (select count(*) from pilot.account_profiles
+         where organization_id = $1 and account_id = any($3::text[])
+           and photo_blob_path is not null)::text as photos,
+       (select count(*) from pilot.coach_observations
+         where organization_id = $1 and athlete_id = any($2::text[]))::text as coach_notes,
+       (select count(*) from pilot.sessions
+         where organization_id = $1 and athlete_id = any($2::text[]))::text as session_notes`,
+    [organizationId, athleteIds, athleteAccountIds],
+  );
+  const row = counted.rows[0];
+
+  return {
+    athleteVideos: parseInt(row.videos, 10),
+    athletePhotos: parseInt(row.photos, 10),
+    coachNotes: parseInt(row.coach_notes, 10),
+    sessionNotes: parseInt(row.session_notes, 10),
+    shadowConversations: conversations.rowCount ?? 0,
+  };
 }
 
 /**
@@ -46,6 +129,17 @@ function refuseAlreadyDeleted(who: 'athlete' | 'guardian', deletedAt: string | n
     `This ${who} was already deleted on ${day}. Nothing was changed.`,
     'ALREADY_DELETED',
   );
+}
+
+/** The audit record's copy of the counts, in the audit vocabulary's snake_case. */
+function tiedRecordsAudit(tied: TiedRecordCounts) {
+  return {
+    videos: tied.athleteVideos,
+    photos: tied.athletePhotos,
+    coach_notes: tied.coachNotes,
+    session_notes: tied.sessionNotes,
+    shadow_conversations: tied.shadowConversations,
+  };
 }
 
 /**
@@ -75,7 +169,8 @@ async function supersedeOutstandingActivationCodes(
 
 /**
  * Soft-deletes a guardian/parent account; the database trigger then marks deleted each linked
- * athlete this guardian was the last guardian of. Refuses (409) a guardian already deleted.
+ * athlete this guardian was the last guardian of, and everything tied to those athletes is marked
+ * with them (scope B, markAthleteTiedRecords). Refuses (409) a guardian already deleted.
  * Organization-admin only. Writes the audit event in the same transaction, after the soft delete.
  */
 export async function deleteGuardianAccount(
@@ -172,11 +267,12 @@ export async function deleteGuardianAccount(
       [parentAccountId],
     );
 
-    const athleteCount = await client.query<{ count: string }>(
-      `select count(*)::text as count from pilot.athletes
+    const withdrawnAthletes = await client.query<{ athlete_id: string }>(
+      `select athlete_id from pilot.athletes
        where deleted_at = $1::timestamptz and organization_id = $2`,
       [deletionTime, actor.organizationId],
     );
+    const withdrawnAthleteIds = withdrawnAthletes.rows.map((row) => row.athlete_id);
 
     /* The children the trigger just withdrew had their own logins closed by
        it (deleted_at, active_flag, sessions), and they are the athlete
@@ -190,9 +286,18 @@ export async function deleteGuardianAccount(
        where organization_id = $1 and role = 'athlete' and deleted_at = $2::timestamptz`,
       [actor.organizationId, deletionTime],
     );
-    await supersedeOutstandingActivationCodes(
+    const withdrawnChildAccountIds = withdrawnChildAccounts.rows.map((row) => row.account_id);
+    await supersedeOutstandingActivationCodes(client, withdrawnChildAccountIds);
+
+    /* A child the cascade withdrew is an athlete deleted at this moment like
+       any other, so scope B covers them too: the same mark, the same stamp on
+       their conversations, in this transaction. */
+    const tied = await markAthleteTiedRecords(
       client,
-      withdrawnChildAccounts.rows.map((row) => row.account_id),
+      actor.organizationId,
+      withdrawnAthleteIds,
+      withdrawnChildAccountIds,
+      deletionTime,
     );
 
     // Log to audit trail
@@ -212,7 +317,9 @@ export async function deleteGuardianAccount(
         parentAccountId,
         JSON.stringify({
           reason: reason || 'Not specified',
-          cascade_deleted_athletes: parseInt(athleteCount.rows[0].count, 10),
+          cascade_deleted_athletes: withdrawnAthleteIds.length,
+          // What the withdrawn children's mark covers (scope B), counted.
+          tied_records_marked: tiedRecordsAudit(tied),
           deleted_at: new Date(deletionTime).toISOString(),
         }),
       ],
@@ -223,7 +330,8 @@ export async function deleteGuardianAccount(
       deletedEntityId: parentAccountId,
       deletedRecordsCounts: {
         accounts: 1,
-        athletes: parseInt(athleteCount.rows[0].count, 10),
+        athletes: withdrawnAthleteIds.length,
+        ...tied,
       },
       deletedAt: new Date(deletionTime).toISOString(),
       auditEventId: auditResult.rows[0].audit_id,
@@ -232,9 +340,10 @@ export async function deleteGuardianAccount(
 }
 
 /**
- * Soft-deletes an athlete record and closes the athlete's own login. Photos, videos and
- * observations are NOT marked here. Refuses (409) an athlete already deleted.
- * Organization-admin only. Writes the audit event in the same transaction, after the soft delete.
+ * Soft-deletes an athlete record, closes the athlete's own login, and marks everything tied to
+ * the athlete deleted at the same moment (scope B, markAthleteTiedRecords). Refuses (409) an
+ * athlete already deleted. Organization-admin only. Writes the audit event in the same
+ * transaction, after the soft delete.
  */
 export async function deleteAthleteRecord(
   actor: ActorIdentity,
@@ -323,16 +432,19 @@ export async function deleteAthleteRecord(
       await supersedeOutstandingActivationCodes(client, [deactivatedAccount.rows[0].account_id]);
     }
 
-    // Observations still on file for this athlete. NOT a deletion count: a soft
-    // delete leaves the athlete row in place, so the FK cascade does not fire
-    // and nothing here is removed. The audit record used to call this
-    // 'cascade_deleted_observations', which claimed a deletion that had not
-    // happened -- in the record whose whole purpose is being accurate about
-    // what was deleted.
-    const observationCount = await client.query<{ count: string }>(
-      `select count(*)::text as count from pilot.coach_observations
-       where athlete_id = $1 and organization_id = $2`,
-      [athleteId, actor.organizationId],
+    /* Scope B: everything tied to the athlete, marked at this same moment.
+       Counts of rows MARKED, never of rows removed: a soft delete leaves every
+       row in place, the FK cascade does not fire, and nothing is erased. The
+       audit record once called its observation count
+       'cascade_deleted_observations', claiming a deletion that had not
+       happened -- in the record whose whole purpose is being accurate about
+       what was deleted. */
+    const tied = await markAthleteTiedRecords(
+      client,
+      actor.organizationId,
+      [athleteId],
+      deactivatedAccount.rows.map((row) => row.account_id),
+      deletionTime,
     );
 
     // Log to audit trail
@@ -352,7 +464,7 @@ export async function deleteAthleteRecord(
         athleteId,
         JSON.stringify({
           reason: reason || 'Not specified',
-          observations_retained: parseInt(observationCount.rows[0].count, 10),
+          tied_records_marked: tiedRecordsAudit(tied),
           // Counts, not claims. An athlete record with no account deactivates
           // nothing and revokes nothing, and the audit row should say so
           // rather than imply an access closure that did not happen.
@@ -369,7 +481,7 @@ export async function deleteAthleteRecord(
       deletedRecordsCounts: {
         athletes: 1,
         accounts: deactivatedAccount.rows.length,
-        coachObservationsRetained: parseInt(observationCount.rows[0].count, 10),
+        ...tied,
       },
       deletedAt: new Date(deletionTime).toISOString(),
       auditEventId: auditResult.rows[0].audit_id,

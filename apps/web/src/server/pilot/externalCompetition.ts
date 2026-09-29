@@ -249,6 +249,8 @@ export async function listCompetitionEntries(organizationId: string, competition
      join pilot.athletes a
        on a.organization_id = e.organization_id and a.athlete_id = e.athlete_id
      where e.organization_id = $1 and e.competition_id = $2
+       -- Scope B: a deleted athlete's entries are marked deleted with them.
+       and a.deleted_at is null
      order by a.full_name asc`,
     [organizationId, competitionId],
   );

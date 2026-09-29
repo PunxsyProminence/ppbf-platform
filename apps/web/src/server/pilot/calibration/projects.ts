@@ -1,4 +1,5 @@
 import { query, queryOne } from '../db';
+import { athleteNotDeletedSql } from '../deletedAthletes';
 import { getVideoSessionById } from '../videoSessions';
 import {
   BOXING_ONTOLOGY_VERSION,
@@ -423,6 +424,9 @@ export async function listCalibrationClips(
     `select ${CLIP_COLUMNS}
      from pilot.calibration_clips
      where organization_id = $1 and calibration_project_id = $2
+       -- Scope B: a clip cut from a deleted athlete's footage is marked
+       -- deleted with them. Teaching-footage clips name no athlete and stay.
+       and ${athleteNotDeletedSql('pilot.calibration_clips')}
      order by clip_code asc`,
     [organizationId, calibrationProjectId],
   );
@@ -435,7 +439,8 @@ export async function getCalibrationClip(
   return queryOne<CalibrationClipRow>(
     `select ${CLIP_COLUMNS}
      from pilot.calibration_clips
-     where organization_id = $1 and calibration_clip_id = $2`,
+     where organization_id = $1 and calibration_clip_id = $2
+       and ${athleteNotDeletedSql('pilot.calibration_clips')}`,
     [organizationId, calibrationClipId],
   );
 }
