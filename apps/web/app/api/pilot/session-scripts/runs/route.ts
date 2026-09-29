@@ -22,7 +22,9 @@ export const runtime = 'nodejs';
 // is a successful answer to that question, not a missing resource.
 // With ?script_id= it instead answers "what has been delivered from this plan": the settled
 // (completed/abandoned/legacy) runs, via the module's own history read, which already excludes
-// live runs -- a session still on the floor is not yet a record of what happened. Same role gate
+// live runs -- a session still on the floor is not yet a record of what happened. "This plan" is
+// every version of it (the read follows the script's lineage), because the browse list shows only
+// the newest version and older versions' deliveries would otherwise be unreachable. Same role gate
 // as the live lookup: both response shapes are delivery records and carry who was on the floor.
 // Mirrors the sibling browse route's convention of one GET switching on script_id.
 export async function GET(request: NextRequest) {
@@ -49,6 +51,16 @@ const START_OPTIONAL_FIELDS = ['activity_id', 'athletes_present', 'delivered_on'
 function badRequest(code: string) {
   return NextResponse.json({ error: code }, { status: 400 });
 }
+
+// Plain wording for refusals a coach can act on without knowing the code. `error` stays the code
+// (the page and the tests switch on it); `message` is what a person reads. Only codes whose remedy
+// is not obvious from the code are worded here.
+const START_REFUSAL_MESSAGES: ReadonlyMap<string, string> = new Map([
+  [
+    'SESSION_SCRIPT_SUPERSEDED',
+    'This plan has been replaced by a newer version, so no session was started. Reload the list and start the current version.',
+  ],
+]);
 
 // POST starts a run. The body is deliberately narrow: no run_state, no started_at, no elapsed
 // time. Those are the server's to set, and accepting them from a client is how a coach's clock
@@ -125,7 +137,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ run }, { status: 201 });
   } catch (error) {
     if (error instanceof SessionScriptRunError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+      const message = START_REFUSAL_MESSAGES.get(error.message);
+      return NextResponse.json(
+        message ? { error: error.message, message } : { error: error.message },
+        { status: error.status },
+      );
     }
     return jsonError(error);
   }
