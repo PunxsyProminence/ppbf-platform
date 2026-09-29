@@ -3424,6 +3424,10 @@ describe('the pre-session self-report presents as a self-report, not a clearance
     // Wellness.
     expect(within(help).queryByText(/Say how you feel/)).toBeNull();
     expect(within(help).queryAllByText(/readiness/i)).toEqual([]);
+    // OD-2026-09-29-003 (Q6 A): school grades do not block training, and
+    // nothing records an academic status, so the help may not warn that one
+    // goes stale ("Assuming academic status is still current").
+    expect(within(help).queryAllByText(/academic/i)).toEqual([]);
 
     // The old authority vocabulary is gone with it.
     expect(screen.queryByText('Current Readiness')).toBeNull();
@@ -3695,10 +3699,27 @@ describe('the Schedule help claims no readiness restriction', () => {
     });
 
     // Anchored on a line that stays, so the absence cannot pass on a closed panel.
-    expect(screen.getByText('Booking while on academic hold')).toBeTruthy();
+    expect(screen.getByText('Open the unified scheduler to see live classes')).toBeTruthy();
     expect(screen.queryByText(/Readiness RED may limit contact work/)).toBeNull();
     expect(screen.queryByText(/Booking contact work with RED readiness/)).toBeNull();
     expect(screen.queryAllByText(/readiness/i)).toEqual([]);
+  });
+
+  // OD-2026-09-29-003 (Q6 A): school grades do not block training. "Check your
+  // academic status first" and "Booking while on academic hold" told an
+  // athlete about a status and a hold nothing in the app records or applies.
+  test('the help claims no academic status or academic hold', async () => {
+    await renderWorkspace();
+    openTab('Schedule');
+    const toggle = screen.getByRole('button', { name: /HELP: Schedule Session/ });
+    await act(async () => {
+      fireEvent.click(toggle);
+      await Promise.resolve();
+    });
+    const help = toggle.parentElement as HTMLElement;
+
+    expect(within(help).getByText('Open the unified scheduler to see live classes')).toBeTruthy();
+    expect(within(help).queryAllByText(/academic/i)).toEqual([]);
   });
 });
 

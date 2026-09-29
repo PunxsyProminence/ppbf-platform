@@ -164,6 +164,108 @@ and should not try to.
 
 ---
 
+## OD-2026-09-29-003 -- "all recommended": the missing documents, athletes' birth dates, the waiver CHECK, guardian waiver statuses, the 20% floor, school grades, the Floor Card, the WRITES audit, deleted accounts at sign-in
+
+**Provenance: PRIMARY.** **Date:** 2026-09-29. The Claude session put nine
+questions to Jason, each with options and one marked recommended. **Jason's
+answer, verbatim:** *"all recommended"*. That picks the recommended option in
+every question. What each asked, and which option was recommended, is as that
+session summarized it (the full question text is not in this repository).
+Line numbers are at `108938f4`.
+
+1. **The two missing 2026-08-22 owner documents** (OD-2026-09-29-002 item
+   9b). As put: A, check Jason's ChatGPT history (recommended); B, call them
+   lost; C, A then B. **A**: Jason's ChatGPT history is searched next; the
+   documents are not declared lost.
+2. **Athletes changing their own record.** As put: athletes can change their
+   own birth date, name and weight class through the server (no screen offers
+   it); a birth date change matters because a 14-year-old who sets an adult
+   date switches off the minor photo rules. A, lock birth date for athletes,
+   admins keep it (recommended); B, lock all three for athletes; C, leave as
+   is. **A**: the server refuses an athlete's change to their own date of
+   birth; organization admins can still change it; athletes can still change
+   name and weight class. Build item. Coaches can change it today
+   (`apps/web/app/api/pilot/athletes/update/route.ts:43`;
+   `apps/web/src/server/pilot/access.ts:590-592` refuses a coach only a
+   `coach_id` change), including a coach covering on a temporary grant
+   (:117-130); the question did not cover them. Whether coaches keep it is an
+   open owner question in `docs/current/ACTIVE_WORK.md`, to be answered
+   before this build ships.
+3. **A CHECK on waiver statuses** (OD-2026-08-29-008). As put: all 11
+   production waivers are clean; A, add the strict database rule now, a small
+   change (recommended); B, leave it. **A**: add a CHECK constraint on
+   `pilot.waivers.status`. Build item. Its migration is applied only through
+   the `apply-migrations` workflow, production with Jason's approval. "Clean"
+   covers status values only: all 11 rows are type `program_consent`
+   (OD-2026-09-29-002 item 8a), which in this repository only the gate script
+   writes (`apps/web/scripts/pilot-shadow-intake-gate.mjs:698`, signer "Gate
+   Guardian"), so they are likely gate-test rows, not real guardians'
+   signatures (INFERRED).
+4. **Guardian waiver statuses.** As put: guardian waiver statuses already
+   reach the parent safety page's data but are not shown. A, show them
+   (recommended); B, leave hidden. **A**: the parent safety page shows them.
+   Build item. Not raised in the question: the page's data carries only the
+   four tracked types (`apps/web/src/server/pilot/waiverCompliance.ts:20`;
+   `apps/web/app/api/pilot/parent/safety/route.ts:91-102`), read by exact
+   type (`waiverCompliance.ts:134-145`), and production's rows are all
+   `program_consent`, which nothing maps to them. Shown as it comes back
+   today, every child would read missing on all four (INFERRED). The build
+   asks Jason how `program_consent` maps, or what guardians should see, and
+   shows him the page's wording before it ships.
+5. **The 20% floor.** As put: should "covered" require at least 20%
+   boxing-specific evidence? A, yes, enforce; B, no, count sources as now
+   (recommended for now). **B**: no floor is enforced; "covered" keeps
+   counting sources as it does today. Nothing to build. "For now" was part of
+   the recommendation, so the question may come back.
+6. **School grades.** As put: should school grades ever block training? An
+   old description claims the app does this; nothing enforces it. A, no, and
+   delete that claim (recommended); B, yes, build it. **A**: school grades do
+   not block training, and the claim goes. Done in the change that records
+   this entry. The Collegiate Track's description
+   (`apps/web/components/trackAssignments.ts:72`, *"Enforces academic passing
+   standards as a requirement for on-floor training access"*) now says the
+   track reads no grades and gates nothing: a track is a label an admin puts
+   on an athlete profile at `/admin`, saved per organization in
+   `pilot.admin_track_assignments`, and its description is shown nowhere.
+   Three athlete help lines that assumed an academic status or hold were
+   copies of the same claim and are removed: *"Assuming academic status is
+   still current"*, *"Check your academic status first"* and *"Booking while
+   on academic hold"* (`apps/web/components/AthleteWorkspace.tsx:2291`,
+   :3364, :3376). No other file claims grades gate training (`git grep -i
+   academic`, 2026-09-29): the other hits are the goal category "Academics",
+   homepage copy about mentoring, research citations in seed data, and one
+   item in the Collegiate Track's focus workout, which nothing renders
+   (*"Mandatory 30-minute academic study or homework block"*, :77); it does
+   not gate training and is unchanged.
+7. **The Floor Card idea** (OD-2026-09-29-002 item 4, QB). As put: a
+   personal space per user; extras unlock by real accomplishments, no points
+   or rankings; saved in `docs/archive/2026-09-29_branch-salvage/`. A, add it
+   to the build list as an idea (recommended); B, archive only. **A**: an
+   Ideas row in `docs/current/ACTIVE_WORK.md`. The name needs a decision
+   later: `PRODUCT_CAPABILITIES.json` already uses "Individual Floor Card"
+   for the card that puts a training plan on the floor (CAP-Q-017, :9200-9201;
+   *"Floor Cards should operationalize the plan"*, :832).
+8. **The WRITES audit.** As put: add the WRITES audit back to ChatGPT's
+   project instructions. **A**: add it. That change is made in ChatGPT by the
+   Claude session, outside this repository; it is not verified here.
+9. **Deleted accounts at sign-in.** As put: after a deletion an admin can
+   still reopen the login. A, one central rule: sign-in refuses any account
+   marked deleted (recommended); B, block each path; C, leave. **A**. Build
+   item, built separately after the auth bug fixes in progress on 2026-09-29
+   land. The paths that reopen a deleted login are listed in
+   `docs/DATA_RETENTION.md`, "Open gap" (:141-149): a new activation code, an
+   athlete PIN reset or account creation (`apps/web/src/server/pilot/activation.ts`),
+   re-inviting a deleted guardian's email (`createOrUpdateMicrosoftStaffAccount`,
+   `apps/web/src/server/pilot/staffProvisioning.ts`), and the platform
+   owner's `setAccountActiveStatus` and `upsertOrganizationMembership`
+   (`apps/web/src/server/pilot/auth.ts:1170`, :1199); none of those files
+   reads `deleted_at` (`git grep`, 2026-09-29). The `/admin/data-deletion`
+   screen (#1000) cancels outstanding activation codes when it deletes
+   (`apps/web/src/server/pilot/dataDeletion.ts:61`); it does not close those
+   paths.
+
+---
+
 ## OD-2026-09-29-002 -- The other answers of 2026-09-29: branches, PR #941, two production checks, untried modules, the roster door, athlete deletion, the tracker check
 
 **Provenance: PRIMARY.** **Date:** 2026-09-29. Jason answered a numbered list
@@ -269,6 +371,14 @@ below are at `91de82ca`.
     tested by `apps/web/app/api/pilot/parent/safety/route.test.ts` and
     `apps/web/app/parent/safety/page.test.tsx`) may then be marked DONE.
     Module 094 stays DRAFT: it has no behaviour test.
+
+Status (2026-09-29): answered further by OD-2026-09-29-003 (*"all
+recommended"*). Item 8a's new question: add the CHECK now (Q3 A; a build row).
+Item 9b: Jason's ChatGPT history is searched next, and the documents are not
+declared lost (Q1 A). Item 4, QB: the Floor Card idea is an Ideas row in
+`docs/current/ACTIVE_WORK.md` (Q7 A). Item 10: sign-in is to refuse any
+account marked deleted, one central rule, built after the auth bug fixes land
+(Q9 A; a build row).
 
 ---
 
@@ -2082,6 +2192,11 @@ one exactly `signed`; a byte-exact CHECK would refuse 0 rows, and no CHECK
 exists (`npm run pilot:check-waiver-statuses`, run 2026-09-29 and reported by
 the session that ran it; OD-2026-09-29-002 item 8a). Whether to add the
 constraint is a new owner question (`docs/current/ACTIVE_WORK.md`).
+
+Status (2026-09-29): answered. Jason chose to add the strict CHECK now
+(*"all recommended"*, OD-2026-09-29-003 Q3 A). It is a build row in
+`docs/current/ACTIVE_WORK.md`; its migration is applied only through the
+`apply-migrations` workflow, production with Jason's approval.
 
 ---
 

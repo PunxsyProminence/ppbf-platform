@@ -2285,10 +2285,14 @@ export default function AthleteWorkspace() {
                   'Monitor active SMART goals',
                   'Note any pain or injury concerns'
                 ]}
+                /* "Assuming academic status is still current" stood here until
+                   OD-2026-09-29-003 (Q6 A): school grades do not block
+                   training, and nothing in the app records an academic
+                   status, so the line warned about a state that does not
+                   exist. */
                 mistakes={[
                   'Not reporting pain to your coach',
-                  'Skipping the check-in process',
-                  'Assuming academic status is still current'
+                  'Skipping the check-in process'
                 ]}
               />
 
@@ -3360,8 +3364,7 @@ export default function AthleteWorkspace() {
                 title="Schedule Session"
                 description="Classes and sign-ups live in the unified scheduler. This is the door to it."
                 usage={[
-                  'Open the unified scheduler to see live classes',
-                  'Check your academic status first'
+                  'Open the unified scheduler to see live classes'
                 ]}
                 /* "Readiness RED may limit contact work" and "Booking contact
                    work with RED readiness" stood in these two lists until
@@ -3371,9 +3374,15 @@ export default function AthleteWorkspace() {
                    all, so the copy claimed a restriction nothing applies, on
                    an answer the athlete may never have given. Nothing
                    readiness-based replaces them: the scheduler owns booking
-                   and eligibility. */
+                   and eligibility.
+
+                   "Check your academic status first" and "Booking while on
+                   academic hold" went the same way under OD-2026-09-29-003
+                   (Q6 A): school grades do not block training, and there is
+                   no academic status or hold anywhere in the app for an
+                   athlete to check or be on. */
                 mistakes={[
-                  'Booking while on academic hold'
+                  'Looking for classes on this tab instead of in the scheduler'
                 ]}
               />
             </div>
