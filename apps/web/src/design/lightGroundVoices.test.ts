@@ -2,7 +2,7 @@ import path from 'node:path';
 import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
 
 /**
- * LAW 6 GIVES THE APP TWO GROUNDS. A VOICE THAT ANSWERS ONLY ONE IS A BUG.
+ * THE APP HAS TWO LIGHT GROUNDS. A VOICE THAT ANSWERS ONLY ONE IS A BUG.
  *
  * Every type voice in ppbf.css pins an ink tuned for dark leather -- bone and
  * brass rungs that sit at 1.05:1 to 2.01:1 on a light ground. The sheet answers
