@@ -22,7 +22,9 @@ export const runtime = 'nodejs';
 // is a successful answer to that question, not a missing resource.
 // With ?script_id= it instead answers "what has been delivered from this plan": the settled
 // (completed/abandoned/legacy) runs, via the module's own history read, which already excludes
-// live runs -- a session still on the floor is not yet a record of what happened. Same role gate
+// live runs -- a session still on the floor is not yet a record of what happened. "This plan" is
+// every version of it (the read follows the script's lineage), because the browse list shows only
+// the newest version and older versions' deliveries would otherwise be unreachable. Same role gate
 // as the live lookup: both response shapes are delivery records and carry who was on the floor.
 // Mirrors the sibling browse route's convention of one GET switching on script_id.
 export async function GET(request: NextRequest) {

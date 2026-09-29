@@ -13,6 +13,9 @@
 //    whether the item is behind it -- without repointing the item.
 // 4. All three stay inside one organization: another gym's higher version in a lineage with the
 //    same id must neither hide this gym's head nor supersede its script or drill.
+// 5. listSettledRunsForScript returns the whole lineage's deliveries. The list in (1) shows only
+//    the head, and the page reads history only for a plan opened from that list, so a by-id read
+//    would leave v1's nights on no screen at all once v2 loaded.
 //
 // FIXTURES USE A RENAMED v2 for drills. pilot_drill_library_one_active_name is unique on
 // (organization_id, discipline, name) where active, and superseded is not withdrawn (active and
@@ -37,6 +40,7 @@ import {
   SessionScriptRunError,
   finishSessionScriptRun,
   getLiveRunForCoach,
+  listSettledRunsForScript,
   moveSessionScriptRunCursor,
   pauseSessionScriptRun,
   resumeSessionScriptRun,
@@ -451,6 +455,48 @@ describe('startSessionScriptRun follows versions', () => {
 
     const live = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-a' });
     expect(live.script_id).toBe('scr-a');
+  });
+});
+
+describe('listSettledRunsForScript follows versions', () => {
+  test('the history read for v2 includes the nights delivered from v1', async () => {
+    await seedScript({ scriptId: 'scr-tue-v1', lineageId: 'lin-tue', version: 1, blockIds: ['blk-v1-1'] });
+    const onV1 = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-tue-v1' });
+    await finishSessionScriptRun(ORG_A, COACH_A, onV1.run_id, { runState: 'completed' });
+
+    await seedScript({ scriptId: 'scr-tue-v2', lineageId: 'lin-tue', version: 2, blockIds: ['blk-v2-1'] });
+    const onV2 = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-tue-v2' });
+    await finishSessionScriptRun(ORG_A, COACH_A, onV2.run_id, { runState: 'abandoned' });
+
+    // Another lineage of this gym, delivered too. It shares a script_id with a row of the OTHER
+    // gym's 'lin-tue' below, so a lineage join that dropped the organization would pull it in.
+    await seedScript({
+      scriptId: 'scr-fri',
+      lineageId: 'lin-fri',
+      version: 1,
+      name: 'Friday sparring',
+      blockIds: ['blk-fri-1'],
+    });
+    const onFri = await startSessionScriptRun(ORG_A, COACH_A, { scriptId: 'scr-fri' });
+    await finishSessionScriptRun(ORG_A, COACH_A, onFri.run_id, { runState: 'completed' });
+    await seedScript({ org: ORG_B, coach: COACH_B, scriptId: 'scr-fri', lineageId: 'lin-tue', version: 3 });
+
+    // Only the head is listed, so v2 is the plan a coach can open -- and its history must carry v1.
+    expect((await listSessionScripts(ORG_A)).map((s) => s.script_id).sort()).toEqual(['scr-fri', 'scr-tue-v2']);
+    const history = await listSettledRunsForScript(ORG_A, 'scr-tue-v2');
+    expect(history.map((r) => [r.run_id, r.script_id, r.script_version]).sort()).toEqual(
+      [
+        [onV1.run_id, 'scr-tue-v1', 1],
+        [onV2.run_id, 'scr-tue-v2', 2],
+      ].sort(),
+    );
+
+    // Same lineage, same answer from either version's id.
+    expect((await listSettledRunsForScript(ORG_A, 'scr-tue-v1')).map((r) => r.run_id).sort()).toEqual(
+      [onV1.run_id, onV2.run_id].sort(),
+    );
+    // The other lineage keeps its own history only.
+    expect((await listSettledRunsForScript(ORG_A, 'scr-fri')).map((r) => r.run_id)).toEqual([onFri.run_id]);
   });
 });
 

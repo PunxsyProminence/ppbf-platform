@@ -422,6 +422,13 @@ export async function finishSessionScriptRun(
 
 // History for a script. Excludes live runs: a session still on the floor is not yet a record of
 // what happened, and mixing the two is how a half-finished night gets counted as a delivery.
+//
+// The history is the whole LINEAGE's, not just this version's. The browse list shows only the head
+// (sessionScripts.ts listSessionScripts), and this read is reached only from a plan opened there
+// (coach/session-scripts/page.tsx loadDeliveries). Reading by exact script_id would drop every
+// night delivered from v1 off the screen the moment v2 loaded. Each row still carries its own
+// script_version, which the page prints, so versions stay told apart. The lineage is resolved
+// inside the caller's organization, so another gym's same-id lineage never adds rows.
 export async function listSettledRunsForScript(
   organizationId: string,
   scriptId: string,
@@ -431,7 +438,15 @@ export async function listSettledRunsForScript(
     `select ${RUN_COLUMNS}
        from pilot.session_script_runs
       where organization_id = $1
-        and script_id = $2
+        and script_id in (
+          select version_row.script_id
+            from pilot.session_scripts requested
+            join pilot.session_scripts version_row
+              on version_row.organization_id = requested.organization_id
+             and version_row.lineage_id = requested.lineage_id
+           where requested.organization_id = $1
+             and requested.script_id = $2
+        )
         and (run_state is null or run_state in ('completed', 'abandoned'))
       order by delivered_on desc, created_at desc
       limit $3`,

@@ -131,6 +131,9 @@ const RENDERING_FIELDS =
  * History is not served here: getSessionScriptLineage below returns every
  * version, and getSessionScriptWithDetail still opens any version by id, which
  * a run pinned to an older version needs (SessionScriptLiveDelivery.tsx:167).
+ * Delivery history follows the lineage too (sessionScriptRuns.ts
+ * listSettledRunsForScript), so opening the head shows the nights delivered
+ * from the versions this list no longer shows.
  *
  * Retired scripts are excluded by default because a retired script is one the
  * gym has decided not to run; a coach browsing for tonight should not find it
