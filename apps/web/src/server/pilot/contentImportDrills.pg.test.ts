@@ -169,7 +169,8 @@ beforeAll(async () => {
   // Every migration in apply-migrations.yml's `all` order (scripts/lib/full-schema.mjs),
   // pilot_slice_postgres_drill_vocabulary_widening_migration.sql among them:
   // the committed CSVs carry literature_grounded_draft and warmup_decay, which
-  // the old seedAll below cannot load without it (drillSeedPrerequisite.test.ts).
+  // drill_library_v3's CHECK constraints refuse without it, whichever loader
+  // writes them (drillSeedPrerequisite.test.ts).
   await applyFullSchema(client, { infraDir: INFRA_DIR });
 
   observer = new Client({ connectionString: connectionStringFor(DATABASE) });
