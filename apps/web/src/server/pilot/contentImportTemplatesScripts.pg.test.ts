@@ -584,13 +584,17 @@ describe('workout templates', () => {
     const admin = await createGymWithDisciplines('gym_pinned');
     const drill = fixtureDrillId('pinned:slip');
     await insertDrill('gym_pinned', drill);
+    // Built on v2, whose id is NOT the lineage key, so the comparison has to
+    // map the stored version back to its lineage to see "unchanged".
+    const builtOn = await reviseDrill('gym_pinned', drill, 'v2');
     const template = `wtp_${hex14('fixture template:pinned')}`;
     const files = templatePackage([templateRow(template)], [itemRow(template, 1, drill)]);
     await applyCommitted('gym_pinned', admin, files);
+    expect((await templateItems('gym_pinned', template)).map((row) => row.drill_id)).toEqual([builtOn]);
     const before = await rowVersions('gym_pinned');
 
-    const newer = await reviseDrill('gym_pinned', drill, 'v2');
-    expect(newer).not.toBe(drill);
+    const newer = await reviseDrill('gym_pinned', drill, 'v3');
+    expect(newer).not.toBe(builtOn);
 
     const planned = await plan('gym_pinned', admin, files);
     expect(planned.blocking).toEqual([]);
@@ -601,7 +605,7 @@ describe('workout templates', () => {
     const result = await applyCommitted('gym_pinned', admin, files, planned.planHash);
     expect(result.importId).toBeNull();
     expect(await rowVersions('gym_pinned')).toEqual(before);
-    expect((await templateItems('gym_pinned', template)).map((row) => row.drill_id)).toEqual([drill]);
+    expect((await templateItems('gym_pinned', template)).map((row) => row.drill_id)).toEqual([builtOn]);
   });
 
   it('a withdrawn template stays withdrawn when its content is revised, and its name is free for a new template', async () => {
