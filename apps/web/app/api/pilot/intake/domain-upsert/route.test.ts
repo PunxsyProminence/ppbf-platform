@@ -6,6 +6,7 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { createCoachObservation, createReadiness, linkGuardianAthlete, upsertGuardian } from '@/src/server/pilot/intake';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
+import { ConflictError } from '@/src/server/pilot/errors';
 
 // The register reconciliation (Wave 9) found this route's coach_note write
 // path -- module 002 Raw Observation Intake -- carrying a role gate, athlete
@@ -216,6 +217,28 @@ test('a guardian_link write with no account_id skips account validation but stil
   expect(response.status).toBe(200);
   expect(mockAssertActiveParent).not.toHaveBeenCalled();
   expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({ accountId: undefined }));
+});
+
+// Naming an existing guardian record with a different login is refused by
+// upsertGuardian (proved against a real database in guardianUpsert.pg.test.ts).
+// This pins what the route does with that refusal: the admin sees a 409 that
+// names the conflict, and the athlete is NOT linked to the guardian record.
+test('a guardian record already linked to another login is refused with a 409, and no link is made', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'acct-admin-1' }));
+  mockAccess.mockResolvedValue(undefined);
+  mockAssertActiveParent.mockResolvedValue(undefined);
+  mockUpsertGuardian.mockRejectedValueOnce(new ConflictError(
+    'Conflict: guardian record "parent-1" is already linked to another login account, not "acct-parent-1".',
+    'GUARDIAN_ACCOUNT_CONFLICT',
+  ));
+
+  const response = await POST(postRequest(GUARDIAN_LINK_BODY));
+  const payload = await response.json();
+
+  expect(response.status).toBe(409);
+  expect(String(payload.error)).toMatch(/already linked to another login account/);
+  expect(mockLinkGuardianAthlete).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
 });
 
 // pilot.readiness.score is a NOT NULL column a coach-facing triage board

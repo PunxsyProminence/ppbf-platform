@@ -890,11 +890,11 @@ async function run() {
      login route will not accept an administrator-known value as a
      credential. It proved no such thing at this point in the run: the
      account is still `active_flag = false`, so loginWithAccountIdAndPin
-     returns null on its `unknown_or_inactive_account` branch and never
-     reaches verifyPin at all. Both refusals were failing on the same line,
-     and the code-as-PIN one would have stayed green with the entire PIN
-     comparison deleted -- exactly the "guard nobody would notice losing"
-     this comment warns about.
+     returns null on its `unknown_or_inactive_account` branch, where the PIN
+     comparison's result is never consulted. Both refusals were failing on
+     the same line, and the code-as-PIN one would have stayed green with the
+     entire PIN comparison deleted -- exactly the "guard nobody would notice
+     losing" this comment warns about.
 
      It now runs after step 10, where the account is active and holds a real
      pin_hash, so the refusal lands on the credential check it names. */
@@ -1022,12 +1022,12 @@ async function run() {
   /* THE RETIRED SHARED PIN, refused against that same active account.
 
      auth.ts refuses DEFAULT_FIRST_LOGIN_PIN in its own branch, which sits
-     BELOW the active_flag and pin_hash checks and above verifyPin. So it is
-     only reachable on an active account holding a real hash -- which is
-     exactly here, and nowhere earlier in this gate. Until now nothing
-     exercised it on a deployed revision at all: the guard that the published
-     bootstrap credential can never mint a session was asserted only in unit
-     tests.
+     BELOW the active_flag and pin_hash checks and above the wrong-PIN
+     decision. So it is only reachable on an active account holding a real
+     hash -- which is exactly here, and nowhere earlier in this gate. Until
+     now nothing exercised it on a deployed revision at all: the guard that
+     the published bootstrap credential can never mint a session was asserted
+     only in unit tests.
 
      Legacy rows in deployed databases still hold that PIN's hash. That is
      precisely why the branch exists, and why proving it live is worth a
@@ -1048,7 +1048,7 @@ async function run() {
 
      Step 9c already tried this one, but at that point the account was
      inactive, so login refused it on the unknown_or_inactive_account branch
-     and never compared anything. That proved promotion leaves no usable
+     whatever the PIN comparison said. That proved promotion leaves no usable
      credential -- worth proving, and it stays -- but it did NOT prove the old
      PIN is dead now that the account holds a real hash again. This does. */
   await clearAuthThrottle();

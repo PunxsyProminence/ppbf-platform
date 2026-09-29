@@ -35,6 +35,9 @@ const ORG_ID = 'org-guardian-upsert';
 const OTHER_ORG_ID = 'org-guardian-upsert-elsewhere';
 const ADMIN_ID = 'acct-guardian-upsert-admin';
 const GUARDIAN_ACCOUNT_ID = 'acct-guardian-upsert-parent';
+// A second, equally real parent login in the same organization -- the account
+// an intake write might wrongly re-point an existing guardian record to.
+const OTHER_GUARDIAN_ACCOUNT_ID = 'acct-guardian-upsert-other-parent';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -125,9 +128,9 @@ beforeAll(async () => {
   }
   await client.query(
     `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
-     values ($1, 'organization_admin', $2, 'microsoft'), ($3, 'parent', $2, 'microsoft')
+     values ($1, 'organization_admin', $2, 'microsoft'), ($3, 'parent', $2, 'microsoft'), ($4, 'parent', $2, 'microsoft')
      on conflict do nothing`,
-    [ADMIN_ID, ORG_ID, GUARDIAN_ACCOUNT_ID],
+    [ADMIN_ID, ORG_ID, GUARDIAN_ACCOUNT_ID, OTHER_GUARDIAN_ACCOUNT_ID],
   );
 
   // Env before import: db.ts reads the connection string when its pool is
@@ -269,5 +272,97 @@ describe('upsertGuardian', () => {
 
     const rowA = await readParent(ORG_ID, 'parent-shared-id');
     expect(rowA).toMatchObject({ full_name: 'Org A Guardian', phone: '555-0400' });
+  });
+});
+
+// coalesce kept an OMITTED account_id from wiping the link, but a SUPPLIED
+// different one still replaced it: naming an existing parent_id with another
+// login silently re-pointed the record, so the real parent lost every child
+// linked to it and the other login gained them. Only a real database can show
+// the ON CONFLICT ... WHERE guard leaves the row alone and returns nothing.
+describe('upsertGuardian refuses to move a guardian record to a different login', () => {
+  test('a different account_id for an existing guardian is refused, and the record is untouched', async () => {
+    await intake.upsertGuardian({
+      organizationId: ORG_ID,
+      parentId: 'parent-linked',
+      accountId: GUARDIAN_ACCOUNT_ID,
+      fullName: 'Real Guardian',
+      phone: '555-0500',
+    });
+
+    await expect(intake.upsertGuardian({
+      organizationId: ORG_ID,
+      parentId: 'parent-linked',
+      accountId: OTHER_GUARDIAN_ACCOUNT_ID,
+      fullName: 'Someone Else',
+      phone: '555-0999',
+    })).rejects.toMatchObject({ status: 409, code: 'GUARDIAN_ACCOUNT_CONFLICT' });
+
+    const row = await readParent(ORG_ID, 'parent-linked');
+    expect(row).toMatchObject({
+      account_id: GUARDIAN_ACCOUNT_ID,
+      full_name: 'Real Guardian',
+      phone: '555-0500',
+    });
+  });
+
+  test('the pre-write check refuses the same case against the real row', async () => {
+    await intake.upsertGuardian({
+      organizationId: ORG_ID,
+      parentId: 'parent-linked-check',
+      accountId: GUARDIAN_ACCOUNT_ID,
+      fullName: 'Real Guardian',
+    });
+
+    await expect(intake.assertGuardianAccountUnchanged({
+      organizationId: ORG_ID,
+      parentId: 'parent-linked-check',
+      accountId: OTHER_GUARDIAN_ACCOUNT_ID,
+    })).rejects.toMatchObject({ status: 409, code: 'GUARDIAN_ACCOUNT_CONFLICT' });
+
+    await expect(intake.assertGuardianAccountUnchanged({
+      organizationId: ORG_ID,
+      parentId: 'parent-linked-check',
+      accountId: GUARDIAN_ACCOUNT_ID,
+    })).resolves.toBeUndefined();
+  });
+
+  test('restating the same account_id still updates the record', async () => {
+    await intake.upsertGuardian({
+      organizationId: ORG_ID,
+      parentId: 'parent-same',
+      accountId: GUARDIAN_ACCOUNT_ID,
+      fullName: 'Guardian Same',
+      phone: '555-0600',
+    });
+
+    await intake.upsertGuardian({
+      organizationId: ORG_ID,
+      parentId: 'parent-same',
+      accountId: GUARDIAN_ACCOUNT_ID,
+      fullName: 'Guardian Same',
+      phone: '555-0601',
+    });
+
+    const row = await readParent(ORG_ID, 'parent-same');
+    expect(row).toMatchObject({ account_id: GUARDIAN_ACCOUNT_ID, phone: '555-0601' });
+  });
+
+  test('a guardian record with no login yet may be given one', async () => {
+    await intake.upsertGuardian({
+      organizationId: ORG_ID,
+      parentId: 'parent-unlinked',
+      fullName: 'Guardian Unlinked',
+    });
+
+    await intake.upsertGuardian({
+      organizationId: ORG_ID,
+      parentId: 'parent-unlinked',
+      accountId: OTHER_GUARDIAN_ACCOUNT_ID,
+      fullName: 'Guardian Unlinked',
+    });
+
+    const row = await readParent(ORG_ID, 'parent-unlinked');
+    expect(row.account_id).toBe(OTHER_GUARDIAN_ACCOUNT_ID);
   });
 });
