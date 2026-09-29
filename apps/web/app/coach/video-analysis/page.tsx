@@ -879,8 +879,14 @@ export default function CoachVideoAnalysisPage() {
             only a human verdict settles it.
           </p>
           {proposalsError ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{proposalsError}</p> : null}
+          {/* The queue holds only athletes this reader may reach (the proposals
+              GET filters by athlete access), while the accept-rate line above
+              counts the whole gym's outstanding proposals. The empty state
+              names its scope, so the two cannot read as a contradiction. */}
           {!proposalsError && proposals.length === 0 ? (
-            <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">No Film Study observations awaiting review.</p>
+            <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">
+              No Film Study observations awaiting review for athletes you can see.
+            </p>
           ) : (
             <div className="mt-[var(--s3)] space-y-[var(--s3)]">
               {proposals.map((p) => (
