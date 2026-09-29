@@ -608,7 +608,7 @@ describe('workout templates', () => {
     expect((await templateItems('gym_pinned', template)).map((row) => row.drill_id)).toEqual([builtOn]);
   });
 
-  it('a withdrawn template stays withdrawn when its content is revised, and its name is free for a new template', async () => {
+  it('a withdrawn template stays withdrawn when its content is revised, and its name is free for a template with a different id', async () => {
     const admin = await createGymWithDisciplines('gym_withdrawn');
     const template = `wtp_${hex14('fixture template:withdrawn')}`;
     await applyCommitted('gym_withdrawn', admin, templatePackage([templateRow(template, { name: 'Pad rounds' })], []));
@@ -621,10 +621,76 @@ describe('workout templates', () => {
       [2, false, false],
     ]);
 
-    // Only an ACTIVE row holds a name (pilot_workout_templates_one_active_name is `where active`).
+    // Only an ACTIVE row holds a name (pilot_workout_templates_one_active_name
+    // is `where active`). This withdrawn template's id is a fixture id, not
+    // MINT.template('Pad rounds'), so the new: one mints a different id; the
+    // next test is the case where it does not.
     const added = await applyCommitted('gym_withdrawn', admin, templatePackage([templateRow('new:pad-rounds', { name: 'Pad rounds' })], []));
     expect(added.plan.blocking).toEqual([]);
     expect(await templateVersions('gym_withdrawn', MINT.template('Pad rounds'))).toMatchObject([{ version: 1, active: true, name: 'Pad rounds' }]);
+  });
+
+  it('a withdrawn template whose id comes from its name keeps that name: a new: template of the same name is refused, naming it', async () => {
+    // Every committed template's id is MINT.template(name) (ids.ts), so this
+    // is the case a real withdrawn template is in.
+    const admin = await createGymWithDisciplines('gym_withdrawn_formula');
+    await applyCommitted('gym_withdrawn_formula', admin, templatePackage([templateRow('new:pad-rounds', { name: 'Pad rounds' })], []));
+    const withdrawn = MINT.template('Pad rounds');
+    await client.query("update pilot.workout_templates set active = false where organization_id = 'gym_withdrawn_formula' and template_id = $1", [withdrawn]);
+
+    // The same name mints the same id: this names the withdrawn template, it does not add one.
+    const again = await plan('gym_withdrawn_formula', admin, templatePackage([templateRow('new:pad-rounds-again', { name: 'Pad rounds' })], []));
+    expect(again.blocking.map((finding) => [finding.code, finding.file, finding.line])).toEqual([['minted_id_exists', TEMPLATES_CSV, 2]]);
+    expect(again.blocking[0].message).toContain(`mints ${withdrawn}, which is already the committed item 'Pad rounds'.`);
+    expect(unitOf(again, 'workout-templates', withdrawn)?.outcome).toBe('reject');
+
+    // A different name is a different template.
+    const other = await plan('gym_withdrawn_formula', admin, templatePackage([templateRow('new:pad-rounds-two', { name: 'Pad rounds two' })], []));
+    expect(other.blocking).toEqual([]);
+    expect(unitOf(other, 'workout-templates', MINT.template('Pad rounds two'))?.outcome).toBe('new');
+  });
+
+  it('a new template or script cannot take a child id the database already holds: refused at plan, at the row', async () => {
+    const admin = await createGymWithDisciplines('gym_child_ids');
+    const drill = fixtureDrillId('child-ids:jab');
+    await insertDrill('gym_child_ids', drill);
+    const original = `wtp_${hex14('fixture template:child-ids')}`;
+    const takenItem = MINT.templateItem(original, '1');
+    const script = `scr_${hex14('fixture script:child-ids')}`;
+    const takenBlock = MINT.block(script, '1');
+    await applyCommitted('gym_child_ids', admin, {
+      ...templatePackage([templateRow(original)], [itemRow(original, 1, drill, { item_id: takenItem })]),
+      ...scriptPackage([scriptRow(script)], [blockRow(script, 1, { block_id: takenBlock })], []),
+    });
+    const before = await rowVersions('gym_child_ids');
+
+    // A copy of each that kept the original's child id.
+    const copies = (itemId: string, blockId: string) => ({
+      ...templatePackage([templateRow('new:copy', { name: 'Copy' })], [itemRow('new:copy', 1, drill, { item_id: itemId })]),
+      ...scriptPackage([scriptRow('new:copy-script', { name: 'Copy script' })], [blockRow('new:copy-script', 1, { block_id: blockId })], []),
+    });
+    const copy = MINT.template('Copy');
+    const copyScript = MINT.script('boxing', 'Copy script');
+    const planned = await plan('gym_child_ids', admin, copies(takenItem, takenBlock));
+    expect(planned.blocking.map((finding) => [finding.code, finding.file, finding.line, finding.column, finding.key])).toEqual([
+      ['duplicate_id', ITEMS_CSV, 2, 'item_id', `${copy} / 1`],
+      ['duplicate_id', BLOCKS_CSV, 2, 'block_id', `${copyScript} / 1`],
+    ]);
+    expect(planned.blocking[0].message).toContain(`item_id ${takenItem} is already used by template_id ${original}`);
+    expect(planned.blocking[1].message).toContain(`block_id ${takenBlock} is already used by script_id ${script}`);
+    expect(unitOf(planned, 'workout-templates', copy)).toMatchObject({ outcome: 'reject' });
+    expect(unitOf(planned, 'workout-templates', copy)?.toVersion).toBeUndefined();
+    expect(unitOf(planned, 'session-scripts', copyScript)?.outcome).toBe('reject');
+
+    // The apply refuses the plan instead of failing on the primary key; nothing is written.
+    await expect(applyCommitted('gym_child_ids', admin, copies(takenItem, takenBlock), planned.planHash)).rejects.toMatchObject({ code: 'PLAN_BLOCKED' });
+    expect(await rowVersions('gym_child_ids')).toEqual(before);
+
+    // Blank child ids: minted under the new ids, and the copies load.
+    await applyCommitted('gym_child_ids', admin, copies('', ''));
+    expect((await templateItems('gym_child_ids', copy)).map((row) => row.item_id)).toEqual([MINT.templateItem(copy, '1')]);
+    const copyBlocks = await observer.query("select block_id from pilot.session_script_blocks where organization_id = 'gym_child_ids' and script_id = $1", [copyScript]);
+    expect(copyBlocks.rows).toEqual([{ block_id: MINT.block(copyScript, '1') }]);
   });
 });
 
@@ -799,6 +865,38 @@ describe('one transaction', () => {
     const audits = await contentImportAuditRows('gym_atomic');
     expect(audits).toHaveLength(auditBefore + 1);
     expect(audits[audits.length - 1].details.datasets).toEqual(['workout-templates', 'session-scripts']);
+  });
+
+  it('holds the template and script a child-only package names, even when it writes nothing', async () => {
+    // A package of items alone (or blocks alone) re-plans, and may revise, the
+    // template (or script) they name, so apply must hold that row FOR UPDATE
+    // like any row a root file names (apply.ts "THE ORDER", step 3).
+    const admin = await createGymWithDisciplines('gym_child_locks');
+    const template = `wtp_${hex14('fixture template:locks')}`;
+    const script = `scr_${hex14('fixture script:locks')}`;
+    const items = [itemRow(template, 1, '', { free_text_drill: 'Skip rope' })];
+    const blocks = [blockRow(script, 1)];
+    await applyCommitted('gym_child_locks', admin, { ...templatePackage([templateRow(template)], items), ...scriptPackage([scriptRow(script)], blocks, []) });
+
+    const childOnly = { [ITEMS_CSV]: csv(ITEMS_CSV, items), [BLOCKS_CSV]: csv(BLOCKS_CSV, blocks) };
+    const shown = await plan('gym_child_locks', admin, childOnly);
+    expect(shown.blocking).toEqual([]);
+    expect(shown.changes).toBe(0);
+
+    const takeRow = (sql: string, id: string) => observer.query(`${sql} for update nowait`, ['gym_child_locks', id]);
+    const templateRowSql = 'select 1 from pilot.workout_templates where organization_id = $1 and template_id = $2';
+    const scriptRowSql = 'select 1 from pilot.session_scripts where organization_id = $1 and script_id = $2';
+    await client.query('BEGIN');
+    try {
+      const result = await applyImport({ client, organizationId: 'gym_child_locks', actorAccountId: admin, files: childOnly, expectedPlanHash: shown.planHash });
+      expect(result.importId).toBeNull();
+      // Another session cannot take either row while the import's transaction is open (55P03 lock_not_available).
+      await expect(takeRow(templateRowSql, template)).rejects.toMatchObject({ code: '55P03' });
+      await expect(takeRow(scriptRowSql, script)).rejects.toMatchObject({ code: '55P03' });
+    } finally {
+      await client.query('ROLLBACK');
+    }
+    await expect(takeRow(templateRowSql, template)).resolves.toMatchObject({ rowCount: 1 });
   });
 
   it('refuses a stale plan: a template revised after the plan was shown', async () => {

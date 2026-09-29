@@ -3,7 +3,7 @@ import { hex14, isNewId } from '../ids';
 import { drillLineageHeads } from '../lineage';
 import { rootFileSpec } from '../specs';
 import type { ColumnSpec, DatasetSpec, FileSpec, Finding, ParsedFile, ParsedRow, RowValues } from '../types';
-import { newIdKindOf, type MintedIds, type ValidationResult } from '../validate';
+import { newIdKindOf, rowKey, type MintedIds, type ValidationResult } from '../validate';
 import { integerText, normalizeCell, numberText, parseBoolean, splitList } from '../values';
 import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, UnitPlan } from './index';
 
@@ -52,6 +52,16 @@ import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, Uni
 // lineage key as its id. Child ids of a version are the ids.ts formulas fed
 // the VERSION's id, so a new version's children can never collide with, or
 // attach to, an older version's.
+//
+// A NEW LINEAGE KEEPS A CHILD ID ITS FILE GIVES (the committed files carry
+// them, and the first load must write the ids the old loaders wrote). Nothing
+// upstream checks such an id against the database: the validator sees only
+// this package (validate.ts checkKeys) and the baseline holds root rows only
+// (readBaseline). So the plan checks every child id it would insert, and a
+// taken one is a blocking duplicate_id at its row -- otherwise a copied
+// template's item ids plan clean and the apply dies on the primary key
+// (pilot_workout_template_items_pkey, pilot_ssb_pkey, pilot_ssr_pkey are all
+// (organization_id, <id>)).
 
 // ---------------------------------------------------------------------------
 // Configuration: what differs between templates and scripts.
@@ -192,6 +202,9 @@ interface VersionedItem {
   root?: Cells;
   children?: Map<FileSpec, Cells[]>;
   head?: VersionHead;
+  /** For a unit to be written: the id of the version row, and each child row's id, index for index with `children`. */
+  writeId?: string;
+  childIds?: Map<FileSpec, string[]>;
 }
 
 interface VersionedState {
@@ -313,6 +326,86 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
     });
   }
 
+  /** The ids a unit planned as new / new_version would be written under. Decided here so apply writes what the plan checked. */
+  function assignWriteIds(item: VersionedItem): void {
+    const { unit } = item;
+    const isNew = unit.outcome === 'new';
+    const id = isNew ? unit.key : versionId(config.idPrefix, unit.key, unit.toVersion as number);
+    item.writeId = id;
+    item.childIds = new Map(
+      config.children.map((child) => [
+        child.spec,
+        // A new lineage keeps a child id its file gave; a new version always
+        // re-mints, because an id in the file names a row of an OLDER version.
+        (item.children?.get(child.spec) ?? []).map((cells) => (isNew && cells[child.idColumn] ? cells[child.idColumn] : child.mintId(id, cells))),
+      ]),
+    );
+  }
+
+  /**
+   * Every child id this plan would insert must be free: not held by any row of
+   * the organization (the primary key is (organization_id, <id>)), and not
+   * planned twice. A clash rejects its unit with a duplicate_id at the child
+   * row, so the plan shown is one the apply can write.
+   */
+  async function refuseTakenChildIds(
+    ctx: EngineContext,
+    items: readonly VersionedItem[],
+    located: ReadonlyMap<Cells, { file: string; line: number }>,
+    rootPath: string | undefined,
+    findings: Finding[],
+  ): Promise<void> {
+    for (const child of config.children) {
+      const childIdColumn = ident(child.idColumn);
+      const parentColumn = ident(child.spec.parent?.column ?? '');
+      const planned = new Map<string, { item: VersionedItem; cells: Cells }>();
+      const clashes: { item: VersionedItem; cells: Cells; id: string; holder: string }[] = [];
+      for (const item of items) {
+        const rows = item.children?.get(child.spec) ?? [];
+        (item.childIds?.get(child.spec) ?? []).forEach((id, index) => {
+          const earlier = planned.get(id);
+          if (earlier) clashes.push({ item, cells: rows[index], id, holder: `${earlier.item.unit.key} in this same plan` });
+          else planned.set(id, { item, cells: rows[index] });
+        });
+      }
+      if (planned.size > 0) {
+        const { rows } = await ctx.client.query<{ id: string; parent: string }>(
+          `select ${childIdColumn} as id, ${parentColumn} as parent from pilot.${ident(child.table)}
+            where organization_id = $1 and ${childIdColumn} = any($2::text[])
+            order by ${childIdColumn}`,
+          [ctx.organizationId, [...planned.keys()]],
+        );
+        for (const row of rows) {
+          const owner = planned.get(row.id) as { item: VersionedItem; cells: Cells };
+          clashes.push({ ...owner, id: row.id, holder: `${parentColumn} ${row.parent} (pilot.${child.table})` });
+        }
+      }
+
+      for (const { item, cells, id, holder } of clashes) {
+        // A new lineage is written under its own key (assignWriteIds); only there does a file-given id survive.
+        const fromFile = item.writeId === item.unit.key && cells[child.idColumn] === id;
+        const message = fromFile
+          ? `${child.idColumn} ${id} is already used by ${holder}, so ${item.unit.key} cannot be written with it. Leave ${child.idColumn} blank on this row and the tool mints one.`
+          : `${child.idColumn} ${id}, minted for ${item.unit.key}, is already used by ${holder}; the database holds a row this plan did not expect.`;
+        // A child row carried over from the stored version has no line; it is
+        // located at the root row's file, or at the table it was read from.
+        const at = located.get(cells);
+        item.unit.outcome = 'reject';
+        delete item.unit.fromVersion;
+        delete item.unit.toVersion;
+        item.unit.reasons = [...(item.unit.reasons ?? []), message];
+        findings.push({
+          code: 'duplicate_id',
+          file: at?.file ?? rootPath ?? `database:pilot.${child.table}`,
+          line: at?.line,
+          column: child.idColumn,
+          key: rowKey(child.spec, cells) || undefined,
+          message,
+        });
+      }
+    }
+  }
+
   return {
     spec: config.dataset,
 
@@ -324,11 +417,16 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
       const rows: ParsedRow[] = [...heads.values()].map((head) => {
         const values = rootCells(head.row);
         values[rootSpec.key[0]] = head.lineageId;
+        const raw = { ...values };
         // A row that does not hold its name under the partial unique index
         // (a withdrawn template: pilot_workout_templates_one_active_name is
         // `where active`) must not make a new template's name look taken.
+        // `raw` keeps the stored name, so a minted_id_exists message can still
+        // say which item it is (validate.ts mintIds): a template id comes
+        // from its name (ids.ts MINT.template), so a new: template named like
+        // a withdrawn one mints the withdrawn one's id and is refused.
         if (config.holdsName && rootSpec.nameColumn && !config.holdsName(head.row)) values[rootSpec.nameColumn] = '';
-        return { line: 0, raw: { ...values }, values };
+        return { line: 0, raw, values };
       });
       return [{ path: `database:${table}`, spec: rootSpec, header: rootSpec.columns.map((column) => column.name), rows }];
     },
@@ -387,12 +485,14 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
       }
       const packageChildren = new Map<FileSpec, Map<string, Cells[]>>();
       const childReasons = new Map<string, string[]>();
+      const childRowAt = new Map<Cells, { file: string; line: number }>();
       for (const file of childFiles) {
         const byParent = new Map<string, Cells[]>();
         packageChildren.set(file.spec, byParent);
         const parentColumn = file.spec.parent?.column ?? '';
         for (const row of file.rows) {
           const cells = resolvedCells(file.spec, row.values, minted);
+          childRowAt.set(cells, { file: file.path, line: row.line });
           const parent = cells[parentColumn];
           addKey(parent, row.values[parentColumn], file.path);
           byParent.set(parent, [...(byParent.get(parent) ?? []), cells]);
@@ -456,8 +556,11 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
           unit.fromVersion = head.version;
           unit.toVersion = (versions.get(key) ?? head.version) + 1;
         }
-        items.push({ unit, root, children, head });
+        const item: VersionedItem = { unit, root, children, head };
+        if (unit.outcome === 'new' || unit.outcome === 'new_version') assignWriteIds(item);
+        items.push(item);
       }
+      await refuseTakenChildIds(ctx, items, childRowAt, rootFile?.path, findings);
 
       // A lineage the database holds that the ROOT file does not name. A
       // package of child rows only is not a statement about which templates
@@ -510,7 +613,9 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
           throw new Error(`content-import: ${config.dataset.name} ${unit.key} was planned without its content`);
         }
         const isNew = unit.outcome === 'new';
-        const id = isNew ? unit.key : versionId(config.idPrefix, unit.key, unit.toVersion);
+        const id = item.writeId;
+        const childIds = item.childIds;
+        if (!id || !childIds) throw new Error(`content-import: ${config.dataset.name} ${unit.key} was planned without the ids it writes`);
 
         const values = new Map<string, unknown>([
           ['organization_id', ctx.organizationId],
@@ -533,11 +638,10 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
         for (const child of config.children) {
           const parentColumn = ident(child.spec.parent?.column ?? '');
           const drill = drillColumnOf(child.spec);
-          for (const cells of children.get(child.spec) ?? []) {
-            // A new lineage keeps a child id its file gave (the committed
-            // files carry them); a new version always re-mints, because an
-            // id in the file names a row of an OLDER version.
-            const childId = isNew && cells[child.idColumn] ? cells[child.idColumn] : child.mintId(id, cells);
+          const ids = childIds.get(child.spec) ?? [];
+          for (const [index, cells] of (children.get(child.spec) ?? []).entries()) {
+            // The id the plan checked was free (assignWriteIds, refuseTakenChildIds).
+            const childId = ids[index];
             const row = new Map<string, unknown>([
               ['organization_id', ctx.organizationId],
               [ident(child.idColumn), childId],

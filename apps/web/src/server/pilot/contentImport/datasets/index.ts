@@ -12,9 +12,8 @@ import { workoutTemplatesEngine } from './templates';
 // a discipline differs from a drill.
 //
 // ONE LINE PER DATASET MODULE. The drill library and universal stop rules
-// (IMP-07) and workout templates and session scripts (IMP-08) register here
-// when they land; until then a package carrying their files is refused at plan
-// with dataset_not_loadable, rather than half-loaded.
+// (IMP-07) register here when they land; until then a package carrying their
+// files is refused at plan with dataset_not_loadable, rather than half-loaded.
 
 export type UnitOutcome = 'new' | 'new_version' | 'unchanged' | 'absent' | 'reject';
 
