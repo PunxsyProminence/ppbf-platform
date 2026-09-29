@@ -1,445 +1,397 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-// seed-reference-data.yml dispatches five reference-data loaders. The
-// operator types an organization_id into the workflow form; the loader reads an
-// environment variable. Nothing tied those two names together, and they drifted:
-// the workflow exported PPBF_ORG_ID / SEED_ACCOUNT_ID while the loaders read
-// PPBF_SEED_ORG_ID / PPBF_SEED_ACCOUNT_ID.
+import { datasetsFor, formatPlan, parseCliArgs, readDatabaseEnv } from './contentImport/cli';
+import { writeCsv } from './contentImport/csv';
+import { LOADABLE_DATASETS, UNIT_OUTCOMES } from './contentImport/datasets';
+import type { ImportPlan } from './contentImport/plan';
+import { loadOfflineReferenceSets, readCommittedBaseline } from './contentImport/referenceSets';
+import { committedPath, DATASETS, fileSpecByName } from './contentImport/specs';
+import type { DatasetName, ParsedPackage, RowValues } from './contentImport/types';
+import { validatePackage, validateParsed } from './contentImport/validate';
+
+// seed-reference-data.yml is how reference content reaches a real database
+// (R1 route 3: files handed over, validated, committed by PR, loaded by this
+// workflow). Since IMP-10 every dataset goes through ONE loader, the
+// content-import core, by one CLI call (scripts/pilot-content-import.ts). This
+// file ties the workflow to that CLI at the source level, the way the workflow
+// used to be tied to seven copied seed-*.mjs loaders.
 //
-// The failure that drift produced was not a crash. Every loader defaulted a
-// missing PPBF_SEED_ORG_ID to 'ppbf-default-org', so a production dispatch would
-// have written hundreds of owned rows under a hardcoded fixture organization and
-// reported success, with the operator's typed value discarded in silence.
-//
-// The pg suites could not catch it: they import seedAll and pass placeholders as
-// arguments, so run() -- the entry point the workflow actually invokes, and the
-// only place these variables are read -- was never executed by any test.
-//
-// This ties the workflow to the loaders at the source level, like
-// drillSeedPrerequisite.test.ts ties the CSVs to their consumers.
+// Why source-level at all: the failures it guards leave the YAML perfectly
+// valid. The organization id once drifted between the workflow and the loaders
+// (PPBF_ORG_ID exported, PPBF_SEED_ORG_ID read) and every loader defaulted the
+// missing value to 'ppbf-default-org', so a production dispatch would have
+// written hundreds of rows under a fixture organization and reported success.
+// No pg suite could see that: they call the loader directly, never through the
+// workflow.
 
 const PILOT_DIR = __dirname;
-const REPO_ROOT = path.resolve(PILOT_DIR, '../../../../..');
+const WEB_DIR = path.resolve(PILOT_DIR, '../../..');
+const REPO_ROOT = path.resolve(WEB_DIR, '../..');
 const WORKFLOW = path.join(REPO_ROOT, '.github/workflows/seed-reference-data.yml');
-const SCRIPTS_DIR = path.resolve(PILOT_DIR, '../../../scripts');
+const SCRIPTS_DIR = path.join(WEB_DIR, 'scripts');
+const SEED_DATA_DIR = path.join(WEB_DIR, 'seed-data');
+const CLI_SOURCE = path.join(PILOT_DIR, 'contentImport/cli.ts');
 
 // Normalized because the repo checks out CRLF on Windows, and a trailing \r
 // silently defeats any regex anchored with $ or ending in \n. A structural
 // assertion that cannot match is a guard that always passes vacuously.
 const WORKFLOW_SOURCE = fs.readFileSync(WORKFLOW, 'utf8').replace(/\r\n/g, '\n');
+const PACKAGE_SCRIPTS = (JSON.parse(fs.readFileSync(path.join(WEB_DIR, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
 
-/**
- * The loaders seed-reference-data.yml dispatches, read off the workflow's own
- * dataset choices rather than listed here.
- *
- * A hand-maintained list is what failed. This one was written when three
- * loaders existed; session-scripts later joined the workflow's choices and the
- * list did not grow, so every assertion below -- including the
- * owning-organization guard, the one this file exists for -- silently stopped
- * covering it while still reporting green. Deriving the list means a dataset
- * added to the workflow is covered the day it lands, with nobody having to
- * remember this file.
- *
- * `all` is excluded: it is the aggregate choice, not a loader.
- */
-function dispatchedLoaders(workflowSource: string): string[] {
-  // Anchored on the YAML key at its own indent, for the reason the
-  // dataset-choice test below records: `dataset:` also appears in the
-  // workflow's header comment.
-  const block = workflowSource.match(/\n {6}dataset:\n([\s\S]*?)\n {6}mode:/);
-  if (!block) {
-    throw new Error('seed-reference-data.yml: could not read the dataset choices');
-  }
+/** The operator's dataset choices, read off the input block at its own indent (the header comment names datasets too). */
+function datasetChoices(workflow: string): string[] {
+  const block = workflow.match(/\n {6}dataset:\n([\s\S]*?)\n {6}mode:/);
+  if (!block) throw new Error('seed-reference-data.yml: could not read the dataset choices');
   return block[1]
     .split('\n')
     .map((line) => line.trim().match(/^- (\S+)$/)?.[1])
-    .filter((value): value is string => Boolean(value) && value !== 'all')
-    .map((dataset) => `seed-${dataset}.mjs`)
-    .sort();
+    .filter((value): value is string => Boolean(value));
 }
 
-/**
- * The loaders the workflow's STEPS actually invoke, read from the
- * `npm run seed:<dataset>` lines rather than from the input choices.
- *
- * A second, independent reading of the same file. dispatchedLoaders() parses
- * the operator-facing choice list; this parses what the job runs. Asserting
- * the two agree means a derivation that silently returns a SHORT list fails
- * here -- which a "did we get at least one, and more than one" sanity check
- * cannot do, because a truncated list satisfies it.
- */
-function stepInvokedLoaders(workflowSource: string): string[] {
-  const invoked = [...workflowSource.matchAll(/npm run seed:([a-z0-9-]+)/g)]
-    .map((match) => `seed-${match[1]}.mjs`);
-  return [...new Set(invoked)].sort();
+/** One job's text: from its key at two-space indent to the next job key or the end. */
+function jobBlock(workflow: string, job: string): string {
+  const start = workflow.indexOf(`\n  ${job}:\n`);
+  if (start === -1) throw new Error(`seed-reference-data.yml: no job ${job}`);
+  const rest = workflow.slice(start + 1);
+  const next = rest.slice(1).search(/\n {2}[a-z][a-z0-9_-]*:\n/);
+  return next === -1 ? rest : rest.slice(0, next + 2);
 }
 
-const LOADERS = dispatchedLoaders(WORKFLOW_SOURCE);
-
-/**
- * Every seed loader that resolves an owning organization -- discovered from
- * disk, not listed.
- *
- * Defaulting the owner is wrong however the loader is reached, not just when
- * the workflow dispatches it: `npm run seed:<dataset>` exists for all of them,
- * and the workflow's `Resolve Owning Organization` step (which writes
- * PPBF_SEED_ORG_ID to $GITHUB_ENV) only masks the fallback on the CI path.
- * A loader deliberately absent from the workflow -- transfer-claims, whose
- * rows violate pilot_transfer_drill_fk -- must still not guess its owner.
- *
- * Read off the filesystem because a hand-maintained list is what failed here:
- * LOADERS above was written when three loaders existed and did not grow with
- * them. A new seed-*.mjs that reads PPBF_SEED_ORG_ID is covered the day it
- * lands, with nobody having to remember this file.
- */
-function orgOwningLoaders(): string[] {
-  return fs
-    .readdirSync(SCRIPTS_DIR)
-    .filter((file) => file.startsWith('seed-') && file.endsWith('.mjs'))
-    .filter((file) => fs.readFileSync(path.join(SCRIPTS_DIR, file), 'utf8').includes('PPBF_SEED_ORG_ID'))
-    .sort();
+/** One step's text, from its `- name:` line to the next step. */
+function stepBlock(workflow: string, name: string): string {
+  const start = workflow.indexOf(`- name: ${name}\n`);
+  if (start === -1) throw new Error(`seed-reference-data.yml: no step ${name}`);
+  const next = workflow.indexOf('- name:', start + 1);
+  return workflow.slice(start, next === -1 ? undefined : next);
 }
 
-/** Seed-specific variables a loader reads out of the environment. */
-function seedVarsRequiredBy(loader: string): string[] {
-  const source = fs.readFileSync(path.join(SCRIPTS_DIR, loader), 'utf8');
-  const names = new Set<string>();
-  for (const m of source.matchAll(/required\(\s*['"]([A-Z0-9_]+)['"]\s*\)/g)) {
-    names.add(m[1]);
-  }
-  for (const m of source.matchAll(/process\.env\.([A-Z0-9_]+)/g)) {
-    names.add(m[1]);
-  }
-  // The database connection variables are resolved at run time into $GITHUB_ENV
-  // from the Container App's own secret, not passed through the job env block.
-  // Only the seed-specific values come from operator input.
-  return [...names].filter((n) => n.startsWith('PPBF_SEED_'));
+const at = (needle: string) => WORKFLOW_SOURCE.indexOf(needle);
+
+/** The committed datasets that have at least one file on disk. */
+function committedDatasets(): DatasetName[] {
+  return DATASETS.filter((dataset) => dataset.files.some((file) => fs.existsSync(path.join(SEED_DATA_DIR, committedPath(file))))).map(
+    (dataset) => dataset.name,
+  );
 }
 
 describe('seed-reference-data workflow contract', () => {
   const workflow = WORKFLOW_SOURCE;
+  const choices = datasetChoices(workflow);
+  const validateJob = jobBlock(workflow, 'validate');
+  const seedJob = jobBlock(workflow, 'seed');
 
-  it('reads a workflow and every dispatched loader that actually exists', () => {
-    // A broken path or regex would make every assertion below vacuously pass.
+  it('reads the workflow, its two jobs and its choices, so nothing below passes vacuously', () => {
     expect(workflow).toContain('name: seed-reference-data');
-    // The derivation feeds every it.each below, so an empty or truncated
-    // result would silently reduce this whole suite to nothing. Checked
-    // against the workflow's own step invocations -- a second, independent
-    // reading of the same file, so a short list fails rather than passing a
-    // "more than one" sanity check.
-    expect(LOADERS).toEqual(stepInvokedLoaders(workflow));
-    expect(LOADERS).toContain('seed-drill-library.mjs');
-    for (const loader of LOADERS) {
-      expect(fs.existsSync(path.join(SCRIPTS_DIR, loader))).toBe(true);
+    expect(validateJob).toContain('- name: Validate Package');
+    expect(seedJob).toContain('- name: Load Reference Data');
+    expect(choices).toContain('all');
+    expect(choices).toContain('drill-library');
+    expect(choices.length).toBeGreaterThan(2);
+  });
+
+  it('every dataset choice is a registered content-import dataset and the workflow validates before any Azure or database step', () => {
+    // Every choice but 'all' is a dataset the engine loads, and the CLI accepts it.
+    for (const choice of choices) {
+      expect(() => datasetsFor(choice)).not.toThrow();
+      if (choice !== 'all') expect(LOADABLE_DATASETS).toContain(choice);
     }
-  });
+    // ...and every loadable dataset that has a committed file is offered. A
+    // first universal-stop-rules file makes this fail until it is a choice.
+    expect(choices.filter((choice) => choice !== 'all').sort()).toEqual(
+      LOADABLE_DATASETS.filter((name) => committedDatasets().includes(name)).sort(),
+    );
 
-  // Guards the cross-check above against quietly becoming circular. A
-  // stepInvokedLoaders that ignored its argument -- or was rewritten to return
-  // the choice-derived list -- would satisfy that equality while proving
-  // nothing, so this pins that it genuinely reads what it is given.
-  it('derives the step invocations from the text it is given', () => {
-    expect(stepInvokedLoaders('')).toEqual([]);
-    expect(stepInvokedLoaders('        run: npm run seed:only-this')).toEqual(['seed-only-this.mjs']);
-  });
+    // The validation runs the offline validator over exactly what the load
+    // will read (runValidateCommitted), for the dataset the operator chose.
+    const validate = stepBlock(validateJob, 'Validate Package');
+    expect(validate).toMatch(/run: npm run --silent content:validate -- --dataset "\$DATASET"/);
+    expect(validate).toContain('DATASET: ${{ inputs.dataset }}');
+    expect(PACKAGE_SCRIPTS['content:validate']).toBe('tsx scripts/pilot-content-import.ts validate');
+    expect(parseCliArgs(['validate', '--dataset', 'all'])).toEqual({ command: 'validate', dataset: 'all', write: false, dryRun: false });
 
-  it.each(LOADERS)('%s reads at least one seed variable', (loader) => {
-    expect(seedVarsRequiredBy(loader).length).toBeGreaterThan(0);
-  });
-
-  it.each(LOADERS)('every variable %s reads is exported by the workflow', (loader) => {
-    for (const name of seedVarsRequiredBy(loader)) {
-      // Either declared in a job/step `env:` block, or written to $GITHUB_ENV.
-      const exported = new RegExp(`(^\\s*${name}:)|(${name}=)`, 'm').test(workflow);
-      expect(exported).toBe(true);
+    // BEFORE: in a job that cannot reach Azure or a database at all -- no
+    // environment (so no environment secrets), no secrets, no OIDC token, no
+    // login, no connection string -- and the job that can does not start
+    // until it has passed.
+    // Comment lines are left out: the job's own comment explains the absence.
+    const validateCode = validateJob
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('#'))
+      .join('\n');
+    for (const forbidden of ['environment:', 'secrets.', 'id-token', 'azure/login', 'az containerapp', 'AZURE_POSTGRES_CONNECTION_STRING', 'content:apply']) {
+      expect({ forbidden, found: validateCode.includes(forbidden) }).toEqual({ forbidden, found: false });
     }
+    expect(seedJob).toMatch(/\n {4}needs: validate\n/);
+    expect(at('- name: Validate Package')).toBeLessThan(at('azure/login'));
+    expect(at('- name: Validate Package')).toBeLessThan(at('- name: Resolve Declared Database Target'));
+    expect(at('- name: Validate Package')).toBeLessThan(at('- name: Load Reference Data'));
   });
 
-  it('names the two operator-supplied values explicitly', () => {
-    // Guards the specific pair that drifted, so a rename of either side fails
-    // here rather than silently seeding the wrong organization.
-    expect(seedVarsRequiredBy('seed-drill-library.mjs').sort()).toEqual([
-      'PPBF_SEED_ACCOUNT_ID',
-      'PPBF_SEED_ORG_ID',
+  it("dataset all is ONE apply step and ONE CLI call -- one transaction -- not a chain of per-dataset steps", () => {
+    // The old `all` ran a step per loader, each with its own transaction, so a
+    // failure half way left earlier datasets committed. Now every choice,
+    // `all` included, is one `content:apply` call; runApply plans every
+    // dataset, then applies them in one BEGIN .. COMMIT (proved without a
+    // database in seedLoaderTransactions.test.ts, and against Postgres in
+    // contentImportEngine.pg.test.ts: one import_id, one audit row).
+    const applyCalls = [...workflow.matchAll(/content:apply/g)];
+    expect(applyCalls).toHaveLength(1);
+    const load = stepBlock(seedJob, 'Load Reference Data');
+    expect(load).toContain('npm run --silent content:apply -- $DRY_RUN --dataset "$DATASET"');
+    expect(load).toContain('DATASET: ${{ inputs.dataset }}');
+    expect(PACKAGE_SCRIPTS['content:apply']).toBe('tsx scripts/pilot-content-import.ts apply');
+    // No per-dataset steps, and no per-dataset seed script run by the workflow.
+    expect(workflow).not.toMatch(/inputs\.dataset == '/);
+    expect(workflow).not.toMatch(/npm run seed:/);
+    // 'all' is every loadable dataset in apply (dependency) order.
+    expect(datasetsFor('all')).toEqual([...LOADABLE_DATASETS]);
+  });
+
+  it('keeps dry-run as apply + ROLLBACK, not a plan-only preview', () => {
+    // mode=dry-run passes --dry-run to apply (runApply applies, then rolls
+    // back), so a dry run still proves the rows fit the live schema. The plan
+    // command is never what the workflow runs.
+    const load = stepBlock(seedJob, 'Load Reference Data');
+    expect(load).toMatch(/if \[ "\$MODE" = "dry-run" \]; then\n\s+DRY_RUN="--dry-run"/);
+    expect(load).toContain('MODE: ${{ inputs.mode }}');
+    expect(workflow).not.toMatch(/content:plan/);
+    expect(parseCliArgs(['apply', '--dry-run', '--dataset', 'all'])).toMatchObject({ command: 'apply', dryRun: true });
+  });
+
+  it('prints the plan counts in the run summary, in the exact format the CLI prints them', () => {
+    const summary = stepBlock(seedJob, 'Record What Ran');
+    expect(summary).toContain('if: always()');
+    // The load step keeps its output where the summary reads it.
+    expect(stepBlock(seedJob, 'Load Reference Data')).toContain('| tee "$RUNNER_TEMP/content-import.log"');
+    expect(summary).toContain('LOG="$RUNNER_TEMP/content-import.log"');
+
+    // The summary's count pattern must match the line formatPlan really
+    // prints, or the summary silently shows "(no plan was printed)".
+    const pattern = summary.match(/grep -E '(\^ {2}\[a-z-\]\+: [^']+)' "\$LOG"/)?.[1];
+    expect(pattern).toBeDefined();
+    const plan: ImportPlan = {
+      organizationId: 'gym_test',
+      actor: { accountId: 'admin@gym_test', role: 'organization_admin', isPlatformOwner: false },
+      datasets: ['disciplines', 'drill-library'],
+      units: [],
+      counts: {
+        disciplines: { new: 5, new_version: 0, unchanged: 0, absent: 0, reject: 0 },
+        'drill-library': { new: 0, new_version: 2, unchanged: 117, absent: 1, reject: 0 },
+      },
+      totals: { new: 5, new_version: 2, unchanged: 117, absent: 1, reject: 0 },
+      blocking: [],
+      warnings: [],
+      changes: 7,
+      planHash: 'hash',
+    };
+    const printed = formatPlan(plan);
+    const countLines = printed.filter((line) => new RegExp(pattern as string).test(line));
+    expect(countLines).toEqual([
+      '  disciplines: 5 new, 0 new version, 0 unchanged, 0 absent, 0 reject',
+      '  drill-library: 0 new, 2 new version, 117 unchanged, 1 absent, 0 reject',
     ]);
-  });
-
-  it('resolves the owning organization before any loader runs', () => {
-    // PPBF_SEED_ORG_ID is written to $GITHUB_ENV by a step rather than declared
-    // at job level, because a blank organization_id is resolved from the target
-    // app's own secret at run time. $GITHUB_ENV only reaches LATER steps, so a
-    // resolution step ordered after a seed step would hand that loader an empty
-    // variable -- which now stops it rather than silently defaulting, but still
-    // fails a real dispatch for a reason nobody would guess from the form.
-    const resolveAt = workflow.indexOf('name: Resolve Owning Organization');
-    expect(resolveAt).toBeGreaterThan(-1);
-
-    const seedSteps = [...workflow.matchAll(/name: Seed [A-Za-z ]+/g)];
-    expect(seedSteps.length).toBeGreaterThan(0);
-    for (const step of seedSteps) {
-      expect(step.index).toBeGreaterThan(resolveAt);
-    }
+    // Every outcome is in that line, in the order the pattern expects.
+    expect(UNIT_OUTCOMES).toEqual(['new', 'new_version', 'unchanged', 'absent', 'reject']);
+    // The header line names the organization and must NOT be what the summary picks up.
+    expect(printed[0]).toContain('gym_test');
+    expect(new RegExp(pattern as string).test(printed[0])).toBe(false);
   });
 
   it('never prints the resolved organization into the run summary', () => {
-    // The value is a secret the app reads for itself. Echoing it into
-    // GITHUB_STEP_SUMMARY would publish it to anyone with repo read access.
-    const summary = workflow.slice(workflow.indexOf('name: Record What Ran'));
+    // The value is masked in the log. The summary is not a log, so it carries
+    // counts and verdicts only: never the input, never the variable, never a
+    // free-text CLI line (the plan header and a refusal message can name it).
+    const summary = stepBlock(seedJob, 'Record What Ran');
     expect(summary).not.toMatch(/\$\{\{\s*inputs\.organization_id\s*\}\}/);
     expect(summary).not.toMatch(/\$PPBF_SEED_ORG_ID|\$\{PPBF_SEED_ORG_ID\}/);
+    expect(summary).not.toMatch(/cat "\$LOG"|tail [^\n]*"\$LOG"/);
+    expect(summary).toContain("grep -oE '^RESULT: [A-Z ]+'");
   });
 
-  it('every dataset choice is actually run by a step', () => {
-    // A choice with no matching `if:` would dispatch, consume an approval on a
-    // protected environment, seed nothing, and finish green -- the same shape
-    // of failure as the org-id drift above, where the run reported success and
-    // the operator's input reached nothing.
-    //
-    // Anchored on the YAML key at its own indent, not on the first occurrence
-    // of the word: `dataset:` also appears in this file's header comment, and
-    // slicing from there swept in `target:`'s own staging/production options.
-    const block = workflow.match(/\n {6}dataset:\n([\s\S]*?)\n {6}mode:/);
-    expect(block).not.toBeNull();
+  it('demands a seeder account for EVERY dataset', () => {
+    // The core runs every load as a checked account and records it on every
+    // row (contentImport/actor.ts), so no dataset is exempt -- the old list of
+    // datasets that "needed" one is gone.
+    const input = workflow.slice(at('      seed_account_id:'));
+    expect(input.slice(0, input.indexOf('type: string'))).toContain('required: true');
+    const confirm = stepBlock(validateJob, 'Confirm Explicit Target And Apply Intent');
+    expect(confirm).toContain('SEED_ACCOUNT: ${{ inputs.seed_account_id }}');
+    expect(confirm).toMatch(/if \[ -z "\$\{SEED_ACCOUNT\/\/\[\[:space:\]\]\/\}" \]; then/);
+    // Unconditional: not inside a per-dataset condition.
+    expect(confirm).not.toContain('$DATASET');
+    expect(seedJob).toContain('PPBF_SEED_ACCOUNT_ID: ${{ inputs.seed_account_id }}');
+  });
 
-    const options = block![1]
-      .split('\n')
-      .map((l) => l.trim().match(/^- (\S+)$/)?.[1])
-      .filter((v): v is string => Boolean(v));
-
-    expect(options).toContain('all');
-    expect(options).toContain('drill-library');
-    expect(options.length).toBeGreaterThan(1);
-
-    for (const option of options) {
-      if (option === 'all') continue;
-      expect(workflow).toContain(`inputs.dataset == '${option}'`);
+  it('every variable the CLI reads is exported to the load step', () => {
+    // Read from the CLI's own source, so a renamed variable fails here rather
+    // than as "Missing required environment variable" after an approval.
+    const cli = fs.readFileSync(CLI_SOURCE, 'utf8');
+    const required = [...cli.matchAll(/required\('([A-Z0-9_]+)'\)/g)].map((match) => match[1]);
+    expect(required.sort()).toEqual(['AZURE_POSTGRES_CONNECTION_STRING', 'PPBF_SEED_ACCOUNT_ID', 'PPBF_SEED_ORG_ID']);
+    // The declared-target check the CLI runs before connecting.
+    const targets = ['PPBF_EXPECTED_POSTGRES_HOSTNAME', 'PPBF_EXPECTED_POSTGRES_DATABASE'];
+    for (const name of [...required, ...targets]) {
+      // Declared in the seed job's env, or written to $GITHUB_ENV before the load step.
+      const declared = new RegExp(`^\\s*${name}:`, 'm').test(seedJob);
+      const writtenAt = seedJob.indexOf(`${name}=`);
+      expect({ name, exported: declared || (writtenAt > -1 && writtenAt < seedJob.indexOf('- name: Load Reference Data')) }).toEqual({ name, exported: true });
     }
   });
 
-  it('"all" runs every single-dataset step, in the order the runbook requires', () => {
-    // Not just that each step mentions `all`, but that the steps appear in
-    // dependency order.
-    //
-    // DISCIPLINES MOVED TO THE FRONT, and this list is the record of why.
-    // It used to read Drill Library -> Disciplines, described as the runbook's
-    // order; the runbook says only "in dependency order" and never named
-    // drill-library first. That was survivable while no dependency existed.
-    // pilot.drill_library.discipline and pilot.session_scripts.discipline now
-    // carry organization-scoped foreign keys into pilot.disciplines, so the
-    // registry has to be filled before either loader runs -- seeding 119 drills
-    // into an empty registry fails on the key, and a fresh environment never
-    // gets its catalogs.
-    //
-    // Reordering these is therefore a schema question. If this assertion fails,
-    // the fix is not to re-sort the list.
-    //
-    // SEED DRILL SECONDARY SKILLS SITS AFTER SEED DRILL LIBRARY for the same
-    // class of reason: pilot.drill_secondary_skills carries a composite
-    // foreign key to (organization_id, drill_id) in pilot.drill_library, so a
-    // relationship seeded into an empty library fails on the key. Its position
-    // is a schema fact too, and it has its own named assertion below.
-    const steps = [
-      'Seed Disciplines',
-      'Seed Drill Library',
-      'Seed Drill Secondary Skills',
-      'Seed Workout Templates',
-      'Seed Competence Cohorts',
-      'Seed Session Scripts',
-    ];
-    const positions = steps.map((s) => workflow.indexOf(`- name: ${s}`));
-    expect(positions.every((p) => p > -1)).toBe(true);
-    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  it('resolves the owning organization before the load, from the operator input only, and never defaults it', () => {
+    expect(at('- name: Resolve Owning Organization')).toBeGreaterThan(-1);
+    expect(at('- name: Resolve Owning Organization')).toBeLessThan(at('- name: Load Reference Data'));
+    const resolve = stepBlock(seedJob, 'Resolve Owning Organization');
+    expect(resolve).toContain('SUPPLIED: ${{ inputs.organization_id }}');
+    expect(resolve).toContain('echo "PPBF_SEED_ORG_ID=$ORG" >> "$GITHUB_ENV"');
+    // No fallback to the app's default-org secret (OD-2026-09-28-007): that is
+    // how gym material ended up under ppbf-default-org.
+    expect(workflow).not.toContain('ppbf-pilot-default-org-id');
+    // The CLI has no default either: a blank organization is refused.
+    expect(() => readDatabaseEnv({ AZURE_POSTGRES_CONNECTION_STRING: 'postgres://h/db', PPBF_SEED_ACCOUNT_ID: 'a', PPBF_SEED_ORG_ID: ' ' })).toThrow(
+      'Missing required environment variable: PPBF_SEED_ORG_ID',
+    );
+    expect(fs.readFileSync(CLI_SOURCE, 'utf8')).not.toMatch(/PPBF_SEED_ORG_ID[^\n]*(\|\||\?\?)/);
+  });
 
-    for (const step of steps) {
-      const body = workflow.slice(workflow.indexOf(`- name: ${step}`));
-      const condition = body.slice(0, body.indexOf('run:'));
-      expect(condition).toContain("inputs.dataset == 'all'");
+  it('transfer-claims stays out of the choices until its file validates', () => {
+    expect(choices).not.toContain('transfer-claims');
+    expect(() => datasetsFor('transfer-claims')).toThrow('transfer-claims has no database loader');
+    // The reason it is out, made executable: the committed file still fails
+    // the validator (173 rows over 61 drill ids not in the library,
+    // contentPackageContract.test.ts). The day it validates this fails, and
+    // adding it (with a loader) becomes a decision instead of an accident.
+    const baseline = readCommittedBaseline(SEED_DATA_DIR);
+    const references = loadOfflineReferenceSets(SEED_DATA_DIR, baseline);
+    const transfer: ParsedPackage = { files: baseline.files.filter((file) => file.spec.dataset === 'transfer-claims') };
+    expect(transfer.files).toHaveLength(1);
+    expect(validateParsed(transfer, { references, baseline }).blocking.length).toBeGreaterThan(0);
+  });
+
+  it('every npm run seed:<dataset> runs the content-import CLI apply', () => {
+    const seeds: Record<string, string> = {
+      'seed:disciplines': 'disciplines',
+      'seed:competence-cohorts': 'competence-levels,cohort-definitions',
+      'seed:drill-library': 'drill-library',
+      // Secondary skills are part of a drill's version unit (Jason's default:
+      // "a drill's version unit includes ... secondary skills"), so they load
+      // with the drill library; a changed link makes a new drill version.
+      'seed:drill-secondary-skills': 'drill-library',
+      'seed:workout-templates': 'workout-templates',
+      'seed:session-scripts': 'session-scripts',
+      'seed:transfer-claims': 'transfer-claims',
+    };
+    for (const [script, dataset] of Object.entries(seeds)) {
+      expect({ script, command: PACKAGE_SCRIPTS[script] }).toEqual({ script, command: `tsx scripts/pilot-content-import.ts apply --dataset ${dataset}` });
     }
+    expect(PACKAGE_SCRIPTS['seed:drill-library:dry']).toBe('tsx scripts/pilot-content-import.ts apply --dry-run --dataset drill-library');
+    expect(datasetsFor(seeds['seed:competence-cohorts'])).toEqual(['competence-levels', 'cohort-definitions']);
+    // seed:transfer-claims is refused by name before any connection opens.
+    expect(() => datasetsFor(seeds['seed:transfer-claims'])).toThrow('has no database loader');
   });
 
-  it('fills the discipline registry before any loader that references it', () => {
-    // The pair above, asserted on its own and by name. The positional check is
-    // order-sensitive but not self-explaining: someone re-sorting that array to
-    // make a failure go away would satisfy it again and reintroduce the defect.
-    // This one cannot be satisfied that way -- it names the constraint's two
-    // referencing tables and the registry they point at.
-    const at = (step: string) => workflow.indexOf(`- name: ${step}`);
-
-    expect(at('Seed Disciplines')).toBeGreaterThan(-1);
-    for (const dependent of ['Seed Drill Library', 'Seed Session Scripts', 'Seed Competence Cohorts']) {
-      expect(at(dependent)).toBeGreaterThan(at('Seed Disciplines'));
-    }
-  });
-
-  it('fills the drill library before seeding any relationship that points into it', () => {
-    // The positional array above is order-sensitive but not self-explaining --
-    // someone re-sorting it to silence a failure would satisfy it again and
-    // reintroduce the defect. This one names the constraint instead: the
-    // relationship table's composite FK targets pilot.drill_library, so the
-    // library must be populated first. It cannot be satisfied by re-sorting.
-    const at = (step: string) => workflow.indexOf(`- name: ${step}`);
-
-    expect(at('Seed Drill Library')).toBeGreaterThan(-1);
-    expect(at('Seed Drill Secondary Skills')).toBeGreaterThan(at('Seed Drill Library'));
-  });
-
-  it('fills the drill library before seeding the workout templates that reference it', () => {
-    // Same class of fact as the assertion above and asserted the same way, by
-    // naming the constraint rather than trusting the positional array:
-    // pilot.workout_template_items carries a foreign key into
-    // pilot.drill_library, so items seeded into an empty library fail on the
-    // key. workoutTemplates.pg.test.ts proves the dependency from the other
-    // side -- it seeds against the real 119-drill library and asserts zero
-    // orphaned drill_id references -- so this is the workflow half of a fact
-    // the database already enforces.
-    //
-    // Re-sorting the steps to silence a failure cannot satisfy this.
-    const at = (step: string) => workflow.indexOf(`- name: ${step}`);
-
-    expect(at('Seed Drill Library')).toBeGreaterThan(-1);
-    expect(at('Seed Workout Templates')).toBeGreaterThan(at('Seed Drill Library'));
-  });
-
-  it('demands a seeder account for the workout-template dataset, which its loader requires', () => {
-    // The positive counterpart to the relationship case below. Two halves,
-    // because either alone can go stale without the other noticing:
-    //
-    //   the GUARD must name workout-templates, so a single-dataset dispatch
-    //   refuses in a second instead of dying mid-seed against a real database;
-    //
-    //   and the LOADER must actually require the variable, so the guard is not
-    //   demanding an account nothing consumes -- which would block a legitimate
-    //   dispatch for no reason, the mirror of the defect the relationship
-    //   assertion guards against.
-    // Anchored on the shell condition itself, NOT on the first occurrence of
-    // 'SEED_ACCOUNT'. That string first appears in a job-level comment far above
-    // the guard, so slicing from there and cutting at the first 'fi' yields a
-    // slice of prose -- a window in which any assertion about the guard passes or
-    // fails for reasons unconnected to the guard.
-    const conditionStart = workflow.indexOf('if [ "$DATASET"');
-    expect(conditionStart).toBeGreaterThan(-1);
-    const guardCondition = workflow.slice(
-      conditionStart,
-      workflow.indexOf('then', conditionStart),
-    );
-    expect(guardCondition).toMatch(/workout-templates/);
-    // The window really is the guard and not something that merely contains the
-    // word: it names the datasets that need an account and nothing else.
-    expect(guardCondition).toMatch(/drill-library/);
-    expect(guardCondition).toMatch(/session-scripts/);
-
-    // Read through seedVarsRequiredBy rather than a substring search, for the
-    // reason its sibling records: a loader header can NAME a variable in order
-    // to explain that it does not use one, and a raw search cannot tell an
-    // explanation from a dependency.
-    expect(seedVarsRequiredBy('seed-workout-templates.mjs')).toEqual(
-      expect.arrayContaining(['PPBF_SEED_ORG_ID', 'PPBF_SEED_ACCOUNT_ID']),
-    );
-  });
-
-  it('does not demand a seeder account for the relationship dataset', () => {
-    // pilot.drill_secondary_skills has NO created_by/seeder column, so
-    // seed-drill-secondary-skills.mjs never reads PPBF_SEED_ACCOUNT_ID. Its
-    // absence from the guard is therefore correct, and asserting that keeps a
-    // future edit from "fixing" the gap by demanding an account the loader has
-    // no use for -- which would block a legitimate single-dataset dispatch.
-    const guard = workflow.slice(workflow.indexOf('SEED_ACCOUNT'));
-    const guardCondition = guard.slice(0, guard.indexOf('fi'));
-    expect(guardCondition).not.toMatch(/drill-secondary-skills/);
-
-    // Asserted through seedVarsRequiredBy rather than as a raw string search:
-    // the loader's header NAMES PPBF_SEED_ACCOUNT_ID in order to record why it
-    // does not use one, and a substring check cannot tell an explanation from a
-    // dependency. This reads what the loader actually consumes.
-    expect(seedVarsRequiredBy('seed-drill-secondary-skills.mjs')).toEqual(['PPBF_SEED_ORG_ID']);
-  });
-
-  it('never lets a family id reach a skill column through the relationship loader', () => {
-    // The loader is the one write path into pilot.drill_secondary_skills, and
-    // SKILL-01..12 are derived through skillFamilies.ts rather than stored. A
-    // seed CSV is the easiest place for a family id to slip in, so the guard
-    // lives in the loader and is pinned here.
-    //
-    // Checked as source text rather than behaviour on purpose: the behavioural
-    // proof is in drillLibraryV3.pg.test.ts against real Postgres. This asserts
-    // the check has not been DELETED, which a passing behavioural test on a
-    // different input would not notice.
-    const loader = fs.readFileSync(
-      path.join(SCRIPTS_DIR, 'seed-drill-secondary-skills.mjs'),
-      'utf8',
-    );
-    expect(loader).toContain('SECONDARY_SKILL_IS_FAMILY_ID');
-    expect(loader).toContain('SECONDARY_SKILL_EQUALS_PRIMARY');
-    expect(loader).toContain('SECONDARY_SKILL_PRIMARY_MISMATCH');
-    expect(loader).toContain('SECONDARY_SKILL_DRILL_HAS_NO_PRIMARY');
-    expect(loader).toContain('SECONDARY_SKILL_DRILL_NOT_FOUND_IN_ORG');
-  });
-
-  it('seeds exactly the one approved relationship and no other', () => {
-    // NO GAP FILLING. The CSV is the canonical dataset and one owner decision
-    // approved exactly one row. A second row appearing here without a decision
-    // is the failure this guards -- it would be invisible in a diff review of
-    // a large seed file and silently widen coach-facing search results.
-    const csv = fs
-      .readFileSync(
-        path.resolve(PILOT_DIR, '../../../seed-data/drill-library/seed_drill_secondary_skills.csv'),
-        'utf8',
-      )
-      .replace(/\r\n/g, '\n')
-      .trim()
-      .split('\n');
-
-    expect(csv[0]).toBe('organization_id,drill_id,skill_id');
-    expect(csv.slice(1)).toEqual(['{{PPBF_ORG_ID}},drl_3df01682e604dd,SK-GUARD-02']);
-  });
-
-  it('"all" still demands the seeder account drill-library, session-scripts and workout-templates need', () => {
-    // drill-library stamps a seeder onto every row and fails at the insert
-    // without one. If `all` skipped that precondition, the run would clear the
-    // gate and then die mid-seed against a real database.
-    const guard = workflow.slice(workflow.indexOf('SEED_ACCOUNT'));
-    expect(guard).toMatch(/DATASET"\s*=\s*"all"/);
-    // session-scripts stamps created_by_account_id the same way
-    // (seed-session-scripts.mjs requires PPBF_SEED_ACCOUNT_ID), so its
-    // single-dataset dispatch must clear the same precondition.
-    expect(guard).toMatch(/DATASET"\s*=\s*"session-scripts"/);
-    // workout-templates stamps a seeder the same way
-    // (seed-workout-templates.mjs requires PPBF_SEED_ACCOUNT_ID), so its
-    // single-dataset dispatch must clear the same precondition.
-    expect(guard).toMatch(/DATASET"\s*=\s*"workout-templates"/);
-  });
-
-  // Discovery must not be able to pass vacuously: a truncated list would make
-  // the guard below assert nothing while still reporting green, which is the
-  // failure mode this file already warns about for its regexes.
-  //
-  // So this checks the CLASSIFICATION OF EVERY seed-*.mjs ON DISK, not just
-  // the ones discovery returned. Asserting only "discovery contains LOADERS"
-  // would be satisfied by a discovery that returned exactly LOADERS and
-  // dropped every loader the workflow does not dispatch -- which is precisely
-  // the hole this change exists to close.
-  it('classifies every seed loader on disk by whether it owns an organization', () => {
-    const all = fs
+  it('leaves no second write path for reference content: no seed script reads the owning organization', () => {
+    // The seven copied loaders are gone. A new scripts/seed-*.mjs that reads
+    // PPBF_SEED_ORG_ID would be an eighth copy beside the core -- the
+    // duplication IMP-10 removed -- so it fails here, naming the file.
+    const readers = fs
       .readdirSync(SCRIPTS_DIR)
-      .filter((file) => file.startsWith('seed-') && file.endsWith('.mjs'));
-    const found = orgOwningLoaders();
-
-    expect(all.length).toBeGreaterThan(0);
-    expect(found).toEqual(expect.arrayContaining(LOADERS));
-
-    for (const file of all) {
-      const ownsAnOrganization = fs
-        .readFileSync(path.join(SCRIPTS_DIR, file), 'utf8')
-        .includes('PPBF_SEED_ORG_ID');
-      expect({ file, covered: found.includes(file) }).toEqual({ file, covered: ownsAnOrganization });
+      .filter((file) => /\.(mjs|js|ts)$/.test(file))
+      .filter((file) => /process\.env\.PPBF_SEED_ORG_ID|required\(\s*['"]PPBF_SEED_ORG_ID['"]\s*\)/.test(fs.readFileSync(path.join(SCRIPTS_DIR, file), 'utf8')));
+    expect(readers).toEqual([]);
+    // Every `node scripts/...` a package script names still exists.
+    for (const [name, command] of Object.entries(PACKAGE_SCRIPTS)) {
+      for (const match of command.matchAll(/(?:node|tsx) (scripts\/[\w./-]+\.(?:mjs|ts))/g)) {
+        expect({ name, file: match[1], exists: fs.existsSync(path.join(WEB_DIR, match[1])) }).toEqual({ name, file: match[1], exists: true });
+      }
     }
   });
+});
 
-  it.each(orgOwningLoaders())('%s does not default its owning organization', (loader) => {
-    const source = fs.readFileSync(path.join(SCRIPTS_DIR, loader), 'utf8');
-    // A loader that falls back to some literal organization writes real rows
-    // under the wrong owner when the variable is missing, and says nothing.
-    expect(source).not.toMatch(/PPBF_SEED_ORG_ID[^\n]*\|\|/);
+// ---------------------------------------------------------------------------
+// The secondary-skill relationship file. Until IMP-10 this test pinned
+// seed_drill_secondary_skills.csv to its ONE approved row, header included, so
+// any second link failed CI until the test was edited. Jason's default for the
+// hand-off: handing files over IS approval of what is in them. So a new link is
+// admitted, and what holds the file now is the validator's relationship rules
+// (specs/drills.ts secondarySkills.rowRules plus the skill-code checks), the
+// same rules the core applies at plan. Checked against the REAL committed
+// library, not a fixture.
+
+describe("secondary-skill rows are admitted by the validator's relationship rules", () => {
+  const baseline = readCommittedBaseline(SEED_DATA_DIR);
+  const references = loadOfflineReferenceSets(SEED_DATA_DIR, baseline);
+  const secondarySpec = fileSpecByName('seed_drill_secondary_skills.csv');
+  const committedRows = (baseline.files.find((file) => file.spec.file === 'seed_drill_secondary_skills.csv')?.rows ?? []).map((row) => row.values);
+  const library = baseline.files.find((file) => file.spec.file === 'seed_drill_library.csv')?.rows.map((row) => row.values) ?? [];
+
+  function packageOf(rows: RowValues[]) {
+    const header = ['organization_id', 'drill_id', 'skill_id', 'expected_primary_skill_id'];
+    return validatePackage(
+      [{ path: 'drill-library/seed_drill_secondary_skills.csv', text: writeCsv(header, rows.map((row) => header.map((name) => row[name] ?? ''))) }],
+      { references, baseline },
+    );
+  }
+
+  // A drill with a primary skill, and an SK code that is neither its primary
+  // nor already linked to it: the shape of a new, legitimate link.
+  const withPrimary = library.find((row) => row.skill_id && !committedRows.some((link) => link.drill_id === row.drill_id)) as RowValues;
+  const otherCode = [...references.skillCodes].sort().find((code) => code !== withPrimary?.skill_id) as string;
+  const noPrimary = library.find((row) => !row.skill_id);
+  const link = (overrides: Record<string, string>): RowValues => ({ organization_id: '{{PPBF_ORG_ID}}', drill_id: withPrimary.drill_id, skill_id: otherCode, ...overrides });
+
+  it('reads the committed file and a library to link against', () => {
+    expect(secondarySpec).toBeDefined();
+    expect(committedRows.length).toBeGreaterThanOrEqual(1);
+    expect(withPrimary).toBeDefined();
+    expect(otherCode).toMatch(/^SK-[A-Z]+-\d{2}$/);
+  });
+
+  it('the committed rows pass', () => {
+    expect(packageOf(committedRows).blocking).toEqual([]);
+  });
+
+  it('a new link beside them is ADMITTED -- the one-row pin is gone', () => {
+    const result = packageOf([...committedRows, link({})]);
+    expect(result.blocking).toEqual([]);
+    // An expected primary that matches is admitted too.
+    expect(packageOf([link({ expected_primary_skill_id: withPrimary.skill_id })]).blocking).toEqual([]);
+  });
+
+  it.each([
+    ['a family id in the skill column', { skill_id: 'SKILL-01' }, 'skill_family_in_skill_column'],
+    ['a malformed skill code', { skill_id: 'sk-guard-2' }, 'bad_id'],
+    ["the drill's own primary again", { skill_id: '__PRIMARY__' }, 'row_rule'],
+    ['an expected primary the drill does not have', { expected_primary_skill_id: '__OTHER__' }, 'row_rule'],
+    ['a drill in neither the package nor the library', { drill_id: 'drl_00000000000000' }, 'orphan_reference'],
+  ])('%s is refused', (_label, overrides, code) => {
+    const resolved = Object.fromEntries(
+      Object.entries(overrides).map(([key, value]) => [
+        key,
+        value === '__PRIMARY__' ? withPrimary.skill_id : value === '__OTHER__' ? otherCode : value,
+      ]),
+    );
+    const result = packageOf([link(resolved)]);
+    expect(result.blocking.map((finding) => finding.code)).toContain(code);
+  });
+
+  it('a well-formed SK code no family list names yet is admitted with a warning, not refused', () => {
+    // Jason's default: a new skill code in handed-over files is approved, its
+    // family "not decided yet" -- skillFamilies.ts is edited in the same PR.
+    const result = packageOf([link({ skill_id: 'SK-NEWCODE-01' })]);
+    expect(result.blocking).toEqual([]);
+    expect(result.warnings.map((warning) => warning.code)).toContain('unmapped_skill_code');
+  });
+
+  it('a drill with no primary skill cannot take a secondary one', () => {
+    if (!noPrimary) {
+      // Every committed drill has a primary today; the rule is still pinned
+      // in contentImportValidate.test.ts on a hand-built drill.
+      expect(library.every((row) => row.skill_id)).toBe(true);
+      return;
+    }
+    const result = packageOf([link({ drill_id: noPrimary.drill_id })]);
+    expect(result.blocking.map((finding) => finding.message)).toContainEqual(expect.stringContaining('has no primary skill_id'));
   });
 });

@@ -18,8 +18,8 @@ import {
 
 // pilot.drill_library and its four child tables (drill_library_v3 migration
 // :83-202, widened by drill_vocabulary_widening; drill_secondary_skills
-// migration). Loaded today by seed-drill-library.mjs and
-// seed-drill-secondary-skills.mjs.
+// migration). Loaded by the content-import core (seed-reference-data, npm run
+// seed:drill-library).
 
 const drillParent = () =>
   parentColumn('drill_id', 'drill', 'drill', "The drill's lineage key (its first version's id), or the new:<short-name> of a drill in this package.");
@@ -191,7 +191,7 @@ const secondarySkills: FileSpec = {
       description: "Optional. The primary skill you expect the drill to have; refused if the drill's primary differs.",
     },
   ],
-  // The loader's own refusals (seed-drill-secondary-skills.mjs:200-254),
+  // The retired loader's own refusals (seed-drill-secondary-skills.mjs),
   // checked here against the package or the committed library instead of the
   // database, so they surface before a load rather than during one.
   rowRules: [
@@ -227,14 +227,12 @@ export const drillLibraryDataset: DatasetSpec = {
     + 'version and the old version is kept (and stays live for gyms that adopted it). A child file replaces the full '
     + 'set of rows only for drills that have at least one row in it; a drill with no rows there keeps what it has.',
   loadedToday:
-    'seed-reference-data workflow, datasets drill-library (npm run seed:drill-library) and drill-secondary-skills '
-    + '(npm run seed:drill-secondary-skills). Insert-only: a drill whose discipline and name already exist is skipped, '
-    + 'as are scale and stop rows at an existing (drill, level or ordinal); cues are keyed by cue_id, so a replaced '
-    + "cue set is added beside the old one; a renamed drill that keeps its id stops the run on the table's primary key. "
-    + "That loader splits grounding_claim_ids on ';' and ',' only, so a '|' list is stored as ONE array element until "
-    + 'it changes (the content hash re-splits it, so the stored form never reads as a revision). '
-    + 'seed_drill_secondary_skills.csv is pinned to its one approved row, header included, by '
-    + "seedWorkflowContract.test.ts ('seeds exactly the one approved relationship and no other'), so a new "
-    + 'relationship needs that test changed in the same pull request.',
+    'seed-reference-data workflow, dataset drill-library (npm run seed:drill-library; npm run '
+    + 'seed:drill-secondary-skills loads the same dataset, because secondary skills are part of a drill\'s version), '
+    + 'through the content-import core: a new drill is inserted, a changed one becomes a new version with every child '
+    + 'row re-minted and the old version kept live for gyms that adopted it, an unchanged one is skipped. Rows the '
+    + "retired loader wrote before #1020 may hold a '|' grounding list as ONE array element (it split on ';' and ',' "
+    + 'only); the content hash re-splits it, so that stored form never reads as a revision. New secondary-skill links '
+    + 'are held by the row rules below, not by a pinned file.',
   files: [drillLibrary, scaleLevels, stopRules, cues, secondarySkills],
 };

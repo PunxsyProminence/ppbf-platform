@@ -114,6 +114,23 @@ jobs:
             assert.equal(seeded.unknownCode, false, data);
           }
 
+          // THE SEED LOADER RUNS THE PG SUITES. Every reference dataset loads
+          // through the content-import core (IMP-10), and the seeding suites load
+          // the committed files through it, so a loader-only PR changes what they
+          // prove. The write-target guard and the suites' fixture matched no
+          // predicate before.
+          for (const loader of [
+            'apps/web/src/server/pilot/contentImport/apply.ts',
+            'apps/web/scripts/pilot-content-import.ts',
+            'apps/web/scripts/lib/postgres-write-target.mjs',
+            'apps/web/scripts/lib/postgres-write-target.d.mts',
+            'apps/web/src/testing/referenceContentFixture.ts',
+          ]) {
+            const loaded = classifyPaths([loader]);
+            assert.equal(loaded.migrations, true, loader);
+            assert.equal(loaded.unknownCode, false, loader);
+          }
+
           // ...and its README stays documentation. It loads into nothing, so it
           // takes the docs-only fast path and does not flag the suite; beside
           // unrecognised code it must not hide that code from the report.

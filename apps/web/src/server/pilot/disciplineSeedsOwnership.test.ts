@@ -3,14 +3,16 @@ import path from 'node:path';
 
 import { parse as csvParse } from 'csv-parse/sync';
 
+import { datasetSpec, rootFileSpec } from './contentImport/specs';
 import { DEFAULT_DISCIPLINES } from './disciplineSeeds';
 
 // The guard that keeps the two copies of the discipline registry in lockstep.
 //
 // complianceRuleSeedsOwnership.test.ts parses a MIGRATION, because compliance
 // rules are seeded by one. Disciplines are not: the second copy is
-// seed_disciplines.csv, loaded by an operator running `npm run seed:disciplines`
-// against a single organization. So this file parses the CSV instead, and the
+// seed_disciplines.csv, loaded into one organization per run by the seed
+// workflow through the content-import core (`npm run seed:disciplines` runs the
+// same thing). So this file parses the CSV instead, and the
 // property is the same one -- a discipline added to either copy and not the
 // other is a red build, rather than two gyms that disagree about what the
 // platform runs depending on which path created them.
@@ -21,7 +23,6 @@ import { DEFAULT_DISCIPLINES } from './disciplineSeeds';
 
 const REPO_ROOT = path.resolve(__dirname, '../../../../..');
 const CSV_PATH = path.join(REPO_ROOT, 'apps/web/seed-data/multidiscipline/seed_disciplines.csv');
-const LOADER_PATH = path.join(REPO_ROOT, 'apps/web/scripts/seed-disciplines.mjs');
 const SEEDS_PATH = path.join(__dirname, 'disciplineSeeds.ts');
 
 type CsvRow = Record<string, string>;
@@ -98,26 +99,29 @@ describe('discipline seeds ownership', () => {
     expect(fs.readFileSync(SEEDS_PATH, 'utf8')).not.toMatch(/\{\{PPBF_ORG_ID\}\}/);
   });
 
-  test('writes the same registry columns the loader does', () => {
-    // Reading both inserts rather than trusting them to agree: a column added
-    // to pilot.disciplines and wired into only one path would leave gyms with
-    // a null where the other path puts a value.
+  test('writes the same registry columns the content-import loader does', () => {
+    // Reading both rather than trusting them to agree: a column added to
+    // pilot.disciplines and wired into only one path would leave gyms with a
+    // null where the other path puts a value. The loader's columns are its
+    // spec's (contentImport/specs/disciplines.ts), the one source the seed
+    // workflow loads through since the per-dataset loaders were retired.
+    const specColumns = rootFileSpec(datasetSpec('disciplines')).columns.map((column) => column.name);
     const columns = [
       'organization_id', 'discipline', 'display_name', 'lane', 'exposure_model',
       'governing_body', 'age_policy_source', 'youth_permitted', 'adult_permitted',
       'mixed_age_permitted', 'evidence_note', 'active',
     ];
-    const loader = fs.readFileSync(LOADER_PATH, 'utf8');
     const seeds = fs.readFileSync(SEEDS_PATH, 'utf8');
 
+    expect([...specColumns].sort()).toEqual([...columns].sort());
     for (const column of columns) {
-      expect(loader).toContain(column);
       expect(seeds).toContain(column);
     }
 
-    // Both must leave an existing row alone; the registry's own key is what
-    // makes re-running either path safe.
-    expect(loader).toContain('on conflict (organization_id, discipline) do nothing');
+    // A new gym's defaults must leave an existing row alone: the registry's
+    // own key is what makes re-running it safe. (The seed path differs on
+    // purpose: under R2 it revises a changed row in place and keeps the old
+    // content in pilot.reference_content_revisions.)
     expect(seeds).toContain('on conflict (organization_id, discipline) do nothing');
   });
 });

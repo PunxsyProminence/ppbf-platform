@@ -17,10 +17,11 @@ import {
 } from './common';
 
 // pilot.workout_templates and pilot.workout_template_items
-// (workout_templates_v2 migration :43-100). Loaded today by
-// seed-workout-templates.mjs, whose ON CONFLICT names only the active-name
-// index (:201); the primary key is (organization_id, template_id) (migration
-// :63), so a new name on an existing id is a key violation, not a skip.
+// (workout_templates_v2 migration :43-100). Loaded by the content-import core
+// (seed-reference-data, npm run seed:workout-templates). The retired
+// seed-workout-templates.mjs named only the active-name index in its ON
+// CONFLICT; the primary key is (organization_id, template_id) (migration :63),
+// so a new name on an existing id was a key violation there, not a skip.
 
 export const workoutTemplatesDataset: DatasetSpec = {
   name: 'workout-templates',
@@ -30,9 +31,10 @@ export const workoutTemplatesDataset: DatasetSpec = {
     'Reusable session plans. A template and its items are one unit: under R2 a change to either makes a new '
     + 'template version and the old one is kept. Items listed for a template replace all of its items.',
   loadedToday:
-    'seed-reference-data workflow, dataset workout-templates (npm run seed:workout-templates). Insert-only: a template '
-    + 'whose name already exists is skipped, as are items at an existing (template, ordinal); a renamed template that '
-    + "keeps its id stops the run on the table's primary key.",
+    'seed-reference-data workflow, dataset workout-templates (npm run seed:workout-templates), through the '
+    + 'content-import core: a new template is inserted, a changed one becomes a new version (the old one retired from '
+    + 'the coach browse, kept as history), an unchanged one is skipped. Items name a drill lineage and store the '
+    + 'version current at load.',
   files: [
     {
       dataset: 'workout-templates',

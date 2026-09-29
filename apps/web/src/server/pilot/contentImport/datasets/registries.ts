@@ -20,8 +20,8 @@ import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, Uni
 //                columns), and the history ledger records before (if the
 //                ledger has not seen that content) and after, with versions
 //                (ledger.ts). Before this engine the change was skipped
-//                without a word (seed-disciplines.mjs:174,
-//                seed-competence-cohorts.mjs:178,213: on conflict do nothing).
+//                without a word (the retired seed-disciplines.mjs and
+//                seed-competence-cohorts.mjs: on conflict do nothing).
 //   new       -> inserted, and recorded in the ledger as v1.
 //   absent    -> a row in the database the package does not mention is left
 //                alone and listed.
@@ -62,7 +62,7 @@ function cellText(value: unknown, column: ColumnSpec): string {
  * blankDefault (what the old loaders wrote for a blank, and what the canonical
  * hash reads a blank as), and otherwise NULL -- or '' for a NOT NULL text
  * column such as disciplines.evidence_note, whose old loader wrote ''
- * (seed-disciplines.mjs:187). Nullability is read from the live table, not
+ * (the retired seed-disciplines.mjs). Nullability is read from the live table, not
  * restated here, so it cannot drift from the migrations.
  */
 function databaseValue(column: ColumnSpec, value: string, info: ColumnInfo): unknown {

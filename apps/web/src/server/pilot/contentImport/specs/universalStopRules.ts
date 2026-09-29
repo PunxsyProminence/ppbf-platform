@@ -20,7 +20,9 @@ export const universalStopRulesDataset: DatasetSpec = {
   summary:
     'The few stop conditions that apply to EVERY drill (injury and the like), stored once. A drill\'s own rules '
     + 'go in seed_drill_stop_rules.csv. Under R2 a changed rule becomes a new version.',
-  loadedToday: 'Nothing yet. The file validates today; no table holds these rules until the content-import migration lands.',
+  loadedToday:
+    'No committed file yet. When one lands, seed-reference-data `all` loads it through the content-import core '
+    + '(pilot.universal_stop_rules): a new rule is inserted, a changed one becomes a new version and supersedes the old.',
   files: [
     {
       dataset: 'universal-stop-rules',

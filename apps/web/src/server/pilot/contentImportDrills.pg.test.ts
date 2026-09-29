@@ -3,17 +3,19 @@
 //
 // IMP-07 of the intake plan: R2 ("new stuff gets added if there is nothing to
 // update") for drills, and R3's stored-once universal stop rules. Every test
-// pins a failure the old loader had or a guarantee the engine makes:
-//   - seed-drill-library.mjs:245 says ON CONFLICT (discipline, name) DO
-//     NOTHING, so a revised drill was skipped without a word, and a RENAMED
-//     drill that kept its id stopped the run on the primary key;
-//   - its child inserts (:303, :340, :373) keyed on the drill_id in the file --
-//     the lineage key -- so new scale, stop-rule and cue rows landed on v1,
-//     whatever version was current;
-//   - seed-drill-secondary-skills.mjs:224 looks the drill up by that same id,
-//     with no head filter;
-//   - its grounding_claim_ids split on ';' and ',' only (:210-219), so a '|'
-//     list is ONE element in the database -- which must not read as a revision.
+// pins a failure the old loaders had (seed-drill-library.mjs and
+// seed-drill-secondary-skills.mjs, retired by IMP-10; git history keeps them)
+// or a guarantee the engine makes:
+//   - ON CONFLICT (discipline, name) DO NOTHING, so a revised drill was skipped
+//     without a word, and a RENAMED drill that kept its id stopped the run on
+//     the primary key;
+//   - child inserts keyed on the drill_id in the file -- the lineage key -- so
+//     new scale, stop-rule and cue rows landed on v1, whatever version was
+//     current, and secondary skills were looked up by that same id with no
+//     head filter;
+//   - grounding_claim_ids split on ';' and ',' only until #1020, so production's
+//     2026-08-24 rows hold a '|' list as ONE element -- which must not read as
+//     a revision.
 //
 // Spins up the same disposable, local-only embedded Postgres the other pg
 // suites use. It NEVER connects to production or staging.
@@ -63,22 +65,11 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
   specifier: string,
 ) => Promise<Record<string, unknown>>;
 
-type OldSeedAll = (
-  client: Client,
-  seedDir: string,
-  placeholders: { organizationId: string; seedAccountId?: string },
-  options?: { dryRun?: boolean },
-) => Promise<unknown>;
-
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let client: Client;
 /** A second connection: sees only what is COMMITTED. */
 let observer: Client;
-let oldSeedDrillLibrary: OldSeedAll;
-let oldSeedSecondarySkills: OldSeedAll;
-/** Folders written for the old loaders; removed in afterAll. */
-const oldLoaderDirs: string[] = [];
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -177,12 +168,6 @@ beforeAll(async () => {
   await observer.connect();
 
   await loadPlatformClaims();
-
-  // The OLD loaders, exactly as the seed workflow runs them today, to build a
-  // gym the way production's reference rows were built.
-  oldSeedDrillLibrary = (await nativeDynamicImport(pathToFileURL(path.join(WEB_DIR, 'scripts/seed-drill-library.mjs')).href)).seedAll as OldSeedAll;
-  oldSeedSecondarySkills = (await nativeDynamicImport(pathToFileURL(path.join(WEB_DIR, 'scripts/seed-drill-secondary-skills.mjs')).href))
-    .seedAll as OldSeedAll;
 });
 
 afterAll(async () => {
@@ -202,7 +187,6 @@ afterAll(async () => {
     serverProcess.kill('SIGTERM');
   });
   await fs.rm(DATA_DIR, { recursive: true, force: true }).catch(() => {});
-  for (const dir of oldLoaderDirs) await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
 });
 
 // ---------------------------------------------------------------------------
@@ -263,6 +247,16 @@ function drillFilesOnDisk() {
   return { files, library, byId, secondaries };
 }
 
+/** Row counts of the committed drill files: what a whole load writes. */
+const DRILLS = COMMITTED.library.length;
+const COMMITTED_COUNTS = {
+  drills: DRILLS,
+  scale: rowsOf(COMMITTED.files, SCALE_CSV).length,
+  stop: rowsOf(COMMITTED.files, STOP_CSV).length,
+  cues: rowsOf(COMMITTED.files, CUES_CSV).length,
+  secondary: COMMITTED.secondaries.length,
+};
+
 async function plan(organizationId: string, actorAccountId: string, files: Record<string, string>): Promise<ImportPlan> {
   return planImport({ client, organizationId, actorAccountId, files });
 }
@@ -288,39 +282,25 @@ async function prepareGym(organizationId: string): Promise<string> {
   return admin;
 }
 
-async function quietly<T>(work: () => Promise<T>): Promise<T> {
-  const log = jest.spyOn(console, 'log').mockImplementation(() => undefined);
-  const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-  try {
-    return await work();
-  } finally {
-    log.mockRestore();
-    error.mockRestore();
+/**
+ * The drill library as production holds it today. Production's rows were
+ * written on 2026-08-24 by the retired seed-drill-library.mjs, whose
+ * grounding_claim_ids split on ';' and ',' only, so every '|' list sits in the
+ * database as ONE array element. Everything else it wrote equals the engine's
+ * first load (proved against that loader before it was retired: this suite's
+ * "rows the OLD loaders wrote" cases, OBSERVED passing at d9f8effb), so the
+ * rows come from a first load and the '|' lists are then put back the way the
+ * old loader stored them.
+ */
+async function drillsAsProductionHoldsThem(organizationId: string, admin: string): Promise<void> {
+  await applyCommitted(organizationId, admin, drillFiles());
+  for (const row of COMMITTED.library.filter((drill) => drill.grounding_claim_ids.includes('|'))) {
+    await client.query('update pilot.drill_library set grounding_claim_ids = array[$3::text] where organization_id = $1 and drill_id = $2', [
+      organizationId,
+      row.drill_id,
+      row.grounding_claim_ids,
+    ]);
   }
-}
-
-const COMMITTED_DRILL_DIR = path.join(SEED_DATA_DIR, 'drill-library');
-
-async function oldDrillLoader(organizationId: string, admin: string, seedDir = COMMITTED_DRILL_DIR): Promise<void> {
-  await quietly(() => oldSeedDrillLibrary(client, seedDir, { organizationId, seedAccountId: admin }));
-}
-
-async function oldSecondaryLoader(organizationId: string, seedDir = COMMITTED_DRILL_DIR): Promise<void> {
-  await quietly(() => oldSeedSecondarySkills(client, seedDir, { organizationId }));
-}
-
-/** The drill library as production holds it today: the OLD loaders, over the committed files. */
-async function seedDrillsTheOldWay(organizationId: string, admin: string): Promise<void> {
-  await oldDrillLoader(organizationId, admin);
-  await oldSecondaryLoader(organizationId);
-}
-
-/** A folder holding these files under their base names, for the old loaders. */
-async function oldLoaderDir(files: Record<string, string>): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ppbf-content-drills-old-loader-'));
-  oldLoaderDirs.push(dir);
-  for (const [name, text] of Object.entries(files)) await fs.writeFile(path.join(dir, path.basename(name)), text, 'utf8');
-  return dir;
 }
 
 interface Counts {
@@ -458,20 +438,20 @@ const PRIMARY_ONLY = COMMITTED.library.find(
 
 // ---------------------------------------------------------------------------
 
-describe('the shipped 119-drill package', () => {
-  it('re-importing it onto the rows the OLD loaders wrote finds every drill unchanged and writes nothing', async () => {
+describe('the shipped drill package', () => {
+  it("re-importing it onto the rows as production holds them (the old loader's '|' lists included) finds every drill unchanged and writes nothing", async () => {
     // The canonicaliser guard. Production's drills were written by the old
     // loader; if the engine read ANY of its stored forms as different content,
     // the first run would "revise" every drill it was meant to leave alone.
     const admin = await prepareGym('gym_old_drills');
-    await seedDrillsTheOldWay('gym_old_drills', admin);
+    await drillsAsProductionHoldsThem('gym_old_drills', admin);
     const counts = await committedCounts('gym_old_drills');
-    expect(counts).toMatchObject({ drills: 119, scale: 357, stop: 674, cues: 258, secondary: 1 });
+    expect(counts).toMatchObject(COMMITTED_COUNTS);
     const before = await rowVersions('gym_old_drills');
 
     const result = await applyCommitted('gym_old_drills', admin, drillFiles());
     expect(result.plan.blocking).toEqual([]);
-    expect(result.plan.counts['drill-library']).toEqual({ new: 0, new_version: 0, unchanged: 119, absent: 0, reject: 0 });
+    expect(result.plan.counts['drill-library']).toEqual({ new: 0, new_version: 0, unchanged: DRILLS, absent: 0, reject: 0 });
     expect(result.importId).toBeNull();
 
     expect(await rowVersions('gym_old_drills')).toEqual(before);
@@ -481,11 +461,11 @@ describe('the shipped 119-drill package', () => {
   it('a first load writes v1 of every drill with its children, and loading it again writes nothing', async () => {
     const admin = await prepareGym('gym_first_drills');
     const first = await applyCommitted('gym_first_drills', admin, drillFiles());
-    expect(first.plan.counts['drill-library']).toEqual({ new: 119, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
-    expect(first.written['drill-library']?.inserted).toHaveLength(119);
+    expect(first.plan.counts['drill-library']).toEqual({ new: DRILLS, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
+    expect(first.written['drill-library']?.inserted).toHaveLength(DRILLS);
     expect(first.written['drill-library']?.ledgerRows).toBe(0);
     expect(await committedCounts('gym_first_drills')).toEqual({
-      drills: 119, scale: 357, stop: 674, cues: 258, secondary: 1, transfer: 0, universal: 0, audit: 2,
+      ...COMMITTED_COUNTS, transfer: 0, universal: 0, audit: 2,
     });
 
     const { rows } = await observer.query<{ drill_id: string; lineage_id: string; version: number; head: boolean; active: boolean; role: string; mashed: boolean }>(
@@ -506,24 +486,14 @@ describe('the shipped 119-drill package', () => {
 
     const before = await rowVersions('gym_first_drills');
     const again = await applyCommitted('gym_first_drills', admin, drillFiles());
-    expect(again.plan.counts['drill-library']).toEqual({ new: 0, new_version: 0, unchanged: 119, absent: 0, reject: 0 });
+    expect(again.plan.counts['drill-library']).toEqual({ new: 0, new_version: 0, unchanged: DRILLS, absent: 0, reject: 0 });
     expect(again.importId).toBeNull();
     expect(await rowVersions('gym_first_drills')).toEqual(before);
   });
 
   it("a '|' mashed grounding element already in the database compares equal to the split file value", async () => {
     const admin = await prepareGym('gym_mashed');
-    await seedDrillsTheOldWay('gym_mashed', admin);
-    // #1020 made the old loader split on '|', so it no longer writes the mashed
-    // shape. Put back what every row it wrote before that fix still holds: the
-    // committed '|' list as ONE element (the old split was ';' and ',' only).
-    const pipeRows = COMMITTED.library.filter((row) => row.grounding_claim_ids.includes('|'));
-    await client.query(
-      `update pilot.drill_library drill set grounding_claim_ids = array[cell.raw]
-         from unnest($1::text[], $2::text[]) as cell(drill_id, raw)
-        where drill.organization_id = 'gym_mashed' and drill.drill_id = cell.drill_id`,
-      [pipeRows.map((row) => row.drill_id), pipeRows.map((row) => row.grounding_claim_ids.trim())],
-    );
+    await drillsAsProductionHoldsThem('gym_mashed', admin);
     // The defect is really there: one element holding the whole '|' list.
     const [v1] = await versionsOf('gym_mashed', MASHED.drill_id);
     expect(v1.grounding_claim_ids).toEqual([MASHED.grounding_claim_ids]);
@@ -543,7 +513,7 @@ describe('the shipped 119-drill package', () => {
     const fewer = withEdit(drillFiles(), LIBRARY_CSV, (row) =>
       (row.drill_id === MASHED.drill_id ? { ...row, grounding_claim_ids: claims.slice(1).join('|') } : row));
     const revised = await applyCommitted('gym_mashed', admin, fewer);
-    expect(revised.plan.counts['drill-library']).toMatchObject({ new_version: 1, unchanged: 118 });
+    expect(revised.plan.counts['drill-library']).toMatchObject({ new_version: 1, unchanged: DRILLS - 1 });
     const [, v2] = await versionsOf('gym_mashed', MASHED.drill_id);
     expect(v2.grounding_claim_ids).toEqual(claims.slice(1));
   });
@@ -552,25 +522,21 @@ describe('the shipped 119-drill package', () => {
 describe('a revised drill becomes a new version', () => {
   it('a same-name revision creates v2; v1 stays active with superseded_at set and keeps its children', async () => {
     const admin = await prepareGym('gym_same_name');
-    await seedDrillsTheOldWay('gym_same_name', admin);
+    await drillsAsProductionHoldsThem('gym_same_name', admin);
     const v1Children = await childrenOf('gym_same_name', FIRST);
     const revised = withEdit(drillFiles(), LIBRARY_CSV, (row) => (row.drill_id === FIRST ? { ...row, purpose: `${row.purpose} Revised.` } : row));
-
-    // The old loader, given the revised file, skips it without a word.
-    const dir = await oldLoaderDir({ [LIBRARY_CSV]: revised[LIBRARY_CSV] });
-    await oldDrillLoader('gym_same_name', admin, dir);
-    expect(await versionsOf('gym_same_name', FIRST)).toHaveLength(1);
+    // (The retired loader, given the revised file, skipped it without a word.)
 
     const planned = await plan('gym_same_name', admin, revised);
     expect(unitOf(planned, FIRST)).toMatchObject({ outcome: 'new_version', fromVersion: 1, toVersion: 2 });
-    expect(planned.counts['drill-library']).toEqual({ new: 0, new_version: 1, unchanged: 118, absent: 0, reject: 0 });
+    expect(planned.counts['drill-library']).toEqual({ new: 0, new_version: 1, unchanged: DRILLS - 1, absent: 0, reject: 0 });
     const before = await rowVersions('gym_same_name');
     const result = await applyCommitted('gym_same_name', admin, revised, planned.planHash);
     const v2Id = MINT.drillVersion(FIRST, 2);
     expect(result.written['drill-library']).toEqual({ inserted: [v2Id], updated: [FIRST], ledgerRows: 0 });
 
     // Written: v1's row (superseded_at) and v2's new rows. Nothing else --
-    // not the other 118 drills, not v1's children.
+    // not the other drills, not v1's children.
     const after = await rowVersions('gym_same_name');
     expect(Object.keys(before).filter((key) => after[key] !== before[key])).toEqual([`drill:${FIRST}`]);
     const v1ChildCount = v1Children.scale.length + v1Children.stop.length + v1Children.cues.length + v1Children.secondary.length;
@@ -605,21 +571,18 @@ describe('a revised drill becomes a new version', () => {
 
     // One head, and the same files again are now unchanged.
     const heads = await observer.query("select count(*)::int as n from pilot.drill_library where organization_id = 'gym_same_name' and superseded_at is null");
-    expect(heads.rows[0].n).toBe(119);
+    expect(heads.rows[0].n).toBe(DRILLS);
     const again = await plan('gym_same_name', admin, revised);
-    expect(again.counts['drill-library']).toEqual({ new: 0, new_version: 0, unchanged: 119, absent: 0, reject: 0 });
+    expect(again.counts['drill-library']).toEqual({ new: 0, new_version: 0, unchanged: DRILLS, absent: 0, reject: 0 });
   });
 
   it('a renamed revision creates v2 instead of aborting on the primary key', async () => {
     const admin = await prepareGym('gym_rename');
-    await seedDrillsTheOldWay('gym_rename', admin);
+    await drillsAsProductionHoldsThem('gym_rename', admin);
     const original = COMMITTED.byId.get(FIRST) as Row;
     const renamed = withEdit(drillFiles(), LIBRARY_CSV, (row) => (row.drill_id === FIRST ? { ...row, name: `${row.name} (renamed)` } : row));
-
-    // The old loader: the name index is its ON CONFLICT arbiter, the kept id
-    // hits the primary key, and the run stops.
-    const dir = await oldLoaderDir({ [LIBRARY_CSV]: renamed[LIBRARY_CSV] });
-    await expect(oldDrillLoader('gym_rename', admin, dir)).rejects.toMatchObject({ code: '23505', constraint: 'pilot_drill_library_pkey' });
+    // (The retired loader: the name index was its ON CONFLICT arbiter, the kept
+    // id hit the primary key, and the run stopped with 23505.)
 
     const result = await applyCommitted('gym_rename', admin, renamed);
     expect(unitOf(result.plan, FIRST)).toMatchObject({ outcome: 'new_version', toVersion: 2 });
@@ -649,7 +612,7 @@ describe('a revised drill becomes a new version', () => {
     revised = withDrillRows(revised, SCALE_CSV, FIRST, scale.map((row) => (row.scale_level === 'A' ? { ...row, demand_description: 'Walk it through at half pace.' } : row)));
 
     const result = await applyCommitted('gym_children', admin, revised);
-    expect(result.plan.counts['drill-library']).toEqual({ new: 0, new_version: 1, unchanged: 118, absent: 0, reject: 0 });
+    expect(result.plan.counts['drill-library']).toEqual({ new: 0, new_version: 1, unchanged: DRILLS - 1, absent: 0, reject: 0 });
     const v2Id = MINT.drillVersion(FIRST, 2);
 
     // v1: exactly the rows it had -- the same ids, never rewritten.
@@ -748,7 +711,7 @@ describe('a revised drill becomes a new version', () => {
       (row.drill_id === FIRST ? { ...row, name: SAME_DISCIPLINE.name } : row.drill_id === SAME_DISCIPLINE.drill_id ? { ...row, name: first.name } : row));
     const result = await applyCommitted('gym_swap', admin, swapped);
     expect(result.plan.blocking).toEqual([]);
-    expect(result.plan.counts['drill-library']).toMatchObject({ new_version: 2, unchanged: 117 });
+    expect(result.plan.counts['drill-library']).toMatchObject({ new_version: 2, unchanged: DRILLS - 2 });
     const current = await observer.query(
       `select lineage_id, version, name from pilot.drill_library
         where organization_id = 'gym_swap' and superseded_at is null and lineage_id = any($1::text[]) order by lineage_id`,
@@ -781,7 +744,7 @@ describe('a revised drill becomes a new version', () => {
     // copied from a read. Without the head held FOR UPDATE (apply.ts step 3
     // once took keys from ROOT files only), a stop rule another writer inserts
     // onto v1 -- the old loader, still in the seed workflow, inserts on the
-    // lineage key, seed-drill-library.mjs:340 -- commits after that read, and
+    // lineage key, as the retired seed-drill-library.mjs did -- commits after that read, and
     // v2 is written without it. The insert's foreign-key check takes FOR KEY
     // SHARE on the head, which the supersede UPDATE (FOR NO KEY UPDATE) does
     // not wait for, but FOR UPDATE does.
@@ -851,18 +814,15 @@ describe('a revised drill becomes a new version', () => {
     ]);
     const result = await applyCommitted('gym_secondary', admin, withSecondary);
     expect(unitOf(result.plan, drill)).toMatchObject({ outcome: 'new_version', fromVersion: 2, toVersion: 3 });
-    expect(result.plan.counts['drill-library']).toMatchObject({ new_version: 1, unchanged: 118 });
+    expect(result.plan.counts['drill-library']).toMatchObject({ new_version: 1, unchanged: DRILLS - 1 });
 
     const v3Id = MINT.drillVersion(drill, 3);
     expect((await childrenOf('gym_secondary', v3Id)).secondary).toEqual([secondaryCode]);
     expect((await childrenOf('gym_secondary', drill)).secondary).toEqual([]);
     expect((await childrenOf('gym_secondary', MINT.drillVersion(drill, 2))).secondary).toEqual([]);
 
-    // The old loader looks the drill up by the id in the file -- the lineage
-    // key -- and writes onto v1, which is history.
-    const dir = await oldLoaderDir({ [SECONDARY_CSV]: withSecondary[SECONDARY_CSV] });
-    await oldSecondaryLoader('gym_secondary', dir);
-    expect((await childrenOf('gym_secondary', drill)).secondary).toEqual([secondaryCode]);
+    // (The retired loader looked the drill up by the id in the file -- the
+    // lineage key -- and wrote onto v1, which is history.)
 
     // A secondary skill equal to the head's primary is refused.
     const same = withRows(v2Files, SECONDARY_CSV, [{ organization_id: '{{PPBF_ORG_ID}}', drill_id: drill, skill_id: PRIMARY_ONLY.skill_id }]);
@@ -877,7 +837,7 @@ describe('a revised drill becomes a new version', () => {
     const blocked = await plan('gym_secondary', admin, carried);
     expect(blocked.blocking.map((finding) => [finding.code, finding.key])).toEqual([['row_rule', WITH_SECONDARY.drill_id]]);
     expect(unitOf(blocked, WITH_SECONDARY.drill_id)?.outcome).toBe('reject');
-    expect(blocked.counts['drill-library']).toMatchObject({ reject: 1, absent: 118 });
+    expect(blocked.counts['drill-library']).toMatchObject({ reject: 1, absent: DRILLS - 1 });
   });
 });
 

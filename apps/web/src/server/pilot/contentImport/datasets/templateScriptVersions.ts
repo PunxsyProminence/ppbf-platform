@@ -14,8 +14,8 @@ import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, Uni
 //
 //   unchanged -> nothing is written. A re-import of the committed files must
 //                leave every row exactly as it was (the old loaders' ON
-//                CONFLICT DO NOTHING got this right: seed-workout-templates.mjs
-//                :201, seed-session-scripts.mjs:183).
+//                CONFLICT DO NOTHING got this right: the retired
+//                seed-workout-templates.mjs and seed-session-scripts.mjs).
 //   changed   -> a NEW VERSION: v(n+1) under a new id, with every child row
 //                re-minted under that id, and the old version kept as it is
 //                -- its rows, its children, whatever points at it. Before this
@@ -155,8 +155,8 @@ function cellText(value: CellInput | Date, column: ColumnSpec | undefined): stri
 /**
  * The value written for a cell. A blank means the column's blankDefault, and
  * otherwise NULL -- or '' for a NOT NULL text column such as
- * session_scripts.theme, whose old loader wrote '' (seed-session-scripts.mjs
- * `record.theme || ''`). Nullability is read from the live table.
+ * session_scripts.theme, whose old loader wrote '' (the retired
+ * seed-session-scripts.mjs, `record.theme || ''`). Nullability is read from the live table.
  */
 function databaseValue(column: ColumnSpec, value: string, info: ColumnInfo): unknown {
   const text = value || column.blankDefault || '';

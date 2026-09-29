@@ -8,7 +8,7 @@ import { CsvError, parse } from 'csv-parse/sync';
 // .mjs:6).
 //
 // COLUMN COUNT IS CHECKED HERE, ROW BY ROW. The old loaders pad a short row
-// with '' (seed-drill-library.mjs:191, `row[i] ?? ''`), so a row that lost a
+// with '' (the retired seed-drill-library.mjs, `row[i] ?? ''`), so a row that lost a
 // comma loads with every later field shifted one column left and nothing says
 // so. relax_column_count is on only so that EVERY bad row is reported with its
 // line, instead of the parse stopping at the first.
@@ -67,7 +67,7 @@ export function readCsv(text: string): CsvTable {
   for (const entry of rest) {
     const line = startLine(entry.info.lines, entry.raw);
     // A row of empty cells is not a row -- the old loaders drop it too
-    // (seed-drill-library.mjs:169), and spreadsheet exports leave them.
+    // (the retired seed-*.mjs loaders did), and spreadsheet exports leave them.
     if (entry.record.every((cell) => cell.trim() === '')) continue;
     if (entry.record.length !== header.length) {
       problems.push({

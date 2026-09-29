@@ -15,7 +15,7 @@ import { integerText, isIntegerText, isNumberText, normalizeCell, numberText, pa
 // database hands back as well as CSV text: text[] arrays, booleans, numbers,
 // null. For a list column every element is RE-SPLIT on the list separator
 // before joining -- the old drill loader stored 'A1-001|A2-002' as ONE array
-// element (seed-drill-library.mjs:210-219 splits on ; and , only; 82 of the
+// element (the retired seed-drill-library.mjs split on ; and , only; 82 of the
 // 119 committed drills carry a '|'), and without the re-split every one of
 // those drills would read as changed the first time it is compared.
 //

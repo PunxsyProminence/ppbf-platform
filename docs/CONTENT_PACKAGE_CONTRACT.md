@@ -17,7 +17,9 @@ Research releases have their own contract (not in this file yet).
 3. Claude runs `npm run content:prepare -- --dir <folder> --write`. It mints ids for new items, writes them back
    into your rows, and MERGES the rows into `apps/web/seed-data/` (see "Merging" below).
 4. A pull request carries the files; the fast guard validates every committed file again.
-5. After merge, the seed-reference-data workflow loads them (dry run first; production needs Jason's approval).
+5. After merge, the seed-reference-data workflow checks the committed files again with no database or secrets,
+   then loads them: a dry run first (every write applied, then rolled back), then apply. `all` plans every dataset
+   and applies them in ONE transaction. Production needs Jason's approval.
 
 ## Rules for every file
 
@@ -79,8 +81,8 @@ Research releases have their own contract (not in this file yet).
   and timestamps never count.
 - A CHANGED item gets a new version and the old one is kept as history. A NEW item is inserted. An UNCHANGED item
   is skipped. An item the hand-off leaves out is left alone and listed.
-- TODAY the seed loaders are insert-only (see "Loaded today" under each type): new items load, revisions reach
-  the committed files but not the database until the versioning loader lands.
+- The seed workflow and `npm run seed:<dataset>` load through this rule (the content-import core). A dataset
+  with no loader yet says so under "Loaded today", and a load that names it is refused, not skipped.
 
 ## Merging into the committed files (`content:prepare`)
 
@@ -120,7 +122,7 @@ Research releases have their own contract (not in this file yet).
 
 The sports the gym teaches. Other files name a discipline by its key. Five tables point at the key, so under R2 the planned revision is an in-place update with the old row kept in a history ledger.
 
-Loaded today: seed-reference-data workflow, dataset disciplines (npm run seed:disciplines): inserts new keys, skips existing ones.
+Loaded today: seed-reference-data workflow, dataset disciplines (npm run seed:disciplines), through the content-import core: a new key is inserted, a changed row is revised in place with before and after kept in the history ledger, an unchanged one is skipped.
 
 #### multidiscipline/seed_disciplines.csv
 
@@ -145,7 +147,7 @@ One row = one discipline. Identity: discipline.
 
 The ladder a coach places an athlete on in each domain. Cohorts qualify athletes by a level ORDINAL, so changing a level's ordinal changes which athletes every cohort admits. Other tables point at level_key, so under R2 the planned revision is an in-place update with the old row kept in a history ledger.
 
-Loaded today: seed-reference-data workflow, dataset competence-cohorts (npm run seed:competence-cohorts): inserts new keys, skips existing ones.
+Loaded today: seed-reference-data workflow, dataset competence-levels (npm run seed:competence-cohorts loads it with the cohorts), through the content-import core: a new key is inserted, a changed row is revised in place with before and after kept in the history ledger, an unchanged one is skipped. An ordinal change is refused.
 
 #### competence-cohorts/seed_competence_levels.csv
 
@@ -168,7 +170,7 @@ Rules:
 
 The rooms athletes are grouped into, by competence and time in the programme (never by age, except where a rulebook binds it). The table has no version columns, so under R2 the planned revision is an in-place update with the old row kept in a history ledger.
 
-Loaded today: seed-reference-data workflow, dataset competence-cohorts (npm run seed:competence-cohorts): inserts new ids, skips existing ones.
+Loaded today: seed-reference-data workflow, dataset cohort-definitions (npm run seed:competence-cohorts loads it with the levels), through the content-import core: a new id is inserted, a changed row is revised in place with before and after kept in the history ledger, an unchanged one is skipped.
 
 #### competence-cohorts/seed_cohort_definitions.csv
 
@@ -203,7 +205,7 @@ Rules:
 
 A drill and its rows in the four child files are ONE unit: under R2 a change anywhere makes a new drill version and the old version is kept (and stays live for gyms that adopted it). A child file replaces the full set of rows only for drills that have at least one row in it; a drill with no rows there keeps what it has.
 
-Loaded today: seed-reference-data workflow, datasets drill-library (npm run seed:drill-library) and drill-secondary-skills (npm run seed:drill-secondary-skills). Insert-only: a drill whose discipline and name already exist is skipped, as are scale and stop rows at an existing (drill, level or ordinal); cues are keyed by cue_id, so a replaced cue set is added beside the old one; a renamed drill that keeps its id stops the run on the table's primary key. That loader splits grounding_claim_ids on ';' and ',' only, so a '|' list is stored as ONE array element until it changes (the content hash re-splits it, so the stored form never reads as a revision). seed_drill_secondary_skills.csv is pinned to its one approved row, header included, by seedWorkflowContract.test.ts ('seeds exactly the one approved relationship and no other'), so a new relationship needs that test changed in the same pull request.
+Loaded today: seed-reference-data workflow, dataset drill-library (npm run seed:drill-library; npm run seed:drill-secondary-skills loads the same dataset, because secondary skills are part of a drill's version), through the content-import core: a new drill is inserted, a changed one becomes a new version with every child row re-minted and the old version kept live for gyms that adopted it, an unchanged one is skipped. Rows the retired loader wrote before #1020 may hold a '|' grounding list as ONE array element (it split on ';' and ',' only); the content hash re-splits it, so that stored form never reads as a revision. New secondary-skill links are held by the row rules below, not by a pinned file.
 
 #### drill-library/seed_drill_library.csv
 
@@ -325,7 +327,7 @@ Rules:
 
 The few stop conditions that apply to EVERY drill (injury and the like), stored once. A drill's own rules go in seed_drill_stop_rules.csv. Under R2 a changed rule becomes a new version.
 
-Loaded today: Nothing yet. The file validates today; no table holds these rules until the content-import migration lands.
+Loaded today: No committed file yet. When one lands, seed-reference-data `all` loads it through the content-import core (pilot.universal_stop_rules): a new rule is inserted, a changed one becomes a new version and supersedes the old.
 
 #### drill-library/seed_universal_stop_rules.csv
 
@@ -349,7 +351,7 @@ Rules:
 
 Reusable session plans. A template and its items are one unit: under R2 a change to either makes a new template version and the old one is kept. Items listed for a template replace all of its items.
 
-Loaded today: seed-reference-data workflow, dataset workout-templates (npm run seed:workout-templates). Insert-only: a template whose name already exists is skipped, as are items at an existing (template, ordinal); a renamed template that keeps its id stops the run on the table's primary key.
+Loaded today: seed-reference-data workflow, dataset workout-templates (npm run seed:workout-templates), through the content-import core: a new template is inserted, a changed one becomes a new version (the old one retired from the coach browse, kept as history), an unchanged one is skipped. Items name a drill lineage and store the version current at load.
 
 #### workout-templates/seed_workout_templates.csv
 
@@ -408,7 +410,7 @@ Rules:
 
 A whole coached session, minute by minute, with the words to say. A script, its blocks and its renderings are one unit: under R2 a change makes a new version and the old one is kept. Blocks (or renderings) listed for a script replace all of its blocks (or renderings).
 
-Loaded today: seed-reference-data workflow, dataset session-scripts (npm run seed:session-scripts). Insert-only by id: an existing script, block or rendering id is skipped; a new block at an existing (script, block_order) stops the run.
+Loaded today: seed-reference-data workflow, dataset session-scripts (npm run seed:session-scripts), through the content-import core: a new script is inserted, a changed one becomes version+1 with new block and rendering ids (a run keeps the version it started on), an unchanged one is skipped.
 
 #### session-scripts/seed_session_scripts.csv
 
@@ -491,7 +493,7 @@ Rules:
 
 What a drill or a script block is claimed to develop beyond the sport, and how strong the evidence is. A claim is part of its drill's or script's material.
 
-Loaded today: Not by the workflow: seed-reference-data leaves this dataset out because every committed row points at a drill that is not in the library. npm run seed:transfer-claims exists and is insert-only by transfer_id.
+Loaded today: Nothing yet. The content-import core has no loader for this dataset (a load that names it is refused, npm run seed:transfer-claims included), and seed-reference-data leaves it out of its choices because every committed row points at a drill that is not in the library.
 
 #### transfer-claims/seed_transfer_claims.csv
 

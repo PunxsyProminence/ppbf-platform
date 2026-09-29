@@ -82,10 +82,14 @@ Production promotion requires a separate explicit instruction from Jason, such a
    `organization_id=punxsy_prominence` -- the gym's organization
    (OD-2026-09-28-007); the workflow requires it. Never reuse an id from
    staging: `account_id` is case-sensitive, and staging's seed account was a
-   different, lowercase admin address. The drill-library and workout-template
-   loaders record that account's own role as `created_by_role`, read from
-   `pilot.accounts` (`apps/web/scripts/lib/seed-account-role.mjs`), and refuse
-   an id that matches no account -- the dry-run shows the role it will record.
+   different, lowercase admin address. Every dataset loads through the
+   content-import core, which checks that account before reading anything
+   else -- an active organization admin (or admin) with an active membership
+   in the gym, never the platform owner
+   (`apps/web/src/server/pilot/contentImport/actor.ts`) -- and records its own
+   role as `created_by_role` on every row it writes. The dry-run prints the
+   plan with the account and role it will record; `dataset: all` then applies
+   every dataset in one transaction.
    Deploying first leaves
    production serving code whose catalogs are empty, which the archived
    2026-08-24/25 release record shows, and whose planned sequence was

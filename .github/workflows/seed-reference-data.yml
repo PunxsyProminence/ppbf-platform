@@ -1,5 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────
-# Reference-data seeding -- manual only, one loader per dispatch or all of them.
+# Reference-data seeding -- manual only. R1 route 3: files handed over,
+# validated, committed by PR, then loaded HERE (Jason 2026-09-29: "for seeding
+# it will be 3").
 #
 # Before this existed, the only way to load the drill library, the discipline
 # list or the competence ladder into a real environment was to point
@@ -7,49 +9,62 @@
 # That put a production connection string on a developer's machine to do
 # something the pipeline should have been doing, and it bypassed every guard
 # the deploy path has -- environment protection, OIDC, and the declared-target
-# check the runners already implement.
+# check the runners already implement. The connection string is read from the
+# Container App's own secret at run time, masked, and never leaves the runner
+# (the import-shadow-research.yml shape).
 #
-# This mirrors import-shadow-research.yml exactly: the connection string is
-# read from the Container App's own secret at run time, masked, and never
-# leaves the runner.
+# ONE LOADER. Every dataset goes through the content-import core
+# (apps/web/src/server/pilot/contentImport/, CLI scripts/pilot-content-import.ts)
+# -- the same plan and apply the in-app upload screen will call later. The
+# seven per-dataset seed-*.mjs loaders it replaced are gone (IMP-10); they were
+# insert-only, so a revised row was skipped without a word, which R2 ("new
+# stuff gets added if there is nothing to update") rules out. Now a changed item
+# gets a new version, the old one kept; a new item is inserted; an unchanged
+# item is skipped. docs/CONTENT_PACKAGE_CONTRACT.md says what each file may
+# carry.
 #
-# ORDER MATTERS. Every loader below requires its migration to have been applied
-# first via apply-migrations.yml. seed:drill-library additionally requires the
-# drill-vocabulary-widening migration -- without it, 228 scale-level rows and
-# 63 stop-rule rows are rejected and the whole seeding transaction aborts.
+# TWO JOBS, AND THE ORDER IS THE POINT.
+#   validate  no environment, no secrets, no Azure: confirms the form, then
+#             checks the COMMITTED files this dispatch would load with the
+#             same validator every PR is held to (content:validate --dataset).
+#             A dispatch runs on whatever branch was picked, not only main, so
+#             this is not a repeat of the PR guard. A package that would be
+#             refused fails here, before anyone is asked to approve a
+#             production run and before any credential exists.
+#   seed      needs validate. Resolves the target, logs in, then plans and
+#             applies.
 #
-# `dataset: all` exists because one-per-dispatch made a full pass six gated
-# runs -- three dry-run, three apply -- and on a protected environment that is
-# six approval clicks for one deploy. Worse, firing them together does not
-# work: the concurrency group holds a single pending run, so a third dispatch
-# CANCELS the second, and a cancelled run is easy to read as a finished one.
-# `all` runs the loaders in the required order inside one gated run.
+# ONE TRANSACTION. `dataset: all` is one CLI call: it plans every dataset
+# (printed before anything is written), then applies all of them in ONE
+# transaction -- disciplines before the drills, scripts and cohorts that name
+# them, drills before the templates that name them (apply order is
+# specs/index.ts). Any failure leaves nothing. The old `all` was a chain of
+# independent commits, so a failure half way left the earlier datasets loaded.
 #
-# session-scripts joined the choices once its two content-less Friday-sparring
-# blocks were given real what_to_* text; it needs only its own migration
-# (`npm run pilot:apply-session-scripts`, which runs
-# scripts/pilot-apply-session-scripts-migration.mjs) -- its blocks reference
-# no drills -- so it runs
-# after the original three.
+# DRY RUN STILL APPLIES. mode=dry-run performs every insert, update, history
+# and audit row for real inside that transaction and then ROLLS BACK, so it
+# proves the data fits the live schema (CHECKs, foreign keys, triggers), not
+# only that the files parse or that a plan can be drawn up.
 #
-# workout-templates joined the choices on owner authorization. It was never
-# broken -- workoutTemplates.pg.test.ts seeds it after the real drill library and
-# asserts 12 templates, 82 items and zero orphaned drill_id references -- it was
-# absent only because nobody had decided it should be seedable to a protected
-# environment. That decision has now been taken, and the note that recorded its
-# absence is gone rather than left to contradict the step below.
+# THE SEEDER. Every dataset needs seed_account_id: the load runs AS that
+# account and every row records it and its role. For gym content it must be an
+# organization_admin (or admin) of the target gym with an ACTIVE membership
+# there -- ppbf@punxsyprominence.org for punxsy_prominence -- never the
+# platform_owner Admin@ account. The core refuses anything else
+# (contentImport/actor.ts); this form only makes the input impossible to skip.
 #
-# ONE LOADER REMAINS ABSENT from the choices below:
+# ONE DATASET REMAINS ABSENT from the choices below:
 #
-#   * transfer-claims -- BROKEN against the shipped schema, and there is
-#     nothing to be gained by making it one click away: all 173 rows reference
-#     a drill-id generation that resolves against nothing shipped, violating
-#     pilot_transfer_drill_fk. sessionScriptsTransfer.pg.test.ts asserts that
-#     failure against the real 119-drill library rather than describing it.
-#     Add it here when the underlying data is fixed, not before.
+#   * transfer-claims -- all 173 committed rows point at 61 drill ids that are
+#     not in the library, so its file does not validate
+#     (contentPackageContract.test.ts pins exactly those 173), and the core has
+#     no loader for it yet. seedWorkflowContract.test.ts fails the day its file
+#     validates, so adding it here is a decision rather than something noticed
+#     by accident.
 #
-# Recording the reason it is absent, so the next reader does not have to infer
-# it from the gap.
+# universal-stop-rules is loadable but has no committed file yet; `all` picks
+# it up the day one lands, and seedWorkflowContract.test.ts then asks for it to
+# become a choice.
 # ─────────────────────────────────────────────────────────────────────────
 
 name: seed-reference-data
@@ -69,16 +84,18 @@ on:
         required: true
         type: string
       dataset:
-        description: Which reference dataset to load ("all" runs every loader in dependency order)
+        description: >-
+          Which reference dataset to load. "all" plans every dataset, then
+          applies them in one transaction.
         required: true
         type: choice
         options:
           - all
-          - drill-library
-          - drill-secondary-skills
-          - workout-templates
           - disciplines
-          - competence-cohorts
+          - competence-levels
+          - cohort-definitions
+          - drill-library
+          - workout-templates
           - session-scripts
       mode:
         description: Rehearse inside a rolled-back transaction, or write for real
@@ -101,18 +118,16 @@ on:
         type: string
       seed_account_id:
         description: >-
-          Existing account_id recorded as the seeder (drill-library,
-          workout-templates and session-scripts). For gym content use an
-          organization_admin of punxsy_prominence (ppbf@punxsyprominence.org),
-          never the platform_owner Admin@ account. Case-sensitive; read it
-          with check-database seed-identity. Drill-library and
-          workout-template rows record this account's own role, and those
-          loaders refuse an id that matches no account.
-        required: false
+          Existing account_id the load runs as, for EVERY dataset. For gym
+          content an organization_admin of punxsy_prominence with an active
+          membership there (ppbf@punxsyprominence.org), never the
+          platform_owner Admin@ account -- the loader refuses anything else.
+          Case-sensitive; read it with check-database seed-identity. Every row
+          written records this account and its role.
+        required: true
         type: string
 
 permissions:
-  id-token: write
   contents: read
 
 concurrency:
@@ -120,12 +135,78 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    # NO `environment:` and no secrets, on purpose: this job cannot read a
+    # connection string or log in to Azure, so nothing it runs can touch a
+    # database. It also needs no approval, so a refused package costs no
+    # reviewer's click on a protected environment.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Confirm Explicit Target And Apply Intent
+        env:
+          TARGET: ${{ inputs.target }}
+          CONFIRM_TARGET: ${{ inputs.confirm_target }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM_SEED: ${{ inputs.confirm_seed }}
+          ORGANIZATION_ID: ${{ inputs.organization_id }}
+          SEED_ACCOUNT: ${{ inputs.seed_account_id }}
+        run: |
+          set -euo pipefail
+          test "$TARGET" = "$CONFIRM_TARGET"
+          if [ "$MODE" = "apply" ]; then
+            test "$CONFIRM_SEED" = "SEED REFERENCE DATA"
+          fi
+          # Every dataset, not a list of them: the content-import core runs
+          # every load as an account it has checked, and records it on every
+          # row it writes. A blank value is refused here rather than by the
+          # core, after the approval and the login.
+          if [ -z "${SEED_ACCOUNT//[[:space:]]/}" ]; then
+            echo "::error::seed_account_id is required for every dataset. For gym content use an organization_admin of the gym (ppbf@punxsyprominence.org), never the platform owner."
+            exit 1
+          fi
+          # No fallback to the app's default-org secret: that fallback is how
+          # the policy shelf came to sit under ppbf-default-org instead of the
+          # gym (OD-2026-09-28-007; import-shadow-research.yml refuses it too).
+          if [ -z "${ORGANIZATION_ID//[[:space:]]/}" ]; then
+            echo "::error::organization_id is required. For gym content pass punxsy_prominence (OD-2026-09-28-007)."
+            exit 1
+          fi
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      # The committed files this dispatch would load, through the validator
+      # every PR is held to (contentPackageContract.test.ts). Offline: no
+      # database, no secrets. The seed job below does not start unless this
+      # passes.
+      - name: Validate Package
+        working-directory: apps/web
+        env:
+          DATASET: ${{ inputs.dataset }}
+        run: npm run --silent content:validate -- --dataset "$DATASET"
+
   seed:
+    needs: validate
     # Same environment name as the target, so a protection rule on `production`
     # gates this exactly as it gates apply-migrations and deploy-production.
     environment: ${{ inputs.target }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
     env:
       # RESOURCE_GROUP is deliberately NOT set here. The staging literal used
       # to sit at job level for BOTH targets, so a production dispatch looked
@@ -134,41 +215,15 @@ jobs:
       # production requires secrets.AZURE_PRODUCTION_RESOURCE_GROUP with no
       # staging fallback, mirroring deploy-production.yml.
       CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
-      # PPBF_SEED_ACCOUNT_ID is the loader's actual contract name -- see
-      # seed-drill-library.mjs. It is deliberately NOT named after the
-      # {{SEED_ACCOUNT_ID}} placeholder in the CSVs: that placeholder is the token
-      # substituted into the seed text, not the variable carrying the value.
+      # The account the load runs as (contentImport/cli.ts readDatabaseEnv).
+      # Deliberately NOT named after the {{SEED_ACCOUNT_ID}} placeholder in
+      # the CSVs: that placeholder is the token in the seed text, not the
+      # variable carrying the value.
       #
-      # PPBF_SEED_ORG_ID is NOT set here. It is resolved in a step below, because
-      # when the operator leaves organization_id blank the value has to be read
-      # from the target app's own secret at run time. Setting it at job level too
-      # would leave two sources for one name. (The blank case is superseded:
-      # organization_id is now required -- see Resolve Owning Organization.)
+      # PPBF_SEED_ORG_ID is NOT set here; Resolve Owning Organization writes it
+      # to $GITHUB_ENV, masked.
       PPBF_SEED_ACCOUNT_ID: ${{ inputs.seed_account_id }}
     steps:
-      - name: Confirm Explicit Target And Apply Intent
-        env:
-          TARGET: ${{ inputs.target }}
-          CONFIRM_TARGET: ${{ inputs.confirm_target }}
-          MODE: ${{ inputs.mode }}
-          CONFIRM_SEED: ${{ inputs.confirm_seed }}
-          DATASET: ${{ inputs.dataset }}
-          SEED_ACCOUNT: ${{ inputs.seed_account_id }}
-        run: |
-          set -euo pipefail
-          test "$TARGET" = "$CONFIRM_TARGET"
-          if [ "$MODE" = "apply" ]; then
-            test "$CONFIRM_SEED" = "SEED REFERENCE DATA"
-          fi
-          # seed-drill-library.mjs, seed-session-scripts.mjs and
-          # seed-workout-templates.mjs stamp a seeder onto every row they write
-          # and fail without one. Catching that here costs a second instead of
-          # an aborted transaction against a real database.
-          if [ "$DATASET" = "drill-library" ] || [ "$DATASET" = "session-scripts" ] ||
-            [ "$DATASET" = "workout-templates" ] || [ "$DATASET" = "all" ]; then
-            test -n "$SEED_ACCOUNT"
-          fi
-
       # A wrong-resource-group lookup that happens to resolve is worse than one
       # that refuses (deploy-production.yml records the same reasoning for its
       # own RESOURCE_GROUP), so an unset secret stops the run here -- before
@@ -234,141 +289,81 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
 
-      # The organization that will own every seeded row. Asking an operator to
-      # type this was the wrong shape: the value is a secret they cannot see
-      # from here, so the only way to supply it was to copy it out of Azure by
-      # hand, and a typo seeds a real database under an organization that does
-      # not exist. The app already knows its own default org -- it reads this
-      # exact secret to answer requests, and the staging E2E gate resolves it
-      # the same way -- so the pipeline reads it too, and the operator supplies
-      # nothing unless they mean to override it.
-      #
-      # SUPERSEDED 2026-09-28: organization_id is now a required input
-      # (OD-2026-09-28-007: the gym is punxsy_prominence; pass it explicitly).
-      # The blank branch below only runs if a dispatch arrives without a value.
+      # The organization that will own every row: the operator's explicit
+      # input, required and checked non-blank by the validate job. There is
+      # no fallback to the app's default-org secret any more (see the validate
+      # job).
       - name: Resolve Owning Organization
         env:
           SUPPLIED: ${{ inputs.organization_id }}
         run: |
           set -euo pipefail
-          if [ -n "$SUPPLIED" ]; then
-            ORG="$SUPPLIED"
-            SOURCE="operator input"
-          else
-            ORG="$(az containerapp secret show \
-              --name "$CONTAINER_APP_NAME" \
-              --resource-group "$RESOURCE_GROUP" \
-              --secret-name ppbf-pilot-default-org-id \
-              --query value -o tsv)"
-            SOURCE="$CONTAINER_APP_NAME default org secret"
-          fi
-          if [ -z "$ORG" ]; then
-            echo "::error::Could not resolve an owning organization. Supply organization_id explicitly."
-            exit 1
-          fi
-          # Masked because the app treats it as a secret; the loaders print
-          # counts, never the org, so nothing downstream leaks it either.
+          ORG="$(printf '%s' "$SUPPLIED" | tr -d '[:space:]')"
+          test -n "$ORG"
+          # Masked: the summary below must never carry it, and the CLI's own
+          # lines that name it stay in the masked log.
           echo "::add-mask::$ORG"
           echo "PPBF_SEED_ORG_ID=$ORG" >> "$GITHUB_ENV"
-          echo "ORG_SOURCE=$SOURCE" >> "$GITHUB_ENV"
-          echo "Owning organization resolved from $SOURCE."
+          echo "ORG_SOURCE=operator input" >> "$GITHUB_ENV"
+          echo "Owning organization resolved from operator input."
 
-      # --dry-run still performs every insert for real inside a transaction and
-      # then rolls back, so it proves the data actually fits the live schema
-      # rather than only that the files parse.
-      # The steps are ordered disciplines -> drill-library -> competence-cohorts
-      # -> session-scripts, so `all` cannot run them wrong.
-      #
-      # DISCIPLINES RUNS FIRST, AND THAT IS NOW A HARD REQUIREMENT RATHER THAN A
-      # PREFERENCE. It used to run second, behind drill-library, described as
-      # "the order the runbook requires" -- the runbook says only "in dependency
-      # order" and never named drill-library first, and the order was survivable
-      # because no dependency existed. drill-library and session-scripts now
-      # write a `discipline` that references pilot.disciplines, so the registry
-      # has to exist before either: seeding 119 drills into an empty registry
-      # fails on the foreign key, and a fresh environment never gets its
-      # catalogs.
-      #
-      # Ordering a loader before this one is therefore a schema question, not a
-      # formatting choice. competence-cohorts and session-scripts already ran
-      # after disciplines and still do.
-      # Each loader still opens its own transaction, so `all` is a chain of
-      # independent commits and not one giant one -- a later failure leaves the
-      # earlier datasets loaded, and every loader is idempotent, so the fix is
-      # to re-run rather than to unpick anything.
-      - name: Seed Disciplines
-        if: inputs.dataset == 'disciplines' || inputs.dataset == 'all'
+      # ONE step, ONE CLI call, ONE transaction -- for a single dataset and for
+      # `all` alike. The CLI prints the plan (per dataset: new, new version,
+      # unchanged, absent, reject) BEFORE it writes, then applies inside one
+      # BEGIN .. COMMIT; with --dry-run it applies and ROLLS BACK. It asserts the
+      # connection string names the declared target before connecting
+      # (lib/postgres-write-target.mjs) and checks the seed account in the
+      # database before reading anything else (contentImport/actor.ts).
+      - name: Load Reference Data
         working-directory: apps/web
-        run: npm run seed:disciplines ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
-
-      - name: Seed Drill Library
-        if: inputs.dataset == 'drill-library' || inputs.dataset == 'all'
-        working-directory: apps/web
-        run: npm run seed:drill-library ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
-
-      # AFTER Seed Drill Library, and that is a foreign key rather than a
-      # preference: pilot.drill_secondary_skills carries a composite FK to
-      # (organization_id, drill_id) in pilot.drill_library, so seeding a
-      # relationship into an empty library fails on the key.
-      #
-      # It is also the only loader here that needs NO seeder account -- the
-      # table has no created_by column -- which is why it is absent from the
-      # SEED_ACCOUNT guard above. Absence there is deliberate, not an oversight.
-      #
-      # The loader validates every row against the destination database before
-      # inserting (drill exists in this org, has a primary, secondary is an
-      # SK-* code and not a SKILL-* family id, secondary differs from primary,
-      # and the pinned primary matches). A disagreement stops the run instead
-      # of writing a relationship whose approval assumed something else.
-      - name: Seed Drill Secondary Skills
-        if: inputs.dataset == 'drill-secondary-skills' || inputs.dataset == 'all'
-        working-directory: apps/web
-        run: npm run seed:drill-secondary-skills ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
-
-      # AFTER Seed Drill Library, and for the same reason as the loader above
-      # rather than a preference: pilot.workout_template_items carries a foreign
-      # key into pilot.drill_library, so seeding items into an empty library
-      # fails on the key. workoutTemplates.pg.test.ts proves the dependency the
-      # other way round -- it seeds against the real 119-drill library and
-      # asserts 12 templates, 82 items and ZERO orphaned drill_id references.
-      #
-      # It DOES need a seeder account, unlike the relationship loader above:
-      # seed-workout-templates.mjs calls required('PPBF_SEED_ACCOUNT_ID') with no
-      # fallback and substitutes it into every row, so the guard above names it.
-      - name: Seed Workout Templates
-        if: inputs.dataset == 'workout-templates' || inputs.dataset == 'all'
-        working-directory: apps/web
-        run: npm run seed:workout-templates ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
-
-      - name: Seed Competence Cohorts
-        if: inputs.dataset == 'competence-cohorts' || inputs.dataset == 'all'
-        working-directory: apps/web
-        run: npm run seed:competence-cohorts ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
-
-      - name: Seed Session Scripts
-        if: inputs.dataset == 'session-scripts' || inputs.dataset == 'all'
-        working-directory: apps/web
-        run: npm run seed:session-scripts ${{ inputs.mode == 'dry-run' && '-- --dry-run' || '' }}
+        env:
+          DATASET: ${{ inputs.dataset }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          DRY_RUN=""
+          if [ "$MODE" = "dry-run" ]; then
+            DRY_RUN="--dry-run"
+          fi
+          npm run --silent content:apply -- $DRY_RUN --dataset "$DATASET" 2>&1 | tee "$RUNNER_TEMP/content-import.log"
 
       - name: Record What Ran
-        # Matches the equivalent step in every sibling workflow. This file
-        # explicitly anticipates a mid-chain failure leaving earlier datasets
-        # loaded -- that is precisely the run whose summary must still print.
+        # Always, so a refused or failed load still leaves its plan counts in
+        # the summary -- that is precisely the run someone needs to read.
         if: always()
+        env:
+          TARGET: ${{ inputs.target }}
+          DATASET: ${{ inputs.dataset }}
+          MODE: ${{ inputs.mode }}
         run: |
+          LOG="$RUNNER_TEMP/content-import.log"
           {
             echo "### Reference data seeding"
             echo ""
-            echo "- target: \`${{ inputs.target }}\`"
-            echo "- dataset: \`${{ inputs.dataset }}\`"
-            echo "- mode: \`${{ inputs.mode }}\`"
+            echo "- target: \`$TARGET\`"
+            echo "- dataset: \`$DATASET\`"
+            echo "- mode: \`$MODE\`"
             # Never the value itself -- it is masked, and printing it here would
-            # put a secret in a summary anyone with repo read access can see.
-            echo "- owning organization: resolved from \`$ORG_SOURCE\`"
+            # put it in a summary anyone with repo read access can see.
+            echo "- owning organization: resolved from \`${ORG_SOURCE:-nothing (the run stopped first)}\`"
             echo ""
-            if [ "${{ inputs.mode }}" = "dry-run" ]; then
-              echo "Rehearsed and rolled back. Nothing was written."
+            if [ -f "$LOG" ]; then
+              # Counts and verdicts only, never a free-text line: the plan's
+              # header and a refusal's message can name the organization.
+              echo "Plan, per dataset (new, new version, unchanged, absent, reject):"
+              echo ""
+              echo '```'
+              grep -E '^  [a-z-]+: [0-9]+ new, [0-9]+ new version, [0-9]+ unchanged, [0-9]+ absent, [0-9]+ reject$' "$LOG" || echo "(no plan was printed)"
+              grep -E '^(BLOCKING|WARNINGS): [0-9]+$' "$LOG" || true
+              grep -oE '^RESULT: [A-Z ]+' "$LOG" || echo "RESULT: none (the load did not finish)"
+              echo '```'
+              echo ""
+              if [ "$MODE" = "dry-run" ]; then
+                echo "A dry run applies inside one transaction and rolls back. Nothing was written."
+              else
+                echo "Applied in one transaction, or not at all. Re-running with the same files writes nothing: unchanged items are skipped."
+              fi
             else
-              echo "Written. The loaders are idempotent -- re-running adds no duplicates."
+              echo "The load step did not run."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

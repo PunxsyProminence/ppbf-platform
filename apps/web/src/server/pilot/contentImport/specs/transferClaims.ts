@@ -3,10 +3,11 @@ import type { DatasetSpec } from '../types';
 import { parseBoolean } from '../values';
 import { bool, childIdColumn, organizationColumn, referenceColumn, text, vocabulary } from './common';
 
-// pilot.transfer_claims (transfer_claims migration :35-82). Loaded today by
-// seed-transfer-claims.mjs, which the seed workflow deliberately does not
-// dispatch: every committed row points at a drill that is not in the library
-// (seed-reference-data.yml:42-49). contentPackageContract.test.ts pins that
+// pilot.transfer_claims (transfer_claims migration :35-82). No loader yet: the
+// content-import engine has no dataset module for it (datasets/index.ts), and
+// the seed workflow leaves it out of its choices, because every committed row
+// points at a drill that is not in the library (seed-reference-data.yml header,
+// seedWorkflowContract.test.ts). contentPackageContract.test.ts pins that
 // defect as exactly 173 orphaned rows over 61 drill ids.
 
 export const transferClaimsDataset: DatasetSpec = {
@@ -17,8 +18,9 @@ export const transferClaimsDataset: DatasetSpec = {
     'What a drill or a script block is claimed to develop beyond the sport, and how strong the evidence is. '
     + 'A claim is part of its drill\'s or script\'s material.',
   loadedToday:
-    'Not by the workflow: seed-reference-data leaves this dataset out because every committed row points at a drill '
-    + 'that is not in the library. npm run seed:transfer-claims exists and is insert-only by transfer_id.',
+    'Nothing yet. The content-import core has no loader for this dataset (a load that names it is refused, '
+    + 'npm run seed:transfer-claims included), and seed-reference-data leaves it out of its choices because every '
+    + 'committed row points at a drill that is not in the library.',
   files: [
     {
       dataset: 'transfer-claims',

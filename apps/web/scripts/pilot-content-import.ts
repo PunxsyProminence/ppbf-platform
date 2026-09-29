@@ -14,6 +14,7 @@ import {
   runPlan,
   runPrepare,
   runValidate,
+  runValidateCommitted,
   seedSslConfig,
 } from '../src/server/pilot/contentImport/cli';
 import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mjs';
@@ -22,10 +23,12 @@ import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mj
 // validated, committed by PR, loaded by the seed-reference-data workflow).
 //
 //   npm run content:validate -- --dir <folder>           report only; exit 1 on a blocking problem
+//   npm run content:validate -- --dataset <name|all>     the COMMITTED files a load would read; no database
 //   npm run content:prepare  -- --dir <folder> [--write] mint ids, merge into apps/web/seed-data
 //   npm run content:describe [-- --write]                print (or write) docs/CONTENT_PACKAGE_CONTRACT.md
 //   npm run content:plan  -- --dataset <name|all>             what a load WOULD do; writes nothing
 //   npm run content:apply -- [--dry-run] --dataset <name|all> load the committed seed-data in ONE transaction
+//   npm run seed:<dataset> [-- --dry-run]                   apply for one seed-data folder (package.json)
 //
 // validate, prepare and describe need NO DATABASE AND NO SECRETS: everything
 // they check against is committed (seed-data, the loaded research package,
@@ -92,6 +95,9 @@ async function main(): Promise<number> {
 
   if (args.command === 'describe') return runDescribe({ docPath: CONTRACT_DOC, write: args.write }, io);
   if (args.command === 'plan' || args.command === 'apply') return runDatabaseCommand(args, io);
+  if (args.command === 'validate' && args.dataset !== undefined) {
+    return runValidateCommitted({ seedDataDir: SEED_DATA_DIR, datasets: datasetsFor(args.dataset) }, io);
+  }
 
   const packageDir = resolveDir(args.dir as string);
   if (!fs.existsSync(packageDir) || !fs.statSync(packageDir).isDirectory()) {
