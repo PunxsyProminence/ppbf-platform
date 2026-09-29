@@ -126,4 +126,20 @@ describe('register_class membership flag banner', () => {
     expect(status).toHaveTextContent('Youth Boxing (lapsed)');
     expect(status).toHaveTextContent('Registration was NOT blocked');
   });
+
+  // A full class waitlists rather than refusing, and the route says so in
+  // `status`. The banner used to say "submitted" either way, so a waitlisted
+  // family believed they had a seat.
+  test('a waitlisted registration says the athlete was waitlisted, not submitted', async () => {
+    installFetchMock({ ok: true, class_id: 'class-1', athlete_id: 'athlete-1', status: 'waitlisted', membership_flags: [] });
+
+    render(<SchedulerPage />);
+    await screen.findByText('Class Schedule');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Register' }));
+
+    const status = await screen.findByRole('status');
+    await waitFor(() => expect(status).toHaveTextContent('The class is full, so this athlete was added to the waitlist.'));
+    expect(status).not.toHaveTextContent('Class registration submitted.');
+  });
 });

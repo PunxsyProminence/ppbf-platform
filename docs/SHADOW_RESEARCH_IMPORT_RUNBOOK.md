@@ -192,6 +192,58 @@ runs.
 
 ---
 
+## Moving a gym's policy shelf — `move-policy-shelf`
+
+Moves one organization's `internal_policy` sources, their documents and chunks, and the
+citation-check and retraction-check rows about those sources to another named organization, in one
+transaction (`apps/web/scripts/pilot-move-policy-shelf.mjs`). Built for OD-2026-09-28-011 item 6:
+the shelf under `ppbf-default-org` goes to `punxsy_prominence`. It selects the rows the database
+holds, not an import scope: every `internal_policy` source in the from-organization whatever its
+approval state, with that state reported rather than filtered.
+
+The move changes which organization owns the rows, not whether they can be retrieved. Retrieval
+reads only sources that are active, approved and verified, and documents that are indexed, approved
+and verified. `pilot-rescope-library-baseline.mjs` inserted its programme-source copy and document
+copies as pending (:296, :311), so some of the shelf may still be pending; the dry run's
+`state_tally` shows how many sources, documents and chunks are `ready` and `not_ready`, and each
+document's `ingest_state`, `approval_state` and `verification_state`. Rows that are `not_ready`
+stay out of retrieval after the move until they are reviewed.
+
+Dispatch the `move-policy-shelf` workflow, `from_organization_id` = `ppbf-default-org`,
+`to_organization_id` = `punxsy_prominence`, in this order:
+
+1. `target` staging, `mode` dry-run. Read the plan: every source, document, chunk and check row it
+   would move, their review state, the counts for both organizations, any blockers, and a
+   `plan_fingerprint`.
+2. `target` staging, `mode` apply, `confirm_move` = `MOVE POLICY SHELF`, `expected_fingerprint` =
+   the `plan_fingerprint` from step 1.
+3. `target` production, `mode` dry-run. Compare with OD-2026-09-28-007: 22 sources, 7 documents,
+   49 chunks (counted 2026-09-28; the dry run is the current count), and read `state_tally`.
+4. `target` production, `mode` apply, `expected_fingerprint` = the `plan_fingerprint` from step 3.
+   The job runs in the `production` environment, which is where Jason approves the run; the
+   `expected_fingerprint` input is what ties the approved run to the rows step 3 showed.
+5. `check-database` with `library-scope`, to see the shelf under `punxsy_prominence`.
+
+Apply moves only the reviewed plan. It re-plans inside its own transaction and, before its first
+update, refuses (`PLAN_FINGERPRINT_MISMATCH`) if those rows do not give the expected fingerprint:
+any source, document, chunk or check row added to or gone from the plan since the dry run changes
+it. Run a fresh dry run and use its fingerprint.
+
+A dry run exits non-zero when its plan has blockers. Apply also refuses on: an organization that
+does not exist; from equal to to; `__platform__` on either side; a document or chunk of the shelf already in another organization; a moving chunk whose document or
+source is not moving; any `shadow_evidence_items`, `shadow_research_submissions` or (outside the
+target) `rabbit_holes` row pointing at a moving row; a document or chunk tied to an athlete
+(`subject_id`); a url, content hash or check id the target already holds; more rows than
+`PPBF_POLICY_MOVE_MAX` (500); and any update touching a different number of rows than planned. It
+verifies the end state before committing and writes one `pilot.audit_events` row
+(`entity_type = 'shadow_library_policy_move'`).
+
+Not moved: capability rules (the dry run lists the from-organization's rules that ask for
+`internal_policy` under `capability_rules_not_moved`), research requirements, and history rows in
+`audit_events` and `shadow_events`.
+
+---
+
 ## Known limitation this runbook does not fix
 
 `import-shadow-research.mjs` writes the research corpus only. The 1,243-claim evidence registry

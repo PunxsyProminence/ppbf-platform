@@ -55,8 +55,8 @@ beforeEach(() => {
   mockAudit.mockResolvedValue(undefined);
 });
 
-// Creating this gym's children is the gym's own administrator's act -- the same
-// boundary the PIN directory and athlete accounts hold.
+// The platform owner never opens a gym's athlete records (OD-2026-09-28-005),
+// and loading them is the gym's own act.
 test('refuses the platform owner', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({
     accountId: 'platform-owner',
@@ -70,13 +70,117 @@ test('refuses the platform owner', async () => {
   expect(mockPlan).not.toHaveBeenCalled();
 });
 
-test('refuses a coach', async () => {
-  mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+test('refuses a request with no session, before anything is planned', async () => {
+  // The real gate, not the mock: no cookie means resolvePrincipal returns
+  // before any database query, and the route must answer 401.
+  const actual = jest.requireActual('@/src/server/pilot/http');
+  mockRequirePrincipal.mockImplementation(actual.requirePrincipal);
 
   const response = await post({ csv: CSV });
 
-  expect(response.status).toBe(403);
+  expect(response.status).toBe(401);
   expect(mockPlan).not.toHaveBeenCalled();
+  expect(mockApply).not.toHaveBeenCalled();
+});
+
+test.each(['athlete', 'parent', 'staff', 'volunteer', 'board'] as const)(
+  'refuses a %s',
+  async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: `${role}-1`, role }));
+
+    const response = await post({ csv: CSV });
+
+    expect(response.status).toBe(403);
+    expect(mockPlan).not.toHaveBeenCalled();
+  },
+);
+
+// Jason, 2026-09-29, "9d. B": coaches load rosters too, into their own gym.
+describe('a coach loading a roster', () => {
+  const coach = () => principal({ accountId: 'coach-1', role: 'coach' });
+
+  test('is allowed for their own gym, and a blank Coach cell becomes the coach loading it', async () => {
+    mockRequirePrincipal.mockResolvedValue(coach());
+
+    const response = await post({ csv: CSV });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.committed).toBe(false);
+    expect(mockPlan).toHaveBeenCalledTimes(1);
+    expect(mockPlan.mock.calls[0][0]).toBe('org-1');
+    expect(mockPlan.mock.calls[0][1][0].coach_account_id).toBe('coach-1');
+    expect(mockApply).not.toHaveBeenCalled();
+  });
+
+  // "3B": a coach may name any active coach in the gym. The route passes the
+  // named coach through unchanged; planRosterImport checks it against the gym.
+  test('passes a named coach through to planning unchanged', async () => {
+    mockRequirePrincipal.mockResolvedValue(coach());
+
+    await post({ csv: 'Athlete ID,Full name,Date of birth,Coach\nath-1,A Name,2012-03-14,coach-2\n' });
+
+    expect(mockPlan.mock.calls[0][1][0].coach_account_id).toBe('coach-2');
+  });
+
+  test('commits the same rows it planned, and the audit says coach', async () => {
+    mockRequirePrincipal.mockResolvedValue(coach());
+    mockApply.mockResolvedValue({
+      rows: [{ line: 1, athlete_id: 'ath-1', full_name: 'A Name', outcome: 'create', reason: '' }],
+      counts: { create: 1, skip_exists: 0, reject: 0 },
+    });
+
+    const response = await post({ csv: CSV, commit: true });
+
+    expect(response.status).toBe(200);
+    expect(mockApply).toHaveBeenCalledTimes(1);
+    expect(mockApply.mock.calls[0][0]).toBe('org-1');
+    expect(mockApply.mock.calls[0][1]).toBe(mockPlan.mock.calls[0][1]);
+    expect(mockApply.mock.calls[0][3]).toBe('coach-1');
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit.mock.calls[0][0]).toMatchObject({
+      actor_account_id: 'coach-1',
+      actor_role: 'coach',
+      organization_id: 'org-1',
+    });
+  });
+
+  test('is refused when the body names another gym', async () => {
+    mockRequirePrincipal.mockResolvedValue(coach());
+
+    const response = await post({ csv: CSV, organization_id: 'org-2', commit: true });
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error).toMatch(/another organization/);
+    expect(mockPlan).not.toHaveBeenCalled();
+    expect(mockApply).not.toHaveBeenCalled();
+  });
+
+  test('is refused when the session carries no gym', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'coach-1', role: 'coach', organizationId: '' }));
+
+    const response = await post({ csv: CSV });
+
+    expect(response.status).toBe(403);
+    expect(mockPlan).not.toHaveBeenCalled();
+  });
+});
+
+test('still admits a legacy admin session', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'admin' }));
+
+  const response = await post({ csv: CSV });
+
+  expect(response.status).toBe(200);
+  expect(mockPlan).toHaveBeenCalledTimes(1);
+});
+
+// An admin's blank Coach cell is left blank for planning to refuse ("needs a
+// coach"); only a coach's own import fills it in.
+test('does not fill in a blank Coach cell for an admin', async () => {
+  await post({ csv: CSV });
+  expect(mockPlan.mock.calls[0][1][0].coach_account_id).toBe('');
 });
 
 // The default matters more than the flag: loading forty real children is not an
@@ -123,11 +227,22 @@ test('commit true applies the plan and audits once', async () => {
   });
 });
 
-// The gym is the caller's own, always. There is no body field for it, so this
-// asserts the planning call is scoped to the session.
+// The gym is the caller's own, always. A body naming another one is refused
+// rather than silently redirected; naming the caller's own, or none, plans for
+// the session's gym.
+test('refuses an admin whose body names another gym', async () => {
+  const response = await post({ csv: CSV, organization_id: 'org-2' });
+
+  expect(response.status).toBe(403);
+  expect(mockPlan).not.toHaveBeenCalled();
+});
+
 test('scopes the import to the caller gym', async () => {
-  await post({ csv: CSV, organization_id: 'org-2' });
-  expect(mockPlan.mock.calls[0][0]).toBe('org-1');
+  await post({ csv: CSV });
+  await post({ csv: CSV, organization_id: 'org-1' });
+
+  expect(mockPlan).toHaveBeenCalledTimes(2);
+  expect(mockPlan.mock.calls.map((call) => call[0])).toEqual(['org-1', 'org-1']);
 });
 
 test('refuses a file with no usable header', async () => {
