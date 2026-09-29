@@ -1,5 +1,10 @@
+import type { PoolClient } from 'pg';
+
+import { formatGymDate } from '../../lib/gymTime';
+
 import type { PilotRole } from './contracts';
 import { query, withTransaction } from './db';
+import { ConflictError } from './errors';
 
 export interface ActorIdentity {
   accountId: string;
@@ -24,7 +29,53 @@ export interface DeletionResult {
 }
 
 /**
- * Deletes a guardian/parent account and cascade-marks all linked athletes for deletion.
+ * Owner decision, 2026-09-29 ("1A"): a person already marked deleted is
+ * refused, and nothing is changed -- no second deleted_at, no second audit row.
+ *
+ * Before this, a repeat deletion wrote deleted_at = now() again, and the purge
+ * measures its 2-year / 1-year window from deleted_at, so a second click
+ * restarted the person's retention clock. The caller is told the date the
+ * first deletion happened, in the gym's timezone.
+ */
+function refuseAlreadyDeleted(who: 'athlete' | 'guardian', deletedAt: string | null | undefined): void {
+  if (!deletedAt) {
+    return;
+  }
+  const day = formatGymDate(deletedAt) ?? deletedAt;
+  throw new ConflictError(
+    `This ${who} was already deleted on ${day}. Nothing was changed.`,
+    'ALREADY_DELETED',
+  );
+}
+
+/**
+ * Cancels every activation code still waiting to be redeemed for the given athlete accounts.
+ *
+ * Closing a login means more than active_flag = false and revoked sessions. redeemActivationCode
+ * (activation.ts) sets active_flag = true on the account and its membership and never reads
+ * deleted_at, so a code handed out before the deletion -- live for 14 days by default, up to 90
+ * (activationPolicy.ts) -- would reopen the login this deletion just closed, with no admin
+ * involved. Superseded rather than deleted: the row stays as the record that a code existed, and
+ * cleanupActivationTokens removes it on its own schedule. Same transaction as the deletion.
+ */
+async function supersedeOutstandingActivationCodes(
+  client: PoolClient,
+  accountIds: string[],
+): Promise<void> {
+  if (accountIds.length === 0) {
+    return;
+  }
+  await client.query(
+    `update pilot.account_activation_tokens
+     set superseded_at = now()
+     where account_id = any($1::text[]) and consumed_at is null and superseded_at is null`,
+    [accountIds],
+  );
+}
+
+/**
+ * Soft-deletes a guardian/parent account; the database trigger then marks deleted each linked
+ * athlete this guardian was the last guardian of. Refuses (409) a guardian already deleted.
  * Organization-admin only. Writes the audit event in the same transaction, after the soft delete.
  */
 export async function deleteGuardianAccount(
@@ -37,16 +88,22 @@ export async function deleteGuardianAccount(
   }
 
   return withTransaction(async (client) => {
-    // Verify the parent account exists and belongs to this organization
-    const parentRow = await client.query<{ account_id: string; role: string }>(
-      `select account_id, role from pilot.accounts
-       where account_id = $1 and organization_id = $2 and role = 'parent'`,
+    // Verify the parent account exists and belongs to this organization.
+    // `for update` holds the row until this transaction ends, so a second
+    // deletion racing this one waits, then reads the deleted_at this one wrote
+    // and is refused below instead of writing a second one.
+    const parentRow = await client.query<{ account_id: string; role: string; deleted_at: string | null }>(
+      `select account_id, role, deleted_at::text as deleted_at from pilot.accounts
+       where account_id = $1 and organization_id = $2 and role = 'parent'
+       for update`,
       [parentAccountId, actor.organizationId],
     );
 
     if (parentRow.rows.length === 0) {
       throw new Error('Not found: parent account does not exist or is not a parent role');
     }
+
+    refuseAlreadyDeleted('guardian', parentRow.rows[0].deleted_at);
 
     // Take the timestamp the DATABASE stamped, not one minted in JavaScript.
     // The cascade trigger copies new.deleted_at onto the linked athletes, so
@@ -121,6 +178,23 @@ export async function deleteGuardianAccount(
       [deletionTime, actor.organizationId],
     );
 
+    /* The children the trigger just withdrew had their own logins closed by
+       it (deleted_at, active_flag, sessions), and they are the athlete
+       accounts in this organization now carrying exactly this deletion's
+       timestamp -- the trigger copies new.deleted_at onto them, the same
+       match the count above relies on. Their outstanding activation codes are
+       cancelled here, for the reason supersedeOutstandingActivationCodes
+       records. */
+    const withdrawnChildAccounts = await client.query<{ account_id: string }>(
+      `select account_id from pilot.accounts
+       where organization_id = $1 and role = 'athlete' and deleted_at = $2::timestamptz`,
+      [actor.organizationId, deletionTime],
+    );
+    await supersedeOutstandingActivationCodes(
+      client,
+      withdrawnChildAccounts.rows.map((row) => row.account_id),
+    );
+
     // Log to audit trail
     const auditResult = await client.query<{ audit_id: number }>(
       `insert into pilot.audit_events (
@@ -158,7 +232,8 @@ export async function deleteGuardianAccount(
 }
 
 /**
- * Deletes an athlete record and marks all linked data (photos, videos, observations) for deletion.
+ * Soft-deletes an athlete record and closes the athlete's own login. Photos, videos and
+ * observations are NOT marked here. Refuses (409) an athlete already deleted.
  * Organization-admin only. Writes the audit event in the same transaction, after the soft delete.
  */
 export async function deleteAthleteRecord(
@@ -171,16 +246,22 @@ export async function deleteAthleteRecord(
   }
 
   return withTransaction(async (client) => {
-    // Verify the athlete exists and belongs to this organization
-    const athleteRow = await client.query<{ athlete_id: string }>(
-      `select athlete_id from pilot.athletes
-       where athlete_id = $1 and organization_id = $2`,
+    // Verify the athlete exists and belongs to this organization. `for update`
+    // for the same reason as the guardian path above.
+    const athleteRow = await client.query<{ athlete_id: string; deleted_at: string | null }>(
+      `select athlete_id, deleted_at::text as deleted_at from pilot.athletes
+       where athlete_id = $1 and organization_id = $2
+       for update`,
       [athleteId, actor.organizationId],
     );
 
     if (athleteRow.rows.length === 0) {
       throw new Error('Not found: athlete does not exist in this organization');
     }
+
+    // Also refuses an athlete the guardian cascade already withdrew: that
+    // athlete's row carries the cascade's deleted_at.
+    refuseAlreadyDeleted('athlete', athleteRow.rows[0].deleted_at);
 
     const deletedAthlete = await client.query<{ deleted_at: string }>(
       `update pilot.athletes
@@ -238,6 +319,8 @@ export async function deleteAthleteRecord(
         [deactivatedAccount.rows[0].account_id],
       );
       sessionsRevoked = revoked.rowCount ?? 0;
+
+      await supersedeOutstandingActivationCodes(client, [deactivatedAccount.rows[0].account_id]);
     }
 
     // Observations still on file for this athlete. NOT a deletion count: a soft

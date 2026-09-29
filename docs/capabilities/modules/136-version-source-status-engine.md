@@ -5,6 +5,7 @@
 | Status | **DONE** (Wave 9 reconciliation) |
 | Vertical slice | Defines ShadowLibrarySourceStatus ('active'/'archived'/'rejected'/'quarantined'), ShadowLibraryApprovalState and ShadowLibraryVerificationSt |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | Data Quality / Trust (`dataQualityTrust`) |
 | Source | `2.0.0-draft-merged` |
@@ -39,3 +40,4 @@ _Scaffold only. Do not mark active until promotion review._
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/src/server/pilot/shadowLibrary.ts; apps/web/app/api/pilot/shadow/library/sources/route.ts; apps/web/src/server/pilot/drillVersioning.ts. Test: apps/web/src/server/pilot/shadowLibrary.test.ts — 'retrieves only active, approved, verified, fully indexed evidence' an |
+| 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |

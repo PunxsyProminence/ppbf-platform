@@ -135,15 +135,17 @@ describe('golden-era session scripts scope', () => {
     expect(PAGE).toMatch(/className="[^"]*\bge-scripts\b[^"]*"/);
   });
 
-  /* The reserved medical/safeguarding red is not decorative chrome. The
-     project-wide reservation has its own guard; this one only states that the
-     004A block never reached for it while restyling a coaching surface. */
+  /* Written when the medical/safeguarding red was reserved project-wide, with
+     its own guard; this one only states that the 004A block never reached for
+     it while restyling a coaching surface. STATUS 2026-09-29: red is not
+     reserved and that guard is deleted (OD-2026-09-29-001); this check still
+     runs, and --locked still means a medical stop. */
   test('the scoped block never uses reserved medical red', () => {
     /* Read from the theme file rather than from the resolved sheet: resolution
        inlines this file at its @import position, so slicing the resolved text
        would drag in everything the theme states after it. */
     /* Comments come out FIRST, before the block is located, because the
-       block's own header NAMES the three reserved things in order to say it
+       block's own header NAMES the three locked-red things in order to say it
        does not use them -- and because 'GOLDEN ERA 004A' itself sits inside
        that header, so slicing first would strand an unterminated comment. A
        guard that cannot tell a declaration from a prohibition would forbid
