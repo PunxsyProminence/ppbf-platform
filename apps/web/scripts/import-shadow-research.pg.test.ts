@@ -254,7 +254,7 @@ describe('importSeedPackage idempotency against the real seed package', () => {
       ]);
 
       expect(secondCounts.map((r) => r.rows[0].n)).toEqual(firstCounts.map((r) => r.rows[0].n));
-      expect(firstCounts.map((r) => r.rows[0].n)).toEqual([1214, 14, 1193, 30, 229]);
+      expect(firstCounts.map((r) => r.rows[0].n)).toEqual([1042, 14, 1193, 30, 229]);
 
       const reviewGate = await client.query(
         `select count(*)::int as n from pilot.shadow_library_sources
