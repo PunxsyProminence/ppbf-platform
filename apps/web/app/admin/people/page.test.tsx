@@ -41,10 +41,21 @@ interface MockOptions {
   onDelete?: (body: Record<string, unknown>) => { ok: boolean; status?: number; error?: string };
   onActivationReset?: (body: Record<string, unknown>) => Record<string, unknown>;
   onAthleteAccount?: (body: Record<string, unknown>) => Record<string, unknown>;
+  onAthleteRecord?: (body: Record<string, unknown>) => Record<string, unknown>;
+  // Decides the Nth GET of the staff list (1-based): a refusal, or a request
+  // that never gets an answer at all. Unset, every read succeeds.
+  onStaffGet?: (call: number) => { ok: false; status: number } | 'network-error' | undefined;
 }
 
 function fetchMock(options: MockOptions = {}) {
+  let staffGets = 0;
   return jest.fn(async (url: string, init?: RequestInit) => {
+    // POST /api/pilot/athletes -- the roster half of adding a new athlete.
+    if (url.endsWith('/api/pilot/athletes')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      const payload = options.onAthleteRecord?.(body) ?? { ok: true };
+      return { ok: payload.ok === true, status: payload.ok === true ? 201 : 409, json: async () => payload } as Response;
+    }
     if (url.includes('/api/pilot/admin/accounts/pin-reset')) {
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
       const payload = options.onActivationReset?.(body) ?? { ok: true, activation_code: 'ABCD-2345-EFGH', expires_at: '2026-08-26T00:00:00Z' };
@@ -60,7 +71,9 @@ function fetchMock(options: MockOptions = {}) {
         ok: options.rosterOk !== false,
         status: options.rosterOk === false ? 500 : 200,
         json: async () =>
-          options.rosterOk === false ? { ok: false } : { ok: true, items: options.roster ?? [] },
+          // A fresh array per read, as a real response is: handing back the
+          // same reference would let React skip a roster that has grown.
+          options.rosterOk === false ? { ok: false } : { ok: true, items: [...(options.roster ?? [])] },
       } as Response;
     }
 
@@ -76,6 +89,15 @@ function fetchMock(options: MockOptions = {}) {
           status: outcome.status ?? (outcome.ok ? 200 : 400),
           json: async () => (outcome.ok ? { ok: true } : { error: outcome.error }),
         } as Response;
+      }
+
+      staffGets += 1;
+      const staffOutcome = options.onStaffGet?.(staffGets);
+      if (staffOutcome === 'network-error') {
+        throw new TypeError('Failed to fetch');
+      }
+      if (staffOutcome) {
+        return { ok: false, status: staffOutcome.status, json: async () => ({}) } as Response;
       }
 
       return {
@@ -520,6 +542,157 @@ describe('the add-athlete form', () => {
     fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'Nobody Here' } });
 
     expect(screen.queryByText(/is already on your roster as/i)).toBeNull();
+  });
+
+  // highest+1 over a roster nobody could read is ath-001, and the field used
+  // to present that as the gym's next free id.
+  test('leaves the record ID empty, and says why, when the roster could not be read', async () => {
+    global.fetch = fetchMock({ members: [], guardianLinks: [], rosterOk: false }) as never;
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
+
+    const idField = (await screen.findByLabelText(/Athlete record ID/i)) as HTMLInputElement;
+    expect(idField.value).toBe('');
+    expect(screen.queryByText(/next free one/i)).toBeNull();
+    expect(screen.getByText(/Your gym roster could not be read, so no ID was filled in/i)).toBeTruthy();
+    expect(screen.getByText(/Still needed before this can be saved/i).textContent).toMatch(/Athlete record ID/);
+  });
+
+  /**
+   * The roster record and the sign-in are two writes. When the second fails,
+   * the page reloads the roster -- which now holds the record just written. An
+   * auto-filled id that was still derived from the roster then moved on to the
+   * next number and unlocked, so correcting the sign-in ID and pressing the
+   * button again created a second record for the same child.
+   */
+  test('a retry after a failed sign-in step reuses the auto-filled record, never a second one', async () => {
+    const liveRoster: Record<string, unknown>[] = [
+      { athlete_id: 'ath-001', full_name: 'Alex Johnson', account_id: null, account_active: null, has_pin: false, account_updated_at: null },
+    ];
+    const recordPosts: Record<string, unknown>[] = [];
+    const accountPosts: Record<string, unknown>[] = [];
+    global.fetch = fetchMock({
+      members: [guardianMember({ account_id: 'coach-1', login_email: 'coach@example.com', role: 'coach' })],
+      guardianLinks: [],
+      roster: liveRoster,
+      onAthleteRecord: (body) => {
+        recordPosts.push(body);
+        liveRoster.push({ athlete_id: body.athlete_id, full_name: body.full_name, account_id: null, account_active: null, has_pin: false, account_updated_at: null });
+        return { ok: true };
+      },
+      onAthleteAccount: (body) => {
+        accountPosts.push(body);
+        return accountPosts.length === 1
+          ? { ok: false, error: 'Account already exists' }
+          : { ok: true, activation_code: 'JKLM-4567-NPQR', expires_at: '2026-08-26T00:00:00Z' };
+      },
+    }) as never;
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
+
+    const idField = (await screen.findByLabelText(/Athlete record ID/i)) as HTMLInputElement;
+    expect(idField.value).toBe('ath-002');
+
+    fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'Jo Fighter' } });
+    fireEvent.change(screen.getByLabelText(/Date of birth/i), { target: { value: '2012-04-01' } });
+    fireEvent.change(screen.getByLabelText(/Weight class/i), { target: { value: '80 lb' } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact note/i), { target: { value: 'Mum 555-0100' } });
+    fireEvent.change(screen.getByLabelText(/^Coach$/i), { target: { value: 'coach-1' } });
+    fireEvent.change(screen.getByLabelText('Sign-in ID'), { target: { value: 'jo' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Athlete & Get Code' }));
+
+    expect(await screen.findByText(/Account already exists/i)).toBeTruthy();
+    expect(recordPosts).toHaveLength(1);
+    expect(recordPosts[0].athlete_id).toBe('ath-002');
+
+    // The reload has put ath-002 on the roster. The field must still hold it,
+    // locked, rather than having moved on to ath-003.
+    expect((screen.getByLabelText(/Athlete record ID/i) as HTMLInputElement).value).toBe('ath-002');
+    expect(screen.getByText(/Roster record saved, so these details are locked/i)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Sign-in ID'), { target: { value: 'jo-fighter' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Athlete & Get Code' }));
+
+    expect(await screen.findByText('JKLM-4567-NPQR')).toBeTruthy();
+    expect(recordPosts).toHaveLength(1);
+    expect(accountPosts).toEqual([
+      { account_id: 'jo', athlete_id: 'ath-002' },
+      { account_id: 'jo-fighter', athlete_id: 'ath-002' },
+    ]);
+
+    // The id was pinned for the retry. Once the athlete is added the pin must
+    // come off again, or every admin faces an empty ID box after their first
+    // successful add. The page returns to the people list first.
+    await screen.findByText('Everyone in this gym');
+    fireEvent.click(screen.getByRole('button', { name: /^Add Athlete$/i }));
+    expect((screen.getByLabelText(/Athlete record ID/i) as HTMLInputElement).value).toBe('ath-003');
+    expect(screen.getByText(/next free one for your gym \(ath-003\)/i)).toBeTruthy();
+  });
+});
+
+/**
+ * After a successful add the page reloads, and the suggestion for the NEXT
+ * athlete is worked out from whatever roster that reload leaves standing. The
+ * reload reads the staff list and the roster together, and a staff read that
+ * failed used to skip the roster entirely: the roster from before the add stayed
+ * marked current, and the box offered the id just written as the gym's next
+ * free one.
+ */
+describe('the reload after a successful add', () => {
+  async function addOneAthleteThenReopen(onStaffGet: MockOptions['onStaffGet']) {
+    const liveRoster: Record<string, unknown>[] = [
+      { athlete_id: 'ath-001', full_name: 'Alex Johnson', account_id: null, account_active: null, has_pin: false, account_updated_at: null },
+    ];
+    const recordPosts: Record<string, unknown>[] = [];
+    global.fetch = fetchMock({
+      members: [guardianMember({ account_id: 'coach-1', login_email: 'coach@example.com', role: 'coach' })],
+      guardianLinks: [],
+      roster: liveRoster,
+      onStaffGet,
+      onAthleteRecord: (body) => {
+        recordPosts.push(body);
+        liveRoster.push({ athlete_id: body.athlete_id, full_name: body.full_name, account_id: null, account_active: null, has_pin: false, account_updated_at: null });
+        return { ok: true };
+      },
+      onAthleteAccount: () => ({ ok: true, activation_code: 'JKLM-4567-NPQR', expires_at: '2026-08-26T00:00:00Z' }),
+    }) as never;
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
+    expect(((await screen.findByLabelText(/Athlete record ID/i)) as HTMLInputElement).value).toBe('ath-002');
+
+    fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'Jo Fighter' } });
+    fireEvent.change(screen.getByLabelText(/Date of birth/i), { target: { value: '2012-04-01' } });
+    fireEvent.change(screen.getByLabelText(/Weight class/i), { target: { value: '80 lb' } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact note/i), { target: { value: 'Mum 555-0100' } });
+    fireEvent.change(screen.getByLabelText(/^Coach$/i), { target: { value: 'coach-1' } });
+    fireEvent.change(screen.getByLabelText('Sign-in ID'), { target: { value: 'jo' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Athlete & Get Code' }));
+
+    expect(await screen.findByText('JKLM-4567-NPQR')).toBeTruthy();
+    expect(recordPosts.map((body) => body.athlete_id)).toEqual(['ath-002']);
+    // The reload's own failure is on screen, and the page is back on the list.
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Unable to load your gym roster|Failed to fetch/);
+    await screen.findByText('Everyone in this gym');
+
+    fireEvent.click(screen.getByRole('button', { name: /^Add Athlete$/i }));
+    return screen.getByLabelText(/Athlete record ID/i) as HTMLInputElement;
+  }
+
+  test('a refused staff read still takes the fresh roster, so the next id moves on', async () => {
+    const idField = await addOneAthleteThenReopen((call) => (call === 2 ? { ok: false, status: 503 } : undefined));
+
+    expect(idField.value).toBe('ath-003');
+    expect(screen.getByText(/next free one for your gym \(ath-003\)/i)).toBeTruthy();
+    expect(screen.queryByText(/next free one for your gym \(ath-002\)/i)).toBeNull();
+  });
+
+  test('a reload that got no answer at all claims no next free id', async () => {
+    const idField = await addOneAthleteThenReopen((call) => (call === 2 ? 'network-error' : undefined));
+
+    // Nothing was read, so nothing is suggested -- least of all ath-002.
+    expect(idField.value).toBe('');
+    expect(screen.queryByText(/next free one/i)).toBeNull();
+    expect(screen.getByText(/Your gym roster could not be read, so no ID was filled in/i)).toBeTruthy();
   });
 });
 

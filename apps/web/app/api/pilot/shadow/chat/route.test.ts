@@ -1850,3 +1850,43 @@ describe('SHADOW pre-generation safety precedence', () => {
     });
   });
 });
+
+describe('a question over the length limit', () => {
+  // It used to share a branch with the empty question, so a coach who pasted
+  // a long question was told "Enter a question for SHADOW." -- a false reason,
+  // and no way to learn what was actually wrong.
+  test('is refused as too long, naming the limit, not as an empty question', async () => {
+    global.fetch = jest.fn() as unknown as typeof fetch;
+
+    const response = await POST(postRequest({ message: 'a'.repeat(12_001) }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.state).toBe('filtered');
+    expect(payload.response).toBe(
+      'That question is too long for SHADOW (limit 12,000 characters). Shorten it and send again.',
+    );
+    expect(payload.response).not.toContain('Enter a question');
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+  });
+
+  test('a question exactly at the limit is not refused for its length', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'RESEARCH NEEDED — no verified evidence was supplied.' } }] }),
+    }) as unknown as typeof fetch;
+
+    const response = await POST(postRequest({ message: 'a'.repeat(12_000) }));
+
+    expect(response.status).toBe(200);
+  });
+
+  test('an empty question still gets the empty-question reply', async () => {
+    const response = await POST(postRequest({ message: '   ' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.response).toBe('Enter a question for SHADOW.');
+  });
+});

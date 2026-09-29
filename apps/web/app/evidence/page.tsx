@@ -44,7 +44,13 @@ const APPROVAL_BADGES: Record<ReviewState, { className: string; glyph: string; l
 
 export default function EvidenceReviewPage() {
   const [queue, setQueue] = useState<ReviewQueue>({ sources: [], documents: [] });
-  const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [actionError, setActionError] = useState('');
+  // A failed first read and a failed review action are different facts. When
+  // the read failed the page does not know what the library holds, so the
+  // empty sentences below must not speak; a failed action says nothing about
+  // the list that is already on screen.
+  const error = loadError || actionError;
   const [busyKey, setBusyKey] = useState('');
   // Before the first read resolved, this page asserted both of its empty
   // sentences at once -- an admin opening it saw "No sources" and "No
@@ -64,8 +70,8 @@ export default function EvidenceReviewPage() {
   useEffect(() => {
     void fetchQueue().then(
       setQueue,
-      (loadError: unknown) => {
-        setError(loadError instanceof Error ? loadError.message : 'Unable to load evidence.');
+      (failure: unknown) => {
+        setLoadError(failure instanceof Error ? failure.message : 'Unable to load evidence.');
       },
     ).finally(() => setLoading(false));
   }, [fetchQueue]);
@@ -73,7 +79,7 @@ export default function EvidenceReviewPage() {
   const update = async (payload: Record<string, string>) => {
     const key = `${payload.entityType}:${payload.entityId}:${payload.action}`;
     setBusyKey(key);
-    setError('');
+    setActionError('');
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/evidence/review`, {
         method: 'PATCH',
@@ -87,7 +93,7 @@ export default function EvidenceReviewPage() {
       }
       setQueue(await fetchQueue());
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : 'Evidence review failed.');
+      setActionError(updateError instanceof Error ? updateError.message : 'Evidence review failed.');
     } finally {
       setBusyKey('');
     }
@@ -175,7 +181,7 @@ export default function EvidenceReviewPage() {
               Tailwind text-[…] utility on the same element loses the cascade
               and never lands -- this line was rendering bone-on-cork at
               2.34:1. A span carries no .t-body of its own, so it wins. */}
-          {!loading && queue.sources.length === 0 ? (
+          {!loading && !loadError && queue.sources.length === 0 ? (
             <p className="t-body">
               <span className="text-[color:var(--hide-800)]">
                 No sources have been recorded for this organization yet. This is an empty library, not a cleared
@@ -221,7 +227,7 @@ export default function EvidenceReviewPage() {
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
             <span className="text-[color:var(--hide-900)]">Documents</span>
           </h2>
-          {!loading && queue.documents.length === 0 ? (
+          {!loading && !loadError && queue.documents.length === 0 ? (
             <p className="t-body">
               <span className="text-[color:var(--hide-800)]">
                 No documents have been recorded for this organization yet. This is an empty library, not a cleared

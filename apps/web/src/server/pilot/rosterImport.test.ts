@@ -1,5 +1,16 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 import { buildRosterCsv } from '@/app/api/pilot/admin/export/roster/csv';
-import { applyRosterImport, parseCsv, parseRosterCsv, planRosterImport, type RosterImportRow, type RosterRowPlan } from './rosterImport';
+import {
+  applyRosterImport,
+  assignBlankCoachTo,
+  parseCsv,
+  parseRosterCsv,
+  planRosterImport,
+  type RosterImportRow,
+  type RosterRowPlan,
+} from './rosterImport';
 import { query } from './db';
 import { insertAthleteIfAbsent } from './entities';
 import { insertClubMemberIfAbsent } from './clubMembers';
@@ -16,9 +27,21 @@ const mockInsertIfAbsent = insertAthleteIfAbsent as jest.Mock;
 const mockInsertAthlete = insertAthleteIfAbsent as jest.Mock;
 const mockInsertClubMember = insertClubMemberIfAbsent as jest.Mock;
 
+/** This gym's one active coach, as the active-coach lookup reports it. */
+const GYM_COACH = 'coach-1';
+
+/** Default database: nobody on the roster yet, and GYM_COACH is an active
+ * coach here. Tests that need something else override it. */
+function answerQuery(sql: string) {
+  if (sql.includes('from pilot.accounts')) {
+    return Promise.resolve([{ account_id: GYM_COACH }]);
+  }
+  return Promise.resolve([]);
+}
+
 beforeEach(() => {
   jest.resetAllMocks();
-  mockQuery.mockResolvedValue([]);
+  mockQuery.mockImplementation(answerQuery);
   mockInsertAthlete.mockResolvedValue(true);
   mockInsertClubMember.mockResolvedValue(true);
 });
@@ -187,7 +210,7 @@ describe('planRosterImport', () => {
     weight_class: '',
     gym_status: '',
     emergency_contact_note: '',
-    coach_account_id: '',
+    coach_account_id: GYM_COACH,
     member_type: '',
     address_line1: '',
     city: '',
@@ -314,6 +337,171 @@ describe('planRosterImport', () => {
   });
 });
 
+// Jason, 2026-09-29, "3B": every importer, admin or coach, may name any ACTIVE
+// COACH OF THE IMPORTING GYM as a row's coach, and nobody else.
+describe("a row's coach", () => {
+  const row = (over: Partial<RosterImportRow> = {}): RosterImportRow => ({
+    athlete_id: 'ath-1',
+    full_name: 'A Name',
+    date_of_birth: '2012-03-14',
+    weight_class: '',
+    gym_status: '',
+    emergency_contact_note: '',
+    coach_account_id: GYM_COACH,
+    member_type: '',
+    address_line1: '',
+    city: '',
+    state: '',
+    postal_code: '',
+    ...over,
+  });
+
+  const coachLookups = () => mockQuery.mock.calls.filter(([sql]) => (sql as string).includes('from pilot.accounts'));
+
+  // pilot.athletes.coach_id is `text not null` with a foreign key to
+  // pilot.accounts: a blank one would pass the preview and fail at Add with a
+  // raw database error. Caught in the preview instead.
+  it('marks an athlete row with a blank Coach cell as needing a coach', async () => {
+    const plan = await planRosterImport('org-1', [row({ coach_account_id: '' })]);
+
+    expect(plan.rows[0].outcome).toBe('reject');
+    expect(plan.rows[0].reason).toMatch(/^Needs a coach\./);
+  });
+
+  // The example the import page shows in its paste box is the format people
+  // copy. Without a Coach column every row an admin pasted in it came back
+  // "Needs a coach". Read from the page source so the two cannot drift: the
+  // example must parse with every column recognised and, when its coach is an
+  // active coach of the gym, be addable as shown.
+  it("accepts the import page's own example file once its coach is a real one", async () => {
+    const source = fs.readFileSync(path.join(__dirname, '../../../app/admin/import/page.tsx'), 'utf8');
+    const example = source.match(/placeholder=\{'([^']*)'\}/)?.[1]?.replace(/\\n/g, '\n') ?? '';
+    const parsed = parseRosterCsv(example);
+
+    expect(parsed.fatal).toBe('');
+    expect(parsed.rows).toHaveLength(1);
+    const [exampleRow] = parsed.rows;
+    // Every column in the example header was read into a field.
+    for (const field of ['athlete_id', 'full_name', 'date_of_birth', 'weight_class', 'gym_status', 'coach_account_id'] as const) {
+      expect(exampleRow[field]).not.toBe('');
+    }
+
+    mockQuery.mockImplementation((sql: string) => (sql.includes('from pilot.accounts')
+      ? Promise.resolve([{ account_id: exampleRow.coach_account_id }])
+      : Promise.resolve([])));
+    const plan = await planRosterImport('org-1', parsed.rows);
+
+    expect(plan.rows[0]).toMatchObject({ outcome: 'create', reason: '' });
+  });
+
+  // Another gym's account, an inactive one, a non-coach and an unknown id all
+  // come back absent from the gym-scoped lookup, and all read the same.
+  it('marks a coach the gym does not have as an active coach, with one reason for every kind', async () => {
+    const plan = await planRosterImport('org-1', [
+      row({ athlete_id: 'ath-1', coach_account_id: 'coach-other-gym' }),
+      row({ athlete_id: 'ath-2', coach_account_id: 'admin-1' }),
+    ]);
+
+    expect(plan.counts).toEqual({ create: 0, skip_exists: 0, reject: 2 });
+    expect(plan.rows[0].reason).toBe('Coach "coach-other-gym" is not an active coach in this gym.');
+    expect(plan.rows[1].reason).toBe('Coach "admin-1" is not an active coach in this gym.');
+  });
+
+  it('accepts any active coach of the gym, not only the one loading the file', async () => {
+    mockQuery.mockImplementation((sql: string) => Promise.resolve(
+      sql.includes('from pilot.accounts') ? [{ account_id: 'coach-1' }, { account_id: 'coach-2' }] : [],
+    ));
+
+    const plan = await planRosterImport('org-1', [
+      row({ athlete_id: 'ath-1', coach_account_id: 'coach-1' }),
+      row({ athlete_id: 'ath-2', coach_account_id: 'coach-2' }),
+    ]);
+
+    expect(plan.counts).toEqual({ create: 2, skip_exists: 0, reject: 0 });
+  });
+
+  it('looks coaches up in the importing gym only, active coaches only, each id once', async () => {
+    await planRosterImport('org-1', [
+      row({ athlete_id: 'ath-1' }),
+      row({ athlete_id: 'ath-2' }),
+      row({ athlete_id: 'ath-3', coach_account_id: 'coach-2' }),
+    ]);
+
+    const lookups = coachLookups();
+    expect(lookups).toHaveLength(1);
+    const [sql, params] = lookups[0];
+    expect(sql).toMatch(/organization_id = \$1/);
+    expect(sql).toMatch(/role = 'coach'/);
+    expect(sql).toMatch(/active_flag = true/);
+    expect(params).toEqual(['org-1', ['coach-1', 'coach-2']]);
+  });
+
+  it('asks nothing of a non-athlete member row, which has no coach', async () => {
+    const plan = await planRosterImport('org-1', [
+      row({ athlete_id: 'mbr-1', date_of_birth: '', member_type: 'Non-Athlete', coach_account_id: '' }),
+    ]);
+
+    expect(plan.counts).toEqual({ create: 1, skip_exists: 0, reject: 0 });
+    expect(coachLookups()).toHaveLength(0);
+  });
+
+  // Nothing would be written for it either way, so the true answer is the
+  // collision, not a coach problem nobody needs to fix.
+  it('reports an athlete already on the roster as such, whatever its Coach cell says', async () => {
+    mockQuery.mockImplementation((sql: string) => Promise.resolve(
+      sql.includes('from pilot.athletes') ? [{ athlete_id: 'ath-1' }] : [],
+    ));
+
+    const plan = await planRosterImport('org-1', [row({ coach_account_id: 'coach-gone' })]);
+
+    expect(plan.rows[0].outcome).toBe('skip_exists');
+  });
+
+  // Add creates only what the plan marked `create`, so the refusal holds at
+  // the write, not just in the preview.
+  it('is refused at Add too: a refused row is never inserted', async () => {
+    const rows = [
+      row({ athlete_id: 'ath-1' }),
+      row({ athlete_id: 'ath-2', coach_account_id: 'coach-other-gym' }),
+      row({ athlete_id: 'ath-3', coach_account_id: '' }),
+    ];
+    const plan = await planRosterImport('org-1', rows);
+
+    const result = await applyRosterImport('org-1', rows, plan, 'admin-1');
+
+    expect(mockInsertAthlete).toHaveBeenCalledTimes(1);
+    expect(mockInsertAthlete.mock.calls[0][1]).toMatchObject({ athlete_id: 'ath-1', coach_id: GYM_COACH });
+    expect(result.counts).toEqual({ create: 1, skip_exists: 0, reject: 2 });
+  });
+});
+
+describe('assignBlankCoachTo', () => {
+  const blank: RosterImportRow = {
+    athlete_id: 'ath-1',
+    full_name: 'A Name',
+    date_of_birth: '2012-03-14',
+    weight_class: '',
+    gym_status: '',
+    emergency_contact_note: '',
+    coach_account_id: '',
+    member_type: '',
+    address_line1: '',
+    city: '',
+    state: '',
+    postal_code: '',
+  };
+
+  it('fills a blank Coach cell with the coach loading the file and leaves a named one alone', () => {
+    const rows = [blank, { ...blank, athlete_id: 'ath-2', coach_account_id: 'coach-2' }];
+
+    const filled = assignBlankCoachTo(rows, 'coach-1');
+
+    expect(filled.map((r) => r.coach_account_id)).toEqual(['coach-1', 'coach-2']);
+    // The parsed rows are not rewritten underneath the caller.
+    expect(rows[0].coach_account_id).toBe('');
+  });
+});
+
 describe('applyRosterImport', () => {
   const row = (over: Partial<Record<string, string>> = {}) => ({
     athlete_id: 'ath-1',
@@ -322,7 +510,7 @@ describe('applyRosterImport', () => {
     weight_class: '',
     gym_status: '',
     emergency_contact_note: '',
-    coach_account_id: '',
+    coach_account_id: GYM_COACH,
     member_type: '',
     address_line1: '',
     city: '',

@@ -79,9 +79,15 @@ export const WALL_DISPLAY_CONSENT_TYPES: Readonly<
 };
 
 /**
- * A waiver `status` is freeform text, so this is an allow-list and not a
- * deny-list: an unrecognised status is a refusal. 'pending' is deliberately
- * absent -- a release that has been started is not a release that was given.
+ * A waiver `status` was freeform text until pilot_waivers_status_check, so this
+ * is an allow-list and not a deny-list: an unrecognised status is a refusal.
+ * 'pending' is deliberately absent -- a release that has been started is not a
+ * release that was given.
+ *
+ * The constraint admits only signed, declined, withdrawn and missing, so on a
+ * migrated database only 'signed' here can match a row written after it. The
+ * other entries matter only for rows written before the migration, or on a
+ * database it has not reached.
  */
 const AFFIRMATIVE_WAIVER_STATUS = new Set([
   'signed',

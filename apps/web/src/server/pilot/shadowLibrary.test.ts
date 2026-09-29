@@ -8,8 +8,13 @@ jest.mock('./access', () => ({
 jest.mock('./shadowEvents', () => ({ emitShadowEvent: jest.fn() }));
 jest.mock('./shadowTelemetry', () => ({ writeShadowTelemetryEvent: jest.fn() }));
 jest.mock('./shadowResearch', () => ({
+  // The constants stay real, so the event names asserted below are the ones
+  // the module actually writes.
+  ...jest.requireActual('./shadowResearch'),
   createShadowResearchRequirement: jest.fn(),
   listShadowResearchRequirements: jest.fn(),
+  reopenCoverageResolvedGapRequirement: jest.fn(),
+  resolveCoveredCapabilityGapRequirements: jest.fn(),
 }));
 jest.mock('./shadowEmbeddings', () => ({
   ...jest.requireActual('./shadowEmbeddings'),
@@ -24,11 +29,19 @@ import { assertActorCanAccessAthlete } from './access';
 import { query, queryOne } from './db';
 import { embedText, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import { emitShadowEvent } from './shadowEvents';
-import { createShadowResearchRequirement, listShadowResearchRequirements } from './shadowResearch';
+import {
+  createShadowResearchRequirement,
+  listShadowResearchRequirements,
+  reopenCoverageResolvedGapRequirement,
+  resolveCoveredCapabilityGapRequirements,
+} from './shadowResearch';
 import {
   createShadowLibraryChunk,
   createShadowLibraryClaim,
+  listApprovedGlobalEvidenceForResearchBridge,
+  listShadowCapabilityCoverage,
   normalizeSearchScope,
+  recomputeShadowCapabilityCoverage,
   searchShadowLibrary,
 } from './shadowLibrary';
 
@@ -451,5 +464,225 @@ describe('SHADOW library claim honesty', () => {
         }),
       }),
     );
+  });
+});
+
+// What search serves is the bar. The coverage count used to accept any active
+// source, so a rule read "covered" on a source still waiting for review, never
+// indexed, or suppressed for retraction -- while search returned nothing for
+// it -- and a covered rule opens no research gap. The real-database proof is
+// shadowLibraryCoverage.pg.test.ts; this pins the predicates in the SQL itself,
+// whitespace-normalized, for a run without Postgres.
+describe('SHADOW library capability coverage counts only servable sources', () => {
+  function normalizedSql(callIndex: number): string {
+    return String(mockQuery.mock.calls[callIndex][0])
+      .replace(/--[^\n]*/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /** The LATERAL subquery that produces matched_sources. */
+  function matchedSourcesSubquery(sql: string): string {
+    const start = sql.indexOf('left join lateral (');
+    const end = sql.indexOf(') ms on true');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    return sql.slice(start, end);
+  }
+
+  const SERVABLE_PREDICATES = [
+    "s.status = 'active'",
+    "s.approval_state = 'approved'",
+    "s.verification_state = 'verified'",
+    'not coalesce(s.retrieval_suppressed, false)',
+    // A gym-wide search returns no athlete-scoped chunk, so an athlete-scoped
+    // document is no gym-wide coverage.
+    'd.subject_id is null',
+    "d.ingest_state = 'indexed'",
+    'd.index_completed_at is not null',
+    "d.approval_state = 'approved'",
+    "d.verification_state = 'verified'",
+  ];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockQuery.mockResolvedValue([]);
+    jest.mocked(listShadowResearchRequirements).mockResolvedValue([]);
+  });
+
+  it('the listed count requires everything search requires', async () => {
+    await listShadowCapabilityCoverage('org-1');
+
+    const subquery = matchedSourcesSubquery(normalizedSql(0));
+    for (const predicate of SERVABLE_PREDICATES) {
+      expect({ predicate, present: subquery.includes(predicate) }).toEqual({ predicate, present: true });
+    }
+  });
+
+  it('recompute grades on the same count it lists', async () => {
+    await recomputeShadowCapabilityCoverage({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-1',
+      actorRole: 'organization_admin',
+    });
+
+    // Call 0 computes the states; the last call is the list returned to the
+    // caller. With no rules there is no update in between.
+    const computed = matchedSourcesSubquery(normalizedSql(0));
+    const listed = matchedSourcesSubquery(normalizedSql(mockQuery.mock.calls.length - 1));
+    for (const predicate of SERVABLE_PREDICATES) {
+      expect({ predicate, present: computed.includes(predicate) }).toEqual({ predicate, present: true });
+    }
+    expect(computed).toBe(listed);
+  });
+
+  // R1 (Jason 2026-09-29): coverage counts every shelf search reads -- the
+  // gym's own and the shared platform baseline -- and no other. Counting the
+  // gym's shelf alone called a rule uncovered while search was answering it.
+  it('counts the gym shelf and the platform shelf, exactly the organizations search reads', async () => {
+    await listShadowCapabilityCoverage('org-1');
+    await recomputeShadowCapabilityCoverage({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-1',
+      actorRole: 'organization_admin',
+    });
+
+    const coverageCalls = mockQuery.mock.calls.filter(([sql]) => String(sql).includes(') ms on true'));
+    expect(coverageCalls.length).toBeGreaterThanOrEqual(3);
+    for (const [sql, params] of coverageCalls) {
+      const subquery = matchedSourcesSubquery(String(sql).replace(/\s+/g, ' '));
+      expect(subquery).toContain('s.organization_id = any($2::text[])');
+      // The rule's own organization is no longer the shelf filter.
+      expect(subquery).not.toContain('s.organization_id = cm.organization_id');
+      // Still one shelf per source: the chunk sits on the source's shelf and
+      // the document on the chunk's, so a platform source is never paired
+      // with a gym chunk or document.
+      expect(subquery).toContain('c.organization_id = s.organization_id');
+      expect(subquery).toContain('d.organization_id = c.organization_id');
+      expect(params).toEqual(['org-1', ['org-1', '__platform__']]);
+    }
+  });
+
+  // Search serves a source through the chunks that cite it, not through a
+  // document the source owns (searchShadowLibrary joins `s.source_id =
+  // c.source_id` and `d.document_id = c.document_id`). In the research corpus
+  // every document belongs to one programme source and the chunks cite
+  // hundreds of others, so an ownership join counted almost nothing search
+  // serves. The real-database proof is the "real corpus shape" case in
+  // shadowLibraryCoverage.pg.test.ts.
+  it('counts a source through the chunks that cite it, joined the way search joins them', async () => {
+    await listShadowCapabilityCoverage('org-1');
+
+    const subquery = matchedSourcesSubquery(normalizedSql(0));
+    expect(subquery).toContain('from pilot.shadow_library_chunks c');
+    expect(subquery).toContain('c.source_id = s.source_id');
+    expect(subquery).toContain('d.document_id = c.document_id');
+    // A gym-wide search returns no athlete-scoped chunk.
+    expect(subquery).toContain('c.subject_id is null');
+    // Document ownership is not what search asks.
+    expect(subquery).not.toContain('d.source_id = s.source_id');
+  });
+});
+
+// R2 (Jason 2026-09-29): the coverage check closes its own gap tickets once a
+// capability grades covered, and reopens a ticket it closed when the gap comes
+// back. The real-database proof is shadowLibraryCoverage.pg.test.ts.
+describe('SHADOW library capability coverage manages its own gap tickets', () => {
+  const mockReopen = jest.mocked(reopenCoverageResolvedGapRequirement);
+  const mockResolveCovered = jest.mocked(resolveCoveredCapabilityGapRequirements);
+  const mockCreateRequirement = jest.mocked(createShadowResearchRequirement);
+
+  const ruleRow = (key: string, matched: number, minimum = 1) => ({
+    capability_map_id: `map-${key}`,
+    capability_key: key,
+    required_source_types: [],
+    minimum_authority_tier: 3,
+    minimum_source_count: minimum,
+    matched_sources: matched,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockQuery.mockResolvedValue([]);
+    jest.mocked(listShadowResearchRequirements).mockResolvedValue([]);
+    mockReopen.mockResolvedValue(null);
+    mockResolveCovered.mockResolvedValue([]);
+    mockCreateRequirement.mockResolvedValue(1);
+  });
+
+  async function recomputeWith(rows: ReturnType<typeof ruleRow>[]) {
+    mockQuery.mockResolvedValueOnce(rows as never);
+    return recomputeShadowCapabilityCoverage({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-curator',
+      actorRole: 'organization_admin',
+    });
+  }
+
+  it('closes the open gap ticket of every rule that grades covered, and only those', async () => {
+    mockResolveCovered.mockResolvedValue([{ research_requirement_id: 41, capability_key: 'cap-covered' }]);
+
+    await recomputeWith([ruleRow('cap-covered', 2), ruleRow('cap-uncovered', 0), ruleRow('cap-partial', 1, 2)]);
+
+    expect(mockResolveCovered).toHaveBeenCalledTimes(1);
+    expect(mockResolveCovered).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      covered: [{ capabilityKey: 'cap-covered', matchedSources: 2 }],
+      resolvedByAccountId: 'acct-curator',
+      resolvedByRole: 'organization_admin',
+    });
+
+    // The pass records what it closed on the event that names who ran it.
+    const recomputed = mockEmitShadowEvent.mock.calls
+      .map(([event]) => event)
+      .find((event) => event.eventName === 'SHADOW_LIBRARY_CAPABILITY_COVERAGE_RECOMPUTED');
+    expect(recomputed?.payload).toEqual({ rules: 3, closed_research_requirement_ids: [41] });
+  });
+
+  it('reopens a ticket the coverage check closed instead of leaving the recurrence ticketless', async () => {
+    mockReopen.mockResolvedValue(41);
+
+    await recomputeWith([ruleRow('cap-lost-its-source', 0)]);
+
+    expect(mockReopen).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-1',
+      capabilityKey: 'cap-lost-its-source',
+      sourceStatus: 'missing',
+      metadata: expect.objectContaining({ capability_key: 'cap-lost-its-source', coverage_state: 'uncovered' }),
+    }));
+    expect(mockCreateRequirement).not.toHaveBeenCalled();
+    expect(mockEmitShadowEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventName: 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED',
+      entityId: 'cap-lost-its-source',
+    }));
+  });
+
+  it('opens a new ticket when there is nothing of its own to reopen', async () => {
+    await recomputeWith([ruleRow('cap-new-gap', 0)]);
+
+    expect(mockCreateRequirement).toHaveBeenCalledWith(expect.objectContaining({
+      sourceEventName: 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED',
+      sourceEntityType: 'shadow_library_capability_map',
+      sourceEntityId: 'cap-new-gap',
+    }));
+  });
+});
+
+describe('SHADOW research-bridge export excludes retracted sources', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockQuery.mockResolvedValue([]);
+  });
+
+  // suppressSource flips only retrieval_suppressed; approval and verification
+  // stay as they were. So without its own predicate the export shipped a
+  // source's text under approved_evidence after search had dropped it.
+  it('filters out a source suppressed for retraction, as search does', async () => {
+    await listApprovedGlobalEvidenceForResearchBridge({ organizationId: 'org-1' });
+
+    const sql = String(mockQuery.mock.calls[0][0])
+      .replace(/--[^\n]*/g, ' ')
+      .replace(/\s+/g, ' ');
+    expect(sql).toContain('not coalesce(s.retrieval_suppressed, false)');
   });
 });
