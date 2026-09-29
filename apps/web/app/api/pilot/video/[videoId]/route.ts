@@ -76,7 +76,8 @@ interface VideoSessionRow {
  * console. But it calls the SAME two functions, which emit the same two
  * literals, and it grew no status parameter precisely so that stays true. The
  * gate-visible population is unchanged. This would stop holding only if
- * intake/domain-upsert, which accepts an arbitrary status string, were later
+ * intake/domain-upsert, which takes its status from the caller (held to the
+ * four-value vocabulary since the waiver-status-check change), were later
  * allowed to pass parentId -- checked 2026-08-28 and re-checked when the
  * staff writer landed, across every upsertWaiver caller in apps/web.
  *
@@ -175,9 +176,11 @@ interface VideoSessionRow {
  * a different resource than the one addressed.
  */
 /**
- * pilot.waivers.status is freeform text -- no CHECK constraint, and
- * /api/pilot/intake/domain-upsert stores `asString(body.payload.status,
- * 'signed')`, which accepts any string a caller sends. waiverCompliance.ts
+ * pilot.waivers.status was freeform text -- no CHECK constraint, and
+ * /api/pilot/intake/domain-upsert stored `asString(body.payload.status,
+ * 'signed')`, which accepted any string a caller sent. pilot_waivers_status_check
+ * and requireWaiverStatus refuse those on write now, but rows written before
+ * them, or on a database the migration has not reached, remain. waiverCompliance.ts
  * records a waiver stored as ' Signed ' as something that ACTUALLY HAPPENED,
  * not a hypothetical, and wallDisplay.ts normalises this same column with
  * exactly this expression before testing it.

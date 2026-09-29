@@ -546,13 +546,15 @@ describe('GET /api/pilot/video/[videoId] guardian consent scope', () => {
 });
 
 /**
- * pilot.waivers.status IS FREEFORM TEXT.
+ * pilot.waivers.status WAS FREEFORM TEXT.
  *
  * No CHECK constraint on the column, and /api/pilot/intake/domain-upsert
- * stores `asString(body.payload.status, 'signed')` -- any string a caller
- * sends. waiverCompliance.ts records a waiver stored as ' Signed ' as
- * something that actually happened and says so in as many words: "this is
- * reachable rather than theoretical".
+ * stored `asString(body.payload.status, 'signed')` -- any string a caller
+ * sent. pilot_waivers_status_check and requireWaiverStatus refuse such values
+ * on write now, but rows written before them, or on a database the migration
+ * has not reached, can still hold anything. waiverCompliance.ts records a
+ * waiver stored as ' Signed ' as something that actually happened and says so
+ * in as many words: "this was reachable rather than theoretical".
  *
  * The two refusals in this route were positive matches on the raw string, so
  * ' Withdrawn ' matched neither, both filters came back empty, and the SAS was
