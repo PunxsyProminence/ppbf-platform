@@ -39,6 +39,15 @@ const CAPTURE_SESSIONS_PATH = path.resolve(
   __dirname,
   '../../../../../infra/azure/pilot_slice_postgres_capture_sessions_migration.sql',
 );
+/* The claim skips footage whose athlete is marked deleted (deletion scope B),
+   so the scan SQL now reads pilot.athletes and its deleted_at: the base schema
+   and the data-retention migration, both of which production has always
+   applied before the video-sessions migration. */
+const BASE_SCHEMA_PATH = path.resolve(__dirname, '../../../../../infra/azure/pilot_slice_postgres.sql');
+const RETENTION_PATH = path.resolve(
+  __dirname,
+  '../../../../../infra/azure/pilot_slice_postgres_data_retention_deletion_migration.sql',
+);
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -136,6 +145,8 @@ beforeAll(async () => {
   client = new Client({ connectionString: connectionStringFor(PG_DATABASE) });
   await client.connect();
   await client.query('create schema if not exists pilot');
+  await client.query(await fs.readFile(BASE_SCHEMA_PATH, 'utf8'));
+  await client.query(await fs.readFile(RETENTION_PATH, 'utf8'));
   await client.query(await fs.readFile(MIGRATION_PATH, 'utf8'));
   /*
    * TS-ANON-01: the sweep now asks which DESTINATION a video belongs to
