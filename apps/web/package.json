@@ -382,7 +382,8 @@
     "test:migrations:roster-import": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/rosterImport.pg.test.ts --testTimeout=300000",
     "test:migrations:content-import-vocabularies": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportVocabularies.pg.test.ts --testTimeout=300000",
     "test:migrations:content-import-engine": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportEngine.pg.test.ts --testTimeout=300000",
-    "test:migrations:content-import-drills": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportDrills.pg.test.ts --testTimeout=300000"
+    "test:migrations:content-import-drills": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportDrills.pg.test.ts --testTimeout=300000",
+    "test:migrations:content-import-templates-scripts": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportTemplatesScripts.pg.test.ts --testTimeout=300000"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",

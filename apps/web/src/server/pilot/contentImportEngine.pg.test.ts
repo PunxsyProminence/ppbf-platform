@@ -835,13 +835,17 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
     expect(await committedCounts('gym_cli')).toEqual({ disciplines: 0, levels: 0, cohorts: 0, ledger: 0, audit: 0, shadowEvents: 0 });
   });
 
-  it('apply --dataset all commits the registries and the drills together, mirrors the audit event after commit, and a re-plan finds nothing to do', async () => {
+  it('apply --dataset all commits every loadable dataset together, mirrors the audit event after commit, and a re-plan finds nothing to do', async () => {
     const applied = await runCli(['apply', '--dataset', 'all'], env);
     expect({ code: applied.code, stderr: applied.stderr }).toEqual({ code: 0, stderr: '' });
     expect(applied.stdout).toContain('target_hostname: localhost');
-    // 17 registry rows and 119 drills, in one transaction: the drills'
-    // discipline foreign key is satisfied by disciplines written earlier in it.
-    expect(applied.stdout).toContain('RESULT: COMMITTED -- 136 item(s) written');
+    // 17 registry rows, 119 drills, 12 workout templates and 3 session scripts,
+    // in one transaction: the drills' discipline foreign key is satisfied by
+    // disciplines written earlier in it, and the template items' drill
+    // foreign key by the drills.
+    expect(applied.stdout).toContain('RESULT: COMMITTED -- 151 item(s) written');
+    expect(applied.stdout).toContain('  workout-templates: inserted 12');
+    expect(applied.stdout).toContain('  session-scripts: inserted 3');
     expect(await committedCounts('gym_cli')).toEqual({ disciplines: 5, levels: 6, cohorts: 6, ledger: 17, audit: 1, shadowEvents: 1 });
     const drills = await observer.query("select count(*)::int as n from pilot.drill_library where organization_id = 'gym_cli'");
     expect(drills.rows).toEqual([{ n: 119 }]);
@@ -852,6 +856,8 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
     expect(again.code).toBe(0);
     expect(planBlock(again.stdout)).toContain('  cohort-definitions: 0 new, 0 new version, 6 unchanged, 0 absent, 0 reject');
     expect(planBlock(again.stdout)).toContain('  drill-library: 0 new, 0 new version, 119 unchanged, 0 absent, 0 reject');
+    expect(planBlock(again.stdout)).toContain('  workout-templates: 0 new, 0 new version, 12 unchanged, 0 absent, 0 reject');
+    expect(planBlock(again.stdout)).toContain('  session-scripts: 0 new, 0 new version, 3 unchanged, 0 absent, 0 reject');
     expect(again.stdout).toContain('RESULT: PLANNED -- 0 item(s) would be written.');
   });
 

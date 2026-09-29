@@ -84,9 +84,12 @@ export async function applyImport(request: ApplyRequest): Promise<ApplyResult> {
 
   // A child file names its item through its parent column, and counts: a
   // package carrying only a drill's cues still revises that drill, copying its
-  // other child rows from a read. Holding the head FOR UPDATE makes a child
-  // insert onto it from elsewhere (its foreign-key check takes FOR KEY SHARE)
-  // either finish before the re-plan, which then sees it, or wait for COMMIT.
+  // other child rows from a read; a package of template items alone still
+  // writes a new version of the template they name
+  // (datasets/templateScriptVersions.ts, "ONE UNIT"). Holding the head FOR
+  // UPDATE makes a child insert onto it from elsewhere (its foreign-key check
+  // takes FOR KEY SHARE) either finish before the re-plan, which then sees it,
+  // or wait for COMMIT.
   const { parsed } = parsePackage(packageInputs(request.files));
   for (const engine of DATASET_ENGINES) {
     const keys = parsed.files
