@@ -95,12 +95,14 @@ describe('golden-era scheduler scope', () => {
     expect(PAGE).toMatch(/className="[^"]*\bge-scheduler\b[^"]*"/);
   });
 
-  /* Reserved medical red is #A81E22 / --locked / --stamp-red and is never
-     decorative chrome. The scheduler block is bronze, wood, paper and patina;
+  /* Written when #A81E22 / --locked / --stamp-red was reserved medical red and
+     never decorative chrome. STATUS 2026-09-29: red is not reserved
+     (OD-2026-09-29-001); this check still runs, and --locked still means a
+     medical stop. The scheduler block is bronze, wood, paper and patina;
      this pins that it stays that way rather than trusting a reading of it.
 
      COMMENTS ARE STRIPPED FIRST, and the reason is worth stating: the block's
-     own header names the reserved red in order to say it is not used, so a raw
+     own header names the locked red in order to say it is not used, so a raw
      scan of the text fails on its own documentation. The fix for that is never
      an allow-list — it is to measure the DECLARATIONS, which is what actually
      ships to a browser. Verified by watching this go red before the strip. */

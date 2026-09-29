@@ -103,9 +103,11 @@ test.describe('Public homepage', () => {
         const cs = getComputedStyle(el);
         const label = `<${el.tagName.toLowerCase()}> ${(el.textContent || '').trim().slice(0, 30)}`;
 
-        // rgb(168,30,34) is #A81E22, --locked. Law 2 reserves it for the safety
-        // gate, so it has no business on a page whose entire audience is
-        // strangers with no athlete to be locked. The literal is inlined
+        // rgb(168,30,34) is #A81E22, --locked. Written when Law 2 reserved it
+        // for the safety gate, on a page whose entire audience is strangers
+        // with no athlete to be locked. STATUS 2026-09-29: red is not
+        // reserved (OD-2026-09-29-001); this check predates that ruling and
+        // still runs. The literal is inlined
         // because this callback is serialised into the browser and cannot close
         // over anything declared out here.
         const isSafetyRed = (c: string) => /rgba?\(168,\s*30,\s*34/.test(c);
@@ -137,7 +139,8 @@ test.describe('Public homepage', () => {
       return { painted, lowContrast, smallTargets };
     });
 
-    // Law 2 — the safety gate's red belongs to the safety gate.
+    // Law 2 as it stood before OD-2026-09-29-001 (red is not reserved): the
+    // safety gate's red belonged to the safety gate. Still enforced here.
     expect(audit.painted, 'elements painted the safety red on a public page').toEqual([]);
 
     // WCAG 1.4.3.

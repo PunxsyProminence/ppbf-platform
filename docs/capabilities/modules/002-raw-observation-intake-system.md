@@ -5,6 +5,7 @@
 | Status | **DONE** (Wave 9 reconciliation follow-up) |
 | Vertical slice | coach/admin free-text athlete observation write via POST /api/pilot/intake/domain-upsert (entity_type=coach_note) into pilot.coach_observations |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | Core Athlete System (`coreAthleteSystem`) |
 | Source | `2.0.0-draft-merged` |
@@ -40,3 +41,4 @@ _Scaffold only. Do not mark active until promotion review._
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — coach/admin free-text athlete observation write via POST /api/pilot/intake/domain-upsert (entity_type=coach_no. Missing: A real write path exists (domain-upsert -> createCoachObservation) with a role gate and organization_id scoping on both insert and audit event, but th. Evidence: apps/web/src/server/pilot/intake.ts; apps/web/app/api/pilot/intake/domain-upsert/route.ts. Status stays DRAFT. |
 | 2026-08-15 | wave9-reconciliation | The audit's one missing DoD element (no test on the coach_note write path) closed: route.test.ts pins the org-scoped attributed write, the parent-role refusal, the athlete-access refusal, and the missing-payload refusal. Promoted DRAFT -> DONE. |
+| 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |

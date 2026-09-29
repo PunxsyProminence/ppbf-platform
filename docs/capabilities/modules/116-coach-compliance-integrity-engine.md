@@ -5,6 +5,7 @@
 | Status | **DONE** (Wave 9 reconciliation) |
 | Vertical slice | compliance rule/violation tracking with severity, escalation ladder, coach/admin role gates, org- and athlete-scoped access |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | Coach System (`coachSystem`) |
 | Source | `2.0.0-draft-merged` |
@@ -39,3 +40,4 @@ _Scaffold only. Do not mark active until promotion review._
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/src/server/pilot/compliance.ts; apps/web/app/api/pilot/compliance/violations/route.ts; apps/web/app/api/pilot/compliance/violations/route.test.ts. Test: apps/web/app/api/pilot/compliance/violations/route.test.ts: '403 for a role that cannot view violations', '403 when coac |
+| 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |
