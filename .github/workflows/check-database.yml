@@ -69,6 +69,7 @@ on:
           - duplicate-guardians
           - orphan-chat-audit
           - seed-identity
+          - reference-content
           - library-scope
           - deletion-preflight
 
@@ -188,6 +189,13 @@ jobs:
               # seeding workflows ask an operator to type, so nobody has to read them out of a
               # production SQL client by eye. Athlete and parent accounts are never selected.
               npm run pilot:check-seed-identity | tee /tmp/check-output.txt
+              ;;
+            reference-content)
+              # Read-only. Counts reference-content rows per organization_id and created_by_role,
+              # plus gym adoptions, superseded drill versions and the '|' claim-id defect, so a
+              # seed is planned on where the existing rows sit. Counts only: no row ids, names or
+              # account ids. A report -- exits zero whenever it ran; read the counts.
+              npm run pilot:check-reference-content | tee /tmp/check-output.txt
               ;;
             *)
               echo "::error::Unknown check '$CHECK'"
