@@ -11,11 +11,11 @@ import type { DbClient, ImportActor } from './actor';
 //
 // THE SHADOW MIRROR COMES AFTER COMMIT. writePilotAuditEvent also mirrors every
 // organization-scoped event into pilot.shadow_events and
-// pilot.shadow_telemetry_events (audit.ts:36-63). Those are observations of an
+// pilot.shadow_telemetry_events (audit.ts:35-63). Those are observations of an
 // event that happened, so they are written only once it has: the caller calls
 // emitContentImportAuditMirror AFTER its COMMIT (the seed CLI does; a dry run,
 // which rolls back, emits nothing). The names are derived exactly as
-// audit.ts:40-41 derives them, so a reader of the SHADOW stream sees the same
+// audit.ts:39-40 derives them, so a reader of the SHADOW stream sees the same
 // event name any other audited create produces.
 
 export const CONTENT_IMPORT_ENTITY_TYPE = 'content_import';

@@ -15,7 +15,7 @@ import type { DbClient } from './actor';
 //     and NOT on active: a withdrawn head is still the head.
 //   session_scripts: the highest version in the lineage. The table has no
 //     superseded_at; a newer version existing IS what supersedes
-//     (session_scripts migration :29-31, unique (org, lineage_id, version)).
+//     (session_scripts migration :30-31, :59 unique (org, lineage_id, version)).
 
 export interface DrillHead {
   lineageId: string;

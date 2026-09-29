@@ -575,6 +575,35 @@ describe('registries: disciplines, competence levels, cohort definitions', () =>
     expect(kick.rows).toEqual([{ display_name: 'Kickboxing (edited)' }]);
   });
 
+  it('holds the rows it will write: an edit in flight when apply starts is waited for, then seen, and the plan is refused as stale', async () => {
+    // Without the FOR UPDATE before the re-plan, apply would re-plan against
+    // the row as last committed, find its hash unchanged, then block on the
+    // UPDATE and -- once the other writer commits -- overwrite that writer's
+    // edit with content planned against a state that no longer exists.
+    const admin = await createGym('gym_locks');
+    await applyCommitted('gym_locks', admin, committedFiles());
+    const revised = withEdit(committedFiles(), DISCIPLINES_CSV, (row) => (row.discipline === 'boxing' ? { ...row, display_name: 'Boxing, revised' } : row));
+    const shown = await plan('gym_locks', admin, revised);
+
+    await observer.query('BEGIN');
+    try {
+      await observer.query("update pilot.disciplines set display_name = 'Boxing (edited in the app)' where organization_id = 'gym_locks' and discipline = 'boxing'");
+      let settled = false;
+      const applying = applyCommitted('gym_locks', admin, revised, shown.planHash).finally(() => {
+        settled = true;
+      });
+      applying.catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      expect(settled).toBe(false); // waiting on the other writer's row
+      await observer.query('COMMIT');
+      await expectRefusal(applying, 'STALE_PLAN');
+    } finally {
+      await observer.query('ROLLBACK').catch(() => undefined);
+    }
+    const { rows } = await observer.query("select display_name from pilot.disciplines where organization_id = 'gym_locks' and discipline = 'boxing'");
+    expect(rows).toEqual([{ display_name: 'Boxing (edited in the app)' }]);
+  });
+
   it('exactly one content_import audit row is written, inside the transaction', async () => {
     const admin = await createGym('gym_audit');
     const files = committedFiles();
