@@ -106,7 +106,7 @@ const promoted = {
 
 // W-D4C: where a reference drill stands in this gym, as the drill-library
 // route derives it and sends it beside the list.
-type LifecycleState = 'available' | 'operational' | 'retired' | 'superseded' | 'unavailable';
+type LifecycleState = 'available' | 'operational' | 'retired' | 'superseded' | 'unavailable' | 'newer_version_available';
 interface Lifecycle { state: LifecycleState; operational_drill_id: string | null }
 type LifecycleMap = Record<string, Lifecycle>;
 
@@ -306,6 +306,9 @@ const CONFLICT_REREAD = "Nothing was changed. This drill's status in this gym wa
 const DETAIL_URL = '/api/pilot/drill-library?drill_id=reference-1';
 const RETIRED_WITHDRAWN_NOTICE =
   'Retired. It can no longer be newly assigned. Its reference has been withdrawn, so it cannot be restored.';
+const NEWER_VERSION_LABEL = "Newer version of this gym's drill";
+const NEWER_VERSION_EXPLANATION =
+  "This gym already has an earlier version of this drill. Updating the gym's drill to this version is not built yet, so it cannot be promoted as a separate drill.";
 const RETIRE_WITHDRAWN_CONSEQUENCE =
   'Retiring stops new assignments. Its reference has been withdrawn, so athletes already cannot read it, and once retired it cannot be restored.';
 
@@ -703,6 +706,27 @@ describe('reference lifecycle', () => {
       const shown = labels.filter((candidate) => within(referenceCard(name)).queryByText(candidate));
       expect({ name, shown }).toEqual({ name, shown: label ? [label] : [] });
     }
+  });
+
+  it("labels the current version of a drill this gym adopted earlier, and offers no Promote on it", async () => {
+    // Owner ruling R2: a revised drill is v2 and the gym's drill keeps pointing
+    // at v1. The browse lists current versions only, so v2 is the card the
+    // coach sees; it must say why it cannot be promoted, and offer nothing the
+    // promote route would refuse.
+    const fetchMock = routes({
+      lifecycle: { [reference.drill_id]: { state: 'newer_version_available', operational_drill_id: OPERATIONAL_HEAD } },
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    await screen.findAllByRole('button', { name: 'View drill: Seeded jab return' });
+    expect(within(referenceCard('Seeded jab return')).getByText(NEWER_VERSION_LABEL)).toBeInTheDocument();
+
+    const detail = await openReference();
+    expect(within(detail).getByText(NEWER_VERSION_LABEL)).toBeInTheDocument();
+    expect(within(detail).getByText(NEWER_VERSION_EXPLANATION)).toBeInTheDocument();
+    expectNoLifecycleAction(detail);
+    expect(writes(fetchMock)).toEqual([]);
   });
 
   it('offers no Promote on a reference that is not ready to adopt, and says what it lacks', async () => {

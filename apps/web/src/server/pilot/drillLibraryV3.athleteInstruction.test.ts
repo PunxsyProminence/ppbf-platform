@@ -15,9 +15,18 @@ describe('stripGroundingClaimTags', () => {
     expect(stripGroundingClaimTags('Hands up [B4-027]\nEyes up [A5-149]')).toBe('Hands up\nEyes up');
   });
 
+  // The registry also holds PS- and CB- claims (contentImport/ids.ts,
+  // REGISTRY_CLAIM_ID_PATTERN). The old letter-digit-only pattern left both on
+  // an athlete's screen.
+  test('removes PS- and CB- claim tags too, alone or beside a letter-digit one', () => {
+    expect(stripGroundingClaimTags('Hands home [PS-012]')).toBe('Hands home');
+    expect(stripGroundingClaimTags('Coach calls it [CB-003][A2-070].')).toBe('Coach calls it.');
+  });
+
   test('leaves ordinary bracketed prose alone', () => {
     expect(stripGroundingClaimTags('Hold [2 seconds] at the end')).toBe('Hold [2 seconds] at the end');
     expect(stripGroundingClaimTags('Round [A] then round [B]')).toBe('Round [A] then round [B]');
+    expect(stripGroundingClaimTags('Rest [PS] then go')).toBe('Rest [PS] then go');
   });
 });
 

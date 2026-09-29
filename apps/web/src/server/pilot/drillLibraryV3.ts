@@ -1,9 +1,12 @@
+import { INLINE_CLAIM_TAG_PATTERN } from './contentImport/ids';
 import { query, queryOne } from './db';
 import { memberCodesForFamily } from './skillFamilies';
 
 // pilot.drill_library, pilot.drill_scale_levels, pilot.drill_stop_rules and
 // pilot.drill_cues are owned by
-// infra/azure/pilot_slice_postgres_drill_library_v3_migration.sql, applied
+// infra/azure/pilot_slice_postgres_drill_library_v3_migration.sql, and
+// pilot.universal_stop_rules (read with every drill detail) by
+// infra/azure/pilot_slice_postgres_content_import_migration.sql -- both applied
 // through the apply-migrations workflow like every other table. Nothing here
 // issues DDL.
 //
@@ -65,14 +68,55 @@ export interface DrillScaleLevelRow {
   authoring_state: string;
 }
 
+/**
+ * Where a stop rule a reader returns came from (owner ruling R3, 2026-09-29:
+ * "every drill is different so the rules would vary, obviously injury of some
+ * sort would require stoppage universally").
+ *
+ *   drill      a pilot.drill_stop_rules row of THIS drill version -- the
+ *              drill's own rule, whatever its legacy `scope` says. The five
+ *              generic lines seeded with scope='universal' on every drill are
+ *              NOT universal under R3 (content-import migration, section (5)),
+ *              so `scope` never decides this.
+ *   universal  a pilot.universal_stop_rules row: stored ONCE for the gym and
+ *              applying to every drill (or every drill at the contact levels
+ *              it names).
+ *
+ * The two sets are returned in separate arrays AND each rule carries this
+ * marker, so a consumer that merges them -- a printed sheet, an assistant
+ * context, a future view -- cannot lose which is which.
+ */
+export type StopRuleOrigin = 'drill' | 'universal';
+
 export interface DrillStopRuleRow {
   organization_id: string;
   stop_rule_id: string;
   drill_id: string;
   ordinal: number;
   condition_text: string;
+  /** Legacy authoring label. Not where the rule came from: see `origin`. */
   scope: 'universal' | 'drill_specific';
   rule_kind: string;
+  origin: 'drill';
+}
+
+/**
+ * One of the gym's stored-once stop rules (pilot.universal_stop_rules), as a
+ * coach reads it with a drill. Only the CURRENT version of each rule is ever
+ * returned (active, superseded_at null), and only when it applies to the drill:
+ * applies_to_contact_levels is null (every drill) or names the drill's
+ * contact_level.
+ */
+export interface UniversalStopRuleRow {
+  organization_id: string;
+  universal_rule_id: string;
+  lineage_id: string;
+  version: number;
+  ordinal: number;
+  condition_text: string;
+  rule_kind: string;
+  applies_to_contact_levels: string[] | null;
+  origin: 'universal';
 }
 
 export interface DrillCueRow {
@@ -123,7 +167,10 @@ export interface DrillSecondarySkillRow {
 
 export interface DrillWithDetail extends DrillLibraryRow {
   scale_levels: DrillScaleLevelRow[];
+  /** The drill's OWN stop rules: every pilot.drill_stop_rules row of this version. */
   stop_rules: DrillStopRuleRow[];
+  /** The gym's stored-once rules that apply to this drill. Never counted as the drill's own. */
+  universal_stop_rules: UniversalStopRuleRow[];
   cues: DrillCueRow[];
   secondary_skills: DrillSecondarySkillRow[];
 }
@@ -141,16 +188,61 @@ const SCALE_FIELDS =
 
 const STOP_RULE_FIELDS = 'organization_id, stop_rule_id, drill_id, ordinal, condition_text, scope, rule_kind';
 
+const UNIVERSAL_STOP_RULE_FIELDS =
+  'organization_id, universal_rule_id, lineage_id, version, ordinal, condition_text, rule_kind, applies_to_contact_levels';
+
+/**
+ * The gym's CURRENT stored-once stop rules that apply to a drill at
+ * `contactLevel`, in checklist order. One query shared by the coach and athlete
+ * detail reads, so the two audiences can never be told a different set.
+ *
+ *   active and superseded_at is null
+ *     The current version only. A revision supersedes the old version first
+ *     and inserts the new one (content-import migration, section (3)), so a
+ *     superseded row is history and a withdrawn head (active = false) applies
+ *     to nothing.
+ *   applies_to_contact_levels is null or $2 = any(...)
+ *     NULL means every drill; a list narrows the rule to drills at those
+ *     contact levels (the migration's CHECK keeps the list non-empty and
+ *     inside the drill contact_level vocabulary).
+ *
+ * The organization term is the tenant boundary, as everywhere in this module.
+ */
+async function readUniversalStopRules(organizationId: string, contactLevel: string): Promise<UniversalStopRuleRow[]> {
+  const rows = await query<Omit<UniversalStopRuleRow, 'origin'>>(
+    `select ${UNIVERSAL_STOP_RULE_FIELDS}
+     from pilot.universal_stop_rules
+     where organization_id = $1
+       and active
+       and superseded_at is null
+       and (applies_to_contact_levels is null or $2::text = any(applies_to_contact_levels))
+     order by ordinal`,
+    [organizationId, contactLevel],
+  );
+  return rows.map((row) => ({ ...row, origin: 'universal' as const }));
+}
+
 const CUE_FIELDS = 'organization_id, cue_id, drill_id, cue_text, cue_family, focus_type, evidence_note, source_ref';
 
 const SECONDARY_SKILL_FIELDS = 'organization_id, drill_id, skill_id';
 
 /**
- * The coach-facing browse list: active drills only, filterable by the axes a
- * coach actually plans around. difficulty here is the authoring-time
- * prerequisite band (see the migration's two-axes note) -- it is NOT a scale
- * filter. Scale level is a per-running choice, not a library-browse filter,
- * so it has no parameter here.
+ * The coach-facing browse list: CURRENT versions only (active, and not
+ * superseded), filterable by the axes a coach actually plans around.
+ *
+ * WHY superseded_at IS A SECOND TERM BESIDE active. Under owner ruling R2 a
+ * revised drill becomes v(n+1) and the old head gets superseded_at but stays
+ * active = true, because gyms that adopted it keep reading that exact version
+ * (the athlete reads below require the pinned row to be active). `active`
+ * alone would therefore list v1 and v2 side by side. A gym that runs v1 still
+ * reaches it: its operational drill opens the pinned reference by id through
+ * getDrillWithDetail, which has no such filter, and the head reports
+ * 'newer_version_available' in listReferenceLifecycles.
+ *
+ * difficulty here is the authoring-time prerequisite band (see the
+ * migration's two-axes note) -- it is NOT a scale filter. Scale level is a
+ * per-running choice, not a library-browse filter, so it has no parameter
+ * here.
  *
  * TWO SKILL FILTERS, AND THE DIFFERENCE BETWEEN THEM IS THE POINT.
  *
@@ -208,6 +300,7 @@ export async function listDrillLibrary(
      from pilot.drill_library d
      where d.organization_id = $1
        and d.active
+       and d.superseded_at is null
        and ($2::text is null or d.discipline = $2)
        and ($3::text is null or d.category = $3)
        and ($4::text is null or d.difficulty = $4)
@@ -255,6 +348,13 @@ export async function listDrillLibrary(
  * was and is still the primary owner; a drill with no secondary relationships
  * returns an empty array, so the shape every existing consumer reads is
  * unchanged.
+ *
+ * TWO STOP-RULE SETS, KEPT APART (R3). stop_rules is every pilot.drill_stop_rules
+ * row of THIS version -- the drill's own rules, the legacy scope='universal'
+ * lines included. universal_stop_rules is the gym's current stored-once set that
+ * applies to this drill's contact level. They are separate arrays because
+ * adoption readiness counts only the first (drillAdoptionReadiness.ts), and a
+ * merged list would let one gym-wide rule make every drill look ready.
  */
 export async function getDrillWithDetail(organizationId: string, drillId: string): Promise<DrillWithDetail | null> {
   const drill = await queryOne<DrillLibraryRow>(
@@ -265,19 +365,20 @@ export async function getDrillWithDetail(organizationId: string, drillId: string
     return null;
   }
 
-  const [scaleLevels, stopRules, cues, secondarySkills] = await Promise.all([
+  const [scaleLevels, stopRules, universalStopRules, cues, secondarySkills] = await Promise.all([
     query<DrillScaleLevelRow>(
       `select ${SCALE_FIELDS} from pilot.drill_scale_levels
        where organization_id = $1 and drill_id = $2
        order by scale_level`,
       [organizationId, drillId],
     ),
-    query<DrillStopRuleRow>(
+    query<Omit<DrillStopRuleRow, 'origin'>>(
       `select ${STOP_RULE_FIELDS} from pilot.drill_stop_rules
        where organization_id = $1 and drill_id = $2
        order by ordinal`,
       [organizationId, drillId],
     ),
+    readUniversalStopRules(organizationId, drill.contact_level),
     query<DrillCueRow>(
       `select ${CUE_FIELDS} from pilot.drill_cues where organization_id = $1 and drill_id = $2`,
       [organizationId, drillId],
@@ -293,7 +394,8 @@ export async function getDrillWithDetail(organizationId: string, drillId: string
   return {
     ...drill,
     scale_levels: scaleLevels,
-    stop_rules: stopRules,
+    stop_rules: stopRules.map((rule) => ({ ...rule, origin: 'drill' as const })),
+    universal_stop_rules: universalStopRules,
     cues,
     secondary_skills: secondarySkills,
   };
@@ -311,6 +413,16 @@ export async function getDrillWithDetail(organizationId: string, drillId: string
  *   superseded   not adopted here, and a newer version of the reference exists
  *                (superseded_at, W-D4A's rule).
  *   unavailable  not adopted here, and the reference is withdrawn (inactive).
+ *   newer_version_available
+ *                not adopted here, current and active -- and the gym HAS
+ *                adopted another version of the same reference lineage (owner
+ *                ruling R2: a revised drill is v(n+1), the old head is kept).
+ *                This is how a gym running v1 learns v2 exists: the coach
+ *                browse lists heads only, so v2 is the row it sees. It is not
+ *                'available', because promoting v2 beside the gym's v1 would
+ *                give one gym two operational drills of one reference lineage,
+ *                and moving the gym's drill to v2 is not built yet (IMP-15, an
+ *                owner decision); the promote route refuses it in the same words.
  *   available    not adopted here, and adoptable.
  *
  * Adoption comes first: for a gym that adopted a reference, what matters is
@@ -324,19 +436,57 @@ export async function getDrillWithDetail(organizationId: string, drillId: string
  * earlier version is the active one. Once retired it is the adopted lineage's
  * HEAD (highest version) -- the one Restore brings back -- found through the
  * lineage root, which pilot_drills_one_reference_per_org makes unique per
- * reference. Null when the gym never adopted it.
+ * reference. For 'newer_version_available' it is the gym's drill for the OTHER
+ * version (OTHER_VERSION_ADOPTION below): the link from the gym's drill to the
+ * newer head. Null when the gym never adopted any version of it.
  *
  * Authors only (coach, organization_admin, admin -- the roles that promote,
  * retire and restore). Athlete and other reader reads never call this:
  * lifecycle and adoption are how the gym's library is governed, not
  * instruction.
  */
-export type ReferenceLifecycleState = 'available' | 'operational' | 'retired' | 'superseded' | 'unavailable';
+export type ReferenceLifecycleState =
+  | 'available'
+  | 'operational'
+  | 'retired'
+  | 'superseded'
+  | 'unavailable'
+  | 'newer_version_available';
 
 export interface ReferenceLifecycle {
   state: ReferenceLifecycleState;
   operational_drill_id: string | null;
 }
+
+/**
+ * "The gym's drill for ANOTHER version of this reference's lineage", as a
+ * LATERAL subquery correlated on `d` (the reference row). One row or none:
+ * the operational drill id and the reference version it pins.
+ *
+ * Which drill, when there could be several: an ACTIVE one first (the gym runs
+ * it), then the newest reference version, then the newest operational version
+ * -- the same "live row, else the lineage head" rule the adopted-state
+ * operational_drill_id follows. Every operational version of one gym lineage
+ * carries the same reference_drill_id (a refinement inherits it,
+ * drillVersioning.ts), so the newest operational version IS that lineage's head.
+ *
+ * Shared by listReferenceLifecycles and getOtherVersionAdoption so the coach
+ * page's label and the promote route's refusal cannot disagree about which
+ * references this gym already has a version of. Both organization terms are the
+ * tenant boundary: lineage ids and drill ids are per-organization keys, and
+ * another gym may hold the very same strings.
+ */
+const OTHER_VERSION_ADOPTION = `
+       select od.drill_id, od.reference_drill_id
+       from pilot.drills od
+       join pilot.drill_library v
+         on v.organization_id = od.organization_id
+        and v.drill_id = od.reference_drill_id
+       where od.organization_id = d.organization_id
+         and v.lineage_id = d.lineage_id
+         and v.drill_id <> d.drill_id
+       order by od.active desc, v.version desc, od.version desc
+       limit 1`;
 
 export async function listReferenceLifecycles(
   organizationId: string,
@@ -358,6 +508,7 @@ export async function listReferenceLifecycles(
               ) then 'retired'
               when not d.active then 'unavailable'
               when d.superseded_at is not null then 'superseded'
+              when other_version.drill_id is not null then 'newer_version_available'
               else 'available'
             end as state,
             coalesce(
@@ -381,9 +532,15 @@ export async function listReferenceLifecycles(
                   and root.supersedes_drill_id is null
                 order by head.version desc
                 limit 1
-              )
+              ),
+              -- Only for 'newer_version_available' (the CASE above reaches it
+              -- only for an active, unsuperseded, unadopted row). Guarded so a
+              -- superseded or withdrawn row keeps answering null, as before.
+              case when d.active and d.superseded_at is null then other_version.drill_id end
             ) as operational_drill_id
      from pilot.drill_library d
+     left join lateral (${OTHER_VERSION_ADOPTION}
+     ) other_version on true
      where d.organization_id = $1
        and ($2::text[] is null or d.drill_id = any($2::text[]))`,
     [organizationId, drillIds ?? null],
@@ -393,6 +550,40 @@ export async function listReferenceLifecycles(
     lifecycles[row.drill_id] = { state: row.state, operational_drill_id: row.operational_drill_id };
   }
   return lifecycles;
+}
+
+export interface OtherVersionAdoption {
+  /** The gym's operational drill (pilot.drills) for the other version. */
+  operational_drill_id: string;
+  /** The reference version that operational drill pins. */
+  adopted_reference_drill_id: string;
+}
+
+/**
+ * Whether this gym already has an operational drill -- running or retired --
+ * for ANOTHER version of this reference's lineage, and which one. Null when it
+ * has none, or when the reference is not this gym's.
+ *
+ * The promote route's question, asked on its own rather than through
+ * listReferenceLifecycles: that read answers for a reference as a whole
+ * (adopted, withdrawn, superseded come first), while the route has already
+ * judged those and needs only this one fact before it writes. The subquery is
+ * the one the lifecycle state uses, so the two cannot drift.
+ */
+export async function getOtherVersionAdoption(
+  organizationId: string,
+  referenceDrillId: string,
+): Promise<OtherVersionAdoption | null> {
+  return queryOne<OtherVersionAdoption>(
+    `select other_version.drill_id as operational_drill_id,
+            other_version.reference_drill_id as adopted_reference_drill_id
+     from pilot.drill_library d
+     join lateral (${OTHER_VERSION_ADOPTION}
+     ) other_version on true
+     where d.organization_id = $1
+       and d.drill_id = $2`,
+    [organizationId, referenceDrillId],
+  );
 }
 
 /** Every version of one drill lineage, oldest first -- mirrors drillVersioning.ts's getDrillLineage. */
@@ -411,9 +602,12 @@ export async function getDrillLibraryLineage(organizationId: string, lineageId: 
 // read-only browse over the cues coaches already wrote into drill records.
 // No invented content and no separate store -- pilot.drill_cues remains
 // owned by its drills; this is the library view of that craft, searchable
-// across the whole active library instead of locked inside one drill at a
-// time. Cues on inactive (superseded) drill versions are excluded so a
-// reworded cue never appears twice.
+// across the whole current library instead of locked inside one drill at a
+// time. Only cues on the CURRENT version of each drill are listed (active and
+// superseded_at is null), so a reworded cue never appears twice. `active`
+// alone no longer says that: under owner ruling R2 a superseded version stays
+// active for the gyms that adopted it (see listDrillLibrary), and a revision
+// re-mints every cue onto the new version.
 // ---------------------------------------------------------------------------
 
 export interface CueLibraryRow {
@@ -440,6 +634,7 @@ export async function listCueLibrary(
        on d.organization_id = c.organization_id and d.drill_id = c.drill_id
      where c.organization_id = $1
        and d.active = true
+       and d.superseded_at is null
        and ($2::text is null or c.focus_type = $2)
        and ($3::text is null or c.cue_text ilike '%' || $3 || '%' or c.cue_family ilike '%' || $3 || '%' or d.name ilike '%' || $3 || '%')
      order by c.cue_family asc, c.cue_text asc`,
@@ -574,12 +769,30 @@ export interface AthleteScaleGuidance {
   coach_watch_point: string;
 }
 
-/** A stop rule as an athlete reads it: when to stop, and whether it is universal. */
+/**
+ * One of the drill's OWN stop rules as an athlete reads it: when to stop. The
+ * legacy `scope` label is kept for the shape's existing readers; `origin` is
+ * what says where the rule came from (StopRuleOrigin).
+ */
 export interface AthleteStopRule {
   ordinal: number;
   condition_text: string;
   scope: 'universal' | 'drill_specific';
   rule_kind: string;
+  origin: 'drill';
+}
+
+/**
+ * One of the gym's stored-once stop rules as an athlete reads it: when to stop,
+ * and that it came from the gym-wide set. No id, lineage, version, active flag
+ * or contact-level targeting -- those are how the set is governed, not
+ * instruction, and several are on the athlete deny-lists by name.
+ */
+export interface AthleteUniversalStopRule {
+  ordinal: number;
+  condition_text: string;
+  rule_kind: string;
+  origin: 'universal';
 }
 
 /**
@@ -618,7 +831,10 @@ export interface AthleteDrillDetail extends AthleteDrillSummary {
    */
   equipment_needed: string;
   scale_levels: AthleteScaleGuidance[];
+  /** The drill's own stop rules (every row of this version, legacy scope included). */
   stop_rules: AthleteStopRule[];
+  /** The gym's stored-once stop rules that apply to this drill (R3). */
+  universal_stop_rules: AthleteUniversalStopRule[];
 }
 
 /**
@@ -638,17 +854,26 @@ interface AthleteInstructionRow {
 }
 
 /**
- * Inline grounding-claim tags -- `[A2-070]`, `[B4-027]` -- are the evidence
- * model's citations. In the seeded corpus they sit in what_good_looks_like,
- * what_bad_looks_like and corrections among the fields above (and in transfer,
- * which athletes do not get); every field here is stripped regardless, so a
- * tag added to another one later cannot leak. They are provenance, and
- * OD-2026-09-17-001 clause 8 keeps grounding claim ids off an athlete's screen,
- * so they are removed before the text leaves the server rather than left for a
- * renderer to remember. The pattern is the claim-id shape only, so ordinary
- * bracketed prose is untouched.
+ * Inline grounding-claim tags -- `[A2-070]`, `[B4-027]`, `[PS-012]`,
+ * `[CB-003]` -- are the evidence model's citations. In the seeded corpus they
+ * sit in what_good_looks_like, what_bad_looks_like and corrections among the
+ * fields above (and in transfer, which athletes do not get); every field here
+ * is stripped regardless, so a tag added to another one later cannot leak.
+ * They are provenance, and OD-2026-09-17-001 clause 8 keeps grounding claim ids
+ * off an athlete's screen, so they are removed before the text leaves the
+ * server rather than left for a renderer to remember.
+ *
+ * THE SHAPE IS contentImport/ids.ts's, not a copy of it. This regex used to be
+ * its own `\[[A-Z]\d+-\d+\]`, which accepts only letter-digit tracks -- so a
+ * PS- or CB- claim, which the registry also holds and which the content
+ * validator accepts in drill prose, reached athletes verbatim. Every tag in
+ * the committed drill CSVs matches the imported shape (291 of 291 checked when
+ * this changed), so nothing the old pattern stripped is now left behind. The
+ * pattern is the claim-id shape only, so ordinary bracketed prose is untouched;
+ * the leading spaces or tabs are taken with the tag so no gap is left before
+ * the punctuation that follows it.
  */
-const GROUNDING_CLAIM_TAG = /[ \t]*\[[A-Z]\d+-\d+\]/g;
+const GROUNDING_CLAIM_TAG = new RegExp(`[ \\t]*${INLINE_CLAIM_TAG_PATTERN.source}`, 'g');
 
 export function stripGroundingClaimTags(text: string): string {
   return text.replace(GROUNDING_CLAIM_TAG, '');
@@ -705,6 +930,16 @@ export function toAthleteStopRule(row: AthleteStopRuleRow): AthleteStopRule {
     condition_text: row.condition_text,
     scope: row.scope,
     rule_kind: row.rule_kind,
+    origin: 'drill',
+  };
+}
+
+export function toAthleteUniversalStopRule(row: UniversalStopRuleRow): AthleteUniversalStopRule {
+  return {
+    ordinal: row.ordinal,
+    condition_text: row.condition_text,
+    rule_kind: row.rule_kind,
+    origin: 'universal',
   };
 }
 
@@ -823,7 +1058,10 @@ async function readAthleteDrillDetail(
     return null;
   }
 
-  const [scaleLevels, stopRules, cues] = await Promise.all([
+  // The stored-once rules are read only once the drill is known to be one this
+  // athlete may see (the null return above), and through the same query the
+  // coach read uses -- see readUniversalStopRules.
+  const [scaleLevels, stopRules, universalStopRules, cues] = await Promise.all([
     query<AthleteScaleRow>(
       `select drill_id, scale_level, is_starting_point, demand_description, constraint_applied,
               contact_level, coach_watch_point
@@ -839,6 +1077,7 @@ async function readAthleteDrillDetail(
        order by ordinal`,
       [organizationId, drillId],
     ),
+    readUniversalStopRules(organizationId, drill.contact_level),
     // ORDERED, unlike the coach cue read this mirrors. That read has no ORDER BY
     // at all, so its row order is whatever Postgres returns; for a screen an
     // athlete reads while training, cue order changing between loads is a
@@ -857,6 +1096,7 @@ async function readAthleteDrillDetail(
     ...toAthleteInstruction(drill),
     scale_levels: scaleLevels.map(toAthleteScaleGuidance),
     stop_rules: stopRules.map(toAthleteStopRule),
+    universal_stop_rules: universalStopRules.map(toAthleteUniversalStopRule),
   };
 }
 

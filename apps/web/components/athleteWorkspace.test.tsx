@@ -2154,8 +2154,10 @@ describe('tabs with nothing behind them are not offered', () => {
     };
 
     // The athlete DETAIL (getAthleteDrillDetail): the browse fields plus the
-    // practical instruction and the two child sets. Stop rules are one of each
-    // scope, so both groupings are exercised.
+    // practical instruction and the child sets. The drill's own stop rules are
+    // one of each legacy scope, and the gym has one stored-once rule, so both
+    // groupings are exercised -- and the legacy scope='universal' row has to
+    // land with the drill's own (owner ruling R3), not with the gym's.
     const adoptedDetail = {
       ...adopted,
       execution: 'Partner throws the jab.\n\nCatch it on the rear glove.\n\nReturn your own jab.',
@@ -2170,8 +2172,11 @@ describe('tabs with nothing behind them are not offered', () => {
         { scale_level: 'C', is_starting_point: false, demand_description: 'Partner varies the rhythm.', constraint_applied: '', contact_level: 'light_technical', coach_watch_point: 'Does the lesson survive?' },
       ],
       stop_rules: [
-        { ordinal: 1, condition_text: 'Stop when fatigue breaks decision quality.', scope: 'universal', rule_kind: 'fatigue' },
-        { ordinal: 2, condition_text: 'Stop when the glove stops meeting the punch.', scope: 'drill_specific', rule_kind: 'technique_degradation' },
+        { ordinal: 1, condition_text: 'Stop when fatigue breaks decision quality.', scope: 'universal', rule_kind: 'fatigue', origin: 'drill' },
+        { ordinal: 2, condition_text: 'Stop when the glove stops meeting the punch.', scope: 'drill_specific', rule_kind: 'technique_degradation', origin: 'drill' },
+      ],
+      universal_stop_rules: [
+        { ordinal: 1, condition_text: 'Stop on any sign of injury.', rule_kind: 'safety', origin: 'universal' },
       ],
     };
 
@@ -2223,10 +2228,15 @@ describe('tabs with nothing behind them are not offered', () => {
 
       const safety = within(detail).getByRole('region', { name: 'Safety' });
       expect(within(safety).getByText(/Light technical contact/)).toBeTruthy();
-      expect(within(safety).getByText("This drill's stop rules")).toBeTruthy();
-      expect(within(safety).getByText('Stop when the glove stops meeting the punch.')).toBeTruthy();
-      expect(within(safety).getByText('Stop rules for every drill')).toBeTruthy();
-      expect(within(safety).getByText('Stop when fatigue breaks decision quality.')).toBeTruthy();
+      const stopGroup = (heading: string) =>
+        [...(within(safety).getByText(heading).nextElementSibling?.querySelectorAll('li') ?? [])].map((li) => li.textContent);
+      // R3: both of the drill's own rows are its own rules, whatever their
+      // legacy scope label; only the gym's stored-once rule is for every drill.
+      expect(stopGroup('Stop rules')).toEqual([
+        'Stop when fatigue breaks decision quality.',
+        'Stop when the glove stops meeting the punch.',
+      ]);
+      expect(stopGroup('Stop rules for every drill')).toEqual(['Stop on any sign of injury.']);
 
       const items = within(detail).getAllByRole('listitem').map((item) => item.textContent);
       const first = items.indexOf('Partner throws the jab.');
@@ -2294,17 +2304,21 @@ describe('tabs with nothing behind them are not offered', () => {
       expect(grid?.classList.contains('hidden')).toBe(false);
     });
 
-    test('a drill with only general stop rules claims no drill-specific ones, and a warm-up rule reads as readiness', async () => {
-      // The corpus case: 114 of 119 drills have no drill-specific stop rule,
-      // and 63 carry a warm-up readiness rule, which is not a reason to stop.
+    test("legacy scope=universal rows are the drill's own stop rules, and a warm-up rule reads as readiness", async () => {
+      // The corpus case: 114 of 119 drills have only rows labelled
+      // scope='universal', and 63 carry a warm-up readiness rule, which is not
+      // a reason to stop. Under owner ruling R3 those labelled rows are the
+      // drill's own rules, so with no stored-once rule loaded nothing claims to
+      // be for every drill.
       storedReferenceDrills = [adopted];
       storedReferenceDrillDetails = {
         [adopted.drill_id]: {
           ...adoptedDetail,
           stop_rules: [
-            { ordinal: 1, condition_text: 'Stop when chasing replaces positioning.', scope: 'universal', rule_kind: 'intent_drift' },
-            { ordinal: 2, condition_text: 'Re-warm before contact after ~20 minutes idle.', scope: 'universal', rule_kind: 'warmup_decay' },
+            { ordinal: 1, condition_text: 'Stop when chasing replaces positioning.', scope: 'universal', rule_kind: 'intent_drift', origin: 'drill' },
+            { ordinal: 2, condition_text: 'Re-warm before contact after ~20 minutes idle.', scope: 'universal', rule_kind: 'warmup_decay', origin: 'drill' },
           ],
+          universal_stop_rules: [],
         },
       };
       await renderWorkspace();
@@ -2312,9 +2326,9 @@ describe('tabs with nothing behind them are not offered', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Open drill: Catch and Return' }));
       const safety = within(await screen.findByRole('article', { name: 'Catch and Return' })).getByRole('region', { name: 'Safety' });
 
-      expect(within(safety).queryByText("This drill's stop rules")).toBeNull();
-      expect(within(safety).getByText('Stop rules for every drill')).toBeTruthy();
+      expect(within(safety).getByText('Stop rules')).toBeTruthy();
       expect(within(safety).getByText('Stop when chasing replaces positioning.')).toBeTruthy();
+      expect(within(safety).queryByText('Stop rules for every drill')).toBeNull();
       expect(within(safety).getByText('Before contact or maximal effort')).toBeTruthy();
       expect(within(safety).getByText('Re-warm before contact after ~20 minutes idle.')).toBeTruthy();
     });

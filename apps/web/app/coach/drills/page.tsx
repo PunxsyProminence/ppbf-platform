@@ -46,7 +46,17 @@ const LIFECYCLE_LABELS: Record<ReferenceLifecycleState, string> = {
   retired: 'Retired in this gym',
   superseded: 'A newer version exists',
   unavailable: 'Withdrawn',
+  // The current version of a drill this gym adopted at an earlier version
+  // (running or retired). The browse lists current versions only, so this is
+  // the card a coach running v1 sees for v2.
+  newer_version_available: "Newer version of this gym's drill",
 };
+
+// What a coach reads on that drill instead of a Promote button. The same
+// facts the promote route refuses with: the gym keeps its drill, and the
+// update step is not built yet (it waits on an owner decision, IMP-15).
+const NEWER_VERSION_EXPLANATION =
+  "This gym already has an earlier version of this drill. Updating the gym's drill to this version is not built yet, so it cannot be promoted as a separate drill.";
 
 // DISCOVERY (W-D4C): every filter reads a durable, structured column -- an
 // enum the database CHECKs, the discipline registry, the stored category, the
@@ -164,6 +174,16 @@ function ReferenceActions({
       >
         {promotingReferenceId === referenceDrillId ? 'Promoting...' : 'Promote'}
       </button>
+    );
+  }
+  // No Promote: the server refuses a separate promotion of a newer version of
+  // a drill this gym already has, so the page says why instead of offering it.
+  if (state.state === 'newer_version_available') {
+    return (
+      <>
+        {label}
+        <p className="basis-full text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{NEWER_VERSION_EXPLANATION}</p>
+      </>
     );
   }
   // A retired adoption whose reference was since withdrawn cannot come back:
