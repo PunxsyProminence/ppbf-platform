@@ -549,9 +549,19 @@ describe('a revised drill becomes a new version', () => {
     const planned = await plan('gym_same_name', admin, revised);
     expect(unitOf(planned, FIRST)).toMatchObject({ outcome: 'new_version', fromVersion: 1, toVersion: 2 });
     expect(planned.counts['drill-library']).toEqual({ new: 0, new_version: 1, unchanged: 118, absent: 0, reject: 0 });
+    const before = await rowVersions('gym_same_name');
     const result = await applyCommitted('gym_same_name', admin, revised, planned.planHash);
     const v2Id = MINT.drillVersion(FIRST, 2);
     expect(result.written['drill-library']).toEqual({ inserted: [v2Id], updated: [FIRST], ledgerRows: 0 });
+
+    // Written: v1's row (superseded_at) and v2's new rows. Nothing else --
+    // not the other 118 drills, not v1's children.
+    const after = await rowVersions('gym_same_name');
+    expect(Object.keys(before).filter((key) => after[key] !== before[key])).toEqual([`drill:${FIRST}`]);
+    const v1ChildCount = v1Children.scale.length + v1Children.stop.length + v1Children.cues.length + v1Children.secondary.length;
+    const added = Object.keys(after).filter((key) => !(key in before));
+    expect(added).toContain(`drill:${v2Id}`);
+    expect(added).toHaveLength(1 + v1ChildCount);
 
     const [v1, v2] = await versionsOf('gym_same_name', FIRST);
     expect(v1).toMatchObject({ drill_id: FIRST, version: 1, superseded: true, active: true });
