@@ -113,11 +113,11 @@ function RosterImportConsole() {
           Paste a spreadsheet or choose a file. Nothing is written until you have seen what it would
           do and pressed Add. An athlete already on the roster is never overwritten, and nobody gets
           a sign-in from this screen &mdash; PINs are issued afterwards.
-        </p>
-        <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
-          Every athlete needs a coach: put the account ID of an active coach in this gym in the
-          Coach account ID column. When a coach loads the file, a blank Coach cell means that
-          coach; when an admin loads it, the cell has to be filled in.
+          <span className="mt-2 block">
+            Every athlete needs a coach: put the account ID of an active coach in this gym in the
+            Coach account ID column. When a coach loads the file, a blank Coach cell means that
+            coach; when an admin loads it, the cell has to be filled in.
+          </span>
         </p>
 
         <div className="mt-4 flex flex-wrap gap-3">
