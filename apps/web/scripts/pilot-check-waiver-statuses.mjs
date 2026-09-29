@@ -8,15 +8,18 @@ import { Client } from 'pg';
  * Read-only census of the values `pilot.waivers.status` actually holds.
  *
  * THE QUESTION THIS ANSWERS, AND WHY IT IS NOT ANSWERABLE FROM THE REPOSITORY.
- * The column is `status text not null` with no CHECK constraint anywhere in
- * infra/azure (checked: no CHECK on this column exists in any .sql file in
- * that directory). Two of its four writers store a literal --
+ * The column is `status text not null`. When this script was written no CHECK
+ * covered it; pilot_slice_postgres_waiver_status_check_migration.sql now adds
+ * one over WAIVER_STATUSES below, and this census is the pre-flight for any
+ * database that migration has not reached -- the ALTER refuses if a row is
+ * outside the list, and names no row. Two of its four writers store a literal --
  * grantMediaConsent writes 'signed', withdrawMediaConsent writes 'withdrawn'.
- * The other two do not: POST /api/pilot/intake/domain-upsert stores
- * `asString(body.payload.status, 'signed')`, any string a caller sends, and
- * POST /api/pilot/intake/review-action stores whatever the promoted intake
- * case payload carried. So the set of values in production is a fact about
- * production, and nothing in this repository records it.
+ * The other two did not: POST /api/pilot/intake/domain-upsert stored
+ * `asString(body.payload.status, 'signed')`, any string a caller sent, and
+ * POST /api/pilot/intake/review-action stored whatever the promoted intake
+ * case payload carried. (Both now refuse a value outside the list with a 400.)
+ * So the set of values already stored is a fact about each database, and
+ * nothing in this repository records it.
  *
  * THE DECISION IT FEEDS. Owner decision, 2026-08-29 (D-7): MEASURE PRODUCTION
  * FIRST, before any CHECK constraint is proposed for this column. This script
