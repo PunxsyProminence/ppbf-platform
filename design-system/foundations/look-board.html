@@ -1,0 +1,359 @@
+<!-- @dsCard group="Foundations" name="Look Board" subtitle="The merged look: the real gym drawn in the early gritty style" -->
+<meta charset="utf-8">
+<link rel="stylesheet" href="../ppbf.css">
+<style>
+  body { margin: 0; }
+  .sheet { padding: var(--s6); max-width: 1180px; margin: 0 auto; }
+
+  h1 { font-family: var(--font-display); text-transform: uppercase; font-size: var(--t-2xl);
+       letter-spacing: .05em; color: var(--bone-100); margin: var(--s3) 0 var(--s3);
+       text-shadow: 0 2px 0 rgba(0,0,0,.6), 0 0 22px rgba(232,206,122,.14); }
+  .lede { font-size: var(--t-sm); line-height: 1.62; color: var(--bone-300); max-width: 68ch; margin: 0; }
+  .lede + .lede { margin-top: var(--s4); }
+
+  h2 { font-family: var(--font-display); text-transform: uppercase; font-size: var(--t-md);
+       letter-spacing: .08em; color: var(--brass-300); margin: var(--s7) 0 var(--s5);
+       padding-bottom: var(--s3); border-bottom: 1px solid rgba(212,175,74,.28); }
+  h3 { font-family: var(--font-display); text-transform: uppercase; font-size: var(--t-sm);
+       letter-spacing: .07em; color: var(--bone-100); margin: 0 0 var(--s3); }
+
+  .law { border-left: 3px solid var(--brass-500); background: rgba(184,145,47,.13);
+         padding: var(--s4) var(--s5); border-radius: 0 var(--r-md) var(--r-md) 0;
+         font-size: var(--t-sm); line-height: 1.6; color: var(--brass-200); }
+  .law b { color: var(--brass-300); }
+  .law + .law { margin-top: var(--s4); }
+
+  /* ------------------------------------------------------------------ the merge, as two sources */
+  .sources { display: grid; gap: var(--s5); grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
+  .source { background: var(--hide-900); border: 1px solid var(--edge-paper);
+            border-radius: var(--r-lg); padding: var(--s5); }
+  .source ul { margin: var(--s3) 0 0; padding-left: 1.1em; }
+  .source li { font-size: 13px; line-height: 1.72; color: var(--bone-300); }
+  .source cite { display: block; font: var(--t-xs)/1.6 var(--font-data); color: var(--brass-400);
+                 letter-spacing: .05em; margin-top: var(--s4); font-style: normal; }
+
+  /* ------------------------------------------------------------------ THE GROUND: the painted floor */
+  /* The gym's painted, zoned floor is the single most distinctive thing in the
+     building and the 2026-08-24 DNA table had no floor row at all. It is drawn
+     here in CSS -- no image asset, so it renders on a floor kiosk offline, the
+     same rule foundations/materials.html works under, and it carries no
+     lettering, so the plates' zero-lettering rule is satisfied structurally
+     rather than by inspection. */
+  .floor { position: relative; height: 340px; border-radius: var(--r-lg); overflow: hidden;
+           border: 1px solid var(--edge-dark); box-shadow: var(--shadow-contact);
+           display: grid; grid-template-columns: 1.1fr 1.4fr 1fr .55fr; }
+  .zone { position: relative; }
+  .zone--ring   { background: linear-gradient(176deg, #7E2B26 0%, #6A211D 55%, #5A1B18 100%); }
+  .zone--mat    { background: linear-gradient(176deg, #2E4A63 0%, #27405A 60%, #1F3650 100%); }
+  .zone--cardio { background: linear-gradient(176deg, #6B6963 0%, #5C5A55 60%, #4E4C48 100%); }
+  .zone--locker { background: linear-gradient(176deg, #3E4A36 0%, #35402E 100%); }
+
+  /* pale tape grid on the mat floor -- taped, not printed: it does not meet the edges */
+  .zone--mat::before { content: ""; position: absolute; inset: 12% 8%;
+      background-image: linear-gradient(to right, rgba(226,222,208,.30) 2px, transparent 2px),
+                        linear-gradient(to bottom, rgba(226,222,208,.30) 2px, transparent 2px);
+      background-size: 74px 74px; }
+  /* white floor markings at the cardio end -- machine bays, not a grid */
+  .zone--cardio::before { content: ""; position: absolute; inset: 18% 14% 22%;
+      border: 2px solid rgba(238,234,222,.34); border-top: 0; }
+  /* the locker end is carpet, not paint */
+  .zone--locker::before { content: ""; position: absolute; inset: 0;
+      background-image: radial-gradient(rgba(0,0,0,.30) 1px, transparent 1px);
+      background-size: 4px 4px; }
+  /* the ring sits on the red */
+  .ring { position: absolute; left: 6%; right: 6%; top: 16%; bottom: 16%;
+          border: 3px solid rgba(20,16,13,.55); border-radius: 3px;
+          background: linear-gradient(168deg, #7FA9A4 0%, #6E9A96 60%, #5F8B88 100%);
+          box-shadow: 0 10px 26px rgba(0,0,0,.45); }
+  .ring .post { position: absolute; width: 13px; height: 13px; border-radius: 2px;
+                box-shadow: 0 1px 3px rgba(0,0,0,.6); }
+  .ring .post--red  { background: #A4302B; }
+  .ring .post--blue { background: #2B4C74; }
+  .ring .pad { position: absolute; width: 26px; height: 8px; background: #E8E2D2; border-radius: 1px; }
+  .ring .roundel { position: absolute; left: 50%; top: 50%; translate: -50% -50%;
+                   width: 74px; height: 74px; border-radius: 50%;
+                   border: 5px solid rgba(164,48,43,.42);
+                   background: radial-gradient(circle, rgba(240,235,222,.34) 42%, transparent 44%); }
+
+  /* the whole floor sits under the building's own light: flat, uneven, slightly green */
+  .floor::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+      background:
+        radial-gradient(120% 80% at 22% -10%, rgba(214,226,200,.16) 0%, transparent 58%),
+        radial-gradient(120% 80% at 78% -10%, rgba(214,226,200,.13) 0%, transparent 58%),
+        linear-gradient(180deg, rgba(12,10,8,.06) 0%, rgba(12,10,8,.40) 100%);
+      mix-blend-mode: multiply; }
+  .floor-note { margin-top: var(--s4); font-size: 12.8px; line-height: 1.6; color: var(--bone-400); }
+
+  /* ------------------------------------------------------------------ THE PANEL: one Floor panel */
+  .panel-stage { padding: var(--s6); border-radius: var(--r-lg);
+      background: linear-gradient(176deg, #2E4A63 0%, #233C55 100%); }
+
+  /* Aged tan canvas over dark iron, with a gold hairline: the early set's panel,
+     carrying the gym's own plank edge. */
+  .fpanel { max-width: 420px; border-radius: var(--r-md); overflow: hidden;
+            border: 1px solid rgba(20,16,13,.80);
+            box-shadow: 0 2px 0 rgba(255,245,220,.06) inset, 0 12px 28px rgba(0,0,0,.46); }
+  .fpanel__cap { display: flex; align-items: center; justify-content: space-between; gap: var(--s4);
+                 padding: var(--s4) var(--s5); background: linear-gradient(180deg, #221A14 0%, #160F0B 100%);
+                 border-bottom: 1px solid rgba(212,175,74,.42); }
+  .fpanel__cap b { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .08em;
+                   font-size: 15px; color: var(--bone-100); }
+  .fpanel__body { padding: var(--s5); position: relative;
+      background:
+        radial-gradient(circle at 18% 22%, rgba(120,40,30,.13) 0%, transparent 34%),
+        radial-gradient(circle at 86% 78%, rgba(120,40,30,.10) 0%, transparent 30%),
+        linear-gradient(174deg, #E4D6B4 0%, #D8C7A2 60%, #CDBB95 100%); }
+  .fpanel__body::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+      background-image: radial-gradient(rgba(90,70,44,.16) 1px, transparent 1px);
+      background-size: 3px 3px; }
+  .fpanel dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: var(--s3) var(--s4); }
+  .fpanel dt { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .07em;
+               font-size: 13px; color: #4A3A24; }
+  .fpanel dd { margin: 0; text-align: right; font: 19.1px/1.3 var(--font-data); color: #241B10; }
+  .fpanel__foot { display: flex; align-items: center; gap: var(--s4);
+                  padding: var(--s4) var(--s5); background: #17100C;
+                  border-top: 1px solid rgba(212,175,74,.28); }
+
+  /* Law 7 stands: refusal is a stamp. Law 3 stands: never colour alone. */
+  .stamp { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
+           border: 2px solid var(--stamp-red); color: var(--locked-ink);
+           background: rgba(168,30,34,.22); border-radius: 2px; rotate: -2deg;
+           font-family: var(--font-display); text-transform: uppercase; letter-spacing: .09em;
+           font-size: 12px; }
+  .stamp span[aria-hidden] { font-size: 13px; }
+
+  .btn-demo { min-height: 55px; min-width: 55px; padding: 0 var(--s5);
+              display: inline-flex; align-items: center; gap: var(--s3);
+              font-family: var(--font-display); text-transform: uppercase; letter-spacing: .07em;
+              font-size: 15px; color: var(--bone-100); border-radius: var(--r-md);
+              border: 1px solid rgba(212,175,74,.46); background: linear-gradient(180deg, #33261C, #211812);
+              box-shadow: 0 1px 0 rgba(255,245,220,.10) inset; }
+
+  /* ------------------------------------------------------------------ specimens */
+  .grid3 { display: grid; gap: var(--s5); grid-template-columns: repeat(auto-fit, minmax(212px, 1fr)); }
+  .spec .swatch { height: 116px; border-radius: var(--r-lg); position: relative; overflow: hidden;
+                  border: 1px solid var(--edge-dark); }
+  .spec .cap { margin-top: var(--s4); }
+  .spec .cap b { display: block; font-family: var(--font-display); text-transform: uppercase;
+                 font-size: var(--t-sm); letter-spacing: .07em; color: var(--bone-100); }
+  .spec .cap code { display: block; font: var(--t-xs)/1.6 var(--font-data); color: var(--brass-400);
+                    letter-spacing: .06em; margin-top: 2px; }
+  .spec .cap p { margin: var(--s3) 0 0; font-size: 12.8px; line-height: 1.58; color: var(--bone-400); }
+
+  .sw--plank { background:
+      repeating-linear-gradient(92deg, #9A6E3E 0 38px, #8C6236 38px 40px),
+      linear-gradient(180deg, rgba(255,240,210,.10), rgba(0,0,0,.28)); }
+  .sw--board { background: linear-gradient(176deg, #1C2420, #151B18); }
+  .sw--board::after { content: "3 - 2 - 3"; position: absolute; left: 12px; bottom: 12px;
+      font: 20px var(--font-data); color: rgba(230,227,214,.62); letter-spacing: .12em; }
+  .sw--canvas { background:
+      radial-gradient(circle at 24% 28%, rgba(120,40,30,.16) 0%, transparent 32%),
+      linear-gradient(174deg, #E4D6B4, #CDBB95); }
+  .sw--iron { background: linear-gradient(180deg, #2A211A, #14100D); }
+  .sw--pipe { background: linear-gradient(90deg, #14100D 0%, #2E2A26 18%, #4A443E 36%, #2E2A26 58%, #14100D 100%); }
+  .sw--stain { background: radial-gradient(circle at 50% 45%, #6E2018 0%, #4B1711 42%, #2A1710 72%, #1A100C 100%); }
+
+  .voice { display: grid; gap: var(--s5); grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .voice div { background: var(--hide-900); border: 1px solid var(--edge-paper);
+               border-radius: var(--r-lg); padding: var(--s5); }
+  .voice p { margin: var(--s3) 0 0; color: var(--bone-200); }
+  .voice code { font: var(--t-xs)/1.6 var(--font-data); color: var(--brass-400); letter-spacing: .05em; }
+
+  .open { background: rgba(168,30,34,.10); border: 1px solid rgba(168,30,34,.42);
+          border-radius: var(--r-lg); padding: var(--s5); }
+  .open li { font-size: 13px; line-height: 1.72; color: var(--bone-200); }
+</style>
+
+<body class="ppbf">
+<div class="sheet">
+  <div class="head">
+    <div class="t-eyebrow">PPBF Design System · Foundations</div>
+    <h1>Look Board</h1>
+    <p class="lede">
+      One page that fixes the merged style before any screen changes, so every room
+      follows it instead of each room deciding again. Owner decision
+      <b>OD-2026-09-28-012</b>: the two looks merge — the real gym is <em>drawn in</em>
+      the early gritty style, for screens and for images — and the board is built
+      around <b>The Floor</b>, with The Floor's own background and one Floor panel as
+      its samples (<em>"kinda a cross between a and c"</em>).
+    </p>
+    <p class="lede">
+      Nothing here is invented. The early style is read from Jason's Canva folder
+      <b>PPBF LOOKS AND FEELS</b> (opened 2026-09-29); the building is read from
+      <code>docs/REAL-GYM-REFERENCE-LOCK.md</code> §2, which is itself amended from
+      his ten photographs. Where the two disagree, it says so rather than picking.
+    </p>
+  </div>
+
+  <h2>The merge, as two sources</h2>
+  <div class="sources">
+    <div class="source">
+      <h3>What the early set brings</h3>
+      <ul>
+        <li><b>Aged tan canvas</b> as the paper — olive-tan, stained, never white.</li>
+        <li><b>Dark charcoal iron</b> as the chassis: header band, footers, frames.</li>
+        <li><b>Gold foil</b> as the rule and the emblem — a hairline, not a fill.</li>
+        <li><b>Oxidised red</b> as stain and as status, bled into the ground.</li>
+        <li><b>Stencil caps</b> as the voice, with <em>ADAPT AND OVERCOME</em> a fixture.</li>
+        <li><b>Dense grids of small bordered cards</b> — an operations board, not a column.</li>
+      </ul>
+      <cite>Canva · PPBF LOOKS AND FEELS · 22 items · opened 2026-09-29.
+      Jason, 2026-09-28: "the logos and things will need to be updated thos were kinda mock ups".</cite>
+    </div>
+    <div class="source">
+      <h3>What the building brings</h3>
+      <ul>
+        <li><b>A painted, zoned floor</b> — red at the ring, blue with a taped grid, grey with
+            white markings, green carpet at the lockers.</li>
+        <li><b>Honey reclaimed plank</b> over most of the walls.</li>
+        <li><b>Blackboard paint</b> — the wall itself is written on, in chalk.</li>
+        <li><b>Homemade structure</b>: timber post-and-beam, black steel scaffold pipe.</li>
+        <li><b>The ring</b>: teal canvas, a faded brewery roundel, red and blue posts, white pads.</li>
+        <li><b>Flat fluorescent light</b>, uneven and slightly green. Never cinematic.</li>
+      </ul>
+      <cite>docs/REAL-GYM-REFERENCE-LOCK.md §2, amended 2026-09-26 from ten owner photographs.</cite>
+    </div>
+  </div>
+
+  <p class="law" style="margin-top: var(--s5)">
+    <b>The rule this board sets.</b> The gym supplies the <em>surfaces</em> — plank, blackboard,
+    painted floor zones, steel pipe, teal canvas. The early set supplies the
+    <em>treatment</em> — aged tan panels on dark iron, a gold hairline, an oxidised stain,
+    stencil caps, and content laid out as a dense board of real objects. A room is built by
+    choosing which of the gym's surfaces it stands on; it is not built by choosing a new style.
+  </p>
+
+  <h2>The ground — The Floor</h2>
+  <div class="floor">
+    <div class="zone zone--ring">
+      <div class="ring">
+        <div class="roundel"></div>
+        <div class="post post--red"  style="left:-7px;  top:-7px"></div>
+        <div class="post post--blue" style="right:-7px; top:-7px"></div>
+        <div class="post post--blue" style="left:-7px;  bottom:-7px"></div>
+        <div class="post post--red"  style="right:-7px; bottom:-7px"></div>
+        <div class="pad" style="left:2px;  top:6px"></div>
+        <div class="pad" style="right:2px; bottom:6px"></div>
+      </div>
+    </div>
+    <div class="zone zone--mat"></div>
+    <div class="zone zone--cardio"></div>
+    <div class="zone zone--locker"></div>
+  </div>
+  <p class="floor-note">
+    Drawn in CSS, no image asset — the same rule <code>foundations/materials.html</code> works
+    under, so a floor kiosk renders it offline. It also carries <b>no lettering at all</b>, which
+    is how the plates' zero-lettering rule gets satisfied structurally instead of by inspection
+    after the fact: eight generated plates were rejected for lettering, two of them for
+    "EVERLAST" on a bag. The one exception the owner has granted — the ring canvas keeps its
+    IRON CITY roundel (OD-2026-09-28-013) — is drawn here as the shape without the words, because
+    at this scale the words would be illegible anyway.
+    <b>The four zone colours are proposed, not measured</b>: they are read off the photographs by
+    eye and need Jason's on the tablet before they become tokens.
+  </p>
+
+  <h2>The panel — one object from The Floor</h2>
+  <div class="panel-stage">
+    <div class="fpanel">
+      <div class="fpanel__cap">
+        <b>Session · Tuesday</b>
+        <span class="t-label" style="color: var(--brass-300)">Mat floor</span>
+      </div>
+      <div class="fpanel__body">
+        <dl>
+          <dt>Rounds</dt><dd>8 &times; 3:00</dd>
+          <dt>Rest</dt><dd>1:00</dd>
+          <dt>On the bags</dt><dd>4</dd>
+          <dt>Cleared to spar</dt><dd>2 of 6</dd>
+        </dl>
+      </div>
+      <div class="fpanel__foot">
+        <span class="stamp"><span aria-hidden="true">&#10006;</span> Not cleared</span>
+        <button class="btn-demo" type="button">Open the card</button>
+      </div>
+    </div>
+  </div>
+  <p class="floor-note">
+    Aged canvas over dark iron, gold hairline at both seams, the stain bled into the panel rather
+    than painted on top. The readout is 19.1&nbsp;px and the control is 55&nbsp;px — <b>law 5, which
+    stands</b>. The refusal is a stamp carrying a glyph <em>and</em> an uppercase label, so it survives
+    both law 7 and law 3. It is a real object with a top, a face and a foot, which is what makes a
+    board of them read as equipment standing in a room rather than as tiles.
+  </p>
+
+  <h2>Materials</h2>
+  <div class="grid3">
+    <div class="spec"><div class="swatch sw--plank"></div><div class="cap">
+      <b>Honey plank</b><code>proposed · wall, most rooms</code>
+      <p>Reclaimed board, laid across. The default wall of the building.</p></div></div>
+    <div class="spec"><div class="swatch sw--board"></div><div class="cap">
+      <b>Blackboard paint</b><code>--slate-board / --chalk</code>
+      <p>The wall <em>is</em> the chalkboard. Writing goes on it directly.</p></div></div>
+    <div class="spec"><div class="swatch sw--canvas"></div><div class="cap">
+      <b>Aged canvas</b><code>proposed · panel face</code>
+      <p>The early set's paper, stained. Every panel face, every readout.</p></div></div>
+    <div class="spec"><div class="swatch sw--iron"></div><div class="cap">
+      <b>Dark iron</b><code>--hide-950 / --hide-800</code>
+      <p>Chassis. Caps, feet, frames — never a content surface.</p></div></div>
+    <div class="spec"><div class="swatch sw--pipe"></div><div class="cap">
+      <b>Steel pipe</b><code>proposed · structure</code>
+      <p>The scaffold rail the bags hang from. Rails and dividers.</p></div></div>
+    <div class="spec"><div class="swatch sw--stain"></div><div class="cap">
+      <b>Oxidised stain</b><code>--stamp-red at low alpha</code>
+      <p>Bled into a ground, never a fill. Status stays <code>--locked</code>.</p></div></div>
+  </div>
+
+  <h2>Colour, and what is still reserved</h2>
+  <p class="law">
+    <b>Law 2 stands, with one change.</b> Saturated colour means safety or status —
+    <em>except red, which is the club's colour and is no longer reserved</em>
+    (OD-2026-09-29-001). <code>--locked</code> (<code>#A81E22</code>) still means a medical stop
+    and nothing else may wear it.
+  </p>
+  <p class="law">
+    <b>Law 3 stands.</b> Colour is never the only channel. Every status carries a glyph and an
+    uppercase label, as the stamp above does. This is what lets the gritty ground go dark without
+    the safety signals going with it.
+  </p>
+  <p class="law">
+    <b>Laws 1, 4, 6 and 8 are retired</b> (OD-2026-09-28-009). Brass is no longer the chassis —
+    dark iron is, and brass is the hairline. The materials list above replaces law 6's five.
+  </p>
+
+  <h2>Voice</h2>
+  <div class="voice">
+    <div><h3>Display</h3><code>var(--font-display)</code>
+      <p style="font-family: var(--font-display); text-transform: uppercase; letter-spacing:.06em; font-size: 26px">
+        Adapt and Overcome</p></div>
+    <div><h3>Readout</h3><code>var(--font-data) · 19.1px floor</code>
+      <p style="font: 19.1px/1.4 var(--font-data)">8 &times; 3:00 &nbsp; 2 of 6 &nbsp; 94%</p></div>
+    <div><h3>Body</h3><code>var(--font-body)</code>
+      <p style="font-size: 15px; line-height: 1.6">What a coach reads standing up, on a tablet, in
+        bad light.</p></div>
+  </div>
+  <p class="floor-note">
+    Named through tokens only. The retired faces — Alfa Slab One, Oswald, Special Elite, Caveat,
+    UnifrakturCook — are never spelled out in source; <code>legacyVisualVocabulary.test.ts</code>
+    holds that at zero. The tokens themselves still resolve to those faces through the legacy
+    sheet, which is what OD-2026-09-28-009 item 4 means by correcting the contract "to what is
+    built". <b>Replacing the faces is a separate decision and this board does not make it.</b>
+  </p>
+
+  <h2>What this board does not decide</h2>
+  <div class="open">
+    <ul>
+      <li><b>The four floor-zone colours.</b> Read off photographs by eye. They need Jason's eye on
+          a gym tablet before they become tokens.</li>
+      <li><b>The typefaces.</b> The early set is military stencil; the live tokens still point at the
+          retired faces. Whether the merged look keeps them, and which face carries
+          <em>ADAPT AND OVERCOME</em>, is open.</li>
+      <li><b>The emblem.</b> The early set's laurel-and-heart logos are mock-ups by the owner's own
+          account and are deliberately not drawn here.</li>
+      <li><b>Whether any room still wants a photograph.</b> This board shows the ground can be
+          material rather than a plate. The plate mechanism is untouched and still works.</li>
+      <li><b>The other sixteen rooms.</b> <code>docs/ROOM-MAP.md</code> is the build order. Each room
+          picks its surfaces from the materials above; it does not pick a new style.</li>
+    </ul>
+  </div>
+</div>
+</body>

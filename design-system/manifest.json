@@ -282,6 +282,13 @@
       "bytes": 12720
     },
     {
+      "path": "foundations/look-board.html",
+      "group": "Foundations",
+      "name": "Look Board",
+      "subtitle": "The merged look: the real gym drawn in the early gritty style",
+      "bytes": 21622
+    },
+    {
       "path": "foundations/materials.html",
       "group": "Foundations",
       "name": "Materials",
@@ -307,7 +314,7 @@
       "group": "Foundations",
       "name": "Palette",
       "subtitle": "Hide, brass and bone ramps + the four-rung status ladder",
-      "bytes": 9932
+      "bytes": 10087
     },
     {
       "path": "foundations/patterns.html",
@@ -409,8 +416,8 @@
     }
   ],
   "counts": {
-    "previews": 19,
-    "foundations": 9,
+    "previews": 20,
+    "foundations": 10,
     "components": 3,
     "screens": 7
   }
