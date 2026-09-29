@@ -95,8 +95,9 @@ interface Refusal {
   message: string;
 }
 
-// Room DNA (clinic): red -- --locked, #A81E22 -- is reserved for a medical or
-// safeguarding FACT. `not_cleared` is one: a clinician looked at this child and
+// Room DNA (clinic): --locked (#A81E22) marks a medical or safeguarding FACT;
+// red itself is not reserved (OD-2026-09-29-001). `not_cleared` is one: a
+// clinician looked at this child and
 // said no. `none` is not. It means nobody has typed a clearance record in yet,
 // which this page's own copy below calls what it is -- the office sets one
 // during onboarding. Both wore --locked, so a coach scanning the roster could
@@ -327,8 +328,8 @@ export default function SportsMedicinePage() {
           brass/steel control hierarchy all live in scoped CSS under .ge-clinic
           in design-system/current/ppbf-golden-era.css. Every control,
           clearance badge, hold stamp and refusal on this page is untouched,
-          the room's own wall and lamp are left to the committed plate, and no
-          reserved safeguarding red is restated. */}
+          the room's own wall and lamp are left to the committed plate, and the
+          --locked safeguarding red is not restated. */}
       <div className="ge-clinic">
         {/* The fixture the room's light has always implied. .room--clinic::before
             throws a green pool from the top of the wall and nothing in the app
@@ -378,7 +379,8 @@ export default function SportsMedicinePage() {
               It wore .alert--critical -- the same --locked red as "a clinician
               said no" -- alongside eight other "unable to load" banners across
               this room. --restricted carries it now, glyph and uppercase label
-              intact (Law 3), and red is left to mean a child is in danger. */}
+              intact (Law 3), and --locked is left to mean a child is in
+              danger. (Red itself is not reserved, OD-2026-09-29-001.) */}
           {errorMessage && (
             <div className="alert alert--warning" role="alert">
               <span className="alert-icon" aria-hidden="true">▲</span>

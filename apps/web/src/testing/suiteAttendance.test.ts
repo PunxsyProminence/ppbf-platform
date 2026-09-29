@@ -15,6 +15,8 @@ import manifest from './safetyCriticalSuites.json';
  * `Tests: 8017 passed` -- and the passing test COUNT WENT UP, because the
  * eight assertions on the reserved medical red did not fail, they ceased to
  * exist. Nobody reading a summary sees a safeguarding guard disappear.
+ * (That suite was later deleted on purpose: red is not reserved,
+ * OD-2026-09-29-001. The incident is why this register exists.)
  *
  * That is a cousin of what #651 fixed, arriving through a different door.
  * #651 added non-emptiness FLOORS INSIDE suites, against guards that pass
@@ -48,8 +50,8 @@ import manifest from './safetyCriticalSuites.json';
  * automated proof of a rule that, when broken:
  *
  *   (a) miscommunicates a safety state to a coach, a guardian or a child --
- *       the safety ladder, the reserved medical red, the refusal vocabulary,
- *       a corner tint mistakable for a hold;
+ *       the safety ladder, the refusal vocabulary, a corner tint mistakable
+ *       for a hold;
  *   (b) lets a governed artefact enter the repository unchecked -- the plate
  *       byte gate;
  *   (c) drops a legibility or accessibility floor on a shared surface --
@@ -97,13 +99,13 @@ interface ManifestEntry {
 const ENTRIES: ManifestEntry[] = manifest.suites;
 
 /**
- * The nine the incident review named. Pinned here so the register can never be
+ * The nine the incident review named, eight since safeguardingRedReservation
+ * was deleted (OD-2026-09-29-001). Pinned here so the register can never be
  * quietly shrunk below the agreed floor -- the failure mode this whole change
  * exists to prevent is coverage leaving without anything going red, and a
  * register nobody guards is exactly that.
  */
 const REQUIRED_BY_NAME = [
-  'src/design/safeguardingRedReservation.test.ts',
   'src/design/plateBinaries.test.ts',
   'src/design/brassAlphaChannel.test.ts',
   'src/design/lightGroundVoices.test.ts',
@@ -434,11 +436,15 @@ describe('the suite attendance reporter', () => {
 
   it('names an ignore pattern as the reason when one swallowed a registered suite', () => {
     const results = everythingRan().slice(1);
+    // Derived from the first entry, not written out: this was the literal
+    // 'safeguardingRedReservation' until that suite was deleted
+    // (OD-2026-09-29-001) and the pattern stopped matching ENTRIES[0].
+    const ignored = path.basename(ENTRIES[0].path).replace(/\.test\.tsx?$/, '');
     const contexts = [
       {
         config: {
           ...CONTEXTS[0].config,
-          testPathIgnorePatterns: ['/node_modules/', 'safeguardingRedReservation'],
+          testPathIgnorePatterns: ['/node_modules/', ignored],
         },
       },
     ];
@@ -456,7 +462,7 @@ describe('the suite attendance reporter', () => {
       const error = reporter.getLastError();
       expect(error?.message).toContain(ENTRIES[0].path);
       expect(error?.message).toContain('EXCLUDED FROM THE RUN');
-      expect(error?.message).toContain('safeguardingRedReservation');
+      expect(error?.message).toContain(`testPathIgnorePatterns entry ${JSON.stringify(ignored)}`);
     } finally {
       write.mockRestore();
     }

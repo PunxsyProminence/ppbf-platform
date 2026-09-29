@@ -62,7 +62,7 @@ If two screens feel interchangeable, the room DNA failed — fix tokens/chrome, 
 | **Purpose** | Medical clearance, holds, compliance, safeguarding |
 | **Feel** | Varnished cabinetry, cooler green-tinted light |
 | **Copy voice** | Care + safety — non-punitive, clear path back |
-| **Allowed chrome** | **Brass Training Hold**, **red only** critical medical/safety |
+| **Allowed chrome** | **Brass Training Hold**, **`--locked` only** for critical medical/safety (red itself is not reserved, OD-2026-09-29-001) |
 | **Forbidden** | Wall sayings, “tough it out” eggs, SHADOW banter |
 | **Easter eggs?** | **NEVER** |
 

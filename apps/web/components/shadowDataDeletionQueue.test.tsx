@@ -264,8 +264,8 @@ describe('a handled request stays visible and says how it was handled', () => {
   });
 
   it('does not paint a waiting request in the safeguarding red', async () => {
-    // That red is reserved for the top of the safety ladder -- a person who
-    // may not participate. A data request waiting on an admin is work owed.
+    // badge--locked means the top of the safety ladder -- a person who may
+    // not participate. A data request waiting on an admin is work owed.
     await renderQueue();
 
     const badge = screen.getByText(/AWAITING REVIEW/);
