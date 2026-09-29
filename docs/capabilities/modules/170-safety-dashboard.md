@@ -5,6 +5,7 @@
 | Status | **DONE** (Wave 9 reconciliation follow-up) |
 | Vertical slice | /admin/safety-flags board consuming the open-flag queue API (coach/admin): severity counts worst-first, resolve with mandatory note, external-rule flags never offered a bypass |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | Dashboards / Reporting (`dashboardsReporting`) |
 | Source | `2.0.0-draft-merged` |
@@ -40,3 +41,4 @@ _Scaffold only. Do not mark active until promotion review._
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — Blank DRAFT stub, Active=false, no defined intent/tables/roles. Missing: A genuinely working, role-gated, org-scoped, tested safety-flags queue exists (raise/list/resolve), and a guardian-facing per-family safety status pag. Evidence: docs/capabilities/modules/170-safety-dashboard.md; apps/web/app/api/pilot/safety-flags/route.ts. Status stays DRAFT. |
 | 2026-08-16 | wave9-reconciliation | The audit's missing consumer built: the open-flag queue API (already role-gated, org-scoped, tested) now has /admin/safety-flags rendering it worst-first with severity counts and the resolve lifecycle. Client mirrors the server's external-rule-cannot-be-bypassed refusal; a failed read admits flags may exist. Board-level aggregates deliberately remain out (board gets aggregates only, per standing doctrine). Promoted DRAFT -> DONE. |
+| 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |

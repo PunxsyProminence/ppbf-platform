@@ -87,9 +87,13 @@ the source.
   only (no edit, no delete, no undo or reopen), open work only, and "Coaches
   with access" may cancel. See the Status line on OD-2026-09-19-002.
 - Test headers that carry the ruling they enforce:
-  `apps/web/src/design/safeguardingRedReservation.test.ts` (2026-08-19, the
-  safety red is reserved) and `apps/web/src/design/legacyVisualVocabulary.test.ts`
-  (2026-08-23, Leather & Brass retired as the look, with its type voices).
+  `apps/web/src/design/legacyVisualVocabulary.test.ts` (2026-08-23, Leather &
+  Brass retired as the look, with its type voices). The 2026-08-19 safety-red
+  reservation was stated in the header of the now-deleted
+  `apps/web/src/design/safeguardingRedReservation.test.ts` and restated in the
+  code and docs that OD-2026-09-29-001 lists; that entry supersedes it. The
+  refusal stamps' own form of it (MEDICALLY_NOT_ALLOWED is their one red mark,
+  `apps/web/components/RefusalStamp.tsx:10-17`) was not changed.
 - `docs/archive/2026-09-28_CROSS_SESSION_NOTES.md` -- rulings resolved in the
   old running log (history).
 - The old OneDrive ledger, `PPBF-AI-Lanes/PPBF_DECISION_HANDOFF_LEDGER.md`
@@ -157,6 +161,167 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-09-29-002 -- The other answers of 2026-09-29: branches, PR #941, two production checks, untried modules, the roster door, athlete deletion, the tracker check
+
+**Provenance: PRIMARY.** **Date:** 2026-09-29. Jason answered a numbered list
+of questions from the Claude session in short replies. His words are verbatim;
+what each item asked is as that session summarized it (the full question text
+is not in this repository). His messages, verbatim, in order: *"3 A 4 A 5 A
+6 B7A8A 9 explain this one better 10 C 11  explain more"*; *"9a. B 9b. B 9c.
+B9d. B 11A"*; *"1A 2A 3B"*; *"QA A, QB A i have 45 mins before weekly reset
+dont worry about usage get as much done as possible"*. Line numbers cited
+below are at `91de82ca`.
+
+3. **Dependabot PR #965** (`tsx` 4.23.13 to 4.23.15). *"3 A"*: merge it. Done:
+   merged as `91de82ca`.
+4. **Leftover GitHub branches.** *"4 A"*: compare each with `main`, delete the
+   ones whose changes are already in `main`, keep the `archive/` and `rescue/`
+   branches, and list for Jason any with real unique work. In progress. All 95
+   remote refs (`main` included) were first backed up to a local git bundle,
+   `Documents/PPBF-local-backups/github-branches-2026-09-29/all-remote-branches.bundle`
+   (`git bundle list-heads` lists 95). How many are deleted is not recorded
+   here; read it live (`git ls-remote --heads origin`).
+   Follow-up answers, *"QA A, QB A"*: QA -- delete the branches the audit
+   judged replaced or abandoned (all are in the bundle); QB -- for the ones
+   holding real unmerged work, check each against `main`, put live bugs on
+   the build list, save ideas and docs (the SHADOW design package to the
+   archive, the "Floor Card" idea as a row), then delete those branches.
+5. **PR #941** (the coach drill library redone as a drill cabinet). *"5 A"*:
+   check it against `main`; close it if `main` already has what it adds,
+   otherwise tell Jason what is missing. In progress.
+6. **Red.** *"6 B"*: see OD-2026-09-29-001.
+7. **Stale lines in Jason's rule files.** *"7A"*: fix them. Done, as reported
+   by the session that asked; those files are outside this repository.
+8. **Two read-only production checks.** *"8A"*: run them. Run 2026-09-29;
+   reported by the session that ran them, output not reproduced here.
+   - (a) Waiver statuses (`npm run pilot:check-waiver-statuses`,
+     OD-2026-08-29-008): `pilot.waivers` holds 11 rows, every one exactly
+     `signed` (waiver type `program_consent`); a byte-exact CHECK over
+     `signed`, `declined`, `withdrawn` and `missing` (the script's
+     `WAIVER_STATUSES`, `apps/web/scripts/pilot-check-waiver-statuses.mjs:119`)
+     would refuse 0 rows; no CHECK constraint exists. Whether to add one now
+     is a new owner question.
+   - (b) The Shadow library: the only `doctrine_kind` in production is
+     `shadow-authority-model` (1 source, tier 1, under `ppbf-default-org`,
+     "SHADOW Canonical Authority Model"). `shadow-event-model` is not there, so
+     editing `docs/SHADOW_EVENT_MODEL.md` re-approves no stored copy: the next
+     seed registers it as `pending_review`, and it is approved at `/evidence`
+     before SHADOW reads it (`apps/web/scripts/shadow-library-seed-manifest.json:2`,
+     :19-20). Library totals: `__platform__` 1,194 sources;
+     `ppbf-default-org` 22 `internal_policy` sources (1 tier 1, 21 tier 3).
+9. Four open questions from `docs/current/ACTIVE_WORK.md`.
+   - (a) **DONE modules nobody has tried.** As put: list the 36 DONE modules
+     that *"have no ManualVerification record and rest only on the blanket
+     2026-08-28 sign-off"*, each with a one-line "how to try it", so Jason or a
+     coach can check it on the tablet; until checked, each is labelled "built,
+     not yet tried by a person". *"9a. B"*: do that.
+     Two parts of that were wrong. These modules carry no sign-off at all: the
+     blanket sign-off covered only modules that then carried
+     `PENDING_SIGN_OFF` (`docs/current/SIGN_OFF_GUIDE.md:8-10`; module 003's
+     audit log, 2026-09-28). And 36 is the count inside that guide. DONE with
+     no ManualVerification row matched 47 module files at `91de82ca`: the 36
+     plus 3, 11, 53, 75, 76, 121, 123, 125, 127, 128 and 129, which the guide
+     does not cover. Module 084 joined them when it was marked DONE under
+     item 11. The list written on 2026-09-29,
+     `docs/capabilities/SIGN_OFF_WALKTHROUGH.md`, covers all 48. Taking in the
+     12 beyond the 36 was Claude's call; Jason has not been asked.
+   - (b) **The two missing 2026-08-22 owner documents**
+     (`PPBF_OWNER_DECISION_IDENTITY_ACCESS_GOVERNANCE_MULTI_ORG_2026-08-22.md`,
+     `PPBF_OWNER_PRODUCT_DIRECTION_v2_2026-08-22.md`). *"9b. B"*: search every
+     OneDrive, Google Drive and SharePoint folder for them, read-only. In
+     progress.
+   - (c) **The button-size collision**
+     (`apps/web/scripts/css-layer-collisions.mjs` reports 101 collisions;
+     `.btn` in 23 places may render at 44px instead of 55px, unconfirmed).
+     *"9c. B"*: parked until the look-board redesign (OD-2026-09-28-012).
+   - (d) **The `/admin/import` door.** *"9d. B"*: organization admins and
+     coaches get the door, which also means opening the import page and its
+     API to coaches. Today both admit organization admins only
+     (`apps/web/app/api/pilot/admin/roster-import/route.ts:39`;
+     `apps/web/app/admin/import/page.tsx:249-253`). Build item.
+     Asked next: when a coach loads a roster, whose athletes are they? A, the
+     coach's own; B, any active coach in the same gym, checked against that
+     gym, like an admin. *"3B"*: B.
+10. **When a gym deletes an athlete.** *"10 C"*: A now -- the athlete's record
+    is marked deleted, their login stops and their signed-in sessions end;
+    videos, photos and notes stay on file -- then B right after: everything
+    tied to the athlete is marked deleted at the same moment. (Correction
+    given to Jason the same day: the question said the nightly cleanup removes
+    the record after 2 years. It does not: the scheduled cleanup is a dry run,
+    permanent removal happens only when someone dispatches retention-cleanup
+    with APPLY, the window is 2 years for athlete rows and 1 year for guardian
+    accounts, and whether stored video and photo files are erased is
+    UNVERIFIED -- `docs/DATA_RETENTION.md:71-81`,
+    `.github/workflows/retention-cleanup.yml`.) Asked next: deleting someone
+    already deleted restarts their clock -- A, the server refuses it; B, ship
+    as is; and should the result count the sessions ended -- A, no count; B,
+    add it. *"1A 2A"*: the server refuses a second deletion; no count. Build items; they set the scope of the
+    `/admin/data-deletion` screen (OD-2026-09-28-008, OD-2026-09-28-011 item
+    11).
+11. **The capability tracker check.** *"11A"*: remove the check that compares
+    the module files with the old index, `expanded-200-index.json` (history
+    under OD-2026-09-28-010 item 17) -- the tracker-disagreement ceiling,
+    `apps/web/src/docs/capabilityEvidence.test.ts:180-199` -- and keep the
+    checks that DONE modules cite code. Module 084 (guardian safety report;
+    tested by `apps/web/app/api/pilot/parent/safety/route.test.ts` and
+    `apps/web/app/parent/safety/page.test.tsx`) may then be marked DONE.
+    Module 094 stays DRAFT: it has no behaviour test.
+
+---
+
+## OD-2026-09-29-001 -- Red is not reserved; `--locked` still means a medical stop
+
+**Provenance: PRIMARY.** **Date:** 2026-09-29. Jason's words are verbatim; the
+question is as the Claude session summarized it (its full wording is not in
+this repository).
+
+**Asked.** Whether red stays reserved. As put, in part: *"Red means danger.
+Right now only safety warnings may use red"*; option B, *"Red is free to use.
+The test goes and the rule changes."* **Jason's answer, verbatim:** *"6 B"*.
+
+This confirms what he said on 2026-09-24, *"delete red no need for it to be
+excluded"*, quoted in commit `d2621ddb` (branch `local/coach-floor-board`) and
+never recorded here.
+
+**What this decides.** Red, `#A81E22` included, is free to use. What changed:
+`apps/web/src/design/safeguardingRedReservation.test.ts` is deleted, and its
+entries leave `apps/web/src/testing/safetyCriticalSuites.json` and
+`apps/web/src/testing/suiteAttendance.test.ts` (commit `d2621ddb`,
+cherry-picked 2026-09-29). What did not: `--locked` still exists, still
+resolves to `#A81E22` (`design-system/current/ppbf-golden-era.css:76` at
+`91de82ca`), and still means a medical stop (MEDICALLY_NOT_ALLOWED). The
+refusal stamps still draw MEDICALLY_NOT_ALLOWED as their one red mark
+(`apps/web/components/RefusalStamp.tsx:10-17`), and
+`apps/web/components/refusalStamp.test.tsx` ("MEDICALLY NOT ALLOWED is the one
+red mark", :52) still checks it; `d2621ddb` touches neither.
+
+Law 2 (OD-2026-09-28-009 item 1, saturated colour means safety or status)
+still stands, except that red is no longer reserved. At `91de82ca` its text in
+`design-system/README.md:60-61` still named red; the same change that records
+this entry corrects it. Browser checks that still refuse the old red on some
+pages (`apps/web/e2e/public-homepage.spec.ts`,
+`apps/web/e2e/golden-era-scope-proofs.spec.ts`, the `goldenEra*Scope` tests)
+enforce the retired hue ban and are a build row in `docs/current/ACTIVE_WORK.md`
+to retire; the `--locked` token checks stay.
+
+**Supersedes** the 2026-08-19 reservation of that red for MEDICALLY_NOT_ALLOWED
+alone, and the owner's 2026-08-24 approval of its guard (*"go option 2"*).
+Neither has an entry here. The 2026-08-24 approval was recorded only in the
+deleted test's header (at `91de82ca`, line 17). The 2026-08-19 reservation
+was stated there too (line 9), and at `91de82ca` it is also restated in
+`apps/web/components/RefusalStamp.tsx:10-17`,
+`apps/web/components/CoachWorkspace.tsx:790`,
+`apps/web/components/SignInPanel.tsx:53` and :416,
+`apps/web/components/SignInPanel.test.tsx:199`,
+`apps/web/app/auth/link/page.tsx:103`,
+`apps/web/src/design/readinessRungPolicy.test.ts:11`,
+`apps/web/src/design/safetySemanticsSurviveTheThemeSwap.test.ts:34`,
+`design-system/legacy/ppbf-leather-brass.css:1919`,
+`docs/VISUAL-RESET-PHASE-1-PLAN.md:319` and `docs/GROK-APP-BUILD-MAP.md:70`
+and :691. This entry does not correct those lines.
 
 ---
 
@@ -277,6 +442,11 @@ summarized it (the full question text is not in this repository).
     "c") and a building-map door for `/admin/import` (OD-2026-09-28-010 item
     26). Open questions on either go to Jason before they are built.
 
+Status (2026-09-29): item 11's questions are answered (OD-2026-09-29-002).
+Deletion scope, *"10 C"*: A now, then B right after. The `/admin/import` door
+goes to organization admins and coaches, and the import page and API open to
+coaches, *"9d. B"*.
+
 ---
 
 ## OD-2026-09-28-010 -- Capability tracker, SHADOW spec, and process defaults from the documentation review
@@ -343,6 +513,13 @@ started 2026-09-19T03:43:47Z. The operating organization therefore had one
 active operational drill when W-D3 reached production: the gate in
 OD-2026-09-18-001 was met.
 
+Status (2026-09-29): item 17 -- Jason retired the capability-evidence check
+that compared the module files with the old index, `expanded-200-index.json`
+(the tracker-disagreement ceiling), *"11A"* (OD-2026-09-29-002 item 11). The
+checks that DONE modules cite code stay. Item 26 -- the `/admin/import` door
+goes to organization admins and coaches, and the import page and API open to
+coaches, *"9d. B"* (OD-2026-09-29-002 item 9d).
+
 ---
 
 ## OD-2026-09-28-009 -- Visual rules under Golden Era
@@ -376,6 +553,9 @@ Golden Era's seven (OD-2026-09-28-014), and the ring canvas's IRON CITY
 lettering is an exception to the plates' zero-lettering rule
 (OD-2026-09-28-013).
 
+Status (2026-09-29): law 2 still stands, but red is no longer reserved
+(OD-2026-09-29-001); `--locked` still means a medical stop.
+
 ---
 
 ## OD-2026-09-28-008 -- Attendance has one system of record; retention describes what exists
@@ -398,6 +578,11 @@ report; only the organization-admin API
 calls it. Option C, as put: *"A now, B later"* -- rewrite the policy to match
 what exists today, and put the deletion screen on the build list. **Jason's
 answer:** *"c"*.
+
+Status (2026-09-29): the deletion screen's scope is answered, *"10 C"*
+(OD-2026-09-29-002 item 10): A now (the record is marked deleted, login stops,
+signed-in sessions end), then B right after (everything tied to the athlete is
+marked deleted at the same moment).
 
 ---
 
@@ -1891,6 +2076,12 @@ with a non-exact row once counted: normalising rows, widening the vocabulary,
 admitting case and padding inside the constraint, or leaving the column
 unconstrained are four different answers and **all four remain OWNER DECISION
 REQUIRED.**
+
+Status (2026-09-29): measured. Production holds 11 `pilot.waivers` rows, every
+one exactly `signed`; a byte-exact CHECK would refuse 0 rows, and no CHECK
+exists (`npm run pilot:check-waiver-statuses`, run 2026-09-29 and reported by
+the session that ran it; OD-2026-09-29-002 item 8a). Whether to add the
+constraint is a new owner question (`docs/current/ACTIVE_WORK.md`).
 
 ---
 

@@ -182,12 +182,15 @@ describe('golden-era drillcase scope', () => {
   });
 
   test('the scope never spends the reserved medical red on cabinet chrome', () => {
-    // The ramp is bronze; #A81E22 belongs to MEDICALLY_NOT_ALLOWED alone. The
-    // page's pre-existing --locked form-error sites are a separate, frozen
-    // entry in safeguardingRedReservation.test.ts and are not touched here.
+    // The ramp is bronze. Written when #A81E22 was reserved for
+    // MEDICALLY_NOT_ALLOWED alone. STATUS 2026-09-29: red is not reserved
+    // (OD-2026-09-29-001); this check still runs, and --locked still means a
+    // medical stop. The page's pre-existing --locked form-error sites were a
+    // frozen entry in safeguardingRedReservation.test.ts, since deleted, and
+    // are not touched here.
     //
     // Comments are stripped before the scan: the block's own prose NAMES the
-    // reserved tokens in order to say it does not use them, and a guard that
+    // locked tokens in order to say it does not use them, and a guard that
     // cannot tell a declaration from the sentence documenting it is a guard
     // that punishes writing the reason down.
     const stripped = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
