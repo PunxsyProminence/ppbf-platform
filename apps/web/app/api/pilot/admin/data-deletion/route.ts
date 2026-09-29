@@ -1,4 +1,5 @@
 import { deleteAthleteRecord, deleteGuardianAccount } from '@/src/server/pilot/dataDeletion';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { requireMicrosoftAuthenticatedPrincipal, jsonError } from '@/src/server/pilot/http';
 import { isOrganizationAdminRole } from '@/src/server/pilot/access';
 import type { NextRequest } from 'next/server';
@@ -8,8 +9,10 @@ export const runtime = 'nodejs';
 /**
  * DELETE /api/pilot/admin/data-deletion
  *
- * Deletes an athlete or guardian account and marks all linked data for deletion.
- * Organization admin only.
+ * Marks an athlete record or a guardian account deleted (see dataDeletion.ts
+ * for exactly what each marks). Organization admin only. A person already
+ * deleted is refused with 409 and nothing changes. Called by the
+ * /admin/data-deletion screen.
  *
  * Request body:
  * {
@@ -69,6 +72,13 @@ export async function DELETE(request: NextRequest) {
     return Response.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
+
+    // Already deleted (owner decision 2026-09-29, "1A"). The service threw
+    // before writing anything, and its message -- the date of the first
+    // deletion -- was authored for the admin to read.
+    if (error instanceof ConflictError) {
+      return jsonError(error, 409);
+    }
 
     // Same Error-wrapping fix as above: these two branches already computed
     // the right status themselves, they just need the real message to
