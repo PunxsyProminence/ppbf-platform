@@ -76,11 +76,17 @@ function runnableClassifyShell(outputPath: string): string {
 /** Run the shipped classifier over a file list and return its flags. */
 function classify(files: string[]): Record<string, string> {
   const listFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-cls-')), 'files.txt');
-  fs.writeFileSync(listFile, `${files.join('\n')}\n`);
-  const stdout = execFileSync(process.execPath, [classifier, listFile], { encoding: 'utf8' });
-  return Object.fromEntries(
-    stdout.trim().split('\n').map((line) => line.split('=') as [string, string]),
-  );
+  try {
+    fs.writeFileSync(listFile, `${files.join('\n')}\n`);
+    const stdout = execFileSync(process.execPath, [classifier, listFile], { encoding: 'utf8' });
+    return Object.fromEntries(
+      stdout.trim().split('\n').map((line) => line.split('=') as [string, string]),
+    );
+  } finally {
+    // Nothing else clears these: the start-of-run sweep only takes
+    // ppbf-*-pg-test-* folders (scripts/lib/embedded-pg-cleanup.mjs:50).
+    fs.rmSync(path.dirname(listFile), { recursive: true, force: true });
+  }
 }
 
 describe('a branch behind its base, diffed both ways against real git', () => {
@@ -331,15 +337,16 @@ describe('the coach E2E command attends every coach spec on disk', () => {
 /**
  * A seed-data change runs the PostgreSQL suites that load it.
  *
- * WHY THIS EXISTS. Five embedded-Postgres suites load their rows straight out
+ * WHY THIS EXISTS. Six embedded-Postgres suites load their rows straight out
  * of `apps/web/seed-data/` into the real schema (drillLibraryV3.pg.test.ts:82,
  * multidiscipline.pg.test.ts:63, competenceCohorts.pg.test.ts:55,
- * workoutTemplates.pg.test.ts:69-71, sessionScriptsTransfer.pg.test.ts:59-61),
- * and `npm test` excludes every .pg suite. So a data row that breaks a CHECK
- * constraint or a foreign key meets the schema ONLY in those suites -- and
- * before `isSeedDataPath` a PR changing only seed data classified
- * `unknown_code` and ran none of them. That is the shape every content
- * hand-off arrives in.
+ * workoutTemplates.pg.test.ts:69-71, sessionScriptsTransfer.pg.test.ts:59-61,
+ * and scripts/import-shadow-research.pg.test.ts:197,232 for
+ * shadow-research/2026-08-07), and `npm test` excludes every .pg suite. So a
+ * data row that breaks a CHECK constraint or a foreign key meets the schema
+ * ONLY in those suites -- and before `isSeedDataPath` a PR changing only seed
+ * data classified `unknown_code` and ran none of them. That is the shape every
+ * content hand-off arrives in.
  *
  * Three hops, and each is held here or elsewhere: the file sets `migrations`
  * (below), the step that flag guards runs `npm run test:migrations` (below),
@@ -366,9 +373,10 @@ describe('a seed-data change runs the PostgreSQL suites that load it', () => {
    * across the whole tree is seconds of fork cost for no added fidelity; the
    * CLI's flag lines are exercised through `classify()`.
    *
-   * The list goes in on stdin, not argv: the classifier's own entry check
-   * (ci-classify-paths.mjs, the `process.argv[1]` test at its foot) parses
-   * argv[1] as a file URL on import and throws on anything else.
+   * The list goes in on stdin, not argv, so no file path ever sits in argv[1]
+   * for the classifier's import-time entry check (the `process.argv[1]` test
+   * at the foot of ci-classify-paths.mjs) to read, and the list meets no
+   * command-line length ceiling as the folder grows.
    */
   function flagsPerFile(files: string[]): Record<string, { migrations: boolean; docsOnly: boolean }> {
     const script = [
