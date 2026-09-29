@@ -389,13 +389,13 @@ function AdjudicationDesk() {
           </div>
         )}
 
-        {/* alert--warning and ▲, never alert--critical and ✕. The safeguarding
-            red (#A81E22) is reserved for the top of the safety ladder — a
-            person who may not participate (owner decision 2026-08-19). A clip
-            that is not ready to be settled, or a decision the server refused,
-            is emphatically not that, and spending the reservation on it would
-            blunt the one signal that has to keep meaning what it says.
-            src/design/safeguardingRedReservation.test.ts enforces it. */}
+        {/* alert--warning and ▲, never alert--critical and ✕. alert--critical
+            wears --locked, which means the top of the safety ladder — a
+            person who may not participate. A clip that is not ready to be
+            settled, or a decision the server refused, is emphatically not
+            that, and borrowing the medical stop for it would blunt the one
+            signal that has to keep meaning what it says. Red itself is not
+            reserved (OD-2026-09-29-001); the --locked meaning is kept. */}
         {errorMessage && (
           <div className="alert alert--warning" role="alert">
             <span className="alert-icon" aria-hidden="true">▲</span>

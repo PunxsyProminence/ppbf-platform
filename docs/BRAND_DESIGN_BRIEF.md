@@ -110,15 +110,22 @@ never be mistaken for a safety state.
 | Restricted | `--restricted` | `#C05A1E` | `▲` |
 | Locked | `--locked` | `#A81E22` | `✕` |
 
-Stamps: `--stamp-red` is the same `#A81E22` as `--locked`, and that red means
-**MEDICALLY_NOT_ALLOWED only** — never refusal, redaction, or a destructive
-action (owner decision 2026-08-19; `docs/GOLDEN-ERA-V1-CONTRACT.md` §7; guarded by
-`apps/web/src/design/safeguardingRedReservation.test.ts`) ·
+Stamps: `--stamp-red` is the same `#A81E22` as `--locked` ·
 `--stamp-green` `#2F7A3E` (approved, compliant).
 
+**Red is not reserved** (OD-2026-09-29-001, 2026-09-29): the club's colours are
+black, red and white, so red may be used anywhere. The owner decision of
+2026-08-19 that kept `#A81E22` for MEDICALLY_NOT_ALLOWED alone is superseded
+(OD-2026-09-29-001), and its test (`safeguardingRedReservation.test.ts`) is
+deleted. What stays: the Locked state — `--locked`, `✕` — still means a medical
+stop (`docs/GOLDEN-ERA-V1-CONTRACT.md` §7). Within the refusal-stamp family, red
+stays MEDICALLY_NOT_ALLOWED's mark only (`apps/web/components/RefusalStamp.tsx:10-17`,
+enforced by `apps/web/components/refusalStamp.test.tsx`); whether
+OD-2026-09-29-001 frees that family too is open for Jason.
+
 These four are chosen to sit correctly on leather while staying clearly separate
-from a gold bezel. **A saturated pixel anywhere else is a bug** — against leather
-and brass it is unmissable, and the whole budget is spent on safety state.
+from a gold bezel. **A saturated pixel anywhere else is a bug**, red excepted —
+against leather and brass it is unmissable, and the budget is spent on safety state.
 
 **Law 3 — colour is never the only channel.** Every state carries its glyph and an
 uppercase label, so the ladder survives greyscale printing for board packets and
@@ -188,10 +195,9 @@ scale. Nothing is sized by eye.
 - **Stamps are permanent ink** (Law 7): refusals and redactions are stamped on the
   page — `RESEARCH NEEDED`, `REDACTED` — not floated as a dismissible notice.
 - **The seal is the ceremonial mark.** A circular rubber-stamp roundel
-  (`.seal` in the design system): use the `.seal--ink` variant (dark ink
-  `#2A2116`); the default `.seal` still paints `#A81E22`, which
-  `docs/GOLDEN-ERA-V1-CONTRACT.md` §7 reserves for MEDICALLY_NOT_ALLOWED
-  (this brief's §4) — GE §7 debt, not a colour to copy — rotated −7°, double circular
+  (`.seal` in the design system): the default `.seal` paints `#A81E22` and the
+  `.seal--ink` variant dark ink `#2A2116`; either may be used, since red is not
+  reserved (OD-2026-09-29-001, this brief's §4) — rotated −7°, double circular
   rule, curved uppercase text following the rim, a large slab-serif monogram
   centered, worn/eroded ink at the edge — pressed by hand, not placed by a
   designer. Use it as the one ceremonial element a piece is allowed; it is
@@ -230,9 +236,10 @@ scale. Nothing is sized by eye.
 >
 > **Use saturated colour for one thing only:** a safety or status mark — olive-green
 > `#3F7D4E` cleared, orange `#C05A1E` restricted, crimson `#A81E22` locked (medically
-> not allowed to participate, and nothing else) — and
+> not allowed to participate) — and
 > always pair it with a glyph (`✓ ▲ ✕`) and an uppercase word, never colour alone.
-> Everything else stays leather, patina, and bone.
+> Red is the one exception: it is also the club's colour (black, red and white) and
+> may be used freely. Everything else stays leather, patina, and bone.
 >
 > Lay it out on a golden-section split (38.2% / 61.8%) with margins from the
 > Fibonacci scale (13/21/34/55px). Disciplined and safety-forward, not hype.

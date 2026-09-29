@@ -57,10 +57,12 @@ to `apps/web/`.
 1. **RETIRED.** *Brass is the chassis, never the message.* Frames, rivets, bezels,
    button faces. Brass never reports a status. *(Review + contrast sweep; no dedicated
    test.)*
-2. **Saturated colour means safety or status — nothing else.** Green/blue/orange/red
-   belong to the safety ladder and queue outcomes only. `--safety-locked` aliases
-   `--locked`; it never paints chrome. → `src/design/cornerColor.test.ts` (a member's
-   red/blue corner tint can never be mistaken for a safety state).
+2. **Saturated colour means safety or status — nothing else, red excepted.**
+   Green/blue/orange belong to the safety ladder and queue outcomes only. Red is not
+   reserved (OD-2026-09-29-001, 2026-09-29): it is the club's colour (black, red and
+   white) and may be used anywhere. `--safety-locked` aliases `--locked`, which still
+   means a medical stop; it never paints chrome. → `src/design/cornerColor.test.ts`
+   (a member's red/blue corner tint can never be mistaken for a safety state).
 3. **Colour is never the only channel.** Every state carries a glyph (`✓ ◉ ▲ ✕`) and an
    uppercase label; the ladder survives greyscale and colour blindness. A bare spinner is
    colour-and-motion-only and therefore banned — pair `.skeleton`/`aria-busy` with `.working` text.

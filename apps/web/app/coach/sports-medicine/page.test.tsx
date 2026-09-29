@@ -178,7 +178,8 @@ test('a real lift condition is printed as written, never replaced by the fallbac
 });
 
 /* ---------------------------------------------------------------------------
-   Room DNA: red means a child is in danger, and nothing else.
+   Room DNA: --locked means a child is in danger, and nothing else. (Red
+   itself is not reserved, OD-2026-09-29-001.)
    ------------------------------------------------------------------------- */
 
 test('no clearance record on file does not wear the medical red', async () => {

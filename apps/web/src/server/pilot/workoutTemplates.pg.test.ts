@@ -638,9 +638,20 @@ describe('workoutTemplates.ts read functions', () => {
 
 describe('seed-workout-templates.mjs against real Postgres', () => {
   const SEED_ORG = 'ppbf-default-org';
+  const SEED_ACCOUNT = 'acct-seed-test';
 
+  // Both loaders read created_by_role from the seed account's own
+  // pilot.accounts row and refuse an account that does not exist, so the
+  // account is created alongside the library it seeds. organization_admin, not
+  // the platform_owner the CSVs used to carry, so the role assertion below can
+  // tell the two behaviours apart.
   async function seedRealDrillLibrary(client: Client): Promise<void> {
-    await seedDrillLibraryAll(client, DRILL_SEED_DIR, { organizationId: SEED_ORG, seedAccountId: 'acct-seed-test' });
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id)
+       values ($1, 'organization_admin', $2)`,
+      [SEED_ACCOUNT, SEED_ORG],
+    );
+    await seedDrillLibraryAll(client, DRILL_SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT });
   }
 
   test('--dry-run inserts nothing', async () => {
@@ -657,7 +668,7 @@ describe('seed-workout-templates.mjs against real Postgres', () => {
       await seedWorkoutTemplatesAll(
         client,
         TEMPLATE_SEED_DIR,
-        { organizationId: SEED_ORG, seedAccountId: 'acct-seed-test' },
+        { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT },
         { dryRun: true },
       );
 
@@ -683,13 +694,25 @@ describe('seed-workout-templates.mjs against real Postgres', () => {
       );
       await seedRealDrillLibrary(client);
 
-      await seedWorkoutTemplatesAll(client, TEMPLATE_SEED_DIR, { organizationId: SEED_ORG, seedAccountId: 'acct-seed-test' });
+      await seedWorkoutTemplatesAll(client, TEMPLATE_SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT });
 
       const templates = await client.query(
         `select count(*)::int as n from pilot.workout_templates where organization_id = $1`,
         [SEED_ORG],
       );
       expect(templates.rows[0].n).toBe(12);
+
+      // Every template carries the seed account and ITS role, read from
+      // pilot.accounts -- not the platform_owner the CSV used to say.
+      const provenance = await client.query(
+        `select created_by_account_id, created_by_role, count(*)::int as n
+         from pilot.workout_templates where organization_id = $1
+         group by 1, 2`,
+        [SEED_ORG],
+      );
+      expect(provenance.rows).toEqual([
+        { created_by_account_id: SEED_ACCOUNT, created_by_role: 'organization_admin', n: 12 },
+      ]);
 
       const items = await client.query(
         `select count(*)::int as n from pilot.workout_template_items where organization_id = $1`,
@@ -724,8 +747,8 @@ describe('seed-workout-templates.mjs against real Postgres', () => {
       );
       await seedRealDrillLibrary(client);
 
-      await seedWorkoutTemplatesAll(client, TEMPLATE_SEED_DIR, { organizationId: SEED_ORG, seedAccountId: 'acct-seed-test' });
-      await seedWorkoutTemplatesAll(client, TEMPLATE_SEED_DIR, { organizationId: SEED_ORG, seedAccountId: 'acct-seed-test' });
+      await seedWorkoutTemplatesAll(client, TEMPLATE_SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT });
+      await seedWorkoutTemplatesAll(client, TEMPLATE_SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT });
 
       const templates = await client.query(
         `select count(*)::int as n from pilot.workout_templates where organization_id = $1`,
