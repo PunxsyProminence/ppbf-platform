@@ -14,10 +14,11 @@
 -- row. The importer that fills it is separate work.
 --
 -- (1) A SUPERSEDED DRILL VERSION STAYS LIVE, SO IT MUST NOT HOLD THE NAME.
---     A revision under R2 inserts v2 and sets superseded_at on v1, and v1
---     keeps active = true. It has to: promotion pins the exact reference
---     version a gym adopted (drill_reference_provenance_migration.sql:79-84),
---     and the athlete and restore reads require that pinned row to be active
+--     A revision under R2 sets superseded_at on v1 and then inserts v2 (the
+--     order (2) below forces), and v1 keeps active = true. It has to:
+--     promotion pins the exact reference version a gym adopted
+--     (drill_reference_provenance_migration.sql:79-84), and the athlete and
+--     restore reads require that pinned row to be active
 --     (drillLibraryV3.ts:726, :746, :818; drills.ts:360-367). The code already
 --     treats superseded as "a newer version exists", not as withdrawn
 --     (drillAdoptionReadiness.ts:51-53; promote/route.test.ts:404-406).
@@ -218,7 +219,7 @@ create unique index if not exists pilot_universal_stop_rules_one_head_per_lineag
   where superseded_at is null;
 
 comment on table pilot.universal_stop_rules is
-  'Stop rules stored ONCE per gym that apply to every drill (owner ruling 2026-09-29: "obviously injury of some sort would require stoppage universally"). applies_to_contact_levels NULL = every drill; a list narrows the rule to drills at those contact levels. Versioned like pilot.drill_library: a revision inserts a new version and sets superseded_at on the old one.';
+  'Stop rules stored ONCE per gym that apply to every drill (owner ruling 2026-09-29: "obviously injury of some sort would require stoppage universally"). applies_to_contact_levels NULL = every drill; a list narrows the rule to drills at those contact levels. Versioned like pilot.drill_library: a revision sets superseded_at on the old version FIRST and then inserts the new one; the one-head-per-lineage index refuses the other order.';
 
 -- (4) --------------------------------------------------------------------------
 create table if not exists pilot.reference_content_revisions (
