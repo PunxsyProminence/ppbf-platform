@@ -127,8 +127,21 @@ export async function checkLibraryScope(client) {
     // through the API is `source_<uuid>`. Splitting on the prefix answers "is
     // THIS corpus already loaded" rather than "is there any library content",
     // which are different questions with different remedies.
+    //
+    // Retired rows are counted apart. The 2026-09-29 corpus repair takes the
+    // wrong-paper and duplicate sources out of the seed, and a database retires
+    // them rather than deleting them (a chunk's source FK cascades on delete), so
+    // a repaired database still holds them. Counting them as corpus would compare
+    // a repaired baseline against a seed that no longer lists them and call it
+    // wrong. "Live" is what retrieval and coverage themselves require of a source
+    // -- status 'active' (shadowLibrary.ts coverage and retrieval queries) and not
+    // rejected -- so this holds whichever way a row was retired.
     const corpusByOrg = await client.query(
-      `select organization_id, count(*)::int as corpus_sources
+      `select organization_id,
+              (count(*) filter (where status = 'active' and approval_state <> 'rejected'))::int
+                as corpus_sources,
+              (count(*) filter (where not (status = 'active' and approval_state <> 'rejected')))::int
+                as corpus_retired
          from pilot.shadow_library_sources
         where source_id like 'src\\_%'
         group by organization_id
@@ -206,6 +219,27 @@ function pad(value, width) {
   return String(value ?? '').padEnd(width);
 }
 
+/**
+ * Which state the check reports, decided from the counts alone so the choice is
+ * testable without a database. run() prints the words for each state.
+ *
+ * Holding MORE than the corpus assigns is its own state, not "incomplete": after
+ * the 2026-09-29 corpus repair the seed lists fewer sources than a database
+ * imported before it holds, and calling that incomplete invites someone to
+ * "fix" it by deleting rows -- which cascades to the chunks cited to them.
+ */
+export function libraryScopeState({ platformRow, platformCorpus, elsewhere, expected }) {
+  if (!platformRow) return 'NO_RESERVED_ORGANIZATION';
+  if (platformCorpus === 0 && elsewhere.length > 0) return 'CORPUS_OUTSIDE_BASELINE';
+  if (platformCorpus > expected) return 'BASELINE_EXCEEDS_CORPUS';
+  if (platformCorpus > 0 && platformCorpus < expected) return 'BASELINE_INCOMPLETE';
+  if (platformCorpus === expected && platformRow.capabilities > 0
+      && platformRow.capabilities_with_tracks === 0) return 'EVIDENCE_AXIS_EMPTY';
+  if (platformCorpus === expected) return 'PRESENT_AND_SPLIT';
+  if (platformRow.chunks === 0) return 'EMPTY';
+  return 'PRESENT';
+}
+
 export async function run() {
   await loadEnvLocal();
   const connectionString = required('AZURE_POSTGRES_CONNECTION_STRING');
@@ -238,7 +272,10 @@ export async function run() {
     console.log('  none -- the research corpus has never been imported into this database');
   } else {
     for (const r of result.corpusByOrg) {
-      console.log(`  ${pad(r.organization_id, 24)}${r.corpus_sources}`);
+      console.log(
+        `  ${pad(r.organization_id, 24)}${r.corpus_sources}`
+        + `${r.corpus_retired > 0 ? ` (+${r.corpus_retired} retired: archived, quarantined or rejected; not counted)` : ''}`,
+      );
     }
   }
 
@@ -310,11 +347,13 @@ export async function run() {
   const gymKeeps = SCOPE_EXPECTED_COUNTS.ppbf_policy.sources;
   const strays = elsewhere.filter((r) => r.corpus_sources > gymKeeps);
 
+  const state = libraryScopeState({ platformRow, platformCorpus, elsewhere, expected });
+
   console.log('');
-  if (!platformRow) {
+  if (state === 'NO_RESERVED_ORGANIZATION') {
     console.log('PILOT LIBRARY SCOPE CHECK: NO RESERVED ORGANIZATION');
     console.log('  The platform library scope migration has not been applied to this database.');
-  } else if (platformCorpus === 0 && elsewhere.length > 0) {
+  } else if (state === 'CORPUS_OUTSIDE_BASELINE') {
     console.log('PILOT LIBRARY SCOPE CHECK: CORPUS IS OUTSIDE THE BASELINE');
     console.log(
       '  Corpus rows are held by a gym organization and the baseline holds none. source_id is '
@@ -322,21 +361,32 @@ export async function run() {
       + 'organization while these exist. Re-scope them (pilot:rescope-library-baseline) or '
       + 'remove them first -- an owner decision, not a retry.',
     );
-  } else if (platformCorpus > 0 && platformCorpus !== expected) {
+  } else if (state === 'BASELINE_EXCEEDS_CORPUS') {
+    console.log('PILOT LIBRARY SCOPE CHECK: BASELINE HOLDS MORE THAN THE CORPUS ASSIGNS');
+    console.log(`  The baseline holds ${platformCorpus} live corpus source(s); the corpus assigns it ${expected}.`);
+    console.log(
+      '  The 2026-09-29 corpus repair took wrong-paper and duplicate sources out of the seed. A '
+      + 'database imported before it still holds them live until the owner-gated production '
+      + 'repair retires them. Do NOT delete them: a chunk\'s source foreign key cascades on delete, '
+      + 'so deleting a source deletes the claims cited to it.',
+    );
+    if (strays.length > 0) {
+      console.log(`  A gym holds more than the ${gymKeeps} it should keep: ${strays.map((r) => `${r.organization_id}=${r.corpus_sources}`).join(', ')}`);
+    }
+  } else if (state === 'BASELINE_INCOMPLETE') {
     console.log('PILOT LIBRARY SCOPE CHECK: BASELINE INCOMPLETE');
     console.log(`  The baseline holds ${platformCorpus} corpus source(s); the corpus assigns it ${expected}.`);
     if (strays.length > 0) {
       console.log(`  A gym holds more than the ${gymKeeps} it should keep: ${strays.map((r) => `${r.organization_id}=${r.corpus_sources}`).join(', ')}`);
     }
-  } else if (platformCorpus === expected && platformRow.capabilities > 0
-      && platformRow.capabilities_with_tracks === 0) {
+  } else if (state === 'EVIDENCE_AXIS_EMPTY') {
     console.log('PILOT LIBRARY SCOPE CHECK: BASELINE PRESENT, EVIDENCE AXIS EMPTY');
     console.log(
       `  ${platformRow.capabilities} capability row(s), none carrying feeder_tracks. Coverage `
       + 'queries will return nothing. Backfill with the importer\'s capability_map_only mode '
       + '(tables: capability_map_only) -- safe on an approved baseline, unlike a full import.',
     );
-  } else if (platformCorpus === expected) {
+  } else if (state === 'PRESENT_AND_SPLIT') {
     console.log('PILOT LIBRARY SCOPE CHECK: BASELINE PRESENT AND CORRECTLY SPLIT');
     console.log(
       `  ${platformCorpus} corpus source(s) in the baseline, ${platformRow.sources_approved} approved, `
@@ -344,7 +394,7 @@ export async function run() {
       + `over ${platformRow.distinct_chunk_tracks} chunk track(s). `
       + `Gyms keep their own policy material: ${elsewhere.map((r) => `${r.organization_id}=${r.corpus_sources}`).join(', ') || 'none'}.`,
     );
-  } else if (platformRow.chunks === 0) {
+  } else if (state === 'EMPTY') {
     console.log('PILOT LIBRARY SCOPE CHECK: BASELINE EMPTY, NOTHING BLOCKING');
     console.log('  The reserved organization holds no corpus rows and no gym holds them either.');
   } else {
