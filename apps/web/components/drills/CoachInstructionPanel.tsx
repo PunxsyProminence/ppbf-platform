@@ -11,8 +11,8 @@ import type { OpenedInstruction } from './drillInstructionRead';
  *
  * It says why when there is nothing to show, because "no instructions" and
  * "the instructions did not load" call for different actions. Plain text, not
- * an alert: none of these is a failed write, and the pages' red channels are
- * reserved for those (safeguardingRedReservation.test.ts). The outcome sits in
+ * an alert: none of these is a failed write, and the pages keep their red
+ * alerts for those. The outcome sits in
  * one polite live region, so a screen-reader user hears what the toggle
  * produced as well as seeing it.
  *

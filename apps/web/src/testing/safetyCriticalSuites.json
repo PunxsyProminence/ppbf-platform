@@ -38,7 +38,7 @@
     {
       "path": "src/design/cornerColor.test.ts",
       "minimumTests": 49,
-      "guards": "A member's red or blue corner may never be mistakable for a safety state. Chroma below every rung, delta-E 20 from every rung and ink tint. The same harm as the reserved red, approached from the other side."
+      "guards": "A member's red or blue corner may never be mistakable for a safety state. Chroma below every rung, delta-E 20 from every rung and ink tint. The same harm as a non-medical state wearing --locked, approached from the other side."
     },
     {
       "path": "src/design/plateBinaries.test.ts",
@@ -98,7 +98,7 @@
     {
       "path": "components/refusalStamp.test.tsx",
       "minimumTests": 29,
-      "guards": "The refusal vocabulary, and specifically that MEDICALLY_NOT_ALLOWED is the one red mark -- the render-side companion to safeguardingRedReservation. Covers training_hold and the five non-medical refusals as the states that must NOT read as a medical bar."
+      "guards": "The refusal vocabulary, and specifically that MEDICALLY_NOT_ALLOWED is the one red mark in the refusal family. The repo-wide red reservation it once accompanied is deleted (OD-2026-09-29-001); this is the surface test that keeps a medical stop distinguishable. Covers training_hold and the five non-medical refusals as the states that must NOT read as a medical bar."
     },
     {
       "path": "components/designSystemClasses.test.ts",

@@ -4,6 +4,7 @@
 |-------|-------|
 | Status | **DONE** |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | Safety / Recovery / Health (`safetyRecoveryHealth`) |
 | Source | `2.0.0-draft-merged` |
@@ -75,3 +76,4 @@ see module 034.)
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-06 | session B (remote) | Built on PR #238: training_holds table, gate row, escalation wiring, registration block, contact flag, athlete banner. Scope decisions taken with owner. Status stays inactive pending promotion review. |
+| 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |

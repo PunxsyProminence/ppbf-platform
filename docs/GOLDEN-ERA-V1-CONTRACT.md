@@ -1,7 +1,7 @@
 # GOLDEN ERA V1 — Real-Gym Visual Contract
 **Version:** 1.1 · **Date:** 2026-08-24 · **Author:** Grok · **Owner:** Jason Neale  
 **Status:** Active authority for the usable-app visual release.  
-**Amended 2026-09-28** (OD-2026-09-28-001, OD-2026-09-28-009): owner-first authority order (§2); §3 points to the lock; §8 records the fonts as built; §9 points to the plates README; §13 shows the seam as built; Claude places plate binaries. Later the same day, by owner decision: §4 adds dark glass as a panel material (OD-2026-09-28-014); §9 lets the ring canvas keep its IRON CITY lettering (OD-2026-09-28-013).  
+**Amended 2026-09-28** (OD-2026-09-28-001, OD-2026-09-28-009): owner-first authority order (§2); §3 points to the lock; §8 records the fonts as built; §9 points to the plates README; §13 shows the seam as built; Claude places plate binaries. Later the same day, by owner decision: §4 adds dark glass as a panel material (OD-2026-09-28-014); §9 lets the ring canvas keep its IRON CITY lettering (OD-2026-09-28-013). **Amended 2026-09-29** (OD-2026-09-29-001): §6 and §7, red is not reserved; `--locked` still means a medical stop.  
 **Related:** this file (look & feel) · `docs/REAL-GYM-REFERENCE-LOCK.md` (environmental DNA) · `docs/ROOM-MAP.md` (the visual build order) · `design-system/README.md` (the laws that still bind) · `apps/web/public/plates/README.md` (plates)
 
 > This document is the durable visual authority.  
@@ -102,7 +102,7 @@ A coach floor-group page and a session-script delivery page both sit in `.room--
 | **Floor** | Open bags + ring edge + fluorescent, high energy | Chalk, WordsOnTheWall, CLEARED badges | Board tables, file cork, clinic red theater |
 | **Board** | Formal quiet — chalkboard / certificates wall | Count tiles, PLANNED tabs | Chat, athlete detail, eggs |
 | **File** | Gear shelves / sticky-note tagged storage density | Queues, Observation→Lesson columns | Hype, eggs |
-| **Clinic** | Cleaner corner, cooler light, less bag drama | Brass Training Hold, red only for critical medical/safety | Wall sayings, “tough it out” eggs |
+| **Clinic** | Cleaner corner, cooler light, less bag drama | Brass Training Hold, `--locked` only for critical medical/safety | Wall sayings, “tough it out” eggs |
 | **Night** | Darker, low lamp, bags as silhouettes | Mode labels only (Scout / Architect / Omega) | Board chrome on deny, Master Mode toggle |
 
 Easter eggs: primary home is Floor. Never on Board, File, Clinic, Night (deny).
@@ -113,11 +113,13 @@ Easter eggs: primary home is Floor. Never on Board, File, Clinic, Night (deny).
 
 | Token / colour | Meaning | Never use for |
 |----------------|---------|---------------|
-| `#A81E22` / `--locked` | **MEDICALLY_NOT_ALLOWED only** | Ordinary network failures, loading, empty, form rejection, generic overdue, normal validation, ordinary destructive buttons, generic unavailable |
+| `--locked` (resolves to `#A81E22`) | **MEDICALLY_NOT_ALLOWED only** | Ordinary network failures, loading, empty, form rejection, generic overdue, normal validation, ordinary destructive buttons, generic unavailable |
 | Restricted | Visually distinct from Locked | — |
-| Destructive action | Separate destructive semantic treatment | Medical locked red |
+| Destructive action | Separate destructive semantic treatment | The `--locked` medical-stop treatment |
 
-If you encounter `--stamp-restricted: var(--locked)`, treat it as existing semantic debt, not design authority. Do not reinterpret medical/safeguarding logic. (`apps/web/src/design/safeguardingRedReservation.test.ts` enforces the reservation in CI.)
+**Red itself is not reserved** (OD-2026-09-29-001, 2026-09-29). The club's colours are black, red and white, so red, `#A81E22` included, may be used anywhere. What the table above keeps is the state: `--locked` means a medical stop and nothing else. The 2026-08-19 reservation of the hue is superseded (OD-2026-09-29-001), and its test (`apps/web/src/design/safeguardingRedReservation.test.ts`) is deleted. Within the refusal-stamp family, red stays MEDICALLY_NOT_ALLOWED's mark only (`apps/web/components/RefusalStamp.tsx:10-17`, enforced by `apps/web/components/refusalStamp.test.tsx`); whether OD-2026-09-29-001 frees that family too is open for Jason.
+
+If you encounter `--stamp-restricted: var(--locked)`, treat it as existing semantic debt, not design authority. Do not reinterpret medical/safeguarding logic.
 
 ---
 

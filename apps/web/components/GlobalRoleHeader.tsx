@@ -36,9 +36,10 @@ const FEEDBACK_TRIAGE_ROLES = ["admin", "platform_owner"];
    - Targets were px-3 py-1, about 26px tall. That is under the 44px WCAG floor
      on a bar that ships on every route including phones. They are now --tap.
    - The role badge was --safety-locked, which aliases to --locked: the safety
-     gate's "this athlete may not participate" red. Law 2 reserves saturated
-     colour for safety state, and a job title is not one. Role is identity, so
-     it wears patina brass and the red goes back to meaning only what it should.
+     gate's "this athlete may not participate" medical stop, and a job title is
+     not one. Role is identity, so it wears patina brass and --locked goes back
+     to meaning only what it should. (Red itself is not reserved,
+     OD-2026-09-29-001.)
 
    Note the text-[length:...] / text-[color:...] hints below. Tailwind v4 cannot
    tell whether text-[var(--x)] is a font size or a colour, so it silently emits

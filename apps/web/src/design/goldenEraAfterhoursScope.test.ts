@@ -15,18 +15,22 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  *    override leaks wherever it is forgotten; a token override cannot. Same
  *    seam .ge-bell, .ge-floorboard and .ge-locker use.
  *
- * 2. THE RESERVED RED IS NOT SPENT ON THE ROOM. #A81E22 / --locked /
+ * 2. THE LOCKED RED IS NOT SPENT ON THE ROOM. #A81E22 / --locked /
  *    --stamp-red is MEDICALLY_NOT_ALLOWED, and After Hours is the room where
  *    that matters most: /admin/shadow paints real refusals, review gates and
  *    safety states, so a decorative red anywhere in this scope teaches a
  *    reader's eye that the gate's red is furniture. The whole 006 identity is
  *    built from bronze, hide, wood and bone, and this pins it — every
  *    declaration under the scope, checked for the seed colour, its rgb
- *    spelling and both reserved token names.
+ *    spelling and both token names.
+ *
+ *    STATUS 2026-09-29: red itself is not reserved (OD-2026-09-29-001).
+ *    These checks were written under the reservation and still run; --locked
+ *    still means a medical stop.
  *
  *    Checked on COMMENT-STRIPPED css on purpose. The scoped block's own header
- *    names the reservation in prose ("NO RESERVED RED. #A81E22 / --locked /
- *    --stamp-red is MEDICALLY_NOT_ALLOWED and nothing else"), which is the
+ *    names the rule in prose ("NO LOCKED RED. --locked (#A81E22, also
+ *    --stamp-red) means MEDICALLY_NOT_ALLOWED"), which is the
  *    sentence that keeps the next author from re-deciding it. A guard that
  *    cannot tell prose from a declaration would force the comment to stop
  *    naming the rule it exists to protect — the same reasoning typeLadder.test
@@ -50,7 +54,7 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  *
  * MUTATION CHECK: set a `--brass-NNN` rung on `.ge-afterhours` back to its
  * legacy value, or drop the class from the page, or delete a real control, or
- * paint one declaration in the reserved red — each turns this suite red.
+ * paint one declaration in the locked red — each turns this suite red.
  */
 
 const BRASS_RUNGS = ['200', '300', '400', '500', '600', '700', '800', '900'] as const;
