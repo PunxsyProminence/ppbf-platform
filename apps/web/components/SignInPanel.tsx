@@ -50,8 +50,10 @@ function MethodRule() {
  * query parameter is how a mark and its copy drift apart.
  *
  * Not one of them is red, and that is the whole point. The owner's locked art
- * policy of 2026-08-19 (RefusalStamp's header carries it) reserves red and
- * --locked for MEDICALLY_NOT_ALLOWED alone. A sign-in refusal is never
+ * policy of 2026-08-19 for the refusal-stamp family (RefusalStamp's header
+ * carries it) keeps the red / --locked stamp for MEDICALLY_NOT_ALLOWED alone.
+ * (That is the stamp family's own rule; red elsewhere is not reserved,
+ * OD-2026-09-29-001.) A sign-in refusal is never
  * medical, so it renders brass/bone like every other non-medical "no".
  *
  * The sentences are unchanged from the copy this table replaced. Each is
@@ -152,9 +154,9 @@ export default function SignInPanel({
   const [magicLinkRateLimited, setMagicLinkRateLimited] = useState(false);
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState('');
-  // A 429 is a WAIT state, not a refusal: the owner's locked art policy
-  // reserves red/--locked for medical/safety only, and a rate limit is
-  // neither. Every other loginError (wrong PIN length, invalid credentials,
+  // A 429 is a WAIT state, not a refusal: the refusal-stamp family's locked
+  // art policy keeps its red/--locked stamp for medical/safety only, and a
+  // rate limit is neither. Every other loginError (wrong PIN length, invalid credentials,
   // timeout, network failure, ...) is a genuine non-medical refusal. This
   // flag is the only thing that tells the render below which of the two
   // RefusalStamp kinds applies -- it is reset at the top of every fresh
@@ -494,7 +496,8 @@ export default function SignInPanel({
             </div>
           )}
           {/* A 429 here is a WAIT state (kind="wait"), never a refusal --
-              red/--locked is reserved for medically_not_allowed alone.
+              the refusal-stamp family keeps its red/--locked stamp for
+              medically_not_allowed alone.
               Every other magic-link failure is a genuine, non-medical
               refusal (kind="cannot_be_done"): brass/bone, same as PIN
               login's own error treatment below, never the clinic-red

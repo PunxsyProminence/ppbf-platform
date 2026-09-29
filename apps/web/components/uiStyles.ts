@@ -17,9 +17,10 @@
  * reserves saturated colour for safety state, and a selected tab is not one —
  * when the gate's red is also the tab highlight, a locked athlete stops being
  * unmissable. Chrome now uses --accent (brass): a selected tab is a control in
- * the "on" position, which is chassis, not a claim about a person.
+ * the "on" position, which is chassis, not a claim about a person. (That is
+ * about the --locked token. Red itself is not reserved, OD-2026-09-29-001.)
  *
- * Red survives in exactly two places here, both correct: the status ladder
+ * The --locked red survives in exactly two places here: the status ladder
  * below, and the error/retry affordances.
  *
  * Tokens
