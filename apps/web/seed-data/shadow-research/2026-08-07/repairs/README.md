@@ -82,3 +82,23 @@ carries) and `src_ad951938a95719ec` (the Med Sci Sports Exerc title, PubMed
 26891166, of the joint Academy of Nutrition and Dietetics / Dietitians of Canada
 / ACSM position statement this J Acad Nutr Diet row, PubMed 26920240, carries:
 same first author, same date, same opening sentence of the abstract).
+
+## pre_repair_values.csv
+
+The value every field the repair changes held in the seed production imported
+(commit `95f3c79e`, the last seed before #1008; `a6378b52` parses to the same
+values): one row per `(table, row_id, field)`, `before_json` the value as JSON,
+empty when the metadata key was absent. It is the "before" half of the tool's
+state check -- the lane SQL's preconditions, made exact for every field -- so a
+production dry run can say PRE_REPAIR, PARTIAL, REPAIRED or DRIFTED rather than
+guess. It holds only fields that change (1,205 rows: 221 chunk `source_id`, 213
+source `status`, 11 source `authority_tier`, and the managed metadata keys);
+every other managed field of a listed row is expected to already hold the seed
+value. `researchRepairPlan.test.ts` re-derives it from `95f3c79e` on every CI run
+and fails if any difference between that seed and today's is not in the plan
+(the two chunk sentences #1003 corrected are the only exception: text, not
+citation or tier data, and not written by the tool).
+
+The tool is `apps/web/scripts/pilot-repair-research-baseline.mjs`, dispatched by
+the `repair-research-baseline` workflow; the order of runs is in
+`docs/SHADOW_RESEARCH_IMPORT_RUNBOOK.md`.
