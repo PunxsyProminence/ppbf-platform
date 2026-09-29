@@ -568,11 +568,34 @@ describe('registries: disciplines, competence levels, cohort definitions', () =>
 
     // An edit to the absent row changes nothing this import would write.
     const reshown = await plan('gym_stale', admin, revised);
+    // Wrestling's ledger head (v1, the first load) no longer matches the row,
+    // so the row as the app left it is recorded first (ledger.ts:20-24, :67).
+    expect(reshown.units.find((unit) => unit.dataset === 'disciplines' && unit.key === 'wrestling')).toMatchObject({
+      outcome: 'new_version',
+      fromVersion: 2,
+      toVersion: 3,
+      recordsBefore: true,
+    });
     await observer.query("update pilot.disciplines set display_name = 'Kickboxing (edited)' where organization_id = 'gym_stale' and discipline = 'kickboxing'");
     const applied = await applyCommitted('gym_stale', admin, revised, reshown.planHash);
     expect(applied.written.disciplines?.updated.sort()).toEqual(['boxing', 'wrestling']);
     const kick = await observer.query("select display_name from pilot.disciplines where organization_id = 'gym_stale' and discipline = 'kickboxing'");
     expect(kick.rows).toEqual([{ display_name: 'Kickboxing (edited)' }]);
+
+    // The history never skips a state the row held: the file's note (first
+    // load), the note edited in the app, then the file's note again.
+    const disciplinesTable = readCsv(committedFiles()[DISCIPLINES_CSV]);
+    const wrestlingCells = disciplinesTable.records.find((record) => record.cells[disciplinesTable.header.indexOf('discipline')] === 'wrestling')?.cells;
+    const fileNote = wrestlingCells?.[disciplinesTable.header.indexOf('evidence_note')];
+    expect(fileNote).toContain('CB-002');
+    const wrestling = await ledgerRows('gym_stale', 'disciplines', 'wrestling');
+    expect(wrestling.map((row) => [row.version, row.content.evidence_note])).toEqual([
+      [1, fileNote],
+      [2, 'edited in the app'],
+      [3, fileNote],
+    ]);
+    expect(wrestling[1].import_id).toBe(applied.importId);
+    expect(wrestling[2].import_id).toBe(applied.importId);
   });
 
   it('holds the rows it will write: an edit in flight when apply starts is waited for, then seen, and the plan is refused as stale', async () => {
