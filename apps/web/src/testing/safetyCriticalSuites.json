@@ -3,22 +3,28 @@
     "The register of suites that may not vanish from a run without the run going red.",
     "A suite that fails to LOAD reports as one failing file while every assertion it owns",
     "disappears from the totals, so the passing test count goes UP. On 2026-08-25 that",
-    "happened to safeguardingRedReservation.test.ts and the reserved medical red had no",
-    "guard on main at all. Enforced by scripts/suiteAttendanceReporter.js on every",
+    "happened to the safeguarding-red suite -- since retired by owner decision, see below --",
+    "and the run stayed green while its subject had no guard on main at all. The suite is",
+    "gone; the failure mode it exposed is why this register exists and is not.",
+    "Enforced by scripts/suiteAttendanceReporter.js on every",
     "unnarrowed run; the register itself is kept honest by src/testing/suiteAttendance.test.ts.",
     "",
     "minimumTests is a MEASURED FLOOR, taken from the green run of 2026-08-25 at d04dde68",
     "(588 suites, 8124 tests). It is not a target and it is not a ceiling: adding tests is",
     "always fine, and a floor left behind by growth is stale rather than wrong -- re-measure",
     "it upward whenever you notice. Lowering one, or removing an entry, is a deliberate act",
-    "that has to be argued for in the same change -- never a way to make a red run green."
+    "that has to be argued for in the same change -- never a way to make a red run green.",
+    "",
+    "OWNER DECISION on the safeguarding red: 'delete red no need for it to be excluded'",
+    "(2026-09-24), confirmed 2026-09-29 (OD-2026-09-29-001). The reservation held #A81E22",
+    "and seven tokens for MEDICALLY_NOT_ALLOWED alone, banned the literal from CSS and",
+    "TS/TSX, and carried a 118-entry ledger of every site where a red sat near a failure",
+    "word. The club's own identity is black, red and white, so the app could not wear its",
+    "own colours. The hue monopoly and the ledger are gone. What is NOT gone: --locked still",
+    "exists and still means a medical stop. Anything that needs a medical stop to stay",
+    "distinguishable from an ordinary error belongs in a test of that surface."
   ],
   "suites": [
-    {
-      "path": "src/design/safeguardingRedReservation.test.ts",
-      "minimumTests": 8,
-      "guards": "The reserved safeguarding red. #A81E22 / --locked belongs to MEDICALLY_NOT_ALLOWED alone (owner decision 2026-08-19); this is the guard that stops load errors, empty states and 'not on file' placeholders wearing it through any of the four derived channels. This is the suite that went dark on 2026-08-25."
-    },
     {
       "path": "src/design/readinessRungPolicy.test.ts",
       "minimumTests": 4,
@@ -32,7 +38,7 @@
     {
       "path": "src/design/cornerColor.test.ts",
       "minimumTests": 49,
-      "guards": "A member's red or blue corner may never be mistakable for a safety state. Chroma below every rung, delta-E 20 from every rung and ink tint. The same harm as the reserved red, approached from the other side."
+      "guards": "A member's red or blue corner may never be mistakable for a safety state. Chroma below every rung, delta-E 20 from every rung and ink tint. The same harm as a non-medical state wearing --locked, approached from the other side."
     },
     {
       "path": "src/design/plateBinaries.test.ts",
@@ -92,7 +98,7 @@
     {
       "path": "components/refusalStamp.test.tsx",
       "minimumTests": 29,
-      "guards": "The refusal vocabulary, and specifically that MEDICALLY_NOT_ALLOWED is the one red mark -- the render-side companion to safeguardingRedReservation. Covers training_hold and the five non-medical refusals as the states that must NOT read as a medical bar."
+      "guards": "The refusal vocabulary, and specifically that MEDICALLY_NOT_ALLOWED is the one red mark in the refusal family. The repo-wide red reservation it once accompanied is deleted (OD-2026-09-29-001); this is the surface test that keeps a medical stop distinguishable. Covers training_hold and the five non-medical refusals as the states that must NOT read as a medical bar."
     },
     {
       "path": "components/designSystemClasses.test.ts",

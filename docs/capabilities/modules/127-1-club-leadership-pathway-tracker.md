@@ -4,6 +4,7 @@
 |-------|-------|
 | Status | **DONE** (vertical slice — see Implementation notes) |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | Class / Program Management (`classProgramManagement`) |
 | Source | `2.0.0-draft-merged` |
@@ -89,3 +90,4 @@ matrix and both inline coverage loops). Door added to `buildingMap.ts`.
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-16 | Claude | Vertical slice built to owner design (module 127): three nomination paths, majority-vote confirmation, permanent membership. Registered DONE / PENDING_SIGN_OFF. |
+| 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. The 2026-08-16 entry above named PENDING_SIGN_OFF but wrote no row, and no SIGNED_OFF was recorded for this module on 2026-08-28. |

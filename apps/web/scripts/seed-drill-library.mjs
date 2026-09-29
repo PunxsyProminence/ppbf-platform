@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { Client } from 'pg';
 
+import { resolveSeedAccountRole } from './lib/seed-account-role.mjs';
+
 /**
  * Loads the literature-grounded drill library (README_DRILL_LIBRARY_V3.md)
  * into pilot.drill_library / drill_scale_levels / drill_stop_rules /
@@ -36,6 +38,12 @@ import { Client } from 'pg';
  * Placeholders: every row in the CSVs carries the literal strings
  * {{PPBF_ORG_ID}} and {{SEED_ACCOUNT_ID}}, substituted here at load time --
  * never commit a real organization or account id into a seed CSV.
+ *
+ * created_by_role is NOT in the CSV. It is the seed account's own role, read
+ * from pilot.accounts before anything is written (lib/seed-account-role.mjs),
+ * and the run refuses if that account does not exist or has no role. The CSV
+ * once said platform_owner on every row and that was written as given, so a
+ * gym seed run as an organization_admin recorded a role nobody held.
  */
 
 function required(name) {
@@ -210,7 +218,7 @@ function toTextArray(value) {
     .filter(Boolean);
 }
 
-async function seedDrillLibrary(client, records, { dryRun }) {
+async function seedDrillLibrary(client, records, { dryRun, createdByRole }) {
   let inserted = 0;
   let skipped = 0;
 
@@ -266,7 +274,7 @@ async function seedDrillLibrary(client, records, { dryRun }) {
         record.field_provenance || 'PPBF source manual v3',
         record.active === '' ? true : toBool(record.active),
         toTextOrNull(record.created_by_account_id),
-        toTextOrNull(record.created_by_role),
+        createdByRole,
       ],
     );
 
@@ -389,13 +397,18 @@ export async function seedAll(client, seedDir, placeholders, { dryRun = false } 
     cues: 'seed_drill_cues.csv',
   };
 
+  // Before BEGIN, so a wrong account refuses before any row is attempted --
+  // in --dry-run too, which is where an operator should find out.
+  const createdByRole = await resolveSeedAccountRole(client, placeholders.seedAccountId);
+  console.log(`seed account role (recorded as created_by_role): ${createdByRole}`);
+
   await client.query('BEGIN');
   try {
     const drillRecords = await loadCsvRecords(path.join(seedDir, files.drills), placeholders);
     if (drillRecords === null) {
       console.log(`${files.drills} not found in ${seedDir} -- nothing to seed for drill_library.`);
     } else {
-      await seedDrillLibrary(client, drillRecords, { dryRun });
+      await seedDrillLibrary(client, drillRecords, { dryRun, createdByRole });
     }
 
     const scaleRecords = await loadCsvRecords(path.join(seedDir, files.scaleLevels), placeholders);

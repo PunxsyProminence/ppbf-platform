@@ -47,7 +47,7 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  *        Law 2 status ladder are not a visual pass's to restyle, and the wall
  *        is the committed plate's job, not this scope's;
  *      - the block declares no `--bone-*`, `--hide-*`, `--paper`, `--plate` or
- *        reserved-red token. A bone rung is a platform-wide promise about
+ *        locked-red token. A bone rung is a platform-wide promise about
  *        contrast (cornerColor.test.ts reads the LAST declaration of a token
  *        as its value), and `--plate` is a locked room inventory with its own
  *        guard. Only the brass ramp moves.
@@ -116,7 +116,7 @@ function legacyRung(source: string, rung: string): string | null {
  * The 010 block's DECLARATIONS, comments removed.
  *
  * Comments come out FIRST, before the block is located, because the block's own
- * header names the reserved red in order to say it does not use it, names
+ * header names the locked red in order to say it does not use it, names
  * `.mat-paper` in order to say it does not touch it, and because "GOLDEN ERA
  * 010" itself sits inside that header — slicing first would strand an
  * unterminated comment. The block ends where the next scope begins, which is
@@ -332,6 +332,9 @@ describe('the 010 block stays inside its scope and off what it may not touch', (
     }
   });
 
+  // STATUS 2026-09-29: red itself is not reserved (OD-2026-09-29-001). This
+  // check was written under the reservation and still runs; --locked still
+  // means a medical stop.
   test('the scoped block never uses reserved medical red', () => {
     const block = fileBlock();
     expect(block).not.toMatch(/#A81E22/i);
@@ -427,7 +430,7 @@ describe('the 010 mockup did not delete or invent research controls', () => {
 
   test('the failed-read refusal is still its own state', () => {
     // A projection that could not be read is not an empty archive. Both
-    // states, and the reserved-red panel that carries the first, survive.
+    // states, and the --locked panel that carries the first, survive.
     expect(PAGE).toContain('badge badge--locked');
     expect(PAGE).toContain('border-[color:var(--locked)]');
     expect(PAGE).toContain('No SHADOW research projection items exist');

@@ -5,6 +5,7 @@
 | Status | **DONE** (slice shipped 2026-08-16) |
 | Vertical slice | Circuit stations on the same daily floor plan as module 121: a group with a station name and rotation order is a circuit stop; a group without one is a small group. Plan-level rotation_minutes (1-120, optional). The UI labels the day from what is actually there rather than assuming a shape. `/coach/floor-groups`. |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | Class / Program Management (`classProgramManagement`) |
 | Source | `2.0.0-draft-merged` |
@@ -39,3 +40,4 @@ _Scaffold only. Do not mark active until promotion review._
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-16 | claude-session | Slice shipped: stations are OPTIONAL by owner answer 2026-08-16 ("some groups work in small groups and we do do circuits") -- neither shape is the default, and a day with no stations reads as a small-group day rather than a broken circuit. Promoted per playbook rule with ManualVerification PENDING_SIGN_OFF. |
+| 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. The 2026-08-16 entry above named PENDING_SIGN_OFF but wrote no row, and no SIGNED_OFF was recorded for this module on 2026-08-28. |
