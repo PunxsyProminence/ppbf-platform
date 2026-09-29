@@ -33,6 +33,7 @@ import { readDatasetFiles, runApply } from './contentImport/cli';
 import { readCsv, writeCsv } from './contentImport/csv';
 import { MINT } from './contentImport/ids';
 import { type ImportPlan, planImport } from './contentImport/plan';
+import { claimIdsFromChunksCsv, LOADED_RESEARCH_CHUNKS } from './contentImport/referenceSets';
 import { ContentImportRefusal } from './contentImport/refusal';
 
 jest.setTimeout(300_000);
@@ -204,6 +205,29 @@ async function createAccount(accountId: string, options: AccountOptions): Promis
 async function createGym(organizationId: string): Promise<string> {
   await createOrganization(organizationId);
   return createAccount(`admin@${organizationId}`, { homeOrganizationId: organizationId, memberships: { [organizationId]: true } });
+}
+
+/**
+ * Every claim id of the LOADED research package as chunks of the shared
+ * __platform__ library, which referenceSetsDb.ts reads for every gym.
+ */
+async function loadPlatformClaims(): Promise<void> {
+  const ids = [...claimIdsFromChunksCsv(await fs.readFile(path.join(SEED_DATA_DIR, LOADED_RESEARCH_CHUNKS), 'utf8'))];
+  await client.query(
+    `insert into pilot.shadow_library_sources (source_id, organization_id, title, source_type, authority_tier, url)
+     values ('src_engine_test', '__platform__', 'Loaded research claims (test)', 'peer_reviewed', 1, 'https://example.org/engine-test')`,
+  );
+  await client.query(
+    `insert into pilot.shadow_library_documents (document_id, source_id, organization_id, document_name, content_sha256)
+     values ('doc_engine_test', 'src_engine_test', '__platform__', 'Loaded research claims (test)', 'engine-test')`,
+  );
+  await client.query(
+    `insert into pilot.shadow_library_chunks (chunk_id, document_id, source_id, organization_id, ordinal, text_content, metadata)
+     select 'chunk_' || claim_id, 'doc_engine_test', 'src_engine_test', '__platform__', ordinal::int, 'Claim ' || claim_id,
+            jsonb_build_object('claim_id', claim_id)
+       from unnest($1::text[]) with ordinality as claim(claim_id, ordinal)`,
+    [ids],
+  );
 }
 
 function committedFiles(): Record<string, string> {
@@ -717,10 +741,12 @@ describe('registries: disciplines, competence levels, cohort definitions', () =>
     );
     expect(await committedCounts('gym_guards')).toMatchObject({ disciplines: 0, ledger: 0, audit: 0 });
 
-    const withDrills = { ...committedFiles(), 'drill-library/seed_drill_library.csv': await fs.readFile(path.join(SEED_DATA_DIR, 'drill-library/seed_drill_library.csv'), 'utf8') };
-    const refused = await plan('gym_guards', admin, withDrills);
+    // Transfer claims: a type no engine loads yet (the drill library was the
+    // example here until IMP-07 registered it).
+    const withClaims = { ...committedFiles(), 'transfer-claims/seed_transfer_claims.csv': await fs.readFile(path.join(SEED_DATA_DIR, 'transfer-claims/seed_transfer_claims.csv'), 'utf8') };
+    const refused = await plan('gym_guards', admin, withClaims);
     expect(refused.blocking.filter((finding) => finding.code === 'dataset_not_loadable').map((finding) => finding.file)).toEqual([
-      'drill-library/seed_drill_library.csv',
+      'transfer-claims/seed_transfer_claims.csv',
     ]);
   });
 });
@@ -775,6 +801,11 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
 
   beforeAll(async () => {
     const admin = await createGym('gym_cli');
+    // 'all' includes the drill library since IMP-07, and its drills cite
+    // research claims: the plan checks each against the claims this gym can
+    // read (referenceSetsDb.ts), so the loaded package's claims go into the
+    // shared __platform__ library first, as in production.
+    await loadPlatformClaims();
     env = {
       AZURE_POSTGRES_CONNECTION_STRING: connectionStringFor(DATABASE),
       PPBF_EXPECTED_POSTGRES_HOSTNAME: 'localhost',
@@ -795,6 +826,7 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
     const shown = planBlock(planned.stdout);
     expect(planBlock(dry.stdout)).toEqual(shown);
     expect(shown).toContain('  disciplines: 5 new, 0 new version, 0 unchanged, 0 absent, 0 reject');
+    expect(shown).toContain('  drill-library: 119 new, 0 new version, 0 unchanged, 0 absent, 0 reject');
     expect(shown).toContain('BLOCKING: 0');
     expect(dry.stdout).toContain('RESULT: DRY RUN -- applied inside the transaction and ROLLED BACK');
     // It really applied: the rows were written, then rolled back.
@@ -803,18 +835,23 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
     expect(await committedCounts('gym_cli')).toEqual({ disciplines: 0, levels: 0, cohorts: 0, ledger: 0, audit: 0, shadowEvents: 0 });
   });
 
-  it('apply --dataset all commits the three registries together, mirrors the audit event after commit, and a re-plan finds nothing to do', async () => {
+  it('apply --dataset all commits the registries and the drills together, mirrors the audit event after commit, and a re-plan finds nothing to do', async () => {
     const applied = await runCli(['apply', '--dataset', 'all'], env);
     expect({ code: applied.code, stderr: applied.stderr }).toEqual({ code: 0, stderr: '' });
     expect(applied.stdout).toContain('target_hostname: localhost');
-    expect(applied.stdout).toContain('RESULT: COMMITTED -- 17 item(s) written');
+    // 17 registry rows and 119 drills, in one transaction: the drills'
+    // discipline foreign key is satisfied by disciplines written earlier in it.
+    expect(applied.stdout).toContain('RESULT: COMMITTED -- 136 item(s) written');
     expect(await committedCounts('gym_cli')).toEqual({ disciplines: 5, levels: 6, cohorts: 6, ledger: 17, audit: 1, shadowEvents: 1 });
+    const drills = await observer.query("select count(*)::int as n from pilot.drill_library where organization_id = 'gym_cli'");
+    expect(drills.rows).toEqual([{ n: 119 }]);
     const mirror = await observer.query("select event_name from pilot.shadow_events where organization_id = 'gym_cli' and entity_type = 'content_import'");
     expect(mirror.rows).toEqual([{ event_name: 'SHADOW_AUDIT_CREATE_CONTENT_IMPORT' }]);
 
     const again = await runCli(['plan', '--dataset', 'all'], env);
     expect(again.code).toBe(0);
     expect(planBlock(again.stdout)).toContain('  cohort-definitions: 0 new, 0 new version, 6 unchanged, 0 absent, 0 reject');
+    expect(planBlock(again.stdout)).toContain('  drill-library: 0 new, 0 new version, 119 unchanged, 0 absent, 0 reject');
     expect(again.stdout).toContain('RESULT: PLANNED -- 0 item(s) would be written.');
   });
 

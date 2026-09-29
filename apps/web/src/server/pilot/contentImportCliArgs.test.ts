@@ -26,10 +26,11 @@ describe('plan and apply arguments', () => {
   });
 
   it("'all' is every dataset the engine loads, in dependency order; a dataset it cannot load yet is named as such", () => {
-    expect(datasetsFor('all')).toEqual(['disciplines', 'competence-levels', 'cohort-definitions']);
+    expect(datasetsFor('all')).toEqual(['disciplines', 'competence-levels', 'cohort-definitions', 'drill-library', 'universal-stop-rules']);
     expect(datasetsFor('all')).toEqual([...LOADABLE_DATASETS]);
     expect(datasetsFor('cohort-definitions')).toEqual(['cohort-definitions']);
-    expect(() => datasetsFor('drill-library')).toThrow('drill-library has no database loader');
+    expect(datasetsFor('drill-library')).toEqual(['drill-library']);
+    expect(() => datasetsFor('transfer-claims')).toThrow('transfer-claims has no database loader');
     expect(() => datasetsFor('competence-cohorts')).toThrow('unknown dataset competence-cohorts');
   });
 

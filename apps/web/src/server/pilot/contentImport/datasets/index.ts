@@ -2,17 +2,18 @@ import type { DbClient, ImportActor } from '../actor';
 import { DATASETS } from '../specs';
 import type { DatasetName, DatasetSpec, Finding, ParsedFile } from '../types';
 import type { ValidationResult } from '../validate';
+import { DRILL_LIBRARY_ENGINE } from './drills';
 import { REGISTRY_ENGINES } from './registries';
+import { UNIVERSAL_STOP_RULES_ENGINE } from './universalStopRules';
 
 // THE DATASET REGISTRY OF THE DATABASE HALF. Each dataset module turns the
 // validated rows of its files into a plan (what each item WOULD become) and
 // writes that plan. plan.ts and apply.ts only orchestrate: they never know how
 // a discipline differs from a drill.
 //
-// ONE LINE PER DATASET MODULE. The drill library and universal stop rules
-// (IMP-07) and workout templates and session scripts (IMP-08) register here
-// when they land; until then a package carrying their files is refused at plan
-// with dataset_not_loadable, rather than half-loaded.
+// ONE LINE PER DATASET MODULE. Workout templates and session scripts (IMP-08)
+// register here when they land; until then a package carrying their files is
+// refused at plan with dataset_not_loadable, rather than half-loaded.
 
 export type UnitOutcome = 'new' | 'new_version' | 'unchanged' | 'absent' | 'reject';
 
@@ -74,9 +75,11 @@ export interface DatasetEngine {
 // Applied in the specs' dependency order (specs/index.ts: a dataset only
 // references datasets above it), whatever order the modules register in, so
 // cohorts are written after the disciplines they point at in an 'all' load.
-export const DATASET_ENGINES: readonly DatasetEngine[] = [...REGISTRY_ENGINES].sort(
-  (a, b) => DATASETS.indexOf(a.spec) - DATASETS.indexOf(b.spec),
-);
+export const DATASET_ENGINES: readonly DatasetEngine[] = [
+  ...REGISTRY_ENGINES,
+  DRILL_LIBRARY_ENGINE,
+  UNIVERSAL_STOP_RULES_ENGINE,
+].sort((a, b) => DATASETS.indexOf(a.spec) - DATASETS.indexOf(b.spec));
 
 export function datasetEngine(name: DatasetName): DatasetEngine | undefined {
   return DATASET_ENGINES.find((engine) => engine.spec.name === name);

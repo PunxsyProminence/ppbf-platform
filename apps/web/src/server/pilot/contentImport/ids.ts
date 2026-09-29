@@ -166,6 +166,15 @@ export const MINT = {
   cue: (drillId: string, cueText: string) => `cue_${hex14(`${drillId}:${norm(cueText)}`)}`,
   transfer: (targetId: string, claimKind: string, statement: string) =>
     `txf_${hex14(`${targetId}:${norm(claimKind)}:${norm(statement)}`)}`,
+  // NEW: a LATER VERSION of a drill or universal stop rule (v2 and on). v1's id
+  // IS its lineage key (the formulas above), and a package only ever names the
+  // lineage (contract "Identity"), so every later version is minted from the
+  // lineage and the version number (plan, architecture: "v2 and later are
+  // minted from sha256(lineage_id + '#v' + n)"). Deterministic, so a dry run
+  // and the real run write the same ids, and two gyms that load the same
+  // revision agree on what it is called.
+  drillVersion: (lineageId: string, version: number) => `drl_${hex14(`${lineageId}#v${version}`)}`,
+  universalRuleVersion: (lineageId: string, version: number) => `ust_${hex14(`${lineageId}#v${version}`)}`,
 } as const;
 
 /** The minting formulas as the contract doc states them. */
