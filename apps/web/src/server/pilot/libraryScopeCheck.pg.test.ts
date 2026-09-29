@@ -82,7 +82,19 @@ const MIGRATION_RUNNER_PATH = path.resolve(
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let prerequisiteSchemaSql: string[];
-let checkLibraryScope: (client: Client) => Promise<{ nonCorpus: NonCorpusRow[] }>;
+interface CorpusRow {
+  organization_id: string;
+  corpus_sources: number;
+  corpus_retired: number;
+}
+
+let checkLibraryScope: (client: Client) => Promise<{ nonCorpus: NonCorpusRow[]; corpusByOrg: CorpusRow[] }>;
+let libraryScopeState: (input: {
+  platformRow: Record<string, number> | undefined;
+  platformCorpus: number;
+  elsewhere: CorpusRow[];
+  expected: number;
+}) => string;
 let client: Client;
 
 function connectionStringFor(database: string): string {
@@ -114,21 +126,26 @@ async function seedSource(
     title = `Title ${sourceId}`,
     sourceType = 'peer_reviewed',
     approved = false,
+    rejected = false,
+    status = 'active',
     documents = 1,
     chunks = 1,
   } = {},
 ): Promise<void> {
+  // A rejected row carries no approval stamps: shadow_library_sources_review_pair_check
+  // refuses a non-approved row that keeps them.
   await target.query(
     `insert into pilot.shadow_library_sources
        (source_id, organization_id, title, source_type, authority_tier, url,
         approval_state, verification_state, approved_by_account_id, approved_at,
-        verified_by_account_id, verified_at)
+        verified_by_account_id, verified_at, status)
      values ($1, $2, $3, $4, 1, $5,
-       case when $6 then 'approved' else 'pending_review' end,
-       case when $6 then 'verified' else 'unverified' end,
-       case when $6 then $7 else null end, case when $6 then now() else null end,
-       case when $6 then $7 else null end, case when $6 then now() else null end)`,
-    [sourceId, organizationId, title, sourceType, `https://example.org/${organizationId}/${sourceId}`, approved, ADMIN],
+       case when $8 then 'rejected' when $6 then 'approved' else 'pending_review' end,
+       case when $6 and not $8 then 'verified' else 'unverified' end,
+       case when $6 and not $8 then $7 else null end, case when $6 and not $8 then now() else null end,
+       case when $6 and not $8 then $7 else null end, case when $6 and not $8 then now() else null end,
+       $9)`,
+    [sourceId, organizationId, title, sourceType, `https://example.org/${organizationId}/${sourceId}`, approved, ADMIN, rejected, status],
   );
 
   for (let d = 0; d < documents; d += 1) {
@@ -188,7 +205,8 @@ beforeAll(async () => {
   );
 
   const scriptModule = await nativeDynamicImport(pathToFileURL(CHECK_SCRIPT_PATH).href);
-  checkLibraryScope = scriptModule.checkLibraryScope as (c: Client) => Promise<{ nonCorpus: NonCorpusRow[] }>;
+  checkLibraryScope = scriptModule.checkLibraryScope as typeof checkLibraryScope;
+  libraryScopeState = scriptModule.libraryScopeState as typeof libraryScopeState;
 
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
   await admin.connect();
@@ -215,10 +233,14 @@ beforeAll(async () => {
     [ADMIN, GYM],
   );
 
-  // Two corpus rows, which must never appear in the section, and three
+  // Two live corpus rows, which must never appear in the section, and three
   // non-corpus rows, which must.
   await seedSource(client, GYM, 'src_aaaaaaaaaaaaaaaa');
   await seedSource(client, GYM, 'src_bbbbbbbbbbbbbbbb');
+  // Two RETIRED corpus rows, the two ways a repaired database can hold a source
+  // the seed no longer lists: archived with its approval kept, and rejected.
+  await seedSource(client, GYM, 'src_cccccccccccccccc', { approved: true, status: 'archived' });
+  await seedSource(client, GYM, 'src_dddddddddddddddd', { rejected: true });
   await seedSource(client, GYM, 'source_uploaded_pending', {
     title: 'Punxsy Coaching System Source Manual v3',
     sourceType: 'internal_policy',
@@ -342,6 +364,59 @@ describe('the NON-CORPUS section names what a bulk approval would sweep in', () 
     const after = await client.query('select count(*)::int as n from pilot.shadow_library_sources');
 
     expect(after.rows[0].n).toBe(before.rows[0].n);
+  });
+});
+
+// The corpus count is what the scope verdict compares against the seed, so a
+// retired row must not be in it. The 2026-09-29 corpus repair removed 172
+// sources from the seed; a database imported before it keeps them until the
+// production repair retires them, and retiring never deletes (a chunk's source
+// FK cascades). If retired rows still counted, a correctly repaired production
+// would read 1194 against the seed's 1022 and report itself broken.
+describe('the corpus count leaves retired rows out', () => {
+  test('archived and rejected corpus rows are counted as retired, not as corpus', async () => {
+    const result = await checkLibraryScope(client);
+    const gym = result.corpusByOrg.find((r) => r.organization_id === GYM);
+
+    expect(gym).toEqual({ organization_id: GYM, corpus_sources: 2, corpus_retired: 2 });
+  });
+
+  test('retired corpus rows stay out of the non-corpus section too', async () => {
+    const result = await checkLibraryScope(client);
+
+    expect(result.nonCorpus.map((r) => r.source_id)).not.toEqual(
+      expect.arrayContaining(['src_cccccccccccccccc', 'src_dddddddddddddddd']),
+    );
+  });
+});
+
+describe('the scope verdict', () => {
+  const platformRow = { capabilities: 30, capabilities_with_tracks: 30, chunks: 1173 };
+  const state = (platformCorpus: number, overrides: Partial<Parameters<typeof libraryScopeState>[0]> = {}) =>
+    libraryScopeState({ platformRow, platformCorpus, elsewhere: [], expected: 1022, ...overrides });
+
+  // The case this split exists for: production before its repair. It holds the
+  // sources the seed dropped, and must not be told it is incomplete -- the
+  // remedy that word invites is deleting rows.
+  test('holding more live corpus than the seed assigns is its own state, not incomplete', () => {
+    expect(state(1194)).toBe('BASELINE_EXCEEDS_CORPUS');
+  });
+
+  test('holding fewer is still incomplete', () => {
+    expect(state(1000)).toBe('BASELINE_INCOMPLETE');
+  });
+
+  test('holding exactly the seed count is present and split', () => {
+    expect(state(1022)).toBe('PRESENT_AND_SPLIT');
+  });
+
+  test('the unchanged states keep their meaning', () => {
+    expect(state(1022, { platformRow: undefined })).toBe('NO_RESERVED_ORGANIZATION');
+    expect(state(0, { elsewhere: [{ organization_id: GYM, corpus_sources: 1194, corpus_retired: 0 }] }))
+      .toBe('CORPUS_OUTSIDE_BASELINE');
+    expect(state(1022, { platformRow: { ...platformRow, capabilities_with_tracks: 0 } }))
+      .toBe('EVIDENCE_AXIS_EMPTY');
+    expect(state(0, { platformRow: { ...platformRow, chunks: 0 } })).toBe('EMPTY');
   });
 });
 

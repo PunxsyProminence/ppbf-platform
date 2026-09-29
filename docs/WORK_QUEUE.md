@@ -2,8 +2,10 @@
 
 > # ⛔ SUPERSEDED — DO NOT PLAN OR CLAIM FROM THIS FILE
 >
-> **The authoritative queue is [docs/current/WORK_QUEUE.md](current/WORK_QUEUE.md).**
-> If this file contradicts it, that file wins.
+> **Current work is the open PRs on GitHub and the work orders Jason approves;
+> blocked and parked work is [docs/current/ACTIVE_WORK.md](current/ACTIVE_WORK.md).**
+> The later history is [docs/current/WORK_QUEUE.md](current/WORK_QUEUE.md); if
+> this file contradicts it, that file wins.
 >
 > This one is kept only because the incidents recorded below are real history worth
 > keeping. **Every task table in it is historical.** Items marked open may be long
@@ -15,7 +17,7 @@
 > reported the result as the live plan — including telling the owner it was "the
 > single largest drag on the build". Ten items were correctly identified as finished
 > and none of it mattered, because no one should have been reading this table at all.
-> If you are here to find work, stop and open the file linked above.
+> If you are here to find work, stop and use the sources named at the top of this banner.
 
 Two Claude sessions work this repository at the same time. Today that cost real
 duplicated work: the same nine compliance/progression/publication tables were

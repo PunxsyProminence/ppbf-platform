@@ -8,6 +8,11 @@ rename.
 
 ## Scope and method
 
+- **Measured at (checked 2026-09-28):** landed on `main` as `83b03242` (#406,
+  2026-08-18). The scan is older than that commit: its 103 files match `main` from
+  `9e32fc71` to `23646003` (2026-08-15/16), while at `83b03242` the same glob
+  already matched 112, and at `10da14c9` (2026-09-28) it matches 172. Counts and
+  line numbers below are from that snapshot; re-measure before relying on them.
 - **Scanned:** every `apps/web/components/**/*.test.tsx` and `apps/web/app/**/*.test.tsx`
   file — 103 files total. `*.pg.test.ts` and pure API route tests were out of scope and
   were not touched.

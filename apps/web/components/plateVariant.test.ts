@@ -494,7 +494,7 @@ describe('the same route resolves to the same variant, every time', () => {
      * "Deterministic" is not a property of a single run -- comparing a call to
      * itself proves only that the function is a function, and the first version
      * of this test did exactly that and could not fail. The promise the README
-     * and GROK-VISUAL-LANE both make is across TIME: the door a coach opened
+     * and GROK-VISUAL-LANE (history since 2026-09-28) both make is across TIME: the door a coach opened
      * last week stands in front of the same wall today. Nothing enforces that
      * except a recorded answer, so here it is recorded.
      *
@@ -529,7 +529,7 @@ describe('the same route resolves to the same variant, every time', () => {
   });
 
   it('derives the variant from nothing but the path', () => {
-    // The rule the README and GROK-VISUAL-LANE both state, asserted against the
+    // The rule the README and GROK-VISUAL-LANE (now history) both state, asserted against the
     // source rather than trusted: no clock, no randomness, no counter, no
     // session. A screen that changes between loads breaks screenshot
     // comparison, print reproducibility, and a coach's sense of place.

@@ -1,7 +1,7 @@
 # T-000 — <title: one capability, one concern>
 
 > Status: READY | CLAIMED (<builder, date>) | BACKLOG | RESOLVED (delivery note appended below)
-> Lane: A (git-capable AI) or B (chat-only AI) — either unless stated
+> Builder: Claude Code (OD-2026-09-28-001), unless Jason names another builder for this ticket
 > Priority: P0 safety / P1 pilot-blocking / P2 operator / P3 polish
 
 <!-- Everything below this line is the prompt. Paste the whole file into the
@@ -66,13 +66,14 @@ Examples:
 
 ## Delivery
 
-Lane A: branch `ticket/T-000-<slug>` off current `origin/main`, run
+Claude Code: branch `ticket/T-000-<slug>` off current `origin/main`, run
 `npm ci && npm run typecheck && npm run lint && npm test`, push ONCE, open a
 draft PR with the repo's PR template, fill Evidence with real command
 output. You cannot push to a branch twice — revisions are a new `-v2`
 branch and PR.
 
-Lane B: output every file COMPLETE (no elisions), each preceded by its full
+A chat-only builder, only when Jason names one for this ticket: output every
+file COMPLETE (no elisions), each preceded by its full
 repo path, plus a MANIFEST.md: ticket id, file list (new vs replaces), what
 was not done, assumptions made. The human will place your output in
 `intake/drops/T-000/`.

@@ -1,6 +1,6 @@
 # T-007 — Safeguarding audit: minors' data retention policy and deletion capability
 
-> Status: BACKLOG
+> Status: **RESOLVED IN PART — #250, merged 2026-08-06 (`e3cfd309`), shipped `docs/DATA_RETENTION.md`, the organization-admin deletion API (`api/pilot/admin/data-deletion`) and `pilot-cleanup-deleted-data.mjs`; the `/admin/data-deletion` screen and the goal-6 compliance-check command were never built (the cleanup script's dry run counts only soft-deleted rows past their window), and OD-2026-09-28-008 puts the screen on the build list**
 > Lane: A (git-capable AI) or B (chat-capable AI)
 > Priority: P1 compliance (legal + safeguarding)
 

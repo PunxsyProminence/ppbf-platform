@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** a 2026-08-12 session handoff; its paste-in instructions, branch lock and "do not create pull requests" rule are superseded (OD-2026-09-28-001) -- do not follow them. Current source: [AGENT_KERNEL.md](../AGENT_KERNEL.md).
+
 # Handoff: platform-wide SHADOW evidence baseline
 
 Paste this whole file as your first message to a fresh Claude Code session on

@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** the 2026-08-23 reset plan; its measurements are dated, its section 8 PRs (#573, #556, #534) are closed, and of its section 11 owner decisions only the font retirement is recorded in `docs/current/OWNER_DECISIONS.md` (OD-2026-09-28-009 item 4). Current source: `docs/ROOM-MAP.md` (Build order), `docs/GOLDEN-ERA-V1-CONTRACT.md` (the look).
+
 # Visual Reset — Phase 1 plan
 
 **Measured against `main` at `a2e9077129fc43fc69a6eaa2b57ba9047ccfeab7`, 2026-08-23.**

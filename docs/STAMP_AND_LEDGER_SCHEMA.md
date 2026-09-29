@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** retired by OD-2026-09-28-008; the stamp ledger (a second check-in record), its stamp API and offline check-in storage were NOT BUILT; the live Passbook read model is unaffected. Current source: the attendance system of record is [docs/current/ATTENDANCE_PRECEDENCE.md](current/ATTENDANCE_PRECEDENCE.md).
+
 # PPBF Stamp & Ledger Schema
 
 **Version:** 1.0  

@@ -1,5 +1,7 @@
 # PPBF Brand & Visual Design Brief
 
+> **Look (2026-09-28):** Golden Era, `docs/GOLDEN-ERA-V1-CONTRACT.md`; this brief still transcribes the retired Leather & Brass sheet. Of the eight laws, 2, 3, 5 and 7 still bind; 1, 4, 6 and 8 are retired (OD-2026-09-28-009).
+
 A copy-paste-ready reference for generating **on-brand external visuals** — posters,
 social cards, flyers, grant-packet covers — in Canva or any design/image tool that
 cannot read the app's CSS.
@@ -31,8 +33,11 @@ cannot read the app's CSS.
 for forty years. Oiled leather, cast brass, a slate board with today's sessions on
 it, a cork wall of pinned notes, and a stamp pad for anything official.
 
-Not a flat "tactical" look and not glossy skeuomorphism: **every surface is one of
-five real materials** — leather, brass, slate, cork, paper (Law 6). Most hardware in
+Not a flat "tactical" look and not glossy skeuomorphism: **every surface is a real
+material**. The five this brief was written around (leather, brass, slate, cork,
+paper) were Law 6, now retired (OD-2026-09-28-009); Golden Era's materials replace
+them (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4, plus dark glass where it
+fits, owner-approved 2026-09-28, OD-2026-09-28-014). Most hardware in
 a gym run forty years on donations is *oxidized, not polished* — so patina is
 load-bearing and polished brass is reserved for the few things that would actually
 see a polishing rag.
@@ -105,12 +110,22 @@ never be mistaken for a safety state.
 | Restricted | `--restricted` | `#C05A1E` | `▲` |
 | Locked | `--locked` | `#A81E22` | `✕` |
 
-Stamps: `--stamp-red` `#A81E22` (refusal, redaction, destructive) ·
+Stamps: `--stamp-red` is the same `#A81E22` as `--locked` ·
 `--stamp-green` `#2F7A3E` (approved, compliant).
 
+**Red is not reserved** (OD-2026-09-29-001, 2026-09-29): the club's colours are
+black, red and white, so red may be used anywhere. The owner decision of
+2026-08-19 that kept `#A81E22` for MEDICALLY_NOT_ALLOWED alone is superseded
+(OD-2026-09-29-001), and its test (`safeguardingRedReservation.test.ts`) is
+deleted. What stays: the Locked state — `--locked`, `✕` — still means a medical
+stop (`docs/GOLDEN-ERA-V1-CONTRACT.md` §7). Within the refusal-stamp family, red
+stays MEDICALLY_NOT_ALLOWED's mark only (`apps/web/components/RefusalStamp.tsx:10-17`,
+enforced by `apps/web/components/refusalStamp.test.tsx`); whether
+OD-2026-09-29-001 frees that family too is open for Jason.
+
 These four are chosen to sit correctly on leather while staying clearly separate
-from a gold bezel. **A saturated pixel anywhere else is a bug** — against leather
-and brass it is unmissable, and the whole budget is spent on safety state.
+from a gold bezel. **A saturated pixel anywhere else is a bug**, red excepted —
+against leather and brass it is unmissable, and the budget is spent on safety state.
 
 **Law 3 — colour is never the only channel.** Every state carries its glyph and an
 uppercase label, so the ladder survives greyscale printing for board packets and
@@ -180,11 +195,13 @@ scale. Nothing is sized by eye.
 - **Stamps are permanent ink** (Law 7): refusals and redactions are stamped on the
   page — `RESEARCH NEEDED`, `REDACTED` — not floated as a dismissible notice.
 - **The seal is the ceremonial mark.** A circular rubber-stamp roundel
-  (`.seal` in `ppbf.css`): stamp-red `#A81E22`, rotated −7°, double circular
+  (`.seal` in the design system): the default `.seal` paints `#A81E22` and the
+  `.seal--ink` variant dark ink `#2A2116`; either may be used, since red is not
+  reserved (OD-2026-09-29-001, this brief's §4) — rotated −7°, double circular
   rule, curved uppercase text following the rim, a large slab-serif monogram
   centered, worn/eroded ink at the edge — pressed by hand, not placed by a
   designer. Use it as the one ceremonial element a piece is allowed; it is
-  where the polished-brass budget or the red budget gets spent, never both.
+  where the polished-brass budget gets spent.
 - **Hand-painted signage** (`.t-painted`): display face, uppercase, −0.6°
   rotation, rust-brown offset shadow under the ink, edges slightly worn — the
   board over the door, for hero headlines on public pieces.
@@ -213,14 +230,16 @@ scale. Nothing is sized by eye.
 > Where a headline is wanted, prefer the gym's own line: "BOXING IS THE
 > ENGAGEMENT PLATFORM. YOUTH DEVELOPMENT IS THE OBJECTIVE." on a slight −0.6°
 > rotation like hand-painted signage. One ceremonial mark permitted: a circular
-> rubber-stamp seal in `#A81E22`, rotated ~−7°, curved rim text, worn ink edge.
+> rubber-stamp seal in dark ink `#2A2116`, rotated ~−7°, curved rim text, worn ink edge.
 > **Hard blur-free offset drop shadows** (`4px 4px 0` black) on square panels — no
 > soft shadows, no glossy gradients, no rounded SaaS cards, no blue or cyan.
 >
 > **Use saturated colour for one thing only:** a safety or status mark — olive-green
-> `#3F7D4E` cleared, orange `#C05A1E` restricted, crimson `#A81E22` locked — and
+> `#3F7D4E` cleared, orange `#C05A1E` restricted, crimson `#A81E22` locked (medically
+> not allowed to participate) — and
 > always pair it with a glyph (`✓ ▲ ✕`) and an uppercase word, never colour alone.
-> Everything else stays leather, patina, and bone.
+> Red is the one exception: it is also the club's colour (black, red and white) and
+> may be used freely. Everything else stays leather, patina, and bone.
 >
 > Lay it out on a golden-section split (38.2% / 61.8%) with margins from the
 > Fibonacci scale (13/21/34/55px). Disciplined and safety-forward, not hype.

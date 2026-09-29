@@ -14,6 +14,11 @@ Where the evidence behind SHADOW's coaching guidance lives, and how to check it.
 | `cross_track_conflict_ledger.csv` | 34 adjudicated disagreements |
 | `track_evidence_summary.csv` | Per-track counts and boxing-specificity |
 
+The 2026-08-08 package (`apps/web/seed-data/shadow-research/2026-08-08/`, a research package
+the importer does not load) carries a 1,243-claim copy of this registry: these 1193 claims plus
+50 Penn State and combatives claims. `apps/web/src/server/pilot/researchRegistryLineage.test.ts`
+pins that lineage.
+
 ## What it is for
 
 Three audiences, one artefact:
@@ -27,13 +32,17 @@ it on trust.
 
 ## Verifying it
 
+From `apps/web` (the scripts are defined only in `apps/web/package.json`, and npm runs them with
+that folder as the working directory):
+
 ```
-npm run verify:research-citations -- --csv apps/web/seed-data/research-evidence/2026-08-07/evidence_registry_boxing_learning.csv
-npm run check:retractions        -- --csv apps/web/seed-data/research-evidence/2026-08-07/evidence_registry_boxing_learning.csv
+npm run verify:research-citations -- --csv seed-data/research-evidence/2026-08-07/evidence_registry_boxing_learning.csv
+npm run check:retractions        -- --csv seed-data/research-evidence/2026-08-07/evidence_registry_boxing_learning.csv
 ```
 
-Both run without a database or credentials. See `docs/CITATION_VERIFICATION.md` and
-`docs/RETRACTION_SURVEILLANCE.md`.
+Both run without a database or credentials. Each script's header documents its checks
+(`apps/web/scripts/verify-research-citations.mjs`, `apps/web/scripts/check-source-retractions.mjs`),
+and the package README's "Verify it yourself" section says what each reports.
 
 ## Relationship to the seeded library
 
@@ -51,4 +60,6 @@ transfer status, verification method — that a reviewer needs and a retrieval s
    protocol, no exhaustive search, no dual independent screening. Stated in full in the methods
    document.
 3. **Three conflicts were escalated as requiring human decisions** and are not resolvable by
-   research. See the conflict ledger — `CT-11`, `CT-13`, `CT-15`.
+   research. See the conflict ledger — `CT-11`, `CT-13`, `CT-15`. `CT-13` (attendance source
+   of truth) has since been resolved in code: see `docs/current/ATTENDANCE_PRECEDENCE.md`. The
+   ledger row still reads ESCALATED.

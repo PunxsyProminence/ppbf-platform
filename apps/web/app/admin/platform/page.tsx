@@ -79,8 +79,8 @@ const CLOSED_STATUS: Exclude<OrgStatus, 'active'> = 'inactive';
 // are --filed, which ppbf.css reserves for exactly this ("lifecycle/account
 // states -- Deactivated, Unfilled, Archived, Unknown -- never for anything
 // Layer 11 or a queue outcome actually gates on"). A closed gym is a
-// lifecycle state, not a safety state; spending the safety red on it is what
-// makes the safety red stop meaning anything.
+// lifecycle state, not a safety state; putting the --locked medical stop on
+// it is what makes that signal stop meaning anything.
 const GYM_STANDING: Record<string, { badgeClass: string; glyph: string; label: string; meaning: string }> = {
   active: {
     badgeClass: 'badge badge--cleared',

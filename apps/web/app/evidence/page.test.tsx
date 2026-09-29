@@ -104,3 +104,19 @@ test('says indexing is confirmed only when index_completed_at says so', async ()
 
   expect(screen.getByText(/indexed · 1 chunk stored · indexing confirmed/)).toBeTruthy();
 });
+
+test('a failed read shows the failure and nothing about the library', async () => {
+  // The read never answered, so the page does not know whether the library
+  // is empty. The banner used to sit on top of both empty sentences, which
+  // told an admin the library was empty AND that nobody could look.
+  global.fetch = jest.fn().mockResolvedValue({ ok: false, json: async () => ({}) }) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<EvidenceReviewPage />);
+  });
+
+  expect(screen.getByRole('alert').textContent).toMatch(/Unable to load the evidence review queue\./);
+  expect(screen.queryByText(/No sources have been recorded/i)).toBeNull();
+  expect(screen.queryByText(/No documents have been recorded/i)).toBeNull();
+  expect(screen.queryByText(/Loading the evidence library/i)).toBeNull();
+});

@@ -29,11 +29,11 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  *      - no rule names `.stamp`. Both card families on this route carry one
  *        (the seat directory's "Seat held" governance refusal and the aggregate
  *        panel's "Suppressed" k-anonymity withholding), and on a dark material
- *        the sheet resolves that mark to the reserved `--locked-ink`. Restyling
+ *        the sheet resolves that mark to `--locked-ink`. Restyling
  *        it — or re-grounding the card under it — is a safety-semantics change
  *        wearing a visual change's clothes;
  *      - the block declares no `--bone-*`, `--hide-*`, `--paper`, `--plate` or
- *        reserved-red token. A bone rung is a platform-wide promise about
+ *        locked-red token. A bone rung is a platform-wide promise about
  *        contrast (cornerColor.test.ts reads the LAST declaration of a token as
  *        its value), and `--plate` is a locked room inventory with its own
  *        guard. Only the brass ramp moves.
@@ -71,6 +71,40 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
 const BRASS_RUNGS = ['200', '300', '400', '500', '600', '700', '800', '900'] as const;
 
 const css = readDesignSystemCss(DESIGN_SYSTEM_ENTRY);
+
+/* THE MEDICAL-STOP NAMES: --locked, its --locked-* rungs, and every custom
+   property whose every declaration resolves to one of them. Read from the
+   sheets rather than listed, because app/globals.css aliases --locked as
+   --safety-locked, --status-critical and --status-danger, and a check on the
+   bare name waves all three through. ("Every declaration", so a slot such as
+   `--badge`, which only the locked variant of .badge fills with --locked, is
+   not counted.) */
+const GLOBALS_CSS = readFileSync(path.resolve(__dirname, '../../app/globals.css'), 'utf8');
+const MEDICAL_STOP_TOKENS: readonly string[] = (() => {
+  const values = new Map<string, string[]>();
+  for (const [, name, value] of `${css}\n${GLOBALS_CSS}`
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .matchAll(/(?<![\w-])(--[\w-]+)\s*:\s*([^;{}]*)/g)) {
+    values.set(name, [...(values.get(name) ?? []), value]);
+  }
+  const tokens = new Set([...values.keys()].filter((name) => /^--locked(?:-|$)/.test(name)));
+  const resolvesToStop = (value: string) =>
+    [...value.matchAll(/var\(\s*(--[\w-]+)/g)].some(([, ref]) => tokens.has(ref));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [name, all] of values) {
+      if (tokens.has(name) || !all.every(resolvesToStop)) continue;
+      tokens.add(name);
+      grew = true;
+    }
+  }
+  return [...tokens].sort();
+})();
+
+/** The medical-stop names `text` refers to, matched as whole property names. */
+function medicalStopReferences(text: string): string[] {
+  return MEDICAL_STOP_TOKENS.filter((token) => new RegExp(`(?<![\\w-])${token}(?![\\w-])`).test(text));
+}
 
 /** The Golden Era sheet on its own, for assertions about THIS block's text. */
 const THEME = readFileSync(
@@ -111,7 +145,7 @@ function legacyRung(source: string, rung: string): string | null {
  * The 008 block's DECLARATIONS, comments removed.
  *
  * Comments come out FIRST, before the block is located, because the block's own
- * header names the reserved red in order to say it does not use it, and because
+ * header names the locked red in order to say it does not use it, and because
  * "GOLDEN ERA 008" itself sits inside that header — slicing first would strand
  * an unterminated comment. The block ends where the next scope begins, which is
  * `.ge-scripts` (004A follows 008 in source order).
@@ -278,11 +312,15 @@ describe('the 008 block stays inside its scope and off what it may not touch', (
     }
   });
 
-  test('the scoped block never uses reserved medical red', () => {
+  // --locked means a medical stop, which a board restyle has no business
+  // reaching for. Red itself is not reserved (OD-2026-09-29-001), so the hue
+  // and --stamp-red are not refused here.
+  test('the scoped block never uses the --locked medical-stop token', () => {
     const block = boardBlock();
-    expect(block).not.toMatch(/#A81E22/i);
     expect(block).not.toMatch(/--locked\b/);
-    expect(block).not.toMatch(/--stamp-red\b/);
+    expect(MEDICAL_STOP_TOKENS)
+      .toEqual(expect.arrayContaining(['--locked', '--safety-locked', '--status-critical', '--status-danger']));
+    expect(medicalStopReferences(block)).toEqual([]);
   });
 
   test('the block never restates the room, its wall or its light', () => {

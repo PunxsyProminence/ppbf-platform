@@ -5,6 +5,7 @@
 | Status | **DONE** (Wave 9 reconciliation) |
 | Vertical slice | coach/org-admin STOP-HOLD-REGRESS training constraint system with transactional escalation, role-gated and org-scoped, fully tested |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | Combat / Boxing System (`combatBoxingSystem`) |
 | Source | `2.0.0-draft-merged` |
@@ -39,3 +40,4 @@ _Scaffold only. Do not mark active until promotion review._
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/src/server/pilot/trainingHolds.ts; apps/web/app/api/pilot/training-holds/route.ts; apps/web/app/api/pilot/training-holds/route.test.ts. Test: apps/web/app/api/pilot/training-holds/route.test.ts pins 403 behavior per role and coach-assignment enforcement for plac |
+| 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |

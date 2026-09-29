@@ -49,9 +49,10 @@ import { installPilotApi, SERVER_GUARDED_ROUTES, type PilotApiStubs, type PilotS
         in either serialisation the browser uses.
      4. A whole-scope sweep: every element under the scope plus its ::before
         and ::after, across fifteen paint properties, against every legacy
-        rung and against the reserved safeguarding red. Assertion 3 is the
-        named catch; this is the wide net. See THE LEAK LEDGER below for the
-        places it currently finds legacy gold and why.
+        rung. Assertion 3 is the named catch; this is the wide net. See THE
+        LEAK LEDGER below for the places it currently finds legacy gold and
+        why. (It also refused #A81E22 until red stopped being reserved,
+        OD-2026-09-29-001; that half is gone.)
 
    WHY THE SWEEP READS PSEUDO-ELEMENTS. Most golden-era metal is drawn on
    `::before`/`::after` -- rivets, screw heads, frame beads, lamp pools. A
@@ -144,13 +145,6 @@ const LEGACY_ROOT_RAMP: Readonly<Record<string, string>> = {
   '--brass-900': '#4a340b',
 };
 
-/** #A81E22 / --locked / --stamp-red. Law 2 reserves it for
-    MEDICALLY_NOT_ALLOWED, so it may not be spent on decorative chrome. This is
-    not a theoretical reservation on these surfaces: the legacy `.pap--ruled`
-    draws its margin rule in `rgba(168,30,34,.34)`, and the golden-era
-    `.mat-paper` override exists to replace exactly that. */
-const SAFEGUARDING_RED = '#a81e22';
-
 /* CANONICAL FORM, AND WHY MATCHING NEEDS ONE.
 
    Chromium answers `getComputedStyle` with two spellings of the same colour.
@@ -199,7 +193,6 @@ const squash = (value: string) => canonicalise(value).replace(/\s+/g, '');
 
 const LEGACY_NEEDLES = Object.values(LEGACY_ROOT_RAMP).flatMap(serialisations);
 const GOLDEN_NEEDLES = Object.values(GOLDEN_ERA_RAMP).flatMap(serialisations);
-const RESERVED_RED_NEEDLES = serialisations(SAFEGUARDING_RED);
 
 /** Every property a colour reaches the screen through on these surfaces.
     A flat list rather than a full CSSStyleDeclaration walk: that also picks up
@@ -640,7 +633,7 @@ const SCOPES: readonly ScopeCase[] = [
       {
         selector: '.mat-paper',
         property: 'background-image',
-        note: 'the register sheet, whose margin rule is bronze ink and never the reserved red',
+        note: 'the register sheet, whose margin rule is bronze ink',
       },
     ],
   },
@@ -779,7 +772,6 @@ interface ScopeReading {
   readonly rootRamp: Record<string, string>;
   readonly components: Record<string, { readonly found: boolean; readonly value: string }>;
   readonly leaks: readonly string[];
-  readonly reservedRed: readonly string[];
 }
 
 interface ReaderInput {
@@ -789,7 +781,6 @@ interface ReaderInput {
   readonly paintProperties: readonly string[];
   readonly componentKeys: readonly (readonly [string, string])[];
   readonly legacyNeedles: readonly string[];
-  readonly redNeedles: readonly string[];
 }
 
 function readScope(page: Page, scopeCase: ScopeCase): Promise<ScopeReading> {
@@ -800,7 +791,6 @@ function readScope(page: Page, scopeCase: ScopeCase): Promise<ScopeReading> {
     paintProperties: PAINT_PROPERTIES,
     componentKeys: scopeCase.components.map((component) => [component.selector, component.property] as const),
     legacyNeedles: LEGACY_NEEDLES,
-    redNeedles: RESERVED_RED_NEEDLES,
   };
 
   return page.evaluate((arg: ReaderInput): ScopeReading => {
@@ -814,7 +804,6 @@ function readScope(page: Page, scopeCase: ScopeCase): Promise<ScopeReading> {
         rootRamp: {},
         components: {},
         leaks: [],
-        reservedRed: [],
       };
     }
 
@@ -879,7 +868,6 @@ function readScope(page: Page, scopeCase: ScopeCase): Promise<ScopeReading> {
 
     const nodes: Element[] = [scope, ...Array.from(scope.querySelectorAll('*'))];
     const leaks = new Set<string>();
-    const reservedRed = new Set<string>();
 
     for (const element of nodes) {
       for (const pseudo of ['', '::before', '::after']) {
@@ -902,7 +890,6 @@ function readScope(page: Page, scopeCase: ScopeCase): Promise<ScopeReading> {
           const flat = flatten(raw);
           const key = `${element.tagName.toLowerCase()}${pseudo} | ${property} | ${raw}`;
           if (arg.legacyNeedles.some((needle) => flat.includes(needle))) leaks.add(key);
-          if (arg.redNeedles.some((needle) => flat.includes(needle))) reservedRed.add(key);
         }
       }
     }
@@ -915,7 +902,6 @@ function readScope(page: Page, scopeCase: ScopeCase): Promise<ScopeReading> {
       rootRamp,
       components,
       leaks: [...leaks].sort(),
-      reservedRed: [...reservedRed].sort(),
     };
   }, input);
 }
@@ -1027,13 +1013,9 @@ test.describe('Golden-era scopes resolve to bronze in a real browser', () => {
           carries(value, GOLDEN_NEEDLES),
           `${scopeCase.scope} ${component.selector} — ${component.property} carries no golden-era rung at all: ${value}`,
         ).toBe(true);
-        expect(
-          carries(value, RESERVED_RED_NEEDLES),
-          `${scopeCase.scope} ${component.selector} — ${component.property} paints the reserved safeguarding red: ${value}`,
-        ).toBe(false);
       }
 
-      // 4a. The sweep, against the ledger, in both directions.
+      // 4. The sweep, against the ledger, in both directions.
       const ledger = (KNOWN_LEAKS[scopeCase.scope] ?? []).map((leak) => leak.key).sort();
       expect(
         reading.leaks,
@@ -1041,13 +1023,6 @@ test.describe('Golden-era scopes resolve to bronze in a real browser', () => {
         + `KNOWN_LEAKS is a NEW leak; a KNOWN_LEAKS entry missing here has been fixed, and its ledger entry `
         + `must be deleted.`,
       ).toEqual(ledger);
-
-      // 4b. Law 2 — the safety gate's red is not chrome. No ledger, no exceptions.
-      expect(
-        reading.reservedRed,
-        `${SAFEGUARDING_RED} is reserved for MEDICALLY_NOT_ALLOWED and may not be painted as decorative `
-        + `chrome on ${scopeCase.route}`,
-      ).toEqual([]);
     });
   }
 });

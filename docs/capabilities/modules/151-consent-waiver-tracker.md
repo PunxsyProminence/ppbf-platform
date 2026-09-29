@@ -27,7 +27,7 @@ Track whether a consent/waiver is on file for an athlete (boolean + optional tim
 - [ ] Staff can set flag
 - [ ] Coach sees flag
 - [ ] Persists after refresh
-- [ ] ManualVerification=PASSED
+- [ ] ManualVerification=SIGNED_OFF
 
 ## Audit log
 | Date | Actor | Note |

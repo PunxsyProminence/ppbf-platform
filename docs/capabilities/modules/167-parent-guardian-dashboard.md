@@ -8,6 +8,8 @@
 | Parent | 15 Guardian |
 | Vertical slice | guardian dashboard linked athletes only (reuse 093) |
 
+> **Alias (2026-09-28):** Module 093 has the same name ("Parent / Guardian Dashboard") under At-Home / Parent / Guardian. One capability listed twice; count it once.
+
 ## Boundaries
 - Dashboards show only role-allowed data
 - Board stays aggregate-only (not these dashboards)

@@ -61,7 +61,7 @@ These are measured operating constraints, not general model folklore:
 
 ## 6. Release and environment rules
 
-Who may release, and the procedure, are in `docs/AI_DELIVERY_PIPELINE.md` (OD-2026-08-29-006: staging is a build lane's; production needs Jason's word; no AI approves the protected `production` environment or invents `migrations_complete=CONFIRMED`). Rules kept only here:
+Who may release, and the procedure, are in `docs/AI_DELIVERY_PIPELINE.md`; this file does not restate them. Rules kept only here:
 
 - Production migrations precede application code that depends on them.
 - `--set-env-vars` cannot unset existing variables; workflows must state required values explicitly.
@@ -69,13 +69,13 @@ Who may release, and the procedure, are in `docs/AI_DELIVERY_PIPELINE.md` (OD-20
 - Wait for the new revision to serve traffic before running deployed-behavior probes.
 - Live Azure state and current workflow evidence outrank deployment prose or snapshots.
 
-## 7. Lanes are fixed across AI products; tasks vary within Claude lanes
+## 7. Roles are fixed across AI products; tasks vary within Claude sessions
 
-- Across AI products the lanes are fixed (OD-2026-09-21-001; `AGENT_KERNEL.md`, Working channel): ChatGPT designs, enforces standards and researches, and is read-only here; Grok owns visual work; Codex has no lane.
-- Among Claude lanes, a session may build, review, audit, integrate, or prepare a release when the current request authorizes that task and the hard boundaries above are preserved.
+- Across AI products the roles are set by OD-2026-09-28-001 (`docs/current/OWNER_DECISIONS.md`): Claude Code is the only builder; ChatGPT is the architect and reviewer; no other AI holds a standing role.
+- Among Claude sessions, a session may build, review, audit, integrate, or prepare a release when the current request authorizes that task and the hard boundaries above are preserved.
 - Independent review is useful for auth, organization isolation, minors/safeguarding, destructive data, schema, SHADOW safety, and production work; executable evidence outranks model agreement.
 - An audit finding is a lead until verified. It should include file/location evidence and a falsifiable confirming check.
-- Chat-only AI output is a candidate patch. A repo-capable AI/session must reconcile it with current source and execute the relevant checks before merge.
+- Chat-only AI output is a candidate patch. A Claude Code session must reconcile it with current source and execute the relevant checks before merge.
 
 ## 8. Scope and failure handling
 

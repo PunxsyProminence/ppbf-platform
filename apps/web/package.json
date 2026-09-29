@@ -25,6 +25,7 @@
     "pilot:check-duplicate-guardians": "node scripts/pilot-check-duplicate-guardians.mjs",
     "pilot:check-deletion-preflight": "node scripts/pilot-check-deletion-preflight.mjs",
     "pilot:check-orphan-chat-audit": "node scripts/pilot-check-orphan-chat-audit.mjs",
+    "pilot:check-shadow-job-queue": "node scripts/pilot-check-shadow-job-queue.mjs",
     "pilot:check-seed-identity": "node scripts/pilot-check-seed-identity.mjs",
     "pilot:check-library-scope": "node scripts/pilot-check-library-scope.mjs",
     "pilot:check-runtime-claims": "node scripts/pilot-check-runtime-claims.mjs",
@@ -81,6 +82,7 @@
     "pilot:apply-membership-account-fk": "node scripts/pilot-apply-membership-account-fk-migration.mjs",
     "pilot:apply-waiver-parent-fk": "node scripts/pilot-apply-waiver-parent-fk-migration.mjs",
     "pilot:apply-waiver-recorded-by": "node scripts/pilot-apply-waiver-recorded-by-migration.mjs",
+    "pilot:apply-waiver-status-check": "node scripts/pilot-apply-waiver-status-check-migration.mjs",
     "pilot:apply-capture-sessions": "node scripts/pilot-apply-capture-sessions-migration.mjs",
     "pilot:apply-capture-participants": "node scripts/pilot-apply-capture-participants-migration.mjs",
     "pilot:apply-research-requirement-subject": "node scripts/pilot-apply-research-requirement-subject-migration.mjs",
@@ -102,6 +104,7 @@
     "pilot:cleanup-membership-orphans": "node scripts/pilot-cleanup-membership-orphans.mjs",
     "pilot:approve-library-baseline": "node scripts/pilot-approve-library-baseline.mjs",
     "pilot:rescope-library-baseline": "node scripts/pilot-rescope-library-baseline.mjs",
+    "pilot:move-policy-shelf": "node scripts/pilot-move-policy-shelf.mjs",
     "seed:shadow:library": "node scripts/seed-shadow-library.mjs",
     "seed:shadow:research": "node scripts/import-shadow-research.mjs",
     "seed:shadow:research:dry": "node scripts/import-shadow-research.mjs --dry-run",
@@ -135,6 +138,7 @@
     "test:migrations:soft-deleted-athlete-access": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/softDeletedAthleteAccess.pg.test.ts --testTimeout=180000",
     "test:migrations:platform-library-scope": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/platformLibraryScope.pg.test.ts --testTimeout=180000",
     "test:migrations:library-scope-check": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/libraryScopeCheck.pg.test.ts --testTimeout=180000",
+    "test:migrations:move-policy-shelf": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/movePolicyShelf.pg.test.ts --testTimeout=600000",
     "test:migrations:coach-roster-scope": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/coachRosterFieldScope.pg.test.ts --testTimeout=180000",
     "test:migrations:training-holds": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/trainingHolds.pg.test.ts --testTimeout=180000",
     "test:migrations:scheduler-membership-flag": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/schedulerMembershipFlag.pg.test.ts --testTimeout=180000",
@@ -195,6 +199,7 @@
     "test:migrations:membership-orphan-cleanup": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/membershipOrphanCleanup.pg.test.ts --testTimeout=180000",
     "test:migrations:waiver-parent-fk": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/waiverParentFk.pg.test.ts --testTimeout=180000",
     "test:migrations:waiver-recorded-by": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/waiverRecordedBy.pg.test.ts --testTimeout=180000",
+    "test:migrations:waiver-status-check": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/waiverStatusCheck.pg.test.ts --testTimeout=180000",
     "test:migrations:research-requirement-subject": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/researchRequirementSubject.pg.test.ts --testTimeout=180000",
     "test:migrations:readiness-provenance": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/readinessProvenance.pg.test.ts --testTimeout=180000",
     "test:migrations:attendance-precedence": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/attendancePrecedence.pg.test.ts --testTimeout=180000",
@@ -319,6 +324,7 @@
     "test:migrations:competence-cohorts": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/competenceCohorts.pg.test.ts --testTimeout=180000",
     "test:migrations:video-sessions": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoSessionsMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:video-scan": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoScanPromotion.pg.test.ts --testTimeout=180000",
+    "test:migrations:video-archive": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoArchive.pg.test.ts --testTimeout=180000",
     "test:migrations:capture-participants": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/captureParticipants.pg.test.ts --testTimeout=180000",
     "pilot:apply-film-study-proposals": "node scripts/pilot-apply-film-study-proposals-migration.mjs",
     "pilot:apply-film-study-coach-reported": "node scripts/pilot-apply-film-study-coach-reported-migration.mjs",
@@ -342,6 +348,7 @@
     "test:migrations:embedded-pg-server-cleanup": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath scripts/embedded-pg-server-cleanup.pg.test.ts --testTimeout=180000",
     "test:migrations:feedback": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/feedback.pg.test.ts --testTimeout=180000",
     "test:migrations:compliance": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/complianceMigration.pg.test.ts --testTimeout=180000",
+    "test:migrations:compliance-film-study-filing": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/complianceFilmStudyFiling.pg.test.ts --testTimeout=180000",
     "test:migrations:progression": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/progressionMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:publications": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/publicationsMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:publication-retraction": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/publicationRetraction.pg.test.ts --testTimeout=180000",
@@ -364,7 +371,8 @@
     "test:migrations:readiness-gates": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/migrationReadinessGates.pg.test.ts --testTimeout=180000",
     "test:migrations:unexercised-runners": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/unexercisedMigrationRunners.pg.test.ts --testTimeout=180000",
     "test:migrations:cue-source-provenance": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/cueSourceProvenance.pg.test.ts --testTimeout=180000",
-    "test:migrations:assignment-cancellation": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/assignmentCancellation.pg.test.ts --testTimeout=180000"
+    "test:migrations:assignment-cancellation": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/assignmentCancellation.pg.test.ts --testTimeout=180000",
+    "test:migrations:roster-import": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/rosterImport.pg.test.ts --testTimeout=300000"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",
@@ -380,7 +388,7 @@
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
-    "@testing-library/dom": "^10.4.1",
+    "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.2",
     "@types/jest": "^30.0.0",
@@ -394,11 +402,11 @@
     "embedded-postgres": "18.4.0-beta.17",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
-    "jest": "^30.4.2",
+    "jest": "^30.5.2",
     "jest-environment-jsdom": "^30.4.1",
     "tailwindcss": "^4.3.3",
     "ts-jest": "^29.4.12",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

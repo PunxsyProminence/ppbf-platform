@@ -53,10 +53,10 @@ on:
           - whole_corpus
       organization_id:
         description: >-
-          Owning organization. Ignored for platform_baseline, which is forced to the reserved
-          platform organization. Otherwise leave blank to resolve it from the target app's own
-          ppbf-pilot-default-org-id secret; set it only to import for some other organization
-          deliberately.
+          Owning organization. For platform_baseline leave it blank or set __platform__ (any
+          other value is refused). For ppbf_policy and whole_corpus it is required: pass
+          punxsy_prominence for gym content (OD-2026-09-28-007). A blank value is refused; it
+          no longer falls back to the target app's default-org secret.
         required: false
         type: string
       seed_account_id:
@@ -86,10 +86,10 @@ jobs:
       # production requires secrets.AZURE_PRODUCTION_RESOURCE_GROUP with no
       # staging fallback, mirroring deploy-production.yml.
       CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
-      # PPBF_ORG_ID is deliberately NOT set here -- it is resolved in a step below, because a
-      # value that may come from a secret must be written to $GITHUB_ENV at run time. Declaring it
-      # here as well would give one name two sources, which is exactly the bug #273 fixed in the
-      # sibling workflow.
+      # PPBF_ORG_ID is deliberately NOT set here -- it is resolved in a step below, because
+      # platform_baseline forces __platform__ and the other scopes take the operator's value;
+      # declaring it here as well would give one name two sources, which is exactly the bug #273
+      # fixed in the sibling workflow.
       SEED_ACCOUNT_ID: ${{ inputs.seed_account_id }}
     steps:
       - name: Confirm Explicit Target And Apply Intent
@@ -98,11 +98,21 @@ jobs:
           CONFIRM_TARGET: ${{ inputs.confirm_target }}
           MODE: ${{ inputs.mode }}
           CONFIRM_IMPORT: ${{ inputs.confirm_import }}
+          SCOPE: ${{ inputs.scope }}
+          ORGANIZATION_ID: ${{ inputs.organization_id }}
         run: |
           set -euo pipefail
           test "$TARGET" = "$CONFIRM_TARGET"
           if [ "$MODE" = "apply" ]; then
             test "$CONFIRM_IMPORT" = "IMPORT RESEARCH"
+          fi
+          # ppbf_policy and whole_corpus land in one gym's organization, so the operator names it.
+          # A blank value used to resolve to the app's default-org secret, and the policy shelf
+          # sits under ppbf-default-org, not the gym (OD-2026-09-28-007). Refused here, before
+          # install and login, as seed-reference-data.yml requires organization_id (#994).
+          if [ "$SCOPE" != "platform_baseline" ] && [ -z "${ORGANIZATION_ID//[[:space:]]/}" ]; then
+            echo "::error::scope $SCOPE needs an explicit organization_id. For gym content pass punxsy_prominence (OD-2026-09-28-007)."
+            exit 1
           fi
 
       # A wrong-resource-group lookup that happens to resolve is worse than one
@@ -137,12 +147,11 @@ jobs:
         run: npm ci
 
       # NOT conditional on mode, deliberately. It was `if: inputs.mode == 'apply'`
-      # until Resolve Owning Organization below started calling
-      # `az containerapp secret show` whenever organization_id is blank -- which
-      # is the normal case now, and which dry-run reaches too. Skipping login in
-      # dry-run left that az call unauthenticated, so `set -euo pipefail` failed
-      # the step: the feature's own headline path, in the mode an operator uses
-      # first, was broken.
+      # while Resolve Owning Organization below called `az containerapp secret show`
+      # for a blank organization_id, in dry-run too, and the skipped login failed
+      # that call. That fallback is gone (organization_id is required for
+      # ppbf_policy and whole_corpus), so dry-run makes no az call today; the login
+      # stays unconditional so a later az call in dry-run cannot reopen the hole.
       - name: Authenticate via Azure OIDC
         uses: azure/login@v3
         with:
@@ -176,19 +185,13 @@ jobs:
             echo "Owning organization forced to the reserved platform organization by scope."
             exit 0
           fi
-          if [ -n "$SUPPLIED" ]; then
-            ORG="$SUPPLIED"
-            SOURCE="operator input"
-          else
-            ORG="$(az containerapp secret show \
-              --name "$CONTAINER_APP_NAME" \
-              --resource-group "$RESOURCE_GROUP" \
-              --secret-name ppbf-pilot-default-org-id \
-              --query value -o tsv)"
-            SOURCE="$CONTAINER_APP_NAME default org secret"
-          fi
-          if [ -z "$ORG" ]; then
-            echo "::error::Could not resolve an owning organization. Supply organization_id explicitly."
+          # No fallback to the app's default-org secret: ppbf_policy and whole_corpus need an
+          # explicit organization (first step; OD-2026-09-28-007). Refused again here in case
+          # the steps are ever reordered.
+          ORG="$SUPPLIED"
+          SOURCE="operator input"
+          if [ -z "${ORG//[[:space:]]/}" ]; then
+            echo "::error::Could not resolve an owning organization. Supply organization_id explicitly; for gym content pass punxsy_prominence."
             exit 1
           fi
           # Masked because the app treats it as a secret. The importer prints counts and never the
@@ -273,8 +276,8 @@ jobs:
             echo "- mode: \`${{ inputs.mode }}\`"
             echo "- scope: \`${{ inputs.scope }}\`"
             echo "- tables: \`${{ inputs.tables }}\`"
-            # Prints the SOURCE, never the value: the organization is masked and may have come
-            # from a secret, and a run summary is not a place to undo that.
+            # Prints the SOURCE, never the value: the organization is masked (the app treats its
+            # org id as a secret), and a run summary is not a place to undo that.
             echo "- organization resolved from: \`$ORG_SOURCE\`"
             echo '- evidence approval: `pending_review`'
             echo '- embeddings: not generated by this workflow'

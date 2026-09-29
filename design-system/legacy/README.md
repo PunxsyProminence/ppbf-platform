@@ -2,11 +2,12 @@
 
 ## NOT CURRENT PPBF DESIGN AUTHORITY. DO NOT USE FOR NEW UI.
 
-`ppbf-leather-brass.css` is the "Leather & Brass" design system as it stood on
-**2026-08-23**, the day the owner retired it as PPBF's visual authority.
-
-It is kept **whole and verbatim** so it can be read, compared against and
-recovered from. It is not kept so it can be extended.
+`ppbf-leather-brass.css` is the "Leather & Brass" design system the owner
+retired as PPBF's visual authority on **2026-08-23**. The look is now Golden Era:
+`docs/GOLDEN-ERA-V1-CONTRACT.md`. `legacy-fonts.css` holds the `@font-face` rules
+for its five typefaces (Alfa Slab One, Oswald, Special Elite, Caveat,
+UnifrakturCook), retired the same day; the `.woff2` files stay in
+`design-system/fonts/`.
 
 ## What this is
 
@@ -15,29 +16,24 @@ aged paper, stains and patina, stained-oak surrounds, brick-and-mortar walls,
 hanging practical lights, wood-type display faces, room walls with their own
 materials, decorative stamps, creases and aging.
 
-## Why it is still loaded
+## It is still loaded, and it is not verbatim
 
-It is: `design-system/current/ppbf-theme.css` imports it today. Retiring an
-aesthetic and replacing it are separate jobs, and Phase 1 of the visual reset
-did only the first — it made the aesthetic **replaceable** rather than welded
-into the same sheet as the spacing scale and the type ladder.
+`design-system/current/ppbf-theme.css` imports `current/ppbf-golden-era.css`,
+and that sheet imports this one for continuity and applies its overrides on top
+(its header, "IMPLEMENTATION NOTE"). So this file is still the live base of
+most tokens, materials and components on every screen, it still loads
+`legacy-fonts.css`, and where it and `foundation/` both define a scale token its
+copy lands second and wins (`foundationMatchesLegacy.test.ts` pins the two
+together).
 
-That makes Phase 1 a deliberate visual no-op: the same rules load in the same
-order, so nothing looks different. What changed is that there is now exactly
-one line to replace when the new system is authored.
+Room plates and their variants are still declared in its PLATES block
+(`:3560-3680`); `current/ppbf-golden-era.css` overrides some of them (the gym
+floor's `--plate: none`, The Bell's own plate). `apps/web/public/plates/README.md`
+says how to add a variant.
 
-## The one difference from the original file
-
-`@import "./fonts.css"` became `@import "../fonts.css"`. The file moved one
-directory down; the import had to climb to reach its sibling. Nothing else was
-altered — not a value, not a comment, not a line of whitespace.
-`foundationMatchesLegacy.test.ts` pins the token values that were copied out of
-it.
-
-`fonts.css` itself deliberately stayed at `design-system/fonts.css`. Moving it
-would break `build-manifest.mjs` and `manifest.json`, and whether the four
-shipped display faces — Alfa Slab One, Oswald, Special Elite, Caveat — retire
-along with the aesthetic is an owner decision that Phase 1 does not settle.
+It is not a frozen copy. It has been edited since the retirement -- #641,
+#646, #677 and `92fdcbef` (2026-08-25 to 2026-09-24) -- and its font import is
+`./legacy-fonts.css`, which moved here from `design-system/fonts.css` in #574.
 
 ## What you may take from here
 

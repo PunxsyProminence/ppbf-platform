@@ -20,8 +20,9 @@
    foundation supplies a visible one in currentColor and a theme supplies its
    own colour. The foundation must never depend on the theme.
 
-   The retired aesthetic is preserved verbatim in legacy/ for reference. See
-   legacy/README.md before reaching for anything in it.
+   The retired aesthetic lives in legacy/. It is not frozen: current/ppbf-golden-era.css
+   imports it as its base and it has been edited since retirement (#641, #646, #677,
+   92fdcbef). See legacy/README.md before reaching for anything in it.
    =========================================================================== */
 
 @import "./foundation/ppbf-foundation.css";

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
@@ -45,6 +45,18 @@ interface AthleteOption {
   full_name: string;
 }
 
+// One season's events and roster, tagged with the season they were read for.
+// `failed` means the last read of that season did not come back, so the page
+// does not know what it holds.
+interface SeasonDetail {
+  seasonId: string | null;
+  events: EventRow[];
+  roster: RosterRow[];
+  failed: boolean;
+}
+
+const NO_DETAIL: SeasonDetail = { seasonId: null, events: [], roster: [], failed: false };
+
 const SEASON_BADGE: Record<string, { className: string; glyph: string }> = {
   planned: { className: 'badge badge--monitor', glyph: '◉' },
   active: { className: 'badge badge--cleared', glyph: '✓' },
@@ -61,27 +73,42 @@ export default function WrestlingLeagueManagementPage() {
   const [seasons, setSeasons] = useState<SeasonRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // errorMessage is shared by every read and write on the page, so it cannot
+  // say whether the list on screen is real. seasonsLoadError and detail.failed
+  // can: while the last read of a list failed, the page does not know what it
+  // holds and must not print "nothing on record" -- or another season's
+  // records -- for it.
+  const [seasonsLoadError, setSeasonsLoadError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [showSeasonForm, setShowSeasonForm] = useState(false);
   const [seasonForm, setSeasonForm] = useState({ season_name: '', starts_on: '', ends_on: '' });
 
   const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
-  const [events, setEvents] = useState<EventRow[]>([]);
-  const [roster, setRoster] = useState<RosterRow[]>([]);
+  // The season open right now, readable from inside a reply that was started
+  // for another one. Set in the same click that changes selectedSeasonId.
+  const openSeasonRef = useRef<string | null>(null);
+  const [detail, setDetail] = useState<SeasonDetail>(NO_DETAIL);
   const [detailLoading, setDetailLoading] = useState(false);
   const [athletes, setAthletes] = useState<AthleteOption[]>([]);
   const [eventForm, setEventForm] = useState({ event_name: '', event_date: '', location: '' });
   const [rosterAthleteId, setRosterAthleteId] = useState('');
 
   const reloadSeasons = useCallback(async (signal?: AbortSignal) => {
-    const response = await fetch(`${apiBase()}/api/pilot/operations/wrestling-league/seasons`, {
-      method: 'GET',
-      credentials: 'include',
-      signal,
-    });
-    if (!response.ok) throw new Error('Unable to load league seasons.');
-    const payload = (await response.json()) as { items?: SeasonRow[] };
-    setSeasons(payload.items ?? []);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/operations/wrestling-league/seasons`, {
+        method: 'GET',
+        credentials: 'include',
+        signal,
+      });
+      if (!response.ok) throw new Error('Unable to load league seasons.');
+      const payload = (await response.json()) as { items?: SeasonRow[] };
+      setSeasons(payload.items ?? []);
+      setSeasonsLoadError(false);
+    } catch (error) {
+      // An aborted read is the page unmounting, not a failed load.
+      if (!signal?.aborted) setSeasonsLoadError(true);
+      throw error;
+    }
   }, []);
 
   useEffect(() => {
@@ -101,17 +128,29 @@ export default function WrestlingLeagueManagementPage() {
     return () => controller.abort();
   }, [reloadSeasons]);
 
-  const reloadDetail = useCallback(async (seasonId: string, signal?: AbortSignal) => {
+  // Returns false, and changes nothing, when another season (or none) was
+  // opened while this read was out: its reply -- success or failure -- is not
+  // about the season on screen. Only a failure for the open season throws.
+  const reloadDetail = useCallback(async (seasonId: string, signal?: AbortSignal): Promise<boolean> => {
     const base = `${apiBase()}/api/pilot/operations/wrestling-league`;
-    const [eventsResponse, rosterResponse] = await Promise.all([
-      fetch(`${base}/events?season_id=${encodeURIComponent(seasonId)}`, { credentials: 'include', signal }),
-      fetch(`${base}/roster?season_id=${encodeURIComponent(seasonId)}`, { credentials: 'include', signal }),
-    ]);
-    if (!eventsResponse.ok || !rosterResponse.ok) throw new Error('Unable to load the season detail.');
-    const eventsPayload = (await eventsResponse.json()) as { items?: EventRow[] };
-    const rosterPayload = (await rosterResponse.json()) as { items?: RosterRow[] };
-    setEvents(eventsPayload.items ?? []);
-    setRoster(rosterPayload.items ?? []);
+    try {
+      const [eventsResponse, rosterResponse] = await Promise.all([
+        fetch(`${base}/events?season_id=${encodeURIComponent(seasonId)}`, { credentials: 'include', signal }),
+        fetch(`${base}/roster?season_id=${encodeURIComponent(seasonId)}`, { credentials: 'include', signal }),
+      ]);
+      if (!eventsResponse.ok || !rosterResponse.ok) throw new Error('Unable to load the season detail.');
+      const eventsPayload = (await eventsResponse.json()) as { items?: EventRow[] };
+      const rosterPayload = (await rosterResponse.json()) as { items?: RosterRow[] };
+      if (openSeasonRef.current !== seasonId) return false;
+      setDetail({ seasonId, events: eventsPayload.items ?? [], roster: rosterPayload.items ?? [], failed: false });
+      return true;
+    } catch (error) {
+      // An aborted read is the effect being cleaned up, not a failed load.
+      if (signal?.aborted) throw error;
+      if (openSeasonRef.current !== seasonId) return false;
+      setDetail({ seasonId, events: [], roster: [], failed: true });
+      throw error;
+    }
   }, []);
 
   // The loading flag is raised in the click handler that selects the season,
@@ -122,8 +161,8 @@ export default function WrestlingLeagueManagementPage() {
     const controller = new AbortController();
     void (async () => {
       try {
-        await reloadDetail(selectedSeasonId, controller.signal);
-        if (controller.signal.aborted) return;
+        const applied = await reloadDetail(selectedSeasonId, controller.signal);
+        if (controller.signal.aborted || !applied) return;
         setErrorMessage(null);
         setDetailLoading(false);
       } catch (error) {
@@ -211,6 +250,14 @@ export default function WrestlingLeagueManagementPage() {
     }
   };
 
+  // After a write, the reload is for the season written to. If the coach has
+  // opened another season meanwhile, that season's own read decides the alert;
+  // the write's reload leaves it alone.
+  const reloadAfterWrite = async (seasonId: string) => {
+    const applied = await reloadDetail(seasonId);
+    if (applied || openSeasonRef.current === null) setErrorMessage(null);
+  };
+
   const handleCreateEvent = async () => {
     if (!selectedSeasonId) return;
     setBusy(true);
@@ -222,8 +269,7 @@ export default function WrestlingLeagueManagementPage() {
         location: eventForm.location,
       });
       setEventForm({ event_name: '', event_date: '', location: '' });
-      await reloadDetail(selectedSeasonId);
-      setErrorMessage(null);
+      await reloadAfterWrite(selectedSeasonId);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to create the event.');
     } finally {
@@ -240,14 +286,21 @@ export default function WrestlingLeagueManagementPage() {
         athlete_id: rosterAthleteId,
       });
       setRosterAthleteId('');
-      await reloadDetail(selectedSeasonId);
-      setErrorMessage(null);
+      await reloadAfterWrite(selectedSeasonId);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to add the athlete.');
     } finally {
       setBusy(false);
     }
   };
+
+  // Lists (or "none") are printed only when the page holds a good read of the
+  // season that is open. Otherwise each list slot says it could not load --
+  // the shared alert may since have been replaced or cleared by another action.
+  const detailKnown = detail.seasonId === selectedSeasonId && !detail.failed;
+  const detailUnknownLine = (
+    <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>Unable to load the season detail.</p>
+  );
 
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
@@ -314,6 +367,10 @@ export default function WrestlingLeagueManagementPage() {
               <div className="flex justify-center py-[var(--s7)]">
                 <span className="working">Loading seasons...</span>
               </div>
+            ) : seasonsLoadError && seasons.length === 0 ? (
+              /* The failure alert above is the whole truth here: nobody could
+                 look, so the page does not say the league has no seasons. */
+              null
             ) : seasons.length === 0 ? (
               <div className="mat-leather mt-[var(--s4)] rounded-[var(--r-lg)]">
                 <div className="empty">
@@ -336,8 +393,10 @@ export default function WrestlingLeagueManagementPage() {
                           {season.ends_on ? ` – ${formatGymDateNumeric(season.ends_on)}` : ''}
                         </span>
                         <button type="button" className="btn btn--ghost" onClick={() => {
-                          setDetailLoading(!selected);
-                          setSelectedSeasonId(selected ? null : season.season_id);
+                          const next = selected ? null : season.season_id;
+                          openSeasonRef.current = next;
+                          setDetailLoading(next !== null);
+                          setSelectedSeasonId(next);
                         }}>
                           {selected ? 'Close detail' : 'Open detail'}
                         </button>
@@ -356,11 +415,11 @@ export default function WrestlingLeagueManagementPage() {
                         <div className="mt-[var(--s4)] grid gap-[var(--s4)] lg:grid-cols-2">
                           <section>
                             <h3 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Events</h3>
-                            {events.length === 0 ? (
+                            {!detailKnown ? detailUnknownLine : detail.events.length === 0 ? (
                               <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>No events filed for this season.</p>
                             ) : (
                               <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
-                                {events.map((event) => (
+                                {detail.events.map((event) => (
                                   <li key={event.event_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
                                     {formatGymDateNumeric(event.event_date)} — {event.event_name}
                                     {event.location ? ` (${event.location})` : ''} · {event.status}
@@ -394,11 +453,11 @@ export default function WrestlingLeagueManagementPage() {
 
                           <section>
                             <h3 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Roster</h3>
-                            {roster.length === 0 ? (
+                            {!detailKnown ? detailUnknownLine : detail.roster.length === 0 ? (
                               <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>No athletes on this season roster.</p>
                             ) : (
                               <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
-                                {roster.map((entry) => (
+                                {detail.roster.map((entry) => (
                                   <li key={entry.entry_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
                                     {entry.athlete_name} · {entry.status}
                                   </li>

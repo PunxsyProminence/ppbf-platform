@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** Grok order 01 at `27711faa`; its PR #573 closed unmerged as RETIRED (2026-08-25) and Grok now only makes images on request (OD-2026-09-28-001). Current source: `docs/ROOM-MAP.md` (the store is in The Window).
+
 # Grok implementation brief #1 — the public store
 
 **Against `main` @ `27711faa`. Mode B (implementation) per `docs/GROK-VISUAL-LANE.md`.**

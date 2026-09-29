@@ -314,8 +314,8 @@ describe('the three sections that already have screens are not copied here', () 
 
 describe('the safeguarding red is not spent on an arithmetic failure', () => {
   it('badges an invalid result restricted, never locked', async () => {
-    // #A81E22 is reserved for a person who may not participate. An invalid
-    // formula result is a fact about a calculation.
+    // badge--locked (--locked) means a person who may not participate. An
+    // invalid formula result is a fact about a calculation.
     await renderAndPick(model({
       formulaOutputs: {
         availability: 'available',

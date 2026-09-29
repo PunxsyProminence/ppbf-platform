@@ -1,4 +1,7 @@
 # ROOM PURPOSE DNA — no two rooms feel alike
+
+> **Scope (2026-09-28):** the six rooms below are today's (`apps/web/components/buildingMap.ts` also files a seventh, `teach`); the target rooms and build order are `docs/ROOM-MAP.md` (OD-2026-09-28-009), and for training rooms (the Floor) how a room looks is `docs/REAL-GYM-REFERENCE-LOCK.md` — where a training room's **Feel** row below disagrees with it, the lock wins; other rooms follow `docs/ROOM-MAP.md`.
+
 **Date:** 19 Aug 2026 · Grok · Jason: each room must feel like its purpose  
 **Tagline:** OBSERVE. DECIDE. EXECUTE. REPEAT.
 
@@ -27,7 +30,7 @@ If two screens feel interchangeable, the room DNA failed — fix tokens/chrome, 
 | | |
 |--|--|
 | **Purpose** | Training, coaching decisions, wall TV, athlete work |
-| **Feel** | Brick + mortar, caged lamps, gloves/bags as DNA not clutter |
+| **Feel** | Open bags + ring edge + fluorescent (`docs/REAL-GYM-REFERENCE-LOCK.md` §2, §5 — never brick + caged lamps, which the lock forbids), gloves/bags as DNA not clutter |
 | **Motion** | Cards by urgency, kiosk big taps, session scripts, drills |
 | **Copy voice** | Coach in the corner — short, direct, kid-first |
 | **Allowed chrome** | Chalk, WordsOnTheWall, CLEARED badges, floor cards |
@@ -59,7 +62,7 @@ If two screens feel interchangeable, the room DNA failed — fix tokens/chrome, 
 | **Purpose** | Medical clearance, holds, compliance, safeguarding |
 | **Feel** | Varnished cabinetry, cooler green-tinted light |
 | **Copy voice** | Care + safety — non-punitive, clear path back |
-| **Allowed chrome** | **Brass Training Hold**, **red only** critical medical/safety |
+| **Allowed chrome** | **Brass Training Hold**, **`--locked` only** for critical medical/safety (red itself is not reserved, OD-2026-09-29-001) |
 | **Forbidden** | Wall sayings, “tough it out” eggs, SHADOW banter |
 | **Easter eggs?** | **NEVER** |
 

@@ -2,17 +2,14 @@
    PPBF GOLDEN ERA V1 — CURRENT VISUAL THEME
    ---------------------------------------------------------------------------
    Status: ACTIVE rendered visual authority for the usable-app release.
-   Date: 2026-08-24 · Lane: Grok visual · Owner: Jason Neale
+   Date: 2026-08-24 · Author: Grok · Owner: Jason Neale
 
-   Authority order (docs/GOLDEN-ERA-V1-CONTRACT.md):
-     1. Functional  — current main source + real APIs (no invented functions)
-     2. Visual      — this sheet + Golden Era contract
-     3. Environmental — docs/REAL-GYM-REFERENCE-LOCK.md + owner photos
-     4. Owner       — Jason's explicit choices
+   Authority order: docs/GOLDEN-ERA-V1-CONTRACT.md (owner decisions govern;
+     docs/current/OWNER_DECISIONS.md).
 
    IDENTITY: When Jason opens the app it must be unmistakably
      - Punxsy Prominence (the real nonprofit)
-     - The real Punxsy Prominence gym (Iron City / blue foam / wood / bags)
+     - The real Punxsy Prominence gym (training-room DNA: docs/REAL-GYM-REFERENCE-LOCK.md §2)
      - Golden Era interface (paper / brass / leather / iron-city feel)
      - Real current PPBF functions
 
@@ -26,21 +23,25 @@
      7. Varnished cabinetry + cooler green tint — clinic only
 
    SAFETY COLOUR (hard owner decision):
-     #A81E22 / --locked  = MEDICALLY_NOT_ALLOWED only.
+     --locked (#A81E22) = MEDICALLY_NOT_ALLOWED only.
      Never ordinary network failures, loading, empty, form rejection,
      generic overdue, normal validation, ordinary destructive buttons,
      or generic unavailable. Restricted is visually distinct from Locked.
-     Claude's safeguarding-red-guard owns CI enforcement; Grok does not
-     touch those three reserved files.
+     Red itself is NOT reserved (OD-2026-09-29-001, 2026-09-29): the club's
+     colours are black, red and white. The hue reservation and its test,
+     safeguardingRedReservation.test.ts, are deleted; the token's meaning
+     above stays.
 
    PAGE DNA: Every page has its own feel while flowing from the previous
      (same building, same day, same Golden Era chassis, same Iron City DNA).
      Same room ≠ same atmosphere.
 
    PLATES: Layer 0 only (the wall the room stands in). Real UI composites
-     on top in code. Quiet centre, outer-thirds interest, zero lettering,
+     on top in code. Quiet centre, outer-thirds interest, zero lettering
+     (except the ring canvas's IRON CITY lettering, OD-2026-09-28-013; see
+     docs/REAL-GYM-REFERENCE-LOCK.md Mode A item 4),
      4:4:4, complete SOI/EOI. Real gym DNA required — no stock gym.
-     Type B producer set lives under apps/web/public/plates/ (see contract §9).
+     Type B producer set lives under apps/web/public/plates/ (see apps/web/public/plates/README.md).
 
    IMPLEMENTATION NOTE:
      The full visual implementation (tokens, materials, rooms, stamps, badges,
@@ -70,10 +71,11 @@
 }
 
 /* --------------------------------------------------------------------------
-   Safety red contract restatement (hard owner decision)
+   --locked contract restatement (hard owner decision)
    --------------------------------------------------------------------------
    --locked and --stamp-red remain #A81E22. Documented here so a future
-   session does not re-interpret medical red as generic chrome. */
+   session does not re-interpret --locked, the medical stop, as generic
+   chrome. Red itself is not reserved (OD-2026-09-29-001). */
 :root {
   --locked:     #A81E22;
   --locked-ink: #F3C9C6;
@@ -92,8 +94,9 @@
    Real-gym plate authority (already wired in legacy PLATES block)
    --------------------------------------------------------------------------
    room--* --plate URLs and plate-07 warm ground remain the layer-0 walls.
-   Drift test before any Mode B plate ship: Iron City / blue-foam / rough-wood
-   / bag DNA visible in the outer thirds; no stock grey brick. */
+   Drift test before any Mode B plate ship: the training-room DNA in
+   docs/REAL-GYM-REFERENCE-LOCK.md §2 visible in the outer thirds (other rooms:
+   docs/ROOM-MAP.md); no stock grey brick. */
 
 /* ==========================================================================
    GOLDEN ERA 008 — THE BOARD (Board Hub)
@@ -143,9 +146,9 @@
    families on this route both carry a `.stamp`: the seat directory's "Seat
    held" governance refusal, and the aggregate panel's "Suppressed" k-anonymity
    withholding. On a dark material the sheet resolves that mark to
-   `--locked-ink`, the reserved safeguarding tint, at 11.26:1 here. Flipping
+   `--locked-ink`, the safeguarding tint, at 11.26:1 here. Flipping
    those cards to paper would print that ink at about 1.1:1 and the fix would be
-   to restate the reserved tint — which is a safety-semantics change wearing a
+   to restate the locked tint — which is a safety-semantics change wearing a
    visual change's clothes. So the cards stay dark and become the reference's
    OTHER material instead: engraved bronze plates, riveted, standing off the
    sheet. Recorded rather than resolved quietly.
@@ -189,7 +192,7 @@
    does not eat the field on a small viewport. No layout, no stacking rule and
    no control placement is invented for phones here.
 
-   RESERVED RED. Nothing below names --locked, --stamp-red or #A81E22, and no
+   LOCKED RED. Nothing below names --locked, --stamp-red or #A81E22, and no
    `.stamp` on this route is restyled at all: safeguarding ink is not a visual
    pass's to touch, and the status it carries is not decorative.
 
@@ -867,7 +870,7 @@
 
    Measured on the face's darkest stop (#17110C): .t-body's --bone-200 at
    15.06:1, .t-label's --bone-400 at 7.82:1, .stat-note's --brass-300 at
-   9.14:1, and the reserved --locked-ink a `.stamp` resolves at 12.46:1. */
+   9.14:1, and the --locked-ink a `.stamp` resolves at 12.46:1. */
 .ge-board .mat-leather {
   background-color: #221A13;
   background-image:
@@ -1072,14 +1075,14 @@
    inside those three is either a voice this scope restates or a component that
    carries its own contrast (.plaque, .btn--ghost). The plan section, the
    live-delivery console and the past-deliveries list stay dark, because they
-   carry the medical and safeguarding panels whose ink is the reserved
+   carry the medical and safeguarding panels whose ink is the
    --locked-ink literal: restyling a locked panel so it survives a ground flip
    is a safety-semantics change, not a visual one. A ground flip that cannot be
    seen rendered from here is exactly how this repository once shipped an
    unreadable page; the boundary above is drawn so that it cannot happen again,
    and every ratio quoted below is measured rather than assumed.
 
-   RESERVED RED: nothing below names --locked, --stamp-red or #A81E22.
+   LOCKED RED: nothing below names --locked, --stamp-red or #A81E22.
    FUNCTIONAL_CHANGES: NONE. One class on the page wrapper is the only markup
    touched; no control is added, removed, renamed or re-labelled. The controls
    the reference draws that this route does not have were NOT built; they are
@@ -1496,10 +1499,12 @@
       review text. The low light is spent on the surfaces; .t-body keeps the
       rung the sheet gives it.
 
-   4. NO RESERVED RED. #A81E22 / --locked / --stamp-red is MEDICALLY_NOT_ALLOWED
-      and nothing else. This console carries real refusals, review gates and
-      safety states, so the whole after-hours identity is built out of bronze,
-      hide, wood and bone -- there is not one red value below. The gauge's Law 2
+   4. NO LOCKED RED. --locked (#A81E22, also --stamp-red) means
+      MEDICALLY_NOT_ALLOWED. Red itself is not reserved (OD-2026-09-29-001);
+      this scope simply does not use it. This console carries real refusals,
+      review gates and safety states, so the whole after-hours identity is
+      built out of bronze, hide, wood and bone -- there is not one red value
+      below. The gauge's Law 2
       danger arc keeps the sheet's own red and is not touched here.
 
    FUNCTIONAL_CHANGES: NONE.
@@ -1768,7 +1773,7 @@
    simply does not draw most of them, and a reference that omits a control is
    not an instruction to delete it. FUNCTIONAL_CHANGES: NONE.
 
-   RESERVED RED. Nothing below names --locked, --stamp-red or #A81E22, and the
+   LOCKED RED. Nothing below names --locked, --stamp-red or #A81E22, and the
    status ladder (.badge--cleared / .badge--restricted on this page's result
    banners) is deliberately left alone: safety colour is not this pass's to
    restyle.
@@ -2335,10 +2340,11 @@
 
 /* The register sheet. Sepia margin rule down the left and faint horizontal
    ruling, so the roster reads as a bound register rather than a white card.
-   The ruling is BRONZE INK, never the reserved red: .pap--ruled draws its
-   margin in rgba(168,30,34,…) and that colour is #A81E22 -- the safeguarding
-   red, reserved for MEDICALLY_NOT_ALLOWED, which may not be spent on a
-   decorative line. No `color` is set here at all: .mat-paper's own light-
+   The ruling is BRONZE INK. It was chosen to keep off the red reservation:
+   .pap--ruled's margin was then rgba(168,30,34,…), #A81E22. That margin now
+   draws in rgba(70,110,150,.34) (legacy sheet), and the reservation itself
+   is deleted: red is not reserved (OD-2026-09-29-001). No `color` is set
+   here at all: .mat-paper's own light-
    ground ink restatement is already correct and is not this pass's business. */
 .ge-frontoffice .mat-paper {
   background-image:
@@ -2425,7 +2431,7 @@
    control disappears quietly. goldenEraDrillcaseScope.test.ts pins both
    halves. FUNCTIONAL_CHANGES: NONE.
 
-   Reserved medical red (--locked / --stamp-red / #A81E22) is not touched and
+   The locked red (--locked / --stamp-red / #A81E22) is not touched and
    is not part of any ramp below.
    ========================================================================== */
 
@@ -3719,7 +3725,7 @@
    are a look-versus-threshold conflict for the visual owner to decide, not a
    number to win by quietly repainting an approved plaque.
 
-   RESERVED RED IS NOT INVOLVED. Nothing below names --locked, --stamp-red or
+   LOCKED RED IS NOT INVOLVED. Nothing below names --locked, --stamp-red or
    #A81E22; the safety ladder is not this pass's to touch.
    ------------------------------------------------------------------------ */
 .ge-floorboard {
@@ -3843,7 +3849,7 @@
 
    THE REFUSAL SURFACE IS OUTSIDE THE SCOPE BY CONSTRUCTION. Both projection
    failures on this route render `role="alert"` panels whose border IS the
-   reserved safeguarding red (`border-[color:var(--locked)]`), carrying a
+   --locked medical-stop red (`border-[color:var(--locked)]`), carrying a
    `.badge--locked`. Every `.mat-leather` rule below therefore excludes
    `[role="alert"]`, because this sheet is unlayered and a bare
    `.ge-file .mat-leather { border-color: … }` would out-rank that utility and
@@ -3896,14 +3902,14 @@
        #DAB974 9.31:1, .t-body --bone-200 14.08:1;
      drawer bank  #171109 -- .t-body 15.08:1, .t-label --bone-400 7.83:1,
        .t-data --bone-300 12.15:1, .stat-note --brass-300 9.15:1, and the
-       reserved --locked-ink a .stamp would resolve 12.48:1;
+       --locked-ink a .stamp would resolve 12.48:1;
      drawer front #241B14 -- .t-command 15.00:1, .t-body 13.61:1,
        .t-label 7.07:1, --locked-ink 11.26:1;
      index tab    #1F1811 -- .plaque's own --brass-200 10.88:1;
      pull plate   --brass-400 #BE9440 -- engraved ink #241B12 6.05:1, which is
        why the plate's face stops at the 400 rung (see the .btn note below).
 
-   RESERVED RED. Nothing below names --locked, --stamp-red or #A81E22, and no
+   LOCKED RED. Nothing below names --locked, --stamp-red or #A81E22, and no
    `.stamp` on this route is restyled at all: safeguarding ink is not a visual
    pass's to touch, and the status it carries is not decorative.
 
@@ -4021,7 +4027,7 @@
 
    `[role="alert"]` IS EXCLUDED FROM EVERY ONE OF THESE RULES. On this route
    that attribute marks the two projection-failure panels, whose border is the
-   reserved safeguarding red stated as `border-[color:var(--locked)]`. This
+   --locked medical-stop red stated as `border-[color:var(--locked)]`. This
    sheet is unlayered and Tailwind's utilities sit in @layer utilities, so a
    border-color here would beat it and repaint #A81E22 in bronze. Refusal ink
    is not a visual pass's to move, so those panels keep the stock material
@@ -4270,7 +4276,8 @@
 /* ==========================================================================
    GOLDEN ERA VISUAL 001 — THE BELL (sign-in)
    ==========================================================================
-   Visual authority: Documents/PPBF-AI-Lanes/Visual-Handoffs/01_READY_FOR_GROK/
+   Visual authority: Documents/PPBF-AI-Lanes__ARCHIVED_2026-09-28/Visual-Handoffs/
+   01_READY_FOR_GROK/ (folder renamed 2026-09-28, OD-2026-09-28-003)
    001_SIGN_IN/ (REFERENCE_APPROVED.jpg desktop, REFERENCE_MOBILE_APPROVED.jpg
    phone), STATUS APPROVED_BY_JASON 2026-08-24.
 
@@ -4280,7 +4287,7 @@
    unchanged. No selector below leaves the scope. Functional markup is not
    touched; this sheet is the whole implementation besides one class name.
 
-   Reserved-red rule holds: nothing here uses --locked / --stamp-red / #A81E22.
+   Locked red untouched: nothing here uses --locked / --stamp-red / #A81E22.
    ========================================================================== */
 
 /* ==========================================================================
@@ -4306,7 +4313,7 @@
    .ge-bell actually computes to bronze on the real /login page, and that
    removing a rung makes it fall back to legacy -- lives in
    e2e/public-homepage.spec.ts, read from a browser's own getComputedStyle,
-   because a text scan cannot prove computed inheritance. Reserved medical red
+   because a text scan cannot prove computed inheritance. The locked red
    is not part of this ramp and is never touched here. */
 
 /* THE RAMP CARRIES ITS CHANNEL TRIPLES TOO. Each rung below is re-stated as
@@ -4406,7 +4413,7 @@
    lane and the owner, not a scrim strength.
 
    Sits above the plate (z 0), below the card column (z 1). Warm browns only --
-   no reserved red. */
+   no locked red. */
 .ge-bell::before {
   content: "";
   position: fixed;
@@ -4712,12 +4719,12 @@
    THE ROW CARDS STAY DARK, AND THAT IS A SAFETY BOUNDARY RATHER THAN A
    PREFERENCE. Every athlete row is a `.mat-leather`, and each one carries both
    a `.stamp` (the training-hold mark, and the refusal mark a bounced write
-   leaves) and a `.badge` whose `--locked` variant is the reserved safeguarding
+   leaves) and a `.badge` whose `--locked` variant is the safeguarding
    red for `not_cleared` — a clinician looked at this child and said no. On a
    dark material the sheet resolves a bare `.stamp` to `--locked-ink` (#F3C9C6)
    and `.badge--locked` composes its own ground from `--locked`. Flipping these
    cards to the reference's paper would print --locked-ink at about 1.1:1 and
-   the only fix would be to restate the reserved tint — a safety-semantics
+   the only fix would be to restate the locked tint — a safety-semantics
    change wearing a visual change's clothes. So the cards stay dark and become
    the reference's OTHER material instead: brushed steel instrument trays,
    riveted. The steel stops were chosen to sit at the SAME luminance band as
@@ -5004,7 +5011,7 @@
    re-argued. Measured on the face's LIGHTEST stop (#2F3538): `.empty`'s
    --bone-400 at 5.20:1, `.t-body`'s inherited --bone-200 at 10.02:1, the
    --bone-100 athlete name at 12.21:1, `.stamp--brass`'s --brass-300 at 6.07:1
-   and a bare `.stamp`'s reserved --locked-ink at 8.29:1.
+   and a bare `.stamp`'s --locked-ink at 8.29:1.
 
    No rule here names `.stamp` or `.badge`. Both live on these cards and both
    carry safety semantics; the tray is what changes, never the mark on it. */

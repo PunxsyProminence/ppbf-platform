@@ -5,6 +5,7 @@
 | Status | **DONE** (Wave 9 reconciliation) |
 | Vertical slice | athlete Passbook read model (identity, attendance, sessions, readiness, goals, observations, progression gaps) plus coach open-gap queue |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | Core Athlete System (`coreAthleteSystem`) |
 | Source | `2.0.0-draft-merged` |
@@ -73,9 +74,20 @@ ParentDigest, or explicitly widen the ParentDigest disclosure decision. Do
 not build a parent Passbook surface, and do not widen parent access, until
 that reconciliation is decided.
 
+**Checked against code 2026-09-28: narrowed, still open.** Under
+OD-2026-09-25-003 a linked guardian no longer receives `pilot.sessions.notes`
+(the key is absent), and the observations reaching a guardian are only
+`coach_observation` and `parent_message` (PASSBOOK_GUARDIAN_NOTE_TYPES and
+getAthletePassbook in `apps/web/src/server/pilot/passbook.ts`); attendance notes
+and staff account ids go to staff readers only. A guardian still
+receives the dated session rows, which ParentDigest withholds, so the
+reconciliation above is still to be decided. `GET /api/pilot/passbook` still
+has no page; `/coach/passbook-gaps` reads only `/api/pilot/passbook/gaps`.
+
 ## Audit log
 | Date | Actor | Note |
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-04 | Codex | Added issue #156 Passbook read-model and API-only slice; governance remains inactive. |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: DoD verified in code (route+role gate+org isolation+test). Evidence: apps/web/src/server/pilot/passbook.ts; apps/web/app/api/pilot/passbook/route.ts; apps/web/app/api/pilot/passbook/gaps/route.ts. Test: apps/web/app/api/pilot/passbook/route.test.ts pins 403 for board and unlinked parent, and 200 with observations+gaps for |
+| 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |

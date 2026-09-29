@@ -1,3 +1,5 @@
+import { calendarDayKey } from '@/lib/calendarDay';
+
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import { guardianAthleteIds, isGuardianLinkedToAthlete } from './guardianAccess';
@@ -84,8 +86,8 @@ export function requireRole(actor: ActorIdentity, allowed: PilotRole[]): void {
    per-route filter can.
 
    WHAT STILL SEES DELETED ATHLETES, deliberately. The compliance path does not
-   pass through here: /api/pilot/admin/data-deletion calls getDeletionStatus,
-   which queries `pilot.athletes where deleted_at is not null` directly and is
+   pass through here: getDeletionStatus (dataDeletion.ts; no route calls it yet --
+   corrected 2026-09-28, this comment said the data-deletion route did) queries `pilot.athletes where deleted_at is not null` directly and is
    untouched by this change (it references none of these helpers -- verified by
    grep, not assumed). Retention reporting keeps working precisely because it
    never asked this file's permission. */
@@ -559,10 +561,22 @@ export async function athleteIdsForCoach(organizationId: string, coachAccountId:
   }
 }
 
+/**
+ * The fields assertAthleteUpdateAllowed rules on. dob may arrive as a Date
+ * (a pg client without db.ts's DATE parser) or a 'YYYY-MM-DD' string; both
+ * are compared as calendar days.
+ */
+interface AthleteUpdateGuardFields {
+  coach_id: string;
+  active_flag: boolean;
+  gym_status: string;
+  dob: string | Date;
+}
+
 export function assertAthleteUpdateAllowed(
   actor: ActorIdentity,
-  before: { coach_id: string; active_flag: boolean; gym_status: string },
-  after: { coach_id: string; active_flag: boolean; gym_status: string },
+  before: AthleteUpdateGuardFields,
+  after: AthleteUpdateGuardFields,
 ): void {
   // Who an athlete's coach is, is an administrator's decision. The create
   // route already refuses to let a coach file an athlete under anyone but
@@ -605,5 +619,21 @@ export function assertAthleteUpdateAllowed(
 
   if (before.gym_status !== after.gym_status) {
     throw new Error('Forbidden: athlete cannot change gym_status');
+  }
+
+  // Jason 2026-09-29 (Q2 A): an athlete may not change their own date of
+  // birth; admins and coaches keep that ability. Age is read from dob --
+  // wallDisplay.isMinor, competenceCohorts.ageOnGymDay -- so a minor who
+  // writes an adult date moves themselves out of the rules that apply to
+  // minors, including profileVisibility's MINOR_CIRCLE, the circle a minor's
+  // photograph stays inside.
+  //
+  // Compared as calendar days, not with !==: the stored value can be a Date
+  // while the request carries a string, and a raw comparison would refuse
+  // every athlete save, including ones that never touched dob.
+  if (calendarDayKey(before.dob) !== calendarDayKey(after.dob)) {
+    throw new Error(
+      'Forbidden: athlete cannot change date of birth; ask an organization admin to correct it',
+    );
   }
 }

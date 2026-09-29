@@ -80,7 +80,7 @@ Cross-organization operations are denied.
 
 Organization admins and downstream roles cannot access another organization.
 
-Platform Owner does not automatically receive private-domain visibility unless explicit delegated permission is granted and audited.
+Platform Owner never opens an individual athlete record: it sees de-identified, aggregate data only, and no delegated or support-pass route exists (OD-2026-09-28-005; enforcement in [ORGANIZATION_ROLE_MODEL.md](ORGANIZATION_ROLE_MODEL.md#enforcement-model)). Individual records are reached by signing in with the organization's own admin account.
 
 ## Audit requirements
 

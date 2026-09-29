@@ -1038,8 +1038,8 @@ export default function ParentHub() {
               <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
                 <h3 className="t-label">This Week&apos;s Parent Support Tasks</h3>
                 {/* Not-built-yet is a statement of fact, not a refusal or a
-                    safety state, so it wears the label voice — never the
-                    safety gate's red (Law 2). */}
+                    safety state, so it wears the label voice — never
+                    --locked, the safety gate's mark (Law 2). */}
                 <p className="t-label max-w-[520px]">
                   PLANNED | NOT YET IMPLEMENTED
                 </p>
@@ -1284,14 +1284,13 @@ export default function ParentHub() {
               <div className="space-y-[var(--s3)]">
                 {schedulerFeedState === 'loading' && <p className="working">Reading the schedule</p>}
 
-                {/* alert--warning, not alert--critical. The safeguarding red is
-                    reserved for the top of the safety ladder -- a person who may
-                    not participate (owner decision 2026-08-19) -- and a schedule
-                    that would not load is not that. Spending the red on a failed
+                {/* alert--warning, not alert--critical. alert--critical wears
+                    --locked, which means the top of the safety ladder -- a
+                    person who may not participate -- and a schedule that would
+                    not load is not that. Putting the medical stop on a failed
                     fetch is what makes it stop meaning anything when a real
-                    participation block needs it. src/design/
-                    safeguardingRedReservation.test.ts enforces this and named
-                    the substitution. */}
+                    participation block needs it. (Red itself is not reserved,
+                    OD-2026-09-29-001.) */}
                 {schedulerFeedState === 'failed' && (
                   <div className="alert alert--warning alert--tight" role="alert">
                     Unavailable - the schedule could not be read. This is not an empty attendance record.

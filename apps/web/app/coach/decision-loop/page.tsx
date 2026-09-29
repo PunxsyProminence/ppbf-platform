@@ -583,7 +583,8 @@ export default function DecisionLoopReviewPage() {
                     />
                   </label>
                   {/* The one danger-face control on this page: it operates the
-                      medical gate itself, the red that Law 2 reserves. */}
+                      medical gate itself. Red is not reserved
+                      (OD-2026-09-29-001). */}
                   <button type="submit" className="btn btn--danger">
                     Set Status
                   </button>

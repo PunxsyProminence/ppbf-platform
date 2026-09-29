@@ -67,6 +67,9 @@ function mockFetch(options: {
     video_session_id?: string;
     observation_text?: string;
   }) => void;
+  complianceRules?: () => Response;
+  fileViolation?: () => Response;
+  onFileViolation?: (body: Record<string, unknown>) => void;
 }) {
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -152,6 +155,19 @@ function mockFetch(options: {
           : ({ ok: true, status: 201, json: async () => ({ ok: true, proposal: {} }) } as Response);
       }
       return { ok: true, json: async () => ({ ok: true, proposals: options.proposals ? options.proposals() : [] }) } as Response;
+    }
+    // The rules read behind Escalate to Compliance. Defaults to none, so a
+    // suite that does not care about escalation sees no escalation control.
+    if (url.includes('/api/pilot/compliance/rules')) {
+      return options.complianceRules
+        ? options.complianceRules()
+        : ({ ok: true, json: async () => ({ ok: true, rules: [] }) } as Response);
+    }
+    if (url.includes('/api/pilot/compliance/violations') && init?.method === 'POST') {
+      options.onFileViolation?.(JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>);
+      return options.fileViolation
+        ? options.fileViolation()
+        : ({ ok: true, status: 201, json: async () => ({ violation_id: 'v1' }) } as Response);
     }
     return { ok: true, json: async () => ({ items: [] }) } as Response;
   });
@@ -697,6 +713,151 @@ describe('Film Study review queue', () => {
     // It must not render "null frame(s) · null" -- a coach entry has no
     // inference run to describe, and saying so is the point of the row.
     await screen.findByText(/reported by a coach — the model did not propose this/);
+  });
+});
+
+// Nothing in the app could file a compliance violation before this control,
+// so the Compliance Center and the coach morning read both read a list
+// nothing added to. The queue's reviewers can now file one
+// from a proposal, under a rule they choose.
+describe('escalating a proposal to Compliance', () => {
+  const proposal = (overrides: Record<string, unknown> = {}) => ({
+    proposal_id: 'prop-1',
+    athlete_id: 'ath-1',
+    video_session_id: 'vid-1',
+    origin: 'model_proposed',
+    observation_text: 'Athlete kept guard low in round 2.',
+    model_deployment: 'gpt-4o-vision',
+    frames_analyzed: 12,
+    review_state: 'pending_review',
+    created_at: '2026-08-04T00:00:00.000Z',
+    ...overrides,
+  });
+
+  const RULES = [
+    { rule_id: 'rule-injury', rule_name: 'Physical Injury Prevention', rule_category: 'safety', severity: 'critical', escalation_level: 'admin', active_flag: true },
+    { rule_id: 'rule-form', rule_name: 'Proper Technique & Form', rule_category: 'technique', severity: 'high', escalation_level: 'coach', active_flag: true },
+  ];
+
+  const rulesResponse = () => ({ ok: true, json: async () => ({ ok: true, rules: RULES }) }) as Response;
+
+  const RULE_LABEL = 'Compliance rule this breaks (only needed if you are escalating)';
+
+  test("files a violation from the proposal: its athlete and video, the chosen rule, and that rule's severity", async () => {
+    let filed: Record<string, unknown> | undefined;
+    global.fetch = mockFetch({
+      videos: () => [],
+      proposals: () => [proposal()],
+      complianceRules: rulesResponse,
+      onFileViolation: (body) => { filed = body; },
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    fireEvent.change(await screen.findByLabelText(RULE_LABEL), { target: { value: 'rule-injury' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Escalate to Compliance' }));
+
+    await screen.findByText(/Filed as a compliance violation under “Physical Injury Prevention”/);
+    expect(filed).toEqual({
+      rule_id: 'rule-injury',
+      athlete_id: 'ath-1',
+      video_session_id: 'vid-1',
+      severity: 'critical',
+      details: { source: 'film_study_proposal', proposal_id: 'prop-1' },
+    });
+    // Filing is not a verdict: the observation stays in the queue with all
+    // three exits, and cannot be filed a second time from this row.
+    expect(screen.getByText('Athlete kept guard low in round 2.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeTruthy();
+    expect(screen.getByText(/This observation still needs its own verdict\./)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Escalate to Compliance' })).toBeNull();
+  });
+
+  test('escalating with no rule chosen is refused before anything is sent', async () => {
+    let called = false;
+    global.fetch = mockFetch({
+      videos: () => [],
+      proposals: () => [proposal()],
+      complianceRules: rulesResponse,
+      onFileViolation: () => { called = true; },
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Escalate to Compliance' }));
+
+    await screen.findByText('Choose the compliance rule this breaks before escalating.');
+    expect(called).toBe(false);
+  });
+
+  test("a refused escalation shows the server's reason and leaves the control in place", async () => {
+    global.fetch = mockFetch({
+      videos: () => [],
+      proposals: () => [proposal()],
+      complianceRules: rulesResponse,
+      fileViolation: () => ({
+        ok: false,
+        status: 403,
+        json: async () => ({ error: 'Forbidden: coach is not assigned to this athlete' }),
+      }) as Response,
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    fireEvent.change(await screen.findByLabelText(RULE_LABEL), { target: { value: 'rule-form' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Escalate to Compliance' }));
+
+    await screen.findByText('Forbidden: coach is not assigned to this athlete');
+    expect(screen.queryByText(/Filed as a compliance violation/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Escalate to Compliance' })).toBeTruthy();
+  });
+
+  // After a reload the row offers Escalate again; the server refuses a second
+  // filing under the same rule, and the coach reads why.
+  test('an observation already filed under the chosen rule shows the server\'s sentence, not a success', async () => {
+    global.fetch = mockFetch({
+      videos: () => [],
+      proposals: () => [proposal()],
+      complianceRules: rulesResponse,
+      fileViolation: () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({ error: 'This observation is already filed under this rule.', violation_id: 'v-existing' }),
+      }) as Response,
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    fireEvent.change(await screen.findByLabelText(RULE_LABEL), { target: { value: 'rule-injury' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Escalate to Compliance' }));
+
+    await screen.findByText('This observation is already filed under this rule.');
+    expect(screen.queryByText(/Filed as a compliance violation/)).toBeNull();
+  });
+
+  test('a failed rules read says Escalate is unavailable, instead of silently offering no control', async () => {
+    global.fetch = mockFetch({
+      videos: () => [],
+      proposals: () => [proposal()],
+      complianceRules: () => ({ ok: false, status: 500, json: async () => ({ error: 'Internal server error' }) }) as Response,
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    await screen.findByText("Could not load this gym's compliance rules, so Escalate to Compliance is unavailable right now.");
+    expect(screen.queryByRole('button', { name: 'Escalate to Compliance' })).toBeNull();
+  });
+
+  test('a gym with no active rules says there is nothing to escalate under', async () => {
+    global.fetch = mockFetch({
+      videos: () => [],
+      proposals: () => [proposal()],
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    await screen.findByText('This gym has no active compliance rules, so there is nothing to escalate an observation under.');
+    expect(screen.queryByRole('button', { name: 'Escalate to Compliance' })).toBeNull();
   });
 });
 

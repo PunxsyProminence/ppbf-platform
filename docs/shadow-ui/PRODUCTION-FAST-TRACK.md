@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** the 2026-08-19 P0 push (issue #486, closed 2026-09-22); its build-lane/release-lane split and "No mid-loop Jason mock reviews" rule no longer hold, though code still cites its P0.2 row. Current source: `docs/AI_DELIVERY_PIPELINE.md`.
+
 # PRODUCTION FAST TRACK — P0 to deployed production
 **For:** Claude Code in VS Code · Jason reviews **only on live URL**  
 **Date:** 19 Aug 2026  

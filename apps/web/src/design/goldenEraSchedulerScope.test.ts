@@ -44,6 +44,40 @@ const BRASS_RUNGS = ['200', '300', '400', '500', '600', '700', '800', '900'] as 
 
 const css = readDesignSystemCss(DESIGN_SYSTEM_ENTRY);
 
+/* THE MEDICAL-STOP NAMES: --locked, its --locked-* rungs, and every custom
+   property whose every declaration resolves to one of them. Read from the
+   sheets rather than listed, because app/globals.css aliases --locked as
+   --safety-locked, --status-critical and --status-danger, and a check on the
+   bare name waves all three through. ("Every declaration", so a slot such as
+   `--badge`, which only the locked variant of .badge fills with --locked, is
+   not counted.) */
+const GLOBALS_CSS = readFileSync(path.resolve(__dirname, '../../app/globals.css'), 'utf8');
+const MEDICAL_STOP_TOKENS: readonly string[] = (() => {
+  const values = new Map<string, string[]>();
+  for (const [, name, value] of `${css}\n${GLOBALS_CSS}`
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .matchAll(/(?<![\w-])(--[\w-]+)\s*:\s*([^;{}]*)/g)) {
+    values.set(name, [...(values.get(name) ?? []), value]);
+  }
+  const tokens = new Set([...values.keys()].filter((name) => /^--locked(?:-|$)/.test(name)));
+  const resolvesToStop = (value: string) =>
+    [...value.matchAll(/var\(\s*(--[\w-]+)/g)].some(([, ref]) => tokens.has(ref));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [name, all] of values) {
+      if (tokens.has(name) || !all.every(resolvesToStop)) continue;
+      tokens.add(name);
+      grew = true;
+    }
+  }
+  return [...tokens].sort();
+})();
+
+/** The medical-stop names `text` refers to, matched as whole property names. */
+function medicalStopReferences(text: string): string[] {
+  return MEDICAL_STOP_TOKENS.filter((token) => new RegExp(`(?<![\\w-])${token}(?![\\w-])`).test(text));
+}
+
 const PAGE = readFileSync(
   path.resolve(__dirname, '../../app/schedule/page.tsx'),
   'utf8',
@@ -95,12 +129,14 @@ describe('golden-era scheduler scope', () => {
     expect(PAGE).toMatch(/className="[^"]*\bge-scheduler\b[^"]*"/);
   });
 
-  /* Reserved medical red is #A81E22 / --locked / --stamp-red and is never
-     decorative chrome. The scheduler block is bronze, wood, paper and patina;
-     this pins that it stays that way rather than trusting a reading of it.
+  /* --locked means a medical stop and is never decorative chrome. Red itself
+     is not reserved (OD-2026-09-29-001), so the hue and --stamp-red are not
+     refused here. The scheduler block is bronze, wood, paper and patina;
+     this pins that it does not reach for the medical-stop token rather than
+     trusting a reading of it.
 
      COMMENTS ARE STRIPPED FIRST, and the reason is worth stating: the block's
-     own header names the reserved red in order to say it is not used, so a raw
+     own header names the locked red in order to say it is not used, so a raw
      scan of the text fails on its own documentation. The fix for that is never
      an allow-list — it is to measure the DECLARATIONS, which is what actually
      ships to a browser. Verified by watching this go red before the strip. */
@@ -108,12 +144,13 @@ describe('golden-era scheduler scope', () => {
     .slice(css.indexOf('.ge-scheduler {'))
     .replace(/\/\*[\s\S]*?\*\//g, '');
 
-  test('the scheduler block never reaches the reserved medical red', () => {
+  test('the scheduler block never reaches the --locked medical-stop token', () => {
     // The slice has to have found the real block, or this asserts about "".
     expect(SCHEDULER_DECLARATIONS).toContain('--brass-500');
-    expect(SCHEDULER_DECLARATIONS).not.toMatch(/#A81E22/i);
     expect(SCHEDULER_DECLARATIONS).not.toMatch(/var\(--locked/);
-    expect(SCHEDULER_DECLARATIONS).not.toMatch(/var\(--stamp-red/);
+    expect(MEDICAL_STOP_TOKENS)
+      .toEqual(expect.arrayContaining(['--locked', '--safety-locked', '--status-critical', '--status-danger']));
+    expect(medicalStopReferences(SCHEDULER_DECLARATIONS)).toEqual([]);
   });
 });
 

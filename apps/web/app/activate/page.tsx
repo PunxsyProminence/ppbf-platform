@@ -20,11 +20,12 @@ const PIN_PATTERN = /^\d{6}$/;
    the 52px and 44px it was built at.
 
    The cards were bg-white with rounded-2xl and rounded-xl fields: white is not
-   one of the five materials and neither radius is on the Fibonacci scale. They
+   one of Golden Era's materials and neither radius is on the Fibonacci scale. They
    are paper now. The chrome came off the safety gate's red alias, since a
-   Continue button is not a safety state. Red survives only on the genuine
-   refusal, and the success panel takes the ladder's own --cleared instead of
-   the hardcoded material-green hex it used to carry.
+   Continue button is not a safety state. --locked survives only on the
+   genuine refusal (red itself is not reserved, OD-2026-09-29-001), and the
+   success panel takes the ladder's own --cleared instead of the hardcoded
+   material-green hex it used to carry.
 
    Sizes are set with Tailwind rather than ppbf's .t-* voices on purpose:
    globals.css imports ppbf.css after Tailwind, so .t-body and .t-label pin

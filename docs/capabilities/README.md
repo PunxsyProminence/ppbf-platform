@@ -1,34 +1,23 @@
 # Capabilities
 
-This directory is the home of **capability documentation**: one concise
-contract per meaningful product capability, not one README per route. A route
-is not automatically a capability; a component is not automatically a
-capability. One capability may span UI, API, database, SHADOW, AI/ML, and
-tests — it gets **one** contract.
+Where each capability question is answered (OD-2026-09-28-010):
 
-## Lifecycle
-
-Every meaningful capability carries exactly one status:
-
-- **CORE** — required conventional platform functionality (Platform → Admin →
-  Coach → Athlete).
-- **FOUNDATION** — shared infrastructure: SHADOW, AI, ML, authentication,
-  organization isolation.
-- **DEVELOPMENT** — exists or being built; not approved for production use.
-- **VALIDATION** — implementation exists and is being tested against its
-  go-live requirements.
-- **READY** — all required go-live gates have been proven.
-- **ACTIVE** — enabled for its intended production users.
-- **DEPRECATED** — no longer part of the supported system.
-
-A capability becomes ACTIVE only when its Go-Live Contract is satisfied. An
-unfinished capability must never block unrelated core workflows. See
-[`GO_LIVE_CONTRACT_TEMPLATE.md`](GO_LIVE_CONTRACT_TEMPLATE.md) for the
-contract shape. Contracts are written for capabilities that actually exist or
-are actively being developed — never speculatively.
-
-Live gate state (what is actually enforced in code today) is tracked in
-[`GATES.md`](GATES.md).
+- **Build status of a capability:** the module files in [`modules/`](modules/),
+  and nowhere else. A module's `Status` row is its status; its audit log says
+  who changed it and why. `claimed, no code` marks a module that was recorded
+  DONE with no code behind it; it stays so until Jason walks through it.
+- **History, not status:** `expanded-200-backlog.csv` (last changed
+  2026-08-16) and `expanded-200-index.json` (generated 2026-08-03). Neither is
+  kept current, and no code reads either: the evidence test stopped reading
+  the index on 2026-09-29 (Jason's "11A", OD-2026-09-29-002).
+- **The approved product list:**
+  [`PRODUCT_CAPABILITIES.json`](../../PRODUCT_CAPABILITIES.json).
+  `PPBF_CAPABILITIES.json` at the repository root is an old draft, kept because
+  scripts check that it exists (`health-check.ps1`,
+  `scripts/check-governance.ps1`, `scripts/health-check.ps1`,
+  `scripts/quick-reference.ps1`) and `packages/governance/featureFlags.ts`
+  imports it.
+- **Gates enforced in code today:** [`GATES.md`](GATES.md).
 
 ---
 
@@ -47,8 +36,8 @@ had a history and none of it had been read by anyone else.
 
 Checked before anything else, because it is the question that decides how much
 the rest matters: a repo-wide search for `expanded-200-backlog`,
-`expanded-200-index` and `PPBF_CAPABILITIES` finds **no consumer in
-`apps/web`**. These are planning artifacts. A row marked `DONE` here changes
+`expanded-200-index` and `PPBF_CAPABILITIES` finds **no consumer in the
+running `apps/web` application** (the evidence test read the index until 2026-09-29). These are planning artifacts. A row marked `DONE` here changes
 nothing a coach, athlete or board member sees.
 
 That matters because the owner's standing rule is that fake data must be gone
@@ -87,11 +76,12 @@ one it carries most often is *mapped*.
 paper" as an open owner decision, while this backlog marked 151 Consent /
 Waiver DONE. Traced on 2026-08-03:
 
-- `pilot.waivers` is in the base schema at `pilot_slice_postgres.sql:421`, with
+- `pilot.waivers` is in the base schema,
+  `infra/azure/pilot_slice_postgres.sql` (`create table if not exists pilot.waivers`), with
   an athlete foreign key, `signed_by_name`, `signed_by_role`, `signed_at`,
   `consent_version` and `status`.
 - `POST /api/pilot/intake/domain-upsert` with `entity_type: 'waiver'` writes it
-  (`intake.ts:480` → `upsertWaiver`), guarded by
+  (`upsertWaiver` in `apps/web/src/server/pilot/intake.ts`), guarded by
   `requireRole(['organization_admin', 'coach'])`.
 - That route is **not** behind `PPBF_INTAKE_PROMOTION_ENABLED`, so it works in
   production today.
@@ -144,7 +134,8 @@ Until a human runs the checklists, the accurate summary of this backlog is
 
 ### 3. The work log records the plan and not the finding
 
-`work/NNN-*-IN_PROGRESS.md` holds a useful Search/Do plan. The matching
+`work/NNN-*-IN_PROGRESS.md` (archived 2026-09-28 to
+`docs/archive/2026-09-28_capabilities-work/`) holds a useful Search/Do plan. The matching
 `-DONE.md` is four lines and says only that it closed. So the exercise's most
 valuable output — *which endpoints and tables a module actually maps to* — was
 never written down anywhere that survives.
@@ -161,9 +152,9 @@ from now needs and cannot reconstruct.
 
 ## Reading the CSV
 
-`expanded-200-backlog.csv` is the source of truth for status; the module stubs
-mirror it. Counts drift as waves land — do not trust a count table in prose;
-read the CSV itself for current numbers.
+`expanded-200-backlog.csv` is history, not status (see the top of this file).
+For current numbers, count the `Status` rows in `modules/`; do not trust a
+count table in prose.
 
 `Active` is `false` on all rows. `PromotionRequired` gates anything becoming
 live. Neither should be flipped from this backlog — promotion is a separate,

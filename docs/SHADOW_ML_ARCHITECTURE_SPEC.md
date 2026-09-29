@@ -1,12 +1,20 @@
 # SHADOW: Total Best ML Build Specification
 
 **Version:** 1.1  
-**Status:** Production Design  
-**Last Updated:** 2026-08-03  
+**Status:** Design reference, partly built — not a production design (corrected 2026-09-28; it read
+"Production Design"). The sections checked against code are listed below; much of the rest is
+marked NOT BUILT, struck, or parked where it appears. The code on `main` wins.  
+**Last Updated:** 2026-09-28  
 **Verified against code:** `main` @ `2aa2ded` — §1, §2.1, §4.2, §5, and §7 were
 rewritten on 2026-08-03 to match `shadowRouter.ts` / `shadowClassifier.ts` as
 shipped. Where this document and the code disagree, the code is authoritative;
 treat any drift as a defect in this file.  
+**Corrected 2026-09-28 against `bbf299fe`:** Heavy Bag is synchronous by default (§1.1,
+§3.1, §5.3); the 0-100 readiness and injury-risk scores and the numeric confidence values
+are struck (OD-2026-09-28-010 #22); the disclaimer design is struck and the unbuilt safety
+stages are marked (§2.5, §6.1-6.3); two unbuilt endpoints are marked (§2.2); the removed
+Standard tier, the learning-loop thresholds, learning style and tier-gated consent are
+brought into line with the code (§2.4, §3.1, §5.4, §6.4, Phase 3).  
 **Audience:** Engineering, Platform Leadership
 
 ---
@@ -67,8 +75,10 @@ User Query
     │
     ├─ Heavy Bag (complexity ≥ 0.6, high-risk patterns, or manual escalation)
     │  └→ gpt-5.6-sol-shadow (fallback: gpt-5-shadow)
-    │     measured ~95s, 210s timeout — async-default via shadow_jobs,
-    │     processed by /jobs/process, result linked in shadow_chat_audit
+    │     measured ~95s, 210s timeout — synchronous by default; queued to
+    │     shadow_jobs (processed by /jobs/process) only on preferAsync with
+    │     the worker enabled, and never for a question the high-risk
+    │     fallback intercepts
     │
     └─ Film Study (vision)
        └→ gpt-5-vision-shadow (fallback: text-only via luna)
@@ -80,8 +90,11 @@ User Query
   coaching answers. It is still ~33s unstreamed today — streaming this path is
   the top open UX item, tracked in the capability build plan (Track S1).
 - Heavy Bag is reserved for complex, high-stakes work (progression planning,
-  risk assessment, sensitive escalations) and is a poor synchronous wait by
-  design — the async job path is the intended UX.
+  risk assessment, sensitive escalations). It answers synchronously by default;
+  the background job path is an explicit opt-in (`preferAsync`) that also needs
+  the worker enabled; a question the high-risk fallback intercepts
+  (`FALLBACK_RESPONSES`) never queues
+  (`app/api/pilot/shadow/chat/route.ts`, the background Heavy Bag branch).
 - High-risk medical/psychological patterns force Heavy Bag regardless of the
   complexity score. Safety escalation is never latency-optimized away.
 - All timeouts stay under 240s because that is the Azure Container Apps ingress
@@ -222,9 +235,20 @@ SHADOW accepts and processes:
 - Policy queries
 
 #### 2.2.2 Video Intelligence
+
+**NOT BUILT, and parked (checked 2026-09-28).** No pose-estimation, scoring or
+drill-classification code exists; `apps/web/src/server/pilot/calibration/ontology.ts:17-23`
+lists "technique score" among concepts deliberately absent, and no recognition model has
+been trained (`apps/web/src/server/pilot/teachShadow/coverage.ts:13-15`). Per-skill video
+scoring, including the 0-100 technique score below, is parked under
+`BACKLOG-video-skill-scoring` in `docs/current/ACTIVE_WORK.md`. Teach Shadow teaches
+recognition only and does not re-open it (OD-2026-09-28-006, ruling 5). What exists for
+video today is the upload path, Film Study (Phase 4, §7), and Teach Shadow capture and
+labelling (`apps/web/app/teach-shadow/`, governed by OD-2026-09-28-006).
+
 - **Pose Estimation:** OpenAI Vision API detects key points (15 points per frame)
 - **Movement Quality Scoring:** ML classifier evaluates technique quality (0-100)
-- **Drill Classification:** Matches video to known drills (confidence threshold 0.85+)
+- **Drill Classification:** Matches video to known drills ~~(confidence threshold 0.85+)~~ — STRUCK 2026-09-28, OD-2026-09-28-010 #22
 - **Error Detection:** Identifies form deviations, safety issues
 - **Personalized Drill Recommendations:** Based on detected errors
 
@@ -250,9 +274,9 @@ SHADOW accepts and processes:
 - **Key Fact Extraction:** Azure Document Intelligence extracts structured data
 - **Validation:** Cross-references with athlete record for inconsistencies
 - **Linking:** Automatically links to athlete profile
-- **OCR:** Processes handwritten notes (confidence > 0.90)
+- **OCR:** Processes handwritten notes ~~(confidence > 0.90)~~ — STRUCK 2026-09-28, OD-2026-09-28-010 #22
 
-**API:** `POST /api/pilot/shadow/documents/analyze`
+**API:** `POST /api/pilot/shadow/documents/analyze` — **not implemented** (no such route at `bbf299fe`)
 ```typescript
 {
   documentId: string;
@@ -267,9 +291,10 @@ SHADOW accepts and processes:
 - **Real-time Ingestion:** HR, HRV, sleep, training load from wearables
 - **Trend Detection:** 7-day, 30-day, 90-day rolling averages
 - **Anomaly Detection:** ML classifier identifies unusual patterns
-- **Predictive Signals:** Fatigue, readiness, injury risk (ML-based)
+- **Predictive Signals:** Fatigue (ML-based). ~~Readiness and injury-risk prediction~~ — struck
+  2026-09-28 (OD-2026-09-28-010 #22; in-app AI never diagnoses, OD-2026-09-21-001)
 
-**API:** `POST /api/pilot/shadow/metrics/ingest`
+**API:** `POST /api/pilot/shadow/metrics/ingest` — **not implemented** (no such route at `bbf299fe`; `/api/pilot/shadow/metrics` is a GET report, not ingestion)
 ```typescript
 {
   athleteId: string;
@@ -280,8 +305,7 @@ SHADOW accepts and processes:
     sleepQuality?: 0-100;
     trainingLoad?: number;
     recoveryScore?: 0-100;
-    readinessScore?: 0-100;
-    injuryRiskScore?: 0-100;
+    // readinessScore, injuryRiskScore (0-100): STRUCK 2026-09-28, OD-2026-09-28-010 #22
   };
 }
 ```
@@ -399,7 +423,7 @@ interface Recommendation {
   title: string;
   description: string;
   category: string;
-  confidence: 0-100;  // AI confidence in recommendation
+  // confidence (0-100): STRUCK 2026-09-28, OD-2026-09-28-010 #22
   reasoning: string;  // full chain-of-thought
   
   // Guidance
@@ -438,7 +462,7 @@ interface OutcomeSignal {
   };
   
   execution_context: {
-    sessionType: 'quick_round' | 'standard' | 'heavy_bag';
+    sessionType: 'quick_round' | 'heavy_bag';  // no 'standard' tier (§5.2)
     complexityScore: 0-100;
     athleteProfile: UserProfile;
     organizationContext: string;
@@ -449,6 +473,10 @@ interface OutcomeSignal {
 ```
 
 #### 2.4.3 Effectiveness Scoring
+
+**Not what the code does.** `outcomeToScore` (`apps/web/src/server/pilot/shadowLearningLoop.ts`)
+maps each outcome signal to a fixed value on a 0-1 scale (`thumbs_up` 1.0 down to
+`escalated_to_human` 0.0). The weighting below was never built.
 
 ```typescript
 function scoreEffectiveness(signal: OutcomeSignal): EffectivenessScore {
@@ -471,7 +499,7 @@ function scoreEffectiveness(signal: OutcomeSignal): EffectivenessScore {
   
   return {
     score: Math.max(0, Math.min(100, score)),
-    confidence: calculateConfidence(signal),
+    // confidence: STRUCK 2026-09-28, OD-2026-09-28-010 #22
     recommendation_id: signal.recommendationId
   };
 }
@@ -479,12 +507,13 @@ function scoreEffectiveness(signal: OutcomeSignal): EffectivenessScore {
 
 #### 2.4.4 Library Update Trigger
 
-When recommendation effectiveness is scored:
+When recommendation effectiveness is scored, the code (`queueLibraryEntryChangeForHumanReview`,
+`shadowLearningLoop.ts`) proposes one action for a human to review; nothing changes the
+library automatically:
 
-1. **If score > 80:** Promote recommendation to high-confidence library entry
-2. **If score 50-80:** Keep in standard library (effective for most contexts)
-3. **If score 30-50:** Add context markers ("works for: athletes with X profile")
-4. **If score < 30:** Flag for review, consider removal
+1. **Score ≥ 0.75:** propose `promote`
+2. **Score < 0.4:** propose `demote`
+3. **Otherwise:** propose `retain`
 
 ```typescript
 interface LibraryEntry {
@@ -496,7 +525,7 @@ interface LibraryEntry {
   effectiveness_score: 0-100;
   success_count: number;
   failure_count: number;
-  confidence_threshold: 0-100;
+  // confidence_threshold (0-100): STRUCK 2026-09-28, OD-2026-09-28-010 #22
   
   // Contextual applicability
   applicable_to: {
@@ -516,6 +545,15 @@ interface LibraryEntry {
 ```
 
 ### 2.5 Safety & Governance Layer
+
+> **Design only -- not built as written (checked 2026-09-28 at `bbf299fe`).** The shipped
+> checks are `validateShadowRequest` (high-risk topic classification, refusal of prescription
+> and rapid weight-cut requests, urgent-symptom detection) and `validateShadowResponse`
+> (filters diagnosis claims and uncited evidence claims) in
+> `apps/web/src/server/pilot/shadowChat.ts`; a withheld request or a replaced response is
+> queued in `pilot.shadow_human_review_queue`. No code does content moderation, jailbreak
+> detection, confidence scoring, chain-of-thought attachment or request/response hashing,
+> and no code prepends disclaimers.
 
 #### 2.5.1 Pre-Flight Validation
 
@@ -556,17 +594,13 @@ async function filterResponse(
 ): Promise<FilteredResponse> {
   const issues = [];
   
-  // 1. Medical boundary enforcement
-  if (isMedicalAdvice(response) && !context.userRole.includes('doctor')) {
-    response = prependMedicalDisclaimer(response);
-    issues.push('medical_boundary_triggered');
-  }
+  // 1. Medical boundary enforcement -- STRUCK 2026-09-28. This prepended a
+  //    medical disclaimer to every medical answer. Never built, and not to be
+  //    built: AGENT_KERNEL.md forbids repeating generic disclaimers. The shipped
+  //    check filters diagnosis claims instead (validateShadowResponse).
   
-  // 2. Confidence markers
-  if (estimateConfidence(response) < 0.7) {
-    response = addConfidenceMarker(response, 'LOW');
-    issues.push('low_confidence_flagged');
-  }
+  // 2. Confidence markers -- STRUCK 2026-09-28, OD-2026-09-28-010 #22:
+  //    no numeric confidence estimate.
   
   // 3. Explainability
   const explanation = generateChainOfThought(response);
@@ -580,7 +614,7 @@ async function filterResponse(
     filtered_response: response,
     issues,
     explanation,
-    confidence: estimateConfidence(response),
+    // confidence: STRUCK 2026-09-28, OD-2026-09-28-010 #22
     requires_human_review: issues.includes('escalation_triggered')
   };
 }
@@ -612,7 +646,7 @@ interface AuditEntry {
   // Response
   response: string;
   response_hash: string;
-  confidence: 0-100;
+  // confidence (0-100): STRUCK 2026-09-28, OD-2026-09-28-010 #22
   safety_filters_applied: string[];
   
   // Outcome
@@ -637,7 +671,7 @@ interface AuditEntry {
 // Request
 {
   message: string;
-  sessionType?: 'quick_round' | 'standard' | 'heavy_bag';  // optional override
+  sessionType?: 'quick_round' | 'heavy_bag';  // optional override; no 'standard' tier (§5.2)
   context?: {
     athleteId?: string;
     previousMessagesCount?: number;
@@ -652,9 +686,9 @@ interface AuditEntry {
   createdAt: ISO8601;
   
   // Metadata
-  tier: 'quick_round' | 'standard' | 'heavy_bag';
+  tier: 'quick_round' | 'heavy_bag';
   complexity: 0-100;
-  confidence: 0-100;
+  // confidence (0-100): STRUCK 2026-09-28, OD-2026-09-28-010 #22
   modelUsed: string;
   tokenCount: {
     input: number;
@@ -662,7 +696,7 @@ interface AuditEntry {
   };
   
   // Async handling
-  async: boolean;  // true if Heavy Bag
+  async: boolean;  // true only when a Heavy Bag request was queued (preferAsync + worker enabled)
   jobId?: string;  // for async queries
   estimatedCompleteTime?: ISO8601;
   
@@ -684,7 +718,7 @@ interface AuditEntry {
 **Auth:** `requirePrincipal` (cookie-based session)  
 **Rate Limits:** 30 requests/60s per user, 400/day per user, 10 Heavy Bag/hour per user
 (administrative tier exempt)  
-**Timeout:** Quick Round (2s), Standard (5s), Heavy Bag (0s, async)
+**Timeout:** provider timeouts Quick Round 90s, Heavy Bag 210s (§1.2); Heavy Bag answers synchronously unless queued (§1.1)
 
 > **Two deliberate divergences from earlier drafts of this section.** Both were decided;
 > neither is drift.
@@ -907,7 +941,7 @@ CREATE TABLE shadow_learning_events (
   session_type VARCHAR(50),
   outcome_signal VARCHAR(50),
   effectiveness_score INT,
-  effectiveness_confidence FLOAT,
+  -- effectiveness_confidence: STRUCK 2026-09-28, OD-2026-09-28-010 #22
   library_updated BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -941,7 +975,7 @@ CREATE TABLE shadow_recommendation_effectiveness (
   effectiveness_score INT,
   success_count INT DEFAULT 0,
   failure_count INT DEFAULT 0,
-  confidence_threshold INT,
+  -- confidence_threshold: STRUCK 2026-09-28, OD-2026-09-28-010 #22
   version INT DEFAULT 1,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   promoted_from_recommendation_id UUID
@@ -975,7 +1009,7 @@ CREATE TABLE shadow_chat_audit (
   message_hash VARCHAR(255),
   model_used VARCHAR(100),
   complexity_score FLOAT,
-  confidence FLOAT,
+  -- confidence: STRUCK 2026-09-28, OD-2026-09-28-010 #22
   response_hash VARCHAR(255),
   safety_filters_applied VARCHAR(255)[],
   feedback_received VARCHAR(50),
@@ -1037,7 +1071,7 @@ shadow:jobs:{job_id} → Job (JSON)
 3. Classify (shadowClassifier: complexity < 0.4, or boundary 0.4–0.6)
 4. Assemble lightweight context (role guidance, safety boundaries)
 5. Call Azure OpenAI gpt-5.6-luna-shadow (90s timeout; fallback gpt-5-mini)
-6. Filter response (medical boundaries, confidence markers)
+6. Filter response (`validateShadowResponse`: diagnosis and uncited-claim filtering)
 7. Log to shadow_chat_audit
 8. Return response with metadata
 ```
@@ -1054,7 +1088,12 @@ Quick Round with a manual escalation flag for authorized roles (§2.1). This
 heading is retained so old references resolve to an explanation rather than a
 dangling anchor.
 
-### 5.3 Heavy Bag Pipeline (async-default, ~95s measured execution)
+### 5.3 Heavy Bag Pipeline (synchronous by default; background on `preferAsync`, ~95s measured execution)
+
+By default Heavy Bag runs in the request like §5.1, with its 210s timeout. Steps 3-10 below are
+the background path, taken only when the client sends `preferAsync`, the worker is enabled, and
+the high-risk fallback (`FALLBACK_RESPONSES`) does not intercept the question
+(`app/api/pilot/shadow/chat/route.ts`).
 
 ```
 1. Message received
@@ -1071,8 +1110,8 @@ dangling anchor.
 ```
 
 **Measured:** ~95s model execution. The earlier "< 30s" SLA was aspirational
-and is withdrawn; the async job path is the intended UX, and timeouts are
-bounded by the 240s Azure Container Apps ingress limit, not by an SLA.
+and is withdrawn; timeouts are bounded by the 240s Azure Container Apps
+ingress limit, not by an SLA.
 
 ### 5.4 Learning Loop Pipeline
 
@@ -1083,12 +1122,12 @@ bounded by the 240s Azure Container Apps ingress limit, not by an SLA.
 2. Record to shadow_feedback table
 3. Link to recommendation & message
 4. [Async, fire-and-forget] Call processLearningSignal()
-5. [Async] Score effectiveness (0-100)
+5. [Async] Score effectiveness (0-1, a fixed value per outcome signal; §2.4.3)
 6. [Async] Update shadow_learning_events
-7. [Async] Determine library action:
-   - If score > 80: promote to high-confidence entry
-   - If score < 30: flag for review
-   - If context-specific: add applicability markers
+7. [Async] Propose a library action for human review (§2.4.4):
+   - score ≥ 0.75: propose promote
+   - score < 0.4: propose demote
+   - otherwise: propose retain
 8. [Async] Update user profile (interaction_count++, tier_recalc)
 9. [Async] Check for auto-generated research requirements
 10. [Async] Update personalization engine
@@ -1143,10 +1182,13 @@ The flow below is retained as the design of record for whoever picks up that dec
 
 ### 6.1 Multi-Stage Validation
 
+**Checked 2026-09-28 at `bbf299fe`: the ticks below were the design, not the build.** Items
+found not built are marked; §2.5 names the checks that did ship.
+
 **Stage 1: Pre-Flight (100% of requests)**
-- ✅ Content safety API (Azure Content Moderator)
-- ✅ Jailbreak detection (keyword + pattern matching)
-- ✅ Medical emergency detection (911 trigger words)
+- ❌ Content safety API (Azure Content Moderator) — NOT BUILT
+- ❌ Jailbreak detection (keyword + pattern matching) — NOT BUILT
+- ✅ Medical emergency detection — as urgent-symptom patterns in `validateShadowRequest`; there is no 911 trigger-word list
 - ✅ Rate limit enforcement
 - ✅ Consent status verification
 
@@ -1156,17 +1198,21 @@ The flow below is retained as the design of record for whoever picks up that dec
 - ✅ Escalation decision
 
 **Stage 3: Post-Response Filtering (100% of requests)**
-- ✅ Medical boundary enforcement (prepend disclaimers)
-- ✅ Confidence scoring (flag low-confidence responses)
-- ✅ Explainability requirement (attach chain-of-thought)
+- ❌ ~~Medical boundary enforcement (prepend disclaimers)~~ — STRUCK; never built (§2.5.2)
+- ❌ ~~Confidence scoring (flag low-confidence responses)~~ — NOT BUILT; struck (OD-2026-09-28-010 #22)
+- ❌ Explainability requirement (attach chain-of-thought) — NOT BUILT
 - ✅ Escalation trigger check (human review flag)
 
 **Stage 4: Audit Trail (100% of requests)**
-- ✅ One-way hash of request/response
+- ❌ One-way hash of request/response — NOT BUILT (`pilot.shadow_chat_audit` stores the message and response text)
 - ✅ Full metadata logging
 - ✅ Retention policy enforcement
 
 ### 6.2 Confidence & Explainability
+
+**NOT BUILT as specified (checked 2026-09-28).** The shipped response (`ShadowChatResponse`,
+`app/api/pilot/shadow/chat/route.ts`) carries `evidenceTier`, `citations`, `handoff` and
+`requiresHumanReview`; it has no confidence number, confidence reason or chain of thought.
 
 Every response includes:
 
@@ -1175,7 +1221,7 @@ Every response includes:
   response: string;
   
   // Explainability
-  confidence: 0-100;
+  // confidence (0-100): STRUCK 2026-09-28, OD-2026-09-28-010 #22
   confidenceReason: string;
   chainOfThought: string;  // step-by-step reasoning
   
@@ -1200,10 +1246,7 @@ SHADOW escalates to human review when:
    - Psychological safety
    - Liability exposure
 
-2. **Confidence < 50%**
-   - Insufficient data
-   - Ambiguous request
-   - Novel situation
+2. ~~**Confidence < 50%**~~ — STRUCK 2026-09-28, OD-2026-09-28-010 #22; there is no confidence number to trigger on
 
 3. **User Escalation**
    - User clicks "Escalate to Human"
@@ -1216,7 +1259,7 @@ SHADOW escalates to human review when:
    - Organizational sensitivity
 
 **Escalation Flow:**
-1. Flag in shadow_jobs (job_type = 'human_review')
+1. Queue in `pilot.shadow_human_review_queue` (`queueHumanReview`, `shadowConversations.ts`), not `shadow_jobs` -- the chat route queues every withheld request and every replaced response
 2. Notify admin/coach dashboard
 3. Set 24-hour SLA for human response
 4. Log in audit trail
@@ -1233,8 +1276,10 @@ SHADOW escalates to human review when:
   every organization-owned record carries `organization_id`)
 - No cross-organization recommendations or patterns
 
-**Consent Management:**
-- Gold-tier members opt-in to anonymized pattern analysis
+**Consent Management:** NOT BUILT (no opt-in or opt-out for pattern analysis in
+`apps/web/src/server/pilot/shadow*.ts`, checked 2026-09-28).
+- ~~Gold-tier members opt-in to anonymized pattern analysis~~ — struck 2026-09-28: tiers never
+  gate a capability (`shadowProfiling.ts:2`; Phase 3 below), so a tier cannot be the consent condition
 - Opt-out available at any time (historical data retained, future data anonymous)
 
 ---
@@ -1260,8 +1305,7 @@ SHADOW escalates to human review when:
   capabilities
 - ⏳ Adaptive response generation — unlock-gated; needs real feedback volume
   and human review capacity before it can warm up
-- ⏳ Learning style detection — current inference is crude heuristics; do not
-  deepen until volume exists
+- ❌ Learning style detection — WITHDRAWN 2026-08-23 (§2.3); no code infers it. Do not build
 - **Status:** partially shipped; advancing is gated on operational volume, not
   code
 
@@ -1269,7 +1313,10 @@ SHADOW escalates to human review when:
 - 🔄 Video Intelligence — upload → content scan → promote path is **live**;
   Film Study executor runs behind a mandatory human proposals gate; per-frame
   cost measurement still required before general availability. Pose estimation
-  and drill classification are **aspirational, not in scope**.
+  and drill classification are **aspirational, not in scope**. (2026-09-28: neither is built.
+  Teach Shadow, which collects labelled footage to teach recognition, is governed by
+  OD-2026-09-28-006; per-skill scoring stays parked under `BACKLOG-video-skill-scoring`, see
+  §2.2.2.)
 - 🔄 Document Intelligence — document-intake pipeline exists (classify, review,
   link); OCR/fact-extraction depth is future work
 - ⏳ Biometric Integration — **deferred; nothing built**
@@ -1285,7 +1332,7 @@ SHADOW escalates to human review when:
 
 ### Phase 6: Advanced Features (Weeks 21+)
 - ⏳ Cross-organizational anonymized insights
-- ⏳ Predictive readiness/fatigue/injury risk
+- ⏳ Predictive fatigue (~~readiness and injury-risk scores~~ struck 2026-09-28, OD-2026-09-28-010 #22)
 - ⏳ Board-level analytics
 - ⏳ What-If simulator for training plans
 
@@ -1294,6 +1341,17 @@ SHADOW escalates to human review when:
 ## File Structure
 
 **Recommended project structure for future development:**
+
+> **NOT BUILT as laid out (checked 2026-09-28).** None of the `src/server/pilot/shadow*/`
+> folders and none of the `src/client/components/` or `src/client/pages/` entries exist:
+> shipped SHADOW code is mostly flat files in `apps/web/src/server/pilot/` (`shadowRouter.ts`,
+> `shadowClassifier.ts`, `shadowJobQueue.ts`, `shadowLearningLoop.ts`, `shadowLibrary.ts` and
+> others) plus the subfolders `patterns/`, `formulas/`, `calibration/` and `teachShadow/`, and
+> pages under `apps/web/app/shadow/` (including `scout/`) and `apps/web/app/admin/shadow/`.
+> Under `app/api/pilot/shadow/`, `chat`, `feedback`, `jobs` (with `process` and `[jobId]`) and `upload` exist; `scout-reports`,
+> `migrate` and `debug` do not (§3.5, §3.7), nor do the three docs listed beside this one.
+> Read the tree as an old proposal, not a map. The confidence-scoring and readiness entries
+> are struck (OD-2026-09-28-010 #22).
 
 ```
 apps/web/
@@ -1305,14 +1363,14 @@ apps/web/
 │   │       │   ├── theCorner.ts          # Complexity classifier
 │   │       │   ├── contextAssembler.ts   # Builds optimal context window
 │   │       │   ├── responseFilter.ts     # Post-response safety filtering
-│   │       │   ├── confidentceMarker.ts  # Confidence scoring
+│   │       │   ├── confidentceMarker.ts  # Confidence scoring — STRUCK 2026-09-28, OD-2026-09-28-010 #22
 │   │       │   └── chainOfThought.ts     # Explainability generation
 │   │       │
 │   │       ├── shadowPersonalization/
 │   │       │   ├── userProfile.ts        # Tier management, memory
 │   │       │   ├── adaptiveGeneration.ts # Tone, complexity, format adaptation
-│   │       │   ├── learningStyleDetector.ts
-│   │       │   └── readinessSignal.ts
+│   │       │   ├── learningStyleDetector.ts  # WITHDRAWN 2026-08-23 (§2.3)
+│   │       │   └── readinessSignal.ts        # STRUCK 2026-09-28, OD-2026-09-28-010 #22 (readiness)
 │   │       │
 │   │       ├── shadowLearningLoop/
 │   │       │   ├── index.ts
@@ -1363,7 +1421,7 @@ apps/web/
 │       │   ├── ShadowMessage.tsx          # Message with feedback
 │       │   ├── FeedbackButtons.tsx        # 👍 👎 escalate
 │       │   ├── ScoutReportCard.tsx        # Report display
-│       │   └── ConfidenceMarker.tsx       # Confidence indicator
+│       │   └── ConfidenceMarker.tsx       # Confidence indicator (HIGH/MEDIUM/LOW, §6.2; not a number, so not struck; not built)
 │       │
 │       └── pages/
 │           ├── shadow/
@@ -1595,15 +1653,15 @@ tier, §4.2.)
 ## Appendix: Glossary
 
 - **Quick Round:** synchronous, lightweight context, luna (~33s measured, unstreamed)
-- **Heavy Bag:** async-default, full context and deep reasoning, sol (~95s measured)
+- **Heavy Bag:** synchronous by default (background only on `preferAsync`), full context and deep reasoning, sol (~95s measured)
 - **The Corner:** model routing layer (`shadowRouter.ts`); tier decisions come
   from the classifier (`shadowClassifier.ts`)
 - **Scout Report:** Comprehensive athlete intelligence generated async
 - **Outcome Signal:** User feedback (thumbs up/down) + objective data
-- **Effectiveness Score:** 0-100 rating of recommendation quality
+- **Effectiveness Score:** 0-1 value per outcome signal (§2.4.3)
 - **Learning Loop:** Recommendation → Outcome → Score → Library Update → Profile Update
 - **Tier:** Bronze (< 10 interactions), Silver (10-50), Gold (50+)
-- **Confidence Marker:** HIGH/MEDIUM/LOW label on responses
+- **Confidence Marker:** HIGH/MEDIUM/LOW label on responses — not built (§6.2)
 - **Chain-of-Thought:** Step-by-step reasoning explanation
 - **Fire-and-Forget:** Async operation that doesn't block request
 
@@ -1628,4 +1686,4 @@ tier, §4.2.)
 
 ---
 
-This specification is **production-ready** and can be used immediately for Phase 3+ development planning. It includes concrete API contracts, database schemas, file structure, and implementation timelines.
+This specification is **production-ready** and can be used immediately for Phase 3+ development planning. It includes concrete API contracts, database schemas, file structure, and implementation timelines. (Corrected 2026-09-28: it is not production-ready; see **Status** at the top.)

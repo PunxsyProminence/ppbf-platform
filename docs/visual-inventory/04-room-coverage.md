@@ -1,3 +1,5 @@
+> **HISTORY (2026-09-28):** room counts and plate ranking for the six-room building, measured at `a11ea7c1` (2026-08-20); not a build order (OD-2026-09-28-009 item 3). Current source: `docs/ROOM-MAP.md` (Build order).
+
 # 04 — Room coverage: where a second wall would actually help
 
 **Counted from `origin/main` at `a11ea7c166f7659e4c5bb63337d44323069febaa`.**

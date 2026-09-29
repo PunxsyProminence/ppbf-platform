@@ -1,10 +1,11 @@
 # GOLDEN ERA V1 — Real-Gym Visual Contract
-**Version:** 1.1 · **Date:** 2026-08-24 · **Author:** Grok (visual lane) · **Owner:** Jason Neale  
+**Version:** 1.1 · **Date:** 2026-08-24 · **Author:** Grok · **Owner:** Jason Neale  
 **Status:** Active authority for the usable-app visual release.  
-**Sibling law:** `docs/GROK-VISUAL-LANE.md` (process) · this file (look & feel) · `docs/REAL-GYM-REFERENCE-LOCK.md` (environmental DNA)
+**Amended 2026-09-28** (OD-2026-09-28-001, OD-2026-09-28-009): owner-first authority order (§2); §3 points to the lock; §8 records the fonts as built; §9 points to the plates README; §13 shows the seam as built; Claude places plate binaries. Later the same day, by owner decision: §4 adds dark glass as a panel material (OD-2026-09-28-014); §9 lets the ring canvas keep its IRON CITY lettering (OD-2026-09-28-013). **Amended 2026-09-29** (OD-2026-09-29-001): §6 and §7, red is not reserved; `--locked` still means a medical stop.  
+**Related:** this file (look & feel) · `docs/REAL-GYM-REFERENCE-LOCK.md` (environmental DNA) · `docs/ROOM-MAP.md` (the visual build order) · `design-system/README.md` (the laws that still bind) · `apps/web/public/plates/README.md` (plates)
 
 > This document is the durable visual authority.  
-> A future Grok session must be able to reproduce the approved direction from this file alone.  
+> A future session must be able to reproduce the approved direction from this file alone.  
 > Conversation history is not required and must not be the source of truth.
 
 ---
@@ -27,14 +28,14 @@ It must **not** look like:
 
 ---
 
-## 2. Authority order (non-negotiable)
+## 2. Authority order
 
 | Rank | Authority | Source |
 |------|-----------|--------|
-| 1 | Functional | Current `main` source + real APIs |
-| 2 | Visual | This contract + Jason-approved Golden Era |
-| 3 | Environmental | **`docs/REAL-GYM-REFERENCE-LOCK.md`** + owner photos |
-| 4 | Owner | Jason’s explicit choices override earlier mockups |
+| 1 | Owner | Jason’s decisions (`docs/current/OWNER_DECISIONS.md`) and explicit choices; they override this contract and earlier mockups |
+| 2 | Functional | Current `main` source + real APIs |
+| 3 | Visual | This contract + Jason-approved Golden Era |
+| 4 | Environmental | **`docs/REAL-GYM-REFERENCE-LOCK.md`** + owner photos |
 
 If a design board shows something with no real backend: **omit it**, adapt the composition around the real function, or report it as a future functional requirement. Never fake it.
 
@@ -42,32 +43,14 @@ If a design board shows something with no real backend: **omit it**, adapt the c
 
 ## 3. Real-gym environmental truth
 
-**Full lock:** `docs/REAL-GYM-REFERENCE-LOCK.md`  
-That file is the permanent environmental authority. Summary only below.
+**The lock:** `docs/REAL-GYM-REFERENCE-LOCK.md` is the environmental authority: its DNA, its forbidden list and its drift test are not restated here. (They were, and the copy drifted: this section still named blue foam ceiling pads after the owner's 2026-09-26 photographs replaced them.) Its DNA applies to training rooms; other rooms follow `docs/ROOM-MAP.md` (OD-2026-09-28-009).
 
 The actual gym is the reference, not a stock template.
 
-**Locked DNA (must appear):**
-- Iron City Brewery teal ring canvas + red/white circular logo
-- Blue foam ceiling pads / gray plywood
-- Rough wood beams, posts, A-frames
-- Everlast / Powercore / red bags / speed bags / Sting gloves
-- Wood-framed mirrors, chalkboards, handwritten workout signs
-- 3rd Infantry banner, Rocky + fight posters, American flag, lockers
-- Fluorescent + red LED + natural light — lived-in, rustic, nonprofit
-
-**Forbidden (causes drift):**
-- Generic grey-brown brick + caged industrial lamps as default
-- Stock polished commercial boxing gym
-- Fictional logos, trophies, athletes, faces of minors
-
-**Use for:** spatial character, material roughness, lighting, signage, photographic texture.  
 **Do not fabricate** rooms, equipment, architecture, or claims that do not exist.
 
 Stylization is allowed. Fabrication of real-world facts is not.  
 The interface does not need to literally recreate every physical wall; it must feel *derived from this gym*.
-
-**Drift test before every Mode B ship:** Would Jason recognise this as *his* gym? Is Iron City / blue-foam / rough-wood / bag DNA visible in the outer thirds?
 
 ---
 
@@ -84,11 +67,14 @@ Golden Era is the **rendered visual authority**. The old Leather & Brass sheet i
 6. **Cork / file** — file-room only.
 7. **Varnished cabinetry + cooler green tint** — clinic only.
 
+### Dark glass (owner-approved 2026-09-28, OD-2026-09-28-014)
+**Dark glass** — the dark translucent dashboard panels over the real gym in Jason's Grok board. Jason's words: *"its can use all types where appropriate"* (OD-2026-09-28-014): a panel may be aged paper, dark glass, or both, each where it fits. The core list above is otherwise unchanged; the answer did not rank the materials. Not built yet: no glass material exists in the `design-system/` sheets or `apps/web/app/globals.css` at `10da14c9`.
+
 ### Surface rules
-- Cards and panels sit *on* the room (paper/leather on the wall plate), never fight the plate.
+- Cards and panels sit *on* the room (aged paper, leather or dark glass on the wall plate), never fight the plate.
 - Quiet centre of every plate; UI panels land in the quiet zone.
 - Text over photographs or textured grounds must remain readable (overlay or material treatment required). Jason has already caught unreadable text that tests missed — treat contrast as first-class.
-- No skeuomorphic “room-*” classes beyond the six declared rooms. No new invented materials without owner approval.
+- No skeuomorphic “room-*” classes beyond the six declared rooms. No new invented materials without owner approval (dark glass has it, above).
 
 ---
 
@@ -108,7 +94,7 @@ A coach floor-group page and a session-script delivery page both sit in `.room--
 
 ---
 
-## 6. Room Purpose DNA (summary — full law in `docs/shadow-ui/ROOM-PURPOSE-DNA.md`)
+## 6. Room Purpose DNA (summary of today's six rooms — full law in `docs/shadow-ui/ROOM-PURPOSE-DNA.md`; the target rooms are `docs/ROOM-MAP.md`)
 
 | Room | Purpose feel | Allowed chrome | Forbidden |
 |------|--------------|----------------|-----------|
@@ -116,7 +102,7 @@ A coach floor-group page and a session-script delivery page both sit in `.room--
 | **Floor** | Open bags + ring edge + fluorescent, high energy | Chalk, WordsOnTheWall, CLEARED badges | Board tables, file cork, clinic red theater |
 | **Board** | Formal quiet — chalkboard / certificates wall | Count tiles, PLANNED tabs | Chat, athlete detail, eggs |
 | **File** | Gear shelves / sticky-note tagged storage density | Queues, Observation→Lesson columns | Hype, eggs |
-| **Clinic** | Cleaner corner, cooler light, less bag drama | Brass Training Hold, red only for critical medical/safety | Wall sayings, “tough it out” eggs |
+| **Clinic** | Cleaner corner, cooler light, less bag drama | Brass Training Hold, `--locked` only for critical medical/safety | Wall sayings, “tough it out” eggs |
 | **Night** | Darker, low lamp, bags as silhouettes | Mode labels only (Scout / Architect / Omega) | Board chrome on deny, Master Mode toggle |
 
 Easter eggs: primary home is Floor. Never on Board, File, Clinic, Night (deny).
@@ -127,26 +113,25 @@ Easter eggs: primary home is Floor. Never on Board, File, Clinic, Night (deny).
 
 | Token / colour | Meaning | Never use for |
 |----------------|---------|---------------|
-| `#A81E22` / `--locked` | **MEDICALLY_NOT_ALLOWED only** | Ordinary network failures, loading, empty, form rejection, generic overdue, normal validation, ordinary destructive buttons, generic unavailable |
+| `--locked` (resolves to `#A81E22`) | **MEDICALLY_NOT_ALLOWED only** | Ordinary network failures, loading, empty, form rejection, generic overdue, normal validation, ordinary destructive buttons, generic unavailable |
 | Restricted | Visually distinct from Locked | — |
-| Destructive action | Separate destructive semantic treatment | Medical locked red |
+| Destructive action | Separate destructive semantic treatment | The `--locked` medical-stop treatment |
 
-If you encounter `--stamp-restricted: var(--locked)`, treat it as existing semantic debt, not design authority. Do not reinterpret medical/safeguarding logic. (Claude’s safeguarding-red-guard owns the CI enforcement; Grok does not touch those three reserved files.)
+**Red itself is not reserved** (OD-2026-09-29-001, 2026-09-29). The club's colours are black, red and white, so red, `#A81E22` included, may be used anywhere. What the table above keeps is the state: `--locked` means a medical stop and nothing else. The 2026-08-19 reservation of the hue is superseded (OD-2026-09-29-001), and its test (`apps/web/src/design/safeguardingRedReservation.test.ts`) is deleted. Within the refusal-stamp family, red stays MEDICALLY_NOT_ALLOWED's mark only (`apps/web/components/RefusalStamp.tsx:10-17`, enforced by `apps/web/components/refusalStamp.test.tsx`); whether OD-2026-09-29-001 frees that family too is open for Jason.
+
+If you encounter `--stamp-restricted: var(--locked)`, treat it as existing semantic debt, not design authority. Do not reinterpret medical/safeguarding logic.
 
 ---
 
 ## 8. Typography hierarchy
 
-Keep the six established voices (do not invent new families without owner approval):
+**Corrected 2026-09-28 to what is built** (OD-2026-09-28-009). The six-voice list this section carried (Alfa Slab One, Oswald, Inter, Special Elite, Caveat, UnifrakturCook) did not match what the app renders, and five of its faces had been retired the day before it was written.
 
-- **Alfa Slab One** — command / page title (sparingly)
-- **Oswald** — section / rail / tab labels
-- **Inter** — body, supporting copy, forms
-- **Special Elite** — data / numeric / ledger
-- **Caveat** — chalk / informal wall notes (Floor only)
-- **UnifrakturCook** — rare seal / formal marks only
+- **Retired 2026-08-23 by owner decision:** Alfa Slab One, Oswald, Special Elite, Caveat and UnifrakturCook, the Leather & Brass personality faces. `apps/web/src/design/legacyVisualVocabulary.test.ts` fails if app source (`.tsx` under `app/` and `components/`) names one. Their `.woff2` files stay in `design-system/fonts/`; their `@font-face` rules are in `design-system/legacy/legacy-fonts.css`.
+- **Body:** Roboto Condensed, and **data / numeric / ledger:** Geist Mono — both self-hosted through `next/font` in `apps/web/app/layout.tsx` and read by `--font-body` and `--font-data` in `apps/web/app/globals.css`. Inter is not shipped by this repository.
+- **Still rendering where existing CSS asks for them:** the retired faces. `design-system/current/ppbf-golden-era.css` imports the legacy sheet, which loads `legacy-fonts.css`, and `globals.css` still names Alfa Slab One, Oswald and Caveat in `--font-stencil`, `--font-ui` and `--font-hand`. Oswald is also loaded once through `next/font` as `--font-tactical-display` — the one live binding the owner kept on 2026-08-23 until the new system supplies its display typography and the replacement can be verified (pinned by the same test).
 
-Data and numeric values use Special Elite so they never look like marketing copy.  
+Do not add a family without owner approval.  
 Unknown / missing values must look **unknown**, never zero or “normal complete”.
 
 ---
@@ -154,23 +139,11 @@ Unknown / missing values must look **unknown**, never zero or “normal complete
 ## 9. Photographic / plate rules
 
 - Layer 0 only (the wall the room stands in). Real UI composites on top in code.
-- Quiet centre, outer-thirds interest, zero lettering, 4:4:4 (no chroma subsampling), complete SOI **and** EOI, larger than 8 KB, at most 400 KB, geometry one of 1280×720 / 2560×1440 landscape or 405×720 / 810×1440 portrait, orientation matches filename.
+- Quiet centre, outer-thirds interest, zero lettering — except the IRON CITY lettering on the ring canvas, which stays when the ring is in frame (owner, 2026-09-28: *"no i like that you can leave it"*; OD-2026-09-28-013; `docs/REAL-GYM-REFERENCE-LOCK.md` Mode A item 4).
 - Variants from a shared root reference (one building, one day) derived from the Real Gym Reference Lock.
-- Grok owns placing the real JPEG binaries directly on its feature branch. No base64, no materializer, no bytes through a chat channel.
-- **A delivery is bytes on a branch.** A real `git add` of the actual file, nothing else. A manifest, a link, a drive folder, a zip, or a `.jpg`-named placeholder is not a delivery however complete its covering note reads — PR #643 (2026-08-25) is the worked example, and it cost a round.
-- **Fallback when Grok's tooling cannot push a binary: Jason drag-drops the JPEGs onto the branch.** Per the owner's 2026-08-25 ruling Claude may accept and land a binary when directed, but **it cannot retrieve bytes from SharePoint/OneDrive at all** — the connector renders an image rather than returning file contents, `downloadUrl` is null, and a zip is inaccessible. That is a capability fact, not a preference, so a handoff written around it does not run. See `apps/web/public/plates/README.md`.
-- `plateBinaries.test.ts` is the hard gate. Do not weaken it.
+- The byte laws, the delivery rule and who places images are stated once, in `AGENT_KERNEL.md` "Binary assets (plates)"; `apps/web/src/design/plateBinaries.test.ts` enforces them on the bytes and is the hard gate. Do not weaken it. The delivery record (PR #643, 2026-08-25, is the worked example) is in `apps/web/public/plates/README.md`.
 
-Exact producer set for the current Type B ship (leave office-01 and board-01 untouched unless separately ordered):
-
-| File | Bytes | SHA-256 |
-|------|------:|---------|
-| plate-02a-floor-landscape-01.jpg | 128611 | 410022d6e7ddccfdd231ffbffc8b66de7df8001bc047253665070a35fd024c68 |
-| plate-02b-floor-portrait-01.jpg | 44121 | b3828428a637f1b506f787f3ca1da290c4ed3f3bc3e045bc77a616d845aa2c65 |
-| plate-03-clinic-01.jpg | 82644 | e2b4564a8f6a7c8f0ae0dbc3a57189ce58bb7465da017627cfb3ce08a3653cdb |
-| plate-05-file-01.jpg | 178682 | 4cd52259c0a4ea4c8b468e28ad30211795fc4f10d43430d04bd0a86507ef465e |
-| plate-06-night-01.jpg | 153920 | 9fe30999c4f13629700fc3674c02ffdbe6aaf497feec69df149959579976f448 |
-| plate-07-warm-ground-01.jpg | 111648 | 44cf1db174f1a9045ae3da496e185f2b83636642e7d8ac21105a454a3d57d3b3 |
+Which plates are committed, and which the stylesheet actually paints, is the tables in `apps/web/public/plates/README.md`. (This section used to carry an "exact producer set" of six files with byte counts and SHA-256 hashes; none of them matched the committed plates.)
 
 ---
 
@@ -210,10 +183,12 @@ Today is: **real app + real gym + Golden Era + usable core workflows**.
 design-system/
   foundation/     ← do not casually rewrite (spacing, focus, tap, reduced-motion, form geometry, print, SR helpers)
   current/
-    ppbf-theme.css   ← THE SEAM. Currently still imports retired Leather & Brass.
-                       Replace that import with the real Golden Era sheet.
+    ppbf-theme.css        ← THE SEAM. Imports ppbf-golden-era.css.
+    ppbf-golden-era.css   ← the Golden Era sheet. Imports the legacy sheet for
+                            continuity, then overrides on top of it.
   legacy/
-    ppbf-leather-brass.css  ← retired as visual authority; may remain for alias mapping only
+    ppbf-leather-brass.css  ← retired as visual authority, but still the live base
+                              of most tokens, materials, components and the PLATES block
 ```
 
 Where legacy token names still appear in markup, map them into Golden Era meaning rather than leaving old visual meaning active. Rendered truth matters more than a mechanical rename of every call site for this release.
@@ -257,18 +232,18 @@ If YES → ship the staging candidate for Jason’s live review.
 ## 16. Asset & plate manifest (pointer only)
 
 - **Real-gym environmental lock:** `docs/REAL-GYM-REFERENCE-LOCK.md` (asset UUIDs + DNA table). Owner photos stay with Jason / conversation assets — full-res personal photos are not committed to the public repo.
-- Shipped plates: `apps/web/public/plates/` (see §9 for exact producer set).
+- Shipped plates: `apps/web/public/plates/` (its README's tables list what is committed and what is painted).
 - Do not place binary images inside this Markdown or any JSON.
-- Optional archive: OneDrive `Documents/PPBF-AI-Lanes/Grok-Plates-Inbox/` (provenance only, never a shipping dependency — nothing on the far side of a drive folder can be fetched into this repository by Claude, so a copy there is an archive of a delivery, not the delivery).
+- A copy of a plate in a drive folder is an archive of a delivery, never the delivery and never a shipping dependency.
 
 ---
 
 ## 17. Change control
 
-- This contract is amended only by owner decision, or by a visual PR from any lane that updates it as part of a visual release (OD-2026-09-26-001).
-- No lane rewrites another lane's approved visual decisions out of preference. Any lane may propose a change to them, and the owner decides.
-- ChatGPT audits claims against this contract and the actual PR diff.
+- This contract is amended by owner decision, or by Claude in a visual PR that updates it as part of a visual release (OD-2026-09-26-001 as narrowed by OD-2026-09-28-001).
+- Nobody rewrites an approved visual decision out of preference (OD-2026-09-26-001). Anyone may propose a change, and the owner decides.
+- ChatGPT, as reviewer once its instructions are set up (OD-2026-09-28-001 #2), checks claims against this contract and the actual PR diff.
 
 Tagline remains: **OBSERVE. DECIDE. EXECUTE. REPEAT.**
 
-— Grok visual lane, 2026-08-24 (v1.1 — real-gym lock linked)
+— Grok, 2026-08-24 (v1.1 — real-gym lock linked)
