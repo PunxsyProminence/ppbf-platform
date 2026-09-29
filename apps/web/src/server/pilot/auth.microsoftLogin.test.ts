@@ -34,6 +34,7 @@ describe('loginWithMicrosoftEmail', () => {
       is_platform_owner: true,
       athlete_id: null,
       active_flag: true,
+      account_deleted: false,
       organization_status: 'active',
       ...overrides,
     };
@@ -75,6 +76,40 @@ describe('loginWithMicrosoftEmail', () => {
 
     expect(result?.principal.role).toBe('volunteer');
     expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  // Sign-in refuses any account marked deleted (OD-2026-09-29-003 Q9), even
+  // one an admin path has set active again.
+  test('refuses an account marked deleted, though active, without writing a session row', async () => {
+    mockQueryOne.mockResolvedValueOnce(accountRow({
+      account_id: 'coach@example.com',
+      role: 'coach',
+      organization_id: 'org-1',
+      is_platform_owner: false,
+      account_deleted: true,
+    }));
+
+    const result = await loginWithMicrosoftEmail('coach@example.com');
+
+    expect(result).toBeNull();
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  // Fail closed: a row that does not say it is not deleted admits nobody.
+  test('refuses a row with no deletion flag at all', async () => {
+    const row: Record<string, unknown> = accountRow({
+      account_id: 'coach@example.com',
+      role: 'coach',
+      organization_id: 'org-1',
+      is_platform_owner: false,
+    });
+    delete row.account_deleted;
+    mockQueryOne.mockResolvedValueOnce(row);
+
+    const result = await loginWithMicrosoftEmail('coach@example.com');
+
+    expect(result).toBeNull();
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 
   // Every refusal below used to run after the insert, so a sign-in that was

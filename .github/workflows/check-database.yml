@@ -180,7 +180,10 @@ jobs:
               # whether any deleted record still has access open -- the footprint the two
               # bugs fixed in #690 and #709 would leave behind. Counts and timestamps only;
               # no account ids, athlete ids, names or emails. Exits non-zero only when a
-              # deleted record still has access, never merely because deletions exist.
+              # deleted athlete still has a login that is active and not marked deleted,
+              # never merely because deletions exist. Accounts marked deleted but flagged
+              # active, and their sessions, are counted as refused at sign-in
+              # (OD-2026-09-29-003 Q9), not as exposure.
               npm run pilot:check-deletion-preflight | tee /tmp/check-output.txt
               ;;
             seed-identity)

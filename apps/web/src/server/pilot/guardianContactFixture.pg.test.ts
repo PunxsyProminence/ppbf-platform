@@ -151,6 +151,11 @@ beforeAll(async () => {
   db = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await db.connect();
   await db.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
+  // pilot.accounts.deleted_at: the provisioner refuses a fixture marked deleted
+  // (OD-2026-09-29-003 Q9), and the base schema does not create the column.
+  await db.query(
+    await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8'),
+  );
   await db.query(
     `insert into pilot.organizations (organization_id, organization_name, status)
      values ($1, 'Gate Organization', 'active')`,

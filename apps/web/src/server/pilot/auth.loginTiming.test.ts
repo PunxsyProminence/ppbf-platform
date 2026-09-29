@@ -61,6 +61,7 @@ function athleteRow(overrides: Record<string, unknown> = {}) {
     pin_hash: 'scrypt$real-salt$11',
     must_change_pin: false,
     active_flag: true,
+    account_deleted: false,
     has_master_shadow_access: false,
     organization_status: 'active',
     holds_board_seat: false,
@@ -109,6 +110,47 @@ describe('every login rejection pays the same PIN check', () => {
     expect(mockVerifyPin).toHaveBeenCalledTimes(1);
     expect(mockVerifyPin).toHaveBeenCalledWith('482913', 'scrypt$real-salt$11');
     expect(loggedReasons()).toEqual(['unknown_or_inactive_account']);
+  });
+
+  // Sign-in refuses any account marked deleted (OD-2026-09-29-003 Q9). The
+  // case that matters is an account an admin path set active again: the
+  // right PIN, active, and still refused -- after the same one verification.
+  test('an account marked deleted is refused after the same one PIN check, even active with the right PIN', async () => {
+    mockQueryOne.mockResolvedValueOnce(athleteRow({ account_deleted: true }));
+    mockVerifyPin.mockResolvedValueOnce(true);
+
+    const result = await loginWithAccountIdAndPin('ath-1', '482913');
+
+    expect(result).toBeNull();
+    expect(mockVerifyPin).toHaveBeenCalledTimes(1);
+    expect(mockVerifyPin).toHaveBeenCalledWith('482913', 'scrypt$real-salt$11');
+    expect(loggedReasons()).toEqual(['deleted_account']);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('an account marked deleted with a wrong PIN logs the deletion, after one PIN check', async () => {
+    mockQueryOne.mockResolvedValueOnce(athleteRow({ account_deleted: true, active_flag: false }));
+
+    const result = await loginWithAccountIdAndPin('ath-1', '000111');
+
+    expect(result).toBeNull();
+    expect(mockVerifyPin).toHaveBeenCalledTimes(1);
+    expect(loggedReasons()).toEqual(['deleted_account']);
+  });
+
+  // Fail closed: a row that does not say it is not deleted is treated as
+  // deleted, so a query that forgot to select the flag admits nobody.
+  test('a row with no deletion flag at all is refused as deleted', async () => {
+    const row: Record<string, unknown> = athleteRow();
+    delete row.account_deleted;
+    mockQueryOne.mockResolvedValueOnce(row);
+    mockVerifyPin.mockResolvedValueOnce(true);
+
+    const result = await loginWithAccountIdAndPin('ath-1', '482913');
+
+    expect(result).toBeNull();
+    expect(loggedReasons()).toEqual(['deleted_account']);
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 
   test('an account in a suspended organization still pays the PIN check before being refused', async () => {

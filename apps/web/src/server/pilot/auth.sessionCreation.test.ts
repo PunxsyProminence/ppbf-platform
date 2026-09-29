@@ -37,6 +37,7 @@ describe('new sessions store expires_at', () => {
       auth_provider: 'ppbf_local',
       pin_hash: 'hash',
       active_flag: true,
+      account_deleted: false,
       has_master_shadow_access: false,
       organization_status: 'active',
     });
@@ -60,7 +61,7 @@ describe('new sessions store expires_at', () => {
     mockQueryOne.mockResolvedValueOnce({
       account_id: 'legacy-athlete', role: 'athlete', organization_id: 'org-1', is_platform_owner: false,
       athlete_id: 'ath-legacy', auth_provider: 'ppbf_local', pin_hash: 'hash', must_change_pin: true,
-      active_flag: true, has_master_shadow_access: false, organization_status: 'active',
+      active_flag: true, account_deleted: false, has_master_shadow_access: false, organization_status: 'active',
     });
 
     const result = await loginWithAccountIdAndPin('legacy-athlete', '123456');
@@ -79,6 +80,7 @@ describe('new sessions store expires_at', () => {
       auth_provider: 'ppbf_local',
       pin_hash: 'hash',
       active_flag: true,
+      account_deleted: false,
       has_master_shadow_access: false,
       organization_status: 'active',
     });
@@ -98,6 +100,7 @@ describe('new sessions store expires_at', () => {
       athlete_id: null,
       auth_provider: 'microsoft',
       active_flag: true,
+      account_deleted: false,
       has_master_shadow_access: false,
       organization_status: 'active',
     });
@@ -174,6 +177,7 @@ function localAccountRow(accountId: string, role: string) {
     pin_hash: 'hash',
     must_change_pin: false,
     active_flag: true,
+    account_deleted: false,
     has_master_shadow_access: false,
     organization_status: 'active',
     holds_board_seat: false,
