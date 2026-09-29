@@ -89,6 +89,9 @@ export async function applyImport(request: ApplyRequest): Promise<ApplyResult> {
   // either finish before the re-plan, which then sees it, or wait for COMMIT.
   const { parsed } = parsePackage(packageInputs(request.files));
   for (const engine of DATASET_ENGINES) {
+    // A child row names its item by its parent column: a package of template
+    // items alone still writes a new version of the template they name
+    // (datasets/templateScriptVersions.ts, "ONE UNIT"), so that row is held too.
     const keys = parsed.files
       .filter((file) => file.spec.dataset === engine.spec.name)
       .flatMap((file) => file.rows.map((row) => row.values[file.spec.parent?.column ?? file.spec.key[0]]));

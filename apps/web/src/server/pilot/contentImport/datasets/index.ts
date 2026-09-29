@@ -4,6 +4,8 @@ import type { DatasetName, DatasetSpec, Finding, ParsedFile } from '../types';
 import type { ValidationResult } from '../validate';
 import { DRILL_LIBRARY_ENGINE } from './drills';
 import { REGISTRY_ENGINES } from './registries';
+import { sessionScriptsEngine } from './sessionScripts';
+import { workoutTemplatesEngine } from './templates';
 import { UNIVERSAL_STOP_RULES_ENGINE } from './universalStopRules';
 
 // THE DATASET REGISTRY OF THE DATABASE HALF. Each dataset module turns the
@@ -11,9 +13,9 @@ import { UNIVERSAL_STOP_RULES_ENGINE } from './universalStopRules';
 // writes that plan. plan.ts and apply.ts only orchestrate: they never know how
 // a discipline differs from a drill.
 //
-// ONE LINE PER DATASET MODULE. Workout templates and session scripts (IMP-08)
-// register here when they land; until then a package carrying their files is
-// refused at plan with dataset_not_loadable, rather than half-loaded.
+// ONE LINE PER DATASET MODULE. A dataset with no module here (transfer
+// claims, assessment protocols) is refused at plan with dataset_not_loadable,
+// rather than half-loaded.
 
 export type UnitOutcome = 'new' | 'new_version' | 'unchanged' | 'absent' | 'reject';
 
@@ -79,6 +81,8 @@ export const DATASET_ENGINES: readonly DatasetEngine[] = [
   ...REGISTRY_ENGINES,
   DRILL_LIBRARY_ENGINE,
   UNIVERSAL_STOP_RULES_ENGINE,
+  workoutTemplatesEngine,
+  sessionScriptsEngine,
 ].sort((a, b) => DATASETS.indexOf(a.spec) - DATASETS.indexOf(b.spec));
 
 export function datasetEngine(name: DatasetName): DatasetEngine | undefined {

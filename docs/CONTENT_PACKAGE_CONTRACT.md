@@ -432,12 +432,13 @@ One row = one session script. Identity: script_id.
 | reset_protocol |  | text | What to do when the room loses it. |
 | coach_priorities |  | text | The priorities, in order. |
 | frequent_phrases |  | text | The short cues repeated all session. |
-| authoring_state |  | `draft`, `coach_reviewed`, `in_use`, `retired` | How far it has been reviewed. Blank means draft. |
+| authoring_state |  | `draft`, `coach_reviewed`, `in_use`, `retired` | How far it has been reviewed. Lifecycle, not content: a change here alone makes no new version and writes nothing; a new script, or the new version a content change makes, takes this value. Blank means draft. |
 | source_document |  | text | Which PPBF document it came from. |
 | created_by_account_id |  | `{{SEED_ACCOUNT_ID}}` or blank | The account that runs the load is recorded as the author. |
 
 Rules:
 
+- authoring_state is never retired: retiring a script is a separate action, not a hand-off.
 - A new:<short-name> script_id becomes 'scr_' + first 14 hex of sha256(discipline + ':' + name).
 
 #### session-scripts/seed_session_script_blocks.csv
