@@ -210,8 +210,11 @@ const checkDatabaseArms = [
 
 describe('check-database.yml', () => {
   test('every option runs the check of the same name, and every arm is an option', () => {
-    // Guards the guard, as above: a regex that stopped matching would make the
-    // equality below compare two empty lists.
+    // An invariant over the whole file, not a test of the census: it passes on
+    // the file before the census was added too. It is what catches the next
+    // option added without its arm, or an arm copied from its neighbour and not
+    // renamed. Guards the guard, as above: a regex that stopped matching would
+    // make the equality below compare two empty lists.
     expect(checkDatabaseOptions.length).toBeGreaterThanOrEqual(5);
     expect(checkDatabaseArms.map((entry) => entry.arm).sort()).toEqual([...checkDatabaseOptions].sort());
     expect(checkDatabaseArms.filter((entry) => entry.arm !== entry.script)).toEqual([]);
@@ -222,7 +225,12 @@ describe('check-database.yml', () => {
     // A seed is planned from two answers read at the same moment: which account
     // may seed (seed-identity) and where the existing reference rows sit
     // (reference-content). Operators are sent to this workflow for the first,
-    // so the second is offered here too.
+    // so the second is offered here too -- as an option AND as an arm that runs
+    // it, so an operator who picks it gets the census rather than `Unknown check`.
     expect(checkDatabaseOptions).toEqual(expect.arrayContaining(['seed-identity', 'reference-content']));
+    expect(checkDatabaseArms).toEqual(expect.arrayContaining([
+      { arm: 'seed-identity', script: 'seed-identity' },
+      { arm: 'reference-content', script: 'reference-content' },
+    ]));
   });
 });

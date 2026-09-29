@@ -9,7 +9,8 @@
 //
 //   1. Every count is keyed the way the plan needs it, against the schema
 //      production actually runs -- built by applyFullSchema, so a table the
-//      census names but the migrations do not create would fail here.
+//      census names but the migrations do not create would fail here. A
+//      table's total stays complete when its list of groups is cut.
 //   2. A table or column the database does not have is reported `absent`,
 //      never 0 and never an error. That is a legitimate production state and
 //      the reason the census exists.
@@ -71,6 +72,7 @@ const DRILLS = {
   gymPipe: 'drl-secret-gym-pipe',
   gymClean: 'drl-secret-gym-clean',
   gymHostileRole: 'drl-secret-gym-hostile',
+  gymRetired: 'drl-secret-gym-retired',
 };
 const TEMPLATE_IDS = ['tpl-secret-default', 'tpl-secret-gym'];
 const OPERATIONAL_DRILL_IDS = ['op-secret-adopted', 'op-secret-own'];
@@ -105,6 +107,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let census: (client: Queryable) => Promise<CensusReport>;
 let formatReport: (report: CensusReport) => string[];
 let referenceTables: string[];
+let groupLimit: number;
 let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 
 /** Built once: the census only reads, so every case can share it. */
@@ -147,7 +150,7 @@ async function insertReferenceDrill(
   client: Client,
   organizationId: string,
   drillId: string,
-  opts: { role: string | null; claims?: string[]; superseded?: boolean },
+  opts: { role: string | null; claims?: string[]; superseded?: boolean; active?: boolean },
 ) {
   await client.query(
     `insert into pilot.drill_library (
@@ -164,7 +167,7 @@ async function insertReferenceDrill(
       SECRET_ACCOUNT,
       opts.role,
       opts.superseded ? '2026-09-01T00:00:00Z' : null,
-      !opts.superseded,
+      opts.active ?? !opts.superseded,
     ],
   );
 }
@@ -208,11 +211,19 @@ async function plantReferenceContent(client: Client) {
   });
   // A NULL role is its own group, not folded into a neighbour.
   await insertReferenceDrill(client, ORG_DEFAULT, DRILLS.defaultNoRole, { role: null });
+  // Two '|' elements in ONE row, beside a clean one. The census counts rows, so
+  // this is 1; a census counting elements would say 2.
   await insertReferenceDrill(client, ORG_GYM, DRILLS.gymPipe, {
-    role: 'organization_admin', claims: ['C1-001|C2-002', 'C3-003'],
+    role: 'organization_admin', claims: ['C1-001|C2-002', 'C3-003|C4-004', 'C5-005'],
   });
   await insertReferenceDrill(client, ORG_GYM, DRILLS.gymClean, { role: 'organization_admin' });
   await insertReferenceDrill(client, ORG_GYM, DRILLS.gymHostileRole, { role: HOSTILE_ROLE });
+  // Retired but never superseded: active=false, superseded_at NULL. The
+  // superseded count reads superseded_at, so this row is not in it; a census
+  // reading `not active` instead would count it.
+  await insertReferenceDrill(client, ORG_GYM, DRILLS.gymRetired, {
+    role: 'organization_admin', active: false,
+  });
 
   // A child table with no created_by_role column: keyed by organization alone.
   for (const [cueId, org, drill] of [
@@ -248,6 +259,22 @@ async function plantReferenceContent(client: Client) {
      values ($1, $2, $2, 'bagwork', 'Focus.', $3), ($4, $5, $5, 'bagwork', 'Focus.', null)`,
     [ORG_GYM, OPERATIONAL_DRILL_IDS[0], DRILLS.gymClean, ORG_DEFAULT, OPERATIONAL_DRILL_IDS[1]],
   );
+
+  // More organizations than the census lists groups for, one competence level
+  // each (a table whose only foreign key is the organization, so nothing else
+  // asserted here moves). GROUP_LIMIT + 2, not + 1: the query fetches
+  // GROUP_LIMIT + 1 rows to see the cut, so a total summed over what was fetched
+  // would say GROUP_LIMIT + 1 and one summed over what is printed would say
+  // GROUP_LIMIT. Only a total taken before the LIMIT says GROUP_LIMIT + 2.
+  for (const statement of [
+    `insert into pilot.organizations (organization_id, organization_name, status)
+     select 'org-census-bulk-' || g, 'bulk', 'active' from generate_series(1, $1::int) as g`,
+    `insert into pilot.competence_levels (organization_id, level_key, ordinal, display_name, observable_test)
+     select 'org-census-bulk-' || g, 'level-1', 1, 'Level 1', 'observable'
+     from generate_series(1, $1::int) as g`,
+  ]) {
+    await client.query(statement, [groupLimit + 2]);
+  }
 }
 
 /** Order-free comparison: the census orders by collation, which is not the point here. */
@@ -299,6 +326,7 @@ beforeAll(async () => {
   census = censusModule.checkReferenceContent as typeof census;
   formatReport = censusModule.formatReport as typeof formatReport;
   referenceTables = censusModule.REFERENCE_TABLES as string[];
+  groupLimit = censusModule.GROUP_LIMIT as number;
 
   const helper = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
   applyFullSchema = helper.applyFullSchema as typeof applyFullSchema;
@@ -344,11 +372,11 @@ describe('against the schema production runs', () => {
       .toEqual(['drill_library', 'workout_templates']);
 
     const library = tableEntry(report, 'drill_library');
-    expect(library.total).toBe(7);
+    expect(library.total).toBe(8);
     expect(sortedGroups(library.groups)).toEqual(sortedGroups([
       { organization_id: ORG_DEFAULT, created_by_role: null, row_count: 1 },
       { organization_id: ORG_DEFAULT, created_by_role: 'platform_owner', row_count: 3 },
-      { organization_id: ORG_GYM, created_by_role: 'organization_admin', row_count: 2 },
+      { organization_id: ORG_GYM, created_by_role: 'organization_admin', row_count: 3 },
       { organization_id: ORG_GYM, created_by_role: HOSTILE_ROLE, row_count: 1 },
     ]));
 
@@ -379,11 +407,14 @@ describe('against the schema production runs', () => {
     expect(report.adopted).toMatchObject({ state: 'counted', total: 1 });
     expect(report.adopted.groups).toEqual([{ organization_id: ORG_GYM, row_count: 1 }]);
 
+    // superseded_at, not `not active`: the gym's retired row is inactive and
+    // was never superseded, so the gym has no group here.
     expect(report.superseded).toMatchObject({ state: 'counted', total: 1 });
     expect(report.superseded.groups).toEqual([{ organization_id: ORG_DEFAULT, row_count: 1 }]);
 
-    // Rows, not elements: the gym row has one '|' element and one clean one and
-    // counts once. The clean default row counts not at all.
+    // Rows, not elements: the gym row has two '|' elements and counts once
+    // (counting elements would make the gym 2 and the total 4). The clean
+    // default row counts not at all.
     expect(report.pipeClaimIds).toMatchObject({ state: 'counted', total: 3 });
     expect(sortedGroups(report.pipeClaimIds.groups)).toEqual(sortedGroups([
       { organization_id: ORG_DEFAULT, row_count: 2 },
@@ -428,6 +459,25 @@ describe('against the schema production runs', () => {
     expect(await snapshot()).toEqual(before);
   });
 
+  test('keeps a table total complete when its list of groups is cut', async () => {
+    const report = await census(fullClient);
+    const levels = tableEntry(report, 'competence_levels');
+
+    // The planted table, and only it, is over the limit.
+    expect(report.tables.filter((entry) => entry.truncated).map((entry) => entry.table))
+      .toEqual(['competence_levels']);
+    expect(levels.truncated).toBe(true);
+    expect(levels.groups).toHaveLength(groupLimit);
+    expect(levels.total).toBe(groupLimit + 2);
+
+    // And the log says both: the complete total, and that the list is cut.
+    const lines = formatReport(report);
+    expect(lines).toContain(`pilot.competence_levels: ${groupLimit + 2} row(s), by organization_id`);
+    expect(lines).toContain(
+      `    !! more than ${groupLimit} groups -- list above is TRUNCATED; the total is complete`,
+    );
+  });
+
   test('prints counts and organization/role keys only, one physical line per record', async () => {
     const lines = formatReport(await census(fullClient));
     const text = lines.join('\n');
@@ -435,7 +485,7 @@ describe('against the schema production runs', () => {
     // The keys the plan needs are there, JSON-quoted.
     expect(text).toContain(`organization_id="${ORG_DEFAULT}" created_by_role="platform_owner" -> 3`);
     expect(text).toContain(`organization_id="${ORG_GYM}" -> 1`);
-    expect(text).toContain('pilot.drill_library: 7 row(s), by organization_id, created_by_role');
+    expect(text).toContain('pilot.drill_library: 8 row(s), by organization_id, created_by_role');
     expect(text).toContain('pilot.drill_cues: 3 row(s), by organization_id');
 
     // Nothing row-level was planted that the output repeats.

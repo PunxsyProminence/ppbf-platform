@@ -4,12 +4,11 @@ import { fileURLToPath } from 'node:url';
 
 import { Client } from 'pg';
 
-// The one place a check script turns a database string into log text. Imported
-// rather than copied so there is one rule to audit, not two that can drift: an
-// organization_id or created_by_role is free text, and a raw newline or
-// `::warning::` in one would forge a line in the CI log. See the encoder's own
-// header in pilot-check-cue-source-provenance.mjs.
-import { encodeSingleLineJson } from './pilot-check-cue-source-provenance.mjs';
+// Shared with cue-source-provenance rather than copied, so there is one rule to
+// audit, not two that can drift: an organization_id or created_by_role is free
+// text, and a raw newline or `::warning::` in one would forge a line in the CI
+// log. See the encoder's own header.
+import { encodeSingleLineJson } from './lib/single-line-json.mjs';
 
 /**
  * Read-only census of the reference content a database already holds, so the
@@ -18,8 +17,9 @@ import { encodeSingleLineJson } from './pilot-check-cue-source-provenance.mjs';
  * WHY THIS EXISTS. What is known about production's reference rows is REPORTED,
  * not observed: PRODUCTION_STATE.json:226 records the 2026-08-24 seed running as
  * Admin@ with the organization taken from the default-org secret, and until #997
- * the loaders wrote created_by_role from the CSV rather than from the account. If those rows sit under ppbf-default-org, the gym (punxsy_prominence)
- * cannot see them, and a first load there inserts fresh v1 rows rather than new
+ * the loaders wrote created_by_role from the CSV rather than from the account.
+ * If those rows sit under ppbf-default-org, the gym (punxsy_prominence) cannot
+ * see them, and a first load there inserts fresh v1 rows rather than new
  * versions. Nobody can answer that from the repository. This answers it, plus
  * the two numbers the load and the repair decision also wait on: how many
  * reference drills a gym has already adopted (pilot.drills.reference_drill_id)
