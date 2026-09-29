@@ -248,7 +248,7 @@ async function seedDrillLibrary(client, records, { dryRun, createdByRole }) {
          $26::text[],$27,
          $28,$29,$30
        )
-       on conflict (organization_id, discipline, name) where active do nothing
+       on conflict (organization_id, discipline, name) where active and superseded_at is null do nothing
        returning drill_id`,
       [
         record.organization_id,
