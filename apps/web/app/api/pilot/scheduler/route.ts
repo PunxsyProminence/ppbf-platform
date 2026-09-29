@@ -13,7 +13,7 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { getSafetyGateDefinition, recordSafetyGateEvaluation } from '@/src/server/pilot/safetyGateMatrix';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   bulkUpsertSchedulerAttendance,
   createSchedulerClass,
@@ -195,10 +195,33 @@ function classRegistrationCount(store: SchedulerStore, classId: string): number 
   return store.registrations.filter((entry) => entry.class_id === classId && entry.status === 'registered').length;
 }
 
-function decorateClasses(store: SchedulerStore): Array<SchedulerClass & { registered_count: number }> {
-  return store.classes.map((item) => ({
+/* The rows come from the reader's filtered store; the COUNT comes from the
+   whole organization's store. They are different questions. Which
+   registrations a reader may SEE is filterStateForActor's call (a parent sees
+   their own children's, a coach their reachable athletes'), but how many
+   seats are taken is one fact about the class, the same for everyone.
+   Counting the filtered rows told a parent "Seats: 0/20" on a full class --
+   they registered and were waitlisted without being told why -- and told a
+   coach covering a class only the athletes on their own roster.
+
+   WHAT THIS DISCLOSES. Every reader -- parent, athlete, and a coach for
+   classes they do not own -- now learns the organization-wide number of
+   'registered' rows on every class. That IS something the row filter
+   withholds: how many other families' athletes are signed up. It is one
+   integer per class and names no athlete, guardian or account; it is
+   organization-scoped (listSchedulerStore reads only this organization's
+   rows) and uses the same status = 'registered' rule the capacity check in
+   registerForClassTransactionally waitlists on. Before this, a family learned
+   only "at capacity", from the class row's status turning 'full', which
+   familyClass passes through. Whether families should see the count or only
+   Open/Full is an owner question, not settled here. */
+function decorateClasses(
+  classes: SchedulerClass[],
+  fullStore: SchedulerStore,
+): Array<SchedulerClass & { registered_count: number }> {
+  return classes.map((item) => ({
     ...item,
-    registered_count: classRegistrationCount(store, item.class_id),
+    registered_count: classRegistrationCount(fullStore, item.class_id),
   }));
 }
 
@@ -445,7 +468,7 @@ export async function GET(request: NextRequest) {
       getCoachAthleteIds(actor),
     ]);
     const filtered = filterStateForActor(actor, store, parentAthleteIds, coachAthleteIds);
-    const classes = decorateClasses(filtered);
+    const classes = decorateClasses(filtered.classes, store);
 
     // The field projection runs AFTER filterStateForActor, not inside it,
     // because the coach branch reads coach_account_id and
@@ -682,13 +705,25 @@ export async function POST(request: NextRequest) {
 
       const registrationId = requiredString(body.registration_id, 'registration_id');
 
+      // A missing id and another family's id answer with the same 404. They
+      // used to answer 400 and 403, which let a guardian tell a real
+      // registration id from a made-up one. Only the access refusal is
+      // folded in: a database fault still surfaces as a fault rather than
+      // being dressed up as "not found".
       const registration = await getSchedulerRegistrationById(actor.organizationId, registrationId);
       if (!registration) {
-        throw new Error('Missing registration record');
+        return hiddenNotFound();
       }
 
       if (actor.role === 'parent') {
-        await assertActorCanAccessAthlete(actor as never, registration.athlete_id);
+        try {
+          await assertActorCanAccessAthlete(actor as never, registration.athlete_id);
+        } catch (error) {
+          if (error instanceof Error && error.message.startsWith('Forbidden')) {
+            return hiddenNotFound();
+          }
+          throw error;
+        }
       }
 
       await markSchedulerRegistrationReviewed(

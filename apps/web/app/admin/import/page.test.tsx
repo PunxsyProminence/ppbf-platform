@@ -6,6 +6,8 @@
 // that nothing is written until a person has seen what would happen: a preview
 // they read, produced by the same server-side planner the commit then uses.
 
+import fs from 'node:fs';
+import path from 'node:path';
 import type { ReactNode } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
@@ -14,6 +16,14 @@ import RosterImportPage from './page';
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
   default: ({ children }: { readonly children: ReactNode }) => children,
+}));
+
+// The signed-in role, as the session store reports it. Null (no session read
+// yet) unless a test sets it.
+let mockSession: { role: string; expiresAt: number } | null = null;
+jest.mock('@/components/roleSession', () => ({
+  getRoleSessionSnapshot: () => mockSession,
+  subscribeRoleSession: () => () => {},
 }));
 
 jest.mock('next/link', () => ({
@@ -44,7 +54,42 @@ const originalFetch = global.fetch;
 
 afterEach(() => {
   global.fetch = originalFetch;
+  mockSession = null;
   jest.clearAllMocks();
+});
+
+// RoleSessionGate is mocked above, so the gate itself is read from source. It
+// must match the route: organization admins and coaches (Jason, 2026-09-29,
+// "9d. B"), and never the platform owner (OD-2026-09-28-005).
+describe('who the page admits', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'page.tsx'), 'utf8');
+
+  it('admits exactly admin and coach', () => {
+    expect(source).toContain("<RoleSessionGate allowedRoles={['admin', 'coach']}>");
+  });
+
+  it('does not admit the platform owner', () => {
+    const gate = source.match(/allowedRoles=\{(\[[^\]]*\])\}/)?.[1] ?? '';
+    expect(gate).not.toContain('platform_owner');
+  });
+});
+
+// The export page and its API are organization-admin only; a coach following
+// the link would be bounced away.
+describe('the export link', () => {
+  it('is offered to an admin', () => {
+    mockSession = { role: 'admin', expiresAt: Date.now() + 60_000 };
+    render(<RosterImportPage />);
+    expect(screen.getByText('Export the roster first')).toBeTruthy();
+  });
+
+  it('is not offered to a coach', () => {
+    mockSession = { role: 'coach', expiresAt: Date.now() + 60_000 };
+    render(<RosterImportPage />);
+    expect(screen.queryByText('Export the roster first')).toBeNull();
+    // The rest of the screen is the same for a coach.
+    expect(screen.getByRole('button', { name: /check this file/i })).toBeTruthy();
+  });
 });
 
 function mockApi(preview: unknown = PREVIEW, committed?: unknown) {

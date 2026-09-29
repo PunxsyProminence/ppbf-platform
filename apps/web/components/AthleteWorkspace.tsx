@@ -2285,11 +2285,10 @@ export default function AthleteWorkspace() {
                   'Monitor active SMART goals',
                   'Note any pain or injury concerns'
                 ]}
-                /* "Assuming academic status is still current" stood here until
-                   OD-2026-09-29-003 (Q6 A): school grades do not block
-                   training, and nothing in the app records an academic
-                   status, so the line warned about a state that does not
-                   exist. */
+                /* "Assuming academic status is still current" stood third here.
+                   The platform keeps no academic status on an athlete -- no
+                   column, no read, no gate -- so it warned a child about a
+                   record that does not exist. */
                 mistakes={[
                   'Not reporting pain to your coach',
                   'Skipping the check-in process'
@@ -3377,12 +3376,16 @@ export default function AthleteWorkspace() {
                    and eligibility.
 
                    "Check your academic status first" and "Booking while on
-                   academic hold" went the same way under OD-2026-09-29-003
-                   (Q6 A): school grades do not block training, and there is
-                   no academic status or hold anywhere in the app for an
-                   athlete to check or be on. */
+                   academic hold" went for the same reason: no academic status
+                   or academic hold exists anywhere on the platform, and the
+                   rule that DOES refuse a sign-up was never mentioned. That
+                   rule is an active training hold that pauses all training
+                   (schedulerDb.registerForClassTransactionally); holds lift
+                   when a coach or admin lifts them or when they expire, and
+                   the refusal on /schedule prints the hold's own explanation
+                   and lift condition. */
                 mistakes={[
-                  'Looking for classes on this tab instead of in the scheduler'
+                  'Signing up while your training is paused — sign-up is refused until the hold is lifted or ends, and the message shows why and how to get it lifted'
                 ]}
               />
             </div>

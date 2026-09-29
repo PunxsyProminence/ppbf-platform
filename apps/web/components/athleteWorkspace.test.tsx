@@ -3424,9 +3424,8 @@ describe('the pre-session self-report presents as a self-report, not a clearance
     // Wellness.
     expect(within(help).queryByText(/Say how you feel/)).toBeNull();
     expect(within(help).queryAllByText(/readiness/i)).toEqual([]);
-    // OD-2026-09-29-003 (Q6 A): school grades do not block training, and
-    // nothing records an academic status, so the help may not warn that one
-    // goes stale ("Assuming academic status is still current").
+    // "Assuming academic status is still current": no academic status exists
+    // on the platform, so the help warned about a record nobody keeps.
     expect(within(help).queryAllByText(/academic/i)).toEqual([]);
 
     // The old authority vocabulary is gone with it.
@@ -3705,10 +3704,11 @@ describe('the Schedule help claims no readiness restriction', () => {
     expect(screen.queryAllByText(/readiness/i)).toEqual([]);
   });
 
-  // OD-2026-09-29-003 (Q6 A): school grades do not block training. "Check your
-  // academic status first" and "Booking while on academic hold" told an
-  // athlete about a status and a hold nothing in the app records or applies.
-  test('the help claims no academic status or academic hold', async () => {
+  // "Check your academic status first" and "Booking while on academic hold"
+  // named a status and a hold the platform does not have, and the rule that
+  // really refuses a sign-up -- an active training hold that pauses all
+  // training -- was never mentioned.
+  test('the help names the training hold that really refuses a sign-up, and no academic rule', async () => {
     await renderWorkspace();
     openTab('Schedule');
     const toggle = screen.getByRole('button', { name: /HELP: Schedule Session/ });
@@ -3718,7 +3718,9 @@ describe('the Schedule help claims no readiness restriction', () => {
     });
     const help = toggle.parentElement as HTMLElement;
 
-    expect(within(help).getByText('Open the unified scheduler to see live classes')).toBeTruthy();
+    expect(within(help).getByText(
+      'Signing up while your training is paused — sign-up is refused until the hold is lifted or ends, and the message shows why and how to get it lifted',
+    )).toBeTruthy();
     expect(within(help).queryAllByText(/academic/i)).toEqual([]);
   });
 });
