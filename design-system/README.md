@@ -36,15 +36,20 @@ sheets already say.
 
 Raw fetch for tools: `https://raw.githubusercontent.com/PunxsyProminence/ppbf-platform/main/design-system/manifest.json`
 
-**Token count, measured at `bbf299fe` (2026-09-28).** `build-manifest.mjs` reads every
-`:root` block of `foundation/ppbf-foundation.css` and `legacy/ppbf-leather-brass.css`
-(not `current/ppbf-golden-era.css`). The committed `manifest.json` says **117**;
-regenerating it gives **125**, so the committed file is stale. The generator's
-line-anchored regex (`/^\s*(--[\w-]+):\s*([^;]+);/gm`) also records only the first
-of several declarations packed onto one line, which hides 19 more (`--s2`…`--s8`
-except `--s5`, `--r-md`, `--r-lg`, `--r-xl`, `--r-pill`, the five `*-ink` pairs, and
-`--sy`, `--sh-len`, `--sh-blur`, `--sh-op`). The manifest is generated and must not
-be hand-edited: fix the generator, then re-run `npm run design:manifest`.
+**Token count, regenerated 2026-09-29: 152.** `build-manifest.mjs` follows the
+import chain from `ppbf.css` in load order (foundation, legacy fonts, Leather & Brass,
+Golden Era, theme) and reads each sheet's top-level `:root` blocks, splitting
+declarations on semicolons. A token declared in more than one sheet has the value of
+the last one, as in the browser, and print overrides are not recorded. `manifest.json`
+lists the sheets under `stylesheets`, the retired ones with role `legacy`. Per sheet:
+foundation 41, Leather & Brass 144, Golden Era 12. The manifest committed before this
+said 117: it predated the 8 `--brass-*-rgb` tokens, missed 19 declarations packed
+onto a shared line (`--s2`…`--s8` except `--s5`, `--r-md`, `--r-lg`, `--r-xl`,
+`--r-pill`, the five `*-ink` pairs, `--sy`, `--sh-len`, `--sh-blur`, `--sh-op`),
+never read the Golden Era sheet (8 tokens declared only there), and recorded the print
+override of `--cleared`, `--monitor` and `--restricted` as their values. The manifest
+is generated and must not be hand-edited: change the generator, then re-run
+`npm run design:manifest`.
 
 ## The eight laws — four bind, four are retired
 
