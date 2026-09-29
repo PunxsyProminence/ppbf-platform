@@ -497,15 +497,50 @@ describe("'newer_version_available': a gym running v1 is told v2 exists (real da
     await updateDrill({ organizationId: gym, drillId: 'op-jab-refined', active: false });
 
     // Retired, the gym still HAS the drill (Restore brings it back), so v2 is
-    // still not a fresh adoption: it names the lineage head.
+    // still not a fresh adoption: it names the lineage head -- and says the
+    // drill is retired, because v2's card is now the only place the coach
+    // page can offer that Restore (the browse hides v1).
     expect(await lifecyclesOf(gym, ['ref-jab-v1', 'ref-jab-v2'])).toEqual({
       'ref-jab-v1': { state: 'retired', operational_drill_id: 'op-jab-refined' },
-      'ref-jab-v2': { state: 'newer_version_available', operational_drill_id: 'op-jab-refined' },
+      'ref-jab-v2': { state: 'newer_version_retired', operational_drill_id: 'op-jab-refined' },
     });
+    expect((await listDrillLibrary(gym)).map((drill) => drill.drill_id)).toEqual(['ref-jab-v2']);
+    // The promote route still refuses v2: the gym has a version, running or not.
     expect(await getOtherVersionAdoption(gym, 'ref-jab-v2')).toEqual({
       operational_drill_id: 'op-jab-refined',
       adopted_reference_drill_id: 'ref-jab-v1',
     });
+
+    // The Restore that state offers is one the server's own guard accepts:
+    // the named drill comes back, and v2 goes back to naming a running drill.
+    const restored = await updateDrill({ organizationId: gym, drillId: 'op-jab-refined', active: true });
+    expect(restored?.active).toBe(true);
+    expect(await lifecyclesOf(gym, ['ref-jab-v1', 'ref-jab-v2'])).toEqual({
+      'ref-jab-v1': { state: 'operational', operational_drill_id: 'op-jab-refined' },
+      'ref-jab-v2': { state: 'newer_version_available', operational_drill_id: 'op-jab-refined' },
+    });
+  });
+
+  test('a retired drill whose pinned version was withdrawn is not offered back', async () => {
+    const gym = await newGym('newer-pinned-withdrawn');
+    await insertReference(gym, { drillId: 'ref-jab-v1', name: 'Jab Return', lineageId: 'lin-jab' });
+    const operationalId = await promote(gym, 'ref-jab-v1', 'Jab Return');
+    await revise(gym, 'ref-jab-v1', { drillId: 'ref-jab-v2' });
+    await updateDrill({ organizationId: gym, drillId: operationalId, active: false });
+    await client.query(
+      `update pilot.drill_library set active = false where organization_id = $1 and drill_id = 'ref-jab-v1'`,
+      [gym],
+    );
+
+    // No Restore state: the server refuses that restore, so the head keeps the
+    // action-less newer-version state (the page offers nothing on it).
+    expect((await lifecyclesOf(gym, ['ref-jab-v2']))['ref-jab-v2']).toEqual({
+      state: 'newer_version_available',
+      operational_drill_id: operationalId,
+    });
+    // CONTROL: the server's guard really does refuse it.
+    await expect(updateDrill({ organizationId: gym, drillId: operationalId, active: true }))
+      .rejects.toMatchObject({ reason: 'reference_withdrawn' });
   });
 
   test("a gym that never adopted the lineage sees v2 available and v1 superseded, whatever another gym adopted", async () => {
@@ -687,11 +722,20 @@ describe('claim tags never reach an athlete (real database)', () => {
         where organization_id = $1 and drill_id = $2`,
       [gym, 'ref-tags'],
     );
+    // Stop-rule text is prose the content validator accepts tags in too
+    // (validate.ts inline-claim check over text() columns): the drill's own
+    // rule and a stored-once rule, each tagged.
+    await insertOwnStopRule(gym, 'ref-tags', {
+      stopRuleId: 'stp-tagged', ordinal: 1, text: 'Stop when the hands drop [PS-012].', scope: 'drill_specific', kind: 'technique_degradation',
+    });
+    await insertUniversalRule(gym, { ruleId: 'ust_tagged', ordinal: 1, text: 'Stop on any sign of injury [CB-003]' });
 
     // CONTROL: the tags really are in the row -- the coach read is unprojected.
     const coach = await getDrillWithDetail(gym, 'ref-tags');
     expect(coach?.what_good_looks_like).toBe('Hands home [PS-012]');
     expect(coach?.what_bad_looks_like).toBe('Hands drop [CB-003][A2-070]');
+    expect(coach?.stop_rules.map((rule) => rule.condition_text)).toEqual(['Stop when the hands drop [PS-012].']);
+    expect(coach?.universal_stop_rules.map((rule) => rule.condition_text)).toEqual(['Stop on any sign of injury [CB-003]']);
 
     for (const read of [getAthleteDrillDetail, getAthleteDrillDetailForOpenWork]) {
       const athlete = await read(gym, 'ref-tags');
@@ -699,6 +743,8 @@ describe('claim tags never reach an athlete (real database)', () => {
       expect(athlete?.what_bad_looks_like).toBe('Hands drop');
       expect(athlete?.common_errors).toBe('Pawing the jab');
       expect(athlete?.corrections).toBe('Coach calls home.');
+      expect(athlete?.stop_rules.map((rule) => rule.condition_text)).toEqual(['Stop when the hands drop.']);
+      expect(athlete?.universal_stop_rules.map((rule) => rule.condition_text)).toEqual(['Stop on any sign of injury']);
       expect(JSON.stringify(athlete)).not.toMatch(/\[[A-Z][A-Z0-9]-\d{3}\]/);
     }
   });

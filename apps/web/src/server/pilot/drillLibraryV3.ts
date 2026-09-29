@@ -237,7 +237,10 @@ const SECONDARY_SKILL_FIELDS = 'organization_id, drill_id, skill_id';
  * alone would therefore list v1 and v2 side by side. A gym that runs v1 still
  * reaches it: its operational drill opens the pinned reference by id through
  * getDrillWithDetail, which has no such filter, and the head reports
- * 'newer_version_available' in listReferenceLifecycles.
+ * 'newer_version_available' in listReferenceLifecycles. A gym that RETIRED its
+ * v1 drill has no operational card for it (retired drills are left out of that
+ * list), so the head reports 'newer_version_retired' instead and the coach page
+ * offers Restore there.
  *
  * difficulty here is the authoring-time prerequisite band (see the
  * migration's two-axes note) -- it is NOT a scale filter. Scale level is a
@@ -423,6 +426,19 @@ export async function getDrillWithDetail(organizationId: string, drillId: string
  *                give one gym two operational drills of one reference lineage,
  *                and moving the gym's drill to v2 is not built yet (IMP-15, an
  *                owner decision); the promote route refuses it in the same words.
+ *   newer_version_retired
+ *                the same, except that the gym RETIRED its drill for the other
+ *                version and Restore can bring it back: no version of it is
+ *                active, and the reference version it pins is still active (the
+ *                restore guard's terms, drills.ts updateDrill). Split from
+ *                'newer_version_available' because the head's card is the ONLY
+ *                place a coach can reach that drill once a revision lands: the
+ *                browse hides the superseded version it pins, and the operational
+ *                list leaves retired drills out. Before the browse listed heads
+ *                only, the pinned version's own card carried 'retired' and
+ *                Restore; this state keeps that way back. A retired drill whose
+ *                pinned version was withdrawn stays 'newer_version_available':
+ *                the server refuses that restore, so no state offers it.
  *   available    not adopted here, and adoptable.
  *
  * Adoption comes first: for a gym that adopted a reference, what matters is
@@ -436,9 +452,10 @@ export async function getDrillWithDetail(organizationId: string, drillId: string
  * earlier version is the active one. Once retired it is the adopted lineage's
  * HEAD (highest version) -- the one Restore brings back -- found through the
  * lineage root, which pilot_drills_one_reference_per_org makes unique per
- * reference. For 'newer_version_available' it is the gym's drill for the OTHER
- * version (OTHER_VERSION_ADOPTION below): the link from the gym's drill to the
- * newer head. Null when the gym never adopted any version of it.
+ * reference. For the two newer-version states it is the gym's drill for the
+ * OTHER version (OTHER_VERSION_ADOPTION below): the link from the gym's drill to
+ * the newer head, and the drill a Restore offered on the head brings back.
+ * Null when the gym never adopted any version of it.
  *
  * Authors only (coach, organization_admin, admin -- the roles that promote,
  * retire and restore). Athlete and other reader reads never call this:
@@ -451,7 +468,8 @@ export type ReferenceLifecycleState =
   | 'retired'
   | 'superseded'
   | 'unavailable'
-  | 'newer_version_available';
+  | 'newer_version_available'
+  | 'newer_version_retired';
 
 export interface ReferenceLifecycle {
   state: ReferenceLifecycleState;
@@ -461,7 +479,8 @@ export interface ReferenceLifecycle {
 /**
  * "The gym's drill for ANOTHER version of this reference's lineage", as a
  * LATERAL subquery correlated on `d` (the reference row). One row or none:
- * the operational drill id and the reference version it pins.
+ * the operational drill id, the reference version it pins, whether that drill
+ * is active, and whether the version it pins is still active.
  *
  * Which drill, when there could be several: an ACTIVE one first (the gym runs
  * it), then the newest reference version, then the newest operational version
@@ -469,6 +488,10 @@ export interface ReferenceLifecycle {
  * operational_drill_id follows. Every operational version of one gym lineage
  * carries the same reference_drill_id (a refinement inherits it,
  * drillVersioning.ts), so the newest operational version IS that lineage's head.
+ * The same ordering is why the row's `active` answers for the whole set: an
+ * inactive first row means the gym runs no version of the lineage, which is
+ * what the restore guard asks (with the pinned version's `active`) before it
+ * lets that head come back.
  *
  * Shared by listReferenceLifecycles and getOtherVersionAdoption so the coach
  * page's label and the promote route's refusal cannot disagree about which
@@ -477,7 +500,7 @@ export interface ReferenceLifecycle {
  * another gym may hold the very same strings.
  */
 const OTHER_VERSION_ADOPTION = `
-       select od.drill_id, od.reference_drill_id
+       select od.drill_id, od.reference_drill_id, od.active, v.active as reference_active
        from pilot.drills od
        join pilot.drill_library v
          on v.organization_id = od.organization_id
@@ -508,6 +531,9 @@ export async function listReferenceLifecycles(
               ) then 'retired'
               when not d.active then 'unavailable'
               when d.superseded_at is not null then 'superseded'
+              when other_version.drill_id is not null
+                   and not other_version.active
+                   and other_version.reference_active then 'newer_version_retired'
               when other_version.drill_id is not null then 'newer_version_available'
               else 'available'
             end as state,
@@ -533,9 +559,9 @@ export async function listReferenceLifecycles(
                 order by head.version desc
                 limit 1
               ),
-              -- Only for 'newer_version_available' (the CASE above reaches it
-              -- only for an active, unsuperseded, unadopted row). Guarded so a
-              -- superseded or withdrawn row keeps answering null, as before.
+              -- Only for the two newer-version states (the CASE above reaches
+              -- them only for an active, unsuperseded, unadopted row). Guarded
+              -- so a superseded or withdrawn row keeps answering null, as before.
               case when d.active and d.superseded_at is null then other_version.drill_id end
             ) as operational_drill_id
      from pilot.drill_library d
@@ -924,10 +950,17 @@ export function toAthleteScaleGuidance(row: AthleteScaleRow): AthleteScaleGuidan
   };
 }
 
+// Stop-rule text is stripped like the instruction fields above. Both
+// condition_text columns are free prose to the content validator
+// (contentImport/specs/drills.ts and specs/universalStopRules.ts declare them
+// with text(), role 'content'), and validate.ts accepts an inline claim tag in
+// such a column as a citation -- so a validated import can carry
+// "Stop on any sign of injury [PS-012]" to this projection. The coach reads
+// keep the tag; athletes never see it (OD-2026-09-17-001 clause 8).
 export function toAthleteStopRule(row: AthleteStopRuleRow): AthleteStopRule {
   return {
     ordinal: row.ordinal,
-    condition_text: row.condition_text,
+    condition_text: stripGroundingClaimTags(row.condition_text),
     scope: row.scope,
     rule_kind: row.rule_kind,
     origin: 'drill',
@@ -937,7 +970,7 @@ export function toAthleteStopRule(row: AthleteStopRuleRow): AthleteStopRule {
 export function toAthleteUniversalStopRule(row: UniversalStopRuleRow): AthleteUniversalStopRule {
   return {
     ordinal: row.ordinal,
-    condition_text: row.condition_text,
+    condition_text: stripGroundingClaimTags(row.condition_text),
     rule_kind: row.rule_kind,
     origin: 'universal',
   };

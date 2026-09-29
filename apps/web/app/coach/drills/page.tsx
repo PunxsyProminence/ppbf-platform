@@ -46,10 +46,12 @@ const LIFECYCLE_LABELS: Record<ReferenceLifecycleState, string> = {
   retired: 'Retired in this gym',
   superseded: 'A newer version exists',
   unavailable: 'Withdrawn',
-  // The current version of a drill this gym adopted at an earlier version
-  // (running or retired). The browse lists current versions only, so this is
-  // the card a coach running v1 sees for v2.
+  // The current version of a drill this gym adopted at an earlier version.
+  // The browse lists current versions only, so this is the card a coach
+  // running v1 sees for v2.
   newer_version_available: "Newer version of this gym's drill",
+  // The same, when the gym retired its drill and Restore can bring it back.
+  newer_version_retired: 'Newer version of a drill this gym retired',
 };
 
 // What a coach reads on that drill instead of a Promote button. The same
@@ -57,6 +59,12 @@ const LIFECYCLE_LABELS: Record<ReferenceLifecycleState, string> = {
 // update step is not built yet (it waits on an owner decision, IMP-15).
 const NEWER_VERSION_EXPLANATION =
   "This gym already has an earlier version of this drill. Updating the gym's drill to this version is not built yet, so it cannot be promoted as a separate drill.";
+
+// What Restore does on the newer version's card, before it is taken. It brings
+// back the gym's OWN drill at the version the gym adopted -- not this version --
+// which is why the sentence says so.
+const NEWER_VERSION_RESTORE_CONSEQUENCE =
+  'This gym retired an earlier version of this drill. Restoring brings back that same drill, at the version this gym adopted: coaches can assign it again, and athletes can read it in Learn. Updating it to this version is not built yet.';
 
 // DISCOVERY (W-D4C): every filter reads a durable, structured column -- an
 // enum the database CHECKs, the discipline registry, the stored category, the
@@ -174,6 +182,29 @@ function ReferenceActions({
       >
         {promotingReferenceId === referenceDrillId ? 'Promoting...' : 'Promote'}
       </button>
+    );
+  }
+  // A newer version of a drill this gym retired: Restore, on the gym's drill
+  // (operational_drill_id), not Promote. Once a revision lands this card is the
+  // only way back to that drill -- the browse hides the superseded version it
+  // pins, and the operational list below leaves retired drills out -- so it
+  // carries the same Restore the pinned version's own card used to.
+  if (state.state === 'newer_version_retired' && state.operational_drill_id) {
+    const operationalDrillId = state.operational_drill_id;
+    return (
+      <>
+        {label}
+        <button
+          type="button"
+          id={`lifecycle-${referenceDrillId}`}
+          onClick={() => onChangeLifecycle(referenceDrillId, operationalDrillId, true)}
+          disabled={busy}
+          className="btn btn--ghost"
+        >
+          {changingLifecycle ? 'Saving...' : 'Restore'}
+        </button>
+        <p className="basis-full text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{NEWER_VERSION_RESTORE_CONSEQUENCE}</p>
+      </>
     );
   }
   // No Promote: the server refuses a separate promotion of a newer version of
