@@ -17,7 +17,7 @@ export const DEFAULT_SEED_DIR = path.resolve(
 );
 
 export const EXPECTED_COUNTS = Object.freeze({
-  sources: 1041,
+  sources: 1042,
   documents: 14,
   chunks: 1193,
   capabilityMap: 30,
@@ -185,7 +185,7 @@ export const SEED_SCOPES = Object.freeze(['platform_baseline', 'ppbf_policy']);
  * successful smaller import -- which for the platform baseline would mean SHADOW
  * quietly missing evidence, the failure mode with no symptom.
  *
- *   platform_baseline  1041 - 20 policy sources = 1021; 1193 - 20 policy chunks
+ *   platform_baseline  1042 - 20 policy sources = 1022; 1193 - 20 policy chunks
  *                      = 1173; all 14 documents; the whole capability map and
  *                      requirement set.
  *   ppbf_policy        the 20 policy sources plus one copied programme source;
@@ -195,7 +195,7 @@ export const SEED_SCOPES = Object.freeze(['platform_baseline', 'ppbf_policy']);
  */
 export const SCOPE_EXPECTED_COUNTS = Object.freeze({
   platform_baseline: Object.freeze({
-    sources: 1021, documents: 14, chunks: 1173, capabilityMap: 30, requirements: 229,
+    sources: 1022, documents: 14, chunks: 1173, capabilityMap: 30, requirements: 229,
   }),
   ppbf_policy: Object.freeze({
     sources: 21, documents: 6, chunks: 20, capabilityMap: 0, requirements: 0,
