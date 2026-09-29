@@ -29,11 +29,11 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  *      - no rule names `.stamp`. Both card families on this route carry one
  *        (the seat directory's "Seat held" governance refusal and the aggregate
  *        panel's "Suppressed" k-anonymity withholding), and on a dark material
- *        the sheet resolves that mark to the reserved `--locked-ink`. Restyling
+ *        the sheet resolves that mark to `--locked-ink`. Restyling
  *        it — or re-grounding the card under it — is a safety-semantics change
  *        wearing a visual change's clothes;
  *      - the block declares no `--bone-*`, `--hide-*`, `--paper`, `--plate` or
- *        reserved-red token. A bone rung is a platform-wide promise about
+ *        locked-red token. A bone rung is a platform-wide promise about
  *        contrast (cornerColor.test.ts reads the LAST declaration of a token as
  *        its value), and `--plate` is a locked room inventory with its own
  *        guard. Only the brass ramp moves.
@@ -111,7 +111,7 @@ function legacyRung(source: string, rung: string): string | null {
  * The 008 block's DECLARATIONS, comments removed.
  *
  * Comments come out FIRST, before the block is located, because the block's own
- * header names the reserved red in order to say it does not use it, and because
+ * header names the locked red in order to say it does not use it, and because
  * "GOLDEN ERA 008" itself sits inside that header — slicing first would strand
  * an unterminated comment. The block ends where the next scope begins, which is
  * `.ge-scripts` (004A follows 008 in source order).
@@ -278,6 +278,9 @@ describe('the 008 block stays inside its scope and off what it may not touch', (
     }
   });
 
+  // STATUS 2026-09-29: red itself is not reserved (OD-2026-09-29-001). This
+  // check was written under the reservation and still runs; --locked still
+  // means a medical stop.
   test('the scoped block never uses reserved medical red', () => {
     const block = boardBlock();
     expect(block).not.toMatch(/#A81E22/i);

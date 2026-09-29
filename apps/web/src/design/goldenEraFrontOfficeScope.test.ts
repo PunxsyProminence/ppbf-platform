@@ -116,10 +116,11 @@ describe('golden-era front office scope', () => {
     expect(PAGE.match(/className="[^"]*\bge-frontoffice\b/g) ?? []).toHaveLength(1);
   });
 
-  /* The office keeps its register in bronze ink. #A81E22 is the safeguarding
-     red -- MEDICALLY_NOT_ALLOWED, and nothing else -- and `.pap--ruled` draws
-     its margin line in exactly that colour, which is the trap a ruled-paper
-     restyle walks straight into. */
+  /* The office keeps its register in bronze ink. Written when #A81E22, the
+     safeguarding red, was reserved for MEDICALLY_NOT_ALLOWED and `.pap--ruled`
+     drew its margin line in exactly that colour. STATUS 2026-09-29: red is not
+     reserved (OD-2026-09-29-001); this check still runs, and --locked still
+     means a medical stop. */
   test('the scope spends no safeguarding red on chrome', () => {
     for (const [, body] of scopedRules()) {
       expect(body.toUpperCase()).not.toContain('#A81E22');

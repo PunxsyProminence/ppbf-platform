@@ -1,0 +1,243 @@
+name: move-policy-shelf
+
+# Moves one organization's policy shelf -- its internal_policy library sources,
+# their documents and chunks, and the citation/retraction check rows about
+# those sources -- to another named organization.
+#
+# Built for OD-2026-09-28-011 item 6: production holds 22 approved
+# internal_policy sources under ppbf-default-org, which is not the gym
+# (OD-2026-09-28-007), and Jason said yes to moving them to punxsy_prominence.
+# He approves the production run in GitHub: the job runs in the environment
+# named by `target`, so a production dispatch is held by the production
+# environment's protection rules, the same gate rescope-library-baseline.yml
+# used.
+#
+# Dry run by default. The tool refuses, before connecting, when the target
+# organization is missing, when from equals to, or when either side is
+# __platform__; inside its transaction it refuses unknown organizations, rows
+# cited from elsewhere, key collisions in the target, and any mismatch between
+# the plan and what the update touched.
+#
+# Apply moves only the plan that was reviewed: it needs expected_fingerprint
+# set to the plan_fingerprint a dry run of the same target printed, and it
+# refuses (PLAN_FINGERPRINT_MISMATCH, before its first update) when the rows
+# it finds give a different fingerprint. A run carries only its inputs, so the
+# fingerprint is how an approved run names a set of rows.
+#
+# Dispatch-only for the reason in scripts/lib/postgres-write-target.mjs: the
+# alternative is an operator holding a production connection string on a laptop,
+# which is how 361 orphaned rows got into production on 2026-07-18.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Database environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      confirm_target:
+        description: Retype the target exactly
+        required: true
+        type: string
+      mode:
+        description: Report what would be moved, or move it
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - apply
+      confirm_move:
+        description: For apply mode, type MOVE POLICY SHELF exactly
+        required: false
+        type: string
+      expected_fingerprint:
+        description: For apply mode, the plan_fingerprint (sha256:...) printed by the dry run you reviewed
+        required: false
+        type: string
+      from_organization_id:
+        description: The organization currently holding the shelf
+        required: true
+        default: ppbf-default-org
+        type: string
+      to_organization_id:
+        description: The organization the shelf moves to (no default; it must exist)
+        required: true
+        type: string
+      source_type:
+        description: Which library sources make up the shelf
+        required: true
+        default: internal_policy
+        type: choice
+        options:
+          - internal_policy
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: move-policy-shelf-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  move:
+    environment: ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # RESOURCE_GROUP is resolved per target by the step below, never set
+      # here: production reads secrets.AZURE_PRODUCTION_RESOURCE_GROUP with no
+      # staging fallback (see workflowResourceGroupContract.test.ts).
+      CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
+      PPBF_POLICY_MOVE_FROM_ORG: ${{ inputs.from_organization_id }}
+      PPBF_POLICY_MOVE_TO_ORG: ${{ inputs.to_organization_id }}
+      PPBF_POLICY_MOVE_SOURCE_TYPE: ${{ inputs.source_type }}
+      PPBF_POLICY_MOVE_APPLY: ${{ inputs.mode == 'apply' }}
+    steps:
+      # Free text reaches the shell through the environment, never by
+      # interpolation: `${{ ... }}` in a `run:` block is substituted before
+      # bash parses the line, so a value with a quote and a semicolon becomes
+      # commands.
+      - name: Confirm Explicit Target And Apply Intent
+        env:
+          TARGET: ${{ inputs.target }}
+          CONFIRM_TARGET: ${{ inputs.confirm_target }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM_MOVE: ${{ inputs.confirm_move }}
+          EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
+        run: |
+          set -euo pipefail
+          if [ "$TARGET" != "$CONFIRM_TARGET" ]; then
+            echo "::error::confirm_target does not match target."
+            exit 1
+          fi
+          if [ -z "$PPBF_POLICY_MOVE_TO_ORG" ]; then
+            echo "::error::to_organization_id is required."
+            exit 1
+          fi
+          if [ "$PPBF_POLICY_MOVE_FROM_ORG" = "$PPBF_POLICY_MOVE_TO_ORG" ]; then
+            echo "::error::from_organization_id and to_organization_id are the same."
+            exit 1
+          fi
+          if [ "$MODE" = "apply" ] && [ "$CONFIRM_MOVE" != "MOVE POLICY SHELF" ]; then
+            echo "::error::apply mode needs confirm_move set to MOVE POLICY SHELF exactly."
+            exit 1
+          fi
+          if [ "$MODE" = "apply" ] && [[ ! "$EXPECTED_FINGERPRINT" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::apply mode needs expected_fingerprint set to the plan_fingerprint printed by the dry run you reviewed."
+            exit 1
+          fi
+
+      # A wrong-resource-group lookup that happens to resolve is worse than one
+      # that refuses, so an unset secret stops the run here -- before the Azure
+      # login, and long before anything touches a database.
+      - name: Resolve Target Resource Group
+        env:
+          TARGET: ${{ inputs.target }}
+          PRODUCTION_RESOURCE_GROUP: ${{ secrets.AZURE_PRODUCTION_RESOURCE_GROUP }}
+        run: |
+          if [ "$TARGET" = "production" ]; then
+            if [ -z "$PRODUCTION_RESOURCE_GROUP" ]; then
+              echo "::error::secrets.AZURE_PRODUCTION_RESOURCE_GROUP is empty or unset. Refusing to fall back to the staging resource group for a production operation."
+              exit 1
+            fi
+            echo "RESOURCE_GROUP=$PRODUCTION_RESOURCE_GROUP" >> "$GITHUB_ENV"
+          else
+            echo "RESOURCE_GROUP=rg-ppbf-enterprise-staging" >> "$GITHUB_ENV"
+          fi
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      # Not conditional on mode: the dry run reads the same database, so it needs
+      # the same connection string, resolved the same way.
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Declared Database Target
+        env:
+          OVERRIDE_HOST: ${{ vars.PPBF_EXPECTED_POSTGRES_HOSTNAME }}
+          OVERRIDE_DB: ${{ vars.PPBF_EXPECTED_POSTGRES_DATABASE }}
+        run: |
+          set -euo pipefail
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
+
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) process.exit(2);
+            process.stdout.write(host + "\n" + db);
+          ')"
+          HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
+          echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
+
+      # One command for both modes. The script is read-only unless
+      # PPBF_POLICY_MOVE_APPLY is exactly 'true' AND PPBF_POLICY_MOVE_CONFIRM is
+      # the phrase -- it checks the phrase itself too, so the dry run cannot
+      # write even if the guard step above is later edited carelessly.
+      - name: Move Policy Shelf
+        working-directory: apps/web
+        env:
+          PPBF_POLICY_MOVE_CONFIRM: ${{ inputs.confirm_move }}
+          PPBF_POLICY_MOVE_EXPECT_FINGERPRINT: ${{ inputs.expected_fingerprint }}
+        # `shell: bash` for pipefail; GitHub's default `bash -e {0}` lacks it
+        # and `tee` would discard a failed run's exit code.
+        shell: bash
+        run: npm run pilot:move-policy-shelf 2>&1 | tee -a /tmp/tool-output.txt
+
+      - name: Record What Moved
+        if: always()
+        env:
+          TARGET: ${{ inputs.target }}
+          MODE: ${{ inputs.mode }}
+          EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          # `-s`, not `tail ... ||`: tee creates the file before the tool
+          # writes, so an empty file exits tail 0 and skips the fallback.
+          echo '--- tool output (last lines, repeated) ---'
+          [ -s /tmp/tool-output.txt ] && tail -n 12 /tmp/tool-output.txt || echo '(none captured)'
+          {
+            echo '### SHADOW library policy-shelf move'
+            echo ''
+            echo "- target: \`$TARGET\`"
+            echo "- mode: \`$MODE\`"
+            echo "- from organization: \`$PPBF_POLICY_MOVE_FROM_ORG\`"
+            echo "- to organization: \`$PPBF_POLICY_MOVE_TO_ORG\`"
+            echo "- source type: \`$PPBF_POLICY_MOVE_SOURCE_TYPE\`"
+            echo "- expected fingerprint: \`${EXPECTED_FINGERPRINT:-none}\`"
+            echo "- result: \`$JOB_STATUS\`"
+            echo ''
+            echo 'The dry run prints every source, document, chunk and check row that would'
+            echo 'move, their review state, the blockers (if any) and a plan fingerprint.'
+            echo 'Apply re-plans inside its own transaction, refuses unless that plan has'
+            echo 'the expected fingerprint, verifies the end state before committing, and'
+            echo 'records the move in pilot.audit_events.'
+          } >> "$GITHUB_STEP_SUMMARY"

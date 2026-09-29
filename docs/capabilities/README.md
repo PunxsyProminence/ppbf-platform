@@ -8,8 +8,8 @@ Where each capability question is answered (OD-2026-09-28-010):
   DONE with no code behind it; it stays so until Jason walks through it.
 - **History, not status:** `expanded-200-backlog.csv` (last changed
   2026-08-16) and `expanded-200-index.json` (generated 2026-08-03). Neither is
-  kept current. The index stays because
-  `apps/web/src/docs/capabilityEvidence.test.ts` reads it.
+  kept current, and no code reads either: the evidence test stopped reading
+  the index on 2026-09-29 (Jason's "11A", OD-2026-09-29-002).
 - **The approved product list:**
   [`PRODUCT_CAPABILITIES.json`](../../PRODUCT_CAPABILITIES.json).
   `PPBF_CAPABILITIES.json` at the repository root is an old draft, kept because
@@ -37,7 +37,7 @@ had a history and none of it had been read by anyone else.
 Checked before anything else, because it is the question that decides how much
 the rest matters: a repo-wide search for `expanded-200-backlog`,
 `expanded-200-index` and `PPBF_CAPABILITIES` finds **no consumer in the
-running `apps/web` application** (the evidence test reads the index). These are planning artifacts. A row marked `DONE` here changes
+running `apps/web` application** (the evidence test read the index until 2026-09-29). These are planning artifacts. A row marked `DONE` here changes
 nothing a coach, athlete or board member sees.
 
 That matters because the owner's standing rule is that fake data must be gone

@@ -67,8 +67,8 @@ type GoalStatus = CoachDevelopmentGoalStatus;
    personal planning state, not a safety state, so none of these wears a
    saturated safety rung: 'cancelled' is filed, not restricted -- a coach who
    stopped pursuing a goal is not a person who may not participate, and
-   painting it like one is exactly the confusion the safeguarding red is
-   reserved against.
+   painting it like one is exactly the confusion --locked exists to prevent.
+   (Red itself is not reserved, OD-2026-09-29-001.)
 
    Only the CLASS is decided here. The words come from the shared vocabulary,
    so this page and the coach hub call each state the same thing. */

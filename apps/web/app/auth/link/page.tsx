@@ -111,7 +111,8 @@ function LinkPageContent() {
           said "Sign-in refused" before and says it now -- because what
           changed is which severity the colour claims, not what happened.
 
-          Red is left to mean a child is in danger. */}
+          --locked is left to mean a child is in danger. Red itself is not
+          reserved (OD-2026-09-29-001). */}
       {displayedError ? (
         <div
           className="rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] bg-[rgba(192,90,30,0.10)] p-[var(--s4)]"

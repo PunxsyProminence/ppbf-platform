@@ -80,6 +80,28 @@ type SchedulerResponse = {
   attendance: SchedulerAttendance[];
 };
 
+// The rest of a training-hold refusal. register_class answers a held athlete
+// with a 403 carrying the explanation the coach wrote for the athlete and the
+// condition that lifts the hold; this page used to print only the one-line
+// error above them, so a family learned registration was paused and neither
+// why nor what ends it.
+type HoldRefusalDetail = {
+  explanation: string;
+  liftCondition: string;
+};
+
+function holdRefusalDetailFrom(result: { athlete_explanation?: unknown; lift_condition?: unknown }): HoldRefusalDetail | null {
+  if (typeof result.athlete_explanation !== 'string' || !result.athlete_explanation.trim()) {
+    return null;
+  }
+  return {
+    explanation: result.athlete_explanation.trim(),
+    // The column defaults to '' -- a hold may be placed without one. Carried
+    // as blank and said so at render time, never filled with a made-up one.
+    liftCondition: typeof result.lift_condition === 'string' ? result.lift_condition.trim() : '',
+  };
+}
+
 const allowedRoles: ClubRole[] = ['athlete', 'coach', 'parent', 'admin'];
 
 function roleCanManageClasses(role: SchedulerRole | null): boolean {
@@ -115,7 +137,16 @@ export default function SchedulerPage() {
   const [loading, setLoading] = useState(true);
   const [actionMessage, setActionMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [errorDetail, setErrorDetail] = useState<HoldRefusalDetail | null>(null);
   const [actionInFlight, setActionInFlight] = useState(false);
+
+  // Every error write on this page goes through here, so a hold's detail is
+  // replaced or cleared together with the message it belongs to and can never
+  // linger under a later, unrelated failure.
+  const showError = useCallback((message: string, detail: HoldRefusalDetail | null = null) => {
+    setErrorMessage(message);
+    setErrorDetail(detail);
+  }, []);
 
   const [newClassTitle, setNewClassTitle] = useState('');
   const [newClassStartAt, setNewClassStartAt] = useState('');
@@ -148,7 +179,7 @@ export default function SchedulerPage() {
   // "Loading scheduler...", every time a dropdown changes.
   const loadSchedulerState = useCallback(async () => {
     setLoading(true);
-    setErrorMessage('');
+    showError('');
 
     try {
       const authRes = await fetch(`${apiBase()}/api/pilot/auth/session`, { method: 'POST', credentials: 'include' });
@@ -192,11 +223,11 @@ export default function SchedulerPage() {
         setAthletes([]);
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load scheduler state');
+      showError(error instanceof Error ? error.message : 'Failed to load scheduler state');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -214,7 +245,7 @@ export default function SchedulerPage() {
 
     setActionInFlight(true);
     setActionMessage('');
-    setErrorMessage('');
+    showError('');
 
     try {
       const response = await fetch(`${apiBase()}/api/pilot/scheduler`, {
@@ -228,9 +259,13 @@ export default function SchedulerPage() {
         ok?: boolean;
         error?: string;
         membership_flags?: MembershipFlag[];
+        athlete_explanation?: unknown;
+        lift_condition?: unknown;
+        status?: string;
       };
       if (!response.ok || !result.ok) {
-        throw new Error(result.error || 'Action failed');
+        showError(result.error || 'Action failed', holdRefusalDetailFrom(result));
+        return;
       }
 
       // Non-blocking membership flag (capability-network audit finding):
@@ -238,20 +273,26 @@ export default function SchedulerPage() {
       // training hold blocks -- but a coach/admin acting here should still
       // see it, so it rides along on the success message instead of being
       // silently dropped.
+      // A full class waitlists rather than refusing (schedulerDb.ts), and the
+      // route says which happened in `status`. Saying "submitted" to a family
+      // who was waitlisted told them they had a seat.
+      const message = payload.action === 'register_class' && result.status === 'waitlisted'
+        ? 'The class is full, so this athlete was added to the waitlist.'
+        : successMessage;
       if (result.membership_flags && result.membership_flags.length > 0) {
         const summary = result.membership_flags
           .map((flag) => `${flag.program_name} (${flag.status})`)
           .join(', ');
         setActionMessage(
-          `${successMessage} Note: this athlete's membership is not active -- ${summary}. `
+          `${message} Note: this athlete's membership is not active -- ${summary}. `
             + 'Registration was NOT blocked; please follow up with the family.',
         );
       } else {
-        setActionMessage(successMessage);
+        setActionMessage(message);
       }
       await loadSchedulerState();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Action failed');
+      showError(error instanceof Error ? error.message : 'Action failed');
     } finally {
       setActionInFlight(false);
     }
@@ -321,16 +362,24 @@ export default function SchedulerPage() {
               which Law 3 forbids. They are queue outcomes, so they get the
               badge component and the ladder's own rungs.
 
-              The failure rung is --restricted, not --locked. #A81E22 /
-              --locked is reserved for MEDICALLY_NOT_ALLOWED (owner decision
-              2026-08-19), and a scheduler request that did not go through is
-              not a medical restriction on a child -- dressing it in the
-              medical channel is exactly the confusion the reservation exists
-              to prevent. Success keeps the cleared rung. */}
+              The failure rung is --restricted, not --locked. --locked means
+              MEDICALLY_NOT_ALLOWED, and a scheduler request that did not go
+              through is not a medical restriction on a child -- dressing it
+              in the medical channel is exactly the confusion that meaning
+              exists to prevent. (Red itself is not reserved,
+              OD-2026-09-29-001.) Success keeps the cleared rung. */}
           {errorMessage ? (
             <div className="rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] bg-[rgba(192,90,30,0.10)] p-[var(--s4)]" role="alert">
               <span className="badge badge--restricted"><i>▲</i>Failed</span>
               <p className="t-body mt-[var(--s3)]">{errorMessage}</p>
+              {errorDetail ? (
+                <>
+                  <p className="t-body mt-[var(--s3)]">Why: {errorDetail.explanation}</p>
+                  <p className="t-body mt-[var(--s3)]">
+                    To lift it: {errorDetail.liftCondition || 'not written down — ask whoever placed the hold.'}
+                  </p>
+                </>
+              ) : null}
             </div>
           ) : null}
           {actionMessage ? (
@@ -372,7 +421,7 @@ export default function SchedulerPage() {
                               setSelectedClassId(item.class_id);
                               const targetAthlete = role === 'athlete' ? targetAthleteForAthleteRole : targetAthleteForOthers;
                               if (!targetAthlete) {
-                                setErrorMessage('Select an athlete first before registering.');
+                                showError('Select an athlete first before registering.');
                                 return;
                               }
                               void runAction(
@@ -517,7 +566,7 @@ export default function SchedulerPage() {
                     onClick={() => {
                       const targetAthlete = role === 'athlete' ? targetAthleteForAthleteRole : targetAthleteForOthers;
                       if (!targetAthlete) {
-                        setErrorMessage('Select an athlete first.');
+                        showError('Select an athlete first.');
                         return;
                       }
                       void runAction(
@@ -595,7 +644,7 @@ export default function SchedulerPage() {
                     onClick={() => {
                       const targetAthlete = role === 'athlete' ? targetAthleteForAthleteRole : targetAthleteForOthers;
                       if (!targetAthlete) {
-                        setErrorMessage('Select an athlete first.');
+                        showError('Select an athlete first.');
                         return;
                       }
 
@@ -696,7 +745,7 @@ export default function SchedulerPage() {
                               onClick={() => {
                                 const coachId = (assignCoachInputs[item.request_id] ?? '').trim();
                                 if (!coachId) {
-                                  setErrorMessage('Enter the coach account id to assign first.');
+                                  showError('Enter the coach account id to assign first.');
                                   return;
                                 }
                                 void runAction(

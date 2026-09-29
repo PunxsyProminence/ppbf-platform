@@ -11,8 +11,8 @@
 // What these pin: the resolution note -- the durable record of why a red flag
 // about a child was closed -- is taken in the room, in a real dialog, and
 // never in window.prompt(); an empty one refuses without closing anything; and
-// a failed read does not wear the red this room reserves for a medical or
-// safeguarding fact.
+// a failed read does not wear the --locked red this room keeps for a medical
+// or safeguarding fact (red itself is not reserved, OD-2026-09-29-001).
 
 import type { ReactNode } from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';

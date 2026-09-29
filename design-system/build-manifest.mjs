@@ -18,7 +18,7 @@
  */
 
 import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
-import { join, dirname, relative } from 'node:path';
+import { join, dirname, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -51,40 +51,166 @@ for (const group of GROUPS) {
   }
 }
 
-/* ---- tokens: pull the custom properties straight out of the stylesheet --- */
-/* The visual reset of 2026-08-23 turned ppbf.css into two @import lines, so
-   reading it directly would produce an empty manifest. The rules now live in
-   the foundation and in whatever design-system/current/ppbf-theme.css points
-   at -- today the archived Leather & Brass sheet.
+/* ---- stylesheets: the chain the browser loads, starting at ppbf.css ------ */
+/* The visual reset of 2026-08-23 turned ppbf.css into two import lines, so
+   reading it alone would produce an empty manifest. This used to name two
+   sheets by hand -- the foundation and the retired Leather & Brass sheet --
+   and so never read the Golden Era sheet that is the current look, and every
+   token declared only there was missing. It now follows the imports from
+   ppbf.css the way the browser does, so whatever current/ppbf-theme.css
+   points at is read without an edit here.
 
-   Read in the same order the browser loads them, foundation first, so a token
-   the theme overrides resolves to the theme's value here too. WHEN THE THEME
-   STOPS IMPORTING THE ARCHIVE, THE SECOND PATH BELOW MOVES WITH IT. */
-const css = [
-  readFileSync(join(ROOT, 'foundation/ppbf-foundation.css'), 'utf8'),
-  readFileSync(join(ROOT, 'legacy/ppbf-leather-brass.css'), 'utf8'),
-].join('\n');
-/* EVERY :root block, not just the first. This used to be one slice because
-   there was one sheet with one token block. After the reset there are at least
-   two -- the foundation's mechanics and the theme's palette -- and slicing the
-   first alone silently dropped 50-odd tokens from the manifest. */
-const rootBlock = [...css.matchAll(/:root\s*\{([\s\S]*?)\n\}/g)]
-  .map((m) => m[1])
-  .join('\n');
-const tokens = {};
-for (const m of rootBlock.matchAll(/^\s*(--[\w-]+):\s*([^;]+);/gm)) {
-  const name = m[1];
-  // The generated feTurbulence data URIs are enormous and carry no meaning as
-  // text; record that they exist rather than inlining kilobytes of base64.
-  const value = m[2].trim();
-  tokens[name] = value.startsWith('url("data:image/svg+xml')
-    ? '<generated SVG data URI>'
-    : value.replace(/\s+/g, ' ');
+   LOAD ORDER. An import's rules come before the importing sheet's own rules,
+   so each sheet is listed after everything it imports: foundation, then the
+   legacy fonts and the Leather & Brass sheet, then Golden Era, then the theme
+   seam. A token declared in more than one sheet resolves to the last one, as
+   it does in the browser. Same import pattern as
+   apps/web/src/design/readDesignSystemCss.ts; only relative specifiers are
+   followed, and a cycle contributes nothing on its second visit. */
+const IMPORT_RULE = /@import\s+(?:url\()?["']([^"']+)["']\)?[^;]*;/g;
+
+/* Comments removed, strings kept intact, so a quoted data URI that happens to
+   contain slashes and asterisks is not read as a comment. */
+function stripComments(css) {
+  let out = '';
+  let quote = null;
+  for (let i = 0; i < css.length; i++) {
+    const c = css[i];
+    if (quote) {
+      out += c;
+      if (c === '\\') { out += css[i + 1] ?? ''; i++; } else if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") { quote = c; out += c; continue; }
+    if (c === '/' && css[i + 1] === '*') {
+      const end = css.indexOf('*/', i + 2);
+      i = end === -1 ? css.length : end + 1;
+      out += ' ';
+      continue;
+    }
+    out += c;
+  }
+  return out;
 }
 
-const byPrefix = (p) => Object.keys(tokens).filter((t) => t.startsWith(p)).length;
+function loadChain(file, seen = new Set(), sheets = []) {
+  if (seen.has(file)) return sheets;
+  seen.add(file);
+  const css = stripComments(readFileSync(file, 'utf8'));
+  for (const m of css.matchAll(IMPORT_RULE)) {
+    const specifier = m[1];
+    if (specifier.startsWith('./') || specifier.startsWith('../')) {
+      loadChain(join(dirname(file), specifier), seen, sheets);
+    }
+  }
+  sheets.push({ path: relative(ROOT, file).split(sep).join('/'), css });
+  return sheets;
+}
 
-/* ---- rooms: the six grounds, read from the stylesheet -------------------- */
+/* What each sheet is, from where it sits. The retired Leather & Brass sheets
+   under legacy/ still load -- Golden Era is built on top of them -- so they are
+   listed, and labelled as what they are. */
+function roleOf(p) {
+  if (p === 'ppbf.css') return 'entry';
+  if (p === 'current/ppbf-theme.css') return 'seam';
+  if (p.startsWith('current/')) return 'current';
+  if (p.startsWith('foundation/')) return 'foundation';
+  if (p.startsWith('legacy/')) return 'legacy';
+  return 'unclassified';
+}
+const ROLE_NOTES = {
+  entry: 'The one stylesheet pages load; imports only.',
+  foundation: 'Structure, accessibility and responsive mechanics. No look.',
+  legacy: 'Retired Leather & Brass (2026-08-23, legacy/README.md). Still loaded: the Golden Era sheet imports the Leather & Brass sheet as its base, and that sheet imports the legacy fonts.',
+  current: 'Golden Era V1, the current look (../docs/GOLDEN-ERA-V1-CONTRACT.md).',
+  seam: 'The theme seam: the one import that decides the look.',
+  unclassified: 'Not under foundation/, current/ or legacy/.',
+};
+
+const sheets = loadChain(join(ROOT, 'ppbf.css'));
+
+/* ---- tokens: the custom properties of every top-level :root block -------- */
+/* TOP-LEVEL ONLY. The regex this replaced swept in the :root inside the
+   legacy sheet's print block, so the manifest recorded the print override of
+   --cleared, --monitor and --restricted as their values. Declarations are
+   split on semicolons rather than read one per line, because the legacy
+   sheet packs several onto one line and the old line-anchored match kept only
+   the first (design-system/README.md, "Token count"). */
+function topLevelRules(css) {
+  const rules = [];
+  let depth = 0;
+  let start = 0;
+  let prelude = '';
+  let bodyStart = 0;
+  let quote = null;
+  for (let i = 0; i < css.length; i++) {
+    const c = css[i];
+    if (quote) {
+      if (c === '\\') i++; else if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === '{') {
+      if (depth === 0) { prelude = css.slice(start, i).trim(); bodyStart = i + 1; }
+      depth++;
+    } else if (c === '}') {
+      depth--;
+      if (depth === 0) { rules.push({ prelude, body: css.slice(bodyStart, i) }); start = i + 1; }
+    } else if (c === ';' && depth === 0) {
+      start = i + 1;
+    }
+  }
+  return rules;
+}
+
+function declarations(body) {
+  const out = [];
+  let parens = 0;
+  let quote = null;
+  let start = 0;
+  for (let i = 0; i <= body.length; i++) {
+    const c = body[i];
+    if (quote) {
+      if (c === '\\') i++; else if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === '(') parens++;
+    else if (c === ')') parens--;
+    else if ((c === ';' && parens === 0) || i === body.length) {
+      const decl = body.slice(start, i).trim();
+      const colon = decl.indexOf(':');
+      if (decl.startsWith('--') && colon > 0) out.push([decl.slice(0, colon).trim(), decl.slice(colon + 1).trim()]);
+      start = i + 1;
+    }
+  }
+  return out;
+}
+
+const tokens = {};
+const stylesheets = [];
+for (const sheet of sheets) {
+  const declared = new Set();
+  for (const rule of topLevelRules(sheet.css)) {
+    if (rule.prelude !== ':root') continue;
+    for (const [name, raw] of declarations(rule.body)) {
+      declared.add(name);
+      // The generated feTurbulence data URIs are enormous and carry no meaning as
+      // text; record that they exist rather than inlining kilobytes of base64.
+      tokens[name] = raw.startsWith('url("data:image/svg+xml')
+        ? '<generated SVG data URI>'
+        : raw.replace(/\s+/g, ' ');
+    }
+  }
+  const role = roleOf(sheet.path);
+  stylesheets.push({ path: sheet.path, role, note: ROLE_NOTES[role], tokensDeclared: declared.size });
+}
+
+const names = Object.keys(tokens);
+const byPrefix = (p) => names.filter((t) => t.startsWith(p)).length;
+
+/* ---- rooms: the room grounds, read from the stylesheets ------------------ */
+const css = sheets.map((s) => s.css).join('\n');
 const rooms = [...css.matchAll(/^\.room--(\w+)\s*\{/gm)].map((m) => m[1])
   .filter((v, i, a) => a.indexOf(v) === i);
 
@@ -99,7 +225,7 @@ const manifest = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   name: 'PPBF Design System — Golden Era V1',
   description:
-    "The design system for the Punxsy Prominence Boxing and Fitness platform. The active look is Golden Era V1 (../docs/GOLDEN-ERA-V1-CONTRACT.md): current/ppbf-theme.css imports current/ppbf-golden-era.css, which imports the retired Leather & Brass sheet (legacy/ppbf-leather-brass.css) as its base and overrides part of it. Laws 1, 4, 6 and 8 below are retired (OD-2026-09-28-009); laws 2, 3, 5 and 7 stand. build-manifest.mjs hardcodes the laws and the display voice, and generates the rooms, type and token entries from the foundation and legacy sheets only; it never reads the Golden Era sheet, so tokens declared only there are missing here.",
+    "The design system for the Punxsy Prominence Boxing and Fitness platform. The active look is Golden Era V1 (../docs/GOLDEN-ERA-V1-CONTRACT.md): current/ppbf-theme.css imports current/ppbf-golden-era.css, which imports the retired Leather & Brass sheet (legacy/ppbf-leather-brass.css) as its base and overrides part of it. Laws 1, 4, 6 and 8 below are retired (OD-2026-09-28-009); laws 2, 3, 5 and 7 stand. build-manifest.mjs hardcodes the laws and the display voice. It generates the stylesheets, rooms and tokens by following the import chain from ppbf.css in the order the browser loads it, so a token declared in more than one sheet has the value of the last one, and it reads top-level :root blocks only, so print and other media overrides are not recorded.",
   license: 'MIT',
   generatedBy: 'design-system/build-manifest.mjs',
 
@@ -124,7 +250,7 @@ const manifest = {
 
   laws: [
     'Brass is the chassis, never the message.',
-    'Saturated colour means safety or status. Nothing else may use it.',
+    'Saturated colour means safety or status. Nothing else may use it, except red, the club\'s colour (OD-2026-09-29-001); --locked still means a medical stop.',
     'Colour is never the only channel — glyph + uppercase label, always.',
     'Six voices, each with a job. Display is wood type, not stencil.',
     'Kiosk-first sizing — 55px targets, 19.1px type on the gym floor.',
@@ -132,6 +258,9 @@ const manifest = {
     'Refusal is a stamp, not an error toast.',
     'Proportion descends from φ. Nothing is sized by eye.',
   ],
+
+  // In load order: each sheet after the sheets it imports.
+  stylesheets,
 
   rooms: rooms.map((r) => ({ class: `room--${r}`, name: r })),
 
@@ -144,9 +273,11 @@ const manifest = {
   },
 
   tokenCounts: {
-    total: Object.keys(tokens).length,
+    total: names.length,
     type: byPrefix('--t-'),
-    space: byPrefix('--s'),
+    // --s1 .. --s8 only. A bare '--s' prefix also counted --stamp-*, --split-*,
+    // --slate-board and --shadow-*.
+    space: names.filter((t) => /^--s\d+$/.test(t)).length,
     motionDurations: byPrefix('--m-'),
     motionEasings: byPrefix('--e-'),
     fonts: byPrefix('--font-'),
@@ -167,7 +298,7 @@ writeFileSync(join(ROOT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '
 
 const rel = relative(process.cwd(), join(ROOT, 'manifest.json'));
 console.log(
-  `wrote ${rel} — ${previews.length} previews, ${Object.keys(tokens).length} tokens, `
+  `wrote ${rel} — ${previews.length} previews, ${names.length} tokens from ${stylesheets.length} stylesheets, `
   + `${faces.length} faces (${(fontBytes / 1024).toFixed(1)} KiB)`,
 );
 

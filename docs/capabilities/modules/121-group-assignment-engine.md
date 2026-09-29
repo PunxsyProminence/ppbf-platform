@@ -5,6 +5,7 @@
 | Status | **DONE** (slice shipped 2026-08-16) |
 | Vertical slice | Attendance-driven floor groups: a plan belongs to a DAY (not a permanent roster), athletes are placed into groups for that session only, one group per athlete per plan enforced by primary key, placements carry no level/rank and never carry forward. Shares `pilot.floor_plans_daily` / `floor_plan_groups` / `floor_plan_members` with module 123. `/coach/floor-groups`. |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | Class / Program Management (`classProgramManagement`) |
 | Source | `2.0.0-draft-merged` |
@@ -39,3 +40,4 @@ _Scaffold only. Do not mark active until promotion review._
 |------|-------|------|
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-16 | claude-session | Slice shipped: built to the owner answer 2026-08-16 -- the gym splits the room by who actually shows up, so nothing here pre-assigns rosters or persists a grouping beyond the session. A placement is a fact about one day and implies no level or judgment. Promoted per playbook rule with ManualVerification PENDING_SIGN_OFF. |
+| 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. The 2026-08-16 entry above named PENDING_SIGN_OFF but wrote no row, and no SIGNED_OFF was recorded for this module on 2026-08-28. |

@@ -24,11 +24,9 @@ import path from 'node:path';
  * eats the second slash of a `https://` inside a string literal and takes the
  * rest of the line with it -- the exact bug that discredited an earlier count
  * in `safeguardingRedReservation.test.ts`, which is where this machine comes
- * from and which still carries its own copy. That copy also returns a
- * string-position mask its proximity rule depends on; this one does not need
- * the mask, and unifying them means editing a live guard that belongs to the
- * safeguarding lane. Two readers, one shape, stated here so the next person
- * knows the duplication is deliberate rather than missed.
+ * from. That suite carried its own copy (with a string-position mask its
+ * proximity rule needed) until it was deleted with the red reservation,
+ * OD-2026-09-29-001; its copy went with it.
  *
  * COMMENT CHARACTERS BECOME SPACES, never deleted, so every surviving
  * character keeps its line and column and a violation can be reported at the

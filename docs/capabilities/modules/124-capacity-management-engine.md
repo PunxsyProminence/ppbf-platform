@@ -5,6 +5,7 @@
 | Status | **DONE** (Wave 9 slice promotion) |
 | Vertical slice | per-class seat cap + waitlist enforcement inside the scheduler; a broader capacity console is future work |
 | Active | false |
+| ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
 | Category | Class / Program Management (`classProgramManagement`) |
 | Source | `2.0.0-draft-merged` |
@@ -40,3 +41,4 @@ _Scaffold only. Do not mark active until promotion review._
 | 2026-08-03 | scaffold-script | Stub created from PPBF_CAPABILITIES.json |
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — POST class-creation validates capacity (1-200); role-gated writes; registration path checks capacity/waitlist. Missing: Real capacity-enforcement and waitlisting exists for class scheduling with role gates and org isolation, but this is a narrow per-class seat cap embed. Evidence: apps/web/app/api/pilot/scheduler/route.ts; apps/web/src/server/pilot/schedulerDb.ts. Status stays DRAFT. |
 | 2026-08-16 | wave9-reconciliation | Owner decision 2026-08-16: narrow-but-real slices promote per the playbook rule (DONE means slice shipped in code), with the slice line naming exactly what exists. Evidence: apps/web/app/api/pilot/scheduler/route.ts; apps/web/src/server/pilot/schedulerDb.ts. Test: apps/web/app/api/pilot/scheduler/route.test.ts exercises class capacity and registration/waitlist behavior |
+| 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |

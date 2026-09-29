@@ -71,6 +71,19 @@ interface FilmStudyProposal {
   created_at: string;
 }
 
+// Mirrors ComplianceRule in src/server/pilot/compliance.ts (the rows
+// GET /api/pilot/compliance/rules returns), trimmed to what the escalation
+// picker needs. Declared here, not imported, for the same reason as the
+// validation report below: that module imports ./db.
+interface ComplianceRuleOption {
+  rule_id: string;
+  rule_name: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+}
+
+const COMPLIANCE_RULES_LOAD_ERROR =
+  "Could not load this gym's compliance rules, so Escalate to Compliance is unavailable right now.";
+
 /**
  * The shape GET /api/pilot/shadow/film-study/validation returns.
  *
@@ -210,6 +223,17 @@ export default function CoachVideoAnalysisPage() {
   const [missedObservation, setMissedObservation] = useState('');
   const [missedSubmitting, setMissedSubmitting] = useState(false);
   const [missedError, setMissedError] = useState('');
+
+  // Escalate to Compliance. null rules = not loaded yet; the control only
+  // appears once there is a rule to file against.
+  const [complianceRules, setComplianceRules] = useState<ComplianceRuleOption[] | null>(null);
+  const [complianceRulesError, setComplianceRulesError] = useState('');
+  const [escalationRuleDrafts, setEscalationRuleDrafts] = useState<Record<string, string>>({});
+  const [escalatingProposalId, setEscalatingProposalId] = useState<string | null>(null);
+  // Proposals filed during this visit, keyed by proposal id, holding the rule
+  // they were filed under -- so the row says what happened and cannot be
+  // filed twice from here by a second click.
+  const [escalatedProposals, setEscalatedProposals] = useState<Record<string, ComplianceRuleOption>>({});
 
   const [validation, setValidation] = useState<FilmStudyValidationReport | null>(null);
   const [validationSummary, setValidationSummary] = useState('');
@@ -404,6 +428,53 @@ export default function CoachVideoAnalysisPage() {
   };
 
   /**
+   * Escalate to Compliance: file a compliance violation from a proposal.
+   *
+   * Until this existed nothing in the app could file one, so the Compliance
+   * Center and the coach morning read both read a list nothing added to. The violation is filed against the proposal's own
+   * athlete and video, at the chosen rule's own severity, and names the
+   * proposal it came from.
+   *
+   * Escalating is not a verdict. The proposal stays in the queue and still
+   * needs Accept, Correct or Reject -- whether the model described the clip
+   * well and whether the clip shows a rule being broken are separate calls.
+   */
+  const escalateProposal = async (proposal: FilmStudyProposal) => {
+    const ruleId = escalationRuleDrafts[proposal.proposal_id] ?? '';
+    const rule = (complianceRules ?? []).find((r) => r.rule_id === ruleId);
+    if (!rule) {
+      setProposalsError('Choose the compliance rule this breaks before escalating.');
+      return;
+    }
+
+    setEscalatingProposalId(proposal.proposal_id);
+    try {
+      const res = await fetch(`${apiBase()}/api/pilot/compliance/violations`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rule_id: rule.rule_id,
+          athlete_id: proposal.athlete_id,
+          video_session_id: proposal.video_session_id,
+          severity: rule.severity,
+          details: { source: 'film_study_proposal', proposal_id: proposal.proposal_id },
+        }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? `Could not escalate to Compliance (${res.status}).`);
+      }
+      setEscalatedProposals((current) => ({ ...current, [proposal.proposal_id]: rule }));
+      setProposalsError('');
+    } catch (err) {
+      setProposalsError(err instanceof Error ? err.message : 'Could not escalate to Compliance.');
+    } finally {
+      setEscalatingProposalId(null);
+    }
+  };
+
+  /**
    * The missed detection. Without this the queue only ever holds what the
    * model produced, so a model that proposes one easy observation per video
    * and gets it accepted is indistinguishable from one that finds everything.
@@ -500,6 +571,31 @@ export default function CoachVideoAnalysisPage() {
       } catch {
         // Silent: the picker degrades to empty, and the rest of the page still
         // reads. A failed roster load is not a failed video library.
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
+  // The rules a proposal can be escalated under, loaded once. Unlike the
+  // roster above, a failure here is said out loud: a missing Escalate control
+  // with no reason reads as "this page cannot do that", which is untrue.
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/api/pilot/compliance/rules`, {
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error(COMPLIANCE_RULES_LOAD_ERROR);
+        const data = (await res.json()) as { rules?: ComplianceRuleOption[] };
+        if (controller.signal.aborted) return;
+        setComplianceRules(data.rules ?? []);
+        setComplianceRulesError('');
+      } catch {
+        if (controller.signal.aborted) return;
+        setComplianceRules(null);
+        setComplianceRulesError(COMPLIANCE_RULES_LOAD_ERROR);
       }
     })();
     return () => controller.abort();
@@ -879,6 +975,14 @@ export default function CoachVideoAnalysisPage() {
             only a human verdict settles it.
           </p>
           {proposalsError ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{proposalsError}</p> : null}
+          {proposals.length > 0 && complianceRulesError ? (
+            <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">{complianceRulesError}</p>
+          ) : null}
+          {proposals.length > 0 && complianceRules !== null && complianceRules.length === 0 ? (
+            <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">
+              This gym has no active compliance rules, so there is nothing to escalate an observation under.
+            </p>
+          ) : null}
           {/* The queue holds only athletes this reader may reach (the proposals
               GET filters by athlete access), while the accept-rate line above
               counts the whole gym's outstanding proposals. The empty state
@@ -930,6 +1034,32 @@ export default function CoachVideoAnalysisPage() {
                       className="textarea"
                     />
                   </div>
+                  {escalatedProposals[p.proposal_id] ? (
+                    <p className="t-data mt-[var(--s3)] text-[color:var(--bone-300)]">
+                      Filed as a compliance violation under &ldquo;{escalatedProposals[p.proposal_id].rule_name}&rdquo;
+                      ({escalatedProposals[p.proposal_id].severity}). This observation still needs its own verdict.
+                    </p>
+                  ) : complianceRules && complianceRules.length > 0 ? (
+                    <div className="field mt-[var(--s3)]">
+                      <label htmlFor={`compliance-rule-${p.proposal_id}`} className="t-data text-[color:var(--bone-400)]">
+                        Compliance rule this breaks (only needed if you are escalating)
+                      </label>
+                      <select
+                        id={`compliance-rule-${p.proposal_id}`}
+                        className="select"
+                        value={escalationRuleDrafts[p.proposal_id] ?? ''}
+                        onChange={(e) => {
+                          const { value } = e.target;
+                          setEscalationRuleDrafts((current) => ({ ...current, [p.proposal_id]: value }));
+                        }}
+                      >
+                        <option value="">Select a rule…</option>
+                        {complianceRules.map((rule) => (
+                          <option key={rule.rule_id} value={rule.rule_id}>{rule.rule_name} · {rule.severity}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
                   <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
                     <button
                       onClick={() => { void resolveProposal(p, 'accepted'); }}
@@ -955,6 +1085,17 @@ export default function CoachVideoAnalysisPage() {
                     >
                       {resolvingProposalId === p.proposal_id ? 'Recording...' : 'Reject'}
                     </button>
+                    {/* Filing is not a verdict, so it sits beside the three
+                        exits rather than replacing any of them. */}
+                    {complianceRules && complianceRules.length > 0 && !escalatedProposals[p.proposal_id] ? (
+                      <button
+                        onClick={() => { void escalateProposal(p); }}
+                        disabled={escalatingProposalId === p.proposal_id || resolvingProposalId === p.proposal_id}
+                        className="btn btn--ghost disabled:opacity-50"
+                      >
+                        {escalatingProposalId === p.proposal_id ? 'Filing...' : 'Escalate to Compliance'}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               ))}

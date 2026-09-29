@@ -360,11 +360,57 @@ function rejectionReason(row: RosterImportRow, seen: Set<string>): string {
 }
 
 /**
+ * A blank Coach cell, when a COACH loads the file, means the coach loading it
+ * (Jason, 2026-09-29, "3B", OD-2026-09-29-002 item 9d). The route applies
+ * this to the rows it hands to BOTH planRosterImport and applyRosterImport, so
+ * the preview and the write read one value.
+ *
+ * It vouches for nothing: the filled-in id still goes through the same
+ * active-coach check in planRosterImport as a typed one.
+ */
+export function assignBlankCoachTo(
+  rows: readonly RosterImportRow[],
+  coachAccountId: string,
+): RosterImportRow[] {
+  return rows.map((row) => (row.coach_account_id ? row : { ...row, coach_account_id: coachAccountId }));
+}
+
+/**
+ * Why an athlete row's Coach value cannot be used, or empty if it can.
+ *
+ * Every importer, admin or coach, may name ANY active coach of the importing
+ * gym and nobody else (Jason, 2026-09-29, "3B", OD-2026-09-29-002 item 9d).
+ * pilot.athletes.coach_id is `text not null` with a foreign key to
+ * pilot.accounts (infra/azure/pilot_slice_postgres.sql,
+ * pilot_athletes_coach_fk), so a blank
+ * one is a row Postgres refuses -- caught here, in the preview, rather than as
+ * a raw database error after Add.
+ *
+ * One reason covers another gym's account, an inactive one, a non-coach and an
+ * id that does not exist. The lookup is scoped to this gym, so which of those
+ * it was is not something this gym's preview should say.
+ */
+function coachRejectionReason(row: RosterImportRow, activeCoaches: ReadonlySet<string>): string {
+  if (resolveMemberType(row.member_type) !== 'athlete') {
+    return '';
+  }
+  if (!row.coach_account_id) {
+    return 'Needs a coach. Put the account id of an active coach in this gym in the Coach column.';
+  }
+  if (!activeCoaches.has(row.coach_account_id)) {
+    return `Coach "${row.coach_account_id}" is not an active coach in this gym.`;
+  }
+  return '';
+}
+
+/**
  * What an import would do, decided before anything is written.
  *
  * The dry run and the real run share this function, so the preview a person
  * approves is produced by the same code that then acts -- rather than by a
- * second implementation that can disagree with it.
+ * second implementation that can disagree with it. That is also what makes
+ * the coach check hold at Add: applyRosterImport creates only the rows this
+ * plan marked `create`.
  */
 export async function planRosterImport(
   organizationId: string,
@@ -392,6 +438,23 @@ export async function planRosterImport(
     ...existingMemberRows.map((row) => row.member_id),
   ]);
 
+  // The same predicate as access.ts assertActiveCoachAccount, batched: this
+  // gym, role coach, active.
+  const coachIds = Array.from(new Set(
+    rows
+      .filter((row) => resolveMemberType(row.member_type) === 'athlete' && row.coach_account_id !== '')
+      .map((row) => row.coach_account_id),
+  ));
+  const activeCoachRows = coachIds.length
+    ? await query<{ account_id: string }>(
+      `select account_id from pilot.accounts
+       where organization_id = $1 and account_id = any($2::text[])
+         and role = 'coach' and active_flag = true`,
+      [organizationId, coachIds],
+    )
+    : [];
+  const activeCoaches = new Set(activeCoachRows.map((row) => row.account_id));
+
   const seen = new Set<string>();
   const planned: RosterRowPlan[] = rows.map((row, index) => {
     const reason = rejectionReason(row, seen);
@@ -410,6 +473,13 @@ export async function planRosterImport(
         outcome: 'skip_exists',
         reason: 'Already on the roster. Left exactly as it is.',
       };
+    }
+    // After the collision check: an athlete already here is left alone
+    // whatever the file says about their coach, so "already on the roster" is
+    // the true answer for that row, not a coach problem nobody needs to fix.
+    const coachReason = coachRejectionReason(row, activeCoaches);
+    if (coachReason) {
+      return { line: index + 1, athlete_id: row.athlete_id, full_name: row.full_name, outcome: 'reject', reason: coachReason };
     }
     return { line: index + 1, athlete_id: row.athlete_id, full_name: row.full_name, outcome: 'create', reason: '' };
   });

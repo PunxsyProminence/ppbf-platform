@@ -937,6 +937,19 @@ describe('drill secondary skill relationships against real Postgres', () => {
 
 describe('seed-drill-library.mjs against real Postgres', () => {
   const SEED_ORG = 'ppbf-default-org';
+  const SEED_ACCOUNT = 'acct-seed-test';
+
+  // seedAll reads created_by_role from the seed account's own pilot.accounts
+  // row and refuses an account that does not exist. organization_admin -- how
+  // gym content is seeded -- and not the platform_owner the CSV used to carry,
+  // so the role assertion below can tell the two behaviours apart.
+  async function insertSeedAccount(client: Client): Promise<void> {
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id)
+       values ($1, 'organization_admin', $2)`,
+      [SEED_ACCOUNT, SEED_ORG],
+    );
+  }
 
   test('--dry-run inserts nothing', async () => {
     const client = await freshDatabase('ppbf_test_drilllib_seed_dry_run');
@@ -948,11 +961,12 @@ describe('seed-drill-library.mjs against real Postgres', () => {
          values ($1, $1, 'active') on conflict do nothing`,
         [SEED_ORG],
       );
+      await insertSeedAccount(client);
 
       await seedAll(
         client,
         SEED_DIR,
-        { organizationId: SEED_ORG, seedAccountId: 'acct-seed-test' },
+        { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT },
         { dryRun: true },
       );
 
@@ -974,8 +988,9 @@ describe('seed-drill-library.mjs against real Postgres', () => {
          values ($1, $1, 'active') on conflict do nothing`,
         [SEED_ORG],
       );
+      await insertSeedAccount(client);
 
-      await seedAll(client, SEED_DIR, { organizationId: SEED_ORG, seedAccountId: 'acct-seed-test' });
+      await seedAll(client, SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT });
 
       const { rows } = await client.query(
         `select count(*)::int as n, count(*) filter (where organization_id = $1)::int as n_for_org
@@ -984,6 +999,18 @@ describe('seed-drill-library.mjs against real Postgres', () => {
       );
       expect(rows[0].n).toBe(119);
       expect(rows[0].n_for_org).toBe(119);
+
+      // Every row carries the seed account and ITS role, read from
+      // pilot.accounts -- not the platform_owner the CSV used to say.
+      const provenance = await client.query(
+        `select created_by_account_id, created_by_role, count(*)::int as n
+         from pilot.drill_library where organization_id = $1
+         group by 1, 2`,
+        [SEED_ORG],
+      );
+      expect(provenance.rows).toEqual([
+        { created_by_account_id: SEED_ACCOUNT, created_by_role: 'organization_admin', n: 119 },
+      ]);
 
       // The child tables, pinned to the supplied CSVs' own row counts. Two of
       // these files were rejected outright until the vocabulary-widening
@@ -1023,12 +1050,40 @@ describe('seed-drill-library.mjs against real Postgres', () => {
          values ($1, $1, 'active') on conflict do nothing`,
         [SEED_ORG],
       );
+      await insertSeedAccount(client);
 
-      await seedAll(client, SEED_DIR, { organizationId: SEED_ORG, seedAccountId: 'acct-seed-test' });
-      await seedAll(client, SEED_DIR, { organizationId: SEED_ORG, seedAccountId: 'acct-seed-test' });
+      await seedAll(client, SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT });
+      await seedAll(client, SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT });
 
       const { rows } = await client.query(`select count(*)::int as n from pilot.drill_library where organization_id = $1`, [SEED_ORG]);
       expect(rows[0].n).toBe(119);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  test('refuses a seed account id that matches no account, writing nothing', async () => {
+    // account_id is case-sensitive, and a wrong casing is the likeliest way an
+    // operator types an id that resolves to nobody. This is the real schema
+    // answering, not the fake client in seedCreatedByRole.test.ts.
+    const client = await freshDatabase('ppbf_test_drilllib_seed_no_account');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      await client.query(vocabularyWideningSql);
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status)
+         values ($1, $1, 'active') on conflict do nothing`,
+        [SEED_ORG],
+      );
+      await insertSeedAccount(client);
+
+      await expect(
+        seedAll(client, SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT.toUpperCase() }),
+      ).rejects.toThrow(/^SEED_ACCOUNT_NOT_FOUND: /);
+
+      const { rows } = await client.query(`select count(*)::int as n from pilot.drill_library where organization_id = $1`, [SEED_ORG]);
+      expect(rows[0].n).toBe(0);
     } finally {
       activeClient = null;
       await client.end();
