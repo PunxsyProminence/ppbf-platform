@@ -65,12 +65,8 @@ This does not weaken the SHADOW medical-status write-isolation gate
 likely to carry real legal constraints even after de-identification, and that
 gate is deliberately strict-by-construction independent of this boundary.
 
-Platform Owner can additionally:
-
-- create organizations
-- assign organization admins
-- activate and deactivate organizations
-- view platform aggregates and benchmarks
+What Platform Owner may do, and what stays gated regardless, is listed once, in
+[ORGANIZATION_ROLE_MODEL.md](ORGANIZATION_ROLE_MODEL.md#platform-owner).
 
 ## Analytics separation
 

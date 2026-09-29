@@ -20,7 +20,7 @@ const PIN_PATTERN = /^\d{6}$/;
    the 52px and 44px it was built at.
 
    The cards were bg-white with rounded-2xl and rounded-xl fields: white is not
-   one of the five materials and neither radius is on the Fibonacci scale. They
+   one of Golden Era's materials and neither radius is on the Fibonacci scale. They
    are paper now. The chrome came off the safety gate's red alias, since a
    Continue button is not a safety state. Red survives only on the genuine
    refusal, and the success panel takes the ladder's own --cleared instead of

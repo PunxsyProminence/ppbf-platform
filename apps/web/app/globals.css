@@ -27,8 +27,9 @@
 
    The aliases keep resolving, because the direction is explicit that existing
    pages are not converted in this pass. But the vocabulary is closed: NEW work
-   may not use these names, and src/design/legacyVisualVocabulary.test.ts fails
-   on any increase, naming the file and the token. Write new work against the
+   may not use these names. src/design/legacyVisualVocabulary.test.ts caps 18
+   of them by name (ALIAS_CEILINGS) and fails when one of those rises, naming
+   the file and the token; the rest are uncapped. Write new work against the
    foundation's mechanics (--t-*, --s*, --r-*, --tap) and the current theme's
    own tokens.
 

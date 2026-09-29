@@ -1,5 +1,7 @@
 # SHADOW Event Model
 
+> **Status (2026-09-28):** doctrine, not built as written. Listed in the SHADOW Library seed manifest as tier-1 doctrine (`apps/web/scripts/shadow-library-seed-manifest.json`, `shadow-event-model`); doctrine authority is `docs/SHADOW_AUTHORITY_MODEL.md`. What exists in code is a flat event log, `pilot.shadow_events` (`infra/azure/pilot_slice_postgres.sql:164-174`), with free-text operation names such as `SHADOW_LIBRARY_SOURCE_CREATED` (`apps/web/src/server/pilot/shadowLibrary.ts:501`); separately, the closed decision loop (`pilot.shadow_recommendations` -> `shadow_decisions` -> `shadow_decision_outcomes`, `infra/azure/pilot_slice_postgres_shadow_decision_loop_migration.sql:31-111`) records recommendation, decision and outcome as linked tables, not as typed events. The 16 event types and the parent/root/derived links below are not implemented.
+
 Purpose: define the canonical SHADOW event architecture before implementation work.
 
 Scope: doctrine only. No code or schema implementation in this document.

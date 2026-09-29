@@ -443,7 +443,7 @@ function NoticesAuthoringPage() {
             <p className={`inline-block border-2 px-2 py-1 text-[length:var(--t-xs)] font-mono font-bold uppercase ${LIFECYCLE_TONE[draftLifecycle]}`}>
               {LIFECYCLE_LABELS[draftLifecycle]} - {describeWindow(draftStartsAt, draftEndsAt)}
             </p>
-            {/* The preview renders on paper, one of the five materials — the
+            {/* The preview renders on paper, one of Golden Era's materials — the
                 bg-white card it used to be is not (Law 6) — and its radius
                 comes off the Fibonacci scale. */}
             <article className="mat-paper rounded-[var(--r-md)] border border-[color:rgba(51,41,27,.26)] px-[var(--s4)] py-[var(--s3)]">

@@ -30,8 +30,8 @@ its capability table.
 - Capabilities: [docs/capabilities/](docs/capabilities/README.md); build
   status lives in the module files under `docs/capabilities/modules/`
   (OD-2026-09-28-010 item 17); [GATES.md](docs/capabilities/GATES.md)
-- SHADOW: [docs/SHADOW_AUTHORITY_MODEL.md](docs/SHADOW_AUTHORITY_MODEL.md) and
-  the SHADOW documents AGENT_KERNEL's read path names
+- SHADOW: [docs/SHADOW_AUTHORITY_MODEL.md](docs/SHADOW_AUTHORITY_MODEL.md) for
+  doctrine; the map below says which source owns each SHADOW concept
 - Design: [docs/GOLDEN-ERA-V1-CONTRACT.md](docs/GOLDEN-ERA-V1-CONTRACT.md)
   (the active look), [design-system/README.md](design-system/README.md) (the
   design laws OD-2026-09-28-009 keeps),
@@ -40,6 +40,24 @@ its capability table.
 - Release/deploy/migrations:
   [docs/AI_DELIVERY_PIPELINE.md](docs/AI_DELIVERY_PIPELINE.md) plus the
   relevant runbook under `docs/`
+
+### SHADOW: which source owns what
+
+Checked 2026-09-28. Where a document and the code disagree, the code wins.
+
+| Concept | Authoritative source |
+|---|---|
+| Doctrine: what SHADOW is, who decides | [docs/SHADOW_AUTHORITY_MODEL.md](docs/SHADOW_AUTHORITY_MODEL.md) |
+| Chat behaviour, routing, model tiers | the code: `apps/web/app/api/pilot/shadow/chat/route.ts`, `shadowRouter.ts`, `shadowClassifier.ts`. [docs/SHADOW_ML_ARCHITECTURE_SPEC.md](docs/SHADOW_ML_ARCHITECTURE_SPEC.md) is a design reference, partly built |
+| Events | [docs/SHADOW_EVENT_MODEL.md](docs/SHADOW_EVENT_MODEL.md) (doctrine; the code has a flat event log plus the decision-loop tables) |
+| Pattern formation | [docs/SHADOW_PATTERN_FORMATION_CONTRACT.md](docs/SHADOW_PATTERN_FORMATION_CONTRACT.md) (algorithm built, thresholds not ratified) |
+| Evidence tiers | the code: `apps/web/src/server/pilot/shadowEvidenceTier.ts`; the 2026-08-07 `EVIDENCE_TIER_SPEC.md` in the research seed package is PROPOSED |
+| Research archive and custody | [docs/SHADOW_RESEARCH_ARCHITECTURE.md](docs/SHADOW_RESEARCH_ARCHITECTURE.md) §1.0 only; the rest is PROPOSED (OD-2026-09-28-010 item 25) |
+| Research import | [docs/SHADOW_RESEARCH_INTAKE_IMPORT.md](docs/SHADOW_RESEARCH_INTAKE_IMPORT.md); steps in [docs/SHADOW_RESEARCH_IMPORT_RUNBOOK.md](docs/SHADOW_RESEARCH_IMPORT_RUNBOOK.md) |
+| Teach Shadow and Film Study | OD-2026-09-28-006 in [docs/current/OWNER_DECISIONS.md](docs/current/OWNER_DECISIONS.md); per-skill video scoring is parked (`BACKLOG-video-skill-scoring` in [docs/current/ACTIVE_WORK.md](docs/current/ACTIVE_WORK.md)) |
+
+History, not doctrine: `docs/SHADOW_AI_TECHNICAL_COMPANION.md` (OD-2026-09-28-010
+item 23) and the archived V1 build prompt (item 24).
 
 ## Development
 

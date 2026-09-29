@@ -2,7 +2,10 @@
 
 Layer 0 only: the photographed wall a room stands in. Real UI composites on
 top in code; no plate carries lettering or substitutes for a stamp, ticket, or
-passbook content. A plate is a `background-image` layer on `.room::after` /
+passbook content. One exception: the IRON CITY lettering on the ring canvas stays
+when the ring is in frame (owner, 2026-09-28, "no i like that you can leave it";
+OD-2026-09-28-013; `docs/REAL-GYM-REFERENCE-LOCK.md` Mode A
+item 4). A plate is a `background-image` layer on `.room::after` /
 `.on-canvas::after` — never an `<img>`. Missing files are safe by design: with
 this directory empty, the gradient wall in the design-system sheets
 (`design-system/legacy/ppbf-leather-brass.css`, loaded through
@@ -53,6 +56,9 @@ sit in the "Landed but not declared" table below rather than the first one. Bind
 stated three ways in the prompt and still leaks. `plate-09` has faint illegible
 marks on a clipboard; `plate-10` has them inside the canvas roundel. It leaks
 exactly where a real gym carries branding, which is where the model expects it.
+The ring canvas is now the one place lettering is allowed (IRON CITY; see the
+top of this file). Whether the `plate-10` roundel marks read as that lettering
+has not been judged; the `plate-09` clipboard marks are outside the exception.
 
 ## The gym floor no longer takes a plate
 

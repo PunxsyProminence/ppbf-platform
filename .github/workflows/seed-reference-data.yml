@@ -100,7 +100,14 @@ on:
         required: true
         type: string
       seed_account_id:
-        description: Existing privileged account_id recorded as the seeder (drill-library and session-scripts)
+        description: >-
+          Existing account_id recorded as the seeder (drill-library,
+          workout-templates and session-scripts). For gym content use an
+          organization_admin of punxsy_prominence (ppbf@punxsyprominence.org),
+          never the platform_owner Admin@ account. Case-sensitive; read it
+          with check-database seed-identity. Hold: new drill-library and
+          workout-template rows would record the wrong role until their
+          loaders are fixed (docs/AI_DELIVERY_PIPELINE.md, promotion step 2).
         required: false
         type: string
 

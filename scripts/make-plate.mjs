@@ -113,9 +113,13 @@ function readGymDna() {
 
 /* Composition and lettering are Mode A rules. Lettering is stated three ways
    because one phrasing gets ignored, and text inside a plate competes with the
-   UI text drawn over it. */
+   UI text drawn over it. One exception, owner 2026-09-28 ("no i like that you
+   can leave it", OD-2026-09-28-013, lock Mode A item 4): the IRON CITY
+   lettering on the ring canvas stays when the ring is in frame. The real canvas
+   reads IRON CITY BREWERY (lock section 1), so the prompt spells that out
+   rather than invite the model to drop a word. Everything else stays forbidden. */
 const COMPOSITION = 'Composition: the centre of the frame is QUIET and uncluttered because interface text is laid over it, and all visual interest sits in the outer thirds. No people.';
-const NO_TEXT = 'ABSOLUTELY NO TEXT anywhere in the frame: no writing, no letters, no numbers, no words, no signage, no posters, no banners, no readable chalkboards or whiteboards, no labels, no logos, no brand marks.';
+const NO_TEXT = 'The only lettering allowed is the lettering printed on the boxing ring canvas itself, which reads IRON CITY BREWERY, and only when the ring is in frame. ABSOLUTELY NO OTHER TEXT anywhere in the frame: no other writing, no other letters, no numbers, no words, no signage, no posters, no banners, no readable chalkboards or whiteboards, no labels, no other logos, no other brand marks.';
 
 /* ---- arguments ----------------------------------------------------------- */
 

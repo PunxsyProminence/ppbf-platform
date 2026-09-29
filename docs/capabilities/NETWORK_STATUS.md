@@ -638,7 +638,8 @@ asking what happens to video of their child would be given a two-year answer.
 
 **Now the reassuring half, which decides whether this is one document to fix or a
 systemic problem.** Of 440 documents in scope, **17 were verified TRUE and are
-listed by name** in `docs/audit-2026-08-18/PASS-12-docs-vs-code.md` so the next
+listed by name** in `docs/audit-2026-08-18/PASS-12-docs-vs-code.md` (on branch
+`docs/full-spectrum-audit-2026-08-18`, not on `main`) so the next
 reader knows what can be trusted. Both root contract files are among them:
 `AUTH_CONTRACT.md` matches on role enum, cookie flags and endpoints, and
 `ORGANIZATION_ROLE_MODEL.md`'s board boundary holds at every checked point.
@@ -851,7 +852,8 @@ Open the file before acting on any of it.
 The escalation register is now fully enumerated — eight writer call paths across
 seven source types, six readers, and one declared source type
 (`safety_gate_evaluation`) with no writer at all. That table is in
-`docs/audit-2026-08-18/PASS-04-safety-gates.md`; consult it before adding either
+`docs/audit-2026-08-18/PASS-04-safety-gates.md` (on branch
+`docs/full-spectrum-audit-2026-08-18`, not on `main`); consult it before adding either
 a writer or a reader.
 
 ---

@@ -48,7 +48,9 @@ Do not preload archived audits, the historical queue, superseded plans, old buil
 - **ChatGPT** -- the architect: plans, specifications and work orders, which
   Jason approves before anything is built. Approved work orders arrive in one
   OneDrive inbox folder, `PPBF-AI-Lanes/ChatGPT-Handoffs` (admin@), which Claude reads
-  (OD-2026-09-28-003). Also the reviewer, once its instructions are set up;
+  (OD-2026-09-28-003). ChatGPT cannot write to that folder itself (capability
+  table below, tested 2026-09-28), so how an approved work order gets there is
+  not settled: **OWNER DECISION REQUIRED**. Also the reviewer, once its instructions are set up;
   until then no merge waits on a ChatGPT review. It plans from the capability
   table below and assumes nothing that is not on it (OD-2026-09-28-002). It
   writes nothing to this repository.
@@ -155,14 +157,16 @@ row with the date and method.
 | Claude Code, Jason's PC | Load a signed-in page | CAN'T alone | Jason signs in; no AI enters credentials (recorded 2026-09-21) |
 | Claude Code, Jason's PC | Generate a plate and encode it to the plate laws | CAN | 2026-09-26, as reported in the #982 commit (`ef47c977`): `scripts/make-plate.mjs` (an Azure Foundry image model, encoded with `sharp`) made plates 09-13, and `plateBinaries.test.ts` passed on them |
 | Claude Code, Jason's PC | Read-only production database query | CAN | 2026-09-28: `BEGIN READ ONLY` queries with `current_database() = postgres`, recorded as evidence in OD-2026-09-28-007 and -010. Run only when Jason says so, per run (OD-2026-09-28-010 item 8) |
-| Claude Code, Jason's PC | Make an image through a Canva connector | NOT SURE | Not checked. Jason named the connector on 2026-09-28 (OD-2026-09-28-001). Smallest test: list the session's connectors, then make one image he asks for |
+| Claude Code, Jason's PC | Find a Canva design and export it to disk through the Canva connector | CAN | 2026-09-28: with the connector connected, `search-designs` found designs and `export-design` saved a 99,506-byte JPEG to disk |
+| Claude Code, Jason's PC | Make an image through the Canva connector | CAN | 2026-09-28: `generate-image` job `AaDpVwIHRcQdrJxcFpIt9w` returned SUCCESS and media `MAHWgi5mfQM`; no "Open generated image" link came back. Not recorded: whether that generated image was then exported to disk |
 | Claude Code, cloud container sessions | Read SharePoint/OneDrive files, text or binary | CAN'T | 2026-08-20..25, not re-checked: the connector rendered files for viewing; `downloadUrl` came back null |
 | Claude Code, cloud container sessions | Load a deployed page | CAN'T | 2026-08-20..25, not re-checked: outbound HTTPS refused |
 | Claude Code, cloud container sessions | Re-encode a JPEG | CAN'T | 2026-08-20..25, not re-checked: `cjpeg`, `jpegtran`, ImageMagick and Pillow absent |
-| ChatGPT | Read this repository | CAN | 2026-08-20: reported `main` at `cd6a7335` and #524 as the latest merge, both correct at the time; not re-checked |
+| ChatGPT | Read this repository's files and pull-request metadata | CAN | 2026-09-28, project "PPBF — App Build Review", through its GitHub connector; Claude checked the answers against the repository and GitHub: it quoted the `docs/current/OWNER_DECISIONS.md` heading exactly and gave PR #995's title and file count (214) correctly. Earlier: 2026-08-20, it reported `main` at `cd6a7335` and #524 as the latest merge, both correct at the time |
+| ChatGPT | Read a pull request's diff | NOT SURE | Not tested. Its first review is the test |
 | ChatGPT | Load a deployed page | CAN'T | 2026-08-20: its browser tool could not load the staging URL; not re-checked |
-| ChatGPT | Read SharePoint, OneDrive and Google Drive | CAN | 2026-08-20: as separate connector calls, not one query; not re-checked |
-| ChatGPT | Write to OneDrive | NOT SURE | Mixed record: 2026-09-21 it wrote ledger entry LEDGER-0010 and Claude read it back; the same day its exact-item write was blocked on its side (LEDGER-0009), and on 2026-09-22 its direct write failed (LEDGER-0015). Each write raises a permission prompt that someone must allow. Smallest test: write one file to the work-order inbox folder and have Claude read it back |
+| ChatGPT | Read SharePoint, OneDrive and Google Drive | CAN | 2026-08-20: as separate connector calls, not one query. 2026-09-28, project "PPBF — App Build Review": it listed the OneDrive work-order inbox, `PPBF-AI-Lanes/ChatGPT-Handoffs` |
+| ChatGPT | Write to the OneDrive work-order inbox (`PPBF-AI-Lanes/ChatGPT-Handoffs`) | CAN'T | 2026-09-28, project "PPBF — App Build Review": its upload failed validation, and Claude checked the folder and found no file created. Earlier mixed record: 2026-09-21 it wrote ledger entry LEDGER-0010 and Claude read it back; the same day its exact-item write was blocked on its side (LEDGER-0009), and on 2026-09-22 its direct write failed (LEDGER-0015). Each of those writes raised a permission prompt that someone had to allow |
 | Grok | Make an image Jason asks for | CAN | 2026-08-19..25, not re-checked since: all 18 plate-01..08 files on `main` are Grok's -- Plate Set v1-g in #506 (`51e77b54`; Grok's own status note, commit `311e4dc6`, since deleted) and the `grok/plates-full-ship` delivery landed by #666 (`d04dde68`). 4:4:4 was measured on them (`docs/GROK-VISUAL-LANE.md`, "The amendment: 4:4:4"; the gate table in #666), and `plateBinaries.test.ts` passed on the committed plates on 2026-09-28 |
 | Grok | Guarantee 4:4:4 JPEG output | CAN'T | Grok's own statement, recorded 2026-08-20 in #524 (`docs/GROK-VISUAL-LANE.md`, "The amendment: 4:4:4"). The same day Grok accepted re-encoding to 4:4:4 in its own pipeline before shipping (same section); not re-checked since |
 
@@ -390,7 +394,8 @@ made, in his own words, with the evidence each rested on. His decisions are
 recorded only there, by Claude, quoting him; the OneDrive decision ledger takes
 no new entries and stays as history (OD-2026-09-28-003). **Read it before
 writing a test, gate, migration, or policy constant that asserts who may do
-what.** If the policy is recorded there, build to it. If it is not, that is
+what.** If the policy is recorded there, or in a source it indexes under
+"Decisions recorded elsewhere", build to it. If it is in neither, that is
 **OWNER DECISION REQUIRED**: say so and stop. Inventing the answer is the
 failure it exists to prevent. If code you are reading contradicts an entry,
 that is a finding. Report it; do not assume the entry is stale.
@@ -399,13 +404,9 @@ That file records decisions, not environment state.
 
 ### Brief header -- required on every PR and status report
 
-```
-SESSION:     <thread name / branch prefix>
-MIGRATIONS:  NONE | <slug list>          <-- never omit
-STACKED ON:  NONE | #NNN (state the order)
-CONTESTED:   files other sessions may also touch
-SCOPE:       what the owner authorized, in his words
-```
+The five lines -- `SESSION`, `MIGRATIONS`, `STACKED ON`, `CONTESTED`, `SCOPE`
+-- and what each takes are in `.github/pull_request_template.md`, "Brief
+header". Copy them from there; a status report uses the same block.
 
 `MIGRATIONS` matters most. A release is sized and sequenced from it, and a
 missing or wrong value produces a code deploy against a schema that does not
@@ -559,9 +560,11 @@ inferred. Where a claim has an obvious way to check it, the check is named.
   you have pushed. The agent container has only the `psql` client, no
   Postgres, so a session there cannot run `.pg.test.ts` or
   `npm run test:migrations`; `pre-release-migrations.yml` is that gate.
-- **Windows (Jason's PC):** embedded-Postgres suites run locally, but a killed
-  jest run skips cleanup for every suite, orphaning `postgres.exe` and leaving
-  `%TEMP%\ppbf-*-pg-test-*` folders. Run one pg suite per jest process with a
+- **Windows (Jason's PC):** embedded-Postgres suites run locally. Since #956
+  (`6d1139c9`), leftover `%TEMP%\ppbf-*-pg-test-*` folders are swept when the
+  next suite starts (`sweepStaleDataDirs`,
+  `apps/web/scripts/lib/embedded-pg-cleanup.mjs`), but a killed jest run can
+  still orphan `postgres.exe`. Run one pg suite per jest process with a
   timeout long enough to finish.
 - Playwright runs from `apps/web`, with
   `PPBF_CHROMIUM_PATH=/opt/pw-browsers/chromium`. Never run
@@ -606,7 +609,7 @@ it renders begins reading the session store.
 When sources disagree:
 
 1. current executable code and enforced infrastructure describe current behavior;
-2. Jason's rules and decisions outrank every repository document below, in this order: his user-level rules, then his workspace rules (both kept outside this repository; for Claude Code, `~/.claude/CLAUDE.md` and `~/.claude/rules/ppbf-workspace.md`), then `docs/current/OWNER_DECISIONS.md`. A lower one may narrow a higher one. Where a recorded decision says explicitly that it supersedes a rule line -- OD-2026-09-28-001 supersedes the lane list (OD-2026-09-25-002, which the workspace rules' LANES line cites) and OD-2026-09-28-003 supersedes ChatGPT's storage and ledger duties in the workspace rules -- that decision governs on that point and the rule file is due an update; every other contradiction between them goes to Jason;
+2. Jason's rules and decisions outrank every repository document below, in this order: his user-level rules, then his workspace rules (both kept outside this repository; for Claude Code, `~/.claude/CLAUDE.md` and `~/.claude/rules/ppbf-workspace.md`), then `docs/current/OWNER_DECISIONS.md`. A lower one may narrow a higher one. Where a recorded decision says explicitly that it supersedes a rule line -- OD-2026-09-28-001 supersedes the lane list (OD-2026-09-25-002) and OD-2026-09-28-003 supersedes ChatGPT's storage and ledger duties in the workspace rules -- that decision governs on that point; every other contradiction between them goes to Jason;
 3. the current request from Jason, an approved work order, or an assigned ticket defines implementation intent/scope. A new decision from Jason is recorded in `docs/current/OWNER_DECISIONS.md` (OD-2026-09-28-003). Jason's own current instruction is his newest decision and governs; where it changes a recorded decision, say which entry, and it is recorded there as a new one. A recorded decision wins over a newer work order until Jason records a new one, and a work order must name the decision it replaces (OD-2026-09-28-010 item 10) -- that rule governs work orders, not Jason's own word;
 4. this file governs how AI work is done;
 5. `docs/current/ACTIVE_WORK.md` records blocked and intentionally parked work, open owner questions, and the build list;

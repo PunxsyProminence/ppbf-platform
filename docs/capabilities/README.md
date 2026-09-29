@@ -76,11 +76,12 @@ one it carries most often is *mapped*.
 paper" as an open owner decision, while this backlog marked 151 Consent /
 Waiver DONE. Traced on 2026-08-03:
 
-- `pilot.waivers` is in the base schema at `pilot_slice_postgres.sql:421`, with
+- `pilot.waivers` is in the base schema,
+  `infra/azure/pilot_slice_postgres.sql` (`create table if not exists pilot.waivers`), with
   an athlete foreign key, `signed_by_name`, `signed_by_role`, `signed_at`,
   `consent_version` and `status`.
 - `POST /api/pilot/intake/domain-upsert` with `entity_type: 'waiver'` writes it
-  (`intake.ts:480` → `upsertWaiver`), guarded by
+  (`upsertWaiver` in `apps/web/src/server/pilot/intake.ts`), guarded by
   `requireRole(['organization_admin', 'coach'])`.
 - That route is **not** behind `PPBF_INTAKE_PROMOTION_ENABLED`, so it works in
   production today.

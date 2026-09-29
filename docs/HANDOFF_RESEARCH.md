@@ -1,7 +1,7 @@
 # Handoff: research and evidence
 
-A standing brief for an agent that owns the questions in this platform that no
-amount of coding can close. Sibling of `docs/EXTERNAL_AUDIT_PROMPTS.md` and
+A standing brief for whichever agent Jason asks to work the questions in this
+platform that no amount of coding can close. Sibling of `docs/EXTERNAL_AUDIT_PROMPTS.md` and
 `docs/HANDOFF_VISUALS.md`.
 
 Read `AGENT_KERNEL.md` first, then `docs/current/ACTIVE_WORK.md` (blocked and
@@ -37,17 +37,23 @@ Carry sources inline.
 
 ## Where your output goes
 
-Research is ChatGPT's lane (OD-2026-09-21-001), and ChatGPT is read-only on the
-repository. **Research goes to the Admin@ OneDrive folder `Library Intake/_CONTROL -
+Roles are OD-2026-09-28-001: Claude Code is the only builder; ChatGPT is the
+architect and reviewer and is read-only on the repository; no other AI holds a
+standing role, and research is not one. Whoever Jason asks to do this research, the
+rules below hold. What each AI can actually reach (repository, drives,
+folders) is the capability table in `AGENT_KERNEL.md` ("Capabilities, by where
+they were checked"; OD-2026-09-28-002); check it before planning a hand-off.
+**Research goes to the Admin@ OneDrive folder `Library Intake/_CONTROL -
 Registers and Coverage Maps/AI_GOVERNANCE/REVIEW_REQUIRED/PPBF_FULL_APP_RESEARCH_BACKLOG_NOT_BUILD_SOURCE/`**,
 marked NOT APP SOURCE: Markdown with inline citations, one item per file. It
 stays there until it has been crosswalked, checked for duplicates and drift, and
 promoted by Jason.
 
 Only promoted input reaches the repository. The artifact goes to Claude through
-drive-root `PPBF-AI-Lanes/ChatGPT-Handoffs/`, with the ledger carrying a summary
-and pointer, and Claude opens a draft PR per item under `docs/research/` only
-under that promotion or an approved work order. That directory does not exist
+drive-root `PPBF-AI-Lanes/ChatGPT-Handoffs/`, the work-order inbox; the OneDrive
+decision ledger takes no new entries (both OD-2026-09-28-003). Claude opens a
+draft PR per item under `docs/research/` only under that promotion or an
+approved work order. That directory does not exist
 yet; the first such PR creates it, other agents do not touch it, and those PRs
 are not marked ready for review.
 

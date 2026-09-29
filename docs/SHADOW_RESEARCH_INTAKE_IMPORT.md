@@ -1,5 +1,7 @@
 # SHADOW research intake import
 
+> **Status (2026-09-28):** current. Checked against code that day: the package counts below match `EXPECTED_COUNTS` (`apps/web/scripts/import-shadow-research.mjs:19-25`), and the workflows and approval routes it names exist. The step-by-step operator procedure is [SHADOW_RESEARCH_IMPORT_RUNBOOK.md](SHADOW_RESEARCH_IMPORT_RUNBOOK.md).
+
 This document covers the deterministic import of a **derived GitHub research corpus** into the SHADOW Library. It does not define original-file custody or replace the governed Microsoft archive.
 
 For the archive, provenance, taxonomy, and source-of-truth boundaries, start with §1.0 of [SHADOW_RESEARCH_ARCHITECTURE.md](SHADOW_RESEARCH_ARCHITECTURE.md), the section verified on 2026-08-24; the rest of that document is PROPOSED (OD-2026-09-28-010 item 25).
