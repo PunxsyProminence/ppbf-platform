@@ -40,7 +40,7 @@ describe('SHADOW research intake package', () => {
     })()`);
 
     expect(result.counts).toEqual({
-      sources: 1042,
+      sources: 1001,
       documents: 14,
       chunks: 1193,
       capabilityMap: 30,

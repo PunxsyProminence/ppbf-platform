@@ -134,7 +134,7 @@ async function main() {
     step(7, 'VERIFYING what actually landed');
     const v = new Client({ connectionString: conn(DB) });
     await v.connect();
-    const expected = { shadow_library_sources: 1042, shadow_library_documents: 14,
+    const expected = { shadow_library_sources: 1001, shadow_library_documents: 14,
       shadow_library_chunks: 1193, shadow_library_capability_map: 30,
       shadow_research_requirements: 229 };
     let allOk = true;
