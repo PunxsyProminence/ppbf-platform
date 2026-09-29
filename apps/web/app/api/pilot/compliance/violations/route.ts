@@ -3,15 +3,18 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import {
+  ComplianceViolationAlreadyFiledError,
   type ComplianceViolationTransition,
   createComplianceViolation,
+  FILM_STUDY_PROPOSAL_SOURCE,
   getComplianceRuleById,
   getComplianceViolationById,
   getOrganizationViolations,
   transitionComplianceViolation,
 } from '@/src/server/pilot/compliance';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
-import { hiddenNotFound, parseSafeLimit, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
+import { hiddenNotFound, isUuid, parseSafeLimit, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
+import { getFilmStudyProposal } from '@/src/server/pilot/shadowFilmStudyProposals';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 
 export const runtime = 'nodejs';
@@ -107,6 +110,48 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const details = body.details && typeof body.details === 'object' && !Array.isArray(body.details)
+      ? body.details
+      : {};
+
+    // details.source and details.proposal_id say where a violation came
+    // from, so only the server may vouch for them. The one source it can
+    // vouch for is a Film Study proposal; any other claimed source (a
+    // hand-filed violation calling itself a machine detection, say) and any
+    // proposal cited outside that source are refused, not stored.
+    if (details.source !== undefined && details.source !== FILM_STUDY_PROPOSAL_SOURCE) {
+      throw new Error(`Unsupported details.source: the only supported source is "${FILM_STUDY_PROPOSAL_SOURCE}"`);
+    }
+    if (details.proposal_id !== undefined && details.source !== FILM_STUDY_PROPOSAL_SOURCE) {
+      throw new Error(`Unsupported details.proposal_id: only a violation with details.source "${FILM_STUDY_PROPOSAL_SOURCE}" cites a proposal`);
+    }
+
+    // A violation escalated from the Film Study review queue names the
+    // proposal it came from. That citation is provenance an admin will follow,
+    // so it has to be true: the proposal must exist in THIS organization and
+    // be about the same athlete and the same video the violation is filed
+    // against. Anything else is refused without revealing whether the
+    // proposal exists. Its stored details are then written by
+    // createComplianceViolation from the verified id alone, so nothing else
+    // the request put in details sits beside the citation looking backed by
+    // it.
+    let filmStudyProposalId: string | undefined;
+    if (details.source === FILM_STUDY_PROPOSAL_SOURCE) {
+      const proposalId = typeof details.proposal_id === 'string' ? details.proposal_id : '';
+      if (!isUuid(proposalId)) {
+        throw new Error('Missing details.proposal_id: a Film Study escalation must name its proposal');
+      }
+      const proposal = await getFilmStudyProposal(principal.organizationId, proposalId);
+      if (
+        !proposal
+        || proposal.athlete_id !== body.athlete_id
+        || proposal.video_session_id !== body.video_session_id
+      ) {
+        return hiddenNotFound();
+      }
+      filmStudyProposalId = proposal.proposal_id;
+    }
+
     const violation = await createComplianceViolation({
       organizationId: principal.organizationId,
       ruleId: body.rule_id,
@@ -114,11 +159,39 @@ export async function POST(request: NextRequest) {
       athleteId: body.athlete_id,
       detectedByAccountId: principal.accountId,
       severity: body.severity || 'medium',
-      details: body.details || {},
+      ...(filmStudyProposalId ? { filmStudyProposalId } : { details }),
+    });
+
+    // Same non-fatal audit the lifecycle transitions below write: the
+    // violation row is already committed, so a lost audit row is logged for
+    // an operator rather than reported to the filer as a failed filing.
+    await auditViolationEvent({
+      event_type: 'create',
+      actor_account_id: principal.accountId,
+      actor_role: principal.role,
+      organization_id: principal.organizationId,
+      entity_type: 'compliance_violation',
+      entity_id: violation.violation_id,
+      details: {
+        action: 'violation_filed',
+        rule_id: body.rule_id,
+        athlete_id: body.athlete_id,
+        video_session_id: body.video_session_id || null,
+        severity: violation.severity,
+        source: filmStudyProposalId ? FILM_STUDY_PROPOSAL_SOURCE : null,
+        proposal_id: filmStudyProposalId ?? null,
+      },
+      shadow_mirror: false,
     });
 
     return NextResponse.json(violation, { status: 201 });
   } catch (error) {
+    // The same proposal is already filed under the same rule. Refused before
+    // any insert, so neither a second register row nor a second escalation
+    // exists; the existing violation is named so it can be found.
+    if (error instanceof ComplianceViolationAlreadyFiledError) {
+      return NextResponse.json({ error: error.message, violation_id: error.violationId }, { status: 409 });
+    }
     return jsonError(error);
   }
 }

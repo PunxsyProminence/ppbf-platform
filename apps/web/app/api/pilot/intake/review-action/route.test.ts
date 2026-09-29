@@ -6,7 +6,18 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { createOrUpdateMicrosoftStaffAccount } from '@/src/server/pilot/staffProvisioning';
 import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
 import { upsertAthlete } from '@/src/server/pilot/entities';
-import { assertActorCanAccessIntakeCase, createReadiness, getIntakeCaseById, updateIntakeCaseStatus } from '@/src/server/pilot/intake';
+import {
+  assertActorCanAccessIntakeCase,
+  assertGuardianAccountUnchanged,
+  createReadiness,
+  getIntakeCaseById,
+  linkGuardianAthlete,
+  updateIntakeCaseStatus,
+  upsertGuardian,
+  upsertWaiver,
+} from '@/src/server/pilot/intake';
+import { ConflictError } from '@/src/server/pilot/errors';
+import { queryOne } from '@/src/server/pilot/db';
 import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -17,7 +28,14 @@ jest.mock('@/src/server/pilot/http', () => {
 // Guardian provisioning is the subject; everything the promotion path touches
 // on the way to it is stubbed so a failure here is about the guardian, not
 // about the database.
+//
+// Except the pre-write login checks (guardian and athlete), which run for real
+// against a stubbed pilot.accounts lookup: the refusals they are tested for
+// have to be the route's own behaviour, not a mock's.
+jest.mock('@/src/server/pilot/db', () => ({ query: jest.fn(), queryOne: jest.fn(), withTransaction: jest.fn() }));
 jest.mock('@/src/server/pilot/staffProvisioning', () => ({
+  assertGuardianLoginProvisionable:
+    jest.requireActual('@/src/server/pilot/staffProvisioning').assertGuardianLoginProvisionable,
   createOrUpdateMicrosoftStaffAccount: jest.fn(),
 }));
 jest.mock('@/src/server/pilot/auth', () => ({
@@ -45,6 +63,9 @@ jest.mock('@/src/server/pilot/shadow', () => ({ buildReviewResearchFields: jest.
 jest.mock('@/src/server/pilot/shadowResearch', () => ({ createShadowResearchRequirement: jest.fn() }));
 jest.mock('@/src/server/pilot/intake', () => ({
   assertActorCanAccessIntakeCase: jest.fn(),
+  assertAthleteAccountIdProvisionable:
+    jest.requireActual('@/src/server/pilot/intake').assertAthleteAccountIdProvisionable,
+  assertGuardianAccountUnchanged: jest.fn(),
   getIntakeCaseById: jest.fn(),
   // Promotion refuses outright when a case has no scanned documents, so the
   // fixture supplies one that passes review.
@@ -76,6 +97,13 @@ const mockCreateResearchRequirement = createShadowResearchRequirement as jest.Mo
 >;
 const mockCreateReadiness = createReadiness as jest.MockedFunction<typeof createReadiness>;
 const mockUpsertAthlete = upsertAthlete as jest.MockedFunction<typeof upsertAthlete>;
+const mockAssertGuardianUnchanged = assertGuardianAccountUnchanged as jest.MockedFunction<
+  typeof assertGuardianAccountUnchanged
+>;
+const mockUpsertGuardian = upsertGuardian as jest.MockedFunction<typeof upsertGuardian>;
+const mockLinkGuardianAthlete = linkGuardianAthlete as jest.MockedFunction<typeof linkGuardianAthlete>;
+const mockQueryOne = queryOne as jest.Mock;
+const mockUpsertWaiver = upsertWaiver as jest.MockedFunction<typeof upsertWaiver>;
 
 function principal(): PilotPrincipal {
   return {
@@ -88,7 +116,10 @@ function principal(): PilotPrincipal {
   };
 }
 
-function promoteRequest(guardian: Record<string, unknown> | undefined) {
+function promoteRequest(
+  guardian: Record<string, unknown> | undefined,
+  athleteExtra: Record<string, unknown> = {},
+) {
   return new NextRequest('http://localhost/api/pilot/intake/review-action', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -104,6 +135,7 @@ function promoteRequest(guardian: Record<string, unknown> | undefined) {
           gym_status: 'active',
           emergency_contact: 'Guardian 555-0102',
           coach_id: 'acct-admin',
+          ...athleteExtra,
         },
         ...(guardian ? { guardian } : {}),
       },
@@ -111,8 +143,39 @@ function promoteRequest(guardian: Record<string, unknown> | undefined) {
   });
 }
 
+// Answers the pre-write pilot.accounts lookups by what they ask for rather
+// than by call order, so a test states the accounts that exist and nothing
+// else. Anything not named does not exist.
+function stubAccounts(accounts: {
+  byEmail?: Record<string, Record<string, unknown>>;
+  byId?: Record<string, Record<string, unknown>>;
+}) {
+  mockQueryOne.mockImplementation(async (sql: string, params: unknown[]) => {
+    const key = String(params?.[0]);
+    if (sql.includes('lower(login_email) = $1')) return accounts.byEmail?.[key] ?? null;
+    if (sql.includes('where account_id = $1')) return accounts.byId?.[key] ?? null;
+    return null;
+  });
+}
+
+// The promotion's writes, in order: the athlete record, the athlete's account,
+// the guardian's login, the guardian record and its link, and the case status.
+// A refusal has to come before every one of them.
+function expectNothingWritten() {
+  expect(mockUpsertAthlete).not.toHaveBeenCalled();
+  expect(mockAthleteAccount).not.toHaveBeenCalled();
+  expect(mockStaffProvision).not.toHaveBeenCalled();
+  expect(mockUpsertGuardian).not.toHaveBeenCalled();
+  expect(mockLinkGuardianAthlete).not.toHaveBeenCalled();
+  expect(mockUpdateStatus).not.toHaveBeenCalled();
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
+  // mockReset, not only clearAllMocks: a refusal test leaves a queued
+  // lookup result behind, and clearAllMocks would carry it into the next test.
+  // Reset, it answers "no such account" -- a new guardian login.
+  mockQueryOne.mockReset();
   process.env.PPBF_INTAKE_PROMOTION_ENABLED = 'true';
   mockRequirePrincipal.mockResolvedValue(principal());
   mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'approved' } as never);
@@ -145,6 +208,10 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
       organizationId: 'org-real',
       role: 'parent',
       accountIdHint: 'guardian-1',
+      // R5: provisioning itself also refuses to re-role an existing account,
+      // and to reactivate a deleted one.
+      refuseRoleChange: true,
+      refuseDeletedLogin: true,
     });
   });
 
@@ -169,18 +236,109 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     expect(mockStaffProvision).not.toHaveBeenCalled();
   });
 
+  // It used to be refused only after upsertAthlete and the athlete's account
+  // had been written, so the admin saw a 400 for a promotion that had half
+  // happened.
+  test('a guardian PIN is refused before the athlete record or any account is written', async () => {
+    const response = await POST(promoteRequest({ ...guardianBase, pin: '482913' }, { account_id: 'athlete-1' }));
+
+    expect(response.status).toBe(400);
+    expectNothingWritten();
+  });
+
   test('requires an email when an account is being provisioned', async () => {
     const withoutEmail = { ...guardianBase };
     delete (withoutEmail as { email?: string }).email;
 
-    const response = await POST(promoteRequest(withoutEmail));
+    const response = await POST(promoteRequest(withoutEmail, { account_id: 'athlete-1' }));
     const payload = await response.json();
 
     // Without an email there is no identity for Microsoft sign-in to resolve,
     // so an account provisioned here could never be reached.
     expect(response.status).toBe(400);
     expect(String(payload.error)).toMatch(/Missing guardian\.email/);
-    expect(mockStaffProvision).not.toHaveBeenCalled();
+    // Refused before the first write, not after the athlete record and the
+    // athlete's account.
+    expectNothingWritten();
+  });
+
+  // Otherwise the athlete account is created under the id and guardian
+  // provisioning then refuses it as taken, after the athlete writes.
+  test('a guardian account_id equal to the athlete account_id is refused before anything is written', async () => {
+    const response = await POST(promoteRequest(guardianBase, { account_id: ' guardian-1 ' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe(
+      'Unsupported guardian.account_id: it is the same as athlete.account_id. '
+      + 'The athlete and the guardian each need their own login.',
+    );
+    expectNothingWritten();
+  });
+
+  // pilot.parents.parent_id and full_name are NOT NULL. Missing either used to
+  // pass every pre-write check; the athlete record, the athlete's account and
+  // an active parent login were written; and upsertGuardian then failed on the
+  // constraint, which reached the admin as "Internal server error".
+  test.each([
+    ['parent_id', 'Missing guardian.parent_id'],
+    ['full_name', 'Missing guardian.full_name'],
+  ])('a guardian without %s is refused 400 before anything is written', async (field, message) => {
+    const withoutField: Record<string, unknown> = { ...guardianBase };
+    delete withoutField[field];
+
+    const response = await POST(promoteRequest(withoutField, { account_id: 'athlete-1' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe(message);
+    expectNothingWritten();
+  });
+
+  test.each(['parent_id', 'full_name'])('a blank guardian %s is refused like a missing one', async (field) => {
+    const response = await POST(promoteRequest({ ...guardianBase, [field]: '   ' }));
+
+    expect(response.status).toBe(400);
+    expectNothingWritten();
+  });
+
+  test('the guardian record is written, checked and linked under the trimmed parent_id and full_name', async () => {
+    const response = await POST(promoteRequest({ ...guardianBase, parent_id: ' parent-1 ', full_name: ' Gate Guardian ' }));
+
+    expect(response.status).toBe(200);
+    expect(mockAssertGuardianUnchanged).toHaveBeenCalledWith(expect.objectContaining({ parentId: 'parent-1' }));
+    expect(mockUpsertGuardian).toHaveBeenCalledWith(
+      expect.objectContaining({ parentId: 'parent-1', fullName: 'Gate Guardian' }),
+    );
+    expect(mockLinkGuardianAthlete).toHaveBeenCalledWith(expect.objectContaining({ parentId: 'parent-1' }));
+  });
+
+  // Provisioning's upsert reactivates whatever login it is pointed at, and
+  // reads nothing about deletion. A deleted family's guardian came back with
+  // a working login, and the retention purge later removed that live login.
+  test('a guardian email that belongs to a deleted parent login is refused 409 before anything is written', async () => {
+    stubAccounts({
+      byEmail: {
+        'guardian@example.org': {
+          account_id: 'guardian-1',
+          organization_id: 'org-real',
+          role: 'parent',
+          auth_provider: 'microsoft',
+          is_platform_owner: false,
+          deleted_at: '2026-03-01 12:00:00+00',
+        },
+      },
+    });
+
+    const response = await POST(promoteRequest(guardianBase, { account_id: 'athlete-1' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.code).toBe('DELETED_GUARDIAN_LOGIN');
+    expect(payload.error).toBe(
+      'Conflict: guardian@example.org belongs to a guardian login that was deleted. Intake does not restore a deleted login.',
+    );
+    expectNothingWritten();
   });
 
   test('a guardian record with no account_id provisions no account', async () => {
@@ -193,6 +351,211 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     // a login, and must not silently create one.
     expect(response.status).toBe(200);
     expect(mockStaffProvision).not.toHaveBeenCalled();
+  });
+
+  // A guardian record already linked to one login must not be re-pointed to
+  // another by a promotion: that would cut the real parent off from every
+  // child on the record. upsertGuardian refuses it, but this route has no
+  // transaction and writes the athlete and both accounts first -- so the
+  // refusal has to land before any of them, not halfway through.
+  test('a guardian record linked to a different login is refused before anything is written', async () => {
+    mockAssertGuardianUnchanged.mockRejectedValueOnce(new ConflictError(
+      'Conflict: guardian record "parent-1" is already linked to another login account, not "guardian-1".',
+      'GUARDIAN_ACCOUNT_CONFLICT',
+    ));
+
+    const response = await POST(promoteRequest(guardianBase));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(String(payload.error)).toMatch(/already linked to another login account/);
+    expect(mockAssertGuardianUnchanged).toHaveBeenCalledWith({
+      organizationId: 'org-real',
+      parentId: 'parent-1',
+      accountId: 'guardian-1',
+    });
+    expect(mockUpsertAthlete).not.toHaveBeenCalled();
+    expect(mockAthleteAccount).not.toHaveBeenCalled();
+    expect(mockStaffProvision).not.toHaveBeenCalled();
+    expect(mockUpsertGuardian).not.toHaveBeenCalled();
+    expect(mockUpdateStatus).not.toHaveBeenCalled();
+  });
+
+  test('the guardian check runs, scoped to the session organization, before the first promotion write', async () => {
+    const response = await POST(promoteRequest({ ...guardianBase, organization_id: 'org-attacker' }));
+
+    expect(response.status).toBe(200);
+    expect(mockAssertGuardianUnchanged).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: 'org-real', parentId: 'parent-1' }),
+    );
+    expect(mockAssertGuardianUnchanged.mock.invocationCallOrder[0])
+      .toBeLessThan(mockUpsertAthlete.mock.invocationCallOrder[0]);
+  });
+
+  // Provisioning keeps the login an email already has and ignores
+  // guardian.account_id. The guardian record used to be linked to
+  // guardian.account_id anyway -- any existing account, another family's
+  // parent login included, which would then see this child.
+  test('an email that already belongs to a different account is refused before anything is written', async () => {
+    stubAccounts({
+      byEmail: {
+        'guardian@example.org': {
+          account_id: 'acct-other-family',
+          organization_id: 'org-real',
+          role: 'parent',
+          auth_provider: 'microsoft',
+          is_platform_owner: false,
+        },
+      },
+    });
+
+    const response = await POST(promoteRequest({ ...guardianBase, account_id: 'acct-named-in-payload' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(String(payload.error)).toMatch(/already belongs to a different login account than "acct-named-in-payload"/);
+    expect(mockQueryOne).toHaveBeenCalledWith(
+      expect.stringContaining('lower(login_email) = $1'),
+      ['guardian@example.org'],
+    );
+    expect(mockUpsertAthlete).not.toHaveBeenCalled();
+    expect(mockAthleteAccount).not.toHaveBeenCalled();
+    expect(mockStaffProvision).not.toHaveBeenCalled();
+    expect(mockUpsertGuardian).not.toHaveBeenCalled();
+    expect(mockUpdateStatus).not.toHaveBeenCalled();
+  });
+
+  test('an account_id another identity already holds is refused before anything is written', async () => {
+    stubAccounts({ byId: { 'guardian-1': { account_id: 'guardian-1', organization_id: 'org-real', role: 'parent' } } });
+
+    const response = await POST(promoteRequest(guardianBase));
+    const payload = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(String(payload.error)).toMatch(/account_id is already in use by another identity/);
+    expectNothingWritten();
+  });
+
+  // R5 (Jason 2026-09-29, "A"). Provisioning re-roles an existing account to
+  // the role it is given, so a guardian email that belonged to a coach turned
+  // the coach's login into a parent login as a side effect of promotion.
+  describe('R5: a guardian email or account_id that belongs to an existing non-parent account', () => {
+    test.each(['coach', 'staff', 'volunteer', 'board', 'organization_admin', 'admin', 'athlete'])(
+      'an existing %s account named by email is refused with 409 before anything is written',
+      async (existingRole) => {
+        stubAccounts({
+          byEmail: {
+            'guardian@example.org': {
+              account_id: 'guardian-1',
+              organization_id: 'org-real',
+              role: existingRole,
+              auth_provider: existingRole === 'athlete' ? 'ppbf_local' : 'microsoft',
+              is_platform_owner: false,
+            },
+          },
+        });
+
+        const response = await POST(promoteRequest(guardianBase, { account_id: 'athlete-1' }));
+        const payload = await response.json();
+
+        expect(response.status).toBe(409);
+        expect(payload.error).toBe(
+          `Conflict: guardian@example.org already belongs to an existing ${existingRole} account in this organization. `
+          + "Intake does not change an existing account's role, so it cannot make that account a parent login. "
+          + 'Use a different email address.',
+        );
+        expectNothingWritten();
+      },
+    );
+
+    test('the email is matched the way sign-in matches it: trimmed and lower-cased', async () => {
+      stubAccounts({
+        byEmail: {
+          'guardian@example.org': {
+            account_id: 'guardian-1',
+            organization_id: 'org-real',
+            role: 'coach',
+            auth_provider: 'microsoft',
+            is_platform_owner: false,
+          },
+        },
+      });
+
+      const response = await POST(promoteRequest({ ...guardianBase, email: '  Guardian@Example.ORG ' }));
+
+      expect(response.status).toBe(409);
+      expectNothingWritten();
+    });
+
+    test('a new email whose account_id belongs to an existing coach is refused with 409 naming it', async () => {
+      stubAccounts({ byId: { 'guardian-1': { account_id: 'guardian-1', organization_id: 'org-real', role: 'coach' } } });
+
+      const response = await POST(promoteRequest(guardianBase));
+      const payload = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(String(payload.error)).toMatch(
+        /^Conflict: account_id "guardian-1" already belongs to an existing coach account in this organization\./,
+      );
+      expectNothingWritten();
+    });
+
+    test('an existing parent login for that email is still linked, not refused', async () => {
+      stubAccounts({
+        byEmail: {
+          'guardian@example.org': {
+            account_id: 'guardian-1',
+            organization_id: 'org-real',
+            role: 'parent',
+            auth_provider: 'microsoft',
+            is_platform_owner: false,
+          },
+        },
+      });
+
+      const response = await POST(promoteRequest(guardianBase));
+
+      expect(response.status).toBe(200);
+      expect(mockStaffProvision).toHaveBeenCalledWith(expect.objectContaining({ refuseRoleChange: true }));
+    });
+
+    test('an email with no account_id provisions nothing, so no account is looked up or changed', async () => {
+      const recordOnly = { ...guardianBase };
+      delete (recordOnly as { account_id?: string }).account_id;
+
+      const response = await POST(promoteRequest(recordOnly));
+
+      expect(response.status).toBe(200);
+      expect(mockQueryOne).not.toHaveBeenCalled();
+      expect(mockStaffProvision).not.toHaveBeenCalled();
+    });
+  });
+
+  test('the guardian record is linked to the account provisioning wrote, not the payload account_id', async () => {
+    mockStaffProvision.mockResolvedValueOnce({
+      accountId: 'acct-provisioned',
+      organizationId: 'org-real',
+      role: 'parent',
+      loginEmail: 'guardian@example.org',
+      created: false,
+    });
+
+    const response = await POST(promoteRequest(guardianBase));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertGuardian).toHaveBeenCalledWith(
+      expect.objectContaining({ parentId: 'parent-1', accountId: 'acct-provisioned' }),
+    );
+  });
+
+  test('a guardian record with no account_id leaves its login link alone', async () => {
+    const recordOnly = { ...guardianBase };
+    delete (recordOnly as { account_id?: string }).account_id;
+
+    await POST(promoteRequest(recordOnly));
+
+    expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({ accountId: undefined }));
+    expect(mockQueryOne).not.toHaveBeenCalled();
   });
 
   test('promotion without a guardian still works', async () => {
@@ -238,6 +601,85 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     expect(response.status).toBe(400);
     expect(String(payload.error)).toMatch(/Unsupported athlete\.pin/);
     expect(mockAthleteAccount).not.toHaveBeenCalled();
+    // It used to be refused after upsertAthlete had written the record.
+    expectNothingWritten();
+  });
+
+  // createOrUpdateAthleteAccount's update branch re-roles any same-org account
+  // it is pointed at into a locked athlete account (PIN cleared, deactivated,
+  // sessions revoked). Same rule as R5 on the guardian side.
+  test.each(['coach', 'parent', 'staff', 'organization_admin', 'admin'])(
+    'an athlete account_id that belongs to an existing %s account is refused with 409 before anything is written',
+    async (existingRole) => {
+      stubAccounts({ byId: { 'athlete-1': { organization_id: 'org-real', role: existingRole } } });
+
+      const response = await POST(athletePromoteRequest({ account_id: 'athlete-1' }));
+      const payload = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(payload.error).toBe(
+        `Conflict: account_id "athlete-1" already belongs to an existing ${existingRole} account in this organization. `
+        + "Intake does not change an existing account's role, so it cannot make that account an athlete login. "
+        + 'Use a different account_id.',
+      );
+      expectNothingWritten();
+    },
+  );
+
+  // createOrUpdateAthleteAccount refuses this itself, but only after
+  // upsertAthlete had written the athlete record: a 409 ("Account already
+  // exists in another organization") for a promotion that had half happened.
+  // Now a 403, before the first write.
+  test('an athlete account_id held in another organization is refused 403 before anything is written', async () => {
+    stubAccounts({ byId: { 'athlete-1': { organization_id: 'org-other', role: 'athlete' } } });
+
+    const response = await POST(athletePromoteRequest({ account_id: 'athlete-1' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(payload.error).toBe('Forbidden: account already exists in another organization');
+    expectNothingWritten();
+  });
+
+  test('an existing athlete account in this organization is still re-provisioned', async () => {
+    stubAccounts({ byId: { 'athlete-1': { organization_id: 'org-real', role: 'athlete', athlete_id: null } } });
+
+    const response = await POST(athletePromoteRequest({ account_id: 'athlete-1' }));
+
+    expect(response.status).toBe(200);
+    expect(mockAthleteAccount).toHaveBeenCalledWith('athlete-1', 'ath-1', 'org-real');
+  });
+
+  test('re-promoting the athlete whose login it already is still re-provisions it', async () => {
+    stubAccounts({ byId: { 'athlete-1': { organization_id: 'org-real', role: 'athlete', athlete_id: 'ath-1' } } });
+
+    const response = await POST(athletePromoteRequest({ account_id: 'athlete-1' }));
+
+    expect(response.status).toBe(200);
+    expect(mockAthleteAccount).toHaveBeenCalledWith('athlete-1', 'ath-1', 'org-real');
+  });
+
+  // createOrUpdateAthleteAccount's update branch re-binds the login to the
+  // promoted athlete, clears its PIN and revokes its sessions. Naming another
+  // child's login -- a typo, a reused id -- locked that child out, and the next
+  // activation code for the login showed this child's records to that family.
+  test('an athlete account_id that is another athlete record\'s login is refused 409 before anything is written', async () => {
+    stubAccounts({
+      byId: { 'athlete-1': { organization_id: 'org-real', role: 'athlete', athlete_id: 'ath-other-child' } },
+    });
+
+    const response = await POST(athletePromoteRequest({ account_id: 'athlete-1' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.code).toBe('EXISTING_ATHLETE_ACCOUNT_CONFLICT');
+    expect(payload.error).toBe(
+      'Conflict: account_id "athlete-1" is already the login of a different athlete record in this organization. '
+      + "Intake does not move an athlete's login to another athlete record. Use a different account_id.",
+    );
+    // The other child's record id is not disclosed.
+    expect(payload.error).not.toContain('ath-other-child');
+    expectNothingWritten();
   });
 
   test('provisions the athlete account credential-less when account_id is given without a pin', async () => {
@@ -347,6 +789,72 @@ describe('promotion readiness is validated before it reaches pilot.readiness', (
   });
 });
 
+
+// promotion.waiver.status reached pilot.waivers unread. With
+// pilot_waivers_status_check in place a bad value would fail at upsertWaiver
+// as a 500 -- after the athlete, account, guardian, emergency contact and
+// medical writes had already committed, since promotion has no transaction.
+// It is checked before the first write instead, like the readiness score.
+describe('promotion waiver status is validated before any promotion write', () => {
+  function waiverPromoteRequest(waiver: Record<string, unknown>) {
+    return new NextRequest('http://localhost/api/pilot/intake/review-action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        intake_case_id: 'case-1',
+        action: 'promote',
+        promotion: {
+          athlete: {
+            athlete_id: 'ath-1',
+            full_name: 'Gate Athlete',
+            dob: '2011-02-10',
+            weight_class: '119',
+            gym_status: 'active',
+            emergency_contact: 'Guardian 555-0102',
+            coach_id: 'acct-admin',
+          },
+          waiver,
+        },
+      }),
+    });
+  }
+
+  const WAIVER = {
+    waiver_type: 'general',
+    signed_by_name: 'Pat Guardian',
+    signed_by_role: 'guardian',
+    signed_at: '2026-09-29T12:00:00.000Z',
+    consent_version: 'v1',
+  };
+
+  test.each(['signed', 'declined', 'withdrawn', 'missing'])('%p promotes and is written as given', async (status) => {
+    const response = await POST(waiverPromoteRequest({ ...WAIVER, status }));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertWaiver).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-real',
+      athleteId: 'ath-1',
+      status,
+      recordedByAccountId: 'acct-admin',
+    }));
+  });
+
+  test.each([
+    ['padded and capitalised', ' Signed '],
+    ['outside the vocabulary', 'active'],
+    ['null', null],
+    ['absent', undefined],
+  ])('a status that is %s is refused 400 before the athlete write', async (_label, status) => {
+    const response = await POST(waiverPromoteRequest({ ...WAIVER, status }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(String(payload.error)).toMatch(/^Unsupported promotion\.waiver\.status/);
+    expect(mockUpsertAthlete).not.toHaveBeenCalled();
+    expect(mockUpsertWaiver).not.toHaveBeenCalled();
+    expect(mockUpdateStatus).not.toHaveBeenCalled();
+  });
+});
 
 describe('review-action authorizes the actor against the case before mutating it', () => {
   // The bug: the only case-authority gate was

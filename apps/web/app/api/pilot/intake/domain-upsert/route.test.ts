@@ -4,8 +4,9 @@ import { POST } from './route';
 import { assertActiveParentAccount, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { createCoachObservation, createReadiness, linkGuardianAthlete, upsertGuardian } from '@/src/server/pilot/intake';
+import { createCoachObservation, createReadiness, linkGuardianAthlete, upsertGuardian, upsertWaiver } from '@/src/server/pilot/intake';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
+import { ConflictError } from '@/src/server/pilot/errors';
 
 // The register reconciliation (Wave 9) found this route's coach_note write
 // path -- module 002 Raw Observation Intake -- carrying a role gate, athlete
@@ -40,6 +41,7 @@ jest.mock('@/src/server/pilot/intake', () => {
     upsertGuardian: jest.fn(),
     linkGuardianAthlete: jest.fn(),
     createReadiness: jest.fn(),
+    upsertWaiver: jest.fn(),
   };
 });
 
@@ -51,6 +53,7 @@ const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockAssertActiveParent = assertActiveParentAccount as jest.Mock;
 const mockUpsertGuardian = upsertGuardian as jest.Mock;
 const mockLinkGuardianAthlete = linkGuardianAthlete as jest.Mock;
+const mockUpsertWaiver = upsertWaiver as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -218,6 +221,28 @@ test('a guardian_link write with no account_id skips account validation but stil
   expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({ accountId: undefined }));
 });
 
+// Naming an existing guardian record with a different login is refused by
+// upsertGuardian (proved against a real database in guardianUpsert.pg.test.ts).
+// This pins what the route does with that refusal: the admin sees a 409 that
+// names the conflict, and the athlete is NOT linked to the guardian record.
+test('a guardian record already linked to another login is refused with a 409, and no link is made', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'acct-admin-1' }));
+  mockAccess.mockResolvedValue(undefined);
+  mockAssertActiveParent.mockResolvedValue(undefined);
+  mockUpsertGuardian.mockRejectedValueOnce(new ConflictError(
+    'Conflict: guardian record "parent-1" is already linked to another login account, not "acct-parent-1".',
+    'GUARDIAN_ACCOUNT_CONFLICT',
+  ));
+
+  const response = await POST(postRequest(GUARDIAN_LINK_BODY));
+  const payload = await response.json();
+
+  expect(response.status).toBe(409);
+  expect(String(payload.error)).toMatch(/already linked to another login account/);
+  expect(mockLinkGuardianAthlete).not.toHaveBeenCalled();
+  expect(mockAudit).not.toHaveBeenCalled();
+});
+
 // pilot.readiness.score is a NOT NULL column a coach-facing triage board
 // (readinessBoard.ts) reads as ground truth. A missing or non-numeric score
 // used to be silently coerced to a stored 0 via Number(value || 0) -- a
@@ -355,5 +380,60 @@ describe('automation_mode is held to the closed vocabulary', () => {
 
     expect(response.status).toBe(200);
     expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* pilot_waivers_status_check holds pilot.waivers.status to four values. This
+   route used to store asString(payload.status, 'signed') -- any string a
+   caller sent, and 'signed' for null or a number. The constraint would turn
+   that into a raw 500; the route checks first and answers 400 instead. */
+describe('a waiver status is held to the vocabulary before it is written', () => {
+  const WAIVER_BODY = {
+    entity_type: 'waiver',
+    athlete_id: 'ath-1',
+    payload: {
+      waiver_type: 'travel',
+      signed_by_name: 'Pat Guardian',
+      signed_by_role: 'guardian',
+      signed_at: '2026-09-29T12:00:00.000Z',
+      consent_version: 'v1',
+    },
+  };
+
+  beforeEach(() => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockAccess.mockResolvedValue(undefined);
+    mockUpsertWaiver.mockResolvedValue('waiver-1');
+  });
+
+  test.each(['signed', 'declined', 'withdrawn', 'missing'])('%p is written as given', async (status) => {
+    const response = await POST(postRequest({ ...WAIVER_BODY, payload: { ...WAIVER_BODY.payload, status } }));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertWaiver).toHaveBeenCalledWith(expect.objectContaining({ status }));
+  });
+
+  test('an omitted status still defaults to signed', async () => {
+    const response = await POST(postRequest(WAIVER_BODY));
+
+    expect(response.status).toBe(200);
+    expect(mockUpsertWaiver).toHaveBeenCalledWith(expect.objectContaining({ status: 'signed' }));
+  });
+
+  test.each([
+    ['padded and capitalised', ' Signed '],
+    ['upper case', 'SIGNED'],
+    ['outside the vocabulary', 'pending'],
+    ['empty', ''],
+    ['null', null],
+    ['a number', 1],
+  ])('a status that is %s is refused 400 and nothing is written', async (_label, status) => {
+    const response = await POST(postRequest({ ...WAIVER_BODY, payload: { ...WAIVER_BODY.payload, status } }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(String(payload.error)).toMatch(/^Unsupported payload\.status/);
+    expect(mockUpsertWaiver).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 });

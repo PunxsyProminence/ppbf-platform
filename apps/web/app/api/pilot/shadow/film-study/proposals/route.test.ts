@@ -2,11 +2,12 @@ import { NextRequest } from 'next/server';
 
 import { GET, PATCH, POST } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import {
   createCoachReportedObservation,
   getFilmStudyProposal,
+  listFilmStudyProposalAthleteIds,
   listFilmStudyProposals,
   resolveFilmStudyProposal,
 } from '@/src/server/pilot/shadowFilmStudyProposals';
@@ -18,6 +19,7 @@ jest.mock('@/src/server/pilot/http', () => ({
 jest.mock('@/src/server/pilot/access', () => ({
   ...jest.requireActual('@/src/server/pilot/access'),
   assertActorCanAccessAthlete: jest.fn(),
+  accessibleAthleteIds: jest.fn(),
 }));
 jest.mock('@/src/server/pilot/videoDestination', () => ({
   ...jest.requireActual('@/src/server/pilot/videoDestination'),
@@ -27,12 +29,15 @@ jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }
 jest.mock('@/src/server/pilot/shadowFilmStudyProposals', () => ({
   createCoachReportedObservation: jest.fn(),
   getFilmStudyProposal: jest.fn(),
+  listFilmStudyProposalAthleteIds: jest.fn(),
   listFilmStudyProposals: jest.fn(),
   resolveFilmStudyProposal: jest.fn(),
 }));
 
 const mockPrincipal = jest.mocked(requirePrincipal);
 const mockAccess = jest.mocked(assertActorCanAccessAthlete);
+const mockAccessible = jest.mocked(accessibleAthleteIds);
+const mockQueueAthletes = jest.mocked(listFilmStudyProposalAthleteIds);
 const mockAudit = jest.mocked(writePilotAuditEvent);
 const mockGet = jest.mocked(getFilmStudyProposal);
 const mockList = jest.mocked(listFilmStudyProposals);
@@ -98,6 +103,8 @@ beforeEach(() => {
   mockAudit.mockResolvedValue(undefined as never);
   mockGet.mockResolvedValue(pendingProposal as never);
   mockList.mockResolvedValue([pendingProposal] as never);
+  mockQueueAthletes.mockResolvedValue(['ATH-1']);
+  mockAccessible.mockResolvedValue(new Set(['ATH-1']));
   mockResolve.mockResolvedValue({
     ...pendingProposal,
     review_state: 'accepted',
@@ -123,6 +130,36 @@ describe('GET film study proposals', () => {
   test('narrowing to an athlete takes the per-athlete access check', async () => {
     await GET(req('GET', undefined, '?athlete_id=ATH-1'));
     expect(mockAccess).toHaveBeenCalledWith(expect.anything(), 'ATH-1');
+    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ athleteIds: ['ATH-1'] }));
+  });
+
+  // The whole-queue read the Film Study page makes. It used to list every
+  // proposal in the gym, so a coach saw observations about athletes they are
+  // neither assigned to nor covering.
+  test("without athlete_id, another coach's athlete's proposals are never requested", async () => {
+    mockQueueAthletes.mockResolvedValue(['ATH-1', 'ATH-OTHER-COACH']);
+    mockAccessible.mockResolvedValue(new Set(['ATH-1']));
+
+    const response = await GET(req('GET'));
+
+    expect(response.status).toBe(200);
+    expect(mockQueueAthletes).toHaveBeenCalledWith({ organizationId: 'org-1', state: 'pending' });
+    expect(mockAccessible).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'coach-1', role: 'coach' }),
+      ['ATH-1', 'ATH-OTHER-COACH'],
+    );
+    expect(mockList).toHaveBeenCalledTimes(1);
+    expect(mockList.mock.calls[0][0].athleteIds).toEqual(['ATH-1']);
+  });
+
+  test('a reader who may reach none of the queued athletes gets an empty athlete list, not the gym', async () => {
+    mockQueueAthletes.mockResolvedValue(['ATH-OTHER-COACH']);
+    mockAccessible.mockResolvedValue(new Set());
+
+    await GET(req('GET', undefined, '?state=all'));
+
+    expect(mockQueueAthletes).toHaveBeenCalledWith({ organizationId: 'org-1', state: 'all' });
+    expect(mockList.mock.calls[0][0].athleteIds).toEqual([]);
   });
 
   // Omega is broader in breadth but strictly NARROWER in depth

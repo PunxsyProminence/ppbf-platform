@@ -662,7 +662,14 @@ const READERS: Reader[] = [
     read: async () =>
       (await getResearchLibrary(ORG)).map((row) => (row.library_id === 'lib-ath-sb-gone' ? GONE : LIVE)),
   },
-  { name: 'Film Study proposal queue', read: async () => athleteIdsOf(await listFilmStudyProposals({ organizationId: ORG, state: 'all' })) },
+  {
+    // Both athletes named on purpose: #1015 makes the caller pass the athletes
+    // it authorized, and this asks whether the queue itself still honours the
+    // mark when a caller names a deleted one.
+    name: 'Film Study proposal queue',
+    read: async () =>
+      athleteIdsOf(await listFilmStudyProposals({ organizationId: ORG, state: 'all', athleteIds: [GONE, LIVE] })),
+  },
   { name: 'calibration clips list', read: async () => athleteIdsOf(await listCalibrationClips(ORG, PROJECT)) },
   {
     name: 'one calibration clip',

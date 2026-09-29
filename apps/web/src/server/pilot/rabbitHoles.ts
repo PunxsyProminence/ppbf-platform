@@ -6,6 +6,7 @@ import { isOrganizationAdminRole } from './access';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import { FORMULA_IDS } from './formulas/types';
+import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
 import { PLATFORM_LIBRARY_ORGANIZATION_ID } from './platformLibraryScope';
 import type { ProgressionGap } from './progression';
 import type { ShadowEvidenceTier } from './shadowEvidenceTier';
@@ -193,10 +194,10 @@ const LESSON_COLUMNS = `
 
 // The citation is RESOLVED, never trusted. library_document_id carries no
 // foreign key because existence is not the property that matters: a document is
-// citable only while it is indexed, approved and verified, hanging off an
-// active, approved, verified source, and owned by an organization this lesson is
-// allowed to cite -- seven mutable columns across two tables, and approval is
-// revocable. Without a foreign key, organization scoping of the citation is this
+// citable only while it is indexed, approved, verified and about no one athlete,
+// hanging off an active, approved, verified source that has not been suppressed
+// for retraction, and owned by an organization this lesson is allowed to cite --
+// nine mutable columns across two tables, and approval is revocable. Without a foreign key, organization scoping of the citation is this
 // join's responsibility. A left join, so a reference that does not resolve
 // leaves the lesson standing and the citation simply absent.
 //
@@ -210,23 +211,29 @@ const LESSON_COLUMNS = `
 // The reserved id is interpolated rather than parameterised because
 // CITATION_JOIN is shared by three queries whose parameter numbering differs;
 // it is a module constant, never input.
-const CITATION_JOIN = `
+//
+// "Citable" is what a gym-wide SHADOW search can serve, read from
+// libraryServability.ts rather than restated here. Restated, it drifted: this
+// join checked approval and verification but not retrieval_suppressed, so a
+// lesson went on naming a source pulled for retraction (suppressSource flips
+// only that flag and leaves the approvals standing); and it did not check
+// subject_id, so a lesson -- which every reader of its audience sees -- could
+// name a document filed against one athlete.
+//
+// Exported so rabbitHoles.pg.test.ts runs THIS join against a real database
+// instead of a hand-kept copy that could pass while this said something else.
+export const CITATION_JOIN = `
   left join pilot.shadow_library_documents d
     on (d.organization_id = r.organization_id
         or d.organization_id = '${PLATFORM_LIBRARY_ORGANIZATION_ID}')
    and d.document_id = r.library_document_id
-   and d.ingest_state = 'indexed'
-   and d.index_completed_at is not null
-   and d.approval_state = 'approved'
-   and d.verification_state = 'verified'
+   and ${SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL}
    and exists (
      select 1
      from pilot.shadow_library_sources s
      where s.source_id = d.source_id
        and s.organization_id = d.organization_id
-       and s.status = 'active'
-       and s.approval_state = 'approved'
-       and s.verification_state = 'verified'
+       and ${SERVABLE_LIBRARY_SOURCE_SQL}
    )`;
 
 function toLesson(row: RabbitHoleRow): RabbitHoleLesson {

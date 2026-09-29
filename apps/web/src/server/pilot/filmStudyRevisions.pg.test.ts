@@ -427,7 +427,11 @@ describe('correcting until the model is mostly right', () => {
     const proposal = await pendingProposal();
     await correct(proposal.proposal_id, 'Being reworked.');
 
-    const queue = await proposals.listFilmStudyProposals({ organizationId: ORG_ID, state: 'pending' });
+    const queue = await proposals.listFilmStudyProposals({
+      organizationId: ORG_ID,
+      state: 'pending',
+      athleteIds: [ATHLETE_ID],
+    });
 
     // Dropping it after the first pass would make "correct until it is right"
     // impossible to actually do.

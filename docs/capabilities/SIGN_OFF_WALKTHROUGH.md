@@ -38,7 +38,7 @@ an org admin closes it.
 
 **Nothing to try yet (Jason's call: build a screen, or accept API-only).** 027,
 042 and 135 have no screen. 128's page loads but nothing can add an entry.
-Parts of 001, 084, 116, 133 and 170 are API-only; the row says which part.
+Parts of 001, 116, 133 and 170 are API-only; the row says which part.
 
 **The older guide.** `docs/current/SIGN_OFF_GUIDE.md` (2026-08-18) covers 36 of
 these. Some of its lines are out of date: holds are now placed and lifted on
@@ -63,7 +63,7 @@ disagree, this file is the later check.
 | 075 | Safety Review Engine | `/admin/safety-review` | Org admin | Open it while a test hold is on. Expect the hold under "Active Training Holds", with failing gates, open escalations and open compliance violations below. Lift the hold on `/coach/sports-medicine` and expect it gone from this list. | |
 | 076 | Pain / Symptom Flag Engine | `/athlete/dashboard`, "Pain/Soreness Report", then `/coach/environment/intake-router` | Athlete, then Coach | File a pain report. Expect it under "Athlete Pain Reports" in the coach's workspace, and no hold placed by itself. | |
 | 082 | Stop / Hold / Regress Engine | `/coach/sports-medicine`, then `/athlete/dashboard` and `/schedule` | Coach, then Athlete | Place an "All training" hold on a test athlete. As that athlete, expect a hold banner on the dashboard and "Register" on `/schedule` refused with the hold's explanation. Only "All training" and "No contact" can be placed. | |
-| 084 | Guardian Safety Report Engine | `/parent/safety` | Guardian | Open it as the parent of a test athlete who has a hold. Expect "Safety Status" for each linked child: the hold and gate standing in the words the child sees; no coach reason text. Waiver statuses are not on this page: the API returns them but no screen shows them (Jason's call: show them or not). | |
+| 084 | Guardian Safety Report Engine | `/parent/safety` | Guardian | Open it as the parent of a test athlete who has a hold. Expect "Safety Status" for each linked child: the hold and gate standing in the words the child sees; no coach reason text; and a "Waivers" list (General, Medical release, Photo & media, Travel), each marked Signed, Declined, Withdrawn or Missing, or Unknown for a value the page does not recognise. Photo & media should match the "Photo & Video Consent" page: Signed only when that page says "Consent on file". Production's waiver rows are all of type `program_consent` (OD-2026-09-29-002 item 8a), which the route does not read, so expect Missing on all four unless the test athlete has waivers of these types. | |
 | 090 | Family Communication Engine | `/coach/decision-loop`, "Message Home", then `/parent/dashboard` | Coach, then Guardian | Send a message home. Expect "Sent to the family." Then expect it on the guardian's dashboard. One-way: no replies. | |
 | 095 | Home Barrier Reporting System | `/parent/dashboard`, "Report a Barrier", then `/coach/environment/intake-router` | Guardian, then Coach | Choose Home, describe it, press "Send to Coach". Expect it under "Family Barrier Reports" for that athlete's coach only. | |
 | 096 | Transportation / Attendance Barrier Tracker | Same as 095 | Guardian, then Coach | As 095 with Type "Transportation". Expect it in the same list. | |

@@ -65,7 +65,7 @@ The Bags row above records that.
 
 ### Mode A (design / mockups)
 1. Always pass **at least 2–4 of the owner reference photos** into the image model when generating page mockups or new plate concepts. **The photographs live at `C:\Users\jason\PPBF-Gym-Reference\` on Jason's machine** (owner decision 2026-09-26: "where is it at now use it"). Ten frames, named for what they show. They are deliberately NOT committed — faces and minors — and that has not changed.
-2. Prompt must name the DNA in section 2 above: the brewery-roundel ring with red and blue posts and white pads, honey plank and blackboard-paint walls, the painted red / blue / grey floor zones, the homemade timber and pipe bag frames, flat fluorescent light.
+2. For a training room, the prompt must name the DNA in section 2 above (other rooms follow `docs/ROOM-MAP.md`; `scripts/make-plate.mjs --room` does this): the brewery-roundel ring with red and blue posts and white pads, honey plank and blackboard-paint walls, the painted red / blue / grey floor zones, the homemade timber and pipe bag frames, flat fluorescent light.
 3. Quiet centre for UI; real gym interest only in outer thirds / edges.
 4. Zero lettering on the plate itself (UI text lives in code), with one exception: the IRON CITY lettering on the ring canvas stays when the ring is in frame. Owner, 2026-09-28: *"no i like that you can leave it"* (OD-2026-09-28-013). No other lettering is allowed.
 

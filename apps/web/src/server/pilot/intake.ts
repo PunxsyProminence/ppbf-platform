@@ -7,6 +7,7 @@ import {
 } from './access';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
+import { ConflictError } from './errors';
 import type { ReadinessMethod } from './readinessProvenance';
 import { getShadowEventTimeline, getShadowReviewProjection } from './shadowReadModels';
 
@@ -1445,6 +1446,119 @@ export function readinessColumnsForReader(role: PilotRole): string[] {
   return [...READINESS_IDENTITY_COLUMNS];
 }
 
+/**
+ * Refuses, before anything is written, an athlete account_id that intake
+ * promotion's call to createOrUpdateAthleteAccount must not touch.
+ *
+ * Promotion writes the athlete record first and has no transaction around its
+ * writes. createOrUpdateAthleteAccount's own cross-organization refusal was
+ * therefore a 409 ("Account already exists in another organization") that
+ * landed only after upsertAthlete had written the athlete record. Here it is
+ * refused first, as a 403, with the message provisioning uses elsewhere.
+ *
+ * createOrUpdateAthleteAccount's update branch sets role athlete, sets
+ * athlete_id to the promoted athlete, clears the PIN, deactivates the login
+ * and revokes every session, on whatever same-organization account it is
+ * pointed at. So:
+ *  - an account_id that named a coach's, a parent's or an admin's login turned
+ *    it into a locked athlete login. Intake does not change an existing
+ *    account's role, the same rule as the guardian login (R5, Jason
+ *    2026-09-29);
+ *  - an account_id that named ANOTHER child's athlete login re-bound it to the
+ *    promoted child's record: the first child was locked out, and the next
+ *    activation code issued for that login showed the promoted child's records
+ *    to whoever redeemed it -- the first child's family. Refused too.
+ * Re-promoting the same athlete, or naming an athlete login bound to no
+ * athlete record, stays allowed: re-provisioning is what re-running promotion
+ * is for. createOrUpdateAthleteAccount holds the same two rules in its own
+ * write, so this check only moves the refusal ahead of the first write.
+ *
+ * Lives here, not in auth.ts: it is an intake provisioning check, and auth.ts
+ * is the sign-in surface credentialPolicyDrift.test.ts guards.
+ */
+export async function assertAthleteAccountIdProvisionable(params: {
+  accountId: string;
+  athleteId: string;
+  organizationId: string;
+}): Promise<void> {
+  const existing = await queryOne<{ organization_id: string; role: PilotRole; athlete_id: string | null }>(
+    'select organization_id, role, athlete_id from pilot.accounts where account_id = $1',
+    [params.accountId],
+  );
+
+  if (!existing) {
+    return;
+  }
+
+  if (existing.organization_id !== params.organizationId) {
+    throw new Error('Forbidden: account already exists in another organization');
+  }
+
+  if (existing.role !== 'athlete') {
+    throw new ConflictError(
+      `Conflict: account_id "${params.accountId}" already belongs to an existing ${existing.role} account `
+      + "in this organization. Intake does not change an existing account's role, so it cannot make that "
+      + 'account an athlete login. Use a different account_id.',
+      'EXISTING_ACCOUNT_ROLE_CONFLICT',
+    );
+  }
+
+  if (existing.athlete_id && existing.athlete_id !== params.athleteId) {
+    throw new ConflictError(
+      `Conflict: account_id "${params.accountId}" is already the login of a different athlete record in this `
+      + "organization. Intake does not move an athlete's login to another athlete record. Use a different account_id.",
+      'EXISTING_ATHLETE_ACCOUNT_CONFLICT',
+    );
+  }
+}
+
+/**
+ * The refusal for naming an existing guardian record with a different login
+ * account. A guardian record's account is the login that sees every child
+ * linked to that record, so re-pointing it silently would cut the real parent
+ * off from all their children and hand them to whoever holds the new login.
+ * Intake refuses instead. Moving a guardian to another login on purpose is not
+ * an intake action and nothing here provides one.
+ */
+function guardianAccountConflict(parentId: string, accountId: string): ConflictError {
+  return new ConflictError(
+    `Conflict: guardian record "${parentId}" is already linked to another login account, not "${accountId}". `
+    + 'Intake does not move a guardian to another login. Leave account_id out to keep the current link, '
+    + 'or use a new parent_id if this is a different guardian.',
+    'GUARDIAN_ACCOUNT_CONFLICT',
+  );
+}
+
+/**
+ * Refuses, before any write, a request that would re-point an existing
+ * guardian record to a different login account.
+ *
+ * upsertGuardian enforces the same rule itself, atomically, and that is the
+ * guarantee. This read exists for review-action's promotion, which has no
+ * transaction around its writes: without it the athlete record, and any
+ * athlete or guardian account the payload names, would already be written
+ * when upsertGuardian refused, and the admin would see a refusal for a
+ * promotion that had mostly happened.
+ */
+export async function assertGuardianAccountUnchanged(params: {
+  organizationId: string;
+  parentId: string;
+  accountId?: string;
+}): Promise<void> {
+  if (!params.accountId) {
+    return;
+  }
+
+  const existing = await queryOne<{ account_id: string | null }>(
+    'select account_id from pilot.parents where organization_id = $1 and parent_id = $2',
+    [params.organizationId, params.parentId],
+  );
+
+  if (existing?.account_id && existing.account_id !== params.accountId) {
+    throw guardianAccountConflict(params.parentId, params.accountId);
+  }
+}
+
 export async function upsertGuardian(params: {
   organizationId: string;
   parentId: string;
@@ -1461,7 +1575,15 @@ export async function upsertGuardian(params: {
   // leaving them alone. coalesce against the current row so an omitted field
   // preserves what is already on file; full_name has no optional caller path
   // (both call sites always supply one) and keeps overwriting as before.
-  await query(
+  //
+  // account_id may FILL an empty link or restate the same one, never replace
+  // a different one. coalesce alone let a supplied account_id overwrite the
+  // guardian's existing login, silently moving every child linked to this
+  // record to the new login. The where clause makes that case update nothing,
+  // so no row comes back and the write is refused below. It is in the same
+  // statement as the write, so a concurrent change cannot slip between a
+  // check and the update.
+  const written = await query<{ parent_id: string }>(
     `insert into pilot.parents
      (organization_id, parent_id, account_id, full_name, phone, email)
      values ($1,$2,$3,$4,$5,$6)
@@ -1470,9 +1592,19 @@ export async function upsertGuardian(params: {
        full_name = excluded.full_name,
        phone = coalesce(excluded.phone, pilot.parents.phone),
        email = coalesce(excluded.email, pilot.parents.email),
-       updated_at = now()`,
+       updated_at = now()
+     where pilot.parents.account_id is null
+        or excluded.account_id is null
+        or pilot.parents.account_id = excluded.account_id
+     returning parent_id`,
     [params.organizationId, params.parentId, params.accountId ?? null, params.fullName, params.phone ?? null, params.email ?? null],
   );
+
+  if (written.length === 0) {
+    // Only the where clause can leave nothing written, and it only fails
+    // when both sides carry an account_id and they differ.
+    throw guardianAccountConflict(params.parentId, params.accountId ?? '');
+  }
 }
 
 export async function linkGuardianAthlete(params: {

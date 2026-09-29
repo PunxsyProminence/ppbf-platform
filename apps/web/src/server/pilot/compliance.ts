@@ -8,6 +8,7 @@ import {
   type BoardCountMetric,
 } from './boardSummary';
 import { query, queryOne, withTransaction } from './db';
+import { ConflictError } from './errors';
 import {
   fileEscalation,
   type SafetyEscalationSeverity,
@@ -15,6 +16,27 @@ import {
 } from './escalationLadder';
 
 const COMPLIANCE_SEVERITIES = ['critical', 'high', 'medium', 'low'] as const;
+
+/**
+ * details.source on a violation escalated from the Film Study review queue
+ * (app/coach/video-analysis). It is the only provenance value a violation can
+ * carry: POST /api/pilot/compliance/violations refuses any other source, and
+ * the details of a Film Study filing are written here, never taken from the
+ * request, so the stored citation is exactly the pair the route verified.
+ */
+export const FILM_STUDY_PROPOSAL_SOURCE = 'film_study_proposal';
+
+/**
+ * The same Film Study proposal is already filed under the same rule in this
+ * organization. Each filing also files its rule's escalation, so a second one
+ * would put a duplicate on the escalation ladder as well as the register.
+ * Filing the proposal under a different rule is still allowed.
+ */
+export class ComplianceViolationAlreadyFiledError extends ConflictError {
+  constructor(readonly violationId: string) {
+    super('This observation is already filed under this rule.', 'COMPLIANCE_VIOLATION_ALREADY_FILED');
+  }
+}
 
 // Maps pilot.compliance_rules.escalation_level to escalationLadder.ts's
 // SafetyEscalationTargetRole. 'coach' and 'admin' map onto rungs that
@@ -203,6 +225,31 @@ async function fileComplianceEscalationIfConfigured(
   );
 }
 
+/**
+ * The violation already filed in this organization from this Film Study
+ * proposal under this rule, if any (the oldest, should duplicates predate this
+ * check). Organization-scoped in the predicate, so another gym's filings never
+ * answer. Pass the transaction client to read inside the create transaction.
+ */
+export async function findFilmStudyProposalViolation(
+  organizationId: string,
+  ruleId: string,
+  proposalId: string,
+  client?: PoolClient,
+): Promise<{ violation_id: string } | null> {
+  const sql = `select violation_id from pilot.compliance_violations
+     where organization_id = $1 and rule_id = $2
+       and details->>'source' = $3 and details->>'proposal_id' = $4
+     order by created_at asc, violation_id asc
+     limit 1`;
+  const params = [organizationId, ruleId, FILM_STUDY_PROPOSAL_SOURCE, proposalId];
+  if (client) {
+    const result = await client.query<{ violation_id: string }>(sql, params);
+    return result.rows[0] ?? null;
+  }
+  return queryOne<{ violation_id: string }>(sql, params);
+}
+
 export async function createComplianceViolation(params: {
   organizationId: string;
   ruleId: string;
@@ -210,7 +257,17 @@ export async function createComplianceViolation(params: {
   athleteId: string;
   detectedByAccountId: string;
   severity: string;
-  details: Record<string, unknown>;
+  /** The filer's own details, for a violation not escalated from Film Study. */
+  details?: Record<string, unknown>;
+  /**
+   * The Film Study proposal this violation is escalated from, already checked
+   * by the caller to be in this organization and about this athlete and
+   * video. When set, the stored details are exactly
+   * { source: FILM_STUDY_PROPOSAL_SOURCE, proposal_id } and `details` is not
+   * used, and a second filing of the same proposal under the same rule throws
+   * ComplianceViolationAlreadyFiledError.
+   */
+  filmStudyProposalId?: string;
   evidencePath?: string;
 }): Promise<ComplianceViolation> {
   // pilot.compliance_violations.severity carries no check constraint, unlike
@@ -224,8 +281,38 @@ export async function createComplianceViolation(params: {
 
   const violationId = `violation_${Date.now()}_${randomUUID().split('-')[0]}`;
   const now = new Date().toISOString();
+  const filmStudyProposalId = params.filmStudyProposalId;
+  const details: Record<string, unknown> = filmStudyProposalId
+    ? { source: FILM_STUDY_PROPOSAL_SOURCE, proposal_id: filmStudyProposalId }
+    : params.details ?? {};
 
   return withTransaction(async (client) => {
+    if (filmStudyProposalId) {
+      // Locking the proposal row makes two filings of the same proposal wait
+      // for each other, so the second one's duplicate check below sees the
+      // first one's committed violation instead of racing past it. A proposal
+      // gone since the caller's check is refused the way a missing one is.
+      const locked = await client.query<{ proposal_id: string }>(
+        `select proposal_id from pilot.shadow_film_study_proposals
+         where organization_id = $1 and proposal_id = $2
+         for update`,
+        [params.organizationId, filmStudyProposalId],
+      );
+      if (locked.rows.length === 0) {
+        throw new Error('Not found');
+      }
+
+      const existing = await findFilmStudyProposalViolation(
+        params.organizationId,
+        params.ruleId,
+        filmStudyProposalId,
+        client,
+      );
+      if (existing) {
+        throw new ComplianceViolationAlreadyFiledError(existing.violation_id);
+      }
+    }
+
     const result = await client.query<ComplianceViolation>(
       `insert into pilot.compliance_violations (
         violation_id, organization_id, rule_id, video_session_id, athlete_id,
@@ -241,7 +328,7 @@ export async function createComplianceViolation(params: {
         params.detectedByAccountId,
         now,
         params.severity,
-        JSON.stringify(params.details),
+        JSON.stringify(details),
         params.evidencePath || null,
       ],
     );

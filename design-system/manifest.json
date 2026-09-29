@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "name": "PPBF Design System — Golden Era V1",
-  "description": "The design system for the Punxsy Prominence Boxing and Fitness platform. The active look is Golden Era V1 (../docs/GOLDEN-ERA-V1-CONTRACT.md): current/ppbf-theme.css imports current/ppbf-golden-era.css, which imports the retired Leather & Brass sheet (legacy/ppbf-leather-brass.css) as its base and overrides part of it. Laws 1, 4, 6 and 8 below are retired (OD-2026-09-28-009); laws 2, 3, 5 and 7 stand. build-manifest.mjs hardcodes the laws and the display voice, and generates the rooms, type and token entries from the foundation and legacy sheets only; it never reads the Golden Era sheet, so tokens declared only there are missing here.",
+  "description": "The design system for the Punxsy Prominence Boxing and Fitness platform. The active look is Golden Era V1 (../docs/GOLDEN-ERA-V1-CONTRACT.md): current/ppbf-theme.css imports current/ppbf-golden-era.css, which imports the retired Leather & Brass sheet (legacy/ppbf-leather-brass.css) as its base and overrides part of it. Laws 1, 4, 6 and 8 below are retired (OD-2026-09-28-009); laws 2, 3, 5 and 7 stand. build-manifest.mjs hardcodes the laws and the display voice. It generates the stylesheets, rooms and tokens by following the import chain from ppbf.css in the order the browser loads it, so a token declared in more than one sheet has the value of the last one, and it reads top-level :root blocks only, so print and other media overrides are not recorded.",
   "license": "MIT",
   "generatedBy": "design-system/build-manifest.mjs",
   "entryPoints": {
@@ -27,6 +27,44 @@
     "Every screen is a room, and every panel in it is a real object.",
     "Refusal is a stamp, not an error toast.",
     "Proportion descends from φ. Nothing is sized by eye."
+  ],
+  "stylesheets": [
+    {
+      "path": "foundation/ppbf-foundation.css",
+      "role": "foundation",
+      "note": "Structure, accessibility and responsive mechanics. No look.",
+      "tokensDeclared": 41
+    },
+    {
+      "path": "legacy/legacy-fonts.css",
+      "role": "legacy",
+      "note": "Retired Leather & Brass (2026-08-23, legacy/README.md). Still loaded: the Golden Era sheet imports the Leather & Brass sheet as its base, and that sheet imports the legacy fonts.",
+      "tokensDeclared": 0
+    },
+    {
+      "path": "legacy/ppbf-leather-brass.css",
+      "role": "legacy",
+      "note": "Retired Leather & Brass (2026-08-23, legacy/README.md). Still loaded: the Golden Era sheet imports the Leather & Brass sheet as its base, and that sheet imports the legacy fonts.",
+      "tokensDeclared": 144
+    },
+    {
+      "path": "current/ppbf-golden-era.css",
+      "role": "current",
+      "note": "Golden Era V1, the current look (../docs/GOLDEN-ERA-V1-CONTRACT.md).",
+      "tokensDeclared": 12
+    },
+    {
+      "path": "current/ppbf-theme.css",
+      "role": "seam",
+      "note": "The theme seam: the one import that decides the look.",
+      "tokensDeclared": 0
+    },
+    {
+      "path": "ppbf.css",
+      "role": "entry",
+      "note": "The one stylesheet pages load; imports only.",
+      "tokensDeclared": 0
+    }
   ],
   "rooms": [
     {
@@ -74,7 +112,7 @@
     "licence": "SIL OFL 1.1 — all faces free and self-hosted, no CDN"
   },
   "tokenCounts": {
-    "total": 117,
+    "total": 152,
     "type": 9,
     "space": 8,
     "motionDurations": 6,
@@ -96,12 +134,22 @@
     "--t-4xl": "63.6px",
     "--t-5xl": "80.9px",
     "--s1": "3px",
+    "--s2": "5px",
+    "--s3": "8px",
+    "--s4": "13px",
     "--s5": "21px",
+    "--s6": "34px",
+    "--s7": "55px",
+    "--s8": "89px",
     "--r-sm": "5px",
+    "--r-md": "8px",
+    "--r-lg": "13px",
+    "--r-xl": "21px",
+    "--r-pill": "999px",
     "--split-minor": "38.2%",
     "--split-major": "61.8%",
     "--tap": "55px",
-    "--focus": "0 0 0 3px rgba(212, 175, 74, .55)",
+    "--focus": "0 0 0 3px rgb(var(--brass-400-rgb, 212 175 74) / .55)",
     "--m-instant": "55ms",
     "--m-quick": "89ms",
     "--m-base": "144ms",
@@ -127,6 +175,14 @@
     "--brass-400": "#D4AF4A",
     "--brass-300": "#E8CE7A",
     "--brass-200": "#F2E2A8",
+    "--brass-900-rgb": "74 52 11",
+    "--brass-800-rgb": "107 78 18",
+    "--brass-700-rgb": "140 107 31",
+    "--brass-600-rgb": "169 129 38",
+    "--brass-500-rgb": "184 145 47",
+    "--brass-400-rgb": "212 175 74",
+    "--brass-300-rgb": "232 206 122",
+    "--brass-200-rgb": "242 226 168",
     "--bone-100": "#F7F1E1",
     "--bone-200": "#EFE6D0",
     "--bone-300": "#DCCFB2",
@@ -153,11 +209,16 @@
     "--mortar": "#5C5246",
     "--lamp": "#FFE9B8",
     "--lamp-hot": "#FFF6DF",
-    "--cleared": "var(--cleared-deep)",
-    "--monitor": "var(--monitor-deep)",
-    "--restricted": "var(--restricted-deep)",
+    "--cleared": "#3F7D4E",
+    "--cleared-ink": "#C8E6CE",
+    "--monitor": "#2E6E96",
+    "--monitor-ink": "#C2E0F0",
+    "--restricted": "#C05A1E",
+    "--restricted-ink": "#F6D6B8",
     "--locked": "#A81E22",
+    "--locked-ink": "#F3C9C6",
     "--filed": "#6B6355",
+    "--filed-ink": "#E3DDD0",
     "--cleared-deep": "#366A42",
     "--monitor-deep": "#2A6488",
     "--restricted-deep": "#9A4818",
@@ -184,6 +245,10 @@
     "--grain": "<generated SVG data URI>",
     "--grain-fine": "<generated SVG data URI>",
     "--sx": "1",
+    "--sy": "1",
+    "--sh-len": "1",
+    "--sh-blur": "1",
+    "--sh-op": "1",
     "--corner-red-900": "#2E141A",
     "--corner-red-700": "#60303C",
     "--corner-red-500": "#844F5C",
@@ -198,7 +263,15 @@
     "--corner-edge": "var(--corner-none-edge-ink)",
     "--corner-mid": "var(--corner-none-mid)",
     "--corner-deep": "var(--patina-900)",
-    "--corner-wash": "color-mix(in srgb, var(--corner-mid) 6%, transparent)"
+    "--corner-wash": "color-mix(in srgb, var(--corner-mid) 6%, transparent)",
+    "--ppbf-visual-authority": "\"Golden Era V1\"",
+    "--ppbf-visual-contract": "\"docs/GOLDEN-ERA-V1-CONTRACT.md\"",
+    "--ppbf-real-gym-lock": "\"docs/REAL-GYM-REFERENCE-LOCK.md\"",
+    "--ppbf-visual-date": "\"2026-08-24\"",
+    "--shadow-contact": "0 1px 1px rgba(0, 0, 0, .42), 0 3px 8px rgba(0, 0, 0, .24)",
+    "--shadow-inset": "inset 0 1px 0 rgba(255, 255, 255, .045), inset 0 -1px 0 rgba(0, 0, 0, .58), inset 0 0 0 1px rgba(0, 0, 0, .22)",
+    "--edge-dark": "rgba(7, 8, 9, .72)",
+    "--edge-paper": "rgba(95, 72, 44, .36)"
   },
   "previews": [
     {
@@ -220,7 +293,7 @@
       "group": "Foundations",
       "name": "Matter",
       "subtitle": "The display voice, paper as stock × age × soil × damage, light that shadows obey, placement, the seal, discoverables",
-      "bytes": 22328
+      "bytes": 22353
     },
     {
       "path": "foundations/motion.html",

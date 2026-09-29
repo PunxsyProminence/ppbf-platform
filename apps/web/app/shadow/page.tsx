@@ -31,6 +31,10 @@ import {
   type OwnedShadowConversation,
 } from '@/client/shadowSessions';
 import { formatGymClock24, formatGymDateNumeric } from '@/src/lib/gymTime';
+import {
+  SHADOW_MESSAGE_TOO_LONG_RESPONSE,
+  isShadowMessageTooLong,
+} from '@/src/shared/shadowChatLimits';
 
 // How much verified evidence actually backed a response -- drives the
 // message background darkness (bigger shadow = more evidenced). Independent
@@ -1210,6 +1214,15 @@ function ShadowChatPageContent() {
     if (!userInput.trim() || isLoading || restoringSessionId) return;
 
     const rawQuestion = userInput.trim();
+    // Refused here, before the box is cleared, so the question is still there
+    // to shorten. The route applies the same limit from the same module.
+    if (isShadowMessageTooLong(rawQuestion)) {
+      addMessage('shadow', SHADOW_MESSAGE_TOO_LONG_RESPONSE, {
+        state: 'filtered',
+        evidenceTier: NO_SERVER_EVIDENCE_TIER,
+      });
+      return;
+    }
     addMessage('user', rawQuestion);
     setUserInput('');
     setIsLoading(true);

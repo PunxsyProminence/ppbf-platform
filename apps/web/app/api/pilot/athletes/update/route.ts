@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { calendarDayKey } from '@/lib/calendarDay';
 import { assertActorCanAccessAthlete, assertAthleteUpdateAllowed, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import type { PilotAthlete } from '@/src/server/pilot/contracts';
@@ -22,20 +23,15 @@ const CORRECTABLE_FIELDS = [
 ] as const;
 
 /**
- * pilot.athletes.dob is a `date` column, which node-postgres parses to a Date
- * at local midnight while the request carries a YYYY-MM-DD string. Rebuilding
- * the string from local parts inverts that parse in any timezone, so a
- * date of birth is not reported as changed on every save.
+ * pilot.athletes.dob is a `date` column, which can come back as a Date at
+ * local midnight while the request carries a YYYY-MM-DD string, so a date of
+ * birth would be reported as changed on every save. calendarDayKey is the same
+ * normalizer assertAthleteUpdateAllowed uses to refuse an athlete moving their
+ * own dob; one function means the audit and the refusal agree on what changed.
+ * It trims strings and stringifies everything else, which is what every other
+ * correctable field needs too.
  */
-function comparable(value: unknown): string {
-  if (value instanceof Date) {
-    const month = `${value.getMonth() + 1}`.padStart(2, '0');
-    const day = `${value.getDate()}`.padStart(2, '0');
-    return `${value.getFullYear()}-${month}-${day}`;
-  }
-
-  return typeof value === 'string' ? value.trim() : String(value);
-}
+const comparable = calendarDayKey;
 
 export async function POST(request: NextRequest) {
   try {

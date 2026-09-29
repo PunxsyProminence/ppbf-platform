@@ -155,10 +155,25 @@ async function seedRoster(client: Client, organizationId: string, athleteId: str
   );
 }
 
-/** The full production schema: base file plus every migration, by fixpoint. */
-async function fullSchemaDatabase(name: string): Promise<Client> {
+/**
+ * The full production schema: base file plus every migration, in deploy order
+ * -- with pilot_waivers_status_check taken back off unless asked for.
+ *
+ * The census is the pre-flight for a database that constraint has NOT reached,
+ * and only there can the non-exact rows planted below exist at all. With the
+ * constraint in place they cannot be inserted, which is the constraint
+ * working, not the census. The drop is deliberately not `if exists`: it fails
+ * here if the rebuild path ever stops installing the constraint.
+ */
+async function fullSchemaDatabase(
+  name: string,
+  { withStatusCheck = false }: { withStatusCheck?: boolean } = {},
+): Promise<Client> {
   const client = await emptyDatabase(name);
   await applyFullSchema(client, { infraDir: INFRA_DIR });
+  if (!withStatusCheck) {
+    await client.query('alter table pilot.waivers drop constraint pilot_waivers_status_check');
+  }
   await seedRoster(client, ORG, ATHLETE);
   await seedRoster(client, OTHER_ORG, OTHER_ATHLETE);
   return client;
@@ -427,6 +442,27 @@ describe('a clean database', () => {
       expect(report.syntheticRowCount).toBe(0);
       expect(report.byOrganization).toEqual([]);
       expect(report.guardianGate?.unreadableRowCount).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('a database the status CHECK has reached', () => {
+  it('reports the constraint by name, and the column refuses a non-exact value', async () => {
+    const client = await fullSchemaDatabase('ppbf_test_waiver_census_constrained', {
+      withStatusCheck: true,
+    });
+    try {
+      await insertWaiver(client, 'signed');
+      await expect(insertWaiver(client, ' Signed ')).rejects.toMatchObject({ code: '23514' });
+
+      const report = await census.censusWaiverStatuses(client);
+      expect(report.checkConstraints.map((constraint) => constraint.conname)).toEqual([
+        'pilot_waivers_status_check',
+      ]);
+      expect(report.totalRowCount).toBe(1);
+      expect(report.nonExactRowCount).toBe(0);
     } finally {
       await client.end();
     }
