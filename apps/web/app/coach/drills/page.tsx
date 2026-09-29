@@ -711,7 +711,7 @@ function CoachDrillLibrary() {
        with dead ground down both sides of any real screen. The reading measure
        moved onto the prose, where a measure belongs, and the room now runs wall
        to wall the way the two shells measured for this ruling do. */
-    <main className="ge-drillcase room min-h-screen text-[color:var(--bone-200)]">
+    <main className="ge-drillcase room room--cabinet min-h-screen text-[color:var(--bone-200)]">
       <div className="ge-drillcase__room">
         <div className="ge-drillcase__rail">
           {/* The nameplate, on the stile rather than across the top. A masthead

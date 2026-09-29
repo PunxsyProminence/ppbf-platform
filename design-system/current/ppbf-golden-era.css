@@ -2486,10 +2486,19 @@
    the drill cabinet a room of its own rather than a cabinet standing in someone
    else's.
 
-   So the selector is `.ge-drillcase.room` now. Same specificity it had, (0,2,0)
-   against bare `.room`'s (0,1,0), and still later in source order, so it wins
-   both ways without !important -- but it no longer borrows another room's
-   identity to get there.
+   So the carcass keys off `.ge-drillcase.room` now -- (0,2,0) against bare
+   `.room`'s (0,1,0), later in source order, winning both ways without
+   !important, and no longer borrowing another room's identity to get there.
+
+   `--plate` IS NOT DECLARED ON THAT SELECTOR, and the difference matters. The
+   PLATES cascade is decided by SOURCE ORDER, not specificity: every rule that
+   binds `--plate` sits at exactly one class so that nothing in the block can
+   outrank anything else, and `plateVariant.test.ts` holds that as one
+   assertion. A `--plate` at (0,2,0) would beat every other room's paint from
+   anywhere in the file, which is the whole failure mode that law prevents --
+   it was written here at (0,2,0) first and the guard caught it. So this room's
+   paint hangs off `.room--cabinet`, one class, like the other six, and the
+   carcass below carries only its own material.
 
    `--plate: none` IS RESTATED HERE, and it is not redundant. It was arriving
    from `.room--floor`'s golden-era override, which this page no longer wears;
@@ -2543,8 +2552,11 @@
    three edges, so it protects its own legibility and the wall does not have to
    be beaten flat to make type readable -- only the band behind the stile does,
    and the stile's own drawer fronts are material. */
-.ge-drillcase.room {
+.room--cabinet {
   --plate: url("/plates/plate-08-bell-gym-landscape-01.jpg");
+}
+
+.ge-drillcase.room {
   background-color: transparent;
   background-image:
     var(--grain),
@@ -2558,8 +2570,11 @@
 }
 
 @media (orientation: portrait) {
-  .ge-drillcase.room {
+  .room--cabinet {
     --plate: url("/plates/plate-02b-floor-portrait-02.jpg");
+  }
+
+  .ge-drillcase.room {
     background-image:
       var(--grain),
       linear-gradient(184deg,

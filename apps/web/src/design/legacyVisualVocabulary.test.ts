@@ -108,9 +108,32 @@ const ALIAS_CEILINGS: Readonly<Record<string, number>> = {
  * Rooms may leave freely; they may not spread. A screen written from here on
  * does not paint one — buildingMapRooms.test.ts no longer requires it — and
  * this is the assertion that makes that real rather than advisory.
+ *
+ * 143 AGAIN SINCE 2026-09-29, FOR ONE NAMED ROOM, and the reason is the
+ * condition this docblock's own opening paragraph was written about: capping
+ * `room--*` "would have left an author with no legal move, and that argument
+ * always ends with somebody weakening whichever guard is younger". That
+ * condition came back. `/coach/drills` became a room of its own
+ * (OD-2026-09-26-001; `docs/ROOM-MAP.md`, merged in #983, is now the single
+ * visual build order by OD-2026-09-28-009 item 3), and a painted room has
+ * exactly one legal place to hang its plate: `plateVariant.test.ts` models
+ * every room's paint as `.room--<room>` at one class and asserts the whole
+ * inventory against `ROOM_ORDER`. So `room--cabinet` is not the retired
+ * aesthetic growing back — it is the younger, approved plan needing the one
+ * hook the older guard forbids.
+ *
+ * WHAT THIS DOES NOT DECIDE. The number is bumped by exactly one, for one room
+ * that can be named, which is a measurement and not slack. But ROOM-MAP.md
+ * lists sixteen more rooms, and each one will arrive here the same way. Bumping
+ * this sixteen times would turn an exact ceiling into a ratchet, which is the
+ * same slack this docblock already records a failure from. The premise —
+ * "rooms are retired as a visual concept", 2026-08-23 — has been reversed by
+ * the owner; the entry needs re-founding or removing before the next room, and
+ * that is Jason's call, raised with him on 2026-09-29. Until he answers, this
+ * stays a ceiling measured by the code that enforces it.
  */
 const CLASS_CEILINGS: Readonly<Record<string, number>> = {
-  'room--': 142,
+  'room--': 143,
 };
 
 /**

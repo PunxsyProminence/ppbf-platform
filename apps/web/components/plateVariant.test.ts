@@ -78,6 +78,7 @@ const DEFAULT_PLATE: Partial<Record<Room, string | null>> = {
   file: '/plates/plate-05-file-01.jpg',
   clinic: '/plates/plate-03-clinic-01.jpg',
   night: '/plates/plate-06-night-01.jpg',
+  cabinet: '/plates/plate-08-bell-gym-landscape-01.jpg',
 };
 
 /*
@@ -662,11 +663,15 @@ describe('the resolver reads the sheet it is pointed at', () => {
       '.room--office', '.room--floor', '.room--board',
       '.room--file', '.room--clinic', '.room--night', '.on-canvas',
     ]));
-    // Six rooms, the portrait floor, the warm canvas ground -- and the ninth,
+    // Seven rooms, the portrait floor, the warm canvas ground -- the tenth,
     // `.room--floor { --plate: none }` in the current theme, which is what
-    // takes the photograph off the gym floor.
+    // takes the photograph off the gym floor -- and the eleventh, the drill
+    // cabinet's portrait override. The cabinet is the seventh painted room
+    // (2026-09-26), and it is the first to arrive with a plate of its own on
+    // both orientations, which is why this went from nine to eleven.
     expect(declared.filter((selector) => selector === '.room--floor')).toHaveLength(3);
-    expect(declared).toHaveLength(9);
+    expect(declared.filter((selector) => selector === '.room--cabinet')).toHaveLength(2);
+    expect(declared).toHaveLength(11);
   });
 
   it('still routes every plate through --plate, so resolving it means something', () => {
