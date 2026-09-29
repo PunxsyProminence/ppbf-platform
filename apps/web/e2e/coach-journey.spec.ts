@@ -1462,7 +1462,20 @@ test.describe('Coach journey', () => {
     // among the drills this gym runs.
     await expect(jab.getByText('Operational in this gym')).toBeVisible();
     await expect(jab.getByRole('button', { name: 'Retire' })).toBeVisible();
+
+    /* AND BACK AMONG THE DRILLS THIS GYM RUNS -- which is now a WALK, not a
+       glance, and that is a real change in what the coach sees rather than a
+       test detail. The cabinet's three stations became separate panels when it
+       was rebuilt as a room ("the tabs in the room is different equipment",
+       owner, 2026-09-26), so this gym's shelf is not on screen while the coach
+       is standing at the reference cabinet. The proof is not weakened: the
+       restored drill really is on the shelf, by the server's re-read answer and
+       not the page's optimism. It is simply read where the shelf is. */
+    const shelf = page.getByRole('button', { name: /This gym.s shelf/ });
+    await shelf.click();
     await expect(page.getByRole('button', { name: 'View instructions: Jab return' })).toBeVisible();
+    await page.getByRole('button', { name: /Reference cabinet/ }).click();
+    await expect(jab.getByText('Operational in this gym')).toBeVisible();
 
     /* 5. AN OPERATIONAL ADOPTION: Retire is offered. Not pressed -- the server
           owns what a retirement does; this is what the coach is offered. */
