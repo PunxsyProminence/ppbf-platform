@@ -235,9 +235,17 @@ export function checkUploadRequest(body: unknown): UploadRequest {
   // a cell is one row here exactly as it is at plan. Only a CSV has rows the
   // core reads; any other file is refused or ignored by its name
   // (validate.ts:180-203) and its text is never parsed.
+  //
+  // A row with the wrong number of cells counts too. readCsv leaves it out of
+  // `records` and reports it as a column_count problem (csv.ts:72-79), and the
+  // core turns every one into a blocking finding (validate.ts:112-120) that
+  // the plan carries back to the page -- so counting records alone let a file
+  // of 20,000 malformed rows past the cap and 20,000 findings through.
   let rows = 0;
   for (const [name, text] of Object.entries(files)) {
-    if (extensionOf(name) === '.csv' && text.trim() !== '') rows += readCsv(text).records.length;
+    if (extensionOf(name) !== '.csv' || text.trim() === '') continue;
+    const table = readCsv(text);
+    rows += table.records.length + table.problems.filter((problem) => problem.kind === 'column_count').length;
   }
   if (rows > UPLOAD_LIMITS.rows) {
     throw new UploadTooLarge(

@@ -326,6 +326,28 @@ describe('the caps name their number', () => {
     expect(mockPlan).not.toHaveBeenCalled();
   });
 
+  test('rows with the wrong number of cells count toward the row cap, as the core reads each one', async () => {
+    // Half well-formed, half short. The core reports every short row as a
+    // blocking column_count finding, so counting only the readable ones let a
+    // file of short rows past the cap with a finding per row behind it.
+    const good = UPLOAD_LIMITS.rows / 2;
+    const short = UPLOAD_LIMITS.rows / 2 + 1;
+    const [header, ...wellFormed] = levelsWithRows(good).trimEnd().split('\n');
+    const text = `${[header, ...wellFormed, ...Array.from({ length: short }, (_, index) => `,short_${index},${index}`)].join('\n')}\n`;
+    const references = loadOfflineReferenceSets(SEED_DATA_DIR);
+    const findings = validatePackage(packageInputs({ 'seed_competence_levels.csv': text }), { references })
+      .blocking.filter((finding) => finding.code === 'column_count');
+    expect(findings).toHaveLength(short);
+
+    const response = await post({ files: files({ 'seed_competence_levels.csv': text }) });
+    const body = await response.json();
+
+    expect(response.status).toBe(413);
+    expect(body.code).toBe('UPLOAD_TOO_MANY_ROWS');
+    expect(body.error).toContain(`${(good + short).toLocaleString('en-US')} rows`);
+    expect(mockPlan).not.toHaveBeenCalled();
+  });
+
   test('exactly the row cap is accepted', async () => {
     const response = await post({ files: files({ 'seed_competence_levels.csv': levelsWithRows(UPLOAD_LIMITS.rows) }) });
 
