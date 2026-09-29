@@ -19,6 +19,7 @@ jest.mock('./security', () => ({
 
 import { createAthleteAccount, createOrUpdateAthleteAccount } from './auth';
 import { query } from './db';
+import { ConflictError } from './errors';
 
 const mockQuery = query as jest.Mock;
 
@@ -49,6 +50,7 @@ describe('createOrUpdateAthleteAccount', () => {
 
   test('updates the existing account to pending state, reassigns inactive membership, and revokes sessions on rerun', async () => {
     mockQuery.mockResolvedValueOnce([{ organization_id: 'org_1' }]); // existing account
+    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'acct_1' }] }); // the update wrote it
 
     await createOrUpdateAthleteAccount('acct_1', 'athlete_1', 'org_1');
 
@@ -64,6 +66,44 @@ describe('createOrUpdateAthleteAccount', () => {
     const [revokeSql, revokeParams] = currentClient.query.mock.calls[2];
     expect(revokeSql).toContain('pilot.session_tokens');
     expect(revokeParams).toEqual(['acct_1']);
+  });
+
+  // The update only touches an athlete login bound to no athlete record or to
+  // this one. It used to turn a coach's, parent's or admin's login into a
+  // locked athlete login, and re-bind another child's login to this child.
+  test('the update is held to an athlete login that is unbound or already this athlete\'s', async () => {
+    mockQuery.mockResolvedValueOnce([{ organization_id: 'org_1' }]);
+    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'acct_1' }] });
+
+    await createOrUpdateAthleteAccount('acct_1', 'athlete_1', 'org_1');
+
+    const [updateSql] = currentClient.query.mock.calls[0];
+    const normalized = String(updateSql).replace(/\s+/g, ' ');
+    expect(normalized).toContain(
+      "where account_id = $5 and organization_id = $6 and role = 'athlete' and (athlete_id is null or athlete_id = $2)",
+    );
+    expect(normalized).toContain('returning account_id');
+  });
+
+  test('when the update touches no row, it is refused 409 and nothing else runs', async () => {
+    mockQuery.mockResolvedValueOnce([{ organization_id: 'org_1' }]);
+    currentClient.query.mockResolvedValueOnce({ rows: [] }); // coach's login, or another child's
+
+    const refusal = await createOrUpdateAthleteAccount('acct_1', 'athlete_1', 'org_1').then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect(refusal).toBeInstanceOf(ConflictError);
+    expect(refusal).toMatchObject({ status: 409, code: 'EXISTING_ATHLETE_ACCOUNT_CONFLICT' });
+    expect((refusal as Error).message).toBe(
+      'Conflict: account_id "acct_1" cannot be made the login for athlete record "athlete_1". '
+      + 'Only an athlete login in this organization that belongs to no athlete record, or already to '
+      + 'this one, can be. Use a different account_id.',
+    );
+    // No membership write and no session revocation: the coach, or the other
+    // child, keeps their sessions.
+    expect(currentClient.query).toHaveBeenCalledTimes(1);
   });
 
   test('rejects reassigning an account that belongs to another organization', async () => {
