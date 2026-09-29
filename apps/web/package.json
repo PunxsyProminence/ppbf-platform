@@ -38,6 +38,7 @@
     "pilot:check-waiver-statuses": "node scripts/pilot-check-waiver-statuses.mjs",
     "pilot:check-video-readiness": "node scripts/pilot-check-video-readiness.mjs",
     "pilot:check-cue-source-provenance": "node scripts/pilot-check-cue-source-provenance.mjs",
+    "pilot:check-reference-content": "node scripts/pilot-check-reference-content.mjs",
     "pilot:apply-shadow-runtime": "node scripts/pilot-apply-shadow-runtime-migration.mjs",
     "pilot:apply-research-triage-view": "node scripts/pilot-apply-research-triage-view-migration.mjs",
     "pilot:apply-magic-link": "node scripts/pilot-apply-magic-link-migration.mjs",
@@ -379,7 +380,8 @@
     "test:migrations:cue-source-provenance": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/cueSourceProvenance.pg.test.ts --testTimeout=180000",
     "test:migrations:assignment-cancellation": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/assignmentCancellation.pg.test.ts --testTimeout=180000",
     "test:migrations:roster-import": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/rosterImport.pg.test.ts --testTimeout=300000",
-    "test:migrations:content-import-vocabularies": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportVocabularies.pg.test.ts --testTimeout=300000"
+    "test:migrations:content-import-vocabularies": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportVocabularies.pg.test.ts --testTimeout=300000",
+    "test:migrations:reference-content-census": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/referenceContentCensus.pg.test.ts --testTimeout=240000"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",
