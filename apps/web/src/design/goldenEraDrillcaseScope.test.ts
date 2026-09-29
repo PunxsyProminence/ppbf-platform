@@ -181,11 +181,10 @@ describe('golden-era drillcase scope', () => {
     expect(PAGE).toMatch(/className="[^"]*\bge-drillcase\b[^"]*"/);
   });
 
-  test('the scope never spends the reserved medical red on cabinet chrome', () => {
-    // The ramp is bronze. Written when #A81E22 was reserved for
-    // MEDICALLY_NOT_ALLOWED alone. STATUS 2026-09-29: red is not reserved
-    // (OD-2026-09-29-001); this check still runs, and --locked still means a
-    // medical stop. The page's pre-existing --locked form-error sites were a
+  test('the scope never spends the --locked medical-stop token on cabinet chrome', () => {
+    // The ramp is bronze, and --locked means a medical stop. Red itself is
+    // not reserved (OD-2026-09-29-001), so the hue and --stamp-red are not
+    // refused here. The page's pre-existing --locked form-error sites were a
     // frozen entry in safeguardingRedReservation.test.ts, since deleted, and
     // are not touched here.
     //
@@ -196,8 +195,7 @@ describe('golden-era drillcase scope', () => {
     const stripped = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
     const declarations = stripped.slice(stripped.indexOf('.ge-drillcase'));
     expect(declarations).toContain('.ge-drillcase');
-    expect(declarations).not.toMatch(/#A81E22/i);
-    expect(declarations).not.toMatch(/--locked|--stamp-red/);
+    expect(declarations).not.toMatch(/--locked/);
   });
 });
 

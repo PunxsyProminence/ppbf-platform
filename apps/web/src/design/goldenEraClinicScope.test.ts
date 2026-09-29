@@ -310,15 +310,13 @@ describe('the 009 block stays inside its scope and off what it may not touch', (
     }
   });
 
-  // STATUS 2026-09-29: red itself is not reserved (OD-2026-09-29-001). This
-  // check was written under the reservation and still runs; --locked still
-  // means a medical stop.
-  test('the scoped block never uses reserved medical red', () => {
+  // --locked means a medical stop, and on this surface it is the not_cleared
+  // badge's alone. Red itself is not reserved (OD-2026-09-29-001), so the hue
+  // and --stamp-red are not refused here.
+  test('the scoped block never uses the --locked medical-stop tokens', () => {
     const block = clinicBlock();
-    expect(block).not.toMatch(/#A81E22/i);
     expect(block).not.toMatch(/--locked\b/);
     expect(block).not.toMatch(/--locked-ink\b/);
-    expect(block).not.toMatch(/--stamp-red\b/);
   });
 
   test('the block never restates the room, its wall, its light or its fixture', () => {
@@ -424,7 +422,7 @@ describe('the 009 mockup did not delete or invent clinic controls', () => {
     expect(PAGE).not.toContain("value: 'conditioning_only'");
   });
 
-  test('the reserved red still marks not_cleared, and nothing else on the page', () => {
+  test('badge--locked still marks not_cleared, and nothing else on the page', () => {
     // The one safety semantic this surface turns on. `not_cleared` means a
     // clinician looked at this child and said no, and it is the only state that
     // wears `badge--locked`. Every other action state sits one rung down on

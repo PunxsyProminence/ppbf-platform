@@ -135,12 +135,11 @@ describe('golden-era session scripts scope', () => {
     expect(PAGE).toMatch(/className="[^"]*\bge-scripts\b[^"]*"/);
   });
 
-  /* Written when the medical/safeguarding red was reserved project-wide, with
-     its own guard; this one only states that the 004A block never reached for
-     it while restyling a coaching surface. STATUS 2026-09-29: red is not
-     reserved and that guard is deleted (OD-2026-09-29-001); this check still
-     runs, and --locked still means a medical stop. */
-  test('the scoped block never uses reserved medical red', () => {
+  /* --locked means a medical stop; this states that the 004A block never
+     reached for it while restyling a coaching surface. Red itself is not
+     reserved (OD-2026-09-29-001), so the hue and --stamp-red are not refused
+     here. */
+  test('the scoped block never uses the --locked medical-stop token', () => {
     /* Read from the theme file rather than from the resolved sheet: resolution
        inlines this file at its @import position, so slicing the resolved text
        would drag in everything the theme states after it. */
@@ -154,9 +153,7 @@ describe('golden-era session scripts scope', () => {
     const start = declarations.indexOf('.ge-scripts');
     expect(start).toBeGreaterThan(-1);
     const block = declarations.slice(start);
-    expect(block).not.toMatch(/#A81E22/i);
     expect(block).not.toMatch(/--locked\b/);
-    expect(block).not.toMatch(/--stamp-red\b/);
   });
 });
 

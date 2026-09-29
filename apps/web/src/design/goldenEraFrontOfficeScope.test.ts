@@ -116,16 +116,12 @@ describe('golden-era front office scope', () => {
     expect(PAGE.match(/className="[^"]*\bge-frontoffice\b/g) ?? []).toHaveLength(1);
   });
 
-  /* The office keeps its register in bronze ink. Written when #A81E22, the
-     safeguarding red, was reserved for MEDICALLY_NOT_ALLOWED and `.pap--ruled`
-     drew its margin line in exactly that colour. STATUS 2026-09-29: red is not
-     reserved (OD-2026-09-29-001); this check still runs, and --locked still
-     means a medical stop. */
-  test('the scope spends no safeguarding red on chrome', () => {
+  /* The office keeps its register in bronze ink, and --locked means a medical
+     stop, which is not chrome. Red itself is not reserved (OD-2026-09-29-001),
+     so the hue and --stamp-red are not refused here. */
+  test('the scope spends no --locked medical-stop token on chrome', () => {
     for (const [, body] of scopedRules()) {
-      expect(body.toUpperCase()).not.toContain('#A81E22');
-      expect(body).not.toMatch(/168\s*,\s*30\s*,\s*34/);
-      expect(body).not.toMatch(/var\(--(?:locked|stamp-red)[^)]*\)/);
+      expect(body).not.toMatch(/var\(--locked[^)]*\)/);
     }
   });
 

@@ -278,14 +278,12 @@ describe('the 008 block stays inside its scope and off what it may not touch', (
     }
   });
 
-  // STATUS 2026-09-29: red itself is not reserved (OD-2026-09-29-001). This
-  // check was written under the reservation and still runs; --locked still
-  // means a medical stop.
-  test('the scoped block never uses reserved medical red', () => {
+  // --locked means a medical stop, which a board restyle has no business
+  // reaching for. Red itself is not reserved (OD-2026-09-29-001), so the hue
+  // and --stamp-red are not refused here.
+  test('the scoped block never uses the --locked medical-stop token', () => {
     const block = boardBlock();
-    expect(block).not.toMatch(/#A81E22/i);
     expect(block).not.toMatch(/--locked\b/);
-    expect(block).not.toMatch(/--stamp-red\b/);
   });
 
   test('the block never restates the room, its wall or its light', () => {

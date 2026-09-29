@@ -15,18 +15,15 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  *    override leaks wherever it is forgotten; a token override cannot. Same
  *    seam .ge-bell, .ge-floorboard and .ge-locker use.
  *
- * 2. THE LOCKED RED IS NOT SPENT ON THE ROOM. #A81E22 / --locked /
- *    --stamp-red is MEDICALLY_NOT_ALLOWED, and After Hours is the room where
- *    that matters most: /admin/shadow paints real refusals, review gates and
- *    safety states, so a decorative red anywhere in this scope teaches a
- *    reader's eye that the gate's red is furniture. The whole 006 identity is
- *    built from bronze, hide, wood and bone, and this pins it — every
- *    declaration under the scope, checked for the seed colour, its rgb
- *    spelling and both token names.
+ * 2. THE --locked TOKEN IS NOT SPENT ON THE ROOM. --locked means
+ *    MEDICALLY_NOT_ALLOWED, and After Hours is the room where that matters
+ *    most: /admin/shadow paints real refusals, review gates and safety states,
+ *    so decorating this scope with the medical-stop token teaches a reader's
+ *    eye that the gate is furniture. Every declaration under the scope is
+ *    checked for the token name.
  *
- *    STATUS 2026-09-29: red itself is not reserved (OD-2026-09-29-001).
- *    These checks were written under the reservation and still run; --locked
- *    still means a medical stop.
+ *    Red itself is not reserved (OD-2026-09-29-001), so the seed colour, its
+ *    rgb spelling and --stamp-red are no longer refused here.
  *
  *    Checked on COMMENT-STRIPPED css on purpose. The scoped block's own header
  *    names the rule in prose ("NO LOCKED RED. --locked (#A81E22, also
@@ -54,7 +51,7 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  *
  * MUTATION CHECK: set a `--brass-NNN` rung on `.ge-afterhours` back to its
  * legacy value, or drop the class from the page, or delete a real control, or
- * paint one declaration in the locked red — each turns this suite red.
+ * paint one declaration with var(--locked) — each turns this suite red.
  */
 
 const BRASS_RUNGS = ['200', '300', '400', '500', '600', '700', '800', '900'] as const;
@@ -106,7 +103,7 @@ describe('golden-era after-hours scope', () => {
   });
 });
 
-describe('the 006 scope never spends the reserved medical red', () => {
+describe('the 006 scope never spends the --locked medical-stop token', () => {
   /** Every rule whose selector list names `.ge-afterhours`, comments removed. */
   function scopedRules(): Array<[string, string]> {
     const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -126,10 +123,7 @@ describe('the 006 scope never spends the reserved medical red', () => {
   });
 
   test.each([
-    ['the seed colour', /#A81E22/i],
-    ['its rgb spelling', /168\s*,\s*30\s*,\s*34/],
     ['the --locked token', /--locked\b/],
-    ['the --stamp-red token', /--stamp-red\b/],
   ])('no declaration under the scope reaches %s', (_label, pattern) => {
     const offenders = scopedRules()
       .filter(([, body]) => pattern.test(body))

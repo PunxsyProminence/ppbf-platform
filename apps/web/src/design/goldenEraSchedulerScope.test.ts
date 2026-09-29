@@ -95,11 +95,11 @@ describe('golden-era scheduler scope', () => {
     expect(PAGE).toMatch(/className="[^"]*\bge-scheduler\b[^"]*"/);
   });
 
-  /* Written when #A81E22 / --locked / --stamp-red was reserved medical red and
-     never decorative chrome. STATUS 2026-09-29: red is not reserved
-     (OD-2026-09-29-001); this check still runs, and --locked still means a
-     medical stop. The scheduler block is bronze, wood, paper and patina;
-     this pins that it stays that way rather than trusting a reading of it.
+  /* --locked means a medical stop and is never decorative chrome. Red itself
+     is not reserved (OD-2026-09-29-001), so the hue and --stamp-red are not
+     refused here. The scheduler block is bronze, wood, paper and patina;
+     this pins that it does not reach for the medical-stop token rather than
+     trusting a reading of it.
 
      COMMENTS ARE STRIPPED FIRST, and the reason is worth stating: the block's
      own header names the locked red in order to say it is not used, so a raw
@@ -110,12 +110,10 @@ describe('golden-era scheduler scope', () => {
     .slice(css.indexOf('.ge-scheduler {'))
     .replace(/\/\*[\s\S]*?\*\//g, '');
 
-  test('the scheduler block never reaches the reserved medical red', () => {
+  test('the scheduler block never reaches the --locked medical-stop token', () => {
     // The slice has to have found the real block, or this asserts about "".
     expect(SCHEDULER_DECLARATIONS).toContain('--brass-500');
-    expect(SCHEDULER_DECLARATIONS).not.toMatch(/#A81E22/i);
     expect(SCHEDULER_DECLARATIONS).not.toMatch(/var\(--locked/);
-    expect(SCHEDULER_DECLARATIONS).not.toMatch(/var\(--stamp-red/);
   });
 });
 
