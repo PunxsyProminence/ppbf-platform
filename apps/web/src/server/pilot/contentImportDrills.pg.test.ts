@@ -166,6 +166,10 @@ beforeAll(async () => {
 
   client = new Client({ connectionString: connectionStringFor(DATABASE) });
   await client.connect();
+  // Every migration in apply-migrations.yml's `all` order (scripts/lib/full-schema.mjs),
+  // pilot_slice_postgres_drill_vocabulary_widening_migration.sql among them:
+  // the committed CSVs carry literature_grounded_draft and warmup_decay, which
+  // the old seedAll below cannot load without it (drillSeedPrerequisite.test.ts).
   await applyFullSchema(client, { infraDir: INFRA_DIR });
 
   observer = new Client({ connectionString: connectionStringFor(DATABASE) });
