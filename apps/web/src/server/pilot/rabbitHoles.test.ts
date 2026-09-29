@@ -408,6 +408,27 @@ describe('what a reader receives', () => {
     expect(sql).toContain("s.approval_state = 'approved'");
     expect(sql).toContain("s.verification_state = 'verified'");
   });
+
+  // suppressSource flips only retrieval_suppressed and leaves the approvals
+  // standing, so without its own predicate a lesson went on naming a source
+  // pulled for retraction. And a lesson is read by everyone in its audience,
+  // so it must never name a document filed against one athlete. Both are what
+  // a gym-wide search already refuses; the join now reads the same rule.
+  test('the citation join refuses a retracted source and an athlete-scoped document, as search does', async () => {
+    queryMock.mockResolvedValueOnce([]);
+
+    await listPublishedRabbitHoles({
+      organizationId: 'org-a',
+      anchorType: 'gap_type',
+      anchorKey: 'technique',
+      role: 'athlete',
+    });
+
+    const sql = String(queryMock.mock.calls[0][0]).replace(/\s+/g, ' ');
+    const join = sql.slice(sql.indexOf('left join pilot.shadow_library_documents d'));
+    expect(join).toContain('not coalesce(s.retrieval_suppressed, false)');
+    expect(join).toContain('d.subject_id is null');
+  });
 });
 
 describe('editing and retiring', () => {

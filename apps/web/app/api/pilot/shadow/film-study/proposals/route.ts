@@ -13,12 +13,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { assertVideoIsFilmStudyMedia } from '@/src/server/pilot/videoDestination';
 
-import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { accessibleAthleteIds, assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { isUuid, jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   createCoachReportedObservation,
   getFilmStudyProposal,
+  listFilmStudyProposalAthleteIds,
   listFilmStudyProposals,
   resolveFilmStudyProposal,
   type FilmStudyProposalVerdict,
@@ -45,17 +46,35 @@ export async function GET(request: NextRequest) {
       throw new Error('Missing state: expected "pending" or "all"');
     }
 
+    // Every proposal is an observation about one athlete, so every row this
+    // returns is limited to athletes the reader may reach. Without athlete_id
+    // this used to list the whole gym's queue: a coach saw observations about
+    // athletes they are neither assigned to nor covering.
     const athleteId = params.get('athlete_id');
+    let athleteIds: string[];
     if (athleteId) {
       // Narrowing to one athlete is a per-athlete read, so it takes the same
       // access check every other athlete-scoped read takes.
       await assertActorCanAccessAthlete(principal, athleteId);
+      athleteIds = [athleteId];
+    } else {
+      // The Film Study page asks for the whole queue. It gets the part of it
+      // this reader may see: the athletes the queue names, filtered through
+      // the batched form of the same gate (assigned or actively covering for
+      // a coach, live athletes of the gym for an admin). The filter then runs
+      // in SQL, before the row limit, so hidden rows cannot crowd out visible
+      // ones.
+      const candidates = await listFilmStudyProposalAthleteIds({
+        organizationId: principal.organizationId,
+        state: stateParam,
+      });
+      athleteIds = [...await accessibleAthleteIds(principal, candidates)];
     }
 
     const proposals = await listFilmStudyProposals({
       organizationId: principal.organizationId,
       state: stateParam,
-      athleteId,
+      athleteIds,
     });
 
     return NextResponse.json({ ok: true, proposals });

@@ -983,8 +983,14 @@ export default function CoachVideoAnalysisPage() {
               This gym has no active compliance rules, so there is nothing to escalate an observation under.
             </p>
           ) : null}
+          {/* The queue holds only athletes this reader may reach (the proposals
+              GET filters by athlete access), while the accept-rate line above
+              counts the whole gym's outstanding proposals. The empty state
+              names its scope, so the two cannot read as a contradiction. */}
           {!proposalsError && proposals.length === 0 ? (
-            <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">No Film Study observations awaiting review.</p>
+            <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">
+              No Film Study observations awaiting review for athletes you can see.
+            </p>
           ) : (
             <div className="mt-[var(--s3)] space-y-[var(--s3)]">
               {proposals.map((p) => (

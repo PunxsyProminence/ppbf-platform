@@ -77,6 +77,10 @@ import {
   degradedShadowEvidenceBundle,
   type ShadowEvidenceCitation,
 } from '@/src/server/pilot/shadowEvidence';
+import {
+  SHADOW_MESSAGE_TOO_LONG_RESPONSE,
+  isShadowMessageTooLong,
+} from '@/src/shared/shadowChatLimits';
 
 export interface ShadowChatRequest {
   message: string;
@@ -160,7 +164,6 @@ export function resolveShadowProviderTimeoutMs(
   return Math.max(PROVIDER_TIMEOUT_FLOOR_MS, Math.min(PROVIDER_TIMEOUT_CEILING_MS, Math.trunc(parsed)));
 }
 
-const MAX_MESSAGE_LENGTH = 12_000;
 const DEGRADED_RESPONSE = 'SHADOW is temporarily unavailable. No generated guidance was returned. Please try again later or contact your organization for support.';
 /**
  * Shown when the Library holds no retrievable evidence for anyone.
@@ -546,10 +549,30 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       preferAsync = false,
     } = body;
 
+    // Its own refusal, not the empty-question one below: telling someone who
+    // pasted a long question to "Enter a question" is false, and gives them
+    // nothing to act on.
+    if (typeof rawMessage === 'string' && isShadowMessageTooLong(rawMessage)) {
+      return NextResponse.json(
+        {
+          success: false,
+          state: 'filtered',
+          response: SHADOW_MESSAGE_TOO_LONG_RESPONSE,
+          messageId: `msg_${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          filtered: true,
+          requiresHumanReview: false,
+          evidenceTier: 'RESEARCH_NEEDED',
+          handoff: resolveHandoff({ requiresHumanReview: false, topic: undefined }),
+          error: 'Question exceeds the maximum length.',
+        },
+        { status: 400 },
+      );
+    }
+
     if (
       typeof rawMessage !== 'string'
       || rawMessage.trim().length === 0
-      || rawMessage.length > MAX_MESSAGE_LENGTH
       || (requestedConversationId !== undefined
         && !isUuid(requestedConversationId))
       || (athleteId !== undefined
