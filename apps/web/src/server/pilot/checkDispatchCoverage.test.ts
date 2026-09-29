@@ -191,7 +191,7 @@ describe('every read-only check is dispatchable', () => {
 
 /**
  * check-database.yml is the older, smaller read-only workflow, and the one the
- * seeding runbook sends an operator to (seed-reference-data.yml:108, "read it
+ * seeding runbook sends an operator to (seed-reference-data.yml:125, "read it
  * with check-database seed-identity"). It carries a SUBSET of the checks on
  * purpose, so the everything-in-both assertion above does not apply to it. What
  * does apply is the same two mismatches: an option whose arm is missing falls

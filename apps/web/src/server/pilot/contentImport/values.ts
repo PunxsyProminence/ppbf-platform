@@ -13,7 +13,7 @@ export function normalizeCell(raw: string | null | undefined): string {
 
 // The committed CSVs write whole numbers both ways ('2' and '2.0': cohort
 // min_level_ordinal, template item duration_minutes). The old loaders read
-// both with parseInt (seed-competence-cohorts.mjs:132), so both stay valid.
+// both with parseInt (the retired seed-competence-cohorts.mjs), so both stay valid.
 const INTEGER_TEXT = /^-?\d+(?:\.0+)?$/;
 const NUMBER_TEXT = /^-?\d+(?:\.\d+)?$/;
 

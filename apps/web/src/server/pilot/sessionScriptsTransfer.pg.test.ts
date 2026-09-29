@@ -1,7 +1,8 @@
 // Real PostgreSQL-backed contract test for the session-scripts and transfer-claims
 // migrations (pilot.session_scripts, pilot.session_script_blocks,
 // pilot.session_script_renderings, pilot.session_script_runs, pilot.transfer_claims)
-// and their seed loaders running against a real transaction.
+// and the committed files loaded through the content-import core against a real
+// transaction.
 //
 // What needs proving, and cannot be proven by reading SQL or a mocked-query unit test:
 //
@@ -12,16 +13,15 @@
 //    without evidence_class='EVIDENCE-SUPPORTED' is rejected.
 // 4. pilot_transfer_one_target holds: a claim attaching to zero or two of
 //    drill_id/block_id/script_id is rejected.
-// 5. seed-session-scripts.mjs loads exactly 3 scripts / 65 blocks / 4 renderings,
-//    idempotently.
-// 6. seed-transfer-claims.mjs against the REAL, already-shipped drill-library seed --
-//    this migration adds a named FK from transfer_claims.drill_id to
-//    pilot.drill_library(organization_id, drill_id), matching this repo's convention of
-//    naming every foreign-key-shaped column. The proposed archive's seed_transfer_claims.csv
-//    was authored against a different generation of drill IDs than the archive's own
-//    seed_drill_library.csv (folder 01) or the already-shipped repo drill library -- neither
-//    matches. This test proves whether that FK holds or fails against real data, and the
-//    result must not be worked around.
+// 5. The committed session scripts load whole through the content-import core (the path
+//    the seed workflow runs) -- every script, block and rendering the files hold --
+//    idempotently, and all or nothing.
+// 6. The committed transfer claims against the REAL drill library, loaded through the
+//    core. This migration adds a named FK from transfer_claims.drill_id to
+//    pilot.drill_library(organization_id, drill_id). seed_transfer_claims.csv was authored
+//    against a different generation of drill IDs than the shipped drill library, so its
+//    rows do not resolve -- and the result must not be worked around. The core now refuses
+//    them at plan, before any write, instead of at the foreign key half way through a load.
 //
 // Spins up the same disposable, local-only embedded Postgres the other migration suites
 // use. It NEVER connects to production or staging.
@@ -36,6 +36,14 @@ import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
+
+import {
+  committedRows,
+  createSeedingGym,
+  loadReferenceContent,
+  loadResearchClaimsIntoPlatformLibrary,
+  openFullSchemaDatabase,
+} from '../../testing/referenceContentFixture';
 
 jest.setTimeout(180_000);
 
@@ -54,11 +62,6 @@ const TRANSFER_CLAIMS_RUNNER_PATH = path.resolve(
   __dirname,
   '../../../scripts/pilot-apply-transfer-claims-migration.mjs',
 );
-const SESSION_SCRIPTS_SEED_LOADER_PATH = path.resolve(__dirname, '../../../scripts/seed-session-scripts.mjs');
-const TRANSFER_CLAIMS_SEED_LOADER_PATH = path.resolve(__dirname, '../../../scripts/seed-transfer-claims.mjs');
-const SESSION_SCRIPTS_SEED_DIR = path.resolve(__dirname, '../../../seed-data/session-scripts');
-const TRANSFER_CLAIMS_SEED_DIR = path.resolve(__dirname, '../../../seed-data/transfer-claims');
-const DRILL_LIBRARY_SEED_DIR = path.resolve(__dirname, '../../../seed-data/drill-library');
 const SCHEMA_FILES = [
   'pilot_slice_postgres.sql',
   'pilot_slice_postgres_drill_library_v3_migration.sql',
@@ -78,19 +81,6 @@ let sessionScriptsMigrationSql: string;
 let transferClaimsMigrationSql: string;
 let applySessionScriptsMigration: (client: Client, sql: string) => Promise<void>;
 let applyTransferClaimsMigration: (client: Client, sql: string) => Promise<void>;
-let seedSessionScripts: (
-  client: Client,
-  seedDir: string,
-  placeholders: { organizationId: string; seedAccountId: string },
-  opts?: { dryRun?: boolean },
-) => Promise<void>;
-let seedTransferClaims: (
-  client: Client,
-  seedDir: string,
-  placeholders: { organizationId: string },
-  opts?: { dryRun?: boolean },
-) => Promise<void>;
-
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
 }
@@ -183,12 +173,6 @@ beforeAll(async () => {
 
   const transferClaimsRunner = await nativeDynamicImport(pathToFileURL(TRANSFER_CLAIMS_RUNNER_PATH).href);
   applyTransferClaimsMigration = transferClaimsRunner.applyMigrationTransaction as typeof applyTransferClaimsMigration;
-
-  const sessionScriptsSeed = await nativeDynamicImport(pathToFileURL(SESSION_SCRIPTS_SEED_LOADER_PATH).href);
-  seedSessionScripts = sessionScriptsSeed.seedAll as typeof seedSessionScripts;
-
-  const transferClaimsSeed = await nativeDynamicImport(pathToFileURL(TRANSFER_CLAIMS_SEED_LOADER_PATH).href);
-  seedTransferClaims = transferClaimsSeed.seedAll as typeof seedTransferClaims;
 });
 
 afterAll(async () => {
@@ -375,236 +359,152 @@ describe('transfer claims constraints against real Postgres', () => {
   });
 });
 
-describe('seed-session-scripts.mjs against real Postgres', () => {
+/*
+  THE COMMITTED SESSION SCRIPTS AND TRANSFER CLAIMS, LOADED THE WAY THE SEED
+  WORKFLOW LOADS THEM.
+
+  Until IMP-10 these ran seed-session-scripts.mjs and seed-transfer-claims.mjs.
+  Both are retired; the content-import core loads every dataset, run as
+  runApply (the `content:apply` the seed workflow calls), into a database
+  holding the schema production runs. Scripts name a discipline, so the
+  registry loads in the same transaction. Every count comes from the files.
+*/
+describe('the committed session scripts, loaded through the content-import core', () => {
+  let seedDb: Client;
+  const SCRIPTS = committedRows('session-scripts/seed_session_scripts.csv');
+  const BLOCKS = committedRows('session-scripts/seed_session_script_blocks.csv');
+  const RENDERINGS = committedRows('session-scripts/seed_session_script_renderings.csv');
+  const DATASETS = 'disciplines,session-scripts';
+  const INDUCED = 'INDUCED_NON_DATABASE_FAILURE';
+
+  beforeAll(async () => {
+    seedDb = await openFullSchemaDatabase(Client, connectionStringFor, 'ppbf_test_session_scripts_core_seed');
+  });
+
+  afterAll(async () => {
+    await seedDb?.end().catch(() => {});
+  });
+
+  async function count(table: string, organizationId: string, where = ''): Promise<number> {
+    const { rows } = await seedDb.query(`select count(*)::int as n from pilot.${table} where organization_id = $1 ${where}`, [organizationId]);
+    return rows[0].n;
+  }
+
   // seed_session_script_blocks.csv used to carry two blocks (both in the Friday sparring
   // script, block_kind='instruction': "Sparring Drill Rounds" blk_df4fb688e5b181 and
   // "Open Sparring" blk_01b502a7e7336d) with none of what_to_say/what_to_explain/
-  // what_to_watch/what_to_fix filled in. pilot_ssb_content rejected them, and because
-  // seedAll runs in one transaction, 0 of 65 blocks loaded. Those two cells are now
-  // filled from the drill library's own sparring rows (seed-data/drill-library:
-  // Conditioned Sparring -- Single Task / Role Swap, Open Sparring, their cues and stop
-  // rules), so the package must load whole -- and stay stable on a re-run.
-  test('loads exactly 3 scripts / 65 blocks / 4 renderings, idempotently', async () => {
-    const client = await freshDatabase('ppbf_test_session_scripts_seed');
-    try {
-      await applySessionScriptsMigration(client, sessionScriptsMigrationSql);
+  // what_to_watch/what_to_fix filled in. pilot_ssb_content rejected them, and because the
+  // load runs in one transaction, 0 of the blocks loaded. Those two cells are now filled
+  // from the drill library's own sparring rows, so the package must load whole -- and stay
+  // stable on a re-run.
+  test('loads every committed script, block and rendering, and a second load writes nothing', async () => {
+    const organizationId = 'gym_scripts_real';
+    const admin = await createSeedingGym(seedDb, organizationId);
+    const first = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: DATASETS });
+    expect(first.code).toBe(0);
+    const again = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: DATASETS });
+    expect(again.lines).toContain(`  session-scripts: 0 new, 0 new version, ${SCRIPTS.length} unchanged, 0 absent, 0 reject`);
+    expect(again.lines).toContain('RESULT: NOTHING TO APPLY -- every item is unchanged or absent; nothing was written.');
 
-      // Twice on purpose: the second call must skip every already-present row rather
-      // than duplicate or fail, which is the loader's stated idempotency contract.
-      await seedSessionScripts(client, SESSION_SCRIPTS_SEED_DIR, { organizationId: ORG_A, seedAccountId: COACH_A });
-      await seedSessionScripts(client, SESSION_SCRIPTS_SEED_DIR, { organizationId: ORG_A, seedAccountId: COACH_A });
+    expect(SCRIPTS.length).toBeGreaterThanOrEqual(3);
+    expect(await count('session_scripts', organizationId)).toBe(SCRIPTS.length);
+    expect(await count('session_script_blocks', organizationId)).toBe(BLOCKS.length);
+    expect(await count('session_script_renderings', organizationId)).toBe(RENDERINGS.length);
 
-      const scripts = await client.query(`select count(*)::int as n from pilot.session_scripts where organization_id = $1`, [ORG_A]);
-      const blocks = await client.query(`select count(*)::int as n from pilot.session_script_blocks where organization_id = $1`, [ORG_A]);
-      const renderings = await client.query(`select count(*)::int as n from pilot.session_script_renderings where organization_id = $1`, [ORG_A]);
-      expect(scripts.rows[0].n).toBe(3);
-      expect(blocks.rows[0].n).toBe(65);
-      expect(renderings.rows[0].n).toBe(4);
+    // The two repaired sparring blocks carry supervision content -- the exact cells
+    // whose emptiness used to void the whole load under pilot_ssb_content.
+    const repaired = await seedDb.query(
+      `select block_id, what_to_say, what_to_watch from pilot.session_script_blocks
+       where organization_id = $1 and block_id in ('blk_df4fb688e5b181', 'blk_01b502a7e7336d')
+       order by block_id`,
+      [organizationId],
+    );
+    expect(repaired.rows).toHaveLength(2);
+    for (const row of repaired.rows) {
+      expect((row.what_to_say ?? '').trim()).not.toBe('');
+      expect((row.what_to_watch ?? '').trim()).not.toBe('');
+    }
 
-      // The two repaired sparring blocks carry supervision content -- the exact cells
-      // whose emptiness used to void the whole load under pilot_ssb_content.
-      const repaired = await client.query(
-        `select block_id, what_to_say, what_to_watch from pilot.session_script_blocks
-         where organization_id = $1 and block_id in ('blk_df4fb688e5b181', 'blk_01b502a7e7336d')
-         order by block_id`,
-        [ORG_A],
-      );
-      expect(repaired.rows).toHaveLength(2);
-      for (const row of repaired.rows) {
-        expect((row.what_to_say ?? '').trim()).not.toBe('');
-        expect((row.what_to_watch ?? '').trim()).not.toBe('');
-      }
-
-      // KNOWN CONTENT GAP, not a defect: "Week 2 Monday" (scr_e2ed38b1a19670) ships with
-      // zero blocks. It loads fine; sessionScriptRuns.ts refuses to start a run of it
-      // (SESSION_SCRIPT_HAS_NO_BLOCKS, 422) and the coach UI hides Start. Pinned here so
-      // a 0-block count on this script reads as the shipped state, not as data loss.
-      const emptyScript = await client.query(
-        `select count(*)::int as n from pilot.session_script_blocks
-         where organization_id = $1 and script_id = 'scr_e2ed38b1a19670'`,
-        [ORG_A],
-      );
-      expect(emptyScript.rows[0].n).toBe(0);
-    } finally {
-      await client.end();
+    // KNOWN CONTENT GAP, not a defect: a script the files ship with zero blocks
+    // ("Week 2 Monday", scr_e2ed38b1a19670, today) loads fine; sessionScriptRuns.ts
+    // refuses to start a run of it (SESSION_SCRIPT_HAS_NO_BLOCKS, 422) and the coach UI
+    // hides Start. Pinned from the files so a 0-block count reads as the shipped state,
+    // not as data loss.
+    const withoutBlocks = SCRIPTS.map((row) => row.script_id).filter((id) => !BLOCKS.some((block) => block.script_id === id));
+    for (const scriptId of withoutBlocks) {
+      expect({ scriptId, blocks: await count('session_script_blocks', organizationId, `and script_id = '${scriptId}'`) }).toEqual({ scriptId, blocks: 0 });
     }
   });
 
-  // The test above, and every other test that touches this loader, exercises a path where
-  // seedAll either succeeds outright or fails on a PostgreSQL constraint. Neither can tell
-  // a correct rollback apart from a COMMIT that ran anyway: a PostgreSQL error aborts the
-  // transaction, so the rows are gone either way and a zero count proves nothing about the
-  // loader's control flow.
-  //
-  // This is the first case where a SUCCESSFUL WRITE PRECEDES THE FAILURE and the failure is
-  // NOT a database error. seedAll reads three CSVs and writes after each one. Copying only
-  // the first means the three session_scripts rows are already inserted when the second
-  // fs.readFile rejects with ENOENT -- a JavaScript filesystem error that never reaches
-  // PostgreSQL, so the transaction stays valid and committable.
-  //
-  // APPLY mode on purpose: no options object is passed, so dryRun defaults to false. A
-  // dry-run rolls back regardless of outcome and would pass against either implementation.
+  // THE ORDER IS THE WHOLE TEST. The scripts are inserted, THEN the first block insert
+  // throws a plain JavaScript error -- no SQLSTATE, so the transaction stays valid and
+  // committable, and a COMMIT reached anyway (the old loaders' `finally`) would keep the
+  // scripts. APPLY mode: a dry run rolls back on success too and would pass against it.
   test('a failure after scripts are inserted rolls back the rows already written', async () => {
-    const client = await freshDatabase('ppbf_test_session_scripts_seed_atomicity');
-    try {
-      await applySessionScriptsMigration(client, sessionScriptsMigrationSql);
+    const organizationId = 'gym_scripts_atomicity';
+    const admin = await createSeedingGym(seedDb, organizationId);
+    let scriptInserts = 0;
+    const failing = {
+      query: (sql: string, params?: unknown[]) => {
+        if (/insert into pilot\.session_scripts\b/i.test(sql)) scriptInserts += 1;
+        if (/insert into pilot\.session_script_blocks/i.test(sql)) throw new TypeError(INDUCED);
+        return seedDb.query(sql, params);
+      },
+    };
+    await expect(
+      loadReferenceContent(failing as unknown as Client, { organizationId, actorAccountId: admin, datasets: DATASETS }),
+    ).rejects.toThrow(INDUCED);
 
-      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ppbf-session-scripts-atomicity-'));
-
-      // The REAL shipped first file, not a synthesised stand-in: its rows have to insert
-      // successfully for this test to be measuring what it claims to measure.
-      await fs.copyFile(
-        path.join(SESSION_SCRIPTS_SEED_DIR, 'seed_session_scripts.csv'),
-        path.join(dir, 'seed_session_scripts.csv'),
-      );
-      // seed_session_script_blocks.csv is deliberately absent. That is the induced failure.
-
-      await expect(
-        seedSessionScripts(client, dir, { organizationId: ORG_A, seedAccountId: COACH_A }),
-      ).rejects.toThrow();
-
-      // All three write targets, because the loader writes all three and a repair must not
-      // leave any of them behind.
-      const scripts = await client.query(`select count(*)::int as n from pilot.session_scripts where organization_id = $1`, [ORG_A]);
-      const blocks = await client.query(`select count(*)::int as n from pilot.session_script_blocks where organization_id = $1`, [ORG_A]);
-      const renderings = await client.query(`select count(*)::int as n from pilot.session_script_renderings where organization_id = $1`, [ORG_A]);
-      expect(scripts.rows[0].n).toBe(0);
-      expect(blocks.rows[0].n).toBe(0);
-      expect(renderings.rows[0].n).toBe(0);
-    } finally {
-      await client.end();
-    }
+    expect(scriptInserts).toBeGreaterThan(0);
+    // All three write targets, because the load writes all three and a repair must not
+    // leave any of them behind.
+    expect(await count('session_scripts', organizationId)).toBe(0);
+    expect(await count('session_script_blocks', organizationId)).toBe(0);
+    expect(await count('session_script_renderings', organizationId)).toBe(0);
   });
 });
 
-// Reads only the drill_id column out of the real, already-shipped seed_drill_library.csv and
-// inserts minimal pilot.drill_library rows -- deliberately NOT going through
-// seed-drill-library.mjs's full seedAll, because that loader's single transaction also seeds
-// pilot.drill_scale_levels from seed_drill_scale_levels.csv, and that CSV (copied into this
-// repo from the same proposed-migrations archive as this folder, still uncommitted pending a
-// user decision) trips the pre-existing drill_scale_levels_authoring_state_check finding,
-// which would roll back the drill_library rows too and mask what THIS test is checking.
-// Minimal RFC 4180 parser, same shape as the one duplicated across scripts/*.mjs in this
-// repo -- needed here because the CSV's description columns carry embedded commas and
-// newlines inside quoted fields, which a plain line-split cannot handle correctly.
-function parseCsvForTest(text: string): string[][] {
-  const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = '';
-  let inQuotes = false;
-  let index = 0;
+describe('the committed transfer claims against the real drill library, through the content-import core', () => {
+  let seedDb: Client;
+  const CLAIMS = committedRows('transfer-claims/seed_transfer_claims.csv');
+  const LIBRARY = committedRows('drill-library/seed_drill_library.csv');
 
-  const endField = () => {
-    row.push(field);
-    field = '';
-  };
-  const endRow = () => {
-    endField();
-    rows.push(row);
-    row = [];
-  };
+  beforeAll(async () => {
+    seedDb = await openFullSchemaDatabase(Client, connectionStringFor, 'ppbf_test_transfer_claims_core_seed');
+    await loadResearchClaimsIntoPlatformLibrary(seedDb);
+  });
 
-  while (index < source.length) {
-    const char = source[index];
-    if (inQuotes) {
-      if (char === '"') {
-        if (source[index + 1] === '"') {
-          field += '"';
-          index += 2;
-          continue;
-        }
-        inQuotes = false;
-        index += 1;
-        continue;
-      }
-      field += char;
-      index += 1;
-      continue;
-    }
-    if (char === '"') {
-      inQuotes = true;
-      index += 1;
-      continue;
-    }
-    if (char === ',') {
-      endField();
-      index += 1;
-      continue;
-    }
-    if (char === '\r') {
-      endRow();
-      index += source[index + 1] === '\n' ? 2 : 1;
-      continue;
-    }
-    if (char === '\n') {
-      endRow();
-      index += 1;
-      continue;
-    }
-    field += char;
-    index += 1;
-  }
-  if (field !== '' || row.length > 0) endRow();
-  return rows.filter((entry) => entry.some((cell) => cell.trim() !== ''));
-}
+  afterAll(async () => {
+    await seedDb?.end().catch(() => {});
+  });
 
-async function insertRealDrillIds(client: Client, organizationId: string): Promise<string[]> {
-  const raw = await fs.readFile(path.join(DRILL_LIBRARY_SEED_DIR, 'seed_drill_library.csv'), 'utf8');
-  const table = parseCsvForTest(raw);
-  const [header, ...dataRows] = table;
-  const drillIdIndex = header.indexOf('drill_id');
-  if (drillIdIndex === -1) throw new Error('test bug: drill_id column not found in seed_drill_library.csv');
-  const drillIds = dataRows.map((cells) => cells[drillIdIndex]);
+  test('reports how many committed claims resolve against real drill IDs, and refuses the rest before writing anything', async () => {
+    const organizationId = 'gym_transfer_claims';
+    const admin = await createSeedingGym(seedDb, organizationId);
+    expect((await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,drill-library' })).code).toBe(0);
+    const drillCount = await seedDb.query('select count(*)::int as n from pilot.drill_library where organization_id = $1', [organizationId]);
+    expect(drillCount.rows[0].n).toBe(LIBRARY.length);
 
-  for (const drillId of drillIds) {
-    await client.query(
-      `insert into pilot.drill_library
-         (organization_id, drill_id, lineage_id, name, category, target_behavior, purpose,
-          standard_setup, execution, what_good_looks_like, what_bad_looks_like)
-       values ($1,$2,$2,$3,'test','test behavior','test purpose','test setup',
-               'test execution','test good','test bad')`,
-      [organizationId, drillId, `test drill ${drillId}`],
+    // The dataset the seed workflow leaves out, handed to the same apply anyway.
+    const loaded = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: ['transfer-claims'] });
+    const orphans = loaded.lines.filter((line) => line.startsWith('  [orphan_reference] transfer-claims/seed_transfer_claims.csv:') && line.includes(' drill_id '));
+    const libraryIds = new Set(LIBRARY.map((row) => row.drill_id));
+    const unresolved = CLAIMS.filter((row) => row.drill_id && !libraryIds.has(row.drill_id));
+
+    console.log(
+      `TRANSFER CLAIMS RESULT: ${CLAIMS.length - unresolved.length} of ${CLAIMS.length} claims resolve against the real drill library; `
+      + `${orphans.length} refused at plan over ${new Set(unresolved.map((row) => row.drill_id)).size} drill ids`,
     );
-  }
-  return drillIds;
-}
 
-describe('seed-transfer-claims.mjs against the real, already-shipped drill library', () => {
-  test('reports how many of the 173 claims resolve against real drill IDs, and how many are FK-rejected', async () => {
-    const client = await freshDatabase('ppbf_test_transfer_claims_seed_against_real_drills');
-    try {
-      await applySessionScriptsMigration(client, sessionScriptsMigrationSql);
-      await applyTransferClaimsMigration(client, transferClaimsMigrationSql);
-      const drillIds = await insertRealDrillIds(client, ORG_A);
-
-      const drillCount = await client.query(`select count(*)::int as n from pilot.drill_library where organization_id = $1`, [ORG_A]);
-      expect(drillIds).toHaveLength(119);
-      expect(drillCount.rows[0].n).toBe(119);
-
-      let fkError: Error | null = null;
-      try {
-        await seedTransferClaims(client, TRANSFER_CLAIMS_SEED_DIR, { organizationId: ORG_A });
-      } catch (error) {
-        fkError = error as Error;
-      }
-
-      const claimCount = await client.query(`select count(*)::int as n from pilot.transfer_claims where organization_id = $1`, [ORG_A]);
-
-      console.log(
-        fkError
-          ? `TRANSFER CLAIMS FK RESULT: seeding failed against real drill_library -- ${fkError.message}`
-          : `TRANSFER CLAIMS FK RESULT: seeding succeeded, ${claimCount.rows[0].n} rows loaded`,
-      );
-
-      // This assertion documents the actual finding rather than assuming an outcome:
-      // the seed data's drill_id references were generated in a different run than the
-      // shipped drill library and do not resolve against it.
-      expect(fkError).not.toBeNull();
-      expect(fkError?.message).toMatch(/pilot_transfer_drill_fk/);
-      expect(claimCount.rows[0].n).toBe(0);
-    } finally {
-      await client.end();
-    }
+    // This documents the actual finding rather than assuming an outcome: the claims'
+    // drill_id references were generated in a different run than the shipped drill
+    // library and do not resolve against it. Every unresolved row is refused by name,
+    // and nothing is written.
+    expect(unresolved.length).toBeGreaterThan(0);
+    expect(orphans).toHaveLength(unresolved.length);
+    expect(loaded.code).toBe(1);
+    expect(loaded.lines.some((line) => line.startsWith('  [dataset_not_loadable]'))).toBe(true);
+    const claimCount = await seedDb.query('select count(*)::int as n from pilot.transfer_claims where organization_id = $1', [organizationId]);
+    expect(claimCount.rows[0].n).toBe(0);
   });
 });

@@ -17,7 +17,7 @@ import {
 } from './common';
 
 // pilot.session_scripts, session_script_blocks, session_script_renderings
-// (session_scripts migration :27-124). Loaded today by seed-session-scripts.mjs.
+// (session_scripts migration :27-124). Loaded by the content-import core (seed-reference-data, npm run seed:session-scripts).
 
 const scriptParent = () =>
   parentColumn('script_id', 'script', 'script', 'The script id, or the new:<short-name> of a script in this package.');
@@ -31,8 +31,9 @@ export const sessionScriptsDataset: DatasetSpec = {
     + 'are one unit: under R2 a change makes a new version and the old one is kept. Blocks (or renderings) listed '
     + 'for a script replace all of its blocks (or renderings).',
   loadedToday:
-    'seed-reference-data workflow, dataset session-scripts (npm run seed:session-scripts). Insert-only by id: an '
-    + 'existing script, block or rendering id is skipped; a new block at an existing (script, block_order) stops the run.',
+    'seed-reference-data workflow, dataset session-scripts (npm run seed:session-scripts), through the content-import '
+    + 'core: a new script is inserted, a changed one becomes version+1 with new block and rendering ids (a run keeps '
+    + 'the version it started on), an unchanged one is skipped.',
   files: [
     {
       dataset: 'session-scripts',

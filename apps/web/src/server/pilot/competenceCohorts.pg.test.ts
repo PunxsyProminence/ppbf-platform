@@ -1,7 +1,7 @@
 // Real PostgreSQL-backed contract test for the competence-cohorts and method-naming
 // migrations (pilot.competence_levels, pilot.athlete_competence, pilot.v_athlete_tenure,
-// pilot.cohort_definitions, pilot.methods) and their seed loader running against a real
-// transaction.
+// pilot.cohort_definitions, pilot.methods), and the committed levels and cohorts loaded
+// through the content-import core against a real transaction.
 //
 // What needs proving, and cannot be proven by reading SQL or a mocked-query unit test:
 //
@@ -13,10 +13,10 @@
 // 3. pilot.v_athlete_tenure buckets tenure_band on training HOURS, not calendar time or
 //    session count alone -- an athlete enrolled long ago with few logged minutes must not
 //    land in 'established'.
-// 4. seed-competence-cohorts.mjs loads exactly 6 levels and 6 cohorts, idempotently, and of
-//    the 6 real seeded cohorts exactly one (Competition Squad) carries a regulatory_basis --
-//    matching the README's claim that age survives as a regulatory floor on exactly one
-//    cohort, not as a general grouping axis.
+// 4. The committed competence levels and cohort definitions load whole through the
+//    content-import core (the path the seed workflow runs), idempotently, all or nothing --
+//    and the cohorts that carry a regulatory_basis are exactly the ones the committed file
+//    says (the README's claim that age survives only as a regulatory floor).
 // 5. The method-naming migration's own insert lands the single 'reset_method' row and is
 //    idempotent under re-application.
 //
@@ -33,6 +33,13 @@ import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
+
+import {
+  committedRows,
+  createSeedingGym,
+  loadReferenceContent,
+  openFullSchemaDatabase,
+} from '../../testing/referenceContentFixture';
 
 jest.setTimeout(180_000);
 
@@ -51,8 +58,6 @@ const METHOD_RUNNER_PATH = path.resolve(
   __dirname,
   '../../../scripts/pilot-apply-method-naming-migration.mjs',
 );
-const SEED_LOADER_PATH = path.resolve(__dirname, '../../../scripts/seed-competence-cohorts.mjs');
-const SEED_DIR = path.resolve(__dirname, '../../../seed-data/competence-cohorts');
 const SCHEMA_FILES = [
   'pilot_slice_postgres.sql',
   'pilot_slice_postgres_activity_log_migration.sql',
@@ -73,13 +78,6 @@ let cohortsMigrationSql: string;
 let methodMigrationSql: string;
 let applyCohortsMigration: (client: Client, sql: string) => Promise<void>;
 let applyMethodMigration: (client: Client, sql: string) => Promise<void>;
-let seedAll: (
-  client: Client,
-  seedDir: string,
-  placeholders: { organizationId: string },
-  opts?: { dryRun?: boolean },
-) => Promise<void>;
-
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
 }
@@ -180,9 +178,6 @@ beforeAll(async () => {
 
   const methodRunner = await nativeDynamicImport(pathToFileURL(METHOD_RUNNER_PATH).href);
   applyMethodMigration = methodRunner.applyMigrationTransaction as typeof applyMethodMigration;
-
-  const seedModule = await nativeDynamicImport(pathToFileURL(SEED_LOADER_PATH).href);
-  seedAll = seedModule.seedAll as typeof seedAll;
 });
 
 afterAll(async () => {
@@ -434,116 +429,107 @@ describe('pilot.v_athlete_tenure', () => {
   });
 });
 
-describe('seed-competence-cohorts.mjs against real Postgres', () => {
-  test('seeds exactly 6 competence levels and 6 cohort definitions', async () => {
-    const client = await freshDatabase('ppbf_test_competence_cohorts_seed');
-    try {
-      await applyCohortsMigration(client, cohortsMigrationSql);
-      await seedAll(client, SEED_DIR, { organizationId: ORG_A });
+/*
+  THE COMMITTED LEVELS AND COHORTS, LOADED THE WAY THE SEED WORKFLOW LOADS THEM.
 
-      const levels = await client.query(`select count(*)::int as n from pilot.competence_levels where organization_id = $1`, [ORG_A]);
-      const cohorts = await client.query(`select count(*)::int as n from pilot.cohort_definitions where organization_id = $1`, [ORG_A]);
-      expect(levels.rows[0].n).toBe(6);
-      expect(cohorts.rows[0].n).toBe(6);
-    } finally {
-      await client.end();
-    }
+  Until IMP-10 these ran seed-competence-cohorts.mjs. It is retired; the
+  content-import core loads every dataset, run as runApply (the `content:apply`
+  the seed workflow calls, and what `npm run seed:competence-cohorts` runs),
+  into a database holding the schema production runs. Cohorts name a
+  discipline, so the registry loads in the same transaction. Every count comes
+  from the committed files.
+*/
+describe('the committed competence levels and cohorts, loaded through the content-import core', () => {
+  let seedDb: Client;
+  const LEVELS = committedRows('competence-cohorts/seed_competence_levels.csv');
+  const COHORTS = committedRows('competence-cohorts/seed_cohort_definitions.csv');
+  const DATASETS = 'disciplines,competence-levels,cohort-definitions';
+  const INDUCED = 'INDUCED_NON_DATABASE_FAILURE';
+
+  beforeAll(async () => {
+    seedDb = await openFullSchemaDatabase(Client, connectionStringFor, 'ppbf_test_competence_cohorts_core_seed');
   });
 
-  test('exactly one of the 6 seeded cohorts carries a regulatory_basis, and it is Competition Squad', async () => {
-    const client = await freshDatabase('ppbf_test_competence_cohorts_seed_reg_basis');
-    try {
-      await applyCohortsMigration(client, cohortsMigrationSql);
-      await seedAll(client, SEED_DIR, { organizationId: ORG_A });
-
-      const withRegBasis = await client.query(
-        `select cohort_name, min_age_regulatory, regulatory_basis from pilot.cohort_definitions
-         where organization_id = $1 and regulatory_basis <> ''`,
-        [ORG_A],
-      );
-      expect(withRegBasis.rows).toHaveLength(1);
-      expect(withRegBasis.rows[0].cohort_name).toBe('Competition Squad');
-      expect(withRegBasis.rows[0].min_age_regulatory).toBe(8);
-    } finally {
-      await client.end();
-    }
+  afterAll(async () => {
+    await seedDb?.end().catch(() => {});
   });
 
-  test('re-running is idempotent: no duplicates, no error', async () => {
-    const client = await freshDatabase('ppbf_test_competence_cohorts_seed_idempotent');
-    try {
-      await applyCohortsMigration(client, cohortsMigrationSql);
-      await seedAll(client, SEED_DIR, { organizationId: ORG_A });
-      await seedAll(client, SEED_DIR, { organizationId: ORG_A });
+  async function count(table: string, organizationId: string): Promise<number> {
+    const { rows } = await seedDb.query(`select count(*)::int as n from pilot.${table} where organization_id = $1`, [organizationId]);
+    return rows[0].n;
+  }
 
-      const levels = await client.query(`select count(*)::int as n from pilot.competence_levels where organization_id = $1`, [ORG_A]);
-      expect(levels.rows[0].n).toBe(6);
-    } finally {
-      await client.end();
-    }
+  test('loads every committed competence level and cohort definition', async () => {
+    const admin = await createSeedingGym(seedDb, 'gym_cohorts_real');
+    const loaded = await loadReferenceContent(seedDb, { organizationId: 'gym_cohorts_real', actorAccountId: admin, datasets: DATASETS });
+    expect(loaded.code).toBe(0);
+    expect(LEVELS.length).toBeGreaterThanOrEqual(6);
+    expect(await count('competence_levels', 'gym_cohorts_real')).toBe(LEVELS.length);
+    expect(await count('cohort_definitions', 'gym_cohorts_real')).toBe(COHORTS.length);
   });
 
-  test('--dry-run writes nothing', async () => {
-    const client = await freshDatabase('ppbf_test_competence_cohorts_seed_dry_run');
-    try {
-      await applyCohortsMigration(client, cohortsMigrationSql);
-      await seedAll(client, SEED_DIR, { organizationId: ORG_A }, { dryRun: true });
+  test('the cohorts carrying a regulatory_basis are exactly the ones the committed file names', async () => {
+    const admin = await createSeedingGym(seedDb, 'gym_cohorts_reg_basis');
+    expect((await loadReferenceContent(seedDb, { organizationId: 'gym_cohorts_reg_basis', actorAccountId: admin, datasets: DATASETS })).code).toBe(0);
 
-      const levels = await client.query(`select count(*)::int as n from pilot.competence_levels where organization_id = $1`, [ORG_A]);
-      expect(levels.rows[0].n).toBe(0);
-    } finally {
-      await client.end();
-    }
+    const withRegBasis = await seedDb.query(
+      `select cohort_name, min_age_regulatory from pilot.cohort_definitions
+       where organization_id = $1 and regulatory_basis <> ''
+       order by cohort_name`,
+      ['gym_cohorts_reg_basis'],
+    );
+    const expected = COHORTS.filter((row) => row.regulatory_basis.trim() !== '')
+      .map((row) => ({ cohort_name: row.cohort_name, min_age_regulatory: row.min_age_regulatory ? Number(row.min_age_regulatory) : null }))
+      .sort((a, b) => a.cohort_name.localeCompare(b.cohort_name));
+    expect(withRegBasis.rows).toEqual(expected);
+    // Age as a regulatory floor, not a grouping axis: some cohort carries one,
+    // and not every cohort does.
+    expect(expected.length).toBeGreaterThan(0);
+    expect(expected.length).toBeLessThan(COHORTS.length);
   });
 
-  test('a failure after the first file rolls back the rows the first file already wrote', async () => {
-    const client = await freshDatabase('ppbf_test_competence_cohorts_seed_atomicity');
-    try {
-      await applyCohortsMigration(client, cohortsMigrationSql);
+  test('loading it again writes nothing: no duplicates, no error', async () => {
+    const admin = await createSeedingGym(seedDb, 'gym_cohorts_again');
+    expect((await loadReferenceContent(seedDb, { organizationId: 'gym_cohorts_again', actorAccountId: admin, datasets: DATASETS })).code).toBe(0);
+    const again = await loadReferenceContent(seedDb, { organizationId: 'gym_cohorts_again', actorAccountId: admin, datasets: DATASETS });
+    expect(again.lines).toContain('RESULT: NOTHING TO APPLY -- every item is unchanged or absent; nothing was written.');
+    expect(await count('competence_levels', 'gym_cohorts_again')).toBe(LEVELS.length);
+    expect(await count('cohort_definitions', 'gym_cohorts_again')).toBe(COHORTS.length);
+  });
 
-      // TWO FILES, AND THE ORDER IS THE WHOLE TEST.
-      //
-      // seedAll loads seed_competence_levels.csv and inserts 6 rows, THEN loads
-      // seed_cohort_definitions.csv. A seed directory holding only the first
-      // file therefore fails with a filesystem ENOENT from fs.readFile, AFTER
-      // six successful inserts.
-      //
-      // That ordering is the point. Every other case in this describe block
-      // either succeeds outright or rolls back a dry-run, so none of them can
-      // distinguish correct rollback from a COMMIT that ran anyway. An ENOENT
-      // is a JavaScript throw, not a PostgreSQL error, so it does NOT put the
-      // transaction into an aborted state and PostgreSQL has no reason to
-      // refuse a COMMIT reached through `finally`.
-      //
-      // The first file is the REAL shipped CSV, copied rather than synthesised,
-      // so the six rows that must disappear are genuine seed content.
-      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ppbf-competence-atomicity-'));
-      await fs.copyFile(
-        path.join(SEED_DIR, 'seed_competence_levels.csv'),
-        path.join(dir, 'seed_competence_levels.csv'),
-      );
-      // seed_cohort_definitions.csv is deliberately NOT created.
+  test('--dry-run applies and rolls back: nothing is written', async () => {
+    const admin = await createSeedingGym(seedDb, 'gym_cohorts_dry_run');
+    const loaded = await loadReferenceContent(seedDb, { organizationId: 'gym_cohorts_dry_run', actorAccountId: admin, datasets: DATASETS, dryRun: true });
+    expect(loaded.code).toBe(0);
+    expect(loaded.lines.some((line) => line.startsWith('RESULT: DRY RUN'))).toBe(true);
+    expect(await count('competence_levels', 'gym_cohorts_dry_run')).toBe(0);
+  });
 
-      // APPLY mode, not dry-run: a dry-run rolls back on the success path too
-      // and would pass against the defect.
-      await expect(seedAll(client, dir, { organizationId: ORG_A })).rejects.toThrow();
+  test('a failure after the levels are written rolls back the rows already written', async () => {
+    // THE ORDER IS THE WHOLE TEST. The levels are inserted, THEN the first
+    // cohort insert throws a plain JavaScript error -- no SQLSTATE, so
+    // PostgreSQL has no reason to abort the transaction, and a COMMIT reached
+    // anyway (the old loaders' `finally`) would keep every level. APPLY mode,
+    // not dry-run: a dry run rolls back on the success path too and would pass
+    // against the defect.
+    const admin = await createSeedingGym(seedDb, 'gym_cohorts_atomicity');
+    let levelInserts = 0;
+    const failing = {
+      query: (sql: string, params?: unknown[]) => {
+        if (/insert into pilot\.competence_levels/i.test(sql)) levelInserts += 1;
+        if (/insert into pilot\.cohort_definitions/i.test(sql)) throw new TypeError(INDUCED);
+        return seedDb.query(sql, params);
+      },
+    };
+    await expect(
+      loadReferenceContent(failing as unknown as Client, { organizationId: 'gym_cohorts_atomicity', actorAccountId: admin, datasets: DATASETS }),
+    ).rejects.toThrow(INDUCED);
 
-      // All-or-nothing. Not "the cohort file was skipped" -- the competence
-      // levels must be gone too, or a partial dataset survives a run that
-      // exited non-zero, and the operator has no way to know six rows landed.
-      const levels = await client.query(
-        `select count(*)::int as n from pilot.competence_levels where organization_id = $1`,
-        [ORG_A],
-      );
-      expect(levels.rows[0].n).toBe(0);
-
-      const cohorts = await client.query(
-        `select count(*)::int as n from pilot.cohort_definitions where organization_id = $1`,
-        [ORG_A],
-      );
-      expect(cohorts.rows[0].n).toBe(0);
-    } finally {
-      await client.end();
-    }
+    // The failure really came after writes: levels were inserted first.
+    expect(levelInserts).toBeGreaterThan(0);
+    // All or nothing -- the levels and the disciplines before them are gone too.
+    expect(await count('competence_levels', 'gym_cohorts_atomicity')).toBe(0);
+    expect(await count('cohort_definitions', 'gym_cohorts_atomicity')).toBe(0);
+    expect(await count('disciplines', 'gym_cohorts_atomicity')).toBe(0);
   });
 });

@@ -118,7 +118,7 @@ describe('a valid package', () => {
 
 describe('lists', () => {
   it("grounding_claim_ids 'A1-001|A2-002' yields two ids, not one", () => {
-    // The old loader split on ; and , only (seed-drill-library.mjs:210-219),
+    // The old loader split on ; and , only (the retired seed-drill-library.mjs),
     // so 'A1-001|A2-002' became ONE array element and 82 of the 119 committed
     // drills were stored that way. Each id must be its own element.
     expect(splitList('A1-001|A2-002', '|')).toEqual(['A1-001', 'A2-002']);
@@ -138,7 +138,7 @@ describe('lists', () => {
   });
 
   it("a blank cell and its column's default are the same content, so a re-sent drill is not a revision", () => {
-    // The loader stores 'none' / 'authored' for a blank (seed-drill-library.mjs:313-315),
+    // The loader stores 'none' / 'authored' for a blank (as the retired seed-drill-library.mjs did),
     // so a database row and the file that loaded it must hash the same.
     const dataset = datasetSpec('drill-library');
     const scaleRow = (contact: string, state: string) => ({

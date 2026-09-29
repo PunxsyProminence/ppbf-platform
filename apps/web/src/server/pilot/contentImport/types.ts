@@ -69,7 +69,7 @@ export interface ColumnSpec {
   systemDefault?: string;
   /**
    * The value a blank cell STANDS FOR: what the loader writes for a blank
-   * (e.g. seed-drill-library.mjs:313 `record.contact_level || 'none'`) and so
+   * (e.g. the retired seed-drill-library.mjs, `record.contact_level || 'none'`) and so
    * what a database row holds. The canonical hash reads a blank as this value,
    * so re-sending an item with the default left blank is not a revision.
    * Printed in the doc as "Blank means <value>".

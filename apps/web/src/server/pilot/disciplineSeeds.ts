@@ -8,8 +8,9 @@
  *
  * For compliance rules the second copy is a migration. For disciplines there is
  * no seeding migration at all: `apps/web/seed-data/multidiscipline/seed_disciplines.csv`
- * is loaded by `npm run seed:disciplines`, an operator step that seeds ONE
- * organization per run (seed-disciplines.mjs reads a single PPBF_SEED_ORG_ID).
+ * is loaded by the seed-reference-data workflow through the content-import core
+ * (`npm run seed:disciplines` runs the same thing), an operator step that seeds
+ * ONE organization per run (PPBF_SEED_ORG_ID, contentImport/cli.ts).
  * So this module seeds a gym created after that step, at the moment it is
  * created, and `disciplineSeedsOwnership.test.ts` parses the CSV and fails if
  * the two ever disagree.
