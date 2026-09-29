@@ -82,11 +82,16 @@ export async function applyImport(request: ApplyRequest): Promise<ApplyResult> {
 
   await client.query('select pg_advisory_xact_lock(hashtext($1))', [`ppbf.content-import:${organizationId}`]);
 
+  // A child file names its item through its parent column, and counts: a
+  // package carrying only a drill's cues still revises that drill, copying its
+  // other child rows from a read. Holding the head FOR UPDATE makes a child
+  // insert onto it from elsewhere (its foreign-key check takes FOR KEY SHARE)
+  // either finish before the re-plan, which then sees it, or wait for COMMIT.
   const { parsed } = parsePackage(packageInputs(request.files));
   for (const engine of DATASET_ENGINES) {
     const keys = parsed.files
-      .filter((file) => file.spec.dataset === engine.spec.name && !file.spec.parent)
-      .flatMap((file) => file.rows.map((row) => row.values[file.spec.key[0]]));
+      .filter((file) => file.spec.dataset === engine.spec.name)
+      .flatMap((file) => file.rows.map((row) => row.values[file.spec.parent?.column ?? file.spec.key[0]]));
     if (keys.length > 0) await engine.lockKeys(context, keys);
   }
 

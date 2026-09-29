@@ -148,7 +148,17 @@ export const UNIVERSAL_STOP_RULES_ENGINE: DatasetEngine = {
 
       const why = [...(reasons.get(key) ?? [])];
       if (why.length === 0) {
-        if (!head) {
+        if (head && isNewId(raw)) {
+          // The validator refuses a new:<short-name> that mints an ACTIVE
+          // rule's id (validate.ts mintIds, against readBaseline); a WITHDRAWN
+          // head is not in that baseline, and without this the "new" rule
+          // would plan as a revision of it and land withdrawn, without a word.
+          why.push(
+            `${raw} mints ${key}, which is already the committed item '${String(head.row.condition_text ?? '')}'`
+              + `${head.active ? '' : ' (withdrawn: its current version is inactive, and a revision keeps it so)'}. `
+              + 'To revise that item keep its id instead of new:; to add a different item give it a different name.',
+          );
+        } else if (!head) {
           const taken = existingIds.get(key);
           if (taken) {
             why.push(

@@ -761,6 +761,65 @@ describe('a revised drill becomes a new version', () => {
     expect((await versionsOf('gym_stale_drill', FIRST)).map((row) => [row.version, row.superseded])).toEqual([[1, true], [2, false]]);
   });
 
+  it("a package carrying only a drill's cues holds its head: a stop rule inserted elsewhere mid-import is waited for, then seen, and the plan is refused as stale", async () => {
+    // A cues-only package still revises the drill, and v2's stop rules are
+    // copied from a read. Without the head held FOR UPDATE (apply.ts step 3
+    // once took keys from ROOT files only), a stop rule another writer inserts
+    // onto v1 -- the old loader, still in the seed workflow, inserts on the
+    // lineage key, seed-drill-library.mjs:340 -- commits after that read, and
+    // v2 is written without it. The insert's foreign-key check takes FOR KEY
+    // SHARE on the head, which the supersede UPDATE (FOR NO KEY UPDATE) does
+    // not wait for, but FOR UPDATE does.
+    const admin = await prepareGym('gym_child_lock');
+    await applyCommitted('gym_child_lock', admin, drillFiles());
+    const cues = rowsOf(COMMITTED.files, CUES_CSV).filter((row) => row.drill_id === FIRST);
+    const cuesOnly = withRows({ [CUES_CSV]: drillFiles()[CUES_CSV] }, CUES_CSV, [
+      ...cues,
+      { organization_id: '{{PPBF_ORG_ID}}', cue_id: '', drill_id: FIRST, cue_text: 'Eyes through the target.', cue_family: cues[0]?.cue_family ?? '', focus_type: 'external' },
+    ]);
+    const shown = await plan('gym_child_lock', admin, cuesOnly);
+    expect(shown.blocking).toEqual([]);
+    expect(unitOf(shown, FIRST)).toMatchObject({ outcome: 'new_version', fromVersion: 1, toVersion: 2 });
+
+    const importPid = (await client.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0].pid;
+    const otherPid = (await observer.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0].pid;
+    const extra = 'Stop when the athlete drops the guard twice in a row.';
+    await observer.query('BEGIN');
+    try {
+      const next = (await observer.query<{ next: number }>(
+        "select coalesce(max(ordinal), 0) + 1 as next from pilot.drill_stop_rules where organization_id = 'gym_child_lock' and drill_id = $1",
+        [FIRST],
+      )).rows[0].next;
+      await observer.query(
+        `insert into pilot.drill_stop_rules (organization_id, stop_rule_id, drill_id, ordinal, condition_text, rule_kind)
+         values ('gym_child_lock', $1, $2, $3, $4, 'technique_degradation')`,
+        [MINT.stopRule(FIRST, String(next)), FIRST, next, extra],
+      );
+      let settled = false;
+      const applying = applyCommitted('gym_child_lock', admin, cuesOnly, shown.planHash).finally(() => {
+        settled = true;
+      });
+      applying.catch(() => undefined);
+      // Not a timer: wait until the import is either blocked by this
+      // connection or finished. Finished first is the failure.
+      let blocked = false;
+      while (!blocked && !settled) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const { rows } = await observer.query<{ blocked: boolean }>('select $2::int = any(pg_blocking_pids($1::int)) as blocked', [importPid, otherPid]);
+        blocked = rows[0].blocked;
+      }
+      expect(blocked).toBe(true);
+      await observer.query('COMMIT');
+      const error = await applying.then(() => null, (caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ContentImportRefusal);
+      expect((error as ContentImportRefusal).code).toBe('STALE_PLAN');
+    } finally {
+      await observer.query('ROLLBACK').catch(() => undefined);
+    }
+    expect((await versionsOf('gym_child_lock', FIRST)).map((row) => [row.version, row.superseded])).toEqual([[1, false]]);
+    expect((await childrenOf('gym_child_lock', FIRST)).stop.map((row) => row.text)).toContain(extra);
+  });
+
   it('secondary skills attach to the head version and differ from its primary', async () => {
     const admin = await prepareGym('gym_secondary');
     await applyCommitted('gym_secondary', admin, drillFiles());
@@ -804,6 +863,46 @@ describe('a revised drill becomes a new version', () => {
     expect(blocked.blocking.map((finding) => [finding.code, finding.key])).toEqual([['row_rule', WITH_SECONDARY.drill_id]]);
     expect(unitOf(blocked, WITH_SECONDARY.drill_id)?.outcome).toBe('reject');
     expect(blocked.counts['drill-library']).toMatchObject({ reject: 1, absent: 118 });
+  });
+});
+
+describe('a new:<short-name> never lands on a drill the gym already has', () => {
+  it("one that mints a WITHDRAWN drill's id is refused, not planned as a revision that lands withdrawn", async () => {
+    // The validator judges minted ids against readBaseline, which holds ACTIVE
+    // heads only (a withdrawn drill does not hold its name). plan() resolves
+    // against every head, so before the engine's own check the "new" drill
+    // planned as new_version of the withdrawn lineage, with nothing blocking,
+    // and v2 inherited active = false.
+    const admin = await prepareGym('gym_withdrawn');
+    const source = COMMITTED.byId.get(FIRST) as Row;
+    const probe = (drillId: string, purpose: string) =>
+      withRows({ [LIBRARY_CSV]: drillFiles()[LIBRARY_CSV] }, LIBRARY_CSV, [
+        { ...source, drill_id: drillId, lineage_id: '', version: '', supersedes_drill_id: '', superseded_at: '', name: 'Probe drill', purpose },
+      ]);
+    const probeId = MINT.drill(source.discipline, 'Probe drill');
+    const first = await applyCommitted('gym_withdrawn', admin, probe('new:probe-drill', source.purpose));
+    expect(first.written['drill-library']?.inserted).toEqual([probeId]);
+    const again = probe('new:probe-again', `${source.purpose} Again.`);
+
+    // Active: the validator refuses it (and the name, which the drill holds).
+    const whileActive = await plan('gym_withdrawn', admin, again);
+    expect(whileActive.blocking.map((finding) => finding.code).sort()).toEqual(['duplicate_value', 'minted_id_exists']);
+    expect(whileActive.blocking.find((finding) => finding.code === 'minted_id_exists')?.message)
+      .toContain(`new:probe-again mints ${probeId}, which is already the committed item`);
+
+    // Withdrawn: the engine refuses it, in the same words, saying why.
+    await client.query("update pilot.drill_library set active = false where organization_id = 'gym_withdrawn' and drill_id = $1", [probeId]);
+    const whileWithdrawn = await plan('gym_withdrawn', admin, again);
+    expect(whileWithdrawn.blocking.map((finding) => [finding.code, finding.key])).toEqual([['minted_id_exists', probeId]]);
+    expect(whileWithdrawn.blocking[0].message).toContain(`new:probe-again mints ${probeId}, which is already the committed item 'Probe drill' (withdrawn`);
+    expect(unitOf(whileWithdrawn, probeId)).toMatchObject({ outcome: 'reject', packageKey: 'new:probe-again' });
+    expect(unitOf(whileWithdrawn, probeId)?.toVersion).toBeUndefined();
+
+    const error = await applyCommitted('gym_withdrawn', admin, again, whileWithdrawn.planHash).then(() => null, (caught: unknown) => caught);
+    expect((error as ContentImportRefusal).code).toBe('PLAN_BLOCKED');
+    expect(await versionsOf('gym_withdrawn', probeId)).toEqual([
+      expect.objectContaining({ drill_id: probeId, version: 1, superseded: false, active: false, purpose: source.purpose }),
+    ]);
   });
 });
 
@@ -872,6 +971,32 @@ describe('universal stop rules (R3: stored once)', () => {
       { lineage_id: warmupId, version: 2, ordinal: 1 },
       { lineage_id: injuryId, version: 3, ordinal: 2 },
     ]);
+  });
+
+  it("a new:<short-name> that mints a WITHDRAWN rule's id is refused, not planned as a revision that lands withdrawn", async () => {
+    const admin = await createGym('gym_universal_withdrawn');
+    const injuryId = MINT.universalRule(INJURY);
+    await applyCommitted('gym_universal_withdrawn', admin, universal([['{{PPBF_ORG_ID}}', 'new:injury', '1', INJURY, 'safety', '']]));
+    await client.query(
+      "update pilot.universal_stop_rules set active = false where organization_id = 'gym_universal_withdrawn' and universal_rule_id = $1",
+      [injuryId],
+    );
+
+    const again = universal([['{{PPBF_ORG_ID}}', 'new:injury-again', '1', INJURY, 'safety', '']]);
+    const refused = await plan('gym_universal_withdrawn', admin, again);
+    expect(refused.blocking.map((finding) => [finding.code, finding.key])).toEqual([['minted_id_exists', injuryId]]);
+    expect(refused.blocking[0].message).toContain(`new:injury-again mints ${injuryId}, which is already the committed item '${INJURY}' (withdrawn`);
+    expect(refused.units.find((unit) => unit.dataset === 'universal-stop-rules' && unit.key === injuryId)).toMatchObject({
+      outcome: 'reject',
+      packageKey: 'new:injury-again',
+    });
+
+    const error = await applyCommitted('gym_universal_withdrawn', admin, again, refused.planHash).then(() => null, (caught: unknown) => caught);
+    expect((error as ContentImportRefusal).code).toBe('PLAN_BLOCKED');
+    const rows = await observer.query(
+      "select universal_rule_id, version, active, superseded_at is null as head from pilot.universal_stop_rules where organization_id = 'gym_universal_withdrawn'",
+    );
+    expect(rows.rows).toEqual([{ universal_rule_id: injuryId, version: 1, active: false, head: true }]);
   });
 });
 

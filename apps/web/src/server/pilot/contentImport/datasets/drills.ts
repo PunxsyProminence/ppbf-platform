@@ -253,7 +253,8 @@ export const DRILL_LIBRARY_ENGINE: DatasetEngine = {
   // so the validator judges name uniqueness (pilot_drill_library_one_active_name:
   // one active current drill per name per discipline) and minted-id collisions
   // against what this gym holds. Active heads only, as the index does; a
-  // withdrawn drill does not hold its name.
+  // withdrawn drill does not hold its name. (A new:<short-name> that mints a
+  // withdrawn drill's id is refused in plan() instead.)
   async readBaseline(ctx): Promise<ParsedFile[]> {
     const heads = [...(await readHeads(ctx)).values()].filter((head) => head.active);
     const { children } = await readHeadChildren(ctx, heads.map((head) => head.drillId));
@@ -290,9 +291,11 @@ export const DRILL_LIBRARY_ENGINE: DatasetEngine = {
     return files;
   },
 
-  // The head of every lineage the package names, so nothing supersedes it
-  // between the re-plan and the write (apply.ts step 3). Its children are
-  // never updated -- a new version gets new rows -- so the head row is enough.
+  // The head of every lineage the package names, in any of its files, so
+  // nothing supersedes it between the re-plan and the write (apply.ts step 3).
+  // Its children are never updated -- a new version gets new rows -- so the
+  // head row is enough: a child row inserted onto it elsewhere needs FOR KEY
+  // SHARE on it for the foreign key, which this FOR UPDATE makes wait.
   async lockKeys(ctx, keys): Promise<void> {
     const lineages = [...new Set(keys.filter((key) => key && !isNewId(key)))].sort();
     if (lineages.length === 0) return;
@@ -393,6 +396,22 @@ export const DRILL_LIBRARY_ENGINE: DatasetEngine = {
       }
 
       if ((reasons.get(key) ?? []).length > 0) continue;
+      // A new:<short-name> that mints the lineage key of a drill this gym
+      // already has describes that drill, not a new one. The validator refuses
+      // it when the drill is active (validate.ts mintIds, against
+      // readBaseline), but a WITHDRAWN head is not in that baseline -- it does
+      // not hold its name -- so without this the "new" drill would plan as a
+      // revision of the withdrawn lineage and land withdrawn, without a word.
+      if (head && isNewId(raw)) {
+        reject(
+          key,
+          'minted_id_exists',
+          `${raw} mints ${key}, which is already the committed item '${String(head.row.name ?? '')}'`
+            + `${head.active ? '' : ' (withdrawn: its current version is inactive, and a revision keeps it so)'}. `
+            + 'To revise that item keep its id instead of new:; to add a different item give it a different name.',
+        );
+        continue;
+      }
       if (!head) {
         const taken = existingIds.get(key);
         if (taken) {
