@@ -58,6 +58,40 @@ const BRASS_RUNGS = ['200', '300', '400', '500', '600', '700', '800', '900'] as 
 
 const css = readDesignSystemCss(DESIGN_SYSTEM_ENTRY);
 
+/* THE MEDICAL-STOP NAMES: --locked, its --locked-* rungs, and every custom
+   property whose every declaration resolves to one of them. Read from the
+   sheets rather than listed, because app/globals.css aliases --locked as
+   --safety-locked, --status-critical and --status-danger, and a check on the
+   bare name waves all three through. ("Every declaration", so a slot such as
+   `--badge`, which only the locked variant of .badge fills with --locked, is
+   not counted.) */
+const GLOBALS_CSS = readFileSync(path.resolve(__dirname, '../../app/globals.css'), 'utf8');
+const MEDICAL_STOP_TOKENS: readonly string[] = (() => {
+  const values = new Map<string, string[]>();
+  for (const [, name, value] of `${css}\n${GLOBALS_CSS}`
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .matchAll(/(?<![\w-])(--[\w-]+)\s*:\s*([^;{}]*)/g)) {
+    values.set(name, [...(values.get(name) ?? []), value]);
+  }
+  const tokens = new Set([...values.keys()].filter((name) => /^--locked(?:-|$)/.test(name)));
+  const resolvesToStop = (value: string) =>
+    [...value.matchAll(/var\(\s*(--[\w-]+)/g)].some(([, ref]) => tokens.has(ref));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [name, all] of values) {
+      if (tokens.has(name) || !all.every(resolvesToStop)) continue;
+      tokens.add(name);
+      grew = true;
+    }
+  }
+  return [...tokens].sort();
+})();
+
+/** The medical-stop names `text` refers to, matched as whole property names. */
+function medicalStopReferences(text: string): string[] {
+  return MEDICAL_STOP_TOKENS.filter((token) => new RegExp(`(?<![\\w-])${token}(?![\\w-])`).test(text));
+}
+
 const PAGE = readFileSync(
   path.resolve(__dirname, '../../app/admin/shadow/page.tsx'),
   'utf8',
@@ -128,6 +162,16 @@ describe('the 006 scope never spends the --locked medical-stop token', () => {
     const offenders = scopedRules()
       .filter(([, body]) => pattern.test(body))
       .map(([selectors]) => selectors);
+    expect(offenders).toEqual([]);
+  });
+
+  test('no declaration under the scope reaches an alias of --locked', () => {
+    expect(MEDICAL_STOP_TOKENS)
+      .toEqual(expect.arrayContaining(['--locked', '--safety-locked', '--status-critical', '--status-danger']));
+    const offenders = scopedRules()
+      .map(([selectors, body]) => [selectors, medicalStopReferences(body)] as const)
+      .filter(([, names]) => names.length > 0)
+      .map(([selectors, names]) => `${selectors}: ${names.join(', ')}`);
     expect(offenders).toEqual([]);
   });
 });
