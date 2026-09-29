@@ -518,7 +518,11 @@ describe('workout templates', () => {
     await insertDrill('gym_revise', jab);
     await insertDrill('gym_revise', cross);
     const template = `wtp_${hex14('fixture template:revise')}`;
-    const v1Items = [itemRow(template, 1, jab), itemRow(template, 2, cross)];
+    // With item ids, as a committed file carries them: a revision must not reuse them.
+    const v1Items = [
+      itemRow(template, 1, jab, { item_id: MINT.templateItem(template, '1') }),
+      itemRow(template, 2, cross, { item_id: MINT.templateItem(template, '2') }),
+    ];
     await applyCommitted('gym_revise', admin, templatePackage([templateRow(template)], v1Items));
 
     // The jab drill gets a new version after the template was built.
@@ -684,6 +688,19 @@ describe('session scripts', () => {
     // v2 is now the lineage's current version (a higher version supersedes).
     expect((await sessionScriptLineageHeads(observer, 'gym_scripts')).get(script)).toEqual({ lineageId: script, id: v2, version: 2 });
     expect((await plan('gym_scripts', admin, revised)).counts['session-scripts']).toEqual({ new: 0, new_version: 0, unchanged: 1, absent: 0, reject: 0 });
+
+    // The script row alone: v3 carries v2's blocks and renderings, re-minted under v3.
+    await applyCommitted('gym_scripts', admin, { [SCRIPTS_CSV]: csv(SCRIPTS_CSV, [scriptRow(script, { theme: 'Decide, then move' })]) });
+    const v3 = versionId('scr', script, 3);
+    expect(await children(v3)).toEqual({
+      blocks: [
+        { block_id: MINT.block(v3, '1'), block_order: 1, block_kind: 'instruction' },
+        { block_id: MINT.block(v3, '2'), block_order: 2, block_kind: 'drill_round' },
+        { block_id: MINT.block(v3, '3'), block_order: 3, block_kind: 'close' },
+      ],
+      renderings: [{ rendering_id: MINT.rendering(v3, 'cheat_sheet'), format: 'cheat_sheet', body: 'WEDNESDAY: see first.' }],
+    });
+    expect((await children(v2)).blocks.map((row) => row.block_id)).toEqual([1, 2, 3].map((order) => MINT.block(v2, String(order))));
   });
 
   it('authoring_state is lifecycle: a change to it alone writes nothing, retired is refused, a content change takes the file state', async () => {
