@@ -70,15 +70,30 @@ const DATASET_LABEL: Record<string, string> = {
   'assessment-protocols': 'Assessment protocols',
 };
 
-/* Law 3: every state carries a glyph and an uppercase label, never colour
-   alone. None of these is a safety state, so none is painted (Law 2). */
-const OUTCOME_MARK: Record<PlanUnitView['outcome'], { glyph: string; label: string }> = {
-  new: { glyph: '+', label: 'NEW' },
-  new_version: { glyph: '↻', label: 'NEW VERSION' },
-  unchanged: { glyph: '=', label: 'UNCHANGED' },
-  absent: { glyph: '○', label: 'ABSENT' },
+/* Law 3 (docs/FRONTEND_STYLE_CONTRACT.md:43-45): every state is a .badge
+   carrying one of the contract's four glyphs and an uppercase label, never
+   colour alone. ✓ goes in or is already in, ◉ is worth a look (the warnings'
+   mark below), ✕ cannot be loaded. None of these is a safety state or a
+   queue outcome, so each takes the administrative rung, .badge--filed
+   (design-system/legacy/ppbf-leather-brass.css:818-821), and nothing is
+   painted (Law 2). */
+const OUTCOME_MARK: Record<PlanUnitView['outcome'], { glyph: '✓' | '◉' | '✕'; label: string }> = {
+  new: { glyph: '✓', label: 'NEW' },
+  new_version: { glyph: '✓', label: 'NEW VERSION' },
+  unchanged: { glyph: '✓', label: 'UNCHANGED' },
+  absent: { glyph: '◉', label: 'ABSENT' },
   reject: { glyph: '✕', label: 'REJECT' },
 };
+
+function OutcomeBadge({ outcome }: { readonly outcome: PlanUnitView['outcome'] }) {
+  const mark = OUTCOME_MARK[outcome];
+  return (
+    <span className="badge badge--filed">
+      <i aria-hidden="true">{mark.glyph}</i>
+      {mark.label}
+    </span>
+  );
+}
 
 function datasetLabel(name: string): string {
   return DATASET_LABEL[name] ?? name;
@@ -133,9 +148,7 @@ function UnitList({ units, title, note }: { readonly units: PlanUnitView[]; read
       <ul className="t-body space-y-[var(--s2)]">
         {units.map((unit) => (
           <li key={`${unit.dataset}-${unit.key}`} className="border-l-2 border-[color:var(--brass-700)] pl-[var(--s3)]">
-            <span className="t-data">
-              {OUTCOME_MARK[unit.outcome].glyph} {OUTCOME_MARK[unit.outcome].label}
-            </span>{' '}
+            <OutcomeBadge outcome={unit.outcome} />{' '}
             {datasetLabel(unit.dataset)}: {unitName(unit)}
             {unit.outcome === 'new_version' && unit.from_version !== undefined && unit.to_version !== undefined
               ? <span className="t-data"> (history v{unit.from_version} → v{unit.to_version})</span>
@@ -156,13 +169,12 @@ function ContentImportScreen() {
   const [applied, setApplied] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
 
-  async function choose(list: FileList | null) {
+  async function choose(chosen: File[]) {
     // A new choice is a new package: the old plan describes files that are
     // no longer the ones on screen, so it goes, and Apply with it.
     setPlan(null);
     setApplied(false);
     setResult(null);
-    const chosen = Array.from(list ?? []);
     setReading(true);
     try {
       const read = await Promise.all(chosen.map(async (file) => ({
@@ -210,8 +222,12 @@ function ContentImportScreen() {
         audit_mirror?: string;
       };
       setPlan(payload.plan ?? null);
+      // The plan on screen is what THIS answer describes: loaded after an
+      // Apply, only proposed after a Check -- including a Check pressed after
+      // an Apply to see whether it went through, whose plan was not applied
+      // and must be appliable if it still has changes.
+      setApplied(commit);
       if (commit) {
-        setApplied(true);
         setResult({
           kind: 'applied',
           importId: payload.import_id ?? null,
@@ -271,7 +287,14 @@ function ContentImportScreen() {
                 className="input w-full"
                 disabled={busy !== null || reading}
                 onChange={(event) => {
-                  void choose(event.target.files);
+                  // Take the files, THEN empty the input: a browser fires no
+                  // change for the same path chosen again, so a CSV edited
+                  // after a blocking finding and re-chosen would otherwise be
+                  // ignored and the text read the first time sent again (the
+                  // same reset as coach/video-analysis/capture/page.tsx:268-269).
+                  const chosen = Array.from(event.target.files ?? []);
+                  event.target.value = '';
+                  void choose(chosen);
                 }}
               />
             </div>
@@ -399,7 +422,7 @@ function ContentImportScreen() {
             />
             {byOutcome('unchanged').length > 0 ? (
               <details className="t-body">
-                <summary className="t-label">= UNCHANGED ({byOutcome('unchanged').length}): nothing is written for these</summary>
+                <summary className="t-label">✓ UNCHANGED ({byOutcome('unchanged').length}): nothing is written for these</summary>
                 <UnitList units={byOutcome('unchanged')} title="Unchanged" />
               </details>
             ) : null}

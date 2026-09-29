@@ -7,8 +7,11 @@
 // nothing else (no commit, no organization); that the plan is shown -- new,
 // new version, unchanged, absent, blocking findings, warnings; that Apply is
 // off while anything blocks and when there is nothing to write; that Apply
-// sends the hash of the plan on screen; and that a refusal clears the plan
-// rather than leaving a stale one beside it.
+// sends the hash of the plan on screen; that a refusal clears the plan
+// rather than leaving a stale one beside it; that a Check after an Apply is a
+// proposal again, never "loaded"; that the file input is emptied once read, so
+// an edited file chosen again is read again; and that outcomes are contract
+// badges (Law 3).
 
 import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -279,6 +282,97 @@ test('a cap refusal at Check shows the server\'s number', async () => {
 
   await screen.findByText(/10,001 rows, and this accepts 10,000 at a time/);
   expect(screen.queryByRole('region', { name: 'Plan' })).toBeNull();
+});
+
+test('Check pressed after an Apply shows the new plan as a proposal, with its own Apply', async () => {
+  render(<ContentImportPage />);
+  await chooseFiles([new File([DRILLS_CSV], 'seed_drill_library.csv', { type: 'text/csv' })]);
+  await checkFiles();
+  reply = {
+    status: 200,
+    body: { ...planBody(), committed: true, import_id: 'imp_1', audit_id: '42', written: {}, audit_mirror: 'written' },
+  };
+  fireEvent.click(screen.getByRole('button', { name: 'Apply 2 changes' }));
+  await screen.findByRole('heading', { name: 'What was loaded' });
+
+  // "Did it go through?" -- and in the meantime the gym's content moved, so
+  // this plan has changes of its own. It was NOT applied: it must not read
+  // as loaded, and it must be appliable without choosing the files again.
+  const NEXT = 'd'.repeat(64);
+  reply = { status: 200, body: planBody({ plan_hash: NEXT }) };
+  fireEvent.click(screen.getByRole('button', { name: 'Check these files' }));
+
+  await screen.findByRole('heading', { name: 'What this would do' });
+  expect(screen.queryByRole('heading', { name: 'What was loaded' })).toBeNull();
+  expect(screen.queryByText(/✓ Applied/)).toBeNull();
+  expect(sent(2)).toEqual({ files: [{ name: 'seed_drill_library.csv', text: DRILLS_CSV }] });
+  const apply = screen.getByRole('button', { name: 'Apply 2 changes' });
+  expect((apply as HTMLButtonElement).disabled).toBe(false);
+
+  fireEvent.click(apply);
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+  expect(sent(3)).toMatchObject({ commit: true, plan_hash: NEXT });
+});
+
+test('the file input is emptied after its files are read, so the same file edited and chosen again is read again', async () => {
+  render(<ContentImportPage />);
+  const input = screen.getByLabelText('Content files (CSV)') as HTMLInputElement;
+  // A browser fires no change event when the path chosen is the one already
+  // selected, and setting value to '' empties the selection. Both are browser
+  // behaviour the test DOM does not have, so the second is stood in for here:
+  // a page that emptied the input BEFORE taking its files would read none.
+  const emptied: string[] = [];
+  Object.defineProperty(input, 'value', {
+    configurable: true,
+    get: () => '',
+    set: (next: string) => {
+      emptied.push(next);
+      Object.defineProperty(input, 'files', { configurable: true, writable: true, value: [] });
+    },
+  });
+
+  await chooseFiles([new File([DRILLS_CSV], 'seed_drill_library.csv', { type: 'text/csv' })]);
+  expect(emptied).toEqual(['']);
+  await checkFiles();
+  expect(sent(0)).toEqual({ files: [{ name: 'seed_drill_library.csv', text: DRILLS_CSV }] });
+
+  const EDITED = 'drill_id,name\ndrl_0000000000000a,Jab Ladder (fixed)\n';
+  await act(async () => {
+    fireEvent.change(input, { target: { files: [new File([EDITED], 'seed_drill_library.csv', { type: 'text/csv' })] } });
+  });
+  expect(emptied).toEqual(['', '']);
+  await waitFor(() => expect(screen.queryByRole('region', { name: 'Plan' })).toBeNull());
+  // Check is off while the files are being read.
+  const check = screen.getByRole('button', { name: 'Check these files' }) as HTMLButtonElement;
+  await waitFor(() => expect(check.disabled).toBe(false));
+  fireEvent.click(check);
+  await screen.findByRole('heading', { name: 'What this would do' });
+  expect(sent(1)).toEqual({ files: [{ name: 'seed_drill_library.csv', text: EDITED }] });
+});
+
+test('every outcome is a .badge with one of the contract\'s four glyphs and an uppercase label, never colour alone', async () => {
+  reply = {
+    status: 200,
+    body: planBody({
+      units: [
+        ...planBody().plan.units,
+        { dataset: 'drill-library', key: 'drl_0000000000000e', outcome: 'reject', label: 'Bad Row', reasons: ['refused'] },
+      ],
+    }),
+  };
+  render(<ContentImportPage />);
+  await chooseFiles([new File([DRILLS_CSV], 'seed_drill_library.csv', { type: 'text/csv' })]);
+  await checkFiles();
+
+  const plan = screen.getByRole('region', { name: 'Plan' });
+  const badges = Array.from(plan.querySelectorAll('.badge'));
+  // docs/FRONTEND_STYLE_CONTRACT.md:43-45 (Law 3). Administrative rung only:
+  // no plan outcome is a safety state (Law 2).
+  expect(badges.map((badge) => badge.textContent)).toEqual(['✕REJECT', '✓NEW', '✓NEW VERSION', '◉ABSENT', '✓UNCHANGED']);
+  for (const badge of badges) {
+    expect(badge.className).toBe('badge badge--filed');
+    expect(['✓', '◉', '▲', '✕']).toContain(badge.querySelector('i')?.textContent);
+  }
 });
 
 test('choosing other files clears the plan, so Apply can never run against files no longer on screen', async () => {
