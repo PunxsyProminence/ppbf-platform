@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
+import { requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   applyRosterImport,
+  assignBlankCoachTo,
   parseRosterCsv,
   planRosterImport,
 } from '@/src/server/pilot/rosterImport';
@@ -14,10 +15,22 @@ export const runtime = 'nodejs';
 /**
  * Loading a roster from a spreadsheet.
  *
- * ORGANIZATION ADMIN ONLY, and the gym comes from the session. The same
- * boundary the PIN directory and athlete accounts hold: creating this gym's
- * children is the gym's own administrator's act. A body-supplied
- * organization_id is not read at all here, so there is nothing to get wrong.
+ * ORGANIZATION ADMINS AND COACHES, each into their OWN gym only (Jason,
+ * 2026-09-29, "9d. B", OD-2026-09-29-002 item 9d). The gym comes from the
+ * session. A body that names a different organization is refused rather than
+ * silently redirected, the same as the activation-code route, so a wrong
+ * caller fails loudly instead of writing somewhere it did not mean to. The
+ * platform owner is not in the role list and stays out (OD-2026-09-28-005).
+ *
+ * WHO A ROW'S COACH MAY BE (Jason, 2026-09-29, "3B", recorded under
+ * OD-2026-09-29-002 item 9d). Any active coach of the importing gym, for a
+ * coach importer exactly as for an admin; the check lives in
+ * planRosterImport, so the preview and Add enforce it together. A blank
+ * Coach cell means the coach loading the file when a coach loads it; from an
+ * admin it is a row that cannot be added, because every athlete needs one.
+ *
+ * The audit event records the session's own role, so a coach's import reads
+ * 'coach', never an admin role.
  *
  * DRY RUN IS THE DEFAULT. A caller that omits `commit` gets the plan and
  * nothing is written. Loading forty real children off a spreadsheet is not an
@@ -36,12 +49,19 @@ const MAX_ROWS = 500;
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
-    requireRole(principal, ['organization_admin']);
-    if (!isOrganizationAdminRole(principal.role)) {
-      throw new Error('Forbidden: role not allowed');
+    requireRole(principal, ['organization_admin', 'coach']);
+    if (!principal.organizationId) {
+      throw new Error('Forbidden: no organization on this session');
     }
 
-    const body = (await request.json()) as { csv?: string; commit?: boolean };
+    const body = (await request.json()) as { csv?: string; commit?: boolean; organization_id?: unknown };
+    const requestedOrganizationId = body.organization_id === undefined || body.organization_id === null
+      ? ''
+      : String(body.organization_id).trim();
+    if (requestedOrganizationId && requestedOrganizationId !== principal.organizationId) {
+      throw new Error('Forbidden: cannot act on another organization');
+    }
+
     const csv = typeof body.csv === 'string' ? body.csv : '';
     const commit = body.commit === true;
 
@@ -62,13 +82,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const plan = await planRosterImport(principal.organizationId, parsed.rows);
+    // The SAME rows go to planning and to apply, so a filled-in coach is the
+    // one the preview checked and the one that is written.
+    const rows = principal.role === 'coach'
+      ? assignBlankCoachTo(parsed.rows, principal.accountId)
+      : parsed.rows;
+
+    const plan = await planRosterImport(principal.organizationId, rows);
 
     if (!commit) {
       return NextResponse.json({ ok: true, committed: false, ...plan });
     }
 
-    const result = await applyRosterImport(principal.organizationId, parsed.rows, plan, principal.accountId);
+    const result = await applyRosterImport(principal.organizationId, rows, plan, principal.accountId);
 
     // Audited as one event naming counts and the ids created, not one event per
     // athlete: forty rows would otherwise bury every other event of that

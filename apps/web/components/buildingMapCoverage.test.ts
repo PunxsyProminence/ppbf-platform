@@ -73,7 +73,6 @@ const EXCLUDED: Record<string, string> = {
  */
 const PENDING_TRIAGE: Record<string, string> = {
   '/admin/export': 'real admin feature ("Take Your Roster With You") -- wants a door, roles unconfirmed',
-  '/admin/import': 'real admin feature ("Load a roster") -- wants a door, roles unconfirmed',
   '/admin/gear': 'real admin feature ("Equipment and margin") -- wants a door, roles unconfirmed',
   '/admin/gear/vendors': 'real admin feature ("Suppliers and accounts") -- wants a door, roles unconfirmed',
   '/admin/athletes': 'renders a notice ("Athlete records are managed per gym") -- may be a signpost, not a surface',
@@ -127,7 +126,10 @@ describe('the building map covers what is actually on disk', () => {
     // The whole point of separating it from EXCLUDED is that it shrinks. A new
     // orphan parked here instead of given a door would otherwise be invisible
     // again, which is the failure this file exists to stop.
-    expect(Object.keys(PENDING_TRIAGE).length).toBeLessThanOrEqual(7);
+    //
+    // 7 -> 6 on 2026-09-29: '/admin/import' got its door, roles admin and
+    // coach, on Jason's answer "9d. B" (OD-2026-09-29-002 item 9d).
+    expect(Object.keys(PENDING_TRIAGE).length).toBeLessThanOrEqual(6);
   });
 
   it('does not carry a pending entry for a route that no longer exists', () => {
