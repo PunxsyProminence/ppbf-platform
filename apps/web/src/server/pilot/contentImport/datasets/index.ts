@@ -3,6 +3,8 @@ import { DATASETS } from '../specs';
 import type { DatasetName, DatasetSpec, Finding, ParsedFile } from '../types';
 import type { ValidationResult } from '../validate';
 import { REGISTRY_ENGINES } from './registries';
+import { sessionScriptsEngine } from './sessionScripts';
+import { workoutTemplatesEngine } from './templates';
 
 // THE DATASET REGISTRY OF THE DATABASE HALF. Each dataset module turns the
 // validated rows of its files into a plan (what each item WOULD become) and
@@ -74,7 +76,11 @@ export interface DatasetEngine {
 // Applied in the specs' dependency order (specs/index.ts: a dataset only
 // references datasets above it), whatever order the modules register in, so
 // cohorts are written after the disciplines they point at in an 'all' load.
-export const DATASET_ENGINES: readonly DatasetEngine[] = [...REGISTRY_ENGINES].sort(
+export const DATASET_ENGINES: readonly DatasetEngine[] = [
+  ...REGISTRY_ENGINES,
+  workoutTemplatesEngine,
+  sessionScriptsEngine,
+].sort(
   (a, b) => DATASETS.indexOf(a.spec) - DATASETS.indexOf(b.spec),
 );
 

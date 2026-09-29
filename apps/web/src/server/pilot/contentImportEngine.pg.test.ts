@@ -773,8 +773,40 @@ function planBlock(stdout: string): string[] {
 describe('the content-import command (scripts/pilot-content-import.ts)', () => {
   let env: Record<string, string>;
 
+  // 'all' also carries the committed workout templates (IMP-08), whose items
+  // name drills. The drill library is not loadable on this branch, so the
+  // drills they name are put in place by SQL, as
+  // contentImportTemplatesScripts.pg.test.ts does. Their discipline arrives in
+  // the same 'all' load, so they go in with foreign-key triggers off
+  // (session_replication_role, this transaction only). When the drill engine
+  // (IMP-07) is registered, 'all' carries the committed drill library itself
+  // and this fixture goes.
+  async function insertDrillsTheCommittedTemplatesName(organizationId: string): Promise<void> {
+    const items = readCsv(await fs.readFile(path.join(SEED_DATA_DIR, 'workout-templates/seed_workout_template_items.csv'), 'utf8'));
+    const column = items.header.indexOf('drill_id');
+    const drillIds = [...new Set(items.records.map((record) => record.cells[column]).filter(Boolean))];
+    await client.query('BEGIN');
+    try {
+      await client.query("set local session_replication_role = 'replica'");
+      for (const drillId of drillIds) {
+        await client.query(
+          `insert into pilot.drill_library
+             (organization_id, drill_id, lineage_id, name, category, target_behavior, purpose, standard_setup, execution,
+              what_good_looks_like, what_bad_looks_like)
+           values ($1, $2, $2, $2, 'footwork', 't', 'p', 's', 'e', 'g', 'b')`,
+          [organizationId, drillId],
+        );
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
+  }
+
   beforeAll(async () => {
     const admin = await createGym('gym_cli');
+    await insertDrillsTheCommittedTemplatesName('gym_cli');
     env = {
       AZURE_POSTGRES_CONNECTION_STRING: connectionStringFor(DATABASE),
       PPBF_EXPECTED_POSTGRES_HOSTNAME: 'localhost',
@@ -803,11 +835,14 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
     expect(await committedCounts('gym_cli')).toEqual({ disciplines: 0, levels: 0, cohorts: 0, ledger: 0, audit: 0, shadowEvents: 0 });
   });
 
-  it('apply --dataset all commits the three registries together, mirrors the audit event after commit, and a re-plan finds nothing to do', async () => {
+  it('apply --dataset all commits every loadable dataset together, mirrors the audit event after commit, and a re-plan finds nothing to do', async () => {
     const applied = await runCli(['apply', '--dataset', 'all'], env);
     expect({ code: applied.code, stderr: applied.stderr }).toEqual({ code: 0, stderr: '' });
     expect(applied.stdout).toContain('target_hostname: localhost');
-    expect(applied.stdout).toContain('RESULT: COMMITTED -- 17 item(s) written');
+    // 17 registry rows, 12 workout templates, 3 session scripts.
+    expect(applied.stdout).toContain('RESULT: COMMITTED -- 32 item(s) written');
+    expect(applied.stdout).toContain('  workout-templates: inserted 12');
+    expect(applied.stdout).toContain('  session-scripts: inserted 3');
     expect(await committedCounts('gym_cli')).toEqual({ disciplines: 5, levels: 6, cohorts: 6, ledger: 17, audit: 1, shadowEvents: 1 });
     const mirror = await observer.query("select event_name from pilot.shadow_events where organization_id = 'gym_cli' and entity_type = 'content_import'");
     expect(mirror.rows).toEqual([{ event_name: 'SHADOW_AUDIT_CREATE_CONTENT_IMPORT' }]);
@@ -815,6 +850,8 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
     const again = await runCli(['plan', '--dataset', 'all'], env);
     expect(again.code).toBe(0);
     expect(planBlock(again.stdout)).toContain('  cohort-definitions: 0 new, 0 new version, 6 unchanged, 0 absent, 0 reject');
+    expect(planBlock(again.stdout)).toContain('  workout-templates: 0 new, 0 new version, 12 unchanged, 0 absent, 0 reject');
+    expect(planBlock(again.stdout)).toContain('  session-scripts: 0 new, 0 new version, 3 unchanged, 0 absent, 0 reject');
     expect(again.stdout).toContain('RESULT: PLANNED -- 0 item(s) would be written.');
   });
 

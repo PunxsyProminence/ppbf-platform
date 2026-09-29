@@ -59,9 +59,27 @@ export const sessionScriptsDataset: DatasetSpec = {
         text('reset_protocol', 'What to do when the room loses it.'),
         text('coach_priorities', 'The priorities, in order.'),
         text('frequent_phrases', 'The short cues repeated all session.'),
-        vocabulary('authoring_state', 'script_authoring_state', 'How far it has been reviewed.', { blankDefault: 'draft' }),
+        vocabulary(
+          'authoring_state',
+          'script_authoring_state',
+          'How far it has been reviewed. Lifecycle, not content: a change here alone makes no new version and writes nothing; '
+          + 'a new script, or the new version a content change makes, takes this value.',
+          { blankDefault: 'draft' },
+        ),
         text('source_document', 'Which PPBF document it came from.', { label: true }),
         createdByColumn(),
+      ],
+      rowRules: [
+        {
+          // Lifecycle is not content (datasets/sessionScripts.ts): a file
+          // saying 'retired' would otherwise load a NEW VERSION marked retired
+          // rather than retire anything (the intake plan critique).
+          description: 'authoring_state is never retired: retiring a script is a separate action, not a hand-off.',
+          check: (row) =>
+            row.authoring_state === 'retired'
+              ? "authoring_state 'retired' cannot come in a package: retiring a script is a separate action, and a file cannot do it"
+              : null,
+        },
       ],
     },
     {
