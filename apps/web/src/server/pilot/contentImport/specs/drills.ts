@@ -98,9 +98,9 @@ const scaleLevels: FileSpec = {
     bool('is_starting_point', 'true on exactly one row per drill, and that row is B.', { required: true }),
     text('demand_description', 'What changes at this level.', { required: true }),
     text('constraint_applied', 'The constraint that changes the demand.'),
-    vocabulary('contact_level', 'contact_level', 'Contact at this level.', { blankMeans: 'none' }),
+    vocabulary('contact_level', 'contact_level', 'Contact at this level.', { blankDefault: 'none' }),
     text('coach_watch_point', 'What the coach watches for.'),
-    vocabulary('authoring_state', 'scale_authoring_state', 'How far the row has been reviewed.', { blankMeans: 'authored' }),
+    vocabulary('authoring_state', 'scale_authoring_state', 'How far the row has been reviewed.', { blankDefault: 'authored' }),
   ],
   groupRules: [
     {
@@ -146,7 +146,7 @@ const stopRules: FileSpec = {
       'scope',
       'stop_rule_scope',
       "Optional. Legacy rows say universal; each is treated as this drill's own rule (R3).",
-      { blankMeans: 'drill_specific' },
+      { blankDefault: 'drill_specific' },
     ),
     vocabulary('rule_kind', 'stop_rule_kind', 'What kind of stop.', { required: true }),
   ],
@@ -166,7 +166,7 @@ const cues: FileSpec = {
     drillParent(),
     text('cue_text', 'The words the coach says.', { required: true }),
     text('cue_family', 'The cue family all three scale levels share.', { label: true }),
-    vocabulary('focus_type', 'cue_focus_type', 'Where the cue directs attention.', { blankMeans: 'unspecified' }),
+    vocabulary('focus_type', 'cue_focus_type', 'Where the cue directs attention.', { blankDefault: 'unspecified' }),
     text('evidence_note', 'Evidence note (evidence attaches to the cue class, not the words).'),
     text('source_ref', 'Where it came from.', { label: true }),
   ],
@@ -231,6 +231,8 @@ export const drillLibraryDataset: DatasetSpec = {
     + '(npm run seed:drill-secondary-skills). Insert-only: a drill whose discipline and name already exist is skipped, '
     + 'as are scale and stop rows at an existing (drill, level or ordinal); cues are keyed by cue_id, so a replaced '
     + "cue set is added beside the old one; a renamed drill that keeps its id stops the run on the table's primary key. "
+    + "That loader splits grounding_claim_ids on ';' and ',' only, so a '|' list is stored as ONE array element until "
+    + 'it changes (the content hash re-splits it, so the stored form never reads as a revision). '
     + 'seed_drill_secondary_skills.csv is pinned to its one approved row, header included, by '
     + "seedWorkflowContract.test.ts ('seeds exactly the one approved relationship and no other'), so a new "
     + 'relationship needs that test changed in the same pull request.',

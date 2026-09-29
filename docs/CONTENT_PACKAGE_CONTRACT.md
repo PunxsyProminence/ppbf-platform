@@ -34,8 +34,9 @@ Research releases have their own contract (not in this file yet).
   may be left out, left blank, or hold today's default shown in the tables. Anything else is refused.
 - Lists inside one cell use `|` between items; spaces around items are trimmed. Two stored exceptions keep `,`:
   cohort `required_domains` and `tenure_bands`. Any other separator in a list cell is refused.
-- true / false in any letter case. Whole numbers may be written `2` or `2.0`. A blank cell means "no value" (the
-  default shown).
+- true / false in any letter case. Whole numbers may be written `2` or `2.0`. A blank cell means the default the
+  table shows ("Blank means ..."), and is the same content as writing that default; with no default shown it means
+  "no value".
 - A column the file does not define is refused (its values would otherwise be dropped silently).
 
 ## Identity
@@ -48,7 +49,10 @@ Research releases have their own contract (not in this file yet).
 - In every package file, drill_id means the drill's LINEAGE key (the id of its first version), never a later
   version's id. template_id and script_id work the same way.
 - Child ids (scale_id, stop_rule_id, cue_id, item_id, block_id, rendering_id, transfer_id) may be blank; the tool
-  keeps the committed id of an existing row and mints one for a new row.
+  keeps the committed id of an existing row and mints one for a new row. An existing row is found by the rest of
+  its identity (a drill + scale_level, a template + ordinal, ...). transfer_id IS a claim's whole identity, so a
+  blank one is matched to the committed claim with the same target, claim_kind and statement: KEEP transfer_id
+  when a revision changes any of those three, or the revision is added as a new claim beside the old one.
 - Id formats:
   - drill: drl_ and 14 lowercase hex characters; minted as 'drl_' + first 14 hex of sha256(discipline + ':' + name)
   - template: wtp_ and 14 lowercase hex characters; minted as 'wtp_' + first 14 hex of sha256(name)
@@ -86,6 +90,8 @@ Research releases have their own contract (not in this file yet).
   blocks and renderings): the package's rows for a parent replace ALL of that parent's committed rows in that
   file. A parent with no row in the package keeps what it has.
 - prepare refuses to write if the merged files would carry a blocking problem the committed files do not.
+- A row whose content is the same as the committed row (true/TRUE, 2/2.0, a blank for the default shown) is
+  unchanged: the committed row is kept byte for byte.
 
 ## Blocking problems
 
@@ -197,7 +203,7 @@ Rules:
 
 A drill and its rows in the four child files are ONE unit: under R2 a change anywhere makes a new drill version and the old version is kept (and stays live for gyms that adopted it). A child file replaces the full set of rows only for drills that have at least one row in it; a drill with no rows there keeps what it has.
 
-Loaded today: seed-reference-data workflow, datasets drill-library (npm run seed:drill-library) and drill-secondary-skills (npm run seed:drill-secondary-skills). Insert-only: a drill whose discipline and name already exist is skipped, as are scale and stop rows at an existing (drill, level or ordinal); cues are keyed by cue_id, so a replaced cue set is added beside the old one; a renamed drill that keeps its id stops the run on the table's primary key. seed_drill_secondary_skills.csv is pinned to its one approved row, header included, by seedWorkflowContract.test.ts ('seeds exactly the one approved relationship and no other'), so a new relationship needs that test changed in the same pull request.
+Loaded today: seed-reference-data workflow, datasets drill-library (npm run seed:drill-library) and drill-secondary-skills (npm run seed:drill-secondary-skills). Insert-only: a drill whose discipline and name already exist is skipped, as are scale and stop rows at an existing (drill, level or ordinal); cues are keyed by cue_id, so a replaced cue set is added beside the old one; a renamed drill that keeps its id stops the run on the table's primary key. That loader splits grounding_claim_ids on ';' and ',' only, so a '|' list is stored as ONE array element until it changes (the content hash re-splits it, so the stored form never reads as a revision). seed_drill_secondary_skills.csv is pinned to its one approved row, header included, by seedWorkflowContract.test.ts ('seeds exactly the one approved relationship and no other'), so a new relationship needs that test changed in the same pull request.
 
 #### drill-library/seed_drill_library.csv
 
@@ -343,7 +349,7 @@ Rules:
 
 Reusable session plans. A template and its items are one unit: under R2 a change to either makes a new template version and the old one is kept. Items listed for a template replace all of its items.
 
-Loaded today: seed-reference-data workflow, dataset workout-templates (npm run seed:workout-templates). Insert-only: a template whose name already exists is skipped, as are items at an existing (template, ordinal).
+Loaded today: seed-reference-data workflow, dataset workout-templates (npm run seed:workout-templates). Insert-only: a template whose name already exists is skipped, as are items at an existing (template, ordinal); a renamed template that keeps its id stops the run on the table's primary key.
 
 #### workout-templates/seed_workout_templates.csv
 
@@ -493,7 +499,7 @@ One row = one claim about one drill, script or script block. Identity: transfer_
 | column | required | allowed | meaning |
 | --- | --- | --- | --- |
 | organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
-| transfer_id |  | txf_ and 14 lowercase hex characters | Keep it on a revision, or leave blank for a new claim and the tool mints it. |
+| transfer_id |  | txf_ and 14 lowercase hex characters | KEEP it on a revision: a blank one finds a committed claim only by the same target, claim_kind and statement. |
 | drill_id |  | drl_ and 14 lowercase hex characters or new:<short-name>; must be a drill in the package or the committed library | A drill's lineage key or a new:<short-name> in this package. |
 | block_id |  | blk_ and 14 lowercase hex characters; must be a block in the package or the committed scripts | A session script block id. |
 | script_id |  | scr_ and 14 lowercase hex characters or new:<short-name>; must be a script in the package or the committed scripts | A script id or a new:<short-name> in this package. |
@@ -511,7 +517,7 @@ Rules:
 - Exactly one of drill_id, block_id and script_id.
 - EVIDENCE-SUPPORTED needs a registry_claim_id.
 - A public claim that names a brain structure must be EVIDENCE-SUPPORTED.
-- A blank transfer_id is filled with 'txf_' + first 14 hex of sha256(target id + ':' + claim_kind + ':' + statement) (an existing row keeps its id).
+- A blank transfer_id takes the id of the committed row whose content gives the same 'txf_' + first 14 hex of sha256(target id + ':' + claim_kind + ':' + statement), else it is filled with that formula. Two rows that come to the same id are refused as a duplicate.
 
 ### 9. Assessment protocols
 

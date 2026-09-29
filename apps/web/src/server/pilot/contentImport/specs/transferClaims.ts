@@ -33,14 +33,18 @@ export const transferClaimsDataset: DatasetSpec = {
       },
       columns: [
         organizationColumn(),
-        childIdColumn('transfer_id', 'transfer', 'Keep it on a revision, or leave blank for a new claim and the tool mints it.'),
+        childIdColumn(
+          'transfer_id',
+          'transfer',
+          'KEEP it on a revision: a blank one finds a committed claim only by the same target, claim_kind and statement.',
+        ),
         referenceColumn('drill_id', 'drill', "A drill's lineage key or a new:<short-name> in this package.", { idKind: 'drill', allowNew: true }),
         referenceColumn('block_id', 'block', 'A session script block id.', { idKind: 'block' }),
         referenceColumn('script_id', 'script', 'A script id or a new:<short-name> in this package.', { idKind: 'script', allowNew: true }),
         vocabulary('claim_kind', 'claim_kind', 'What kind of transfer.', { required: true }),
         text('statement', 'The claim.', { required: true }),
         text('named_structure', "A brain structure the claim names, e.g. cerebellum; blank when none."),
-        vocabulary('evidence_class', 'transfer_evidence_class', 'How strong the evidence is.', { blankMeans: 'MECHANISM-THEORISED' }),
+        vocabulary('evidence_class', 'transfer_evidence_class', 'How strong the evidence is.', { blankDefault: 'MECHANISM-THEORISED' }),
         referenceColumn(
           'registry_claim_id',
           'claim',
@@ -48,8 +52,8 @@ export const transferClaimsDataset: DatasetSpec = {
           { idKind: 'claim' },
         ),
         text('source_document', 'Which PPBF document it came from.', { label: true }),
-        bool('athlete_facing', 'Athletes may see it.', { blankMeans: 'true' }),
-        bool('public_facing', 'It may be shown outside the gym.', { blankMeans: 'false' }),
+        bool('athlete_facing', 'Athletes may see it.', { blankDefault: 'true' }),
+        bool('public_facing', 'It may be shown outside the gym.', { blankDefault: 'false' }),
       ],
       rowRules: [
         {

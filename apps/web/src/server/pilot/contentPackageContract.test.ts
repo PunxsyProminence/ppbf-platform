@@ -3,7 +3,6 @@ import path from 'node:path';
 
 import { readCsv, writeCsv } from './contentImport/csv';
 import { describeContract } from './contentImport/describe';
-import { MINT } from './contentImport/ids';
 import { loadOfflineReferenceSets, readCommittedBaseline } from './contentImport/referenceSets';
 import { committedPath, DATASETS } from './contentImport/specs';
 import type { ParsedPackage, RowValues } from './contentImport/types';
@@ -20,6 +19,14 @@ import { validateParsed } from './contentImport/validate';
   ids that are not in the library (seed-reference-data.yml:42-49 leaves it out
   of the workflow for that reason). Pinning the count means a fix shows up
   here as a change to review, and so does any new orphan.
+
+  NOTHING ELSE HERE MAY FAIL ON A NORMAL HAND-OFF. prepare refuses a merge
+  that adds a blocking finding (prepare.ts), and this guard must not fail on
+  one it accepts: a new drill, the first universal-stop-rules or
+  assessment-protocols file, a renamed item that keeps its id (the contract's
+  own revision rule). So the non-vacuity checks below are floors, not exact
+  counts, and the minting formulas are pinned to fixed committed pairs in
+  contentImportValidate.test.ts rather than to every current row (review S1).
 */
 
 const WEB_DIR = path.resolve(__dirname, '../../..');
@@ -41,16 +48,20 @@ const COMMITTED = DATASETS.filter((dataset) => datasetPackage(dataset.name).file
 
 describe('committed seed content meets the content package contract', () => {
   it('finds the committed datasets at all, so the cases below cannot pass vacuously', () => {
-    expect(COMMITTED).toEqual([
-      'disciplines',
-      'competence-levels',
-      'cohort-definitions',
-      'drill-library',
-      'workout-templates',
-      'session-scripts',
-      'transfer-claims',
-    ]);
-    expect(rows('seed_drill_library.csv')).toHaveLength(119);
+    // Floors, not exact values: a hand-off may add a drill or a whole dataset
+    // (the first universal stop rules file), and prepare never removes a row.
+    expect(COMMITTED).toEqual(
+      expect.arrayContaining([
+        'disciplines',
+        'competence-levels',
+        'cohort-definitions',
+        'drill-library',
+        'workout-templates',
+        'session-scripts',
+        'transfer-claims',
+      ]),
+    );
+    expect(rows('seed_drill_library.csv').length).toBeGreaterThanOrEqual(119);
     // The LOADED research package (import-shadow-research.mjs:16), one claim per chunk.
     expect(references.claimIds.size).toBe(1193);
   });
@@ -77,28 +88,6 @@ describe('committed seed content meets the content package contract', () => {
     const result = validateParsed(baseline, { references, baseline });
     expect(result.blocking).toHaveLength(173);
     expect(new Set(result.blocking.map((finding) => finding.file))).toEqual(new Set(['transfer-claims/seed_transfer_claims.csv']));
-  });
-});
-
-describe('the id minting formulas reproduce every committed id they claim to', () => {
-  // ids.ts states each formula as OBSERVED. This is where that stays true: a
-  // content edit that changes a name without its id, or a formula edit, fails here.
-  it('drl_ = sha256(discipline:name) for all 119 drills', () => {
-    const drills = rows('seed_drill_library.csv');
-    expect(drills.filter((row) => MINT.drill(row.discipline, row.name) === row.drill_id)).toHaveLength(119);
-  });
-
-  it('wtp_ = sha256(name) for all 12 templates, coh_ = sha256(cohort_name) for all 6 cohorts', () => {
-    expect(rows('seed_workout_templates.csv').every((row) => MINT.template(row.name) === row.template_id)).toBe(true);
-    expect(rows('seed_workout_templates.csv')).toHaveLength(12);
-    expect(rows('seed_cohort_definitions.csv').every((row) => MINT.cohort(row.cohort_name) === row.cohort_id)).toBe(true);
-    expect(rows('seed_cohort_definitions.csv')).toHaveLength(6);
-  });
-
-  it('wti_, blk_ and rnd_ child ids for all 82 items, 65 blocks and 4 renderings', () => {
-    expect(rows('seed_workout_template_items.csv').filter((row) => MINT.templateItem(row.template_id, row.ordinal) === row.item_id)).toHaveLength(82);
-    expect(rows('seed_session_script_blocks.csv').filter((row) => MINT.block(row.script_id, row.block_order) === row.block_id)).toHaveLength(65);
-    expect(rows('seed_session_script_renderings.csv').filter((row) => MINT.rendering(row.script_id, row.format) === row.rendering_id)).toHaveLength(4);
   });
 });
 

@@ -81,10 +81,23 @@ export interface ValidationResult {
   parsed: ParsedPackage;
   /** new:<short-name> -> minted id, by the kind of item. */
   minted: MintedIds;
+  /**
+   * The id a BLANK key takes, by package row, for files whose key is a child
+   * id the tool fills (transfer claims). prepare writes exactly these.
+   */
+  blankKeyIds: Map<ParsedRow, string>;
 }
 
 export function rowKey(spec: FileSpec, values: RowValues): string {
   return spec.key.map((column) => values[column] ?? '').join(' / ');
+}
+
+/** The kind of item a new:<short-name> in this column names, or undefined if the column takes no new: ids. */
+export function newIdKindOf(spec: FileSpec, column: ColumnSpec): IdKind | undefined {
+  // lineage_id must equal the key (checkCell), so a new: lineage is the key's new: id.
+  if (column.role === 'key' || column.role === 'lineage') return spec.mint?.idKind;
+  if (column.allowNew) return column.idKind;
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -471,6 +484,89 @@ function mintIds(parsed: ParsedPackage, baseline: ParsedPackage | undefined, out
   return minted;
 }
 
+/** The row with each new:<short-name> reference replaced by its minted id; unresolved ones are left (they are orphans). */
+function withNewIdsResolved(spec: FileSpec, values: RowValues, minted: MintedIds): Record<string, string> {
+  const cells: Record<string, string> = { ...values };
+  for (const column of spec.columns) {
+    const value = cells[column.name];
+    if (!value || !isNewId(value)) continue;
+    const kind = newIdKindOf(spec, column);
+    const id = kind ? minted.get(kind)?.get(value) : undefined;
+    if (id) cells[column.name] = id;
+  }
+  return cells;
+}
+
+/**
+ * A BLANK KEY THAT IS A CHILD ID -- transfer_id, the only one today. Every
+ * other child file finds an existing row by the rest of its key (drill +
+ * scale_level) and keeps its id; here the id IS the key, so a blank one has no
+ * key to compare. Without this, two blank rows describing the same claim minted
+ * the same id and prepare kept only the second, and a blank-id re-send of a
+ * committed claim was added beside it (review S1).
+ *
+ * The rest of the identity is what the formula reads (target, claim_kind,
+ * statement): a blank row takes the id of the committed row whose content mints
+ * the same id -- the same claim -- and otherwise the minted id. Refused: the
+ * minted id already names a committed claim whose words have since changed
+ * (that is a different claim now), and two rows that come to the same id.
+ */
+function resolveBlankKeys(parsed: ParsedPackage, baseline: ParsedPackage | undefined, minted: MintedIds, out: Finding[]): Map<ParsedRow, string> {
+  const resolved = new Map<ParsedRow, string>();
+  for (const file of parsed.files) {
+    const mint = file.spec.mint;
+    const keyColumn = file.spec.columns.find((column) => column.name === file.spec.key[0]);
+    if (!mint || file.spec.key.length !== 1 || keyColumn?.name !== mint.column || keyColumn.role !== 'child_id') continue;
+
+    const committedIds = new Set<string>();
+    const byContent = new Map<string, string[]>();
+    for (const row of baselineFile(baseline, file.spec)?.rows ?? []) {
+      const id = row.values[mint.column];
+      if (!id) continue;
+      committedIds.add(id);
+      const contentId = mint.mint(row.values);
+      byContent.set(contentId, [...(byContent.get(contentId) ?? []), id]);
+    }
+
+    const lineOf = new Map<string, number>();
+    for (const row of file.rows) {
+      const id = row.values[mint.column];
+      if (id && !lineOf.has(id)) lineOf.set(id, row.line);
+    }
+
+    for (const row of file.rows) {
+      if (row.values[mint.column]) continue;
+      const contentId = mint.mint(withNewIdsResolved(file.spec, row.values, minted));
+      const matches = byContent.get(contentId) ?? [];
+      if (matches.length > 1) {
+        out.push(finding(file, row, mint.column, 'duplicate_key', `has the same content as committed ${matches.join(', ')}; write the ${mint.column} you mean`));
+        continue;
+      }
+      const id = matches[0] ?? contentId;
+      if (matches.length === 0 && committedIds.has(id)) {
+        out.push(
+          finding(
+            file,
+            row,
+            mint.column,
+            'minted_id_exists',
+            `a blank ${mint.column} mints ${id}, which is already a committed row whose content has since changed. To revise that row write its ${mint.column}; to add a new one, change what the id is made from.`,
+          ),
+        );
+        continue;
+      }
+      const earlier = lineOf.get(id);
+      if (earlier !== undefined) {
+        out.push(finding(file, row, mint.column, 'duplicate_key', `a blank ${mint.column} comes to ${id}, the same row as line ${earlier}`));
+        continue;
+      }
+      lineOf.set(id, row.line);
+      resolved.set(row, id);
+    }
+  }
+  return resolved;
+}
+
 // ---------------------------------------------------------------------------
 // References
 
@@ -629,7 +725,8 @@ export function validateParsed(
     checkRules(file, context, blocking);
   }
   const minted = mintIds(parsed, options.baseline, blocking);
+  const blankKeyIds = resolveBlankKeys(parsed, options.baseline, minted, blocking);
 
   const warnings = [...parseWarnings, ...computeWarnings(parsed, { references: options.references, baseline: options.baseline })];
-  return { blocking, warnings, parsed, minted };
+  return { blocking, warnings, parsed, minted, blankKeyIds };
 }

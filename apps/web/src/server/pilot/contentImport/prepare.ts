@@ -1,9 +1,10 @@
+import { canonicalCell } from './canonical';
 import { writeCsv } from './csv';
 import { type IdKind, isNewId } from './ids';
 import { referenceSetsFromBaseline } from './referenceSets';
 import { committedPath, FILE_SPECS } from './specs';
-import type { ColumnSpec, FileSpec, Finding, ParsedFile, ParsedPackage, ReferenceSets } from './types';
-import { type MintedIds, parseFile, rowKey, validateParsed, type ValidationResult } from './validate';
+import type { FileSpec, Finding, ParsedFile, ParsedPackage, ReferenceSets } from './types';
+import { type MintedIds, newIdKindOf, parseFile, rowKey, validateParsed, type ValidationResult } from './validate';
 import { normalizeCell, splitList } from './values';
 
 // `content:prepare`: turn a validated hand-off into the committed seed files.
@@ -64,17 +65,11 @@ export interface PrepareInput {
 
 type Cells = Record<string, string>;
 
-function kindOfReference(spec: FileSpec, column: ColumnSpec): IdKind | undefined {
-  if (column.role === 'key') return spec.mint?.idKind;
-  if (column.allowNew) return column.idKind;
-  return undefined;
-}
-
 function resolveNewIds(spec: FileSpec, cells: Cells, minted: MintedIds): void {
   for (const column of spec.columns) {
     const value = cells[column.name];
     if (!value || !isNewId(value)) continue;
-    const kind = kindOfReference(spec, column);
+    const kind = newIdKindOf(spec, column);
     const id = kind ? minted.get(kind)?.get(value) : undefined;
     if (!id) throw new Error(`${spec.file}: ${column.name} ${value} has no minted id (validation should have refused this)`);
     cells[column.name] = id;
@@ -88,6 +83,7 @@ function preparedCells(
   minted: MintedIds,
   committedByKey: ReadonlyMap<string, Record<string, string>>,
   counter: { childIds: number },
+  blankKeyId: string | undefined,
 ): Cells {
   const cells: Cells = {};
   for (const column of spec.columns) {
@@ -95,6 +91,12 @@ function preparedCells(
     cells[column.name] = column.list && value ? splitList(value, column.list).join(column.list) : value;
   }
   resolveNewIds(spec, cells, minted);
+  // A blank transfer_id: validate decided it (the committed claim with the same
+  // content, or the minted id) and refused any clash; take exactly that.
+  if (blankKeyId && spec.mint && !cells[spec.mint.column]) {
+    cells[spec.mint.column] = blankKeyId;
+    counter.childIds += 1;
+  }
 
   // A blank tool-decided cell takes the committed row's value when the row
   // already exists (same key) -- including a child's own id, so re-sending a
@@ -129,8 +131,19 @@ function headerFor(spec: FileSpec, committed: ParsedFile | undefined, packageRow
   return header;
 }
 
-function sameRow(header: readonly string[], raw: Readonly<Record<string, string>>, cells: Cells): boolean {
-  return header.every((name) => normalizeCell(raw[name]) === (cells[name] ?? ''));
+/**
+ * Unchanged is decided the way canonical.ts decides it, cell by cell: 'TRUE'
+ * from a spreadsheet export is the committed 'True', '2.0' is '2', and a blank
+ * is its column's default. Comparing raw text reported every re-sent spreadsheet
+ * row as REVISED and rewrote its committed bytes (review S1).
+ */
+function sameRow(spec: FileSpec, header: readonly string[], raw: Readonly<Record<string, string>>, cells: Cells): boolean {
+  return header.every((name) => {
+    const column = spec.columns.find((c) => c.name === name);
+    return column
+      ? canonicalCell(column, raw[name]) === canonicalCell(column, cells[name])
+      : normalizeCell(raw[name]) === (cells[name] ?? '');
+  });
 }
 
 function mergeFile(
@@ -138,11 +151,13 @@ function mergeFile(
   committed: ParsedFile | undefined,
   before: string | null,
   packageFile: ParsedFile,
-  minted: MintedIds,
+  validation: ValidationResult,
   counter: { childIds: number },
 ): FileChange {
   const committedByKey = new Map((committed?.rows ?? []).map((row) => [rowKey(spec, row.values), row.raw]));
-  const prepared = packageFile.rows.map((row) => preparedCells(spec, row.values, minted, committedByKey, counter));
+  const prepared = packageFile.rows.map((row) =>
+    preparedCells(spec, row.values, validation.minted, committedByKey, counter, validation.blankKeyIds.get(row)),
+  );
   const header = headerFor(spec, committed, prepared);
 
   // Each output row is either a committed row kept byte for byte, or prepared cells.
@@ -172,7 +187,7 @@ function mergeFile(
         .filter(({ entry }) => ('raw' in entry ? normalizeCell(entry.raw[parentColumn]) : entry.cells[parentColumn]) === parent);
       const old = positions.map(({ entry }) => entry);
       const unchanged = old.length === rows.length
-        && old.every((entry, index) => 'raw' in entry && sameRow(header, entry.raw, rows[index]));
+        && old.every((entry, index) => 'raw' in entry && sameRow(spec, header, entry.raw, rows[index]));
       if (unchanged) {
         change.unchanged.push(parent);
         continue;
@@ -194,7 +209,7 @@ function mergeFile(
         continue;
       }
       const existing = out[index];
-      if ('raw' in existing && sameRow(header, existing.raw, cells)) {
+      if ('raw' in existing && sameRow(spec, header, existing.raw, cells)) {
         change.unchanged.push(key);
         continue;
       }
@@ -226,7 +241,7 @@ function rewrittenPackageFile(file: ParsedFile, minted: MintedIds): { path: stri
       const column = columns.get(name);
       const value = normalizeCell(raw);
       if (!column || !isNewId(value)) return raw;
-      const kind = kindOfReference(file.spec, column);
+      const kind = newIdKindOf(file.spec, column);
       const id = kind ? minted.get(kind)?.get(value) : undefined;
       if (!id) return raw;
       changed = true;
@@ -272,17 +287,21 @@ export function preparePackage(input: PrepareInput): PrepareResult {
     const spec = packageFile.spec;
     const committed = baseline.files.find((file) => file.spec === spec);
     const before = baselineText.get(committedPath(spec)) ?? null;
-    changes.push(mergeFile(spec, committed, before, packageFile, validation.minted, counter));
+    changes.push(mergeFile(spec, committed, before, packageFile, validation, counter));
   }
 
   // The merged files must not carry a blocking finding the committed ones do
-  // not: that is exactly what contentPackageContract.test.ts would fail on in
-  // the PR, so it is refused here, before anything is written.
-  const beforeFindings = new Set(validateAll(baseline, input.claimIds, input.skillCodes).map(signature));
+  // not: the fast guard (contentPackageContract.test.ts) fails the PR on any
+  // new one, so it is refused here, before anything is written. A merge that
+  // CLEARS a committed finding is allowed -- that is a fix -- but the guard pins
+  // transfer-claims' known orphans exactly, so it is reported below.
+  const committedFindings = validateAll(baseline, input.claimIds, input.skillCodes);
+  const beforeFindings = new Set(committedFindings.map(signature));
   const merged = mergedPackage(baseline, changes);
-  const introducedFindings = validateAll(merged, input.claimIds, input.skillCodes).filter(
-    (finding) => !beforeFindings.has(signature(finding)),
-  );
+  const mergedFindings = validateAll(merged, input.claimIds, input.skillCodes);
+  const afterFindings = new Set(mergedFindings.map(signature));
+  const introducedFindings = mergedFindings.filter((finding) => !beforeFindings.has(signature(finding)));
+  const clearedFindings = committedFindings.filter((finding) => !afterFindings.has(signature(finding)));
 
   const packageRewrites = validation.parsed.files
     .map((file) => rewrittenPackageFile(file, validation.minted))
@@ -307,6 +326,14 @@ export function preparePackage(input: PrepareInput): PrepareResult {
       'seed_drill_secondary_skills.csv changed. seedWorkflowContract.test.ts pins that file to its one approved row '
       + "('seeds exactly the one approved relationship and no other'), so the PR must change that test too, on Jason's "
       + 'say-so (decision 8 in the intake plan).',
+    );
+  }
+  if (clearedFindings.length > 0) {
+    const files = [...new Set(clearedFindings.map((finding) => finding.file))].join(', ');
+    notices.push(
+      `the merge clears ${clearedFindings.length} blocking finding(s) the committed files carry (${files}). `
+      + 'contentPackageContract.test.ts pins the committed transfer-claims orphans exactly (173 rows over 61 drills), '
+      + 'so the PR must lower that pin to what is left.',
     );
   }
   const drillFile = merged.files.find((file) => file.spec.file === 'seed_drill_library.csv');

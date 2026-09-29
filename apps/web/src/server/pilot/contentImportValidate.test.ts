@@ -1,7 +1,7 @@
-import { canonicalCell } from './contentImport/canonical';
+import { canonicalCell, unitContentHash } from './contentImport/canonical';
 import { writeCsv } from './contentImport/csv';
 import { MINT, REGISTRY_CLAIM_ID_PATTERN } from './contentImport/ids';
-import { fileSpecByName } from './contentImport/specs';
+import { datasetSpec, fileSpecByName } from './contentImport/specs';
 import type { FileSpec, FindingCode, PackageFileInput, ParsedPackage, ReferenceSets, WarningCode } from './contentImport/types';
 import { parsePackage, validatePackage, type ValidationResult } from './contentImport/validate';
 import { splitList } from './contentImport/values';
@@ -137,6 +137,27 @@ describe('lists', () => {
     expect(canonicalCell(column, 'A1-001 |A2-002')).toBe('A1-001|A2-002');
   });
 
+  it("a blank cell and its column's default are the same content, so a re-sent drill is not a revision", () => {
+    // The loader stores 'none' / 'authored' for a blank (seed-drill-library.mjs:313-315),
+    // so a database row and the file that loaded it must hash the same.
+    const dataset = datasetSpec('drill-library');
+    const scaleRow = (contact: string, state: string) => ({
+      scale_level: 'B',
+      is_starting_point: 'true',
+      demand_description: 'd',
+      contact_level: contact,
+      authoring_state: state,
+    });
+    const unit = (row: Record<string, string>) => ({ root: { name: 'x' }, children: { 'seed_drill_scale_levels.csv': [row] } });
+    expect(unitContentHash(dataset, unit(scaleRow('', '')))).toBe(unitContentHash(dataset, unit(scaleRow('none', 'authored'))));
+    expect(unitContentHash(dataset, unit(scaleRow('', '')))).not.toBe(unitContentHash(dataset, unit(scaleRow('light_technical', ''))));
+
+    const athleteFacing = spec('seed_transfer_claims.csv').columns.find((c) => c.name === 'athlete_facing');
+    if (!athleteFacing) throw new Error('no athlete_facing column');
+    expect(canonicalCell(athleteFacing, '')).toBe(canonicalCell(athleteFacing, true));
+    expect(canonicalCell(athleteFacing, 'TRUE')).toBe('true');
+  });
+
   it.each([
     ['A1-001;A2-002'],
     ['A1-001,A2-002'],
@@ -235,6 +256,73 @@ describe('keys and ids', () => {
     const baseline = parsePackage([input('seed_drill_library.csv', [drill({ drill_id: EXISTING_DRILL, name: 'Touch to Reposition' })])]).parsed;
     const result = run(goodDrillPackage({ name: 'Touch to Reposition' }), baseline);
     expect(codes(result)).toEqual(expect.arrayContaining(['minted_id_exists', 'duplicate_value']));
+  });
+
+  it('lineage_id written as the same new:<name> as drill_id is accepted', () => {
+    // The contract allows lineage_id "blank or the same as drill_id"; prepare
+    // must then resolve it too (contentImportPrepare.test.ts).
+    expect(run(goodDrillPackage({ lineage_id: 'new:mirror-jab' })).blocking).toEqual([]);
+  });
+});
+
+describe('the minting formulas reproduce real committed ids', () => {
+  // Fixed (inputs, id) pairs copied from the committed CSVs. When ids.ts was
+  // written every committed row matched its formula (119 drills, 12 templates,
+  // 6 cohorts, 82 items, 65 blocks, 4 renderings); these pin the formulas
+  // themselves, so an edit to one fails here. They are not re-derived from
+  // the live files: a renamed item keeps its id, so its current name no
+  // longer mints it, and that is the contract working (review S1).
+  it.each([
+    ['boxing', 'Touch to Reposition', 'drl_7f812fecacfee4'],
+    ['conditioning', 'Guard Through Fatigue', 'drl_d418eb017730d7'],
+    ['conditioning', 'Footwork Under Accumulated Fatigue', 'drl_47e30881c7b416'],
+  ])('drl_: %s / %s -> %s', (discipline, name, id) => {
+    expect(MINT.drill(discipline, name)).toBe(id);
+  });
+
+  it('wtp_, coh_, wti_, blk_ and rnd_', () => {
+    expect(MINT.template('Beginner Footwork')).toBe('wtp_98af8ee68020d0');
+    expect(MINT.template('Intro to Boxing — Session 1')).toBe('wtp_216dfa4227233d');
+    expect(MINT.cohort('Open Floor')).toBe('coh_bac0c06f582b46');
+    expect(MINT.cohort('Working Group')).toBe('coh_ee6dbaa7f0edbd');
+    expect(MINT.templateItem('wtp_216dfa4227233d', '1')).toBe('wti_78e9602c406a6f');
+    expect(MINT.templateItem('wtp_98af8ee68020d0', '2')).toBe('wti_25c92d8e809246');
+    expect(MINT.block('scr_0d0c3b6389e8d1', '1')).toBe('blk_989cbc8e4523e0');
+    expect(MINT.block('scr_0d0c3b6389e8d1', '42')).toBe('blk_00c9e915ac9318');
+    expect(MINT.rendering('scr_e2ed38b1a19670', 'cheat_sheet')).toBe('rnd_9c378b9c06cd21');
+    expect(MINT.rendering('scr_e2ed38b1a19670', 'class_plan')).toBe('rnd_d4cc60f799b849');
+  });
+});
+
+describe('a blank transfer_id is the whole key, so it is resolved before it is compared', () => {
+  const claim = (overrides: Record<string, string> = {}) => ({
+    transfer_id: '',
+    drill_id: EXISTING_DRILL,
+    claim_kind: 'life_skill_transfer',
+    statement: 'Reset after mistakes and continue.',
+    evidence_class: 'COACHING INTENT',
+    ...overrides,
+  });
+  const claims = (rows: Record<string, string>[]) => input('seed_transfer_claims.csv', rows, 'transfer-claims');
+
+  it('two blank rows describing the same claim are a duplicate, not a silent overwrite', () => {
+    // Before: no finding, and prepare kept only the second row.
+    const result = run([claims([claim(), claim({ evidence_class: 'EVIDENCE-SUPPORTED', registry_claim_id: 'A1-001' })])]);
+    expect(result.blocking).toEqual([expect.objectContaining({ code: 'duplicate_key', column: 'transfer_id', line: 3 })]);
+  });
+
+  it('a blank row with the same target, claim_kind and statement as a committed claim takes its id', () => {
+    const legacyId = 'txf_0000000000abcd'; // committed ids are not reproducible by any formula (ids.ts)
+    const baseline = parsePackage([claims([claim({ transfer_id: legacyId })])]).parsed;
+    const result = run([claims([claim({ evidence_class: 'EVIDENCE-SUPPORTED', registry_claim_id: 'A1-001' })])], baseline);
+    expect(result.blocking).toEqual([]);
+    expect([...result.blankKeyIds.values()]).toEqual([legacyId]);
+  });
+
+  it('a blank row whose minted id is a committed claim that has since been reworded is refused', () => {
+    const minted = MINT.transfer(EXISTING_DRILL, 'life_skill_transfer', 'Reset after mistakes and continue.');
+    const baseline = parsePackage([claims([claim({ transfer_id: minted, statement: 'Reset, then continue.' })])]).parsed;
+    expect(codes(run([claims([claim()])], baseline))).toEqual(['minted_id_exists']);
   });
 });
 

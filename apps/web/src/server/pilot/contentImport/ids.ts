@@ -11,8 +11,12 @@ import { createHash } from 'node:crypto';
 // MINTING IS DETERMINISTIC, NOT RANDOM. A new item gets the id its content
 // would have been given by the process that minted the committed ids, so the
 // same hand-off prepared twice produces the same files. Each formula below was
-// checked against the committed CSVs, not assumed (contentPackageContract
-// .test.ts re-checks all of them on every PR):
+// checked against EVERY committed row when this module was written (OBSERVED
+// at 67857c79), not assumed. From then on contentImportValidate.test.ts pins
+// each formula to real committed (inputs, id) pairs, so a formula edit fails.
+// It is deliberately NOT re-checked over every current row: the contract's
+// revision rule keeps an item's id when its name changes, so a renamed item's
+// id no longer matches its name -- and that is correct, not a defect.
 //
 //   drl_  sha256(discipline + ':' + name)      119/119 committed drills
 //   wtp_  sha256(name)                          12/12 committed templates

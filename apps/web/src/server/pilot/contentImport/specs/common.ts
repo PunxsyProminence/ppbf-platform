@@ -51,6 +51,7 @@ export function systemColumn(name: string, systemDefault: string, what: string):
 
 interface Options {
   required?: boolean;
+  blankDefault?: string;
   blankMeans?: string;
   label?: boolean;
 }

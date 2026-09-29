@@ -18,6 +18,10 @@ import { integerText, isIntegerText, isNumberText, normalizeCell, numberText, pa
 // element (seed-drill-library.mjs:210-219 splits on ; and , only; 82 of the
 // 119 committed drills carry a '|'), and without the re-split every one of
 // those drills would read as changed the first time it is compared.
+//
+// A BLANK CELL AND ITS COLUMN'S blankDefault ARE THE SAME CONTENT, for the
+// same reason: the loader stores the default for a blank, so the database row
+// says 'authored' where the file said nothing.
 
 export type CellInput = string | readonly string[] | boolean | number | null | undefined;
 
@@ -28,9 +32,8 @@ export function isContentColumn(column: ColumnSpec): boolean {
 }
 
 export function canonicalCell(column: ColumnSpec, value: CellInput): string {
-  if (value === null || value === undefined) return '';
-
   if (column.list) {
+    if (value === null || value === undefined) return '';
     const elements = Array.isArray(value) ? value : [String(value)];
     return elements.flatMap((element) => splitList(normalizeCell(String(element)), column.list as string)).join(column.list);
   }
@@ -38,7 +41,11 @@ export function canonicalCell(column: ColumnSpec, value: CellInput): string {
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (typeof value === 'number') return String(value);
 
-  const text = normalizeCell(Array.isArray(value) ? value.join(',') : String(value));
+  // A blank IS its column's default: the loader writes the default for a blank
+  // (blankDefault in the spec) and a database row holds it, so 'none' and ''
+  // in a scale row's contact_level are the same content, not a revision.
+  const written = value === null || value === undefined ? '' : normalizeCell(Array.isArray(value) ? value.join(',') : String(value));
+  const text = written || column.blankDefault || '';
   if (!text) return '';
   if (column.type === 'boolean') {
     const parsed = parseBoolean(text);

@@ -39,7 +39,7 @@ export const disciplinesDataset: DatasetSpec = {
         // CONTENT here, not a system flag: this is the gym's on/off switch for
         // the discipline, and the committed file sets it false for wrestling,
         // bjj and combatives. Versioned tables use `active` differently.
-        bool('active', 'The discipline is offered.', { blankMeans: 'true' }),
+        bool('active', 'The discipline is offered.', { blankDefault: 'true' }),
       ],
     },
   ],

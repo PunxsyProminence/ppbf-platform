@@ -301,4 +301,84 @@ describe('re-sending committed rows unchanged', () => {
     expect(output).toContain('unchanged: 2');
     expect(hashTree(seedData)).toEqual(before);
   });
+
+  it('as a spreadsheet writes them (TRUE, 8 for 8.0, a blank for the default) is still unchanged, bytes kept', () => {
+    // Before: compared as raw text, these were REVISED, raised the revision
+    // NOTICE and rewrote the committed rows (review S1, probe B).
+    const templates = table('workout-templates/seed_workout_templates.csv', REAL_SEED_DATA)
+      .slice(0, 2)
+      .map((row) => ({ ...row, requires_coach_authorization: row.requires_coach_authorization.toUpperCase(), active: row.active.toUpperCase() }));
+    const items = table('workout-templates/seed_workout_template_items.csv', REAL_SEED_DATA)
+      .filter((row) => row.template_id === TEMPLATE)
+      .map((row) => ({
+        ...row,
+        duration_minutes: row.duration_minutes.replace(/\.0$/, ''),
+        contact_level: row.contact_level === 'none' ? '' : row.contact_level,
+      }));
+    expect(items.some((row) => row.contact_level === '')).toBe(true);
+    writePackageFile('seed_workout_templates.csv', templates);
+    writePackageFile('seed_workout_template_items.csv', items);
+
+    const before = hashTree(seedData);
+    const { code, output } = prepare(true);
+    expect(code).toBe(0);
+    expect(output).toContain('workout-templates/seed_workout_templates.csv: no change');
+    expect(output).toContain('workout-templates/seed_workout_template_items.csv: no change');
+    expect(output).not.toContain('REVISED');
+    expect(hashTree(seedData)).toEqual(before);
+  });
+});
+
+describe('a new drill whose lineage_id repeats its new:<name>', () => {
+  it('is prepared like a blank lineage: both become the minted id, in the committed file and the hand-off', () => {
+    // Before: validate passed it and prepare threw "has no minted id".
+    writePackageFile('seed_drill_library.csv', [{ ...newDrill(), lineage_id: 'new:mirror-jab' }]);
+    const { code } = prepare(true);
+    expect(code).toBe(0);
+    const minted = MINT.drill('boxing', 'Mirror Jab');
+    expect(table('drill-library/seed_drill_library.csv').find((row) => row.drill_id === minted)?.lineage_id).toBe(minted);
+    const handoffRow = table('drill-library/seed_drill_library.csv', handoff);
+    expect(handoffRow.map((row) => [row.drill_id, row.lineage_id])).toEqual([[minted, minted]]);
+  });
+});
+
+describe('transfer claims sent with a blank transfer_id', () => {
+  const claim = (overrides: Record<string, string> = {}) => ({
+    drill_id: REVISED_DRILL,
+    claim_kind: 'life_skill_transfer',
+    statement: 'Reset after mistakes and continue.',
+    evidence_class: 'COACHING INTENT',
+    ...overrides,
+  });
+  const CLAIMS = 'transfer-claims/seed_transfer_claims.csv';
+
+  it('two rows for the same claim are refused, and nothing is written', () => {
+    // Before: BLOCKING 0, then 'added' and 'revised' the same txf_ id and only
+    // the second row survived (review S1, probe2).
+    writePackageFile('seed_transfer_claims.csv', [claim(), claim({ evidence_class: 'EVIDENCE-SUPPORTED', registry_claim_id: 'A1-001' })]);
+    const before = hashTree(seedData);
+    const { code, output } = prepare(true);
+    expect(code).toBe(1);
+    expect(output).toContain('[duplicate_key]');
+    expect(hashTree(seedData)).toEqual(before);
+  });
+
+  it('re-sending a claim without its id revises that claim in place instead of adding a second one', () => {
+    writePackageFile('seed_transfer_claims.csv', [claim()]);
+    expect(prepare(true).code).toBe(0);
+    const minted = MINT.transfer(REVISED_DRILL, 'life_skill_transfer', 'Reset after mistakes and continue.');
+    const afterFirst = table(CLAIMS);
+    expect(afterFirst).toHaveLength(table(CLAIMS, REAL_SEED_DATA).length + 1);
+    expect(afterFirst.filter((row) => row.drill_id === REVISED_DRILL).map((row) => row.transfer_id)).toEqual([minted]);
+
+    writePackageFile('seed_transfer_claims.csv', [claim({ evidence_class: 'EVIDENCE-SUPPORTED', registry_claim_id: 'A1-001' })]);
+    const second = prepare(true);
+    expect(second.code).toBe(0);
+    expect(second.output).toContain(`revised: ${minted}`);
+    const afterSecond = table(CLAIMS);
+    expect(afterSecond).toHaveLength(afterFirst.length);
+    expect(afterSecond.filter((row) => row.drill_id === REVISED_DRILL)).toEqual([
+      expect.objectContaining({ transfer_id: minted, evidence_class: 'EVIDENCE-SUPPORTED', registry_claim_id: 'A1-001' }),
+    ]);
+  });
 });

@@ -63,7 +63,8 @@ const REFERENCE_TEXT: Record<NonNullable<ColumnSpec['references']>, string> = {
 
 function columnRow(spec: FileSpec, column: ColumnSpec): string {
   const required = column.required ? 'yes' : '';
-  const blank = column.blankMeans ? ` Blank means ${column.blankMeans}.` : '';
+  const blankText = column.blankDefault ?? column.blankMeans;
+  const blank = blankText ? ` Blank means ${blankText}.` : '';
   return `| ${column.name} | ${required} | ${cellText(allowedText(spec, column))} | ${cellText(column.description + blank)} |`;
 }
 
@@ -87,11 +88,17 @@ function fileSection(spec: FileSpec): string[] {
   if (spec.mint) {
     const column = spec.columns.find((c) => c.name === spec.mint?.column);
     const formula = MINT_FORMULA_TEXT[spec.mint.idKind];
-    rules.push(
-      column?.role === 'key'
-        ? `A new:<short-name> ${spec.mint.column} becomes ${formula}.`
-        : `A blank ${spec.mint.column} is filled with ${formula} (an existing row keeps its id).`,
-    );
+    if (column?.role === 'key') {
+      rules.push(`A new:<short-name> ${spec.mint.column} becomes ${formula}.`);
+    } else if (spec.key.includes(spec.mint.column)) {
+      // The id is the whole identity (transfer claims): see blankKeyIds in validate.ts.
+      rules.push(
+        `A blank ${spec.mint.column} takes the id of the committed row whose content gives the same ${formula}, `
+        + 'else it is filled with that formula. Two rows that come to the same id are refused as a duplicate.',
+      );
+    } else {
+      rules.push(`A blank ${spec.mint.column} is filled with ${formula} (an existing row keeps its id).`);
+    }
   }
   if (rules.length > 0) {
     lines.push('Rules:', '', ...rules.map((rule) => `- ${rule}`), '');
@@ -150,8 +157,9 @@ export function describeContract(): string {
     '  may be left out, left blank, or hold today\'s default shown in the tables. Anything else is refused.',
     '- Lists inside one cell use `|` between items; spaces around items are trimmed. Two stored exceptions keep `,`:',
     '  cohort `required_domains` and `tenure_bands`. Any other separator in a list cell is refused.',
-    '- true / false in any letter case. Whole numbers may be written `2` or `2.0`. A blank cell means "no value" (the',
-    '  default shown).',
+    '- true / false in any letter case. Whole numbers may be written `2` or `2.0`. A blank cell means the default the',
+    '  table shows ("Blank means ..."), and is the same content as writing that default; with no default shown it means',
+    '  "no value".',
     '- A column the file does not define is refused (its values would otherwise be dropped silently).',
     '',
     '## Identity',
@@ -164,7 +172,10 @@ export function describeContract(): string {
     '- In every package file, drill_id means the drill\'s LINEAGE key (the id of its first version), never a later',
     '  version\'s id. template_id and script_id work the same way.',
     '- Child ids (scale_id, stop_rule_id, cue_id, item_id, block_id, rendering_id, transfer_id) may be blank; the tool',
-    '  keeps the committed id of an existing row and mints one for a new row.',
+    '  keeps the committed id of an existing row and mints one for a new row. An existing row is found by the rest of',
+    '  its identity (a drill + scale_level, a template + ordinal, ...). transfer_id IS a claim\'s whole identity, so a',
+    '  blank one is matched to the committed claim with the same target, claim_kind and statement: KEEP transfer_id',
+    '  when a revision changes any of those three, or the revision is added as a new claim beside the old one.',
     '- Id formats:',
     ...idKinds.map((kind) => `  - ${kind.replace(/_/g, ' ')}: ${idShapeText(kind)}; minted as ${MINT_FORMULA_TEXT[kind]}`),
     `  - research claim: ${idShapeText('claim')}. It must be a claim in the LOADED research package`,
@@ -191,6 +202,8 @@ export function describeContract(): string {
     '  blocks and renderings): the package\'s rows for a parent replace ALL of that parent\'s committed rows in that',
     '  file. A parent with no row in the package keeps what it has.',
     '- prepare refuses to write if the merged files would carry a blocking problem the committed files do not.',
+    '- A row whose content is the same as the committed row (true/TRUE, 2/2.0, a blank for the default shown) is',
+    '  unchanged: the committed row is kept byte for byte.',
     '',
     '## Blocking problems',
     '',

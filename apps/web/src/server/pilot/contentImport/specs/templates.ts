@@ -18,7 +18,9 @@ import {
 
 // pilot.workout_templates and pilot.workout_template_items
 // (workout_templates_v2 migration :43-100). Loaded today by
-// seed-workout-templates.mjs.
+// seed-workout-templates.mjs, whose ON CONFLICT names only the active-name
+// index (:201); the primary key is (organization_id, template_id) (migration
+// :63), so a new name on an existing id is a key violation, not a skip.
 
 export const workoutTemplatesDataset: DatasetSpec = {
   name: 'workout-templates',
@@ -29,7 +31,8 @@ export const workoutTemplatesDataset: DatasetSpec = {
     + 'template version and the old one is kept. Items listed for a template replace all of its items.',
   loadedToday:
     'seed-reference-data workflow, dataset workout-templates (npm run seed:workout-templates). Insert-only: a template '
-    + 'whose name already exists is skipped, as are items at an existing (template, ordinal).',
+    + 'whose name already exists is skipped, as are items at an existing (template, ordinal); a renamed template that '
+    + "keeps its id stops the run on the table's primary key.",
   files: [
     {
       dataset: 'workout-templates',
@@ -56,11 +59,11 @@ export const workoutTemplatesDataset: DatasetSpec = {
         text('name', 'The template name.', { required: true }),
         text('session_type', 'e.g. technical, footwork, sparring.', { required: true, label: true }),
         vocabulary('difficulty', 'difficulty', 'Who it is pitched at.', { required: true }),
-        text('age_band', 'e.g. any, youth, adult, youth_and_adult.', { blankMeans: 'any', label: true }),
+        text('age_band', 'e.g. any, youth, adult, youth_and_adult.', { blankDefault: 'any', label: true }),
         integer('duration_minutes', 'Session length, 15 to 180 minutes.', { required: true, bound: 'template_duration_minutes' }),
         text('intent', 'What the session is for.', { required: true }),
         text('coach_notes', 'Coach notes.'),
-        bool('requires_coach_authorization', 'A coach must authorize it.', { blankMeans: 'false' }),
+        bool('requires_coach_authorization', 'A coach must authorize it.', { blankDefault: 'false' }),
         systemColumn('active', 'true', 'withdrawing a template is a separate action'),
         createdByColumn(),
       ],
@@ -90,7 +93,7 @@ export const workoutTemplatesDataset: DatasetSpec = {
         text('free_text_drill', 'A drill described in words instead of drill_id.'),
         integer('duration_minutes', '1 to 90 minutes.', { bound: 'template_item_duration_minutes' }),
         integer('rep_count', 'Reps, 1 or more.', { bound: 'positive' }),
-        vocabulary('contact_level', 'contact_level', 'Contact in this item.', { blankMeans: 'none' }),
+        vocabulary('contact_level', 'contact_level', 'Contact in this item.', { blankDefault: 'none' }),
         text('coach_note', 'Coach note.'),
         vocabulary('scale_level', 'scale_level', 'A preferred scale level (a preference, never forced).'),
       ],
