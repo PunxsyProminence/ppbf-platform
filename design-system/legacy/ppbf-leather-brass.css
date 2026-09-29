@@ -860,15 +860,11 @@ body.ppbf {
    #A81E22, so NOTHING MOVES ON SCREEN -- the literal became reachable, it did
    not become a different colour.
 
-   WHAT THIS DOES NOT DECIDE. Whether an ordinary destructive button may wear
-   the reservation AT ALL is an owner question, and it is open in two places
-   at once: current/ppbf-golden-era.css lists "ordinary destructive buttons"
-   among the uses the red is never for, while
-   apps/web/src/design/safeguardingRedReservation.test.ts records the same
-   question as unadjudicated -- "a future one needs an allow-list entry with a
-   reason, not a ruling from a test". This change takes no position on it. It
-   makes the answer, whichever way the owner goes, one token line instead of a
-   literal hunt. */
+   ANSWERED 2026-09-29. Whether an ordinary destructive button may wear this
+   red was an open owner question. Red is not reserved (OD-2026-09-29-001;
+   the club's colours are black, red and white) and
+   safeguardingRedReservation.test.ts is deleted, so it may. --locked still
+   means a medical stop; a destructive button is not one. */
 .btn--danger {
   color: var(--paper);
   background-image: linear-gradient(180deg, #D2453F 0%, var(--stamp-red) 55%, #6E1214 100%);
@@ -1914,7 +1910,12 @@ body.ppbf.on-canvas {
     var(--grain-fine), linear-gradient(178deg, #F8F5E6, #E9E3CD);
   background-blend-mode: normal, normal, overlay, normal;
 }
-/* THE MARGIN RULE IS NOT ALLOWED TO BE THE SAFEGUARDING RED.
+/* THE MARGIN RULE WAS MOVED OFF THE SAFEGUARDING RED.
+   STATUS 2026-09-29: that reservation is deleted (OD-2026-09-29-001; the
+   club's colours are black, red and white), so a red margin is allowed again.
+   The ink below stays until someone chooses otherwise. What follows is why it
+   moved.
+
    It was rgba(168,30,34,.34) -- the channels of #A81E22, which the owner
    reserved on 2026-08-19 for MEDICALLY_NOT_ALLOWED: the top of the safety
    ladder, a child who may not participate. A decorative margin line on a

@@ -34,8 +34,8 @@ export interface ShadowDeletionRequestRow {
 /* Law 3: state carries a glyph and an uppercase word, never colour alone --
    the same ladder the rest of this room uses.
 
-   `pending` is --restricted and NOT --locked. The safeguarding red is reserved
-   for the top of the safety ladder, a person who may not participate; a data
+   `pending` is --restricted and NOT --locked. --locked means the top of the
+   safety ladder, a person who may not participate; a data
    request waiting on an admin is work owed, not a child in danger. */
 const STATUS_BADGE: Record<ShadowDeletionRequestStatus, { rung: string; glyph: string; label: string }> = {
   pending: { rung: 'badge--restricted', glyph: '▲', label: 'AWAITING REVIEW' },

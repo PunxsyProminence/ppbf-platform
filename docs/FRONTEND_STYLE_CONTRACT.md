@@ -33,11 +33,13 @@ ones marked:
 
 1. **Brass is the chassis, never the message** (Law 1, retired OD-2026-09-28-009). Frames, rivets, rope,
    button faces, the "on" state of a control. Brass never reports a status.
-2. **Saturated colour means safety or status, and nothing else** (Law 2).
-   Green, blue, orange and red belong to a participant's safety state or a
-   queue outcome. In particular `--safety-locked` aliases to `--locked` — the
-   safety gate's red — so it must not paint tabs, panel borders, links, or
-   emphasis. (Chrome accents used brass under Law 1, retired OD-2026-09-28-009.)
+2. **Saturated colour means safety or status, and nothing else** (Law 2),
+   red excepted. Green, blue and orange belong to a participant's safety state
+   or a queue outcome. Red is not reserved (OD-2026-09-29-001, 2026-09-29): it
+   is the club's colour and may be used anywhere. The token is not free:
+   `--safety-locked` aliases to `--locked`, which still means a medical stop,
+   so it must not paint tabs, panel borders, links, or emphasis. (Chrome
+   accents used brass under Law 1, retired OD-2026-09-28-009.)
 3. **Colour is never the only channel** (Law 3). Every state carries a glyph
    (`✓ ◉ ▲ ✕`) and an uppercase label, so it survives greyscale board packets
    and every form of colour blindness. Use `.badge`, not an emoji.
@@ -119,8 +121,9 @@ silently emits neither. Use `text-[length:var(--x)]` / `text-[color:var(--x)]`.
    `--safety-locked` (`apps/web/app/globals.css`); it aliases to
    `--locked` — the safety gate's red — and it no longer paints tabs, borders,
    eyebrows, banners, or "planned" markers anywhere. Planned/not-implemented
-   markers are `.stamp--brass`. Any new saturated red must be the safety gate
-   speaking. Regressions here are the highest-priority drift.
+   markers are `.stamp--brass`. Any new use of `--safety-locked` / `--locked`
+   must be the safety gate speaking; red itself is not reserved
+   (OD-2026-09-29-001). Regressions here are the highest-priority drift.
 
 ## Checking your work
 
@@ -148,7 +151,9 @@ regression rather than a cosmetic one.
    (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4: seven core materials plus dark glass,
    owner-approved 2026-09-28, OD-2026-09-28-014), which replaced the old
    five-material rule (OD-2026-09-28-009).
-2. Saturated colour appears only for safety state or queue outcome (Law 2).
+2. Saturated colour appears only for safety state or queue outcome (Law 2),
+   except red, which is not reserved (OD-2026-09-29-001); `--locked` still
+   appears only for a medical stop.
    (The "chrome accents are brass" half was Law 1, retired OD-2026-09-28-009.)
 3. Every state carries a glyph and an uppercase label, not colour alone (Law 3).
 4. RETIRED with Law 8 (OD-2026-09-28-009): sizes from the √φ type ladder and
