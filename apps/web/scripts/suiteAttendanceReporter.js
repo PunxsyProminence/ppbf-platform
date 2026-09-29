@@ -14,7 +14,9 @@
  * `Tests: 8017 passed` -- and the passing test count went UP, because the
  * eight assertions that file owns did not fail, they ceased to exist. The
  * guard on the reserved medical red (#A81E22 / MEDICALLY_NOT_ALLOWED) was
- * absent from `main` and no summary said so.
+ * absent from `main` and no summary said so. (That suite was later deleted on
+ * purpose: red is not reserved, OD-2026-09-29-001. The incident stands as the
+ * reason this reporter exists.)
  *
  * WHY THIS IS A DIFFERENT HOLE FROM THE ONE #651 CLOSED. #651 added
  * non-emptiness FLOORS inside suites, for guards that pass while reading

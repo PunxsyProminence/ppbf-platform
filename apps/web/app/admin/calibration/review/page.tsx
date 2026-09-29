@@ -253,14 +253,13 @@ function CalibrationReviewTable() {
           </div>
         )}
 
-        {/* alert--warning and ▲, never alert--critical and ✕. The safeguarding
-            red (#A81E22) is reserved for the top of the safety ladder -- a
-            person who may not participate (owner decision 2026-08-19). A clip
-            that is not ready for review, or a fetch that failed, is emphatically
-            not that, and spending the reservation on it would blunt the one
-            signal that has to keep meaning what it says.
-            src/design/safeguardingRedReservation.test.ts enforces this, and it
-            named this file when the first draft reached for the red. */}
+        {/* alert--warning and ▲, never alert--critical and ✕. alert--critical
+            wears --locked, which means the top of the safety ladder -- a
+            person who may not participate. A clip that is not ready for
+            review, or a fetch that failed, is emphatically not that, and
+            borrowing the medical stop for it would blunt the one signal that
+            has to keep meaning what it says. Red itself is not reserved
+            (OD-2026-09-29-001); the --locked meaning is kept. */}
         {errorMessage && (
           <div className="alert alert--warning" role="alert">
             <span className="alert-icon" aria-hidden="true">▲</span>
@@ -282,10 +281,9 @@ function CalibrationReviewTable() {
             data-testid="pair-selection"
             className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]"
           >
-            {/* NOT the safeguarding red. A clip waiting on a choice is not a
-                person who may not participate, and spending that reservation
-                here blunts the one signal that has to keep meaning what it
-                says (safeguardingRedReservation.test.ts). */}
+            {/* NOT the --locked medical stop. A clip waiting on a choice is not
+                a person who may not participate, and borrowing that signal
+                here blunts the one that has to keep meaning what it says. */}
             <p className="alert alert--warning mb-[var(--s3)]">
               <span aria-hidden="true">▲</span>{' '}
               This clip has {candidates.length} submitted readings. A comparison reads exactly

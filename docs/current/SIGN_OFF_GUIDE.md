@@ -1,5 +1,11 @@
 # Owner Sign-Off Walkthrough Guide
 
+> **History (2026-09-29).** The current list of built-but-untried modules is
+> `docs/capabilities/SIGN_OFF_WALKTHROUGH.md` (48 DONE modules marked
+> `PENDING_SIGN_OFF`, checked against the code on 2026-09-29; Jason's "9a. B",
+> OD-2026-09-29-002). This guide's counts and per-module notes below are as of
+> 2026-09-28 and older; keep it for its no-route list and history.
+
 This guide was written on 2026-08-18 (#406) for manually verifying 82 of the
 89 modules that `docs/capabilities/expanded-200-backlog.csv` then marked
 `Status: DONE` but `ManualVerification: PENDING_SIGN_OFF`; 53, 121, 123, 125,

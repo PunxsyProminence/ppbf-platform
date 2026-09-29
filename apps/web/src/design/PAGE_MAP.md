@@ -19,10 +19,12 @@ Two consequences worth knowing before you touch a page:
   `var(--t-md)`, `var(--s5)`, `var(--brass-500)`. The legacy aliases
   (`--canvas-tan`, `--safety-locked`, `--text-sm`) exist to carry pages written
   before the design system existed, not as a second vocabulary to write in.
-- **`--safety-locked` means what it says.** It is the safety gate's red, and
-  Law 2 reserves saturated colour for safety state. It is not a chrome accent —
-  active tabs, KPI labels and panel borders take `--accent` (brass). The token
-  was called `--red-primary` until it was renamed for exactly this reason.
+- **`--safety-locked` means what it says.** It is `--locked`, the safety gate's
+  medical stop, and Law 2 reserves saturated colour for safety state (red
+  itself is not reserved, OD-2026-09-29-001; this token is). It is not a
+  chrome accent — active tabs, KPI labels and panel borders take `--accent`
+  (brass). The token was called `--red-primary` until it was renamed for
+  exactly this reason.
 - **ppbf.css ships real component classes** — `.badge`, `.tile`, `.frame`,
   `.mat-leather`, `.mat-paper`, `.gauge`, `.plaque`. Use them instead of
   rebuilding a panel out of utilities. Its `.stamp` is a *static ink mark*
