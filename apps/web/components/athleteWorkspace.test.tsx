@@ -3424,6 +3424,9 @@ describe('the pre-session self-report presents as a self-report, not a clearance
     // Wellness.
     expect(within(help).queryByText(/Say how you feel/)).toBeNull();
     expect(within(help).queryAllByText(/readiness/i)).toEqual([]);
+    // "Assuming academic status is still current": no academic status exists
+    // on the platform, so the help warned about a record nobody keeps.
+    expect(within(help).queryAllByText(/academic/i)).toEqual([]);
 
     // The old authority vocabulary is gone with it.
     expect(screen.queryByText('Current Readiness')).toBeNull();
@@ -3695,10 +3698,30 @@ describe('the Schedule help claims no readiness restriction', () => {
     });
 
     // Anchored on a line that stays, so the absence cannot pass on a closed panel.
-    expect(screen.getByText('Booking while on academic hold')).toBeTruthy();
+    expect(screen.getByText('Open the unified scheduler to see live classes')).toBeTruthy();
     expect(screen.queryByText(/Readiness RED may limit contact work/)).toBeNull();
     expect(screen.queryByText(/Booking contact work with RED readiness/)).toBeNull();
     expect(screen.queryAllByText(/readiness/i)).toEqual([]);
+  });
+
+  // "Check your academic status first" and "Booking while on academic hold"
+  // named a status and a hold the platform does not have, and the rule that
+  // really refuses a sign-up -- an active training hold that pauses all
+  // training -- was never mentioned.
+  test('the help names the training hold that really refuses a sign-up, and no academic rule', async () => {
+    await renderWorkspace();
+    openTab('Schedule');
+    const toggle = screen.getByRole('button', { name: /HELP: Schedule Session/ });
+    await act(async () => {
+      fireEvent.click(toggle);
+      await Promise.resolve();
+    });
+    const help = toggle.parentElement as HTMLElement;
+
+    expect(within(help).getByText(
+      'Signing up while your training is paused — sign-up is refused until the hold is lifted or ends, and the message shows why and how to get it lifted',
+    )).toBeTruthy();
+    expect(within(help).queryAllByText(/academic/i)).toEqual([]);
   });
 });
 

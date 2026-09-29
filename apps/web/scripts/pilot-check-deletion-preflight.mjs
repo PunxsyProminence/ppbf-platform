@@ -16,11 +16,15 @@
 // was verified is what the code would do the first time anyone deleted
 // someone; nobody checked whether anyone ever had.
 //
-// The code says probably not. deleteGuardianAccount and deleteAthleteRecord
+// The code said probably not. deleteGuardianAccount and deleteAthleteRecord
 // have exactly one caller between them -- DELETE /api/pilot/admin/data-deletion
-// -- and NOTHING in app/ or components/ calls that endpoint. There is no
-// button. No script and no workflow calls it either. Triggering a deletion
-// requires hand-crafting an authenticated request against the live API.
+// -- and until 2026-09-29 NOTHING in app/ or components/ called that endpoint:
+// there was no button, and no script or workflow called it either. Triggering
+// a deletion required hand-crafting an authenticated request against the live
+// API. Since 2026-09-29 the /admin/data-deletion screen calls it, so a
+// non-zero count is now expected and is not by itself evidence of the old
+// exposure, which needed a deletion made before the 2026-08-27 fixes. The
+// first_seen / last_seen timestamps printed below are where to look.
 //
 // "Probably not" is not a number, and this file exists because the difference
 // matters: if the audit table is empty then those two PRs closed a hole before
