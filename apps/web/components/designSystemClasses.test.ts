@@ -132,8 +132,9 @@ describe('the app only names design-system classes that exist', () => {
     expect(missing).toEqual([]);
   });
 
-  /* The six rooms are load-bearing enough to name individually: Law 6 is the
-     architecture, and losing one is not a styling nit.
+  /* The six rooms are load-bearing enough to name individually: the rooms are
+     the architecture (docs/GOLDEN-ERA-V1-CONTRACT.md §4 and §6,
+     docs/ROOM-MAP.md), and losing one is not a styling nit.
 
      This asserts the DEFINING rule, not merely that the token appears. Checking
      the token was the first version and it was useless: deleting `.room--office

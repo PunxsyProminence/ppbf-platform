@@ -38,6 +38,7 @@
     "pilot:check-waiver-statuses": "node scripts/pilot-check-waiver-statuses.mjs",
     "pilot:check-video-readiness": "node scripts/pilot-check-video-readiness.mjs",
     "pilot:check-cue-source-provenance": "node scripts/pilot-check-cue-source-provenance.mjs",
+    "pilot:check-reference-content": "node scripts/pilot-check-reference-content.mjs",
     "pilot:apply-shadow-runtime": "node scripts/pilot-apply-shadow-runtime-migration.mjs",
     "pilot:apply-research-triage-view": "node scripts/pilot-apply-research-triage-view-migration.mjs",
     "pilot:apply-magic-link": "node scripts/pilot-apply-magic-link-migration.mjs",
@@ -128,6 +129,7 @@
     "test:migrations:waiver-status-census": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/waiverStatusCensus.pg.test.ts --testTimeout=240000",
     "test:migrations:data-retention": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/dataRetentionDeletion.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-deletion-access": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteDeletionRevokesAccess.pg.test.ts --testTimeout=180000",
+    "test:migrations:signin-refuses-deleted": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/signInRefusesDeletedAccount.pg.test.ts --testTimeout=180000",
     "test:migrations:full-schema-fixture": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/fullSchemaFixture.pg.test.ts --testTimeout=600000",
     "test:migrations:guardian-media-consent": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/guardianMediaConsentMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:parent-task-state": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/parentTaskState.pg.test.ts --testTimeout=180000",
@@ -324,6 +326,7 @@
     "test:migrations:session-scripts-transfer": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionScriptsTransfer.pg.test.ts --testTimeout=180000",
     "test:migrations:session-scripts-module": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionScripts.pg.test.ts --testTimeout=180000",
     "test:migrations:session-run-state": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionScriptRuns.pg.test.ts --testTimeout=180000",
+    "test:migrations:reference-version-readers": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/referenceVersionReaders.pg.test.ts --testTimeout=180000",
     "test:migrations:competence-cohorts-module": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/competenceCohortsModule.pg.test.ts --testTimeout=180000",
     "test:migrations:drill-vocabulary-widening": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/drillVocabularyWidening.pg.test.ts --testTimeout=180000",
     "test:migrations:competence-cohorts": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/competenceCohorts.pg.test.ts --testTimeout=180000",
@@ -379,7 +382,8 @@
     "test:migrations:cue-source-provenance": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/cueSourceProvenance.pg.test.ts --testTimeout=180000",
     "test:migrations:assignment-cancellation": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/assignmentCancellation.pg.test.ts --testTimeout=180000",
     "test:migrations:roster-import": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/rosterImport.pg.test.ts --testTimeout=300000",
-    "test:migrations:content-import-vocabularies": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportVocabularies.pg.test.ts --testTimeout=300000"
+    "test:migrations:content-import-vocabularies": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportVocabularies.pg.test.ts --testTimeout=300000",
+    "test:migrations:reference-content-census": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/referenceContentCensus.pg.test.ts --testTimeout=240000"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",

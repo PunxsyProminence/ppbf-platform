@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 /**
  * The change-aware classifier must be fed THIS branch's diff, not the delta to
@@ -75,11 +76,17 @@ function runnableClassifyShell(outputPath: string): string {
 /** Run the shipped classifier over a file list and return its flags. */
 function classify(files: string[]): Record<string, string> {
   const listFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-cls-')), 'files.txt');
-  fs.writeFileSync(listFile, `${files.join('\n')}\n`);
-  const stdout = execFileSync(process.execPath, [classifier, listFile], { encoding: 'utf8' });
-  return Object.fromEntries(
-    stdout.trim().split('\n').map((line) => line.split('=') as [string, string]),
-  );
+  try {
+    fs.writeFileSync(listFile, `${files.join('\n')}\n`);
+    const stdout = execFileSync(process.execPath, [classifier, listFile], { encoding: 'utf8' });
+    return Object.fromEntries(
+      stdout.trim().split('\n').map((line) => line.split('=') as [string, string]),
+    );
+  } finally {
+    // Nothing else clears these: the start-of-run sweep only takes
+    // ppbf-*-pg-test-* folders (scripts/lib/embedded-pg-cleanup.mjs:50).
+    fs.rmSync(path.dirname(listFile), { recursive: true, force: true });
+  }
 }
 
 describe('a branch behind its base, diffed both ways against real git', () => {
@@ -324,5 +331,128 @@ describe('the coach E2E command attends every coach spec on disk', () => {
     );
 
     expect(allowList).toContain(`'${coachScriptPerCi()}'`);
+  });
+});
+
+/**
+ * A seed-data change runs the PostgreSQL suites that load it.
+ *
+ * WHY THIS EXISTS. Six embedded-Postgres suites load their rows straight out
+ * of `apps/web/seed-data/` into the real schema (drillLibraryV3.pg.test.ts:82,
+ * multidiscipline.pg.test.ts:63, competenceCohorts.pg.test.ts:55,
+ * workoutTemplates.pg.test.ts:69-71, sessionScriptsTransfer.pg.test.ts:59-61,
+ * and scripts/import-shadow-research.pg.test.ts:197,232 for
+ * shadow-research/2026-08-07), and `npm test` excludes every .pg suite. So a
+ * data row that breaks a CHECK constraint or a foreign key meets the schema
+ * ONLY in those suites -- and before `isSeedDataPath` a PR changing only seed
+ * data classified `unknown_code` and ran none of them. That is the shape every
+ * content hand-off arrives in.
+ *
+ * Three hops, and each is held here or elsewhere: the file sets `migrations`
+ * (below), the step that flag guards runs `npm run test:migrations` (below),
+ * and that runner reaches every .pg suite (pgTestCoverage.test.ts).
+ */
+describe('a seed-data change runs the PostgreSQL suites that load it', () => {
+  /** Every file committed under seed-data, repo-relative with forward slashes. */
+  function seedDataFilesOnDisk(): string[] {
+    const root = path.join(repositoryRoot, 'apps/web/seed-data');
+    const walk = (dir: string): string[] =>
+      fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const full = path.join(dir, entry.name);
+        return entry.isDirectory() ? walk(full) : [full];
+      });
+    return walk(root)
+      .map((file) => path.relative(repositoryRoot, file).split(path.sep).join('/'))
+      .sort();
+  }
+
+  /**
+   * `classifyPaths([file])` for each file ALONE, in one process. One at a time
+   * for the reason the coach block gives -- a combined list passes as soon as
+   * any path matches -- and one process because spawning the CLI per file
+   * across the whole tree is seconds of fork cost for no added fidelity; the
+   * CLI's flag lines are exercised through `classify()`.
+   *
+   * The list goes in on stdin, not argv, so no file path ever sits in argv[1]
+   * for the classifier's import-time entry check (the `process.argv[1]` test
+   * at the foot of ci-classify-paths.mjs) to read, and the list meets no
+   * command-line length ceiling as the folder grows.
+   */
+  function flagsPerFile(files: string[]): Record<string, { migrations: boolean; docsOnly: boolean }> {
+    const script = [
+      "import fs from 'node:fs';",
+      `import { classifyPaths } from ${JSON.stringify(pathToFileURL(classifier).href)};`,
+      "const files = JSON.parse(fs.readFileSync(0, 'utf8'));",
+      'console.log(JSON.stringify(Object.fromEntries(files.map((file) => {',
+      '  const { migrations, docsOnly } = classifyPaths([file]);',
+      '  return [file, { migrations, docsOnly }];',
+      '}))));',
+    ].join('\n');
+    return JSON.parse(
+      execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+        encoding: 'utf8',
+        input: JSON.stringify(files),
+      }),
+    );
+  }
+
+  // Through the CLI, because its `migrations=` line is what the step's `if:`
+  // compares. One data shape per format the folder holds or will hold.
+  it.each([
+    'apps/web/seed-data/drill-library/seed_drill_library.csv',
+    'apps/web/seed-data/drill-library/seed_drill_library.json',
+    'apps/web/seed-data/shadow-research/2026-08-07/research_triage_view.sql',
+  ])('sends %s to the PostgreSQL suite on its own', (file) => {
+    const flags = classify([file]);
+
+    expect([flags.migrations, flags.docs_only, flags.unknown_code]).toEqual(['true', 'false', 'false']);
+  });
+
+  it('keeps a README under seed-data on the docs-only path', () => {
+    const flags = classify(['apps/web/seed-data/drill-library/README.md']);
+
+    expect([flags.docs_only, flags.migrations]).toEqual(['true', 'false']);
+  });
+
+  it('does not let a seed-data README hide unrecognised code beside it', () => {
+    // The reason documentation is carved out of the predicate rather than the
+    // whole folder matched: a README that set `migrations` would turn
+    // `unknown_code` off for this diff and the report would name nothing.
+    const flags = classify([
+      'apps/web/seed-data/drill-library/README.md',
+      'apps/web/components/SomeNewSurface.tsx',
+    ]);
+
+    expect([flags.unknown_code, flags.migrations]).toEqual(['true', 'false']);
+  });
+
+  it('flags every data file committed under seed-data, found rather than listed', () => {
+    const files = seedDataFilesOnDisk();
+    const data = files.filter((file) => !file.endsWith('.md'));
+    const docs = files.filter((file) => file.endsWith('.md'));
+    // Floors, so an empty walk cannot pass by checking nothing.
+    expect(data.length).toBeGreaterThan(20);
+    expect(docs.length).toBeGreaterThan(0);
+
+    const flags = flagsPerFile(files);
+    // Naming the absentees, as the coach block does: "some seed file runs no
+    // pg suite" is only actionable if it says which.
+    expect(data.filter((file) => flags[file].migrations !== true)).toEqual([]);
+    expect(docs.filter((file) => flags[file].migrations !== false || flags[file].docsOnly !== true)).toEqual([]);
+  });
+
+  it('runs the migration suite from the one step that flag guards', () => {
+    const workflow = fs.readFileSync(
+      path.join(repositoryRoot, '.github/workflows/ci.yml'),
+      'utf8',
+    );
+    const guarded = workflow
+      .split(/\n      - name: /)
+      .filter((step) => /steps\.changes\.outputs\.migrations == 'true'/.test(step));
+
+    // A flag nothing reads is the "suite ran" without "the suite traversed the
+    // changed path" this file's header describes.
+    expect(guarded).toHaveLength(1);
+    expect(guarded[0]).toMatch(/\n\s+run: npm run test:migrations\s*(\n|$)/);
   });
 });

@@ -324,6 +324,18 @@ describe('POST runs — start', () => {
     await expect(response.json()).resolves.toEqual({ error: code });
   });
 
+  // A superseded plan is the one refusal whose remedy the code does not say, so the route words it.
+  // The code stays in `error` for anything that switches on it.
+  it('maps SESSION_SCRIPT_SUPERSEDED to 409 with a plain message beside the code', async () => {
+    mockStart.mockRejectedValue(new SessionScriptRunError('SESSION_SCRIPT_SUPERSEDED', 409));
+    const response = await POST(post({ script_id: 'scr-1' }));
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error: string; message?: string };
+    expect(body.error).toBe('SESSION_SCRIPT_SUPERSEDED');
+    expect(body.message).toMatch(/replaced by a newer version/);
+    expect(body.message).toMatch(/no session was started/);
+  });
+
   it('does not leak an unexpected server error as a run-state code', async () => {
     mockStart.mockRejectedValue(new Error('connection terminated unexpectedly'));
     const response = await POST(post({ script_id: 'scr-1' }));
