@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **DONE** (Wave 9 reconciliation follow-up) |
-| Vertical slice | read-only /coach/cue-library browse/search over pilot.drill_cues (active drills only), grouped by cue family with drill attribution; authoring stays on the drill |
+| Vertical slice | read-only /coach/cue-library browse/search over pilot.drill_cues (current versions of active drills only), grouped by cue family with drill attribution; authoring stays on the drill |
 | Active | false |
 | ManualVerification | PENDING_SIGN_OFF |
 | Promotion required | true |
@@ -42,3 +42,4 @@ _Scaffold only. Do not mark active until promotion review._
 | 2026-08-15 | wave9-reconciliation | Reconciliation audit: PARTIAL coverage — drill cues stored/read as part of the drill library (pilot.drill_cues), no standalone cue-library UI. Missing: no dedicated cue-library browsing/search surface independent of individual drill records. Evidence: infra/azure/pilot_slice_postgres_drill_library_v3_migration.sql; apps/web/src/server/pilot/drillLibraryV3.ts. Status stays DRAFT. |
 | 2026-08-16 | wave9-reconciliation | Owner decision 2026-08-16: build the read-only browse over cues already in drill records, no invented content. listCueLibrary (org-scoped, active-drill join), principal-gated route matching the drill-library posture, page grouped by cue family with search + focus filter. Tests pin server-side filtering, no-authoring-control, empty-vs-failed honesty. Promoted DRAFT -> DONE. |
 | 2026-09-29 | Claude (housekeeping round 3) | ManualVerification row added: PENDING_SIGN_OFF, meaning built, not yet tried by a person (OD-2026-09-29-002, 9a). It moves to SIGNED_OFF only on Jason's word; how to try it is in docs/capabilities/SIGN_OFF_WALKTHROUGH.md. |
+| 2026-09-30 | Claude (housekeeping) | Vertical slice reworded "(active drills only)" -> "(current versions of active drills only)": since #1032 (d100e6bd) listCueLibrary also requires d.superseded_at is null (apps/web/src/server/pilot/drillLibraryV3.ts:663), so a superseded version's cues no longer show. |

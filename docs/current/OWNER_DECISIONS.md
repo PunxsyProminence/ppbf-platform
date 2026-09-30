@@ -164,6 +164,395 @@ and should not try to.
 
 ---
 
+## OD-2026-09-30-004 -- Answers to the housekeeping question batch (2026-09-30)
+
+**Provenance: PRIMARY.** **Date:** 2026-09-30. Between 12:08Z and 13:58Z the
+housekeeping session (overwatch, OD-2026-09-30-003) put these questions to
+Jason, each with options and one marked recommended; what each asked is as that
+session put it (its transcript,
+`~/.claude/projects/C--Dev/8bdb1aff-9439-4499-a828-5f3351394dcc.jsonl`, is
+outside this repository). **Jason's answer, verbatim** (14:30Z): *"G4 it can
+deploy more than once a day as many times as we need to  G8 also check with
+chat gpt incase the answer is already there ( i will be working there outside
+here) go with you recomendations, also we need to update the instructions and
+settings with the other Ai"*. Its G4 and G8 parts are recorded in
+OD-2026-09-30-003.
+
+**How "go with you recomendations" is read (INFERRED).** As picking the
+recommended option in every question then open in that session. The session
+told Jason so at 14:30Z, naming the questions (all those below, M2 as part of
+P4), and asked him to correct it if he meant less; none of his messages up to
+15:05Z did. Not answered by it, because withdrawn before it: the release choice
+b (moot once the migration reached staging, 13:24Z); R1 and R2 (folded into P1
+and P2); and L1-L8 (replaced by G1-G10, OD-2026-09-30-003). Not answered by it
+either: the plate branch `wip/plate-library-edits-2026-09-28`. The session
+recommended parking it at 12:08Z, handed it to the visual lane at 12:46Z, and
+put it in none of the later question lists or the 14:30Z read-back; where it
+stands is in `docs/current/ACTIVE_WORK.md`.
+
+- **a. Production deletion preflight.** As put: dispatch `check-database` with
+  `check=deletion-preflight` against production, read-only, counts only: how
+  many accounts marked deleted could still get in, which is how many the
+  release's sign-in rule (OD-2026-09-29-003 item 9) locks out. Recommended
+  yes. **Yes.** Run 2026-09-30 as run 36729671808 (14:38Z): 0 deleted accounts
+  still active, 0 unrevoked sessions on deleted accounts (its log, "DELETION
+  PREFLIGHT: NOTHING EVER DELETED.").
+- **c. Two lines in Jason's L2 rule file.** As put: add that
+  `magicLinkRedemption.pg.test.ts` hangs on Windows to the known issues, and
+  correct the checkouts line (`C:\Dev\ppbf-platform` was on
+  `local/teach-shadow-clip-cutter`, not `main`). Recommended yes to both.
+  **Yes.** Done 2026-09-30 outside this repository
+  (`~/.claude/rules/ppbf-workspace.md`, both lines read at writing).
+- **d1. A guardian login an admin deactivated.** As put: when intake promotion
+  names a guardian login with `active_flag` false and `deleted_at` null: A,
+  refuse with a message; B, reactivate it, as it does today. Recommended A.
+  **A**: refuse with a clear message; the admin reactivates the login on
+  purpose. Build item.
+- **d2. Blocking a duplicate athlete.** As put: A, block adding an athlete when
+  name AND birth date match someone on the roster; B, keep today's name-only
+  warning. Recommended B: matching birth dates would put every child's birth
+  date in the directory the page reads. **B.** Nothing to build.
+- **d3. The parent Passbook.** As put: A, narrow `GET /api/pilot/passbook` for
+  guardians to match `ParentDigest` (no dated session rows); B, widen the
+  ParentDigest decision to allow them. Recommended A. **A.** Build item.
+- **d4. A deploy-gate fixture marked deleted by the account cleanup.** As put:
+  A, the cleanup skips `gate_*` ids; B, provision new ids; C, clear
+  `deleted_at`. Recommended A. **A.** Build item.
+- **e1. A withdrawn athlete re-enrolled through intake.** As put: A, give them
+  a new `account_id`; B, restore the old login by clearing `deleted_at`.
+  Recommended A. **A**: a new login; the deleted one stays deleted. Build item.
+- **e2. An admin acting on a login marked deleted** (a new activation code, a
+  PIN reset, a staff re-invite, the platform owner's status and membership
+  routes). As put: A, refuse with a clear message, like intake's 409; B, warn
+  and continue; C, leave it. Recommended A. **A.** Build item.
+- **e3. Undoing a mistaken deletion.** As put: A, build a restore action; B, a
+  production database fix Jason approves each time. Recommended B for now.
+  **B**; a restore action is built only if mistaken deletions start happening.
+  Nothing to build.
+- **#1027 Q1. Admin safety screens for a deleted athlete** (from the deletion
+  scope B session). As put: A, hide the athlete's safety records at once; B,
+  hide them once they are resolved. That session recommended B. **B.** Build
+  item, after #1027.
+- **#1027 Q2. Teaching footage a deleted athlete appears in.** As put: A, leave
+  it; B, hide it too. Recommended A. **A**: leave it. Nothing to build.
+- **H1. The content-intake session's close-out records.** As put: A, take them
+  into housekeeping in full -- OD-2026-09-29-005 and -006, two build-list rows,
+  the open-question rows, and the protected-doc edits after their PRs merge; B,
+  the decision records and build rows only; C, decline. Recommended A. **A**,
+  except the module 007 edit, which that session made itself in #1038
+  (`f597a4a5`). Done in the change that records this entry.
+- **H2. Who loads gym content.** As put: the code in #1031 already enforces it
+  -- gym content is loaded only by an organization admin of
+  `punxsy_prominence` (`ppbf@`), never by the platform owner (`Admin@`); only
+  the platform owner loads into `__platform__`. A, confirm it as Jason's
+  ruling; B, change it. Recommended A. **A**: it is Jason's ruling. Enforced in
+  `assertImportActor` (`apps/web/src/server/pilot/contentImport/actor.ts:56-126`
+  at `f597a4a5`): into `__platform__` only a platform owner (:90-98); into a gym
+  never a platform owner (:100-105), only role `organization_admin` or `admin`
+  (:39, :106-111), with an active membership in that gym (:113-124). This
+  settles OD-2026-09-29-005 item 9.
+- **M1. Merge PR #1027 (deletion scope B) once CI passes.** As put:
+  squash-merge #1027 at `23f76e0a` once `validate` is green, while it is still
+  mergeable and no new review finding has appeared; it has no migration and
+  merging deploys nothing. Recommended yes. **Yes**, held until the production
+  deploy of the 2026-09-30 release is dispatched (the release window,
+  OD-2026-09-30-003). Merged 2026-09-30 14:41Z as `fee441eb`, after
+  `deploy-production` run 36730895578 was dispatched (14:40Z).
+- **M2. The storage lifecycle policy.** As put (13:29Z): a read-only check of
+  the production storage account's lifecycle policy, to learn whether anything
+  ever erases stored files of deleted records; A, run it (recommended); B,
+  leave it. At 13:46Z the session folded it into production queue P4, and the
+  read-back named it only there. **A**, as part of P4.
+- **F1. `local/coach-floor-board`** (21 commits, 56 files, never in a PR; it
+  split from `main` 105 commits back and conflicts in 6 files; its policy half
+  landed through #998 and #1009). As put: A, drop it (it stays in the
+  2026-09-29 backup bundle); B, rebuild its screen work fresh on `main` as a
+  visual-lane thread; C, keep it parked. Recommended C for now, then B when
+  Jason restarts the visual pass. **C**: parked, and rebuilt fresh as a visual
+  lane when the visual pass restarts. Not merged, not deleted.
+- **T1. The provisional research tiers.** As put: keep the tiers the lanes set
+  provisionally -- the IOC safeguarding paper 1, the ocular paper 3,
+  `src_b6292c09e6883927` 3, `src_360144ca30330cbd` 4 -- since changing one
+  after the production repair means a new PR and a second production run.
+  Recommended keep. **Keep.** This settles what OD-2026-09-29-006 item 3 left
+  for Jason.
+- **The production queue, P0-P4.** As put, in order: P0 the deletion count
+  (item a); P1 the content-import migration (production run 36720671791); P2
+  release `main` (deploy staging at `main`'s head, take that run's image
+  digest, dispatch `deploy-production`); P3 the research baseline repair -- a
+  production dry run that must read PRE_REPAIR with 221 repoint, 213 retire, 65
+  retier, 706 metadata and 0 blockers or stop, then the apply with that dry
+  run's fingerprint, then verification; P4 the read-only reference-content
+  census (#1022) and the storage lifecycle check (M2). Each production step
+  needs Jason's approval click in GitHub. Recommended all, in that order.
+  **Yes.** State when written (GitHub, 14:52Z): P1 had already succeeded (run
+  36720671791, 13:53Z); P0 succeeded (item a); P2's staging deploy succeeded at
+  `f597a4a5` (run 36729726639), and `deploy-production` run 36730895578,
+  dispatched at `f597a4a5`, was waiting for approval; the P3 production dry run
+  succeeded (run 36729679951: PRE_REPAIR, 221, 213, 65 and 706 pending, no
+  blockers, the same plan fingerprint as staging's), and its apply was not yet
+  dispatched; the P4 census succeeded (run 36729675728), and the storage check
+  had not run.
+
+---
+
+## OD-2026-09-30-003 -- The housekeeping thread is overwatch: general contractor, ChatGPT liaison, deployment lead
+
+**Provenance: PRIMARY.** **Date:** 2026-09-30. **Governs:** how the Claude
+threads are organised. Jason's words are verbatim; the questions are as the
+housekeeping session put them (transcript as in OD-2026-09-30-004). Times UTC.
+
+**Jason's words, verbatim.** In the housekeeping thread, 13:24Z:
+
+> i want this house keep thread to be the leader here in the claude code
+> desktop app, i am working on closing out the other threads, your job is to
+> keep things tidy, identify new threads to execute the build, when you make
+> new threads we need drift guards and scope completeion guards to prevent
+> drift and over extensions of thier job, you can recommend what tools and
+> connectors to use, when we can we can save usage by giveing a playbutton to
+> run the code with a play button in pwershell, what questions do you have
+
+In the content-intake thread, 13:45Z (transcript as in OD-2026-09-29-006,
+checked before that session was deleted):
+
+> ok i still need to update it but house keeping will be in charge of
+> recommending production because i will have multi lane working
+
+In the housekeeping thread, 13:57Z:
+
+> ok now lets get you set up as over watch, to add on to what i told you
+> before, you will be in charge of the actual deployment, when staging is
+> ready we can deploy to production, your job will be to identify builds, i
+> would venture to guess smaller is better when fighting drife and breaking
+> scope but you can educate me on it, chat gpt is still the archetect, this
+> thread is the liason so if i need to go and help chat gpt design you let me
+> know, this thread is alson the general contarctor in the claude enviroment,
+> we will build lanes from here they will update or ask you questions when they
+> need guidance, they will inform you when thier scope is complete, you will
+> then decide on wheter they will close or continue scope only those two
+> options no parking, what questions do you have
+
+The session then put ten questions, G1-G10, each with a recommended option;
+they replaced its earlier L1-L8 (13:25Z), which Jason never answered and which
+this entry does not decide. **Jason's answer** (14:30Z) changed G4, added to
+G8, and took the rest as recommended: *"G4 it can deploy more than once a day
+as many times as we need to  G8 also check with chat gpt incase the answer is
+already there ( i will be working there outside here) go with you
+recomendations"* (the whole message is quoted in OD-2026-09-30-004).
+
+**What this decides.**
+
+1. **The housekeeping thread is overwatch**: it keeps things tidy, identifies
+   builds and starts the build threads (lanes) with drift and
+   scope-completion guards; it is the general contractor of the Claude
+   threads, the liaison to ChatGPT, in charge of deployment, and it recommends
+   production. ChatGPT is still the architect.
+2. **G1 Production approval.** As put: A, it stays Jason's click in GitHub; B,
+   Claude clicks it after Jason opens the approval page in Claude's in-app
+   browser and tells it to approve that run; C, remove the required reviewer.
+   Recommended A, with B when he is at the desk; not C. **A with B**: Jason's
+   click in GitHub stays; Claude clicks only under the in-app-browser rule of
+   Jason's L2 rule file, per run, on his instruction at the time. The required
+   reviewer stays.
+3. **G2 Staging deploys.** Overwatch deploys staging whenever merged work is
+   ready, without asking.
+4. **G3 "Staging is ready"**, before overwatch recommends production: the
+   staging deploy succeeded, the schema check passed, the read-only checks are
+   clean (health, sign-in page, SHADOW queue), and every migration the release
+   needs is applied in production. Changes to screens for sign-in, minors'
+   data or safety also need Jason's own signed-in check on staging.
+5. **G4 How often to release.** As put: A, whenever staging is ready and
+   something worthwhile is waiting, at most once a day (recommended); B, after
+   every merge. **Jason changed it**: *"as many times as we need to"* -- A
+   without the daily cap.
+6. **G5 Lane size.** One lane = one work item = one PR, with a file allowlist
+   and one "done when" sentence; about 400 changed lines or fewer, not
+   counting tests, and anything bigger is split before it starts. Lanes
+   touching sign-in, permissions, migrations or minors' data run on Opus,
+   others on Sonnet.
+7. **G6 Close or continue.** When a lane reports its scope complete, overwatch
+   decides one of two things -- *"only those two options no parking"*: close
+   it, or continue it, and continue only with a next item in the same area and
+   files.
+8. **G7 Merging.** Only overwatch merges lane PRs, after CI passes and its
+   scope check (a script that flags any file outside the lane's allowlist).
+9. **G8 Questions from lanes.** As put: overwatch answers technical, how-to and
+   scope questions; product intent, design, safety, minors' privacy and
+   spending go to Jason. **Jason added**: *"also check with chat gpt incase the
+   answer is already there ( i will be working there outside here)"* --
+   overwatch first checks ChatGPT for an existing answer.
+10. **G9 ChatGPT.** Overwatch relays design questions to ChatGPT through its
+    in-app browser when Jason is signed in (the standing relay yes in his L1
+    rules), brings the answers back as questions for him, and tells him when a
+    design choice needs him: *"this thread is the liason so if i need to go and
+    help chat gpt design you let me know"*.
+11. **G10 Recording it.** This entry, plus an overwatch section in Jason's L2
+    rule file so every lane reads it at start. Written 2026-09-30, outside this
+    repository (`~/.claude/rules/ppbf-workspace.md`, "OVERWATCH", read at
+    writing). G10 as put named this entry OD-2026-09-30-001; #1039 (merged
+    2026-09-30 14:46Z as `7d7992f0`) had already used -001 and -002 for other
+    decisions, so this entry is -003 and the answer batch is -004.
+
+**How questions are put to Jason.** Housekeeping thread, 13:08Z: *"explain in
+layman terms, in the future i want claude to ask the questions in the official
+way then give me layman terms so i can learn as we go"*. Every question to
+Jason is written in its official form first, then in plain English. Recorded in
+Jason's L1 rule file the same day (`~/.claude/CLAUDE.md`, "QUESTIONS, OFFICIAL
+THEN PLAIN", read at writing).
+
+**A fact learned the same day, not a ruling: the release window.**
+`deploy-production` accepts only a `confirm_sha` equal to the commit it checked
+out, which is `main`'s head when it is dispatched
+(`.github/workflows/deploy-production.yml:100`), and only an image built from
+that exact commit (:263). So from the staging deploy until production is
+dispatched, overwatch asks lanes to hold their merges to `main`. Related ruling:
+OD-2026-09-30-001 section 1, a release freezes one SHA and later merges ride the
+next one.
+
+**Relation to OD-2026-09-28-001.** Unchanged: Claude Code is the only builder,
+ChatGPT the architect and reviewer, Jason owner and final authority. This entry
+adds how the Claude threads are organised among themselves.
+
+---
+
+## OD-2026-09-29-006 -- Research baseline repair: the repo patch by PR, production by a pinned tool, archive not reject, tiers by the spec
+
+**Provenance: PRIMARY**, except item 3: text the algorithm lane wrote and Jason
+pasted, recorded as relayed, not as his words. **Date:** 2026-09-29. Recorded
+2026-09-30 from the content-intake session's hand-off; each quote was checked
+that day against that session's transcript
+(`~/.claude/projects/C--Dev/3a86c2fd-c456-4b4d-8502-da243d4c17b1.jsonl`,
+outside this repository; deleted with the session at 14:49Z). Times UTC.
+
+1. **The hand-off.** At 17:24Z Jason attached
+   `CLAUDE_CODE_HANDOFF_research_repair.md`; at 18:30Z he added the lane's SQL,
+   a patch, the repair log and the tier-conflict list. The hand-off's Part 1,
+   the repo patch, went in as a PR (#1008); its Part 2, production, waits for
+   his yes on each run.
+2. 17:38Z: *"what failed, and does it affect the research-repair branch? if it
+   doesnt then auto merge"* (his message begins with a stray `"`). Decided:
+   auto-merge the research-repair PR if the failure did not affect it. #1008
+   merged at 18:49Z as `929f9c62`.
+3. **Relayed**, written by the algorithm lane and pasted by Jason at 19:01Z:
+   - Q1 *"Build the production repair tool: yes. Use the repair log as the
+     pinned plan exactly as you validated it"*. Built as #1030 (`f57e804d`).
+   - Q2 *"Retire method: archived"* and *"Keep approval_state untouched"*.
+     Duplicate sources are retired with `status = 'archived'`.
+   - Q3 *"Tiers: set them by the spec"*. Tiers follow
+     `apps/web/seed-data/shadow-research/2026-08-07/EVIDENCE_TIER_SPEC.md`
+     section 3; shipped in #1029 (`19307001`). Left for Jason: the IOC
+     safeguarding paper and the ocular paper (named in the relay);
+     `apps/web/seed-data/shadow-research/2026-08-07/repairs/README.md` marks
+     `src_00c5cf14f2692175`, `src_9b44730ebb92f513` and
+     `src_b6292c09e6883927` provisional. Kept as set on 2026-09-30
+     (OD-2026-09-30-004 T1).
+   - Q4 *"Do the follow-ups: yes, but with this constraint first."* The
+     constraint: confirm the tier distribution after the correction before
+     pinning new counts. Q4 also claimed that runtime reads the tier from chunk
+     metadata; the lane withdrew that in a correction pasted at 19:06Z:
+     runtime reads the source row.
+4. 19:27Z, Jason's own words: *"1 and 2 are ok"*, approving the two points of
+   the session's 19:06:24Z message. (1) The original SQL failed on
+   `shadow_library_sources_review_pair_check`
+   (`infra/azure/pilot_slice_postgres_shadow_evidence_migration.sql:51-66`),
+   which refuses a row that is not approved but keeps its approval and
+   verification stamps -- not on the allowed-values rule. The answer stays
+   `archived`. (2) `verify-evidence-tier-corpus` grades each claim on its
+   source row's tier, as runtime does, and new counts are pinned only after
+   the corrected distribution is confirmed.
+
+Status (2026-09-30): staging is repaired -- dry run 36721260945 (PRE_REPAIR;
+221, 213, 65 and 706 pending; no blockers), apply 36722378826, confirming dry
+run 36722550670 (REPAIRED). Production dry run 36729679951 (2026-09-30 14:40Z):
+PRE_REPAIR, the same four counts, no blockers, and the same plan fingerprint as
+staging's. The production apply had not been dispatched when this was written.
+
+---
+
+## OD-2026-09-29-005 -- Content intake: how gym material comes in, how revisions load, stop rules, scope, merging
+
+**Provenance: PRIMARY.** **Date:** 2026-09-29. Recorded 2026-09-30 from the
+content-intake session's hand-off; each quote was checked against that
+session's transcript (as in OD-2026-09-29-006). R1-R4 were one question box,
+asked 15:27Z and answered 15:38Z; the options are as put, and Jason typed his
+own answer to each. Times UTC.
+
+1. **Where it started** (a work request, not a ruling), 14:17Z: *"i want you
+   to find all artifacts atifacts, we need to check our seeds for redudebtcey
+   dubluicates and boiler plate issues"*.
+2. 15:26Z: *"ok i will work on the material i.e. seed data research ect in
+   another account, lets fix the infrastucture for it and build/fix a propper
+   place to brining it into, ask questions if you need more guidance"*.
+   Decided: Jason writes the material elsewhere; Claude builds the intake and
+   the place it loads into.
+3. **R1.** Asked: *"How should the material from your other account get into
+   the app's pipeline?"* Options: 1, a drop folder Claude brings it in from
+   (recommended); 2, an in-app upload screen; 3, hand files to Claude in chat.
+   **Jason:** *"for seeding it will be 3 for future work it will be 2"*.
+   Decided: seeding now means files handed to Claude in a session, validated,
+   merged by PR and loaded by the `seed-reference-data` workflow; later loads
+   go through an in-app upload screen. The drop folder was not chosen. Built:
+   #1024; the upload screen in #1031 (`07010d65`); the seed path in #1038
+   (`f597a4a5`), which replaced #1033 (closed unmerged).
+4. **R2.** Asked: *"When improved content arrives for a drill or template
+   that's already loaded, what should happen?"* Options: 1, new version, old
+   kept (recommended); 2, overwrite in place; 3, replace the whole library; 4,
+   skip (today's behaviour). **Jason:** *"1 an d new stuff gets added if there
+   is nothing to update"*. Decided: a revision becomes a new version and the
+   old one is kept as history; material with nothing to update is added as
+   new. R2 did NOT decide this: #1031 updates disciplines, competence levels
+   and cohort definitions in place, keeping the before and after rows in
+   `pilot.reference_content_revisions`. Jason was not asked (an open question
+   in `docs/current/ACTIVE_WORK.md`).
+5. **R3.** Asked: *"The universal 'stop when…' rules are currently copied onto
+   every drill (658 of 674 rows). How should they be stored?"* Options: 1,
+   store once, apply to all (recommended); 2, keep them per drill. **Jason:**
+   *"every drill is different so the rules would vary,  obviously injury of
+   some sort would require stoppage universally"*. Decided (INFERRED; he
+   answered in his own words rather than picking an option): each drill
+   carries its own stop rules, and an injury stop applies to every drill.
+   Built: `pilot.universal_stop_rules` (#1023) holds rules stored once, and the
+   copied legacy lines show as each drill's own rules (#1032). Not yet
+   supplied: the wording of the universal rule; no file is committed
+   (`.github/workflows/seed-reference-data.yml:65` at `f597a4a5`).
+6. **R4** (several could be picked). Asked: *"Which material should the new
+   intake cover in this build?"* Options: drills and workout templates;
+   session scripts, cohorts, disciplines; the research corpus (Shadow
+   library); transfer claims. **Jason:** *"all, types, in another thread we
+   were woking the teaching the punch recognition to the AI/ML (machine not
+   ethlete human)  these would all end up working togethere in the end"*.
+   Decided: all four types, and they must end up working with the
+   punch-recognition work. Delivered: drills, templates, scripts, disciplines,
+   competence levels, cohorts and universal stop rules (#1031, #1038). Not
+   delivered: the research corpus (IMP-11/16/17, parked); transfer claims,
+   which the import core refuses by name (`datasetsFor`,
+   `apps/web/src/server/pilot/contentImport/cli.ts:244-260`); and assessment
+   protocols, which have a spec and no loader
+   (`apps/web/src/server/pilot/contentImport/datasets/index.ts:16-18`). That
+   is a gap against R4; Jason has not approved narrowing it.
+7. 16:00Z: *"go ahead and build it when the plan is ready"*. Decided: build
+   without waiting for plan approval. The session's reply at 16:00:15Z set the
+   limit: merging, migrations and staging or production seeding each still
+   wait for his word.
+8. Offered at 16:57Z (say "merge when green" and each PR merges once CI
+   passes); 17:29Z: *"merge when green"*. Decided: that session's PRs merge by
+   GitHub auto-merge (squash) once the required checks, `validate` and
+   `declaration`, pass. A merge applies no migration and touches no
+   environment.
+9. **The seeder rule.** Stated in that session's task brief (14:02Z), not in
+   Jason's words there: *"Gym content is seeded as an organization_admin of
+   punxsy_prominence (ppbf@punxsyprominence.org), never the platform_owner
+   Admin@ account"*. The brief cited OD-2026-09-28-005 and -007; neither says
+   it. #1031 enforces it (`assertImportActor`,
+   `apps/web/src/server/pilot/contentImport/actor.ts`). **Jason confirmed it as
+   his ruling on 2026-09-30** (OD-2026-09-30-004 H2).
+
+Not decisions: the defaults and the questions in the session's 16:57Z report.
+Jason has not answered them; they are open questions in
+`docs/current/ACTIVE_WORK.md`.
+
+---
+
 ## OD-2026-09-29-004 -- Second "all recommended" and the P answers: research coverage, gap tickets, seat counts, guardian logins, the stale deploy, coaches and birth dates, guardian waivers, the waiver rule
 
 **Provenance: PRIMARY.** **Date:** 2026-09-29. Two sets of questions from the
@@ -953,6 +1342,12 @@ then *"Good well use the connector for canva"*.
 OD-2026-09-21-001 (ChatGPT designs and enforces standards; Grok keeps visual
 design and implementation), and narrows OD-2026-09-26-001: anyone may design or
 generate an image, but implementing it in this repository is Claude's.
+
+Status (2026-09-30): OD-2026-09-30-003 adds how the Claude threads are
+organised among themselves: the housekeeping thread is overwatch -- general
+contractor of the other Claude threads (lanes), liaison to ChatGPT, and
+deployment lead. Claude Code is still the only builder, and ChatGPT still the
+architect and reviewer.
 
 ---
 
@@ -1993,6 +2388,17 @@ clause 3, and the coach's remedy -- promote the newer version -- is blocked by
 under the same name. No reference row has ever been superseded in any
 environment (all 119 shipped rows are version 1, active, `lineage_id =
 drill_id`), so this is latent rather than live. It needs its own slice.
+
+Status (2026-09-30), on "What it does not decide": since #1031 (`07010d65`) a
+revised reference drill is inserted as the next version and the old version
+stays active for gyms that adopted it, so their athletes keep it. That is a
+builder default put to Jason on 2026-09-29 and not answered. The coach's move
+to the newer version is the open A/B question in `docs/current/ACTIVE_WORK.md`
+(IMP-15); until it is answered, #1032 (`d100e6bd`) refuses the separate
+promotion with 409 `NEWER_VERSION_UPDATE_NOT_BUILT`
+(`apps/web/app/api/pilot/drills/promote/route.ts:150`). Both are on `main`. No
+content-import load has run through the seed path in any environment (no
+`seed-reference-data` run since 2026-09-16, GitHub).
 
 **Evidence.** Source inspected at `main` `d9493536`; the exposure confirmed by
 reading `coachingContentAccess.ts:93-102` and both route gates directly, and
