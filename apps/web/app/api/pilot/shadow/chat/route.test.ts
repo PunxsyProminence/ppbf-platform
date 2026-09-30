@@ -1765,19 +1765,53 @@ describe('SHADOW pre-generation safety precedence', () => {
   // every row proves the safety handler did NOT run first -- the queue write is
   // the observable for that, because it happens before the safety response is
   // returned.
-  describe('gates that safety does NOT outrank', () => {
-    it('core runtime readiness still refuses an urgent message', async () => {
+  // REVERSED 2026-09-26 BY OWNER RULING. These three assertions used to live in
+  // "gates that safety does NOT outrank" below, and #972 argued for them in
+  // writing: a throttle an urgent word could unlock is a bypass, and the safety
+  // path still writes to the review queue, so "costs no model tokens" is not
+  // "costs nothing".
+  //
+  // Jason reversed it. The counter-argument he accepted is that a throttled or
+  // mid-migration deployment answering "too many requests" to someone reporting
+  // chest pain is the worse failure, and that the queue write -- the thing the
+  // global limits were incidentally bounding -- can be bounded directly instead.
+  // That is what the safety_review bucket is for.
+  //
+  // The tests are inverted rather than deleted: each still records the failure
+  // that earned it, and a reader comparing the two describes can see exactly
+  // which way the line moved and why.
+  describe('gates that safety now OUTRANKS', () => {
+    // These cases make the readiness probe and the limiter FAIL, and the
+    // file's beforeEach clears calls but not implementations -- so without
+    // this the rejection survives into later tests and detonates there. It
+    // already did: it broke the length test two describes away, which is a
+    // confusing place to debug a mock set here.
+    afterEach(() => {
       const readiness = jest.mocked(assertShadowRuntimeReadiness);
-      readiness.mockRejectedValueOnce(new Error('SHADOW runtime not ready'));
-
-      const response = await POST(postRequest({ message: URGENT_MESSAGE }));
-
-      expect(readiness).toHaveBeenCalled();
-      expect(response.status).toBeGreaterThanOrEqual(500);
-      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+      readiness.mockReset();
+      readiness.mockResolvedValue(undefined as never);
+      mockEnforceRateLimit.mockReset();
+      mockEnforceRateLimit.mockResolvedValue(undefined as never);
     });
 
-    it('the global chat rate limit still refuses an urgent message', async () => {
+    it('an urgent message is answered when core runtime readiness would 503', async () => {
+      const readiness = jest.mocked(assertShadowRuntimeReadiness);
+      readiness.mockRejectedValue(new ShadowRuntimeUnavailableError({
+        missingTables: ['shadow_chat_messages'],
+      }));
+
+      const response = await POST(postRequest({ message: URGENT_MESSAGE }));
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.state).toBe('filtered');
+      expect(body.requiresHumanReview).toBe(true);
+      // Not merely "did not 503" -- the readiness probe must not have been
+      // consulted at all, because consulting it is what used to 503.
+      expect(readiness).not.toHaveBeenCalled();
+    });
+
+    it('an urgent message is answered when the global chat limit would 429', async () => {
       mockEnforceRateLimit.mockImplementation(async (input) => {
         if (input?.endpointKey === 'chat') {
           throw new ShadowRateLimitExceeded(60, 'chat');
@@ -1787,17 +1821,15 @@ describe('SHADOW pre-generation safety precedence', () => {
       const response = await POST(postRequest({ message: URGENT_MESSAGE }));
       const body = await response.json();
 
-      expect(response.status).toBe(429);
-      expect(body.error).toBe('Rate limit exceeded.');
-      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+      expect(response.status).toBe(400);
+      expect(body.state).toBe('filtered');
+      expect(body.error).not.toBe('Rate limit exceeded.');
     });
 
-    // Distinct from the row above on purpose. A test that throws on "the first
-    // non-Heavy-Bag limiter call" only ever exercises `chat`, so moving the
-    // chokepoint BETWEEN the two global limits would leave it green while
-    // chat_daily silently became SAFETY_FIRST. Here `chat` resolves and only
-    // the daily limit throws.
-    it('the global daily rate limit still refuses an urgent message', async () => {
+    // Kept distinct for the reason the old pair was: a change that moved the
+    // boundary BETWEEN the two global limits would leave a chat-only test green
+    // while chat_daily quietly kept its old position.
+    it('an urgent message is answered when the global daily limit would 429', async () => {
       const seen: string[] = [];
       mockEnforceRateLimit.mockImplementation(async (input) => {
         seen.push(String(input?.endpointKey));
@@ -1809,15 +1841,86 @@ describe('SHADOW pre-generation safety precedence', () => {
       const response = await POST(postRequest({ message: URGENT_MESSAGE }));
       const body = await response.json();
 
-      // Proves the daily limit was actually reached rather than the request
-      // dying at the chat limit.
-      expect(seen).toContain('chat');
-      expect(seen).toContain('chat_daily');
-      expect(response.status).toBe(429);
-      expect(body.error).toBe('Rate limit exceeded.');
-      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+      expect(response.status).toBe(400);
+      expect(body.state).toBe('filtered');
+      // Neither global limit is consulted for an urgent request. Asserting the
+      // status alone would pass if `chat` were still called and happened not to
+      // throw, which is the hole the old chat_daily test existed to close.
+      expect(seen).not.toContain('chat');
+      expect(seen).not.toContain('chat_daily');
     });
 
+    // The ordinary request must be unaffected. Without this, moving the two
+    // gates behind a guard could skip them for EVERY request and all three
+    // assertions above would still pass.
+    it('POSITIVE CONTROL: a benign message still passes through both gates', async () => {
+      const readiness = jest.mocked(assertShadowRuntimeReadiness);
+      const seen: string[] = [];
+      mockEnforceRateLimit.mockImplementation(async (input) => {
+        seen.push(String(input?.endpointKey));
+      });
+
+      await POST(postRequest({ message: BENIGN_MESSAGE }));
+
+      expect(readiness).toHaveBeenCalled();
+      expect(seen).toContain('chat');
+      expect(seen).toContain('chat_daily');
+    });
+  });
+
+  // THE THROTTLE ON THE QUEUE WRITE, and specifically the distinction the
+  // owner-directed shape turns on: exhaustion and failure are different events
+  // and must not be collapsed. Treating "bucket table unavailable" as "quota
+  // used up" would silently discard safeguarding work at the exact moment the
+  // database is already unwell.
+  describe('the safety_review throttle', () => {
+    afterEach(() => {
+      mockEnforceRateLimit.mockReset();
+      mockEnforceRateLimit.mockResolvedValue(undefined as never);
+    });
+
+    it('EXHAUSTED: the queue write is skipped and the safeguarding response still returns', async () => {
+      mockEnforceRateLimit.mockImplementation(async (input) => {
+        if (input?.endpointKey === 'safety_review') {
+          throw new ShadowRateLimitExceeded(3_600, 'safety_review');
+        }
+      });
+
+      const response = await POST(postRequest({ message: URGENT_MESSAGE }));
+      const body = await response.json();
+
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+      expect(response.status).toBe(400);
+      expect(body.state).toBe('filtered');
+      // The field means a human is needed, not that a row was persisted.
+      expect(body.requiresHumanReview).toBe(true);
+      expect(body.error).not.toBe('Rate limit exceeded.');
+    });
+
+    it('BROKEN: a limiter error writes the review anyway, rather than losing it', async () => {
+      mockEnforceRateLimit.mockImplementation(async (input) => {
+        if (input?.endpointKey === 'safety_review') {
+          throw new Error('relation "pilot.shadow_rate_limit_buckets" does not exist');
+        }
+      });
+
+      const response = await POST(postRequest({ message: URGENT_MESSAGE }));
+
+      // The whole point of ruling (c). A collapsed implementation would skip
+      // the write here and this is the only assertion that catches it.
+      expect(mockQueueHumanReview).toHaveBeenCalled();
+      expect(response.status).toBe(400);
+    });
+
+    it('POSITIVE CONTROL: an unthrottled urgent message writes the review', async () => {
+      const response = await POST(postRequest({ message: URGENT_MESSAGE }));
+
+      expect(mockQueueHumanReview).toHaveBeenCalled();
+      expect(response.status).toBe(400);
+    });
+  });
+
+  describe('gates that safety does NOT outrank', () => {
     it('athlete authorization still refuses an urgent message', async () => {
       const accessCheck = jest.mocked(assertActorCanAccessAthlete);
       accessCheck.mockRejectedValueOnce(new Error('Forbidden: athlete cannot access another athlete record'));

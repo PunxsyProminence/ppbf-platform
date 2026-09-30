@@ -603,6 +603,17 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     }
     const message = rawMessage.trim();
 
+    // COMPUTED HERE, ABOVE RUNTIME READINESS AND THE GLOBAL LIMITS, because
+    // owner ruling 2026-09-26 put the safeguarding response ahead of both.
+    // validateShadowRequest reads only the message -- its role and organization
+    // parameters are unused -- so nothing below is needed to decide this, and
+    // hoisting it costs no work for the ordinary request.
+    //
+    // It is HANDLED at the single chokepoint far below, not here. The
+    // chokepoint stayed put on purpose: a second call site is how this contract
+    // decayed three times, so what moves is the two gates, not the response.
+    const requestValidation = validateShadowRequest(message, userRole, organizationId);
+
     // Chat was the only SHADOW route without a readiness guard, which is why an
     // unmigrated environment surfaced here as an opaque 500 rather than a 503
     // naming the missing tables. Every table listed below is written on a path
@@ -613,25 +624,39 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // Tables used only by best-effort, catch-wrapped writes (the human-review
     // queue, the evidence bundle, the chat audit row) are deliberately omitted
     // so that a partially migrated environment can still serve chat.
-    await assertShadowRuntimeReadiness({
-      requiredTables: [
-        'shadow_rate_limit_buckets',
-        'shadow_user_profiles',
-        'shadow_chat_sessions',
-        'shadow_chat_messages',
-      ],
-    });
+    // GUARDED, NOT MOVED. Owner ruling 2026-09-26 reverses #972's
+    // classification: the safeguarding response now outranks core runtime
+    // readiness and the two global abuse limits. It still does NOT outrank
+    // authentication, structural validation, or the athlete and conversation
+    // authorization below -- those stay unguarded, because a guessed athlete
+    // or conversation id must not become reachable by typing a symptom.
+    //
+    // Guarding rather than relocating keeps the ordinary request's order
+    // exactly as it was: for a benign message every gate below still runs in
+    // the same sequence, which is why the readiness suite -- including "fails
+    // before touching the rate limiter", which sends "How do I improve
+    // footwork?" -- still holds unchanged rather than being inverted.
+    if (requestValidation.valid) {
+      await assertShadowRuntimeReadiness({
+        requiredTables: [
+          'shadow_rate_limit_buckets',
+          'shadow_user_profiles',
+          'shadow_chat_sessions',
+          'shadow_chat_messages',
+        ],
+      });
 
-    await enforceShadowRateLimit({
-      organizationId,
-      accountId: userId,
-      ...resolveShadowRateLimit('chat'),
-    });
-    await enforceShadowRateLimit({
-      organizationId,
-      accountId: userId,
-      ...resolveShadowRateLimit('chat_daily'),
-    });
+      await enforceShadowRateLimit({
+        organizationId,
+        accountId: userId,
+        ...resolveShadowRateLimit('chat'),
+      });
+      await enforceShadowRateLimit({
+        organizationId,
+        accountId: userId,
+        ...resolveShadowRateLimit('chat_daily'),
+      });
+    }
 
     if (athleteId) {
       await assertActorCanAccessAthlete(principal, athleteId);
@@ -669,13 +694,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // and refused session types have no tier and keep the classifier's.
     const effectiveTier = sessionTypeToTier(sessionType) ?? classification.tier;
 
-    // Step 2: Validate request first (blocks diagnosis, clearance, prescription
-    // for non-educational queries). COMPUTED HERE, HANDLED BELOW, and the order
-    // is the point: a request carrying an urgent personal symptom must reach the
-    // high-risk handoff even when it also fails an authorization check. A 403
-    // that pre-empts "chest pain" answers the wrong question about the wrong
-    // thing. The refusal below therefore defers to it.
-    const requestValidation = validateShadowRequest(message, userRole, organizationId);
+    // Step 2's validation is computed far above, before runtime readiness and
+    // the global limits, so that the safeguarding response can outrank them.
+    // It is still HANDLED below, at the single chokepoint.
 
     // A board summary the executor would refuse is refused HERE, before the
     // worker-readiness probe, the context build, the enqueue and any provider
@@ -710,6 +731,44 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // thing that decayed three times.
     const respondWithSafetyBoundary = async (): Promise<NextResponse<ShadowChatResponse>> => {
       const messageId = `msg_${Date.now()}`;
+
+      // THE QUEUE WRITE IS THROTTLED; THE RESPONSE NEVER IS. The global chat
+      // limits used to bound how often one account could cause a row here.
+      // They no longer run before this point, so this bucket replaces exactly
+      // that bound and nothing more.
+      //
+      // TWO FAILURES THAT MUST NOT BE COLLAPSED (owner-directed shape, ruled
+      // 2026-09-30). Exhaustion is a decision: the account has had its three
+      // rows this hour, so skip the write. Anything else -- a missing bucket
+      // table, a dead connection -- is the limiter failing, and treating that
+      // as exhaustion would silently discard safeguarding work at exactly the
+      // moment the database is already unwell. So a broken limiter falls
+      // through to the write, which has its own best-effort catch.
+      let writeReview = true;
+      try {
+        await enforceShadowRateLimit({
+          organizationId,
+          accountId: userId,
+          ...resolveShadowRateLimit('safety_review'),
+        });
+      } catch (error) {
+        if (error instanceof ShadowRateLimitExceeded) {
+          writeReview = false;
+          // Distinguishable in logs from both a queue-write failure and a
+          // throttle failure, because those three are different events and a
+          // reader of this log has to be able to tell which one happened. No
+          // counter, no audit row: recording the suppression of a
+          // database-backed write with another database-backed write would
+          // reintroduce the dependency this slice exists to remove.
+          console.warn('SHADOW human-review queue write suppressed by safety_review throttle');
+        } else {
+          console.error('SHADOW safety_review throttle unavailable; queueing review unthrottled');
+        }
+      }
+
+      // requiresHumanReview stays true below whether or not this row is
+      // written. It means the situation needs a human, not that a row exists.
+      if (writeReview) {
       await queueHumanReview({
         organizationId,
         accountId: userId,
@@ -728,6 +787,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       }).catch(() => {
         console.error('SHADOW human-review queue write failed');
       });
+      }
       return NextResponse.json(
         {
           success: false,

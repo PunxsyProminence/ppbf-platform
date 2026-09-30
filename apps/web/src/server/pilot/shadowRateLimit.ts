@@ -76,6 +76,19 @@ const RATE_LIMIT_DEFAULTS = {
   // batch of session video is the one action here with an unbounded byte cost.
   shadow_upload: { limit: 40, windowSeconds: 3_600 },
   video_upload: { limit: 20, windowSeconds: 3_600 },
+  // The one bucket that does NOT protect the provider or the pool. It bounds
+  // how often a single account can cause a human-review row to be written,
+  // because the safeguarding response is returned BEFORE the global chat
+  // limits now (owner ruling 2026-09-26) and those limits were the only thing
+  // bounding that write.
+  //
+  // Owner decision, 2026-09-26: 3 per hour per account. Single digits was his
+  // instruction; this is the number he chose from it.
+  //
+  // Exceeding it suppresses the QUEUE WRITE ONLY. It never suppresses the
+  // safeguarding response, and a failure of this limiter's own storage is
+  // NOT treated as exhaustion -- see respondWithSafetyBoundary.
+  safety_review: { limit: 3, windowSeconds: 3_600 },
 } as const;
 
 export type ShadowRateLimitKey = keyof typeof RATE_LIMIT_DEFAULTS;
