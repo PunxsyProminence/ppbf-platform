@@ -514,6 +514,16 @@ describe('the shipped 119-drill package', () => {
   it("a '|' mashed grounding element already in the database compares equal to the split file value", async () => {
     const admin = await prepareGym('gym_mashed');
     await seedDrillsTheOldWay('gym_mashed', admin);
+    // #1020 made the old loader split on '|', so it no longer writes the mashed
+    // shape. Put back what every row it wrote before that fix still holds: the
+    // committed '|' list as ONE element (the old split was ';' and ',' only).
+    const pipeRows = COMMITTED.library.filter((row) => row.grounding_claim_ids.includes('|'));
+    await client.query(
+      `update pilot.drill_library drill set grounding_claim_ids = array[cell.raw]
+         from unnest($1::text[], $2::text[]) as cell(drill_id, raw)
+        where drill.organization_id = 'gym_mashed' and drill.drill_id = cell.drill_id`,
+      [pipeRows.map((row) => row.drill_id), pipeRows.map((row) => row.grounding_claim_ids.trim())],
+    );
     // The defect is really there: one element holding the whole '|' list.
     const [v1] = await versionsOf('gym_mashed', MASHED.drill_id);
     expect(v1.grounding_claim_ids).toEqual([MASHED.grounding_claim_ids]);
