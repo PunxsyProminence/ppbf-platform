@@ -151,10 +151,21 @@ async function main() {
         keep: plan.keep.length,
         hold: plan.hold.length,
         retire: plan.retire.length,
-        already_soft_deleted: plan.skip.length,
+        already_soft_deleted: plan.alreadySoftDeleted.length,
+        gate_fixture_skipped: plan.gateFixtures.length,
       },
       accounts: plan.decisions.map(describe),
     }, null, 2));
+
+    // The staging gate's own accounts. Listed on their own, on every run, so a
+    // reader can see they were passed over on purpose and not missed.
+    if (plan.gateFixtures.length > 0) {
+      console.log(JSON.stringify({
+        event: 'account.cleanup.gate-fixtures-skipped',
+        note: 'staging-gate fixtures (account_id starts with gate_) are never retired; the gate signs in as them',
+        accounts: plan.gateFixtures.map(describe),
+      }));
+    }
 
     // Two rows sharing a login email once case is folded. Reported separately
     // because the plan above shows them as `keep` -- correctly, since nothing
@@ -241,7 +252,8 @@ async function main() {
     // already makes. They are here because this statement is the one that can
     // fire pilot.cascade_parent_deletion across minors' records, and a
     // WHERE clause is cheaper than trusting that no future edit to the planner
-    // ever lets a parent through.
+    // ever lets a parent through. The gate-fixture clause is the same second
+    // lock for the staging gate's accounts (`\_` is a literal underscore).
     const retired = await client.query(
       `update pilot.accounts
           set deleted_at = now(),
@@ -250,9 +262,14 @@ async function main() {
         where account_id = any($1::text[])
           and role <> 'parent'
           and deleted_at is null
+          and account_id not ilike 'gate\\_%'
         returning account_id`,
       [ids],
     );
+
+    // Only the rows the statement above actually retired go on to lose their
+    // memberships and sessions, so a row its guards refused is left whole.
+    const retiredIds = retired.rows.map((row) => row.account_id);
 
     // Memberships are a separate table with its own active_flag; leaving them
     // active would keep a retired account listed as staff of its organization.
@@ -262,7 +279,7 @@ async function main() {
               updated_at = now()
         where account_id = any($1::text[])
           and active_flag = true`,
-      [ids],
+      [retiredIds],
     );
 
     const revoked = await client.query(
@@ -271,7 +288,7 @@ async function main() {
         where account_id = any($1::text[])
           and revoked_at is null
         returning token_hash`,
-      [ids],
+      [retiredIds],
     );
 
     // organization_id is null: this run spans organizations, and the column is a
