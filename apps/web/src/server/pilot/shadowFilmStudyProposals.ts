@@ -17,6 +17,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 
 export type FilmStudyProposalReviewState =
   | 'pending_review'
@@ -224,6 +225,9 @@ export async function listFilmStudyProposals(input: {
      where organization_id = $1
        and ($2::text = 'all' or review_state in ('pending_review', 'corrected'))
        and athlete_id = any($3::text[])
+       -- Scope B: a deleted athlete's proposals leave the queue with them,
+       -- whichever athletes the caller authorized.
+       and ${athleteNotDeletedSql('pilot.shadow_film_study_proposals')}
      order by
        case when review_state in ('pending_review', 'corrected') then 0 else 1 end,
        case when review_state in ('pending_review', 'corrected') then created_at end asc,

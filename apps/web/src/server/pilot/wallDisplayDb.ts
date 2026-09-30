@@ -1,4 +1,5 @@
 import { query } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 import { getWallTimeZone } from './env';
 import {
   buildWallBoard,
@@ -66,6 +67,9 @@ export async function loadWallBoard(input: {
          and status = 'present'
          and checked_in_at >= $2::timestamptz
          and checked_in_at <  $3::timestamptz
+         -- Scope B: a deleted athlete is not named on the wall. Filtered
+         -- here, before the limit, so their rows cannot crowd out anyone's.
+         and ${athleteNotDeletedSql('pilot.scheduler_attendance')}
        order by checked_in_at desc
        limit 200`,
       [input.organizationId, startIso, endIso],
@@ -81,6 +85,7 @@ export async function loadWallBoard(input: {
                 row_number() over (partition by athlete_id order by date asc, session_id asc) as session_number
          from pilot.sessions
          where organization_id = $1 and completed_flag
+           and ${athleteNotDeletedSql('pilot.sessions')}
        )
        select athlete_id, session_number::int as session_number, crossed_on
        from ranked

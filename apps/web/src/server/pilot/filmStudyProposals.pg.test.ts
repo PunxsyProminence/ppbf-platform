@@ -548,6 +548,7 @@ describe('film study proposals runner readiness assertion', () => {
     const client = new Client({ connectionString: connectionStringFor(name) });
     await client.connect();
       await client.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
+      await client.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8'));
       await client.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_video_sessions_migration.sql'), 'utf8'));
     return client;
   }

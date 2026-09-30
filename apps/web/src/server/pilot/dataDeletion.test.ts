@@ -209,6 +209,11 @@ function capturingClient(
       if (sql.includes('update pilot.accounts') || sql.includes('update pilot.athletes')) {
         return { rows: [{ deleted_at: '2026-09-29 16:00:00+00', account_id: 'acct-ath-1' }] };
       }
+      // Scope B's count of the rows the mark now covers.
+      if (sql.includes('as videos')) {
+        return { rows: [{ videos: '2', photos: '1', coach_notes: '3', session_notes: '4' }] };
+      }
+      if (sql.includes('update pilot.shadow_chat_sessions')) return { rows: [], rowCount: 5 };
       if (sql.includes('count(*)')) return { rows: [{ count: '0' }] };
       if (sql.includes('audit_events')) return { rows: [{ audit_id: 7 }] };
       return { rows: [], rowCount: 0 };
@@ -392,5 +397,91 @@ describe('deletion cancels outstanding activation codes', () => {
     await deleteGuardianAccount(actor, 'parent-1');
 
     expect(supersedeCalls(client)).toHaveLength(0);
+  });
+});
+
+/**
+ * Scope B (Jason, 2026-09-29, "10 C"): everything tied to the athlete is
+ * marked deleted at the same moment. The mark itself is the athlete row's
+ * deleted_at, which every reader checks; the one tied table with a deletion
+ * column of its own is stamped in the same transaction. These are
+ * statement-shape assertions; the real-Postgres proof, reader by reader, is
+ * deletionScopeB.pg.test.ts.
+ */
+describe('scope B: what is tied to the athlete is marked in the same transaction', () => {
+  const DELETION_TIME = '2026-09-29 16:00:00+00';
+
+  function stampCall(client: ReturnType<typeof capturingClient>) {
+    return client.calls.find((call) => call.sql.includes('update pilot.shadow_chat_sessions'));
+  }
+
+  test("an athlete deletion stamps their SHADOW conversations with the deletion's own timestamp, before the audit row", async () => {
+    const client = capturingClient(null);
+    useClient(client);
+    await deleteAthleteRecord(actor, 'ath-1', 'withdrew');
+
+    const stamp = stampCall(client);
+    // The athlete's own conversations (by account) and staff ones about them
+    // (by athlete), in this organization, at the athlete's own deleted_at.
+    expect(stamp?.params).toEqual(['org-1', ['ath-1'], ['acct-ath-1'], DELETION_TIME]);
+    expect(stamp?.sql).toMatch(/where organization_id = \$1\s+and \(athlete_id = any\(\$2::text\[\]\) or account_id = any\(\$3::text\[\]\)\)/);
+    // Never over an earlier stamp: a conversation already deleted keeps its date.
+    expect(stamp?.sql).toContain('and deleted_at is null');
+
+    const stampIndex = client.calls.findIndex((call) => call.sql.includes('update pilot.shadow_chat_sessions'));
+    const auditIndex = client.calls.findIndex((call) => call.sql.includes('insert into pilot.audit_events'));
+    expect(stampIndex).toBeGreaterThan(-1);
+    expect(stampIndex).toBeLessThan(auditIndex);
+  });
+
+  test('the result and the audit record carry the counts of what the mark covers', async () => {
+    const client = capturingClient(null);
+    useClient(client);
+    const result = await deleteAthleteRecord(actor, 'ath-1', 'withdrew');
+
+    expect(result.deletedRecordsCounts).toEqual({
+      athletes: 1,
+      accounts: 1,
+      athleteVideos: 2,
+      athletePhotos: 1,
+      coachNotes: 3,
+      sessionNotes: 4,
+      shadowConversations: 5,
+    });
+    const audit = client.calls.find((call) => call.sql.includes('insert into pilot.audit_events'));
+    const details = JSON.parse(String(audit?.params[6])) as Record<string, unknown>;
+    expect(details.tied_records_marked).toEqual({
+      videos: 2,
+      photos: 1,
+      coach_notes: 3,
+      session_notes: 4,
+      shadow_conversations: 5,
+    });
+    expect(details).not.toHaveProperty('observations_retained');
+  });
+
+  test('marking is not erasing: neither deletion issues a DELETE', async () => {
+    const athleteClient = capturingClient(null);
+    useClient(athleteClient);
+    await deleteAthleteRecord(actor, 'ath-1');
+    const guardianClient = capturingClient(null, { withdrawnChildAccounts: ['acct-child-1'] });
+    useClient(guardianClient);
+    await deleteGuardianAccount(actor, 'parent-1');
+
+    for (const sql of [...writes(athleteClient.statements), ...writes(guardianClient.statements)]) {
+      expect(sql).not.toMatch(/^\s*delete\b/i);
+    }
+  });
+
+  test('a guardian deletion marks what is tied to the children the trigger withdrew', async () => {
+    const client = capturingClient(null, { withdrawnChildAccounts: ['acct-child-1'] });
+    useClient(client);
+    const result = await deleteGuardianAccount(actor, 'parent-1');
+
+    // The withdrawn children are the athletes carrying this deletion's timestamp.
+    const lookup = client.calls.find((call) => /select athlete_id from pilot\.athletes\s+where deleted_at = \$1/.test(call.sql));
+    expect(lookup?.params).toEqual([DELETION_TIME, 'org-1']);
+    expect(stampCall(client)?.params).toEqual(['org-1', ['ath-1'], ['acct-child-1'], DELETION_TIME]);
+    expect(result.deletedRecordsCounts).toMatchObject({ athletes: 1, athleteVideos: 2, shadowConversations: 5 });
   });
 });

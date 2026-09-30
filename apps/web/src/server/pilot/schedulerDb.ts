@@ -1,4 +1,5 @@
 import { query, queryOne, withTransaction } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 import { listMembershipFlagsForAthlete, type MembershipFlag } from './programMemberships';
 import { findRegistrationBlockingHold } from './trainingHolds';
 
@@ -77,12 +78,17 @@ export async function listSchedulerStore(organizationId: string): Promise<Schedu
        order by start_at asc, created_at desc`,
       [organizationId],
     ),
+    // Scope B: a deleted athlete's registrations, coaching requests and
+    // attendance are marked deleted with them, for every role this store
+    // feeds -- including the admin, who is handed the whole store, and the
+    // registered_count every role sees.
     query<SchedulerRegistration>(
       `select registration_id, class_id, athlete_id, requested_by_role, requested_by_account_id,
               parent_reviewed, parent_reviewed_at::text, parent_reviewer_account_id,
               status, created_at::text, updated_at::text
        from pilot.scheduler_registrations
        where organization_id = $1
+         and ${athleteNotDeletedSql('pilot.scheduler_registrations')}
        order by created_at desc`,
       [organizationId],
     ),
@@ -92,6 +98,7 @@ export async function listSchedulerStore(organizationId: string): Promise<Schedu
               created_at::text, updated_at::text
        from pilot.scheduler_coaching_requests
        where organization_id = $1
+         and ${athleteNotDeletedSql('pilot.scheduler_coaching_requests')}
        order by created_at desc`,
       [organizationId],
     ),
@@ -101,6 +108,7 @@ export async function listSchedulerStore(organizationId: string): Promise<Schedu
               checked_in_at::text, updated_at::text
        from pilot.scheduler_attendance
        where organization_id = $1
+         and ${athleteNotDeletedSql('pilot.scheduler_attendance')}
        order by checked_in_at desc`,
       [organizationId],
     ),
@@ -243,7 +251,10 @@ export async function registerForClassTransactionally(
     const countResult = await client.query<{ count: string }>(
       `select count(*)::text as count
        from pilot.scheduler_registrations
-       where organization_id = $1 and class_id = $2 and status = 'registered'`,
+       where organization_id = $1 and class_id = $2 and status = 'registered'
+         -- A deleted athlete holds no seat: the count the page shows skips
+         -- them, and this one has to agree with it (scope B).
+         and ${athleteNotDeletedSql('pilot.scheduler_registrations')}`,
       [organizationId, classId],
     );
     const registeredCount = Number.parseInt(countResult.rows[0]?.count ?? '0', 10);
@@ -393,7 +404,10 @@ export async function listRegisteredAthleteIdsForClass(organizationId: string, c
   const rows = await query<{ athlete_id: string }>(
     `select athlete_id
      from pilot.scheduler_registrations
-     where organization_id = $1 and class_id = $2 and status = 'registered'`,
+     where organization_id = $1 and class_id = $2 and status = 'registered'
+       -- A deleted athlete is on no class roster (scope B), so they cannot
+       -- be marked present in one either.
+       and ${athleteNotDeletedSql('pilot.scheduler_registrations')}`,
     [organizationId, classId],
   );
   return rows.map((row) => row.athlete_id);

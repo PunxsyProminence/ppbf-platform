@@ -50,6 +50,10 @@ const MIGRATION_RUNNER_PATH = path.resolve(
 );
 
 const BASE_SQL = 'pilot_slice_postgres.sql';
+// athletes.deleted_at. Deletion scope B makes the readers this suite drives
+// leave a deleted athlete's rows out, and production has had the column since
+// the data-retention migration; a database without it is one that never existed.
+const RETENTION_SQL = 'pilot_slice_postgres_data_retention_deletion_migration.sql';
 const VIDEO_SESSIONS_SQL = 'pilot_slice_postgres_video_sessions_migration.sql';
 /* Applied because these suites now seed a recording session and a take: a
    study cuts its clips from teaching footage, and assertVideoClippable
@@ -123,6 +127,7 @@ async function runnerDatabase(name: string): Promise<Client> {
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
   await client.query(await readMigration(BASE_SQL));
+  await client.query(await readMigration(RETENTION_SQL));
   await client.query(await readMigration(VIDEO_SESSIONS_SQL));
   await client.query(await readMigration(CAPTURE_SESSIONS_SQL));
   await client.query(await readMigration(PROJECTS_SQL));
@@ -269,6 +274,7 @@ beforeAll(async () => {
   const migrateClient = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await migrateClient.connect();
   await migrateClient.query(await readMigration(BASE_SQL));
+  await migrateClient.query(await readMigration(RETENTION_SQL));
   await migrateClient.query(await readMigration(VIDEO_SESSIONS_SQL));
   await migrateClient.query(await readMigration(CAPTURE_SESSIONS_SQL));
   await migrateClient.query(await readMigration(PROJECTS_SQL));

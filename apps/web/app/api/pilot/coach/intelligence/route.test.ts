@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server';
 
 import { GET } from './route';
 import { athleteIdsForCoach } from '@/src/server/pilot/access';
-import { getAthletesByOrganization, getAthletesForCoach } from '@/src/server/pilot/entities';
+import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRoster';
+import { getAthletesForCoach } from '@/src/server/pilot/entities';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { getCoachIntelligence } from '@/src/server/pilot/coachIntelligence';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -19,8 +20,14 @@ jest.mock('@/src/server/pilot/access', () => {
 
 jest.mock('@/src/server/pilot/entities', () => ({
   getAthletesForCoach: jest.fn(),
-  getAthletesByOrganization: jest.fn(),
 }));
+
+// Scope B: the admin arm reads live athletes only, through the same read the
+// coach roster's admin half uses.
+jest.mock('@/src/server/pilot/coachAthleteRoster', () => {
+  const actual = jest.requireActual('@/src/server/pilot/coachAthleteRoster');
+  return { ...actual, organizationActionableRoster: jest.fn() };
+});
 
 jest.mock('@/src/server/pilot/coachIntelligence', () => {
   const actual = jest.requireActual('@/src/server/pilot/coachIntelligence');
@@ -30,7 +37,7 @@ jest.mock('@/src/server/pilot/coachIntelligence', () => {
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockCoachIds = athleteIdsForCoach as jest.Mock;
 const mockForCoach = getAthletesForCoach as jest.Mock;
-const mockByOrg = getAthletesByOrganization as jest.Mock;
+const mockByOrg = organizationActionableRoster as jest.Mock;
 const mockDigest = getCoachIntelligence as jest.Mock;
 
 afterEach(() => {

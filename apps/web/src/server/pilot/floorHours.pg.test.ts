@@ -195,6 +195,10 @@ beforeAll(async () => {
   });
 
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
+  // athletes.deleted_at: deletion scope B makes the readers this suite drives leave a
+  // deleted athlete's rows out; production has had the column since the data-retention
+  // migration, and a database without it is one that never existed.
+  baseSchemaSql += await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8');
   activityLogMigrationSql = await fs.readFile(path.join(INFRA_DIR, ACTIVITY_LOG_MIGRATION_FILE), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
 
