@@ -14,6 +14,15 @@ import { query, queryOne } from './db';
 // detail for a specific drill calls drillLibraryV3.ts's
 // getDrillWithDetail, which already returns all three levels together;
 // this module does not duplicate that read.
+//
+// AN ITEM KEEPS THE DRILL VERSION IT WAS WRITTEN AGAINST. item.drill_id
+// names one exact pilot.drill_library row, and a revised drill is a new row
+// in the same lineage (drill_library v3 migration :86-89), so a template can
+// point at a drill that has since been revised. The item is NOT repointed:
+// the template was authored against that version, and silently swapping the
+// drill under it is the in-place edit versioning exists to prevent. Instead
+// the read reports, per item, the lineage's head and whether the item is
+// behind it, so the coach sees it and decides.
 
 export type WorkoutTemplateDifficulty = 'beginner' | 'intermediate' | 'advanced' | 'elite';
 export type WorkoutTemplateItemScaleLevel = 'A' | 'B' | 'C';
@@ -62,6 +71,22 @@ export interface WorkoutTemplateItemRow {
   created_at: string;
 }
 
+/**
+ * An item as the detail read returns it: the stored row plus where its drill
+ * stands in its lineage. Derived on every read (nothing stored), so it cannot
+ * drift from the drill rows it describes.
+ *
+ *   head_drill_id             the highest version in the item's drill lineage;
+ *                             equal to drill_id when the item is current. Null
+ *                             for a free-text item, which has no lineage.
+ *   uses_older_drill_version  true when a higher version of the item's drill
+ *                             exists. Always false for a free-text item.
+ */
+export interface WorkoutTemplateItemWithDrillHead extends WorkoutTemplateItemRow {
+  head_drill_id: string | null;
+  uses_older_drill_version: boolean;
+}
+
 const TEMPLATE_FIELDS =
   'organization_id, template_id, lineage_id, version, supersedes_template_id, superseded_at, name, '
   + 'session_type, difficulty, age_band, duration_minutes, intent, coach_notes, requires_coach_authorization, '
@@ -70,6 +95,11 @@ const TEMPLATE_FIELDS =
 const ITEM_FIELDS =
   'organization_id, item_id, template_id, ordinal, block, drill_id, free_text_drill, scale_level, '
   + 'duration_minutes, rep_count, contact_level, coach_note, created_at';
+
+// The same columns qualified to the item alias, because the detail read joins
+// pilot.drill_library, which also has organization_id, drill_id,
+// contact_level and created_at -- a bare column would be ambiguous.
+const ITEM_FIELDS_QUALIFIED = ITEM_FIELDS.split(', ').map((field) => `i.${field}`).join(', ');
 
 export async function listWorkoutTemplates(
   organizationId: string,
@@ -90,7 +120,7 @@ export async function listWorkoutTemplates(
 
 export interface WorkoutTemplateWithItems {
   template: WorkoutTemplateRow;
-  items: WorkoutTemplateItemRow[];
+  items: WorkoutTemplateItemWithDrillHead[];
 }
 
 export async function getWorkoutTemplateWithItems(
@@ -105,10 +135,34 @@ export async function getWorkoutTemplateWithItems(
     return null;
   }
 
-  const items = await query<WorkoutTemplateItemRow>(
-    `select ${ITEM_FIELDS} from pilot.workout_template_items
-     where organization_id = $1 and template_id = $2
-     order by ordinal asc`,
+  // HEAD = the highest version in the lineage, the rule drillLibraryV3.ts's
+  // listReferenceLifecycles already uses for "the adopted lineage's HEAD".
+  // Not superseded_at: that column is set by whoever loads the revision, and
+  // a comparison of versions cannot be left out of step with the rows. Not
+  // filtered on active either: active means "not withdrawn", a separate axis
+  // from superseded (drillAdoptionReadiness.ts:51-52), so it says nothing
+  // about which version is newest.
+  //
+  // The lateral join is scoped to the item's own organization at both hops,
+  // so a lineage id shared with another gym can never supply the head.
+  const items = await query<WorkoutTemplateItemWithDrillHead>(
+    `select ${ITEM_FIELDS_QUALIFIED},
+            head.drill_id as head_drill_id,
+            coalesce(head.drill_id <> i.drill_id, false) as uses_older_drill_version
+     from pilot.workout_template_items i
+     left join pilot.drill_library pinned
+       on pinned.organization_id = i.organization_id
+      and pinned.drill_id = i.drill_id
+     left join lateral (
+       select h.drill_id
+       from pilot.drill_library h
+       where h.organization_id = pinned.organization_id
+         and h.lineage_id = pinned.lineage_id
+       order by h.version desc
+       limit 1
+     ) head on true
+     where i.organization_id = $1 and i.template_id = $2
+     order by i.ordinal asc`,
     [organizationId, templateId],
   );
 

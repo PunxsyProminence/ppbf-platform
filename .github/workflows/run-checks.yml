@@ -35,17 +35,23 @@
 # TWO KINDS OF CHECK, AND WHAT A RED RUN MEANS
 #   Most of these are GATES: they exit non-zero when a human still has to
 #   decide something, so a red run is a finding rather than a broken workflow.
-#   Four are REPORTS -- seed-identity, runtime-claims, cue-source-provenance
-#   and video-readiness print their answer and exit zero whenever they managed
-#   to run at all, so the answer is in the log and a green run says only "it
-#   connected". Do not read a green `all` as "seed identity is correct"; read
-#   the group.
+#   Five are REPORTS -- seed-identity, runtime-claims, cue-source-provenance,
+#   reference-content and video-readiness print their answer and exit zero
+#   whenever they managed to run at all, so the answer is in the log and a
+#   green run says only "it connected". Do not read a green `all` as "seed
+#   identity is correct"; read the group.
 #
 #   cue-source-provenance reports how many pilot.drill_cues rows carry each
 #   distinct source_ref, including one named target value. It is a report
 #   because a count is not a verdict: whether a cited source can be produced is
 #   recorded outside this repository and can change, so the check prints numbers
 #   and states no conclusion. Read its count, not its exit status.
+#
+#   reference-content counts the reference-content rows (drill library, its
+#   child tables, templates, session scripts, registries) per organization_id
+#   and created_by_role, plus gym adoptions, superseded versions and the '|'
+#   claim-id defect -- counts only, no row ids or names. It exists so the first
+#   gym load is planned on where the 2026-08-24 rows actually sit.
 #
 # THE ONE CHECK THAT DOES NOT ASK THE DATABASE
 #   video-readiness answers "can a quarantined video promote here at all", and
@@ -118,6 +124,7 @@ on:
           - discipline-values
           - waiver-statuses
           - cue-source-provenance
+          - reference-content
           - video-readiness
 
 permissions:
@@ -428,7 +435,7 @@ jobs:
 
       # A gate script exits non-zero only when a human still has to decide
       # something, so a red run here is a finding, not a broken workflow. The
-      # three report scripts exit zero whenever they ran -- see the header. With
+      # report scripts exit zero whenever they ran -- see the header. With
       # `all`, every check runs even if an earlier one reports -- one finding
       # must not hide the next -- and the job fails at the end if any did.
       - name: Run Check
@@ -475,6 +482,7 @@ jobs:
               run_one discipline-values   pilot:check-discipline-values
               run_one waiver-statuses     pilot:check-waiver-statuses
               run_one cue-source-provenance pilot:check-cue-source-provenance
+              run_one reference-content   pilot:check-reference-content
               run_one video-readiness     pilot:check-video-readiness
               ;;
             orphan-chat-audit)  run_one orphan-chat-audit   pilot:check-orphan-chat-audit ;;
@@ -494,6 +502,7 @@ jobs:
             discipline-values)  run_one discipline-values   pilot:check-discipline-values ;;
             waiver-statuses)    run_one waiver-statuses     pilot:check-waiver-statuses ;;
             cue-source-provenance) run_one cue-source-provenance pilot:check-cue-source-provenance ;;
+            reference-content)  run_one reference-content   pilot:check-reference-content ;;
             video-readiness)    run_one video-readiness     pilot:check-video-readiness ;;
             *)
               echo "::error::Unknown check '$CHECK'."

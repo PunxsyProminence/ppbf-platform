@@ -94,6 +94,66 @@ function resolveSslConfig() {
 
 const count = (rows) => Number(rows[0]?.count ?? 0);
 
+/**
+ * Who marked deleted can still get in, and who is marked deleted but refused.
+ *
+ * SIGN-IN REFUSES ANY ACCOUNT MARKED DELETED (OD-2026-09-29-003 Q9,
+ * src/server/pilot/deletedAccountSignIn.ts): PIN, Microsoft and sign-in-link
+ * sign-in, and resolvePrincipal for every session. So an account with
+ * deleted_at set is not access, whatever its active_flag says, and neither is
+ * a session it holds. Before that rule both were the footprint #690/#709
+ * left, and this check counted them as exposure. They are still counted, as
+ * `refused*`: an account marked deleted but flagged active is a login an admin
+ * path turned back on that can never sign in, which is worth seeing, and on a
+ * deployed revision older than the rule they can still get in.
+ *
+ * What is still EXPOSURE is a deleted athlete whose own login is active and
+ * NOT marked deleted -- the sign-in rule reads accounts.deleted_at only, so
+ * that login still works.
+ */
+export async function countDeletedAccess(client) {
+  const refusedAccounts = await client.query(
+    `select role, count(*)::text as count from pilot.accounts
+      where deleted_at is not null and active_flag = true
+      group by role order by role`,
+  );
+  const athletesExposed = await client.query(
+    `select count(*)::text as count
+       from pilot.athletes a
+       join pilot.accounts acc
+         on acc.organization_id = a.organization_id
+        and acc.athlete_id = a.athlete_id
+        and acc.role = 'athlete'
+      where a.deleted_at is not null
+        and acc.active_flag = true
+        and acc.deleted_at is null`,
+  );
+  const refusedSessions = await client.query(
+    `select count(*)::text as count
+       from pilot.session_tokens t
+       join pilot.accounts acc on acc.account_id = t.account_id
+      where acc.deleted_at is not null
+        and t.revoked_at is null
+        and t.expires_at > now()`,
+  );
+
+  const refusedAccountsByRole = refusedAccounts.rows.map((row) => ({
+    role: row.role,
+    count: Number(row.count),
+  }));
+  return {
+    refusedAccountsByRole,
+    refusedAccounts: refusedAccountsByRole.reduce((sum, row) => sum + row.count, 0),
+    refusedSessions: count(refusedSessions.rows),
+    athletesExposed: count(athletesExposed.rows),
+  };
+}
+
+/** Non-zero only when a deleted record can still get in. */
+export function deletionPreflightExitCode(access) {
+  return access.athletesExposed === 0 ? 0 : 1;
+}
+
 async function main() {
   await loadEnvLocal();
   const connectionString = required('AZURE_POSTGRES_CONNECTION_STRING');
@@ -166,48 +226,25 @@ async function main() {
       console.log(`  role ${row.role}: ${row.count}`);
     }
 
-    // 3. THE EXPOSURE. This is the part that decides whether anyone is owed a
-    //    repair: a record marked deleted whose access was never actually
-    //    closed. Each of these is exactly the footprint one of the two bugs
-    //    leaves behind, so a non-zero count here names a real person who can
-    //    still get in.
-    const activeDeletedAccounts = await client.query(
-      `select role, count(*)::text as count from pilot.accounts
-        where deleted_at is not null and active_flag = true
-        group by role order by role`,
-    );
-    const deletedAthletesWithLiveAccount = await client.query(
-      `select count(*)::text as count
-         from pilot.athletes a
-         join pilot.accounts acc
-           on acc.organization_id = a.organization_id
-          and acc.athlete_id = a.athlete_id
-          and acc.role = 'athlete'
-        where a.deleted_at is not null
-          and acc.active_flag = true`,
-    );
-    const liveSessionsOnDeletedAccounts = await client.query(
-      `select count(*)::text as count
-         from pilot.session_tokens t
-         join pilot.accounts acc on acc.account_id = t.account_id
-        where acc.deleted_at is not null
-          and t.revoked_at is null
-          and t.expires_at > now()`,
-    );
-
-    const activeDeletedTotal = activeDeletedAccounts.rows.reduce((s, r) => s + Number(r.count), 0);
-    const athletesExposed = count(deletedAthletesWithLiveAccount.rows);
-    const liveSessions = count(liveSessionsOnDeletedAccounts.rows);
+    // 3. THE EXPOSURE, and what sign-in now refuses. See countDeletedAccess:
+    //    since the Q9 rule, only a deleted athlete whose own login is not
+    //    marked deleted can still get in, so only that decides the exit code.
+    const access = await countDeletedAccess(client);
+    const exposure = access.athletesExposed;
 
     console.log('\n--- EXPOSURE ---');
-    console.log(`Deleted accounts still active_flag = true: ${activeDeletedTotal}`);
-    for (const row of activeDeletedAccounts.rows) {
+    console.log(`Deleted athletes whose own account is active and not marked deleted: ${exposure}`);
+
+    console.log('\n--- REFUSED AT SIGN-IN (marked deleted; OD-2026-09-29-003 Q9) ---');
+    console.log(`Deleted accounts still active_flag = true: ${access.refusedAccounts}`);
+    for (const row of access.refusedAccountsByRole) {
       console.log(`  role ${row.role}: ${row.count}`);
     }
-    console.log(`Deleted athletes whose account is still active: ${athletesExposed}`);
-    console.log(`Unrevoked, unexpired sessions on deleted accounts: ${liveSessions}`);
-
-    const exposure = activeDeletedTotal + athletesExposed + liveSessions;
+    console.log(`Unrevoked, unexpired sessions on deleted accounts: ${access.refusedSessions}`);
+    console.log('Sign-in refuses every account marked deleted, and resolvePrincipal resolves');
+    console.log('its sessions to nobody, on any revision with that rule');
+    console.log('(apps/web/src/server/pilot/deletedAccountSignIn.ts). On a deployed revision');
+    console.log('without it, these can still sign in.');
 
     console.log('');
     if (totalDeletions === 0 && count(deletedAthletes.rows) === 0) {
@@ -216,17 +253,21 @@ async function main() {
       console.log('closed the hole before it was used; there is nobody to remediate.');
     } else if (exposure === 0) {
       console.log('DELETION PREFLIGHT: DELETIONS FOUND, NO EXPOSURE.');
-      console.log('Records were deleted, and every one of them has its access closed.');
+      console.log('Records were deleted, and none of them can still sign in on a revision with that rule.');
     } else {
       console.log('DELETION PREFLIGHT: EXPOSURE FOUND.');
-      console.log(`${exposure} record(s) are marked deleted with access still open.`);
+      console.log(`${exposure} deleted athlete(s) still have a login that is active and not marked deleted.`);
       console.log('This is an owner decision, not a script\'s: re-run with a follow-up that');
       console.log('selects the ids once somebody has decided what to do about them.');
+    }
+    if (access.refusedAccounts > 0) {
+      console.log(`${access.refusedAccounts} account(s) are marked deleted but flagged active: sign-in refuses`);
+      console.log('them, but an admin screen shows them as active (docs/DATA_RETENTION.md, "Still open").');
     }
 
     await client.query('COMMIT');
     await client.end();
-    process.exit(exposure === 0 ? 0 : 1);
+    process.exit(deletionPreflightExitCode(access));
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     await client.end().catch(() => {});
@@ -235,4 +276,9 @@ async function main() {
   }
 }
 
-await main();
+// Guarded so a test can import countDeletedAccess without running the check
+// (or reading .env.local); `npm run pilot:check-deletion-preflight` runs it.
+const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
+if (isMainModule) {
+  await main();
+}

@@ -368,11 +368,12 @@ describe('the NON-CORPUS section names what a bulk approval would sweep in', () 
 });
 
 // The corpus count is what the scope verdict compares against the seed, so a
-// retired row must not be in it. The 2026-09-29 corpus repair removed 172
-// sources from the seed; a database imported before it keeps them until the
-// production repair retires them, and retiring never deletes (a chunk's source
-// FK cascades). If retired rows still counted, a correctly repaired production
-// would read 1194 against the seed's 1022 and report itself broken.
+// retired row must not be in it. The 2026-09-29 corpus repair (#1008) and its
+// follow-up removed 213 sources from the seed (172 + 41); a database imported
+// before them keeps those rows until the production repair retires them, and
+// retiring never deletes (a chunk's source FK cascades). If retired rows still
+// counted, a correctly repaired production would read 1194 against the seed's
+// 981 and report itself broken.
 describe('the corpus count leaves retired rows out', () => {
   test('archived and rejected corpus rows are counted as retired, not as corpus', async () => {
     const result = await checkLibraryScope(client);
@@ -393,7 +394,7 @@ describe('the corpus count leaves retired rows out', () => {
 describe('the scope verdict', () => {
   const platformRow = { capabilities: 30, capabilities_with_tracks: 30, chunks: 1173 };
   const state = (platformCorpus: number, overrides: Partial<Parameters<typeof libraryScopeState>[0]> = {}) =>
-    libraryScopeState({ platformRow, platformCorpus, elsewhere: [], expected: 1022, ...overrides });
+    libraryScopeState({ platformRow, platformCorpus, elsewhere: [], expected: 981, ...overrides });
 
   // The case this split exists for: production before its repair. It holds the
   // sources the seed dropped, and must not be told it is incomplete -- the
@@ -403,18 +404,18 @@ describe('the scope verdict', () => {
   });
 
   test('holding fewer is still incomplete', () => {
-    expect(state(1000)).toBe('BASELINE_INCOMPLETE');
+    expect(state(900)).toBe('BASELINE_INCOMPLETE');
   });
 
   test('holding exactly the seed count is present and split', () => {
-    expect(state(1022)).toBe('PRESENT_AND_SPLIT');
+    expect(state(981)).toBe('PRESENT_AND_SPLIT');
   });
 
   test('the unchanged states keep their meaning', () => {
-    expect(state(1022, { platformRow: undefined })).toBe('NO_RESERVED_ORGANIZATION');
+    expect(state(981, { platformRow: undefined })).toBe('NO_RESERVED_ORGANIZATION');
     expect(state(0, { elsewhere: [{ organization_id: GYM, corpus_sources: 1194, corpus_retired: 0 }] }))
       .toBe('CORPUS_OUTSIDE_BASELINE');
-    expect(state(1022, { platformRow: { ...platformRow, capabilities_with_tracks: 0 } }))
+    expect(state(981, { platformRow: { ...platformRow, capabilities_with_tracks: 0 } }))
       .toBe('EVIDENCE_AXIS_EMPTY');
     expect(state(0, { platformRow: { ...platformRow, chunks: 0 } })).toBe('EMPTY');
   });

@@ -43,6 +43,13 @@ const BOARD_SEATS_SQL_PATH = path.resolve(
   __dirname,
   '../../../../../infra/azure/pilot_slice_postgres_board_seats_migration.sql',
 );
+// Also not in the base schema: pilot.accounts.deleted_at. The same block needs
+// it, because sign-in and resolvePrincipal refuse an account marked deleted
+// (deletedAccountSignIn.ts) and so read the column on every call.
+const DATA_RETENTION_SQL_PATH = path.resolve(
+  __dirname,
+  '../../../../../infra/azure/pilot_slice_postgres_data_retention_deletion_migration.sql',
+);
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -492,6 +499,7 @@ describe('session revocation regressions (real database, real application code)'
     const migrateClient = await newTestDatabase(TEST_DB_NAME);
     await migrateClient.query(await readSql(SCHEMA_SQL_PATH));
     await migrateClient.query(await readSql(BOARD_SEATS_SQL_PATH));
+    await migrateClient.query(await readSql(DATA_RETENTION_SQL_PATH));
     await migrateClient.end();
 
     process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(TEST_DB_NAME);

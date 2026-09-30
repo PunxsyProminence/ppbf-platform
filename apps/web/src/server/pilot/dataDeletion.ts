@@ -148,9 +148,12 @@ function tiedRecordsAudit(tied: TiedRecordCounts) {
  * Closing a login means more than active_flag = false and revoked sessions. redeemActivationCode
  * (activation.ts) sets active_flag = true on the account and its membership and never reads
  * deleted_at, so a code handed out before the deletion -- live for 14 days by default, up to 90
- * (activationPolicy.ts) -- would reopen the login this deletion just closed, with no admin
- * involved. Superseded rather than deleted: the row stays as the record that a code existed, and
- * cleanupActivationTokens removes it on its own schedule. Same transaction as the deletion.
+ * (activationPolicy.ts) -- would set a PIN and turn the account active again, with no admin
+ * involved. Sign-in now refuses a deleted account whatever active_flag says
+ * (deletedAccountSignIn.ts), so this is the second lock on that door, not the only one; it also
+ * keeps the account from reading as active. Superseded rather than deleted: the row stays as the
+ * record that a code existed, and cleanupActivationTokens removes it on its own schedule. Same
+ * transaction as the deletion.
  */
 async function supersedeOutstandingActivationCodes(
   client: PoolClient,
@@ -214,18 +217,21 @@ export async function deleteGuardianAccount(
     /* active_flag = false is not decoration, it is half of what makes this a
        deletion at all.
 
-       Deleting a guardian used to write deleted_at and nothing else, and
-       NOTHING in the read path filters on deleted_at: resolvePrincipal's query
-       (auth.ts) joins accounts without it, and so does every guardian access
-       check. So the flag the rest of the platform actually gates on --
+       Deleting a guardian used to write deleted_at and nothing else, and at
+       the time NOTHING in the read path filtered on deleted_at: resolvePrincipal's
+       query (auth.ts) joined accounts without it, and so does every guardian
+       access check. So the flag the rest of the platform actually gates on --
        active_flag -- stayed true, and a "deleted" guardian kept reading their
        linked minor's records.
 
        Worse than a stale session: `parent` is a magic-link role, and both the
-       issue and redeem paths gate on active_flag (magicLink.ts) and never look
-       at deleted_at. A deleted guardian could request a fresh link to their own
-       inbox and sign in again, indefinitely, until the account row was purged a
-       year later. Deletion did not close the door; it did not touch it.
+       issue and redeem paths gated on active_flag (magicLink.ts) and never
+       looked at deleted_at. A deleted guardian could request a fresh link to
+       their own inbox and sign in again, indefinitely, until the account row
+       was purged a year later. Deletion did not close the door; it did not
+       touch it. (Every sign-in path and resolvePrincipal now also refuse an
+       account marked deleted -- deletedAccountSignIn.ts -- so this write is one
+       of two locks, not the only one.)
 
        This is the platform's own stated contract, which only the cleanup script
        implemented: scripts/lib/account-cleanup-plan.mjs defines "retire" as

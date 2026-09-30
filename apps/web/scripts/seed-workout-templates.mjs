@@ -281,7 +281,26 @@ export async function seedAll(client, seedDir, placeholders, { dryRun = false } 
   const createdByRole = await resolveSeedAccountRole(client, placeholders.seedAccountId);
   console.log(`seed account role (recorded as created_by_role): ${createdByRole}`);
 
+  /*
+    COMMIT is not in a `finally`. It was, and `finally` runs on the throwing
+    path too: a JavaScript error -- one PostgreSQL never sees -- leaves the
+    transaction open and committable, so the rows written before it were kept
+    by a run that reported failure. Here that is reachable from the files
+    alone: the items CSV is read AFTER the templates are inserted, and
+    loadCsvRecords rethrows every read error but ENOENT, so an unreadable items
+    file would have committed the templates without their items.
+    seed-drill-secondary-skills.mjs:296-321 records the pg regression that
+    measured this. Same shape as that loader, seed-session-scripts.mjs and
+    seed-competence-cohorts.mjs:
+
+      success + apply   -> COMMIT
+      success + dry-run -> ROLLBACK
+      any error         -> ROLLBACK, then rethrow the original error
+
+    seedLoaderTransactions.test.ts pins all three paths.
+  */
   await client.query('BEGIN');
+
   try {
     const templateRecords = await loadCsvRecords(path.join(seedDir, files.templates), placeholders);
     if (templateRecords === null) {
@@ -296,13 +315,21 @@ export async function seedAll(client, seedDir, placeholders, { dryRun = false } 
     } else {
       await seedWorkoutTemplateItems(client, itemRecords, { dryRun });
     }
-  } finally {
-    if (dryRun) {
+  } catch (error) {
+    try {
       await client.query('ROLLBACK');
-      console.log('[dry-run] Rolled back. Nothing was written.');
-    } else {
-      await client.query('COMMIT');
+    } catch {
+      // Swallowed on purpose: a connection that died mid-run makes ROLLBACK throw
+      // too, and that must not replace the error that explains what went wrong.
     }
+    throw error;
+  }
+
+  if (dryRun) {
+    await client.query('ROLLBACK');
+    console.log('[dry-run] Rolled back. Nothing was written.');
+  } else {
+    await client.query('COMMIT');
   }
 }
 

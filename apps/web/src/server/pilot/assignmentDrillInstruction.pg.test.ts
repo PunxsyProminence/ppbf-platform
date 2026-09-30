@@ -544,7 +544,15 @@ async function seededDatabase(): Promise<Client> {
   // an implementation that followed the lineage head would find readable v2
   // content for either audience, through either athlete read, and the
   // substitution would show as words.
+  // v1 is superseded BEFORE v2 is written: the content-import migration's
+  // pilot_drill_library_one_head_per_lineage refuses a second unsuperseded
+  // version in one lineage, so supersede-then-insert is the only order a
+  // version write can take. The end state is the same either way.
   await insertReference(client, { drillId: REF_JAB_V1, label: 'Jab v1', name: 'Jab Return' });
+  await client.query(
+    `update pilot.drill_library set superseded_at = now() where organization_id = $1 and drill_id = $2`,
+    [ORG_A, REF_JAB_V1],
+  );
   await insertReference(client, {
     drillId: REF_JAB_V2,
     label: 'Jab v2',
@@ -553,10 +561,6 @@ async function seededDatabase(): Promise<Client> {
     version: 2,
     supersedesDrillId: REF_JAB_V1,
   });
-  await client.query(
-    `update pilot.drill_library set superseded_at = now() where organization_id = $1 and drill_id = $2`,
-    [ORG_A, REF_JAB_V1],
-  );
   await insertOperationalDrill(client, { drillId: OP_JAB_V1, name: 'Jab Return', referenceDrillId: REF_JAB_V1 });
   await insertOperationalDrill(client, {
     drillId: OP_JAB_V2_ADOPTION,

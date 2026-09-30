@@ -423,8 +423,9 @@ describe('deleting an athlete closes the door the athlete came in through', () =
       await deleteAthleteRecord(admin, ATHLETE_ID, 'withdrew from the program');
 
       const after = await accountRow(client, ATHLETE_ACCOUNT);
-      // active_flag is the one the rest of the platform gates on -- magicLink
-      // and resolvePrincipal both read it and neither reads deleted_at.
+      // active_flag is what the rest of the platform gates on. Sign-in and
+      // resolvePrincipal also refuse deleted_at now (deletedAccountSignIn.ts),
+      // but a deletion still clears the flag rather than rely on that alone.
       expect(after.active_flag).toBe(false);
       expect(after.deleted_at).not.toBeNull();
     });

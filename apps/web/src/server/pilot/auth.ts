@@ -8,6 +8,7 @@ import { seedDefaultDisciplines } from './disciplineSeeds';
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { pinLoginPermitted, usesPin } from './credentialPolicy';
+import { accountDeletedSql, isDeletedAccount, type AccountDeletionFlag } from './deletedAccountSignIn';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { isPlatformLibraryOrganization } from './platformLibraryScope';
 import { seedDefaultSafetyGates } from './safetyGateSeeds';
@@ -85,7 +86,7 @@ export interface PilotPrincipal {
   pinAuthPermitted?: boolean;
 }
 
-interface AccountRow {
+interface AccountRow extends AccountDeletionFlag {
   account_id: string;
   role: PilotRole;
   organization_id: string | null;
@@ -101,7 +102,7 @@ interface AccountRow {
   holds_board_seat: boolean;
 }
 
-interface FederatedAccountRow {
+interface FederatedAccountRow extends AccountDeletionFlag {
   account_id: string;
   role: PilotRole;
   organization_id: string | null;
@@ -173,6 +174,7 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
        a.pin_hash,
        a.must_change_pin,
        a.active_flag,
+       ${accountDeletedSql('a')} as account_deleted,
        a.has_master_shadow_access,
        o.status as organization_status,
        -- A scalar subselect, not a join: a person may hold more than one seat,
@@ -204,10 +206,18 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
   // minor's account.
   //
   // The PIN is checked FIRST, before any of those rejections, so every
-  // outcome costs one scrypt verification: an unknown, inactive, suspended or
-  // PIN-less account is checked against a throwaway hash. The rejections keep
-  // their order and their reason codes; only the timing stops differing.
+  // outcome costs one scrypt verification: an unknown, deleted, inactive,
+  // suspended or PIN-less account pays the same one (a PIN-less or unknown
+  // one against a throwaway hash). The rejections keep their order and their
+  // reason codes; only the timing stops differing.
   const pinIsValid = await verifyPin(pin, data?.pin_hash || await dummyPinHash());
+
+  // Deleted before inactive: an account can be active again and still marked
+  // deleted, which is the case this refusal exists for (deletedAccountSignIn.ts).
+  if (data && isDeletedAccount(data)) {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'deleted_account' });
+    return null;
+  }
 
   if (!data?.active_flag) {
     console.warn('pilot-auth login rejected', { accountId, reason: 'unknown_or_inactive_account' });
@@ -292,6 +302,7 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
        a.athlete_id,
        a.auth_provider,
        a.active_flag,
+       ${accountDeletedSql('a')} as account_deleted,
        a.has_master_shadow_access,
        o.status as organization_status
      from pilot.accounts a
@@ -301,7 +312,10 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
     [normalizedEmail],
   );
 
-  if (!data?.active_flag) {
+  // Deleted before inactive, as in the PIN path (deletedAccountSignIn.ts). No
+  // reason is logged here: this path logs no refusal, and its account_id is
+  // often the person's email address.
+  if (!data || isDeletedAccount(data) || !data.active_flag) {
     return null;
   }
 
@@ -399,7 +413,11 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
       and om.active_flag = true
      where st.token_hash = $1
        and st.revoked_at is null
-       and st.expires_at > now()`,
+       and st.expires_at > now()
+       -- A session held by an account marked deleted resolves to nobody,
+       -- whichever path minted it (deletedAccountSignIn.ts). Not revoked
+       -- here: an inactive account's session is not revoked here either.
+       and not ${accountDeletedSql('a')}`,
     [tokenHash],
   );
 
