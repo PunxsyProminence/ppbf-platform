@@ -46,6 +46,17 @@ export interface HighRiskClassification {
   topic: HighRiskTopic;
   isHighRisk: boolean;
   educationalApproach: boolean;
+  /**
+   * The message is framed as a question ABOUT a subject, regardless of whether
+   * it also carries first-person words.
+   *
+   * Distinct from `educationalApproach`, which is this AND no personal
+   * framing. Both are needed: the stricter one decides whether a message is
+   * ordinary traffic, and this looser one is what stops research and handout
+   * phrasing reaching the acute path. Surfaced rather than recomputed at the
+   * call site, because two copies of this regex would drift.
+   */
+  educationalFraming: boolean;
   examples: {
     allowed: string[];
     blocked: string[];
@@ -149,9 +160,84 @@ export interface ShadowResponseValidation {
 export const SHADOW_SAFE_FILTERED_RESPONSE =
   'I can’t safely provide that generated answer. SHADOW filtered it before display. Consult a qualified coach or medical professional for the next decision. RESEARCH NEEDED — the answer did not pass safety validation.';
 
+/**
+ * Fold the typographic variation a phone keyboard produces, ONCE, before any
+ * pattern in this file runs.
+ *
+ * THE DEFECT THIS CLOSES, and it was live in production:
+ *
+ *   "I can't breathe after that hit."   straight apostrophe -> acute
+ *   "I can\u2019t breathe after that hit."   CURLY apostrophe  -> routine
+ *
+ * Routine means no act-now line, no review row, and no high-risk flag. The
+ * curly apostrophe is what iOS and Android type BY DEFAULT, so every athlete
+ * reporting "I can't breathe", "I can't see" or "my chest doesn't feel right"
+ * from a phone was invisible to the emergency path.
+ *
+ * The codebase already knew. The loss_of_consciousness pattern below carries
+ * `['\u2019]` for ko'd -- one pattern, fixed by hand -- while every can't and
+ * cannot pattern stayed straight-only. shadowChat.test.ts even USES a curly
+ * apostrophe in a case that passes by luck, because that message matches on
+ * "seeing stars" rather than on its apostrophe.
+ *
+ * Which is why this is central rather than another alternation. Per-pattern
+ * character classes are how you get one fixed pattern and fourteen broken
+ * ones, and the next pattern anybody adds starts broken again. Normalising the
+ * INPUT means a pattern author cannot get this wrong.
+ *
+ * Matching only. Never use the result for anything the user reads or anything
+ * persisted -- the athlete's own words are the record.
+ */
+export function normaliseForMatching(text: string): string {
+  return text
+    // Compatibility fold first: it settles full-width Latin, ligatures and
+    // some combining forms before the explicit classes below run.
+    .normalize('NFKC')
+    // Apostrophes and single quotes, including the prime and grave that
+    // autocorrect and copy-paste from documents both produce.
+    .replace(/[\u2018\u2019\u201A\u201B\u2032\u00B4`]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F\u2033]/g, '"')
+    // Dashes, so "can not" typed with an en dash or a minus still reads.
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    // Zero-width characters, which arrive from copy-paste and would otherwise
+    // sit INSIDE a word and defeat a \b boundary invisibly.
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    // Every flavour of space, then collapse runs: a double space between
+    // "chest" and "pain" broke a \s+ pattern that expected one.
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * The topics that are an emergency when someone reports them about
+ * themselves, with their own patterns.
+ *
+ * SEPARATE FROM THE `topics` LOOP BELOW ON PURPOSE. That loop is
+ * first-match-wins, so "I have chest pain and a concussion" classified as
+ * `concussion` -- which is earlier in the list -- and the chest pain was never
+ * seen. The acute decision must not depend on which risky word came first in
+ * the sentence, so it tests these directly instead of reading the loop's
+ * single winner.
+ */
+export const ACUTE_TOPIC_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
+  // Allows words between the body part and the sensation: "my chest FEELS
+  // tight", "tightness IN MY chest". The earlier version required the
+  // sensation immediately after "chest", so "my chest feels tight right now"
+  // graded routine.
+  //
+  // Anchored on "my chest"/"my heart" rather than the bare noun, which keeps
+  // gym vocabulary out -- "chest and shoulder press felt heavy" does not
+  // match, and neither does "chest press".
+  ['chest_pain', /\bmy\s+(?:chest|heart)\b(?!\s*(?:press|fly|flies|day|workout|work\s*out|routine|exercises?|session|sets?|reps?|muscles?|gains?|rate))[^.!?]{0,24}\b(?:pain|hurts?|hurting|aches?|aching|tight|tightness|pressure|heavy|heaviness|burning|crushing|pounding|racing)\b|\b(?:pain|tight|tightness|pressure|heaviness|burning|crushing)\b[^.!?]{0,20}\bin\s+my\s+(?:chest|heart)\b|\b(?:chest|heart)\s+pain\b|\bcardiac\b/i],
+  ['fainting', /\bfaint(?:ed|ing)?\b|\bsyncope\b|\bpassed\s+out\b|\bblacked\s+out\b/i],
+  ['loss_of_consciousness', /(?:loss|lack)\s+of\s+consciousness|\bunconscious\b|\bpassed\s+out\b|\bknocked\s+out\b|\bko'?d\b|\bblacked\s+out\b/i],
+];
+
 // Classify high-risk topics and determine routing
 export function classifyHighRiskTopic(userMessage: string): HighRiskClassification {
-  const msg = userMessage.toLowerCase();
+  // Normalised, not merely lowercased. See normaliseForMatching above.
+  const msg = normaliseForMatching(userMessage).toLowerCase();
 
   const topics: Array<[HighRiskTopic, RegExp]> = [
     ['concussion', /concuss/i],
@@ -161,7 +247,11 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
     ['dehydration', /dehydrat|(?:extreme|excessive)\s+thirst|unable\s+to\s+keep\s+fluids?\s+down/i],
     ['weight_cutting', /(weight.*cut|cut\s+weight|rapid\s+weight|make\s+weight)/i],
     ['rapid_weight_loss', /rapid.*weight|fast\s+weight|lose\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week/i],
-    ['chest_pain', /(chest|heart)\s+pain|cardiac/i],
+    // `hurts` and the rest were absent, so "my chest hurts" graded `none` and
+    // missed the acute set entirely -- the same wording-shaped hole that left
+    // "I have chest pain right now" reading like a sore shoulder, one synonym
+    // further along. Found by probing this classifier rather than by review.
+    ['chest_pain', /(chest|heart)\s+(pain|hurts?|hurting|tight|tightness|pressure)|chest\s+is\s+(tight|hurting|killing)|cardiac/i],
     ['fainting', /faint|syncope/i],
     ['medication', /(take|taking|took)\s+(medicine|medication|drug|pill)/i],
     ['prescription', /prescrip|prescription|prescribed|Rx/i],
@@ -170,7 +260,7 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
     ['return_to_play', /(return.*play|cleared.*play|cleared\s+to)/i],
     ['medical_clearance', /(medical|doctor)\s+clear|cleared|clearance/i],
     ['youth_safety', /(minor|child|kid|young)\s+(safety|harm)/i],
-    ['urgent_symptom', /(can(?:not|'t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'t)\s+move|sudden\s+weakness)/i],
+    ['urgent_symptom', /(can(?:not|'?t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'?t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'?t)\s+move|sudden\s+weakness)/i],
   ];
 
   let classifiedTopic: HighRiskTopic = 'none';
@@ -265,25 +355,11 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
     topic: classifiedTopic,
     isHighRisk: classifiedTopic !== 'none',
     educationalApproach: isEducationalQuery,
+    educationalFraming: hasEducationalFraming,
     examples: examples[classifiedTopic],
   };
 }
 
-/**
- * Topics that are an emergency when someone reports them about themselves.
- *
- * `chest_pain` is here because in substance it was not before: the
- * personal-health-concern branch matched the bare word "pain" and returned
- * before the topic was ever consulted, so "I have chest pain right now" was
- * graded identically to "my shoulder is sore after sparring" and received the
- * non-emergency wording. That was the owner's own worked example when he first
- * ruled on this, and it had never once worked.
- */
-const ACUTE_TOPICS: ReadonlySet<string> = new Set([
-  'chest_pain',
-  'fainting',
-  'loss_of_consciousness',
-]);
 
 /**
  * Delivered above the generated answer when acuity is `acute`, never instead
@@ -324,59 +400,139 @@ export function validateShadowRequest(
   _organizationId: string,
 ): ShadowValidationResult {
   const classification = classifyHighRiskTopic(message);
-  const normalizedMessage = message.toLowerCase();
+  // EVERY PATTERN BELOW READS `text`, NOT `message`. A curly apostrophe from a
+  // phone keyboard turned "I can\u2019t breathe after that hit" into a routine
+  // question with no act-now line and no review row. Normalising once here is
+  // what makes that unrepresentable for a pattern author -- see
+  // normaliseForMatching. `message` itself is never matched against again.
+  const text = normaliseForMatching(message);
+  const normalizedMessage = text.toLowerCase();
 
-  const hasPrescriptionLanguage = /\b(prescribe|prescribed|prescribing|prescription|rx)\b/i.test(message)
-    || /should\s+i\s+take/i.test(message)
-    || /should\s+you\s+take/i.test(message)
-    || /take\s+(?:this\s+)?(?:medication|medicine|drug|pill)/i.test(message);
+  const hasPrescriptionLanguage = /\b(prescribe|prescribed|prescribing|prescription|rx)\b/i.test(text)
+    || /should\s+i\s+take/i.test(text)
+    || /should\s+you\s+take/i.test(text)
+    || /take\s+(?:this\s+)?(?:medication|medicine|drug|pill)/i.test(text);
 
-  const hasRapidWeightCutLanguage = /how\s+do\s+i\s+cut\s+weight/i.test(message)
+  const hasRapidWeightCutLanguage = /how\s+do\s+i\s+cut\s+weight/i.test(text)
     || normalizedMessage.includes('lose weight quickly')
     || normalizedMessage.includes('cut weight for my weight class')
-    || /\b(?:i\s+(?:need|have)\s+to|help\s+me|how\s+(?:can|do)\s+i)\b.{0,35}\bmake\s+weight\b/i.test(message)
-    || /\b(?:i\s+(?:need|want|have)\s+to\s+)?lose\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week\b/i.test(message);
+    || /\b(?:i\s+(?:need|have)\s+to|help\s+me|how\s+(?:can|do)\s+i)\b.{0,35}\bmake\s+weight\b/i.test(text)
+    || /\b(?:i\s+(?:need|want|have)\s+to\s+)?lose\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week\b/i.test(text);
 
-  const hasPersonalContext = /\b(i|me|my|mine|we|our)\b/i.test(message)
-    || /\b(now|currently|today|just happened|during training|after sparring|after (?:a|that|the) hit)\b/i.test(message);
-  const hasUrgentSymptom = /(can(?:not|'t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'t)\s+move|sudden\s+weakness)/i.test(message);
-  const hasAcuteImpactConcern = /(?:after|from).{0,30}(?:hit|blow|punch|fall).{0,60}(?:pain|numb|weak|tingl|blur|bleed|dizz|confus|vomit|can(?:not|'t))/i.test(message);
-  const hasPersonalHealthConcern = /\b(hurt|hurts|hurting|pain|painful|sore|soreness|swollen|swelling|injured|injury|sprain(?:ed|ing)?|strain(?:ed|ing)?|bruised|bruising|numb|numbness|tingling|stiff|stiffness)\b/i.test(message);
+  // "im" is included because hasSelfReport handles it and this did not, which
+  // made that handling unreachable: acute requires BOTH, so "im dizzy" failed
+  // here before the self-report clause was ever consulted.
+  const hasPersonalContext = /\b(i|im|ive|me|my|mine|we|our)\b/i.test(text)
+    || /\b(now|currently|today|just happened|during training|after sparring|after (?:a|that|the) hit)\b/i.test(text);
+  const hasUrgentSymptom = /(can(?:not|'?t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'?t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'?t)\s+move|sudden\s+weakness)/i.test(text);
+  // TWO SHAPES, because only one was covered. The original required "after"
+  // or "from" BEFORE the impact, so "I got hit and now I feel sick" and "I
+  // took a shot to the head and I feel off" both graded routine -- no act-now
+  // line, no review row. How an athlete actually types it is not reliably
+  // prepositional.
+  //
+  // The symptom list gains sick/off/weird/wrong/funny, which is most of the
+  // vocabulary a teenager uses for exactly this.
+  const ACUTE_IMPACT_SYMPTOM = String.raw`(?:pain|hurts?|numb|weak|tingl|blur|bleed|dizz|confus|vomit|sick|nause|off|weird|wrong|funny|can(?:not|'?t))`;
+  const hasAcuteImpactConcern =
+    new RegExp(String.raw`(?:after|from)[^.!?]{0,30}(?:hit|blow|punch|fall|knock|elbow|headbutt)[^.!?]{0,60}` + ACUTE_IMPACT_SYMPTOM, 'i').test(text)
+    || new RegExp(String.raw`\b(?:got|take|took|caught|copped)\s+(?:a\s+|an\s+|that\s+)?(?:hit|shot|blow|punch|knock|elbow|headbutt|clip(?:ped)?)\b[^.!?]{0,60}` + ACUTE_IMPACT_SYMPTOM, 'i').test(text)
+    || new RegExp(String.raw`\b(?:hit|caught|clipped|knocked)\s+(?:me|my)\b[^.!?]{0,60}` + ACUTE_IMPACT_SYMPTOM, 'i').test(text);
+  const hasPersonalHealthConcern = /\b(hurt|hurts|hurting|pain|painful|sore|soreness|swollen|swelling|injured|injury|sprain(?:ed|ing)?|strain(?:ed|ing)?|bruised|bruising|numb|numbness|tingling|stiff|stiffness)\b/i.test(text);
 
-  const hasDiagnosisRequest = /(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i.test(message);
-  const hasClearanceRequest = /\bmedical\s+clear(?:ed|ance)?\b/i.test(message)
-    || /\bclear(?:ed|ance)?\b.{0,40}\b(play|train|training|compete|competition|return|contact|spar|sparring)\b/i.test(message)
-    || /\b(play|train|training|compete|competition|return|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)?\b/i.test(message);
-  const hasMedicationRequest = /(should|do|can|need)\s+(i|you)\s+(take|use|try|get).*(medicine|medication|drug|pill|injection)/i.test(message);
+  const hasDiagnosisRequest = /(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i.test(text);
+  const hasClearanceRequest = /\bmedical\s+clear(?:ed|ance)?\b/i.test(text)
+    || /\bclear(?:ed|ance)?\b.{0,40}\b(play|train|training|compete|competition|return|contact|spar|sparring)\b/i.test(text)
+    || /\b(play|train|training|compete|competition|return|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)?\b/i.test(text);
+  const hasMedicationRequest = /(should|do|can|need)\s+(i|you)\s+(take|use|try|get).*(medicine|medication|drug|pill|injection)/i.test(text);
+
+  /**
+   * Does the sender say the symptom is THEIRS, right now?
+   *
+   * `hasPersonalContext` is not that test. It is true for any of
+   * i/me/my/mine/we/our anywhere in the message, so "My coach asked what can
+   * cause chest pain during exercise" and "Our club is researching what causes
+   * fainting" both reached the acute path and told a coach writing a handout
+   * to stop training and call emergency services.
+   *
+   * This is deliberately narrow: a first-person subject bound to a state or
+   * experience verb, or "my <body part>" with at most two words between. What
+   * it is NOT allowed to do is miss a real report, so it is used only to
+   * OVERRIDE the educational veto below, never as a requirement on its own.
+   */
+  const hasSelfReport =
+    /\b(?:i|i\s*'?\s*m|im|i\s*'?\s*ve|ive)\s+(?:have|has|had|am|are|feel|feeling|felt|get|got|getting|keep|keeps|kept|can\s*'?\s*t|cant|cannot|just|passed|blacked|fainted|vomited|started|woke|been)\b/i.test(text)
+    || /\bmy\s+(?:\w+\s+){0,2}(?:chest|heart|head|neck|back|vision|eyes?|stomach|breathing|balance|speech|pupils?)\b/i.test(text)
+    // A BARE "I'm" IS NOT A SELF-REPORT, and treating it as one reopened the
+    // exact bypass this veto closes: "I'm writing a handout on what causes
+    // fainting" would have been graded acute. It counts only when a symptom
+    // or state follows it closely.
+    || /\b(?:i\s*'?\s*m|im)\b[^.!?]{0,20}\b(?:dizzy|sick|nause\w*|faint|numb|bleeding|blind|deaf|confused|struggling|short\s+of\s+breath|out\s+of\s+breath|seeing\s+stars|hurt|hurting|in\s+pain)\b/i.test(text);
 
   // ACUTE. Ordered first because it is the only branch whose answer carries an
   // extra obligation. Two ways in: an explicit urgent-symptom or acute-impact
   // report, or a topic that IS an emergency when it is about the sender --
   // which is the half chest pain needed and never had.
-  const reportsAcuteTopic = ACUTE_TOPICS.has(classification.topic);
-  if (hasPersonalContext && (hasUrgentSymptom || hasAcuteImpactConcern || reportsAcuteTopic)) {
+  //
+  // THE EDUCATIONAL VETO, AND WHY IT YIELDS TO A SELF-REPORT. Research,
+  // handout and third-party-curiosity phrasing must not reach this branch. But
+  // a real report is often ASKED as a question -- "I have chest pain right
+  // now, what causes it?", "I just fainted, why does that happen?", "my chest
+  // hurts, is that normal?" -- and every one of those carries educational
+  // words. Vetoing on framing alone would drop exactly the messages this
+  // branch exists for. So the veto applies only when nobody is reporting
+  // anything about themselves.
+  //
+  // The asymmetry is deliberate and is the owner's instruction: a missing
+  // act-now line on a real report is the worse error, so an ambiguous case
+  // stays acute.
+  // TESTED DIRECTLY, NOT READ OFF classification.topic. The topic loop is
+  // first-match-wins, so "I have chest pain and a concussion" classified as
+  // `concussion` -- earlier in the list -- and the chest pain was never seen:
+  // elevated, no act-now line. Whether someone gets told to stop must not
+  // depend on which risky word they happened to type first.
+  const acuteTopicMatch = ACUTE_TOPIC_PATTERNS.find(([, pattern]) => pattern.test(text));
+  const reportsAcuteTopic = Boolean(acuteTopicMatch);
+  const vetoedAsEducational = classification.educationalFraming && !hasSelfReport;
+  if (!vetoedAsEducational
+    && hasPersonalContext
+    && (hasUrgentSymptom || hasAcuteImpactConcern || reportsAcuteTopic)) {
     return {
       acuity: 'acute',
       actNow: SHADOW_ACT_NOW_LINE,
       highRisk: true,
-      topic: classification.topic === 'none' ? 'urgent_symptom' : classification.topic,
+      topic: classification.topic === 'none'
+        ? ((acuteTopicMatch ? acuteTopicMatch[0] : 'urgent_symptom') as HighRiskTopic)
+        : classification.topic,
       // Severity downstream keys on these names; a topic that IS the emergency
       // keeps its own name so a reviewer can see which one it was.
-      classification: reportsAcuteTopic ? classification.topic : 'urgent_personal_symptom',
+      // The topic that actually matched, not the loop's winner, so a
+      // reviewer sees which emergency was reported rather than whichever
+      // risky word came first.
+      classification: acuteTopicMatch ? acuteTopicMatch[0] : 'urgent_personal_symptom',
     };
   }
 
-  // EDUCATIONAL FRAMING, NO PERSONAL CONTEXT -> routine.
+  // EDUCATIONAL FRAMING, NO PERSONAL CONTEXT -> routine ACUITY.
   //
-  // "What is a concussion?" is answered like any other question and queues no
-  // review, which is what it did before as well. The owner kept this queue "as
-  // now" and was not offered a wider one; grading every general question about
-  // a risky subject as elevated would have widened it by construction. A review
-  // queue that fills with "what is a concussion?" stops being read, and then it
-  // misses the report that mattered.
+  // THE COMMENT THAT WAS HERE WAS FACTUALLY WRONG, and it was wrong in the
+  // direction that made this look safe. It claimed "What is a concussion?"
+  // queued no review before either, and used that to argue this branch kept
+  // the queue's breadth. Checked against base b4f58159: route.ts:361 returned
+  // state 'filtered' for a FALLBACK_RESPONSES hit and route.ts:1310 queued a
+  // human review on state 'filtered', so educational concussion, weight-cut,
+  // return-to-play and clearance questions WERE queued. I had reasoned only
+  // about the pre-generation write, found it silent for these, and concluded
+  // they were never queued at all.
   //
-  // `highRisk` and `topic` still travel, because downstream tagging and the
-  // evidence tier want to know the subject even when nothing needs doing.
+  // So this branch NARROWED the queue, which is the opposite of the ruling it
+  // cited. The fix is not here: acuity no longer decides who is reviewed.
+  // `highRisk` does, at the route, which is what OD-2026-09-30-006 item 4
+  // always said. Acuity now decides only who gets the act-now line and the
+  // readiness bypass -- which is all it should ever have decided.
+  //
+  // `highRisk` and `topic` still travel, and now they carry the review
+  // decision with them.
   if (classification.educationalApproach) {
     return {
       acuity: 'routine',

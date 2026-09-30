@@ -1998,6 +1998,246 @@ describe('SHADOW pre-generation safety precedence', () => {
     });
   });
 
+  // =========================================================================
+  // THE THREE BLOCKING FINDINGS FROM THE ARCHITECT REVIEW OF 9208457a.
+  //
+  // All three were verified against the code before being accepted, and two
+  // were my errors. Each test below names the defect it would have caught,
+  // because the version of this file that shipped 9208457a was green for all
+  // three.
+  // =========================================================================
+
+  describe('B1: an acute report survives a dependency failing underneath it', () => {
+    // These make real dependencies reject. The file's beforeEach clears calls
+    // but not implementations, so without this the rejection survives into a
+    // later describe and detonates somewhere unrelated -- which has already
+    // happened once in this file.
+    afterEach(() => {
+      mockGetProfile.mockReset();
+      mockGetProfile.mockResolvedValue({} as never);
+      mockAppendConversationExchange.mockReset();
+      mockAppendConversationExchange.mockResolvedValue('assistant-message-1' as never);
+    });
+
+    // THE DEFECT. The acute path skips readiness and the global limits, which
+    // gets it past the gates and then leaves it to die on the next database
+    // call. getOrCreateShadowUserProfile, resolveConversation and
+    // appendConversationExchange all run afterwards; any of them throwing
+    // reached the outer catch, which answered the generic degraded reply with
+    // requiresHumanReview false and NO act-now line.
+    //
+    // A half-broken database is the exact condition the canned line exists
+    // for, and it was the one condition that lost it. The old test only made
+    // the readiness PROBE throw -- the single dependency the acute path
+    // already skips -- so it proved the easy half and read as complete.
+    /**
+     * THE CONVERSATION-WRITE ROW NEEDS A WORKING PROVIDER, and the first
+     * version of this test did not give it one.
+     *
+     * resolveConversation and appendConversationExchange run only under
+     * `if (state === 'ok' || state === 'filtered')`. With no provider
+     * configured the state is 'degraded', so the rejection never fired and
+     * the row passed against the UNFIXED code -- green while testing nothing.
+     * Caught by running these tests against the old source before trusting
+     * them, which is the only reason it is not still in here.
+     */
+    const withWorkingProvider = () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'Here is what to watch for.' } }] }),
+      }) as unknown as typeof fetch;
+    };
+
+    it.each([
+      [
+        'the user profile read',
+        () => {
+          mockGetProfile.mockRejectedValue(new Error('relation "pilot.shadow_user_profiles" does not exist'));
+        },
+      ],
+      [
+        'the conversation write',
+        () => {
+          withWorkingProvider();
+          mockAppendConversationExchange.mockRejectedValue(new Error('relation "pilot.shadow_chat_messages" does not exist'));
+        },
+      ],
+    ])('keeps the act-now line when %s fails', async (_name, breakIt) => {
+      breakIt();
+
+      const response = await POST(postRequest({ message: URGENT_MESSAGE }));
+      const body = await response.json();
+
+      expect(body.response).toContain('tell a coach');
+      // The banner must not claim less than the queue did. The review row was
+      // written before this point, so saying "no human needed" here would be
+      // false about a row that exists.
+      expect(body.requiresHumanReview).toBe(true);
+      expect(body.error).not.toBe('Not found');
+    });
+
+    // Proves the row above is not vacuous a second way: with the provider
+    // working and nothing broken, the conversation write is actually reached.
+    // If a later change moves it behind another condition, this fails and the
+    // failure row stops being evidence.
+    it('CONTROL: the conversation write is reached at all on this path', async () => {
+      withWorkingProvider();
+
+      await POST(postRequest({ message: URGENT_MESSAGE }));
+
+      expect(mockAppendConversationExchange).toHaveBeenCalled();
+    });
+
+    // Without this, a fallback that fired for EVERY request would pass both
+    // rows above while quietly telling anyone with a broken database to stop
+    // training and call emergency services.
+    it('POSITIVE CONTROL: a benign request gets no act-now line when the same dependency fails', async () => {
+      mockGetProfile.mockRejectedValue(new Error('relation "pilot.shadow_user_profiles" does not exist'));
+
+      const response = await POST(postRequest({ message: BENIGN_MESSAGE }));
+      const body = await response.json();
+
+      expect(String(body.response ?? '')).not.toContain('tell a coach');
+    });
+
+    // "You may not be here at all" still outranks the line. The fallback is
+    // armed only after authorization passes, and this proves the ordering
+    // rather than trusting the comment that asserts it.
+    it('an unauthorized athlete id is still refused, act-now or not', async () => {
+      const accessCheck = jest.mocked(assertActorCanAccessAthlete);
+      accessCheck.mockRejectedValueOnce(new Error('Forbidden: athlete cannot access another athlete record'));
+
+      const response = await POST(postRequest({
+        message: URGENT_MESSAGE,
+        athleteId: 'athlete-not-mine',
+      }));
+      const body = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(String(body.response ?? '')).not.toContain('tell a coach');
+    });
+  });
+
+  describe('B2: research framing does not reach the acute bypass', () => {
+    // THE DEFECT. hasPersonalContext is true for any of i/me/my/mine/we/our
+    // anywhere in the message, so a coach writing a handout was graded acute
+    // -- skipping readiness and both global limits, and being told to stop
+    // training and call emergency services.
+    it.each([
+      'My coach asked what can cause chest pain during exercise.',
+      'Our club is researching what causes fainting',
+      'We are writing a handout on what causes fainting in boxers',
+      'Our coaches want to understand chest pain risk factors',
+    ])('NEGATIVE CONTROL: %s is answered normally and still pays the gates', async (message) => {
+      const readiness = jest.mocked(assertShadowRuntimeReadiness);
+      const seen: string[] = [];
+      mockEnforceRateLimit.mockImplementation(async (input) => {
+        seen.push(String(input?.endpointKey));
+      });
+
+      const response = await POST(postRequest({ message }));
+      const body = await response.json();
+
+      expect(String(body.response ?? '')).not.toContain('tell a coach');
+      // Not merely "no act-now line" -- the gates it was skipping must be back.
+      expect(readiness).toHaveBeenCalled();
+      expect(seen).toContain('chat');
+      expect(seen).toContain('chat_daily');
+    });
+
+    // THE OTHER DIRECTION, AND THE OWNER'S EXPLICIT INSTRUCTION: a real report
+    // is often ASKED as a question, and every one of these carries
+    // educational words. A veto on framing alone would drop exactly the
+    // messages the acute path exists for. Missing the line on a real report is
+    // the worse error of the two.
+    it.each([
+      'I have chest pain right now, what causes it?',
+      'I just fainted, why does that happen?',
+      'my chest hurts, is that normal?',
+    ])('POSITIVE CONTROL: %s is still acute despite the question framing', async (message) => {
+      const readiness = jest.mocked(assertShadowRuntimeReadiness);
+
+      const response = await POST(postRequest({ message }));
+      const body = await response.json();
+
+      expect(body.response).toContain('tell a coach');
+      expect(readiness).not.toHaveBeenCalled();
+    });
+
+    // "my chest hurts" graded `none` and missed the acute set entirely,
+    // because the chest_pain pattern was /(chest|heart)\s+pain/ and "chest
+    // hurts" does not match it -- the same wording-shaped hole that left "I
+    // have chest pain right now" reading like a sore shoulder, one synonym
+    // further along. Found by probing the classifier, not by review.
+    it('a self-reported chest pain phrased as "hurts" is acute', async () => {
+      const response = await POST(postRequest({ message: 'My chest hurts' }));
+      const body = await response.json();
+
+      expect(body.response).toContain('tell a coach');
+      expect(mockQueueHumanReview).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'critical' }),
+      );
+    });
+  });
+
+  describe('B3: an educational high-risk question is reviewed, as it was before', () => {
+    // THE DEFECT, AND IT WAS MINE TWICE OVER. I gave educational high-risk
+    // questions acuity 'routine' and drove the review queue from acuity, so
+    // they stopped being queued or flagged. Then I reported that as having
+    // AVOIDED widening the queue.
+    //
+    // It was the opposite. Checked against base b4f58159: a FALLBACK_RESPONSES
+    // hit returned state 'filtered' (route.ts:361) and state 'filtered' queued
+    // a review (route.ts:1310), so "what is a concussion?" WAS reviewed
+    // before. I had reasoned only about the pre-generation write, found it
+    // silent for these, and concluded they were never queued at all.
+    //
+    // OD-2026-09-30-006 item 4 says the write "continues for every high-risk
+    // message, unchanged in breadth", and the owner chose "everything
+    // high-risk, as now" over a narrower option. The ruling was right; the
+    // code had drifted from it. The queue and the flag are now driven by
+    // `highRisk`, and only the act-now line and the bypass by acuity.
+    it.each([
+      'What is a concussion?',
+      'What are the symptoms of a concussion?',
+      'What is the return-to-play protocol?',
+      'What are the risks of rapid weight loss?',
+    ])('%s is answered, rate-limited, unflagged for urgency, and still reviewed', async (message) => {
+      const readiness = jest.mocked(assertShadowRuntimeReadiness);
+      const seen: string[] = [];
+      mockEnforceRateLimit.mockImplementation(async (input) => {
+        seen.push(String(input?.endpointKey));
+      });
+
+      const response = await POST(postRequest({ message }));
+      const body = await response.json();
+
+      // Answered, not refused, and NOT with the canned string this PR deleted.
+      expect(String(body.response ?? '')).not.toContain('contact your medical team immediately');
+      // No act-now line: nobody is reporting anything about themselves.
+      expect(String(body.response ?? '')).not.toContain('tell a coach');
+      // It pays the gates like any other question -- an answer needs the model.
+      expect(readiness).toHaveBeenCalled();
+      expect(seen).toContain('chat');
+      expect(seen).toContain('chat_daily');
+      // AND IT IS STILL REVIEWED. This is the assertion that was missing, and
+      // its absence is why a change that silently narrowed the queue left 268
+      // tests green.
+      expect(body.requiresHumanReview).toBe(true);
+      expect(mockQueueHumanReview).toHaveBeenCalled();
+    });
+
+    // The queue is not simply "everything". Ordinary traffic must stay out of
+    // it, or the breadth claim above means nothing.
+    it('POSITIVE CONTROL: an ordinary question is neither flagged nor queued', async () => {
+      const response = await POST(postRequest({ message: BENIGN_MESSAGE }));
+      const body = await response.json();
+
+      expect(body.requiresHumanReview).toBe(false);
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    });
+  });
+
   describe('gates that safety does NOT outrank', () => {
     it('athlete authorization still refuses an urgent message', async () => {
       const accessCheck = jest.mocked(assertActorCanAccessAthlete);

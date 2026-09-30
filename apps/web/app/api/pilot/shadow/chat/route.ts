@@ -510,6 +510,33 @@ function resolveSessionType(input: {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<ShadowChatResponse>> {
+  /**
+   * The act-now line for an acute report, held OUTSIDE the try so the outer
+   * catch can still deliver it.
+   *
+   * Why it has to live here. The acute path skips readiness and the global
+   * limits, but plenty of database work still runs after it --
+   * getOrCreateShadowUserProfile, resolveConversation,
+   * appendConversationExchange. If any of those throws, control leaves for the
+   * catch at the bottom, which knows nothing about the request and returns the
+   * generic "SHADOW is temporarily unavailable" with requiresHumanReview
+   * false and no act-now line. So the one scenario the canned line exists for
+   * -- a database unwell enough that nothing else works -- was the scenario
+   * that lost it.
+   *
+   * Set once, as soon as acuity is known and AFTER authentication and
+   * athlete/conversation authorization have passed. It must never be set
+   * before those: an unauthenticated or unauthorized caller gets their 401 or
+   * 403 unchanged, because "you may not be here" outranks this and a
+   * safeguarding line is not a reason to answer a stranger.
+   *
+   * A single variable rather than a try/catch per dependency, for the same
+   * reason the chokepoint below is one line: a rule every new await has to
+   * remember is a rule that decays, and this file has already lost that bet
+   * three times.
+   */
+  let acuteFallbackLine: string | null = null;
+
   try {
     // Authenticate via session cookie (consistent with all other SHADOW routes)
     const principal = await requirePrincipal(request);
@@ -615,6 +642,32 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // chokepoint stayed put on purpose: a second call site is how this contract
     // decayed three times, so what moves is the two gates, not the response.
     const requestValidation = validateShadowRequest(message, userRole, organizationId);
+
+    // ARMED HERE, BY DECISION, NOT BY POSITION.
+    //
+    // This used to be armed 250 lines further down, after the athlete and
+    // conversation authorization calls -- on the reasoning that "every gate
+    // deciding whether this caller may be here has passed". That reasoning
+    // confused a REFUSAL with a FAILURE, and the difference was reproducible:
+    // assertConversationAccess and assertActorCanAccessAthlete both query
+    // Postgres, so a pool exhaustion or failover during them threw before the
+    // arming, and an acute report lost the act-now line AND its review row --
+    // but only when the client had sent a conversationId or athleteId. The
+    // same message on a fresh session kept the line. Whether a half-broken
+    // database costs someone the line must not depend on that.
+    //
+    // It is the same distinction OD-2026-09-30-005 already draws for the
+    // safety_review limiter: exhaustion is a decision, an error is an
+    // infrastructure fault, and collapsing them discards safeguarding work at
+    // the moment the database is already unwell.
+    //
+    // Arming early is safe because the CATCH decides, not this line: a genuine
+    // 401, 403 or 404 is excluded there by status. An authorization refusal
+    // still refuses; only an infrastructure failure inside it now keeps the
+    // line.
+    if (requestValidation.acuity === 'acute' && requestValidation.actNow) {
+      acuteFallbackLine = requestValidation.actNow;
+    }
 
     // Chat was the only SHADOW route without a readiness guard, which is why an
     // unmigrated environment surfaced here as an opaque 500 rather than a 503
@@ -760,6 +813,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // it. The owner kept this queue at its existing breadth -- every high-risk
     // message, acute or not -- when offered a narrower one
     // (OD-2026-09-30-006).
+    // Whether the pre-generation row was actually persisted. Read by the
+    // post-generation write below so one request cannot produce two rows for
+    // the same fact.
+    let preGenerationReviewWritten = false;
+
     const queueHighRiskReview = async (): Promise<void> => {
       // THE QUEUE WRITE IS THROTTLED; THE RESPONSE NEVER IS. The global chat
       // limits used to bound how often one account could cause a row here.
@@ -823,6 +881,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
               validationClassification: requestValidation.classification ?? null,
             },
           });
+          preGenerationReviewWritten = true;
         } catch {
           // Best effort by design: a failed review row must not also cost the
           // athlete their answer.
@@ -859,13 +918,27 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // ===================================================================
     // SAFETY CHOKEPOINT
     //
-    // Everything ABOVE this line may refuse a request without consulting the
-    // safety boundary: authentication, structural validation of the body, core
-    // runtime readiness, the global chat and daily abuse limits, and
-    // athlete/conversation authorization. Those are either "there is no usable
-    // request" or "this caller may not be here at all", and safety must not
-    // become a way around a tenant boundary or a throttle -- a caller could
-    // otherwise buy an exemption by typing a symptom.
+    // Everything ABOVE this line may refuse a request: authentication,
+    // structural validation of the body, core runtime readiness, the global
+    // chat and daily abuse limits, and athlete/conversation authorization.
+    //
+    // WITH ONE EXCEPTION, WHICH THIS COMMENT USED TO DENY. It said a caller
+    // could not "buy an exemption by typing a symptom", and that stopped being
+    // true when the owner ruled: an ACUTE report now skips core readiness and
+    // both global limits (OD-2026-09-30-005). The comment survived the change
+    // that falsified it, which is how a reader ends up trusting a guarantee
+    // the code stopped making.
+    //
+    // What is still unbypassable, and is the part the original sentence was
+    // actually protecting: authentication, structural validation, and athlete
+    // and conversation authorization. A guessed athlete or conversation id
+    // must not become reachable by typing a symptom, and it cannot. Those are
+    // "this caller may not be here at all"; readiness and a throttle are only
+    // "not right now", which is the difference the ruling turns on.
+    //
+    // The exemption is also narrower than a symptom word: research and handout
+    // phrasing is vetoed out of the acute set in validateShadowRequest, so
+    // "what can cause chest pain" does not buy it.
     //
     // Everything BELOW this line is a capability or cost refusal: which SHADOW
     // mode you may run, whether the worker for it is configured, whether you
@@ -898,7 +971,22 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // capability or cost refusal, and an acute report still must not receive
     // one -- that is handled by routing it to the plain synchronous path above
     // rather than by returning early here.
-    if (requestValidation.acuity !== 'routine') {
+    //
+    // KEYED ON highRisk, NOT ON ACUITY. This read `acuity !== 'routine'`, which
+    // silently dropped educational high-risk questions out of the review queue
+    // -- and they were IN it before this branch. At base b4f58159 a
+    // FALLBACK_RESPONSES hit returned state 'filtered' (route.ts:361) and
+    // state 'filtered' queued a review (route.ts:1310), so "what is a
+    // concussion?" was reviewed. OD-2026-09-30-006 item 4 says the write
+    // "continues for every high-risk message, unchanged in breadth", and the
+    // owner chose "everything high-risk, as now" over a narrower option. The
+    // ruling was right and this code had drifted from it.
+    //
+    // The two concerns are now separate, and that separation is the fix:
+    // `highRisk` decides who a human looks at, `acuity` decides only who gets
+    // the act-now line and the readiness bypass. Conflating them is what let
+    // one change move both.
+    if (requestValidation.highRisk) {
       await queueHighRiskReview();
     }
 
@@ -1383,12 +1471,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // This used to be implied rather than stated: every high-risk request
     // ended at the safety boundary, which hardcoded `requiresHumanReview:
     // true`. Those requests are answered on this path now, so without the
-    // third term an acute report that generated cleanly would return
+    // third term a high-risk request that generated cleanly would return
     // `requiresHumanReview: false` while a review row for it had just been
     // written -- the banner and the queue disagreeing about the same request.
+    //
+    // The third term reads `highRisk` for the same reason the queue write
+    // does: the flag and the row must be decided by ONE signal, or a later
+    // edit moves one of them and nothing fails.
     const persistedRequiresHumanReview = responseValidation.requiresHumanReview
       || state === 'filtered'
-      || requestValidation.acuity !== 'routine';
+      || Boolean(requestValidation.highRisk);
     const persistedHandoff = resolveHandoff({
       requiresHumanReview: persistedRequiresHumanReview,
       // The response's own topic wins. A benign question can still draw an
@@ -1440,7 +1532,26 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
             }
           : undefined,
       });
-      if (state === 'filtered' || responseValidation.requiresHumanReview) {
+      // ONE ROW PER REQUEST, unless the RESPONSE raised something the request
+      // did not.
+      //
+      // Both writes now exist on the same path, and before this guard a
+      // high-risk request whose answer was then filtered produced TWO review
+      // rows. Base wrote at most one: the pre-generation write only ran for
+      // requests that returned immediately, so the two could never both fire.
+      //
+      // The post-generation write is still needed for the case it was built
+      // for -- an answer that volunteers a high-risk topic the question never
+      // raised, e.g. a benign question drawing unprompted weight-cut guidance.
+      // That is genuinely new information and gets its own row. When the
+      // response topic is the one the request already carried, the
+      // pre-generation row has said it, and a second row is noise in a queue
+      // whose whole value is that someone reads it.
+      const responseRaisedSomethingNew = Boolean(
+        responseValidation.topic && responseValidation.topic !== requestValidation.topic,
+      );
+      const skipDuplicateReview = preGenerationReviewWritten && !responseRaisedSomethingNew;
+      if (!skipDuplicateReview && (state === 'filtered' || responseValidation.requiresHumanReview)) {
         const reviewTicket = {
           organizationId,
           accountId: userId,
@@ -1556,6 +1667,70 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       citations,
     });
   } catch (error) {
+    // AN ACUTE REPORT KEEPS ITS ACT-NOW LINE WHEN A DEPENDENCY FAILS.
+    //
+    // This is the whole reason the line is canned. Skipping readiness and the
+    // global limits got the acute request PAST the gates, and then left it to
+    // die on the next database call: getOrCreateShadowUserProfile,
+    // resolveConversation and appendConversationExchange all run afterwards,
+    // and any one of them throwing landed here, where the generic handler
+    // answered "SHADOW is temporarily unavailable" with requiresHumanReview
+    // false. A half-broken database is precisely the condition this was built
+    // for, and it was the one condition that lost it.
+    //
+    // FIRST IN THE CATCH, ahead of the rate-limit branch, because for an acute
+    // report there is no error here worth preferring to the line.
+    //
+    // 401, 403 and 404 are excluded, and that exclusion is now the ONLY thing
+    // separating a refusal from a failure -- the arming above no longer tries
+    // to do it by position.
+    //
+    // 401/403: "you may not be here" outranks a safeguarding line. A stranger
+    // is not told to stop training.
+    // 404: a conversation that genuinely does not exist is a refusal too.
+    //
+    // KNOWN RESIDUAL GAP, recorded rather than papered over. shadowConversations
+    // converts ANY throw inside assertConversationSubjectAccess into the
+    // SHADOW_CONVERSATION_NOT_FOUND sentinel, which maps to 404 here. So a
+    // database fault on that one path is indistinguishable at this point from
+    // a genuine not-found, and still loses the line. Closing it means teaching
+    // that helper to tell the two apart, which is a different file from this
+    // slice's allowlist.
+    //
+    // requiresHumanReview is true and the row was already written before this
+    // point, so the banner and the queue agree even on this path.
+    if (acuteFallbackLine) {
+      // The sentinel is checked BY NAME, not by status. jsonError does not map
+      // SHADOW_CONVERSATION_NOT_FOUND to 404 -- a dedicated branch further
+      // down this catch does -- so a status test alone let a genuine
+      // not-found through as a 200 carrying the act-now line. Caught by the
+      // pre-existing conversation-authorization test, which is the reason
+      // that test is worth having.
+      const acuteStatus = jsonError(error).status;
+      const isRefusal = acuteStatus === 401
+        || acuteStatus === 403
+        || acuteStatus === 404
+        || (error instanceof Error && error.message === 'SHADOW_CONVERSATION_NOT_FOUND');
+      if (!isRefusal) {
+        console.error('SHADOW acute report fell back to the act-now line after a dependency failed');
+        return NextResponse.json(
+          {
+            success: false,
+            state: 'degraded',
+            response: `${acuteFallbackLine}\n\n${DEGRADED_RESPONSE}`,
+            messageId: `msg_${Date.now()}`,
+            createdAt: new Date().toISOString(),
+            filtered: false,
+            requiresHumanReview: true,
+            evidenceTier: 'RESEARCH_NEEDED',
+            handoff: resolveHandoff({ requiresHumanReview: true, topic: undefined }),
+            error: 'SHADOW could not complete this request.',
+          },
+          { status: 200 },
+        );
+      }
+    }
+
     if (error instanceof ShadowRateLimitExceeded) {
       return NextResponse.json(
         {
