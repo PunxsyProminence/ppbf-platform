@@ -87,7 +87,7 @@ const RATE_LIMIT_DEFAULTS = {
   //
   // Exceeding it suppresses the QUEUE WRITE ONLY. It never suppresses the
   // safeguarding response, and a failure of this limiter's own storage is
-  // NOT treated as exhaustion -- see respondWithSafetyBoundary.
+  // NOT treated as exhaustion -- see queueHighRiskReview in the chat route.
   safety_review: { limit: 3, windowSeconds: 3_600 },
 } as const;
 
