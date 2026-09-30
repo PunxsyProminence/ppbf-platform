@@ -62,8 +62,8 @@ deriveEvidenceTier(claim):
 **Two invariants worth stating explicitly, because they are the point of the change:**
 
 1. **`PROVEN` requires boxing-specific evidence at authority tier 1–2.** Transferred evidence never reaches
-   `PROVEN`, however much of it there is. In the registry this leaves 115 of 1,193 claims at `PROVEN` — all
-   boxing-specific, none contested.
+   `PROVEN`, however much of it there is. In the registry this leaves 122 of 1,193 claims at `PROVEN` (section 4)
+   — all boxing-specific, none contested.
 2. **A contested claim can never read as `PROVEN`.** Under the count rule it frequently would.
 
 ## 3. Authority tier scale
@@ -82,12 +82,18 @@ Assigned per source; `shadow_library_sources.authority_tier` is a smallint clamp
 
 | Tier | Claims | Share |
 |---|---|---|
-| PROVEN | 115 | 10% |
-| EMERGING | 796 | 67% |
-| EXPERIMENTAL | 227 | 19% |
+| PROVEN | 122 | 10% |
+| EMERGING | 821 | 69% |
+| EXPERIMENTAL | 195 | 16% |
 | RESEARCH_NEEDED | 55 | 5% |
 
-The full input-to-output mapping is in `evidence_tier_mapping_table.csv`.
+Each claim is graded on its source row's `authority_tier`, as runtime grades it; until 2026-09-29 this table read
+115 / 796 / 227 / 55, graded on the copy of the tier in each chunk's metadata, which runtime never reads (the same
+corpus graded 118 / 796 / 224 / 55 on its source rows). The 2026-09-29 corrections that set the tier-conflict
+sources by section 3, on both the source row and its chunks, then moved 29 claims: 25 from EXPERIMENTAL to
+EMERGING and 4 from EXPERIMENTAL to PROVEN.
+
+The full input-to-output mapping is in `evidence_tier_mapping_table.csv` (on the same source-row basis).
 
 ## 5. Implementation notes for your team
 

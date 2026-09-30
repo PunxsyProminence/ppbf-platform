@@ -164,6 +164,12 @@ beforeAll(async () => {
   const migrate = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await migrate.connect();
   await migrate.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
+  // pilot.accounts.deleted_at: the minter refuses a deleted fixture, and the
+  // base schema does not create the column. Production applies it through
+  // apply-migrations ('data-retention-deletion').
+  await migrate.query(
+    await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8'),
+  );
   await migrate.query(
     `insert into pilot.organizations (organization_id, organization_name, status)
      values ($1, $1, 'active') on conflict do nothing`,
@@ -300,6 +306,22 @@ describe('mintGateSession', () => {
         connectionString: testConnectionString(),
         accountId: 'gate-inactive',
       })).rejects.toThrow(/is inactive/);
+    });
+
+    test('refuses an account marked deleted, even when it is active again, and writes no session row', async () => {
+      // Sign-in refuses a deleted account (OD-2026-09-29-003 Q9) and
+      // resolvePrincipal resolves its sessions to nobody, so this would 401 on
+      // first use. Active and a member: deleted_at is the only thing wrong.
+      await makeAccount({ accountId: 'gate-deleted', role: 'organization_admin' });
+      await rawQuery('update pilot.accounts set deleted_at = now() where account_id = $1', ['gate-deleted']);
+
+      await expect(mintGateSession({
+        connectionString: testConnectionString(),
+        accountId: 'gate-deleted',
+      })).rejects.toThrow(/is marked deleted/);
+
+      const rows = await rawQuery('select 1 from pilot.session_tokens where account_id = $1', ['gate-deleted']);
+      expect(rows).toHaveLength(0);
     });
 
     test('writes no session row when it refuses', async () => {

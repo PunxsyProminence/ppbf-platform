@@ -72,6 +72,7 @@ export async function mintGateSession({
          a.organization_id,
          a.auth_provider,
          a.active_flag,
+         (a.deleted_at is not null) as account_deleted,
          o.status as organization_status,
          exists (
            select 1
@@ -97,6 +98,20 @@ export async function mintGateSession({
     if (expectedRole && account.role !== expectedRole) {
       throw new Error(
         `Gate fixture account "${accountId}" has role "${account.role}", expected "${expectedRole}".`,
+      );
+    }
+
+    // Sign-in refuses an account marked deleted (OD-2026-09-29-003 Q9), and
+    // resolvePrincipal resolves any session it holds to nobody -- so a
+    // session minted here would 401 on first use with nothing saying why.
+    // Before the inactive check: setting a deleted account active again does
+    // not help. Same expression as accountDeletedSql in
+    // src/server/pilot/deletedAccountSignIn.ts, which this .mjs cannot import;
+    // anything but an explicit false refuses.
+    if (account.account_deleted !== false) {
+      throw new Error(
+        `Gate fixture account "${accountId}" is marked deleted (pilot.accounts.deleted_at is set). `
+        + `Sign-in refuses deleted accounts, so every request would answer 401.`,
       );
     }
 

@@ -76,6 +76,9 @@ const SCHEMA_FILES = [
   'pilot_slice_postgres_shadow_evidence_migration.sql',
   'pilot_slice_postgres_shadow_chunk_embedding_migration.sql',
   'pilot_slice_postgres_retraction_surveillance_migration.sql',
+  // The shared platform shelf (__platform__), which search reads and coverage
+  // now counts (R1, Jason 2026-09-29).
+  'pilot_slice_postgres_platform_library_scope_migration.sql',
 ];
 
 let PG_PORT: number;
@@ -424,7 +427,11 @@ describe('capability coverage (real database)', () => {
     expect(rule.coverage_state).toBe('uncovered');
   });
 
-  test('a rule matching the registered doctrine source grades as covered', async () => {
+  // Coverage counts what search can serve, not what is registered. The last
+  // write-path test left the doctrine document withdrawn (a chunk arrived after
+  // approval), so search returns nothing for it -- and coverage must say so
+  // until the document is reviewed again. It used to read covered throughout.
+  test('a rule matching the registered doctrine source grades as covered only once search can serve it', async () => {
     await routes.postCoverage(jsonRequest('/api/pilot/shadow/library/capability-coverage', 'POST', {
       capability_key: 'shadow.doctrine.authority-boundary',
       required_source_types: ['internal_policy'],
@@ -432,15 +439,148 @@ describe('capability coverage (real database)', () => {
       minimum_source_count: 1,
     }));
 
+    async function recomputedState(): Promise<string> {
+      const recompute = await routes.postCoverage(
+        jsonRequest('/api/pilot/shadow/library/capability-coverage', 'POST', { action: 'recompute' }),
+      );
+      const payload = await recompute.json();
+      const rule = payload.items.find(
+        (item: { capability_key: string }) => item.capability_key === 'shadow.doctrine.authority-boundary',
+      );
+      return rule.coverage_state;
+    }
+
+    async function gapTicket() {
+      const [ticket] = await rawQuery<{ status: string; metadata: Record<string, unknown> }>(
+        `select status, metadata from pilot.shadow_research_requirements
+         where organization_id = $1
+           and source_event_name = 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED'
+           and source_entity_id = $2`,
+        [ORG_ID, 'shadow.doctrine.authority-boundary'],
+      );
+      return ticket;
+    }
+
+    expect(await search('clinical conclusion evidence')).toHaveLength(0);
+    expect(await recomputedState()).toBe('uncovered');
+    expect((await gapTicket()).status).toBe('open');
+
+    const [document] = await rawQuery<{ document_id: string }>(
+      `select document_id from pilot.shadow_library_documents
+       where organization_id = $1 and document_name = $2`,
+      [ORG_ID, 'SHADOW Canonical Authority Model'],
+    );
+    const indexing = await routes.patchReview(jsonRequest('/api/pilot/shadow/evidence/review', 'PATCH', {
+      entityType: 'document',
+      entityId: document.document_id,
+      action: 'complete_indexing',
+    }));
+    expect(indexing.status).toBe(200);
+    const approval = await routes.patchReview(jsonRequest('/api/pilot/shadow/evidence/review', 'PATCH', {
+      entityType: 'document',
+      entityId: document.document_id,
+      action: 'review',
+      approvalState: 'approved',
+    }));
+    expect(approval.status).toBe(200);
+
+    expect((await search('clinical conclusion evidence')).length).toBeGreaterThan(0);
+    expect(await recomputedState()).toBe('covered');
+
+    // R2 (Jason 2026-09-29): the check closes the gap ticket it opened, through
+    // the same route a curator calls.
+    const closed = await gapTicket();
+    expect(closed.status).toBe('resolved');
+    expect(closed.metadata).toEqual(expect.objectContaining({
+      resolution: 'capability_covered',
+      resolved_by_account_id: ACCOUNT_ID,
+      resolved_by_role: 'organization_admin',
+    }));
+  });
+
+  // R1 (Jason 2026-09-29): what search serves from the shared platform shelf
+  // is coverage too. Written by hand because no principal can exist in
+  // __platform__ -- the importer is its only writer.
+  test('a gym rule answered only by the platform shelf reads covered, and search serves the same evidence', async () => {
+    const PLATFORM = '__platform__';
+    await rawQuery(
+      `insert into pilot.shadow_library_sources
+         (source_id, organization_id, title, source_type, authority_tier, status,
+          approval_state, verification_state,
+          approved_by_account_id, approved_at, verified_by_account_id, verified_at)
+       values ('src-platform-nutrition', $1, 'Platform nutrition review', 'peer_reviewed', 1, 'active',
+          'approved', 'verified', $2, now(), $2, now())`,
+      [PLATFORM, ACCOUNT_ID],
+    );
+    await rawQuery(
+      `insert into pilot.shadow_library_documents
+         (document_id, source_id, organization_id, document_name, ingest_state, index_completed_at,
+          approval_state, verification_state,
+          approved_by_account_id, approved_at, verified_by_account_id, verified_at)
+       values ('doc-platform-nutrition', 'src-platform-nutrition', $1, 'Platform nutrition review', 'indexed', now(),
+          'approved', 'verified', $2, now(), $2, now())`,
+      [PLATFORM, ACCOUNT_ID],
+    );
+    await rawQuery(
+      `insert into pilot.shadow_library_chunks
+         (chunk_id, document_id, source_id, organization_id, ordinal, text_content)
+       values ('chunk-platform-nutrition', 'doc-platform-nutrition', 'src-platform-nutrition', $1, 0,
+          'Protein distribution across the day supports recovery between sessions.')`,
+      [PLATFORM],
+    );
+
+    const served = await search('protein distribution recovery');
+    expect(served.map((row) => row.source_id)).toContain('src-platform-nutrition');
+
+    // 'shadow.doctrine.nutrition' (peer_reviewed, tier 1) graded uncovered in
+    // the first coverage test; the gym's own shelf still has nothing for it.
     const recompute = await routes.postCoverage(
       jsonRequest('/api/pilot/shadow/library/capability-coverage', 'POST', { action: 'recompute' }),
     );
     const payload = await recompute.json();
-
     const rule = payload.items.find(
-      (item: { capability_key: string }) => item.capability_key === 'shadow.doctrine.authority-boundary',
+      (item: { capability_key: string }) => item.capability_key === 'shadow.doctrine.nutrition',
     );
+    expect(rule.matched_sources).toBe(1);
     expect(rule.coverage_state).toBe('covered');
+  });
+
+  // Search serves a source through a chunk that CITES it, inside a document
+  // some other source owns -- the shape of the whole research corpus, where
+  // every document belongs to one programme source. Search and coverage are
+  // checked against the same row here, so they cannot agree by accident.
+  test('a platform source cited inside another source\'s document is served by search and counted by coverage', async () => {
+    const PLATFORM = '__platform__';
+    await rawQuery(
+      `insert into pilot.shadow_library_sources
+         (source_id, organization_id, title, source_type, authority_tier, status,
+          approval_state, verification_state,
+          approved_by_account_id, approved_at, verified_by_account_id, verified_at)
+       values ('src-platform-cited', $1, 'Platform hydration trial', 'peer_reviewed', 1, 'active',
+          'approved', 'verified', $2, now(), $2, now())`,
+      [PLATFORM, ACCOUNT_ID],
+    );
+    // In 'doc-platform-nutrition', which 'src-platform-nutrition' owns.
+    await rawQuery(
+      `insert into pilot.shadow_library_chunks
+         (chunk_id, document_id, source_id, organization_id, ordinal, text_content)
+       values ('chunk-platform-cited', 'doc-platform-nutrition', 'src-platform-cited', $1, 1,
+          'Electrolyte intake alongside fluids restored plasma volume faster after training.')`,
+      [PLATFORM],
+    );
+
+    const served = await search('electrolyte plasma volume');
+    expect(served.map((row) => row.source_id)).toContain('src-platform-cited');
+
+    const recompute = await routes.postCoverage(
+      jsonRequest('/api/pilot/shadow/library/capability-coverage', 'POST', { action: 'recompute' }),
+    );
+    const payload = await recompute.json();
+    const rule = payload.items.find(
+      (item: { capability_key: string }) => item.capability_key === 'shadow.doctrine.nutrition',
+    );
+    // The owner from the case above, plus the source its document now cites.
+    expect(rule.matched_sources).toBe(2);
   });
 
   test('re-upserting the same capability_key updates rather than duplicating', async () => {

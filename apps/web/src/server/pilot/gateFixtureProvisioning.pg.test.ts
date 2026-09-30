@@ -51,6 +51,7 @@ const OWNER_ID = 'gate_probe_platform_owner';
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let baseSchemaSql: string;
+let retentionMigrationSql: string;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -83,6 +84,10 @@ async function freshDatabase(name: string): Promise<Client> {
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
   await client.query(baseSchemaSql);
+  // pilot.accounts.deleted_at: the provisioner refuses a fixture marked deleted,
+  // and the base schema does not create the column. Staging applies it through
+  // apply-migrations ('data-retention-deletion').
+  await client.query(retentionMigrationSql);
   return client;
 }
 
@@ -90,9 +95,10 @@ async function freshDatabase(name: string): Promise<Client> {
 async function provision(
   database: string,
   extraEnv: Record<string, string> = {},
+  args: string[] = [],
 ): Promise<{ stdout: string }> {
   const connectionString = connectionStringFor(database);
-  const { stdout } = await execFileAsync(process.execPath, [PROVISIONER_PATH], {
+  const { stdout } = await execFileAsync(process.execPath, [PROVISIONER_PATH, ...args], {
     env: {
       ...process.env,
       NODE_ENV: 'test',
@@ -162,6 +168,10 @@ beforeAll(async () => {
   });
 
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
+  retentionMigrationSql = await fs.readFile(
+    path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'),
+    'utf8',
+  );
 });
 
 afterAll(async () => {
@@ -261,5 +271,68 @@ describe('probe fixtures', () => {
         PPBF_EXPECTED_POSTGRES_DATABASE: 'some_other_database',
       }),
     ).rejects.toThrow(/POSTGRES_TARGET_MISMATCH/);
+  });
+});
+
+describe('a fixture marked deleted', () => {
+  // Sign-in refuses any account marked deleted (OD-2026-09-29-003 Q9). The
+  // upserts set active_flag = true and never touch deleted_at, so without the
+  // refusal a retired fixture would come out of this step looking provisioned
+  // and the gate would fail later, saying only that activation "did not sign
+  // the athlete in".
+  test('is refused by name, nothing is written, and deleted_at is left set', async () => {
+    const database = 'ppbf_test_gate_fixtures_deleted';
+    const client = await freshDatabase(database);
+    try {
+      // pilot.account_activation_tokens, which --deactivate-athlete supersedes.
+      await client.query(
+        await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_onboarding_migration.sql'), 'utf8'),
+      );
+      await provision(database, PROBE_ENV);
+      // After a gate run: --deactivate-athlete clears the PIN and the flag.
+      await provision(database, PROBE_ENV, ['--deactivate-athlete']);
+      // Then pilot-cleanup-accounts.mjs retires it as INACTIVE_RESIDUE, with
+      // the write that script makes.
+      await client.query(
+        `update pilot.accounts set deleted_at = now(), active_flag = false, updated_at = now()
+         where account_id = $1`,
+        [ATHLETE_ACCOUNT_ID],
+      );
+      const before = await client.query(
+        'select pin_hash, active_flag, deleted_at, updated_at from pilot.accounts where account_id = $1',
+        [ATHLETE_ACCOUNT_ID],
+      );
+
+      const refused = await provision(database, PROBE_ENV).then(
+        () => null,
+        (error: { code?: number; stdout?: string; stderr?: string }) => error,
+      );
+
+      expect(refused).not.toBeNull();
+      expect(refused?.code).toBe(1);
+      expect(refused?.stderr).toContain('GATE FIXTURE PROVISION FAIL');
+      expect(refused?.stderr).toContain(`"${ATHLETE_ACCOUNT_ID}" is marked deleted`);
+      expect(refused?.stderr).toContain('Nothing was written');
+      // Only the deleted one is named.
+      expect(refused?.stderr).not.toContain(`"${ADMIN_ID}"`);
+      expect(refused?.stdout).not.toContain('GATE FIXTURE PROVISION PASS');
+
+      // Not reactivated, no new PIN, deleted_at not cleared: the row is exactly
+      // as the cleanup left it.
+      const after = await client.query(
+        'select pin_hash, active_flag, deleted_at, updated_at from pilot.accounts where account_id = $1',
+        [ATHLETE_ACCOUNT_ID],
+      );
+      expect(after.rows).toEqual(before.rows);
+      expect(after.rows[0].active_flag).toBe(false);
+      expect(after.rows[0].deleted_at).not.toBeNull();
+
+      // The always() cleanup step still runs against it: deactivation is not
+      // provisioning and must not fail on a deleted fixture.
+      const { stdout } = await provision(database, PROBE_ENV, ['--deactivate-athlete']);
+      expect(stdout).toContain('GATE FIXTURE DEACTIVATE PASS');
+    } finally {
+      await client.end();
+    }
   });
 });

@@ -44,6 +44,10 @@ const athlete = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+// The empty review queue. Scoped to the reader: the queue lists only athletes
+// they may reach, so "none awaiting review" is true only of those.
+const EMPTY_QUEUE_TEXT = 'No Film Study observations awaiting review for athletes you can see.';
+
 function mockFetch(options: {
   videos: () => Array<Record<string, unknown>>;
   athletes?: () => Array<Record<string, unknown>>;
@@ -55,6 +59,8 @@ function mockFetch(options: {
   requestFilmStudy?: () => Response;
   pollFilmStudyJob?: (jobId: string) => Response;
   proposals?: () => Array<Record<string, unknown>>;
+  /** GET /api/pilot/shadow/film-study/validation. Unset, it falls through to the default. */
+  validation?: () => Response;
   resolveProposal?: () => Response;
   onResolveProposal?: (body: {
     proposal_id?: string;
@@ -130,6 +136,9 @@ function mockFetch(options: {
           ok: true,
           json: async () => ({ ok: true, jobId, status: 'completed', message: 'Video analysis job completed.' }),
         } as Response);
+    }
+    if (url.includes('/api/pilot/shadow/film-study/validation') && options.validation) {
+      return options.validation();
     }
     if (url.includes('/api/pilot/shadow/film-study/proposals')) {
       if (init?.method === 'PATCH') {
@@ -599,7 +608,41 @@ describe('Film Study review queue', () => {
 
     render(<CoachVideoAnalysisPage />);
 
-    await screen.findByText('No Film Study observations awaiting review.');
+    await screen.findByText(EMPTY_QUEUE_TEXT);
+  });
+
+  // The queue is limited to athletes the reader may reach; the accept-rate
+  // line above it counts the whole gym's outstanding proposals. A coach whose
+  // own athletes have nothing pending used to read "No Film Study
+  // observations awaiting review." right under "(3 outstanding)" -- two
+  // statements about the same queue that could not both be true. The empty
+  // state now names its scope.
+  test('an empty queue under a gym-wide outstanding count names whose queue is empty', async () => {
+    const summary = 'No Film Study proposal has been reviewed yet (3 outstanding).'
+      + ' Nothing can be said about the model until coaches clear the queue.';
+    global.fetch = mockFetch({
+      videos: () => [],
+      proposals: () => [],
+      validation: () => ({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          summary,
+          validation: {
+            organizationId: 'org-1',
+            minimumReviewed: 20,
+            overall: {},
+            byDeployment: [],
+          },
+        }),
+      } as Response),
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoAnalysisPage />);
+
+    expect((await screen.findByTestId('film-study-validation-summary')).textContent).toBe(summary);
+    await screen.findByText(EMPTY_QUEUE_TEXT);
+    expect(screen.queryByText('No Film Study observations awaiting review.')).toBeNull();
   });
 
   test('accepting a proposal sends the accepted verdict and removes it from the queue', async () => {
@@ -884,7 +927,7 @@ describe('recording what the model missed', () => {
     }) as unknown as typeof fetch;
 
     render(<CoachVideoAnalysisPage />);
-    await screen.findByText('No Film Study observations awaiting review.');
+    await screen.findByText(EMPTY_QUEUE_TEXT);
 
     await fillMissedForm();
     fireEvent.click(screen.getByRole('button', { name: 'Add to review queue' }));
@@ -936,7 +979,7 @@ describe('recording what the model missed', () => {
     }) as unknown as typeof fetch;
 
     render(<CoachVideoAnalysisPage />);
-    await screen.findByText('No Film Study observations awaiting review.');
+    await screen.findByText(EMPTY_QUEUE_TEXT);
 
     await waitFor(() => expect(within(screen.getByLabelText('Athlete')).getByRole('option', { name: 'Marcus Reed' })).toBeTruthy());
     fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
@@ -959,7 +1002,7 @@ describe('recording what the model missed', () => {
     }) as unknown as typeof fetch;
 
     render(<CoachVideoAnalysisPage />);
-    await screen.findByText('No Film Study observations awaiting review.');
+    await screen.findByText(EMPTY_QUEUE_TEXT);
 
     await fillMissedForm();
     fireEvent.click(screen.getByRole('button', { name: 'Add to review queue' }));
@@ -991,7 +1034,7 @@ describe('recording what the model missed', () => {
     }) as unknown as typeof fetch;
 
     render(<CoachVideoAnalysisPage />);
-    await screen.findByText('No Film Study observations awaiting review.');
+    await screen.findByText(EMPTY_QUEUE_TEXT);
 
     await fillMissedForm();
     fireEvent.click(screen.getByRole('button', { name: 'Add to review queue' }));

@@ -355,5 +355,15 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // prerequisite -- asserting it once here is what stops the next one being
     // grouped next to its sibling instead of after its table.
     expect(at('athlete-check-in-measures')).toBeGreaterThan(at('athlete-check-ins'));
+    // content-import alters two tables it does not create (drill-library-v3's
+    // pilot.drill_library, workout-templates-v2's pilot.workout_templates) and
+    // copies the WIDENED rule_kind vocabulary, which its SQL refuses to do
+    // before drill-vocabulary-widening has run. After v3 matters a second way:
+    // v3 re-runs on every `all` dispatch and re-applies the old
+    // drill_stop_rules comment, so only a later position leaves the corrected
+    // comment in place at the end of the dispatch.
+    for (const prerequisite of ['drill-library-v3', 'drill-vocabulary-widening', 'workout-templates-v2']) {
+      expect(at('content-import')).toBeGreaterThan(at(prerequisite));
+    }
   });
 });

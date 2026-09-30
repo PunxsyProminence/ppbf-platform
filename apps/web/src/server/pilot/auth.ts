@@ -8,6 +8,7 @@ import { seedDefaultDisciplines } from './disciplineSeeds';
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { pinLoginPermitted, usesPin } from './credentialPolicy';
+import { accountDeletedSql, isDeletedAccount, type AccountDeletionFlag } from './deletedAccountSignIn';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { isPlatformLibraryOrganization } from './platformLibraryScope';
 import { seedDefaultSafetyGates } from './safetyGateSeeds';
@@ -15,6 +16,7 @@ import { seedDefaultClearanceTypes } from './clearanceTypeSeeds';
 import { createOpaqueToken, hashPin, hashToken, verifyPin } from './security';
 import { computeSessionExpiry, parseRetentionDays } from './sessionPolicy';
 import { isLoopbackPostgresConnectionString, query, queryOne, withTransaction } from './db';
+import { ConflictError } from './errors';
 import { DEFAULT_FIRST_LOGIN_PIN, assertChosenPinAllowed, validatePinPolicy } from './pinPolicy';
 
 /**
@@ -84,7 +86,7 @@ export interface PilotPrincipal {
   pinAuthPermitted?: boolean;
 }
 
-interface AccountRow {
+interface AccountRow extends AccountDeletionFlag {
   account_id: string;
   role: PilotRole;
   organization_id: string | null;
@@ -100,7 +102,7 @@ interface AccountRow {
   holds_board_seat: boolean;
 }
 
-interface FederatedAccountRow {
+interface FederatedAccountRow extends AccountDeletionFlag {
   account_id: string;
   role: PilotRole;
   organization_id: string | null;
@@ -136,6 +138,30 @@ async function assignOrganizationMembershipTx(
   );
 }
 
+// A throwaway scrypt hash that no PIN is known to match, so a login for an
+// account with no usable hash still pays one scrypt verification. Without it
+// "no such account" answered before any hashing while "live account, wrong
+// PIN" paid a full scrypt, and the gap in response time told an outside
+// caller which sign-in IDs are real. Built once per process, on first need;
+// the promise is cached so concurrent first calls share one hash. Nothing
+// relies on it never matching: every branch that uses it rejects anyway.
+let dummyPinHashPromise: Promise<string> | null = null;
+
+function dummyPinHash(): Promise<string> {
+  if (!dummyPinHashPromise) {
+    const pending = hashPin(createOpaqueToken());
+    dummyPinHashPromise = pending;
+    // A failed hash is not cached: the next login tries again rather than
+    // every later unknown-account login rejecting with the same error.
+    pending.catch(() => {
+      if (dummyPinHashPromise === pending) {
+        dummyPinHashPromise = null;
+      }
+    });
+  }
+  return dummyPinHashPromise;
+}
+
 export async function loginWithAccountIdAndPin(accountId: string, pin: string): Promise<{ principal: PilotPrincipal; token: string } | null> {
   const data = await queryOne<AccountRow>(
     `select
@@ -148,6 +174,7 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
        a.pin_hash,
        a.must_change_pin,
        a.active_flag,
+       ${accountDeletedSql('a')} as account_deleted,
        a.has_master_shadow_access,
        o.status as organization_status,
        -- A scalar subselect, not a join: a person may hold more than one seat,
@@ -177,6 +204,21 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
   // across accounts, previously left zero trace anywhere once that window
   // passed -- no forensic trail for a suspected brute-force against a
   // minor's account.
+  //
+  // The PIN is checked FIRST, before any of those rejections, so every
+  // outcome costs one scrypt verification: an unknown, deleted, inactive,
+  // suspended or PIN-less account pays the same one (a PIN-less or unknown
+  // one against a throwaway hash). The rejections keep their order and their
+  // reason codes; only the timing stops differing.
+  const pinIsValid = await verifyPin(pin, data?.pin_hash || await dummyPinHash());
+
+  // Deleted before inactive: an account can be active again and still marked
+  // deleted, which is the case this refusal exists for (deletedAccountSignIn.ts).
+  if (data && isDeletedAccount(data)) {
+    console.warn('pilot-auth login rejected', { accountId, reason: 'deleted_account' });
+    return null;
+  }
+
   if (!data?.active_flag) {
     console.warn('pilot-auth login rejected', { accountId, reason: 'unknown_or_inactive_account' });
     return null;
@@ -202,7 +244,6 @@ export async function loginWithAccountIdAndPin(accountId: string, pin: string): 
     return null;
   }
 
-  const pinIsValid = await verifyPin(pin, data.pin_hash);
   if (!pinIsValid) {
     console.warn('pilot-auth login rejected', { accountId, reason: 'wrong_pin' });
     return null;
@@ -261,6 +302,7 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
        a.athlete_id,
        a.auth_provider,
        a.active_flag,
+       ${accountDeletedSql('a')} as account_deleted,
        a.has_master_shadow_access,
        o.status as organization_status
      from pilot.accounts a
@@ -270,7 +312,10 @@ export async function loginWithMicrosoftEmail(emailOrUpn: string): Promise<{ pri
     [normalizedEmail],
   );
 
-  if (!data?.active_flag) {
+  // Deleted before inactive, as in the PIN path (deletedAccountSignIn.ts). No
+  // reason is logged here: this path logs no refusal, and its account_id is
+  // often the person's email address.
+  if (!data || isDeletedAccount(data) || !data.active_flag) {
     return null;
   }
 
@@ -368,7 +413,11 @@ export async function resolvePrincipal(request: NextRequest): Promise<PilotPrinc
       and om.active_flag = true
      where st.token_hash = $1
        and st.revoked_at is null
-       and st.expires_at > now()`,
+       and st.expires_at > now()
+       -- A session held by an account marked deleted resolves to nobody,
+       -- whichever path minted it (deletedAccountSignIn.ts). Not revoked
+       -- here: an inactive account's session is not revoked here either.
+       and not ${accountDeletedSql('a')}`,
     [tokenHash],
   );
 
@@ -789,16 +838,39 @@ export async function createOrUpdateAthleteAccount(
     await withTransaction(async (client) => {
       // Same organization—update is allowed. The PIN is changing, so revoke
       // every existing session for this account in the same transaction.
-      await client.query(
+      //
+      // Only an athlete login that is bound to no athlete record, or already
+      // to this one, is updated. Without the last two conditions this update
+      // turned a coach's, parent's or admin's login into a locked athlete
+      // login, and re-bound another child's login to this child's record.
+      // intake.ts's assertAthleteAccountIdProvisionable refuses both before
+      // promotion's first write; this holds the rule in the write itself, so
+      // a change between that check and this statement is still refused.
+      const updated = await client.query<{ account_id: string }>(
         `update pilot.accounts set
            role = $1,
            athlete_id = $2,
            pin_hash = $3,
            active_flag = $4,
            updated_at = now()
-         where account_id = $5 and organization_id = $6`,
+         where account_id = $5 and organization_id = $6
+           and role = 'athlete'
+           and (athlete_id is null or athlete_id = $2)
+         returning account_id`,
         ['athlete', athleteId, null, false, accountId, organizationId],
       );
+
+      if (updated.rows.length === 0) {
+        // Thrown inside the transaction, so nothing below runs and nothing is
+        // committed. Worded to be true for every way the where clause can
+        // miss, since this statement cannot tell which one it was.
+        throw new ConflictError(
+          `Conflict: account_id "${accountId}" cannot be made the login for athlete record "${athleteId}". `
+          + 'Only an athlete login in this organization that belongs to no athlete record, or already to '
+          + 'this one, can be. Use a different account_id.',
+          'EXISTING_ATHLETE_ACCOUNT_CONFLICT',
+        );
+      }
       await client.query(
         `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
          values ($1, $2, 'athlete', false)
