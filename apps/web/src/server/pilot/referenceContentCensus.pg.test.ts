@@ -197,7 +197,7 @@ async function plantReferenceContent(client: Client) {
   );
 
   // 'A1-001|A2-002' as ONE element is the defect: the loader's splitter did not
-  // know '|' (seed-drill-library.mjs:210-219). The clean row holds the same two
+  // know '|' (the retired seed-drill-library.mjs split on ';' and ',' only). The clean row holds the same two
   // ids split properly, so a census counting ids-that-contain-A1 instead of
   // elements-that-contain-'|' would count it and fail.
   await insertReferenceDrill(client, ORG_DEFAULT, DRILLS.defaultPipe, {

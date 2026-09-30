@@ -1,8 +1,8 @@
 import type { DatasetSpec } from '../types';
 import { bool, keyColumn, organizationColumn, text, vocabulary } from './common';
 
-// pilot.disciplines (multidiscipline migration :35-50). Loaded today by
-// seed-disciplines.mjs:162-201.
+// pilot.disciplines (multidiscipline migration :35-50). Loaded by the
+// content-import core (seed-reference-data, npm run seed:disciplines).
 
 export const disciplinesDataset: DatasetSpec = {
   name: 'disciplines',
@@ -11,7 +11,10 @@ export const disciplinesDataset: DatasetSpec = {
   summary:
     'The sports the gym teaches. Other files name a discipline by its key. Five tables point at the key, so '
     + 'under R2 the planned revision is an in-place update with the old row kept in a history ledger.',
-  loadedToday: 'seed-reference-data workflow, dataset disciplines (npm run seed:disciplines): inserts new keys, skips existing ones.',
+  loadedToday:
+    'seed-reference-data workflow, dataset disciplines (npm run seed:disciplines), through the content-import core: a new '
+    + 'key is inserted, a changed row is revised in place with before and after kept in the history ledger, an unchanged '
+    + 'one is skipped.',
   files: [
     {
       dataset: 'disciplines',
@@ -28,8 +31,8 @@ export const disciplinesDataset: DatasetSpec = {
         vocabulary('exposure_model', 'exposure_model', 'The kind of contact exposure it carries.', { required: true }),
         text('governing_body', 'Who sanctions it.'),
         text('age_policy_source', 'Where youth eligibility actually comes from.'),
-        // Required, not defaulted: the loader reads a blank as false
-        // (seed-disciplines.mjs:184-186, toBool('') === false) while the table
+        // Required, not defaulted: the retired loader read a blank as false
+        // (seed-disciplines.mjs, toBool('') === false) while the table
         // defaults two of these to true, so a blank would mean different
         // things depending on which path loaded it.
         bool('youth_permitted', 'Youth may train it.', { required: true }),

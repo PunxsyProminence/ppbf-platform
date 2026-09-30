@@ -1,4 +1,8 @@
-import { datasetsFor, parseCliArgs, readDatabaseEnv, readDatasetFiles, seedSslConfig } from './contentImport/cli';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+import { datasetsFor, parseCliArgs, readDatabaseEnv, readDatasetFiles, runValidateCommitted, seedSslConfig } from './contentImport/cli';
 import { LOADABLE_DATASETS } from './contentImport/datasets';
 
 // The argument and environment rules of `plan` and `apply`, the database
@@ -6,7 +10,7 @@ import { LOADABLE_DATASETS } from './contentImport/datasets';
 // because every one of them is decided before a connection is opened: a
 // mistyped dataset or a missing variable should cost no network at all, and a
 // guessed organization or account is the failure the seed loaders were built
-// to refuse (seed-disciplines.mjs:224-226, "No default").
+// to refuse (the retired seed-*.mjs loaders once defaulted it).
 
 describe('plan and apply arguments', () => {
   it('plan and apply take --dataset <name|all>; apply alone takes --dry-run', () => {
@@ -34,12 +38,64 @@ describe('plan and apply arguments', () => {
     expect(() => datasetsFor('competence-cohorts')).toThrow('unknown dataset competence-cohorts');
   });
 
+  it('a comma-separated list is loaded together, in apply order whatever order it was typed in', () => {
+    // npm run seed:competence-cohorts: one seed-data folder, two datasets, one
+    // transaction (runApply takes the whole list).
+    expect(datasetsFor('cohort-definitions,competence-levels')).toEqual(['competence-levels', 'cohort-definitions']);
+    expect(datasetsFor('workout-templates, drill-library ,disciplines')).toEqual(['disciplines', 'drill-library', 'workout-templates']);
+    expect(() => datasetsFor('disciplines,disciplines')).toThrow('named twice');
+    expect(() => datasetsFor('all,disciplines')).toThrow("'all' cannot be combined");
+    expect(() => datasetsFor('disciplines,transfer-claims')).toThrow('transfer-claims has no database loader');
+    expect(() => datasetsFor('disciplines,')).toThrow('unknown dataset (empty)');
+  });
+
+  it('validate takes --dataset for the committed files a load would read, or --dir for a hand-off, never both', () => {
+    expect(parseCliArgs(['validate', '--dataset', 'all'])).toEqual({ command: 'validate', dataset: 'all', write: false, dryRun: false });
+    expect(parseCliArgs(['validate', '--dir', 'x'])).toEqual({ command: 'validate', dir: 'x', write: false, dryRun: false });
+    expect(() => parseCliArgs(['validate', '--dir', 'x', '--dataset', 'all'])).toThrow('not both');
+    expect(() => parseCliArgs(['validate'])).toThrow('validate needs --dir <path>');
+    expect(() => parseCliArgs(['prepare', '--dir', 'x', '--dataset', 'all'])).toThrow('prepare does not take --dataset');
+  });
+
   it('reads only the committed files of the datasets asked for', () => {
     const files = readDatasetFiles(`${__dirname}/../../../seed-data`, ['competence-levels', 'cohort-definitions']);
     expect(Object.keys(files).sort()).toEqual([
       'competence-cohorts/seed_cohort_definitions.csv',
       'competence-cohorts/seed_competence_levels.csv',
     ]);
+  });
+});
+
+describe('validate --dataset: the committed files, offline', () => {
+  const SEED_DATA_DIR = path.resolve(__dirname, '../../../seed-data');
+  const io = () => {
+    const lines: string[] = [];
+    return { lines, log: (line: string) => lines.push(line) };
+  };
+
+  it("passes every dataset 'all' loads today -- what the seed workflow checks before its Azure login", () => {
+    const out = io();
+    expect(runValidateCommitted({ seedDataDir: SEED_DATA_DIR, datasets: datasetsFor('all') }, out)).toBe(0);
+    expect(out.lines[out.lines.length - 1]).toMatch(/^RESULT: PASS -- 0 blocking/);
+    expect(out.lines.some((line) => line.includes('read drill-library/seed_drill_library.csv'))).toBe(true);
+  });
+
+  it('blocks when a committed file a load would read breaks the contract, naming it', () => {
+    // A scratch copy of the committed tree with one bad row: exactly what a
+    // dispatch from an unmerged branch could carry.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-validate-committed-'));
+    try {
+      fs.cpSync(SEED_DATA_DIR, dir, { recursive: true });
+      const file = path.join(dir, 'multidiscipline/seed_disciplines.csv');
+      const text = fs.readFileSync(file, 'utf8');
+      fs.writeFileSync(file, `${text.replace(/\n$/, '')}\n{{PPBF_ORG_ID}},karate,Karate,not-a-lane,none,,,true,true,false,,true\n`);
+      const out = io();
+      expect(runValidateCommitted({ seedDataDir: dir, datasets: ['disciplines'] }, out)).toBe(1);
+      expect(out.lines.some((line) => line.startsWith('  [unknown_value] multidiscipline/seed_disciplines.csv:'))).toBe(true);
+      expect(out.lines[out.lines.length - 1]).toMatch(/^RESULT: BLOCKED -- /);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

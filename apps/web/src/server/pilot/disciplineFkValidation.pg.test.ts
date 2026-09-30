@@ -172,7 +172,7 @@ async function baseSchemaOnlyDatabase(name: string): Promise<Client> {
   return client;
 }
 
-/** Registers a discipline for one organization, the way seed-disciplines.mjs does. */
+/** Registers a discipline for one organization, as the seed path's disciplines dataset does. */
 function registerDiscipline(
   client: Client,
   organizationId: string,

@@ -4,19 +4,21 @@
 // IMP-06 of the intake plan. The engine is what both loaders of reference
 // content call: the seed CLI now (R1 "for seeding it will be 3") and the
 // upload route later (R1 "for future work it will be 2"). Every test here pins
-// a failure the old per-dataset loaders had or a guarantee the new one makes:
-//   - lib/seed-account-role.mjs:18-40 recorded ANY role, so the platform owner
-//     could seed gym content;
-//   - seed-disciplines.mjs:174 and seed-competence-cohorts.mjs:178,213 said ON
-//     CONFLICT DO NOTHING, so a revised row was skipped without a word (R2
-//     says it gets a new version, the old one kept);
-//   - seed-disciplines.mjs:208-213 COMMITs in a `finally`, so a JavaScript
-//     error after the first insert committed that insert.
+// a failure the old per-dataset loaders had (retired by IMP-10; git history
+// keeps them) or a guarantee the new one makes:
+//   - lib/seed-account-role.mjs recorded ANY role, so the platform owner could
+//     seed gym content;
+//   - seed-disciplines.mjs and seed-competence-cohorts.mjs said ON CONFLICT DO
+//     NOTHING, so a revised row was skipped without a word (R2 says it gets a
+//     new version, the old one kept);
+//   - seed-disciplines.mjs COMMITted in a `finally`, so a JavaScript error
+//     after the first insert committed that insert.
 //
 // Spins up the same disposable, local-only embedded Postgres the other pg
 // suites use. It NEVER connects to production or staging.
 
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -35,6 +37,7 @@ import { MINT } from './contentImport/ids';
 import { type ImportPlan, planImport } from './contentImport/plan';
 import { claimIdsFromChunksCsv, LOADED_RESEARCH_CHUNKS } from './contentImport/referenceSets';
 import { ContentImportRefusal } from './contentImport/refusal';
+import { insertLegacyGoldenRows, LEGACY_GOLDEN_TABLES, legacyGoldenFiles, legacyGoldenRows } from '../../testing/legacyLoaderGolden';
 
 jest.setTimeout(300_000);
 
@@ -55,19 +58,30 @@ const DISCIPLINES_CSV = 'multidiscipline/seed_disciplines.csv';
 const LEVELS_CSV = 'competence-cohorts/seed_competence_levels.csv';
 const COHORTS_CSV = 'competence-cohorts/seed_cohort_definitions.csv';
 
+/** Rows in a committed seed CSV: every count below comes from the files, not a literal. */
+function committedRowCount(relative: string): number {
+  return readCsv(readFileSync(path.join(SEED_DATA_DIR, relative), 'utf8')).records.length;
+}
+const DISCIPLINE_ROWS = committedRowCount(DISCIPLINES_CSV);
+const LEVEL_ROWS = committedRowCount(LEVELS_CSV);
+const COHORT_ROWS = committedRowCount(COHORTS_CSV);
+/** One history row per registry item on a first load. */
+const REGISTRY_ROWS = DISCIPLINE_ROWS + LEVEL_ROWS + COHORT_ROWS;
+const REGISTRY_COUNTS = { disciplines: DISCIPLINE_ROWS, levels: LEVEL_ROWS, cohorts: COHORT_ROWS };
+const DRILL_ROWS = committedRowCount('drill-library/seed_drill_library.csv');
+const TEMPLATE_ROWS = committedRowCount('workout-templates/seed_workout_templates.csv');
+const SCRIPT_ROWS = committedRowCount('session-scripts/seed_session_scripts.csv');
+
 const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
   specifier: string,
 ) => Promise<Record<string, unknown>>;
 
-type OldSeedAll = (client: Client, seedDir: string, placeholders: { organizationId: string }, options?: { dryRun?: boolean }) => Promise<void>;
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let client: Client;
 /** A second connection: sees only what is COMMITTED. */
 let observer: Client;
-let oldSeedDisciplines: OldSeedAll;
-let oldSeedCompetenceCohorts: OldSeedAll;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -135,12 +149,6 @@ beforeAll(async () => {
 
   observer = new Client({ connectionString: connectionStringFor(DATABASE) });
   await observer.connect();
-
-  // The OLD loaders, exactly as the seed workflow runs them today, to build
-  // an organization the way production's reference rows were built.
-  oldSeedDisciplines = (await nativeDynamicImport(pathToFileURL(path.join(WEB_DIR, 'scripts/seed-disciplines.mjs')).href)).seedAll as OldSeedAll;
-  oldSeedCompetenceCohorts = (await nativeDynamicImport(pathToFileURL(path.join(WEB_DIR, 'scripts/seed-competence-cohorts.mjs')).href))
-    .seedAll as OldSeedAll;
 });
 
 afterAll(async () => {
@@ -275,13 +283,27 @@ async function applyCommitted(organizationId: string, actorAccountId: string, fi
   }
 }
 
-async function seedTheOldWay(organizationId: string): Promise<void> {
-  const quiet = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+/**
+ * Registry rows with NO history and no import behind them, as production's
+ * are: the retired seed-disciplines.mjs / seed-competence-cohorts.mjs kept no
+ * ledger. The rows come from a first load, whose history and audit rows are
+ * then removed with triggers off (session_replication_role, this transaction
+ * only): the append-only ledger refuses a DELETE otherwise. Their stored FORM
+ * is the engine's, not the old loaders' -- the case that needs the old form
+ * ("onto the rows THEY wrote") loads src/testing/legacyLoaderGolden.ts
+ * instead. The cases using this one test history and revision, not reading.
+ */
+async function registriesWithoutHistory(organizationId: string, admin: string): Promise<void> {
+  await applyCommitted(organizationId, admin, committedFiles());
+  await client.query('BEGIN');
   try {
-    await oldSeedDisciplines(client, path.join(SEED_DATA_DIR, 'multidiscipline'), { organizationId });
-    await oldSeedCompetenceCohorts(client, path.join(SEED_DATA_DIR, 'competence-cohorts'), { organizationId });
-  } finally {
-    quiet.mockRestore();
+    await client.query("set local session_replication_role = 'replica'");
+    await client.query('delete from pilot.reference_content_revisions where organization_id = $1', [organizationId]);
+    await client.query("delete from pilot.audit_events where organization_id = $1 and entity_type = 'content_import'", [organizationId]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
   }
 }
 
@@ -387,7 +409,7 @@ describe('who may load content (actor.ts)', () => {
     // Control: the gym's organization admin is accepted by the same check.
     const plannedByAdmin = await plan('punxsy_prominence', accepted, committedFiles());
     expect(plannedByAdmin.blocking).toEqual([]);
-    expect(plannedByAdmin.totals.new).toBe(17);
+    expect(plannedByAdmin.totals.new).toBe(REGISTRY_ROWS);
   });
 
   it('refuses an inactive account, a deleted account, and an organization admin without an ACTIVE membership in the target org', async () => {
@@ -450,25 +472,42 @@ describe('who may load content (actor.ts)', () => {
 });
 
 describe('registries: disciplines, competence levels, cohort definitions', () => {
-  it('re-importing the committed files onto rows the OLD loaders wrote finds every item unchanged', async () => {
-    // The canonicaliser guard: the old loaders stored '2.0' as 2, a blank
-    // contact_permitted as 'none', a blank governing_body as NULL. If the
-    // engine read any of that as different content, the first run in
-    // production would "revise" every row it was meant to leave alone.
+  it('re-importing the files the OLD loaders read, onto the rows THEY wrote, finds every item unchanged', async () => {
+    // The canonicaliser guard. Production's registry rows were written by the
+    // retired seed-disciplines.mjs / seed-competence-cohorts.mjs, and a row
+    // nobody revises keeps their stored form for good: the file's '4.0' as 4,
+    // a domain list as comma text, a blank regulatory_basis as ''. If the
+    // engine read any of that as different content, or needed a ledger row to
+    // call an item unchanged, every load would "revise" the rows it was meant
+    // to leave alone. The rows are those loaders' own output, frozen with the
+    // files they read (src/testing/legacyLoaderGolden.ts) -- not the engine's
+    // first load, which would only prove the engine reads its own forms.
     const admin = await createGym('gym_old_loaders');
-    await seedTheOldWay('gym_old_loaders');
-    expect(await committedCounts('gym_old_loaders')).toMatchObject({ disciplines: 5, levels: 6, cohorts: 6 });
+    await insertLegacyGoldenRows(client, LEGACY_GOLDEN_TABLES.registries, { organizationId: 'gym_old_loaders', accountId: admin });
+    const golden = {
+      disciplines: legacyGoldenRows('pilot.disciplines').length,
+      levels: legacyGoldenRows('pilot.competence_levels').length,
+      cohorts: legacyGoldenRows('pilot.cohort_definitions').length,
+    };
+    expect(await committedCounts('gym_old_loaders')).toMatchObject({ ...golden, ledger: 0, audit: 0 });
+    expect(golden.disciplines * golden.levels * golden.cohorts).toBeGreaterThan(0);
 
-    const result = await plan('gym_old_loaders', admin, committedFiles());
+    const result = await plan('gym_old_loaders', admin, legacyGoldenFiles(REGISTRIES));
     expect(result.blocking).toEqual([]);
-    expect(result.totals).toEqual({ new: 0, new_version: 0, unchanged: 17, absent: 0, reject: 0 });
+    expect(result.totals).toEqual({
+      new: 0,
+      new_version: 0,
+      unchanged: golden.disciplines + golden.levels + golden.cohorts,
+      absent: 0,
+      reject: 0,
+    });
   });
 
   it('a first load inserts every row and records each as history v1', async () => {
     const admin = await createGym('gym_first_load');
     const result = await applyCommitted('gym_first_load', admin, committedFiles());
-    expect(result.plan.totals).toEqual({ new: 17, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
-    expect(await committedCounts('gym_first_load')).toEqual({ disciplines: 5, levels: 6, cohorts: 6, ledger: 17, audit: 1, shadowEvents: 0 });
+    expect(result.plan.totals).toEqual({ new: REGISTRY_ROWS, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
+    expect(await committedCounts('gym_first_load')).toEqual({ ...REGISTRY_COUNTS, ledger: REGISTRY_ROWS, audit: 1, shadowEvents: 0 });
     const boxing = await ledgerRows('gym_first_load', 'disciplines', 'boxing');
     expect(boxing.map((row) => row.version)).toEqual([1]);
     expect(boxing[0]).toMatchObject({ import_id: result.importId, recorded_by_account_id: admin, recorded_by_role: 'organization_admin' });
@@ -477,7 +516,7 @@ describe('registries: disciplines, competence levels, cohort definitions', () =>
 
   it('a changed discipline updates the live row in place, and the ledger holds before and after', async () => {
     const admin = await createGym('gym_revise');
-    await seedTheOldWay('gym_revise'); // no history yet, as in production today
+    await registriesWithoutHistory('gym_revise', admin); // no history yet, as in production today
     const before = await rowVersions('gym_revise');
 
     const revised = withEdit(committedFiles(), DISCIPLINES_CSV, (row) =>
@@ -485,7 +524,7 @@ describe('registries: disciplines, competence levels, cohort definitions', () =>
     const planned = await plan('gym_revise', admin, revised);
     expect(unitsOf(planned, 'new_version')).toEqual(['disciplines:boxing']);
     expect(planned.units.find((unit) => unit.key === 'boxing')).toMatchObject({ fromVersion: 1, toVersion: 2, recordsBefore: true });
-    expect(planned.totals).toEqual({ new: 0, new_version: 1, unchanged: 16, absent: 0, reject: 0 });
+    expect(planned.totals).toEqual({ new: 0, new_version: 1, unchanged: REGISTRY_ROWS - 1, absent: 0, reject: 0 });
 
     const result = await applyCommitted('gym_revise', admin, revised, planned.planHash);
     expect(result.written.disciplines).toEqual({ inserted: [], updated: ['boxing'], ledgerRows: 2 });
@@ -495,9 +534,9 @@ describe('registries: disciplines, competence levels, cohort definitions', () =>
       "select display_name, governing_body from pilot.disciplines where organization_id = 'gym_revise' and discipline = 'boxing'",
     );
     expect(rows).toEqual([{ display_name: 'Olympic-style Boxing', governing_body: 'USA Boxing (amateur)' }]);
-    expect(await committedCounts('gym_revise')).toMatchObject({ disciplines: 5, levels: 6, cohorts: 6, ledger: 2, audit: 1 });
+    expect(await committedCounts('gym_revise')).toMatchObject({ ...REGISTRY_COUNTS, ledger: 2, audit: 1 });
 
-    // Before (v1, the row as the old loader wrote it) and after (v2).
+    // Before (v1, the row as it stood with no history) and after (v2).
     const history = await ledgerRows('gym_revise', 'disciplines', 'boxing');
     expect(history.map((row) => [row.version, row.content.display_name, row.content.governing_body])).toEqual([
       [1, 'Boxing', 'USA Boxing'],
@@ -521,10 +560,10 @@ describe('registries: disciplines, competence levels, cohort definitions', () =>
     await applyCommitted('gym_unchanged', admin, committedFiles());
     const countsBefore = await committedCounts('gym_unchanged');
     const versionsBefore = await rowVersions('gym_unchanged');
-    expect(Object.keys(versionsBefore)).toHaveLength(17);
+    expect(Object.keys(versionsBefore)).toHaveLength(REGISTRY_ROWS);
 
     const result = await applyCommitted('gym_unchanged', admin, committedFiles());
-    expect(result.plan.totals).toEqual({ new: 0, new_version: 0, unchanged: 17, absent: 0, reject: 0 });
+    expect(result.plan.totals).toEqual({ new: 0, new_version: 0, unchanged: REGISTRY_ROWS, absent: 0, reject: 0 });
     expect(result.importId).toBeNull();
     expect(result.ledgerRows).toBe(0);
 
@@ -670,7 +709,7 @@ describe('registries: disciplines, competence levels, cohort definitions', () =>
         import_id: importId,
         plan_hash: shown.planHash,
         datasets: ['disciplines', 'competence-levels', 'cohort-definitions'],
-        ledger_rows: 17,
+        ledger_rows: REGISTRY_ROWS,
       });
       // Not visible to any other connection until COMMIT: it rides the
       // import's own transaction, not the pool writePilotAuditEvent uses.
@@ -680,7 +719,7 @@ describe('registries: disciplines, competence levels, cohort definitions', () =>
       await client.query('ROLLBACK');
       throw error;
     }
-    expect(await committedCounts('gym_audit')).toMatchObject({ audit: 1, ledger: 17 });
+    expect(await committedCounts('gym_audit')).toMatchObject({ audit: 1, ledger: REGISTRY_ROWS });
     const ledgerImports = await observer.query("select distinct import_id from pilot.reference_content_revisions where organization_id = 'gym_audit'");
     expect(ledgerImports.rows).toEqual([{ import_id: importId }]);
   });
@@ -826,12 +865,12 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
 
     const shown = planBlock(planned.stdout);
     expect(planBlock(dry.stdout)).toEqual(shown);
-    expect(shown).toContain('  disciplines: 5 new, 0 new version, 0 unchanged, 0 absent, 0 reject');
-    expect(shown).toContain('  drill-library: 119 new, 0 new version, 0 unchanged, 0 absent, 0 reject');
+    expect(shown).toContain(`  disciplines: ${DISCIPLINE_ROWS} new, 0 new version, 0 unchanged, 0 absent, 0 reject`);
+    expect(shown).toContain(`  drill-library: ${DRILL_ROWS} new, 0 new version, 0 unchanged, 0 absent, 0 reject`);
     expect(shown).toContain('BLOCKING: 0');
     expect(dry.stdout).toContain('RESULT: DRY RUN -- applied inside the transaction and ROLLED BACK');
     // It really applied: the rows were written, then rolled back.
-    expect(dry.stdout).toContain('  cohort-definitions: inserted 6');
+    expect(dry.stdout).toContain(`  cohort-definitions: inserted ${COHORT_ROWS}`);
 
     expect(await committedCounts('gym_cli')).toEqual({ disciplines: 0, levels: 0, cohorts: 0, ledger: 0, audit: 0, shadowEvents: 0 });
   });
@@ -840,25 +879,29 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
     const applied = await runCli(['apply', '--dataset', 'all'], env);
     expect({ code: applied.code, stderr: applied.stderr }).toEqual({ code: 0, stderr: '' });
     expect(applied.stdout).toContain('target_hostname: localhost');
-    // 17 registry rows, 119 drills, 12 workout templates and 3 session scripts,
-    // in one transaction: the drills' discipline foreign key is satisfied by
-    // disciplines written earlier in it, and a template item's drill by the
-    // drills (datasets/templateScriptVersions.ts resolves heads at apply).
-    expect(applied.stdout).toContain('RESULT: COMMITTED -- 151 item(s) written');
-    expect(applied.stdout).toContain('  workout-templates: inserted 12');
-    expect(applied.stdout).toContain('  session-scripts: inserted 3');
-    expect(await committedCounts('gym_cli')).toEqual({ disciplines: 5, levels: 6, cohorts: 6, ledger: 17, audit: 1, shadowEvents: 1 });
+    // Every registry row, drill, workout template and session script the files
+    // hold, in ONE transaction -- one import, one audit row: the drills'
+    // discipline foreign key is satisfied by disciplines written earlier in
+    // it, and the template items' drill foreign key by the drills.
+    expect(applied.stdout).toContain(`RESULT: COMMITTED -- ${REGISTRY_ROWS + DRILL_ROWS + TEMPLATE_ROWS + SCRIPT_ROWS} item(s) written`);
+    expect(applied.stdout).toContain(`  workout-templates: inserted ${TEMPLATE_ROWS}`);
+    expect(applied.stdout).toContain(`  session-scripts: inserted ${SCRIPT_ROWS}`);
+    expect(await committedCounts('gym_cli')).toEqual({ ...REGISTRY_COUNTS, ledger: REGISTRY_ROWS, audit: 1, shadowEvents: 1 });
+    const imports = await observer.query(
+      "select count(distinct import_id)::int as n from pilot.reference_content_revisions where organization_id = 'gym_cli'",
+    );
+    expect(imports.rows).toEqual([{ n: 1 }]);
     const drills = await observer.query("select count(*)::int as n from pilot.drill_library where organization_id = 'gym_cli'");
-    expect(drills.rows).toEqual([{ n: 119 }]);
+    expect(drills.rows).toEqual([{ n: DRILL_ROWS }]);
     const mirror = await observer.query("select event_name from pilot.shadow_events where organization_id = 'gym_cli' and entity_type = 'content_import'");
     expect(mirror.rows).toEqual([{ event_name: 'SHADOW_AUDIT_CREATE_CONTENT_IMPORT' }]);
 
     const again = await runCli(['plan', '--dataset', 'all'], env);
     expect(again.code).toBe(0);
-    expect(planBlock(again.stdout)).toContain('  cohort-definitions: 0 new, 0 new version, 6 unchanged, 0 absent, 0 reject');
-    expect(planBlock(again.stdout)).toContain('  drill-library: 0 new, 0 new version, 119 unchanged, 0 absent, 0 reject');
-    expect(planBlock(again.stdout)).toContain('  workout-templates: 0 new, 0 new version, 12 unchanged, 0 absent, 0 reject');
-    expect(planBlock(again.stdout)).toContain('  session-scripts: 0 new, 0 new version, 3 unchanged, 0 absent, 0 reject');
+    expect(planBlock(again.stdout)).toContain(`  cohort-definitions: 0 new, 0 new version, ${COHORT_ROWS} unchanged, 0 absent, 0 reject`);
+    expect(planBlock(again.stdout)).toContain(`  drill-library: 0 new, 0 new version, ${DRILL_ROWS} unchanged, 0 absent, 0 reject`);
+    expect(planBlock(again.stdout)).toContain(`  workout-templates: 0 new, 0 new version, ${TEMPLATE_ROWS} unchanged, 0 absent, 0 reject`);
+    expect(planBlock(again.stdout)).toContain(`  session-scripts: 0 new, 0 new version, ${SCRIPT_ROWS} unchanged, 0 absent, 0 reject`);
     expect(again.stdout).toContain('RESULT: PLANNED -- 0 item(s) would be written.');
   });
 

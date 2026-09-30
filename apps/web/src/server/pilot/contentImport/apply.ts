@@ -16,8 +16,8 @@ import { parsePackage } from './validate';
 // rolls back), the later upload route runs this inside withTransaction
 // (db.ts:173-192). The old loaders put COMMIT in a `finally`, so a JavaScript
 // error after the first insert committed that insert
-// (seed-competence-cohorts.mjs:246-290 explains the regression that proved
-// it; seed-disciplines.mjs:208-213 still has the shape).
+// (the retired seed-competence-cohorts.mjs recorded the regression that proved
+// it; seedLoaderTransactions.test.ts now pins the rule on runApply).
 //
 // NOT IN A TRANSACTION IS REFUSED. The first statement is a SAVEPOINT, which
 // Postgres refuses outside a transaction block (SQLSTATE 25P01). Without this,

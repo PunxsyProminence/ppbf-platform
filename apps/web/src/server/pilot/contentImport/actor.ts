@@ -6,9 +6,9 @@ import { ContentImportRefusal } from './refusal';
 // WHO MAY LOAD CONTENT INTO AN ORGANIZATION. Enforced here, in code, for both
 // callers of the engine (the seed CLI now, the upload route later), because
 // until now the rule lived only in workflow input text
-// (seed-reference-data.yml, seed_account_id description) and the loaders
-// recorded whatever role the account had (lib/seed-account-role.mjs:18-40
-// refuses only a missing account).
+// (seed-reference-data.yml, seed_account_id description) and the retired
+// per-dataset loaders recorded whatever role the account had (their
+// lib/seed-account-role.mjs refused only a missing account).
 //
 //   a gym organization (punxsy_prominence or any other):
 //     the account exists, is active (active_flag), is not deleted

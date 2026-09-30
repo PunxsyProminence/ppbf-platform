@@ -56,7 +56,7 @@ export function assertColumns(table: string, columns: ReadonlyMap<string, TableC
  * The database value for one canonical cell (canonical.ts: blank already reads
  * as the column's blankDefault). A '|' list becomes a real text[] -- the old
  * drill loader split on ';' and ',' only and so stored 'A1-001|A2-002' as ONE
- * element (seed-drill-library.mjs:210-219); every row written here is split.
+ * element (the retired seed-drill-library.mjs); every row written here is split.
  * A blank is NULL where the column allows it, '' for a NOT NULL text column
  * (what_bad_looks_like has no default, drill_library_v3 migration :101-102),
  * and an empty array for a NOT NULL array.

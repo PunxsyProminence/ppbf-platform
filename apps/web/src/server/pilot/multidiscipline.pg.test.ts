@@ -9,7 +9,8 @@
 //    with no coach note is rejected.
 // 2. pilot_mixed_age_unrelated holds: relationship='unrelated_adult' with a note under
 //    15 characters is rejected.
-// 3. pilot.disciplines seeds exactly 5 rows via seed-disciplines.mjs, idempotently.
+// 3. The committed discipline registry loads whole through the content-import core
+//    (the path the seed workflow runs), idempotently, and a dry run writes nothing.
 // 4. The readiness check actually fails when the migration did not land.
 //
 // Spins up the same disposable, local-only embedded Postgres the other migration
@@ -24,7 +25,7 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
-import { Client } from 'pg';
+import { Client, type PoolClient } from 'pg';
 
 let activeClient: Client | null = null;
 
@@ -41,11 +42,18 @@ jest.mock('./db', () => ({
   }),
 }));
 
+import { seedDefaultDisciplines } from './disciplineSeeds';
 import {
   listDisciplines,
   recordGrapplingExposure,
   recordMixedAgeSession,
 } from './multidiscipline';
+import {
+  committedRows,
+  createSeedingGym,
+  loadReferenceContent,
+  openFullSchemaDatabase,
+} from '../../testing/referenceContentFixture';
 
 jest.setTimeout(180_000);
 
@@ -59,8 +67,6 @@ const MIGRATION_RUNNER_PATH = path.resolve(
   __dirname,
   '../../../scripts/pilot-apply-multidiscipline-migration.mjs',
 );
-const SEED_LOADER_PATH = path.resolve(__dirname, '../../../scripts/seed-disciplines.mjs');
-const SEED_DIR = path.resolve(__dirname, '../../../seed-data/multidiscipline');
 const SCHEMA_FILES = [
   'pilot_slice_postgres.sql',
   'pilot_slice_postgres_activity_log_migration.sql',
@@ -82,13 +88,6 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let baseSchemaSql: string[];
 let migrationSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
-let seedAll: (
-  client: Client,
-  seedDir: string,
-  placeholders: { organizationId: string },
-  opts?: { dryRun?: boolean },
-) => Promise<void>;
-
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
 }
@@ -200,9 +199,6 @@ beforeAll(async () => {
     client: Client,
     sql: string,
   ) => Promise<void>;
-
-  const seedModule = await nativeDynamicImport(pathToFileURL(SEED_LOADER_PATH).href);
-  seedAll = seedModule.seedAll as typeof seedAll;
 });
 
 afterAll(async () => {
@@ -220,6 +216,17 @@ afterAll(async () => {
     serverProcess.kill('SIGTERM');
   });
 });
+
+/**
+ * Registers the platform's disciplines for ORG_A through the in-app registry
+ * writer (disciplineSeeds.ts: what a gym created in the app gets), which
+ * disciplineSeedsOwnership.test.ts holds equal to the committed CSV. The
+ * choke-note cases need the registry only because
+ * pilot.grappling_exposure.discipline must name a registered discipline.
+ */
+async function registerDisciplines(client: Client): Promise<void> {
+  await seedDefaultDisciplines(ORG_A, client as unknown as PoolClient);
+}
 
 describe('multidiscipline migration readiness against real Postgres', () => {
   test('the readiness check REFUSES a database where the migration never ran', async () => {
@@ -261,7 +268,7 @@ describe('pilot_grappling_exposure_choke_note', () => {
     const client = await freshDatabase('ppbf_test_multidiscipline_choke_no_note');
     try {
       await applyMigrationTransaction(client, migrationSql);
-      await seedAll(client, SEED_DIR, { organizationId: ORG_A });
+      await registerDisciplines(client);
 
       await expect(
         recordGrapplingExposure({
@@ -287,7 +294,7 @@ describe('pilot_grappling_exposure_choke_note', () => {
     const client = await freshDatabase('ppbf_test_multidiscipline_choke_with_note');
     try {
       await applyMigrationTransaction(client, migrationSql);
-      await seedAll(client, SEED_DIR, { organizationId: ORG_A });
+      await registerDisciplines(client);
 
       const row = await recordGrapplingExposure({
         organizationId: ORG_A,
@@ -356,53 +363,67 @@ describe('pilot_mixed_age_unrelated', () => {
   });
 });
 
-describe('seed-disciplines.mjs against real Postgres', () => {
-  test('seeds exactly 5 discipline rows, boxing and conditioning active', async () => {
-    const client = await freshDatabase('ppbf_test_multidiscipline_seed');
-    try {
-      await applyMigrationTransaction(client, migrationSql);
-      await seedAll(client, SEED_DIR, { organizationId: ORG_A });
+/*
+  THE COMMITTED DISCIPLINE REGISTRY, LOADED THE WAY THE SEED WORKFLOW LOADS IT.
 
-      const all = await listDisciplines(ORG_A);
-      expect(all).toHaveLength(5);
-      expect(all.map((d) => d.discipline).sort()).toEqual(
-        ['bjj', 'boxing', 'combatives', 'conditioning', 'wrestling'],
-      );
+  Until IMP-10 this ran seed-disciplines.mjs. It is retired; the content-import
+  core loads every dataset, run as runApply (the `content:apply` the seed
+  workflow calls), into a database holding the schema production runs. The
+  counts come from the committed file.
+*/
+describe('the committed discipline registry, loaded through the content-import core', () => {
+  let seedDb: Client;
+  const DISCIPLINES = committedRows('multidiscipline/seed_disciplines.csv');
 
-      const active = await listDisciplines(ORG_A, { activeOnly: true });
-      expect(active.map((d) => d.discipline).sort()).toEqual(['boxing', 'conditioning']);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+  beforeAll(async () => {
+    seedDb = await openFullSchemaDatabase(Client, connectionStringFor, 'ppbf_test_multidiscipline_core_seed');
   });
 
-  test('re-running is idempotent: no duplicates, no error', async () => {
-    const client = await freshDatabase('ppbf_test_multidiscipline_seed_idempotent');
-    try {
-      await applyMigrationTransaction(client, migrationSql);
-      await seedAll(client, SEED_DIR, { organizationId: ORG_A });
-      await seedAll(client, SEED_DIR, { organizationId: ORG_A });
-
-      const all = await listDisciplines(ORG_A);
-      expect(all).toHaveLength(5);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+  afterAll(async () => {
+    activeClient = null;
+    await seedDb?.end().catch(() => {});
   });
 
-  test('--dry-run writes nothing', async () => {
-    const client = await freshDatabase('ppbf_test_multidiscipline_seed_dry_run');
-    try {
-      await applyMigrationTransaction(client, migrationSql);
-      await seedAll(client, SEED_DIR, { organizationId: ORG_A }, { dryRun: true });
+  test("loads every committed discipline, with the CSV's active ones active", async () => {
+    const admin = await createSeedingGym(seedDb, 'gym_disciplines_real');
+    const loaded = await loadReferenceContent(seedDb, { organizationId: 'gym_disciplines_real', actorAccountId: admin, datasets: 'disciplines' });
+    expect(loaded.code).toBe(0);
 
-      const all = await listDisciplines(ORG_A);
-      expect(all).toHaveLength(0);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+    activeClient = seedDb;
+    const all = await listDisciplines('gym_disciplines_real');
+    expect(all.map((d) => d.discipline).sort()).toEqual(DISCIPLINES.map((row) => row.discipline).sort());
+    expect(DISCIPLINES.length).toBeGreaterThanOrEqual(5);
+
+    const active = await listDisciplines('gym_disciplines_real', { activeOnly: true });
+    expect(active.map((d) => d.discipline).sort()).toEqual(
+      DISCIPLINES.filter((row) => row.active.trim().toLowerCase() === 'true').map((row) => row.discipline).sort(),
+    );
+    expect(active.length).toBeGreaterThan(0);
+  });
+
+  test('loading it again writes nothing: no duplicates, no error', async () => {
+    const admin = await createSeedingGym(seedDb, 'gym_disciplines_again');
+    expect((await loadReferenceContent(seedDb, { organizationId: 'gym_disciplines_again', actorAccountId: admin, datasets: 'disciplines' })).code).toBe(0);
+    const again = await loadReferenceContent(seedDb, { organizationId: 'gym_disciplines_again', actorAccountId: admin, datasets: 'disciplines' });
+    expect(again.lines).toContain(`  disciplines: 0 new, 0 new version, ${DISCIPLINES.length} unchanged, 0 absent, 0 reject`);
+    expect(again.lines).toContain('RESULT: NOTHING TO APPLY -- every item is unchanged or absent; nothing was written.');
+
+    activeClient = seedDb;
+    expect(await listDisciplines('gym_disciplines_again')).toHaveLength(DISCIPLINES.length);
+  });
+
+  test('--dry-run applies and rolls back: nothing is written', async () => {
+    const admin = await createSeedingGym(seedDb, 'gym_disciplines_dry_run');
+    const loaded = await loadReferenceContent(seedDb, {
+      organizationId: 'gym_disciplines_dry_run',
+      actorAccountId: admin,
+      datasets: 'disciplines',
+      dryRun: true,
+    });
+    expect(loaded.code).toBe(0);
+    expect(loaded.lines.some((line) => line.startsWith('RESULT: DRY RUN'))).toBe(true);
+
+    activeClient = seedDb;
+    expect(await listDisciplines('gym_disciplines_dry_run')).toHaveLength(0);
   });
 });

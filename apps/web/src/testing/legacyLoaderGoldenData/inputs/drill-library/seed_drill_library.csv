@@ -1,0 +1,201 @@
+organization_id,drill_id,lineage_id,version,supersedes_drill_id,superseded_at,name,discipline,category,skill_id,target_behavior,purpose,standard_setup,execution,what_good_looks_like,what_bad_looks_like,common_errors,corrections,transfer,contact_level,equipment_needed,requires_coach_authorization,content_class,source_ref,active,created_by_account_id,difficulty,grounding_claim_ids,field_provenance
+{{PPBF_ORG_ID}},drl_7f812fecacfee4,drl_7f812fecacfee4,1,,,Touch to Reposition,boxing,technical,SK-FW-04,"Train clean entry, visible scoring, and immediate departure from the bad position. This is the core behavioral drill for teaching athletes not to stay in the exchange after success.","Train clean entry, visible scoring, and immediate departure from the bad position. This is the core behavioral drill for teaching athletes not to stay in the exchange after success.","Use open floor space or ring space. One feeder or partner presents a stable target or controlled live picture. Athlete starts in stance with enough room to enter, score, and leave on angle or line.","Athlete establishes stance and visual control before the rep begins.
+
+Athlete enters under control behind feet and straight scoring logic.
+
+Athlete lands the agreed scoring action or touch sequence.
+
+Athlete immediately repositions to a better spot rather than admiring the work.
+
+Athlete resets stance and eyes before the next rep.","Feet arrive before hands on entry, weight balanced, eyes already on target.
+The scoring touch lands clean and visible from outside the opponent's direct line [A2-063].
+The lead foot pivots off the centerline the instant contact is made, weight already transferring.
+Stance and eye line are reset before the next call, with no pause standing in the pocket.","Athlete stands square after the touch lands, watching the result.
+Entry travels straight down the centerline instead of stepping off it.
+Hands land before the base is set, feet trailing the punch.
+Eyes reset late, after the feet have already moved, instead of before the next rep begins.","Staying too long after scoring.
+
+Entering with hands before the base is under control.
+
+Leaving straight back with poor balance when an angle is available.
+
+Treating the drill like speed work instead of precision work.","Coach calls ""off"" the instant the touch lands, before the athlete has time to admire it.
+Coach physically blocks the straight retreat lane so the only open path is the lateral step.
+Coach runs the entry footwork alone, no hands, until foot-before-hand order is automatic.
+Coach freezes the rep on contact and places the athlete's feet by hand into the correct angle.","Repetition of clean stance, entry, and touch under structured drilling produces measurable gains in stance and straight-punch execution within weeks [A2-068].
+In live rounds this builds the habit of hit-and-move rather than hit-and-stay, and a visible off-line touch is scored where a square, admired one may be missed [A2-063].",light_technical,,False,COACHING CRAFT - PPBF source manual v3,Punxsy_Drill_Library_Source_v3.docx,True,{{SEED_ACCOUNT_ID}},intermediate,A2-063|A2-068,PPBF source manual v3
+{{PPBF_ORG_ID}},drl_2d0193a7c52e58,drl_2d0193a7c52e58,1,,,Three and Out,boxing,technical,SK-COMBO-03,"Train exchange restraint, visible finish, and structural discipline. This drill teaches that the athlete does not need unlimited punches to own the exchange.","Train exchange restraint, visible finish, and structural discipline. This drill teaches that the athlete does not need unlimited punches to own the exchange.","Use pads, partner gloves, or controlled live partner work. Set a hard cap of three punches. The last punch is the structural finish and must be followed immediately by reposition.","Athlete enters with a declared scoring sequence.
+
+Athlete throws no more than three punches.
+
+The third shot finishes the scoring phase visibly.
+
+Athlete exits immediately after the third punch.
+
+Athlete resets before the next entry.","Athlete throws exactly three punches per entry, no more, before exiting range.
+The third punch lands with full extension and visible weight transfer, closing the phase [A6-055].
+Hands return to guard and feet reset before the next entry begins.
+Punch selection varies entry to entry rather than repeating the same triple-punch pattern [A8-052].","A fourth punch is thrown after the declared finish, extending past the drill's structure.
+The third punch is flicked or arm-only, with no visible commitment to close the exchange.
+Athlete remains planted in range after punch three instead of exiting.
+The same three-punch sequence is repeated on every entry regardless of angle or opening.","Greed after success.
+
+Poor awareness of sequence count.
+
+Losing stance during the second or third punch.
+
+Throwing the sequence too fast to control the finish.","Coach calls ""out"" the instant a fourth punch starts and stops the rep immediately.
+Coach has the athlete rerun the entry and calls for full extension and weight commitment specifically on punch three.
+Coach steps into the athlete's forward path after punch three to force the exit step.
+Coach names a new three-punch sequence before each entry so the athlete cannot default to a repeated pattern.","Live exchanges lengthen in reaction time and lose punch force the longer they run [A3-032]; this drill builds the habit of committing to a clean finish early instead of drifting into extra output.
+Outside the gym, the same discipline applies: state your point, make it clearly, and stop rather than overextending past the moment it lands.",light_technical,,False,COACHING CRAFT - PPBF source manual v3,Punxsy_Drill_Library_Source_v3.docx,True,{{SEED_ACCOUNT_ID}},intermediate,A3-032|A6-055|A8-052,PPBF source manual v3
+{{PPBF_ORG_ID}},drl_08c95a746f83e9,drl_08c95a746f83e9,1,,,Structured Pursuit,boxing,technical,SK-OUT-01,"Train controlled pressure without chasing. This is a movement and decision drill, not a sprint drill.","Train controlled pressure without chasing. This is a movement and decision drill, not a sprint drill.","One partner or feeder gives ground under controlled conditions. Space should allow the athlete to cut, step, and own ground without having to rush. Use floor markers if needed.","Athlete advances behind stance, not behind emotional urgency.
+
+Athlete uses step patterns and straight scoring threats to control space.
+
+Athlete cuts and meets movement rather than simply following it.
+
+Athlete scores only when the feet and picture are correct.
+
+Athlete leaves the exchange correctly after scoring.","Feet arrive before the hands do; the jab or straight lands only after the back foot has replaced under the hip.
+The pursuing athlete cuts the ring at an angle, meeting the retreating athlete's line rather than trailing it.
+Scores come as single straight punches thrown from a set base, not from a moving base [A2-015].
+After the punch lands, the scoring athlete replaces distance and resets stance before re-engaging.","Feet cross or drag while advancing, so the punch is thrown while still moving forward.
+Shoulders square up to the retreating partner instead of staying staggered behind the lead hand.
+The athlete keeps advancing straight down the centerline instead of angling to cut off the ring.
+After scoring, the athlete stays planted in range instead of exiting off-line.","Mistaking motion for pressure.
+
+Trying to win the rep by speed instead of position.
+
+Allowing frustration to shorten decision time.
+
+Throwing while off the base.","Stop the drill the moment the feet cross or the base collapses, and walk the step pattern in isolation before live pursuit resumes.
+Call ""angle"" out loud on repetitions where the athlete follows a straight line, and have the pair repeat the exchange at a controlled pursuit speed until the cut-off angle appears on its own.
+Restrict scoring credit to punches thrown from a stopped, replaced base — no credit for punches thrown mid-step — so the athlete self-corrects timing rather than being told about it.
+Pair a structured walk-through-then-drill progression rather than open pursuit from the first rep; a structured teaching sequence produces cleaner technical pickup than unstructured repetition [B1-020], and short blocks of structured drilling have shown measurable stance and straight-punch improvement in a matter of weeks [A2-068].","This is what keeps a boxer's range intact under real forward pressure in sparring — advancing on a plan instead of on adrenaline.
+Outside the gym, it is the same discipline: closing on a goal deliberately, checking your footing at each step, rather than rushing the last few feet and losing your position.",light_technical,,False,COACHING CRAFT - PPBF source manual v3,Punxsy_Drill_Library_Source_v3.docx,True,{{SEED_ACCOUNT_ID}},advanced,A2-015|A2-068|B1-020,PPBF source manual v3
+{{PPBF_ORG_ID}},drl_7af719b3b85e94,drl_7af719b3b85e94,1,,,Post Contact Reset,boxing,technical,SK-STANCE-02,Train immediate recovery of structure after either giving or receiving contact. The athlete learns that contact is not a cue for emotional continuation.,Train immediate recovery of structure after either giving or receiving contact. The athlete learns that contact is not a cue for emotional continuation.,"Use controlled partner touch, controlled sparring pictures, or pad interruptions. The coach should be able to trigger the reset repeatedly without needing full-intensity contact.","Athlete experiences the contact trigger.
+
+Athlete does not answer emotionally.
+
+Athlete resets stance, eyes, and breathing quickly.
+
+Athlete resumes from structure, not from panic or momentum.","Feet return to base width and correct angle within one beat of the contact.
+Eyes stay locked on the opponent, not on the glove or the point of impact.
+One sharp exhale follows contact, then breathing settles into its normal rhythm.
+Hands return to guard and weight centers before the next exchange begins.","Athlete freezes upright with weight flat on both heels after contact.
+Athlete chases, swings back, or retaliates before stance is reformed.
+Athlete drops hands, turns the head away, or breaks eye contact with the opponent.
+Athlete holds the breath or breathes rapidly and shallow through the mouth only.","Emotional retaliation.
+
+Loss of visual control.
+
+Breath holding.
+
+Confusing speed with recovery.","Coach calls ""reset"" as a fixed verbal cue the instant contact occurs.
+Coach freezes the pair and checks foot placement, hand position, and eye line before allowing continuation.
+Coach isolates the single contact-then-reset sequence, repeating it standing still before adding footwork or exchange back in.
+Coach has the athlete exhale audibly on command until the sharp exhale becomes automatic after contact.","This reset habit is what lets a boxer keep working behind increased ring movement and defensive movement, the pattern that now defines elite exchanges [A3-021][A2-064][A6-037].
+Outside the gym, the same skill is catching a jolt, a setback, or a provocation without answering it emotionally, and resuming from a settled position instead of momentum or panic.",light_technical,,False,COACHING CRAFT - PPBF source manual v3,Punxsy_Drill_Library_Source_v3.docx,True,{{SEED_ACCOUNT_ID}},beginner,A2-064|A3-021|A6-037,PPBF source manual v3
+{{PPBF_ORG_ID}},drl_0c72ef57315f70,drl_0c72ef57315f70,1,,,Chaos Recognition,boxing,technical,SK-TAC-04,Train the athlete to identify when the exchange is no longer worth staying in. The drill teaches leaving disorder instead of trying to solve it from inside the mess.,Train the athlete to identify when the exchange is no longer worth staying in. The drill teaches leaving disorder instead of trying to solve it from inside the mess.,"Use controlled live partner work with deliberate disruptions: off-beat punches, crowding, awkward spacing, or broken rhythm. The coach must keep it educational, not random.","Athlete enters a live or semi-live exchange picture.
+
+Partner creates controlled disorder.
+
+Athlete identifies the breakdown point.
+
+Athlete exits, repositions, and resets rather than trying to out-chaos the moment.","Athlete breaks contact and steps off the centerline before the second flurry lands.
+Feet reset to fighting stance before hands reset to guard.
+Athlete re-enters on a fresh angle, not the line the disorder occurred on.
+Exchange picture resets clean, like the start of a new round rather than a continuation of the last one.","Athlete stays inside range trying to trade shot for shot.
+Athlete covers and absorbs instead of leaving.
+Athlete backs straight up along the same line, still in range.
+Athlete drops the guard the moment they disengage.","Late recognition.
+
+Pride-driven staying.
+
+Poor visual awareness under crowding.
+
+Lack of agreement about what counts as disorder.","Coach calls ""out"" the instant the exit should have happened and freezes the drill on that frame.
+Coach walks the exit step by step at reduced speed before adding contact back in.
+Coach narrows the disorder window so the exit decision has to come earlier and cleaner.
+If the partner's disorder tips into unintended head contact, coach stops the drill immediately and follows the standard head-contact suspension protocol before any restart [B4-017].","This is the same decision a boxer makes between rounds: the sport already builds in a hard reset rather than a continuation, which is why the one-minute interval exists [A6-022].
+Outside the ring it is the same skill: recognizing when to leave a bad exchange or bad situation instead of trying to win it from inside.",light_technical,,False,COACHING CRAFT - PPBF source manual v3,Punxsy_Drill_Library_Source_v3.docx,True,{{SEED_ACCOUNT_ID}},advanced,A6-022|B4-017,PPBF source manual v3
+{{PPBF_ORG_ID}},drl_3df01682e604dd,drl_3df01682e604dd,1,,,Cross Return to Guard,boxing,technical,SK-CROSS-01,Recovery after the rear hand,Recovery after the rear hand,focus mitt,"Cross and return, with the coach checking that the lead hand did not drop during the throw. The check is on the non-punching hand.","Cross fires straight from chin, rotating rear hip and shoulder into the line.
+Lead hand stays fixed at cheekbone for the entire throw, not just at start and finish.
+Punching arm retracts along the same path it extended, elbow leading the hand back.
+Guard is fully reformed — both hands at the face — before the coach calls the next command.","Lead hand drifts down or drops away from the face during the cross, most visible at full extension [A2-003].
+Cross recovers slower than it was thrown, hand hanging out after impact instead of snapping back.
+Fighter watches their own punch land, head trailing forward instead of resetting behind the lead shoulder.
+Recovery becomes rushed and sloppy after repeated reps, rear hand returning short of guard height.",,"Coach stands on the lead-hand side and calls out every time it drops, independent of how the cross itself looked.
+Hold a target or open palm at the fighter's cheekbone height and have them keep the lead glove touching it through the throw.
+Slow the drill down — cross, hold extension, check the lead hand position, then recover — before returning to full speed.
+If recovery lags after the rear hand fires, cue ""hand back before foot sets"" so the arm's return leads the reset rather than following it.","A lead hand that stays home on every rear-hand throw is what keeps a fighter covered when the cross is countered or slips.
+This same discipline — non-throwing hand stays in position — carries into any exchange where one side of the body is committed and the other has to hold the line.",light_technical,focus mitt,False,"COACHING CRAFT - authored, informed by evidence, not individually validated",PPBF research program 2026-08-07,True,{{SEED_ACCOUNT_ID}},intermediate,A2-003,LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION
+{{PPBF_ORG_ID}},drl_480bb9dea67e50,drl_480bb9dea67e50,1,,,Defensive Layering,boxing,defense,SK-DEF-08,Combining defensive options,Combining defensive options,gloves,Partner attacks with varied punches; athlete must use a different defensive response each time. Requires coach authorization.,"Athlete answers each incoming punch with a different tool: slip, roll, parry, pivot, or step-off, never repeating the same response twice in a row.
+Head moves off the centerline before or as the punch lands, not after.
+Return to a stable guard position between each exchange, hands up, chin down, weight balanced.
+Defensive movement and footwork stay linked to hip and body positioning, not just upper-body reaction [A2-061][A8-003].","Athlete defaults to one preferred defense (usually the guard or pull-back) regardless of punch type.
+Feet stay planted while only the upper body reacts, leaving the athlete square to follow-up punches.
+Defensive movement arrives late, after the punch has already landed or nearly landed.
+Recovery after a defensive action is slow, leaving a flat-footed pause before the guard resets.",,"Stop the round and name the punch just thrown and the defense that should have answered it, then restart from that exact exchange.
+Restrict the partner to a single punch type until the athlete shows the full range of defenses against it, then expand.
+Slow the feed to isolate footwork from head movement, requiring a step or pivot before allowing any upper-body defense.
+Shorten the exchange and demand a guard reset before the next punch is thrown, rewarding recovery speed over defensive variety.","Sustained defensive alertness under repeated, varied attack is what separates rounds two and three from round one in live bouts; activity and accuracy in later exchanges depend on defense that hasn't degraded [A2-061].
+Outside the gym, this is the same skill as staying composed and responsive under repeated, unpredictable pressure rather than falling back on one habitual reaction.",conditioned,gloves,True,"COACHING CRAFT - authored, informed by evidence, not individually validated",PPBF research program 2026-08-07,True,{{SEED_ACCOUNT_ID}},advanced,A2-061|A8-003,LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION
+{{PPBF_ORG_ID}},drl_111f0a8ae15fc3,drl_111f0a8ae15fc3,1,,,Pad Round With Called Sequences,boxing,padwork,SK-PAD-01,Responding to called combinations,Responding to called combinations,focus mitts,"Coach calls sequences at irregular intervals. Pad work is a coaching interaction, not a conditioning block — call density stays low enough that technique is observable.","The athlete's hands stay up and loose between calls, not cocked in advance for a combo they've guessed. Punches launch only after the call is finished, never before it. Each combination runs through its full phase sequence — load, strike, retract — before the guard resets [A6-055]. Response time stays even whether the gap since the last call was short or long.","The athlete throws before the coach finishes calling the sequence. The athlete substitutes a favorite combo for the one actually called. Hands drop and stay down after the punch instead of returning to guard. The athlete chains calls back to back, skipping the retract phase to get ahead of the coach's rhythm.",,"Coach holds the pads still and silent until the guard is reset before calling again. Coach drops to a single punch call, not a combination, to kill the anticipation habit. Coach stretches the gap between calls until the hands stay up without being told. Coach isolates the exact punch being rushed or dropped rather than repeating the whole sequence — pad time is scarce and every call has to be spent on the actual fault [B2-048].",Answering the call instead of running a memorized pattern is the same skill as answering what an opponent actually throws instead of what was planned for. Outside the gym it is the same habit: responding to what is actually in front of you rather than to what you expected to be there.,light_technical,focus mitts,False,"COACHING CRAFT - authored, informed by evidence, not individually validated",PPBF research program 2026-08-07,True,{{SEED_ACCOUNT_ID}},intermediate,A6-055|B2-048,LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION
+{{PPBF_ORG_ID}},drl_31f81811de1b2f,drl_31f81811de1b2f,1,,,Conditioned Sparring — Single Task,boxing,sparring,SK-SPAR-01,Sparring with one permitted action,Sparring with one permitted action,full protective equipment,"One athlete works a single named action while the partner is restricted to defence. Requires coach authorization, protective equipment per the applicable sanctioning body, and direct supervision. No volume is prescribed by this system.","Attacker throws only the named action and nothing else, repetition after repetition.
+Defender uses guard, slip, or pivot only, no return punches, no counters.
+Attacker's off hand stays up and set between reps.
+Both boxers reset to stance and hands-up before the next rep starts.","Attacker adds a second punch or combination not named for the drill.
+Defender fires back instead of defending only.
+Pace or power creeps up past a controlled, no-contact standard.
+Coach is not standing at the pairing, watching the exchange directly.",,"Stop the pair on the first mixed-in punch or returned shot, name the single action again out loud, restart from stance.
+Walk the pair through the action at half speed before letting them go back to drill pace.
+Pull a pair that keeps breaking the restriction out of sparring and put them on solo shadow work instead.
+If a boxer takes a blow to the head or the session gets stopped for that reason, end sparring for that boxer and route through the concussion return protocol before any resumption [B4-017]; confirm registration and medical clearance are current before that boxer sparring resumes at all [B1-043].","One clean, accurate shot beats a wide, busy attack — this is what separates winners from losers in the amateur scoring data, not punch volume [A8-002].
+Doing exactly one thing correctly under supervision, and stopping the moment the boundary breaks, is the same discipline that holds up under pressure outside the ring.",controlled_sparring,full protective equipment,True,"COACHING CRAFT - authored, informed by evidence, not individually validated",PPBF research program 2026-08-07,True,{{SEED_ACCOUNT_ID}},intermediate,A8-002|B1-043|B4-017,LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION
+{{PPBF_ORG_ID}},drl_93b8eac77911a2,drl_93b8eac77911a2,1,,,Open Sparring,boxing,sparring,SK-SPAR-03,Unrestricted controlled sparring,Unrestricted controlled sparring,full protective equipment,"Requires coach authorization, medical and eligibility status confirmed by qualified humans, protective equipment per the applicable sanctioning body, and direct supervision throughout. No volume, frequency or round count is prescribed by this system — no validated safe dose exists.","Both boxers' registration and current medical clearance are confirmed and on file before gloves touch [A5-149].
+Coach stands ringside in direct, uninterrupted supervision for the full session.
+Protective equipment matches the applicable sanctioning body's requirements before the first exchange.
+Boxers break cleanly and stop instantly on the coach's call, with no additional punches thrown after ""stop.""","Sparring starts without documented medical clearance or with an unregistered boxer [A5-149].
+A boxer takes sustained head contact and the session continues instead of stopping.
+Coach attention is split — coaching another pair, on a phone, or out of position to see the exchange.
+A boxer under a medical suspension is put back in to spar before the suspension period is served [B3-047][B4-017].",,"Coach stops the session on sight of any head-blow stoppage criteria and does not resume without ringside medical input [B4-017].
+Coach checks registration and Annual Medical documentation before any pairing steps in, every time, with no exceptions [A5-149].
+Coach removes a suspended boxer from all sparring for the full suspension period regardless of how they say they feel [B3-047].
+Coach repositions immediately to maintain full sightline on both boxers before allowing sparring to continue.","Reading an opponent's timing and adjusting range under pressure is the direct rehearsal for live bout performance.
+The discipline of stopping on command and respecting a suspension carries into any high-consequence activity where the person in charge calls the stop, not the person in the action — a habit worth having given the documented long-term risks of repeated head contact in boxing [B5-046].",open_sparring,full protective equipment,True,"COACHING CRAFT - authored, informed by evidence, not individually validated",PPBF research program 2026-08-07,True,{{SEED_ACCOUNT_ID}},advanced,A5-149|B3-047|B4-017|B5-046,LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION
+{{PPBF_ORG_ID}},drl_81c1dc6ae59852,drl_81c1dc6ae59852,1,,,Read the Stance,boxing,tactical,SK-TAC-01,Identifying opponent stance and implications,Identifying opponent stance and implications,video or partner,Identify orthodox or southpaw and state one consequence for lead-foot position before any movement.,"Boxer calls ""orthodox"" or ""southpaw"" out loud before any foot moves.
+Boxer states the lead-foot consequence in one sentence — inside or outside foot position, which lead hand crosses which lead hand.
+Feet stay planted through the call, then step to the correct angle only after the words are out.
+Call and step happen in the same order every repetition.","Boxer steps or shifts weight before finishing the verbal call.
+Boxer names the stance but gives no foot-position consequence, or gives one that doesn't match the stance called.
+Boxer misreads southpaw as orthodox or vice versa.
+Boxer answers with a generic line (""watch the power hand"") instead of a specific lead-foot statement.",,"Stop the drill the instant feet move before the call is complete; reset to the starting distance.
+Point at the opponent's lead foot and ask ""inside or outside of this?"" until the boxer answers correctly without hesitation.
+Walk the boxer through the two setups side by side — same-stance and mixed-stance — so the foot-position rule is stated for each before any stepping is allowed.
+Slow the pairing to a freeze-frame cadence: stance called, consequence stated, coach says ""step,"" boxer steps.","This is the read that has to run before the first exchange in sparring, since angle and outside-foot control are decided by stance match before a punch is thrown.
+Because mixed-stance pairings are rarer than same-stance ones for most boxers [A2-091], the explicit call-out compensates for the lower rep count southpaw match-ups get in daily sparring.
+Outside of boxing, the habit transfers as ""identify the terrain before you commit a step"" — read the setup, say what it means, then move.",none,video or partner,False,"COACHING CRAFT - authored, informed by evidence, not individually validated",PPBF research program 2026-08-07,True,{{SEED_ACCOUNT_ID}},intermediate,A2-091,LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION
+{{PPBF_ORG_ID}},drl_40acc6820f5df6,drl_40acc6820f5df6,1,,,Skipping — Continuous,conditioning,conditioning,,Coordination and calf endurance,Coordination and calf endurance,skipping rope,Continuous skipping at a sustainable rhythm.,"Rope turns from the wrists, not the shoulders.
+Feet stay under the hips with a low, quiet bounce.
+Landing is on the balls of the feet, heels lightly kissing down between skips.
+Breathing stays even and rhythm holds steady from first skip to last.","Double bounce between rope passes.
+Shoulders rolling the rope instead of the wrists.
+Heels slamming flat on every landing.
+Rhythm collapsing into stop-start bursts.",,"Have the athlete slow the rope speed and shrink the jump height until the wrist turn returns.
+Tap the athlete's shoulders down and cue ""wrists only"" while they skip.
+Cue ""quiet feet"" and have them skip on a mat or softer surface to hear the landing.
+Drop to a walk-in-place rhythm with no rope, rebuild timing, then reintroduce the rope.","Quiet, controlled footwork here is the same footwork that keeps an athlete balanced moving in and out of range on the bag or with a partner.
+Holding a steady rhythm under fatigue here builds the pacing sense needed to last through longer rounds later.",none,skipping rope,False,"COACHING CRAFT - authored, informed by evidence, not individually validated",PPBF research program 2026-08-07,True,{{SEED_ACCOUNT_ID}},beginner,,COACHING-CRAFT DRAFT — no directly relevant research retrieved; REQUIRES FLOOR VALIDATION
+{{PPBF_ORG_ID}},drl_681a54fa579bb1,drl_681a54fa579bb1,1,,,Non-Contact Boxing Circuit,conditioning,conditioning,,Boxing-style conditioning without contact,Boxing-style conditioning without contact,"bag, rope, timer","Circuit of bag, rope and bodyweight stations for participants not pursuing contact. A complete lane in its own right, not a preparatory stage.","Participants rotate through bag, rope and bodyweight stations with no gap between transitions.
+The session moves through a fixed order — warm-up, drills, strength/endurance work, cool-down — with clearly marked high-intensity intervals inside it [B1-062].
+Rope turns stay continuous, feet springing off the floor, no double-bounce.
+Bag strikes extend fully and return to guard before the next combination begins.","Participants cluster at one station while another sits empty.
+Rope turning slows or stops mid-interval; feet go flat instead of springing.
+Bag combinations thrown from the shoulders only, hips and feet not turning with the punch.
+Rest periods run long because no one calls time.",,"Coach calls the rotation aloud and balances station numbers before the next round starts.
+Coach demonstrates rope timing at half speed, then rebuilds it to full tempo with the participant.
+Coach stops the bag worker, resets stance, rebuilds the combination from the feet upward.
+Coach calls interval start and stop audibly and moves the group on that cue, not on individual pace.","The rotation habit, rhythm and interval discipline built here carry directly into any boxing-conditioning setting that does not require contact exposure.
+Structured non-contact boxing circuits run as their own programme have shown strong retention and attendance in community and clinical settings, supporting this as a complete lane rather than a warm-up for sparring [B1-063][B1-059].",none,"bag, rope, timer",False,"COACHING CRAFT - authored, informed by evidence, not individually validated",PPBF research program 2026-08-07,True,{{SEED_ACCOUNT_ID}},beginner,B1-059|B1-062|B1-063,LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION

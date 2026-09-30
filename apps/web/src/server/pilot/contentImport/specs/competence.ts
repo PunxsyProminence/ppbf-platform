@@ -13,7 +13,7 @@ import {
 } from './common';
 
 // pilot.competence_levels and pilot.cohort_definitions (competence_cohorts
-// migration :28-37, :107-142). Loaded today by seed-competence-cohorts.mjs.
+// migration :28-37, :107-142). Loaded by the content-import core (seed-reference-data, npm run seed:competence-cohorts).
 
 export const competenceLevelsDataset: DatasetSpec = {
   name: 'competence-levels',
@@ -24,7 +24,9 @@ export const competenceLevelsDataset: DatasetSpec = {
     + "so changing a level's ordinal changes which athletes every cohort admits. Other tables point at "
     + 'level_key, so under R2 the planned revision is an in-place update with the old row kept in a history ledger.',
   loadedToday:
-    'seed-reference-data workflow, dataset competence-cohorts (npm run seed:competence-cohorts): inserts new keys, skips existing ones.',
+    'seed-reference-data workflow, dataset competence-levels (npm run seed:competence-cohorts loads it with the cohorts), '
+    + 'through the content-import core: a new key is inserted, a changed row is revised in place with before and after '
+    + 'kept in the history ledger, an unchanged one is skipped. An ordinal change is refused.',
   files: [
     {
       dataset: 'competence-levels',
@@ -59,7 +61,9 @@ export const cohortDefinitionsDataset: DatasetSpec = {
     + 'a rulebook binds it). The table has no version columns, so under R2 the planned revision is an in-place '
     + 'update with the old row kept in a history ledger.',
   loadedToday:
-    'seed-reference-data workflow, dataset competence-cohorts (npm run seed:competence-cohorts): inserts new ids, skips existing ones.',
+    'seed-reference-data workflow, dataset cohort-definitions (npm run seed:competence-cohorts loads it with the levels), '
+    + 'through the content-import core: a new id is inserted, a changed row is revised in place with before and after '
+    + 'kept in the history ledger, an unchanged one is skipped.',
   files: [
     {
       dataset: 'cohort-definitions',

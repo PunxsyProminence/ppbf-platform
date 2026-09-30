@@ -47,6 +47,13 @@ jest.mock('./db', () => ({
 }));
 
 import { getWorkoutTemplateWithItems, listWorkoutTemplates } from './workoutTemplates';
+import {
+  committedRows,
+  createSeedingGym,
+  loadReferenceContent,
+  loadResearchClaimsIntoPlatformLibrary,
+  openFullSchemaDatabase,
+} from '../../testing/referenceContentFixture';
 
 jest.setTimeout(180_000);
 
@@ -65,10 +72,6 @@ const MIGRATION_RUNNER_PATH = path.resolve(
   __dirname,
   '../../../scripts/pilot-apply-workout-templates-v2-migration.mjs',
 );
-const DRILL_SEED_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/seed-drill-library.mjs');
-const DRILL_SEED_DIR = path.resolve(__dirname, '../../../seed-data/drill-library');
-const TEMPLATE_SEED_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/seed-workout-templates.mjs');
-const TEMPLATE_SEED_DIR = path.resolve(__dirname, '../../../seed-data/workout-templates');
 
 const ORG_A = 'org-workouttemplates-a';
 // A second gym, so the organization_id predicate on every read in this module
@@ -87,19 +90,6 @@ let migrationSql: string;
 let baseSchemaSql: string;
 let applyDrillLibraryMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
-let seedDrillLibraryAll: (
-  client: Client,
-  seedDir: string,
-  placeholders: { organizationId: string; seedAccountId: string },
-  opts?: { dryRun?: boolean },
-) => Promise<void>;
-let seedWorkoutTemplatesAll: (
-  client: Client,
-  seedDir: string,
-  placeholders: { organizationId: string; seedAccountId: string },
-  opts?: { dryRun?: boolean },
-) => Promise<void>;
-
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
 }
@@ -132,10 +122,9 @@ async function freshDatabase(name: string): Promise<Client> {
   await client.connect();
   await client.query(baseSchemaSql);
   await applyDrillLibraryMigrationTransaction(client, drillLibraryMigrationSql);
-  // seed-drill-library.mjs loads the real CSVs, which carry
-  // authoring_state='literature_grounded_draft' and rule_kind='warmup_decay'.
-  // Only the vocabulary-widening migration permits those, so it is a genuine
-  // prerequisite for any test in this file that seeds the real library.
+  // Part of the schema production runs (the widened drill vocabularies), so
+  // these hand-built fixtures sit on the same CHECKs. The committed library
+  // itself is loaded further down, into a full-schema database.
   await client.query(vocabularyWideningSql);
 
   await client.query(
@@ -255,12 +244,6 @@ beforeAll(async () => {
     client: Client,
     sql: string,
   ) => Promise<void>;
-
-  const drillSeedModule = await nativeDynamicImport(pathToFileURL(DRILL_SEED_SCRIPT_PATH).href);
-  seedDrillLibraryAll = drillSeedModule.seedAll as typeof seedDrillLibraryAll;
-
-  const templateSeedModule = await nativeDynamicImport(pathToFileURL(TEMPLATE_SEED_SCRIPT_PATH).href);
-  seedWorkoutTemplatesAll = templateSeedModule.seedAll as typeof seedWorkoutTemplatesAll;
 });
 
 afterAll(async () => {
@@ -636,134 +619,88 @@ describe('workoutTemplates.ts read functions', () => {
   });
 });
 
-describe('seed-workout-templates.mjs against real Postgres', () => {
-  const SEED_ORG = 'ppbf-default-org';
-  const SEED_ACCOUNT = 'acct-seed-test';
+/*
+  THE COMMITTED TEMPLATES, LOADED THE WAY THE SEED WORKFLOW LOADS THEM.
 
-  // Both loaders read created_by_role from the seed account's own
-  // pilot.accounts row and refuse an account that does not exist, so the
-  // account is created alongside the library it seeds. organization_admin, not
-  // the platform_owner the CSVs used to carry, so the role assertion below can
-  // tell the two behaviours apart.
-  async function seedRealDrillLibrary(client: Client): Promise<void> {
-    await client.query(
-      `insert into pilot.accounts (account_id, role, organization_id)
-       values ($1, 'organization_admin', $2)`,
-      [SEED_ACCOUNT, SEED_ORG],
-    );
-    await seedDrillLibraryAll(client, DRILL_SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT });
+  Until IMP-10 these ran seed-drill-library.mjs and seed-workout-templates.mjs.
+  Both are retired; the content-import core loads every dataset, run as
+  runApply (the `content:apply` the seed workflow calls). The templates load
+  AFTER the real drill library, in the same transaction, because
+  pilot.workout_template_items carries a foreign key into pilot.drill_library
+  -- and every count comes from the committed files.
+*/
+describe('the committed workout templates, loaded through the content-import core', () => {
+  let seedDb: Client;
+  const TEMPLATES = committedRows('workout-templates/seed_workout_templates.csv');
+  const ITEMS = committedRows('workout-templates/seed_workout_template_items.csv');
+  const DATASETS = 'disciplines,drill-library,workout-templates';
+
+  beforeAll(async () => {
+    seedDb = await openFullSchemaDatabase(Client, connectionStringFor, 'ppbf_test_wtpl_core_seed');
+    await loadResearchClaimsIntoPlatformLibrary(seedDb);
+  });
+
+  afterAll(async () => {
+    await seedDb?.end().catch(() => {});
+  });
+
+  async function count(table: string, organizationId: string): Promise<number> {
+    const { rows } = await seedDb.query(`select count(*)::int as n from pilot.${table} where organization_id = $1`, [organizationId]);
+    return rows[0].n;
   }
 
-  test('--dry-run inserts nothing', async () => {
-    const client = await freshDatabase('ppbf_test_wtpl_seed_dry_run');
-    try {
-      await applyMigrationTransaction(client, migrationSql);
-      await client.query(
-        `insert into pilot.organizations (organization_id, organization_name, status)
-         values ($1, $1, 'active') on conflict do nothing`,
-        [SEED_ORG],
-      );
-      await seedRealDrillLibrary(client);
-
-      await seedWorkoutTemplatesAll(
-        client,
-        TEMPLATE_SEED_DIR,
-        { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT },
-        { dryRun: true },
-      );
-
-      const { rows } = await client.query(
-        `select count(*)::int as n from pilot.workout_templates where organization_id = $1`,
-        [SEED_ORG],
-      );
-      expect(rows[0].n).toBe(0);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+  test('--dry-run applies every row and rolls it back: nothing is written', async () => {
+    const organizationId = 'gym_wtpl_dry_run';
+    const admin = await createSeedingGym(seedDb, organizationId);
+    const loaded = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: DATASETS, dryRun: true });
+    expect(loaded.code).toBe(0);
+    expect(loaded.lines).toContain(`  workout-templates: ${TEMPLATES.length} new, 0 new version, 0 unchanged, 0 absent, 0 reject`);
+    expect(await count('workout_templates', organizationId)).toBe(0);
   });
 
-  test('a real run seeds all 12 templates and 82 items, every item resolving a real drill_id', async () => {
-    const client = await freshDatabase('ppbf_test_wtpl_seed_real_run');
-    try {
-      await applyMigrationTransaction(client, migrationSql);
-      await client.query(
-        `insert into pilot.organizations (organization_id, organization_name, status)
-         values ($1, $1, 'active') on conflict do nothing`,
-        [SEED_ORG],
-      );
-      await seedRealDrillLibrary(client);
+  test('a real load writes every committed template and item, every item resolving a real drill_id', async () => {
+    const organizationId = 'gym_wtpl_real';
+    const admin = await createSeedingGym(seedDb, organizationId);
+    const loaded = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: DATASETS });
+    expect(loaded.code).toBe(0);
 
-      await seedWorkoutTemplatesAll(client, TEMPLATE_SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT });
+    expect(TEMPLATES.length).toBeGreaterThanOrEqual(12);
+    expect(await count('workout_templates', organizationId)).toBe(TEMPLATES.length);
+    expect(await count('workout_template_items', organizationId)).toBe(ITEMS.length);
 
-      const templates = await client.query(
-        `select count(*)::int as n from pilot.workout_templates where organization_id = $1`,
-        [SEED_ORG],
-      );
-      expect(templates.rows[0].n).toBe(12);
+    // Every template carries the seed account and ITS role, read from
+    // pilot.accounts after the core checked it -- not a value from the CSV.
+    const provenance = await seedDb.query(
+      `select created_by_account_id, created_by_role, count(*)::int as n
+       from pilot.workout_templates where organization_id = $1
+       group by 1, 2`,
+      [organizationId],
+    );
+    expect(provenance.rows).toEqual([{ created_by_account_id: admin, created_by_role: 'organization_admin', n: TEMPLATES.length }]);
 
-      // Every template carries the seed account and ITS role, read from
-      // pilot.accounts -- not the platform_owner the CSV used to say.
-      const provenance = await client.query(
-        `select created_by_account_id, created_by_role, count(*)::int as n
-         from pilot.workout_templates where organization_id = $1
-         group by 1, 2`,
-        [SEED_ORG],
-      );
-      expect(provenance.rows).toEqual([
-        { created_by_account_id: SEED_ACCOUNT, created_by_role: 'organization_admin', n: 12 },
-      ]);
-
-      const items = await client.query(
-        `select count(*)::int as n from pilot.workout_template_items where organization_id = $1`,
-        [SEED_ORG],
-      );
-      expect(items.rows[0].n).toBe(82);
-
-      const orphanDrillRefs = await client.query(
-        `select count(*)::int as n from pilot.workout_template_items wti
-         where wti.organization_id = $1 and wti.drill_id is not null
-           and not exists (
-             select 1 from pilot.drill_library dl
-             where dl.organization_id = wti.organization_id and dl.drill_id = wti.drill_id
-           )`,
-        [SEED_ORG],
-      );
-      expect(orphanDrillRefs.rows[0].n).toBe(0);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+    const orphanDrillRefs = await seedDb.query(
+      `select count(*)::int as n from pilot.workout_template_items wti
+       where wti.organization_id = $1 and wti.drill_id is not null
+         and not exists (
+           select 1 from pilot.drill_library dl
+           where dl.organization_id = wti.organization_id and dl.drill_id = wti.drill_id
+         )`,
+      [organizationId],
+    );
+    expect(orphanDrillRefs.rows[0].n).toBe(0);
+    // Not vacuous: the committed items do name drills.
+    expect(ITEMS.filter((row) => row.drill_id).length).toBeGreaterThan(0);
   });
 
-  test('re-running is idempotent: no duplicates, no error', async () => {
-    const client = await freshDatabase('ppbf_test_wtpl_seed_idempotent');
-    try {
-      await applyMigrationTransaction(client, migrationSql);
-      await client.query(
-        `insert into pilot.organizations (organization_id, organization_name, status)
-         values ($1, $1, 'active') on conflict do nothing`,
-        [SEED_ORG],
-      );
-      await seedRealDrillLibrary(client);
+  test('loading it again writes nothing: no duplicate, no new version', async () => {
+    const organizationId = 'gym_wtpl_again';
+    const admin = await createSeedingGym(seedDb, organizationId);
+    expect((await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: DATASETS })).code).toBe(0);
 
-      await seedWorkoutTemplatesAll(client, TEMPLATE_SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT });
-      await seedWorkoutTemplatesAll(client, TEMPLATE_SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT });
-
-      const templates = await client.query(
-        `select count(*)::int as n from pilot.workout_templates where organization_id = $1`,
-        [SEED_ORG],
-      );
-      expect(templates.rows[0].n).toBe(12);
-
-      const items = await client.query(
-        `select count(*)::int as n from pilot.workout_template_items where organization_id = $1`,
-        [SEED_ORG],
-      );
-      expect(items.rows[0].n).toBe(82);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+    const again = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: DATASETS });
+    expect(again.lines).toContain(`  workout-templates: 0 new, 0 new version, ${TEMPLATES.length} unchanged, 0 absent, 0 reject`);
+    expect(again.lines).toContain('RESULT: NOTHING TO APPLY -- every item is unchanged or absent; nothing was written.');
+    expect(await count('workout_templates', organizationId)).toBe(TEMPLATES.length);
+    expect(await count('workout_template_items', organizationId)).toBe(ITEMS.length);
   });
 });

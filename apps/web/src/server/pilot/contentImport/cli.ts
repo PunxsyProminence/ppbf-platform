@@ -12,7 +12,7 @@ import { loadOfflineReferenceSets, readCommittedBaseline, skillCodesFromSkillFam
 import { ContentImportRefusal } from './refusal';
 import { committedPath, datasetSpec, DATASETS, fileSpecByName, FILE_SPECS } from './specs';
 import type { DatasetName, Finding, PackageFileInput, Warning } from './types';
-import { ARCHIVE_EXTENSIONS, MEDIA_EXTENSIONS, validatePackage, type ValidationResult } from './validate';
+import { ARCHIVE_EXTENSIONS, MEDIA_EXTENSIONS, validatePackage, validateParsed, type ValidationResult } from './validate';
 
 // The command-line half of the core: reading a folder, printing a report,
 // writing files. scripts/pilot-content-import.ts only parses argv and calls
@@ -96,6 +96,35 @@ export function runValidate(paths: Paths, io: Io): number {
   }
   if (result.blocking.length > 0) {
     io.log(`RESULT: BLOCKED -- fix the ${result.blocking.length} blocking problem(s) above; warnings never block.`);
+    return 1;
+  }
+  io.log(`RESULT: PASS -- 0 blocking, ${result.warnings.length} warning(s).`);
+  return 0;
+}
+
+/**
+ * validate --dataset <name[,name...]|all>: the COMMITTED files a load of those
+ * datasets would read (readDatasetFiles, the same selection apply makes),
+ * checked offline against the committed baseline -- exactly what
+ * contentPackageContract.test.ts holds every PR to. No database and no secrets,
+ * so the seed workflow runs it before its Azure login: a dispatch whose files
+ * would be refused stops there, before any credential or connection exists
+ * (seed-reference-data.yml, "Validate Package"). A dispatch may run on any
+ * branch, not only main, so the PR guard alone does not cover what it loads.
+ */
+export function runValidateCommitted(options: { seedDataDir: string; datasets: readonly DatasetName[] }, io: Io): number {
+  io.log(`content-import validate (committed seed-data): ${options.datasets.join(', ')}`);
+  const baseline = readCommittedBaseline(options.seedDataDir);
+  const references = loadOfflineReferenceSets(options.seedDataDir, baseline);
+  const wanted = new Set<string>(options.datasets);
+  const result = validateParsed({ files: baseline.files.filter((file) => wanted.has(file.spec.dataset)) }, { references, baseline });
+  printFindings(result, io);
+  if (result.parsed.files.length === 0) {
+    io.log('RESULT: NOTHING TO CHECK -- none of those datasets has a committed file.');
+    return 1;
+  }
+  if (result.blocking.length > 0) {
+    io.log(`RESULT: BLOCKED -- ${result.blocking.length} blocking problem(s) in the committed files; a load would refuse them.`);
     return 1;
   }
   io.log(`RESULT: PASS -- 0 blocking, ${result.warnings.length} warning(s).`);
@@ -201,16 +230,36 @@ export function runDescribe(options: { docPath: string; write: boolean }, io: Io
 // (PPBF_SEED_ACCOUNT_ID); everything below takes them as arguments, so the
 // tests drive exactly this code against an embedded Postgres.
 
-/** 'all' is every dataset the engine loads, in apply order. */
+/**
+ * The datasets a --dataset value names, in APPLY order (dependency order,
+ * specs/index.ts), whatever order they were typed in.
+ *
+ *   all                                   every dataset the engine loads
+ *   drill-library                         one dataset
+ *   competence-levels,cohort-definitions  several, loaded together in ONE
+ *                                         transaction (npm run
+ *                                         seed:competence-cohorts: one
+ *                                         seed-data folder, two datasets)
+ *
+ * A dataset the engine cannot load yet (transfer-claims) is refused by name,
+ * before any connection is opened, rather than skipped: a load that reported
+ * success for material it never wrote is the failure.
+ */
 export function datasetsFor(choice: string): DatasetName[] {
   if (choice === 'all') return [...LOADABLE_DATASETS];
-  if ((LOADABLE_DATASETS as readonly string[]).includes(choice)) return [choice as DatasetName];
-  const known = DATASETS.some((dataset) => dataset.name === choice);
-  throw new Error(
-    known
-      ? `dataset ${choice} has no database loader in the content-import engine yet; it loads: ${LOADABLE_DATASETS.join(', ')}`
-      : `unknown dataset ${choice}; choose all or one of: ${LOADABLE_DATASETS.join(', ')}`,
-  );
+  const names = choice.split(',').map((name) => name.trim());
+  for (const name of names) {
+    if (name === 'all') throw new Error(`'all' cannot be combined with other datasets (${choice})`);
+    if ((LOADABLE_DATASETS as readonly string[]).includes(name)) continue;
+    const known = DATASETS.some((dataset) => dataset.name === name);
+    throw new Error(
+      known
+        ? `dataset ${name} has no database loader in the content-import engine yet; it loads: ${LOADABLE_DATASETS.join(', ')}`
+        : `unknown dataset ${name || '(empty)'}; choose all, or one or more (comma-separated) of: ${LOADABLE_DATASETS.join(', ')}`,
+    );
+  }
+  if (new Set(names).size !== names.length) throw new Error(`a dataset is named twice in ${choice}`);
+  return LOADABLE_DATASETS.filter((name) => names.includes(name));
 }
 
 /** The committed files of these datasets, keyed by their path under seed-data. A missing file is simply not handed over. */
@@ -412,7 +461,7 @@ export async function runApply(command: DatabaseCommand & { dryRun: boolean }, i
   return 0;
 }
 
-/** The same TLS rule every seed loader uses (seed-disciplines.mjs resolveSslConfig): off only for a test run that asks. */
+/** The TLS rule the retired seed-*.mjs loaders used (their resolveSslConfig): off only for a test run that asks. */
 export function seedSslConfig(env: Readonly<Record<string, string | undefined>>): false | { rejectUnauthorized: true } {
   return env.NODE_ENV === 'test' && env.PPBF_POSTGRES_DISABLE_SSL === 'true' ? false : { rejectUnauthorized: true };
 }
@@ -425,8 +474,9 @@ export interface DatabaseEnv {
 
 /**
  * No defaults, on purpose: a loader that guesses its organization writes real
- * rows under the wrong one (seed-disciplines.mjs:224-226), and a guessed
- * account is a guessed author.
+ * rows under the wrong one (the retired seed loaders once defaulted to
+ * 'ppbf-default-org'; seedWorkflowContract.test.ts records that drift), and a
+ * guessed account is a guessed author.
  */
 export function readDatabaseEnv(env: Readonly<Record<string, string | undefined>>): DatabaseEnv {
   const required = (name: string): string => {
@@ -445,14 +495,14 @@ export interface CliArgs {
   command: 'validate' | 'prepare' | 'describe' | 'plan' | 'apply';
   dir?: string;
   write: boolean;
-  /** plan and apply: a dataset name or 'all'. */
+  /** plan, apply, and validate of the committed files: a dataset, a comma-separated list, or 'all'. */
   dataset?: string;
   dryRun: boolean;
 }
 
 const USAGE =
-  'usage: pilot-content-import.ts validate --dir <path> | prepare --dir <path> [--write] | describe [--write]'
-  + ' | plan --dataset <name|all> | apply [--dry-run] --dataset <name|all>';
+  'usage: pilot-content-import.ts validate --dir <path> | validate --dataset <name|all> | prepare --dir <path> [--write]'
+  + ' | describe [--write] | plan --dataset <name|all> | apply [--dry-run] --dataset <name|all>';
 
 export function parseCliArgs(argv: readonly string[]): CliArgs {
   const [command, ...rest] = argv;
@@ -492,9 +542,15 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     return { command, dataset, write, dryRun };
   }
 
-  if (dataset !== undefined) throw new Error(`${command} does not take --dataset`);
   if (dryRun) throw new Error(`${command} does not take --dry-run`);
-  if (command !== 'describe' && !dir) throw new Error(`${command} needs --dir <path>`);
   if (command === 'validate' && write) throw new Error('validate never writes; use prepare --write');
+  if (command === 'validate' && dataset !== undefined) {
+    // The committed files a load would read, not a hand-off folder: the seed
+    // workflow's offline check (runValidateCommitted).
+    if (dir !== undefined) throw new Error('validate takes --dir <hand-off folder> or --dataset <name|all>, not both');
+    return { command, dataset, write, dryRun };
+  }
+  if (dataset !== undefined) throw new Error(`${command} does not take --dataset`);
+  if (command !== 'describe' && !dir) throw new Error(`${command} needs --dir <path>`);
   return { command, dir, write, dryRun };
 }

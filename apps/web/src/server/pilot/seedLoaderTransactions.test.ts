@@ -1,312 +1,230 @@
-// Transaction control in the four seed loaders that used to COMMIT inside a
-// `finally`: seed-disciplines.mjs, seed-drill-library.mjs,
-// seed-transfer-claims.mjs and seed-workout-templates.mjs.
+// Transaction control of the seed path: runApply (contentImport/cli.ts), which
+// `npm run seed:<dataset>`, `npm run content:apply` and the seed-reference-data
+// workflow all run.
 //
-// `finally` runs on the throwing path too. A PostgreSQL error aborts the
-// transaction, so its rows are gone whether or not a COMMIT follows -- which is
-// why the old shape looked safe. A JavaScript error never reaches the server,
-// leaves the transaction open and committable, and the `finally` COMMIT kept
-// every row written before it while the run reported failure.
-// seed-drill-secondary-skills.mjs:296-321 records the pg regression that
-// measured that; its sibling loaders were fixed one at a time and these four
-// were not.
+// WHY THIS FILE EXISTS. Four of the seven seed-*.mjs loaders the core replaced
+// (IMP-10) put COMMIT in a `finally`. `finally` runs on the throwing path too.
+// A PostgreSQL error aborts the transaction, so its rows are gone whether or not
+// a COMMIT follows -- which is why that shape looked safe. A JavaScript error
+// never reaches the server, leaves the transaction open and committable, and
+// the `finally` COMMIT kept every row written before it while the run reported
+// failure (#1020 fixed the loaders; this suite held them to it). The loaders are
+// gone; the property is now runApply's, and this is where it is pinned.
+//
+// And the one the workflow depends on: `dataset: all` used to be a chain of
+// per-loader transactions, so a failure half way left the earlier datasets
+// committed. runApply plans every dataset first, then applies them all in ONE
+// transaction.
 //
 // A real database cannot show the difference for an error the database itself
-// raises, so these run each loader's real seedAll over its REAL seed files
-// against a fake client that records every statement and, per case, throws a
-// plain TypeError -- no SQLSTATE, nothing a server would have seen -- on a
-// chosen insert AFTER earlier rows were written. The same loaders run against
-// real Postgres in drillLibraryV3.pg.test.ts, workoutTemplates.pg.test.ts,
-// multidiscipline.pg.test.ts and sessionScriptsTransfer.pg.test.ts.
-//
-// Two seed-drill-library.mjs fixes ride along because they are only visible
-// through the same statements: grounding_claim_ids split on '|' (the separator
-// 82 of the 119 supplied rows use), and the drill_cues count taken from
-// RETURNING instead of one per CSV row.
-//
-// The loaders are real ESM (.mjs) and `npm test` has no ESM loader, so -- as in
-// seedCreatedByRole.test.ts -- every case runs in one real `node` child.
+// raises, so these run runApply against a fake client that records every
+// statement, with the plan and the apply engine replaced by stand-ins that
+// write through that client and, per case, throw a plain TypeError -- no
+// SQLSTATE, nothing a server would have seen -- AFTER rows were written. The
+// real engine against real Postgres, one transaction included, is
+// contentImportEngine.pg.test.ts ('apply --dataset all commits every loadable
+// dataset together', 'a JavaScript error after the first write leaves nothing
+// committed').
 
-import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 
-const SCRIPTS_DIR = path.resolve(__dirname, '../../../scripts');
+import type { DbClient } from './contentImport/actor';
+import { applyImport, type ApplyResult } from './contentImport/apply';
+import { datasetsFor, readDatasetFiles, runApply } from './contentImport/cli';
+import { LOADABLE_DATASETS } from './contentImport/datasets';
+import { type ImportPlan, planImport } from './contentImport/plan';
+
+jest.mock('./contentImport/plan', () => ({ ...jest.requireActual('./contentImport/plan'), planImport: jest.fn() }));
+jest.mock('./contentImport/apply', () => ({ ...jest.requireActual('./contentImport/apply'), applyImport: jest.fn() }));
+
 const SEED_DATA_DIR = path.resolve(__dirname, '../../../seed-data');
-
 const ORG = 'punxsy_prominence';
-const SEED_ACCOUNT = 'acct-gym-admin';
+const ACCOUNT = 'ppbf@punxsyprominence.org';
 const INDUCED = 'INDUCED_NON_DATABASE_FAILURE';
 
-interface ThrowOn {
-  table: string;
-  /** 1-based: the nth insert into `table` throws. */
-  nth: number;
+const mockedPlan = planImport as jest.MockedFunction<typeof planImport>;
+const mockedApply = applyImport as jest.MockedFunction<typeof applyImport>;
+
+function fakePlan(files: Record<string, string>, blocking = 0): ImportPlan {
+  return {
+    organizationId: ORG,
+    actor: { accountId: ACCOUNT, role: 'organization_admin', isPlatformOwner: false },
+    datasets: [...LOADABLE_DATASETS],
+    units: [],
+    counts: {},
+    totals: { new: Object.keys(files).length, new_version: 0, unchanged: 0, absent: 0, reject: 0 },
+    blocking: Array.from({ length: blocking }, () => ({ code: 'orphan_reference' as const, file: 'x.csv', message: 'refused' })),
+    warnings: [],
+    changes: Object.keys(files).length,
+    planHash: `plan-of-${Object.keys(files).length}-files`,
+  };
 }
 
-// throwOn is chosen so rows are already written when the error lands: the
-// second row of a one-table loader, and the first row of the LAST table of a
-// multi-table one, so every earlier table has been written.
-const LOADERS = {
-  disciplines: {
-    module: pathToFileURL(path.join(SCRIPTS_DIR, 'seed-disciplines.mjs')).href,
-    seedDir: path.join(SEED_DATA_DIR, 'multidiscipline'),
-    tables: ['disciplines'],
-    throwOn: { table: 'disciplines', nth: 2 },
-  },
-  drills: {
-    module: pathToFileURL(path.join(SCRIPTS_DIR, 'seed-drill-library.mjs')).href,
-    seedDir: path.join(SEED_DATA_DIR, 'drill-library'),
-    tables: ['drill_library', 'drill_scale_levels', 'drill_stop_rules', 'drill_cues'],
-    throwOn: { table: 'drill_cues', nth: 1 },
-  },
-  transferClaims: {
-    module: pathToFileURL(path.join(SCRIPTS_DIR, 'seed-transfer-claims.mjs')).href,
-    seedDir: path.join(SEED_DATA_DIR, 'transfer-claims'),
-    tables: ['transfer_claims'],
-    throwOn: { table: 'transfer_claims', nth: 2 },
-  },
-  templates: {
-    module: pathToFileURL(path.join(SCRIPTS_DIR, 'seed-workout-templates.mjs')).href,
-    seedDir: path.join(SEED_DATA_DIR, 'workout-templates'),
-    tables: ['workout_templates', 'workout_template_items'],
-    throwOn: { table: 'workout_template_items', nth: 1 },
-  },
-} as const;
-
-type LoaderKey = keyof typeof LOADERS;
-
-interface CaseSpec {
-  loader: LoaderKey;
-  dryRun: boolean;
-  throwOn: ThrowOn | null;
-  /** ROLLBACK throws too, as it does on a connection that died mid-run. */
-  rollbackThrows: boolean;
-  /** Every nth drill_cues insert returns no row, as ON CONFLICT DO NOTHING does for a cue already present. 0 = none. */
-  cuePresentEvery: number;
+interface Recorded {
+  sql: string;
 }
 
-const CASES: Record<string, CaseSpec> = {};
-for (const key of Object.keys(LOADERS) as LoaderKey[]) {
-  const base = { loader: key, dryRun: false, throwOn: null, rollbackThrows: false, cuePresentEvery: 0 };
-  const { throwOn } = LOADERS[key];
-  CASES[`${key}_apply`] = base;
-  CASES[`${key}_dry_run`] = { ...base, dryRun: true };
-  CASES[`${key}_throws`] = { ...base, throwOn };
-  CASES[`${key}_throws_rollback_fails`] = { ...base, throwOn, rollbackThrows: true };
+/** Records every statement. `rollbackFails` models a connection that is already gone. */
+function fakeClient(options: { rollbackFails?: boolean } = {}) {
+  const calls: Recorded[] = [];
+  return {
+    calls,
+    async query(sql: string) {
+      calls.push({ sql: sql.trim().replace(/\s+/g, ' ') });
+      if (options.rollbackFails && /^rollback$/i.test(sql.trim())) throw new Error('Connection terminated');
+      return { rows: [], rowCount: 1 };
+    },
+  };
 }
-CASES.drills_cues_partly_present = {
-  loader: 'drills', dryRun: false, throwOn: null, rollbackThrows: false, cuePresentEvery: 3,
+
+/**
+ * The engine stand-in: one insert per file handed to it (so "rows were
+ * written" is literal), then an optional plain JavaScript failure.
+ */
+function applyWriting(options: { throwAfterWrites?: number } = {}) {
+  mockedApply.mockImplementation(async (request) => {
+    const files = Object.keys(request.files);
+    let written = 0;
+    for (const file of files) {
+      await request.client.query(`insert into pilot.fake_rows (file) values ('${file}')`);
+      written += 1;
+      if (options.throwAfterWrites !== undefined && written === options.throwAfterWrites) throw new TypeError(INDUCED);
+    }
+    const plan = fakePlan(request.files as Record<string, string>);
+    const result: ApplyResult = {
+      plan,
+      importId: 'import-1',
+      auditId: 'audit-1',
+      audit: { importId: 'import-1', organizationId: ORG, actor: plan.actor, details: {} },
+      written: {},
+      ledgerRows: 0,
+    };
+    return result;
+  });
+}
+
+function command(client: ReturnType<typeof fakeClient>, dryRun: boolean, datasets = datasetsFor('all')) {
+  return { client: client as unknown as DbClient, organizationId: ORG, actorAccountId: ACCOUNT, seedDataDir: SEED_DATA_DIR, datasets, dryRun };
+}
+
+const quietIo = () => {
+  const lines: string[] = [];
+  return { lines, log: (line: string) => lines.push(line) };
 };
 
-interface Outcome {
-  ok: boolean;
-  message: string | null;
-  errorName: string | null;
-  /** BEGIN / COMMIT / ROLLBACK, in the order issued. */
-  control: string[];
-  /** The last statement issued: a control verb, or 'insert <table>'. */
-  last: string | null;
-  /** Inserts attempted per table, including one that threw. */
-  inserts: Record<string, number>;
-  /** drill_id -> the grounding_claim_ids array bound for it (drill-library cases only). */
-  grounding: Record<string, string[]>;
-  cues: { returned: number; present: number; total: number };
-  logs: string[];
-}
+const statements = (client: ReturnType<typeof fakeClient>) => client.calls.map((call) => call.sql);
+const count = (list: string[], pattern: RegExp) => list.filter((sql) => pattern.test(sql)).length;
+const WRITE_BEGIN = /^begin$/i;
+const COMMIT = /^commit$/i;
+const ROLLBACK = /^rollback$/i;
+const INSERT = /^insert into pilot\.fake_rows/i;
 
-let outcomes: Record<string, Outcome>;
-
-beforeAll(() => {
-  // String.raw: the child's regular expressions are written exactly as they run.
-  const script = String.raw`
-    const loaders = ${JSON.stringify(LOADERS)};
-    const cases = ${JSON.stringify(CASES)};
-    const placeholders = ${JSON.stringify({ organizationId: ORG, seedAccountId: SEED_ACCOUNT })};
-    const INDUCED = ${JSON.stringify(INDUCED)};
-    const modules = {};
-    for (const [key, loader] of Object.entries(loaders)) modules[key] = await import(loader.module);
-
-    // The loaders report on console.log. Each case keeps its own lines, and
-    // stdout is reserved for the result.
-    let logs = [];
-    console.log = (...args) => { logs.push(args.join(' ')); };
-
-    // Read off the statement itself rather than assumed, so a reordered column
-    // list cannot make this read the wrong parameter.
-    function columnsOf(sql, table) {
-      const match = sql.match(new RegExp('insert into pilot\\.' + table + '\\s*\\(([^)]*)\\)', 'i'));
-      if (!match) throw new Error('no column list in the ' + table + ' insert');
-      return match[1].split(',').map((name) => name.trim());
-    }
-
-    function fakeClient(spec) {
-      const state = {
-        control: [],
-        last: null,
-        inserts: {},
-        grounding: {},
-        cues: { returned: 0, present: 0, total: 0 },
-      };
-      return {
-        state,
-        async query(sql, params = []) {
-          const text = String(sql).trim();
-          if (/from\s+pilot\.accounts/i.test(text)) {
-            state.last = 'select pilot.accounts';
-            return { rows: [{ role: 'organization_admin' }], rowCount: 1 };
-          }
-
-          const insert = text.match(/^insert\s+into\s+pilot\.(\w+)/i);
-          if (!insert) {
-            const verb = text.split(/\s+/)[0].toUpperCase();
-            state.control.push(verb);
-            state.last = verb;
-            if (verb === 'ROLLBACK' && spec.rollbackThrows) {
-              throw new Error('ROLLBACK_ALSO_FAILED: connection gone');
-            }
-            return { rows: [], rowCount: 0 };
-          }
-
-          const table = insert[1];
-          const nth = (state.inserts[table] ?? 0) + 1;
-          state.inserts[table] = nth;
-          state.last = 'insert ' + table;
-
-          if (spec.throwOn && spec.throwOn.table === table && spec.throwOn.nth === nth) {
-            // Not a PostgreSQL error: no SQLSTATE, and nothing a server saw --
-            // so nothing that would have aborted the transaction.
-            throw new TypeError(INDUCED);
-          }
-
-          if (table === 'drill_library') {
-            const columns = columnsOf(text, table);
-            state.grounding[params[columns.indexOf('drill_id')]] = params[columns.indexOf('grounding_claim_ids')];
-          }
-
-          const present = table === 'drill_cues' && spec.cuePresentEvery > 0 && nth % spec.cuePresentEvery === 0;
-          // As pg does: rows come back only for a statement that asks for them,
-          // and ON CONFLICT DO NOTHING on a present row returns none.
-          const rows = !present && /\breturning\b/i.test(text) ? [{ returned: true }] : [];
-          if (table === 'drill_cues') {
-            state.cues.total += 1;
-            if (present) state.cues.present += 1;
-            if (rows.length > 0) state.cues.returned += 1;
-          }
-          return { rows, rowCount: present ? 0 : 1 };
-        },
-      };
-    }
-
-    const out = {};
-    for (const [name, spec] of Object.entries(cases)) {
-      const client = fakeClient(spec);
-      logs = [];
-      let ok = true;
-      let message = null;
-      let errorName = null;
-      try {
-        await modules[spec.loader].seedAll(client, loaders[spec.loader].seedDir, placeholders, { dryRun: spec.dryRun });
-      } catch (error) {
-        ok = false;
-        message = error.message;
-        errorName = error.name;
-      }
-      out[name] = { ok, message, errorName, ...client.state, logs };
-    }
-    process.stdout.write(JSON.stringify(out));
-  `;
-
-  const stdout = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  outcomes = JSON.parse(stdout);
+beforeEach(() => {
+  mockedPlan.mockReset();
+  mockedApply.mockReset();
+  mockedPlan.mockImplementation(async (request) => fakePlan(request.files as Record<string, string>));
 });
 
-function totalInserts(outcome: Outcome): number {
-  return Object.values(outcome.inserts).reduce((sum, n) => sum + n, 0);
-}
+describe("runApply: 'all' plans every dataset, then applies them all in ONE transaction", () => {
+  test('one read-only plan over every dataset, then one BEGIN, one apply call with every file, one COMMIT', async () => {
+    applyWriting();
+    const client = fakeClient();
+    const io = quietIo();
+    expect(await runApply(command(client, false), io)).toBe(0);
 
-describe.each([
-  ['seed-disciplines.mjs', 'disciplines'],
-  ['seed-drill-library.mjs', 'drills'],
-  ['seed-transfer-claims.mjs', 'transferClaims'],
-  ['seed-workout-templates.mjs', 'templates'],
-] as const)('%s transaction control', (_file, key) => {
-  const loader = LOADERS[key];
+    const every = readDatasetFiles(SEED_DATA_DIR, datasetsFor('all'));
+    // A floor on what 'all' covers, so the equalities below cannot pass on a
+    // package that lost its datasets.
+    expect(Object.keys(every).length).toBeGreaterThanOrEqual(12);
 
-  test('an apply that succeeds commits exactly once, as its last statement, and never rolls back', () => {
-    const outcome = outcomes[`${key}_apply`];
-    expect(outcome.message).toBeNull();
-    expect(outcome.control).toEqual(['BEGIN', 'COMMIT']);
-    expect(outcome.last).toBe('COMMIT');
-    // Every table the loader owns was written, so the COMMIT had rows to keep.
-    for (const table of loader.tables) expect(outcome.inserts[table]).toBeGreaterThan(0);
-  });
+    // PLANNED FIRST, over every dataset, and read-only.
+    expect(mockedPlan).toHaveBeenCalledTimes(1);
+    expect(Object.keys(mockedPlan.mock.calls[0][0].files).sort()).toEqual(Object.keys(every).sort());
+    const list = statements(client);
+    expect(list.slice(0, 2)).toEqual(['BEGIN READ ONLY', 'ROLLBACK']);
 
-  test('a JavaScript error after rows were written rolls back, never commits, and reaches the caller', () => {
-    const outcome = outcomes[`${key}_throws`];
-    expect(outcome.ok).toBe(false);
-    expect(outcome.errorName).toBe('TypeError');
-    expect(outcome.message).toBe(INDUCED);
-    // Rows really were written before the error, so a COMMIT here would have
-    // kept them -- that is the failure being excluded, not an empty commit.
-    expect(totalInserts(outcome)).toBeGreaterThan(1);
-    expect(outcome.inserts[loader.throwOn.table]).toBe(loader.throwOn.nth);
-    expect(outcome.control).toEqual(['BEGIN', 'ROLLBACK']);
-    // Nothing after the rollback: the loader stopped at the error.
-    expect(outcome.last).toBe('ROLLBACK');
-  });
+    // THEN ONE apply, handed every file at once and the hash of the plan shown.
+    expect(mockedApply).toHaveBeenCalledTimes(1);
+    expect(Object.keys(mockedApply.mock.calls[0][0].files).sort()).toEqual(Object.keys(every).sort());
+    expect(mockedApply.mock.calls[0][0].expectedPlanHash).toBe(fakePlan(every).planHash);
 
-  test('the caller gets the original error, not the ROLLBACK failure, when the connection is gone', () => {
-    const outcome = outcomes[`${key}_throws_rollback_fails`];
-    expect(outcome.ok).toBe(false);
-    expect(outcome.message).toBe(INDUCED);
-    expect(outcome.control).toEqual(['BEGIN', 'ROLLBACK']);
-  });
-
-  test('a dry run writes every row for real, then rolls back and never commits', () => {
-    const outcome = outcomes[`${key}_dry_run`];
-    expect(outcome.message).toBeNull();
-    // The inserts still run: a dry run proves the rows fit the live schema by
-    // making the database decide, then discards them.
-    for (const table of loader.tables) expect(outcome.inserts[table]).toBeGreaterThan(0);
-    expect(outcome.control).toEqual(['BEGIN', 'ROLLBACK']);
-    expect(outcome.last).toBe('ROLLBACK');
+    // ONE transaction: one BEGIN, every write inside it, one COMMIT after the last write.
+    expect(count(list, WRITE_BEGIN)).toBe(1);
+    expect(count(list, COMMIT)).toBe(1);
+    const begin = list.findIndex((sql) => WRITE_BEGIN.test(sql));
+    const commit = list.findIndex((sql) => COMMIT.test(sql));
+    const inserts = list.map((sql, index) => (INSERT.test(sql) ? index : -1)).filter((index) => index > -1);
+    expect(inserts).toHaveLength(Object.keys(every).length);
+    expect(inserts.every((index) => index > begin && index < commit)).toBe(true);
+    // Nothing rolls back the write transaction on success.
+    expect(list.slice(begin).some((sql) => ROLLBACK.test(sql))).toBe(false);
+    // The SHADOW mirror is written after COMMIT, never inside it.
+    const mirror = list.findIndex((sql) => /^insert into pilot\.shadow_events/i.test(sql));
+    expect(mirror).toBeGreaterThan(commit);
+    expect(io.lines).toContain(`RESULT: COMMITTED -- ${Object.keys(every).length} item(s) written, import_id import-1.`);
   });
 });
 
-describe('seed-drill-library.mjs grounding_claim_ids', () => {
-  test("splits on '|': 'A2-063|A2-068' loads as two claim ids, not one", () => {
-    const { grounding } = outcomes.drills_apply;
-    expect(grounding.drl_7f812fecacfee4).toEqual(['A2-063', 'A2-068']);
-    expect(grounding.drl_2d0193a7c52e58).toEqual(['A3-032', 'A6-055', 'A8-052']);
+describe('runApply transaction control (the finally-COMMIT defect, pinned on the one loader left)', () => {
+  test('a JavaScript error after rows were written rolls back, never commits, and reaches the caller', async () => {
+    applyWriting({ throwAfterWrites: 3 });
+    const client = fakeClient();
+    await expect(runApply(command(client, false), quietIo())).rejects.toThrow(INDUCED);
+
+    const list = statements(client);
+    expect(count(list, INSERT)).toBe(3);
+    expect(count(list, COMMIT)).toBe(0);
+    const begin = list.findIndex((sql) => WRITE_BEGIN.test(sql));
+    expect(list[list.length - 1]).toBe('ROLLBACK');
+    expect(list.lastIndexOf('ROLLBACK')).toBeGreaterThan(begin);
   });
 
-  test("no loaded element still carries a '|'", () => {
-    const elements = Object.values(outcomes.drills_apply.grounding).flat();
-    expect(elements.length).toBeGreaterThan(0);
-    expect(elements.filter((element) => element.includes('|'))).toEqual([]);
+  test('the caller gets the original error, not the ROLLBACK failure, when the connection is gone', async () => {
+    applyWriting({ throwAfterWrites: 1 });
+    const client = fakeClient({ rollbackFails: true });
+    await expect(runApply(command(client, false), quietIo())).rejects.toThrow(INDUCED);
+    expect(count(statements(client), COMMIT)).toBe(0);
   });
-});
 
-describe('seed-drill-library.mjs drill_cues count', () => {
-  test('reports the rows the database returned, not one per CSV row', () => {
-    const outcome = outcomes.drills_cues_partly_present;
-    expect(outcome.message).toBeNull();
-    // Some cues were answered as already present; without both kinds this
-    // would measure nothing.
-    expect(outcome.cues.present).toBeGreaterThan(0);
-    expect(outcome.cues.present).toBeLessThan(outcome.cues.total);
+  test('a dry run writes every row for real, then rolls back and never commits', async () => {
+    applyWriting();
+    const client = fakeClient();
+    const io = quietIo();
+    expect(await runApply(command(client, true), io)).toBe(0);
 
-    const line = outcome.logs.find((entry) => entry.startsWith('drill_cues:'));
-    expect(line).toBe(
-      `drill_cues: ${outcome.cues.returned} would-insert/inserted, `
-      + `${outcome.cues.total - outcome.cues.returned} already present (skipped)`,
-    );
-    // And the rows returned are exactly the cues that were not present, which
-    // only holds when the insert asks for RETURNING.
-    expect(outcome.cues.returned).toBe(outcome.cues.total - outcome.cues.present);
+    const list = statements(client);
+    const every = readDatasetFiles(SEED_DATA_DIR, datasetsFor('all'));
+    // The apply really ran -- every write -- which is what proves the rows fit
+    // the live schema; then it was undone.
+    expect(count(list, INSERT)).toBe(Object.keys(every).length);
+    expect(count(list, COMMIT)).toBe(0);
+    expect(list[list.length - 1]).toBe('ROLLBACK');
+    // A rolled-back import is not an event: no SHADOW mirror.
+    expect(list.some((sql) => /shadow_events/.test(sql))).toBe(false);
+    expect(io.lines.some((line) => line.startsWith('RESULT: DRY RUN -- applied inside the transaction and ROLLED BACK'))).toBe(true);
+  });
+
+  test('a plan with a blocking finding opens no write transaction and writes nothing', async () => {
+    mockedPlan.mockImplementation(async (request) => fakePlan(request.files as Record<string, string>, 2));
+    applyWriting();
+    const client = fakeClient();
+    const io = quietIo();
+    expect(await runApply(command(client, false), io)).toBe(1);
+
+    expect(mockedApply).not.toHaveBeenCalled();
+    expect(statements(client)).toEqual(['BEGIN READ ONLY', 'ROLLBACK']);
+    expect(io.lines).toContain('RESULT: BLOCKED -- 2 blocking problem(s); nothing was written.');
+  });
+
+  test('one dataset is one transaction too', async () => {
+    applyWriting();
+    const client = fakeClient();
+    expect(await runApply(command(client, false, datasetsFor('competence-levels,cohort-definitions')), quietIo())).toBe(0);
+    expect(Object.keys(mockedApply.mock.calls[0][0].files).sort()).toEqual([
+      'competence-cohorts/seed_cohort_definitions.csv',
+      'competence-cohorts/seed_competence_levels.csv',
+    ]);
+    const list = statements(client);
+    expect([count(list, WRITE_BEGIN), count(list, COMMIT)]).toEqual([1, 1]);
   });
 });

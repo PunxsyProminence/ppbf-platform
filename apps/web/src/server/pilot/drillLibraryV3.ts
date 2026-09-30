@@ -13,8 +13,8 @@ import { memberCodesForFamily } from './skillFamilies';
 // READ-ONLY MODULE. The migration's own header notes that a change-proposal
 // review lifecycle for this library (mirroring drillVersioning.ts for
 // pilot.drills) is a reasonable future consolidation, not attempted in this
-// pass -- so there is no write path here beyond what seed-drill-library.mjs
-// does directly. Every field is draft content (see field_provenance and
+// pass -- so there is no write path here beyond what the content-import core
+// does when it loads the drill library (contentImport/datasets/drills.ts). Every field is draft content (see field_provenance and
 // content_class below) until a coach validates it on the floor; this module
 // exists to surface that content for review, not to mutate it.
 

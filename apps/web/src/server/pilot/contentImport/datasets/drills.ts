@@ -24,7 +24,7 @@ import {
 //   unchanged -> nothing is written. The content hash is canonical.ts's, on
 //                both sides, and it RE-SPLITS database list elements on '|':
 //                the old loader stored 'A1-001|A2-002' as one element
-//                (seed-drill-library.mjs:210-219), and without the re-split
+//                (the retired seed-drill-library.mjs), and without the re-split
 //                every such drill would read as revised the first time.
 //   changed   -> v(n+1): the current head gets superseded_at and STAYS
 //                active (gyms that adopted it keep it: pilot.drills pins the
@@ -37,7 +37,7 @@ import {
 //                own children: nothing new ever attaches to history. A rename
 //                is just another change -- the old loader stopped on the
 //                primary key instead (its ON CONFLICT arbiter is the name
-//                index, seed-drill-library.mjs:245, so a new name with the
+//                index, the retired seed-drill-library.mjs, so a new name with the
 //                old id is a 23505).
 //   new       -> v1, drill_id = the lineage key (the committed id, or the
 //                drl_ formula for a new:<short-name>), children keep the ids
@@ -85,7 +85,7 @@ const CHILD_TABLES: readonly ChildTable[] = [
 ];
 
 // A check, not content: expected_primary_skill_id asserts what the drill's
-// primary is (seed-drill-secondary-skills.mjs:186-198 kept it in code for that
+// primary is (the retired seed-drill-secondary-skills.mjs kept it in code for that
 // reason) and pilot.drill_secondary_skills has no column for it. Hashing it
 // would make every package that carries it read as a revision forever.
 const NOT_STORED: ReadonlyMap<FileSpec, ReadonlySet<string>> = new Map([
@@ -381,7 +381,7 @@ export const DRILL_LIBRARY_ENGINE: DatasetEngine = {
         if (!effective.root) {
           reject(key, 'orphan_reference', `drill ${raw} has rows in a child file but is neither in seed_drill_library.csv nor a current drill of this organization`);
         } else {
-          // The loader's own refusals (seed-drill-secondary-skills.mjs:238-243),
+          // The retired loader's own refusals (seed-drill-secondary-skills.mjs),
           // on the drill as it WILL be: the validator checks the package's
           // secondary rows, this also catches carried rows against a changed
           // primary.

@@ -2,12 +2,12 @@
 // (IMP-08): R2 for the two reference tables that DO hold versions, against the
 // full migrated schema.
 //
-// Every test pins a failure the old loaders had or a guarantee the engine
-// makes:
-//   - seed-workout-templates.mjs:201 and seed-session-scripts.mjs:183,231,274
-//     said ON CONFLICT DO NOTHING, so a revised template or script was skipped
-//     without a word. R2 says a changed item becomes a NEW VERSION and the old
-//     one is kept.
+// Every test pins a failure the old loaders had (seed-workout-templates.mjs and
+// seed-session-scripts.mjs, retired by IMP-10; git history keeps them) or a
+// guarantee the engine makes:
+//   - they said ON CONFLICT DO NOTHING, so a revised template or script was
+//     skipped without a word. R2 says a changed item becomes a NEW VERSION and
+//     the old one is kept.
 //   - a package names a drill by its LINEAGE; stored, a template item must
 //     name a real version -- the one current at load -- and a template must
 //     not look "changed" just because one of its drills got a newer version
@@ -44,6 +44,7 @@ import { hex14, MINT } from './contentImport/ids';
 import { sessionScriptLineageHeads } from './contentImport/lineage';
 import { type ImportPlan, planImport } from './contentImport/plan';
 import { ContentImportRefusal } from './contentImport/refusal';
+import { insertLegacyGoldenRows, LEGACY_GOLDEN_TABLES, legacyGoldenFiles, legacyGoldenRows } from '../../testing/legacyLoaderGolden';
 
 jest.setTimeout(300_000);
 
@@ -67,15 +68,11 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
   specifier: string,
 ) => Promise<Record<string, unknown>>;
 
-type OldSeedAll = (client: Client, seedDir: string, placeholders: { organizationId: string; seedAccountId: string }) => Promise<void>;
-
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let client: Client;
 /** A second connection: sees only what is COMMITTED. */
 let observer: Client;
-let oldSeedWorkoutTemplates: OldSeedAll;
-let oldSeedSessionScripts: OldSeedAll;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -143,13 +140,6 @@ beforeAll(async () => {
 
   observer = new Client({ connectionString: connectionStringFor(DATABASE) });
   await observer.connect();
-
-  // The OLD loaders, exactly as the seed workflow runs them today, to build
-  // an organization the way production's reference rows were built.
-  oldSeedWorkoutTemplates = (await nativeDynamicImport(pathToFileURL(path.join(WEB_DIR, 'scripts/seed-workout-templates.mjs')).href))
-    .seedAll as OldSeedAll;
-  oldSeedSessionScripts = (await nativeDynamicImport(pathToFileURL(path.join(WEB_DIR, 'scripts/seed-session-scripts.mjs')).href))
-    .seedAll as OldSeedAll;
 });
 
 afterAll(async () => {
@@ -395,53 +385,69 @@ function unitOf(result: ImportPlan, dataset: string, key: string) {
 
 // ---------------------------------------------------------------------------
 
-describe('the committed templates and scripts', () => {
-  const committedDrillIds = () => {
-    const table = readCsv(committedText(ITEMS_CSV));
-    const column = table.header.indexOf('drill_id');
-    return [...new Set(table.records.map((record) => record.cells[column]).filter(Boolean))].sort();
-  };
-  const committedFiles = () => readDatasetFiles(SEED_DATA_DIR, ['workout-templates', 'session-scripts']);
+describe('the rows the OLD loaders wrote, as production holds them', () => {
+  // Production's templates and scripts were written by the retired
+  // seed-workout-templates.mjs and seed-session-scripts.mjs, and a row nobody
+  // revises keeps their stored form for good. These rows are those loaders'
+  // own output, frozen with the files they read
+  // (src/testing/legacyLoaderGolden.ts): the loaders themselves are gone, and
+  // an engine first load would only show the engine reading its own forms.
+  const DATASETS = ['workout-templates', 'session-scripts'] as const;
+  const OLD_TABLES = [...LEGACY_GOLDEN_TABLES.templates, ...LEGACY_GOLDEN_TABLES.scripts];
+  const oldRowCount = (table: string) => legacyGoldenRows(table).length;
 
-  it('re-importing them onto rows the OLD loaders wrote finds every item unchanged and writes nothing', async () => {
-    // The canonicaliser guard: the old loaders stored '8.0' as 8, 'False' as
-    // false, a blank coach_notes as NULL and a blank theme as ''. If the
-    // engine read any of that as different content, the first run in
-    // production would "revise" every template and script it was meant to
-    // leave alone.
-    const admin = await createGymWithDisciplines('gym_old_loaders');
-    for (const drillId of committedDrillIds()) await insertDrill('gym_old_loaders', drillId);
-    const quiet = jest.spyOn(console, 'log').mockImplementation(() => undefined);
-    try {
-      const placeholders = { organizationId: 'gym_old_loaders', seedAccountId: admin };
-      await oldSeedWorkoutTemplates(client, path.join(SEED_DATA_DIR, 'workout-templates'), placeholders);
-      await oldSeedSessionScripts(client, path.join(SEED_DATA_DIR, 'session-scripts'), placeholders);
-    } finally {
-      quiet.mockRestore();
-    }
+  /** Every drill the old rows' template items and script blocks name, as a v1 head: their foreign keys need one. */
+  const oldDrillIds = () =>
+    [
+      ...new Set(
+        [...legacyGoldenRows('pilot.workout_template_items'), ...legacyGoldenRows('pilot.session_script_blocks')]
+          .map((row) => row.drill_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ].sort();
+
+  /** A gym with the old loaders' disciplines and the drills their rows name; `withOldRows` adds their templates and scripts. */
+  async function gymForOldRows(organizationId: string, withOldRows: boolean): Promise<string> {
+    const admin = await createGym(organizationId);
+    const target = { organizationId, accountId: admin };
+    await insertLegacyGoldenRows(client, ['pilot.disciplines'], target);
+    for (const drillId of oldDrillIds()) await insertDrill(organizationId, drillId);
+    if (withOldRows) await insertLegacyGoldenRows(client, OLD_TABLES, target);
+    return admin;
+  }
+
+  it('re-importing the files they read finds every item unchanged and writes nothing', async () => {
+    // The canonicaliser guard: the old loaders stored an item's '8.0' as 8,
+    // 'False' as false and a blank coach_notes as NULL. If the engine read any
+    // of that as different content, a load would "revise" every template and
+    // script it was meant to leave alone.
+    const admin = await gymForOldRows('gym_old_loaders', true);
     const before = await rowVersions('gym_old_loaders');
-    expect(Object.keys(before)).toHaveLength(12 + 82 + 3 + 65 + 4);
+    expect(Object.keys(before)).toHaveLength(OLD_TABLES.reduce((sum, table) => sum + oldRowCount(table), 0));
+    expect(oldRowCount('pilot.workout_template_items')).toBeGreaterThan(0);
 
-    const planned = await plan('gym_old_loaders', admin, committedFiles());
+    const planned = await plan('gym_old_loaders', admin, legacyGoldenFiles(DATASETS));
     expect(planned.blocking).toEqual([]);
-    expect(planned.counts['workout-templates']).toEqual({ new: 0, new_version: 0, unchanged: 12, absent: 0, reject: 0 });
-    expect(planned.counts['session-scripts']).toEqual({ new: 0, new_version: 0, unchanged: 3, absent: 0, reject: 0 });
+    expect(planned.counts['workout-templates']).toEqual({ new: 0, new_version: 0, unchanged: oldRowCount('pilot.workout_templates'), absent: 0, reject: 0 });
+    expect(planned.counts['session-scripts']).toEqual({ new: 0, new_version: 0, unchanged: oldRowCount('pilot.session_scripts'), absent: 0, reject: 0 });
 
-    const result = await applyCommitted('gym_old_loaders', admin, committedFiles(), planned.planHash);
+    const result = await applyCommitted('gym_old_loaders', admin, legacyGoldenFiles(DATASETS), planned.planHash);
     expect(result.importId).toBeNull();
     expect(await rowVersions('gym_old_loaders')).toEqual(before);
   });
 
-  it('a first load through the engine writes exactly the rows the old loaders wrote, ids included', async () => {
-    const admin = await createGymWithDisciplines('gym_engine_first');
-    for (const drillId of committedDrillIds()) await insertDrill('gym_engine_first', drillId);
-    const result = await applyCommitted('gym_engine_first', admin, committedFiles());
-    expect(result.plan.counts['workout-templates']).toMatchObject({ new: 12 });
-    expect(result.plan.counts['session-scripts']).toMatchObject({ new: 3 });
+  it('a first load through the engine writes exactly the rows they wrote, ids included', async () => {
+    // So the engine's WRITTEN form cannot drift from production's either: a
+    // gym loaded after IMP-10 holds rows in the same form as one loaded
+    // before it, and whatever reads these tables meets one form.
+    await gymForOldRows('gym_old_rows', true);
+    const admin = await gymForOldRows('gym_engine_rows', false);
+    const result = await applyCommitted('gym_engine_rows', admin, legacyGoldenFiles(DATASETS));
+    expect(result.plan.counts['workout-templates']).toMatchObject({ new: oldRowCount('pilot.workout_templates') });
+    expect(result.plan.counts['session-scripts']).toMatchObject({ new: oldRowCount('pilot.session_scripts') });
 
-    // Every column the content decides, compared row by row with the gym the
-    // old loaders built in the test above. Authorship and timestamps differ
-    // by construction and are left out.
+    // Every column the content decides, row by row. Authorship and timestamps
+    // differ by construction and are left out.
     const snapshot = async (organizationId: string) => {
       const read = async (sql: string) => (await observer.query(sql, [organizationId])).rows;
       return {
@@ -471,9 +477,60 @@ describe('the committed templates and scripts', () => {
         ),
       };
     };
-    const engine = await snapshot('gym_engine_first');
-    expect(engine.items).toHaveLength(82);
-    expect(engine).toEqual(await snapshot('gym_old_loaders'));
+    const engine = await snapshot('gym_engine_rows');
+    expect(engine.items).toHaveLength(oldRowCount('pilot.workout_template_items'));
+    expect(engine).toEqual(await snapshot('gym_old_rows'));
+  });
+});
+
+describe('the committed templates and scripts', () => {
+  const committedDrillIds = () => {
+    const table = readCsv(committedText(ITEMS_CSV));
+    const column = table.header.indexOf('drill_id');
+    return [...new Set(table.records.map((record) => record.cells[column]).filter(Boolean))].sort();
+  };
+  const committedFiles = () => readDatasetFiles(SEED_DATA_DIR, ['workout-templates', 'session-scripts']);
+
+  const committedIds = (file: string, column: string) => {
+    const table = readCsv(committedText(file));
+    const index = table.header.indexOf(column);
+    return table.records.map((record) => record.cells[index]).filter(Boolean).sort();
+  };
+
+  it('a first load writes every committed row under its committed id, and loading again writes nothing', async () => {
+    // The package as committed today, whatever a hand-off has changed since
+    // the old loaders' files were frozen: every row lands under its committed
+    // id (the ids production already holds -- a changed id would make a later
+    // load see the item as new), and a second load plans nothing. Reading the
+    // OLD loaders' stored forms is the describe block above.
+    const admin = await createGymWithDisciplines('gym_engine_first');
+    for (const drillId of committedDrillIds()) await insertDrill('gym_engine_first', drillId);
+    const result = await applyCommitted('gym_engine_first', admin, committedFiles());
+    const templates = committedIds(TEMPLATES_CSV, 'template_id');
+    const scripts = committedIds(SCRIPTS_CSV, 'script_id');
+    expect(result.plan.counts['workout-templates']).toMatchObject({ new: templates.length });
+    expect(result.plan.counts['session-scripts']).toMatchObject({ new: scripts.length });
+
+    const ids = async (table: string, column: string) =>
+      (await observer.query(`select ${column} as id from pilot.${table} where organization_id = $1`, ['gym_engine_first'])).rows
+        .map((row: { id: string }) => row.id)
+        .sort();
+    expect(await ids('workout_templates', 'template_id')).toEqual(templates);
+    expect(await ids('workout_template_items', 'item_id')).toEqual(committedIds(ITEMS_CSV, 'item_id'));
+    expect(await ids('session_scripts', 'script_id')).toEqual(scripts);
+    expect(await ids('session_script_blocks', 'block_id')).toEqual(committedIds(BLOCKS_CSV, 'block_id'));
+    expect(await ids('session_script_renderings', 'rendering_id')).toEqual(committedIds(RENDERINGS_CSV, 'rendering_id'));
+    // Not vacuous: the committed files carry their ids.
+    expect(committedIds(ITEMS_CSV, 'item_id').length).toBeGreaterThan(0);
+
+    const before = await rowVersions('gym_engine_first');
+    const planned = await plan('gym_engine_first', admin, committedFiles());
+    expect(planned.blocking).toEqual([]);
+    expect(planned.counts['workout-templates']).toEqual({ new: 0, new_version: 0, unchanged: templates.length, absent: 0, reject: 0 });
+    expect(planned.counts['session-scripts']).toEqual({ new: 0, new_version: 0, unchanged: scripts.length, absent: 0, reject: 0 });
+    const again = await applyCommitted('gym_engine_first', admin, committedFiles(), planned.planHash);
+    expect(again.importId).toBeNull();
+    expect(await rowVersions('gym_engine_first')).toEqual(before);
   });
 });
 

@@ -17,9 +17,12 @@
 // 4. pilot.reference_content_revisions is append-only in fact: UPDATE and
 //    DELETE are refused by the trigger, a duplicate version by the key -- yet
 //    deleting the organization still removes its history.
-// 5. The seed loaders still load the shipped CSVs onto the migrated schema.
-//    seed-drill-library.mjs only does because its ON CONFLICT predicate was
-//    changed with this migration; the old predicate is shown to fail here.
+// 5. A stale loader using the old ON CONFLICT predicate fails LOUDLY on the
+//    migrated schema rather than skipping rows. The per-dataset seed loaders
+//    that used that predicate are retired (IMP-10); the committed CSVs now
+//    load through the content-import core, whose suites run on the full
+//    schema this migration is part of (contentImportDrills.pg.test.ts,
+//    contentImportTemplatesScripts.pg.test.ts).
 // 6. The migration is idempotent in the strict sense -- the guarded
 //    drop-and-recreate does NOT fire again on a second run -- and survives
 //    the `all` loop re-running drill-library-v3 ahead of it.
@@ -28,7 +31,7 @@
 //
 // Behaviour tests apply the migration SQL directly, so a mutant of one
 // section fails only the tests about that section; the runner is driven in
-// its own tests and in the seed tests.
+// its own tests and in the stale-loader test.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -53,8 +56,6 @@ const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedd
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const SCRIPTS_DIR = path.resolve(__dirname, '../../../scripts');
 const MIGRATION_FILE = 'pilot_slice_postgres_content_import_migration.sql';
-const DRILL_SEED_DIR = path.resolve(__dirname, '../../../seed-data/drill-library');
-const TEMPLATE_SEED_DIR = path.resolve(__dirname, '../../../seed-data/workout-templates');
 
 // The prerequisites, in the workflow's `all` order. Raw SQL, not their
 // runners: their readiness is their own suites' business.
@@ -72,14 +73,6 @@ const ORG_B = 'org-content-import-b';
 const SEED_ORG = 'punxsy_prominence';
 const SEED_ACCOUNT = 'acct-content-import-seed';
 
-type Placeholders = { organizationId: string; seedAccountId: string };
-type SeedAll = (
-  client: Client,
-  seedDir: string,
-  placeholders: Placeholders,
-  options?: { dryRun?: boolean },
-) => Promise<unknown>;
-
 const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
   specifier: string,
 ) => Promise<Record<string, unknown>>;
@@ -90,8 +83,6 @@ let baseSql: string;
 let prerequisiteSql: string[];
 let migrationSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
-let seedDrillLibraryAll: SeedAll;
-let seedWorkoutTemplatesAll: SeedAll;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -340,15 +331,6 @@ beforeAll(async () => {
     pathToFileURL(path.join(SCRIPTS_DIR, 'pilot-apply-content-import-migration.mjs')).href,
   );
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as typeof applyMigrationTransaction;
-
-  const drillSeedModule = await nativeDynamicImport(
-    pathToFileURL(path.join(SCRIPTS_DIR, 'seed-drill-library.mjs')).href,
-  );
-  seedDrillLibraryAll = drillSeedModule.seedAll as SeedAll;
-  const templateSeedModule = await nativeDynamicImport(
-    pathToFileURL(path.join(SCRIPTS_DIR, 'seed-workout-templates.mjs')).href,
-  );
-  seedWorkoutTemplatesAll = templateSeedModule.seedAll as SeedAll;
 });
 
 afterAll(async () => {
@@ -703,7 +685,7 @@ describe('the drill_stop_rules table comment', () => {
   });
 });
 
-describe('the seed loaders against the migrated schema', () => {
+describe('a stale loader against the migrated schema', () => {
   async function seededDatabase(name: string): Promise<Client> {
     const client = await freshDatabase(name, { migrated: false });
     try {
@@ -725,32 +707,13 @@ describe('the seed loaders against the migrated schema', () => {
     return client;
   }
 
-  test('seed-drill-library.mjs loads all 119 drills and their children, and a second run writes nothing', async () => {
-    const client = await seededDatabase('ppbf_ci_seed_drills');
-    try {
-      const placeholders = { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT };
-      await seedDrillLibraryAll(client, DRILL_SEED_DIR, placeholders);
-      await seedDrillLibraryAll(client, DRILL_SEED_DIR, placeholders);
-
-      const { rows } = await client.query(
-        `select
-           (select count(*)::int from pilot.drill_library      where organization_id = $1) as drills,
-           (select count(*)::int from pilot.drill_scale_levels where organization_id = $1) as scale_levels,
-           (select count(*)::int from pilot.drill_stop_rules   where organization_id = $1) as stop_rules,
-           (select count(*)::int from pilot.drill_cues         where organization_id = $1) as cues`,
-        [SEED_ORG],
-      );
-      expect(rows[0]).toEqual({ drills: 119, scale_levels: 357, stop_rules: 674, cues: 258 });
-    } finally {
-      await client.end();
-    }
-  });
-
   test('the OLD ON CONFLICT predicate matches no arbiter once the index is redefined', async () => {
-    // Why seed-drill-library.mjs had to change in the same commit. Postgres
-    // infers an arbiter only when the statement's predicate implies the
-    // index's; `where active` does not imply `active and superseded_at is
-    // null`, so the loader's old statement fails outright rather than skipping.
+    // Why the retired seed-drill-library.mjs had to change in the same commit
+    // (the plan's RISK: a stale branch running the old loader against a
+    // migrated database). Postgres infers an arbiter only when the statement's
+    // predicate implies the index's; `where active` does not imply `active and
+    // superseded_at is null`, so the old statement fails outright rather than
+    // skipping.
     const client = await seededDatabase('ppbf_ci_seed_old_predicate');
     try {
       await expect(
@@ -763,25 +726,6 @@ describe('the seed loaders against the migrated schema', () => {
           [SEED_ORG],
         ),
       ).rejects.toThrow(/no unique or exclusion constraint matching the ON CONFLICT specification/);
-    } finally {
-      await client.end();
-    }
-  });
-
-  test('seed-workout-templates.mjs loads all 12 templates and 82 items', async () => {
-    const client = await seededDatabase('ppbf_ci_seed_templates');
-    try {
-      const placeholders = { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT };
-      await seedDrillLibraryAll(client, DRILL_SEED_DIR, placeholders);
-      await seedWorkoutTemplatesAll(client, TEMPLATE_SEED_DIR, placeholders);
-
-      const { rows } = await client.query(
-        `select
-           (select count(*)::int from pilot.workout_templates      where organization_id = $1) as templates,
-           (select count(*)::int from pilot.workout_template_items where organization_id = $1) as items`,
-        [SEED_ORG],
-      );
-      expect(rows[0]).toEqual({ templates: 12, items: 82 });
     } finally {
       await client.end();
     }

@@ -5,7 +5,7 @@
 // (npm run content:validate on a hand-off folder), so it cannot ask Postgres.
 // Checking here means an unknown value is refused while Jason's files are still
 // on the table, not as a 23514 half way through a seed run (the old loaders
-// pass values straight through: seed-drill-library.mjs:221-289).
+// passed values straight through: the retired seed-drill-library.mjs).
 //
 // A COPY DRIFTS, SO EACH ENTRY NAMES WHAT IT MIRRORS. contentImportVocabularies
 // .pg.test.ts builds the full migrated schema and compares every list below
