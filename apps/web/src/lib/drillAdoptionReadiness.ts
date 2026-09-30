@@ -34,6 +34,12 @@ export interface AdoptionReadinessInput {
   execution: string;
   what_good_looks_like: string;
   scale_levels: { scale_level: string; is_starting_point: boolean }[];
+  /**
+   * The drill's OWN stop rules only -- DrillWithDetail.stop_rules, every
+   * pilot.drill_stop_rules row of this version. The gym's stored-once rules
+   * (DrillWithDetail.universal_stop_rules) are deliberately not an input: see
+   * the safety rule below.
+   */
   stop_rules: unknown[];
 }
 
@@ -71,9 +77,17 @@ export function adoptionReadiness(drill: AdoptionReadinessInput): AdoptionReadin
     missing.push('Its scaling is incomplete: it needs easier, standard and harder levels, with one marked as the starting point.');
   }
 
-  // Safety: at least one condition to stop on. Contact level and the
-  // coach-authorization flag are required columns with defaults, so checking
-  // them here would prove nothing.
+  // Safety: at least one condition to stop on that belongs to THIS drill.
+  // Contact level and the coach-authorization flag are required columns with
+  // defaults, so checking them here would prove nothing.
+  //
+  // THE GYM'S STORED-ONCE RULES NEVER COUNT (owner ruling R3; flagged default:
+  // a drill needs at least one rule of its own). They apply to every drill, so
+  // counting them would make every drill "have stop rules" the moment one
+  // injury rule was loaded, and this check would stop checking anything. The
+  // legacy per-drill rows labelled scope='universal' DO count: under R3 they are
+  // the drill's own, and they are what keeps today's 119 seeded drills
+  // adoptable. contentImport/warnings.ts judges new drills the same way.
   if (drill.stop_rules.length === 0) missing.push('It has no stop rules.');
 
   return { ready: missing.length === 0, missing };

@@ -289,6 +289,12 @@ describe('the 004B mockup did not delete or invent drill-library controls', () =
     expect(PAGE).toContain('id={`lifecycle-${referenceDrillId}`}');
     expect(PAGE).toContain("method: 'PATCH'");
     expect(PAGE).toContain('Clear filters');
+    // Content intake (#1032), approved by Jason 2026-09-30 ("go with your
+    // recomendations"): a second Restore, on the card of a NEWER version of a
+    // drill the gym retired. It restores the gym's own drill at the version it
+    // adopted; once a revision lands, that card is the only way back to it.
+    expect(PAGE).toContain("state.state === 'newer_version_retired'");
+    expect(PAGE).toContain('NEWER_VERSION_RESTORE_CONSEQUENCE');
   });
 
   test('the real difficulty vocabulary is unchanged', () => {
@@ -460,11 +466,15 @@ describe('the 004B mockup did not delete or invent drill-library controls', () =
     //   - seven buttons: the five above, plus Retire / Restore (one element
     //     whose caption follows the derived lifecycle) on the opened detail,
     //     and Clear filters on the discovery rail. Named in "the real actions
-    //     still exist"; this case holds the line against an EIGHTH.
+    //     still exist".
+    //
+    // Eight since #1032 (Jason, 2026-09-30, "go with your recomendations"): the
+    // Restore on a newer version's card when the gym retired its drill. Named in
+    // "the real actions still exist"; this case holds the line against a NINTH.
     expect(PAGE.match(/<input\b/g) ?? []).toHaveLength(3);
     expect(PAGE.match(/<textarea\b/g) ?? []).toHaveLength(2);
     expect(PAGE.match(/<select\b/g) ?? []).toHaveLength(2);
-    expect(PAGE.match(/<button\b/g) ?? []).toHaveLength(7);
+    expect(PAGE.match(/<button\b/g) ?? []).toHaveLength(8);
     expect(PAGE.match(/<Link\b/g) ?? []).toHaveLength(1);
   });
 });

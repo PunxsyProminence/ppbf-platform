@@ -57,10 +57,17 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
   const steps = executionSteps(view.execution);
   // Three groups, because they are three different instructions. A readiness
   // rule ("re-warm before contact after ~20 minutes idle") is something to do
-  // BEFORE the drill, not a condition for stopping it.
-  const drillSpecificStops = view.stopRules.filter((rule) => rule.scope === 'drill_specific' && rule.kind !== 'warmup_decay');
+  // BEFORE the drill, not a condition for stopping it, wherever it came from.
+  //
+  // The other two split by ORIGIN, not by the legacy scope label (owner ruling
+  // R3, 2026-09-29): the drill's own rules -- the lines seeded with
+  // scope='universal' on every drill included, because R3 says they are not
+  // universal -- and the gym's stored-once rules, which are. Grouping by scope
+  // put those five generic lines under "Stop rules for every drill", beside the
+  // injury rule that really is (drillDetailView.ts, DrillStopRuleView).
+  const ownStops = view.stopRules.filter((rule) => rule.origin === 'drill' && rule.kind !== 'warmup_decay');
   const readiness = view.stopRules.filter((rule) => rule.kind === 'warmup_decay');
-  const generalStops = view.stopRules.filter((rule) => rule.scope !== 'drill_specific' && rule.kind !== 'warmup_decay');
+  const everyDrillStops = view.stopRules.filter((rule) => rule.origin === 'universal' && rule.kind !== 'warmup_decay');
   const { setup, equipment } = setupAndEquipment(view.setup, view.equipment);
   const coachStatus = view.coach ? referenceStatus(view.coach) : null;
   const good = listItems(view.good);
@@ -96,14 +103,14 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
             ? 'Required. Only run this drill with a coach who has approved it.'
             : 'Not required.'}
         </p>
-        {drillSpecificStops.length === 0 && generalStops.length === 0 && (
+        {ownStops.length === 0 && everyDrillStops.length === 0 && (
           <p className={BODY}>No stop rules are recorded for this drill.</p>
         )}
-        {drillSpecificStops.length > 0 && (
-          <StopRuleList heading={"This drill's stop rules"} rules={drillSpecificStops} />
+        {ownStops.length > 0 && (
+          <StopRuleList heading="Stop rules" rules={ownStops} />
         )}
-        {generalStops.length > 0 && (
-          <StopRuleList heading="Stop rules for every drill" rules={generalStops} />
+        {everyDrillStops.length > 0 && (
+          <StopRuleList heading="Stop rules for every drill" rules={everyDrillStops} />
         )}
         {readiness.length > 0 && (
           <StopRuleList heading="Before contact or maximal effort" rules={readiness} />
@@ -248,8 +255,10 @@ function StopRuleList({ heading, rules }: { heading: string; rules: DrillStopRul
     <div className="space-y-[var(--s1)]">
       <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-200)]">{heading}</p>
       <ol className={`${BODY} list-decimal space-y-[var(--s1)] pl-[var(--s5)]`}>
+        {/* Keyed by origin as well: the readiness list can hold a drill rule
+            and a stored-once rule at the same ordinal. */}
         {rules.map((rule) => (
-          <li key={`stop-${rule.ordinal}`}>{rule.text}</li>
+          <li key={`stop-${rule.origin}-${rule.ordinal}`}>{rule.text}</li>
         ))}
       </ol>
     </div>

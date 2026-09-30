@@ -120,6 +120,18 @@ const SECONDARY_RUNNER_PATH = path.resolve(
  *   provenance        adds reference_drill_id and its composite FK to
  *                     pilot.drill_library
  */
+/**
+ * Every drill DETAIL read -- coach and athlete -- now also reads the gym's
+ * stored-once stop rules from pilot.universal_stop_rules (owner ruling R3),
+ * which the content-import migration creates. It refuses to run without the
+ * vocabulary widening and workout-templates v2 migrations (its own first DO
+ * block), so the tests that read a detail apply all three, in the workflow's
+ * `all` order, through applyStoredOnceRuleSchema below. Like the operational
+ * migrations, they are applied only to build the disposable local fixture.
+ */
+const WORKOUT_TEMPLATES_V2_MIGRATION_FILE = 'pilot_slice_postgres_workout_templates_v2_migration.sql';
+const CONTENT_IMPORT_MIGRATION_FILE = 'pilot_slice_postgres_content_import_migration.sql';
+
 const PROGRESSION_MIGRATION_FILE = 'pilot_slice_postgres_progression_migration.sql';
 const DRILLS_MIGRATION_FILE = 'pilot_slice_postgres_drills_migration.sql';
 const DRILL_VERSIONING_MIGRATION_FILE = 'pilot_slice_postgres_drill_versioning_migration.sql';
@@ -138,6 +150,7 @@ let migrationSql: string;
 let secondarySkillsSql: string;
 let baseSchemaSql: string;
 let operationalDrillSql: string;
+let storedOnceRuleSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let applySecondarySkillsMigration: (client: Client, sql: string) => Promise<void>;
 function connectionStringFor(database: string): string {
@@ -189,6 +202,11 @@ interface InsertDrillOptions {
   category?: string;
   difficulty?: string;
   active?: boolean;
+}
+
+/** After the v3 migration: what every drill DETAIL read needs (see storedOnceRuleSql). */
+async function applyStoredOnceRuleSchema(client: Client): Promise<void> {
+  await client.query(storedOnceRuleSql);
 }
 
 async function insertDrill(client: Client, opts: InsertDrillOptions): Promise<void> {
@@ -273,6 +291,16 @@ beforeAll(async () => {
     DRILL_VERSIONING_MIGRATION_FILE,
     PROVENANCE_MIGRATION_FILE,
   ].map((file) => fs.readFile(path.join(INFRA_DIR, file), 'utf8')))).join('\n');
+
+  // The three are concatenated like operationalDrillSql above: no test here
+  // cares about their seams, only that pilot.universal_stop_rules is real.
+  storedOnceRuleSql = [
+    vocabularyWideningSql,
+    ...(await Promise.all([
+      WORKOUT_TEMPLATES_V2_MIGRATION_FILE,
+      CONTENT_IMPORT_MIGRATION_FILE,
+    ].map((file) => fs.readFile(path.join(INFRA_DIR, file), 'utf8')))),
+  ].join('\n');
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
@@ -489,6 +517,7 @@ describe('drillLibraryV3.ts against real Postgres', () => {
     try {
       await applyMigrationTransaction(client, migrationSql);
       await applySecondarySkillsMigration(client, secondarySkillsSql);
+      await applyStoredOnceRuleSchema(client);
       await insertDrill(client, { drillId: 'drill-detail', name: 'Detail Drill' });
       await insertScaleLevel(client, {
         scaleId: 'scale-detail-b', drillId: 'drill-detail', scaleLevel: 'B', isStartingPoint: true,
@@ -565,6 +594,7 @@ describe('drill secondary skill relationships against real Postgres', () => {
     const client = await freshDatabase(name);
     await applyMigrationTransaction(client, migrationSql);
     await applySecondarySkillsMigration(client, secondarySkillsSql);
+    await applyStoredOnceRuleSchema(client);
     return client;
   }
 
@@ -1263,6 +1293,7 @@ describe('the athlete reference library against real Postgres', () => {
     const client = await freshDatabase(name);
     await applyMigrationTransaction(client, migrationSql);
     await applySecondarySkillsMigration(client, secondarySkillsSql);
+    await applyStoredOnceRuleSchema(client);
     await client.query(operationalDrillSql);
     await client.query(
       `insert into pilot.organizations (organization_id, organization_name, status)
@@ -1498,13 +1529,15 @@ describe('the athlete reference library against real Postgres', () => {
       expect(Object.keys(detail).sort()).toEqual([
         'common_errors', 'contact_level', 'corrections', 'cues', 'drill_id', 'equipment_needed',
         'execution', 'name', 'purpose', 'requires_coach_authorization', 'scale_levels', 'setup',
-        'stop_rules', 'what_bad_looks_like', 'what_good_looks_like',
+        'stop_rules', 'universal_stop_rules', 'what_bad_looks_like', 'what_good_looks_like',
       ]);
       expect(Object.keys(detail.scale_levels[0]).sort()).toEqual([
         'coach_watch_point', 'constraint_applied', 'contact_level', 'demand_description',
         'is_starting_point', 'scale_level',
       ]);
-      expect(Object.keys(detail.stop_rules[0]).sort()).toEqual(['condition_text', 'ordinal', 'rule_kind', 'scope']);
+      // `origin` says where the rule came from (owner ruling R3): this row is the
+      // drill's own, whatever its legacy scope label.
+      expect(Object.keys(detail.stop_rules[0]).sort()).toEqual(['condition_text', 'ordinal', 'origin', 'rule_kind', 'scope']);
 
       // The instructional content IS there -- a projection that dropped
       // everything would pass a deny-list check and be useless.
@@ -1519,8 +1552,11 @@ describe('the athlete reference library against real Postgres', () => {
         cues: ['Hand home first'],
       });
       expect(detail.stop_rules).toEqual([
-        { ordinal: 1, condition_text: 'Stop if the guard drops.', scope: 'universal', rule_kind: 'safety' },
+        { ordinal: 1, condition_text: 'Stop if the guard drops.', scope: 'universal', rule_kind: 'safety', origin: 'drill' },
       ]);
+      // This gym has stored no rules once; referenceDrillVersions.pg.test.ts
+      // covers the ones it has.
+      expect(detail.universal_stop_rules).toEqual([]);
       expect(detail.scale_levels).toHaveLength(1);
 
       // RECURSIVE deny. Serialising and walking every key at every depth is what

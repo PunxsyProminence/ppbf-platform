@@ -1,7 +1,11 @@
 import { NextRequest } from 'next/server';
 
 import { POST } from './route';
-import { getDrillWithDetail, listReferenceLifecycles } from '@/src/server/pilot/drillLibraryV3';
+import {
+  getDrillWithDetail,
+  getOtherVersionAdoption,
+  listReferenceLifecycles,
+} from '@/src/server/pilot/drillLibraryV3';
 import {
   DrillNameTakenError,
   ReferenceDrillAlreadyPromotedError,
@@ -29,6 +33,7 @@ jest.mock('@/src/server/pilot/http', () => {
 
 jest.mock('@/src/server/pilot/drillLibraryV3', () => ({
   getDrillWithDetail: jest.fn(),
+  getOtherVersionAdoption: jest.fn(),
   listReferenceLifecycles: jest.fn(),
 }));
 
@@ -44,6 +49,7 @@ jest.mock('@/src/server/pilot/audit', () => ({
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockGetReference = getDrillWithDetail as jest.Mock;
 const mockLifecycles = listReferenceLifecycles as jest.Mock;
+const mockOtherVersion = getOtherVersionAdoption as jest.Mock;
 const mockPromote = promoteReferenceDrill as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 
@@ -58,6 +64,8 @@ const RESTORE_INSTEAD_MESSAGE =
 const NOT_READY_MESSAGE = 'This reference drill is not ready to adopt.';
 const SCALING_INCOMPLETE =
   'Its scaling is incomplete: it needs easier, standard and harder levels, with one marked as the starting point.';
+const NEWER_VERSION_MESSAGE =
+  "This gym already has an earlier version of this drill. Updating the gym's drill to this newer version is not built yet, so this version cannot be promoted as a separate drill.";
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
   return {
@@ -150,6 +158,9 @@ beforeEach(() => {
   // operational unless the coach retired it. Tests that need another answer
   // say so.
   mockLifecycles.mockResolvedValue(lifecycleFor('operational'));
+  // The gym has no other version of this reference's lineage unless a test
+  // says so.
+  mockOtherVersion.mockResolvedValue(null);
   mockPromote.mockResolvedValue(promotedDrill());
   mockAudit.mockResolvedValue(undefined);
 });
@@ -456,6 +467,88 @@ describe('adoption readiness', () => {
 
     expect(response.status).toBe(201);
     expect(mockPromote).toHaveBeenCalledWith(expect.objectContaining({ cues: [] }));
+  });
+});
+
+describe('a newer version of a drill this gym already has (owner ruling R2)', () => {
+  // A revised drill is v(n+1); the gym's operational drill keeps pointing at
+  // the version it adopted. Until the coach-reviewed update step exists
+  // (IMP-15), promoting the newer version separately is refused -- a renamed
+  // v2 would otherwise become a second operational drill of one lineage.
+  const GYM_VERSION = { operational_drill_id: 'operational-v1', adopted_reference_drill_id: 'drl_reference_v1' };
+
+  it('newer version of a lineage the gym runs is refused with guidance', async () => {
+    mockOtherVersion.mockResolvedValue(GYM_VERSION);
+
+    const response = await POST(promoteRequest({ reference_drill_id: REFERENCE_ID }));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: NEWER_VERSION_MESSAGE,
+      code: 'NEWER_VERSION_UPDATE_NOT_BUILT',
+      operational_drill_id: 'operational-v1',
+    });
+    expect(mockPromote).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it('asks about the session organization and the reference it read, never a supplied organization', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ organizationId: 'org-session' }));
+    mockGetReference.mockResolvedValue(referenceDrill({ organization_id: 'org-session' }));
+    // Another version is adopted only in the session's gym: the refusal can
+    // only come back if the question was asked about it.
+    mockOtherVersion.mockImplementation(async (organizationId: string) =>
+      organizationId === 'org-session' ? GYM_VERSION : null,
+    );
+
+    const response = await POST(
+      promoteRequest({ reference_drill_id: REFERENCE_ID, organization_id: 'org-somebody-else' }),
+    );
+
+    expect(mockOtherVersion.mock.calls).toEqual([['org-session', REFERENCE_ID]]);
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe('NEWER_VERSION_UPDATE_NOT_BUILT');
+    expect(mockPromote).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when it cannot tell whether the gym has another version', async () => {
+    // Failing closed: "could not read" is not "has none", and a promotion on
+    // that guess could create the second operational drill this check exists
+    // to prevent.
+    mockOtherVersion.mockRejectedValue(new Error('connection terminated unexpectedly'));
+    // jsonError logs the unhandled error class; expected here, so kept quiet.
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await POST(promoteRequest({ reference_drill_id: REFERENCE_ID }));
+    logged.mockRestore();
+
+    expect(response.status).toBe(500);
+    expect(mockPromote).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it('answers a retracted or not-ready reference in its own words before asking', async () => {
+    // Those refusals say something about the reference itself; the other-
+    // version question only matters for one the gym could otherwise adopt.
+    mockOtherVersion.mockResolvedValue(GYM_VERSION);
+
+    mockGetReference.mockResolvedValueOnce(referenceDrill({ active: false }));
+    const retracted = await POST(promoteRequest({ reference_drill_id: REFERENCE_ID }));
+    mockGetReference.mockResolvedValueOnce(referenceDrill({ stop_rules: [] }));
+    const notReady = await POST(promoteRequest({ reference_drill_id: REFERENCE_ID }));
+
+    expect(await retracted.json()).toEqual({ error: RETRACTED_MESSAGE });
+    expect((await notReady.json()).code).toBe('NOT_READY_TO_ADOPT');
+    expect(mockOtherVersion).not.toHaveBeenCalled();
+    expect(mockPromote).not.toHaveBeenCalled();
+  });
+
+  it('promotes as before when the gym has no other version of the lineage', async () => {
+    const response = await POST(promoteRequest({ reference_drill_id: REFERENCE_ID }));
+
+    expect(response.status).toBe(201);
+    expect(mockOtherVersion.mock.calls).toEqual([['org-1', REFERENCE_ID]]);
+    expect(mockPromote).toHaveBeenCalledTimes(1);
   });
 });
 

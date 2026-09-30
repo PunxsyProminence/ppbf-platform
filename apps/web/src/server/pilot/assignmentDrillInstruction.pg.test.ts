@@ -241,14 +241,14 @@ const CROSS_ORG_REFERENCE_PROBES: ReadonlyArray<readonly [organizationId: string
 ];
 
 /**
- * The athlete detail's keys (drillLibraryV3.pg.test.ts pins those fifteen)
+ * The athlete detail's keys (drillLibraryV3.pg.test.ts pins those sixteen)
  * minus drill_id, which is the reference pointer. An exact allow-list: a key
  * added to the athlete projection tomorrow fails here as well as there.
  */
 const ATHLETE_INSTRUCTION_KEYS = [
   'common_errors', 'contact_level', 'corrections', 'cues', 'equipment_needed', 'execution', 'name',
   'purpose', 'requires_coach_authorization', 'scale_levels', 'setup', 'stop_rules',
-  'what_bad_looks_like', 'what_good_looks_like',
+  'universal_stop_rules', 'what_bad_looks_like', 'what_good_looks_like',
 ];
 
 /** The coach envelope for an available instruction, exactly. */
@@ -408,8 +408,11 @@ function pinnedInstruction(label: string, name: string) {
       },
     ],
     stop_rules: [
-      { ordinal: 1, condition_text: `${label} stop when the guard drops.`, scope: 'universal', rule_kind: 'safety' },
+      { ordinal: 1, condition_text: `${label} stop when the guard drops.`, scope: 'universal', rule_kind: 'safety', origin: 'drill' },
     ],
+    // No gym in this suite stores rules once (pilot.universal_stop_rules);
+    // referenceDrillVersions.pg.test.ts covers the ones that do.
+    universal_stop_rules: [],
   };
 }
 
@@ -914,7 +917,7 @@ describe('a promoted, live reference (real database)', () => {
   test('the athlete gets the athlete-safe instruction, without the reference pointer', async () => {
     const result = await openAsAthlete(ASG_LIVE);
 
-    // AN EXACT ALLOW-LIST: the fifteen keys of getAthleteDrillDetail minus drill_id.
+    // AN EXACT ALLOW-LIST: the sixteen keys of getAthleteDrillDetail minus drill_id.
     expect(Object.keys(result.drill).sort()).toEqual(ATHLETE_INSTRUCTION_KEYS);
     expect(Object.keys(result).sort()).toEqual(['audience', 'drill', 'state']);
 
@@ -952,8 +955,9 @@ describe('a promoted, live reference (real database)', () => {
         },
       ],
       stop_rules: [
-        { ordinal: 1, condition_text: 'Live stop when the guard drops.', scope: 'universal', rule_kind: 'safety' },
+        { ordinal: 1, condition_text: 'Live stop when the guard drops.', scope: 'universal', rule_kind: 'safety', origin: 'drill' },
       ],
+      universal_stop_rules: [],
     });
     // The derived expectation used for the other drills IS this literal.
     expect(pinnedInstruction('Live', 'Live Drill')).toEqual(result.drill);
@@ -1208,7 +1212,7 @@ describe('OPEN WORK KEEPS ITS INSTRUCTION AFTER THE GYM RETIRES THE DRILL: OD-20
 
     const result = await openAsAthlete(assignmentId);
 
-    // The athlete envelope and the exact fourteen keys -- the same projection
+    // The athlete envelope and the exact fifteen keys -- the same projection
     // as Learn's, not a wider one for this path.
     expect(Object.keys(result).sort()).toEqual(['audience', 'drill', 'state']);
     expect(Object.keys(result.drill).sort()).toEqual(ATHLETE_INSTRUCTION_KEYS);
@@ -1216,7 +1220,7 @@ describe('OPEN WORK KEEPS ITS INSTRUCTION AFTER THE GYM RETIRES THE DRILL: OD-20
     // cues in order, both scale levels, and the safety stop rule.
     expect(result.drill).toEqual(pinnedInstruction('Retired', 'Retired Drill'));
     expect(result.drill.stop_rules).toEqual([
-      { ordinal: 1, condition_text: 'Retired stop when the guard drops.', scope: 'universal', rule_kind: 'safety' },
+      { ordinal: 1, condition_text: 'Retired stop when the guard drops.', scope: 'universal', rule_kind: 'safety', origin: 'drill' },
     ]);
     // Still no pointer, no provenance, and nothing that says it was retired.
     expectNoPointerOrProvenance(result, REF_RETIRED);
@@ -1257,7 +1261,7 @@ describe('getAthleteDrillDetailForOpenWork, directly (real database)', () => {
     await expect(getAthleteDrillDetail(ORG_A, REF_RETIRED)).resolves.toBeNull();
 
     const detail = await getAthleteDrillDetailForOpenWork(ORG_A, REF_RETIRED);
-    // The athlete detail exactly: its fifteen keys, the pointer included (the
+    // The athlete detail exactly: its sixteen keys, the pointer included (the
     // resolver drops it), and the content tag-stripped.
     expect(detail).toEqual({ drill_id: REF_RETIRED, ...pinnedInstruction('Retired', 'Retired Drill') });
   });
