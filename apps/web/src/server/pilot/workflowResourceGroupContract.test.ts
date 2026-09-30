@@ -50,6 +50,7 @@ const COVERED = [
   'cleanup-membership-orphans.yml',
   'import-shadow-research.yml',
   'move-policy-shelf.yml',
+  'repair-research-baseline.yml',
   'rescope-library-baseline.yml',
   'retention-cleanup.yml',
   'run-checks.yml',

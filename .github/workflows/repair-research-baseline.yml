@@ -1,0 +1,219 @@
+name: repair-research-baseline
+
+# Repairs the SHADOW research baseline (organization __platform__) a database
+# imported and approved before the 2026-08-07 corpus was corrected: repoints
+# mis-cited and duplicate claims to their real paper, retires the wrong-paper
+# and duplicate sources (status 'archived', review columns untouched), and
+# sets the tiers and citation metadata the corrected seed carries, on the
+# source row and on its chunks.
+#
+# Jason said yes to the tool on 2026-09-29 (Q1-Q4): the committed repair logs
+# are the pinned plan, the committed seed holds the target values, retire as
+# archived, tiers by the spec. He approves the production run in GitHub: the job
+# runs in the environment named by `target`, so a production dispatch is held by
+# the production environment's protection rules, the same gate
+# move-policy-shelf.yml and rescope-library-baseline.yml use.
+#
+# Dry run by default: it prints the state (PRE_REPAIR, PARTIAL, REPAIRED or
+# DRIFTED), the per-action counts, any blockers and a plan fingerprint, and
+# rolls back. That dry run IS the read-only production precondition check.
+#
+# Apply repairs only the plan that was reviewed: it needs expected_fingerprint
+# set to the plan_fingerprint a dry run of the same target printed, and it
+# refuses (PLAN_FINGERPRINT_MISMATCH, before its first update) when the rows it
+# finds give a different fingerprint. It refuses a DRIFTED database, and on a
+# REPAIRED one it writes nothing.
+#
+# There is deliberately no organization input: the tool only ever touches
+# __platform__, and refuses a listed row it finds anywhere else.
+#
+# Dispatch-only for the reason in scripts/lib/postgres-write-target.mjs: the
+# alternative is an operator holding a production connection string on a laptop,
+# which is how 361 orphaned rows got into production on 2026-07-18.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Database environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      confirm_target:
+        description: Retype the target exactly
+        required: true
+        type: string
+      mode:
+        description: Report the repair state, or apply the repair
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - apply
+      confirm_repair:
+        description: For apply mode, type REPAIR RESEARCH BASELINE exactly
+        required: false
+        type: string
+      expected_fingerprint:
+        description: For apply mode, the plan_fingerprint (sha256:...) printed by the dry run you reviewed
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: repair-research-baseline-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    environment: ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # RESOURCE_GROUP is resolved per target by the step below, never set
+      # here: production reads secrets.AZURE_PRODUCTION_RESOURCE_GROUP with no
+      # staging fallback (see workflowResourceGroupContract.test.ts).
+      CONTAINER_APP_NAME: ${{ inputs.target == 'production' && 'app-ppbf-production' || 'app-ppbf-staging' }}
+      PPBF_RESEARCH_REPAIR_APPLY: ${{ inputs.mode == 'apply' }}
+    steps:
+      # Free text reaches the shell through the environment, never by
+      # interpolation: `${{ ... }}` in a `run:` block is substituted before
+      # bash parses the line, so a value with a quote and a semicolon becomes
+      # commands.
+      - name: Confirm Explicit Target And Apply Intent
+        env:
+          TARGET: ${{ inputs.target }}
+          CONFIRM_TARGET: ${{ inputs.confirm_target }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM_REPAIR: ${{ inputs.confirm_repair }}
+          EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
+        run: |
+          set -euo pipefail
+          if [ "$TARGET" != "$CONFIRM_TARGET" ]; then
+            echo "::error::confirm_target does not match target."
+            exit 1
+          fi
+          if [ "$MODE" = "apply" ] && [ "$CONFIRM_REPAIR" != "REPAIR RESEARCH BASELINE" ]; then
+            echo "::error::apply mode needs confirm_repair set to REPAIR RESEARCH BASELINE exactly."
+            exit 1
+          fi
+          if [ "$MODE" = "apply" ] && [[ ! "$EXPECTED_FINGERPRINT" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::apply mode needs expected_fingerprint set to the plan_fingerprint printed by the dry run you reviewed."
+            exit 1
+          fi
+
+      # A wrong-resource-group lookup that happens to resolve is worse than one
+      # that refuses, so an unset secret stops the run here -- before the Azure
+      # login, and long before anything touches a database.
+      - name: Resolve Target Resource Group
+        env:
+          TARGET: ${{ inputs.target }}
+          PRODUCTION_RESOURCE_GROUP: ${{ secrets.AZURE_PRODUCTION_RESOURCE_GROUP }}
+        run: |
+          if [ "$TARGET" = "production" ]; then
+            if [ -z "$PRODUCTION_RESOURCE_GROUP" ]; then
+              echo "::error::secrets.AZURE_PRODUCTION_RESOURCE_GROUP is empty or unset. Refusing to fall back to the staging resource group for a production operation."
+              exit 1
+            fi
+            echo "RESOURCE_GROUP=$PRODUCTION_RESOURCE_GROUP" >> "$GITHUB_ENV"
+          else
+            echo "RESOURCE_GROUP=rg-ppbf-enterprise-staging" >> "$GITHUB_ENV"
+          fi
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      # Not conditional on mode: the dry run reads the same database, so it needs
+      # the same connection string, resolved the same way.
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Declared Database Target
+        env:
+          OVERRIDE_HOST: ${{ vars.PPBF_EXPECTED_POSTGRES_HOSTNAME }}
+          OVERRIDE_DB: ${{ vars.PPBF_EXPECTED_POSTGRES_DATABASE }}
+        run: |
+          set -euo pipefail
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
+
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) process.exit(2);
+            process.stdout.write(host + "\n" + db);
+          ')"
+          HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
+          echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
+
+      # One command for both modes. The script is read-only unless
+      # PPBF_RESEARCH_REPAIR_APPLY is exactly 'true' AND
+      # PPBF_RESEARCH_REPAIR_CONFIRM is the phrase -- it checks the phrase itself
+      # too, so the dry run cannot write even if the guard step above is later
+      # edited carelessly.
+      - name: Repair Research Baseline
+        working-directory: apps/web
+        env:
+          PPBF_RESEARCH_REPAIR_CONFIRM: ${{ inputs.confirm_repair }}
+          PPBF_RESEARCH_REPAIR_EXPECT_FINGERPRINT: ${{ inputs.expected_fingerprint }}
+        # `shell: bash` for pipefail; GitHub's default `bash -e {0}` lacks it
+        # and `tee` would discard a failed run's exit code.
+        shell: bash
+        run: npm run pilot:repair-research-baseline 2>&1 | tee -a /tmp/tool-output.txt
+
+      - name: Record The Repair Run
+        if: always()
+        env:
+          TARGET: ${{ inputs.target }}
+          MODE: ${{ inputs.mode }}
+          EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          # `-s`, not `tail ... ||`: tee creates the file before the tool
+          # writes, so an empty file exits tail 0 and skips the fallback.
+          echo '--- tool output (last lines, repeated) ---'
+          [ -s /tmp/tool-output.txt ] && tail -n 12 /tmp/tool-output.txt || echo '(none captured)'
+          {
+            echo '### SHADOW research baseline repair'
+            echo ''
+            echo "- target: \`$TARGET\`"
+            echo "- mode: \`$MODE\`"
+            echo "- organization: \`__platform__\` (fixed)"
+            echo "- expected fingerprint: \`${EXPECTED_FINGERPRINT:-none}\`"
+            echo "- result: \`$JOB_STATUS\`"
+            echo ''
+            echo 'The dry run prints the state (PRE_REPAIR, PARTIAL, REPAIRED or DRIFTED),'
+            echo 'every repoint, retire and tier change by id, metadata changes by key, the'
+            echo 'blockers (if any) and a plan fingerprint. Apply re-plans inside its own'
+            echo 'transaction with the rows locked, refuses unless that plan has the'
+            echo 'expected fingerprint, verifies the end state before committing, and'
+            echo 'records the repair in pilot.audit_events.'
+          } >> "$GITHUB_STEP_SUMMARY"

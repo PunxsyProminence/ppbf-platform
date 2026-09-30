@@ -242,6 +242,71 @@ Not moved: capability rules (the dry run lists the from-organization's rules tha
 `internal_policy` under `capability_rules_not_moved`), research requirements, and history rows in
 `audit_events` and `shadow_events`.
 
+## Repairing the research baseline — `repair-research-baseline`
+
+Production imported the 2026-08-07 corpus into `__platform__` and approved it on 2026-08-13. The
+seed was corrected after that (#1008 and its follow-up: 71 mis-cited claims, duplicate sources,
+wrong-paper rows, tiers set by the spec, wrong `verified_title` values). **Merging the seed fix does
+not fix production, and the importer must not be re-run against production**: it upserts
+`approval_state` and would fail on, or reset, every approved row. The repair is the owner-gated tool
+`apps/web/scripts/pilot-repair-research-baseline.mjs` (Jason, 2026-09-29, Q1-Q4). It decides nothing
+itself: the committed logs in `apps/web/seed-data/shadow-research/2026-08-07/repairs/` say which rows,
+the committed seed says what each ends as, and `repairs/pre_repair_values.csv` says what each holds
+before. In `__platform__` only, in one transaction, it:
+
+- repoints 221 chunks to the source the seed puts them on -- first, because a chunk's source foreign
+  key cascades on delete and a claim must never sit on a retired row;
+- sets `authority_tier` on the source row and `authority_tier` / `evidence_tier` in its chunks'
+  metadata, and the citation metadata keys, to the seed's values (other keys and columns untouched);
+- retires 213 sources with `status = 'archived'`, leaving `approval_state`, `verification_state` and
+  the approval stamps as they are. Retrieval, coverage and rabbit holes all require
+  `status = 'active'`, so archived rows drop out of every answer. Nothing is deleted.
+
+The dry run reports one of four states:
+
+| state | meaning | apply does |
+|---|---|---|
+| `PRE_REPAIR` | every planned change still holds its pre-repair value | repairs |
+| `PARTIAL` | some changes in place, the rest pre-repair | resumes (writes only what is pending) |
+| `REPAIRED` | every planned field holds the seed's value | nothing |
+| `DRIFTED` | a field in neither state, a listed row missing or outside `__platform__`, a repoint target not live (active, approved, verified, not suppressed), or a chunk or document the plan does not know on a source it would retire | refuses |
+
+Dispatch the `repair-research-baseline` workflow in this order:
+
+1. `target` staging, `mode` dry-run. Read the state, the counts, the blockers and the
+   `plan_fingerprint`. Staging's history is not recorded here; if it is not `PRE_REPAIR`, stop and
+   report what it says rather than repairing around it.
+2. `target` staging, `mode` apply, `confirm_repair` = `REPAIR RESEARCH BASELINE`,
+   `expected_fingerprint` = the fingerprint from step 1. Then dry-run staging again: `REPAIRED`.
+3. `target` production, `mode` dry-run. This is the read-only production precondition check.
+   **Stop unless the state is `PRE_REPAIR` and `counts.<action>.pending` is exactly**: repoint 221,
+   retire 213, retier 65 (11 source rows, 32 chunks), metadata 706 (224 sources, 71 chunks) --
+   the numbers `researchRepairPlan.test.ts` pins. Anything else means production is not what it
+   imported on 2026-08-13; report it.
+4. `target` production, `mode` apply, `expected_fingerprint` = the fingerprint from step 3. The job
+   runs in the `production` environment, where Jason approves the run; the fingerprint ties the
+   approved run to exactly what step 3 showed, and any row that changed since refuses the apply
+   (`PLAN_FINGERPRINT_MISMATCH`) before its first update.
+5. `check-database` with `library-scope`: expect `BASELINE PRESENT AND CORRECTLY SPLIT` with the
+   baseline's corpus line reading `981 (+213 retired: archived, quarantined or rejected; not counted)`.
+6. Spot-check: the apply's `spot_check` (and a fresh dry run's, which must now say `REPAIRED`) shows
+   claim `A2-076` on the source titled "Quantifying head impacts and neurocognitive performance in
+   collegiate boxers".
+7. A signed-in SHADOW question is the only proof retrieval works end to end. Jason enters the
+   credentials; the tests and the dry run do not prove it.
+
+Apply verifies before committing: every planned field holds the seed's value, no chunk sits on an
+archived source, every target is live, and no source's review columns changed. It writes one
+`pilot.audit_events` row (`entity_type = 'shadow_library_research_repair'`) carrying the
+fingerprint and the sha256 of every plan file. It refuses: a missing `__platform__` organization, a
+fingerprint that does not match, a `DRIFTED` state, and any update that touches a different number
+of rows than planned.
+
+Not changed by the repair: the two chunk sentences #1003 corrected (text, not in any log), the
+capability map's coverage counts (computed while duplicates inflated them), documents, and history
+rows that cite the retired sources (`shadow_evidence_items`, citation and retraction checks; the
+dry run counts them under `history`).
+
 ---
 
 ## Known limitation this runbook does not fix
