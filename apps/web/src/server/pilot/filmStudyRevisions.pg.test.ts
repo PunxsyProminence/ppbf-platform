@@ -92,6 +92,10 @@ async function readMigration(name: string): Promise<string> {
 }
 
 const BASE_SQL = 'pilot_slice_postgres.sql';
+// athletes.deleted_at: deletion scope B makes the readers this suite drives leave a
+// deleted athlete's rows out; production has had the column since the data-retention
+// migration, and a database without it is one that never existed.
+const RETENTION_SQL = 'pilot_slice_postgres_data_retention_deletion_migration.sql';
 const PROPOSALS_SQL = 'pilot_slice_postgres_film_study_proposals_migration.sql';
 const COACH_REPORTED_SQL = 'pilot_slice_postgres_film_study_coach_reported_migration.sql';
 const REVISIONS_SQL = 'pilot_slice_postgres_film_study_revisions_migration.sql';
@@ -192,6 +196,7 @@ beforeAll(async () => {
   const migrateClient = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await migrateClient.connect();
   await migrateClient.query(await readMigration(BASE_SQL));
+  await migrateClient.query(await readMigration(RETENTION_SQL));
   await migrateClient.query(await readMigration(PROPOSALS_SQL));
   await migrateClient.query(await readMigration(COACH_REPORTED_SQL));
   await migrateClient.query(await readMigration(REVISIONS_SQL));
@@ -422,7 +427,11 @@ describe('correcting until the model is mostly right', () => {
     const proposal = await pendingProposal();
     await correct(proposal.proposal_id, 'Being reworked.');
 
-    const queue = await proposals.listFilmStudyProposals({ organizationId: ORG_ID, state: 'pending' });
+    const queue = await proposals.listFilmStudyProposals({
+      organizationId: ORG_ID,
+      state: 'pending',
+      athleteIds: [ATHLETE_ID],
+    });
 
     // Dropping it after the first pass would make "correct until it is right"
     // impossible to actually do.
@@ -468,6 +477,7 @@ describe('film study revisions runner readiness assertion', () => {
     const client = new Client({ connectionString: connectionStringFor(name) });
     await client.connect();
       await client.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
+      await client.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8'));
       await client.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_film_study_proposals_migration.sql'), 'utf8'));
       await client.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_film_study_coach_reported_migration.sql'), 'utf8'));
     return client;

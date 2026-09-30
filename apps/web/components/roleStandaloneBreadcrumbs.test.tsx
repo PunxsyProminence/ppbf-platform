@@ -8,7 +8,7 @@ import RoleStandaloneView from './RoleStandaloneView';
 
 /* The trail has two halves that can each be right while the pair is wrong.
  *
- * Law 6 gives this shell two grounds, and every style constant in it is a pair
+ * This shell has two grounds (roleGround.ts), and every style constant in it is a pair
  * -- BAND/BAND_INK, LINK/LINK_INK. A breadcrumb rung written against only one
  * of them still renders: it just renders brass-800 on leather at 2.45:1, which
  * looks like a styling choice in review and like nothing at all on the screen.

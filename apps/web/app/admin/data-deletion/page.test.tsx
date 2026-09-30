@@ -84,7 +84,15 @@ beforeEach(() => {
     body: {
       deletedEntityType: 'athlete',
       deletedEntityId: 'ath-1',
-      deletedRecordsCounts: { athletes: 1, accounts: 1, coachObservationsRetained: 4 },
+      deletedRecordsCounts: {
+        athletes: 1,
+        accounts: 1,
+        athleteVideos: 3,
+        athletePhotos: 1,
+        coachNotes: 4,
+        sessionNotes: 6,
+        shadowConversations: 2,
+      },
       deletedAt: '2026-09-29T16:00:00.000Z',
       auditEventId: 812,
     },
@@ -119,6 +127,12 @@ async function choose(type: 'athlete' | 'guardian', personLabel: RegExp, reason 
   if (!option) throw new Error(`no option matching ${personLabel}`);
   fireEvent.change(picker, { target: { value: option.value } });
   fireEvent.change(screen.getByLabelText(/^Reason/), { target: { value: reason } });
+}
+
+/** The <dd> beside a result <dt>: which number belongs to which label. */
+function valueFor(label: string): string | null {
+  const term = screen.getByText(label, { selector: 'dt' });
+  return term.nextElementSibling?.textContent ?? null;
 }
 
 function optionTexts(label: string): string[] {
@@ -222,6 +236,26 @@ describe('two confirmations before anything is sent', () => {
     expect(deleteCalls()).toHaveLength(0);
   });
 
+  test('the second confirmation says what scope B marks, and what it leaves alone', async () => {
+    await renderPage();
+    await choose('athlete', /Ada Boxer/);
+    fireEvent.click(screen.getByRole('button', { name: 'Review deletion' }));
+
+    expect(screen.getByText(/Everything tied to them is marked deleted at the same moment/)).toBeTruthy();
+    expect(screen.getByText(/Nothing is erased; it stays in the database until permanent removal\./)).toBeTruthy();
+    expect(screen.getByText(/the admin safety screens .* still show their items/)).toBeTruthy();
+    // The scope-A sentence this replaces is gone.
+    expect(screen.queryByText(/They stay on file/)).toBeNull();
+  });
+
+  test("a guardian confirmation says the withdrawn children's records are marked with them", async () => {
+    await renderPage();
+    await choose('guardian', /parent@gym\.test/);
+    fireEvent.click(screen.getByRole('button', { name: 'Review deletion' }));
+
+    expect(screen.getByText(/everything tied to the child is marked deleted with them/)).toBeTruthy();
+  });
+
   test('Go back sends nothing and returns to the form', async () => {
     await renderPage();
     await choose('athlete', /Ada Boxer/);
@@ -272,9 +306,16 @@ describe('the request and the answer', () => {
     await press('Delete Ada Boxer (ath-1)');
 
     await screen.findByText(/Done: Ada Boxer \(ath-1\) is now marked deleted\./);
-    expect(screen.getByText('closed and signed out everywhere')).toBeTruthy();
-    expect(screen.getByText('4')).toBeTruthy();
-    expect(screen.getByText('812')).toBeTruthy();
+    expect(valueFor('Login')).toBe('closed and signed out everywhere');
+    // Scope B: each tied count sits beside its own label, as the API sent it.
+    expect(valueFor('Videos marked deleted')).toBe('3');
+    expect(valueFor('Photos marked deleted')).toBe('1');
+    expect(valueFor('Coach notes marked deleted')).toBe('4');
+    expect(valueFor('Session notes marked deleted')).toBe('6');
+    expect(valueFor('SHADOW conversations marked deleted')).toBe('2');
+    expect(valueFor('Audit record')).toBe('812');
+    // An athlete deletion withdraws no children; that row is the guardian's.
+    expect(screen.queryByText('Children withdrawn with them')).toBeNull();
     // Gym time (America/New_York), not the viewer's. \s because ICU may put a
     // narrow no-break space before PM.
     expect(screen.getByText(/^September 29, 2026 at 12:00\sPM$/)).toBeTruthy();
@@ -287,7 +328,15 @@ describe('the request and the answer', () => {
       body: {
         deletedEntityType: 'athlete',
         deletedEntityId: 'ath-1',
-        deletedRecordsCounts: { athletes: 1, accounts: 0, coachObservationsRetained: 0 },
+        deletedRecordsCounts: {
+          athletes: 1,
+          accounts: 0,
+          athleteVideos: 0,
+          athletePhotos: 0,
+          coachNotes: 0,
+          sessionNotes: 0,
+          shadowConversations: 0,
+        },
         deletedAt: '2026-09-29T16:00:00.000Z',
         auditEventId: 813,
       },
@@ -299,7 +348,8 @@ describe('the request and the answer', () => {
 
     await screen.findByText('had no login');
     // A real zero from the server is drawn as a zero.
-    expect(screen.getByText('0')).toBeTruthy();
+    expect(valueFor('Videos marked deleted')).toBe('0');
+    expect(valueFor('Coach notes marked deleted')).toBe('0');
   });
 
   test('a count the server did not send reads "not reported", never 0', async () => {
@@ -313,7 +363,8 @@ describe('the request and the answer', () => {
     await press('Delete Ada Boxer (ath-1)');
 
     await screen.findByText(/Done: .* is now marked deleted\./);
-    expect(screen.getAllByText('not reported').length).toBe(3);
+    // Login, the five tied counts and the audit record.
+    expect(screen.getAllByText('not reported').length).toBe(7);
     expect(screen.queryByText('0')).toBeNull();
   });
 
@@ -325,7 +376,8 @@ describe('the request and the answer', () => {
     await press('Delete Ada Boxer (ath-1)');
 
     await screen.findByText(/The server accepted it, but its answer could not be read\./);
-    expect(screen.getAllByText('not reported').length).toBe(4);
+    // The time, login, the five tied counts and the audit record.
+    expect(screen.getAllByText('not reported').length).toBe(8);
   });
 
   test('a guardian result reports the children withdrawn with them', async () => {
@@ -346,8 +398,9 @@ describe('the request and the answer', () => {
     await press('Delete guardian parent@gym.test');
 
     await screen.findByText(/Done: guardian parent@gym\.test is now marked deleted\./);
-    expect(screen.getByText('Children withdrawn with them')).toBeTruthy();
-    expect(screen.getByText('2')).toBeTruthy();
+    expect(valueFor('Children withdrawn with them')).toBe('2');
+    // The withdrawn children's tied records: not sent here, so not reported.
+    expect(valueFor('Videos marked deleted')).toBe('not reported');
     expect(JSON.parse(String(deleteCalls()[0][1].body))).toMatchObject({ entityType: 'guardian', entityId: 'acct-parent' });
   });
 });

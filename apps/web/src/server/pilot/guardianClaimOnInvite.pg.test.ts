@@ -58,6 +58,8 @@ const IMPORTED_EMAIL = 'dana.guardian@example.org';
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let staffProvisioning: typeof import('./staffProvisioning');
+let auth: typeof import('./auth');
+let intake: typeof import('./intake');
 let db: typeof import('./db');
 
 function connectionStringFor(database: string): string {
@@ -186,8 +188,14 @@ beforeAll(async () => {
   await migrateClient.connect();
   // pilot.parents, pilot.guardian_links, pilot.accounts and
   // pilot.organization_memberships are all base-schema; no incremental
-  // migration participates in the claim, so none is applied.
+  // migration participates in the claim. The retention migration is applied
+  // for pilot.accounts.deleted_at, which intake's guardian-login checks read
+  // (the deleted-login cases at the bottom). Production applies it through
+  // apply-migrations.yml's data-retention-deletion entry.
   await migrateClient.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
+  await migrateClient.query(
+    await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8'),
+  );
 
   await migrateClient.query(
     `insert into pilot.organizations (organization_id, organization_name, status)
@@ -211,6 +219,8 @@ beforeAll(async () => {
 
   db = await import('./db');
   staffProvisioning = await import('./staffProvisioning');
+  auth = await import('./auth');
+  intake = await import('./intake');
 });
 
 afterAll(async () => {
@@ -399,5 +409,333 @@ describe('inviting a guardian the roster import already wrote', () => {
     expect(result.guardianLink?.parentId).toBe(`par-${IMPORTED_EMAIL}`);
     expect(await linkedAthletesFor('par_org-claim_cccccccccccccccccccccccc')).toEqual([ATHLETE_A]);
     expect(await linkedAthletesFor(`par-${IMPORTED_EMAIL}`)).toEqual([ATHLETE_B]);
+  });
+});
+
+// R5 (Jason 2026-09-29, "A"). Intake promotion provisions the guardian's login
+// through createOrUpdateMicrosoftStaffAccount with role parent, and that
+// function re-roles an existing account to the role it is given. A guardian
+// email that belonged to a coach turned the coach's login into a parent login.
+// Intake now refuses, before its first write, and provisioning refuses too
+// when intake asks it to. These run the real lookups against real rows.
+async function accountRow(accountId: string) {
+  const rows = await db.query<Record<string, unknown>>(
+    `select account_id, login_email, auth_provider, role, organization_id, athlete_id,
+            pin_hash, active_flag, is_platform_owner, deleted_at, updated_at
+     from pilot.accounts where account_id = $1`,
+    [accountId],
+  );
+  return rows[0];
+}
+
+async function membershipsOf(accountId: string) {
+  return db.query<{ role: string; active_flag: boolean }>(
+    'select role, active_flag from pilot.organization_memberships where account_id = $1 order by organization_id',
+    [accountId],
+  );
+}
+
+async function guardianRowCount(): Promise<number> {
+  const parents = await db.query<{ n: string }>(
+    'select count(*)::text as n from pilot.parents where organization_id = $1',
+    [ORG],
+  );
+  const links = await db.query<{ n: string }>(
+    'select count(*)::text as n from pilot.guardian_links where organization_id = $1',
+    [ORG],
+  );
+  return Number(parents[0].n) + Number(links[0].n);
+}
+
+describe('intake refuses to turn an existing non-parent account into a guardian login', () => {
+  const COACH_EMAIL = 'claim-coach@example.org';
+
+  test('the pre-write check refuses the coach\'s email with 409, matched as sign-in matches it', async () => {
+    const before = await accountRow(COACH_ID);
+
+    await expect(
+      staffProvisioning.assertGuardianLoginProvisionable({
+        loginEmail: `  ${COACH_EMAIL.toUpperCase()} `,
+        organizationId: ORG,
+        accountIdHint: COACH_ID,
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'EXISTING_ACCOUNT_ROLE_CONFLICT',
+      message: expect.stringContaining(`${COACH_EMAIL} already belongs to an existing coach account`),
+    });
+
+    expect(await accountRow(COACH_ID)).toEqual(before);
+    expect(await guardianRowCount()).toBe(0);
+  });
+
+  test('the pre-write check refuses the coach\'s account_id named under a new email', async () => {
+    await expect(
+      staffProvisioning.assertGuardianLoginProvisionable({
+        loginEmail: 'brand.new.guardian@example.org',
+        organizationId: ORG,
+        accountIdHint: COACH_ID,
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining(`account_id "${COACH_ID}" already belongs to an existing coach account`),
+    });
+  });
+
+  test('provisioning with refuseRoleChange refuses the coach and writes nothing', async () => {
+    const sessionHash = 'r5-coach-session';
+    await db.query(
+      'insert into pilot.session_tokens (token_hash, account_id, organization_id) values ($1, $2, $3)',
+      [sessionHash, COACH_ID, ORG],
+    );
+    const before = await accountRow(COACH_ID);
+
+    try {
+      await expect(
+        staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+          loginEmail: COACH_EMAIL,
+          organizationId: ORG,
+          role: 'parent',
+          accountIdHint: COACH_ID,
+          refuseRoleChange: true,
+        }),
+      ).rejects.toMatchObject({ status: 409, code: 'EXISTING_ACCOUNT_ROLE_CONFLICT' });
+
+      // Still a coach, untouched: role, credential, active flag, updated_at.
+      expect(await accountRow(COACH_ID)).toEqual(before);
+      // No parent membership, no guardian record or link, and the coach's
+      // session was not revoked.
+      const memberships = await db.query<{ role: string }>(
+        'select role from pilot.organization_memberships where account_id = $1',
+        [COACH_ID],
+      );
+      expect(memberships).toEqual([]);
+      expect(await guardianRowCount()).toBe(0);
+      const sessions = await db.query<{ revoked_at: string | null }>(
+        'select revoked_at from pilot.session_tokens where token_hash = $1',
+        [sessionHash],
+      );
+      expect(sessions).toEqual([{ revoked_at: null }]);
+    } finally {
+      await db.query('delete from pilot.session_tokens where token_hash = $1', [sessionHash]);
+    }
+  });
+
+  test('an existing parent login passes the check and is provisioned without a role change', async () => {
+    await db.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider, login_email, active_flag)
+       values ('acct-r5-parent', 'parent', $1, 'microsoft', 'r5.parent@example.org', true)`,
+      [ORG],
+    );
+
+    await expect(
+      staffProvisioning.assertGuardianLoginProvisionable({
+        loginEmail: 'r5.parent@example.org',
+        organizationId: ORG,
+        accountIdHint: 'acct-r5-parent',
+      }),
+    ).resolves.toBeUndefined();
+
+    const result = await staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'r5.parent@example.org',
+      organizationId: ORG,
+      role: 'parent',
+      accountIdHint: 'acct-r5-parent',
+      refuseRoleChange: true,
+    });
+
+    expect(result.accountId).toBe('acct-r5-parent');
+    expect((await accountRow('acct-r5-parent')).role).toBe('parent');
+  });
+
+  // Scope of the rule: the invite surfaces re-role on purpose and keep doing so.
+  test('an invite without refuseRoleChange still changes an existing account\'s role', async () => {
+    await db.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider, login_email, active_flag)
+       values ('acct-r5-staff', 'staff', $1, 'microsoft', 'r5.staff@example.org', true)`,
+      [ORG],
+    );
+
+    await staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'r5.staff@example.org',
+      organizationId: ORG,
+      role: 'coach',
+    });
+
+    expect((await accountRow('acct-r5-staff')).role).toBe('coach');
+  });
+
+  // The athlete side of the same rule: createOrUpdateAthleteAccount would
+  // re-role the coach into a locked athlete account.
+  test('an athlete account_id naming the coach is refused 409 and the coach is untouched', async () => {
+    const before = await accountRow(COACH_ID);
+
+    await expect(
+      intake.assertAthleteAccountIdProvisionable({ accountId: COACH_ID, athleteId: ATHLETE_C, organizationId: ORG }),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'EXISTING_ACCOUNT_ROLE_CONFLICT',
+      message: expect.stringContaining(`account_id "${COACH_ID}" already belongs to an existing coach account`),
+    });
+
+    expect(await accountRow(COACH_ID)).toEqual(before);
+    await expect(
+      intake.assertAthleteAccountIdProvisionable({
+        accountId: 'acct-r5-new-athlete',
+        athleteId: ATHLETE_C,
+        organizationId: ORG,
+      }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+// createOrUpdateAthleteAccount's update branch sets role athlete, sets
+// athlete_id to the promoted athlete, clears the PIN, deactivates the login and
+// revokes its sessions. Pointed at another child's athlete login it re-bound
+// that login to the promoted child: the first child was locked out, and the
+// next activation code for the login showed the promoted child's records to
+// the first child's family. Pointed at the coach it made the coach a locked
+// athlete login. The pre-write check refuses both, and so does the write.
+describe('intake does not re-bind another child\'s login, or re-role an account, as an athlete login', () => {
+  const CHILD_A_LOGIN = 'acct-claim-child-a';
+
+  async function insertChildALogin(): Promise<void> {
+    await db.query(
+      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag)
+       values ($1, 'athlete', $2, $3, 'child-a-pin-hash', true)`,
+      [CHILD_A_LOGIN, ORG, ATHLETE_A],
+    );
+    await db.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'athlete', true)`,
+      [CHILD_A_LOGIN, ORG],
+    );
+  }
+
+  test('the pre-write check refuses child A\'s login named for athlete B with 409, and allows it for A', async () => {
+    await insertChildALogin();
+
+    await expect(
+      intake.assertAthleteAccountIdProvisionable({ accountId: CHILD_A_LOGIN, athleteId: ATHLETE_B, organizationId: ORG }),
+    ).rejects.toMatchObject({ status: 409, code: 'EXISTING_ATHLETE_ACCOUNT_CONFLICT' });
+
+    await expect(
+      intake.assertAthleteAccountIdProvisionable({ accountId: CHILD_A_LOGIN, athleteId: ATHLETE_A, organizationId: ORG }),
+    ).resolves.toBeUndefined();
+  });
+
+  test('the write refuses to re-bind child A\'s login to athlete B and leaves the login untouched', async () => {
+    await insertChildALogin();
+    const sessionHash = 'claim-child-a-session';
+    await db.query(
+      'insert into pilot.session_tokens (token_hash, account_id, organization_id) values ($1, $2, $3)',
+      [sessionHash, CHILD_A_LOGIN, ORG],
+    );
+    const before = await accountRow(CHILD_A_LOGIN);
+
+    await expect(auth.createOrUpdateAthleteAccount(CHILD_A_LOGIN, ATHLETE_B, ORG))
+      .rejects.toMatchObject({ status: 409, code: 'EXISTING_ATHLETE_ACCOUNT_CONFLICT' });
+
+    // Still child A's: bound to A, PIN kept, active, not rewritten.
+    expect(await accountRow(CHILD_A_LOGIN)).toEqual(before);
+    expect(before).toMatchObject({ athlete_id: ATHLETE_A, pin_hash: 'child-a-pin-hash', active_flag: true });
+    expect(await membershipsOf(CHILD_A_LOGIN)).toEqual([{ role: 'athlete', active_flag: true }]);
+    const sessions = await db.query<{ revoked_at: string | null }>(
+      'select revoked_at from pilot.session_tokens where token_hash = $1',
+      [sessionHash],
+    );
+    expect(sessions).toEqual([{ revoked_at: null }]);
+  });
+
+  test('the write refuses to make the coach\'s login an athlete login and leaves it untouched', async () => {
+    const before = await accountRow(COACH_ID);
+
+    await expect(auth.createOrUpdateAthleteAccount(COACH_ID, ATHLETE_C, ORG))
+      .rejects.toMatchObject({ status: 409, code: 'EXISTING_ATHLETE_ACCOUNT_CONFLICT' });
+
+    expect(await accountRow(COACH_ID)).toEqual(before);
+    expect(await membershipsOf(COACH_ID)).toEqual([]);
+  });
+
+  test('re-provisioning child A\'s own login, or an athlete login bound to no record, still works', async () => {
+    await insertChildALogin();
+
+    await auth.createOrUpdateAthleteAccount(CHILD_A_LOGIN, ATHLETE_A, ORG);
+
+    expect(await accountRow(CHILD_A_LOGIN)).toMatchObject({
+      role: 'athlete',
+      athlete_id: ATHLETE_A,
+      pin_hash: null,
+      active_flag: false,
+    });
+
+    await db.query(
+      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, active_flag)
+       values ('acct-claim-unbound', 'athlete', $1, null, false)`,
+      [ORG],
+    );
+
+    await auth.createOrUpdateAthleteAccount('acct-claim-unbound', ATHLETE_B, ORG);
+
+    expect(await accountRow('acct-claim-unbound')).toMatchObject({ role: 'athlete', athlete_id: ATHLETE_B });
+  });
+});
+
+// Provisioning's upsert sets active_flag and the membership back to true and
+// reads nothing about deleted_at. Intake promoting a new child under a deleted
+// guardian's old email brought that login back, and the retention purge
+// (deleted_at older than a year, role parent, active_flag not read) would
+// later hard-delete it and its guardian records while it was live.
+describe('intake does not restore a deleted guardian login', () => {
+  const DELETED_EMAIL = 'claim.deleted.guardian@example.org';
+  const DELETED_ID = 'acct-claim-deleted-parent';
+
+  async function insertDeletedParentLogin(): Promise<void> {
+    // The state deleteGuardianAccount leaves: deleted_at set, login and
+    // membership inactive.
+    await db.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider, login_email, active_flag, deleted_at)
+       values ($1, 'parent', $2, 'microsoft', $3, false, now() - interval '30 days')`,
+      [DELETED_ID, ORG, DELETED_EMAIL],
+    );
+    await db.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'parent', false)`,
+      [DELETED_ID, ORG],
+    );
+  }
+
+  test('the pre-write check refuses it with 409, matched as sign-in matches it', async () => {
+    await insertDeletedParentLogin();
+
+    await expect(
+      staffProvisioning.assertGuardianLoginProvisionable({
+        loginEmail: `  ${DELETED_EMAIL.toUpperCase()} `,
+        organizationId: ORG,
+        accountIdHint: DELETED_ID,
+      }),
+    ).rejects.toMatchObject({ status: 409, code: 'DELETED_GUARDIAN_LOGIN' });
+  });
+
+  test('provisioning as intake calls it refuses it and leaves it deleted and inactive', async () => {
+    await insertDeletedParentLogin();
+    const before = await accountRow(DELETED_ID);
+
+    await expect(
+      staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+        loginEmail: DELETED_EMAIL,
+        organizationId: ORG,
+        role: 'parent',
+        accountIdHint: DELETED_ID,
+        refuseRoleChange: true,
+        refuseDeletedLogin: true,
+      }),
+    ).rejects.toMatchObject({ status: 409, code: 'DELETED_GUARDIAN_LOGIN' });
+
+    expect(await accountRow(DELETED_ID)).toEqual(before);
+    expect(before).toMatchObject({ active_flag: false });
+    expect(before.deleted_at).not.toBeNull();
+    expect(await membershipsOf(DELETED_ID)).toEqual([{ role: 'parent', active_flag: false }]);
+    expect(await guardianRowCount()).toBe(0);
   });
 });

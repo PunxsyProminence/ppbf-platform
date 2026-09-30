@@ -819,8 +819,10 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
         condition_text: 'Stop when the hand stops coming home.',
         scope: 'drill_specific',
         rule_kind: 'technique_degradation',
+        origin: 'drill',
       },
     ],
+    universal_stop_rules: [],
     cues: [],
     secondary_skills: [],
   };
@@ -857,6 +859,7 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
         condition_text: 'Stop when the elbow drops below the fist.',
         scope: 'drill_specific',
         rule_kind: 'technique_degradation',
+        origin: 'drill',
       },
     ],
   };

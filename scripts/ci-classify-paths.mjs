@@ -20,7 +20,61 @@ const directComponentName = (file) => {
 const isDocumentationPath = (file) =>
   file.startsWith('docs/') || file.endsWith('.md');
 
+/* THE REFERENCE DATA THE SEEDING SUITES LOAD. The embedded-Postgres suites
+   load the committed rows of apps/web/seed-data/ into the real schema -- the
+   reference datasets through the content-import core
+   (src/testing/referenceContentFixture.ts: drillLibraryV3, multidiscipline,
+   competenceCohorts, workoutTemplates, sessionScriptsTransfer,
+   seedCreatedByRole and the contentImport* suites) and, for
+   shadow-research/2026-08-07, scripts/import-shadow-research.pg.test.ts -- so
+   an edited CSV is an edit to what those suites prove. The whole folder is
+   matched, not those suites' subfolders, so a new package is covered the day
+   it lands. A row that breaks a CHECK constraint or a foreign key is refused
+   by the schema, and only those suites apply one: `npm test` excludes every
+   .pg suite. Before this predicate a PR carrying only seed data classified
+   `unknown_code` and ran none of them -- the exact shape a content hand-off
+   arrives in.
+
+   Documentation under the folder is left out by the same rule `docsOnly`
+   uses. A README there loads into nothing, and matching it would cost more
+   than a wasted run: carried alongside unrecognised code it would turn
+   `unknownCode` off and hide the path the report exists to name. */
+const isSeedDataPath = (file) =>
+  file.startsWith('apps/web/seed-data/') && !isDocumentationPath(file);
+
+/* THE SEED LOADER. Since IMP-10 every reference dataset loads through ONE
+   loader: the content-import core, run by its CLI, which asserts its write
+   target before connecting; the pg suites load the committed files through
+   the same code via their fixture. A PR that changes only the loader changes
+   what every seeding suite proves, so it runs them. The core and the CLI sit
+   under prefixes isMigrationPath already matches (apps/web/src/server/pilot/,
+   apps/web/scripts/pilot-); they are named here so narrowing either prefix
+   cannot silently drop the loader. The write-target guard and the fixture
+   matched no predicate before, so a change to either ran no pg suite -- the
+   shape the retired apps/web/scripts/seed-*.mjs loaders had too.
+
+   One hop further down, the same miss: the fixture builds every seeding
+   suite's database through scripts/lib/full-schema.mjs, which applies the
+   migrations in the order scripts/migration-apply-order.mjs reads, so an
+   edit to either (a dropped or reordered migration) changes what all of
+   those suites prove -- and matched no predicate. And the contentImport*
+   suites compare the engine with the retired loaders' frozen output
+   (src/testing/legacyLoaderGolden.ts and its legacyLoaderGoldenData/), so an
+   edit there changes what the canonicaliser guard proves. */
+const isSeedLoaderPath = (file) =>
+  startsWithAny(file, [
+    'apps/web/src/server/pilot/contentImport/',
+    'apps/web/scripts/pilot-content-import.ts',
+    'apps/web/scripts/lib/postgres-write-target.',
+    'apps/web/src/testing/referenceContentFixture.ts',
+    'apps/web/scripts/lib/full-schema.',
+    'apps/web/scripts/migration-apply-order.',
+    'apps/web/src/testing/legacyLoaderGolden',
+  ]);
+
 const isMigrationPath = (file) =>
+  isSeedDataPath(file) ||
+  isSeedLoaderPath(file) ||
   startsWithAny(file, [
     'infra/azure/',
     'apps/web/src/server/pilot/',

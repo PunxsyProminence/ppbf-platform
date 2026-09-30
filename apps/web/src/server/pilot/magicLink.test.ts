@@ -20,6 +20,7 @@ function account(overrides: Partial<MagicLinkAccount> = {}): MagicLinkAccount {
     auth_provider: 'magic_link',
     login_email: 'coach@example.com',
     active_flag: true,
+    account_deleted: false,
     ...overrides,
   };
 }
@@ -68,6 +69,7 @@ function tokenRow(overrides: Record<string, unknown> = {}) {
     role: 'coach' as PilotRole,
     auth_provider: 'magic_link' as const,
     active_flag: true,
+    account_deleted: false,
     login_email: 'coach@example.com',
     ...overrides,
   };
@@ -131,6 +133,9 @@ describe('issuing a magic link', () => {
     const cases: Array<[string, MagicLinkAccount | null]> = [
       ['no account at all', null],
       ['a deactivated account', account({ active_flag: false })],
+      // Sign-in refuses any account marked deleted (OD-2026-09-29-003 Q9),
+      // including one an admin path has set active again.
+      ['an account marked deleted, though active again', account({ account_deleted: true })],
       ['an athlete, who uses a PIN', account({ role: 'athlete' })],
       ['an administrator, who uses Microsoft', account({ role: 'organization_admin' })],
       ['a board member, who uses Microsoft', account({ role: 'board' })],
@@ -195,6 +200,9 @@ describe('redeeming a magic link', () => {
     ['invalidated by a newer link', tokenRow({ invalidated_at: NOW }), 'TOKEN_INVALIDATED'],
     ['expired', tokenRow({ expires_at: new Date(NOW.getTime() - 1) }), 'TOKEN_EXPIRED'],
     ['account deactivated since issue', tokenRow({ active_flag: false }), 'ACCOUNT_INACTIVE'],
+    // Marked deleted while still active: the existing code, so the link page
+    // shows its existing "not active" message (OD-2026-09-29-003 Q9).
+    ['deleted but still active account', tokenRow({ account_deleted: true }), 'ACCOUNT_INACTIVE'],
     ['role no longer uses magic links', tokenRow({ role: 'organization_admin' }), 'ACCOUNT_NOT_MAGIC_LINK'],
     ['email changed since issue', tokenRow({ login_email: 'new@example.com' }), 'EMAIL_CHANGED'],
   ])('refuses a %s link', async (_label, row, reason) => {

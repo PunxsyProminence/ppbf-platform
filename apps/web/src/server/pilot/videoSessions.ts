@@ -1,4 +1,5 @@
 import { query, queryOne } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 import type { VideoScanDecision } from './videoScanPolicy';
 
 export interface VideoSessionRecord {
@@ -19,6 +20,12 @@ export interface VideoScanClaim extends VideoSessionRecord {
   scan_attempts: number;
 }
 
+/**
+ * A deleted athlete's footage reads as not found (scope B, deletedAthletes.ts):
+ * it is marked deleted with them, so publishing it, clipping it, analysing it
+ * or reviewing its compliance all stop at the same moment. Unassigned and
+ * teaching footage (athlete_id null) is unaffected.
+ */
 export async function getVideoSessionById(
   organizationId: string,
   videoSessionId: string,
@@ -26,7 +33,8 @@ export async function getVideoSessionById(
   return queryOne<VideoSessionRecord>(
     `select video_session_id, organization_id, athlete_id, blob_path, status
      from pilot.video_sessions
-     where organization_id = $1 and video_session_id = $2`,
+     where organization_id = $1 and video_session_id = $2
+       and ${athleteNotDeletedSql('pilot.video_sessions')}`,
     [organizationId, videoSessionId],
   );
 }
@@ -166,14 +174,18 @@ export async function claimNextVideoSessionForScan(): Promise<VideoScanClaim | n
          scan_attempts = scan_attempts + 1,
          updated_at = now()
      where video_session_id = (
-       select video_session_id
-       from pilot.video_sessions
-       where status = 'quarantined'
+       select candidate.video_session_id
+       from pilot.video_sessions candidate
+       where candidate.status = 'quarantined'
          and (
-           (scan_state = 'pending' and scan_next_attempt_at <= now())
-           or (scan_state = 'scanning' and scan_claimed_at < now() - ($1::int * interval '1 second'))
+           (candidate.scan_state = 'pending' and candidate.scan_next_attempt_at <= now())
+           or (candidate.scan_state = 'scanning' and candidate.scan_claimed_at < now() - ($1::int * interval '1 second'))
          )
-       order by created_at asc
+         -- Scope B: a deleted athlete's footage is not downloaded, sent to
+         -- the vision screen or turned into a new escalation about them. It
+         -- stays quarantined, which is what it already was.
+         and ${athleteNotDeletedSql('candidate')}
+       order by candidate.created_at asc
        for update skip locked
        limit 1
      )

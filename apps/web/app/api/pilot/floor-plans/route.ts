@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { query, queryOne } from '@/src/server/pilot/db';
+import { athleteNotDeletedSql } from '@/src/server/pilot/deletedAthletes';
 import { ForbiddenError, NotFoundError, ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
@@ -68,6 +69,8 @@ export async function GET(request: NextRequest) {
          from pilot.athlete_floor_plans fp
          join pilot.athletes a on a.organization_id = fp.organization_id and a.athlete_id = fp.athlete_id
          where fp.organization_id = $1 and a.coach_id = $2
+           -- Scope B: a deleted athlete's plans are marked deleted with them.
+           and a.deleted_at is null
          order by fp.generated_at desc
          limit $3`,
         [principal.organizationId, principal.accountId, limit],
@@ -84,6 +87,7 @@ export async function GET(request: NextRequest) {
       `select athlete_id, payload
        from pilot.athlete_floor_plans
        where organization_id = $1
+         and ${athleteNotDeletedSql('pilot.athlete_floor_plans')}
        order by generated_at desc
        limit $2`,
       [principal.organizationId, limit],

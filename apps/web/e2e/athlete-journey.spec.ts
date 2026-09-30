@@ -754,10 +754,22 @@ async function openAthleteWorkspace(page: Page): Promise<boolean> {
      timeout reported a broken door as an absent one; then reading any sign-in
      alert did the same thing more quietly, because SignInPanel shows that one
      alert for a wrong PIN, a rate limit, a lost session and a server fault
-     alike. So the decision is made on the login RESPONSE, which is the only
-     evidence that distinguishes them. */
+     alike. So the decision is made on the login RESPONSE.
+
+     TWO SHAPES SKIP, AND NOTHING ELSE DOES. Nothing was listening at all; or
+     the server itself said it is unavailable, in the typed 503 A-FIN-11 gave
+     that condition. Everything else -- 400, 401, 429, any other 5xx, a login
+     that succeeds and then arrives nowhere -- is the door being there and
+     saying no, which is a finding about the application and never a reason to
+     skip a proof.
+
+     This reads the same public contract a real client sees. It used to match
+     the raw text of an internal error instead: before A-FIN-11 an absent
+     connection string answered 400 with the variable's own NAME in the body,
+     so the only positive signal available was a string that should never have
+     been disclosed. Fixing the disclosure is what made this check honest. */
   if (login.transportFailed) return false;
-  if (isMissingBackendBody(login.body)) return false;
+  if (login.status === 503 && login.body.includes(SERVICE_UNAVAILABLE)) return false;
 
   if (login.status !== null && login.status !== 200) {
     throw new Error(
@@ -786,23 +798,13 @@ async function openAthleteWorkspace(page: Page): Promise<boolean> {
   }
 }
 
-/** The backend is ABSENT, as opposed to present and refusing. Matched on the
-    shapes this stack actually produces, both observed rather than assumed:
-
-      * the unset connection string, which is what a checkout with no
-        .env.local and no offline runtime answers -- verified here, and note
-        that it arrives as a 400, not a 5xx, so a status-range test would have
-        missed it entirely;
-      * a connection that could not be made or was dropped, which is what a
-        configured-but-unreachable database answers.
-
-    Deliberately NOT matched: a wrong PIN, a rate limit, a lost session, or any
-    other refusal. Those mean the door is there and said no, which is a finding
-    about the application, never a reason to skip a proof. */
-function isMissingBackendBody(body: string): boolean {
-  return /Missing required environment variable: AZURE_POSTGRES_CONNECTION_STRING/i.test(body)
-    || /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|Connection terminated|connection refused|could not connect|database (is )?(unavailable|unreachable)/i.test(body);
-}
+/** The one message the server gives a caller for missing runtime
+    configuration (A-FIN-11). Restated rather than imported, for the reason
+    the note sentinel above is: importing the app's own constant would make
+    this agree with the code by construction, and this string IS the public
+    contract -- if it changes, a run that skipped on it was reading something
+    else. */
+const SERVICE_UNAVAILABLE = 'Service temporarily unavailable. Please try again later.';
 
 /* CI CREATES THE PREREQUISITE, SO CI MAY NOT SKIP.
    Locally the offline runtime is optional, and a missing database is an

@@ -233,6 +233,11 @@ test('the sections run in the order of the teaching loop, not in tool-directory 
     'What Shadow needs more of',
     'Capture examples',
     'Held teaching footage',
+    // CUT sits between release and label because that is the order of the
+    // work: footage cannot be labelled until somebody has cut a clip from it.
+    // Its absence is what broke the loop -- cutting was an operator script, so
+    // a coach could film and could label and nothing joined the two.
+    'Cut study clips',
     'Label & verify',
     'Corpus coverage',
     'Current vocabulary',

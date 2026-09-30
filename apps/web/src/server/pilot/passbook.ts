@@ -688,6 +688,8 @@ export async function getCoachPassbookGapQueue(
      where g.organization_id = $1
        and g.status not in ('completed', 'deferred')
        and ($2::text is null or a.coach_id = $2)
+       -- Scope B: a deleted athlete's gaps are marked deleted with them.
+       and a.deleted_at is null
      order by recorded_absences_since_last_visit desc, last_attended_on asc nulls first,
        case g.severity when 'critical' then 1 when 'high' then 2 when 'medium' then 3 else 4 end,
        g.created_at desc`,

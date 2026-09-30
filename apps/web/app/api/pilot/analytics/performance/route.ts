@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { athleteIdsForCoach, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
-import { getAthletesByOrganization, getAthletesForCoach } from '@/src/server/pilot/entities';
+import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRoster';
+import { getAthletesForCoach } from '@/src/server/pilot/entities';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   clampWindowDays,
@@ -43,7 +44,9 @@ export async function GET(request: NextRequest) {
       principal.role === 'coach'
         ? await coachScopedRoster(principal.organizationId, principal.accountId)
         : isOrganizationAdminRole(principal.role) || principal.role === 'admin'
-          ? await getAthletesByOrganization(principal.organizationId)
+          // Live athletes only: a deleted athlete's records are marked deleted
+          // with them (scope B), and the coach arm has always excluded them.
+          ? await organizationActionableRoster(principal.organizationId)
           : [];
 
     const names = new Map(roster.map((athlete) => [athlete.athlete_id, athlete.full_name]));

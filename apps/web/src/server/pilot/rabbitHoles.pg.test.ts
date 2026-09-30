@@ -24,10 +24,12 @@
 //
 // 4. The SHADOW Library reference behaves as a nullable pointer, not a foreign
 //    key. A citation resolves only for a document that is approved, verified,
-//    indexed, in the SAME organization and hanging off an approved, verified,
-//    active source. Anything else -- a document that never existed, one still
-//    pending review, another gym's, one purged with its source -- leaves the
-//    lesson intact and the citation absent. Never an empty citation shell, and
+//    indexed, about no one athlete, in the SAME organization and hanging off an
+//    approved, verified, active source not suppressed for retraction. Anything
+//    else -- a document that never existed, one still pending review, another
+//    gym's, one purged with its source, one whose source was retracted, one
+//    filed against an athlete -- leaves the lesson intact and the citation
+//    absent. Never an empty citation shell, and
 //    never a borrowed SHADOW evidence tier.
 //
 // 5. The runner's readiness check actually fails when the migration did not
@@ -52,6 +54,7 @@ import { pathToFileURL } from 'node:url';
 import { Client } from 'pg';
 
 import { FORMULA_IDS } from './formulas/types';
+import { CITATION_JOIN } from './rabbitHoles';
 import { deriveEvidenceTier } from './shadowEvidenceTier';
 import { boardSeatConfigs } from '@/app/board/boardWorkspaceConfig';
 
@@ -88,11 +91,17 @@ const ANCHOR_LESSONS_SQL = `
     and status = 'published'
   order by title`;
 
-// The full read. The document is joined under the same predicate
-// shadowLibrary.ts retrieval uses, INCLUDING d.organization_id =
-// r.organization_id -- without a foreign key, organization scoping of the
-// citation is the read's responsibility. A left join, so a lesson whose
-// citation does not resolve still renders; only the citation disappears.
+// The full read. The document is joined under the module's own CITATION_JOIN
+// -- the same servable predicate a gym-wide search uses, INCLUDING the
+// organization scoping, which without a foreign key is the read's
+// responsibility. A left join, so a lesson whose citation does not resolve
+// still renders; only the citation disappears.
+//
+// This used to be a hand-kept COPY of the join, and the suite passed against
+// the copy while the module said something else -- 13 tests green through the
+// platform-baseline widening, and again when the module lacked the retraction
+// and athlete-scope checks. The module's constant is interpolated now, so what
+// runs here is what ships.
 const PUBLISHED_WITH_CITATION_SQL = `
   select
     r.title,
@@ -100,28 +109,7 @@ const PUBLISHED_WITH_CITATION_SQL = `
     d.document_id as cited_document_id,
     d.document_name as cited_document_name
   from pilot.rabbit_holes r
-  -- NOTE: this is a COPY of CITATION_JOIN from rabbitHoles.ts, not the module's
-  -- own constant, so this suite can pass while the module's join says something
-  -- else. It did exactly that when the platform-baseline widening was added:
-  -- 13 tests green against a stale copy. Kept in step by hand until the join is
-  -- exported and shared; rabbitHoles.test.ts asserts the module's actual text.
-  left join pilot.shadow_library_documents d
-    on (d.organization_id = r.organization_id
-        or d.organization_id = '__platform__')
-   and d.document_id = r.library_document_id
-   and d.ingest_state = 'indexed'
-   and d.index_completed_at is not null
-   and d.approval_state = 'approved'
-   and d.verification_state = 'verified'
-   and exists (
-     select 1
-     from pilot.shadow_library_sources s
-     where s.source_id = d.source_id
-       and s.organization_id = d.organization_id
-       and s.status = 'active'
-       and s.approval_state = 'approved'
-       and s.verification_state = 'verified'
-   )
+  ${CITATION_JOIN}
   where r.organization_id = $1
     and r.anchor_type = $2
     and r.anchor_key = $3
@@ -147,6 +135,7 @@ let complianceSql: string;
 let complianceSeedsSql: string;
 let shadowRuntimeSql: string;
 let shadowEvidenceSql: string;
+let retractionSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 
 function connectionStringFor(database: string): string {
@@ -235,6 +224,9 @@ async function freshLibraryDatabase(name: string): Promise<Client> {
   // than through the runner's transaction.
   await client.query(shadowRuntimeSql);
   await client.query(shadowEvidenceSql);
+  // retrieval_suppressed, which the citation join reads (a source pulled for
+  // retraction is not citable). No begin/commit of its own.
+  await client.query(retractionSql);
   return client;
 }
 
@@ -350,6 +342,7 @@ beforeAll(async () => {
   complianceSeedsSql = await readInfra('pilot_slice_postgres_compliance_rule_seeds_migration.sql');
   shadowRuntimeSql = await readInfra('pilot_slice_postgres_shadow_runtime_migration.sql');
   shadowEvidenceSql = await readInfra('pilot_slice_postgres_shadow_evidence_migration.sql');
+  retractionSql = await readInfra('pilot_slice_postgres_retraction_surveillance_migration.sql');
   // Like the board-seats and announcements runners, this runner opens the
   // transaction itself, so the file applies here as plain statements exactly as
   // the runner sends it.
@@ -921,6 +914,87 @@ describe('rabbit holes migration against real Postgres', () => {
         cited_document_id: null,
         cited_document_name: null,
       });
+    } finally {
+      await client.end();
+    }
+  });
+
+  // Two ways a citation used to resolve while a gym-wide search refused the
+  // same document: its source was suppressed for retraction (suppressSource
+  // flips only retrieval_suppressed and leaves the approvals standing), or the
+  // document was filed against one athlete -- and a lesson is read by everyone
+  // in its audience.
+  test('a citation does not resolve to a retracted source or an athlete-scoped document', async () => {
+    const client = await freshLibraryDatabase('ppbf_test_rabbit_library_servable');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+
+      const insertApproved = async (sourceId: string, documentId: string, subjectId: string | null) => {
+        await client.query(
+          `insert into pilot.shadow_library_sources
+             (source_id, organization_id, title, source_type, authority_tier, status,
+              approval_state, verification_state,
+              approved_by_account_id, approved_at, verified_by_account_id, verified_at)
+           values ($1, $2, $1, 'textbook', 1, 'active', 'approved', 'verified', $3, now(), $3, now())`,
+          [sourceId, ORG_A, COACH_ID],
+        );
+        await client.query(
+          `insert into pilot.shadow_library_documents
+             (document_id, source_id, organization_id, subject_id, document_name, ingest_state,
+              index_completed_at, approval_state, verification_state,
+              approved_by_account_id, approved_at, verified_by_account_id, verified_at)
+           values ($1, $2, $3, $4, $5, 'indexed', now(), 'approved', 'verified', $6, now(), $6, now())`,
+          [documentId, sourceId, ORG_A, subjectId, `Document ${documentId}`, COACH_ID],
+        );
+      };
+
+      await insertApproved('src-standing', 'doc-standing', null);
+      await insertApproved('src-retracted', 'doc-retracted', null);
+      await insertApproved('src-athlete', 'doc-athlete', 'ATH-RABBIT-1');
+      // What suppressSource writes: the flag and its reason, nothing else.
+      await client.query(
+        `update pilot.shadow_library_sources
+           set retrieval_suppressed = true,
+               suppression_reason = 'Retracted by the publisher (test fixture).',
+               suppressed_at = now(),
+               suppressed_by_account_id = $1
+         where source_id = 'src-retracted'`,
+        [COACH_ID],
+      );
+
+      await publishLesson(client, {
+        anchorType: 'evidence_tier',
+        anchorKey: 'EMERGING',
+        title: 'A: Cites a standing document',
+        libraryDocumentId: 'doc-standing',
+      });
+      await publishLesson(client, {
+        anchorType: 'evidence_tier',
+        anchorKey: 'EMERGING',
+        title: 'B: Cites a document whose source was retracted',
+        libraryDocumentId: 'doc-retracted',
+      });
+      await publishLesson(client, {
+        anchorType: 'evidence_tier',
+        anchorKey: 'EMERGING',
+        title: 'C: Cites a document filed against one athlete',
+        libraryDocumentId: 'doc-athlete',
+      });
+
+      const { rows } = await client.query(PUBLISHED_WITH_CITATION_SQL, [
+        ORG_A, 'evidence_tier', 'EMERGING', 'athlete',
+      ]);
+      expect(rows).toEqual([
+        {
+          title: 'A: Cites a standing document',
+          homework: null,
+          cited_document_id: 'doc-standing',
+          cited_document_name: 'Document doc-standing',
+        },
+        // The lesson stands; only the citation is absent.
+        { title: 'B: Cites a document whose source was retracted', homework: null, cited_document_id: null, cited_document_name: null },
+        { title: 'C: Cites a document filed against one athlete', homework: null, cited_document_id: null, cited_document_name: null },
+      ]);
     } finally {
       await client.end();
     }

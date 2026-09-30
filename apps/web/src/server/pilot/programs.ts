@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { query, queryOne } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 import { ConflictError } from './errors';
 
 // The programs catalog: the durable named group ("Junior Boxing",
@@ -58,6 +59,9 @@ export async function listProgramsWithCounts(organizationId: string): Promise<Pr
        on m.organization_id = p.organization_id
       and m.program_name = p.program_name
       and m.status = 'active'
+      -- Current headcount: a deleted athlete's membership is marked deleted
+      -- with them (scope B) and is nobody's current enrollment.
+      and ${athleteNotDeletedSql('m')}
      where p.organization_id = $1
      group by p.organization_id, p.program_id, p.program_name, p.status, p.notes, p.created_at
      order by (p.status = 'archived') asc, p.program_name asc`,

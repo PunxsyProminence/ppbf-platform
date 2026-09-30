@@ -12,6 +12,7 @@ import {
   type ShadowResearchRequirementRow,
 } from '@/src/server/pilot/shadowResearch';
 import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { deletedAthleteIdsAmong } from '@/src/server/pilot/deletedAthletes';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -20,6 +21,9 @@ jest.mock('@/src/server/pilot/http', () => {
 
 jest.mock('@/src/server/pilot/shadowReadiness', () => ({ assertShadowRuntimeReadiness: jest.fn() }));
 jest.mock('@/src/server/pilot/guardianAccess', () => ({ guardianAthleteIds: jest.fn() }));
+// Scope B: which named athletes are deleted is a database read; stubbed here,
+// proved against real rows in deletionScopeB.pg.test.ts.
+jest.mock('@/src/server/pilot/deletedAthletes', () => ({ deletedAthleteIdsAmong: jest.fn() }));
 // requireActual for the rest: subjectAthleteIdOf, namedAthleteIdsOf,
 // namedAthleteId and SUBJECT_NAMING_METADATA_KEYS moved into this module from
 // this route file, so a bare-object mock leaves them undefined and every test
@@ -52,6 +56,7 @@ const mockList = listShadowResearchRequirements as jest.MockedFunction<typeof li
 const mockGuardianAthleteIds = guardianAthleteIds as jest.MockedFunction<typeof guardianAthleteIds>;
 const mockGetById = getShadowResearchRequirementById as jest.MockedFunction<typeof getShadowResearchRequirementById>;
 const mockResolve = resolveShadowResearchRequirement as jest.MockedFunction<typeof resolveShadowResearchRequirement>;
+const mockDeletedAmong = deletedAthleteIdsAmong as jest.MockedFunction<typeof deletedAthleteIdsAmong>;
 
 function principal(role: PilotPrincipal['role'] = 'organization_admin'): PilotPrincipal {
   return {
@@ -85,6 +90,7 @@ beforeEach(() => {
   mockRequirePrincipal.mockResolvedValue(principal());
   mockCreate.mockResolvedValue(101);
   mockAssertAthlete.mockResolvedValue(undefined);
+  mockDeletedAmong.mockResolvedValue(new Set());
 });
 
 describe('POST /api/pilot/shadow/research-requirements (create)', () => {
@@ -327,6 +333,19 @@ describe('GET /api/pilot/shadow/research-requirements athlete scope', () => {
 
     expect(await idsFrom(response)).toEqual([10, 11, 12, 13]);
     expect(mockAccessibleAthleteIds).not.toHaveBeenCalled();
+  });
+
+  // Scope B: "every requirement" stops at a deleted athlete. The rows about
+  // them -- named in the column or, for the legacy shape, only in metadata --
+  // are marked deleted with them; the org-wide row and a live child's stay.
+  test('an organization admin does not read the requirements of a deleted athlete', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
+    mockDeletedAmong.mockResolvedValue(new Set(['ath-other']));
+
+    const response = await GET(getRequest());
+
+    expect(await idsFrom(response)).toEqual([10, 11]);
+    expect(mockDeletedAmong).toHaveBeenCalledWith('org-real', ['ath-mine', 'ath-other', 'ath-other']);
   });
 
   // THE LEGITIMATE PATH, PART 2. The parent branch's existing SQL scope is

@@ -32,7 +32,16 @@ import path from 'node:path';
 import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 
+import { pathToFileURL } from 'node:url';
+
 import { Client } from 'pg';
+
+/* ts-jest compiles a plain `await import()` down to require(), which cannot
+   load an ES module here. Building it through Function keeps a real dynamic
+   import in the emitted code, honored under --experimental-vm-modules. */
+const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<Record<string, unknown>>;
 
 // Routes dataDeletion.ts's transaction into whichever embedded database the
 // current test opened. Declared before the import so jest's mock hoisting sees
@@ -74,10 +83,7 @@ const PG_PASSWORD = 'postgres';
 const DATA_DIR = path.join(os.tmpdir(), `ppbf-athlete-deletion-pg-test-${Date.now()}`);
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
-const RETENTION_MIGRATION = 'pilot_slice_postgres_data_retention_deletion_migration.sql';
-// pilot.account_activation_tokens. The base schema does not create it, and
-// both deletion paths now cancel outstanding codes in their transaction.
-const ONBOARDING_MIGRATION = 'pilot_slice_postgres_onboarding_migration.sql';
+const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
 
 const ORG_ID = 'org-adra';
 const COACH = 'acct-coach-adra';
@@ -106,9 +112,7 @@ const CHOSEN_PIN = '481902';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
-let baseSchemaSql: string;
-let retentionMigrationSql: string;
-let onboardingMigrationSql: string;
+let applyFullSchema: (client: Client, opts?: { infraDir?: string }) => Promise<unknown>;
 
 const admin: ActorIdentity = {
   accountId: ADMIN_ACCOUNT,
@@ -150,9 +154,12 @@ async function freshDatabase(name: string): Promise<Client> {
 
   const client = new Client({ connectionString: connectionStringFor(name) });
   await client.connect();
-  await client.query(baseSchemaSql);
-  await client.query(retentionMigrationSql);
-  await client.query(onboardingMigrationSql);
+  /* THE WHOLE SCHEMA (scripts/lib/full-schema.mjs). This suite used to apply
+     the base file plus the two migrations it knew it needed; deletion scope B
+     then made both deletion paths read tables from four more (video
+     sessions, portraits, SHADOW conversations), and a hand-picked database
+     that lacks them is one production has never had. */
+  await applyFullSchema(client, { infraDir: INFRA_DIR });
 
   await client.query(
     `insert into pilot.organizations (organization_id, organization_name, status)
@@ -231,9 +238,8 @@ beforeAll(async () => {
     });
   });
 
-  baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
-  retentionMigrationSql = await fs.readFile(path.join(INFRA_DIR, RETENTION_MIGRATION), 'utf8');
-  onboardingMigrationSql = await fs.readFile(path.join(INFRA_DIR, ONBOARDING_MIGRATION), 'utf8');
+  const helper = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
+  applyFullSchema = helper.applyFullSchema as typeof applyFullSchema;
 });
 
 afterAll(async () => {
@@ -417,8 +423,9 @@ describe('deleting an athlete closes the door the athlete came in through', () =
       await deleteAthleteRecord(admin, ATHLETE_ID, 'withdrew from the program');
 
       const after = await accountRow(client, ATHLETE_ACCOUNT);
-      // active_flag is the one the rest of the platform gates on -- magicLink
-      // and resolvePrincipal both read it and neither reads deleted_at.
+      // active_flag is what the rest of the platform gates on. Sign-in and
+      // resolvePrincipal also refuse deleted_at now (deletedAccountSignIn.ts),
+      // but a deletion still clears the flag rather than rely on that alone.
       expect(after.active_flag).toBe(false);
       expect(after.deleted_at).not.toBeNull();
     });

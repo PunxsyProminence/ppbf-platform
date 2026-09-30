@@ -8,12 +8,12 @@
 Deletion is an organization-admin API, `DELETE /api/pilot/admin/data-deletion`
 (`apps/web/app/api/pilot/admin/data-deletion/route.ts`), the `/admin/data-deletion` screen
 over it (`apps/web/app/admin/data-deletion/page.tsx`, door "Data Deletion" in the office),
-and the cleanup job in Method 1. The screen does scope A only, which is what the API already
-did: the person's record is marked deleted, their login closes and anyone signed in as them is
-signed out; their videos, photos and notes stay on file. **Next, as a separate change (B):**
-marking everything tied to the athlete deleted at the same moment. Still **NOT BUILT**: a
-preview of what will be deleted, a 1-year restore, and a compliance report. Whether stored
-video and photo files are erased when a record is permanently removed is **UNVERIFIED**.
+and the cleanup job in Method 1. Scope A: the person's record is marked deleted, their login
+closes and anyone signed in as them is signed out. Scope B: everything tied to the athlete is
+marked deleted at the same moment -- see *What deletion marks* below for exactly what, what it
+leaves, and why. Still **NOT BUILT**: a preview of what will be deleted, a 1-year restore, and
+a compliance report. Stored video and photo files are **not erased** by deletion or by the
+cleanup job; whether the storage account removes them on its own is **UNVERIFIED**.
 
 ## Overview
 
@@ -109,8 +109,9 @@ The screen: choose an athlete or a guardian of your own organization (athletes a
 are not offered), enter a reason, press **Review deletion**, then confirm a second time on a
 button that names the person. It then shows the API's answer: when the record was marked
 deleted, whether a login was closed ("closed and signed out everywhere" or "had no login"),
-the coach notes kept or the children withdrawn, and the audit record number, or the API's own
-error. The page and its door are for `organization_admin` / `admin` only; the platform owner
+for a guardian the children withdrawn, how many videos, photos, coach notes, session notes and
+SHADOW conversations were marked deleted with the athlete, and the audit record number, or the
+API's own error. The page and its door are for `organization_admin` / `admin` only; the platform owner
 is refused by the page and by the API (OD-2026-09-28-005).
 
 **Request body:** `{ "entityType": "athlete" | "guardian", "entityId": "<athlete id or guardian account id>", "reason": "<optional>" }`
@@ -122,8 +123,10 @@ is refused by the page and by the API (OD-2026-09-28-005).
   the API cancels any activation code still outstanding for those athletes' logins.
 - Athlete: sets `athletes.deleted_at = now()`; if the athlete has an account, sets its
   `deleted_at`, clears `active_flag`, revokes its live sessions and cancels any activation code
-  still outstanding for it (a code issued before the deletion would otherwise reopen the
-  login). Coach observations are retained, not deleted; their count is recorded.
+  still outstanding for it (a code issued before the deletion would otherwise set a new PIN
+  and mark the account active again; sign-in refuses it either way, below).
+- Both: marks everything tied to each athlete it deletes (the athlete chosen, or the children
+  the guardian trigger withdrew) deleted at the same moment -- *What deletion marks*, below.
 - Writes one `data_deletion_initiated` audit event with actor, target and reason, and returns
   counts of what it marked. It does not return how many sessions it ended. An athlete deletion
   records that number in its audit event (`sessions_revoked`); a guardian deletion records none.
@@ -134,19 +137,98 @@ is refused by the page and by the API (OD-2026-09-28-005).
   that two deletions racing each other should end with one deletion and one 409; no test runs
   two at once.
 
-**NOT BUILT:** a preview of what will be deleted, and cascade-marking of photos, videos or
-training notes (the API marks none of them; that is B, the next change). The screen's two
-confirmations are the confirmation step; the API itself does not ask for one.
+**NOT BUILT:** a preview of what will be deleted. The screen's two confirmations are the
+confirmation step; the API itself does not ask for one.
 
-**Open gap (checked 2026-09-29, not closed by this change):** an admin can still turn a
-deleted login back on. Issuing a new activation code, resetting an athlete's PIN, or creating
-an account for a deleted athlete (`apps/web/src/server/pilot/activation.ts`), and re-inviting a
-deleted guardian's email (`createOrUpdateMicrosoftStaffAccount` in
-`apps/web/src/server/pilot/staffProvisioning.ts`) do not read `deleted_at`; nor do the
-platform owner's user-status and membership routes (`setAccountActiveStatus`,
-`upsertOrganizationMembership` in `apps/web/src/server/pilot/auth.ts`). The record stays marked
-deleted while the login works, and a person reopened this way cannot be deleted again from the
-screen (409).
+### What deletion marks (scope B; Jason 2026-09-29, "10 C")
+
+**The mark is the athlete row's own `deleted_at`.** It is written in the deletion transaction
+(by `deleteAthleteRecord`, or by the guardian trigger for a withdrawn child), and every screen
+that reads a row tied to an athlete checks it (`apps/web/src/server/pilot/deletedAthletes.ts`),
+so all of those rows leave every screen at the moment the deletion commits. No other tied table
+gets a copy of the mark: only one has a deletion column of its own, and giving the rest one
+would be a migration on about seventy tables to repeat what the athlete row already says (no
+migration was added). The one that has its own column, `pilot.shadow_chat_sessions.deleted_at`,
+is stamped with the deletion's timestamp for the athlete's own SHADOW conversations and for
+staff conversations about them. Nothing is erased: every row stays in the database until the
+cleanup job (Method 1) removes the athlete row, and the foreign keys that cascade from it take
+most of these rows with it.
+
+**Marked deleted -- no screen shows them after the deletion:**
+- Videos: the video lists (coach and admin), any read of one video (publishing, clipping,
+  analysis, compliance review), the malware/content scan queue (a deleted athlete's footage is
+  not downloaded or sent to the vision screen), publications and the research-library shelf,
+  Film Study proposals, and calibration clips cut from their footage.
+- Photos: the portrait review queue. (Every other portrait read already refused a deleted
+  athlete.)
+- Coach notes and session notes: every coach-note reader already refused a deleted athlete; the
+  session notes behind the public wall board, the board summary and the admin performance,
+  readiness, progression and intelligence views now leave them out too.
+- Everything else tied to them: the public wall board and Wall of Names, class registrations,
+  attendance and coaching requests (the admin's scheduler view, the class roster, the weekly
+  trend, and the seat count -- a deleted athlete holds no seat), community-service and floor
+  hours, floor plans, the passbook gap queue, program headcounts, competition entries, league
+  rosters, 1% Club nominations and members, mentorships with them, coach-coverage grants on
+  them, guardian links in the duplicate-guardian check and in a guardian's link to a coach's
+  portrait, the admin PIN directory, the roster CSV export, and SHADOW research requirements
+  about them.
+
+**Not changed, pending Jason** (safeguarding; the "10 C" question did not cover them): the
+org-admin safety screens -- safety escalations, safety flags, training holds, failing safety
+gates, video compliance violations, the safety review page, the board escalation summary -- and
+the feedback queue, which carries safeguarding disclosures. A deleted athlete's items stay on
+those screens for the organization admin, exactly as before. (Coaches already did not see them.)
+
+**Left as they are, and why:**
+- Counts that name nobody (model-validation rates, SHADOW usage metrics, board competition and
+  league result totals, the public floor-hours totals): history that happened, with no athlete
+  shown.
+- Rows owned by another, live athlete that mention the deleted one (a sparring or grappling
+  partner, a multi-athlete capture): they belong to the other athlete. Teaching footage names no
+  athlete on the video row at all, so nothing links it to a deletion.
+- Write paths (an admin acting on a deleted athlete's row by id, such as releasing or archiving
+  a video, lifting a hold, or answering a registration): unchanged; the lists no longer offer
+  those rows.
+- Code with no caller in the app (for example the calibration gold-record reads, the attendance
+  totals in `attendancePrecedence.ts`, `listDueAssessments`).
+- Readers in files another change owns this week (`intake.ts`, `staffProvisioning.ts`,
+  `shadowLibrary.ts`, `rabbitHoles.ts`): the staff page's guardian-link and member lists, and
+  the SHADOW library curator list, still show a deleted athlete's rows.
+
+**Stored files.** Deletion erases no stored file, and neither does the cleanup job: the app's
+only stored-file deletes are a portrait its owner removes or a reviewer rejects, gym-wall
+photos and credential files (`apps/web/src/server/pilot/blob.ts:204, 281, 356`). The cleanup job
+also leaves the video rows (`pilot.video_sessions.athlete_id` has no foreign key to athletes)
+and the athlete's own account and portrait row (it removes parent accounts only). A playback
+link handed out before the deletion keeps working until it expires (60 minutes). No storage
+lifecycle rule is defined in `infra/`; whether the live storage account has one is
+**UNVERIFIED**.
+
+**Sign-in refuses a deleted login** (owner decision 2026-09-29, OD-2026-09-29-003 Q9, "all
+recommended": one central rule). Every sign-in refuses an account whose `deleted_at` is set,
+whatever its `active_flag` says: PIN sign-in, Microsoft sign-in, asking for and redeeming a
+sign-in link, and every signed-in request (`resolvePrincipal`), so a session minted by any path
+resolves to nobody. The rule is one file, `apps/web/src/server/pilot/deletedAccountSignIn.ts`.
+A refused PIN sign-in logs `deleted_account` and costs the same one PIN check as a wrong PIN; a
+refused sign-in link shows the existing "That account is not active. Contact the gym." The deploy
+gates' session minter (`apps/web/scripts/lib/gate-session.mjs`) and fixture step
+(`apps/web/scripts/pilot-provision-gate-fixtures.mjs`) refuse a deleted fixture by name. The
+deletion preflight check (`apps/web/scripts/pilot-check-deletion-preflight.mjs`) reports a deleted
+login left active, and its sessions, as refused at sign-in rather than as exposure.
+
+**Still open (checked 2026-09-29):** the admin paths that used to turn a deleted login back on
+still write to it without reading `deleted_at`: issuing a new activation code, resetting an
+athlete's PIN or creating an account for a deleted athlete
+(`apps/web/src/server/pilot/activation.ts`); intake re-promoting a withdrawn athlete
+(`createOrUpdateAthleteAccount`, `apps/web/src/server/pilot/auth.ts`); re-inviting a deleted
+guardian's email as staff (`createOrUpdateMicrosoftStaffAccount` in
+`apps/web/src/server/pilot/staffProvisioning.ts`, which reads `deleted_at` only for intake's
+guardian login); and the platform owner's user-status and membership routes
+(`setAccountActiveStatus`, `upsertOrganizationMembership` in `apps/web/src/server/pilot/auth.ts`).
+They can no longer reopen the login, but they can leave an account marked active, with a PIN or
+a code, that can never sign in, and nothing tells the admin why. Nothing in the app clears
+`deleted_at`, so a deletion cannot be undone from any screen (the 1-year restore is not built),
+and a person marked deleted cannot be deleted again from the screen (409).
 
 **Who can trigger:** `organization_admin` or `admin`, in their own organization only  
 **Audit trail:** ✅ `data_deletion_initiated`, with actor, target and reason  
@@ -179,7 +261,7 @@ Parent account deleted
   → Linked athlete records with no remaining guardian marked deleted
     → That athlete's own account deactivated and marked deleted
     → That athlete's live sessions revoked
-    → Photos, videos and training notes: NOT BUILT (nothing marks them)
+    → Everything tied to that athlete marked deleted with them (What deletion marks)
 ```
 
 **Audit trail:** ✅ The guardian's `data_deletion_initiated` event records how many athletes
@@ -199,7 +281,7 @@ the cascade withdrew (`cascade_deleted_athletes`); the cascade writes no event o
 
 1. An organization admin opens `/admin/data-deletion`, chooses the athlete, enters the reason and confirms twice (a coach cannot -- the page and the server admit only `organization_admin` and `admin`)
 2. System sets `athletes.deleted_at = now()` and closes the athlete's own login, if there is one
-3. Photos, videos and notes are NOT cascade-marked (NOT BUILT; B, the next change); coach observations are retained
+3. Everything tied to the athlete is marked deleted at the same moment (What deletion marks); coach notes stay in the database, off every screen
 4. Audit logged: `data_deletion_initiated`, with the admin as actor
 5. A cleanup run dispatched with `apply=APPLY` hard-deletes the athlete row once it is past the 2-year window; the nightly run is a dry run
 
@@ -217,8 +299,9 @@ System has no automatic trigger for age-of-majority. The organization must manua
 
 Deletion tracking (`deleted_at`) exists on `pilot.athletes` and `pilot.accounts`, added by
 `infra/azure/pilot_slice_postgres_data_retention_deletion_migration.sql`, and on
-`pilot.shadow_chat_sessions` (SHADOW history, a separate path). The other tables holding
-minors' data have none. The pattern, as an example:
+`pilot.shadow_chat_sessions` (SHADOW history). The other tables holding minors' data have none;
+a row tied to an athlete is deleted when its athlete is, and its readers check the athlete row
+(`apps/web/src/server/pilot/deletedAthletes.ts`). The pattern, as an example:
 
 ```sql
 -- Example: athletes table
@@ -250,7 +333,13 @@ deletion shown; a guardian deletion uses `entity_type: "parent_account"` and rec
   "entity_id": "ath-456",
   "details": {
     "reason": "Athlete withdrew",
-    "observations_retained": 8,
+    "tied_records_marked": {
+      "videos": 3,
+      "photos": 1,
+      "coach_notes": 8,
+      "session_notes": 40,
+      "shadow_conversations": 2
+    },
     "account_deactivated": true,
     "sessions_revoked": 1,
     "deleted_at": "2026-09-28T12:00:00.000Z"

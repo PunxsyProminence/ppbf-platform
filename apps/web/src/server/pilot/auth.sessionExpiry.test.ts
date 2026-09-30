@@ -82,6 +82,22 @@ describe('resolvePrincipal', () => {
     expect(sql).toContain('om.active_flag = true');
   });
 
+  // Sign-in refuses any account marked deleted (OD-2026-09-29-003 Q9), and
+  // this is the backstop for every path: a session held by a deleted account
+  // resolves to nobody, whichever path minted it. In SQL, like the filters
+  // above; the real database behaviour is proven in
+  // signInRefusesDeletedAccount.pg.test.ts.
+  test('the underlying query refuses a session whose account is marked deleted, in SQL', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    expect(await resolvePrincipal(requestWithToken())).toBeNull();
+
+    const [sql] = mockQueryOne.mock.calls[0];
+    expect(sql).toContain('and not (a.deleted_at is not null)');
+    // Not revoked: resolvePrincipal does not revoke an inactive account's
+    // session either.
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
   test('rejects an expired session (simulated by the DB filter returning no row)', async () => {
     // A real database with `and st.expires_at > now()` in the WHERE clause
     // returns no row for an expired session; queryOne surfaces that as null.

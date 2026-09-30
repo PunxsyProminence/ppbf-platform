@@ -28,11 +28,11 @@ export type ShadowBoxingSpecificity =
 // 'boxing_specific' and 'ppbf_specific' both count as boxing-specific for
 // the PROVEN gate -- ppbf_specific is evidence about THIS gym's own floor,
 // which is at least as specific as the sport in general. Verified against
-// the real 1,193-chunk corpus: this set produces exactly the distribution
-// EVIDENCE_TIER_SPEC.md claims (115 / 796 / 227 / 55), with or without
-// ppbf_specific included, because no VERIFIED EVIDENCE + tier<=2 +
-// ppbf_specific row exists in the corpus today -- named explicitly rather
-// than left as an untested assumption for the day one does.
+// the real 1,193-chunk corpus, each claim graded on its source row's tier as
+// runtime is: this set gives EVIDENCE_TIER_SPEC.md section 4's 122 / 821 /
+// 195 / 55 (2026-09-29) with or without ppbf_specific, because no VERIFIED
+// EVIDENCE + tier<=2 + ppbf_specific row exists in the corpus today -- named
+// explicitly rather than left as an untested assumption for the day one does.
 const BOXING_SPECIFIC_VALUES: ReadonlySet<ShadowBoxingSpecificity> = new Set(['boxing_specific', 'ppbf_specific']);
 
 export interface ShadowEvidenceQuality {

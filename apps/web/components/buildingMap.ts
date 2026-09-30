@@ -232,6 +232,15 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/data-deletion', label: 'Data Deletion', room: 'office', roles: ['admin'],
     keywords: 'delete deletion remove withdraw erase forget retention privacy athlete guardian parent account',
     hint: 'Mark an athlete or guardian deleted and close their login now. Nothing is permanently removed here.' },
+  /* roles: ['admin'], NOT ADMIN_GATE and NOT the roster door's ['admin',
+     'coach']. POST /api/pilot/admin/content-import admits organization_admin
+     and admin only (the flagged default: the upload screen is for
+     organization admins), and gym content is never loaded by the platform
+     owner (contentImport/actor.ts refuses it as well). The route's own suite
+     pins this door against the API gate and the page gate. */
+  { href: '/admin/content-import', label: 'Load Gym Content', room: 'office', roles: ['admin'],
+    keywords: 'content import upload load csv package drills drill library stop rules workout templates session scripts disciplines competence levels cohorts reference versions',
+    hint: 'Check content files, see what would change, then apply. A changed item gets a new version; nothing is deleted.' },
   { href: '/admin/public-interest', label: 'Public Interest', room: 'office', roles: ADMIN_GATE,
     keywords: 'disclosure transparency public record' },
   { href: '/admin/consent', label: 'Waivers & Consent', room: 'office', roles: ['admin', 'coach'],
@@ -263,7 +272,12 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/calibration/review', label: 'Calibration Review', room: 'office', roles: ['admin'],
     keywords: 'calibration comparison disagreement annotation coaches agreement study adjudication clip review blinding',
     hint: 'Where two coaches disagreed on a study clip, side by side. Read-only, and no score.' },
-  { href: '/admin/platform', label: 'Platform', room: 'office', roles: OPEN,
+  /* NOT OPEN. The page computes `hasPlatformAccess = isMicrosoftSession &&
+     sessionRole === 'platform_owner'` (admin/platform/page.tsx) and shows
+     nothing without it, so OPEN advertised an /admin/* door to every role --
+     athlete and parent included -- that all but one of them bounce off. That is
+     the exact failure this file's header says `roles` exists to prevent. */
+  { href: '/admin/platform', label: 'Platform', room: 'office', roles: ['platform_owner'],
     keywords: 'system settings internals' },
   { href: '/print', label: 'Print', room: 'office', roles: ['athlete', 'parent', 'coach', 'admin', 'platform_owner', 'staff'],
     keywords: 'print roster cards sheets document', hint: 'Print rosters and session cards.' },
@@ -363,7 +377,14 @@ export const BUILDING: readonly Door[] = [
     keywords: 'display floor screen tv broadcast', hint: 'Gym floor display — TV at the front desk.' },
   { href: '/athlete/dashboard', label: 'Athlete Workspace', room: 'floor', roles: ['athlete'],
     keywords: 'my training check-in rpe session athlete' },
-  { href: '/athlete/dashboard/sparring', label: 'Sparring', room: 'floor', roles: OPEN,
+  /* NOT OPEN, and the page says so as a literal: RoleStandaloneView carries
+     allowedRoles={['athlete', 'coach', 'admin']}. OPEN advertised an athlete's
+     sparring log to parents, board members, staff and volunteers. Naming the
+     three real roles also moves this door INSIDE buildingMapDoorGate.test.ts,
+     which skips every OPEN door -- so the fix is checked from here on rather
+     than merely correct today. */
+  { href: '/athlete/dashboard/sparring', label: 'Sparring', room: 'floor',
+    roles: ['athlete', 'coach', 'admin'],
     keywords: 'sparring contact rounds partner' },
   { href: '/athlete/progression-intelligence', label: 'My Progression', room: 'floor',
     roles: ['athlete'], keywords: 'progress load profile improvement' },
@@ -429,6 +450,9 @@ export const BUILDING: readonly Door[] = [
   { href: '/teach-shadow/capture', label: 'Capture Examples', room: 'teach',
     roles: ['coach', 'admin'], keywords: 'record camera capture angles multi device join code take example teaching shadow recognition',
     hint: 'Film an example for Shadow. Several coaches can join one session and record it from different angles.' },
+  { href: '/teach-shadow/cut', label: 'Cut Study Clips', room: 'teach',
+    roles: ['coach', 'admin'], keywords: 'clip cut study calibration mark in out scrub footage teaching shadow sample',
+    hint: 'Watch a released take and cut the moment worth labelling into a study clip. Nothing here scores an athlete.' },
   { href: '/teach-shadow/annotation', label: 'Clip Annotation', room: 'teach',
     roles: ['coach', 'admin'], keywords: 'calibration annotate label clip punch defense ontology agreement study verify',
     hint: 'Label what you saw in a study clip. Two coaches label it separately; nothing here scores an athlete.' },

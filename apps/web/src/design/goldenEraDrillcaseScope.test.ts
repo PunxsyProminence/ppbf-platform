@@ -309,6 +309,12 @@ describe('the 004B mockup did not delete or invent drill-library controls', () =
     expect(PAGE).toContain('id={`lifecycle-${referenceDrillId}`}');
     expect(PAGE).toContain("method: 'PATCH'");
     expect(PAGE).toContain('Clear filters');
+    // Content intake (#1032), approved by Jason 2026-09-30 ("go with your
+    // recomendations"): a second Restore, on the card of a NEWER version of a
+    // drill the gym retired. It restores the gym's own drill at the version it
+    // adopted; once a revision lands, that card is the only way back to it.
+    expect(PAGE).toContain("state.state === 'newer_version_retired'");
+    expect(PAGE).toContain('NEWER_VERSION_RESTORE_CONSEQUENCE');
   });
 
   test('the real difficulty vocabulary is unchanged', () => {
@@ -479,19 +485,31 @@ describe('the 004B mockup did not delete or invent drill-library controls', () =
     //     array itself is pinned, key by key and field by field, above);
     //   - EIGHT buttons: the five above, plus Retire / Restore (one element
     //     whose caption follows the derived lifecycle) on the opened detail,
-    //     Clear filters on the discovery rail, and -- since the 2026-09-26 room
+    //     Clear filters on the discovery rail, the Restore on a newer version's
+    //     card when the gym retired its drill, and -- since the 2026-09-26 room
     //     ruling -- the equipment rail's station button, which is ONE element in
-    //     the source rendered three times from STATIONS. Named in "the real
-    //     actions still exist"; this case holds the line against a NINTH.
+    //     the source rendered three times from STATIONS. All named in "the real
+    //     actions still exist"; this case holds the line against a TENTH.
     //
-    //     This number went 7 -> 8 for a control that was ADDED deliberately, and
-    //     that is the only reason it may move: the whole point of the census is
-    //     that a mockup pass cannot quietly invent a control with nothing behind
-    //     it, and the rail has the three stations behind it.
+    //     SEVEN -> EIGHT -> NINE, and each step was a control ADDED
+    //     deliberately, which is the only reason this number may move. Eight
+    //     came from #1032 (Jason, 2026-09-30, "go with your recomendations"):
+    //     the Restore on a superseded card. Nine came from this branch: the
+    //     station rail.
+    //
+    //     BOTH SIDES OF THE MERGE SAID EIGHT, and both were right about their
+    //     own half -- each counted its one addition up from seven, neither knew
+    //     about the other. Taking either side's number would have left the
+    //     census asserting a page that does not exist. Nine is what the merged
+    //     source actually holds, counted rather than reasoned: `grep -o
+    //     '<button' page.tsx | wc -l` returns 9, and the other four counts
+    //     below are unchanged. That is the whole point of a census -- a mockup
+    //     pass cannot quietly invent a control with nothing behind it, and every
+    //     one of these nine has something behind it.
     expect(PAGE.match(/<input\b/g) ?? []).toHaveLength(3);
     expect(PAGE.match(/<textarea\b/g) ?? []).toHaveLength(2);
     expect(PAGE.match(/<select\b/g) ?? []).toHaveLength(2);
-    expect(PAGE.match(/<button\b/g) ?? []).toHaveLength(8);
+    expect(PAGE.match(/<button\b/g) ?? []).toHaveLength(9);
     expect(PAGE.match(/<Link\b/g) ?? []).toHaveLength(1);
   });
 });

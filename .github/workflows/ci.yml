@@ -99,6 +99,57 @@ jobs:
             true
           );
 
+          // SEED DATA RUNS THE PG SUITES. The seeding suites load these files
+          // into a real schema, and a data-only PR is how content hand-offs
+          // arrive -- before this it classified unknown_code and ran none of
+          // them. Every data shape the folder holds, not one.
+          for (const data of [
+            'apps/web/seed-data/drill-library/seed_drill_library.csv',
+            'apps/web/seed-data/drill-library/seed_drill_library.json',
+            'apps/web/seed-data/shadow-research/2026-08-07/research_triage_view.sql',
+          ]) {
+            const seeded = classifyPaths([data]);
+            assert.equal(seeded.migrations, true, data);
+            assert.equal(seeded.docsOnly, false, data);
+            assert.equal(seeded.unknownCode, false, data);
+          }
+
+          // THE SEED LOADER RUNS THE PG SUITES. Every reference dataset loads
+          // through the content-import core (IMP-10), and the seeding suites load
+          // the committed files through it, so a loader-only PR changes what they
+          // prove. The write-target guard and the suites' fixture matched no
+          // predicate before; nor did the schema builder the fixture calls and
+          // the migration order it reads, nor the old loaders' frozen output.
+          for (const loader of [
+            'apps/web/src/server/pilot/contentImport/apply.ts',
+            'apps/web/scripts/pilot-content-import.ts',
+            'apps/web/scripts/lib/postgres-write-target.mjs',
+            'apps/web/scripts/lib/postgres-write-target.d.mts',
+            'apps/web/src/testing/referenceContentFixture.ts',
+            'apps/web/scripts/lib/full-schema.mjs',
+            'apps/web/scripts/migration-apply-order.mjs',
+            'apps/web/src/testing/legacyLoaderGolden.ts',
+            'apps/web/src/testing/legacyLoaderGoldenData/rows.json',
+            'apps/web/src/testing/legacyLoaderGoldenData/inputs/drill-library/seed_drill_library.csv',
+          ]) {
+            const loaded = classifyPaths([loader]);
+            assert.equal(loaded.migrations, true, loader);
+            assert.equal(loaded.unknownCode, false, loader);
+          }
+
+          // ...and its README stays documentation. It loads into nothing, so it
+          // takes the docs-only fast path and does not flag the suite; beside
+          // unrecognised code it must not hide that code from the report.
+          assert.equal(classifyPaths(['apps/web/seed-data/drill-library/README.md']).docsOnly, true);
+          assert.equal(classifyPaths(['apps/web/seed-data/drill-library/README.md']).migrations, false);
+          assert.deepEqual(
+            classifyPaths([
+              'apps/web/seed-data/drill-library/README.md',
+              'apps/web/components/SomeNewSurface.tsx',
+            ]).unclassifiedPaths,
+            ['apps/web/components/SomeNewSurface.tsx']
+          );
+
           assert.deepEqual(classifyPaths(['apps/web/components/roleSession.ts']), {
             docsOnly: false,
             migrations: false,

@@ -1,5 +1,6 @@
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
+import { accountDeletedSql } from './deletedAccountSignIn';
 import { graphTokenProvider } from './managedIdentityToken';
 import { sendPlainTextMail } from './graphMailer';
 import {
@@ -37,9 +38,10 @@ export function magicLinkDependencies(): MagicLinkDependencies {
   return {
     findAccountByEmail: async (email) =>
       queryOne<MagicLinkAccount>(
-        `select account_id, organization_id, role, auth_provider, login_email, active_flag
-           from pilot.accounts
-          where lower(login_email) = lower($1)`,
+        `select a.account_id, a.organization_id, a.role, a.auth_provider, a.login_email, a.active_flag,
+                ${accountDeletedSql('a')} as account_deleted
+           from pilot.accounts a
+          where lower(a.login_email) = lower($1)`,
         [email],
       ),
 
@@ -109,7 +111,8 @@ export async function redeemMagicLink(token: string): Promise<RedemptionResult> 
     const found = await client.query<RedeemableTokenRow>(
       `select t.account_id, t.organization_id, t.sent_to_email, t.expires_at,
               t.consumed_at, t.invalidated_at,
-              a.role, a.active_flag, a.login_email
+              a.role, a.active_flag, a.login_email,
+              ${accountDeletedSql('a')} as account_deleted
          from pilot.magic_link_tokens t
          join pilot.accounts a on a.account_id = t.account_id
         where t.token_hash = $1

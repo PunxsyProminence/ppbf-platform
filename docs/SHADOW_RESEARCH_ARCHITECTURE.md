@@ -350,9 +350,10 @@ proposed/reference material" without qualification is false.** §3 of
 "Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed
 since the warm-up (ring wait, bout delay, late start)." — now sits in **63 of the 674 rows** of
 `apps/web/seed-data/drill-library/seed_drill_stop_rules.csv`, carrying `rule_kind = warmup_decay`.
-That file is loaded into `pilot.drill_stop_rules` by `npm run seed:drill-library`, which
-`.github/workflows/seed-reference-data.yml` dispatches. It is operational drill data, not
-research reference material.
+That file is loaded into `pilot.drill_stop_rules` by the content-import core -- the
+`drill-library` dataset of `.github/workflows/seed-reference-data.yml`, which
+`npm run seed:drill-library` also runs. It is operational drill data, not research reference
+material.
 
 That crossing was made deliberately and is documented, not smuggled:
 

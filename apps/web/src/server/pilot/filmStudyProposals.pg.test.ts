@@ -24,7 +24,20 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
+import { NextRequest } from 'next/server';
 import { Client } from 'pg';
+
+import type { PilotPrincipal } from './auth';
+import { requirePrincipal } from './http';
+
+// Only the session lookup is replaced; the GET route's authorization runs for
+// real against this database.
+jest.mock('./http', () => {
+  const actual = jest.requireActual('./http');
+  return { ...actual, requirePrincipal: jest.fn() };
+});
+
+const mockRequirePrincipal = requirePrincipal as jest.MockedFunction<typeof requirePrincipal>;
 
 jest.setTimeout(180_000);
 
@@ -137,6 +150,12 @@ beforeAll(async () => {
   const migrateClient = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await migrateClient.connect();
   await migrateClient.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
+  // PRODUCTION HAS THIS MIGRATION: it adds pilot.athletes.deleted_at, which
+  // the authorization queries in access.ts read -- and the GET route cases
+  // below run those queries for real.
+  await migrateClient.query(
+    await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8'),
+  );
   await migrateClient.query(
     await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_film_study_proposals_migration.sql'), 'utf8'),
   );
@@ -308,12 +327,17 @@ describe('film study proposals against the real schema', () => {
   });
 
   test('the pending queue is organization-scoped and oldest-first', async () => {
-    const before = await proposals.listFilmStudyProposals({ organizationId: ORG_ID, state: 'pending' });
+    const before = await proposals.listFilmStudyProposals({
+      organizationId: ORG_ID,
+      state: 'pending',
+      athleteIds: [ATHLETE_ID],
+    });
     const olderFirst = before.map((p) => p.created_at);
     expect([...olderFirst].sort()).toEqual(olderFirst);
 
     expect(
-      await proposals.listFilmStudyProposals({ organizationId: OTHER_ORG_ID, state: 'pending' }),
+      // The same athlete id named from another organization still finds nothing.
+      await proposals.listFilmStudyProposals({ organizationId: OTHER_ORG_ID, state: 'pending', athleteIds: [ATHLETE_ID] }),
     ).toEqual([]);
   });
 
@@ -392,6 +416,108 @@ describe('the Film Study video read path against the real schema', () => {
   });
 });
 
+// The Film Study page reads the whole queue: GET with no athlete_id. That read
+// used to return every proposal in the organization, so a coach saw AI
+// observations about athletes -- usually minors -- they are neither assigned to
+// nor covering. These cases run the real route and the real authorization
+// queries against this database; only the session lookup is mocked.
+describe('GET film study proposals: the queue a reader gets', () => {
+  const OTHER_COACH_ID = 'acct-film-coach-two';
+  const OTHER_ATHLETE_ID = 'ATH-FILM-2';
+  const COVERED_ATHLETE_ID = 'ATH-FILM-3';
+  const ADMIN_ID = 'acct-film-admin';
+  let GET: typeof import('@/app/api/pilot/shadow/film-study/proposals/route').GET;
+
+  function principal(accountId: string, role: PilotPrincipal['role']): PilotPrincipal {
+    return {
+      accountId,
+      role,
+      organizationId: ORG_ID,
+      athleteId: null,
+      sessionToken: 'token',
+      authProvider: 'microsoft',
+    };
+  }
+
+  async function queueFor(reader: PilotPrincipal, search = '?state=pending') {
+    mockRequirePrincipal.mockResolvedValue(reader);
+    const response = await GET(
+      new NextRequest(`http://localhost/api/pilot/shadow/film-study/proposals${search}`, { method: 'GET' }),
+    );
+    return { status: response.status, body: await response.json() };
+  }
+
+  function idsOf(body: { proposals?: Array<{ proposal_id: string }> }): string[] {
+    return (body.proposals ?? []).map((proposal) => proposal.proposal_id);
+  }
+
+  beforeAll(async () => {
+    for (const [accountId, role] of [[OTHER_COACH_ID, 'coach'], [ADMIN_ID, 'organization_admin']]) {
+      await db.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+         values ($1, $2, $3, 'microsoft') on conflict do nothing`,
+        [accountId, role, ORG_ID],
+      );
+    }
+    for (const [athleteId, coachId] of [[OTHER_ATHLETE_ID, OTHER_COACH_ID], [COVERED_ATHLETE_ID, OTHER_COACH_ID]]) {
+      await db.query(
+        `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, $2, 'Film Athlete', '2011-05-06', 'fly', 'active', 'contact', true, $3, now(), now())
+         on conflict do nothing`,
+        [ORG_ID, athleteId, coachId],
+      );
+    }
+    GET = (await import('@/app/api/pilot/shadow/film-study/proposals/route')).GET;
+  });
+
+  test("a coach's queue never holds another coach's athlete, and theirs never holds mine", async () => {
+    const mine = await newProposal();
+    const theirs = await newProposal({ athleteId: OTHER_ATHLETE_ID });
+
+    const coachQueue = await queueFor(principal(COACH_ID, 'coach'));
+    expect(coachQueue.status).toBe(200);
+    expect(idsOf(coachQueue.body)).toContain(mine.proposal_id);
+    expect(idsOf(coachQueue.body)).not.toContain(theirs.proposal_id);
+    expect(
+      (coachQueue.body.proposals as Array<{ athlete_id: string }>).every((row) => row.athlete_id === ATHLETE_ID),
+    ).toBe(true);
+
+    const otherQueue = await queueFor(principal(OTHER_COACH_ID, 'coach'), '?state=all');
+    expect(idsOf(otherQueue.body)).toContain(theirs.proposal_id);
+    expect(idsOf(otherQueue.body)).not.toContain(mine.proposal_id);
+  });
+
+  test("naming another coach's athlete is refused outright", async () => {
+    await newProposal({ athleteId: OTHER_ATHLETE_ID });
+    const response = await queueFor(principal(COACH_ID, 'coach'), `?athlete_id=${OTHER_ATHLETE_ID}`);
+    expect(response.status).toBe(403);
+    expect(response.body.proposals).toBeUndefined();
+  });
+
+  test('a live coverage grant admits the covered athlete, and nothing else', async () => {
+    const covered = await newProposal({ athleteId: COVERED_ATHLETE_ID });
+    const uncovered = await newProposal({ athleteId: OTHER_ATHLETE_ID });
+    await db.query(
+      `insert into pilot.coach_coverage
+         (organization_id, athlete_id, covering_coach_id, granted_by_account_id, starts_at, expires_at)
+       values ($1, $2, $3, $4, now() - interval '1 hour', now() + interval '1 day')`,
+      [ORG_ID, COVERED_ATHLETE_ID, COACH_ID, ADMIN_ID],
+    );
+
+    const coachQueue = await queueFor(principal(COACH_ID, 'coach'));
+    expect(idsOf(coachQueue.body)).toContain(covered.proposal_id);
+    expect(idsOf(coachQueue.body)).not.toContain(uncovered.proposal_id);
+  });
+
+  test("an organization admin's queue is the whole gym", async () => {
+    const mine = await newProposal();
+    const theirs = await newProposal({ athleteId: OTHER_ATHLETE_ID });
+
+    const adminQueue = await queueFor(principal(ADMIN_ID, 'organization_admin'));
+    expect(idsOf(adminQueue.body)).toEqual(expect.arrayContaining([mine.proposal_id, theirs.proposal_id]));
+  });
+});
+
 // The runner's OWN readiness assertion, not just the SQL it applies.
 //
 // The suite above migrates one database in beforeAll with a plain
@@ -422,6 +548,7 @@ describe('film study proposals runner readiness assertion', () => {
     const client = new Client({ connectionString: connectionStringFor(name) });
     await client.connect();
       await client.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
+      await client.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8'));
       await client.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_video_sessions_migration.sql'), 'utf8'));
     return client;
   }

@@ -66,6 +66,22 @@ function stopRule(ordinal: number, scope: 'universal' | 'drill_specific' = 'dril
     condition_text: `Stop condition ${ordinal}`,
     scope,
     rule_kind: 'safety',
+    origin: 'drill' as const,
+  };
+}
+
+/** One of the gym's stored-once rules (pilot.universal_stop_rules), as getDrillWithDetail returns it. */
+function universalRule(ordinal: number) {
+  return {
+    organization_id: ORG,
+    universal_rule_id: `ust_${ordinal}`,
+    lineage_id: `ust_${ordinal}`,
+    version: 1,
+    ordinal,
+    condition_text: `Stop on any sign of injury ${ordinal}`,
+    rule_kind: 'safety',
+    applies_to_contact_levels: null,
+    origin: 'universal' as const,
   };
 }
 
@@ -106,6 +122,7 @@ function readyDrill(overrides: Partial<DrillWithDetail> = {}): DrillWithDetail {
     updated_at: '2026-09-01T00:00:00.000Z',
     scale_levels: [scaleLevel('A', false), scaleLevel('B', true), scaleLevel('C', false)],
     stop_rules: [stopRule(1)],
+    universal_stop_rules: [],
     cues: [
       {
         organization_id: ORG,
@@ -218,11 +235,30 @@ describe('adoptionReadiness: safety', () => {
   // The rule is "at least one condition to stop on". Whether a drill needs a
   // drill-specific rule is part of the context-aware gate no column can decide
   // yet (a VERIFIED_MODEL_GAP), so a universal rule counts.
+  //
+  // "Universal" here is the LEGACY scope label on one of the drill's OWN rows.
+  // Under owner ruling R3 those rows are the drill's own rules, and they are
+  // what keeps today's 119 seeded drills adoptable (658 of their 674 rows carry
+  // that label), so this must keep passing.
   test('one universal stop rule is enough', () => {
     expect(adoptionReadiness(readyDrill({ stop_rules: [stopRule(1, 'universal')] }))).toEqual({
       ready: true,
       missing: [],
     });
+  });
+
+  // The gym's stored-once rules apply to every drill, so if they counted,
+  // loading one injury rule would make every drill "have stop rules" and this
+  // requirement would stop checking anything (R3; the flagged default: a drill
+  // needs at least one rule of its own).
+  test('stored-once rules alone do not make a drill ready', () => {
+    const drill = readyDrill({ stop_rules: [], universal_stop_rules: [universalRule(1), universalRule(2)] });
+    expect(adoptionReadiness(drill)).toEqual({ ready: false, missing: [NO_STOP_RULES] });
+  });
+
+  test("stored-once rules beside one of the drill's own rules change nothing", () => {
+    const drill = readyDrill({ stop_rules: [stopRule(1, 'universal')], universal_stop_rules: [universalRule(1)] });
+    expect(adoptionReadiness(drill)).toEqual({ ready: true, missing: [] });
   });
 });
 

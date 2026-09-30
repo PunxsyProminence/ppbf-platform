@@ -42,6 +42,9 @@ export async function GET(request: NextRequest) {
         and acc.athlete_id = ath.athlete_id
         and acc.role = 'athlete'
        where ath.organization_id = $1
+         -- A deleted athlete's login is closed and marked deleted with them
+         -- (scope B); it is not a login an admin manages from here.
+         and ath.deleted_at is null
        order by ath.full_name asc`,
       [principal.organizationId],
     );

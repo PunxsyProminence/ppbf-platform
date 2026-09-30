@@ -5,8 +5,8 @@ import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
 /**
  * A DARK PANEL IS DARK EVERYWHERE, OR IT IS A BUG SOMEWHERE.
  *
- * Law 6 gives the app two grounds, so the sheet has to answer the same
- * question in several places: what ink does a voice take, what colour is a
+ * The app stands on two grounds, light and dark, so the sheet has to answer
+ * the same question in several places: what ink does a voice take, what colour is a
  * link, what colour is a stamp -- each answered once for light ground and once
  * for dark material. Each of those answers carries its own hand-written list of
  * which materials count as dark.

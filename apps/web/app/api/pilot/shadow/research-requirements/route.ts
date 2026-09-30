@@ -7,6 +7,7 @@ import {
   requireRole,
   type ActorIdentity,
 } from '@/src/server/pilot/access';
+import { deletedAthleteIdsAmong } from '@/src/server/pilot/deletedAthletes';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
@@ -101,7 +102,19 @@ async function scopeToReachableSubjects(
   rows: ShadowResearchRequirementRow[],
 ): Promise<ShadowResearchRequirementRow[]> {
   if (isOrganizationAdminRole(actor.role)) {
-    return rows;
+    // The whole gym -- except a deleted athlete, whose requirements are
+    // marked deleted with them (scope B). Every other role already loses
+    // them through accessibleAthleteIds below.
+    const deleted = await deletedAthleteIdsAmong(
+      actor.organizationId,
+      rows
+        .map((row) => subjectAthleteIdOf(row))
+        .filter((athleteId): athleteId is string => athleteId !== null),
+    );
+    return rows.filter((row) => {
+      const athleteId = subjectAthleteIdOf(row);
+      return athleteId === null || !deleted.has(athleteId);
+    });
   }
 
   const namedAthleteIds = rows

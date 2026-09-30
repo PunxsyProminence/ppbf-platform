@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { query, queryOne, withTransaction } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 
 export type PublicationStatus =
   | 'draft'
@@ -122,7 +123,10 @@ export async function getPublicationForPublish(
     `select publication_id, video_session_id, athlete_id, submitted_by_account_id, title, description, tags,
             status, compliance_check_status
      from pilot.video_publications
-     where organization_id = $1 and publication_id = $2`,
+     where organization_id = $1 and publication_id = $2
+       -- Scope B: a deleted athlete's publication reads as not found, so it
+       -- can no longer be submitted, published or decided on.
+       and ${athleteNotDeletedSql('pilot.video_publications')}`,
     [organizationId, publicationId],
   );
 }
@@ -459,6 +463,17 @@ export async function getResearchLibrary(
     select library_id, publication_id, video_session_id, title, description, tags, view_count, published_at
     from pilot.research_library
     where organization_id = $1 and archived_at is null and suppressed_at is null
+      -- Scope B: the shelf entry of a deleted athlete's footage leaves the
+      -- shelf with them. The shelf row carries no athlete, so it is asked of
+      -- the publication it came from.
+      and not exists (
+        select 1 from pilot.video_publications shelved
+          join pilot.athletes shelved_athlete
+            on shelved_athlete.organization_id = shelved.organization_id
+           and shelved_athlete.athlete_id = shelved.athlete_id
+         where shelved.organization_id = pilot.research_library.organization_id
+           and shelved.publication_id = pilot.research_library.publication_id
+           and shelved_athlete.deleted_at is not null)
   `;
   const params: unknown[] = [organizationId];
 
@@ -518,6 +533,7 @@ export async function getOrganizationPublications(
            created_at
     from pilot.video_publications
     where organization_id = $1
+      and ${athleteNotDeletedSql('pilot.video_publications')}
   `;
   const params: unknown[] = [organizationId];
 

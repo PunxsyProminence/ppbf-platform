@@ -25,12 +25,31 @@
  * advertising a bounce, and that is a defect regardless of what the API would
  * have said afterwards.
  *
- * WHAT IT DOES NOT COMPARE. Doors whose `roles` is OPEN (no gate today, and
- * the header says several arguably should have one -- separate work), doors
- * whose roles come from a constant this file cannot resolve statically, and
- * pages that do not declare `allowedRoles` as a literal. Those are skipped
- * rather than guessed at, and the floor assertion below is what stops the
- * skipping from quietly becoming everything.
+ * WHAT IT DOES NOT COMPARE. Doors whose roles come from a constant this file
+ * cannot resolve statically, and pages that do not declare `allowedRoles` as a
+ * literal. Those are skipped rather than guessed at, and the floor assertion
+ * below is what stops the skipping from quietly becoming everything.
+ *
+ * OPEN USED TO BE ON THAT LIST, AND THAT WAS THE HOLE. `roles: OPEN` parses to
+ * null here, so an OPEN door fell out of `comparable` and was never evaluated
+ * at all -- not "no gate found", but "not looked at". That made OPEN an
+ * exemption from the only executable check on door honesty, and two doors sat
+ * in it: /admin/platform, whose page renders nothing without platform_owner,
+ * and /athlete/dashboard/sparring, whose page declares
+ * allowedRoles={['athlete', 'coach', 'admin']}. Both advertised themselves to
+ * every role in the building. 288 green tests never noticed, because nothing
+ * was looking.
+ *
+ * SO OPEN NOW MEANS "ASSERTED UNGATED, AND PROVEN SO". The second describe
+ * below reads every OPEN door's page and fails if it finds an `allowedRoles`
+ * literal there. Claiming a door is open is now a claim this file checks,
+ * rather than a way to leave the set.
+ *
+ * WHAT THAT STILL DOES NOT CATCH, stated so nobody reads more into it: a page
+ * that gates by computed condition rather than by an `allowedRoles` literal.
+ * /admin/platform is exactly that -- `isMicrosoftSession && sessionRole ===
+ * 'platform_owner'` -- so its door is correct today but not executable here.
+ * The instrument is the literal, and it can only see what is written as one.
  *
  * DIRECTION IS DELIBERATE. This asserts the door's roles are a SUBSET of the
  * page's, not equality. A page admitting a role the corridor does not list is
@@ -129,6 +148,35 @@ describe('a door does not advertise a role its page refuses', () => {
         pageAllowedRoles: entry.pageRoles,
         advertisedButRefused: [],
       });
+    },
+  );
+});
+
+/**
+ * The other half of the same rule: a door that claims to be open must be.
+ *
+ * `roles: OPEN` is the widest claim a door can make -- every role in the
+ * building is offered it. Before this block, it was also the cheapest, because
+ * an OPEN door was not compared against anything. A door is not allowed to buy
+ * its way out of the check by claiming more.
+ */
+const openDoors = doors.filter((door) => door.rolesSource === 'OPEN');
+
+describe('a door that says OPEN has no page gate to contradict it', () => {
+  test('there are OPEN doors to check, so this block is not a no-op', () => {
+    // Same reason as the floor above: if the parse or the literal ever stops
+    // matching, this file must fail rather than pass on an empty set. Five
+    // OPEN doors at the time of writing (/dashboard, /public, /help, /store,
+    // /wall), each read and confirmed ungated.
+    expect(openDoors.length).toBeGreaterThan(2);
+  });
+
+  test.each(openDoors.map((door) => [door.href, door] as const))(
+    '%s claims OPEN and its page declares no allowedRoles',
+    (_href, door) => {
+      const pageRoles = pageRolesFor(door.href);
+      expect({ href: door.href, claims: 'OPEN', pageAllowedRoles: pageRoles })
+        .toEqual({ href: door.href, claims: 'OPEN', pageAllowedRoles: null });
     },
   );
 });

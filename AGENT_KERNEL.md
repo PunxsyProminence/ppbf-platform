@@ -102,13 +102,13 @@ transfer, narrow, or expand anyone's authority. Roles are the list above.
 - These are policy. What GitHub enforces on `main` is narrower (read
   2026-09-28 with `gh api` on the branch protection and the two rulesets):
   a pull request is required and force-push and deletion are refused; the
-  only required status check is `validate`; admin enforcement is off
-  (`enforce_admins: false`), and the ruleset lets repository role id 5
-  (GitHub's admin role) bypass it on a pull request. Sessions act through the
-  owner's account, which has admin on this repository, so for them green CI is
-  a rule they keep, not one GitHub forces. `declaration` is not a
-  required check; OD-2026-09-28-010 item 11 decides it becomes one, with admin
-  enforcement left off. Only the owner can change these settings.
+  required status checks are `validate` and `declaration` (since 2026-09-29,
+  OD-2026-09-28-010 item 11 and OD-2026-09-29-004; re-read 2026-09-29 with
+  `gh api`); admin enforcement is off (`enforce_admins: false`), and the
+  ruleset lets repository role id 5 (GitHub's admin role) bypass it on a pull
+  request. Sessions act through the owner's account, which has admin on this
+  repository, so for them green CI is a rule they keep, not one GitHub forces.
+  Only the owner can change these settings.
 
 ### Binary assets (plates)
 
@@ -415,7 +415,7 @@ is not read as `NONE`. CI's `declaration` check
 (`apps/web/scripts/check-migration-declaration.mjs`) fails a PR that changes a
 migration file with the line missing, empty or `NONE`, or that names a slug
 with no `pilot:apply-*` script. It does not catch an omitted line when no
-migration file changes, and it is not a required check (see "Repository
+migration file changes, and admin enforcement is off (see "Repository
 writes"), so writing the line is the rule, not something CI guarantees.
 
 ### Stacked work is declared, not discovered
