@@ -644,10 +644,11 @@ describe('the add-athlete form', () => {
     expect(screen.getByText(/next free one for your gym \(ath-003\)/i)).toBeTruthy();
   });
 
-  // Switching mode resets the id box. Right after a failed sign-in step that
-  // reset must not hand out the next number, or one press writes a second
-  // record for the child whose record already exists.
-  test('switching mode and back after a failed sign-in step keeps the written record', async () => {
+  // The locked note says "to start a different athlete instead, switch modes
+  // above and back". That round trip must give a clean form under the next
+  // free id -- not the saved child's details unlocked under a new number, one
+  // press from a second record for them.
+  test('switching mode and back after a failed sign-in step starts a clean athlete', async () => {
     const liveRoster: Record<string, unknown>[] = [
       { athlete_id: 'ath-001', full_name: 'Alex Johnson', account_id: null, account_active: null, has_pin: false, account_updated_at: null },
     ];
@@ -687,16 +688,16 @@ describe('the add-athlete form', () => {
     fireEvent.click(screen.getByRole('radio', { name: /Already on the roster/i }));
     fireEvent.click(screen.getByRole('radio', { name: /New to the gym/i }));
 
-    // The written record, locked -- not ath-003 and not an empty box.
-    expect((screen.getByLabelText(/Athlete record ID/i) as HTMLInputElement).value).toBe('ath-002');
-    expect(screen.getByText(/Roster record saved, so these details are locked/i)).toBeTruthy();
-
-    fireEvent.change(screen.getByLabelText('Sign-in ID'), { target: { value: 'jo-fighter' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Add Athlete & Get Code' }));
-
-    expect(await screen.findByText('JKLM-4567-NPQR')).toBeTruthy();
+    // ath-002 is on the roster now, so the next free id is ath-003, unlocked,
+    // with nothing of Jo's left in the form.
+    expect((screen.getByLabelText(/Athlete record ID/i) as HTMLInputElement).value).toBe('ath-003');
+    expect(screen.getByText(/next free one for your gym \(ath-003\)/i)).toBeTruthy();
+    expect(screen.queryByText(/Roster record saved, so these details are locked/i)).toBeNull();
+    expect((screen.getByLabelText(/Full name/i) as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText(/Date of birth/i) as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('Sign-in ID') as HTMLInputElement).value).toBe('');
+    expect(screen.getByText(/Still needed before this can be saved/i).textContent).toMatch(/Full name/);
     expect(recordPosts).toHaveLength(1);
-    expect(accountPosts[1]).toEqual({ account_id: 'jo-fighter', athlete_id: 'ath-002' });
   });
 });
 

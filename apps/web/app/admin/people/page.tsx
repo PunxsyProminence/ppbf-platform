@@ -1497,15 +1497,14 @@ function PeopleConsoleContent() {
                         // one is being invented, the other is being chosen off
                         // a list. Carrying a value across would submit an id
                         // the admin never picked in this mode.
-                        if (option.value === 'new' && rosterCreatedFor) {
-                          // Back to "new" after a record was written but the
-                          // sign-in failed: restore that record's id, so the
-                          // details lock again and the retry links it. The
-                          // fresh suggestion would have moved on to the next
-                          // number, and one press would write a second record
-                          // for the same child.
-                          setAthleteId(rosterCreatedFor);
-                          setAthleteIdTouched(true);
+                        if (rosterCreatedFor) {
+                          // Leaving a record that was written but never got its
+                          // sign-in: this is the "start a different athlete"
+                          // the locked note advertises, so drop that child's
+                          // details along with the id. Clearing only the id
+                          // would leave them unlocked under the next free number,
+                          // one press from a second record for the same child.
+                          resetAthleteForm();
                         } else {
                           setAthleteId('');
                           // Untouched again, so "new" offers the next free id
