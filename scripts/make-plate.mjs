@@ -233,7 +233,46 @@ const T7_ROOMS = new Set(['family-room', 'window']);
    reads IRON CITY BREWERY (lock section 1), so the prompt spells that out
    rather than invite the model to drop a word. Everything else stays forbidden. */
 const COMPOSITION = 'Composition: the centre of the frame is QUIET and uncluttered because interface text is laid over it, and all visual interest sits in the outer thirds. No people.';
-const NO_TEXT = 'The only lettering allowed is the lettering printed on the boxing ring canvas itself, which reads IRON CITY BREWERY, and only when the ring is in frame. ABSOLUTELY NO OTHER TEXT anywhere in the frame: no other writing, no other letters, no numbers, no words, no signage, no posters, no banners, no readable chalkboards or whiteboards, no labels, no other logos, no other brand marks.';
+const NO_TEXT = 'The only lettering allowed is the sponsor lettering printed on the boxing ring canvas itself, which reads IRON CITY BREWERY at the centre of the canvas and ALT NATION, and only when the ring canvas is in frame. ABSOLUTELY NO OTHER TEXT anywhere in the frame: no other writing, no other letters, no numbers, no words, no signage, no posters, no banners, no readable chalkboards or whiteboards, no labels, no other logos, no other brand marks.';
+
+/* THE LOCK ASKS FOR WRITING AND THE LETTERING RULE FORBIDS IT. Both are
+   right, and for a training room the prompt used to carry the two of them
+   side by side and let the model choose. It chose the lock, every time.
+
+   The Walls row asks for blackboard-paint walls "written on directly,
+   including a black painted band at chest height carrying chalked combination
+   numbers". Extras goes further and names lettered artefacts outright: a "3rd
+   Infantry Division banner", "fight posters (De La Hoya vs Mayweather)",
+   "framed coaching certificates", "whiteboards of handwritten sessions".
+   Then NO_TEXT says no readable text. The first drill-cabinet portrait came
+   back with chalk over every wall and an invented crest reading EIR D
+   LIFANTEE; it passed the byte gate, which checks geometry, not whether the
+   walls can be read.
+
+   A COUNTER-INSTRUCTION IS NOT ENOUGH, and that was tried first: a sentence
+   saying the surfaces appear blank. The next plate came back with a banner
+   reading 33D INF/ANTRY DIVISION and DE LA HOY. Naming an artefact draws it;
+   a later sentence saying it is blank loses to the earlier, more concrete
+   instruction. So the clause has to leave the prompt rather than be argued
+   with afterwards -- which is what the non-training path already does by
+   dropping Extras wholesale (BUILDING_ROWS above).
+
+   Dropping whole rows would cost a training room its subject, so this drops
+   CLAUSES: each row is split on its own punctuation and any clause naming a
+   lettered artefact is left out, with the lock's other words untouched. The
+   list below is a rule, not a re-description of the gym -- a clause the lock
+   adds later is caught by the same words, and --dry-run prints every clause
+   dropped so the omission is visible rather than silent. */
+const LETTERED = /\b(banner|poster|posters|certificate|certificates|whiteboard|whiteboards|chalked|written|writing|handwritten|label|labels|signage|logo|logos|lettering|numbers)\b/i;
+
+function stripLettered(text) {
+  const clauses = text.split(/\s*;\s*|\s*,\s+/);
+  const kept = clauses.filter((c) => !LETTERED.test(c));
+  const dropped = clauses.filter((c) => LETTERED.test(c));
+  return { text: kept.join(', '), dropped };
+}
+
+const SURFACES_BLANK = 'Every surface in this gym that could carry writing is blank: the chalkboard walls are freshly wiped and completely bare, and nothing in the frame carries a readable mark.';
 
 /* A non-training room has no ring in frame, so the IRON CITY exception cannot
    apply there and the lettering rule is the lock's plain one: zero lettering.
@@ -369,19 +408,26 @@ if (T7_ROOMS.has(room.slug)) {
   );
 }
 for (const line of warnings) console.error(line);
-const dna = keptRows.map(([el, text]) => `${el}: ${text}.`).join(' ');
+const strippedRows = keptRows.map(([el, text]) => {
+  const { text: clean, dropped } = stripLettered(text);
+  return [el, clean, dropped];
+});
+const droppedClauses = strippedRows.flatMap(([el, , dropped]) => dropped.map((d) => `${el}: ${d}`));
+const dna = strippedRows.map(([el, text]) => `${el}: ${text}.`).join(' ');
 /* A training room's prompt is exactly what every plate got before --room
    existed. */
 const PROMPT = room.training
-  ? `${subject}. ${dna} ${gym.forbidden} ${NO_TEXT} ${COMPOSITION}`
-  : `${subject}. ${NOT_THE_FLOOR} ${dna} ${gym.forbidden} ${NO_TEXT_AT_ALL} ${COMPOSITION}`;
+  ? `${subject}. ${dna} ${gym.forbidden} ${NO_TEXT} ${SURFACES_BLANK} ${COMPOSITION}`
+  : `${subject}. ${NOT_THE_FLOOR} ${dna} ${gym.forbidden} ${NO_TEXT_AT_ALL} ${SURFACES_BLANK} ${COMPOSITION}`;
 
 if (flag('dry-run')) {
   console.log(`room: ${room.slug} (${room.name}), ${room.training ? 'a training room' : 'not a training room'} in docs/ROOM-MAP.md`);
   console.log(`DNA rows read from the lock: ${gym.rows.length}`);
   console.log(
     `DNA rows in this prompt: ${keptRows.length}`
-    + (leftOut.length ? ` (left out, not a training room: ${leftOut.join(', ')})` : ''),
+    + (leftOut.length ? ` (left out, not a training room: ${leftOut.join(', ')})` : '')
+    + `; lettered clauses dropped: ${droppedClauses.length}`
+    + (droppedClauses.length ? `\n  - ${droppedClauses.join('\n  - ')}` : ''),
   );
   console.log(`references (${refPaths.length}):\n  ${refPaths.join('\n  ')}`);
   if (warnings.length) console.log(`warnings: ${warnings.length} (printed above, on stderr)`);

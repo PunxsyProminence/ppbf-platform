@@ -110,8 +110,24 @@ describe('make-plate --room', () => {
     for (const row of [...TRAINING_FLOOR_ROWS, ...BUILDING_ROWS]) {
       expect(prompt).toContain(row);
     }
-    expect(prompt).toContain('IRON CITY BREWERY, and only when the ring is in frame');
+    /* The canvas exception. Both sponsor marks are named because both are
+       real: IRON CITY at the centre and ALT NATION beside it, from the same
+       professional fight (lock section 1, owner 2026-09-30). The centre mark
+       is coaching equipment -- a fighter is told to hold their ground by
+       being told to stay on the IRON -- so this assertion is protecting a
+       cue, not a logo. */
+    expect(prompt).toContain('IRON CITY BREWERY at the centre of the canvas and ALT NATION');
+    expect(prompt).toContain('only when the ring canvas is in frame');
     expect(prompt).not.toContain('This room is not the training floor');
+
+    /* A TRAINING ROOM IS NOT EXEMPT FROM THE ZERO-LETTERING LINE. The
+       non-training path got this by dropping Extras wholesale; the training
+       path keeps Extras, because on the floor those objects are the gym, and
+       drops only the clauses that name something lettered. Before that, the
+       prompt asked for a 3rd Infantry Division banner and De La Hoya posters
+       and then said no text, and the model drew the banner -- 33D INF/ANTRY
+       DIVISION, DE LA HOY, chalk over every wall. */
+    expect(prompt).not.toMatch(/fight posters|Infantry Division banner|whiteboards of handwritten|chalked combination numbers|framed coaching certificates/);
   });
 
   it.each(otherRooms.map((slug) => [slug]))('%s gets only the building rows and no lettering exception', (slug) => {
