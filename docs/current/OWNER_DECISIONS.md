@@ -164,6 +164,43 @@ and should not try to.
 
 ---
 
+## OD-2026-09-30-005 -- A lane updates housekeeping BEFORE it acts on a new step, and housekeeping puts that in the instructions it opens a lane with
+
+**Provenance: PRIMARY.** His own free text, unprompted, mid-task.
+**Date:** 2026-09-30. **Governs:** every lane session, and the instructions
+housekeeping issues when it opens one.
+
+### The decision
+
+> before acting on a new step update house keeping, have it add that  to
+> instructions as well when it want to open a new lane
+
+### What that means
+
+1. **Before**, not after. A lane tells housekeeping what it is about to do
+   before it does it, so housekeeping can stop it while stopping is still
+   free. A report filed afterwards is a record; this is a checkpoint.
+2. **Housekeeping writes the rule into the lane.** It is the only session that
+   issues lane instructions, so a rule that lives only here reaches a new lane
+   only if someone remembers to mention it. It belongs in whatever template or
+   checklist a lane is opened from.
+
+### Why it was said when it was
+
+This lane had just been reopened after being told to close, had grown from a
+one-file guard into removing two refusal layers, and had put five decisions to
+the owner in a single sitting -- while housekeeping was holding a release it
+had already been told was ready. The gap between "what a lane is doing" and
+"what housekeeping thinks it is doing" was the widest it had been all day. He
+closed it with a rule rather than a correction.
+
+### The half this entry does NOT settle
+
+The instruction-template change is housekeeping's to make and housekeeping's to
+record; this entry states the requirement, not the wording it adopts. Written
+here by the SHADOW lane because that is where he said it, and offered to
+housekeeping rather than imposed.
+
 ## OD-2026-09-30-004 -- High-risk chat questions get education, not a refusal; acute reports get education plus an act-now line
 
 **Provenance: PRIMARY** for the owner's words and for the options exactly as
