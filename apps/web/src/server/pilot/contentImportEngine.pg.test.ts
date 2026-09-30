@@ -37,6 +37,7 @@ import { MINT } from './contentImport/ids';
 import { type ImportPlan, planImport } from './contentImport/plan';
 import { claimIdsFromChunksCsv, LOADED_RESEARCH_CHUNKS } from './contentImport/referenceSets';
 import { ContentImportRefusal } from './contentImport/refusal';
+import { insertLegacyGoldenRows, LEGACY_GOLDEN_TABLES, legacyGoldenFiles, legacyGoldenRows } from '../../testing/legacyLoaderGolden';
 
 jest.setTimeout(300_000);
 
@@ -283,16 +284,14 @@ async function applyCommitted(organizationId: string, actorAccountId: string, fi
 }
 
 /**
- * The registries as production holds them today: rows with NO history and no
- * import behind them. Production's rows were written by the retired
- * seed-disciplines.mjs / seed-competence-cohorts.mjs, which kept no ledger.
- * Their content equals what the engine's first load writes -- proved against
- * those loaders before they were retired (this suite's "onto rows the OLD
- * loaders wrote" case, and contentImportTemplatesScripts.pg.test.ts's
- * row-by-row comparison) -- so the rows come from a first load, and the
- * history and audit rows it wrote are then removed with triggers off
- * (session_replication_role, this transaction only): the append-only ledger
- * refuses a DELETE otherwise.
+ * Registry rows with NO history and no import behind them, as production's
+ * are: the retired seed-disciplines.mjs / seed-competence-cohorts.mjs kept no
+ * ledger. The rows come from a first load, whose history and audit rows are
+ * then removed with triggers off (session_replication_role, this transaction
+ * only): the append-only ledger refuses a DELETE otherwise. Their stored FORM
+ * is the engine's, not the old loaders' -- the case that needs the old form
+ * ("onto the rows THEY wrote") loads src/testing/legacyLoaderGolden.ts
+ * instead. The cases using this one test history and revision, not reading.
  */
 async function registriesWithoutHistory(organizationId: string, admin: string): Promise<void> {
   await applyCommitted(organizationId, admin, committedFiles());
@@ -473,20 +472,35 @@ describe('who may load content (actor.ts)', () => {
 });
 
 describe('registries: disciplines, competence levels, cohort definitions', () => {
-  it('re-importing the committed files onto rows with no history (production today) finds every item unchanged', async () => {
-    // The canonicaliser guard: stored forms differ from file text ('2.0' is
-    // stored as 2, a blank contact_permitted as 'none', a blank governing_body
-    // as NULL). If the engine read any of that as different content, or needed
-    // a ledger row to call an item unchanged, the first run in production
-    // would "revise" every row it was meant to leave alone.
+  it('re-importing the files the OLD loaders read, onto the rows THEY wrote, finds every item unchanged', async () => {
+    // The canonicaliser guard. Production's registry rows were written by the
+    // retired seed-disciplines.mjs / seed-competence-cohorts.mjs, and a row
+    // nobody revises keeps their stored form for good: the file's '4.0' as 4,
+    // a domain list as comma text, a blank regulatory_basis as ''. If the
+    // engine read any of that as different content, or needed a ledger row to
+    // call an item unchanged, every load would "revise" the rows it was meant
+    // to leave alone. The rows are those loaders' own output, frozen with the
+    // files they read (src/testing/legacyLoaderGolden.ts) -- not the engine's
+    // first load, which would only prove the engine reads its own forms.
     const admin = await createGym('gym_old_loaders');
-    await registriesWithoutHistory('gym_old_loaders', admin);
-    expect(await committedCounts('gym_old_loaders')).toMatchObject({ ledger: 0, audit: 0 });
-    expect(await committedCounts('gym_old_loaders')).toMatchObject(REGISTRY_COUNTS);
+    await insertLegacyGoldenRows(client, LEGACY_GOLDEN_TABLES.registries, { organizationId: 'gym_old_loaders', accountId: admin });
+    const golden = {
+      disciplines: legacyGoldenRows('pilot.disciplines').length,
+      levels: legacyGoldenRows('pilot.competence_levels').length,
+      cohorts: legacyGoldenRows('pilot.cohort_definitions').length,
+    };
+    expect(await committedCounts('gym_old_loaders')).toMatchObject({ ...golden, ledger: 0, audit: 0 });
+    expect(golden.disciplines * golden.levels * golden.cohorts).toBeGreaterThan(0);
 
-    const result = await plan('gym_old_loaders', admin, committedFiles());
+    const result = await plan('gym_old_loaders', admin, legacyGoldenFiles(REGISTRIES));
     expect(result.blocking).toEqual([]);
-    expect(result.totals).toEqual({ new: 0, new_version: 0, unchanged: REGISTRY_ROWS, absent: 0, reject: 0 });
+    expect(result.totals).toEqual({
+      new: 0,
+      new_version: 0,
+      unchanged: golden.disciplines + golden.levels + golden.cohorts,
+      absent: 0,
+      reject: 0,
+    });
   });
 
   it('a first load inserts every row and records each as history v1', async () => {

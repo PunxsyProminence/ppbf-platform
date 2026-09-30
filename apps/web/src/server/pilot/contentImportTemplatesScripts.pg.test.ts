@@ -44,6 +44,7 @@ import { hex14, MINT } from './contentImport/ids';
 import { sessionScriptLineageHeads } from './contentImport/lineage';
 import { type ImportPlan, planImport } from './contentImport/plan';
 import { ContentImportRefusal } from './contentImport/refusal';
+import { insertLegacyGoldenRows, LEGACY_GOLDEN_TABLES, legacyGoldenFiles, legacyGoldenRows } from '../../testing/legacyLoaderGolden';
 
 jest.setTimeout(300_000);
 
@@ -384,6 +385,104 @@ function unitOf(result: ImportPlan, dataset: string, key: string) {
 
 // ---------------------------------------------------------------------------
 
+describe('the rows the OLD loaders wrote, as production holds them', () => {
+  // Production's templates and scripts were written by the retired
+  // seed-workout-templates.mjs and seed-session-scripts.mjs, and a row nobody
+  // revises keeps their stored form for good. These rows are those loaders'
+  // own output, frozen with the files they read
+  // (src/testing/legacyLoaderGolden.ts): the loaders themselves are gone, and
+  // an engine first load would only show the engine reading its own forms.
+  const DATASETS = ['workout-templates', 'session-scripts'] as const;
+  const OLD_TABLES = [...LEGACY_GOLDEN_TABLES.templates, ...LEGACY_GOLDEN_TABLES.scripts];
+  const oldRowCount = (table: string) => legacyGoldenRows(table).length;
+
+  /** Every drill the old rows' template items and script blocks name, as a v1 head: their foreign keys need one. */
+  const oldDrillIds = () =>
+    [
+      ...new Set(
+        [...legacyGoldenRows('pilot.workout_template_items'), ...legacyGoldenRows('pilot.session_script_blocks')]
+          .map((row) => row.drill_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ].sort();
+
+  /** A gym with the old loaders' disciplines and the drills their rows name; `withOldRows` adds their templates and scripts. */
+  async function gymForOldRows(organizationId: string, withOldRows: boolean): Promise<string> {
+    const admin = await createGym(organizationId);
+    const target = { organizationId, accountId: admin };
+    await insertLegacyGoldenRows(client, ['pilot.disciplines'], target);
+    for (const drillId of oldDrillIds()) await insertDrill(organizationId, drillId);
+    if (withOldRows) await insertLegacyGoldenRows(client, OLD_TABLES, target);
+    return admin;
+  }
+
+  it('re-importing the files they read finds every item unchanged and writes nothing', async () => {
+    // The canonicaliser guard: the old loaders stored an item's '8.0' as 8,
+    // 'False' as false and a blank coach_notes as NULL. If the engine read any
+    // of that as different content, a load would "revise" every template and
+    // script it was meant to leave alone.
+    const admin = await gymForOldRows('gym_old_loaders', true);
+    const before = await rowVersions('gym_old_loaders');
+    expect(Object.keys(before)).toHaveLength(OLD_TABLES.reduce((sum, table) => sum + oldRowCount(table), 0));
+    expect(oldRowCount('pilot.workout_template_items')).toBeGreaterThan(0);
+
+    const planned = await plan('gym_old_loaders', admin, legacyGoldenFiles(DATASETS));
+    expect(planned.blocking).toEqual([]);
+    expect(planned.counts['workout-templates']).toEqual({ new: 0, new_version: 0, unchanged: oldRowCount('pilot.workout_templates'), absent: 0, reject: 0 });
+    expect(planned.counts['session-scripts']).toEqual({ new: 0, new_version: 0, unchanged: oldRowCount('pilot.session_scripts'), absent: 0, reject: 0 });
+
+    const result = await applyCommitted('gym_old_loaders', admin, legacyGoldenFiles(DATASETS), planned.planHash);
+    expect(result.importId).toBeNull();
+    expect(await rowVersions('gym_old_loaders')).toEqual(before);
+  });
+
+  it('a first load through the engine writes exactly the rows they wrote, ids included', async () => {
+    // So the engine's WRITTEN form cannot drift from production's either: a
+    // gym loaded after IMP-10 holds rows in the same form as one loaded
+    // before it, and whatever reads these tables meets one form.
+    await gymForOldRows('gym_old_rows', true);
+    const admin = await gymForOldRows('gym_engine_rows', false);
+    const result = await applyCommitted('gym_engine_rows', admin, legacyGoldenFiles(DATASETS));
+    expect(result.plan.counts['workout-templates']).toMatchObject({ new: oldRowCount('pilot.workout_templates') });
+    expect(result.plan.counts['session-scripts']).toMatchObject({ new: oldRowCount('pilot.session_scripts') });
+
+    // Every column the content decides, row by row. Authorship and timestamps
+    // differ by construction and are left out.
+    const snapshot = async (organizationId: string) => {
+      const read = async (sql: string) => (await observer.query(sql, [organizationId])).rows;
+      return {
+        templates: await read(
+          `select template_id, lineage_id, version, supersedes_template_id, superseded_at, name, session_type, difficulty,
+                  age_band, duration_minutes, intent, coach_notes, requires_coach_authorization, active, created_by_role
+             from pilot.workout_templates where organization_id = $1 order by template_id`,
+        ),
+        items: await read(
+          `select item_id, template_id, ordinal, block, drill_id, free_text_drill, scale_level, duration_minutes, rep_count,
+                  contact_level, coach_note
+             from pilot.workout_template_items where organization_id = $1 order by item_id`,
+        ),
+        scripts: await read(
+          `select script_id, lineage_id, version, name, discipline, theme, phase, day_of_week, total_minutes, contact_structure,
+                  target_group, prerequisite_note, reset_protocol, coach_priorities, frequent_phrases, authoring_state, source_document
+             from pilot.session_scripts where organization_id = $1 order by script_id`,
+        ),
+        blocks: await read(
+          `select block_id, script_id, block_order, start_offset_min, end_offset_min, block_label, what_to_say, what_to_explain,
+                  what_to_watch, what_to_fix, block_kind, drill_id, scale_level, contact_level
+             from pilot.session_script_blocks where organization_id = $1 order by block_id`,
+        ),
+        renderings: await read(
+          `select rendering_id, script_id, format, audience_note, body, generated_from_blocks
+             from pilot.session_script_renderings where organization_id = $1 order by rendering_id`,
+        ),
+      };
+    };
+    const engine = await snapshot('gym_engine_rows');
+    expect(engine.items).toHaveLength(oldRowCount('pilot.workout_template_items'));
+    expect(engine).toEqual(await snapshot('gym_old_rows'));
+  });
+});
+
 describe('the committed templates and scripts', () => {
   const committedDrillIds = () => {
     const table = readCsv(committedText(ITEMS_CSV));
@@ -399,14 +498,11 @@ describe('the committed templates and scripts', () => {
   };
 
   it('a first load writes every committed row under its committed id, and loading again writes nothing', async () => {
-    // The ids are the ones production already holds: the retired loaders
-    // wrote them, and the engine's first load must write the same ones, or a
-    // later load would see every item as new. Before the loaders were retired
-    // this case compared the engine's first load with theirs, column by
-    // column, and found them equal (OBSERVED at 40dd25ab); what remains is the
-    // part a later change could break -- the ids -- and the canonicaliser
-    // guard: stored forms ('8.0' as 8, 'False' as false, a blank coach_notes
-    // as NULL, a blank theme as '') read back as unchanged.
+    // The package as committed today, whatever a hand-off has changed since
+    // the old loaders' files were frozen: every row lands under its committed
+    // id (the ids production already holds -- a changed id would make a later
+    // load see the item as new), and a second load plans nothing. Reading the
+    // OLD loaders' stored forms is the describe block above.
     const admin = await createGymWithDisciplines('gym_engine_first');
     for (const drillId of committedDrillIds()) await insertDrill('gym_engine_first', drillId);
     const result = await applyCommitted('gym_engine_first', admin, committedFiles());

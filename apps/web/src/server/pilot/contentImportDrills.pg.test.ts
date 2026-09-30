@@ -40,6 +40,7 @@ import { type ImportPlan, planImport } from './contentImport/plan';
 import { claimIdsFromChunksCsv, LOADED_RESEARCH_CHUNKS } from './contentImport/referenceSets';
 import { ContentImportRefusal } from './contentImport/refusal';
 import type { DatasetName } from './contentImport/types';
+import { insertLegacyGoldenRows, LEGACY_GOLDEN_TABLES, legacyGoldenFiles, legacyGoldenRows } from '../../testing/legacyLoaderGolden';
 
 jest.setTimeout(300_000);
 
@@ -278,14 +279,14 @@ async function prepareGym(organizationId: string): Promise<string> {
 }
 
 /**
- * The drill library as production holds it today. Production's rows were
- * written on 2026-08-24 by the retired seed-drill-library.mjs, whose
- * grounding_claim_ids split on ';' and ',' only, so every '|' list sits in the
- * database as ONE array element. Everything else it wrote equals the engine's
- * first load (proved against that loader before it was retired: this suite's
- * "rows the OLD loaders wrote" cases, OBSERVED passing at d9f8effb), so the
- * rows come from a first load and the '|' lists are then put back the way the
- * old loader stored them.
+ * The WHOLE committed library with production's one known legacy form put
+ * back. Production's rows were written on 2026-08-24 by the retired
+ * seed-drill-library.mjs, whose grounding_claim_ids split on ';' and ',' only,
+ * so every '|' list sits in the database as ONE array element. The rows come
+ * from a first load and the '|' lists are then stored the way that loader
+ * stored them. Every OTHER stored form of that loader is held by the first
+ * case below, on the loader's own frozen output (src/testing/legacyLoaderGolden.ts);
+ * this helper serves the cases that need every committed drill present.
  */
 async function drillsAsProductionHoldsThem(organizationId: string, admin: string): Promise<void> {
   await applyCommitted(organizationId, admin, drillFiles());
@@ -434,10 +435,40 @@ const PRIMARY_ONLY = COMMITTED.library.find(
 // ---------------------------------------------------------------------------
 
 describe('the shipped drill package', () => {
-  it("re-importing it onto the rows as production holds them (the old loader's '|' lists included) finds every drill unchanged and writes nothing", async () => {
-    // The canonicaliser guard. Production's drills were written by the old
-    // loader; if the engine read ANY of its stored forms as different content,
-    // the first run would "revise" every drill it was meant to leave alone.
+  it("re-importing the drills the OLD loader read, onto the rows IT wrote ('|' lists as one element), finds every drill unchanged and writes nothing", async () => {
+    // The canonicaliser guard. Production's drills were written by the retired
+    // seed-drill-library.mjs and seed-drill-secondary-skills.mjs, and a drill
+    // nobody revises keeps their stored form for good. If the engine read ANY
+    // of those forms as different content, a load would "revise" every drill
+    // it was meant to leave alone. The rows are those loaders' own output,
+    // frozen with the files they read (src/testing/legacyLoaderGolden.ts): 13
+    // drills that between them hold every value shape the drill files hold.
+    const admin = await createGym('gym_legacy_drills');
+    const target = { organizationId: 'gym_legacy_drills', accountId: admin };
+    await insertLegacyGoldenRows(client, [...LEGACY_GOLDEN_TABLES.registries, ...LEGACY_GOLDEN_TABLES.drills], target);
+    const oldDrills = legacyGoldenRows('pilot.drill_library');
+    // Production's form is really there: '|' lists stored as ONE element.
+    expect(oldDrills.filter((row) => /^\{[^,]*\|[^,]*\}$/.test(row.grounding_claim_ids ?? '')).length).toBeGreaterThan(0);
+    expect(await committedCounts('gym_legacy_drills')).toMatchObject({
+      drills: oldDrills.length,
+      scale: legacyGoldenRows('pilot.drill_scale_levels').length,
+      stop: legacyGoldenRows('pilot.drill_stop_rules').length,
+      cues: legacyGoldenRows('pilot.drill_cues').length,
+      secondary: legacyGoldenRows('pilot.drill_secondary_skills').length,
+    });
+    const before = await rowVersions('gym_legacy_drills');
+
+    const result = await applyCommitted('gym_legacy_drills', admin, legacyGoldenFiles(['drill-library']));
+    expect(result.plan.blocking).toEqual([]);
+    expect(result.plan.counts['drill-library']).toEqual({ new: 0, new_version: 0, unchanged: oldDrills.length, absent: 0, reject: 0 });
+    expect(result.importId).toBeNull();
+    expect(await rowVersions('gym_legacy_drills')).toEqual(before);
+  });
+
+  it("re-importing the whole committed package onto its first load, production's '|' lists put back, finds every drill unchanged and writes nothing", async () => {
+    // Every committed drill rather than the frozen 13, with the one legacy
+    // form a first load does not write put back by SQL: each '|' list stored
+    // as ONE element, as production's 2026-08-24 rows hold it.
     const admin = await prepareGym('gym_old_drills');
     await drillsAsProductionHoldsThem('gym_old_drills', admin);
     const counts = await committedCounts('gym_old_drills');
