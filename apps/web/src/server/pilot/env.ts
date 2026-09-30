@@ -1,9 +1,25 @@
+import { ServiceUnavailableError, SERVICE_UNAVAILABLE_MESSAGE } from './errors';
+
 export const PILOT_SESSION_COOKIE = 'ppbf_pilot_session';
 
+/**
+ * A required runtime value, or a refusal that says so without saying which.
+ *
+ * This used to throw a plain Error reading "Missing required environment
+ * variable: <NAME>". `jsonError` routes any message beginning with
+ * "Missing" to 400 and returns it verbatim, so a server with no database
+ * configured answered POST /api/pilot/auth/login -- reachable by anyone,
+ * before signing in -- with the name of an infrastructure variable, under a
+ * status that blamed the athlete for a bad request. Neither half was true.
+ *
+ * The name is logged rather than dropped: whoever can act on it is reading
+ * the server's logs, and nobody else has any use for it.
+ */
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value?.trim()) {
-    throw new Error(`Missing required environment variable: ${name}`);
+    console.error('required-environment-unavailable', { missingEnvVar: name });
+    throw new ServiceUnavailableError(SERVICE_UNAVAILABLE_MESSAGE);
   }
   return value;
 }
