@@ -58,7 +58,7 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
   // error string for diagnosis, clearance and prescription questions, and the
   // route turned each into a one-sentence reply with the model never called.
   // The owner reversed that: "well they are supposed to get education not
-  // refusal" (OD-2026-09-30-004).
+  // refusal" (OD-2026-09-30-006).
   //
   // So nothing here asserts that a question is withheld, because there is no
   // longer a return value that can withhold one. What it asserts instead is

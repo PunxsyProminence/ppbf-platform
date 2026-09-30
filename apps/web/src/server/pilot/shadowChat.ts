@@ -54,7 +54,7 @@ export interface HighRiskClassification {
 
 /**
  * How urgent a message is. Says NOTHING about whether it may be answered --
- * every message is answered now (OD-2026-09-30-004).
+ * every message is answered now (OD-2026-09-30-006).
  *
  * - `acute`    someone is reporting a possible emergency about themselves, now
  * - `elevated` high-risk subject matter, answered normally
@@ -311,7 +311,7 @@ export const SHADOW_ACT_NOW_LINE =
  * never grant clearance, and defer the decision to a human. A real answer does
  * all four, and SHADOW_SYSTEM_PROMPT already carries a worked example doing
  * exactly that. The gate was not enforcing the doctrine, it was preventing it
- * (OD-2026-09-30-004: "well they are supposed to get education not refusal").
+ * (OD-2026-09-30-006: "well they are supposed to get education not refusal").
  *
  * So what comes back is how urgent the message is. Nothing here withholds an
  * answer, and there is no longer a return value that can.

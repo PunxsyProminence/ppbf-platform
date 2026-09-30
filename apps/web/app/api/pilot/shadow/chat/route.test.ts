@@ -1232,7 +1232,7 @@ describe('background session types via the job worker', () => {
   // persisted as 'ok' while the synchronous path returned a canned string.
   // Forcing it synchronous made both paths agree on the canned string.
   //
-  // FALLBACK_RESPONSES is deleted (OD-2026-09-30-004) -- it was intercepting
+  // FALLBACK_RESPONSES is deleted (OD-2026-09-30-006) -- it was intercepting
   // the classifier's own `allowed` examples and answering "For concussion
   // concerns, contact your medical team immediately" to "What are the symptoms
   // of a concussion?". Both paths now call the model, so there is nothing left
@@ -1548,7 +1548,7 @@ describe('board summary authority at the request boundary', () => {
     const body = await response.json();
 
     // ANSWERED, not refused. This used to assert a 400 whose entire body was
-    // one sentence; the owner reversed that (OD-2026-09-30-004).
+    // one sentence; the owner reversed that (OD-2026-09-30-006).
     expect(response.status).toBe(200);
     expect(body.error).not.toBe(BOARD_SUMMARY_REFUSAL);
     expect(body.response).toContain('tell a coach');
@@ -1748,7 +1748,7 @@ describe('SHADOW pre-generation safety precedence', () => {
       // ANSWERED. Every row of this matrix used to assert a 400 carrying one
       // sentence. The contract it was defending was only ever "a feature
       // answer is the wrong reply to chest pain" -- which a real answer
-      // satisfies better than a refusal did (OD-2026-09-30-004).
+      // satisfies better than a refusal did (OD-2026-09-30-006).
       expect(response.status).toBe(200);
       expect(body.response).toContain('tell a coach');
       expect(body.requiresHumanReview).toBe(true);
@@ -1950,7 +1950,7 @@ describe('SHADOW pre-generation safety precedence', () => {
       expect(response.status).toBe(200);
     });
 
-    // THE QUOTA COUNTS ROWS, NOT ATTEMPTS (OD-2026-09-30-004, "Refund on
+    // THE QUOTA COUNTS ROWS, NOT ATTEMPTS (OD-2026-09-30-006, "Refund on
     // failure").
     //
     // enforceShadowRateLimit increments BEFORE the write it is bounding, and

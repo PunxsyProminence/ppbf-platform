@@ -120,7 +120,7 @@ export interface ShadowChatResponse {
   error?: string;
 }
 
-// FALLBACK_RESPONSES WAS DELETED (OD-2026-09-30-004).
+// FALLBACK_RESPONSES WAS DELETED (OD-2026-09-30-006).
 //
 // It mapped concussion, weight_cutting, return_to_play and medical_clearance
 // to a canned string and returned it INSTEAD of calling the model. Because it
@@ -606,7 +606,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const message = rawMessage.trim();
 
     // COMPUTED HERE, ABOVE RUNTIME READINESS AND THE GLOBAL LIMITS, because
-    // owner ruling 2026-09-26 (OD-2026-09-30-003) put the safeguarding response ahead of both.
+    // owner ruling 2026-09-26 (OD-2026-09-30-005) put the safeguarding response ahead of both.
     // validateShadowRequest reads only the message -- its role and organization
     // parameters are unused -- so nothing below is needed to decide this, and
     // hoisting it costs no work for the ordinary request.
@@ -626,7 +626,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // Tables used only by best-effort, catch-wrapped writes (the human-review
     // queue, the evidence bundle, the chat audit row) are deliberately omitted
     // so that a partially migrated environment can still serve chat.
-    // GUARDED, NOT MOVED. Owner ruling 2026-09-26 (OD-2026-09-30-003) reverses #972's
+    // GUARDED, NOT MOVED. Owner ruling 2026-09-26 (OD-2026-09-30-005) reverses #972's
     // classification: the safeguarding response now outranks core runtime
     // readiness and the two global abuse limits. It still does NOT outrank
     // authentication, structural validation, or the athlete and conversation
@@ -638,7 +638,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // the same sequence, which is why the readiness suite -- including "fails
     // before touching the rate limiter", which sends "How do I improve
     // footwork?" -- still holds unchanged rather than being inverted.
-    // NARROWED TO ACUTE (OD-2026-09-30-004). This guard previously skipped
+    // NARROWED TO ACUTE (OD-2026-09-30-006). This guard previously skipped
     // readiness and both global limits for EVERY message the classifier
     // rejected, because every one of those was about to become a refusal that
     // needed no model and no quota.
@@ -759,7 +759,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // All that survives is the part that was always useful: putting a human on
     // it. The owner kept this queue at its existing breadth -- every high-risk
     // message, acute or not -- when offered a narrower one
-    // (OD-2026-09-30-004).
+    // (OD-2026-09-30-006).
     const queueHighRiskReview = async (): Promise<void> => {
       // THE QUEUE WRITE IS THROTTLED; THE RESPONSE NEVER IS. The global chat
       // limits used to bound how often one account could cause a row here.
@@ -1325,7 +1325,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const bundleCitationIds = responseValidation.citationIds
       .filter((citationId) => !nonBundleEvidenceIdSet.has(citationId));
     // THE ACT-NOW LINE RIDES ABOVE THE ANSWER, NEVER INSTEAD OF IT
-    // (OD-2026-09-30-004: "Education + act-now line"). Composed at the single
+    // (OD-2026-09-30-006: "Education + act-now line"). Composed at the single
     // point that feeds both the persisted message and the response, so the
     // athlete's transcript and their screen cannot disagree.
     //

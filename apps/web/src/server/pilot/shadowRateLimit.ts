@@ -82,7 +82,7 @@ const RATE_LIMIT_DEFAULTS = {
   // limits now (owner ruling 2026-09-26) and those limits were the only thing
   // bounding that write.
   //
-  // Owner decision, 2026-09-26 (OD-2026-09-30-003): 3 per hour per account. Single digits was his
+  // Owner decision, 2026-09-26 (OD-2026-09-30-005): 3 per hour per account. Single digits was his
   // instruction; this is the number he chose from it.
   //
   // Exceeding it suppresses the QUEUE WRITE ONLY. It never suppresses the
@@ -209,7 +209,7 @@ export async function enforceShadowRateLimit(input: {
  * inserts therefore consumed an account's whole hour while persisting nothing,
  * and the next genuine report that hour was suppressed as exhausted -- the
  * exact outcome the two-failure split exists to prevent, reached by a route it
- * did not cover (OD-2026-09-30-004, decided "Refund on failure").
+ * did not cover (OD-2026-09-30-006, decided "Refund on failure").
  *
  * Best effort by construction, and never throws: it is called from a catch
  * handler, where a second failure has nowhere useful to go.

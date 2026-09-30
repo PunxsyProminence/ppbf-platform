@@ -164,44 +164,7 @@ and should not try to.
 
 ---
 
-## OD-2026-09-30-005 -- A lane updates housekeeping BEFORE it acts on a new step, and housekeeping puts that in the instructions it opens a lane with
-
-**Provenance: PRIMARY.** His own free text, unprompted, mid-task.
-**Date:** 2026-09-30. **Governs:** every lane session, and the instructions
-housekeeping issues when it opens one.
-
-### The decision
-
-> before acting on a new step update house keeping, have it add that  to
-> instructions as well when it want to open a new lane
-
-### What that means
-
-1. **Before**, not after. A lane tells housekeeping what it is about to do
-   before it does it, so housekeeping can stop it while stopping is still
-   free. A report filed afterwards is a record; this is a checkpoint.
-2. **Housekeeping writes the rule into the lane.** It is the only session that
-   issues lane instructions, so a rule that lives only here reaches a new lane
-   only if someone remembers to mention it. It belongs in whatever template or
-   checklist a lane is opened from.
-
-### Why it was said when it was
-
-This lane had just been reopened after being told to close, had grown from a
-one-file guard into removing two refusal layers, and had put five decisions to
-the owner in a single sitting -- while housekeeping was holding a release it
-had already been told was ready. The gap between "what a lane is doing" and
-"what housekeeping thinks it is doing" was the widest it had been all day. He
-closed it with a rule rather than a correction.
-
-### The half this entry does NOT settle
-
-The instruction-template change is housekeeping's to make and housekeeping's to
-record; this entry states the requirement, not the wording it adopts. Written
-here by the SHADOW lane because that is where he said it, and offered to
-housekeeping rather than imposed.
-
-## OD-2026-09-30-004 -- High-risk chat questions get education, not a refusal; acute reports get education plus an act-now line
+## OD-2026-09-30-006 -- High-risk chat questions get education, not a refusal; acute reports get education plus an act-now line
 
 **Provenance: PRIMARY** for the owner's words and for the options exactly as
 they were put to him. The governing sentence is his own free text, not a
@@ -305,9 +268,9 @@ queue keeps its current breadth.
    because it must still be delivered when the model is unavailable.
 3. The classifier is corrected so the acute set actually contains chest pain.
 4. The human-review write continues for **every** high-risk message, unchanged
-   in breadth, and keeps the `safety_review` bound from OD-2026-09-30-003 --
+   in breadth, and keeps the `safety_review` bound from OD-2026-09-30-005 --
    now with the slot refunded when the insert fails.
-5. The guard from OD-2026-09-30-003, which let a refusal past runtime readiness
+5. The guard from OD-2026-09-30-005, which let a refusal past runtime readiness
    and the global limits, narrows to the acute set only. For everything else
    the reasoning inverts: an educational answer needs the model, so it needs
    readiness and it should count against the limits like any other answer.
@@ -337,11 +300,15 @@ enters all credentials.
 - No environment, database or log was read. The platform holds no real athlete
   or user data (owner, 2026-09-29), so no real person was affected either way.
 
-## OD-2026-09-30-003 -- Safety outranks runtime readiness and the global chat limits; the review-queue write gets its own bound
+## OD-2026-09-30-005 -- Safety outranks runtime readiness and the global chat limits; the review-queue write gets its own bound
 
-**Renumbered.** Published first as OD-2026-09-30-001. `main` had independently
-used that id for the release/migration decision, and the collision surfaced on
-merge. This entry, and the three code comments citing it, moved to -003.
+**Renumbered twice.** Published first as OD-2026-09-30-001, then -003, now
+-005. `main` took -001 for the release/migration decision, and overwatch's
+records PR took -003 and -004; both collisions surfaced only when the branches
+met. Ids are allocated by whoever writes first and reconciled at merge, so a
+lane holding an id for any length of time will keep losing it. Recorded rather
+than silently corrected, because the code comments citing this entry moved with
+it and a reader tracing an old id needs to land somewhere.
 
 
 **Provenance: PRIMARY** for the owner's answers and for the options exactly as
