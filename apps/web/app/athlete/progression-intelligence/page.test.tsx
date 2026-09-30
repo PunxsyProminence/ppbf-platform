@@ -563,9 +563,14 @@ describe('W-D4B: opening the drill an assignment was issued against', () => {
         { scale_level: 'C', is_starting_point: false, demand_description: 'Partner counters with a slow hook.', constraint_applied: '', contact_level: 'light_technical', coach_watch_point: 'Does the return survive a counter?' },
       ],
       stop_rules: [
-        { ordinal: 1, condition_text: 'Stop when the hand stops coming home.', scope: 'drill_specific', rule_kind: 'technique_degradation' },
-        { ordinal: 2, condition_text: 'Stop when fatigue breaks decision quality.', scope: 'universal', rule_kind: 'fatigue' },
-        { ordinal: 3, condition_text: 'Re-warm before contact after about twenty minutes idle.', scope: 'universal', rule_kind: 'warmup_decay' },
+        { ordinal: 1, condition_text: 'Stop when the hand stops coming home.', scope: 'drill_specific', rule_kind: 'technique_degradation', origin: 'drill' },
+        { ordinal: 2, condition_text: 'Stop when fatigue breaks decision quality.', scope: 'universal', rule_kind: 'fatigue', origin: 'drill' },
+        { ordinal: 3, condition_text: 'Re-warm before contact after about twenty minutes idle.', scope: 'universal', rule_kind: 'warmup_decay', origin: 'drill' },
+      ],
+      // The gym's stored-once rules (pilot.universal_stop_rules) that apply to
+      // this drill, carried on assigned work as on Learn.
+      universal_stop_rules: [
+        { ordinal: 1, condition_text: 'Stop on any sign of injury.', rule_kind: 'safety', origin: 'universal' },
       ],
     },
   };
@@ -796,8 +801,14 @@ describe('W-D4B: opening the drill an assignment was issued against', () => {
     expect(within(safety).getByText(/Only run this drill with a coach who has approved it/)).toBeTruthy();
     const stopGroup = (heading: string) =>
       [...(within(safety).getByText(heading).nextElementSibling?.querySelectorAll('li') ?? [])].map((li) => li.textContent);
-    expect(stopGroup("This drill's stop rules")).toEqual(['Stop when the hand stops coming home.']);
-    expect(stopGroup('Stop rules for every drill')).toEqual(['Stop when fatigue breaks decision quality.']);
+    // Owner ruling R3: the drill's own rules -- the row labelled
+    // scope='universal' included -- under one heading, and only the gym's
+    // stored-once rule under "for every drill".
+    expect(stopGroup('Stop rules')).toEqual([
+      'Stop when the hand stops coming home.',
+      'Stop when fatigue breaks decision quality.',
+    ]);
+    expect(stopGroup('Stop rules for every drill')).toEqual(['Stop on any sign of injury.']);
     expect(stopGroup('Before contact or maximal effort')).toEqual(['Re-warm before contact after about twenty minutes idle.']);
 
     // The two paragraphs the author wrote come back as two ordered steps.

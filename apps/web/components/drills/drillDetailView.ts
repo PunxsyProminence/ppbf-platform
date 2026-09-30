@@ -19,11 +19,46 @@ export interface DrillScaleView {
   authoringState: string;
 }
 
+/**
+ * One stop rule, with where it came from (owner ruling R3, 2026-09-29).
+ *
+ * origin, NOT the legacy scope label, decides how a rule is presented:
+ *   drill      one of this drill's own rules -- including the five generic
+ *              lines seeded with scope='universal' on every drill, which R3
+ *              says are NOT universal ("every drill is different so the rules
+ *              would vary").
+ *   universal  the gym's stored-once set ("obviously injury of some sort would
+ *              require stoppage universally"), read beside the drill.
+ * The scope label is deliberately not carried into the view, so no renderer can
+ * group by it again.
+ */
 export interface DrillStopRuleView {
   ordinal: number;
   text: string;
-  scope: 'universal' | 'drill_specific';
+  origin: 'drill' | 'universal';
   kind: string;
+}
+
+interface StopRuleSource {
+  ordinal: number;
+  condition_text: string;
+  rule_kind: string;
+}
+
+/**
+ * The drill's own rules first, then the gym's stored-once rules, each in its
+ * own checklist order. `?? []` because a payload from before the stored-once
+ * rules existed has no universal_stop_rules key, and it must still render the
+ * drill's own rules.
+ */
+function stopRuleViews(own: StopRuleSource[] | undefined, universal: StopRuleSource[] | undefined): DrillStopRuleView[] {
+  const toView = (origin: DrillStopRuleView['origin']) => (rule: StopRuleSource): DrillStopRuleView => ({
+    ordinal: rule.ordinal,
+    text: rule.condition_text,
+    origin,
+    kind: rule.rule_kind,
+  });
+  return [...(own ?? []).map(toView('drill')), ...(universal ?? []).map(toView('universal'))];
 }
 
 /** Coach-only decision context. Absent entirely on an athlete view. */
@@ -89,12 +124,7 @@ export function fromAthleteDrillDetail(drill: AthleteDrillDetail): DrillDetailVi
       watchPoint: level.coach_watch_point ?? '',
       authoringState: '',
     })),
-    stopRules: (drill.stop_rules ?? []).map((rule) => ({
-      ordinal: rule.ordinal,
-      text: rule.condition_text,
-      scope: rule.scope,
-      kind: rule.rule_kind,
-    })),
+    stopRules: stopRuleViews(drill.stop_rules, drill.universal_stop_rules),
     coach: null,
   };
 }
@@ -130,12 +160,7 @@ export function fromCoachDrillDetail(drill: DrillWithDetail): DrillDetailView {
       watchPoint: level.coach_watch_point ?? '',
       authoringState: level.authoring_state ?? '',
     })),
-    stopRules: (drill.stop_rules ?? []).map((rule) => ({
-      ordinal: rule.ordinal,
-      text: rule.condition_text,
-      scope: rule.scope,
-      kind: rule.rule_kind,
-    })),
+    stopRules: stopRuleViews(drill.stop_rules, drill.universal_stop_rules),
     coach: {
       discipline: drill.discipline,
       category: drill.category,
