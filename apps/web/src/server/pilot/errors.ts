@@ -90,3 +90,35 @@ export class ConflictError extends PilotError {
     super(409, message, code);
   }
 }
+
+/**
+ * The server cannot serve this request at all, because something it requires
+ * to run is absent. Not the caller's fault and not fixable by sending
+ * different input, which is what separates it from every class above.
+ *
+ * It exists because the condition it names was being reported as a 400 with
+ * the internal detail attached. `requireEnv` throws a plain Error reading
+ * "Missing required environment variable: <NAME>", and `jsonError`'s
+ * compatibility branch routes anything beginning with "Missing" to 400 and
+ * returns the message verbatim -- so a server with no database configured
+ * answered an unauthenticated login with the name of an infrastructure
+ * variable, under a status saying the athlete had typed something wrong.
+ * Both halves came from inferring a contract out of spelling, which is the
+ * failure this whole file exists to end.
+ *
+ * THE MESSAGE STAYS GENERIC, and that is the point rather than politeness.
+ * A PilotError asserts its message was authored for the caller to read, so
+ * anything carried here is disclosed on purpose. The missing variable's name
+ * belongs in the server log, never in the body: whoever can fix it can read
+ * the log, and whoever cannot has no use for it.
+ */
+export class ServiceUnavailableError extends PilotError {
+  constructor(message: string, code?: string) {
+    super(503, message, code);
+  }
+}
+
+/** The one message a caller is given for any missing runtime configuration.
+    Named so a test can pin it without restating it, and so no call site is
+    tempted to write a more "helpful" one. */
+export const SERVICE_UNAVAILABLE_MESSAGE = 'Service temporarily unavailable. Please try again later.';
