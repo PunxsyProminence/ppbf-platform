@@ -585,9 +585,10 @@ export async function POST(request: NextRequest) { // NOSONAR
         // them the same if the email's account changes in between.
         //
         // refuseRoleChange, refuseDeletedLogin and refuseDeactivatedLogin: the
-        // same refusals as that check, held here too, so an account that
-        // became a non-parent, or was deleted or deactivated in between, is
-        // still refused rather than re-roled or reactivated.
+        // same refusals as that check, repeated on provisioning's own read,
+        // so an account that became a non-parent, or was deleted or
+        // deactivated, before that read is still refused rather than re-roled
+        // or reactivated. A change between that read and its upsert is not.
         const provisioned = await createOrUpdateMicrosoftStaffAccount({
           loginEmail: guardian.email,
           organizationId: principal.organizationId,

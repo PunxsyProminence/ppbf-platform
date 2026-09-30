@@ -249,13 +249,17 @@ function deletedGuardianLoginConflict(loginEmail: string): ConflictError {
  * login back on as a side effect. Jason 2026-09-30 (OD-2026-09-30-004 d1, A):
  * intake refuses it, and the admin reactivates the login on purpose. The
  * reactivation named here is the People page's parent invite, which does set it
- * back on (it leaves refuseDeactivatedLogin unset).
+ * back on (it leaves refuseDeactivatedLogin unset). That invite must link the
+ * guardian to an athlete record that exists, so the message also gives the
+ * order for a family whose only child is the one being promoted.
  */
 function deactivatedGuardianLoginConflict(loginEmail: string): ConflictError {
   return new ConflictError(
     `Conflict: ${loginEmail} belongs to a guardian login that was deactivated. Intake does not turn a `
     + 'deactivated login back on. To reactivate it on purpose, add this guardian again on People, '
-    + '"Add Coach, Staff Or Guardian", then promote again.',
+    + '"Add Coach, Staff Or Guardian", linked to one of their children already on the roster, then promote '
+    + 'again. If none is, promote without guardian.account_id first, then add the guardian on People linked '
+    + 'to this child.',
     'DEACTIVATED_GUARDIAN_LOGIN',
   );
 }
@@ -400,10 +404,6 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
       }
     }
 
-    if (params.refuseDeactivatedLogin && !existing.active_flag) {
-      throw deactivatedGuardianLoginConflict(loginEmail);
-    }
-
     // An athlete authenticates by PIN. Converting that row to a Microsoft
     // staff account would clear the PIN and strand the athlete, and would
     // move an athlete-scoped record (athlete_id, session history) onto a
@@ -411,6 +411,12 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     // instead of mutating it as a side effect of an invite.
     if (existing.role === 'athlete' || existing.auth_provider === 'ppbf_local') {
       throw new Error('Forbidden: this email is already used by a PIN-based athlete account');
+    }
+
+    // After the PIN refusal, so a PIN-based login is told what it is rather
+    // than sent to a re-invite that would refuse it.
+    if (params.refuseDeactivatedLogin && !existing.active_flag) {
+      throw deactivatedGuardianLoginConflict(loginEmail);
     }
 
     // Peer protection. Re-inviting an address is how a role gets changed, and
@@ -708,11 +714,10 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
  *    409, and the account is left exactly as it was;
  *  - an existing parent login that was deleted (deleted_at set) -- 409.
  *    Provisioning would reactivate it; see deletedGuardianLoginConflict;
- *  - an existing parent login an admin deactivated (active_flag false) -- 409.
- *    Provisioning would reactivate that too; see
- *    deactivatedGuardianLoginConflict;
  *  - an existing parent account that signs in with a PIN, which provisioning
  *    refuses to convert;
+ *  - an existing parent login an admin deactivated (active_flag false) -- 409.
+ *    Provisioning would reactivate it; see deactivatedGuardianLoginConflict;
  *  - an account_id hint the email's existing login would override.
  *    Provisioning resolves by email first and keeps the login an email already
  *    has, ignoring the hint, so a caller that went on using its own hint --
@@ -765,14 +770,14 @@ export async function assertGuardianLoginProvisionable(params: {
       throw deletedGuardianLoginConflict(loginEmail);
     }
 
-    if (!existing.active_flag) {
-      throw deactivatedGuardianLoginConflict(loginEmail);
-    }
-
     if (existing.auth_provider === 'ppbf_local') {
       throw new Error(
         'Forbidden: this email is already used by a PIN-based account, which cannot be provisioned as a Microsoft login',
       );
+    }
+
+    if (!existing.active_flag) {
+      throw deactivatedGuardianLoginConflict(loginEmail);
     }
 
     if (hint && existing.account_id !== hint) {

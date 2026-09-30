@@ -1313,7 +1313,9 @@ describe('intake guardian login: a deactivated login is refused, not reactivated
   const DEACTIVATED_MESSAGE =
     'Conflict: dana@example.com belongs to a guardian login that was deactivated. Intake does not turn a '
     + 'deactivated login back on. To reactivate it on purpose, add this guardian again on People, '
-    + '"Add Coach, Staff Or Guardian", then promote again.';
+    + '"Add Coach, Staff Or Guardian", linked to one of their children already on the roster, then promote '
+    + 'again. If none is, promote without guardian.account_id first, then add the guardian on People linked '
+    + 'to this child.';
 
   test('the pre-write check refuses a deactivated parent login with 409', async () => {
     mockQueryOne.mockResolvedValueOnce(existingLogin({ deleted_at: null, active_flag: false }));
@@ -1344,6 +1346,16 @@ describe('intake guardian login: a deactivated login is refused, not reactivated
     await expect(refusal).rejects.toMatchObject({ status: 409, code: 'DEACTIVATED_GUARDIAN_LOGIN' });
     await expect(refusal).rejects.toThrow(DEACTIVATED_MESSAGE);
     expect(currentClient.query).not.toHaveBeenCalled();
+  });
+
+  // A PIN-based login is told what it is, not sent to a re-invite that
+  // would refuse it.
+  test('a deactivated PIN-based parent login gets the PIN refusal, not the reactivation message', async () => {
+    mockQueryOne.mockResolvedValueOnce(existingLogin({ auth_provider: 'ppbf_local', active_flag: false }));
+
+    await expect(
+      assertGuardianLoginProvisionable({ loginEmail: 'dana@example.com', organizationId: 'org-1', accountIdHint: 'acct-existing' }),
+    ).rejects.toThrow(/^Forbidden: this email is already used by a PIN-based account/);
   });
 
   // Scope: the invite surfaces are unchanged. Re-inviting is the deliberate

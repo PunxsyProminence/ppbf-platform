@@ -163,7 +163,9 @@ function stubAccounts(accounts: {
     }
     if (sql.includes('lower(login_email) = $1')) return accounts.byEmail?.[key] ?? null;
     if (sql.includes('where account_id = $1')) return accounts.byId?.[key] ?? null;
-    if (sql.includes('athlete_id = $2 and account_id <> $3')) return accounts.byAthlete?.[String(params?.[1])] ?? null;
+    if (sql.includes('where organization_id = $1 and athlete_id = $2')) {
+      return accounts.byAthlete?.[String(params?.[1])] ?? null;
+    }
     return null;
   });
 }
@@ -381,7 +383,9 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     expect(payload.error).toBe(
       'Conflict: guardian@example.org belongs to a guardian login that was deactivated. Intake does not turn a '
       + 'deactivated login back on. To reactivate it on purpose, add this guardian again on People, '
-      + '"Add Coach, Staff Or Guardian", then promote again.',
+      + '"Add Coach, Staff Or Guardian", linked to one of their children already on the roster, then promote '
+      + 'again. If none is, promote without guardian.account_id first, then add the guardian on People linked '
+      + 'to this child.',
     );
     expectNothingWritten();
   });
@@ -785,6 +789,31 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
       'Conflict: athlete record "ath-1" already has a login, account_id "athlete-existing". '
       + 'An athlete record has one login. Leave account_id out to keep that login as it is.',
     );
+    expectNothingWritten();
+  });
+
+  // Reviewer finding: "use a new account_id" led straight into a second
+  // refusal when the deleted login still held this athlete record. Both
+  // namings now get the one message that says what will work.
+  test.each([
+    ['its own deleted login', { 'athlete-old': { organization_id: 'org-real', role: 'athlete', athlete_id: 'ath-1', account_deleted: true } }, 'athlete-old'],
+    ['a new account_id', {}, 'athlete-new'],
+  ])('an athlete record held by a deleted login is refused 409 before anything is written, naming %s', async (_label, byId, accountId) => {
+    stubAccounts({ byId, byAthlete: { 'ath-1': { account_id: 'athlete-old', account_deleted: true } } });
+
+    const response = await POST(athletePromoteRequest({ account_id: accountId }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.code).toBe('ATHLETE_RECORD_HELD_BY_DELETED_LOGIN');
+    expect(payload.error).toBe(
+      'Conflict: athlete record "ath-1" is still held by a login that was deleted. Intake does not restore a '
+      + 'deleted login, and an athlete record takes one login, so intake cannot give this record a new one. If '
+      + 'this is a returning athlete whose old record was removed, promote under a new athlete_id with a new '
+      + "account_id; otherwise the old login's hold on this record needs a database fix.",
+    );
+    // The deleted login's id is not named.
+    expect(payload.error).not.toContain('athlete-old');
     expectNothingWritten();
   });
 

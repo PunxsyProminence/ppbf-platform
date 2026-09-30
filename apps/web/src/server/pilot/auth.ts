@@ -815,19 +815,27 @@ export async function changeOwnPin(accountId: string, currentPin: string, newPin
 }
 
 /**
- * unique (organization_id, athlete_id) on pilot.accounts
- * (infra/azure/pilot_slice_postgres.sql:42), by the name Postgres gives it.
+ * One login per athlete record in an organization, under both names it has:
+ * the base schema's unique (organization_id, athlete_id)
+ * (infra/azure/pilot_slice_postgres.sql:42, named by Postgres), and the index
+ * the multi-organization migration added for databases built before it
+ * (pilot_slice_postgres_multiorg_migration.sql:204). A database can hold both,
+ * and a violation names whichever one refused it.
+ *
  * Naming a second login for an athlete record that already has one met it
  * here, and it reached the admin as "Internal server error" (OD-2026-09-29-002
  * item 4). intake.ts's assertAthleteAccountIdProvisionable refuses that before
  * promotion's first write; this turns the same refusal into a 409 when it is
  * raised in the write instead.
  */
-const ATHLETE_LOGIN_UNIQUE_CONSTRAINT = 'accounts_organization_id_athlete_id_key';
+const ATHLETE_LOGIN_UNIQUE_CONSTRAINTS: readonly string[] = [
+  'accounts_organization_id_athlete_id_key',
+  'uq_pilot_accounts_org_athlete',
+];
 
 function athleteAlreadyHasLoginConflict(error: unknown, athleteId: string): unknown {
   const pgError = error as { code?: string; constraint?: string } | null;
-  if (pgError?.code !== '23505' || pgError.constraint !== ATHLETE_LOGIN_UNIQUE_CONSTRAINT) {
+  if (pgError?.code !== '23505' || !ATHLETE_LOGIN_UNIQUE_CONSTRAINTS.includes(pgError.constraint ?? '')) {
     return error;
   }
   return new ConflictError(

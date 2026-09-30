@@ -343,7 +343,7 @@ describe('e1: a deleted athlete login stays deleted', () => {
         athleteId: 'ATH-E1-WITHDRAWN',
         organizationId: ORG,
       }),
-    ).rejects.toMatchObject({ status: 409, code: 'DELETED_ATHLETE_LOGIN' });
+    ).rejects.toMatchObject({ status: 409, code: 'ATHLETE_RECORD_HELD_BY_DELETED_LOGIN' });
     await expect(
       auth.createOrUpdateAthleteAccount(DELETED_LOGIN, 'ATH-E1-WITHDRAWN', ORG),
     ).rejects.toMatchObject({ status: 409 });
@@ -379,6 +379,41 @@ describe('e1: a deleted athlete login stays deleted', () => {
     await expect(
       intake.assertAthleteRecordNotWithdrawn({ organizationId: ORG, athleteId: 'ATH-E1-ENROLLED' }),
     ).resolves.toBeUndefined();
+  });
+});
+
+// Reviewer finding: account cleanup retires an inactive athlete login
+// (scripts/lib/account-cleanup-plan.mjs, INACTIVE_RESIDUE), so a promoted
+// child who never redeemed an activation code can have a deleted login on a
+// live record. That login still holds the record: every naming is refused
+// with the one message that says so, and nothing is written.
+describe('a live athlete record held by a deleted login', () => {
+  const ATHLETE = 'ATH-HELD';
+  const OLD_LOGIN = 'acct-held-old';
+
+  beforeEach(async () => {
+    await insertAthlete(ATHLETE);
+    await insertAthleteLogin(OLD_LOGIN, ATHLETE, { deleted: true, active: false });
+  });
+
+  test.each([OLD_LOGIN, 'acct-held-new'])('the check refuses naming %s with 409', async (accountId) => {
+    await expect(
+      intake.assertAthleteAccountIdProvisionable({ accountId, athleteId: ATHLETE, organizationId: ORG }),
+    ).rejects.toMatchObject({ status: 409, code: 'ATHLETE_RECORD_HELD_BY_DELETED_LOGIN' });
+  });
+
+  test('the write refuses both namings and writes nothing', async () => {
+    await expect(auth.createOrUpdateAthleteAccount(OLD_LOGIN, ATHLETE, ORG)).rejects.toMatchObject({
+      status: 409,
+      code: 'EXISTING_ATHLETE_ACCOUNT_CONFLICT',
+    });
+    await expect(auth.createOrUpdateAthleteAccount('acct-held-new', ATHLETE, ORG)).rejects.toMatchObject({
+      status: 409,
+      code: 'ATHLETE_ALREADY_HAS_LOGIN',
+    });
+
+    expect(await accountRow('acct-held-new')).toBeNull();
+    expect(await accountRow(OLD_LOGIN)).toMatchObject({ athlete_id: ATHLETE, pin_hash: 'hash-kept', deleted: true });
   });
 });
 

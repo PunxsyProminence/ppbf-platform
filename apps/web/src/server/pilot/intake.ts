@@ -1482,8 +1482,11 @@ export function readinessColumnsForReader(role: PilotRole): string[] {
  *  - a login other than the one this athlete record already has. unique
  *    (organization_id, athlete_id) on pilot.accounts refused it inside the
  *    write, after upsertAthlete had written the athlete record, and the admin
- *    saw "Internal server error" (OD-2026-09-29-002 item 4). The athlete's
- *    existing login counts when it is deleted too: it still holds the record.
+ *    saw "Internal server error" (OD-2026-09-29-002 item 4);
+ *  - any login at all for an athlete record a deleted login still holds. The
+ *    deleted login keeps its athlete_id, so the same constraint refuses every
+ *    new one, and intake does not restore the deleted one. The message says
+ *    so rather than sending the admin from "use a new account_id" into this.
  *
  * Lives here, not in auth.ts: it is an intake provisioning check, and auth.ts
  * is the sign-in surface credentialPolicyDrift.test.ts guards.
@@ -1518,7 +1521,9 @@ export async function assertAthleteAccountIdProvisionable(params: {
       );
     }
 
-    if (isDeletedAccount(existing)) {
+    // A deleted login this athlete record holds is refused below, with the
+    // record: a new account_id would be refused too.
+    if (isDeletedAccount(existing) && existing.athlete_id !== params.athleteId) {
       throw new ConflictError(
         `Conflict: account_id "${params.accountId}" belongs to a login that was deleted. Intake does not restore `
         + 'a deleted login; a re-enrolled athlete gets a new one. Use a new account_id.',
@@ -1535,22 +1540,31 @@ export async function assertAthleteAccountIdProvisionable(params: {
     }
   }
 
-  const otherLogin = await queryOne<{ account_id: string; account_deleted: boolean }>(
+  // The login this athlete record holds, if any: at most one, by the
+  // constraint. The deleted login's id is not named -- it may belong to a
+  // record purged long ago, which no screen shows any more.
+  const heldBy = await queryOne<{ account_id: string; account_deleted: boolean }>(
     `select account_id, ${accountDeletedSql('a')} as account_deleted
      from pilot.accounts a
-     where organization_id = $1 and athlete_id = $2 and account_id <> $3
+     where organization_id = $1 and athlete_id = $2
      limit 1`,
-    [params.organizationId, params.athleteId, params.accountId],
+    [params.organizationId, params.athleteId],
   );
 
-  if (otherLogin) {
+  if (heldBy && isDeletedAccount(heldBy)) {
     throw new ConflictError(
-      isDeletedAccount(otherLogin)
-        ? `Conflict: athlete record "${params.athleteId}" is still held by its deleted login "${otherLogin.account_id}". `
-          + 'Intake does not restore a deleted login, and an athlete record has one login, so intake cannot give '
-          + 'this record a new one.'
-        : `Conflict: athlete record "${params.athleteId}" already has a login, account_id "${otherLogin.account_id}". `
-          + 'An athlete record has one login. Leave account_id out to keep that login as it is.',
+      `Conflict: athlete record "${params.athleteId}" is still held by a login that was deleted. Intake does not `
+      + 'restore a deleted login, and an athlete record takes one login, so intake cannot give this record a new '
+      + 'one. If this is a returning athlete whose old record was removed, promote under a new athlete_id with a '
+      + "new account_id; otherwise the old login's hold on this record needs a database fix.",
+      'ATHLETE_RECORD_HELD_BY_DELETED_LOGIN',
+    );
+  }
+
+  if (heldBy && heldBy.account_id !== params.accountId) {
+    throw new ConflictError(
+      `Conflict: athlete record "${params.athleteId}" already has a login, account_id "${heldBy.account_id}". `
+      + 'An athlete record has one login. Leave account_id out to keep that login as it is.',
       'ATHLETE_ALREADY_HAS_LOGIN',
     );
   }
