@@ -25,6 +25,22 @@ it and does not supersede it privately.
 Real address / building already known to the owner.  
 Working name in DNA: **Iron City** (ring canvas branding: **IRON CITY BREWERY**).
 
+**THE CANVAS CARRIES REAL SPONSOR MARKS, AND THEY ARE NOT DECORATION.**
+`[OWNER 2026-09-30]` Both are sponsors from a **professional fight held on
+this canvas**. **IRON CITY** sits at the **centre**; **ALT NATION** is a
+second sponsor from **the same fight**. Owner, 2026-09-30: *"iron city its
+the center of the canvas, we use it as a way to get the fighters to hold
+there ground stay on the IRON"*, and *"alt nation was another sponsor for
+the same figh on the canvas"*.
+
+The centre mark is **coaching equipment**: the gym tells a fighter to hold
+their ground by telling them to stay on the IRON. So it is not a logo that
+happens to be there and may be cleaned up -- removing it would remove a cue
+coaches actually use. Any future session tempted to strip it as invented
+lettering should read this paragraph first; that nearly happened on
+2026-09-30, when a generated plate produced a garbled "TOR BURKAS BREWERY"
+roundel and the exception itself was about to be proposed for removal.
+
 This is a lived-in, rustic, nonprofit training space — **not** a polished commercial boxing club, not a grey-brick stock gym, not a cinematic set.
 
 ---
@@ -35,7 +51,7 @@ This is a lived-in, rustic, nonprofit training space — **not** a polished comm
 
 | Element | Required character |
 |---------|--------------------|
-| **Ring canvas** | Teal / pale blue-green with a faded **red-and-white circular brewery roundel** printed across it; teal apron skirt. `[CONFIRMED 2026-09-26]` |
+| **Ring canvas** | Teal / pale blue-green with a faded **red-and-white circular brewery roundel** printed across it; teal apron skirt. The roundel is the **IRON CITY** sponsor mark and it sits at the **CENTRE** of the canvas; **ALT NATION**, a second sponsor from the same professional fight, is also on it. `[CONFIRMED 2026-09-26]` `[OWNER 2026-09-30 -- centre placement, second sponsor, coaching use: see section 1]` |
 | **Ring corners** | **Red and blue corner posts**, each with a plain **white pad hanging across the front** of it. Dark ropes lashed to the posts with **red cord**. `[PHOTO 2026-09-26 — new row]` |
 | **Ceiling** | **LOW and PALE**: white-painted plank, and a **white coffered drop ceiling with square recessed light panels**; surface-mounted fluorescent battens below. Rough timber beams where the structure shows. `[PHOTO 2026-09-26 — supersedes "blue foam insulation pads / gray plywood with white X"]` |
 | **Floors** | **PAINTED AND ZONED**, and the single most distinctive thing about the place: **red** at the ring, **blue** with pale tape grid lines on the mat floor, **grey** with white floor markings at the cardio end, **green carpet** in the locker area. `[PHOTO 2026-09-26 — new row; the 2026-08-24 table had no floor row at all]` |
@@ -67,7 +83,7 @@ The Bags row above records that.
 1. Always pass **at least 2–4 of the owner reference photos** into the image model when generating page mockups or new plate concepts. **The photographs live at `C:\Users\jason\PPBF-Gym-Reference\` on Jason's machine** (owner decision 2026-09-26: "where is it at now use it"). Ten frames, named for what they show. They are deliberately NOT committed — faces and minors — and that has not changed.
 2. For a training room, the prompt must name the DNA in section 2 above (other rooms follow `docs/ROOM-MAP.md`; `scripts/make-plate.mjs --room` does this): the brewery-roundel ring with red and blue posts and white pads, honey plank and blackboard-paint walls, the painted red / blue / grey floor zones, the homemade timber and pipe bag frames, flat fluorescent light.
 3. Quiet centre for UI; real gym interest only in outer thirds / edges.
-4. Zero lettering on the plate itself (UI text lives in code), with one exception: the IRON CITY lettering on the ring canvas stays when the ring is in frame. Owner, 2026-09-28: *"no i like that you can leave it"* (OD-2026-09-28-013). No other lettering is allowed.
+4. Zero lettering on the plate itself (UI text lives in code), with one exception: the sponsor lettering **on the ring canvas** stays when the ring is in frame. Owner, 2026-09-28: *"no i like that you can leave it"* (OD-2026-09-28-013). `[OWNER 2026-09-30]` That exception covers **both** canvas sponsors -- **IRON CITY** at the centre and **ALT NATION** -- because both are real marks from the same professional fight, not styling. It does **not** license lettering anywhere else. `[INFERRED, not owner-stated]` It also cannot apply where the ring is out of frame, since there is then no canvas to carry it -- asking for it anyway is what produced an invented brewery roundel on a hanging cloth (2026-09-30). That last sentence is reasoning from the owner facts above, not something the owner said; it is marked so a future session can overturn it without thinking it is overturning him. No other lettering is allowed.
 
 ### Mode B (shipped plates)
 1. Plates are layer-0 only (the wall the room stands in).
