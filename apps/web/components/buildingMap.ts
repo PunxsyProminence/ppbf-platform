@@ -253,7 +253,12 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/calibration/review', label: 'Calibration Review', room: 'office', roles: ['admin'],
     keywords: 'calibration comparison disagreement annotation coaches agreement study adjudication clip review blinding',
     hint: 'Where two coaches disagreed on a study clip, side by side. Read-only, and no score.' },
-  { href: '/admin/platform', label: 'Platform', room: 'office', roles: OPEN,
+  /* NOT OPEN. The page computes `hasPlatformAccess = isMicrosoftSession &&
+     sessionRole === 'platform_owner'` (admin/platform/page.tsx) and shows
+     nothing without it, so OPEN advertised an /admin/* door to every role --
+     athlete and parent included -- that all but one of them bounce off. That is
+     the exact failure this file's header says `roles` exists to prevent. */
+  { href: '/admin/platform', label: 'Platform', room: 'office', roles: ['platform_owner'],
     keywords: 'system settings internals' },
   { href: '/print', label: 'Print', room: 'office', roles: ['athlete', 'parent', 'coach', 'admin', 'platform_owner', 'staff'],
     keywords: 'print roster cards sheets document', hint: 'Print rosters and session cards.' },
@@ -353,7 +358,14 @@ export const BUILDING: readonly Door[] = [
     keywords: 'display floor screen tv broadcast', hint: 'Gym floor display — TV at the front desk.' },
   { href: '/athlete/dashboard', label: 'Athlete Workspace', room: 'floor', roles: ['athlete'],
     keywords: 'my training check-in rpe session athlete' },
-  { href: '/athlete/dashboard/sparring', label: 'Sparring', room: 'floor', roles: OPEN,
+  /* NOT OPEN, and the page says so as a literal: RoleStandaloneView carries
+     allowedRoles={['athlete', 'coach', 'admin']}. OPEN advertised an athlete's
+     sparring log to parents, board members, staff and volunteers. Naming the
+     three real roles also moves this door INSIDE buildingMapDoorGate.test.ts,
+     which skips every OPEN door -- so the fix is checked from here on rather
+     than merely correct today. */
+  { href: '/athlete/dashboard/sparring', label: 'Sparring', room: 'floor',
+    roles: ['athlete', 'coach', 'admin'],
     keywords: 'sparring contact rounds partner' },
   { href: '/athlete/progression-intelligence', label: 'My Progression', room: 'floor',
     roles: ['athlete'], keywords: 'progress load profile improvement' },
