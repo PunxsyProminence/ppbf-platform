@@ -132,6 +132,7 @@
     "test:migrations:waiver-status-census": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/waiverStatusCensus.pg.test.ts --testTimeout=240000",
     "test:migrations:data-retention": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/dataRetentionDeletion.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-deletion-access": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteDeletionRevokesAccess.pg.test.ts --testTimeout=180000",
+    "test:migrations:deletion-scope-b": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/deletionScopeB.pg.test.ts --testTimeout=600000",
     "test:migrations:signin-refuses-deleted": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/signInRefusesDeletedAccount.pg.test.ts --testTimeout=180000",
     "test:migrations:full-schema-fixture": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/fullSchemaFixture.pg.test.ts --testTimeout=600000",
     "test:migrations:guardian-media-consent": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/guardianMediaConsentMigration.pg.test.ts --testTimeout=180000",

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { query } from '@/src/server/pilot/db';
+import { athleteNotDeletedSql } from '@/src/server/pilot/deletedAthletes';
 import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -171,13 +172,17 @@ export async function GET(request: NextRequest) {
         //
         // Written here rather than in a doc because this is where the next
         // audit will look, and it has already been raised once.
+        // deleted_at is null: a deleted athlete's footage is marked deleted
+        // with them (scope B, deletedAthletes.ts), so it leaves this list
+        // too. Unassigned footage is untouched.
         rows = await query<VideoSessionRow>(
           `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
            from pilot.video_sessions
            where organization_id = $1
              ${mediaFilter}
              and (athlete_id is null or athlete_id in (
-               select athlete_id from pilot.athletes where coach_id = $2 and organization_id = $1
+               select athlete_id from pilot.athletes
+                where coach_id = $2 and organization_id = $1 and deleted_at is null
              ))
            order by created_at desc limit $3`,
           [principal.organizationId, principal.accountId, limit],
@@ -194,6 +199,7 @@ export async function GET(request: NextRequest) {
         `select video_session_id, title, notes, file_name, file_size_bytes, mime_type, status, scan_state, athlete_id, uploaded_by_account_id, created_at
          from pilot.video_sessions
          where organization_id = $1 ${mediaFilter} ${athleteFilter}
+           and ${athleteNotDeletedSql('pilot.video_sessions')}
          order by created_at desc limit $2`,
         params,
       );

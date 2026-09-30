@@ -278,6 +278,8 @@ export async function listLeagueRoster(organizationId: string, seasonId: string)
      join pilot.athletes a
        on a.organization_id = r.organization_id and a.athlete_id = r.athlete_id
      where r.organization_id = $1 and r.season_id = $2
+       -- Scope B: a deleted athlete's roster entries are marked deleted with them.
+       and a.deleted_at is null
      order by a.full_name asc`,
     [organizationId, seasonId],
   );

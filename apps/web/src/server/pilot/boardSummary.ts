@@ -187,6 +187,11 @@ export async function getBoardSummary(
        from pilot.athletes
        where organization_id = $1
          and active_flag = true
+         -- Deleting an athlete leaves active_flag alone and writes
+         -- deleted_at; a deleted athlete is not active, and their sessions,
+         -- goals and reviews (every CTE below joins this one) are marked
+         -- deleted with them (scope B).
+         and deleted_at is null
      ),
      recent_sessions as (
        select s.athlete_id, s.completed_flag

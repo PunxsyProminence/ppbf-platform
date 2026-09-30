@@ -48,6 +48,10 @@ export async function loadWallOfNames(input: {
             created_at::text as first_recorded_at
        from pilot.athletes
       where organization_id = $1
+        -- The lineage keeps athletes who stopped training (active_flag), but
+        -- not one the gym deleted: deleting a person takes their name off
+        -- every surface at that moment (scope B).
+        and deleted_at is null
       order by created_at asc, full_name asc
       limit ${WALL_OF_NAMES_MAX + 1}`,
     [input.organizationId],

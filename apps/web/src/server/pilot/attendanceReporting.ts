@@ -1,4 +1,5 @@
 import { query } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 
 // Read-side rollups over pilot.scheduler_attendance -- the attendance store
 // that already exists (schedulerDb.ts writes it, the scheduler route's
@@ -189,6 +190,8 @@ export async function getClassAttendanceRoster(
      where r.organization_id = $1
        and r.class_id = $2
        and r.status = 'registered'
+       -- Scope B: a deleted athlete is marked deleted with their marks.
+       and ath.deleted_at is null
      order by ath.full_name`,
     [organizationId, classId],
   );
@@ -258,6 +261,9 @@ export async function getWeeklyAttendanceTrend(
      where a.organization_id = $1
        and c.start_at >= date_trunc('week', now()) - ($2 * interval '1 week')
        and c.start_at < date_trunc('week', now())
+       -- Scope B, and agreement with getOrganizationAttendanceSummary, which
+       -- already leaves deleted athletes out: their marks are marked deleted.
+       and ${athleteNotDeletedSql('a')}
        and (
          $3::text is null
          or c.coach_account_id = $3
