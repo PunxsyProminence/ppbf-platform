@@ -1497,7 +1497,21 @@ function PeopleConsoleContent() {
                         // one is being invented, the other is being chosen off
                         // a list. Carrying a value across would submit an id
                         // the admin never picked in this mode.
-                        setAthleteId('');
+                        if (option.value === 'new' && rosterCreatedFor) {
+                          // Back to "new" after a record was written but the
+                          // sign-in failed: restore that record's id, so the
+                          // details lock again and the retry links it. The
+                          // fresh suggestion would have moved on to the next
+                          // number, and one press would write a second record
+                          // for the same child.
+                          setAthleteId(rosterCreatedFor);
+                          setAthleteIdTouched(true);
+                        } else {
+                          setAthleteId('');
+                          // Untouched again, so "new" offers the next free id
+                          // rather than an empty box.
+                          setAthleteIdTouched(false);
+                        }
                       }}
                       className="mt-1 accent-[var(--brass-500)]"
                     />

@@ -515,6 +515,21 @@ describe('the add-athlete form', () => {
     expect(screen.getByText(/Still needed before this can be saved/i).textContent).toMatch(/Athlete record ID/);
   });
 
+  // Switching mode empties the box, and used to leave it marked as typed-in,
+  // so coming back to "new" showed an empty box instead of the next free id.
+  test('switching mode after typing an id offers the next free id again', async () => {
+    await openAddAthlete([
+      { athlete_id: 'ath-004', full_name: 'A', account_id: null, account_active: null, has_pin: false, account_updated_at: null },
+    ]);
+
+    fireEvent.change(await screen.findByLabelText(/Athlete record ID/i), { target: { value: 'fighter-12' } });
+    fireEvent.click(screen.getByRole('radio', { name: /Already on the roster/i }));
+    fireEvent.click(screen.getByRole('radio', { name: /New to the gym/i }));
+
+    expect((screen.getByLabelText(/Athlete record ID/i) as HTMLInputElement).value).toBe('ath-005');
+    expect(screen.getByText(/next free one for your gym \(ath-005\)/i)).toBeTruthy();
+  });
+
   /**
    * The duplicate that actually costs something. Two records can never share an
    * id -- the create route is create-only and the primary key refuses it. What
@@ -627,6 +642,61 @@ describe('the add-athlete form', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Add Athlete$/i }));
     expect((screen.getByLabelText(/Athlete record ID/i) as HTMLInputElement).value).toBe('ath-003');
     expect(screen.getByText(/next free one for your gym \(ath-003\)/i)).toBeTruthy();
+  });
+
+  // Switching mode resets the id box. Right after a failed sign-in step that
+  // reset must not hand out the next number, or one press writes a second
+  // record for the child whose record already exists.
+  test('switching mode and back after a failed sign-in step keeps the written record', async () => {
+    const liveRoster: Record<string, unknown>[] = [
+      { athlete_id: 'ath-001', full_name: 'Alex Johnson', account_id: null, account_active: null, has_pin: false, account_updated_at: null },
+    ];
+    const recordPosts: Record<string, unknown>[] = [];
+    const accountPosts: Record<string, unknown>[] = [];
+    global.fetch = fetchMock({
+      members: [guardianMember({ account_id: 'coach-1', login_email: 'coach@example.com', role: 'coach' })],
+      guardianLinks: [],
+      roster: liveRoster,
+      onAthleteRecord: (body) => {
+        recordPosts.push(body);
+        liveRoster.push({ athlete_id: body.athlete_id, full_name: body.full_name, account_id: null, account_active: null, has_pin: false, account_updated_at: null });
+        return { ok: true };
+      },
+      onAthleteAccount: (body) => {
+        accountPosts.push(body);
+        return accountPosts.length === 1
+          ? { ok: false, error: 'Account already exists' }
+          : { ok: true, activation_code: 'JKLM-4567-NPQR', expires_at: '2026-08-26T00:00:00Z' };
+      },
+    }) as never;
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
+
+    expect(((await screen.findByLabelText(/Athlete record ID/i)) as HTMLInputElement).value).toBe('ath-002');
+    fireEvent.change(screen.getByLabelText(/Full name/i), { target: { value: 'Jo Fighter' } });
+    fireEvent.change(screen.getByLabelText(/Date of birth/i), { target: { value: '2012-04-01' } });
+    fireEvent.change(screen.getByLabelText(/Weight class/i), { target: { value: '80 lb' } });
+    fireEvent.change(screen.getByLabelText(/Emergency contact note/i), { target: { value: 'Mum 555-0100' } });
+    fireEvent.change(screen.getByLabelText(/^Coach$/i), { target: { value: 'coach-1' } });
+    fireEvent.change(screen.getByLabelText('Sign-in ID'), { target: { value: 'jo' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Athlete & Get Code' }));
+
+    expect(await screen.findByText(/Account already exists/i)).toBeTruthy();
+    expect(recordPosts).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('radio', { name: /Already on the roster/i }));
+    fireEvent.click(screen.getByRole('radio', { name: /New to the gym/i }));
+
+    // The written record, locked -- not ath-003 and not an empty box.
+    expect((screen.getByLabelText(/Athlete record ID/i) as HTMLInputElement).value).toBe('ath-002');
+    expect(screen.getByText(/Roster record saved, so these details are locked/i)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Sign-in ID'), { target: { value: 'jo-fighter' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Athlete & Get Code' }));
+
+    expect(await screen.findByText('JKLM-4567-NPQR')).toBeTruthy();
+    expect(recordPosts).toHaveLength(1);
+    expect(accountPosts[1]).toEqual({ account_id: 'jo-fighter', athlete_id: 'ath-002' });
   });
 });
 
