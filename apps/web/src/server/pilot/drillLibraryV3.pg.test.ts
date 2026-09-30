@@ -129,6 +129,7 @@ const SECONDARY_RUNNER_PATH = path.resolve(
  * `all` order, through applyStoredOnceRuleSchema below. Like the operational
  * migrations, they are applied only to build the disposable local fixture.
  */
+const VOCABULARY_WIDENING_MIGRATION_FILE = 'pilot_slice_postgres_drill_vocabulary_widening_migration.sql';
 const WORKOUT_TEMPLATES_V2_MIGRATION_FILE = 'pilot_slice_postgres_workout_templates_v2_migration.sql';
 const CONTENT_IMPORT_MIGRATION_FILE = 'pilot_slice_postgres_content_import_migration.sql';
 
@@ -294,13 +295,11 @@ beforeAll(async () => {
 
   // The three are concatenated like operationalDrillSql above: no test here
   // cares about their seams, only that pilot.universal_stop_rules is real.
-  storedOnceRuleSql = [
-    vocabularyWideningSql,
-    ...(await Promise.all([
-      WORKOUT_TEMPLATES_V2_MIGRATION_FILE,
-      CONTENT_IMPORT_MIGRATION_FILE,
-    ].map((file) => fs.readFile(path.join(INFRA_DIR, file), 'utf8')))),
-  ].join('\n');
+  storedOnceRuleSql = (await Promise.all([
+    VOCABULARY_WIDENING_MIGRATION_FILE,
+    WORKOUT_TEMPLATES_V2_MIGRATION_FILE,
+    CONTENT_IMPORT_MIGRATION_FILE,
+  ].map((file) => fs.readFile(path.join(INFRA_DIR, file), 'utf8')))).join('\n');
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
   applyMigrationTransaction = runnerModule.applyMigrationTransaction as (
