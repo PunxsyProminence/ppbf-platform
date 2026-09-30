@@ -51,6 +51,7 @@ import {
 } from '@/src/server/pilot/shadowConversations';
 import {
   enforceShadowRateLimit,
+  refundShadowRateLimit,
   resolveShadowRateLimit,
   shadowRateLimitMessage,
   ShadowRateLimitExceeded,
@@ -119,13 +120,23 @@ export interface ShadowChatResponse {
   error?: string;
 }
 
-// Fallback responses for critical topics
-const FALLBACK_RESPONSES: Record<string, string> = {
-  concussion: 'For concussion concerns, contact your medical team immediately. SHADOW can help you understand concussion recovery protocols and organizational best practices.',
-  weight_cutting: 'Rapid weight loss carries significant health risks. Consult with your medical team and sports nutritionist. SHADOW can provide information on safe weight management practices.',
-  return_to_play: 'Return-to-play decisions require medical professional evaluation. SHADOW can help you understand RTP protocols and evidence-based recovery frameworks.',
-  medical_clearance: 'Medical clearance decisions are made by qualified medical professionals. SHADOW can help you understand what clearance evaluations typically include.',
-};
+// FALLBACK_RESPONSES WAS DELETED (OD-2026-09-30-004).
+//
+// It mapped concussion, weight_cutting, return_to_play and medical_clearance
+// to a canned string and returned it INSTEAD of calling the model. Because it
+// keyed on a classification that survives validation, the requests it actually
+// caught were the EDUCATIONAL ones -- the classifier's own `allowed` examples.
+// Verified against the real classifier: "What is a concussion?", "What are the
+// symptoms of a concussion?", "How does the body recover from concussion?",
+// "What is the return-to-play protocol?", "What is required for medical
+// clearance?" and "What are the risks of rapid weight loss?" all passed
+// validation and were then answered with "For concussion concerns, contact
+// your medical team immediately."
+//
+// The code kept a list of questions it declared allowed and refused exactly
+// those. Each string even advertised the education it was replacing. The model
+// answers them now, under doctrine items 1-3, which forbid diagnosing,
+// prescribing and granting clearance -- and have never said refuse.
 
 // Handoff banner text lives in shadowHandoff.ts so the background job
 // processor resolves the identical banner this route resolves.
@@ -330,7 +341,6 @@ interface LlmRouteResult {
 interface LlmRouteContext {
   sessionType: import('@/src/server/pilot/shadowRouter').ShadowSessionType;
   effectiveTier: import('@/src/server/pilot/shadowClassifier').ShadowTier;
-  highRiskClassification: string | undefined;
   userProfile: import('@/src/server/pilot/shadowUserProfile').ShadowUserProfileRow;
   tierResult: import('@/src/server/pilot/shadowProfiling').ProfileTierResult;
   contextOutput: import('@/src/server/pilot/shadowContextBuilder').ShadowContextOutput;
@@ -345,7 +355,7 @@ interface LlmRouteContext {
 }
 
 async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
-  const { sessionType, highRiskClassification,
+  const { sessionType,
     userProfile, tierResult, contextOutput, classification,
     message, userId, organizationId, userRole, athleteId, unlockState,
     conversationHistory } = ctx;
@@ -358,14 +368,6 @@ async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
 
 ## EVIDENCE BOUNDARY
 Only describe a claim as supported, proven, or evidence-based when verified evidence for that claim is present in the authorized request context. Never invent citations, case counts, confidence values, or outcomes. When verified evidence is absent, label the claim RESEARCH NEEDED.`;
-  if (highRiskClassification && highRiskClassification in FALLBACK_RESPONSES) {
-    return {
-      llmResponse: FALLBACK_RESPONSES[highRiskClassification],
-      resolvedAsync: false,
-      state: 'filtered',
-    };
-  }
-
   // Both personalization paths -- this prompt fragment and the request context
   // spliced in below -- now read ONE decision. They did not: this fragment was
   // gated and `contextOutput.context` was not, so locking the feature stopped
@@ -636,7 +638,18 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // the same sequence, which is why the readiness suite -- including "fails
     // before touching the rate limiter", which sends "How do I improve
     // footwork?" -- still holds unchanged rather than being inverted.
-    if (requestValidation.valid) {
+    // NARROWED TO ACUTE (OD-2026-09-30-004). This guard previously skipped
+    // readiness and both global limits for EVERY message the classifier
+    // rejected, because every one of those was about to become a refusal that
+    // needed no model and no quota.
+    //
+    // They are answers now. An answer needs the worker up and should cost the
+    // same quota as any other answer, so the reasoning inverts for all of them
+    // but one: an acute report still carries a canned act-now line that must
+    // arrive when the database is unmigrated and the provider is down, which is
+    // exactly when these gates refuse. So acute skips them and nothing else
+    // does. If generation then fails, the degraded path still carries the line.
+    if (requestValidation.acuity !== 'acute') {
       await assertShadowRuntimeReadiness({
         requiredTables: [
           'shadow_rate_limit_buckets',
@@ -675,11 +688,18 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
 
     // Step 1: Classify request + route via The Corner
     const classification = classifyRequest(message, userRole as PilotRole, sanitizedTier);
-    const sessionType = resolveSessionType({
+    const routedSessionType = resolveSessionType({
       requestedSessionType,
       effectiveTier: classification.tier,
       role: userRole as PilotRole,
     });
+    // An acute report is answered synchronously on the quick path whatever
+    // mode was requested. The deep modes can queue for a worker, refuse for an
+    // allowance, or depend on a background job the athlete would have to come
+    // back for -- none of which is an acceptable reply to someone reporting
+    // symptoms right now. This is one line rather than a condition on each of
+    // those branches because the per-branch version was forgotten three times.
+    const sessionType = requestValidation.acuity === 'acute' ? 'quick_round' : routedSessionType;
     // Audit F1. Three things must agree: the model that runs (chosen from
     // sessionType), the context depth built for it, and the tier badge shown
     // to the user (both taken from the tier). An explicit sessionType override
@@ -729,9 +749,18 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // replaced. If a second call site ever appears here again, the precedence
     // contract has been reintroduced as a per-branch reminder, which is the
     // thing that decayed three times.
-    const respondWithSafetyBoundary = async (): Promise<NextResponse<ShadowChatResponse>> => {
-      const messageId = `msg_${Date.now()}`;
-
+    // WAS respondWithSafetyBoundary, WHICH REFUSED. It returned a 400 whose
+    // entire body was requestValidation.error -- one sentence, model never
+    // called. A sore shoulder received "Personal pain, injury, and treatment
+    // questions require evaluation by a qualified medical professional. SHADOW
+    // can only provide general educational information," which announces an
+    // education it then declines to give.
+    //
+    // All that survives is the part that was always useful: putting a human on
+    // it. The owner kept this queue at its existing breadth -- every high-risk
+    // message, acute or not -- when offered a narrower one
+    // (OD-2026-09-30-004).
+    const queueHighRiskReview = async (): Promise<void> => {
       // THE QUEUE WRITE IS THROTTLED; THE RESPONSE NEVER IS. The global chat
       // limits used to bound how often one account could cause a row here.
       // They no longer run before this point, so this bucket replaces exactly
@@ -766,50 +795,66 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         }
       }
 
-      // requiresHumanReview stays true below whether or not this row is
-      // written. It means the situation needs a human, not that a row exists.
+      // requiresHumanReview stays true on the response whether or not this row
+      // is written. It means the situation needs a human, not that a row
+      // exists.
       if (writeReview) {
-      await queueHumanReview({
-        organizationId,
-        accountId: userId,
-        conversationId: requestedConversationId,
-        category: requestValidation.topic ?? 'safety_boundary',
-        severity: ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom']
-          .includes(requestValidation.classification ?? '')
-          ? 'critical'
-          : 'high',
-        summary: 'A SHADOW chat request was withheld by the pre-generation safety boundary.',
-        metadata: {
-          sessionType,
-          athleteScoped: Boolean(athleteId),
-          validationClassification: requestValidation.classification ?? null,
-        },
-      }).catch(() => {
-        console.error('SHADOW human-review queue write failed');
-      });
+        try {
+          await queueHumanReview({
+            organizationId,
+            accountId: userId,
+            conversationId: requestedConversationId,
+            category: requestValidation.topic ?? 'safety_boundary',
+            severity: ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom']
+              .includes(requestValidation.classification ?? '')
+              ? 'critical'
+              : 'high',
+            // The old summary read "withheld by the pre-generation safety
+            // boundary". Nothing is withheld now, and a reviewer opening a
+            // queue of rows that all claim a withholding reads a fiction.
+            summary: 'A high-risk SHADOW chat request was answered and flagged for human review.',
+            metadata: {
+              // The type the athlete ASKED for, not the one an acute report is
+              // coerced onto. Recording 'quick_round' for a request that said
+              // 'board_summary' tells the reviewer what the server did instead
+              // of what the person did, which is the less useful of the two.
+              sessionType: routedSessionType,
+              athleteScoped: Boolean(athleteId),
+              validationClassification: requestValidation.classification ?? null,
+            },
+          });
+        } catch {
+          // Best effort by design: a failed review row must not also cost the
+          // athlete their answer.
+          console.error('SHADOW human-review queue write failed');
+          try {
+            // AWAITED, not fired and forgotten. The slot has to be back before
+            // the next request can consume it, and a floating promise here
+            // would also miss a synchronous throw -- `void f().catch()` only
+            // attaches a handler if f() actually returned a promise, so a
+            // throw before the first await escapes into the request and
+            // answers a 500 to the person reporting symptoms.
+            await refundShadowRateLimit({
+              organizationId,
+              accountId: userId,
+              ...resolveShadowRateLimit('safety_review'),
+            });
+          } catch {
+            console.error('SHADOW safety_review refund failed after a failed queue write');
+          }
+        }
       }
-      return NextResponse.json(
-        {
-          success: false,
-          state: 'filtered',
-          response: requestValidation.error || 'Request validation failed',
-          messageId,
-          createdAt: new Date().toISOString(),
-          filtered: true,
-          requiresHumanReview: true,
-          highRiskTopic: requestValidation.topic,
-          evidenceTier: 'RESEARCH_NEEDED',
-          handoff: resolveHandoff({ requiresHumanReview: true, topic: requestValidation.topic }),
-          tier: effectiveTier,
-          complexity: classification.complexity,
-          error: requestValidation.error,
-        },
-        { status: 400 },
-      );
     };
 
-    const boardSummaryRequested = sessionType === 'board_summary'
-      || requestedSessionType === 'board_summary';
+    // An acute report is answered on the plain synchronous path whatever mode
+    // was asked for. Not a safety flourish: the branches below refuse by
+    // FEATURE -- board summaries are for admins, this background mode is not
+    // configured, you have spent your Heavy Bag allowance -- and a feature
+    // answer is the wrong reply to someone reporting chest pain. Routing round
+    // them is structural, so a refusal added below is behind it by
+    // construction, which a per-branch rule failed to be three times.
+    const boardSummaryRequested = requestValidation.acuity !== 'acute'
+      && (sessionType === 'board_summary' || requestedSessionType === 'board_summary');
 
     // ===================================================================
     // SAFETY CHOKEPOINT
@@ -848,8 +893,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // once with a benign message to prove the branch really fires and once with
     // an urgent one to prove this line beats it.
     // ===================================================================
-    if (!requestValidation.valid) {
-      return respondWithSafetyBoundary();
+    // The chokepoint no longer REFUSES here; it records that a human should
+    // look, and falls through to a real answer. Everything below is still a
+    // capability or cost refusal, and an acute report still must not receive
+    // one -- that is handled by routing it to the plain synchronous path above
+    // rather than by returning early here.
+    if (requestValidation.acuity !== 'routine') {
+      await queueHighRiskReview();
     }
 
     if (boardSummaryRequested && !BOARD_SUMMARY_ROLES.has(userRole as PilotRole)) {
@@ -1091,10 +1141,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // and persisted as 'ok' while the same question answered synchronously
     // got the safe fallback. Falling through to the synchronous path gives
     // those requests the identical interception, banner, and review queueing.
-    const interceptableHighRisk = Boolean(
-      requestValidation.classification && requestValidation.classification in FALLBACK_RESPONSES,
-    );
-    if (sessionType === 'heavy_bag' && preferAsync && !interceptableHighRisk && isShadowWorkerEnabled()) {
+    // The !interceptableHighRisk term went with FALLBACK_RESPONSES. It existed
+    // so a concussion-class question could not be generated in the background
+    // and persisted as 'ok' while the same question answered synchronously got
+    // the canned string -- a divergence that only existed because the canned
+    // string existed. Both paths now call the model, so there is nothing left
+    // for the two to disagree about.
+    if (sessionType === 'heavy_bag' && preferAsync && isShadowWorkerEnabled()) {
       await assertShadowRuntimeReadiness({ requiredTables: ['shadow_jobs'] });
       const queuedConversationId = await resolveConversation({
         actor: principal,
@@ -1204,7 +1257,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // Step 6: Route to correct model via The Corner
     const { llmResponse, resolvedAsync, asyncJobId, state: providerState, modelUsed } = await routeLlmCall({
       sessionType, effectiveTier,
-      highRiskClassification: requestValidation.classification ?? undefined,
       userProfile, tierResult, contextOutput: authorizedContextOutput, classification,
       message, userId, organizationId, userRole, athleteId, unlockState, conversationHistory,
     });
@@ -1272,7 +1324,18 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const nonBundleEvidenceIdSet = new Set([...platformEvidenceIds, ...contextEvidenceIds]);
     const bundleCitationIds = responseValidation.citationIds
       .filter((citationId) => !nonBundleEvidenceIdSet.has(citationId));
-    const finalResponse = responseValidation.message;
+    // THE ACT-NOW LINE RIDES ABOVE THE ANSWER, NEVER INSTEAD OF IT
+    // (OD-2026-09-30-004: "Education + act-now line"). Composed at the single
+    // point that feeds both the persisted message and the response, so the
+    // athlete's transcript and their screen cannot disagree.
+    //
+    // This is also the reason the line is canned. When generation degraded,
+    // responseValidation.message is DEGRADED_RESPONSE -- so an acute report
+    // still reads "stop and tell a coach" above "SHADOW is temporarily
+    // unavailable", which is the case the whole arrangement exists for.
+    const finalResponse = requestValidation.acuity === 'acute' && requestValidation.actNow
+      ? `${requestValidation.actNow}\n\n${responseValidation.message}`
+      : responseValidation.message;
     const citations = publicEvidenceCitations(evidenceBundle, responseValidation.citationIds);
     // `libraryEmpty`, not `unsupportedAnswer`: an unsourced answer is now served,
     // so it is a real answer ('ok') carrying the RESEARCH_NEEDED tier. Forcing
@@ -1315,7 +1378,17 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
           })),
       ),
     });
-    const persistedRequiresHumanReview = responseValidation.requiresHumanReview || state === 'filtered';
+    // A high-risk REQUEST now counts, not only a filtered response.
+    //
+    // This used to be implied rather than stated: every high-risk request
+    // ended at the safety boundary, which hardcoded `requiresHumanReview:
+    // true`. Those requests are answered on this path now, so without the
+    // third term an acute report that generated cleanly would return
+    // `requiresHumanReview: false` while a review row for it had just been
+    // written -- the banner and the queue disagreeing about the same request.
+    const persistedRequiresHumanReview = responseValidation.requiresHumanReview
+      || state === 'filtered'
+      || requestValidation.acuity !== 'routine';
     const persistedHandoff = resolveHandoff({
       requiresHumanReview: persistedRequiresHumanReview,
       // The response's own topic wins. A benign question can still draw an

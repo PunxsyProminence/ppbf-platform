@@ -15,7 +15,7 @@ import {
   queueHumanReview,
   resolveConversation,
 } from '@/src/server/pilot/shadowConversations';
-import { enforceShadowRateLimit, ShadowRateLimitExceeded } from '@/src/server/pilot/shadowRateLimit';
+import { enforceShadowRateLimit, refundShadowRateLimit, ShadowRateLimitExceeded } from '@/src/server/pilot/shadowRateLimit';
 import { classifyRequest } from '@/src/server/pilot/shadowClassifier';
 import { executeHeavyBagAsync, executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
 import { isShadowWorkerEnabled } from '@/src/server/pilot/shadowJobWorker';
@@ -142,7 +142,7 @@ jest.mock('@/src/server/pilot/shadowConversations', () => ({
 // actually applies -- a hand-written stub here would let the two drift apart.
 jest.mock('@/src/server/pilot/shadowRateLimit', () => {
   const actual = jest.requireActual('@/src/server/pilot/shadowRateLimit');
-  return { ...actual, enforceShadowRateLimit: jest.fn() };
+  return { ...actual, enforceShadowRateLimit: jest.fn(), refundShadowRateLimit: jest.fn() };
 });
 
 // The rollup's two leaf data sources. omegaPlatformContext itself is left REAL
@@ -206,6 +206,7 @@ const mockAppendUserMessage = jest.mocked(appendUserMessage);
 const mockLoadConversationMessages = jest.mocked(loadConversationMessages);
 const mockQueueHumanReview = jest.mocked(queueHumanReview);
 const mockEnforceRateLimit = jest.mocked(enforceShadowRateLimit);
+const mockRefundRateLimit = jest.mocked(refundShadowRateLimit);
 const mockClassifyRequest = jest.mocked(classifyRequest);
 const mockExecuteHeavyBagSync = jest.mocked(executeHeavyBagSync);
 const mockExecuteHeavyBagAsync = jest.mocked(executeHeavyBagAsync);
@@ -1221,7 +1222,23 @@ describe('background session types via the job worker', () => {
       && Array.isArray(params) && params.includes('<state:queued>'))).toBe(true);
   });
 
-  test('background Heavy Bag: an educationally-framed high-risk question never queues', async () => {
+  // THE DIVERGENCE THIS TEST GUARDED NO LONGER EXISTS, so the test asserts
+  // its absence instead of its workaround.
+  //
+  // It used to require that an educationally-framed high-risk question never
+  // queue. The reason was real: FALLBACK_RESPONSES intercepted that
+  // classification inside routeLlmCall, which the queue branch returned
+  // before, so the SAME question was answered by the background model and
+  // persisted as 'ok' while the synchronous path returned a canned string.
+  // Forcing it synchronous made both paths agree on the canned string.
+  //
+  // FALLBACK_RESPONSES is deleted (OD-2026-09-30-004) -- it was intercepting
+  // the classifier's own `allowed` examples and answering "For concussion
+  // concerns, contact your medical team immediately" to "What are the symptoms
+  // of a concussion?". Both paths now call the model, so there is nothing left
+  // for them to disagree about, and an educational question queues like any
+  // other Heavy Bag question.
+  test('background Heavy Bag: an educational high-risk question queues like any other', async () => {
     mockIsShadowWorkerEnabled.mockReturnValue(true);
 
     const response = await POST(postRequest({
@@ -1231,19 +1248,14 @@ describe('background session types via the job worker', () => {
     }));
     const payload = await response.json();
 
-    // Educational framing passes request validation WITH a high-risk
-    // classification, and the canned-fallback interception for that
-    // classification lives inside routeLlmCall -- which the queue branch
-    // returned before. Queueing handed the question to the background model
-    // and persisted a generated answer as 'ok'; the same question asked
-    // synchronously got the safe fallback. High-risk classifications must
-    // fall through to the synchronous path.
     expect(response.status).toBe(200);
-    expect(mockExecuteHeavyBagAsync).not.toHaveBeenCalled();
-    expect(payload.async).toBe(false);
-    expect(payload.state).toBe('filtered');
-    expect(payload.response).toContain('contact your medical team');
-    expect(payload.handoff).toBeTruthy();
+    expect(mockExecuteHeavyBagAsync).toHaveBeenCalled();
+    expect(payload.async).toBe(true);
+
+    // THE REGRESSION GUARD. Not "it queued" -- that alone would pass if the
+    // canned string came back from the worker. The question must not be met
+    // with the string that used to replace its answer.
+    expect(String(payload.response ?? '')).not.toContain('contact your medical team immediately');
   });
 
   test('background Heavy Bag: preferAsync without the worker stays synchronous', async () => {
@@ -1535,27 +1547,28 @@ describe('board summary authority at the request boundary', () => {
 
     const body = await response.json();
 
-    // The safety boundary owns this request outright.
-    expect(response.status).toBe(400);
+    // ANSWERED, not refused. This used to assert a 400 whose entire body was
+    // one sentence; the owner reversed that (OD-2026-09-30-004).
+    expect(response.status).toBe(200);
     expect(body.error).not.toBe(BOARD_SUMMARY_REFUSAL);
-    expect(body.state).toBe('filtered');
+    expect(body.response).toContain('tell a coach');
     expect(body.requiresHumanReview).toBe(true);
     expect(body.highRiskTopic).toBe('chest_pain');
 
-    // Escalated at the severity the REAL classifier earns, not the one I
-    // assumed: validateShadowRequest classifies this as
-    // 'personal_health_concern', which is 'high' rather than 'critical' -- the
-    // four critical classifications are chest_pain, fainting,
-    // loss_of_consciousness and urgent_personal_symptom as CLASSIFICATIONS, and
-    // 'chest_pain' here is the TOPIC. Pinning the real values so a change to
-    // either mapping is visible.
+    // SEVERITY MOVED, AND THAT IS THE FIX. This asserted 'high' with
+    // classification 'personal_health_concern', and the comment above it
+    // explained that as the real mapping. It was the real mapping, and it was
+    // wrong: the personal-health branch matched the bare word "pain" and
+    // returned before the topic was consulted, so "I have chest pain right
+    // now" was graded exactly like "my shoulder is sore". The test recorded
+    // the defect faithfully and asserted it forever.
     expect(mockQueueHumanReview).toHaveBeenCalledWith(
       expect.objectContaining({
         category: 'chest_pain',
-        severity: 'high',
+        severity: 'critical',
         metadata: expect.objectContaining({
           sessionType: 'board_summary',
-          validationClassification: 'personal_health_concern',
+          validationClassification: 'chest_pain',
         }),
       }),
     );
@@ -1569,7 +1582,12 @@ describe('board summary authority at the request boundary', () => {
     expect(jest.mocked(assertShadowRuntimeReadiness)).not.toHaveBeenCalledWith(
       expect.objectContaining({ requiredTables: ['shadow_jobs'] }),
     );
-    expect(fetchSpy).not.toHaveBeenCalled();
+
+    // AND GENERATION RAN. The act-now line rides above an answer rather than
+    // replacing one, so without this the test would still pass on a refusal
+    // that merely happened to contain the phrase -- which is precisely what it
+    // used to assert.
+    expect(fetchSpy).toHaveBeenCalled();
   });
 
   // Coach keeps every other manual override. This slice narrowed one session
@@ -1718,7 +1736,7 @@ describe('SHADOW pre-generation safety precedence', () => {
       row.benign(await response.json(), response.status);
     });
 
-    it('an urgent symptom beats it', async () => {
+    it('an urgent symptom is ANSWERED, and the feature refusal never pre-empts it', async () => {
       const fetchSpy = arrange(row);
 
       const response = await POST(postRequest({
@@ -1727,13 +1745,16 @@ describe('SHADOW pre-generation safety precedence', () => {
       }));
       const body = await response.json();
 
-      // The safety boundary owns the request.
-      expect(response.status).toBe(400);
-      expect(body.state).toBe('filtered');
+      // ANSWERED. Every row of this matrix used to assert a 400 carrying one
+      // sentence. The contract it was defending was only ever "a feature
+      // answer is the wrong reply to chest pain" -- which a real answer
+      // satisfies better than a refusal did (OD-2026-09-30-004).
+      expect(response.status).toBe(200);
+      expect(body.response).toContain('tell a coach');
       expect(body.requiresHumanReview).toBe(true);
       expect(body.highRiskTopic).toBe('chest_pain');
       expect(mockQueueHumanReview).toHaveBeenCalledWith(
-        expect.objectContaining({ category: 'chest_pain', severity: 'high' }),
+        expect.objectContaining({ category: 'chest_pain', severity: 'critical' }),
       );
 
       // And the branch under test did NOT get to answer instead.
@@ -1742,11 +1763,16 @@ describe('SHADOW pre-generation safety precedence', () => {
       expect(body.error).not.toBe('Background worker unavailable.');
       expect(body.error).not.toBe('Rate limit exceeded.');
 
-      // Nor did anything downstream of it run: no jobs-table probe, no model.
+      // No background job: an acute report is routed to the plain synchronous
+      // path whatever mode was asked for, because a job the athlete has to
+      // come back for is not an answer to symptoms happening now.
       expect(jest.mocked(assertShadowRuntimeReadiness)).not.toHaveBeenCalledWith(
         expect.objectContaining({ requiredTables: ['shadow_jobs'] }),
       );
-      expect(fetchSpy).not.toHaveBeenCalled();
+
+      // THE MODEL RAN. This assertion is inverted from what it was, and it is
+      // the one that distinguishes "answered" from "refused in nicer words".
+      expect(fetchSpy).toHaveBeenCalled();
     });
   });
 
@@ -1803,11 +1829,16 @@ describe('SHADOW pre-generation safety precedence', () => {
       const response = await POST(postRequest({ message: URGENT_MESSAGE }));
       const body = await response.json();
 
-      expect(response.status).toBe(400);
-      expect(body.state).toBe('filtered');
+      expect(response.status).toBe(200);
+      expect(body.response).toContain('tell a coach');
       expect(body.requiresHumanReview).toBe(true);
       // Not merely "did not 503" -- the readiness probe must not have been
       // consulted at all, because consulting it is what used to 503.
+      //
+      // Generation will then fail, because an unmigrated deployment is not a
+      // healthy one. That is the arrangement working: the act-now line is
+      // canned so it survives exactly this, and it arrives above whatever the
+      // degraded path produced.
       expect(readiness).not.toHaveBeenCalled();
     });
 
@@ -1821,8 +1852,8 @@ describe('SHADOW pre-generation safety precedence', () => {
       const response = await POST(postRequest({ message: URGENT_MESSAGE }));
       const body = await response.json();
 
-      expect(response.status).toBe(400);
-      expect(body.state).toBe('filtered');
+      expect(response.status).toBe(200);
+      expect(body.response).toContain('tell a coach');
       expect(body.error).not.toBe('Rate limit exceeded.');
     });
 
@@ -1841,8 +1872,8 @@ describe('SHADOW pre-generation safety precedence', () => {
       const response = await POST(postRequest({ message: URGENT_MESSAGE }));
       const body = await response.json();
 
-      expect(response.status).toBe(400);
-      expect(body.state).toBe('filtered');
+      expect(response.status).toBe(200);
+      expect(body.response).toContain('tell a coach');
       // Neither global limit is consulted for an urgent request. Asserting the
       // status alone would pass if `chat` were still called and happened not to
       // throw, which is the hole the old chat_daily test existed to close.
@@ -1890,8 +1921,8 @@ describe('SHADOW pre-generation safety precedence', () => {
       const body = await response.json();
 
       expect(mockQueueHumanReview).not.toHaveBeenCalled();
-      expect(response.status).toBe(400);
-      expect(body.state).toBe('filtered');
+      expect(response.status).toBe(200);
+      expect(body.response).toContain('tell a coach');
       // The field means a human is needed, not that a row was persisted.
       expect(body.requiresHumanReview).toBe(true);
       expect(body.error).not.toBe('Rate limit exceeded.');
@@ -1909,14 +1940,61 @@ describe('SHADOW pre-generation safety precedence', () => {
       // The whole point of ruling (c). A collapsed implementation would skip
       // the write here and this is the only assertion that catches it.
       expect(mockQueueHumanReview).toHaveBeenCalled();
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(200);
     });
 
     it('POSITIVE CONTROL: an unthrottled urgent message writes the review', async () => {
       const response = await POST(postRequest({ message: URGENT_MESSAGE }));
 
       expect(mockQueueHumanReview).toHaveBeenCalled();
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(200);
+    });
+
+    // THE QUOTA COUNTS ROWS, NOT ATTEMPTS (OD-2026-09-30-004, "Refund on
+    // failure").
+    //
+    // enforceShadowRateLimit increments BEFORE the write it is bounding, and
+    // the write's failure is swallowed so the athlete still gets an answer.
+    // Without a refund, three failed inserts consumed an account's whole hour
+    // while persisting nothing, and the next genuine report that hour was
+    // suppressed as exhausted -- the exact outcome the exhaustion/failure
+    // split exists to prevent, reached by a route that split does not cover.
+    //
+    // Found by a blind review after the implementation had already passed one.
+    it('REFUND: a failed queue write gives the slot back', async () => {
+      mockQueueHumanReview.mockRejectedValueOnce(new Error('relation "pilot.shadow_human_review_queue" does not exist'));
+
+      const response = await POST(postRequest({ message: URGENT_MESSAGE }));
+
+      expect(response.status).toBe(200);
+      expect(mockRefundRateLimit).toHaveBeenCalledWith(
+        expect.objectContaining({ endpointKey: 'safety_review' }),
+      );
+    });
+
+    // Without this, "refund on every path" would pass the test above while
+    // making the limit unreachable -- a quota that always refunds is not a
+    // quota.
+    it('POSITIVE CONTROL: a successful queue write refunds nothing', async () => {
+      const response = await POST(postRequest({ message: URGENT_MESSAGE }));
+
+      expect(response.status).toBe(200);
+      expect(mockQueueHumanReview).toHaveBeenCalled();
+      expect(mockRefundRateLimit).not.toHaveBeenCalled();
+    });
+
+    // A refund that throws must not cost the athlete their answer either. It
+    // runs inside the catch handler of a write that has already failed, which
+    // is the least useful place in the request to raise a second error.
+    it('a failing refund still answers the request', async () => {
+      mockQueueHumanReview.mockRejectedValueOnce(new Error('queue down'));
+      mockRefundRateLimit.mockRejectedValueOnce(new Error('buckets down too'));
+
+      const response = await POST(postRequest({ message: URGENT_MESSAGE }));
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.response).toContain('tell a coach');
     });
   });
 

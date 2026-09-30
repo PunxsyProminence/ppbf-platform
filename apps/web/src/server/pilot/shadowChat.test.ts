@@ -54,39 +54,59 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
     mockListRecentNearMisses.mockResolvedValue([]);
   });
 
-  describe('Request Validation', () => {
+  // THIS DESCRIBE USED TO ASSERT REFUSALS. It pinned `valid: false` and an
+  // error string for diagnosis, clearance and prescription questions, and the
+  // route turned each into a one-sentence reply with the model never called.
+  // The owner reversed that: "well they are supposed to get education not
+  // refusal" (OD-2026-09-30-004).
+  //
+  // So nothing here asserts that a question is withheld, because there is no
+  // longer a return value that can withhold one. What it asserts instead is
+  // how urgent the message is, which is the only thing this function now
+  // decides.
+  describe('Request acuity', () => {
     test.each([
-      ['Do I have a concussion?', false, 'professional medical evaluation'],
-      ['What is a concussion?', true, null],
-      ['Prescribe ibuprofen', false, 'prescription authority'],
-    ])('validates request: %s', (input, shouldPass, expectedError) => {
+      // diagnosis, clearance, prescription and weight-cut asks. The doctrine
+      // forbids ANSWERING these a particular way; it has never forbidden
+      // answering them, and the model is instructed accordingly.
+      ['Do I have a concussion?', 'concussion'],
+      ['Am I cleared to play?', 'return_to_play'],
+      ['Should I take ibuprofen?', 'personal_health_concern'],
+      ['Prescribe ibuprofen', 'personal_health_concern'],
+      ['How do I cut weight for my weight class?', 'weight_cutting'],
+    ])('grades as elevated, and withholds nothing: %s', (input, classification) => {
       const result = validateShadowRequest(input, 'athlete', 'org-123');
-      expect(result.valid).toBe(shouldPass);
-      if (!shouldPass && expectedError) {
-        expect(result.error).toContain(expectedError);
-      }
+      expect(result).toMatchObject({ acuity: 'elevated', highRisk: true, classification });
+      // No act-now line: these are not someone reporting symptoms right now.
+      expect(result.actNow).toBeUndefined();
     });
 
-    // Test 3: Clearance request is blocked
-    test('blocks clearance requests', () => {
-      const result = validateShadowRequest(
-        'Am I cleared to play?',
-        'athlete',
-        'org-123',
-      );
-      expect(result.valid).toBe(false);
-      expect(result.error).toContain('Medical clearance');
-    });
-
-    // Test 4: Prescription request is blocked
-    test('blocks prescription requests', () => {
-      const result = validateShadowRequest(
-        'Should I take ibuprofen?',
-        'athlete',
-        'org-123',
-      );
-      expect(result.valid).toBe(false);
-      expect(result.error).toContain('Medication and prescription');
+    // THE REGRESSION THIS SLICE EXISTS FOR. Every message below is one of the
+    // classifier's OWN `allowed` examples, and every one of them used to reach
+    // the athlete as a canned string instead of an answer -- routed there by
+    // FALLBACK_RESPONSES, which keyed on a classification that survives
+    // validation and therefore caught precisely the educational questions.
+    // "What is a concussion?" was answered "For concussion concerns, contact
+    // your medical team immediately."
+    //
+    // Routine is the assertion that matters: it is what makes them ordinary
+    // traffic, answered by the model and queueing no human review.
+    test.each([
+      'What is a concussion?',
+      'What are the symptoms of a concussion?',
+      'How does the body recover from concussion?',
+      'What is the return-to-play protocol?',
+      'What is required for medical clearance?',
+      'What are the risks of rapid weight loss?',
+      'What causes fainting?',
+      'What can cause shortness of breath?',
+    ])('answers an educational question like any other: %s', (message) => {
+      const result = validateShadowRequest(message, 'athlete', 'org-123');
+      expect(result.acuity).toBe('routine');
+      expect(result.actNow).toBeUndefined();
+      // The subject still travels, for tagging and the evidence tier. Being
+      // about a risky topic is not the same as needing anything done.
+      expect(result.highRisk).toBe(true);
     });
   });
 
@@ -100,30 +120,41 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       expect(result.examples.allowed.length).toBeGreaterThan(0);
     });
 
-    // Test 6: Weight-cutting directive is blocked
-    test('blocks weight-cutting directives', () => {
+    test('grades a weight-cutting directive as elevated rather than refusing it', () => {
       const result = validateShadowRequest(
         'How do I cut weight for my weight class?',
         'athlete',
         'org-123',
       );
-      expect(result.valid).toBe(false);
+      expect(result).toMatchObject({ acuity: 'elevated', highRisk: true });
     });
 
+    // THE DEFECT THAT PROMPTED THIS SLICE. Both of these were graded
+    // `personal_health_concern` -- identically to "my shoulder is sore after
+    // sparring" -- and received the non-emergency wording, because the
+    // personal-health branch matched the bare word "pain" and returned before
+    // the topic was ever consulted. Chest pain was the owner's own worked
+    // example when he first ruled on this, and it had never once worked.
+    //
+    // The old test could not catch it: it asserted only `valid: false`, which
+    // was true either way.
     test.each([
-      'Why did I faint?',
-      'How should I manage my chest pain?',
-    ])('fails closed for personally framed urgent symptoms: %s', (message) => {
+      ['Why did I faint?', 'fainting'],
+      ['How should I manage my chest pain?', 'chest_pain'],
+    ])('grades a personally framed emergency as acute: %s', (message, classification) => {
       const result = validateShadowRequest(message, 'athlete', 'org-123');
-      expect(result.valid).toBe(false);
-      expect(result.highRisk).toBe(true);
+      expect(result).toMatchObject({ acuity: 'acute', highRisk: true, classification });
+      expect(result.actNow).toBeTruthy();
     });
 
     test('keeps general fainting education available without treating it as personal guidance', () => {
       const result = validateShadowRequest('What causes fainting?', 'athlete', 'org-123');
-      expect(result.valid).toBe(true);
-      expect(result.highRisk).toBe(true);
-      expect(result.topic).toBe('fainting');
+      // Same topic as the acute case above, opposite acuity. The difference is
+      // whether someone is describing themselves, which is the whole job of
+      // the personal-context test -- and the reason a topic alone must never
+      // decide this.
+      expect(result).toMatchObject({ acuity: 'routine', highRisk: true, topic: 'fainting' });
+      expect(result.actNow).toBeUndefined();
     });
 
     test.each([
@@ -137,34 +168,39 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       'I blacked out after that punch.',
       "I’m seeing stars after sparring.",
       'I have a headache and nausea after sparring.',
-    ])('stops conservative personal boxing emergencies before model use: %s', (message) => {
+    ])('grades a personal boxing emergency as acute, and still answers it: %s', (message) => {
       const result = validateShadowRequest(message, 'athlete', 'org-123');
-      expect(result.valid).toBe(false);
-      expect(result.highRisk).toBe(true);
-      expect(result.error).toContain('Potential emergency');
+      expect(result).toMatchObject({ acuity: 'acute', highRisk: true });
+      // The act-now line rides above the answer; it does not replace it. It is
+      // canned precisely so it survives the provider being down, which is the
+      // case where there is no answer for it to ride above.
+      expect(result.actNow).toContain('tell a coach');
     });
 
     test.each([
       'My shoulder hurts after training; what should I do?',
       'I strained my wrist. How should I treat it?',
       'My knee is swollen after training.',
-    ])('defers personal pain, injury, and treatment prompts before model use: %s', (message) => {
+    ])('grades personal pain, injury and treatment prompts as elevated: %s', (message) => {
       const result = validateShadowRequest(message, 'athlete', 'org-123');
-      expect(result).toEqual(expect.objectContaining({
-        valid: false,
+      expect(result).toMatchObject({
+        acuity: 'elevated',
         highRisk: true,
         classification: 'personal_health_concern',
-      }));
-      expect(result.error).toContain('qualified medical professional');
+      });
+      // Elevated, not acute: a sore shoulder queues a human and gets a real
+      // answer, and must NOT be told to call emergency services. Keeping this
+      // separate from the acute set is the whole point of grading them apart.
+      expect(result.actNow).toBeUndefined();
     });
 
     test.each([
       'I need to make weight for Friday.',
       'I need to lose 10 pounds this week.',
-    ])('blocks personal rapid weight-cut requests: %s', (message) => {
+    ])('grades personal rapid weight-cut requests as elevated: %s', (message) => {
       const result = validateShadowRequest(message, 'athlete', 'org-123');
-      expect(result.valid).toBe(false);
-      expect(result.highRisk).toBe(true);
+      expect(result).toMatchObject({ acuity: 'elevated', highRisk: true });
+      expect(result.actNow).toBeUndefined();
     });
 
     test('allows general education about an urgent symptom without personal guidance', () => {
@@ -173,8 +209,8 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         'athlete',
         'org-123',
       );
-      expect(result.valid).toBe(true);
-      expect(result.topic).toBe('urgent_symptom');
+      expect(result).toMatchObject({ acuity: 'routine', topic: 'urgent_symptom' });
+      expect(result.actNow).toBeUndefined();
     });
 
     test.each([
@@ -185,7 +221,7 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
       'Clear my chat history.',
     ])('does not misclassify normal boxing or app language as medical: %s', (message) => {
       const result = validateShadowRequest(message, 'coach', 'org-123');
-      expect(result.valid).toBe(true);
+      expect(result).toMatchObject({ acuity: 'routine', highRisk: false });
     });
   });
 
@@ -997,20 +1033,28 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
     test('allows educational medical vocabulary', () => {
       // Concussions are traumatic brain injuries (educational content context)
       expect(validateShadowRequest('What are concussion protocols?', 'coach', 'org-123')).toMatchObject({
-        valid: true,
+        acuity: 'routine',
         highRisk: true,
         topic: 'concussion',
         classification: 'concussion',
       });
     });
 
+    // "I have chest pain right now" is the owner's own example. It asserted
+    // only the topic before, so it passed throughout the entire period in
+    // which chest pain was graded no differently from a sore shoulder. The
+    // acuity is asserted here because that is the part that was wrong.
+    //
+    // Dizziness is deliberately NOT in the acute set: it is elevated. It gets
+    // a real answer and a human, without telling every dizzy athlete to call
+    // emergency services.
     test.each([
-      ['I have chest pain right now', 'chest_pain'],
-      ['I passed out during training', 'loss_of_consciousness'],
-      ['I feel dizzy after sparring', 'dizziness'],
-    ])('fails closed on a personal high-risk report: %s', (message, topic) => {
+      ['I have chest pain right now', 'chest_pain', 'acute'],
+      ['I passed out during training', 'loss_of_consciousness', 'acute'],
+      ['I feel dizzy after sparring', 'dizziness', 'elevated'],
+    ])('grades a personal high-risk report: %s', (message, topic, acuity) => {
       expect(validateShadowRequest(message, 'athlete', 'org-123')).toMatchObject({
-        valid: false,
+        acuity,
         highRisk: true,
         topic,
       });

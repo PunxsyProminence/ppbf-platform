@@ -197,3 +197,58 @@ export async function enforceShadowRateLimit(input: {
     throw new ShadowRateLimitExceeded(row.retry_after_seconds, input.endpointKey);
   }
 }
+
+/**
+ * Give a slot back, so a quota counts work DONE rather than work ATTEMPTED.
+ *
+ * enforceShadowRateLimit increments on the allowed path, before the caller has
+ * done the thing it is being rate limited for. For ordinary chat that is
+ * correct -- the attempt is the cost. For `safety_review` it was not: the
+ * limiter increments, then the human-review insert runs and may fail, and its
+ * failure is swallowed so the athlete still gets an answer. Three failed
+ * inserts therefore consumed an account's whole hour while persisting nothing,
+ * and the next genuine report that hour was suppressed as exhausted -- the
+ * exact outcome the two-failure split exists to prevent, reached by a route it
+ * did not cover (OD-2026-09-30-004, decided "Refund on failure").
+ *
+ * Best effort by construction, and never throws: it is called from a catch
+ * handler, where a second failure has nowhere useful to go.
+ *
+ * It never creates a row, and it clamps at zero. It targets the window that is
+ * current WHEN IT RUNS, so a refund that crosses a window boundary between the
+ * increment and the failure lands on the new window or on nothing. That is a
+ * deliberate rounding error in the athlete's favour at worst by one slot, and
+ * the alternative -- threading the exact window_started_at back out of enforce
+ * -- buys accuracy nobody can perceive at the cost of a wider signature.
+ */
+export async function refundShadowRateLimit(input: {
+  organizationId: string;
+  accountId: string;
+  endpointKey: string;
+  limit: number;
+  windowSeconds: number;
+}): Promise<void> {
+  if (!input.organizationId.trim() || !input.accountId.trim()) return;
+  if (!/^[a-z0-9:_-]{1,80}$/.test(input.endpointKey)) return;
+  if (!Number.isSafeInteger(input.windowSeconds) || input.windowSeconds < 1 || input.windowSeconds > 86_400) return;
+
+  await queryOne<{ request_count: number }>(
+    `update pilot.shadow_rate_limit_buckets
+        set request_count = greatest(0, request_count - 1),
+            updated_at = now()
+      where organization_id = $1
+        and account_id = $2
+        and endpoint_key = $3
+        and window_started_at = to_timestamp(
+          floor(extract(epoch from clock_timestamp()) / $4) * $4
+        )
+        and request_count > 0
+      returning request_count`,
+    [
+      input.organizationId,
+      input.accountId,
+      input.endpointKey,
+      input.windowSeconds,
+    ],
+  );
+}

@@ -52,9 +52,23 @@ export interface HighRiskClassification {
   };
 }
 
+/**
+ * How urgent a message is. Says NOTHING about whether it may be answered --
+ * every message is answered now (OD-2026-09-30-004).
+ *
+ * - `acute`    someone is reporting a possible emergency about themselves, now
+ * - `elevated` high-risk subject matter, answered normally
+ * - `routine`  everything else
+ */
+export type ShadowAcuity = 'acute' | 'elevated' | 'routine';
+
 export interface ShadowValidationResult {
-  valid: boolean;
-  error?: string;
+  acuity: ShadowAcuity;
+  /**
+   * Present iff `acuity === 'acute'`. Prepended to the answer, never returned
+   * instead of it.
+   */
+  actNow?: string;
   highRisk?: boolean;
   topic?: HighRiskTopic;
   classification?: string;
@@ -255,7 +269,53 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
   };
 }
 
-// Validate that the request aligns with SHADOW's doctrine
+/**
+ * Topics that are an emergency when someone reports them about themselves.
+ *
+ * `chest_pain` is here because in substance it was not before: the
+ * personal-health-concern branch matched the bare word "pain" and returned
+ * before the topic was ever consulted, so "I have chest pain right now" was
+ * graded identically to "my shoulder is sore after sparring" and received the
+ * non-emergency wording. That was the owner's own worked example when he first
+ * ruled on this, and it had never once worked.
+ */
+const ACUTE_TOPICS: ReadonlySet<string> = new Set([
+  'chest_pain',
+  'fainting',
+  'loss_of_consciousness',
+]);
+
+/**
+ * Delivered above the generated answer when acuity is `acute`, never instead
+ * of it.
+ *
+ * Canned deliberately. Its whole job is to be identical when the provider is
+ * down -- which is exactly the case where there is no generated answer to
+ * carry it. It states the action and gets out of the way.
+ */
+export const SHADOW_ACT_NOW_LINE =
+  'Stop what you are doing and tell a coach now. If it is getting worse, or you are '
+  + 'struggling to breathe, see, speak, or stay awake, call emergency services -- do not '
+  + 'wait to finish reading this.';
+
+/**
+ * ACUITY, NOT PERMISSION.
+ *
+ * This function used to return `valid: false` for every high-risk message, and
+ * the route turned that into a single sentence with the model never called. A
+ * sore shoulder, "what is a concussion?", and "I have chest pain right now"
+ * all received the same treatment -- a line stating that SHADOW could only
+ * provide general educational information, delivered instead of any.
+ *
+ * The doctrine has never said refuse. It says never diagnose, never prescribe,
+ * never grant clearance, and defer the decision to a human. A real answer does
+ * all four, and SHADOW_SYSTEM_PROMPT already carries a worked example doing
+ * exactly that. The gate was not enforcing the doctrine, it was preventing it
+ * (OD-2026-09-30-004: "well they are supposed to get education not refusal").
+ *
+ * So what comes back is how urgent the message is. Nothing here withholds an
+ * answer, and there is no longer a return value that can.
+ */
 export function validateShadowRequest(
   message: string,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -283,98 +343,80 @@ export function validateShadowRequest(
   const hasAcuteImpactConcern = /(?:after|from).{0,30}(?:hit|blow|punch|fall).{0,60}(?:pain|numb|weak|tingl|blur|bleed|dizz|confus|vomit|can(?:not|'t))/i.test(message);
   const hasPersonalHealthConcern = /\b(hurt|hurts|hurting|pain|painful|sore|soreness|swollen|swelling|injured|injury|sprain(?:ed|ing)?|strain(?:ed|ing)?|bruised|bruising|numb|numbness|tingling|stiff|stiffness)\b/i.test(message);
 
-  // Direct prescription or weight-cutting directives are blocked even when phrased as questions.
-  if (hasPrescriptionLanguage || hasRapidWeightCutLanguage) {
+  const hasDiagnosisRequest = /(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i.test(message);
+  const hasClearanceRequest = /\bmedical\s+clear(?:ed|ance)?\b/i.test(message)
+    || /\bclear(?:ed|ance)?\b.{0,40}\b(play|train|training|compete|competition|return|contact|spar|sparring)\b/i.test(message)
+    || /\b(play|train|training|compete|competition|return|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)?\b/i.test(message);
+  const hasMedicationRequest = /(should|do|can|need)\s+(i|you)\s+(take|use|try|get).*(medicine|medication|drug|pill|injection)/i.test(message);
+
+  // ACUTE. Ordered first because it is the only branch whose answer carries an
+  // extra obligation. Two ways in: an explicit urgent-symptom or acute-impact
+  // report, or a topic that IS an emergency when it is about the sender --
+  // which is the half chest pain needed and never had.
+  const reportsAcuteTopic = ACUTE_TOPICS.has(classification.topic);
+  if (hasPersonalContext && (hasUrgentSymptom || hasAcuteImpactConcern || reportsAcuteTopic)) {
     return {
-      valid: false,
-      error: 'Medication and prescription recommendations require prescription authority and professional medical oversight.',
+      acuity: 'acute',
+      actNow: SHADOW_ACT_NOW_LINE,
       highRisk: true,
-      topic: classification.topic,
+      topic: classification.topic === 'none' ? 'urgent_symptom' : classification.topic,
+      // Severity downstream keys on these names; a topic that IS the emergency
+      // keeps its own name so a reviewer can see which one it was.
+      classification: reportsAcuteTopic ? classification.topic : 'urgent_personal_symptom',
     };
   }
 
-  // Educational queries are allowed
+  // EDUCATIONAL FRAMING, NO PERSONAL CONTEXT -> routine.
+  //
+  // "What is a concussion?" is answered like any other question and queues no
+  // review, which is what it did before as well. The owner kept this queue "as
+  // now" and was not offered a wider one; grading every general question about
+  // a risky subject as elevated would have widened it by construction. A review
+  // queue that fills with "what is a concussion?" stops being read, and then it
+  // misses the report that mattered.
+  //
+  // `highRisk` and `topic` still travel, because downstream tagging and the
+  // evidence tier want to know the subject even when nothing needs doing.
   if (classification.educationalApproach) {
     return {
-      valid: true,
+      acuity: 'routine',
       highRisk: classification.isHighRisk,
       topic: classification.topic,
       classification: classification.isHighRisk ? classification.topic : undefined,
     };
   }
 
-  if (hasPersonalContext && (hasUrgentSymptom || hasAcuteImpactConcern)) {
-    return {
-      valid: false,
-      error: 'Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.',
-      highRisk: true,
-      topic: classification.topic === 'none' ? 'urgent_symptom' : classification.topic,
-      classification: 'urgent_personal_symptom',
-    };
-  }
-
-  if (hasPersonalContext && hasPersonalHealthConcern) {
-    return {
-      valid: false,
-      error: 'Personal pain, injury, and treatment questions require evaluation by a qualified medical professional. SHADOW can only provide general educational information.',
-      highRisk: true,
-      topic: classification.topic,
-      classification: 'personal_health_concern',
-    };
-  }
-
-  // Check for diagnosis claims
-  if (/(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i.test(message)) {
-    return {
-      valid: false,
-      error: 'Diagnosis and personal health assessment require professional medical evaluation.',
-      highRisk: true,
-      topic: classification.topic,
-    };
-  }
-
-  // Check for clearance claims
+  // ELEVATED. High-risk subject matter, answered normally. The model is told
+  // not to diagnose, prescribe or clear, and a human is queued because the
+  // owner kept the queue's existing breadth.
   if (
-    /\bmedical\s+clear(?:ed|ance)?\b/i.test(message)
-    || /\bclear(?:ed|ance)?\b.{0,40}\b(play|train|training|compete|competition|return|contact|spar|sparring)\b/i.test(message)
-    || /\b(play|train|training|compete|competition|return|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)?\b/i.test(message)
+    hasPrescriptionLanguage
+    || hasRapidWeightCutLanguage
+    || hasDiagnosisRequest
+    || hasClearanceRequest
+    || hasMedicationRequest
+    || (hasPersonalContext && hasPersonalHealthConcern)
   ) {
     return {
-      valid: false,
-      error: 'Medical clearance decisions require professional medical authority.',
+      acuity: 'elevated',
       highRisk: true,
       topic: classification.topic,
-    };
-  }
-
-  // Check for prescription claims
-  if (/(should|do|can|need)\s+(i|you)\s+(take|use|try|get).*(medicine|medication|drug|pill|injection)/i.test(message)) {
-    return {
-      valid: false,
-      error: 'Medication and prescription recommendations require professional medical oversight.',
-      highRisk: true,
-      topic: classification.topic,
+      classification: classification.topic === 'none'
+        ? 'personal_health_concern'
+        : classification.topic,
     };
   }
 
   if (classification.isHighRisk) {
-    const emergencyTopic = (
-      classification.topic === 'chest_pain'
-      || classification.topic === 'fainting'
-      || classification.topic === 'loss_of_consciousness'
-    );
     return {
-      valid: false,
-      error: emergencyTopic
-        ? 'Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.'
-        : 'Personal high-risk health and safety concerns require immediate human evaluation. SHADOW can only provide general educational information.',
+      acuity: 'elevated',
       highRisk: true,
       topic: classification.topic,
       classification: classification.topic,
     };
   }
 
-  return { valid: true, highRisk: false, topic: 'none' };
+  return { acuity: 'routine', highRisk: false, topic: 'none' };
 }
 
 // The one line excluded roles get in place of near-miss records.
