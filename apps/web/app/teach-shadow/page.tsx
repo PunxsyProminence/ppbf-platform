@@ -615,8 +615,27 @@ export default function TeachShadowHomePage() {
             )}
           </section>
 
+          {/* STAGE THREE: CUT. Between release and label because that is the
+              order of the work, and because its absence is what broke the
+              loop -- footage could be filmed and clips could be labelled, and
+              nothing a coach could do joined the two. Cutting was an operator
+              script run by hand against a production connection string. */}
           <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
             <p className="t-eyebrow">Stage three</p>
+            <h2 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>Cut study clips</h2>
+            <p className="t-body mt-[var(--s2)]">
+              Watch a released take, find the moment worth labelling, and cut it into a few seconds
+              with a code two coaches can say out loud. A clip is the unit everything after this
+              measures: two coaches label the same one separately, and where they disagree is the
+              finding. Nothing cut here scores an athlete.
+            </p>
+            <Link href="/teach-shadow/cut" className="btn mt-[var(--s4)] inline-block">
+              Cut Study Clips
+            </Link>
+          </section>
+
+          <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+            <p className="t-eyebrow">Stage four</p>
             <h2 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>Label &amp; verify</h2>
             <p className="t-body mt-[var(--s2)]">
               Label what you saw in a study clip, from the fixed vocabulary. Two coaches label the same clip

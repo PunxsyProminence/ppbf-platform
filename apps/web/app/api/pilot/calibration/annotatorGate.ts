@@ -85,6 +85,8 @@ export async function writeCalibrationAuditEvent(input: {
   eventType: Extract<AuditEventType, 'create' | 'update'>;
   principal: PilotPrincipal;
   entityType:
+    | 'calibration_project'
+    | 'calibration_clip'
     | 'calibration_annotation_set'
     | 'calibration_annotation_event'
     | 'calibration_adjudication';
