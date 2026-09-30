@@ -61,6 +61,15 @@ import {
   listCueLibrary,
   listDrillLibrary,
 } from './drillLibraryV3';
+import { memberCodesForFamily, SKILL_FAMILY_IDS } from './skillFamilies';
+import {
+  committedRows,
+  committedText,
+  createSeedingGym,
+  loadReferenceContent,
+  loadResearchClaimsIntoPlatformLibrary,
+  openFullSchemaDatabase,
+} from '../../testing/referenceContentFixture';
 
 jest.setTimeout(180_000);
 
@@ -74,12 +83,6 @@ const MIGRATION_RUNNER_PATH = path.resolve(
   __dirname,
   '../../../scripts/pilot-apply-drill-library-v3-migration.mjs',
 );
-const SEED_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/seed-drill-library.mjs');
-const SECONDARY_SEED_SCRIPT_PATH = path.resolve(
-  __dirname,
-  '../../../scripts/seed-drill-secondary-skills.mjs',
-);
-const SEED_DIR = path.resolve(__dirname, '../../../seed-data/drill-library');
 
 // The secondary-skill relation is a SEPARATE migration, and every test that
 // reaches drillLibraryV3.ts's read functions now needs it applied.
@@ -117,6 +120,19 @@ const SECONDARY_RUNNER_PATH = path.resolve(
  *   provenance        adds reference_drill_id and its composite FK to
  *                     pilot.drill_library
  */
+/**
+ * Every drill DETAIL read -- coach and athlete -- now also reads the gym's
+ * stored-once stop rules from pilot.universal_stop_rules (owner ruling R3),
+ * which the content-import migration creates. It refuses to run without the
+ * vocabulary widening and workout-templates v2 migrations (its own first DO
+ * block), so the tests that read a detail apply all three, in the workflow's
+ * `all` order, through applyStoredOnceRuleSchema below. Like the operational
+ * migrations, they are applied only to build the disposable local fixture.
+ */
+const VOCABULARY_WIDENING_MIGRATION_FILE = 'pilot_slice_postgres_drill_vocabulary_widening_migration.sql';
+const WORKOUT_TEMPLATES_V2_MIGRATION_FILE = 'pilot_slice_postgres_workout_templates_v2_migration.sql';
+const CONTENT_IMPORT_MIGRATION_FILE = 'pilot_slice_postgres_content_import_migration.sql';
+
 const PROGRESSION_MIGRATION_FILE = 'pilot_slice_postgres_progression_migration.sql';
 const DRILLS_MIGRATION_FILE = 'pilot_slice_postgres_drills_migration.sql';
 const DRILL_VERSIONING_MIGRATION_FILE = 'pilot_slice_postgres_drill_versioning_migration.sql';
@@ -132,28 +148,12 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
-let vocabularyWideningSql: string;
 let secondarySkillsSql: string;
 let baseSchemaSql: string;
 let operationalDrillSql: string;
+let storedOnceRuleSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let applySecondarySkillsMigration: (client: Client, sql: string) => Promise<void>;
-let seedAll: (
-  client: Client,
-  seedDir: string,
-  placeholders: { organizationId: string; seedAccountId: string },
-  opts?: { dryRun?: boolean },
-) => Promise<void>;
-// The relationship loader takes no seeder account -- pilot.drill_secondary_skills
-// has no created_by column -- so its placeholder shape is deliberately narrower
-// than seedAll's above.
-let seedSecondarySkills: (
-  client: Client,
-  seedDir: string,
-  placeholders: { organizationId: string },
-  opts?: { dryRun?: boolean },
-) => Promise<{ inserted: number; alreadyPresent: number; rejected: number }>;
-
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
 }
@@ -203,6 +203,11 @@ interface InsertDrillOptions {
   category?: string;
   difficulty?: string;
   active?: boolean;
+}
+
+/** After the v3 migration: what every drill DETAIL read needs (see storedOnceRuleSql). */
+async function applyStoredOnceRuleSchema(client: Client): Promise<void> {
+  await client.query(storedOnceRuleSql);
 }
 
 async function insertDrill(client: Client, opts: InsertDrillOptions): Promise<void> {
@@ -276,13 +281,6 @@ beforeAll(async () => {
 
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
-  // The shipped seed CSVs carry authoring_state='literature_grounded_draft'
-  // and rule_kind='warmup_decay', which only the vocabulary-widening
-  // migration permits. It is a genuine prerequisite for loading them, so the
-  // seed tests below apply it -- reading it here keeps that explicit.
-  vocabularyWideningSql = await fs.readFile(
-    path.join(INFRA_DIR, 'pilot_slice_postgres_drill_vocabulary_widening_migration.sql'), 'utf8',
-  );
   secondarySkillsSql = await fs.readFile(path.join(INFRA_DIR, SECONDARY_MIGRATION_FILE), 'utf8');
 
   // Concatenated in dependency order and applied as one unit, because no test
@@ -293,6 +291,14 @@ beforeAll(async () => {
     DRILLS_MIGRATION_FILE,
     DRILL_VERSIONING_MIGRATION_FILE,
     PROVENANCE_MIGRATION_FILE,
+  ].map((file) => fs.readFile(path.join(INFRA_DIR, file), 'utf8')))).join('\n');
+
+  // The three are concatenated like operationalDrillSql above: no test here
+  // cares about their seams, only that pilot.universal_stop_rules is real.
+  storedOnceRuleSql = (await Promise.all([
+    VOCABULARY_WIDENING_MIGRATION_FILE,
+    WORKOUT_TEMPLATES_V2_MIGRATION_FILE,
+    CONTENT_IMPORT_MIGRATION_FILE,
   ].map((file) => fs.readFile(path.join(INFRA_DIR, file), 'utf8')))).join('\n');
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
@@ -311,14 +317,6 @@ beforeAll(async () => {
     client: Client,
     sql: string,
   ) => Promise<void>;
-
-  const seedModule = await nativeDynamicImport(pathToFileURL(SEED_SCRIPT_PATH).href);
-  seedAll = seedModule.seedAll as typeof seedAll;
-
-  const secondarySeedModule = await nativeDynamicImport(
-    pathToFileURL(SECONDARY_SEED_SCRIPT_PATH).href,
-  );
-  seedSecondarySkills = secondarySeedModule.seedAll as typeof seedSecondarySkills;
 });
 
 afterAll(async () => {
@@ -518,6 +516,7 @@ describe('drillLibraryV3.ts against real Postgres', () => {
     try {
       await applyMigrationTransaction(client, migrationSql);
       await applySecondarySkillsMigration(client, secondarySkillsSql);
+      await applyStoredOnceRuleSchema(client);
       await insertDrill(client, { drillId: 'drill-detail', name: 'Detail Drill' });
       await insertScaleLevel(client, {
         scaleId: 'scale-detail-b', drillId: 'drill-detail', scaleLevel: 'B', isStartingPoint: true,
@@ -594,6 +593,7 @@ describe('drill secondary skill relationships against real Postgres', () => {
     const client = await freshDatabase(name);
     await applyMigrationTransaction(client, migrationSql);
     await applySecondarySkillsMigration(client, secondarySkillsSql);
+    await applyStoredOnceRuleSchema(client);
     return client;
   }
 
@@ -935,474 +935,326 @@ describe('drill secondary skill relationships against real Postgres', () => {
   });
 });
 
-describe('seed-drill-library.mjs against real Postgres', () => {
-  const SEED_ORG = 'ppbf-default-org';
-  const SEED_ACCOUNT = 'acct-seed-test';
+/*
+  THE COMMITTED DRILL LIBRARY, LOADED THE WAY THE SEED WORKFLOW LOADS IT.
 
-  // seedAll reads created_by_role from the seed account's own pilot.accounts
-  // row and refuses an account that does not exist. organization_admin -- how
-  // gym content is seeded -- and not the platform_owner the CSV used to carry,
-  // so the role assertion below can tell the two behaviours apart.
-  async function insertSeedAccount(client: Client): Promise<void> {
-    await client.query(
-      `insert into pilot.accounts (account_id, role, organization_id)
-       values ($1, 'organization_admin', $2)`,
-      [SEED_ACCOUNT, SEED_ORG],
-    );
+  Until IMP-10 these cases ran seed-drill-library.mjs and
+  seed-drill-secondary-skills.mjs. Both are retired: every dataset loads
+  through the content-import core, run as runApply (the `content:apply` the
+  seed workflow calls), so these run that -- over the COMMITTED files, into a
+  database holding the schema production runs (full-schema.mjs, which includes
+  the vocabulary-widening migration two of these files need: 228 scale rows say
+  literature_grounded_draft and 63 stop rows warmup_decay). Every count comes
+  from the files, so a hand-off that grows the library does not break them.
+*/
+describe('the committed drill library, loaded through the content-import core', () => {
+  let seedDb: Client;
+
+  const LIBRARY = committedRows('drill-library/seed_drill_library.csv');
+  const SCALES = committedRows('drill-library/seed_drill_scale_levels.csv');
+  const STOPS = committedRows('drill-library/seed_drill_stop_rules.csv');
+  const CUES = committedRows('drill-library/seed_drill_cues.csv');
+
+  beforeAll(async () => {
+    seedDb = await openFullSchemaDatabase(Client, connectionStringFor, 'ppbf_test_drilllib_core_seed');
+    await loadResearchClaimsIntoPlatformLibrary(seedDb);
+  });
+
+  afterAll(async () => {
+    activeClient = null;
+    await seedDb?.end().catch(() => {});
+  });
+
+  async function drillCount(organizationId: string): Promise<number> {
+    const { rows } = await seedDb.query('select count(*)::int as n from pilot.drill_library where organization_id = $1', [organizationId]);
+    return rows[0].n;
   }
 
-  test('--dry-run inserts nothing', async () => {
-    const client = await freshDatabase('ppbf_test_drilllib_seed_dry_run');
-    try {
-      await applyMigrationTransaction(client, migrationSql);
-      await client.query(vocabularyWideningSql);
-      await client.query(
-        `insert into pilot.organizations (organization_id, organization_name, status)
-         values ($1, $1, 'active') on conflict do nothing`,
-        [SEED_ORG],
-      );
-      await insertSeedAccount(client);
-
-      await seedAll(
-        client,
-        SEED_DIR,
-        { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT },
-        { dryRun: true },
-      );
-
-      const { rows } = await client.query(`select count(*)::int as n from pilot.drill_library where organization_id = $1`, [SEED_ORG]);
-      expect(rows[0].n).toBe(0);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+  test('--dry-run applies every row and rolls it back: nothing is written', async () => {
+    const admin = await createSeedingGym(seedDb, 'gym_drills_dry_run');
+    const loaded = await loadReferenceContent(seedDb, {
+      organizationId: 'gym_drills_dry_run', actorAccountId: admin, datasets: 'disciplines,drill-library', dryRun: true,
+    });
+    expect(loaded.code).toBe(0);
+    expect(loaded.lines).toContain(`  drill-library: ${LIBRARY.length} new, 0 new version, 0 unchanged, 0 absent, 0 reject`);
+    expect(loaded.lines.some((line) => line.startsWith('RESULT: DRY RUN -- applied inside the transaction and ROLLED BACK'))).toBe(true);
+    expect(await drillCount('gym_drills_dry_run')).toBe(0);
   });
 
-  test('a real run seeds all 119 drills from the supplied CSV, substituting placeholders', async () => {
-    const client = await freshDatabase('ppbf_test_drilllib_seed_real_run');
-    try {
-      await applyMigrationTransaction(client, migrationSql);
-      await client.query(vocabularyWideningSql);
-      await client.query(
-        `insert into pilot.organizations (organization_id, organization_name, status)
-         values ($1, $1, 'active') on conflict do nothing`,
-        [SEED_ORG],
-      );
-      await insertSeedAccount(client);
+  test('a real load writes every committed drill and child row, placeholders substituted, stamped with the seed account', async () => {
+    const organizationId = 'gym_drills_real';
+    const admin = await createSeedingGym(seedDb, organizationId);
+    const loaded = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,drill-library' });
+    expect(loaded.code).toBe(0);
 
-      await seedAll(client, SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT });
+    const { rows } = await seedDb.query(
+      `select count(*)::int as n, count(*) filter (where organization_id = $1)::int as n_for_org
+       from pilot.drill_library`,
+      [organizationId],
+    );
+    expect(rows[0].n_for_org).toBe(LIBRARY.length);
+    expect(LIBRARY.length).toBeGreaterThanOrEqual(119);
 
-      const { rows } = await client.query(
-        `select count(*)::int as n, count(*) filter (where organization_id = $1)::int as n_for_org
-         from pilot.drill_library`,
-        [SEED_ORG],
-      );
-      expect(rows[0].n).toBe(119);
-      expect(rows[0].n_for_org).toBe(119);
+    // Every row carries the seed account and ITS role, read from
+    // pilot.accounts after the core checked it -- not a value from the CSV.
+    const provenance = await seedDb.query(
+      `select created_by_account_id, created_by_role, count(*)::int as n
+       from pilot.drill_library where organization_id = $1
+       group by 1, 2`,
+      [organizationId],
+    );
+    expect(provenance.rows).toEqual([{ created_by_account_id: admin, created_by_role: 'organization_admin', n: LIBRARY.length }]);
 
-      // Every row carries the seed account and ITS role, read from
-      // pilot.accounts -- not the platform_owner the CSV used to say.
-      const provenance = await client.query(
-        `select created_by_account_id, created_by_role, count(*)::int as n
-         from pilot.drill_library where organization_id = $1
-         group by 1, 2`,
-        [SEED_ORG],
-      );
-      expect(provenance.rows).toEqual([
-        { created_by_account_id: SEED_ACCOUNT, created_by_role: 'organization_admin', n: 119 },
-      ]);
-
-      // The child tables, pinned to the supplied CSVs' own row counts. Two of
-      // these files were rejected outright until the vocabulary-widening
-      // migration landed, so these numbers are the proof the widening actually
-      // let the real data in -- not just that a synthetic row passes the CHECK.
-      const children = await client.query(
-        `select
-           (select count(*)::int from pilot.drill_scale_levels where organization_id = $1) as scale_levels,
-           (select count(*)::int from pilot.drill_stop_rules  where organization_id = $1) as stop_rules,
-           (select count(*)::int from pilot.drill_cues        where organization_id = $1) as cues,
-           (select count(*)::int from pilot.drill_scale_levels
-              where organization_id = $1 and authoring_state = 'literature_grounded_draft') as lit_grounded,
-           (select count(*)::int from pilot.drill_stop_rules
-              where organization_id = $1 and rule_kind = 'warmup_decay') as warmup_decay`,
-        [SEED_ORG],
-      );
-      expect(children.rows[0]).toEqual({
-        scale_levels: 357,
-        stop_rules: 674,
-        cues: 258,
-        lit_grounded: 228,
-        warmup_decay: 63,
-      });
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+    // The child tables, pinned to the committed files' own row counts --
+    // including the two vocabularies only the widening migration admits, the
+    // proof the real data gets in rather than only a synthetic row.
+    const children = await seedDb.query(
+      `select
+         (select count(*)::int from pilot.drill_scale_levels where organization_id = $1) as scale_levels,
+         (select count(*)::int from pilot.drill_stop_rules  where organization_id = $1) as stop_rules,
+         (select count(*)::int from pilot.drill_cues        where organization_id = $1) as cues,
+         (select count(*)::int from pilot.drill_scale_levels
+            where organization_id = $1 and authoring_state = 'literature_grounded_draft') as lit_grounded,
+         (select count(*)::int from pilot.drill_stop_rules
+            where organization_id = $1 and rule_kind = 'warmup_decay') as warmup_decay`,
+      [organizationId],
+    );
+    const litGrounded = SCALES.filter((row) => row.authoring_state === 'literature_grounded_draft').length;
+    const warmupDecay = STOPS.filter((row) => row.rule_kind === 'warmup_decay').length;
+    expect(children.rows[0]).toEqual({
+      scale_levels: SCALES.length,
+      stop_rules: STOPS.length,
+      cues: CUES.length,
+      lit_grounded: litGrounded,
+      warmup_decay: warmupDecay,
+    });
+    expect([litGrounded, warmupDecay].every((count) => count > 0)).toBe(true);
   });
 
-  test('re-running is idempotent: no duplicates, no error', async () => {
-    const client = await freshDatabase('ppbf_test_drilllib_seed_idempotent');
-    try {
-      await applyMigrationTransaction(client, migrationSql);
-      await client.query(vocabularyWideningSql);
-      await client.query(
-        `insert into pilot.organizations (organization_id, organization_name, status)
-         values ($1, $1, 'active') on conflict do nothing`,
-        [SEED_ORG],
-      );
-      await insertSeedAccount(client);
+  test('loading it again writes nothing: every drill unchanged, no duplicate, no new version', async () => {
+    const organizationId = 'gym_drills_again';
+    const admin = await createSeedingGym(seedDb, organizationId);
+    expect((await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,drill-library' })).code).toBe(0);
 
-      await seedAll(client, SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT });
-      await seedAll(client, SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT });
-
-      const { rows } = await client.query(`select count(*)::int as n from pilot.drill_library where organization_id = $1`, [SEED_ORG]);
-      expect(rows[0].n).toBe(119);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+    const again = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,drill-library' });
+    expect(again.code).toBe(0);
+    expect(again.lines).toContain(`  drill-library: 0 new, 0 new version, ${LIBRARY.length} unchanged, 0 absent, 0 reject`);
+    expect(again.lines).toContain('RESULT: NOTHING TO APPLY -- every item is unchanged or absent; nothing was written.');
+    expect(await drillCount(organizationId)).toBe(LIBRARY.length);
+    const heads = await seedDb.query('select count(*)::int as n from pilot.drill_library where organization_id = $1 and version = 1', [organizationId]);
+    expect(heads.rows[0].n).toBe(LIBRARY.length);
   });
 
   test('refuses a seed account id that matches no account, writing nothing', async () => {
     // account_id is case-sensitive, and a wrong casing is the likeliest way an
-    // operator types an id that resolves to nobody. This is the real schema
-    // answering, not the fake client in seedCreatedByRole.test.ts.
-    const client = await freshDatabase('ppbf_test_drilllib_seed_no_account');
-    try {
-      await applyMigrationTransaction(client, migrationSql);
-      await client.query(vocabularyWideningSql);
-      await client.query(
-        `insert into pilot.organizations (organization_id, organization_name, status)
-         values ($1, $1, 'active') on conflict do nothing`,
-        [SEED_ORG],
-      );
-      await insertSeedAccount(client);
-
-      await expect(
-        seedAll(client, SEED_DIR, { organizationId: SEED_ORG, seedAccountId: SEED_ACCOUNT.toUpperCase() }),
-      ).rejects.toThrow(/^SEED_ACCOUNT_NOT_FOUND: /);
-
-      const { rows } = await client.query(`select count(*)::int as n from pilot.drill_library where organization_id = $1`, [SEED_ORG]);
-      expect(rows[0].n).toBe(0);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+    // operator types an id that resolves to nobody.
+    const organizationId = 'gym_drills_no_account';
+    const admin = await createSeedingGym(seedDb, organizationId);
+    const loaded = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin.toUpperCase(), datasets: 'disciplines,drill-library' });
+    expect(loaded.code).toBe(1);
+    expect(loaded.lines.find((line) => line.startsWith('RESULT:'))).toMatch(/^RESULT: REFUSED -- CONTENT_IMPORT_ACTOR_NOT_FOUND: /);
+    expect(await drillCount(organizationId)).toBe(0);
   });
 });
 
 /*
-  seed-drill-secondary-skills.mjs -- the ONLY write path into
-  pilot.drill_secondary_skills.
+  pilot.drill_secondary_skills through the core.
 
   A row here says "this drill also trains that skill". Getting one wrong does
   not crash anything: it silently widens what a coach's related-skill search
   returns, and the drill still looks correct in every other view. So the
-  loader's refusals matter more than its insert, and most of what follows
-  exercises the refusals against a real database rather than the happy path.
+  refusals matter more than the insert, and most of what follows exercises
+  them against a real database.
 
-  The shipped CSV carries exactly one owner-approved relation --
-  drl_3df01682e604dd (Cross Return to Guard), primary SK-CROSS-01, secondary
-  SK-GUARD-02 -- so these cases use the REAL file, not a fixture, wherever the
-  approved row is the subject. A synthetic CSV would prove the loader works on
-  input nobody ships.
+  seed-drill-secondary-skills.mjs was the one write path into this table and
+  kept its refusals in code. Now secondary skills are part of a drill's
+  version unit (Jason's default: a drill's version includes its secondary
+  skills), loaded with the drill library, and the refusals are the validator's
+  relationship rules (specs/drills.ts) applied at plan against what this gym
+  holds: a refused package writes NOTHING, the valid rows beside the bad one
+  included. The committed relationship rows are used wherever they are the
+  subject; a synthetic CSV would prove the path works on input nobody ships.
 */
-describe('seed-drill-secondary-skills.mjs against real Postgres', () => {
-  const SEED_ORG = 'ppbf-default-org';
-  const APPROVED_DRILL = 'drl_3df01682e604dd';
+describe('drill secondary skills, loaded through the content-import core', () => {
+  let seedDb: Client;
+  const SECONDARY_CSV = 'drill-library/seed_drill_secondary_skills.csv';
+  const LIBRARY = committedRows('drill-library/seed_drill_library.csv');
+  const LINKS = committedRows(SECONDARY_CSV);
+  const [APPROVED] = LINKS;
+  const primaryOf = (drillId: string) => LIBRARY.find((row) => row.drill_id === drillId)?.skill_id ?? '';
+  const NO_PRIMARY = LIBRARY.find((row) => !row.skill_id) as Record<string, string>;
 
-  async function freshWithLibrary(name: string, org: string = SEED_ORG): Promise<Client> {
-    const client = await freshDatabase(name);
-    await applyMigrationTransaction(client, migrationSql);
-    await applySecondarySkillsMigration(client, secondarySkillsSql);
-    await client.query(
-      `insert into pilot.organizations (organization_id, organization_name, status)
-       values ($1, $1, 'active') on conflict do nothing`,
-      [org],
-    );
-    return client;
-  }
-
-  async function insertDrill(
-    client: Client,
-    opts: { organizationId?: string; drillId: string; name: string; primarySkillId: string | null },
-  ): Promise<void> {
-    await client.query(
-      `insert into pilot.drill_library
-         (organization_id, drill_id, lineage_id, name, discipline, category, difficulty, skill_id,
-          target_behavior, purpose, standard_setup, execution, what_good_looks_like, what_bad_looks_like, active)
-       values ($1,$2,$2,$3,'boxing','technical','intermediate',$4,'T.','P.','S.','E.','G.','B.',true)`,
-      [opts.organizationId ?? SEED_ORG, opts.drillId, opts.name, opts.primarySkillId],
-    );
-  }
-
-  /** A throwaway seed directory holding a crafted relationship CSV. */
-  async function craftedSeedDir(dataRows: string[]): Promise<string> {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ppbf-secskill-seed-'));
-    await fs.writeFile(
-      path.join(dir, 'seed_drill_secondary_skills.csv'),
-      ['organization_id,drill_id,skill_id', ...dataRows].join('\n') + '\n',
-      'utf8',
-    );
-    return dir;
-  }
-
-  async function relationCount(client: Client, org: string = SEED_ORG): Promise<number> {
-    const { rows } = await client.query(
-      `select count(*)::int as n from pilot.drill_secondary_skills where organization_id = $1`,
-      [org],
-    );
-    return rows[0].n;
-  }
-
-  test('--dry-run validates and inserts nothing', async () => {
-    const client = await freshWithLibrary('ppbf_test_secskill_dry_run');
-    try {
-      await insertDrill(client, {
-        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: 'SK-CROSS-01',
-      });
-
-      const summary = await seedSecondarySkills(
-        client, SEED_DIR, { organizationId: SEED_ORG }, { dryRun: true },
-      );
-
-      // The insert really ran -- it reports one -- and the rollback removed it.
-      // A dry-run that skipped the insert would report the same summary while
-      // proving nothing about whether the row fits the live schema.
-      expect(summary).toEqual({ inserted: 1, alreadyPresent: 0, rejected: 0 });
-      expect(await relationCount(client)).toBe(0);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+  beforeAll(async () => {
+    seedDb = await openFullSchemaDatabase(Client, connectionStringFor, 'ppbf_test_secskill_core_seed');
+    await loadResearchClaimsIntoPlatformLibrary(seedDb);
   });
 
-  test('the approved row inserts exactly once, and a second run is idempotent', async () => {
-    const client = await freshWithLibrary('ppbf_test_secskill_idempotent');
-    try {
-      await insertDrill(client, {
-        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: 'SK-CROSS-01',
-      });
+  afterAll(async () => {
+    activeClient = null;
+    await seedDb?.end().catch(() => {});
+  });
 
-      const first = await seedSecondarySkills(client, SEED_DIR, { organizationId: SEED_ORG });
-      expect(first).toEqual({ inserted: 1, alreadyPresent: 0, rejected: 0 });
-      expect(await relationCount(client)).toBe(1);
+  async function relationRows(organizationId: string): Promise<{ drill_id: string; skill_id: string }[]> {
+    const { rows } = await seedDb.query(
+      'select drill_id, skill_id from pilot.drill_secondary_skills where organization_id = $1 order by drill_id, skill_id',
+      [organizationId],
+    );
+    return rows;
+  }
 
-      const second = await seedSecondarySkills(client, SEED_DIR, { organizationId: SEED_ORG });
-      expect(second).toEqual({ inserted: 0, alreadyPresent: 1, rejected: 0 });
-      expect(await relationCount(client)).toBe(1);
+  async function gymWithLibrary(organizationId: string): Promise<string> {
+    const admin = await createSeedingGym(seedDb, organizationId);
+    expect((await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,drill-library' })).code).toBe(0);
+    return admin;
+  }
 
-      // The stored row is the approved one, read back from the table rather
-      // than inferred from the counts.
-      const { rows } = await client.query(
-        `select drill_id, skill_id from pilot.drill_secondary_skills where organization_id = $1`,
-        [SEED_ORG],
-      );
-      expect(rows).toEqual([{ drill_id: APPROVED_DRILL, skill_id: 'SK-GUARD-02' }]);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+  /** The secondary-skills file alone, with these rows: a package that revises only its drills' links. */
+  function secondaryPackage(rows: string[], header = 'organization_id,drill_id,skill_id'): Record<string, string> {
+    return { [SECONDARY_CSV]: `${[header, ...rows].join('\n')}\n` };
+  }
+
+  test('reads a committed relationship and a drill with no primary, so nothing below passes vacuously', () => {
+    expect(LINKS.length).toBeGreaterThanOrEqual(1);
+    expect(primaryOf(APPROVED.drill_id)).toMatch(/^SK-/);
+    expect(primaryOf(APPROVED.drill_id)).not.toBe(APPROVED.skill_id);
+    expect(NO_PRIMARY).toBeDefined();
+  });
+
+  test('--dry-run applies the committed relationships and rolls them back', async () => {
+    const organizationId = 'gym_secskill_dry_run';
+    const admin = await createSeedingGym(seedDb, organizationId);
+    const loaded = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,drill-library', dryRun: true });
+    expect(loaded.code).toBe(0);
+    expect(loaded.lines.some((line) => line.startsWith('RESULT: DRY RUN'))).toBe(true);
+    expect(await relationRows(organizationId)).toEqual([]);
+  });
+
+  test('the committed relationships insert exactly once, and a second load writes nothing', async () => {
+    const organizationId = 'gym_secskill_idempotent';
+    const admin = await gymWithLibrary(organizationId);
+    const expected = LINKS.map((row) => ({ drill_id: row.drill_id, skill_id: row.skill_id })).sort((a, b) =>
+      a.drill_id === b.drill_id ? a.skill_id.localeCompare(b.skill_id) : a.drill_id.localeCompare(b.drill_id));
+    expect(await relationRows(organizationId)).toEqual(expected);
+
+    const again = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,drill-library' });
+    expect(again.lines).toContain('RESULT: NOTHING TO APPLY -- every item is unchanged or absent; nothing was written.');
+    expect(await relationRows(organizationId)).toEqual(expected);
   });
 
   test('the primary owner is untouched, and the three filters then behave as designed', async () => {
-    const client = await freshWithLibrary('ppbf_test_secskill_discovery');
-    try {
-      await insertDrill(client, {
-        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: 'SK-CROSS-01',
-      });
-      // A drill that owns SK-GUARD-02 outright, so the skillId case below
-      // distinguishes "returns nothing" from "returns only owners".
-      await insertDrill(client, {
-        drillId: 'guard-owner', name: 'Guard Recovery After Extension', primarySkillId: 'SK-GUARD-02',
-      });
+    const organizationId = 'gym_secskill_discovery';
+    await gymWithLibrary(organizationId);
+    activeClient = seedDb;
+    const secondary = APPROVED.skill_id;
 
-      await seedSecondarySkills(client, SEED_DIR, { organizationId: SEED_ORG });
+    // C. The primary is read straight out of the column: loading a secondary
+    // must not move it.
+    const stored = await seedDb.query('select skill_id from pilot.drill_library where organization_id = $1 and drill_id = $2', [
+      organizationId,
+      APPROVED.drill_id,
+    ]);
+    expect(stored.rows[0].skill_id).toBe(primaryOf(APPROVED.drill_id));
 
-      // C. The primary is read straight out of the column: seeding a secondary
-      // must not move it.
-      const stored = await client.query(
-        `select skill_id from pilot.drill_library where organization_id = $1 and drill_id = $2`,
-        [SEED_ORG, APPROVED_DRILL],
-      );
-      expect(stored.rows[0].skill_id).toBe('SK-CROSS-01');
+    // D. skillId means PRIMARY OWNER and still does: the linked drill is not
+    // among the owners of its secondary code.
+    const owners = LIBRARY.filter((row) => row.skill_id === secondary).map((row) => row.drill_id).sort();
+    const owned = await listDrillLibrary(organizationId, { skillId: secondary });
+    expect(owned.map((row) => row.drill_id).sort()).toEqual(owners);
+    expect(owners).not.toContain(APPROVED.drill_id);
 
-      // D. skillId means PRIMARY OWNER and still does. If Cross Return to Guard
-      // appears here, every existing caller asking who owns a drill has started
-      // receiving drills it does not own.
-      const owned = await listDrillLibrary(SEED_ORG, { skillId: 'SK-GUARD-02' });
-      expect(owned.map((row) => row.drill_id)).toEqual(['guard-owner']);
+    // E. relatedSkillId finds it THROUGH the relationship, beside the owners.
+    const linkedTo = (code: string) => LINKS.filter((row) => row.skill_id === code).map((row) => row.drill_id);
+    const related = await listDrillLibrary(organizationId, { relatedSkillId: secondary });
+    expect(related.map((row) => row.drill_id).sort()).toEqual([...new Set([...owners, ...linkedTo(secondary)])].sort());
 
-      // E. related_skill_id finds it THROUGH the relationship.
-      const related = await listDrillLibrary(SEED_ORG, { relatedSkillId: 'SK-GUARD-02' });
-      expect(related.map((row) => row.drill_id).sort()).toEqual([APPROVED_DRILL, 'guard-owner']);
-
-      // F. THE POINT OF THE WHOLE SLICE. SK-GUARD-02 is a SKILL-01 member code,
-      // so family discovery reaches this drill through the secondary relation
-      // even though its primary (SK-CROSS-01) is outside SKILL-01 entirely.
-      // This is the secondary half of family expansion, which no amount of
-      // primary-side data can exercise.
-      const family = await listDrillLibrary(SEED_ORG, { familyId: 'SKILL-01' });
-      expect(family.map((row) => row.drill_id).sort()).toEqual([APPROVED_DRILL, 'guard-owner']);
-      expect(family.find((row) => row.drill_id === APPROVED_DRILL)?.skill_id).toBe('SK-CROSS-01');
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+    // F. Family discovery reaches the drill through the secondary relation even
+    // when its primary sits outside that family.
+    const family = SKILL_FAMILY_IDS.find((id) => memberCodesForFamily(id).includes(secondary)) as string;
+    const members = memberCodesForFamily(family);
+    const inFamily = LIBRARY.filter((row) => members.includes(row.skill_id) || LINKS.some((link) => link.drill_id === row.drill_id && members.includes(link.skill_id)))
+      .map((row) => row.drill_id)
+      .sort();
+    const byFamily = await listDrillLibrary(organizationId, { familyId: family });
+    expect(byFamily.map((row) => row.drill_id).sort()).toEqual(inFamily);
+    expect(inFamily).toContain(APPROVED.drill_id);
+    activeClient = null;
   });
 
-  test('a SKILL-* family id is refused, and nothing is written', async () => {
-    const client = await freshWithLibrary('ppbf_test_secskill_reject_family');
-    try {
-      await insertDrill(client, {
-        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: 'SK-CROSS-01',
-      });
-
-      // 'SKILL-01' also starts with 'SK', so a naive prefix check would admit
-      // exactly the value the two-namespace rule exists to keep out.
-      const dir = await craftedSeedDir([`{{PPBF_ORG_ID}},${APPROVED_DRILL},SKILL-01`]);
-      await expect(seedSecondarySkills(client, dir, { organizationId: SEED_ORG }))
-        .rejects.toThrow(/SECONDARY_SKILL_IS_FAMILY_ID/);
-
-      expect(await relationCount(client)).toBe(0);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+  test.each([
+    ['a SKILL-* family id', 'family', () => `{{PPBF_ORG_ID}},${APPROVED.drill_id},SKILL-01`, 'skill_family_in_skill_column'],
+    ['a secondary equal to the primary', 'same', () => `{{PPBF_ORG_ID}},${APPROVED.drill_id},${primaryOf(APPROVED.drill_id)}`, 'row_rule'],
+    ['a drill with no primary owner', 'no_primary', () => `{{PPBF_ORG_ID}},${NO_PRIMARY.drill_id},${APPROVED.skill_id}`, 'row_rule'],
+  ])('%s is refused, and nothing is written', async (_label, suffix, row, code) => {
+    const organizationId = `gym_secskill_${suffix}`;
+    const admin = await gymWithLibrary(organizationId);
+    const before = await relationRows(organizationId);
+    const loaded = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'drill-library', files: secondaryPackage([row()]) });
+    expect(loaded.code).toBe(1);
+    expect(loaded.lines.some((line) => line.startsWith(`  [${code}]`))).toBe(true);
+    expect(await relationRows(organizationId)).toEqual(before);
   });
 
-  test('a secondary equal to the primary is refused as redundant', async () => {
-    const client = await freshWithLibrary('ppbf_test_secskill_reject_same');
-    try {
-      await insertDrill(client, {
-        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: 'SK-CROSS-01',
-      });
-
-      const dir = await craftedSeedDir([`{{PPBF_ORG_ID}},${APPROVED_DRILL},SK-CROSS-01`]);
-      await expect(seedSecondarySkills(client, dir, { organizationId: SEED_ORG }))
-        .rejects.toThrow(/SECONDARY_SKILL_EQUALS_PRIMARY/);
-
-      expect(await relationCount(client)).toBe(0);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+  test('a drill whose stored primary differs from the expected one stops the load', async () => {
+    // The approval of a relationship can say which primary it assumed
+    // (expected_primary_skill_id). If the drill says otherwise, the decision
+    // no longer applies -- refuse rather than reinterpret it.
+    const organizationId = 'gym_secskill_primary_mismatch';
+    const admin = await gymWithLibrary(organizationId);
+    const other = [...new Set(LIBRARY.map((row) => row.skill_id).filter(Boolean))].find((code) => code !== primaryOf(APPROVED.drill_id)) as string;
+    const loaded = await loadReferenceContent(seedDb, {
+      organizationId,
+      actorAccountId: admin,
+      datasets: 'drill-library',
+      files: secondaryPackage([`{{PPBF_ORG_ID}},${APPROVED.drill_id},${APPROVED.skill_id},${other}`], 'organization_id,drill_id,skill_id,expected_primary_skill_id'),
+    });
+    expect(loaded.code).toBe(1);
+    expect(loaded.lines.some((line) => line.startsWith('  [row_rule]') && line.includes(`expected primary ${other}`))).toBe(true);
   });
 
-  test('a drill whose stored primary differs from the pinned one stops the run', async () => {
-    const client = await freshWithLibrary('ppbf_test_secskill_primary_mismatch');
-    try {
-      // The approval for this relationship assumed primary SK-CROSS-01. If the
-      // database says otherwise, the decision no longer applies -- the loader
-      // must stop rather than reinterpret or repair it.
-      await insertDrill(client, {
-        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: 'SK-JAB-01',
-      });
-
-      await expect(seedSecondarySkills(client, SEED_DIR, { organizationId: SEED_ORG }))
-        .rejects.toThrow(/SECONDARY_SKILL_PRIMARY_MISMATCH/);
-
-      expect(await relationCount(client)).toBe(0);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
-  });
-
-  test('a drill with no primary owner cannot take a secondary', async () => {
-    const client = await freshWithLibrary('ppbf_test_secskill_no_primary');
-    try {
-      await insertDrill(client, {
-        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: null,
-      });
-
-      await expect(seedSecondarySkills(client, SEED_DIR, { organizationId: SEED_ORG }))
-        .rejects.toThrow(/SECONDARY_SKILL_DRILL_HAS_NO_PRIMARY/);
-
-      expect(await relationCount(client)).toBe(0);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
-  });
-
-  test('a rejected row rolls back the rows that validated before it', async () => {
-    const client = await freshWithLibrary('ppbf_test_secskill_atomicity');
-    try {
-      await insertDrill(client, {
-        drillId: 'atomic-ok', name: 'Valid Row Drill', primarySkillId: 'SK-JAB-01',
-      });
-      await insertDrill(client, {
-        drillId: 'atomic-bad', name: 'Invalid Row Drill', primarySkillId: 'SK-JAB-02',
-      });
-
-      // TWO ROWS, AND THE ORDER IS THE WHOLE TEST. Row 1 validates and inserts
-      // for real; row 2 fails a JavaScript validation rule.
-      //
-      // Every other rejection case in this file uses a single row that fails
-      // BEFORE any insert, so a zero count there proves only that nothing was
-      // ever attempted -- not that anything was undone. This is the first case
-      // where a successful insert precedes the failure, which is the only shape
-      // that can tell COMMIT-on-throw apart from correct rollback.
-      //
-      // A loader validation error is a JavaScript exception, not a PostgreSQL
-      // one, so the transaction is NOT left aborted and a COMMIT reached
-      // through `finally` would succeed and persist row 1.
-      const dir = await craftedSeedDir([
-        '{{PPBF_ORG_ID}},atomic-ok,SK-GUARD-02',
-        '{{PPBF_ORG_ID}},atomic-bad,SKILL-01',
-      ]);
-
-      await expect(seedSecondarySkills(client, dir, { organizationId: SEED_ORG }))
-        .rejects.toThrow(/SECONDARY_SKILL_IS_FAMILY_ID/);
-
-      // All-or-nothing. Not "the bad row was skipped" -- the good one must be
-      // gone too, or a partial dataset is committed under a failed run and the
-      // operator is told the run failed.
-      expect(await relationCount(client)).toBe(0);
-
-      const { rows } = await client.query(
-        `select drill_id from pilot.drill_secondary_skills where organization_id = $1`,
-        [SEED_ORG],
-      );
-      expect(rows).toEqual([]);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+  test('a refused row stops the whole package: the valid row beside it is not written either', async () => {
+    // TWO ROWS, AND THE ORDER IS THE WHOLE TEST: the first is a legitimate new
+    // link, the second is refused. All or nothing -- not "the bad row was
+    // skipped".
+    const organizationId = 'gym_secskill_atomicity';
+    const admin = await gymWithLibrary(organizationId);
+    const before = await relationRows(organizationId);
+    const target = LIBRARY.find((row) => row.skill_id && row.skill_id !== APPROVED.skill_id && row.drill_id !== APPROVED.drill_id) as Record<string, string>;
+    const loaded = await loadReferenceContent(seedDb, {
+      organizationId,
+      actorAccountId: admin,
+      datasets: 'drill-library',
+      files: secondaryPackage([`{{PPBF_ORG_ID}},${target.drill_id},${APPROVED.skill_id}`, `{{PPBF_ORG_ID}},${APPROVED.drill_id},SKILL-01`]),
+    });
+    expect(loaded.code).toBe(1);
+    expect(await relationRows(organizationId)).toEqual(before);
+    const versions = await seedDb.query('select count(*)::int as n from pilot.drill_library where organization_id = $1 and version > 1', [organizationId]);
+    expect(versions.rows[0].n).toBe(0);
   });
 
   test('organization isolation: a drill in another gym is not a match', async () => {
-    const client = await freshWithLibrary('ppbf_test_secskill_org_isolation');
-    try {
-      await client.query(
-        `insert into pilot.organizations (organization_id, organization_name, status)
-         values ($1, $1, 'active') on conflict do nothing`,
-        [ORG_B],
-      );
-      // The drill exists -- but in SEED_ORG only. Seeding for ORG_B must not
-      // reach across, and must say why rather than surfacing a raw FK error.
-      await insertDrill(client, {
-        drillId: APPROVED_DRILL, name: 'Cross Return to Guard', primarySkillId: 'SK-CROSS-01',
-      });
+    // The drills exist -- but in the first gym only. The relationships loaded
+    // for the second gym must not reach across; they are refused as orphans,
+    // and neither gym gains a row.
+    const withLibrary = 'gym_secskill_isolation_a';
+    await gymWithLibrary(withLibrary);
+    const withLibraryBefore = await relationRows(withLibrary);
+    const other = 'gym_secskill_isolation_b';
+    const otherAdmin = await createSeedingGym(seedDb, other);
 
-      await expect(seedSecondarySkills(client, SEED_DIR, { organizationId: ORG_B }))
-        .rejects.toThrow(/SECONDARY_SKILL_DRILL_NOT_FOUND_IN_ORG/);
+    const loaded = await loadReferenceContent(seedDb, {
+      organizationId: other,
+      actorAccountId: otherAdmin,
+      datasets: 'drill-library',
+      files: { [SECONDARY_CSV]: committedText(SECONDARY_CSV) },
+    });
+    expect(loaded.code).toBe(1);
+    expect(loaded.lines.some((line) => line.startsWith('  [orphan_reference]'))).toBe(true);
+    expect(await relationRows(other)).toEqual([]);
+    expect(await relationRows(withLibrary)).toEqual(withLibraryBefore);
 
-      expect(await relationCount(client, ORG_B)).toBe(0);
-      expect(await relationCount(client, SEED_ORG)).toBe(0);
-
-      // And the other direction: a relation seeded for SEED_ORG stays there.
-      await seedSecondarySkills(client, SEED_DIR, { organizationId: SEED_ORG });
-      expect(await relationCount(client, SEED_ORG)).toBe(1);
-      expect(await relationCount(client, ORG_B)).toBe(0);
-
-      const crossed = await listDrillLibrary(ORG_B, { relatedSkillId: 'SK-GUARD-02' });
-      expect(crossed).toEqual([]);
-    } finally {
-      activeClient = null;
-      await client.end();
-    }
+    activeClient = seedDb;
+    expect(await listDrillLibrary(other, { relatedSkillId: APPROVED.skill_id })).toEqual([]);
+    activeClient = null;
   });
 });
 
@@ -1440,6 +1292,7 @@ describe('the athlete reference library against real Postgres', () => {
     const client = await freshDatabase(name);
     await applyMigrationTransaction(client, migrationSql);
     await applySecondarySkillsMigration(client, secondarySkillsSql);
+    await applyStoredOnceRuleSchema(client);
     await client.query(operationalDrillSql);
     await client.query(
       `insert into pilot.organizations (organization_id, organization_name, status)
@@ -1675,13 +1528,15 @@ describe('the athlete reference library against real Postgres', () => {
       expect(Object.keys(detail).sort()).toEqual([
         'common_errors', 'contact_level', 'corrections', 'cues', 'drill_id', 'equipment_needed',
         'execution', 'name', 'purpose', 'requires_coach_authorization', 'scale_levels', 'setup',
-        'stop_rules', 'what_bad_looks_like', 'what_good_looks_like',
+        'stop_rules', 'universal_stop_rules', 'what_bad_looks_like', 'what_good_looks_like',
       ]);
       expect(Object.keys(detail.scale_levels[0]).sort()).toEqual([
         'coach_watch_point', 'constraint_applied', 'contact_level', 'demand_description',
         'is_starting_point', 'scale_level',
       ]);
-      expect(Object.keys(detail.stop_rules[0]).sort()).toEqual(['condition_text', 'ordinal', 'rule_kind', 'scope']);
+      // `origin` says where the rule came from (owner ruling R3): this row is the
+      // drill's own, whatever its legacy scope label.
+      expect(Object.keys(detail.stop_rules[0]).sort()).toEqual(['condition_text', 'ordinal', 'origin', 'rule_kind', 'scope']);
 
       // The instructional content IS there -- a projection that dropped
       // everything would pass a deny-list check and be useless.
@@ -1696,8 +1551,11 @@ describe('the athlete reference library against real Postgres', () => {
         cues: ['Hand home first'],
       });
       expect(detail.stop_rules).toEqual([
-        { ordinal: 1, condition_text: 'Stop if the guard drops.', scope: 'universal', rule_kind: 'safety' },
+        { ordinal: 1, condition_text: 'Stop if the guard drops.', scope: 'universal', rule_kind: 'safety', origin: 'drill' },
       ]);
+      // This gym has stored no rules once; referenceDrillVersions.pg.test.ts
+      // covers the ones it has.
+      expect(detail.universal_stop_rules).toEqual([]);
       expect(detail.scale_levels).toHaveLength(1);
 
       // RECURSIVE deny. Serialising and walking every key at every depth is what

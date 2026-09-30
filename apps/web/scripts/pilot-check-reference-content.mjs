@@ -25,7 +25,7 @@ import { encodeSingleLineJson } from './lib/single-line-json.mjs';
  * reference drills a gym has already adopted (pilot.drills.reference_drill_id)
  * or superseded, and how many drill rows carry the '|' claim-id defect -- the
  * seed loader stored 'A1-001|A2-002' as ONE element because its splitter did
- * not know '|' (seed-drill-library.mjs:210-219).
+ * not know '|' (the retired seed-drill-library.mjs split on ';' and ',' only).
  *
  * COUNTS ONLY. Each count is keyed by organization_id, and by created_by_role on
  * the tables that have that column -- those two keys ARE the question. Nothing

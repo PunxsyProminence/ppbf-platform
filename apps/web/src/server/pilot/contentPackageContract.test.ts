@@ -16,7 +16,7 @@ import { validateParsed } from './contentImport/validate';
   (the specs in contentImport/specs are the one source), so a PR that edits a
   seed CSV by hand is held to the contract too. One dataset is known broken
   and is pinned EXACTLY rather than excused: transfer-claims points at 61 drill
-  ids that are not in the library (seed-reference-data.yml:42-49 leaves it out
+  ids that are not in the library (seed-reference-data.yml's header leaves it out
   of the workflow for that reason). Pinning the count means a fix shows up
   here as a change to review, and so does any new orphan.
 

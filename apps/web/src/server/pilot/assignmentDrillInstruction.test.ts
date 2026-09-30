@@ -214,7 +214,10 @@ function athleteDetail(overrides: Partial<AthleteDrillDetail> = {}): AthleteDril
       },
     ],
     stop_rules: [
-      { ordinal: 1, condition_text: 'Stop if the head is hit', scope: 'universal', rule_kind: 'safety' },
+      { ordinal: 1, condition_text: 'Stop if the head is hit', scope: 'universal', rule_kind: 'safety', origin: 'drill' },
+    ],
+    universal_stop_rules: [
+      { ordinal: 1, condition_text: 'Stop on any sign of injury', rule_kind: 'safety', origin: 'universal' },
     ],
     ...overrides,
   };
@@ -256,6 +259,7 @@ function coachDetail(overrides: Partial<DrillWithDetail> = {}): DrillWithDetail 
     updated_at: '2026-09-10T12:00:00.000Z',
     scale_levels: [],
     stop_rules: [],
+    universal_stop_rules: [],
     cues: [],
     secondary_skills: [],
     ...overrides,
@@ -426,13 +430,15 @@ describe('resolveAssignmentDrillInstruction: athlete', () => {
       'scale_levels',
       'setup',
       'stop_rules',
+      'universal_stop_rules',
       'what_bad_looks_like',
       'what_good_looks_like',
     ]);
     expect(result.drill).not.toHaveProperty('drill_id');
 
     // Every other field is carried as the athlete read shaped it -- the
-    // safety stop rule included, which is why open work keeps it at all.
+    // safety stop rules included (the drill's own and the gym's stored-once
+    // ones), which is why open work keeps it at all.
     const { drill_id: _pointer, ...instruction } = detail;
     void _pointer;
     expect(result.drill).toStrictEqual(instruction);

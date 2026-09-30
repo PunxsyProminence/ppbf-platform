@@ -449,7 +449,11 @@ function mintIds(parsed: ParsedPackage, baseline: ParsedPackage | undefined, out
 
     const existing = new Map<string, string>();
     for (const row of baselineFile(baseline, file.spec)?.rows ?? []) {
-      existing.set(row.values[mint.column], file.spec.nameColumn ? row.values[file.spec.nameColumn] : '');
+      // A database baseline blanks the name of a row that does not hold it (a
+      // withdrawn template, datasets/templateScriptVersions.ts readBaseline)
+      // and keeps it in raw, so the message can still name the item.
+      const name = file.spec.nameColumn ? row.values[file.spec.nameColumn] || row.raw[file.spec.nameColumn] || '' : '';
+      existing.set(row.values[mint.column], name);
     }
 
     const byKind = minted.get(mint.idKind) ?? new Map<string, string>();

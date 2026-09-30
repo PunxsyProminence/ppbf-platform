@@ -213,6 +213,15 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/data-deletion', label: 'Data Deletion', room: 'office', roles: ['admin'],
     keywords: 'delete deletion remove withdraw erase forget retention privacy athlete guardian parent account',
     hint: 'Mark an athlete or guardian deleted and close their login now. Nothing is permanently removed here.' },
+  /* roles: ['admin'], NOT ADMIN_GATE and NOT the roster door's ['admin',
+     'coach']. POST /api/pilot/admin/content-import admits organization_admin
+     and admin only (the flagged default: the upload screen is for
+     organization admins), and gym content is never loaded by the platform
+     owner (contentImport/actor.ts refuses it as well). The route's own suite
+     pins this door against the API gate and the page gate. */
+  { href: '/admin/content-import', label: 'Load Gym Content', room: 'office', roles: ['admin'],
+    keywords: 'content import upload load csv package drills drill library stop rules workout templates session scripts disciplines competence levels cohorts reference versions',
+    hint: 'Check content files, see what would change, then apply. A changed item gets a new version; nothing is deleted.' },
   { href: '/admin/public-interest', label: 'Public Interest', room: 'office', roles: ADMIN_GATE,
     keywords: 'disclosure transparency public record' },
   { href: '/admin/consent', label: 'Waivers & Consent', room: 'office', roles: ['admin', 'coach'],

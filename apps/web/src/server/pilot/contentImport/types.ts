@@ -69,7 +69,7 @@ export interface ColumnSpec {
   systemDefault?: string;
   /**
    * The value a blank cell STANDS FOR: what the loader writes for a blank
-   * (e.g. seed-drill-library.mjs:313 `record.contact_level || 'none'`) and so
+   * (e.g. the retired seed-drill-library.mjs, `record.contact_level || 'none'`) and so
    * what a database row holds. The canonical hash reads a blank as this value,
    * so re-sending an item with the default left blank is not a revision.
    * Printed in the doc as "Blank means <value>".
@@ -210,7 +210,11 @@ export type FindingCode =
   | 'system_column_set'
   | 'skill_family_in_skill_column'
   | 'scale_rule'
-  | 'row_rule';
+  | 'row_rule'
+  // Raised by the database plan stage (plan.ts, datasets/), never offline:
+  // they compare a package with what the target organization already holds.
+  | 'ordinal_change'
+  | 'dataset_not_loadable';
 
 export interface Finding {
   code: FindingCode;

@@ -17,7 +17,7 @@ import {
 } from './common';
 
 // pilot.session_scripts, session_script_blocks, session_script_renderings
-// (session_scripts migration :27-124). Loaded today by seed-session-scripts.mjs.
+// (session_scripts migration :27-124). Loaded by the content-import core (seed-reference-data, npm run seed:session-scripts).
 
 const scriptParent = () =>
   parentColumn('script_id', 'script', 'script', 'The script id, or the new:<short-name> of a script in this package.');
@@ -31,8 +31,9 @@ export const sessionScriptsDataset: DatasetSpec = {
     + 'are one unit: under R2 a change makes a new version and the old one is kept. Blocks (or renderings) listed '
     + 'for a script replace all of its blocks (or renderings).',
   loadedToday:
-    'seed-reference-data workflow, dataset session-scripts (npm run seed:session-scripts). Insert-only by id: an '
-    + 'existing script, block or rendering id is skipped; a new block at an existing (script, block_order) stops the run.',
+    'seed-reference-data workflow, dataset session-scripts (npm run seed:session-scripts), through the content-import '
+    + 'core: a new script is inserted, a changed one becomes version+1 with new block and rendering ids (a run keeps '
+    + 'the version it started on), an unchanged one is skipped.',
   files: [
     {
       dataset: 'session-scripts',
@@ -59,9 +60,27 @@ export const sessionScriptsDataset: DatasetSpec = {
         text('reset_protocol', 'What to do when the room loses it.'),
         text('coach_priorities', 'The priorities, in order.'),
         text('frequent_phrases', 'The short cues repeated all session.'),
-        vocabulary('authoring_state', 'script_authoring_state', 'How far it has been reviewed.', { blankDefault: 'draft' }),
+        vocabulary(
+          'authoring_state',
+          'script_authoring_state',
+          'How far it has been reviewed. Lifecycle, not content: a change here alone makes no new version and writes nothing; '
+          + 'a new script, or the new version a content change makes, takes this value.',
+          { blankDefault: 'draft' },
+        ),
         text('source_document', 'Which PPBF document it came from.', { label: true }),
         createdByColumn(),
+      ],
+      rowRules: [
+        {
+          // Lifecycle is not content (datasets/sessionScripts.ts): a file
+          // saying 'retired' would otherwise load a NEW VERSION marked retired
+          // rather than retire anything (the intake plan critique).
+          description: 'authoring_state is never retired: retiring a script is a separate action, not a hand-off.',
+          check: (row) =>
+            row.authoring_state === 'retired'
+              ? "authoring_state 'retired' cannot come in a package: retiring a script is a separate action, and a file cannot do it"
+              : null,
+        },
       ],
     },
     {

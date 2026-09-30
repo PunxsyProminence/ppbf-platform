@@ -337,14 +337,15 @@ describe('the coach E2E command attends every coach spec on disk', () => {
 /**
  * A seed-data change runs the PostgreSQL suites that load it.
  *
- * WHY THIS EXISTS. Six embedded-Postgres suites load their rows straight out
- * of `apps/web/seed-data/` into the real schema (drillLibraryV3.pg.test.ts:82,
- * multidiscipline.pg.test.ts:63, competenceCohorts.pg.test.ts:55,
- * workoutTemplates.pg.test.ts:69-71, sessionScriptsTransfer.pg.test.ts:59-61,
- * and scripts/import-shadow-research.pg.test.ts:197,232 for
- * shadow-research/2026-08-07), and `npm test` excludes every .pg suite. So a
- * data row that breaks a CHECK constraint or a foreign key meets the schema
- * ONLY in those suites -- and before `isSeedDataPath` a PR changing only seed
+ * WHY THIS EXISTS. The embedded-Postgres suites load the committed rows of
+ * `apps/web/seed-data/` into the real schema -- the reference datasets through
+ * the content-import core (src/testing/referenceContentFixture.ts, used by
+ * drillLibraryV3, multidiscipline, competenceCohorts, workoutTemplates,
+ * sessionScriptsTransfer and seedCreatedByRole, plus the contentImport*
+ * suites), and shadow-research/2026-08-07 through
+ * scripts/import-shadow-research.pg.test.ts -- and `npm test` excludes every
+ * .pg suite. So a data row that breaks a CHECK constraint or a foreign key
+ * meets the schema ONLY in those suites -- and before `isSeedDataPath` a PR changing only seed
  * data classified `unknown_code` and ran none of them. That is the shape every
  * content hand-off arrives in.
  *
