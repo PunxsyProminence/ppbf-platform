@@ -8,6 +8,7 @@ import {
   type BoardCountMetric,
 } from './boardSummary';
 import { query, queryOne, withTransaction } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 import { ConflictError } from './errors';
 import {
   fileEscalation,
@@ -525,10 +526,16 @@ export async function getOrganizationViolations(
     coachAccountId?: string;
   },
 ): Promise<ComplianceViolation[]> {
+  // A deleted athlete's violation leaves once it is closed -- resolved or
+  // dismissed -- and an open one stays until somebody closes it (Jason,
+  // 2026-09-30, OD-2026-09-30-004 "B"). "Open" is this module's one definition
+  // of it, inlined: the values are this file's own constants, never input.
   let sql = `
     select violation_id, rule_id, video_session_id, athlete_id, severity, status, escalation_status, created_at
     from pilot.compliance_violations
     where organization_id = $1
+      and (status in (${COMPLIANCE_VIOLATION_OPEN_STATUSES.map((status) => `'${status}'`).join(', ')})
+           or ${athleteNotDeletedSql('pilot.compliance_violations')})
   `;
   const params: unknown[] = [organizationId];
 
@@ -541,8 +548,7 @@ export async function getOrganizationViolations(
     // deleted_at is null: the coach's own view, which elsewhere has always
     // left a deleted athlete out (athleteIdsForCoach), and a deleted
     // athlete's rows are marked deleted with them (scope B). The org-admin
-    // views of violations are left as they are pending the owner's answer on
-    // safety queues.
+    // view keeps a deleted athlete's OPEN violations (the filter above).
     sql += ` and athlete_id in (select athlete_id from pilot.athletes where coach_id = $${params.length + 1} and organization_id = $1 and deleted_at is null)`;
     params.push(filters.coachAccountId);
   }

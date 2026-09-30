@@ -173,11 +173,30 @@ most of these rows with it.
   portrait, the admin PIN directory, the roster CSV export, and SHADOW research requirements
   about them.
 
-**Not changed, pending Jason** (safeguarding; the "10 C" question did not cover them): the
-org-admin safety screens -- safety escalations, safety flags, training holds, failing safety
-gates, video compliance violations, the safety review page, the board escalation summary -- and
-the feedback queue, which carries safeguarding disclosures. A deleted athlete's items stay on
-those screens for the organization admin, exactly as before. (Coaches already did not see them.)
+**Safety screens: hidden once resolved** (owner decision 2026-09-30, OD-2026-09-30-004, "#1027
+Q1", option B). On the organization admin's safety screens a deleted athlete's item stays until
+somebody deals with it, then leaves. Deleting a child does not deal with a red flag about them.
+(Coaches already did not see a deleted athlete's items.) What "dealt with" means is each screen's
+own state:
+
+| Screen | Still shown for a deleted athlete | Hidden once |
+|---|---|---|
+| Safety escalations | open, acknowledged | resolved |
+| Training holds | active | lifted or expired |
+| Compliance violations (compliance center) | new, acknowledged, escalated | resolved or dismissed |
+| Feedback queue (carries safeguarding disclosures) | new, triaged, planned | done or declined |
+| Safety flags | open | any other status (the screen has only ever listed open flags) |
+| Safety review page (holds, failing gates, escalations, violations) | active holds, unresolved escalations, open violations, a gate whose latest check did not pass | the same states as above; a gate once a newer check passes |
+| Board escalation summary (a count, no names) | open escalations | anything not open (it has only ever counted open ones) |
+
+The first four readers changed (`escalationLadder.ts` `listEscalations`, `trainingHolds.ts`
+`listTrainingHolds`, `compliance.ts` `getOrganizationViolations`, `feedback.ts`
+`listOrganizationFeedback`). The last three already behaved this way and are pinned by the same
+test, `apps/web/src/server/pilot/deletedAthleteSafetyScreens.pg.test.ts`. The feedback queue is
+keyed by the writer's account, so it also hides a deleted guardian's or staff member's
+submissions once they are done or declined. The platform owner's cross-gym feedback list, which
+names nobody and withholds safeguarding text, is unchanged. The video-compliance publication
+queue is not in this table: it drops a deleted athlete's publications at once (videos, above).
 
 **Left as they are, and why:**
 - Counts that name nobody (model-validation rates, SHADOW usage metrics, board competition and
