@@ -1,4 +1,5 @@
 import { isOrganizationAdminRole } from './access';
+import { countCompletedSessions } from './achievements';
 import type { PilotRole } from './contracts';
 import { isSystemCheckInNote } from '../../shared/sessionNoteSemantics';
 
@@ -395,6 +396,12 @@ function belongsToOrganization(row: { organization_id: string }, organizationId:
  * page of this book is audience-scoped (see the note_type lists above), and a
  * caller that forgot to say who is reading must fail to compile rather than
  * fall back to the widest audience.
+ *
+ * NOT THE GUARDIAN'S BOOK. GET /api/pilot/passbook hands a linked guardian
+ * getGuardianPassbook (below) and never calls this for one. The 'parent'
+ * handling that remains here (PASSBOOK_GUARDIAN_NOTE_TYPES, the absent notes
+ * key) is a floor for any other caller, not permission to use this book as a
+ * guardian's: it still carries dated rows, which OD-2026-09-30-004 d3 closed.
  */
 export async function getAthletePassbook(
   organizationId: string,
@@ -637,6 +644,49 @@ export async function getAthletePassbook(
         note: 'gym_status is a roster membership state, not a stamp code',
       },
     },
+  };
+}
+
+/**
+ * THE GUARDIAN'S BOOK (OD-2026-09-30-004 d3; the owner chose A: narrow this
+ * read for a linked guardian to match ParentDigest, with no dated session
+ * rows).
+ *
+ * ParentDigest is the parent's disclosure model: the child's name, coach
+ * recognitions, milestones, and the completed-session COUNT -- never the
+ * session log ("every date, RPE and note"). The first and last are all this
+ * book holds that the digest also shows, so they are all a guardian gets.
+ * Recognitions and milestones are not folded in: they have their own routes,
+ * and adding them here would widen this read, not narrow it.
+ *
+ * A separate function rather than a branch in getAthletePassbook, so that no
+ * query for a dated row runs on a guardian's behalf at all, and the return
+ * type itself cannot carry a page. The count is countCompletedSessions, the
+ * one the digest already shows, so the two cannot drift apart.
+ */
+export interface GuardianPassbook {
+  athlete: Pick<AthleteRow, 'athlete_id' | 'full_name'>;
+  completed_sessions: number;
+}
+
+export async function getGuardianPassbook(
+  organizationId: string,
+  athleteId: string,
+): Promise<GuardianPassbook | null> {
+  const athlete = await queryOne<Pick<AthleteRow, 'organization_id' | 'athlete_id' | 'full_name'>>(
+    `select organization_id, athlete_id, full_name
+     from pilot.athletes
+     where organization_id = $1 and athlete_id = $2`,
+    [organizationId, athleteId],
+  );
+
+  if (!athlete || !belongsToOrganization(athlete, organizationId)) {
+    return null;
+  }
+
+  return {
+    athlete: { athlete_id: athlete.athlete_id, full_name: athlete.full_name },
+    completed_sessions: await countCompletedSessions(organizationId, athleteId),
   };
 }
 
