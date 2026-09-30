@@ -135,9 +135,80 @@ export interface ShadowResponseValidation {
 export const SHADOW_SAFE_FILTERED_RESPONSE =
   'I can’t safely provide that generated answer. SHADOW filtered it before display. Consult a qualified coach or medical professional for the next decision. RESEARCH NEEDED — the answer did not pass safety validation.';
 
+/**
+ * Fold the typographic variation a phone keyboard produces, ONCE, before any
+ * pattern in this file runs.
+ *
+ * THE DEFECT THIS CLOSES IS LIVE IN PRODUCTION. Measured against this file
+ * before the change:
+ *
+ *   "I can't breathe after that hit"        straight  -> withheld, human queued
+ *   "I can\u2019t breathe after that hit"        CURLY     -> allowed through to the model
+ *
+ * Allowed through means the athlete gets an ordinary chat answer instead of
+ * the safeguarding response, and nobody is told. The same holds for "I can\u2019t
+ * see" and "I can\u2019t move". The curly apostrophe is what iOS and Android type
+ * BY DEFAULT, so this is the common case, not an edge case.
+ *
+ * The file already knew. The loss_of_consciousness pattern carries `['\u2019]`
+ * for KO'd -- one pattern, fixed by hand -- while every can't and cannot
+ * pattern stayed straight-only. shadowChat.test.ts even uses a curly
+ * apostrophe in a case that passes by luck, matching on "seeing stars" rather
+ * than on its apostrophe.
+ *
+ * Which is why this is central rather than another character class.
+ * Per-pattern fixes are how you get one correct pattern and fourteen broken
+ * ones, and the next pattern anybody writes starts broken again. Normalising
+ * the INPUT makes it impossible for a pattern author to get wrong.
+ *
+ * MATCHING ONLY. The return value is never persisted, never sent to the
+ * model, and never shown back: the athlete's own words are the record. It is
+ * used only inside the two functions below, and only inside `.test(...)`.
+ */
+export function normaliseForMatching(text: string): string {
+  return text
+    // THE EXPLICIT CLASSES RUN BEFORE NFKC, and the order is load-bearing.
+    // With NFKC first, U+00B4 ACUTE ACCENT decomposes to a space plus a
+    // combining acute, so by the time this class ran the character it was
+    // looking for no longer existed and "can\u00B4t" came out as "can t". Caught
+    // by the unit test for this function, not by reading it.
+    .replace(/[\u2018\u2019\u201A\u201B\u2032\u02BC\u00B4`]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F\u2033]/g, '"')
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    // NFKC after them, for full-width Latin and the rest.
+    .normalize('NFKC')
+    // A SECOND APOSTROPHE PASS, because the order above cuts both ways: NFKC
+    // maps the full-width forms (U+FF07, U+FF40) onto ASCII and onto the
+    // grave, which the first pass has already been and gone past. One more
+    // cheap replace closes that without reintroducing the U+00B4
+    // decomposition problem the ordering exists to avoid.
+    .replace(/[\u2018\u2019\u2032\u02BC`]/g, "'")
+    // Zero-width characters sit INSIDE a word and defeat a \b boundary with
+    // nothing visible to explain why.
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    // Exotic spaces become ordinary ones.
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
+    // HORIZONTAL WHITESPACE ONLY. Collapsing \s+ folded NEWLINES into spaces,
+    // and the newline was the only thing bounding the unbounded `.` gaps in
+    // this file -- `weight.*cut`, `return.*play`, the diagnosis `.*`, and the
+    // bounded `.{0,30}` windows. None carries the /s flag, so `.` never
+    // crossed a line break before. Measured: "Bodyweight work today felt
+    // good.\nTomorrow I want to cut the warm-up short." was fine on main and
+    // was withheld as weight_cutting after the collapse, as was "I need to
+    // return the gloves I borrowed.\nWe can play it by ear for Saturday."
+    // Two ordinary two-line messages, refused.
+    //
+    // Every \s+ in this file already matched a newline, so the apostrophe fix
+    // never needed this. `[^\S\n]` keeps the doubled-space case working and
+    // leaves the line break exactly where the patterns expect it.
+    .replace(/[^\S\n]+/g, ' ')
+    .trim();
+}
+
 // Classify high-risk topics and determine routing
 export function classifyHighRiskTopic(userMessage: string): HighRiskClassification {
-  const msg = userMessage.toLowerCase();
+  // Normalised, not merely lowercased -- see normaliseForMatching.
+  const msg = normaliseForMatching(userMessage).toLowerCase();
 
   const topics: Array<[HighRiskTopic, RegExp]> = [
     ['concussion', /concuss/i],
@@ -156,7 +227,7 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
     ['return_to_play', /(return.*play|cleared.*play|cleared\s+to)/i],
     ['medical_clearance', /(medical|doctor)\s+clear|cleared|clearance/i],
     ['youth_safety', /(minor|child|kid|young)\s+(safety|harm)/i],
-    ['urgent_symptom', /(can(?:not|'t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'t)\s+move|sudden\s+weakness)/i],
+    ['urgent_symptom', /(\bcan(?:not|'?t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|\bcan(?:not|'?t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|\bcan(?:not|'?t)\s+move|sudden\s+weakness)/i],
   ];
 
   let classifiedTopic: HighRiskTopic = 'none';
@@ -264,24 +335,30 @@ export function validateShadowRequest(
   _organizationId: string,
 ): ShadowValidationResult {
   const classification = classifyHighRiskTopic(message);
-  const normalizedMessage = message.toLowerCase();
+  // EVERY PATTERN BELOW READS `text`, NOT `message`. See normaliseForMatching:
+  // a curly apostrophe made "I can\u2019t breathe after that hit" an ordinary
+  // question. `message` is not matched against again anywhere in this
+  // function, which is what keeps the guarantee from depending on each
+  // pattern author remembering it.
+  const text = normaliseForMatching(message);
+  const normalizedMessage = text.toLowerCase();
 
-  const hasPrescriptionLanguage = /\b(prescribe|prescribed|prescribing|prescription|rx)\b/i.test(message)
-    || /should\s+i\s+take/i.test(message)
-    || /should\s+you\s+take/i.test(message)
-    || /take\s+(?:this\s+)?(?:medication|medicine|drug|pill)/i.test(message);
+  const hasPrescriptionLanguage = /\b(prescribe|prescribed|prescribing|prescription|rx)\b/i.test(text)
+    || /should\s+i\s+take/i.test(text)
+    || /should\s+you\s+take/i.test(text)
+    || /take\s+(?:this\s+)?(?:medication|medicine|drug|pill)/i.test(text);
 
-  const hasRapidWeightCutLanguage = /how\s+do\s+i\s+cut\s+weight/i.test(message)
+  const hasRapidWeightCutLanguage = /how\s+do\s+i\s+cut\s+weight/i.test(text)
     || normalizedMessage.includes('lose weight quickly')
     || normalizedMessage.includes('cut weight for my weight class')
-    || /\b(?:i\s+(?:need|have)\s+to|help\s+me|how\s+(?:can|do)\s+i)\b.{0,35}\bmake\s+weight\b/i.test(message)
-    || /\b(?:i\s+(?:need|want|have)\s+to\s+)?lose\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week\b/i.test(message);
+    || /\b(?:i\s+(?:need|have)\s+to|help\s+me|how\s+(?:can|do)\s+i)\b.{0,35}\bmake\s+weight\b/i.test(text)
+    || /\b(?:i\s+(?:need|want|have)\s+to\s+)?lose\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week\b/i.test(text);
 
-  const hasPersonalContext = /\b(i|me|my|mine|we|our)\b/i.test(message)
-    || /\b(now|currently|today|just happened|during training|after sparring|after (?:a|that|the) hit)\b/i.test(message);
-  const hasUrgentSymptom = /(can(?:not|'t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'t)\s+move|sudden\s+weakness)/i.test(message);
-  const hasAcuteImpactConcern = /(?:after|from).{0,30}(?:hit|blow|punch|fall).{0,60}(?:pain|numb|weak|tingl|blur|bleed|dizz|confus|vomit|can(?:not|'t))/i.test(message);
-  const hasPersonalHealthConcern = /\b(hurt|hurts|hurting|pain|painful|sore|soreness|swollen|swelling|injured|injury|sprain(?:ed|ing)?|strain(?:ed|ing)?|bruised|bruising|numb|numbness|tingling|stiff|stiffness)\b/i.test(message);
+  const hasPersonalContext = /\b(i|me|my|mine|we|our)\b/i.test(text)
+    || /\b(now|currently|today|just happened|during training|after sparring|after (?:a|that|the) hit)\b/i.test(text);
+  const hasUrgentSymptom = /(\bcan(?:not|'?t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|\bcan(?:not|'?t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|\bcan(?:not|'?t)\s+move|sudden\s+weakness)/i.test(text);
+  const hasAcuteImpactConcern = /(?:after|from).{0,30}(?:hit|blow|punch|fall).{0,60}(?:pain|numb|weak|tingl|blur|bleed|dizz|confus|vomit|\bcan(?:not|'?t))/i.test(text);
+  const hasPersonalHealthConcern = /\b(hurt|hurts|hurting|pain|painful|sore|soreness|swollen|swelling|injured|injury|sprain(?:ed|ing)?|strain(?:ed|ing)?|bruised|bruising|numb|numbness|tingling|stiff|stiffness)\b/i.test(text);
 
   // Direct prescription or weight-cutting directives are blocked even when phrased as questions.
   if (hasPrescriptionLanguage || hasRapidWeightCutLanguage) {
@@ -324,7 +401,7 @@ export function validateShadowRequest(
   }
 
   // Check for diagnosis claims
-  if (/(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i.test(message)) {
+  if (/(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i.test(text)) {
     return {
       valid: false,
       error: 'Diagnosis and personal health assessment require professional medical evaluation.',
@@ -335,9 +412,9 @@ export function validateShadowRequest(
 
   // Check for clearance claims
   if (
-    /\bmedical\s+clear(?:ed|ance)?\b/i.test(message)
-    || /\bclear(?:ed|ance)?\b.{0,40}\b(play|train|training|compete|competition|return|contact|spar|sparring)\b/i.test(message)
-    || /\b(play|train|training|compete|competition|return|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)?\b/i.test(message)
+    /\bmedical\s+clear(?:ed|ance)?\b/i.test(text)
+    || /\bclear(?:ed|ance)?\b.{0,40}\b(play|train|training|compete|competition|return|contact|spar|sparring)\b/i.test(text)
+    || /\b(play|train|training|compete|competition|return|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)?\b/i.test(text)
   ) {
     return {
       valid: false,
@@ -348,7 +425,7 @@ export function validateShadowRequest(
   }
 
   // Check for prescription claims
-  if (/(should|do|can|need)\s+(i|you)\s+(take|use|try|get).*(medicine|medication|drug|pill|injection)/i.test(message)) {
+  if (/(should|do|can|need)\s+(i|you)\s+(take|use|try|get).*(medicine|medication|drug|pill|injection)/i.test(text)) {
     return {
       valid: false,
       error: 'Medication and prescription recommendations require professional medical oversight.',

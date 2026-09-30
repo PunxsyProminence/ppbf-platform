@@ -3,6 +3,7 @@
 
 import {
   classifyHighRiskTopic,
+  normaliseForMatching,
   validateShadowRequest,
   validateShadowResponse,
   retrieveShadowContext,
@@ -1014,6 +1015,152 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
         highRisk: true,
         topic,
       });
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The phone keyboard
+//
+// Every one of these was measured against this file BEFORE the fix. The
+// straight-apostrophe form was withheld and queued a human; the curly form
+// -- which is what iOS and Android type by default -- was allowed straight
+// through to the model with nobody told.
+// ---------------------------------------------------------------------------
+describe('typographic normalisation before matching', () => {
+  const CURLY = '\u2019';
+
+  // THE DEFECT. Each pair is the same sentence twice, differing only in the
+  // apostrophe character. Before the fix the second of each pair graded
+  // `valid: true` with no classification at all.
+  test.each([
+    ['breathe', `I can${CURLY}t breathe after that hit`],
+    ['see', `I can${CURLY}t see after that punch`],
+    ['move', `I can${CURLY}t move my arm after that fall`],
+  ])('a curly apostrophe still reports an emergency: %s', (_name, message) => {
+    const result = validateShadowRequest(message, 'athlete', 'org-123');
+
+    expect(result.valid).toBe(false);
+    expect(result.classification).toBe('urgent_personal_symptom');
+    expect(result.error).toContain('Potential emergency');
+  });
+
+  // THE PAIRED CONTROL, and the one that makes the rows above mean something.
+  // If the straight form had silently stopped working, every assertion above
+  // could pass while the feature was broken in a new direction.
+  test.each([
+    ["I can't breathe after that hit"],
+    ["I can't see after that punch"],
+    ["I can't move my arm after that fall"],
+  ])('the straight apostrophe behaves exactly as before: %s', (message) => {
+    const result = validateShadowRequest(message, 'athlete', 'org-123');
+
+    expect(result.valid).toBe(false);
+    expect(result.classification).toBe('urgent_personal_symptom');
+    expect(result.error).toContain('Potential emergency');
+  });
+
+  // NO APOSTROPHE AT ALL. Normalisation folds a curly quote into a straight
+  // one; it cannot invent one nobody typed, and "cant" is how this is
+  // actually typed at speed. Fixed alongside, because it is the same defect
+  // and the fold alone does not reach it.
+  test.each([
+    ['i cant breathe after that hit'],
+    ['i cant see after that punch'],
+  ])('an omitted apostrophe still reports an emergency: %s', (message) => {
+    const result = validateShadowRequest(message, 'athlete', 'org-123');
+
+    expect(result.valid).toBe(false);
+    expect(result.classification).toBe('urgent_personal_symptom');
+  });
+
+  // CONTROL, NOT EVIDENCE. KO'd is the one pattern that already carried
+  // ['\u2019] by hand, so it passed before this change and passes after. It is
+  // here to show the hand-patched approach worked exactly where someone
+  // remembered and nowhere else -- which is the argument for normalising the
+  // input instead. It proves nothing about the fix.
+  test.each([
+    ["I got KO'd last round"],
+    [`I got KO${CURLY}d last round`],
+  ])('CONTROL: KO\'d already handled both forms by hand: %s', (message) => {
+    const result = validateShadowRequest(message, 'athlete', 'org-123');
+    expect(result.valid).toBe(false);
+  });
+
+  // Whitespace and zero-width characters arrive from copy-paste and from
+  // predictive keyboards, and are invisible in a bug report.
+  // A zero-width space BETWEEN two words joins them when stripped, which is
+  // correct -- U+200B renders as nothing, so "chest<ZWSP>pain" reads as
+  // "chestpain" to the person typing it too. The case that matters is one
+  // sitting INSIDE a word, where it is invisible and silently defeats a \b
+  // boundary. My first version of this test asserted the join should still
+  // match and was simply wrong about what the user sees.
+  // A LINE BREAK IS NOT A SPACE. Collapsing \s+ folded newlines away, and the
+  // newline was the only bound on the unbounded `.` gaps in this file. Both of
+  // these were fine on main, were withheld after the first version of this
+  // fix, and are fine again.
+  test.each([
+    ['Bodyweight work today felt good.\nTomorrow I want to cut the warm-up short.'],
+    ['I need to return the gloves I borrowed.\nWe can play it by ear for Saturday.'],
+  ])('a two-line message is not withheld by a gap spanning the break: %s', (message) => {
+    expect(validateShadowRequest(message, 'coach', 'org-123').valid).toBe(true);
+  });
+
+  // "signifi|cant". Making the apostrophe optional without a word boundary
+  // meant any word ending in those four letters reached the emergency branch,
+  // and an ordinary training note was answered "stop participation and
+  // contact local emergency services" with a critical review row.
+  test.each([
+    ['I felt great after the punch drill today and my footwork showed significant improvement'],
+    ['I moved from the fall bag over to the vacant station'],
+    ['After that punch combo my notes were scant'],
+  ])('a word ending in "cant" is not an emergency: %s', (message) => {
+    expect(validateShadowRequest(message, 'athlete', 'org-123').valid).toBe(true);
+  });
+
+  // The paired positive: the real report the boundary must not break.
+  test('a genuine apostrophe-less report still fires', () => {
+    const result = validateShadowRequest('my arm hurts after that punch and i cant lift it', 'athlete', 'org-123');
+    expect(result.valid).toBe(false);
+  });
+
+  test('folds doubled spaces, and a zero-width character inside a word', () => {
+    expect(validateShadowRequest('I have  chest   pain right now', 'athlete', 'org-123').valid).toBe(false);
+    expect(validateShadowRequest('I can\u200B\u2019t breathe after that hit', 'athlete', 'org-123').valid).toBe(false);
+  });
+
+  describe('normaliseForMatching itself', () => {
+    test('folds every apostrophe and quote variant to the ASCII form', () => {
+      expect(normaliseForMatching('can\u2019t can\u2018t can\u2032t can\u00B4t')).toBe("can't can't can't can't");
+      expect(normaliseForMatching('\u201Cquoted\u201D')).toBe('"quoted"');
+    });
+
+    test('collapses whitespace and strips zero-width characters', () => {
+      expect(normaliseForMatching('a\u00A0\u00A0b\u200Bc   d')).toBe('a bc d');
+    });
+
+    // MATCHING ONLY. The athlete's own words are the record: the folded text
+    // must never be what is stored, sent to the model, or shown back.
+    //
+    // The "input is not mutated" assertion this test used to carry was
+    // removed: JavaScript strings are immutable, so it could not fail for any
+    // implementation, and a test that cannot fail is decoration.
+    test('no folded text escapes the classifier', () => {
+      const typed = `I can${CURLY}t breathe after that hit`;
+
+      const result = validateShadowRequest(typed, 'athlete', 'org-123');
+      const emitted = JSON.stringify(result);
+
+      // The folded spelling must not appear anywhere in what comes back.
+      expect(emitted).not.toContain("can't breathe");
+      expect(emitted).not.toContain('breathe after that hit');
+      // Nor the original, which would mean the message itself was echoed.
+      expect(emitted).not.toContain(typed);
+      // And the return value is only the fields it is supposed to be, so a
+      // future field carrying text would have to be added deliberately.
+      expect(Object.keys(result).sort()).toEqual(
+        ['classification', 'error', 'highRisk', 'topic', 'valid'],
+      );
     });
   });
 });
