@@ -164,6 +164,69 @@ and should not try to.
 
 ---
 
+## OD-2026-09-30-002 -- Teaching footage is withdrawn, never deleted; a withdrawal says why; and the teaching loop must be walkable by a coach
+
+**Provenance: PRIMARY.** **Date:** decisions taken 2026-09-28 to 2026-09-30,
+recorded 2026-09-30. Quoting Jason directly. Recorded late, and that is the
+defect this file exists to stop: until now these three lived only in PR text
+(#990, #992, #1018), which is exactly how the drill/cue read policy was lost.
+
+### 1. Unwanted footage is ARCHIVED, not deleted
+
+Jason, on four test videos filmed at a desk: **"delete the test footage"**.
+There was no delete path at all -- no DELETE route, `archived` in the status
+CHECK constraint with nothing writing it, and no retention job covering
+`video_sessions`. Three options were put up; Jason chose: **"1"** -- build an
+archive action.
+
+**The rule that came out of it.** Archiving withdraws footage: it stops being
+playable, clippable, labellable and countable, and every existing gate already
+honoured the status. It is NOT deletion. The row stays, the audit trail stays,
+and **the media stays in Azure blob storage**. It is reversible from the same
+screen.
+
+Deleting the bytes is a different action with a different risk and was
+deliberately not built. Jason was told plainly that the four files are still in
+storage; he has not asked for them to be removed. A later session must not read
+"archive" as "delete", or quietly add a purge to finish the job.
+
+The four were archived on production through the button on 2026-09-28, not by
+SQL, so each carries an audit row and a `video.archived` event.
+
+### 2. A withdrawal records why
+
+Jason, after using it: **"add the reason field"**. Shipped in #992: clicking
+Archive opens a reason box on that row, the answer lands on the footage and
+shows to whoever later wonders where the take went.
+
+**Optional, deliberately.** A required field on a reversible housekeeping
+action is answered with "x" within a week, and the column fills with noise
+shaped like data. Blank sends no reason at all rather than an empty string,
+because absent and blank are different facts about whether a withdrawal was
+ever explained. Restore stays one click -- an undo needs no justification.
+
+The four already archived keep their empty reason. Backfilling would be
+inventing a record of a decision as it was not made.
+
+### 3. The teaching loop must be walkable by a coach
+
+Jason: **"build the clip cutter do all if you can or focus on that"**, then
+**"build it"** once told what building it would uncover.
+
+**The rule.** Every stage of the loop the Teach Shadow home page describes --
+film it, cut it, label it, measure, go again -- has a screen a coach can use. A
+stage that exists only as an operator script run by hand against a production
+connection string does not count as built. Cutting was that stage until #1018.
+
+What building it uncovered, recorded here because it is the reason the ruling
+matters: the labelling screen could not play ANY clip it was allowed to show.
+`assertVideoClippable` began requiring a capture take on 2026-09-24
+(`95f106e0`); `GET /api/pilot/video/[videoId]` began refusing one on 2026-09-25
+(`4982943d`). Each was right and each had a passing suite; neither suite could
+see the other, and it shipped to production. Two stages of the loop had
+screens and the path between them was broken for four days with everything
+green.
+
 ## OD-2026-09-30-001 -- Migrate before deploying, and Claude may click the MIGRATION gate on a named run
 
 **Provenance: PRIMARY.** **Date:** 2026-09-30. Taken from the release session
