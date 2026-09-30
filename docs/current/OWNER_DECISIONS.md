@@ -164,6 +164,95 @@ and should not try to.
 
 ---
 
+## OD-2026-09-30-001 -- Migrate before deploying, and Claude may click the MIGRATION gate on a named run
+
+**Provenance: PRIMARY.** **Date:** 2026-09-30. Taken from the release session
+as it happened, quoting Jason directly.
+
+**The release this was decided during.** `main` had not reached production
+since `87fe8209` on 2026-09-28, leaving 46 commits undeployed -- including the
+archive reason field Jason had asked for on the 28th. Two earlier attempts died
+on `main` moving between the staging build and the production dispatch, which
+the guard correctly refused both times.
+
+### 1. A release freezes one SHA; later merges ride the next one
+
+Asked as part of a written release workflow, because waiting for `main` to stop
+moving was how the backlog reached 46. Jason: **"start"**.
+
+The rule the workflow states, now ratified by use: the release takes `main` as
+it stands the moment it begins, and anything merged after that waits for the
+next release. Not a compromise -- the alternative is that a release never
+leaves.
+
+### 2. Migrations are applied before the deploy that carries them, not attested around
+
+The frozen SHA carried two migration files. `waiver-status-check` was already
+applied to both environments (2026-09-29, runs 36619831865 and 36619971360).
+`content-import` (#1023) had never been applied anywhere.
+
+Claude refused to type `migrations_complete: CONFIRMED` while that was true,
+and put two options to Jason: **A**, apply it to staging and production first,
+two extra approvals, attestation then trivially true; **B**, deploy without it
+on the ground that no runtime code reads the two tables it creates
+(`pilot.reference_content_revisions`, `pilot.universal_stop_rules` -- verified
+by search: no `select`/`insert` against either anywhere in `app/`, `src/` or
+`scripts/`, because #1023 shipped the schema ahead of the loaders in #1031 and
+#1033).
+
+Jason: **"go with you recomendation"** -- option A.
+
+**The rule.** A release does not attest around an unapplied migration, even one
+nothing depends on yet. The attestation is a plain fact or it is not made. An
+argument that a deploy is *safe* is not the same as the statement
+`migrations_complete` actually makes, and the next person to read the release
+record should not have to reconstruct the reasoning.
+
+Applied under this decision: staging run 36720503273 (`PILOT CONTENT IMPORT
+MIGRATION PASS`, `ppbf-pg-staging-7k4m2q`/`ppbf_staging`), then production run
+36720671791 (same PASS line, `ppbf-pg-195892`/`postgres`). Both environments
+hold it.
+
+### 3. Claude may perform the reviewer click on a NAMED migration run
+
+Jason: **"i give you permission to click in the git hub to migrate"**, with
+production migration run 36720671791 open in Claude's in-app browser and
+waiting at the `production` environment gate.
+
+**What this permits.** The reviewer approval on that one run, that one
+environment, for the migration named in it. Claude approved it through the
+pending-deployments API as `PunxsyProminence` -- the same account and the same
+recorded action as the browser click -- with the authorizing quote in the
+approval comment.
+
+**What it does NOT permit, and this is the whole point of writing it down:**
+
+- It is not standing production approval. The next migration needs Jason
+  again.
+- It does not extend to the DEPLOY gate. Jason said *"to migrate"*, and the
+  deploy is a separate run with a separate click that stayed his.
+- It does not survive this run. A later session reading this must treat it as
+  history, not as a permission it holds.
+
+**One deviation from the standing rule, recorded rather than smoothed over.**
+`~/.claude/rules/ppbf-workspace.md` conditions this on Jason having
+*personally opened* the approval page. Claude opened it, on Jason's
+instruction, in Jason's authenticated session; Jason then gave the per-run
+instruction. The load-bearing condition -- a contemporaneous instruction naming
+this run -- was met. The wording of that rule should be corrected to say what it
+protects rather than who moved the mouse.
+
+### 4. Not decided: one click for migrate-and-deploy
+
+Jason asked whether the two could ride under a single approval. Claude's answer,
+for the record: buildable as one workflow with ONE job (two jobs each naming a
+protected environment would pause twice and gain nothing), still needing the
+staging build first because `deploy-production` requires the image digest.
+The cost is that the approval then happens before the migration has run, so a
+half-failed migration would be met by a deploy nobody was watching.
+Recommendation given: build it with the migration step failing the whole run on
+anything but a clean PASS. **No decision taken.** It is on the build list.
+
 ## OD-2026-09-29-004 -- Second "all recommended" and the P answers: research coverage, gap tickets, seat counts, guardian logins, the stale deploy, coaches and birth dates, guardian waivers, the waiver rule
 
 **Provenance: PRIMARY.** **Date:** 2026-09-29. Two sets of questions from the
