@@ -122,8 +122,9 @@ is refused by the page and by the API (OD-2026-09-28-005).
   the API cancels any activation code still outstanding for those athletes' logins.
 - Athlete: sets `athletes.deleted_at = now()`; if the athlete has an account, sets its
   `deleted_at`, clears `active_flag`, revokes its live sessions and cancels any activation code
-  still outstanding for it (a code issued before the deletion would otherwise reopen the
-  login). Coach observations are retained, not deleted; their count is recorded.
+  still outstanding for it (a code issued before the deletion would otherwise set a new PIN
+  and mark the account active again; sign-in refuses it either way, below). Coach
+  observations are retained, not deleted; their count is recorded.
 - Writes one `data_deletion_initiated` audit event with actor, target and reason, and returns
   counts of what it marked. It does not return how many sessions it ended. An athlete deletion
   records that number in its audit event (`sessions_revoked`); a guardian deletion records none.
@@ -138,15 +139,31 @@ is refused by the page and by the API (OD-2026-09-28-005).
 training notes (the API marks none of them; that is B, the next change). The screen's two
 confirmations are the confirmation step; the API itself does not ask for one.
 
-**Open gap (checked 2026-09-29, not closed by this change):** an admin can still turn a
-deleted login back on. Issuing a new activation code, resetting an athlete's PIN, or creating
-an account for a deleted athlete (`apps/web/src/server/pilot/activation.ts`), and re-inviting a
-deleted guardian's email (`createOrUpdateMicrosoftStaffAccount` in
-`apps/web/src/server/pilot/staffProvisioning.ts`) do not read `deleted_at`; nor do the
-platform owner's user-status and membership routes (`setAccountActiveStatus`,
-`upsertOrganizationMembership` in `apps/web/src/server/pilot/auth.ts`). The record stays marked
-deleted while the login works, and a person reopened this way cannot be deleted again from the
-screen (409).
+**Sign-in refuses a deleted login** (owner decision 2026-09-29, OD-2026-09-29-003 Q9, "all
+recommended": one central rule). Every sign-in refuses an account whose `deleted_at` is set,
+whatever its `active_flag` says: PIN sign-in, Microsoft sign-in, asking for and redeeming a
+sign-in link, and every signed-in request (`resolvePrincipal`), so a session minted by any path
+resolves to nobody. The rule is one file, `apps/web/src/server/pilot/deletedAccountSignIn.ts`.
+A refused PIN sign-in logs `deleted_account` and costs the same one PIN check as a wrong PIN; a
+refused sign-in link shows the existing "That account is not active. Contact the gym." The deploy
+gates' session minter (`apps/web/scripts/lib/gate-session.mjs`) and fixture step
+(`apps/web/scripts/pilot-provision-gate-fixtures.mjs`) refuse a deleted fixture by name. The
+deletion preflight check (`apps/web/scripts/pilot-check-deletion-preflight.mjs`) reports a deleted
+login left active, and its sessions, as refused at sign-in rather than as exposure.
+
+**Still open (checked 2026-09-29):** the admin paths that used to turn a deleted login back on
+still write to it without reading `deleted_at`: issuing a new activation code, resetting an
+athlete's PIN or creating an account for a deleted athlete
+(`apps/web/src/server/pilot/activation.ts`); intake re-promoting a withdrawn athlete
+(`createOrUpdateAthleteAccount`, `apps/web/src/server/pilot/auth.ts`); re-inviting a deleted
+guardian's email as staff (`createOrUpdateMicrosoftStaffAccount` in
+`apps/web/src/server/pilot/staffProvisioning.ts`, which reads `deleted_at` only for intake's
+guardian login); and the platform owner's user-status and membership routes
+(`setAccountActiveStatus`, `upsertOrganizationMembership` in `apps/web/src/server/pilot/auth.ts`).
+They can no longer reopen the login, but they can leave an account marked active, with a PIN or
+a code, that can never sign in, and nothing tells the admin why. Nothing in the app clears
+`deleted_at`, so a deletion cannot be undone from any screen (the 1-year restore is not built),
+and a person marked deleted cannot be deleted again from the screen (409).
 
 **Who can trigger:** `organization_admin` or `admin`, in their own organization only  
 **Audit trail:** ✅ `data_deletion_initiated`, with actor, target and reason  

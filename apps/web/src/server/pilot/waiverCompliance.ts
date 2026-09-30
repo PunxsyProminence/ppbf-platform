@@ -29,6 +29,35 @@ export type TrackedWaiverType = (typeof TRACKED_WAIVER_TYPES)[number];
 export const WAIVER_STATUSES = ['signed', 'declined', 'withdrawn', 'missing'] as const;
 export type WaiverStatus = (typeof WAIVER_STATUSES)[number];
 
+/**
+ * A waiver status arriving in a request, held to WAIVER_STATUSES byte for byte.
+ *
+ * pilot.waivers.status carries pilot_waivers_status_check over exactly this
+ * list (infra/azure/pilot_slice_postgres_waiver_status_check_migration.sql).
+ * The two writers that take the status from a caller -- intake/domain-upsert
+ * and intake/review-action's promotion -- check it here first, so a bad value
+ * is a 400 naming the field instead of the constraint surfacing as a 500, and
+ * review-action can refuse it before its first (untransacted) promotion write.
+ *
+ * Byte-exact on purpose, matching the constraint: ' Signed ' is refused, not
+ * trimmed. Readers still normalise, for rows written before the constraint.
+ *
+ * `fallback` applies only when the field is ABSENT (undefined). null, a number
+ * or any other string is a value the caller sent, and is refused -- the old
+ * asString(value, 'signed') turned all of those into a signature.
+ *
+ * "Unsupported" is jsonError's 400 prefix.
+ */
+export function requireWaiverStatus(value: unknown, field: string, fallback?: WaiverStatus): WaiverStatus {
+  if (value === undefined && fallback !== undefined) {
+    return fallback;
+  }
+  if (typeof value !== 'string' || !(WAIVER_STATUSES as readonly string[]).includes(value)) {
+    throw new Error(`Unsupported ${field}: must be exactly one of ${WAIVER_STATUSES.join(', ')}`);
+  }
+  return value as WaiverStatus;
+}
+
 export interface AthleteWaiverStatus {
   athleteId: string;
   athleteName: string;
@@ -95,9 +124,11 @@ export async function getOrganizationWaiverStatus(organizationId: string): Promi
          is to surface absent waivers -- so staff would chase a family for a
          document already on file and working.
 
-         pilot.waivers.status carries no CHECK constraint and
-         /api/pilot/intake/domain-upsert accepts any client-supplied string
-         for it, so this is reachable rather than theoretical. */
+         pilot.waivers.status carried no CHECK constraint and
+         /api/pilot/intake/domain-upsert accepted any client-supplied string
+         for it, so this was reachable rather than theoretical. The
+         waiver-status-check migration and requireWaiverStatus now refuse
+         such values on write; this stays for rows written before them. */
       entry.waivers[row.waiver_type] = normalizeWaiverStatus(row.status);
     }
   }
@@ -149,9 +180,10 @@ export async function getAthleteWaiverStatus(
  * Turns whatever `pilot.waivers.status` actually holds into the vocabulary
  * this module promises.
  *
- * The column is `status text not null` with NO check constraint
- * (infra/azure/pilot_slice_postgres.sql), so nothing at the database level
- * stops ' Signed ' or 'SIGNED' being stored, and other readers in this
+ * The column was `status text not null` with NO check constraint
+ * (infra/azure/pilot_slice_postgres.sql) until pilot_waivers_status_check,
+ * and on any database that migration has not reached nothing at the database
+ * level stops ' Signed ' or 'SIGNED' being stored, and other readers in this
  * codebase already normalize before comparing (wallDisplay.ts trims and
  * lowercases waiver vocabulary in two places). Casting the raw column to
  * WaiverStatus, which is what this function used to do, was a type assertion

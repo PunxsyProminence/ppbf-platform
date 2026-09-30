@@ -41,3 +41,31 @@ export function formatCalendarDay(value: string | null | undefined): string {
   const monthName = MONTHS[Number.parseInt(month, 10) - 1] ?? month;
   return `${monthName} ${Number.parseInt(day, 10)}, ${year}`;
 }
+
+/**
+ * The calendar day a DATE value names, as 'YYYY-MM-DD', for asking whether two
+ * values are the same day.
+ *
+ * db.ts hands a DATE column back as its 'YYYY-MM-DD' string, but a pg client
+ * without that parser (and older test fixtures) produces a Date at LOCAL
+ * midnight. Rebuilding the string from local parts inverts that parse in any
+ * timezone; toISOString() would not, because it converts to UTC and moves the
+ * day backwards everywhere east of Greenwich.
+ *
+ * Strings are trimmed and otherwise left as they are. A timestamp or any other
+ * spelling does not compare equal to a bare day: a guard that asks "is this the
+ * same day?" should answer no when it cannot tell, rather than guess yes.
+ *
+ * Shared by the athlete update route's audit (which fields moved) and
+ * assertAthleteUpdateAllowed (an athlete may not move dob), so the two can
+ * never disagree about whether a date of birth changed.
+ */
+export function calendarDayKey(value: unknown): string {
+  if (value instanceof Date) {
+    const month = `${value.getMonth() + 1}`.padStart(2, '0');
+    const day = `${value.getDate()}`.padStart(2, '0');
+    return `${value.getFullYear()}-${month}-${day}`;
+  }
+
+  return typeof value === 'string' ? value.trim() : String(value);
+}

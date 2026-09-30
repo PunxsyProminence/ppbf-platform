@@ -150,9 +150,12 @@ async function checkGuardianConsentOfType(
   /*
    * NORMALISED, not raw. Owner decision, 2026-08-28.
    *
-   * pilot.waivers.status is `text not null` with no CHECK constraint, and
-   * /api/pilot/intake/domain-upsert stores `asString(body.payload.status,
-   * 'signed')` -- any string a caller sends. waiverCompliance.ts records a
+   * pilot.waivers.status was `text not null` with no CHECK constraint, and
+   * /api/pilot/intake/domain-upsert stored `asString(body.payload.status,
+   * 'signed')` -- any string a caller sent. (pilot_waivers_status_check and
+   * requireWaiverStatus now refuse those on write; rows written before them,
+   * and any database the migration has not reached, can still hold them.)
+   * waiverCompliance.ts records a
    * waiver stored as ' Signed ' as something that ACTUALLY HAPPENED, and its
    * own gate has trimmed and lowercased since it was written, on the stated
    * ground that "refusing to take a child to a competition over whitespace

@@ -27,7 +27,7 @@ import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
  *   2. DISTANCE. Every corner token is at least ΔE 20 (CIE76) from every rung
  *      and every -ink tint. Not "a bit different": a different colour.
  *
- *   3. BOTH GROUNDS. Law 6 gives the app ink leather and warm canvas. The edge
+ *   3. BOTH GROUNDS. The app has ink leather and warm canvas. The edge
  *      used on each ground clears 3:1 against that ground (WCAG 1.4.11 for a
  *      graphical object -- the corner is a rope and a binding, never a text
  *      background), and the 6% wash leaves every text voice on that ground

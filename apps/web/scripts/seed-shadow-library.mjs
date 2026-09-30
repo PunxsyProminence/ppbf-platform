@@ -45,6 +45,17 @@ Required environment variables:
 Optional environment variables:
   PILOT_GATE_BASE_URL   (default http://localhost:3000)
 
+Options:
+  --recompute   Register nothing. Grade every capability coverage rule in the
+                signed-in organization against what SHADOW search can serve
+                now -- the organization's own shelf plus the shared
+                __platform__ baseline. Opens a research-gap ticket for each
+                rule that is uncovered or partial (unless one is already
+                open, or a person resolved that capability's ticket by hand;
+                that ticket stays resolved and no new one opens), and closes
+                the open gap ticket of each rule that is covered. Run it after
+                the seeded sources are approved and indexed at /evidence.
+
 Note:
   Seeding does not make anything citable. Sources and documents are written
   as 'pending_review' and stay invisible to SHADOW retrieval until they are
@@ -52,8 +63,13 @@ Note:
   organization's shelf). The __platform__ research baseline is approved with
   the approve-library-baseline workflow instead.
 
+  For the same reason a seed run writes the coverage rules without grading
+  them: graded before review, a rule can read uncovered and open a research-gap
+  ticket that then stays open until --recompute is run after the review.
+
 Example:
   PILOT_GATE_BASE_URL=https://www.punxsyprominence.org PILOT_SESSION_COOKIE=<cookie> npm --prefix apps/web run seed:shadow:library
+  PILOT_GATE_BASE_URL=https://www.punxsyprominence.org PILOT_SESSION_COOKIE=<cookie> npm --prefix apps/web run seed:shadow:library -- --recompute
 `);
 }
 
@@ -294,8 +310,15 @@ async function seedManifestSources() {
   return results;
 }
 
-async function seedCapabilityCoverageRules() {
-  console.log('5) Seed capability coverage rules');
+// Writes the rules and does NOT grade them. Coverage counts only sources SHADOW
+// search can serve, and everything this script registers is pending_review, so
+// a recompute here could grade a rule 'uncovered' and open a research-gap
+// ticket for it -- a ticket that then sat open, feeding the triage view and
+// the research bridge export, until a recompute after review closed it. A rule
+// written for the first time stays 'unknown' (which opens no ticket) until
+// --recompute is run after review at /evidence.
+export async function seedCapabilityCoverageRules() {
+  console.log('5) Seed capability coverage rules (not graded; run --recompute after review)');
   const capabilityRules = [
     {
       capability_key: 'shadow.doctrine.authority-boundary',
@@ -330,6 +353,18 @@ async function seedCapabilityCoverageRules() {
     });
   }
 
+  return capabilityRules.length;
+}
+
+// Grades every coverage rule in the signed-in organization against what search
+// can serve right now (the organization's shelf plus the shared __platform__
+// baseline), opens a research-gap ticket for each rule that comes out
+// uncovered or partial (unless one is already open, or a person resolved that
+// capability's ticket by hand -- that ticket stays resolved and no new one
+// opens), and closes the open gap ticket of each rule that comes out covered.
+// Meant for after review, not straight after a seed.
+export async function recomputeCapabilityCoverage() {
+  console.log('Recompute capability coverage');
   const coverage = await call('/api/pilot/shadow/library/capability-coverage', {
     method: 'POST',
     body: {
@@ -337,7 +372,7 @@ async function seedCapabilityCoverageRules() {
     },
   });
 
-  return coverage.items ?? [];
+  return Array.isArray(coverage?.items) ? coverage.items : [];
 }
 
 async function run() {
@@ -353,8 +388,20 @@ async function run() {
 
   await verifySession();
 
+  if (process.argv.includes('--recompute')) {
+    const coverageItems = await recomputeCapabilityCoverage();
+    console.log('SHADOW capability coverage recomputed');
+    console.log(JSON.stringify(coverageItems.map((item) => ({
+      capability_key: item.capability_key,
+      coverage_state: item.coverage_state,
+      matched_sources: item.matched_sources,
+      minimum_source_count: item.minimum_source_count,
+    })), null, 2));
+    return;
+  }
+
   const results = await seedManifestSources();
-  const coverageItems = await seedCapabilityCoverageRules();
+  const coverageRules = await seedCapabilityCoverageRules();
 
   console.log('SHADOW Library seed complete');
   console.log(JSON.stringify({
@@ -362,9 +409,14 @@ async function run() {
     registered: results.filter((entry) => !entry.skipped).length,
     skipped: results.filter((entry) => entry.skipped).length,
     total_chunks: results.reduce((sum, entry) => sum + entry.chunk_count, 0),
-    coverage_rules: coverageItems.length,
+    coverage_rules: coverageRules,
   }, null, 2));
   console.log('Reminder: everything registered is pending_review. Approve it at /evidence before SHADOW can cite it.');
+  console.log(
+    'Coverage was not graded. Once every seeded source is approved and indexed at /evidence, '
+    + 'run this script again with --recompute. Graded before that, a rule can read uncovered and '
+    + 'open a research-gap ticket that stays open until that recompute.',
+  );
 }
 
 // Run only when this file IS the entry point. Without this the whole seed

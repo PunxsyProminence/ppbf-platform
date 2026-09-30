@@ -594,9 +594,12 @@ describe('listOrganizationConsentStatus', () => {
 /**
  * OWNER DECISION, 2026-08-28: a recognised status survives case and padding.
  *
- * pilot.waivers.status is `text not null` with no CHECK constraint, and
- * /api/pilot/intake/domain-upsert stores `asString(body.payload.status,
- * 'signed')` -- any string a caller sends. waiverCompliance.ts records a
+ * pilot.waivers.status was `text not null` with no CHECK constraint, and
+ * /api/pilot/intake/domain-upsert stored `asString(body.payload.status,
+ * 'signed')` -- any string a caller sent. (pilot_waivers_status_check and
+ * requireWaiverStatus now refuse those on write; rows written before them, or
+ * on a database the migration has not reached, can still hold them.)
+ * waiverCompliance.ts records a
  * waiver stored as ' Signed ' as something that ACTUALLY HAPPENED, and its own
  * gate has trimmed and lowercased since it was written, on the stated ground
  * that refusing over whitespace "punishes the family for a data-entry

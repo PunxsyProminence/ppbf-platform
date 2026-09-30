@@ -156,6 +156,7 @@ function CoachSessionScripts() {
       const payload = (await response.json().catch(() => ({}))) as {
         run?: LiveSessionScriptRun;
         error?: string;
+        message?: string;
       };
 
       if (response.ok && payload.run) {
@@ -189,6 +190,12 @@ function CoachSessionScripts() {
       }
       if (payload.error === 'SESSION_SCRIPT_NOT_FOUND') {
         setStartError('That script could not be found, so no session was started.');
+        return;
+      }
+      // A newer version of this plan loaded after the list was read. The route words this one
+      // itself (session-scripts/runs/route.ts), so its text is shown rather than a second copy here.
+      if (payload.error === 'SESSION_SCRIPT_SUPERSEDED') {
+        setStartError(payload.message ?? 'This plan has been replaced by a newer version, so no session was started.');
         return;
       }
       setStartError(`The server refused to start the session${payload.error ? `: ${payload.error}` : '.'}`);

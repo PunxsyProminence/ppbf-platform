@@ -7,7 +7,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import WorkAxis from '@/components/WorkAxis';
 import { apiBase } from '@/lib/apiBase';
 import type {
-  WorkoutTemplateItemRow,
+  WorkoutTemplateItemWithDrillHead,
   WorkoutTemplateRow,
 } from '@/src/server/pilot/workoutTemplates';
 
@@ -25,7 +25,7 @@ import type {
 // Type-only imports from the server module, so nothing server-side is pulled
 // into this client bundle and the shapes cannot drift from the route's own.
 type Template = WorkoutTemplateRow;
-type TemplateItem = WorkoutTemplateItemRow;
+type TemplateItem = WorkoutTemplateItemWithDrillHead;
 
 interface TemplateDetail {
   template: Template;
@@ -228,6 +228,15 @@ function CoachWorkoutTemplates() {
                           {item.contact_level.replace(/_/g, ' ')}
                         </span>
                       </div>
+                      {/* The template still points at the drill version it
+                          was written against; the library has a newer one.
+                          Said, not fixed -- the server never repoints an item
+                          (workoutTemplates.ts), so the coach decides. */}
+                      {item.uses_older_drill_version && (
+                        <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                          Uses an older drill version.
+                        </p>
+                      )}
                       {(item.coach_note ?? '').trim() !== '' && (
                         <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                           <span className="t-label">Note: </span>

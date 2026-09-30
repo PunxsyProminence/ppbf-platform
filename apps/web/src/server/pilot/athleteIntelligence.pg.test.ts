@@ -529,9 +529,10 @@ describe('reviewed-only Film Study material', () => {
     expect(byOrigin.get('coach_reported')?.reported_by_account_id).toBe(COACH_ID);
   });
 
-  /* `listFilmStudyProposals` returns the whole organization when athleteId is
-   * omitted. This reader has no such mode: the athlete is required, so there is
-   * no argument list that reads another athlete's film by accident. */
+  /* Like `listFilmStudyProposals` (which now requires the athletes it may
+   * return), this reader has no whole-organization mode: the athlete is
+   * required, so there is no argument list that reads another athlete's film
+   * by accident. */
   test('another athlete in the same gym is not returned', async () => {
     await proposalIn('accepted');
     const otherAthlete = await proposals.createFilmStudyProposal({

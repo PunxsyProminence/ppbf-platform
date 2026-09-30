@@ -3,10 +3,19 @@ import { randomUUID } from 'node:crypto';
 import { assertActorCanAccessAthlete } from './access';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
+import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 import { cosineSimilarity, embedText, getEmbeddingDeploymentName, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import { emitShadowEvent } from './shadowEvents';
-import { createShadowResearchRequirement, listShadowResearchRequirements, type ShadowResearchRequirementRow } from './shadowResearch';
+import {
+  CAPABILITY_GAP_SOURCE_ENTITY_TYPE,
+  CAPABILITY_GAP_SOURCE_EVENT_NAME,
+  createShadowResearchRequirement,
+  listShadowResearchRequirements,
+  reopenCoverageResolvedGapRequirement,
+  resolveCoveredCapabilityGapRequirements,
+  type ShadowResearchRequirementRow,
+} from './shadowResearch';
 import { writeShadowTelemetryEvent } from './shadowTelemetry';
 
 // Below this cosine similarity, the best semantic match is noise rather than
@@ -208,6 +217,75 @@ interface ShadowCoverageComputationRow {
   minimum_source_count: number;
   matched_sources: number;
 }
+
+/**
+ * How many sources can satisfy a capability rule, joined LATERAL against `cm`
+ * (pilot.shadow_library_capability_map).
+ *
+ * Counts only sources a gym-wide ('scoped') searchShadowLibrary can actually
+ * serve: approved, verified, not suppressed for retraction, and cited by at
+ * least one gym-wide chunk that sits in an indexed, approved, verified document
+ * not scoped to one athlete (see libraryServability.ts). It used to count any
+ * active source, so a rule read "covered" on a source still waiting for
+ * review, never indexed, or pulled for retraction -- while search returned
+ * nothing for it -- and because it read covered,
+ * ensureCoverageGapResearchRequirement opened no gap ticket.
+ *
+ * THROUGH THE CHUNKS THAT CITE IT, NOT THE DOCUMENT IT OWNS. Search serves a
+ * source by joining each chunk to `s` on the chunk's own source_id and to `d`
+ * on the chunk's document_id; nothing in that join asks which source owns the
+ * document. The research corpus is built that way: on __platform__ all 14
+ * documents belong to one programme source (internal_policy, tier 3), and
+ * their 1,173 chunks cite 968 other sources that own no document at all. A
+ * count keyed on document ownership therefore saw the programme source and
+ * nothing else, while search was serving hundreds of peer-reviewed,
+ * governing-body and clinical-guideline sources out of those same documents.
+ * The EXISTS below is search's own join: chunk to document on both halves of
+ * the key, chunk to source on the chunk's source_id and organization.
+ *
+ * FROM EXACTLY THE SHELVES SEARCH READS. `$2` is
+ * libraryRetrievalOrganizationIds(organizationId) -- the gym's own shelf plus
+ * the shared platform baseline (__platform__) -- the same array
+ * searchShadowLibrary passes. Counting the gym's shelf alone called a rule
+ * uncovered while search was answering it from the platform shelf, and opened
+ * a gap ticket for evidence search was already serving the gym (Jason
+ * 2026-09-29, R1: count the shared shelf too). The chunk is matched on the
+ * SOURCE's organization and the document on the CHUNK's, as search matches
+ * them, so a platform source is never paired with a gym chunk or document, or
+ * the reverse.
+ *
+ * A rule is about the gym's doctrine, not one athlete, so an athlete-scoped
+ * chunk or document never counts (search's 'scoped' branch requires
+ * c.subject_id is null). The platform shelf cannot hold one at all (its CHECK
+ * pilot_shadow_library_documents_platform_unscoped_check).
+ *
+ * One definition for recompute and list, so the state written and the count
+ * shown beside it cannot disagree. Both callers bind `$1` to the organization
+ * whose rules are read and `$2` to its retrieval organizations.
+ */
+const SERVABLE_MATCHED_SOURCES_LATERAL = `
+     left join lateral (
+       select count(distinct s.source_id) as matched_sources
+       from pilot.shadow_library_sources s
+       where s.organization_id = any($2::text[])
+         and ${SERVABLE_LIBRARY_SOURCE_SQL}
+         and s.authority_tier <= cm.minimum_authority_tier
+         and (
+           coalesce(array_length(cm.required_source_types, 1), 0) = 0
+           or s.source_type = any(cm.required_source_types)
+         )
+         and exists (
+           select 1
+           from pilot.shadow_library_chunks c
+           join pilot.shadow_library_documents d
+             on d.document_id = c.document_id
+            and d.organization_id = c.organization_id
+           where c.source_id = s.source_id
+             and c.organization_id = s.organization_id
+             and c.subject_id is null
+             and ${SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL}
+         )
+     ) ms on true`;
 
 function clampAuthorityTier(value: number): number {
   if (!Number.isFinite(value)) {
@@ -416,34 +494,51 @@ async function ensureCoverageGapResearchRequirement(input: {
   }
 
   const fields = buildCoverageGapResearchFields(input.row, input.coverageState);
+  const metadata = {
+    capability_key: input.row.capability_key,
+    coverage_state: input.coverageState,
+    matched_sources: input.row.matched_sources,
+    minimum_source_count: input.row.minimum_source_count,
+    minimum_authority_tier: input.row.minimum_authority_tier,
+    required_source_types: input.row.required_source_types,
+  };
 
-  await createShadowResearchRequirement({
+  // A gap that comes back after the coverage check closed its ticket reopens
+  // that same ticket. The unique index allows one ticket per capability, so a
+  // create here would land on the resolved row and leave it resolved -- the
+  // recurrence would have no open ticket at all. A ticket a person resolved
+  // by hand is not reopened; see reopenCoverageResolvedGapRequirement.
+  const reopenedId = await reopenCoverageResolvedGapRequirement({
     organizationId: input.organizationId,
-    sourceEventName: 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED',
-    sourceEntityType: 'shadow_library_capability_map',
-    sourceEntityId: input.row.capability_key,
+    capabilityKey: input.row.capability_key,
     researchRequirement: fields.requirement,
     knowledgeGap: fields.knowledgeGap,
-    evidenceLabel: input.row.capability_key,
     sourceStatus: fields.sourceStatus,
-    sourceConfidenceTier: 'INSUFFICIENT',
-    sourceVerificationState: 'unknown',
-    createdByAccountId: input.actorAccountId,
-    createdByRole: input.actorRole,
-    metadata: {
-      capability_key: input.row.capability_key,
-      coverage_state: input.coverageState,
-      matched_sources: input.row.matched_sources,
-      minimum_source_count: input.row.minimum_source_count,
-      minimum_authority_tier: input.row.minimum_authority_tier,
-      required_source_types: input.row.required_source_types,
-    },
+    metadata,
   });
+
+  if (reopenedId === null) {
+    await createShadowResearchRequirement({
+      organizationId: input.organizationId,
+      sourceEventName: CAPABILITY_GAP_SOURCE_EVENT_NAME,
+      sourceEntityType: CAPABILITY_GAP_SOURCE_ENTITY_TYPE,
+      sourceEntityId: input.row.capability_key,
+      researchRequirement: fields.requirement,
+      knowledgeGap: fields.knowledgeGap,
+      evidenceLabel: input.row.capability_key,
+      sourceStatus: fields.sourceStatus,
+      sourceConfidenceTier: 'INSUFFICIENT',
+      sourceVerificationState: 'unknown',
+      createdByAccountId: input.actorAccountId,
+      createdByRole: input.actorRole,
+      metadata,
+    });
+  }
 
   await emitShadowEvent({
     organizationId: input.organizationId,
-    eventName: 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED',
-    entityType: 'shadow_library_capability_map',
+    eventName: CAPABILITY_GAP_SOURCE_EVENT_NAME,
+    entityType: CAPABILITY_GAP_SOURCE_ENTITY_TYPE,
     entityId: input.row.capability_key,
     actorAccountId: input.actorAccountId,
     actorRole: input.actorRole,
@@ -616,6 +711,10 @@ export async function listApprovedGlobalEvidenceForResearchBridge(input: {
        and s.status = 'active'
        and s.approval_state = 'approved'
        and s.verification_state = 'verified'
+       -- A source pulled for retraction keeps its approval (suppressSource
+       -- flips only this flag), so without this line the export went on
+       -- shipping its text as approved evidence after search had dropped it.
+       and not coalesce(s.retrieval_suppressed, false)
        and d.ingest_state = 'indexed'
        and d.index_completed_at is not null
        and d.approval_state = 'approved'
@@ -1394,20 +1493,12 @@ export async function recomputeShadowCapabilityCoverage(input: {
        cm.minimum_source_count,
        coalesce(ms.matched_sources, 0)::int as matched_sources
      from pilot.shadow_library_capability_map cm
-     left join lateral (
-       select count(distinct s.source_id) as matched_sources
-       from pilot.shadow_library_sources s
-       where s.organization_id = cm.organization_id
-         and s.status = 'active'
-         and s.authority_tier <= cm.minimum_authority_tier
-         and (
-           coalesce(array_length(cm.required_source_types, 1), 0) = 0
-           or s.source_type = any(cm.required_source_types)
-         )
-     ) ms on true
+     ${SERVABLE_MATCHED_SOURCES_LATERAL}
      where cm.organization_id = $1`,
-    [input.organizationId],
+    [input.organizationId, libraryRetrievalOrganizationIds(input.organizationId)],
   );
+
+  let closedGapRequirements: Array<{ research_requirement_id: number; capability_key: string }> = [];
 
   if (rows.length > 0) {
     const states = rows.map((row) => {
@@ -1446,6 +1537,19 @@ export async function recomputeShadowCapabilityCoverage(input: {
         openItems,
       });
     }
+
+    // The other half of the gap ticket's life (Jason 2026-09-29, R2): a rule
+    // that grades covered closes its own open gap ticket. Before this the
+    // ticket stayed open after the evidence arrived, and it went on feeding the
+    // triage view and the research bridge export as work still to do.
+    closedGapRequirements = await resolveCoveredCapabilityGapRequirements({
+      organizationId: input.organizationId,
+      covered: rows
+        .filter((_, index) => states[index] === 'covered')
+        .map((row) => ({ capabilityKey: row.capability_key, matchedSources: row.matched_sources })),
+      resolvedByAccountId: input.actorAccountId,
+      resolvedByRole: input.actorRole,
+    });
   }
 
   await writeShadowTelemetryEvent({
@@ -1467,6 +1571,9 @@ export async function recomputeShadowCapabilityCoverage(input: {
     actorRole: input.actorRole,
     payload: {
       rules: rows.length,
+      // Which gap tickets this pass closed, on the event that already records
+      // who ran it. The rows themselves carry the same attribution.
+      closed_research_requirement_ids: closedGapRequirements.map((row) => row.research_requirement_id),
     },
   });
 
@@ -1488,19 +1595,9 @@ export async function listShadowCapabilityCoverage(organizationId: string): Prom
        cm.updated_at,
        coalesce(ms.matched_sources, 0)::int as matched_sources
      from pilot.shadow_library_capability_map cm
-     left join lateral (
-       select count(distinct s.source_id) as matched_sources
-       from pilot.shadow_library_sources s
-       where s.organization_id = cm.organization_id
-         and s.status = 'active'
-         and s.authority_tier <= cm.minimum_authority_tier
-         and (
-           coalesce(array_length(cm.required_source_types, 1), 0) = 0
-           or s.source_type = any(cm.required_source_types)
-         )
-     ) ms on true
+     ${SERVABLE_MATCHED_SOURCES_LATERAL}
      where cm.organization_id = $1
      order by cm.capability_key asc`,
-    [organizationId],
+    [organizationId, libraryRetrievalOrganizationIds(organizationId)],
   );
 }

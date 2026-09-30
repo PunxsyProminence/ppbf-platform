@@ -361,7 +361,7 @@ beforeAll(async () => {
        (organization_id, waiver_id, athlete_id, waiver_type, signed_by_name, signed_by_role,
         signed_at, consent_version, status, notes, parent_id)
      values ($1, '77777777-6666-4555-8444-333333333333', $2, 'photo_media', 'Guardian B', 'parent',
-             now(), 'v1', 'active', $3, 'par-b')`,
+             now(), 'v1', 'signed', $3, 'par-b')`,
     [ORG, ATHLETE, 'Countersigned after a call to 555-0200; welfare lead aware of the household situation.'],
   );
 
@@ -616,7 +616,7 @@ describe('the whole domain-get body', () => {
       signed_by_name: 'Guardian B',
       signed_by_role: 'parent',
       consent_version: 'v1',
-      status: 'active',
+      status: 'signed',
       parent_id: 'par-b',
       covers_video: true,
       public_use_allowed: false,

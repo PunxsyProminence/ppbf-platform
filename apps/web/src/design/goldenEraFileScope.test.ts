@@ -40,9 +40,9 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  *      - every rule that names `.mat-leather` excludes `[role="alert"]`. Both
  *        projection failures on this route are `role="alert"` panels whose
  *        border IS `var(--locked)`, and this sheet is unlayered, so a bare
- *        `border-color` here would out-rank that utility and repaint #A81E22
- *        in bronze — a safety-semantics change wearing a visual change's
- *        clothes;
+ *        `border-color` here would out-rank that utility and repaint the
+ *        --locked border in bronze — a safety-semantics change wearing a
+ *        visual change's clothes;
  *      - no rule names `.stamp`, `.badge` or `.room`. Safeguarding ink and the
  *        Law 2 status ladder are not a visual pass's to restyle, and the wall
  *        is the committed plate's job, not this scope's;
@@ -88,6 +88,40 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
 const BRASS_RUNGS = ['200', '300', '400', '500', '600', '700', '800', '900'] as const;
 
 const css = readDesignSystemCss(DESIGN_SYSTEM_ENTRY);
+
+/* THE MEDICAL-STOP NAMES: --locked, its --locked-* rungs, and every custom
+   property whose every declaration resolves to one of them. Read from the
+   sheets rather than listed, because app/globals.css aliases --locked as
+   --safety-locked, --status-critical and --status-danger, and a check on the
+   bare name waves all three through. ("Every declaration", so a slot such as
+   `--badge`, which only the locked variant of .badge fills with --locked, is
+   not counted.) */
+const GLOBALS_CSS = readFileSync(path.resolve(__dirname, '../../app/globals.css'), 'utf8');
+const MEDICAL_STOP_TOKENS: readonly string[] = (() => {
+  const values = new Map<string, string[]>();
+  for (const [, name, value] of `${css}\n${GLOBALS_CSS}`
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .matchAll(/(?<![\w-])(--[\w-]+)\s*:\s*([^;{}]*)/g)) {
+    values.set(name, [...(values.get(name) ?? []), value]);
+  }
+  const tokens = new Set([...values.keys()].filter((name) => /^--locked(?:-|$)/.test(name)));
+  const resolvesToStop = (value: string) =>
+    [...value.matchAll(/var\(\s*(--[\w-]+)/g)].some(([, ref]) => tokens.has(ref));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [name, all] of values) {
+      if (tokens.has(name) || !all.every(resolvesToStop)) continue;
+      tokens.add(name);
+      grew = true;
+    }
+  }
+  return [...tokens].sort();
+})();
+
+/** The medical-stop names `text` refers to, matched as whole property names. */
+function medicalStopReferences(text: string): string[] {
+  return MEDICAL_STOP_TOKENS.filter((token) => new RegExp(`(?<![\\w-])${token}(?![\\w-])`).test(text));
+}
 
 /** The Golden Era sheet on its own, for assertions about THIS block's text. */
 const THEME = readFileSync(
@@ -293,10 +327,10 @@ describe('the 010 block stays inside its scope and off what it may not touch', (
     expect(fileBlock()).not.toContain('.mat-paper');
   });
 
-  test('every rule that names .mat-leather excludes the reserved-red refusal panel', () => {
+  test('every rule that names .mat-leather excludes the --locked refusal panel', () => {
     // Both projection failures render role="alert" with
     // border-[color:var(--locked)]. This sheet is unlayered, so an unqualified
-    // border-color here would beat that utility and repaint #A81E22.
+    // border-color here would beat that utility and repaint the --locked border.
     const offenders = selectors()
       .filter((selector) => NAMES_LEATHER.test(selector))
       .filter((selector) => !selector.includes('[role="alert"]'));
@@ -332,15 +366,16 @@ describe('the 010 block stays inside its scope and off what it may not touch', (
     }
   });
 
-  // STATUS 2026-09-29: red itself is not reserved (OD-2026-09-29-001). This
-  // check was written under the reservation and still runs; --locked still
-  // means a medical stop.
-  test('the scoped block never uses reserved medical red', () => {
+  // --locked means a medical stop, and on this route it is the failed-read
+  // refusal's alone. Red itself is not reserved (OD-2026-09-29-001), so the
+  // hue and --stamp-red are not refused here.
+  test('the scoped block never uses the --locked medical-stop tokens', () => {
     const block = fileBlock();
-    expect(block).not.toMatch(/#A81E22/i);
     expect(block).not.toMatch(/--locked\b/);
-    expect(block).not.toMatch(/--stamp-red\b/);
     expect(block).not.toMatch(/--locked-ink\b/);
+    expect(MEDICAL_STOP_TOKENS)
+      .toEqual(expect.arrayContaining(['--locked', '--safety-locked', '--status-critical', '--status-danger']));
+    expect(medicalStopReferences(block)).toEqual([]);
   });
 
   test('the block spells no brass literal, so the scope can actually reach it', () => {

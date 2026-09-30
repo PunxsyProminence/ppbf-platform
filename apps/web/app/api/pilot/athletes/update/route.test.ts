@@ -141,6 +141,91 @@ describe('POST /api/pilot/athletes/update', () => {
     expect(mockWriteAudit).not.toHaveBeenCalled();
   });
 
+  // Jason 2026-09-29, Q2 A: an athlete may not change their own date of
+  // birth; admins keep it; name and weight class stay the athlete's to edit.
+  describe('date of birth lock for athletes', () => {
+    const athletePrincipal = () =>
+      principal({ accountId: 'ath-account-1', role: 'athlete', athleteId: 'ath-001', authProvider: 'ppbf_local' });
+
+    test('refuses an athlete changing their own date of birth, with a plain 403', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal());
+      mockGetAthleteById.mockResolvedValueOnce(athletePayload({ dob: '2012-04-17' }));
+
+      const response = await POST(makeRequest({ ...athletePayload({ dob: '2000-04-17' }) }));
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({
+        error: 'Forbidden: athlete cannot change date of birth; ask an organization admin to correct it',
+      });
+      expect(mockUpsertAthlete).not.toHaveBeenCalled();
+      expect(mockWriteAudit).not.toHaveBeenCalled();
+    });
+
+    test('allows an athlete save that leaves dob unchanged when the stored dob is a Date', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal());
+      mockGetAthleteById.mockResolvedValueOnce(
+        athletePayload({ dob: new Date(2012, 3, 17) as unknown as string }),
+      );
+
+      const response = await POST(makeRequest({ ...athletePayload({ dob: '2012-04-17' }) }));
+
+      expect(response.status).toBe(200);
+      expect(mockUpsertAthlete).toHaveBeenCalledTimes(1);
+      expect(mockWriteAudit.mock.calls[0][0].details.changed_fields).toEqual([]);
+    });
+
+    test('allows an athlete save that leaves dob unchanged when the stored dob is a string', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal());
+      mockGetAthleteById.mockResolvedValueOnce(athletePayload({ dob: '2012-04-17' }));
+
+      const response = await POST(makeRequest({ ...athletePayload({ dob: '2012-04-17' }) }));
+
+      expect(response.status).toBe(200);
+      expect(mockUpsertAthlete).toHaveBeenCalledTimes(1);
+    });
+
+    test('still lets an athlete change their own name and weight class', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(athletePrincipal());
+      mockGetAthleteById.mockResolvedValueOnce(
+        athletePayload({ dob: new Date(2012, 3, 17) as unknown as string, full_name: 'Dawn Kellermann', weight_class: '101' }),
+      );
+
+      const response = await POST(
+        makeRequest({ ...athletePayload({ full_name: 'Dawn Kellerman', weight_class: '106' }) }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(mockUpsertAthlete).toHaveBeenCalledWith('org-1', expect.objectContaining({
+        full_name: 'Dawn Kellerman',
+        weight_class: '106',
+        dob: '2012-04-17',
+      }));
+      expect(mockWriteAudit.mock.calls[0][0].details.changed_fields).toEqual(['full_name', 'weight_class']);
+    });
+
+    test('lets an organization admin correct a date of birth', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+      mockGetAthleteById.mockResolvedValueOnce(athletePayload({ dob: '2012-04-17' }));
+
+      const response = await POST(makeRequest({ ...athletePayload({ dob: '2012-04-07' }) }));
+
+      expect(response.status).toBe(200);
+      expect(mockUpsertAthlete).toHaveBeenCalledWith('org-1', expect.objectContaining({ dob: '2012-04-07' }));
+    });
+
+    test('lets a coach correct a date of birth, as before', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(
+        principal({ accountId: 'coach-1', role: 'coach', authProvider: 'ppbf_local' }),
+      );
+      mockGetAthleteById.mockResolvedValueOnce(athletePayload({ dob: '2012-04-17' }));
+
+      const response = await POST(makeRequest({ ...athletePayload({ dob: '2012-04-07' }) }));
+
+      expect(response.status).toBe(200);
+      expect(mockUpsertAthlete).toHaveBeenCalledWith('org-1', expect.objectContaining({ dob: '2012-04-07' }));
+    });
+  });
+
   test('refuses a role that may not touch athlete records at all', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'board' }));
 

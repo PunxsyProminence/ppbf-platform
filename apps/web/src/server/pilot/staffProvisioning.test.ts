@@ -23,6 +23,7 @@ jest.mock('./db', () => ({
 import {
   INVITABLE_STAFF_ROLES,
   ORG_ADMIN_INVITABLE_ROLES,
+  assertGuardianLoginProvisionable,
   createOrUpdateMicrosoftStaffAccount,
   isInvitableStaffRole,
   listOrganizationGuardianLinks,
@@ -31,6 +32,7 @@ import {
   requireGuardianLinkForParentInvite,
 } from './staffProvisioning';
 import { query, queryOne } from './db';
+import { ConflictError } from './errors';
 
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
@@ -992,5 +994,313 @@ describe('listOrganizationGuardianLinks', () => {
     expect(sql).toContain('p.account_id is not null');
     expect(sql).toContain('gl.organization_id = $1');
     expect(params).toEqual(['org-1']);
+  });
+});
+
+// An existing login, as the email lookup returns it. Defaults: a Microsoft
+// parent account in org-1.
+function existingLogin(overrides: Record<string, unknown> = {}) {
+  return {
+    account_id: 'acct-existing',
+    organization_id: 'org-1',
+    role: 'parent',
+    auth_provider: 'microsoft',
+    is_platform_owner: false,
+    ...overrides,
+  };
+}
+
+const NON_PARENT_ROLES = ['coach', 'staff', 'volunteer', 'board', 'organization_admin', 'admin', 'athlete'];
+
+// R5 (Jason 2026-09-29, "A"): intake names an existing coach or staff login
+// as a guardian -> intake refuses; it does not turn that login into a parent.
+describe('intake guardian login: an existing non-parent account is refused, not re-roled', () => {
+  test.each(NON_PARENT_ROLES)(
+    'provisioning with refuseRoleChange refuses an existing %s account with 409 and writes nothing',
+    async (existingRole) => {
+      stubLookups({ existingByEmail: existingLogin({ account_id: 'acct-staff', role: existingRole }) });
+
+      const refusal = createOrUpdateMicrosoftStaffAccount({
+        loginEmail: 'shared@example.com',
+        organizationId: 'org-1',
+        role: 'parent',
+        accountIdHint: 'acct-staff',
+        refuseRoleChange: true,
+      });
+
+      await expect(refusal).rejects.toBeInstanceOf(ConflictError);
+      await expect(refusal).rejects.toMatchObject({ status: 409, code: 'EXISTING_ACCOUNT_ROLE_CONFLICT' });
+      await expect(refusal).rejects.toThrow(
+        `Conflict: shared@example.com already belongs to an existing ${existingRole} account in this organization.`,
+      );
+      expect(currentClient.query).not.toHaveBeenCalled();
+    },
+  );
+
+  test('an existing parent account is still provisioned with refuseRoleChange', async () => {
+    stubLookups({ existingByEmail: existingLogin() });
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'dana@example.com',
+      organizationId: 'org-1',
+      role: 'parent',
+      accountIdHint: 'acct-existing',
+      refuseRoleChange: true,
+    });
+
+    expect(result.accountId).toBe('acct-existing');
+    expect(accountUpsertCalls()).toHaveLength(1);
+  });
+
+  test('an account in another organization keeps the generic refusal and is not described', async () => {
+    stubLookups({ existingByEmail: existingLogin({ organization_id: 'org-other', role: 'coach' }) });
+
+    const refusal = createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'shared@example.com',
+      organizationId: 'org-1',
+      role: 'parent',
+      refuseRoleChange: true,
+    });
+
+    await expect(refusal).rejects.toThrow(/^Forbidden: account already exists in another organization$/);
+  });
+
+  // Scope: the invite surfaces re-role on purpose, and must keep doing so.
+  test('without refuseRoleChange an invite still re-roles an existing coach, as before', async () => {
+    stubLookups({ existingByEmail: existingLogin({ account_id: 'acct-coach', role: 'coach' }) });
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'coach@example.com',
+      organizationId: 'org-1',
+      role: 'staff',
+    });
+
+    expect(result.role).toBe('staff');
+    expect(accountUpsertCalls()).toHaveLength(1);
+  });
+});
+
+// Intake promotion writes the athlete record before it provisions the
+// guardian's login, then links the guardian record to that login. This check
+// refuses, before the first write, everything provisioning would refuse for
+// that login, and an account_id provisioning would not use.
+describe('assertGuardianLoginProvisionable', () => {
+  const check = (overrides: { loginEmail?: string; accountIdHint?: string } = {}) =>
+    assertGuardianLoginProvisionable({
+      loginEmail: 'dana@example.com',
+      organizationId: 'org-1',
+      accountIdHint: 'acct-existing',
+      ...overrides,
+    });
+
+  test('provisioning keeps the login an email already has and ignores the hint', async () => {
+    // The premise the hint check exists for. If this ever changes, so does the check.
+    stubLookups({ existingByEmail: existingLogin() });
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'dana@example.com',
+      organizationId: 'org-1',
+      role: 'parent',
+      accountIdHint: 'acct-other-family',
+    });
+
+    expect(result.accountId).toBe('acct-existing');
+  });
+
+  test.each(NON_PARENT_ROLES)(
+    'refuses an email that belongs to an existing %s account with 409 (R5)',
+    async (existingRole) => {
+      mockQueryOne.mockResolvedValueOnce(existingLogin({ account_id: 'acct-staff', role: existingRole }));
+
+      const refusal = check({ loginEmail: ' Shared@Example.com ', accountIdHint: 'acct-staff' });
+
+      await expect(refusal).rejects.toMatchObject({ status: 409, code: 'EXISTING_ACCOUNT_ROLE_CONFLICT' });
+      await expect(refusal).rejects.toThrow(
+        `Conflict: shared@example.com already belongs to an existing ${existingRole} account in this organization. `
+        + "Intake does not change an existing account's role, so it cannot make that account a parent login. "
+        + 'Use a different email address.',
+      );
+      // Looked up the way provisioning looks it up: trimmed, lower-cased.
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('lower(login_email) = $1'),
+        ['shared@example.com'],
+      );
+    },
+  );
+
+  test('refuses an account_id that belongs to an existing non-parent account in this organization (R5)', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    mockQueryOne.mockResolvedValueOnce({ account_id: 'acct-coach', organization_id: 'org-1', role: 'coach' });
+
+    const refusal = check({ accountIdHint: 'acct-coach' });
+
+    await expect(refusal).rejects.toMatchObject({ status: 409, code: 'EXISTING_ACCOUNT_ROLE_CONFLICT' });
+    await expect(refusal).rejects.toThrow(
+      'Conflict: account_id "acct-coach" already belongs to an existing coach account in this organization. '
+      + "Intake does not change an existing account's role, so it cannot make that account a parent login. "
+      + 'Use a different account_id.',
+    );
+  });
+
+  test('refuses the platform owner with provisioning\'s own message', async () => {
+    mockQueryOne.mockResolvedValueOnce(existingLogin({ role: 'platform_owner', is_platform_owner: true }));
+
+    await expect(check()).rejects.toThrow(/^Forbidden: cannot modify a platform owner account$/);
+  });
+
+  test('refuses another organization\'s account with provisioning\'s own message, not naming its role', async () => {
+    mockQueryOne.mockResolvedValueOnce(existingLogin({ organization_id: 'org-other', role: 'coach' }));
+
+    await expect(check()).rejects.toThrow(/^Forbidden: account already exists in another organization$/);
+  });
+
+  test('refuses an existing parent login that signs in with a PIN', async () => {
+    mockQueryOne.mockResolvedValueOnce(existingLogin({ auth_provider: 'ppbf_local' }));
+
+    await expect(check()).rejects.toThrow(/^Forbidden: this email is already used by a PIN-based account/);
+  });
+
+  test('refuses a hint that differs from the login the email already has', async () => {
+    mockQueryOne.mockResolvedValueOnce(existingLogin());
+
+    const refusal = check({ loginEmail: ' Dana@Example.com ', accountIdHint: 'acct-other-family' });
+
+    await expect(refusal).rejects.toBeInstanceOf(ConflictError);
+    await expect(refusal).rejects.toThrow(/already belongs to a different login account than "acct-other-family"/);
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+  });
+
+  test('accepts the hint when it is the parent login the email already has', async () => {
+    mockQueryOne.mockResolvedValueOnce(existingLogin());
+
+    await expect(check({ accountIdHint: ' acct-existing ' })).resolves.toBeUndefined();
+  });
+
+  test('accepts a hint for a new email when no other identity holds it', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    await expect(check({ accountIdHint: 'acct-new' })).resolves.toBeUndefined();
+    expect(mockQueryOne).toHaveBeenLastCalledWith(
+      expect.stringContaining('where account_id = $1'),
+      ['acct-new'],
+    );
+  });
+
+  test('refuses a hint for a new email that another parent identity already holds', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    mockQueryOne.mockResolvedValueOnce({ account_id: 'acct-other-family', organization_id: 'org-1', role: 'parent' });
+
+    await expect(check({ accountIdHint: 'acct-other-family' }))
+      .rejects.toThrow(/^Forbidden: account_id is already in use by another identity$/);
+  });
+
+  test('a hint held in another organization is refused without naming its role', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    mockQueryOne.mockResolvedValueOnce({ account_id: 'acct-elsewhere', organization_id: 'org-other', role: 'coach' });
+
+    await expect(check({ accountIdHint: 'acct-elsewhere' }))
+      .rejects.toThrow(/^Forbidden: account_id is already in use by another identity$/);
+  });
+
+  test('writes nothing', async () => {
+    mockQueryOne.mockResolvedValueOnce(existingLogin({ role: 'coach' }));
+
+    await expect(check()).rejects.toThrow();
+    expect(mockQuery).not.toHaveBeenCalled();
+    expect(currentClient.query).not.toHaveBeenCalled();
+  });
+});
+
+// A deleted guardian login (deleted_at set) is refused on intake's path rather
+// than reactivated. Provisioning's upsert sets active_flag and the membership
+// back to true and reads nothing about deletion, so a family that had been
+// deleted came back with a working login when a new child was promoted under
+// the old email -- and the retention purge, which reads deleted_at and role but
+// not active_flag, later hard-deleted that live login and its guardian records.
+describe('intake guardian login: a deleted login is refused, not reactivated', () => {
+  const DELETED_AT = '2026-03-01 12:00:00+00';
+
+  test('provisioning with refuseDeletedLogin refuses a deleted parent login with 409 and writes nothing', async () => {
+    mockQueryOne.mockResolvedValueOnce({ organization_id: 'org-1' });
+    mockQueryOne.mockResolvedValueOnce(existingLogin({ account_id: 'acct-deleted' }));
+    mockQueryOne.mockResolvedValueOnce({ deleted_at: DELETED_AT });
+
+    const refusal = createOrUpdateMicrosoftStaffAccount({
+      loginEmail: ' Dana@Example.com ',
+      organizationId: 'org-1',
+      role: 'parent',
+      accountIdHint: 'acct-deleted',
+      refuseRoleChange: true,
+      refuseDeletedLogin: true,
+    });
+
+    await expect(refusal).rejects.toBeInstanceOf(ConflictError);
+    await expect(refusal).rejects.toMatchObject({ status: 409, code: 'DELETED_GUARDIAN_LOGIN' });
+    await expect(refusal).rejects.toThrow(
+      'Conflict: dana@example.com belongs to a guardian login that was deleted. Intake does not restore a deleted login.',
+    );
+    expect(mockQueryOne).toHaveBeenLastCalledWith(
+      expect.stringContaining('select deleted_at::text as deleted_at from pilot.accounts where account_id = $1'),
+      ['acct-deleted'],
+    );
+    expect(currentClient.query).not.toHaveBeenCalled();
+  });
+
+  test('provisioning with refuseDeletedLogin still provisions a parent login that was never deleted', async () => {
+    mockQueryOne.mockResolvedValueOnce({ organization_id: 'org-1' });
+    mockQueryOne.mockResolvedValueOnce(existingLogin());
+    mockQueryOne.mockResolvedValueOnce({ deleted_at: null });
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'dana@example.com',
+      organizationId: 'org-1',
+      role: 'parent',
+      accountIdHint: 'acct-existing',
+      refuseRoleChange: true,
+      refuseDeletedLogin: true,
+    });
+
+    expect(result.accountId).toBe('acct-existing');
+    expect(accountUpsertCalls()).toHaveLength(1);
+  });
+
+  // Scope: the invite surfaces are unchanged, and do not read the column.
+  test('without refuseDeletedLogin nothing about deletion is read, as before', async () => {
+    stubLookups({ existingByEmail: existingLogin() });
+
+    await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'dana@example.com',
+      organizationId: 'org-1',
+      role: 'parent',
+    });
+
+    expect(mockQueryOne.mock.calls.some(([sql]) => String(sql).includes('deleted_at'))).toBe(false);
+    expect(accountUpsertCalls()).toHaveLength(1);
+  });
+
+  test('the pre-write check refuses a deleted parent login with 409', async () => {
+    mockQueryOne.mockResolvedValueOnce(existingLogin({ deleted_at: DELETED_AT }));
+
+    const refusal = assertGuardianLoginProvisionable({
+      loginEmail: 'dana@example.com',
+      organizationId: 'org-1',
+      accountIdHint: 'acct-existing',
+    });
+
+    await expect(refusal).rejects.toMatchObject({ status: 409, code: 'DELETED_GUARDIAN_LOGIN' });
+    await expect(refusal).rejects.toThrow(
+      'Conflict: dana@example.com belongs to a guardian login that was deleted. Intake does not restore a deleted login.',
+    );
+    expect(mockQueryOne).toHaveBeenCalledWith(expect.stringContaining('deleted_at'), ['dana@example.com']);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('the pre-write check refuses a deleted non-parent login by its role first', async () => {
+    mockQueryOne.mockResolvedValueOnce(existingLogin({ role: 'coach', deleted_at: DELETED_AT }));
+
+    await expect(
+      assertGuardianLoginProvisionable({ loginEmail: 'dana@example.com', organizationId: 'org-1', accountIdHint: 'acct-existing' }),
+    ).rejects.toMatchObject({ status: 409, code: 'EXISTING_ACCOUNT_ROLE_CONFLICT' });
   });
 });

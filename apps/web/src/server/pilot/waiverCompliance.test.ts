@@ -2,7 +2,16 @@ jest.mock('./db', () => ({
   query: jest.fn(),
 }));
 
-import { getAthleteWaiverStatus, getOrganizationWaiverStatus, TRACKED_WAIVER_TYPES, WAIVER_STATUSES } from './waiverCompliance';
+import fs from 'node:fs';
+import path from 'node:path';
+
+import {
+  getAthleteWaiverStatus,
+  getOrganizationWaiverStatus,
+  requireWaiverStatus,
+  TRACKED_WAIVER_TYPES,
+  WAIVER_STATUSES,
+} from './waiverCompliance';
 import { query } from './db';
 
 const mockQuery = jest.mocked(query);
@@ -75,8 +84,11 @@ describe('getOrganizationWaiverStatus', () => {
   });
 
   test('an unrecognised status is missing here too, never passed through raw', async () => {
-    // pilot.waivers.status has no CHECK constraint and domain-upsert accepts
-    // any client-supplied string, so this is reachable rather than theoretical.
+    // pilot.waivers.status had no CHECK constraint and domain-upsert accepted
+    // any client-supplied string, so this was reachable rather than theoretical.
+    // pilot_waivers_status_check and requireWaiverStatus refuse such values on
+    // write now; rows written before them, or on a database the migration has
+    // not reached, can still hold them.
     // 'pending' is a started release, not a given one.
     mockQuery.mockResolvedValueOnce([
       { athlete_id: 'ath-1', full_name: 'Jordan T.', active_flag: true, waiver_type: 'general', status: 'pending' },
@@ -177,10 +189,12 @@ describe('getAthleteWaiverStatus', () => {
     await expect(getAthleteWaiverStatus('org-1', 'ath-1', 'travel')).resolves.toBe('withdrawn');
   });
 
-  // pilot.waivers.status is `text not null` with no check constraint
-  // (infra/azure/pilot_slice_postgres.sql), so the column can hold anything a
-  // writer puts there. These two pin the deliberately asymmetric handling: a
-  // recognised value survives formatting, an unrecognised one fails closed.
+  // pilot.waivers.status was `text not null` with no check constraint
+  // (infra/azure/pilot_slice_postgres.sql) until pilot_waivers_status_check, so
+  // rows written before it, or on a database the migration has not reached, can
+  // hold anything a writer put there. These two pin the deliberately
+  // asymmetric handling: a recognised value survives formatting, an
+  // unrecognised one fails closed.
   test('a recognised status survives case and padding -- a signature is not lost to whitespace', async () => {
     for (const stored of [' Signed ', 'SIGNED', 'Signed', '\tsigned\n']) {
       mockQuery.mockResolvedValueOnce([{ status: stored }]);
@@ -210,5 +224,56 @@ describe('getAthleteWaiverStatus', () => {
     );
 
     await expect(getAthleteWaiverStatus('org-1', 'ath-1', 'travel')).rejects.toThrow('does not exist');
+  });
+});
+
+/* requireWaiverStatus is what domain-upsert and review-action check a
+   caller's status against before writing it. pilot_waivers_status_check is
+   the floor under it, so the two must admit exactly the same set -- a value
+   this admits and the constraint refuses surfaces as a 500 again, and one the
+   constraint admits and this refuses is a working status nobody can file. */
+describe('requireWaiverStatus', () => {
+  test.each([...WAIVER_STATUSES])('accepts %p exactly', (status) => {
+    expect(requireWaiverStatus(status, 'payload.status')).toBe(status);
+  });
+
+  test.each([' Signed ', 'SIGNED', 'Signed', 'signed ', '', 'pending', 'active'])(
+    'refuses %p with a 400-class error naming the field',
+    (status) => {
+      expect(() => requireWaiverStatus(status, 'payload.status')).toThrow(
+        'Unsupported payload.status: must be exactly one of signed, declined, withdrawn, missing',
+      );
+    },
+  );
+
+  test.each([
+    ['null', null],
+    ['a number', 1],
+    ['a boolean', true],
+    ['an object', { status: 'signed' }],
+    ['an array', ['signed']],
+  ])('refuses %s rather than treating it as absent', (_label, value) => {
+    expect(() => requireWaiverStatus(value, 'payload.status', 'signed')).toThrow(/^Unsupported payload\.status/);
+  });
+
+  test('the fallback applies only when the field is absent', () => {
+    expect(requireWaiverStatus(undefined, 'payload.status', 'signed')).toBe('signed');
+  });
+
+  test('with no fallback, absence is refused', () => {
+    expect(() => requireWaiverStatus(undefined, 'promotion.waiver.status')).toThrow(
+      /^Unsupported promotion\.waiver\.status/,
+    );
+  });
+
+  test('the database CHECK names exactly the same four values', () => {
+    const sql = fs.readFileSync(
+      path.resolve(__dirname, '../../../../../infra/azure/pilot_slice_postgres_waiver_status_check_migration.sql'),
+      'utf8',
+    );
+    const check = sql.match(/check \(status in \(([^)]*)\)\)/);
+    expect(check).not.toBeNull();
+    const literals = [...(check?.[1] ?? '').matchAll(/'([^']*)'/g)].map((match) => match[1]);
+    expect(literals).toEqual([...WAIVER_STATUSES]);
   });
 });

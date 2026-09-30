@@ -15,10 +15,16 @@ import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { buildReviewResearchFields } from '@/src/server/pilot/shadow';
 import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
-import { createOrUpdateMicrosoftStaffAccount } from '@/src/server/pilot/staffProvisioning';
+import {
+  assertGuardianLoginProvisionable,
+  createOrUpdateMicrosoftStaffAccount,
+} from '@/src/server/pilot/staffProvisioning';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
+import { requireWaiverStatus, type WaiverStatus } from '@/src/server/pilot/waiverCompliance';
 import {
   assertActorCanAccessIntakeCase,
+  assertAthleteAccountIdProvisionable,
+  assertGuardianAccountUnchanged,
   bindIntakeDocumentsToOwner,
   createAssessment,
   createAttendance,
@@ -398,21 +404,20 @@ export async function POST(request: NextRequest) { // NOSONAR
     const validatedReadinessScore = promotion.readiness
       ? requireFiniteNumber(promotion.readiness.score, 'promotion.readiness.score')
       : undefined;
+    // The waiver status for the same reason: pilot_waivers_status_check refuses
+    // anything outside the vocabulary, and down at upsertWaiver that refusal
+    // would arrive as a 500 after the athlete, account, guardian, emergency
+    // contact and medical writes had already committed. No default -- the
+    // payload declares status as required.
+    const validatedWaiverStatus = promotion.waiver
+      ? requireWaiverStatus(promotion.waiver.status, 'promotion.waiver.status')
+      : undefined;
 
-    const athleteCreatedAt = new Date().toISOString();
-
-    await upsertAthlete(principal.organizationId, {
-      athlete_id: promotion.athlete.athlete_id,
-      full_name: promotion.athlete.full_name,
-      dob: promotion.athlete.dob,
-      weight_class: promotion.athlete.weight_class,
-      gym_status: promotion.athlete.gym_status,
-      emergency_contact: promotion.athlete.emergency_contact,
-      active_flag: true,
-      coach_id: promotion.athlete.coach_id,
-      created_at: athleteCreatedAt,
-      updated_at: athleteCreatedAt,
-    });
+    // Same reasoning for every other refusal this promotion can raise: each is
+    // checked here, before upsertAthlete, so a refused promotion writes no
+    // athlete, account or guardian row. The payload checks come first, then
+    // the lookups; the write steps below keep their own checks, which these
+    // only move earlier.
 
     // An athlete PIN is deliberately NOT settable at promotion. The account is
     // provisioned with no credential and inactive, and NOBODY sets a PIN for
@@ -423,8 +428,8 @@ export async function POST(request: NextRequest) { // NOSONAR
     // This request used to ACCEPT athlete.pin and silently discard it (it
     // landed in createOrUpdateAthleteAccount's ignored legacy parameter), so
     // an administrator believed a credential was set that never was. Refuse it
-    // the way the guardian branch below refuses guardian.pin; the prefix keeps
-    // jsonError mapping it to a 400.
+    // the way guardian.pin is refused below; the prefix keeps jsonError
+    // mapping it to a 400.
     //
     // The guidance below is user-facing and was stale: it named a `mode`
     // parameter that /admin/accounts/pin-reset no longer has, on a route that
@@ -436,14 +441,6 @@ export async function POST(request: NextRequest) { // NOSONAR
         + 'no administrator sets an athlete PIN. Issue a one-time activation code via '
         + 'POST /api/pilot/admin/accounts/pin-reset (or /api/pilot/admin/activation-codes), then '
         + 'have the athlete redeem it at /api/pilot/auth/activate and choose their own PIN.',
-      );
-    }
-
-    if (promotion.athlete.account_id) {
-      await createOrUpdateAthleteAccount(
-        promotion.athlete.account_id,
-        promotion.athlete.athlete_id,
-        principal.organizationId,
       );
     }
 
@@ -466,33 +463,145 @@ export async function POST(request: NextRequest) { // NOSONAR
         );
       }
 
-      if (promotion.guardian.account_id) {
-        if (!promotion.guardian.email) {
-          throw new Error('Missing guardian.email: required when guardian.account_id is provided');
-        }
+      if (promotion.guardian.account_id && !promotion.guardian.email) {
+        throw new Error('Missing guardian.email: required when guardian.account_id is provided');
+      }
 
-        await createOrUpdateMicrosoftStaffAccount({
-          loginEmail: promotion.guardian.email,
+      // Otherwise the athlete's account is created under that id first, and
+      // guardian provisioning then refuses the id as taken -- after writes.
+      if (
+        promotion.guardian.account_id
+        && promotion.athlete.account_id
+        && promotion.guardian.account_id.trim() === promotion.athlete.account_id.trim()
+      ) {
+        throw new Error(
+          'Unsupported guardian.account_id: it is the same as athlete.account_id. '
+          + 'The athlete and the guardian each need their own login.',
+        );
+      }
+    }
+
+    // pilot.parents.parent_id and full_name are NOT NULL, and nothing checked
+    // them before the first write. A guardian sent without either passed every
+    // check here; the athlete record, and any athlete or parent login the
+    // payload named (the parent login active), were written; and only then did
+    // upsertGuardian fail on the not-null constraint, which reached the admin
+    // as "Internal server error" while those writes stayed. Both are required
+    // now, and every later step uses the trimmed values.
+    const guardian = promotion.guardian && {
+      ...promotion.guardian,
+      parent_id: requireString(promotion.guardian.parent_id, 'guardian.parent_id'),
+      full_name: requireString(promotion.guardian.full_name, 'guardian.full_name'),
+    };
+
+    // The athlete's account: createOrUpdateAthleteAccount refuses one in
+    // another organization, would re-role a same-organization account of any
+    // other role into a locked athlete account, and would re-bind another
+    // child's athlete login to this child's record. All refused here.
+    if (promotion.athlete.account_id) {
+      await assertAthleteAccountIdProvisionable({
+        accountId: promotion.athlete.account_id,
+        athleteId: promotion.athlete.athlete_id,
+        organizationId: principal.organizationId,
+      });
+    }
+
+    if (guardian) {
+      // A guardian record that is already linked to a different login is
+      // refused by upsertGuardian, but that write comes after the athlete
+      // record and any accounts below.
+      await assertGuardianAccountUnchanged({
+        organizationId: principal.organizationId,
+        parentId: guardian.parent_id,
+        accountId: guardian.account_id,
+      });
+
+      // Everything guardian provisioning below would refuse, refused now --
+      // including an email or account_id that belongs to an existing coach,
+      // staff, board or admin account (R5, Jason 2026-09-29: intake refuses
+      // it rather than turning that account into a parent login). And the
+      // login named for the guardian has to be the one provisioning will
+      // actually use: provisioning keeps the login an email already has,
+      // ignoring guardian.account_id, and the guardian record used to be
+      // linked to guardian.account_id anyway -- any existing account, another
+      // family's parent login included, which would then see this child.
+      if (guardian.account_id && guardian.email) {
+        await assertGuardianLoginProvisionable({
+          loginEmail: guardian.email,
+          organizationId: principal.organizationId,
+          accountIdHint: guardian.account_id,
+        });
+      }
+    }
+
+    const athleteCreatedAt = new Date().toISOString();
+
+    await upsertAthlete(principal.organizationId, {
+      athlete_id: promotion.athlete.athlete_id,
+      full_name: promotion.athlete.full_name,
+      dob: promotion.athlete.dob,
+      weight_class: promotion.athlete.weight_class,
+      gym_status: promotion.athlete.gym_status,
+      emergency_contact: promotion.athlete.emergency_contact,
+      active_flag: true,
+      coach_id: promotion.athlete.coach_id,
+      created_at: athleteCreatedAt,
+      updated_at: athleteCreatedAt,
+    });
+
+    // No credential is set here: athlete.pin was refused before the first
+    // write, above.
+    if (promotion.athlete.account_id) {
+      await createOrUpdateAthleteAccount(
+        promotion.athlete.account_id,
+        promotion.athlete.athlete_id,
+        principal.organizationId,
+      );
+    }
+
+    // The login the guardian record ends up linked to, if any. Undefined
+    // leaves the record's current link alone.
+    let guardianAccountId: string | undefined;
+
+    if (guardian) {
+      // guardian.pin, and an account_id without an email, were refused before
+      // the first write, above. `&& email` only narrows the type.
+      if (guardian.account_id && guardian.email) {
+        // The guardian record is linked to the account provisioning wrote --
+        // the one that holds guardian.email and is now an active parent in
+        // this organization -- never to the payload's account_id read back.
+        // The check before the first write makes the two the same; this keeps
+        // them the same if the email's account changes in between.
+        //
+        // refuseRoleChange and refuseDeletedLogin: the same refusals as that
+        // check, held here too, so an account that became a non-parent or was
+        // deleted in between is still refused rather than re-roled or
+        // reactivated.
+        const provisioned = await createOrUpdateMicrosoftStaffAccount({
+          loginEmail: guardian.email,
           organizationId: principal.organizationId,
           role: 'parent',
-          accountIdHint: promotion.guardian.account_id,
+          accountIdHint: guardian.account_id,
+          refuseRoleChange: true,
+          refuseDeletedLogin: true,
         });
+        guardianAccountId = provisioned.accountId;
       }
 
       await upsertGuardian({
         organizationId: principal.organizationId,
-        parentId: promotion.guardian.parent_id,
-        accountId: promotion.guardian.account_id,
-        fullName: promotion.guardian.full_name,
-        phone: promotion.guardian.phone,
-        email: promotion.guardian.email,
+        parentId: guardian.parent_id,
+        accountId: guardianAccountId,
+        fullName: guardian.full_name,
+        phone: guardian.phone,
+        email: guardian.email,
       });
 
       await linkGuardianAthlete({
         organizationId: principal.organizationId,
-        parentId: promotion.guardian.parent_id,
+        parentId: guardian.parent_id,
         athleteId: promotion.athlete.athlete_id,
-        relationshipToAthlete: promotion.guardian.relationship_to_athlete ?? 'guardian',
+        relationshipToAthlete: guardian.relationship_to_athlete ?? 'guardian',
       });
     }
 
@@ -532,7 +641,8 @@ export async function POST(request: NextRequest) { // NOSONAR
         signedByRole: promotion.waiver.signed_by_role,
         signedAt: promotion.waiver.signed_at,
         consentVersion: promotion.waiver.consent_version,
-        status: promotion.waiver.status,
+        // Checked above, before the first promotion write.
+        status: validatedWaiverStatus as WaiverStatus,
         notes: promotion.waiver.notes,
         // The reviewer promoting the case, not the guardian who signed the
         // paper it came from.
@@ -617,8 +727,8 @@ export async function POST(request: NextRequest) { // NOSONAR
       details: {
         athlete_id: promotion.athlete.athlete_id,
         athlete_account_id: promotion.athlete.account_id ?? null,
-        guardian_parent_id: promotion.guardian?.parent_id ?? null,
-        guardian_account_id: promotion.guardian?.account_id ?? null,
+        guardian_parent_id: guardian?.parent_id ?? null,
+        guardian_account_id: guardianAccountId ?? null,
       },
       shadow_mirror: false,
     });
@@ -680,7 +790,7 @@ export async function POST(request: NextRequest) { // NOSONAR
       intake_case_id: intakeCaseId,
       status: 'promoted',
       athlete_id: promotion.athlete.athlete_id,
-      guardian_parent_id: promotion.guardian?.parent_id ?? null,
+      guardian_parent_id: guardian?.parent_id ?? null,
     });
   } catch (error) {
     return jsonError(error);

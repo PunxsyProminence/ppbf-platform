@@ -28,7 +28,8 @@
 #   * ci.yml does run `npm run test:migrations`, but only when the changed-file
 #     classifier (scripts/ci-classify-paths.mjs) flags the diff as touching
 #     `apps/web/src/server/pilot/`, `apps/web/scripts/pilot-`, `infra/azure/`,
-#     or the package manifests. That is per-PR coverage of a PR's own diff.
+#     a data file under `apps/web/seed-data/`, or the package manifests. That
+#     is per-PR coverage of a PR's own diff.
 #     Nothing verifies the migration suites against the *merged* state of
 #     `main` -- which is the state a release operator actually dispatches
 #     from, and which no single PR's CI run ever saw.

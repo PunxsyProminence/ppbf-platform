@@ -54,6 +54,7 @@ afterEach(() => {
 describe('session revocation after credential changes', () => {
   test('createOrUpdateAthleteAccount revokes sessions when updating an existing account', async () => {
     mockQuery.mockResolvedValueOnce([{ organization_id: 'org-1' }]); // existing account lookup
+    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'acct-1' }] }); // the update wrote it
     await createOrUpdateAthleteAccount('acct-1', 'ath-1', 'org-1');
     expect(revokeCalls()).toHaveLength(1);
     expect(revokeCalls()[0][1]).toEqual(['acct-1']);
