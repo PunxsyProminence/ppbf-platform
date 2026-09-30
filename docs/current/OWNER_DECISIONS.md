@@ -164,6 +164,45 @@ and should not try to.
 
 ---
 
+## OD-2026-09-30-001 -- Overwatch merges lane PRs, for as long as the mapping and design work lasts
+
+**Provenance: PRIMARY.** **Date:** 2026-09-30. Asked directly, because a peer
+session had asserted the rule and it was in no record: had Jason given the
+housekeeping/overwatch session the merge lane?
+
+**Jason's answer, verbatim:** *"yes, i may change that later after we get
+everything mapped and figured out UI and design wise"*.
+
+**What this decides.** The overwatch session merges lane pull requests. A
+building session opens its PR, gets CI green, then hands it over with what it
+changes and what was checked; overwatch merges after its own scope check. This
+is a narrowing of OD-2026-09-28-001 for this period only: Claude Code remains
+the builder -- branches, commits, PRs -- and stops at the merge.
+
+**What it does not decide, and the clause matters.** Jason attached an end to it
+in the same breath: *"i may change that later after we get everything mapped and
+figured out UI and design wise"*. It is a rule for the mapping and design phase,
+not a permanent reassignment. Nobody should read it later as having retired
+OD-2026-09-28-001; that decision stands, and this narrows one action type inside
+it while the visual and structural work settles. Production is untouched: it
+still requires Jason's explicit per-run approval.
+
+**Why it is written down at all.** It cost two exchanges between two sessions in
+one hour, because the rule existed only in another session's chat while the
+record said the opposite. That is the exact failure this file's own preamble
+describes: a session about to act can check whether something has been ruled,
+and can only check what was written. The same hour produced a second unrecorded
+claim -- that overwatch "now leads deployment" -- which is also absent here; it
+is not decided by this entry and is left open.
+
+**Evidence.** Jason's answer in the visuals/UI build thread, 2026-09-30, quoted
+above in full. The peer messages that prompted the question came from the
+session named "Repository housekeeping" the same day. At the time of writing,
+`docs/current/OWNER_DECISIONS.md` on `main` at `f597a4a5` held no
+`OD-2026-09-30-*` entry.
+
+---
+
 ## OD-2026-09-29-004 -- Second "all recommended" and the P answers: research coverage, gap tickets, seat counts, guardian logins, the stale deploy, coaches and birth dates, guardian waivers, the waiver rule
 
 **Provenance: PRIMARY.** **Date:** 2026-09-29. Two sets of questions from the
