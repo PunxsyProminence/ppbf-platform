@@ -118,13 +118,19 @@ jobs:
           // through the content-import core (IMP-10), and the seeding suites load
           // the committed files through it, so a loader-only PR changes what they
           // prove. The write-target guard and the suites' fixture matched no
-          // predicate before.
+          // predicate before; nor did the schema builder the fixture calls and
+          // the migration order it reads, nor the old loaders' frozen output.
           for (const loader of [
             'apps/web/src/server/pilot/contentImport/apply.ts',
             'apps/web/scripts/pilot-content-import.ts',
             'apps/web/scripts/lib/postgres-write-target.mjs',
             'apps/web/scripts/lib/postgres-write-target.d.mts',
             'apps/web/src/testing/referenceContentFixture.ts',
+            'apps/web/scripts/lib/full-schema.mjs',
+            'apps/web/scripts/migration-apply-order.mjs',
+            'apps/web/src/testing/legacyLoaderGolden.ts',
+            'apps/web/src/testing/legacyLoaderGoldenData/rows.json',
+            'apps/web/src/testing/legacyLoaderGoldenData/inputs/drill-library/seed_drill_library.csv',
           ]) {
             const loaded = classifyPaths([loader]);
             assert.equal(loaded.migrations, true, loader);
