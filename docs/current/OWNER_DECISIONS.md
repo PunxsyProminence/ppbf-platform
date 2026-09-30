@@ -164,6 +164,142 @@ and should not try to.
 
 ---
 
+## OD-2026-09-30-004 -- High-risk chat questions get education, not a refusal; acute reports get education plus an act-now line
+
+**Provenance: PRIMARY** for the owner's words and for the options exactly as
+they were put to him. The governing sentence is his own free text, not a
+selection. The four selections that follow it are reproduced with their full
+option sets, because a chosen label does not carry a decision on its own.
+
+**Date:** 2026-09-30. **Governs:** what the SHADOW chat route does with a
+message the doctrine classifier marks high-risk.
+**Supersedes** the refusal behaviour built by #972 and everything downstream of
+it, including the shape of the guard published as PR #1036.
+
+### The decision
+
+Put to him as a question about how narrowly to scope a guard. He answered a
+different and larger question, verbatim and unprompted:
+
+> well they are supposed to get education not refusal
+
+That sentence governs this entry. It is not new policy: the standing rule has
+said since it was written that education creates safety, and that unrequested
+refusals and gates are not to be added. The code had drifted from it, and this
+is the owner restating it against the code rather than deciding something new.
+
+### What the code was actually doing
+
+Established by running the real classifier, not by reading it:
+
+| message | classification | emergency wording |
+|---|---|---|
+| "I have chest pain right now" | `personal_health_concern` | no |
+| "My shoulder is sore after sparring" | `personal_health_concern` | no |
+| "I cannot breathe after that hit" | `urgent_personal_symptom` | yes |
+| "I passed out during training" | `loss_of_consciousness` | yes |
+
+Chest pain -- the example the owner himself used when he first ruled on this --
+was filed in the same bucket as a sore shoulder. And the response body for any
+of them was `requestValidation.error` and nothing else: one sentence,
+`success: false`, the model never called. A sore shoulder received, in full,
+"Personal pain, injury, and treatment questions require evaluation by a
+qualified medical professional. SHADOW can only provide general educational
+information." It claims it can educate and then does not.
+
+The system prompt already contained a worked example doing exactly what the
+owner asked for -- decline to diagnose, then offer to walk the athlete through
+what to watch for. The doctrine forbids diagnosing, prescribing and clearing.
+It has never said refuse. The gate was not implementing the doctrine; it was
+preventing it.
+
+### The four selections
+
+**1. What counts against the review-queue quota**, after it was found that the
+limiter increments before the write, so failed inserts consume the hour.
+Options as put: "Refund on failure *(recommended)*" . "Leave it -- count
+attempts" . "Count rows only". He chose:
+
+> Refund on failure
+
+**2. The scope of the #1036 guard.** First put as a two-way choice between
+urgent-only and any-invalid-request; he replied "explain in layman terms", and
+on the corrected options -- which established that narrowing to the code's own
+"urgent" flag would have dropped chest pain -- the set was "Keep it wide
+*(recommended)*" . "Narrow it anyway" . "Narrow it and fix the classifier".
+He chose:
+
+> Narrow it and fix the classifier
+
+This is the owner overriding a recommendation. The recommendation was to keep
+the wide guard and record why; he chose the more expensive and more correct
+option.
+
+**3. When the classifier gets fixed.** Options: "Record it, fix next lane
+*(recommended)*" . "Fix it now before deploy" . "Leave it alone". He chose:
+
+> Fix it now before deploy
+
+Also an override. It reopens a lane that was closing and holds a release that
+was ready to dispatch.
+
+**4. What the acute cases get.** Options: "Education + act-now line
+*(recommended)*" . "Act-now line only" . "Education only, same as the rest".
+He chose:
+
+> Education + act-now line
+
+**5. Who is flagged for a human.** Options: "Acute cases only *(recommended)*"
+. "Everything high-risk, as now" . "Nothing -- drop the flag". He chose:
+
+> Everything high-risk, as now
+
+A third departure from the recommendation, in the conservative direction: the
+queue keeps its current breadth.
+
+### What that means
+
+1. A high-risk message is no longer refused. It reaches the model, which
+   answers it under the existing doctrine -- never diagnosing, prescribing or
+   granting clearance, and deferring to a medical professional where that is
+   the real answer.
+2. The acute set -- chest pain, loss of consciousness, fainting, and the
+   urgent-symptom list -- additionally receives a canned act-now line. Canned
+   because it must still be delivered when the model is unavailable.
+3. The classifier is corrected so the acute set actually contains chest pain.
+4. The human-review write continues for **every** high-risk message, unchanged
+   in breadth, and keeps the `safety_review` bound from OD-2026-09-30-003 --
+   now with the slot refunded when the insert fails.
+5. The guard from OD-2026-09-30-003, which let a refusal past runtime readiness
+   and the global limits, narrows to the acute set only. For everything else
+   the reasoning inverts: an educational answer needs the model, so it needs
+   readiness and it should count against the limits like any other answer.
+
+### What it costs, stated because the options did not say so
+
+More high-risk traffic now reaches the model, so more of it consumes quota and
+depends on the worker being up. The refusal was, incidentally, a cheap and
+always-available path; education is neither. Answer quality for these questions
+is now a live question rather than a fixed string, and nothing in the test
+suite can establish it -- that needs a signed-in human journey, and the owner
+enters all credentials.
+
+### The evidence it rested on
+
+- The branch table above, produced by executing `validateShadowRequest` under
+  jest against the real module.
+- `route.ts`, safety-boundary responder: body is `requestValidation.error`,
+  `success: false`, `state: 'filtered'`, model not called.
+- `shadowChat.ts`, `SHADOW_SYSTEM_PROMPT`: doctrine items 1-3 forbid
+  diagnosis, prescription and clearance; the diagnosis-request example
+  demonstrates declining and then offering education.
+- Blast radius measured before the decision, not estimated after:
+  `shadow/chat/route.test.ts` (22 references / 67 tests) and
+  `shadowChat.test.ts` (17 / 68) carry the behaviour; seven other suites hold
+  one or two incidental references each.
+- No environment, database or log was read. The platform holds no real athlete
+  or user data (owner, 2026-09-29), so no real person was affected either way.
+
 ## OD-2026-09-30-003 -- Safety outranks runtime readiness and the global chat limits; the review-queue write gets its own bound
 
 **Renumbered.** Published first as OD-2026-09-30-001. `main` had independently
