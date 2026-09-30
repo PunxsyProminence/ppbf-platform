@@ -164,6 +164,95 @@ and should not try to.
 
 ---
 
+## OD-2026-09-30-001 -- Safety outranks runtime readiness and the global chat limits; the review-queue write gets its own bound
+
+**Provenance: PRIMARY** for the owner's answers and for the options exactly as
+they were put to him. The options were drafted by Claude, and his input in each
+case was a selection rather than free text, so the options are reproduced here
+in full -- the word alone does not carry the decision.
+
+**Date:** 2026-09-26 (answered); recorded 2026-09-30, late, which is noted below
+rather than hidden. **Governs:** the order in which the SHADOW chat route may
+refuse a request, and what bounds the human-review queue write.
+**Supersedes** the classification recorded by #972, which argued the opposite
+in writing and pinned it in executable tests.
+
+### The decision
+
+Put to him as question 2 of three, verbatim as asked:
+
+> **2. Rate limit / readiness vs safety** -- a throttled or mid-migration
+> deployment answers "too many requests" to someone reporting chest pain.
+> -> **(a)** safety wins, with its own bounded throttle *(my recommendation)* .
+> **(b)** leave as is . **(c)** readiness only
+
+His answer, verbatim:
+
+> a
+
+Two follow-ups the same day fixed the boundary and the number. On whether the
+safeguarding response should also outrank athlete and conversation
+authorization, the options were "No -- auth stays above safety" (ChatGPT's
+ruling), "Yes -- safety wins there too" (the second reviewer's argument), and
+"Split it". He chose, verbatim:
+
+> No -- auth stays above safety
+
+On the size of the new throttle, offered 5, 3 or 10 per hour or delegation to
+Claude, he chose, verbatim:
+
+> 3 per hour
+
+### What that means
+
+1. The safeguarding response outranks **core SHADOW runtime readiness** and the
+   global **`chat`** and **`chat_daily`** limits. A throttled or unmigrated
+   deployment must not answer an urgent personal symptom with "too many
+   requests" or "temporarily unavailable".
+2. It does **not** outrank authentication, structural request validation, or
+   **athlete and conversation authorization**. A guessed athlete or
+   conversation id must not become reachable by typing a symptom. This half is
+   his explicit choice between two reviewers who disagreed, not a default.
+3. The human-review queue write -- which the global limits were incidentally
+   bounding -- gets its own bucket, `safety_review`, at **3 per hour per
+   account**. Exceeding it suppresses the WRITE ONLY and never the response.
+4. **Exhaustion and failure are different events.** A `safety_review` limiter
+   that errors for any reason other than exhaustion must not be treated as
+   exhausted: the write is attempted anyway. Treating "bucket storage
+   unavailable" as "quota used up" would discard safeguarding work at the
+   moment the database is already unwell. (Shape ruled by ChatGPT, 2026-09-30,
+   as architect; the owner ruled the precedence and the number.)
+
+### What it costs, stated because the options did not say so
+
+Two gates that previously refused an urgent request no longer do. If core
+readiness is failing, an urgent request now receives the safeguarding copy
+rather than a 503 naming the missing tables -- which is the intent, but it also
+means the 503 no longer surfaces on that path. And a suppressed queue write is
+a log line only: the response still reports `requiresHumanReview: true`, which
+means a human is needed, not that a row was persisted.
+
+### Recorded late, and why that matters
+
+This entry was written on 2026-09-30, after the implementation was built and
+published as PR #1036. `AGENT_KERNEL.md` requires the decision to be in this
+file BEFORE code or tests assert it, and the same omission was caught on #975
+four days earlier by Codex and corrected then. It was not carried forward to
+this slice; the architect review caught it at merge. The ruling itself was
+never in doubt -- the record was, twice.
+
+### The evidence it rested on
+
+- The chokepoint comment in `apps/web/app/api/pilot/shadow/chat/route.ts`
+  stated in terms that safety did NOT outrank core readiness or the global
+  limits, with #972's reasoning: a throttle an urgent word could unlock is a
+  bypass, and the safety path still writes to the review queue.
+- `enforceShadowRateLimit` writes `pilot.shadow_rate_limit_buckets`, a table on
+  the runtime-readiness list, and throws both on a missing table and on limit
+  exceeded -- which is why the new throttle had to separate those cases.
+- No environment, database or log was read. The platform holds no real athlete
+  or user data (owner, 2026-09-29), so no real person was affected either way.
+
 ## OD-2026-09-29-004 -- Second "all recommended" and the P answers: research coverage, gap tickets, seat counts, guardian logins, the stale deploy, coaches and birth dates, guardian waivers, the waiver rule
 
 **Provenance: PRIMARY.** **Date:** 2026-09-29. Two sets of questions from the

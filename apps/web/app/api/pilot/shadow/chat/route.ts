@@ -604,7 +604,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     const message = rawMessage.trim();
 
     // COMPUTED HERE, ABOVE RUNTIME READINESS AND THE GLOBAL LIMITS, because
-    // owner ruling 2026-09-26 put the safeguarding response ahead of both.
+    // owner ruling 2026-09-26 (OD-2026-09-30-001) put the safeguarding response ahead of both.
     // validateShadowRequest reads only the message -- its role and organization
     // parameters are unused -- so nothing below is needed to decide this, and
     // hoisting it costs no work for the ordinary request.
@@ -624,7 +624,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // Tables used only by best-effort, catch-wrapped writes (the human-review
     // queue, the evidence bundle, the chat audit row) are deliberately omitted
     // so that a partially migrated environment can still serve chat.
-    // GUARDED, NOT MOVED. Owner ruling 2026-09-26 reverses #972's
+    // GUARDED, NOT MOVED. Owner ruling 2026-09-26 (OD-2026-09-30-001) reverses #972's
     // classification: the safeguarding response now outranks core runtime
     // readiness and the two global abuse limits. It still does NOT outrank
     // authentication, structural validation, or the athlete and conversation
