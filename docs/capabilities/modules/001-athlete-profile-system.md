@@ -62,27 +62,25 @@ after that PR.
 ## Promotion blocker — parent disclosure reconciliation (owner decision, 2026-08-14)
 
 The owner has ruled that no parent-facing Passbook UI ships in this pilot and
-the parent experience stays on the ParentDigest disclosure model. That leaves
-a standing contradiction to resolve before this module can be declared
-promoted: `GET /api/pilot/passbook` names `parent` in its role allowlist and
-hands a linked guardian the athlete's full session log and coach
-observations, while `ParentDigest` (`apps/web/components/ParentDigest.tsx`)
-documents the session log as deliberately withheld from the parent surface.
-The API is currently consumed by no page, so nothing discloses today — but
-promotion review must either narrow the API's parent access to match
-ParentDigest, or explicitly widen the ParentDigest disclosure decision. Do
-not build a parent Passbook surface, and do not widen parent access, until
-that reconciliation is decided.
+the parent experience stays on the ParentDigest disclosure model
+(`apps/web/components/ParentDigest.tsx`), which withholds the session log.
+`GET /api/pilot/passbook` names `parent` in its role allowlist, so the API had
+to be reconciled with that model before this module can be declared promoted.
+Do not build a parent Passbook surface, and do not widen parent access,
+without a new owner decision.
 
-**Checked against code 2026-09-28: narrowed, still open.** Under
-OD-2026-09-25-003 a linked guardian no longer receives `pilot.sessions.notes`
-(the key is absent), and the observations reaching a guardian are only
-`coach_observation` and `parent_message` (PASSBOOK_GUARDIAN_NOTE_TYPES and
-getAthletePassbook in `apps/web/src/server/pilot/passbook.ts`); attendance notes
-and staff account ids go to staff readers only. A guardian still
-receives the dated session rows, which ParentDigest withholds, so the
-reconciliation above is still to be decided. `GET /api/pilot/passbook` still
-has no page; `/coach/passbook-gaps` reads only `/api/pilot/passbook/gaps`.
+**Reconciled 2026-09-30 (OD-2026-09-30-004 d3, owner chose A: narrow).** A
+linked guardian calling `GET /api/pilot/passbook` now receives only
+`{ athlete: { athlete_id, full_name }, completed_sessions }`, built by
+`getGuardianPassbook` in `apps/web/src/server/pilot/passbook.ts`. No dated
+session, attendance, readiness, observation, goal or gap row is read for a
+guardian, and the count is `countCompletedSessions`, the same number
+ParentDigest shows. Athlete, coach and admin readers still receive the full
+book from `getAthletePassbook`, unchanged. Pinned by
+`apps/web/app/api/pilot/passbook/route.test.ts` and
+`apps/web/src/server/pilot/passbook.test.ts`. `GET /api/pilot/passbook` still
+has no page; `/coach/passbook-gaps` reads only `/api/pilot/passbook/gaps`,
+which refuses parents.
 
 ## Audit log
 | Date | Actor | Note |
