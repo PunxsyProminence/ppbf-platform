@@ -119,6 +119,11 @@ const ROSTER_QUERY = `
       and sa.athlete_id = ath.athlete_id
   ) attend on true
   where ath.organization_id = $1
+    -- A deleted athlete is not on the roster, and nothing tied to them --
+    -- guardians, emergency contact, login, attendance -- leaves the building
+    -- in this file (scope B). The export carries no deleted column, so a row
+    -- here would read as a current athlete.
+    and ath.deleted_at is null
   order by ath.full_name asc, ath.athlete_id asc
 `;
 

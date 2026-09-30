@@ -82,7 +82,7 @@ const RATE_LIMIT_DEFAULTS = {
   // limits now (owner ruling 2026-09-26) and those limits were the only thing
   // bounding that write.
   //
-  // Owner decision, 2026-09-26 (OD-2026-09-30-001): 3 per hour per account. Single digits was his
+  // Owner decision, 2026-09-26 (OD-2026-09-30-003): 3 per hour per account. Single digits was his
   // instruction; this is the number he chose from it.
   //
   // Exceeding it suppresses the QUEUE WRITE ONLY. It never suppresses the

@@ -542,6 +542,11 @@ export async function listMentorshipsForAthlete(
     `${MENTORSHIP_SELECT}
      where m.organization_id = $1
        and (m.mentor_athlete_id = $2 or m.mentee_athlete_id = $2)
+       -- Scope B: a pairing with an athlete who has been deleted is marked
+       -- deleted with them; the other side no longer sees it. (Left joins:
+       -- a missing athlete row reads as not deleted, as before.)
+       and mentor.deleted_at is null
+       and mentee.deleted_at is null
      order by m.ended_on is null desc, m.started_on desc`,
     [organizationId, athleteId],
   );

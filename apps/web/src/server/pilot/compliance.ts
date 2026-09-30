@@ -538,7 +538,12 @@ export async function getOrganizationViolations(
   }
 
   if (filters?.coachAccountId) {
-    sql += ` and athlete_id in (select athlete_id from pilot.athletes where coach_id = $${params.length + 1} and organization_id = $1)`;
+    // deleted_at is null: the coach's own view, which elsewhere has always
+    // left a deleted athlete out (athleteIdsForCoach), and a deleted
+    // athlete's rows are marked deleted with them (scope B). The org-admin
+    // views of violations are left as they are pending the owner's answer on
+    // safety queues.
+    sql += ` and athlete_id in (select athlete_id from pilot.athletes where coach_id = $${params.length + 1} and organization_id = $1 and deleted_at is null)`;
     params.push(filters.coachAccountId);
   }
 

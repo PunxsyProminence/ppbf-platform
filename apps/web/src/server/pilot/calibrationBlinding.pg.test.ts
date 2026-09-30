@@ -57,6 +57,10 @@ const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const TEST_DB_NAME = 'ppbf_test_calib_blind';
 
 const BASE_SQL = 'pilot_slice_postgres.sql';
+// athletes.deleted_at. Deletion scope B makes the readers this suite drives
+// leave a deleted athlete's rows out, and production has had the column since
+// the data-retention migration; a database without it is one that never existed.
+const RETENTION_SQL = 'pilot_slice_postgres_data_retention_deletion_migration.sql';
 const VIDEO_SESSIONS_SQL = 'pilot_slice_postgres_video_sessions_migration.sql';
 /* Applied because these suites now seed a recording session and a take: a
    study cuts its clips from teaching footage, and assertVideoClippable
@@ -318,6 +322,7 @@ beforeAll(async () => {
   const migrateClient = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
   await migrateClient.connect();
   await migrateClient.query(await readMigration(BASE_SQL));
+  await migrateClient.query(await readMigration(RETENTION_SQL));
   await migrateClient.query(await readMigration(VIDEO_SESSIONS_SQL));
   await migrateClient.query(await readMigration(CAPTURE_SESSIONS_SQL));
   await migrateClient.query(await readMigration(PROJECTS_SQL));

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { BOARD_MINIMUM_COHORT_SIZE } from './boardSummary';
 import { query, queryOne } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 
 // pilot.activity_log_adjustments, pilot.v_activity_effective_minutes,
 // pilot.v_floor_hours_public and pilot.v_floor_hours_admin are owned by
@@ -253,6 +254,8 @@ export async function listPersonActivities(
      where organization_id = $1
        and person_account_id = $2
        and ($3::text is null or activity_domain = $3)
+       -- Scope B: a deleted athlete's activity is marked deleted with them.
+       and ${athleteNotDeletedSql('pilot.v_activity_effective_minutes')}
      order by occurred_on desc, activity_id
      limit $4`,
     [organizationId, personAccountId, filter.activityDomain ?? null, ACTIVITY_LEDGER_LIMIT],
@@ -267,7 +270,8 @@ export async function listPersonActivities(
      from pilot.v_activity_effective_minutes
      where organization_id = $1
        and person_account_id = $2
-       and ($3::text is null or activity_domain = $3)`,
+       and ($3::text is null or activity_domain = $3)
+       and ${athleteNotDeletedSql('pilot.v_activity_effective_minutes')}`,
     [organizationId, personAccountId, filter.activityDomain ?? null],
   );
 
@@ -295,6 +299,7 @@ export async function getFloorHoursAdmin(
        and ($2::text is null or person_account_id = $2)
        and ($3::text is null or athlete_id = $3)
        and ($4::text is null or activity_domain = $4)
+       and ${athleteNotDeletedSql('pilot.v_floor_hours_admin')}
      order by person_account_id, activity_domain, period_year desc, period_quarter desc`,
     [organizationId, filter.personAccountId ?? null, filter.athleteId ?? null, filter.activityDomain ?? null],
   );

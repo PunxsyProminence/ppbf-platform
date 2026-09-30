@@ -128,6 +128,25 @@ arbitrary. The queue as recorded at 2026-08-29, with each item's state on
    before designing to it.
 4. **`gold`** -- the module and its migration exist with no non-test importer.
 
+**The cutting step is no longer a script (2026-09-30, #1018).** Until then a
+clip could only be cut by `scripts/pilot-bootstrap-calibration-clip.ts`, run by
+hand against a production connection string, so the loop the Teach Shadow home
+page describes could not be walked by a coach. `/teach-shadow/cut` now does it,
+with `POST /api/pilot/calibration/projects` and `POST .../clips` behind it.
+
+**And the labelling screen could not play anything it was allowed to show.**
+Two rules landed a day apart, each right, each with a passing suite:
+`assertVideoClippable` began REQUIRING a capture take (2026-09-24, `95f106e0`)
+and `GET /api/pilot/video/[videoId]` began REFUSING one (2026-09-25,
+`4982943d`). Every clip that could legally exist therefore had a source video
+the only playback route 404'd, and `app/teach-shadow/annotation/page.tsx:360`
+fetches exactly that route. It reached production and sat there, because no
+suite could see both halves. Fixed by giving teaching footage its own door,
+`GET /api/pilot/teach-shadow/footage/[videoId]/stream`, gated by
+`assertVideoClippable`; the Film Study route keeps its flat refusal.
+`src/server/pilot/teachingFootagePlayableContract.test.ts` now holds both
+halves at once, which is what neither suite could do.
+
 **The calibration migrations are applied** (corrected 2026-09-28; a BLOCKED
 row here said they had never been applied in any environment, and it is
 removed). `apply-migrations` run 33269702024 (staging, `app-ppbf-staging`,
@@ -144,6 +163,10 @@ when it ships.
 
 | Item | Decided by | State on `main`, checked 2026-09-28 |
 |---|---|---|
+| One approval for migrate-and-deploy (added 2026-09-30): one workflow, ONE job, that builds staging, applies the commit's migrations and dispatches production behind a single gate, failing the whole run on anything but a clean migration PASS | Jason asked for it 2026-09-30 ("can i have multiple lanes migrate and then deploy under the same deployment"); **no decision taken**, recommendation given | Not built. Two constraints found while trying to work around the problem by hand, both verified 2026-09-30: (1) `workflow_dispatch` rejects a raw SHA as its ref (`HTTP 422: No ref found`), and (2) `deploy-production.yml:78` refuses any ref that is not `refs/heads/main`, with the Azure OIDC trust pinned to `repo:...:ref:refs/heads/main` (`:133`) -- so a release branch cannot be used and is not a workaround to reach for. Production can therefore only ever deploy `main`'s head at the moment of dispatch. That is the race: the pipeline takes about ten minutes and `main` moved under four consecutive release attempts on 2026-09-28 and 2026-09-30. A single-run workflow removes it; asking people to stop merging does not. Two jobs would not work -- GitHub pauses at every job naming a protected environment, so the second gate would ask again and the single click would be lost. |
+| Wire `qaReadModel` and `gold` to something (added 2026-09-30) | Not yet decided; raised with Jason 2026-09-30 | Not built. Both modules exist, both have their migrations applied in staging AND production, and neither has a single importer outside tests (checked on `main` 2026-09-30). Labelling now has a full path in front of it -- capture, release, cut (#1018), label, adjudicate -- and nothing behind it: submitted sets do not reach a measure of annotator agreement, and adjudications do not become reference data. |
+| Count what the content screen REFUSES (added 2026-09-30) | Offered to Jason 2026-09-29 and 2026-09-30; not commissioned | Not built. `videoScan.ts`'s screen writes a `blocked` verdict into `pilot.video_sessions.scan_detail` and nothing counts it, so the corpus has a selection bias nobody can measure: the Teach Shadow figures report what got IN and are silent about what was turned away. Small: a count beside the coverage figures, and a reason breakdown from `scan_detail`. |
+| Correct the production-approval clause in `~/.claude/rules/ppbf-workspace.md` (added 2026-09-30) | Follows OD-2026-09-30-001 item 3 | Not done. The rule conditions Claude's reviewer click on Jason having *personally opened* the approval page. On 2026-09-30 Claude opened it on Jason's instruction, in Jason's authenticated session, and Jason then gave the per-run instruction -- the condition that actually protects anything. The clause should say what it protects (a contemporaneous instruction naming one run, one environment, one action) rather than who moved the mouse. Left as-is rather than edited quietly, because a rule about authorization is not one to rewrite on the authority of the session it constrained. |
 | Calibration superseding migration: a revision integer per pair, a unique constraint on (pair, revision), and the adjudication route translating the 23505 collision, with its own test | OD-2026-08-29-005; kept on the list by OD-2026-09-28-010 item 12 | Not built (item 2 of the queue above). PR #929 designed it and closed unmerged on 2026-09-28. |
 | Deletion scope B: everything tied to the athlete marked deleted at the same moment as the athlete, as its own change after the screen | Jason 2026-09-29: "10 C" (scope A, the screen, first; B right after, separately), OD-2026-09-29-002 item 10 | Not built (checked 2026-09-29). Scope A is the `/admin/data-deletion` screen (`apps/web/app/admin/data-deletion/page.tsx`) over the existing API. The API marks only the athlete row and the athlete's account (closing its sessions and outstanding activation codes), or the guardian account (with its membership and sessions) and the children the trigger withdraws (`apps/web/src/server/pilot/dataDeletion.ts`); nothing marks photos, videos or notes. |
 | A One Percent Club nomination is deleted with the athlete it names | OD-2026-08-29-007 | Not built: `pilot_one_percent_nominations_athlete_fk` has no `on delete cascade` (`infra/azure/pilot_slice_postgres_one_percent_club_migration.sql:61-62`), and `apps/web/src/server/pilot/dataRetentionDeletion.pg.test.ts:1264` still expects the purge to report it as a blocker. |

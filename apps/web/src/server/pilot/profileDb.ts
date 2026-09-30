@@ -22,6 +22,7 @@
 
 import { assertActorCanAccessAthlete, isOrganizationAdminRole, type ActorIdentity } from './access';
 import { query, queryOne } from './db';
+import { accountNotDeletedSql } from './deletedAthletes';
 import {
   normalizeCorner,
   normalizeProgram,
@@ -300,6 +301,9 @@ export async function resolveRelationship(
        join pilot.parents p
          on p.organization_id = gl.organization_id and p.parent_id = gl.parent_id
        where a.organization_id = $1 and a.coach_id = $2 and p.account_id = $3
+         -- Scope B: a link to a child who has been deleted is marked deleted
+         -- with them, and makes nobody the guardian's staff any more.
+         and a.deleted_at is null
        limit 1`,
       [subjectOrganizationId, subject.accountId, viewer.accountId],
     );
@@ -587,6 +591,10 @@ export async function listPendingReviewPortraits(organizationId: string): Promis
     `select account_id, photo_uploaded_at
      from pilot.account_profiles
      where organization_id = $1 and photo_review_state = 'pending_review' and photo_blob_path is not null
+       -- Scope B: a deleted athlete's portrait is marked deleted with them
+       -- and leaves the review queue. (A deleted guardian's account is
+       -- marked too, and the same test takes theirs out.)
+       and ${accountNotDeletedSql('pilot.account_profiles')}
      order by photo_uploaded_at asc`,
     [organizationId],
   );

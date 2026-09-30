@@ -193,6 +193,8 @@ export async function listNominations(
   return query<NominationRow>(
     `select ${NOMINATION_FIELDS} from ${NOMINATION_FROM}
      where n.organization_id = $1 and ($2 or n.status = 'open')
+       -- Scope B: a deleted athlete's nominations are marked deleted with them.
+       and a.deleted_at is null
      order by n.status = 'open' desc, n.created_at desc`,
     [organizationId, includeClosed],
   );
@@ -202,7 +204,8 @@ export async function getNomination(organizationId: string, nominationId: string
   await expireStaleOpenNominations(organizationId);
   return queryOne<NominationRow>(
     `select ${NOMINATION_FIELDS} from ${NOMINATION_FROM}
-     where n.organization_id = $1 and n.nomination_id = $2`,
+     where n.organization_id = $1 and n.nomination_id = $2
+       and a.deleted_at is null`,
     [organizationId, nominationId],
   );
 }
@@ -431,6 +434,7 @@ export async function listMembers(organizationId: string): Promise<NominationRow
   return query<NominationRow>(
     `select ${NOMINATION_FIELDS} from ${NOMINATION_FROM}
      where n.organization_id = $1 and n.status = 'confirmed'
+       and a.deleted_at is null
      order by n.decided_at asc`,
     [organizationId],
   );
