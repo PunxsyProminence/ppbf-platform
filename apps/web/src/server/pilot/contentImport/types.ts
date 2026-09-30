@@ -210,7 +210,11 @@ export type FindingCode =
   | 'system_column_set'
   | 'skill_family_in_skill_column'
   | 'scale_rule'
-  | 'row_rule';
+  | 'row_rule'
+  // Raised by the database plan stage (plan.ts, datasets/), never offline:
+  // they compare a package with what the target organization already holds.
+  | 'ordinal_change'
+  | 'dataset_not_loadable';
 
 export interface Finding {
   code: FindingCode;

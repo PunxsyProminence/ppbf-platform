@@ -104,6 +104,8 @@
     "content:validate": "tsx scripts/pilot-content-import.ts validate",
     "content:prepare": "tsx scripts/pilot-content-import.ts prepare",
     "content:describe": "tsx scripts/pilot-content-import.ts describe",
+    "content:plan": "tsx scripts/pilot-content-import.ts plan",
+    "content:apply": "tsx scripts/pilot-content-import.ts apply",
     "pilot:cleanup-deleted-data": "node scripts/pilot-cleanup-deleted-data.mjs",
     "pilot:cleanup-accounts": "node scripts/pilot-cleanup-accounts.mjs",
     "pilot:cleanup-membership-orphans": "node scripts/pilot-cleanup-membership-orphans.mjs",
@@ -384,7 +386,11 @@
     "test:migrations:assignment-cancellation": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/assignmentCancellation.pg.test.ts --testTimeout=180000",
     "test:migrations:roster-import": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/rosterImport.pg.test.ts --testTimeout=300000",
     "test:migrations:content-import-vocabularies": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportVocabularies.pg.test.ts --testTimeout=300000",
-    "test:migrations:reference-content-census": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/referenceContentCensus.pg.test.ts --testTimeout=240000"
+    "test:migrations:reference-content-census": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/referenceContentCensus.pg.test.ts --testTimeout=240000",
+    "test:migrations:content-import-engine": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportEngine.pg.test.ts --testTimeout=300000",
+    "test:migrations:content-import-drills": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportDrills.pg.test.ts --testTimeout=300000",
+    "test:migrations:content-import-templates-scripts": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportTemplatesScripts.pg.test.ts --testTimeout=300000",
+    "test:migrations:content-import-upload": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportUpload.pg.test.ts --testTimeout=300000"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",
