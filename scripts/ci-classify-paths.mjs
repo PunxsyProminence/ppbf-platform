@@ -51,13 +51,25 @@ const isSeedDataPath = (file) =>
    apps/web/scripts/pilot-); they are named here so narrowing either prefix
    cannot silently drop the loader. The write-target guard and the fixture
    matched no predicate before, so a change to either ran no pg suite -- the
-   shape the retired apps/web/scripts/seed-*.mjs loaders had too. */
+   shape the retired apps/web/scripts/seed-*.mjs loaders had too.
+
+   One hop further down, the same miss: the fixture builds every seeding
+   suite's database through scripts/lib/full-schema.mjs, which applies the
+   migrations in the order scripts/migration-apply-order.mjs reads, so an
+   edit to either (a dropped or reordered migration) changes what all of
+   those suites prove -- and matched no predicate. And the contentImport*
+   suites compare the engine with the retired loaders' frozen output
+   (src/testing/legacyLoaderGolden.ts and its legacyLoaderGoldenData/), so an
+   edit there changes what the canonicaliser guard proves. */
 const isSeedLoaderPath = (file) =>
   startsWithAny(file, [
     'apps/web/src/server/pilot/contentImport/',
     'apps/web/scripts/pilot-content-import.ts',
     'apps/web/scripts/lib/postgres-write-target.',
     'apps/web/src/testing/referenceContentFixture.ts',
+    'apps/web/scripts/lib/full-schema.',
+    'apps/web/scripts/migration-apply-order.',
+    'apps/web/src/testing/legacyLoaderGolden',
   ]);
 
 const isMigrationPath = (file) =>
