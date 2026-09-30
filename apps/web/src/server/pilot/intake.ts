@@ -7,6 +7,7 @@ import {
 } from './access';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
+import { accountDeletedSql, isDeletedAccount } from './deletedAccountSignIn';
 import { ConflictError } from './errors';
 import type { ReadinessMethod } from './readinessProvenance';
 import { getShadowEventTimeline, getShadowReviewProjection } from './shadowReadModels';
@@ -1473,6 +1474,17 @@ export function readinessColumnsForReader(role: PilotRole): string[] {
  * is for. createOrUpdateAthleteAccount holds the same two rules in its own
  * write, so this check only moves the refusal ahead of the first write.
  *
+ * Also refused, each held in that write too:
+ *  - a login marked deleted. The update left deleted_at set, so the athlete
+ *    redeemed an activation code and still could not sign in. A re-enrolled
+ *    athlete gets a new login and the deleted one stays deleted (Jason
+ *    2026-09-30, OD-2026-09-30-004 e1, A);
+ *  - a login other than the one this athlete record already has. unique
+ *    (organization_id, athlete_id) on pilot.accounts refused it inside the
+ *    write, after upsertAthlete had written the athlete record, and the admin
+ *    saw "Internal server error" (OD-2026-09-29-002 item 4). The athlete's
+ *    existing login counts when it is deleted too: it still holds the record.
+ *
  * Lives here, not in auth.ts: it is an intake provisioning check, and auth.ts
  * is the sign-in surface credentialPolicyDrift.test.ts guards.
  */
@@ -1481,33 +1493,95 @@ export async function assertAthleteAccountIdProvisionable(params: {
   athleteId: string;
   organizationId: string;
 }): Promise<void> {
-  const existing = await queryOne<{ organization_id: string; role: PilotRole; athlete_id: string | null }>(
-    'select organization_id, role, athlete_id from pilot.accounts where account_id = $1',
+  const existing = await queryOne<{
+    organization_id: string;
+    role: PilotRole;
+    athlete_id: string | null;
+    account_deleted: boolean;
+  }>(
+    `select organization_id, role, athlete_id, ${accountDeletedSql('a')} as account_deleted
+     from pilot.accounts a where account_id = $1`,
     [params.accountId],
   );
 
-  if (!existing) {
-    return;
+  if (existing) {
+    if (existing.organization_id !== params.organizationId) {
+      throw new Error('Forbidden: account already exists in another organization');
+    }
+
+    if (existing.role !== 'athlete') {
+      throw new ConflictError(
+        `Conflict: account_id "${params.accountId}" already belongs to an existing ${existing.role} account `
+        + "in this organization. Intake does not change an existing account's role, so it cannot make that "
+        + 'account an athlete login. Use a different account_id.',
+        'EXISTING_ACCOUNT_ROLE_CONFLICT',
+      );
+    }
+
+    if (isDeletedAccount(existing)) {
+      throw new ConflictError(
+        `Conflict: account_id "${params.accountId}" belongs to a login that was deleted. Intake does not restore `
+        + 'a deleted login; a re-enrolled athlete gets a new one. Use a new account_id.',
+        'DELETED_ATHLETE_LOGIN',
+      );
+    }
+
+    if (existing.athlete_id && existing.athlete_id !== params.athleteId) {
+      throw new ConflictError(
+        `Conflict: account_id "${params.accountId}" is already the login of a different athlete record in this `
+        + "organization. Intake does not move an athlete's login to another athlete record. Use a different account_id.",
+        'EXISTING_ATHLETE_ACCOUNT_CONFLICT',
+      );
+    }
   }
 
-  if (existing.organization_id !== params.organizationId) {
-    throw new Error('Forbidden: account already exists in another organization');
-  }
+  const otherLogin = await queryOne<{ account_id: string; account_deleted: boolean }>(
+    `select account_id, ${accountDeletedSql('a')} as account_deleted
+     from pilot.accounts a
+     where organization_id = $1 and athlete_id = $2 and account_id <> $3
+     limit 1`,
+    [params.organizationId, params.athleteId, params.accountId],
+  );
 
-  if (existing.role !== 'athlete') {
+  if (otherLogin) {
     throw new ConflictError(
-      `Conflict: account_id "${params.accountId}" already belongs to an existing ${existing.role} account `
-      + "in this organization. Intake does not change an existing account's role, so it cannot make that "
-      + 'account an athlete login. Use a different account_id.',
-      'EXISTING_ACCOUNT_ROLE_CONFLICT',
+      isDeletedAccount(otherLogin)
+        ? `Conflict: athlete record "${params.athleteId}" is still held by its deleted login "${otherLogin.account_id}". `
+          + 'Intake does not restore a deleted login, and an athlete record has one login, so intake cannot give '
+          + 'this record a new one.'
+        : `Conflict: athlete record "${params.athleteId}" already has a login, account_id "${otherLogin.account_id}". `
+          + 'An athlete record has one login. Leave account_id out to keep that login as it is.',
+      'ATHLETE_ALREADY_HAS_LOGIN',
     );
   }
+}
 
-  if (existing.athlete_id && existing.athlete_id !== params.athleteId) {
+/**
+ * Refuses, before anything is written, promoting onto an athlete record that
+ * was withdrawn (pilot.athletes.deleted_at set).
+ *
+ * upsertAthlete does not read or clear deleted_at, so re-promoting a withdrawn
+ * athlete_id rewrote a record that stayed withdrawn, still on its retention
+ * clock, and its deleted login still held the record, so no new login could be
+ * made for it. Restoring a withdrawn athlete is not an intake action (Jason
+ * 2026-09-30, OD-2026-09-30-004 e3, B). A returning athlete is re-enrolled as a
+ * new athlete record with a new login (e1, A; Jason 2026-09-30, "go with A").
+ */
+export async function assertAthleteRecordNotWithdrawn(params: {
+  organizationId: string;
+  athleteId: string;
+}): Promise<void> {
+  const row = await queryOne<{ withdrawn: boolean }>(
+    `select deleted_at is not null as withdrawn
+     from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+    [params.organizationId, params.athleteId],
+  );
+
+  if (row?.withdrawn) {
     throw new ConflictError(
-      `Conflict: account_id "${params.accountId}" is already the login of a different athlete record in this `
-      + "organization. Intake does not move an athlete's login to another athlete record. Use a different account_id.",
-      'EXISTING_ATHLETE_ACCOUNT_CONFLICT',
+      `Conflict: athlete record "${params.athleteId}" was withdrawn. Intake does not restore a withdrawn athlete. `
+      + 'To re-enroll them, promote under a new athlete_id, and a new account_id if they need a login.',
+      'WITHDRAWN_ATHLETE_RECORD',
     );
   }
 }

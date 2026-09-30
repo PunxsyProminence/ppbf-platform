@@ -98,8 +98,8 @@ describe('createOrUpdateAthleteAccount', () => {
     expect(refusal).toMatchObject({ status: 409, code: 'EXISTING_ATHLETE_ACCOUNT_CONFLICT' });
     expect((refusal as Error).message).toBe(
       'Conflict: account_id "acct_1" cannot be made the login for athlete record "athlete_1". '
-      + 'Only an athlete login in this organization that belongs to no athlete record, or already to '
-      + 'this one, can be. Use a different account_id.',
+      + 'Only an athlete login in this organization that is not deleted and belongs to no athlete record, '
+      + 'or already to this one, can be. Use a different account_id.',
     );
     // No membership write and no session revocation: the coach, or the other
     // child, keeps their sessions.

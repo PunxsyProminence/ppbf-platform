@@ -1006,6 +1006,7 @@ function existingLogin(overrides: Record<string, unknown> = {}) {
     role: 'parent',
     auth_provider: 'microsoft',
     is_platform_owner: false,
+    active_flag: true,
     ...overrides,
   };
 }
@@ -1302,5 +1303,61 @@ describe('intake guardian login: a deleted login is refused, not reactivated', (
     await expect(
       assertGuardianLoginProvisionable({ loginEmail: 'dana@example.com', organizationId: 'org-1', accountIdHint: 'acct-existing' }),
     ).rejects.toMatchObject({ status: 409, code: 'EXISTING_ACCOUNT_ROLE_CONFLICT' });
+  });
+});
+
+// OD-2026-09-30-004 d1 (Jason, A): a guardian login an admin deactivated
+// (active_flag false, deleted_at null) is refused on intake's path rather than
+// turned back on; the admin reactivates it on purpose.
+describe('intake guardian login: a deactivated login is refused, not reactivated', () => {
+  const DEACTIVATED_MESSAGE =
+    'Conflict: dana@example.com belongs to a guardian login that was deactivated. Intake does not turn a '
+    + 'deactivated login back on. To reactivate it on purpose, add this guardian again on People, '
+    + '"Add Coach, Staff Or Guardian", then promote again.';
+
+  test('the pre-write check refuses a deactivated parent login with 409', async () => {
+    mockQueryOne.mockResolvedValueOnce(existingLogin({ deleted_at: null, active_flag: false }));
+
+    const refusal = assertGuardianLoginProvisionable({
+      loginEmail: 'dana@example.com',
+      organizationId: 'org-1',
+      accountIdHint: 'acct-existing',
+    });
+
+    await expect(refusal).rejects.toMatchObject({ status: 409, code: 'DEACTIVATED_GUARDIAN_LOGIN' });
+    await expect(refusal).rejects.toThrow(DEACTIVATED_MESSAGE);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('provisioning with refuseDeactivatedLogin refuses it with 409 and writes nothing', async () => {
+    stubLookups({ existingByEmail: existingLogin({ active_flag: false }) });
+
+    const refusal = createOrUpdateMicrosoftStaffAccount({
+      loginEmail: ' Dana@Example.com ',
+      organizationId: 'org-1',
+      role: 'parent',
+      accountIdHint: 'acct-existing',
+      refuseRoleChange: true,
+      refuseDeactivatedLogin: true,
+    });
+
+    await expect(refusal).rejects.toMatchObject({ status: 409, code: 'DEACTIVATED_GUARDIAN_LOGIN' });
+    await expect(refusal).rejects.toThrow(DEACTIVATED_MESSAGE);
+    expect(currentClient.query).not.toHaveBeenCalled();
+  });
+
+  // Scope: the invite surfaces are unchanged. Re-inviting is the deliberate
+  // reactivation the refusal names.
+  test('without refuseDeactivatedLogin a deactivated login is reactivated, as before', async () => {
+    stubLookups({ existingByEmail: existingLogin({ active_flag: false }) });
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'dana@example.com',
+      organizationId: 'org-1',
+      role: 'parent',
+    });
+
+    expect(result.accountId).toBe('acct-existing');
+    expect(accountUpsertCalls()).toHaveLength(1);
   });
 });

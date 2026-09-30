@@ -65,6 +65,8 @@ jest.mock('@/src/server/pilot/intake', () => ({
   assertActorCanAccessIntakeCase: jest.fn(),
   assertAthleteAccountIdProvisionable:
     jest.requireActual('@/src/server/pilot/intake').assertAthleteAccountIdProvisionable,
+  assertAthleteRecordNotWithdrawn:
+    jest.requireActual('@/src/server/pilot/intake').assertAthleteRecordNotWithdrawn,
   assertGuardianAccountUnchanged: jest.fn(),
   getIntakeCaseById: jest.fn(),
   // Promotion refuses outright when a case has no scanned documents, so the
@@ -143,19 +145,31 @@ function promoteRequest(
   });
 }
 
-// Answers the pre-write pilot.accounts lookups by what they ask for rather
-// than by call order, so a test states the accounts that exist and nothing
-// else. Anything not named does not exist.
+// Answers the pre-write lookups by what they ask for rather than by call
+// order, so a test states the accounts and athlete records that exist and
+// nothing else. Anything not named does not exist. byAthlete is the login an
+// athlete record already has; withdrawnAthletes are athlete records marked
+// deleted.
 function stubAccounts(accounts: {
   byEmail?: Record<string, Record<string, unknown>>;
   byId?: Record<string, Record<string, unknown>>;
+  byAthlete?: Record<string, Record<string, unknown>>;
+  withdrawnAthletes?: string[];
 }) {
   mockQueryOne.mockImplementation(async (sql: string, params: unknown[]) => {
     const key = String(params?.[0]);
+    if (sql.includes('from pilot.athletes')) {
+      return { withdrawn: accounts.withdrawnAthletes?.includes(String(params?.[1])) ?? false };
+    }
     if (sql.includes('lower(login_email) = $1')) return accounts.byEmail?.[key] ?? null;
     if (sql.includes('where account_id = $1')) return accounts.byId?.[key] ?? null;
+    if (sql.includes('athlete_id = $2 and account_id <> $3')) return accounts.byAthlete?.[String(params?.[1])] ?? null;
     return null;
   });
+}
+
+function pilotAccountsLookups(): unknown[] {
+  return mockQueryOne.mock.calls.filter(([sql]) => String(sql).includes('pilot.accounts'));
 }
 
 // The promotion's writes, in order: the athlete record, the athlete's account,
@@ -212,6 +226,8 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
       // and to reactivate a deleted one.
       refuseRoleChange: true,
       refuseDeletedLogin: true,
+      // d1: and to turn a deactivated one back on.
+      refuseDeactivatedLogin: true,
     });
   });
 
@@ -341,6 +357,35 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     expectNothingWritten();
   });
 
+  // OD-2026-09-30-004 d1 (A): provisioning set active_flag back to true.
+  test('a guardian email that belongs to a deactivated parent login is refused 409 before anything is written', async () => {
+    stubAccounts({
+      byEmail: {
+        'guardian@example.org': {
+          account_id: 'guardian-1',
+          organization_id: 'org-real',
+          role: 'parent',
+          auth_provider: 'microsoft',
+          is_platform_owner: false,
+          deleted_at: null,
+          active_flag: false,
+        },
+      },
+    });
+
+    const response = await POST(promoteRequest(guardianBase, { account_id: 'athlete-1' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.code).toBe('DEACTIVATED_GUARDIAN_LOGIN');
+    expect(payload.error).toBe(
+      'Conflict: guardian@example.org belongs to a guardian login that was deactivated. Intake does not turn a '
+      + 'deactivated login back on. To reactivate it on purpose, add this guardian again on People, '
+      + '"Add Coach, Staff Or Guardian", then promote again.',
+    );
+    expectNothingWritten();
+  });
+
   test('a guardian record with no account_id provisions no account', async () => {
     const recordOnly = { ...guardianBase };
     delete (recordOnly as { account_id?: string }).account_id;
@@ -405,6 +450,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
           role: 'parent',
           auth_provider: 'microsoft',
           is_platform_owner: false,
+          active_flag: true,
         },
       },
     });
@@ -509,6 +555,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
             role: 'parent',
             auth_provider: 'microsoft',
             is_platform_owner: false,
+            active_flag: true,
           },
         },
       });
@@ -526,7 +573,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
       const response = await POST(promoteRequest(recordOnly));
 
       expect(response.status).toBe(200);
-      expect(mockQueryOne).not.toHaveBeenCalled();
+      expect(pilotAccountsLookups()).toEqual([]);
       expect(mockStaffProvision).not.toHaveBeenCalled();
     });
   });
@@ -555,7 +602,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     await POST(promoteRequest(recordOnly));
 
     expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({ accountId: undefined }));
-    expect(mockQueryOne).not.toHaveBeenCalled();
+    expect(pilotAccountsLookups()).toEqual([]);
   });
 
   test('promotion without a guardian still works', async () => {
@@ -642,7 +689,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
   });
 
   test('an existing athlete account in this organization is still re-provisioned', async () => {
-    stubAccounts({ byId: { 'athlete-1': { organization_id: 'org-real', role: 'athlete', athlete_id: null } } });
+    stubAccounts({ byId: { 'athlete-1': { organization_id: 'org-real', role: 'athlete', athlete_id: null, account_deleted: false } } });
 
     const response = await POST(athletePromoteRequest({ account_id: 'athlete-1' }));
 
@@ -651,7 +698,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
   });
 
   test('re-promoting the athlete whose login it already is still re-provisions it', async () => {
-    stubAccounts({ byId: { 'athlete-1': { organization_id: 'org-real', role: 'athlete', athlete_id: 'ath-1' } } });
+    stubAccounts({ byId: { 'athlete-1': { organization_id: 'org-real', role: 'athlete', athlete_id: 'ath-1', account_deleted: false } } });
 
     const response = await POST(athletePromoteRequest({ account_id: 'athlete-1' }));
 
@@ -665,7 +712,9 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
   // activation code for the login showed this child's records to that family.
   test('an athlete account_id that is another athlete record\'s login is refused 409 before anything is written', async () => {
     stubAccounts({
-      byId: { 'athlete-1': { organization_id: 'org-real', role: 'athlete', athlete_id: 'ath-other-child' } },
+      byId: {
+        'athlete-1': { organization_id: 'org-real', role: 'athlete', athlete_id: 'ath-other-child', account_deleted: false },
+      },
     });
 
     const response = await POST(athletePromoteRequest({ account_id: 'athlete-1' }));
@@ -679,6 +728,63 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     );
     // The other child's record id is not disclosed.
     expect(payload.error).not.toContain('ath-other-child');
+    expectNothingWritten();
+  });
+
+  // OD-2026-09-30-004 e1 (A): the update left deleted_at set, so the athlete
+  // redeemed an activation code and still could not sign in.
+  test('an athlete account_id whose login was deleted is refused 409 before anything is written', async () => {
+    stubAccounts({
+      byId: { 'athlete-1': { organization_id: 'org-real', role: 'athlete', athlete_id: null, account_deleted: true } },
+    });
+
+    const response = await POST(athletePromoteRequest({ account_id: 'athlete-1' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.code).toBe('DELETED_ATHLETE_LOGIN');
+    expect(payload.error).toBe(
+      'Conflict: account_id "athlete-1" belongs to a login that was deleted. Intake does not restore a deleted '
+      + 'login; a re-enrolled athlete gets a new one. Use a new account_id.',
+    );
+    expectNothingWritten();
+  });
+
+  // Jason 2026-09-30, "go with A": upsertAthlete rewrote a withdrawn record
+  // while it stayed withdrawn. Refused with or without an account_id.
+  test.each([{ account_id: 'athlete-new' }, {}])(
+    'a withdrawn athlete record is refused 409 before anything is written (%o)',
+    async (athleteExtra) => {
+      stubAccounts({ withdrawnAthletes: ['ath-1'] });
+
+      const response = await POST(athletePromoteRequest(athleteExtra));
+      const payload = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(payload.code).toBe('WITHDRAWN_ATHLETE_RECORD');
+      expect(payload.error).toBe(
+        'Conflict: athlete record "ath-1" was withdrawn. Intake does not restore a withdrawn athlete. '
+        + 'To re-enroll them, promote under a new athlete_id, and a new account_id if they need a login.',
+      );
+      expectNothingWritten();
+    },
+  );
+
+  // OD-2026-09-29-002 item 4: unique (organization_id, athlete_id) refused
+  // this inside createOrUpdateAthleteAccount, after upsertAthlete had written,
+  // and the admin saw "Internal server error".
+  test('a new athlete account_id for an athlete who already has a login is refused 409 before anything is written', async () => {
+    stubAccounts({ byAthlete: { 'ath-1': { account_id: 'athlete-existing', account_deleted: false } } });
+
+    const response = await POST(athletePromoteRequest({ account_id: 'athlete-1' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.code).toBe('ATHLETE_ALREADY_HAS_LOGIN');
+    expect(payload.error).toBe(
+      'Conflict: athlete record "ath-1" already has a login, account_id "athlete-existing". '
+      + 'An athlete record has one login. Leave account_id out to keep that login as it is.',
+    );
     expectNothingWritten();
   });
 

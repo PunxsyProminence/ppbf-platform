@@ -24,6 +24,7 @@ import { requireWaiverStatus, type WaiverStatus } from '@/src/server/pilot/waive
 import {
   assertActorCanAccessIntakeCase,
   assertAthleteAccountIdProvisionable,
+  assertAthleteRecordNotWithdrawn,
   assertGuardianAccountUnchanged,
   bindIntakeDocumentsToOwner,
   createAssessment,
@@ -494,10 +495,20 @@ export async function POST(request: NextRequest) { // NOSONAR
       full_name: requireString(promotion.guardian.full_name, 'guardian.full_name'),
     };
 
+    // A withdrawn athlete record: upsertAthlete would rewrite it while it
+    // stayed withdrawn. A returning athlete is re-enrolled under a new
+    // athlete_id and a new login (OD-2026-09-30-004 e1).
+    await assertAthleteRecordNotWithdrawn({
+      organizationId: principal.organizationId,
+      athleteId: promotion.athlete.athlete_id,
+    });
+
     // The athlete's account: createOrUpdateAthleteAccount refuses one in
     // another organization, would re-role a same-organization account of any
-    // other role into a locked athlete account, and would re-bind another
-    // child's athlete login to this child's record. All refused here.
+    // other role into a locked athlete account, would re-bind another child's
+    // athlete login to this child's record, would re-provision a deleted login
+    // that still could not sign in, and meets the one-login-per-athlete
+    // constraint only after the athlete record is written. All refused here.
     if (promotion.athlete.account_id) {
       await assertAthleteAccountIdProvisionable({
         accountId: promotion.athlete.account_id,
@@ -573,10 +584,10 @@ export async function POST(request: NextRequest) { // NOSONAR
         // The check before the first write makes the two the same; this keeps
         // them the same if the email's account changes in between.
         //
-        // refuseRoleChange and refuseDeletedLogin: the same refusals as that
-        // check, held here too, so an account that became a non-parent or was
-        // deleted in between is still refused rather than re-roled or
-        // reactivated.
+        // refuseRoleChange, refuseDeletedLogin and refuseDeactivatedLogin: the
+        // same refusals as that check, held here too, so an account that
+        // became a non-parent, or was deleted or deactivated in between, is
+        // still refused rather than re-roled or reactivated.
         const provisioned = await createOrUpdateMicrosoftStaffAccount({
           loginEmail: guardian.email,
           organizationId: principal.organizationId,
@@ -584,6 +595,7 @@ export async function POST(request: NextRequest) { // NOSONAR
           accountIdHint: guardian.account_id,
           refuseRoleChange: true,
           refuseDeletedLogin: true,
+          refuseDeactivatedLogin: true,
         });
         guardianAccountId = provisioned.accountId;
       }
