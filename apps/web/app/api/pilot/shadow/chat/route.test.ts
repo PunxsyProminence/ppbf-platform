@@ -278,6 +278,72 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+// ---------------------------------------------------------------------------
+// Normalisation is for MATCHING ONLY
+//
+// normaliseForMatching folds a curly apostrophe so the safety classifier sees
+// "can't" where the athlete typed "can\u2019t". What must NOT happen is the
+// folded text becoming the record: the message sent to the model, written to
+// the conversation, and echoed back has to stay byte-for-byte what they typed.
+//
+// THIS IS TWO TESTS, NOT ONE, AND THE REASON IS THE FIX ITSELF. A curly-quote
+// EMERGENCY report cannot also reach the model: route.ts returns the
+// safeguarding response before the provider is ever called, which is the
+// behaviour this hotfix restores. So byte-for-byte preservation is proven on
+// a message that DOES reach the model, and the acute path is proven
+// separately on one that must not.
+// ---------------------------------------------------------------------------
+describe('the athlete\'s own words survive normalisation', () => {
+  // Contains a curly apostrophe AND a doubled space, so it exercises two of
+  // the folds at once. Deliberately benign: it has to reach the provider.
+  const TYPED = 'I can\u2019t decide which glove size  suits me';
+
+  test('a curly-quote message reaches the model and the conversation exactly as typed', async () => {
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'Twelve ounce for bag work.' } }] }),
+    });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const response = await POST(postRequest({ message: TYPED }));
+    expect(response.status).toBe(200);
+
+    // 1. THE PROVIDER. The outbound request body must carry the typed string,
+    //    not the folded one. Read out of the actual fetch call rather than a
+    //    helper, so a change in how the body is assembled cannot hide it.
+    expect(fetchSpy).toHaveBeenCalled();
+    const sentBody = String((fetchSpy.mock.calls[0]?.[1] as { body?: unknown })?.body ?? '');
+    expect(sentBody).toContain(JSON.stringify(TYPED).slice(1, -1));
+    expect(sentBody).not.toContain("I can't decide");
+    expect(sentBody).not.toContain('glove size suits me');
+
+    // 2. THE CONVERSATION. What is persisted is the record, and it is the
+    //    half a reader would most reasonably assume and least likely check.
+    expect(mockAppendConversationExchange).toHaveBeenCalledWith(
+      expect.objectContaining({ userMessage: TYPED }),
+    );
+  });
+
+  test('a curly-quote emergency report still takes the safety path at the route', async () => {
+    const fetchSpy = jest.fn();
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const response = await POST(postRequest({
+      message: 'I can\u2019t breathe after that hit',
+    }));
+    const body = await response.json();
+
+    // Withheld, a human queued, and the provider never called -- which is
+    // exactly why this cannot be the same test as the one above.
+    expect(response.status).toBe(400);
+    expect(body.requiresHumanReview).toBe(true);
+    expect(mockQueueHumanReview).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'critical' }),
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe('POST /api/pilot/shadow/chat trust boundary', () => {
   test('passes authenticated role and authorized context into the model prompt', async () => {
     global.fetch = jest.fn().mockResolvedValue({
