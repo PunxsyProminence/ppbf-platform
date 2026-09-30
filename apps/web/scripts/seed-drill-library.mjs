@@ -29,11 +29,14 @@ import { resolveSeedAccountRole } from './lib/seed-account-role.mjs';
  * constraint would decide, not a separately-coded prediction of it that
  * could drift from the real one.
  *
- * ONLY seed_drill_library.csv WAS ACTUALLY SUPPLIED. The scale-level,
- * stop-rule and cue seed files this loader also knows how to read do not
- * exist yet in apps/web/seed-data/drill-library/ -- their absence is
- * reported, not treated as an error, so this script is ready the day
- * those files are added without needing a code change.
+ * ALL FOUR FILES ARE SUPPLIED in apps/web/seed-data/drill-library/:
+ * seed_drill_library.csv (119 drills), seed_drill_scale_levels.csv (357),
+ * seed_drill_stop_rules.csv (674) and seed_drill_cues.csv (258) --
+ * drillLibraryV3.pg.test.ts pins those counts. This header used to say only
+ * the drill file existed; that stopped being true when the child files were
+ * added. A child file missing from the directory a run is pointed at is still
+ * reported and skipped rather than treated as an error, so the log line is
+ * the only sign of it.
  *
  * Placeholders: every row in the CSVs carries the literal strings
  * {{PPBF_ORG_ID}} and {{SEED_ACCOUNT_ID}}, substituted here at load time --
@@ -210,10 +213,13 @@ function toTextOrNull(value) {
 function toTextArray(value) {
   const trimmed = String(value ?? '').trim();
   if (!trimmed) return [];
-  // grounding_claim_ids is a semicolon-or-comma-separated list inside one
-  // CSV cell; the cell itself was already correctly unquoted by parseCsv.
+  // grounding_claim_ids is a list inside one CSV cell; the cell itself was
+  // already correctly unquoted by parseCsv. '|' is the separator the supplied
+  // CSV actually uses (82 of 119 rows, e.g. 'A2-063|A2-068'); this used to
+  // split on ';' and ',' only, so each of those rows loaded as ONE element
+  // that matches no claim id. ';' and ',' are still accepted.
   return trimmed
-    .split(/[;,]/)
+    .split(/[|;,]/)
     .map((entry) => entry.trim())
     .filter(Boolean);
 }
@@ -361,16 +367,21 @@ async function seedDrillStopRules(client, records, { dryRun }) {
   return { inserted, skipped };
 }
 
+// Counted from RETURNING, like the three tables above. This used to add one per
+// CSV row whether or not ON CONFLICT skipped it, so a re-run counted all 258
+// cues as inserted ('258 rows processed') while inserting none.
 async function seedDrillCues(client, records, { dryRun }) {
   let inserted = 0;
+  let skipped = 0;
 
   for (const record of records) {
-    await client.query(
+    const result = await client.query(
       `insert into pilot.drill_cues (
          organization_id, cue_id, drill_id, cue_text, cue_family, focus_type, evidence_note, source_ref
        )
        values ($1,$2,$3,$4,$5,$6,$7,$8)
-       on conflict (organization_id, cue_id) do nothing`,
+       on conflict (organization_id, cue_id) do nothing
+       returning cue_id`,
       [
         record.organization_id,
         record.cue_id,
@@ -382,11 +393,16 @@ async function seedDrillCues(client, records, { dryRun }) {
         toTextOrNull(record.source_ref),
       ],
     );
-    inserted += 1;
+
+    if (result.rows.length > 0) {
+      inserted += 1;
+    } else {
+      skipped += 1;
+    }
   }
 
-  console.log(`${dryRun ? '[dry-run] ' : ''}drill_cues: ${inserted} rows processed`);
-  return { inserted, skipped: 0 };
+  console.log(`${dryRun ? '[dry-run] ' : ''}drill_cues: ${inserted} would-insert/inserted, ${skipped} already present (skipped)`);
+  return { inserted, skipped };
 }
 
 export async function seedAll(client, seedDir, placeholders, { dryRun = false } = {}) {
@@ -402,7 +418,27 @@ export async function seedAll(client, seedDir, placeholders, { dryRun = false } 
   const createdByRole = await resolveSeedAccountRole(client, placeholders.seedAccountId);
   console.log(`seed account role (recorded as created_by_role): ${createdByRole}`);
 
+  /*
+    COMMIT is not in a `finally`. It was, and `finally` runs on the throwing
+    path too: a JavaScript error -- one PostgreSQL never sees -- leaves the
+    transaction open and committable, so the rows written before it were kept
+    by a run that reported failure. Here that is reachable from the files
+    alone: four CSVs are read one at a time with writes between them, and
+    loadCsvRecords rethrows every read error but ENOENT, so an unreadable cue
+    file would have committed the drills, scale levels and stop rules without
+    their cues.
+    seed-drill-secondary-skills.mjs:296-321 records the pg regression that
+    measured this. Same shape as that loader, seed-session-scripts.mjs and
+    seed-competence-cohorts.mjs:
+
+      success + apply   -> COMMIT
+      success + dry-run -> ROLLBACK
+      any error         -> ROLLBACK, then rethrow the original error
+
+    seedLoaderTransactions.test.ts pins all three paths.
+  */
   await client.query('BEGIN');
+
   try {
     const drillRecords = await loadCsvRecords(path.join(seedDir, files.drills), placeholders);
     if (drillRecords === null) {
@@ -413,31 +449,39 @@ export async function seedAll(client, seedDir, placeholders, { dryRun = false } 
 
     const scaleRecords = await loadCsvRecords(path.join(seedDir, files.scaleLevels), placeholders);
     if (scaleRecords === null) {
-      console.log(`${files.scaleLevels} not found in ${seedDir} -- skipping drill_scale_levels (not an error; this file was never supplied).`);
+      console.log(`${files.scaleLevels} not found in ${seedDir} -- skipping drill_scale_levels. The shipped seed directory has this file; check the directory this run was pointed at.`);
     } else {
       await seedDrillScaleLevels(client, scaleRecords, { dryRun });
     }
 
     const stopRuleRecords = await loadCsvRecords(path.join(seedDir, files.stopRules), placeholders);
     if (stopRuleRecords === null) {
-      console.log(`${files.stopRules} not found in ${seedDir} -- skipping drill_stop_rules (not an error; this file was never supplied).`);
+      console.log(`${files.stopRules} not found in ${seedDir} -- skipping drill_stop_rules. The shipped seed directory has this file; check the directory this run was pointed at.`);
     } else {
       await seedDrillStopRules(client, stopRuleRecords, { dryRun });
     }
 
     const cueRecords = await loadCsvRecords(path.join(seedDir, files.cues), placeholders);
     if (cueRecords === null) {
-      console.log(`${files.cues} not found in ${seedDir} -- skipping drill_cues (not an error; this file was never supplied).`);
+      console.log(`${files.cues} not found in ${seedDir} -- skipping drill_cues. The shipped seed directory has this file; check the directory this run was pointed at.`);
     } else {
       await seedDrillCues(client, cueRecords, { dryRun });
     }
-  } finally {
-    if (dryRun) {
+  } catch (error) {
+    try {
       await client.query('ROLLBACK');
-      console.log('[dry-run] Rolled back. Nothing was written.');
-    } else {
-      await client.query('COMMIT');
+    } catch {
+      // Swallowed on purpose: a connection that died mid-run makes ROLLBACK throw
+      // too, and that must not replace the error that explains what went wrong.
     }
+    throw error;
+  }
+
+  if (dryRun) {
+    await client.query('ROLLBACK');
+    console.log('[dry-run] Rolled back. Nothing was written.');
+  } else {
+    await client.query('COMMIT');
   }
 }
 

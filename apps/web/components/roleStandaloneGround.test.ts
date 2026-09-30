@@ -1,8 +1,8 @@
 import { isFamilyGround } from './roleGround';
 import type { ClubRole } from './roleRoutes';
 
-/* Law 6 assigns ink leather to staff surfaces and warm canvas to the
-   family-facing side. RoleStandaloneView derives that from allowedRoles rather
+/* Staff surfaces stand on ink leather and the family-facing side on warm
+   canvas. RoleStandaloneView derives that from allowedRoles rather
    than taking a prop, so the ground cannot drift from the audience — these
    cases pin the rule that makes the derivation safe. */
 describe('isFamilyGround', () => {

@@ -1,6 +1,7 @@
 import { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { requiredCredentialFor } from './credentialPolicy';
+import { isDeletedAccount, type AccountDeletionFlag } from './deletedAccountSignIn';
 import { createOpaqueToken, hashToken } from './security';
 
 /**
@@ -30,7 +31,7 @@ import { createOpaqueToken, hashToken } from './security';
  *  forwarded or logged link is usually already dead. */
 export const MAGIC_LINK_LIFETIME_MS = 15 * 60 * 1000;
 
-export interface MagicLinkAccount {
+export interface MagicLinkAccount extends AccountDeletionFlag {
   account_id: string;
   organization_id: string;
   role: PilotRole;
@@ -70,6 +71,7 @@ export interface ConsumeDependencies {
     role: PilotRole;
     auth_provider: AuthProvider;
     active_flag: boolean;
+    account_deleted: boolean;
     login_email: string | null;
   } | null>;
   markConsumed: (tokenHash: string) => Promise<boolean>;
@@ -120,6 +122,9 @@ export async function issueMagicLink(
   // Every one of these is a silent no-op, deliberately. An attacker probing
   // addresses learns the same thing from all of them: nothing.
   if (!account) return;
+  // A deleted person is sent nothing, even when an admin path has set the
+  // account active again (deletedAccountSignIn.ts).
+  if (isDeletedAccount(account)) return;
   if (!account.active_flag) return;
   if (requiredCredentialFor({ role: account.role }) !== 'magic_link') return;
   if (!account.login_email || normalizeEmail(account.login_email) !== email) return;
@@ -173,7 +178,7 @@ export function newMagicLinkToken(): string {
  * been trying to see their kid's schedule for ten minutes.
  */
 /** The token row's shape, as both the validator and the store see it. */
-export interface RedeemableTokenRow {
+export interface RedeemableTokenRow extends AccountDeletionFlag {
   account_id: string;
   organization_id: string;
   sent_to_email: string;
@@ -206,6 +211,11 @@ export function validateTokenForRedemption(
 
   // Re-checked at redemption, not trusted from issuance. A coach deactivated
   // in the fifteen minutes since the link was sent must not get in.
+  //
+  // A deleted account is refused under the same code, so the link page shows
+  // its existing "not active" message. It needs its own check because an
+  // admin path can set a deleted account active again (deletedAccountSignIn.ts).
+  if (isDeletedAccount(row)) return 'ACCOUNT_INACTIVE';
   if (!row.active_flag) return 'ACCOUNT_INACTIVE';
   if (requiredCredentialFor({ role: row.role }) !== 'magic_link') {
     return 'ACCOUNT_NOT_MAGIC_LINK';

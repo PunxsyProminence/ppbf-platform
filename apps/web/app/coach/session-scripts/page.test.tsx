@@ -372,6 +372,22 @@ describe('coach session scripts page', () => {
     expect(postCount).toBe(1);
   });
 
+  it('a start refused as superseded shows the route\'s plain message, not the code', async () => {
+    const message = 'This plan has been replaced by a newer version, so no session was started. Reload the list and start the current version.';
+    routedFetch({
+      runsGet: () => jsonResponse({ run: null }),
+      runsPost: () => jsonResponse({ error: 'SESSION_SCRIPT_SUPERSEDED', message }, false),
+    });
+
+    render(<CoachSessionScriptsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /start live delivery/i }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.queryByText(/SESSION_SCRIPT_SUPERSEDED/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Delivering now')).not.toBeInTheDocument();
+  });
+
   it('a settled run leaves the live surface and says so, returning to browse', async () => {
     routedFetch({
       runsGet: () => jsonResponse({ run: liveRunRow() }),

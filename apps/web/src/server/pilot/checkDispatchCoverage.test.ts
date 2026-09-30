@@ -29,9 +29,11 @@ import path from 'node:path';
 const repositoryRoot = path.resolve(__dirname, '../../../../..');
 const scriptsDir = path.join(repositoryRoot, 'apps/web/scripts');
 const workflowPath = path.join(repositoryRoot, '.github/workflows/run-checks.yml');
+const checkDatabasePath = path.join(repositoryRoot, '.github/workflows/check-database.yml');
 const packageJsonPath = path.join(repositoryRoot, 'apps/web/package.json');
 
 const workflow = fs.readFileSync(workflowPath, 'utf8');
+const checkDatabase = fs.readFileSync(checkDatabasePath, 'utf8');
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
   scripts: Record<string, string>;
 };
@@ -184,5 +186,51 @@ describe('every read-only check is dispatchable', () => {
     // was renamed, and a typo'd one disarms it for nothing while looking like
     // it covers something. Neither is visible in the test that uses the set.
     expect([...NON_DATABASE_CHECKS].filter((slug) => !checkSlugs.includes(slug))).toEqual([]);
+  });
+});
+
+/**
+ * check-database.yml is the older, smaller read-only workflow, and the one the
+ * seeding runbook sends an operator to (seed-reference-data.yml:108, "read it
+ * with check-database seed-identity"). It carries a SUBSET of the checks on
+ * purpose, so the everything-in-both assertion above does not apply to it. What
+ * does apply is the same two mismatches: an option whose arm is missing falls
+ * through to `Unknown check` only after an environment reviewer has approved
+ * the run, and an arm running a different script than its name reports the
+ * wrong answer under the right heading.
+ */
+const checkDatabaseOptions = [...checkDatabase.matchAll(/^\s+- ([a-z0-9-]+)$/gm)]
+  .map((match) => match[1])
+  .filter((option) => option !== 'staging' && option !== 'production');
+
+/** `slug)` followed, after any comment lines, by `npm run pilot:check-<script> |`. */
+const checkDatabaseArms = [
+  ...checkDatabase.matchAll(/^\s+([a-z0-9-]+)\)\n(?:\s+#.*\n)*\s+npm run pilot:check-([a-z0-9-]+) \|/gm),
+].map((match) => ({ arm: match[1], script: match[2] }));
+
+describe('check-database.yml', () => {
+  test('every option runs the check of the same name, and every arm is an option', () => {
+    // An invariant over the whole file, not a test of the census: it passes on
+    // the file before the census was added too. It is what catches the next
+    // option added without its arm, or an arm copied from its neighbour and not
+    // renamed. Guards the guard, as above: a regex that stopped matching would
+    // make the equality below compare two empty lists.
+    expect(checkDatabaseOptions.length).toBeGreaterThanOrEqual(5);
+    expect(checkDatabaseArms.map((entry) => entry.arm).sort()).toEqual([...checkDatabaseOptions].sort());
+    expect(checkDatabaseArms.filter((entry) => entry.arm !== entry.script)).toEqual([]);
+    expect(checkDatabaseArms.filter((entry) => !scriptSlugs.includes(entry.script))).toEqual([]);
+  });
+
+  test('the reference-content census sits beside seed-identity', () => {
+    // A seed is planned from two answers read at the same moment: which account
+    // may seed (seed-identity) and where the existing reference rows sit
+    // (reference-content). Operators are sent to this workflow for the first,
+    // so the second is offered here too -- as an option AND as an arm that runs
+    // it, so an operator who picks it gets the census rather than `Unknown check`.
+    expect(checkDatabaseOptions).toEqual(expect.arrayContaining(['seed-identity', 'reference-content']));
+    expect(checkDatabaseArms).toEqual(expect.arrayContaining([
+      { arm: 'seed-identity', script: 'seed-identity' },
+      { arm: 'reference-content', script: 'reference-content' },
+    ]));
   });
 });

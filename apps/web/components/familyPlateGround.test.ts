@@ -22,7 +22,8 @@ import { readDesignSystemCss } from '../src/design/readDesignSystemCss';
  * stylistic to load-bearing, so it acquired a test.
  *
  * EVERY room is non-warm. There is no `.room--warm`; the warm ground is
- * `.on-canvas`, Law 6's second ground, which is not a room at all. So the
+ * `.on-canvas`, the family ground (components/roleGround.ts), which is not a
+ * room at all. So the
  * assertion is simply that no family file names a room -- naming any room is
  * naming a non-warm one.
  */

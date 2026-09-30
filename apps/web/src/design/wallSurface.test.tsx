@@ -138,11 +138,11 @@ describe('the wall surface', () => {
 });
 
 /**
- * Wall-sized type. The φ ladder's named rungs stop at --t-5xl / --text-6xl
+ * Wall-sized type. The named type rungs stop at --t-5xl / --text-6xl
  * (80.9px), which is a hero size on a laptop and a BODY size fifteen feet from
- * a television. globals.css already continues the ladder with a √φ generator;
- * this pins that the wall's sizes really are up there, since the failure mode
- * -- a class that resolves to inherited body type -- is invisible in review.
+ * a television. This pins that the wall's biggest sizes really are above that,
+ * since the failure mode -- a class that resolves to inherited body type -- is
+ * invisible in review.
  */
 describe('the wall reads at distance', () => {
   const globals = readFileSync(GLOBALS, 'utf8');
@@ -165,13 +165,32 @@ describe('the wall reads at distance', () => {
     expect(wallBlock.length).toBeGreaterThan(2_000);
   });
 
-  it('continues the ladder past the named rungs for the biggest elements', () => {
-    for (const generated of [
-      'calc(var(--t-5xl) * var(--root-phi))',
-      'calc(var(--t-5xl) * var(--root-phi) * var(--root-phi))',
-    ]) {
-      expect(wallBlock).toContain(generated);
+  /* Resolved, not spelled. This used to require the two √φ steps by their
+     calc() text; proportion-from-φ is a retired law (law 8, OD-2026-09-28-009),
+     so the arithmetic is free and only the resulting size is the property. */
+  it('sizes its biggest elements past the top named rung', () => {
+    const tokens = new Map<string, string>();
+    for (const [, name, value] of `${readDesignSystemCss(DESIGN_SYSTEM)}\n${globals}`
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .matchAll(/(?<![\w-])(--[a-z0-9-]+)\s*:\s*([^;}]+)[;}]/gi)) {
+      tokens.set(name, value.trim());
     }
+    const px = (value: string): number => {
+      const ref = value.trim().match(/^var\((--[a-z0-9-]+)\)$/i);
+      if (ref) return px(tokens.get(ref[1]) ?? 'NaN');
+      const calc = value.trim().match(/^calc\((.*)\)$/i);
+      if (calc) return calc[1].split('*').reduce((product, term) => product * px(term), 1);
+      return Number.parseFloat(value);
+    };
+
+    const hero = px('var(--t-5xl)');
+    // NaN fails this, so a resolver that stopped reading tokens cannot pass.
+    expect(hero).toBeGreaterThan(0);
+    const pastHero = new Set(
+      [...wallBlock.matchAll(/font-size:\s*([^;]+);/g)].map((m) => px(m[1])).filter((size) => size > hero),
+    );
+    // Two distinct steps above the hero rung, as the wall has today.
+    expect(pastHero.size).toBeGreaterThanOrEqual(2);
   });
 
   it('sets nothing on the wall below the panel-heading rung', () => {

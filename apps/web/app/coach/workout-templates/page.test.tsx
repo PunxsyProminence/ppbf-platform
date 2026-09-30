@@ -148,6 +148,40 @@ describe('coach workout templates page', () => {
     expect(screen.getByText(/Keep the room moving between blocks/)).toBeInTheDocument();
   });
 
+  it('says when an item uses an older drill version, and only on that item', async () => {
+    mockFetch((url) => (url.includes('template_id')
+      ? jsonResponse({
+        template: BOXING_FUNDAMENTALS,
+        items: [
+          item({
+            item_id: 'wti-old',
+            drill_id: 'drl-jab-v1',
+            free_text_drill: null,
+            head_drill_id: 'drl-jab-v2',
+            uses_older_drill_version: true,
+          }),
+          item({
+            item_id: 'wti-current',
+            ordinal: 2,
+            drill_id: 'drl-solo',
+            free_text_drill: null,
+            head_drill_id: 'drl-solo',
+            uses_older_drill_version: false,
+          }),
+        ],
+      })
+      : jsonResponse({ templates: [BOXING_FUNDAMENTALS] })));
+
+    render(<CoachWorkoutTemplatesPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /open template/i }));
+
+    await screen.findByText('drl-jab-v1');
+    expect(screen.getAllByText(/uses an older drill version/i)).toHaveLength(1);
+    const oldItem = screen.getByText('drl-jab-v1').closest('li');
+    expect(oldItem).toHaveTextContent(/uses an older drill version/i);
+    expect(screen.getByText('drl-solo').closest('li')).not.toHaveTextContent(/older drill version/i);
+  });
+
   it('an empty catalog says so honestly', async () => {
     mockFetch(() => jsonResponse({ templates: [] }));
 

@@ -99,6 +99,34 @@ jobs:
             true
           );
 
+          // SEED DATA RUNS THE PG SUITES. The seeding suites load these files
+          // into a real schema, and a data-only PR is how content hand-offs
+          // arrive -- before this it classified unknown_code and ran none of
+          // them. Every data shape the folder holds, not one.
+          for (const data of [
+            'apps/web/seed-data/drill-library/seed_drill_library.csv',
+            'apps/web/seed-data/drill-library/seed_drill_library.json',
+            'apps/web/seed-data/shadow-research/2026-08-07/research_triage_view.sql',
+          ]) {
+            const seeded = classifyPaths([data]);
+            assert.equal(seeded.migrations, true, data);
+            assert.equal(seeded.docsOnly, false, data);
+            assert.equal(seeded.unknownCode, false, data);
+          }
+
+          // ...and its README stays documentation. It loads into nothing, so it
+          // takes the docs-only fast path and does not flag the suite; beside
+          // unrecognised code it must not hide that code from the report.
+          assert.equal(classifyPaths(['apps/web/seed-data/drill-library/README.md']).docsOnly, true);
+          assert.equal(classifyPaths(['apps/web/seed-data/drill-library/README.md']).migrations, false);
+          assert.deepEqual(
+            classifyPaths([
+              'apps/web/seed-data/drill-library/README.md',
+              'apps/web/components/SomeNewSurface.tsx',
+            ]).unclassifiedPaths,
+            ['apps/web/components/SomeNewSurface.tsx']
+          );
+
           assert.deepEqual(classifyPaths(['apps/web/components/roleSession.ts']), {
             docsOnly: false,
             migrations: false,
