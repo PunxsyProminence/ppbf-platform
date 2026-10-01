@@ -227,7 +227,8 @@ email and the email is unique). Creating a login for a withdrawn athlete record 
 message. The rule is a condition of the write statement itself, not only a check before it;
 creating a login for a withdrawn athlete is a read that locks the athlete row until the write
 commits. A new activation code, a PIN reset, a redemption and a deletion all take the account
-row's lock before they touch its codes, so one that races another waits for it: a code issued
+row's lock before they lock or write its codes (a redemption first reads the code once, unlocked,
+to learn whose it is), so one that races another waits for it: a code issued
 while a deletion is in progress is either refused or superseded by that deletion, never left
 live:
 

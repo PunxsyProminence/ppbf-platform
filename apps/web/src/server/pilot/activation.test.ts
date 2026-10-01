@@ -187,7 +187,7 @@ describe('issueActivationCode', () => {
     expect(lookupSql).toContain('and not (a.deleted_at is not null)');
     // The account row is locked before any code row is touched: the order
     // deletion takes them in.
-    expect(lookupSql).toContain('for update');
+    expect(lookupSql).toContain('for no key update');
     expect(currentClient.query.mock.calls[0][0]).toBe(lookupSql);
     const [insertSql] = callsMatching(/insert into pilot\.account_activation_tokens/)[0];
     expect(insertSql).toContain('from pilot.accounts a');
@@ -366,7 +366,7 @@ describe('redeemActivationCode', () => {
     expect(sql).toContain('expires_at > now()');
 
     const accountLock = statements.findIndex((statement) =>
-      /select 1 from pilot\.accounts where account_id = \$1 for update/.test(statement));
+      /select 1 from pilot\.accounts where account_id = \$1 for no key update/.test(statement));
     expect(accountLock).toBeGreaterThan(-1);
     expect(accountLock).toBeLessThan(lockingRead);
     // The first read of the code takes no lock.
@@ -380,7 +380,7 @@ describe('redeemActivationCode', () => {
     );
 
     expect(currentClient.query).toHaveBeenCalledTimes(1);
-    expect(String(currentClient.query.mock.calls[0][0])).not.toContain('for update');
+    expect(String(currentClient.query.mock.calls[0][0])).not.toMatch(/for (no key )?update/);
   });
 
   /* The athlete has just chosen a PIN nobody else has seen, so the flag that

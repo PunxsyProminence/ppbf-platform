@@ -431,7 +431,27 @@ describe('redeeming a code that belongs to a deleted login', () => {
 // run, because it needs the full schema.
 describe('issuance, redemption and deletion take the account row before its codes', () => {
   const ACCOUNT = 'acct-racing';
-  const settleTime = () => new Promise((resolve) => setTimeout(resolve, 500));
+
+  /**
+   * Resolves once some backend is WAITING ON A LOCK while running a statement
+   * that contains `fragment`, read from pg_stat_activity. This is what makes
+   * these tests fail without the fix rather than pass by luck: "it had not
+   * finished after half a second" is also true of a slow machine, while "it
+   * is blocked on a lock" is only true if it took the lock order under test.
+   * Throws after ten seconds if nothing ever waits.
+   */
+  async function waitUntilBlocked(fragment: string): Promise<void> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const waiting = await db.query(
+        `select 1 from pg_stat_activity
+         where datname = current_database() and wait_event_type = 'Lock' and position($1 in query) > 0`,
+        [fragment],
+      );
+      if (waiting.length > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error(`No backend ever waited on a lock while running: ${fragment}`);
+  }
 
   async function connect(): Promise<Client> {
     const client = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
@@ -477,8 +497,10 @@ describe('issuance, redemption and deletion take the account row before its code
       await deletion.query(SUPERSEDE_SQL, [ACCOUNT]);
 
       const issuing = watch(activation.issueActivationCode({ accountId: ACCOUNT, organizationId: ORG, ...ISSUER }));
-      await settleTime();
-      // Without the account lock this had already returned a code.
+      // Issuance is blocked on the account row the deletion holds. Without
+      // the account lock it never waits: it reads the old row and returns a
+      // code, and this times out.
+      await waitUntilBlocked('from pilot.accounts a');
       expect(issuing.state.settled).toBe(false);
 
       await deletion.query('commit');
@@ -503,13 +525,14 @@ describe('issuance, redemption and deletion take the account row before its code
       await gate.query('lock table pilot.account_activation_tokens in exclusive mode');
 
       const issuing = watch(activation.issueActivationCode({ accountId: ACCOUNT, organizationId: ORG, ...ISSUER }));
-      await settleTime();
+      // Issuance has the account row and is held at its first write to the codes.
+      await waitUntilBlocked('update pilot.account_activation_tokens');
       expect(issuing.state.settled).toBe(false);
 
       await deletion.query('begin');
       const deleting = watch(deletion.query(DELETE_ACCOUNT_SQL, [ACCOUNT]));
-      await settleTime();
       // The deletion cannot mark the login deleted while issuance holds it.
+      await waitUntilBlocked('update pilot.accounts set deleted_at');
       expect(deleting.state.settled).toBe(false);
 
       await gate.query('commit');
@@ -540,7 +563,8 @@ describe('issuance, redemption and deletion take the account row before its code
       await holder.query('select 1 from pilot.accounts where account_id = $1 for update', [ACCOUNT]);
 
       const redeeming = watch(activation.redeemActivationCode(issued.code, '482913'));
-      await settleTime();
+      // The redemption is blocked on the account row, its first lock.
+      await waitUntilBlocked('select 1 from pilot.accounts where account_id');
       expect(redeeming.state.settled).toBe(false);
 
       // Account first, then code. The old order locked the code and then

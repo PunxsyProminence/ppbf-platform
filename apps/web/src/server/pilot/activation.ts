@@ -240,7 +240,7 @@ export async function issueActivationCode(params: {
     // login that could never sign in. That one is named, to the admin of the
     // organization it is in and to nobody else.
     //
-    // LOCK ORDER: THE ACCOUNT ROW, THEN ITS CODES. `for update` here is the
+    // LOCK ORDER: THE ACCOUNT ROW, THEN ITS CODES. The row lock here is the
     // first lock this transaction takes, and it is what serializes issuance
     // with a deletion, which updates the account row and then supersedes its
     // codes (dataDeletion.ts). Without it a deletion still uncommitted had
@@ -250,6 +250,10 @@ export async function issueActivationCode(params: {
     // means this read re-checks the row and finds it deleted; issuance first
     // means the deletion supersedes the code written below. A PIN reset and a
     // redemption take the same two locks in the same order.
+    //
+    // `for no key update` is the lock an UPDATE of these columns takes, so it
+    // waits for a deletion and a deletion waits for it, without also waiting
+    // on every transaction that only references the account by its key.
     const target = await client.query<{ account_id: string }>(
       `select account_id
        from pilot.accounts a
@@ -258,7 +262,7 @@ export async function issueActivationCode(params: {
          and role = 'athlete'
          and is_platform_owner = false
          and not ${accountDeletedSql('a')}
-       for update`,
+       for no key update`,
       [accountId, organizationId],
     );
 
@@ -354,7 +358,7 @@ export async function redeemActivationCode(rawCode: string, pin: string): Promis
     if (owner.rows.length > 0) {
       // No conditions and no result read: this only takes the lock. What the
       // account must be is decided by the update below, in one place.
-      await client.query('select 1 from pilot.accounts where account_id = $1 for update', [
+      await client.query('select 1 from pilot.accounts where account_id = $1 for no key update', [
         owner.rows[0].account_id,
       ]);
     }
