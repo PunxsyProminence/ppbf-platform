@@ -180,6 +180,23 @@ const INTAKE_QUEUE_UNAVAILABLE =
   'The intake queue could not be loaded. The list is unavailable, not empty. Reload to retry.';
 const INTAKE_QUEUE_LOADING = 'Loading intake queue…';
 
+function readShadowOperationalStreams() {
+  return Promise.all([
+    fetch(`${apiBase()}/api/pilot/shadow/telemetry`, {
+      credentials: 'include',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 40 }),
+    }),
+    fetch(`${apiBase()}/api/pilot/shadow/authority`, {
+      credentials: 'include',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 40 }),
+    }),
+  ]);
+}
+
 const DESTINATION_OPTIONS: IntakeDestination[] = [
   'Athlete Workspace',
   'Coach Workspace',
@@ -1192,53 +1209,49 @@ export default function AdminShadowConsolePage() {
   // and again after every review action, promotion and upload.
   async function refreshBackendQueue() {
     try {
-      await readBackendQueue();
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/review-projection`, {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+
+      const payload = (await response.json()) as ReviewQueueApiResponse | { error?: string };
+      if (!response.ok || !('ok' in payload)) {
+        const message = 'error' in payload && payload.error ? payload.error : 'Failed to load review queue';
+        throw new Error(message);
+      }
+
+      const mapped: IntakeItem[] = payload.queue.map((entry) => {
+        const athleteSuffix = entry.primary_athlete_id ? ` | Athlete: ${entry.primary_athlete_id}` : '';
+        const eventSuffix = entry.shadow_event_name ? ` | Event: ${entry.shadow_event_name}` : '';
+
+        return {
+        id: entry.intake_case_id,
+        intakeCaseId: entry.intake_case_id,
+        itemName: entry.summary,
+        dataType: 'File Intake',
+        source: 'SHADOW Upload',
+        suggestedDestination: 'Admin Hub',
+        status: fromBackendStatus(entry.status),
+        reviewNeeded: entry.status === 'pending_review',
+        requiresJasonReview: entry.status === 'pending_review',
+        detectedType: 'File Intake',
+        confidence: 'Medium',
+        notes: `Documents in case: ${entry.document_count}${athleteSuffix}${eventSuffix}`,
+        destinationRoute: '/admin/shadow',
+        timestamp: entry.created_at,
+        lastUpdatedAt: entry.updated_at,
+        };
+      });
+
+      setPendingQueue(mapped);
+      setBackendQueueReady(true);
       setIntakeQueueRead('loaded');
     } catch (error) {
       setIntakeQueueRead('unavailable');
       throw error;
     }
-  }
-
-  async function readBackendQueue() {
-    const response = await fetch(`${apiBase()}/api/pilot/shadow/review-projection`, {
-      credentials: 'include',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-
-    const payload = (await response.json()) as ReviewQueueApiResponse | { error?: string };
-    if (!response.ok || !('ok' in payload)) {
-      const message = 'error' in payload && payload.error ? payload.error : 'Failed to load review queue';
-      throw new Error(message);
-    }
-
-    const mapped: IntakeItem[] = payload.queue.map((entry) => {
-      const athleteSuffix = entry.primary_athlete_id ? ` | Athlete: ${entry.primary_athlete_id}` : '';
-      const eventSuffix = entry.shadow_event_name ? ` | Event: ${entry.shadow_event_name}` : '';
-
-      return {
-      id: entry.intake_case_id,
-      intakeCaseId: entry.intake_case_id,
-      itemName: entry.summary,
-      dataType: 'File Intake',
-      source: 'SHADOW Upload',
-      suggestedDestination: 'Admin Hub',
-      status: fromBackendStatus(entry.status),
-      reviewNeeded: entry.status === 'pending_review',
-      requiresJasonReview: entry.status === 'pending_review',
-      detectedType: 'File Intake',
-      confidence: 'Medium',
-      notes: `Documents in case: ${entry.document_count}${athleteSuffix}${eventSuffix}`,
-      destinationRoute: '/admin/shadow',
-      timestamp: entry.created_at,
-      lastUpdatedAt: entry.updated_at,
-      };
-    });
-
-    setPendingQueue(mapped);
-    setBackendQueueReady(true);
   }
 
   async function refreshShadowFeedbackReviews() {
@@ -1368,23 +1381,6 @@ export default function AdminShadowConsolePage() {
     } else {
       setShadowAuthorityRead('unavailable');
     }
-  }
-
-  function readShadowOperationalStreams() {
-    return Promise.all([
-      fetch(`${apiBase()}/api/pilot/shadow/telemetry`, {
-        credentials: 'include',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 40 }),
-      }),
-      fetch(`${apiBase()}/api/pilot/shadow/authority`, {
-        credentials: 'include',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 40 }),
-      }),
-    ]);
   }
 
   function appendTelemetry(event: TelemetryEvent['event'], payload: Record<string, unknown>) {
