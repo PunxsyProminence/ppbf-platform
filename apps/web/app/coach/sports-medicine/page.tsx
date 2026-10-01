@@ -595,44 +595,7 @@ export default function SportsMedicinePage() {
                           ) : null}
                         </div>
                       </div>
-                    ) : row.hold_read === 'unavailable' ? (
-                      /* NOBODY COULD LOOK. Not the hold stamp (this board never
-                         claims a hold it could not read) and not the open
-                         place control either, which is the row a child with no
-                         hold gets. Owner decision 2026-10-01 (Jason, "3 B"):
-                         the place control is DISABLED until a read succeeds --
-                         shown, with its reason beside it, not hidden. */
-                      <div data-hold-read="unavailable" className="mt-[var(--s3)]">
-                        <p
-                          id={`hold-unread-${row.athlete_id}`}
-                          className="t-body text-[color:var(--bone-300)]"
-                          style={{ fontSize: 'var(--t-sm)' }}
-                        >
-                          Training hold could not be read just now. Unknown is not “no hold” — check again
-                          before making a call that depends on it. A hold cannot be placed from this row
-                          until it has been read.
-                        </p>
-                        <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
-                          <button
-                            type="button"
-                            className="btn btn--ghost"
-                            disabled
-                            aria-describedby={`hold-unread-${row.athlete_id}`}
-                          >
-                            Place a training hold
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn--ghost"
-                            disabled={busy}
-                            aria-busy={busy}
-                            onClick={() => void recheckHold(row.athlete_id)}
-                          >
-                            {busy ? 'Checking…' : 'Check again'}
-                          </button>
-                        </div>
-                      </div>
-                    ) : openFor === row.athlete_id ? (
+                    ) : openFor === row.athlete_id && row.hold_read !== 'unavailable' ? (
                       <div className="mat-paper mt-[var(--s3)] rounded-[var(--r-md)] p-[var(--s3)]">
                         <p className="t-eyebrow">Place a training hold</p>
                         <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2">
@@ -737,18 +700,57 @@ export default function SportsMedicinePage() {
                         </div>
                       </div>
                     ) : (
-                      <div className="mt-[var(--s3)]">
-                        <button
-                          type="button"
-                          className="btn btn--ghost"
-                          onClick={() => {
-                            setOpenFor(row.athlete_id);
-                            setForm({ ...EMPTY_FORM });
-                            setRefusal(null);
-                          }}
-                        >
-                          Place a training hold
-                        </button>
+                      /* ONE place control, in two states. When the hold was
+                         read and there is none, it opens the form. When
+                         NOBODY COULD LOOK (hold_read 'unavailable') it is not
+                         the hold stamp -- this board never claims a hold it
+                         could not read -- and not the live control either,
+                         which is the row a child with no hold gets. Owner
+                         decision 2026-10-01 (Jason, "3 B"): the place control
+                         is DISABLED until a read succeeds -- shown, with its
+                         reason beside it, not hidden. "Check again" is the
+                         read that can succeed. */
+                      <div
+                        data-hold-read={row.hold_read === 'unavailable' ? 'unavailable' : undefined}
+                        className="mt-[var(--s3)]"
+                      >
+                        {row.hold_read === 'unavailable' ? (
+                          <p
+                            id={`hold-unread-${row.athlete_id}`}
+                            className="t-body mb-[var(--s3)] text-[color:var(--bone-300)]"
+                            style={{ fontSize: 'var(--t-sm)' }}
+                          >
+                            Training hold could not be read just now. Unknown is not “no hold” — check again
+                            before making a call that depends on it. A hold cannot be placed from this row
+                            until it has been read.
+                          </p>
+                        ) : null}
+                        <div className="flex flex-wrap gap-[var(--s3)]">
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            disabled={row.hold_read === 'unavailable'}
+                            aria-describedby={row.hold_read === 'unavailable' ? `hold-unread-${row.athlete_id}` : undefined}
+                            onClick={() => {
+                              setOpenFor(row.athlete_id);
+                              setForm({ ...EMPTY_FORM });
+                              setRefusal(null);
+                            }}
+                          >
+                            Place a training hold
+                          </button>
+                          {row.hold_read === 'unavailable' ? (
+                            <button
+                              type="button"
+                              className="btn btn--ghost"
+                              disabled={busy}
+                              aria-busy={busy}
+                              onClick={() => void recheckHold(row.athlete_id)}
+                            >
+                              {busy ? 'Checking…' : 'Check again'}
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
                     )}
                     {rowRefusal ? (
