@@ -1,4 +1,5 @@
 import { query, queryOne, withTransaction } from '../db';
+import { ConflictError } from '../errors';
 import { DISAGREEMENT_CATEGORIES, type DisagreementCategory } from './comparison';
 import { isInVocabulary } from './ontology';
 
@@ -70,6 +71,11 @@ export interface AdjudicationRow {
   source_event_id_b: string | null;
   resolution_type: string;
   missed_event_verdict: string | null;
+  /** Which answer this is for its disagreement -- the pair of marks it names
+   * (OD-2026-08-29-005). The highest revision is the current one; earlier
+   * revisions are retained as the record of what was thought before. Assigned
+   * by the server, never by a caller. */
+  revision: number;
   adjudicator_account_id: string;
   adjudicated_at: string;
   ontology_version: string;
@@ -93,9 +99,63 @@ const ADJUDICATION_COLUMNS = `
   organization_id, adjudication_id, calibration_clip_id,
   annotation_set_id_a, annotation_set_id_b,
   source_event_id_a, source_event_id_b,
-  resolution_type, missed_event_verdict,
+  resolution_type, missed_event_verdict, revision,
   adjudicator_account_id, adjudicated_at, ontology_version, notes, created_at
 `;
+
+/** The unique index that arbitrates two concurrent writers, named here because
+ * the route matches it by name (the pg driver reports a unique index's name in
+ * the error's `constraint` field). OD-2026-08-29-005 chose no row lock, so this
+ * index is the ONLY thing that stops two administrators landing two rows that
+ * both claim to be the same revision of the same disagreement. The route's 409
+ * matches SQLSTATE 23505 together with this exact string, so an unrelated
+ * duplicate key is never reported as a concurrent correction.
+ * Declared in pilot_slice_postgres_calibration_adjudication_revisions_migration.sql. */
+export const ADJUDICATION_PAIR_REVISION_CONSTRAINT =
+  'pilot_calibration_adjudications_decision_revision_uq';
+
+/** What an administrator is told when their decision was made against an
+ * answer that is no longer the current one. One wording, two detection points:
+ * the reviewed-revision check in `recordAdjudication` catches the ordinary
+ * case before anything is written, and the unique index catches the narrow
+ * one where two requests pass that check before either commits. They are the
+ * same event to the person it happens to, so they read the same. The wording
+ * is part of the owner's decision, not a nicety: it says what happened and
+ * what to do about it, in place of a duplicate-key dump naming a constraint. */
+export const ADJUDICATION_SUPERSEDED_CODE = 'CALIBRATION_ADJUDICATION_SUPERSEDED';
+export const ADJUDICATION_SUPERSEDED_MESSAGE =
+  'Someone corrected this adjudication while you were deciding. Reload and review their answer before replacing it.';
+
+/**
+ * "This row is the current answer to its disagreement", as SQL, for a reader
+ * that must not count or act on superseded history.
+ *
+ * `alias` is the reader's alias for pilot.calibration_adjudications. The
+ * grouping is the one the index, the trigger, the backfill and
+ * `recordAdjudication` use: the two readings and the two marks, NULL-safe.
+ * Written once here so a reader cannot drift onto a different idea of what
+ * one disagreement is. The alias is interpolated, so it is checked rather
+ * than trusted.
+ */
+export function currentAdjudicationPredicate(alias: string): string {
+  // `later_revision` is the name the subquery uses for the row it compares
+  // against. A reader that used it too would compare a row with itself and
+  // every row would read as current.
+  if (!/^[a-z_][a-z0-9_]*$/.test(alias) || alias === 'later_revision') {
+    throw new Error('CALIBRATION_ADJUDICATION_ALIAS_INVALID');
+  }
+  return `not exists (
+    select 1
+      from pilot.calibration_adjudications later_revision
+     where later_revision.organization_id = ${alias}.organization_id
+       and later_revision.calibration_clip_id = ${alias}.calibration_clip_id
+       and later_revision.annotation_set_id_a = ${alias}.annotation_set_id_a
+       and later_revision.annotation_set_id_b = ${alias}.annotation_set_id_b
+       and later_revision.source_event_id_a is not distinct from ${alias}.source_event_id_a
+       and later_revision.source_event_id_b is not distinct from ${alias}.source_event_id_b
+       and later_revision.revision > ${alias}.revision
+  )`;
+}
 
 const FIELD_COLUMNS = `
   organization_id, adjudicated_field_id, adjudication_id, field_name,
@@ -125,6 +185,13 @@ export interface RecordAdjudicationInput {
   ontologyVersion: string;
   notes?: string | null;
   fields?: readonly AdjudicatedFieldInput[];
+  /** The revision of this disagreement the adjudicator actually had in front
+   * of them, or 0 if they were looking at one nobody had settled. It is a
+   * claim about WHAT WAS REVIEWED and is only ever compared: the server
+   * computes the revision it writes. Required, with no default -- a caller
+   * that omitted it would get the stale overwrite back, and a default of 0
+   * would refuse every correction. */
+  expectedCurrentRevision: number;
 }
 
 function requireNonEmpty(value: unknown, field: string): string {
@@ -207,26 +274,107 @@ export async function recordAdjudication(
     }
   }
 
+  if (
+    typeof input.expectedCurrentRevision !== 'number'
+    || !Number.isInteger(input.expectedCurrentRevision)
+    || input.expectedCurrentRevision < 0
+  ) {
+    throw new Error(
+      'Missing expected_current_revision: the revision this decision was reviewed against must be a whole number, 0 or more',
+    );
+  }
+
+  const calibrationClipId = requireNonEmpty(input.calibrationClipId, 'calibration_clip_id');
+  const annotationSetIdA = requireNonEmpty(input.annotationSetIdA, 'annotation_set_id_a');
+  const annotationSetIdB = requireNonEmpty(input.annotationSetIdB, 'annotation_set_id_b');
+
   return withTransaction(async (client) => {
+    /* THE NEXT REVISION FOR THIS DISAGREEMENT, DELIBERATELY WITHOUT A LOCK
+     * (OD-2026-08-29-005).
+     *
+     * A disagreement is the pair of MARKS this decision names, inside the pair
+     * of readings: a clip carries one row per disagreement, so counting over
+     * the two readings alone would number unrelated decisions as corrections
+     * of each other. `is not distinct from` because either mark may be null
+     * (one annotator recorded nothing), and two decisions about the same lone
+     * mark are the same disagreement.
+     *
+     * No `for update`, no advisory lock, no serialisable retry. Two
+     * administrators may read the same highest revision and both compute the
+     * same next one; the unique index named above refuses the second
+     * insert with 23505, and the route turns that into a 409 telling them to
+     * read the answer that landed while they were deciding.
+     *
+     * coalesce(max, 0) + 1 rather than count(*) + 1: a count would hand out a
+     * revision that is still in use if an EARLIER row were ever removed, and
+     * the insert would then collide with nobody racing it. Neither form
+     * avoids reusing the number of a removed HIGHEST row.
+     *
+     * The index alone only refuses two inserts that OVERLAP. The far more
+     * likely case is handled just below, before anything is written. */
+    const currentResult = await client.query<{ current_revision: number }>(
+      `select coalesce(max(revision), 0)::int as current_revision
+         from pilot.calibration_adjudications
+        where organization_id = $1
+          and calibration_clip_id = $2
+          and annotation_set_id_a = $3
+          and annotation_set_id_b = $4
+          and source_event_id_a is not distinct from $5
+          and source_event_id_b is not distinct from $6`,
+      [
+        input.organizationId,
+        calibrationClipId,
+        annotationSetIdA,
+        annotationSetIdB,
+        sourceEventIdA,
+        sourceEventIdB,
+      ],
+    );
+    const currentRevision = currentResult.rows[0]?.current_revision;
+    if (typeof currentRevision !== 'number' || !Number.isInteger(currentRevision) || currentRevision < 0) {
+      throw new Error('CALIBRATION_ADJUDICATION_REVISION_UNRESOLVED');
+    }
+
+    /* THE STALE DECISION, REFUSED BEFORE ANYTHING IS WRITTEN.
+     *
+     * An administrator opens the desk at revision 1, thinks for ten minutes
+     * while somebody else records revision 2, and submits. Numbering that as
+     * revision 3 would make current a decision reached without ever seeing
+     * revision 2 -- the harm the refusal sentence describes, and the reason
+     * the owner chose a collision that sends the second person to read the
+     * first correction.
+     *
+     * Compared, never coerced: an expectation that is BEHIND and one that is
+     * AHEAD both mean the reviewer was looking at something other than what
+     * stands now.
+     *
+     * Still no lock. This narrows the window to the gap between the read
+     * above and the insert below; the unique index closes that remainder, and
+     * both give the same refusal. */
+    if (currentRevision !== input.expectedCurrentRevision) {
+      throw new ConflictError(ADJUDICATION_SUPERSEDED_MESSAGE, ADJUDICATION_SUPERSEDED_CODE);
+    }
+
     const adjudicationResult = await client.query<AdjudicationRow>(
       `insert into pilot.calibration_adjudications
          (organization_id, adjudication_id, calibration_clip_id,
           annotation_set_id_a, annotation_set_id_b,
           source_event_id_a, source_event_id_b,
-          resolution_type, missed_event_verdict,
+          resolution_type, missed_event_verdict, revision,
           adjudicator_account_id, ontology_version, notes)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        returning ${ADJUDICATION_COLUMNS}`,
       [
         input.organizationId,
         requireNonEmpty(input.adjudicationId, 'adjudication_id'),
-        requireNonEmpty(input.calibrationClipId, 'calibration_clip_id'),
-        requireNonEmpty(input.annotationSetIdA, 'annotation_set_id_a'),
-        requireNonEmpty(input.annotationSetIdB, 'annotation_set_id_b'),
+        calibrationClipId,
+        annotationSetIdA,
+        annotationSetIdB,
         sourceEventIdA,
         sourceEventIdB,
         input.resolutionType,
         missedEventVerdict,
+        currentRevision + 1,
         requireNonEmpty(input.adjudicatorAccountId, 'adjudicator_account_id'),
         requireNonEmpty(input.ontologyVersion, 'ontology_version'),
         input.notes ?? null,

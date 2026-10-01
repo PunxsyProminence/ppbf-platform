@@ -121,6 +121,7 @@ on:
           - shadow-filter-rate
           - medical-clearance-coverage
           - deletion-preflight
+          - calibration-adjudication-ties
           - discipline-values
           - waiver-statuses
           - cue-source-provenance
@@ -479,6 +480,7 @@ jobs:
               run_one shadow-filter-rate  pilot:check-shadow-filter-rate
               run_one medical-clearance-coverage pilot:check-medical-clearance-coverage
               run_one deletion-preflight  pilot:check-deletion-preflight
+              run_one calibration-adjudication-ties  pilot:check-calibration-adjudication-ties
               run_one discipline-values   pilot:check-discipline-values
               run_one waiver-statuses     pilot:check-waiver-statuses
               run_one cue-source-provenance pilot:check-cue-source-provenance
@@ -497,6 +499,7 @@ jobs:
             library-scope)      run_one library-scope       pilot:check-library-scope ;;
             runtime-claims)     run_one runtime-claims      pilot:check-runtime-claims ;;
             deletion-preflight) run_one deletion-preflight  pilot:check-deletion-preflight ;;
+            calibration-adjudication-ties) run_one calibration-adjudication-ties  pilot:check-calibration-adjudication-ties ;;
             shadow-filter-rate) run_one shadow-filter-rate  pilot:check-shadow-filter-rate ;;
             medical-clearance-coverage) run_one medical-clearance-coverage pilot:check-medical-clearance-coverage ;;
             discipline-values)  run_one discipline-values   pilot:check-discipline-values ;;
