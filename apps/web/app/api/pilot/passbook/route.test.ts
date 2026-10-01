@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { GET } from './route';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { query, queryOne } from '@/src/server/pilot/db';
 import { getAthletePassbook } from '@/src/server/pilot/passbook';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -16,13 +17,24 @@ jest.mock('@/src/server/pilot/access', () => {
   return { ...actual, assertActorCanAccessAthlete: jest.fn() };
 });
 
-jest.mock('@/src/server/pilot/passbook', () => ({
-  getAthletePassbook: jest.fn(),
+// getGuardianPassbook stays REAL, over a mocked database: the guardian case
+// below is then a claim about what actually leaves this route for a parent,
+// not about what a stub was told to return.
+jest.mock('@/src/server/pilot/passbook', () => {
+  const actual = jest.requireActual('@/src/server/pilot/passbook');
+  return { ...actual, getAthletePassbook: jest.fn() };
+});
+
+jest.mock('@/src/server/pilot/db', () => ({
+  query: jest.fn(),
+  queryOne: jest.fn(),
 }));
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockAssertAccess = assertActorCanAccessAthlete as jest.Mock;
 const mockGetPassbook = getAthletePassbook as jest.Mock;
+const mockQuery = query as jest.Mock;
+const mockQueryOne = queryOne as jest.Mock;
 
 function principal(overrides: Partial<PilotPrincipal> = {}): PilotPrincipal {
   return {
@@ -88,33 +100,40 @@ describe('GET /api/pilot/passbook', () => {
 
   // pilot.coach_observations is shared with guardian-authored barrier reports
   // and staff conduct notes, and this route's gate admits the athlete
-  // themselves plus every linked guardian. The reader's role therefore has to
-  // reach getAthletePassbook, which owns the per-audience note_type
-  // allow-list; a route that dropped it would hand every reader the widest
-  // book the module can build.
+  // themselves as well as staff. The reader's role therefore has to reach
+  // getAthletePassbook, which owns the per-audience note_type allow-list; a
+  // route that dropped it would hand every reader the widest book the module
+  // can build. A guardian is not in this list: it reads getGuardianPassbook
+  // instead (the describe block at the end of this file). Every other
+  // admitted reader gets the full book exactly as getAthletePassbook built it.
   test.each([
     ['athlete', { accountId: 'athlete-account-1', athleteId: 'ath-1' }],
-    ['parent', { accountId: 'parent-account-1', athleteId: null }],
     ['coach', { accountId: 'coach-1', athleteId: null }],
     ['organization_admin', { accountId: 'admin-1', athleteId: null }],
     ['admin', { accountId: 'admin-legacy-1', athleteId: null }],
-  ] as const)('passes the %s reader role down so the observation scope can be decided', async (role, identity) => {
+  ] as const)('passes the %s reader role down and returns the full book unchanged', async (role, identity) => {
     const actor = principal({ role, ...identity });
+    const book = {
+      athlete: { athlete_id: 'ath-1' },
+      pages: { sessions: [{ session_id: 'session-1', date: '2026-08-03', rpe: 6, completed_flag: true }] },
+    };
     mockRequirePrincipal.mockResolvedValueOnce(actor);
     mockAssertAccess.mockResolvedValueOnce(undefined);
-    mockGetPassbook.mockResolvedValueOnce({ athlete: { athlete_id: 'ath-1' }, pages: {} });
+    mockGetPassbook.mockResolvedValueOnce(book);
 
     const response = await GET(request());
 
     expect(response.status).toBe(200);
     expect(mockGetPassbook).toHaveBeenCalledWith('org-1', 'ath-1', role);
+    await expect(response.json()).resolves.toEqual({ passbook: book });
+    expect(mockQueryOne).not.toHaveBeenCalled();
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 
   test.each([
     ['athlete', { accountId: 'athlete-account-1', athleteId: 'ath-1' }],
-    ['parent', { accountId: 'parent-account-1', athleteId: null }],
   // getAthletePassbook is mocked here, so this pins the route's pass-through:
-  // an authorized athlete/guardian still receives the corner and the gaps.
+  // an authorized athlete still receives the corner and the gaps.
   // WHICH coach_observations rows the corner may carry is decided one layer
   // down and is pinned in src/server/pilot/passbook.test.ts.
   ] as const)('allows an authorized %s to receive the scoped coach observations and progression gaps in the book', async (role, identity) => {
@@ -159,67 +178,61 @@ describe('GET /api/pilot/passbook', () => {
     expect(mockGetPassbook).not.toHaveBeenCalled();
   });
 
-  /* A-FIN-08 guardian closure, at the boundary this suite can actually see.
-     getAthletePassbook is mocked here, so these do NOT prove the SQL or the
-     projection -- passbook.test.ts owns those, against the real module. What
-     they prove is the two things this route is responsible for: that a
-     guardian's own role is what gets handed down (so the closure engages at
-     all), and that the route serializes the book it was given without
-     reinstating a key the module deliberately left out.
-
-     NAMED FOR EXACTLY THAT, AND NO WIDER. With the module mocked, nothing
-     here may be named as proof that a guardian is denied the note: the
-     fixture below has no notes key to begin with, so the serialization case
-     would stay green even if the closure were torn out of passbook.ts. It
-     establishes that this route invents no key, which is a real thing for a
-     serializing layer to be held to, and not the same claim. The behavioural
-     claim lives, and has to keep living, in
-     src/server/pilot/passbook.test.ts. */
-  describe('the guardian read forwards the guardian role and adds nothing to the book', () => {
-    /** The book as the real module builds it for a parent: sessions present,
-     *  the notes key absent rather than null. */
-    const guardianBook = {
-      athlete: { athlete_id: 'ath-1', full_name: 'Avery Boxer' },
-      pages: {
-        attendance: [],
-        sessions: [
-          { session_id: 'session-1', date: '2026-08-03', rpe: 6, completed_flag: true },
-        ],
-        readiness: [],
-        goals: [],
-        corner: { coach: {}, guardians: [], observations: [] },
-        progression_gaps: [],
-      },
-    };
-
-    test('forwards the guardian role to getAthletePassbook', async () => {
-      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
-      mockAssertAccess.mockResolvedValueOnce(undefined);
-      mockGetPassbook.mockResolvedValueOnce(guardianBook);
-
-      await GET(request());
-
-      expect(mockGetPassbook).toHaveBeenCalledWith('org-1', 'ath-1', 'parent');
+  /* OD-2026-09-30-004 d3 (owner chose A): a linked guardian's book matches
+     ParentDigest -- the child's name and the completed-session count, and no
+     dated rows of any kind. getGuardianPassbook is the real module here, over
+     a mocked database, so this is what a parent's request actually returns.
+     On main this route handed a guardian getAthletePassbook's full book. */
+  describe('a linked guardian receives the ParentDigest-shaped book only', () => {
+    // Implementations queued here must not outlive the case that queued them:
+    // on a route that never calls one of these, a leftover would leak forward.
+    afterEach(() => {
+      mockGetPassbook.mockReset();
+      mockQuery.mockReset();
+      mockQueryOne.mockReset();
     });
 
-    test('adds no notes key to a guardian book that did not carry one', async () => {
-      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
+    function asGuardian() {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'parent-account-1', role: 'parent', athleteId: null }));
       mockAssertAccess.mockResolvedValueOnce(undefined);
-      mockGetPassbook.mockResolvedValueOnce(guardianBook);
+    }
+
+    test('returns name and completed-session count, never the full book', async () => {
+      asGuardian();
+      // What the full book would carry, so a route that still reached for it
+      // would put dated rows in the body this test reads.
+      mockGetPassbook.mockResolvedValueOnce({
+        athlete: { athlete_id: 'ath-1', full_name: 'Avery Boxer', dob: '2012-05-01' },
+        pages: { sessions: [{ session_id: 'session-1', date: '2026-08-03', rpe: 6, completed_flag: true }] },
+      });
+      mockQueryOne
+        .mockResolvedValueOnce({ organization_id: 'org-1', athlete_id: 'ath-1', full_name: 'Avery Boxer' })
+        .mockResolvedValueOnce({ completed: '12' });
 
       const response = await GET(request());
-      const body = await response.json();
 
       expect(response.status).toBe(200);
-      // Anchored to the guardian read: this body is what came back when the
-      // route asked for the parent's book, and it left that book alone.
-      expect(mockGetPassbook).toHaveBeenCalledWith('org-1', 'ath-1', 'parent');
-      const session = body.passbook.pages.sessions[0];
-      expect(session).toMatchObject({ session_id: 'session-1', date: '2026-08-03' });
-      expect(Object.keys(session)).not.toContain('notes');
-      // Absent, not null: JSON.stringify drops an absent key entirely, and
-      // "notes":null would be a claim that no note exists.
-      expect(JSON.stringify(body)).not.toContain('"notes"');
+      await expect(response.json()).resolves.toEqual({
+        passbook: { athlete: { athlete_id: 'ath-1', full_name: 'Avery Boxer' }, completed_sessions: 12 },
+      });
+      expect(mockAssertAccess).toHaveBeenCalledWith(expect.objectContaining({ role: 'parent' }), 'ath-1');
+      expect(mockGetPassbook).not.toHaveBeenCalled();
+      // No row-returning read ran at all; the only sessions SQL is the count.
+      expect(mockQuery).not.toHaveBeenCalled();
+      const sessionSql = mockQueryOne.mock.calls.map(([sql]) => String(sql)).filter((sql) => sql.includes('pilot.sessions'));
+      expect(sessionSql).toHaveLength(1);
+      expect(sessionSql[0]).toMatch(/select count\(\*\)/);
+    });
+
+    test('keeps a missing athlete hidden', async () => {
+      asGuardian();
+      mockQueryOne.mockResolvedValueOnce(null);
+
+      const response = await GET(request());
+
+      expect(response.status).toBe(404);
+      await expect(response.json()).resolves.toEqual({ error: 'Not found' });
+      expect(mockGetPassbook).not.toHaveBeenCalled();
     });
   });
 });

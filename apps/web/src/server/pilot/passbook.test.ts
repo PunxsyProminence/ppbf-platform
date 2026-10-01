@@ -4,6 +4,7 @@ import { query, queryOne } from './db';
 import {
   getAthletePassbook,
   getCoachPassbookGapQueue,
+  getGuardianPassbook,
   passbookObservationNoteTypes,
   PASSBOOK_ATHLETE_NOTE_TYPES,
   PASSBOOK_ATTENDANCE_STATUSES,
@@ -850,5 +851,51 @@ describe('the passbook withholds staff-only fields from a family reader', () => 
       expect(entry).not.toHaveProperty('notes');
       expect(entry).toMatchObject({ date: '2026-07-31', rpe: 3 });
     });
+  });
+});
+
+/* OD-2026-09-30-004 d3 (owner chose A): the guardian's book matches
+   ParentDigest -- name and completed-session count, no dated rows. */
+describe('getGuardianPassbook', () => {
+  test('returns only the name and the completed-session count', async () => {
+    mockQueryOne
+      .mockResolvedValueOnce({ organization_id: 'org-1', athlete_id: 'ath-1', full_name: 'Avery Boxer' })
+      .mockResolvedValueOnce({ completed: '12' });
+
+    await expect(getGuardianPassbook('org-1', 'ath-1')).resolves.toEqual({
+      athlete: { athlete_id: 'ath-1', full_name: 'Avery Boxer' },
+      completed_sessions: 12,
+    });
+  });
+
+  test('reads no row-returning table and touches sessions only through a completed count', async () => {
+    mockQueryOne
+      .mockResolvedValueOnce({ organization_id: 'org-1', athlete_id: 'ath-1', full_name: 'Avery Boxer' })
+      .mockResolvedValueOnce({ completed: '0' });
+
+    await getGuardianPassbook('org-1', 'ath-1');
+
+    expect(mockQuery).not.toHaveBeenCalled();
+    const sqls = mockQueryOne.mock.calls.map(([sql]) => String(sql));
+    expect(sqls).toHaveLength(2);
+    expect(sqls[0]).toMatch(/select organization_id, athlete_id, full_name\s+from pilot\.athletes/);
+    expect(sqls[1]).toMatch(/select count\(\*\)::text as completed\s+from pilot\.sessions[\s\S]*completed_flag = true/);
+    for (const [, params] of mockQueryOne.mock.calls) {
+      expect(params).toEqual(['org-1', 'ath-1']);
+    }
+  });
+
+  test('returns null without counting when the athlete is missing', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    await expect(getGuardianPassbook('org-1', 'ath-missing')).resolves.toBeNull();
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+  });
+
+  test('fails closed when the athlete row belongs to another organization', async () => {
+    mockQueryOne.mockResolvedValueOnce({ organization_id: 'org-2', athlete_id: 'ath-1', full_name: 'Wrong Organization' });
+
+    await expect(getGuardianPassbook('org-1', 'ath-1')).resolves.toBeNull();
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
   });
 });
