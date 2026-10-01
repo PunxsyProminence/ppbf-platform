@@ -305,8 +305,10 @@ export default function DecisionLoopReviewPage() {
 
      Page memory only. Nothing here is written to storage or sent anywhere
      until a button is pressed; a reload or a sign-out drops every draft. */
-  const [draftsByAthlete, setDraftsByAthlete] = useState<Record<string, Drafts>>({});
-  const drafts = draftsByAthlete[athleteId] ?? EMPTY_DRAFTS;
+  // A Map, not a plain object: the ID box takes any text, and "constructor"
+  // or "toString" looked up on an object finds something that is not a draft.
+  const [draftsByAthlete, setDraftsByAthlete] = useState<ReadonlyMap<string, Drafts>>(new Map());
+  const drafts = draftsByAthlete.get(athleteId) ?? EMPTY_DRAFTS;
   const {
     medicalStatusDraft,
     medicalSourceRef,
@@ -342,26 +344,31 @@ export default function DecisionLoopReviewPage() {
     : '';
 
   function editDraft<K extends keyof Drafts>(key: K, value: Drafts[K]) {
-    setDraftsByAthlete((current) => ({
-      ...current,
-      [athleteId]: { ...(current[athleteId] ?? EMPTY_DRAFTS), [key]: value },
-    }));
+    setDraftsByAthlete((current) =>
+      new Map(current).set(athleteId, { ...(current.get(athleteId) ?? EMPTY_DRAFTS), [key]: value }),
+    );
   }
 
   /* After a write lands: empty the fields it sent -- in the draft of the
      athlete it was sent for, whoever is on screen now, and only where the box
      still holds what was sent. A late answer for athlete A must not wipe what
      the coach has typed for B, or typed again for A; and it must not leave the
-     sent text in A's box to be sent a second time. */
-  function clearSentDrafts(forAthleteId: string, sent: Partial<Drafts>) {
+     sent text in A's box to be sent a second time.
+
+     `links` are the record selections that went with the send. They are
+     emptied whatever they hold: the value sent is the DERIVED one (none, if
+     its record was off screen), so comparing would leave a kept id behind to
+     reappear over empty boxes on the next good read. */
+  function clearSentDrafts(forAthleteId: string, sent: Partial<Drafts>, links: ReadonlyArray<keyof Drafts> = []) {
     setDraftsByAthlete((current) => {
-      const mine = current[forAthleteId];
+      const mine = current.get(forAthleteId);
       if (!mine) return current;
       const next: Drafts = { ...mine };
       for (const key of Object.keys(sent) as Array<keyof Drafts>) {
         if (next[key] === sent[key]) Object.assign(next, { [key]: EMPTY_DRAFTS[key] });
       }
-      return { ...current, [forAthleteId]: next };
+      for (const key of links) Object.assign(next, { [key]: EMPTY_DRAFTS[key] });
+      return new Map(current).set(forAthleteId, next);
     });
   }
 
@@ -503,13 +510,13 @@ export default function DecisionLoopReviewPage() {
        kept per athlete and honoured only while the record they point at is
        loaded: see draftsByAthlete.) */
     setDraftsByAthlete((kept) => {
-      const next: Record<string, Drafts> = {};
-      for (const [id, draft] of Object.entries(kept)) {
-        next[id] = {
+      const next = new Map<string, Drafts>();
+      for (const [id, draft] of kept) {
+        next.set(id, {
           ...draft,
           medicalStatusDraft: EMPTY_DRAFTS.medicalStatusDraft,
           medicalSourceRef: EMPTY_DRAFTS.medicalSourceRef,
-        };
+        });
       }
       return next;
     });
@@ -528,9 +535,10 @@ export default function DecisionLoopReviewPage() {
      is 'restricted'"), or "Incident filed" / "Sent to the family" for a child
      nobody is looking at.
 
-     On a late SUCCESS the submitted draft is still cleared (it was sent; left
-     in the box under B it reads as unsent and one click posts it to B), and
-     the confirmation and the re-read are dropped. On a late FAILURE the
+     On a late SUCCESS the submitted draft is still cleared, in the draft of
+     the athlete it was sent for (it was sent; left in their box it reads as
+     unsent and one click sends it again), and the confirmation and the
+     re-read are dropped. On a late FAILURE the
      server's text is withheld -- it describes A -- but the coach is still
      told that something they did has not gone through: an incident report
      that silently failed is worse than a vague line. */
@@ -557,7 +565,9 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to set medical status.');
-      clearSentDrafts(athleteId, { medicalSourceRef });
+      // The selection goes back to Pending too: a status left selected after
+      // it was set is one click from being set again.
+      clearSentDrafts(athleteId, { medicalSourceRef, medicalStatusDraft });
       if (athleteId !== selectedAthleteRef.current) return;
       await refreshAll(athleteId);
     } catch (error) {
@@ -604,7 +614,7 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to record decision.');
-      clearSentDrafts(athleteId, { decisionText, decisionExpectedOutcome, decisionRecommendationId });
+      clearSentDrafts(athleteId, { decisionText, decisionExpectedOutcome }, ['decisionRecommendationId']);
       if (athleteId !== selectedAthleteRef.current) return;
       await refreshAll(athleteId);
     } catch (error) {
@@ -628,7 +638,7 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to flag near-miss.');
-      clearSentDrafts(athleteId, { nearMissDescription, nearMissDecisionId, nearMissSeverity });
+      clearSentDrafts(athleteId, { nearMissDescription, nearMissSeverity }, ['nearMissDecisionId']);
       if (athleteId !== selectedAthleteRef.current) return;
       await refreshAll(athleteId);
     } catch (error) {

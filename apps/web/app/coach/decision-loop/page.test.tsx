@@ -1576,4 +1576,161 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     await waitFor(() => expect(posts(fetchMock).length).toBeGreaterThan(0));
     await waitFor(() => expect(sentFields()).toBe(''));
   });
+
+  test.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+    'an athlete id of "%s" is just an id: no draft of the previous athlete under it, and nothing of theirs sent',
+    async (oddId) => {
+      // The ID box takes any text. Looked up on a plain object, these names
+      // find something that is not a draft, and the boxes kept A's text.
+      const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+        const key = String(url);
+        if (init?.method === 'POST') return jsonResponse({ ok: true });
+        if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+        if (key.includes('athleteId=ath-a')) {
+          if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS });
+          if (key.includes('/recommendations')) return jsonResponse({ recommendations: [A_RECOMMENDATION] });
+          if (key.includes('/decisions')) return jsonResponse({ decisions: [A_DECISION] });
+          return jsonResponse({ nearMisses: [A_NEAR_MISS] });
+        }
+        if (key.includes('/medical-status')) return jsonResponse({ status: null });
+        if (key.includes('/recommendations')) return jsonResponse({ recommendations: [] });
+        if (key.includes('/decisions')) return jsonResponse({ decisions: [] });
+        return jsonResponse({ nearMisses: [] });
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+      await openAthleteA();
+      type('Message', A_TEXT);
+      type('New status', 'cleared');
+      type('Source reference (optional)', A_TEXT);
+      type('What happened', A_TEXT);
+
+      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: oddId } });
+      await screen.findByText('No medical administrative status recorded yet.');
+
+      expect(field<HTMLTextAreaElement>('Message').value).toBe('');
+      expect(field<HTMLSelectElement>('New status').value).toBe('pending');
+      expect(field<HTMLInputElement>('Source reference (optional)').value).toBe('');
+      expect(field<HTMLTextAreaElement>('What happened').value).toBe('');
+
+      // Typing under the odd id and sending carries only what was typed there.
+      type('Message', 'for the odd id');
+      fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+      await waitFor(() => expect(posts(fetchMock)).toHaveLength(1));
+      expect(posts(fetchMock)[0].body).toEqual({
+        entity_type: 'coach_note',
+        athlete_id: oddId,
+        payload: { note_type: 'parent_message', note_text: 'for the odd id' },
+      });
+
+      // And A's draft is still A's.
+      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+      await screen.findByText(/ref-for-athlete-a/);
+      expect(field<HTMLTextAreaElement>('Message').value).toBe(A_TEXT);
+      expect(errors).not.toHaveBeenCalled();
+      errors.mockRestore();
+    },
+  );
+
+  test('a link to a recommendation that is no longer open is not sent, and the selector does not offer it', async () => {
+    let rejected = false;
+    const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+      const key = String(url);
+      if (init?.method === 'POST') {
+        if (key.includes('/medical-status')) rejected = true;
+        return jsonResponse({ ok: true });
+      }
+      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+      if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS });
+      if (key.includes('/recommendations')) {
+        return jsonResponse({ recommendations: [{ ...A_RECOMMENDATION, status: rejected ? 'rejected' : 'provisional' }] });
+      }
+      if (key.includes('/decisions')) return jsonResponse({ decisions: [A_DECISION] });
+      return jsonResponse({ nearMisses: [A_NEAR_MISS] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await openAthleteA();
+    type('Link to recommendation (optional)', 'rec-a');
+    type('Decision text', 'decision for A');
+    type('Expected outcome', 'outcome for A', 'Decisions');
+
+    // A re-read comes back with the recommendation rejected.
+    fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+    await screen.findByText('rejected');
+
+    expect(field<HTMLSelectElement>('Link to recommendation (optional)').value).toBe('');
+    fireEvent.click(screen.getByRole('button', { name: 'Record Decision' }));
+    await waitFor(() => expect(posts(fetchMock).some((post) => post.url.includes('/shadow/decisions'))).toBe(true));
+    expect(posts(fetchMock).find((post) => post.url.includes('/shadow/decisions'))?.body.recommendationId).toBeUndefined();
+  });
+
+  test('a link that was off screen when its decision was sent does not come back afterwards', async () => {
+    // Sent as "None" because A's lists could not be read. Once they can be,
+    // the old link must not reappear over an emptied form.
+    let failReads = false;
+    const fetchMock = installSwitchFetch({
+      readA: () => {
+        if (failReads) throw new Error('Network request failed');
+        return jsonResponse({});
+      },
+    });
+    await openAthleteA();
+    type('Link to recommendation (optional)', 'rec-a');
+    type('Related decision (optional)', 'dec-a');
+    type('Decision text', 'decision for A');
+    type('Expected outcome', 'outcome for A', 'Decisions');
+    type('Description', 'near miss for A');
+
+    failReads = true;
+    switchToB();
+    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    await screen.findByText(/medical administrative status could not be read/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Record Decision' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
+    await waitFor(() => expect(posts(fetchMock)).toHaveLength(2));
+    await settle();
+
+    failReads = false;
+    switchToB();
+    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    await screen.findByText(/ref-for-athlete-a/);
+
+    expect(field<HTMLSelectElement>('Link to recommendation (optional)').value).toBe('');
+    expect(field<HTMLSelectElement>('Related decision (optional)').value).toBe('');
+  });
+
+  test('after a send, the selections that went with it are back to their defaults', async () => {
+    const fetchMock = installSwitchFetch();
+    await openAthleteA();
+
+    type('New status', 'cleared');
+    fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+    await waitFor(() => expect(field<HTMLSelectElement>('New status').value).toBe('pending'));
+
+    type('Link to recommendation (optional)', 'rec-a');
+    type('Decision text', 'decision for A');
+    type('Expected outcome', 'outcome for A', 'Decisions');
+    fireEvent.click(screen.getByRole('button', { name: 'Record Decision' }));
+    await waitFor(() => expect(field<HTMLTextAreaElement>('Decision text').value).toBe(''));
+    expect(field<HTMLSelectElement>('Link to recommendation (optional)').value).toBe('');
+
+    type('Description', 'near miss for A');
+    type('Severity', 'critical', 'Near-Misses');
+    type('Related decision (optional)', 'dec-a');
+    fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
+    await waitFor(() => expect(field<HTMLTextAreaElement>('Description').value).toBe(''));
+    expect(field<HTMLSelectElement>('Severity', 'Near-Misses').value).toBe('low');
+    expect(field<HTMLSelectElement>('Related decision (optional)').value).toBe('');
+
+    type('What happened', 'incident for A');
+    type('Severity', 'critical', 'Report Incident');
+    type('When it happened (optional, if not today)', '2026-08-05');
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+    await screen.findByText('Incident filed -- it is now in the escalation queue.');
+    expect(field<HTMLSelectElement>('Severity', 'Report Incident').value).toBe('high');
+    expect(field<HTMLInputElement>('When it happened (optional, if not today)').value).toBe('');
+
+    expect(posts(fetchMock).find((post) => post.url.includes('/shadow/decisions'))?.body.recommendationId).toBe('rec-a');
+    expect(posts(fetchMock).find((post) => post.url.includes('/near-misses'))?.body).toMatchObject({ decisionId: 'dec-a', severity: 'critical' });
+  });
 });

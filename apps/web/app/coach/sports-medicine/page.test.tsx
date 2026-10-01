@@ -1299,3 +1299,160 @@ describe('one row’s refusal is not erased by another row', () => {
     expect(screen.getByRole('button', { name: 'Place a training hold' })).toBeTruthy();
   });
 });
+
+describe('whose refusal is whose, and when it goes', () => {
+  const SECOND = { athlete_id: 'ath-2', full_name: 'Riley Poe' };
+
+  function rowOf(name: string): HTMLElement {
+    return screen.getByText(name).closest('li') as HTMLElement;
+  }
+
+  /** Jordan has no hold and every place is refused; Riley has a hold. */
+  function boardWithRefusals(options: { failRereadFor?: string } = {}) {
+    const reads: Record<string, number> = {};
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as { action: string; athlete_id?: string };
+        if (body.action === 'lift') {
+          return { ok: false, status: 400, json: async () => ({ error: 'Lift refused for Riley.' }) } as Response;
+        }
+        return { ok: false, status: 400, json: async () => ({ error: `Refused for ${body.athlete_id}.` }) } as Response;
+      }
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, SECOND] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        const id = url.includes('athlete_id=ath-2') ? 'ath-2' : 'ath-1';
+        reads[id] = (reads[id] ?? 0) + 1;
+        if (options.failRereadFor === id && reads[id] > 1) {
+          return { ok: false, status: 503, json: async () => ({}) } as Response;
+        }
+        return { ok: true, json: async () => ({ ok: true, holds: id === 'ath-2' ? [HOLD] : [] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  async function refuseJordan() {
+    render(<SportsMedicinePage />);
+    await screen.findByText('Riley Poe');
+    fireEvent.click(within(rowOf('Jordan Doe')).getByRole('button', { name: 'Place a training hold' }));
+    fireEvent.change(await screen.findByLabelText(/What this athlete reads/), { target: { value: 'Sentence for Jordan.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+    await within(rowOf('Jordan Doe')).findByText('Refused for ath-1.');
+  }
+
+  test('lifting (and being refused) on another row leaves this row’s refusal in place', async () => {
+    boardWithRefusals();
+    await refuseJordan();
+
+    fireEvent.click(within(rowOf('Riley Poe')).getByRole('button', { name: 'Lift this hold' }));
+    await within(rowOf('Riley Poe')).findByText('Lift refused for Riley.');
+
+    expect(within(rowOf('Jordan Doe')).getByText('Refused for ath-1.')).toBeTruthy();
+    expect(within(rowOf('Riley Poe')).queryByText('Refused for ath-1.')).toBeNull();
+  });
+
+  test('a row’s own next action clears its own refusal: placing again, and cancelling', async () => {
+    boardWithRefusals();
+    await refuseJordan();
+    const jordan = within(rowOf('Jordan Doe'));
+
+    // Placing again: the old stamp goes while the new attempt is out, then
+    // the new answer lands.
+    fireEvent.change(jordan.getByLabelText(/What this athlete reads/), { target: { value: 'A second sentence.' } });
+    fireEvent.click(jordan.getByRole('button', { name: 'Place hold' }));
+    await jordan.findByText('Refused for ath-1.');
+
+    fireEvent.click(jordan.getByRole('button', { name: 'Cancel' }));
+    expect(jordan.queryByText('Hold Not Placed')).toBeNull();
+    expect(within(rowOf('Riley Poe')).queryByText('Hold Not Placed')).toBeNull();
+  });
+
+  test('a row’s own refused lift is cleared when it lifts again', async () => {
+    boardWithRefusals();
+    render(<SportsMedicinePage />);
+    await screen.findByText('Riley Poe');
+    const riley = within(rowOf('Riley Poe'));
+    fireEvent.click(riley.getByRole('button', { name: 'Lift this hold' }));
+    await riley.findByText('Hold Not Lifted');
+
+    let sawItGone = false;
+    const observer = new MutationObserver(() => {
+      if (!within(rowOf('Riley Poe')).queryByText('Hold Not Lifted')) sawItGone = true;
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    fireEvent.click(riley.getByRole('button', { name: 'Lift this hold' }));
+    await riley.findByText('Hold Not Lifted');
+    observer.disconnect();
+
+    expect(sawItGone).toBe(true);
+  });
+
+  test('"write the sentence" is about the open form and goes when another row’s form replaces it', async () => {
+    const THIRD = { athlete_id: 'ath-3', full_name: 'Sam Lee' };
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, THIRD] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Lee');
+    fireEvent.click(within(rowOf('Jordan Doe')).getByRole('button', { name: 'Place a training hold' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Place hold' }));
+    await within(rowOf('Jordan Doe')).findByText(/Write the sentence this athlete reads/);
+
+    fireEvent.click(within(rowOf('Sam Lee')).getByRole('button', { name: 'Place a training hold' }));
+
+    // Jordan's form is gone, and so is the prompt about it.
+    expect(screen.queryByText(/Write the sentence this athlete reads/)).toBeNull();
+    expect(within(rowOf('Jordan Doe')).queryByText('Hold Not Placed')).toBeNull();
+  });
+
+  test('a late refusal for one row whose re-read FAILS does not close another row’s open form', async () => {
+    let release: ((response: Response) => void) | undefined;
+    const held = new Promise<Response>((resolve) => { release = resolve; });
+    const THIRD = { athlete_id: 'ath-3', full_name: 'Sam Lee' };
+    let jordanReads = 0;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') return held;
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, THIRD] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('athlete_id=ath-1')) {
+        jordanReads += 1;
+        if (jordanReads > 1) return { ok: false, status: 503, json: async () => ({}) } as Response;
+      }
+      if (url.includes('/training-holds')) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Lee');
+    fireEvent.click(within(rowOf('Jordan Doe')).getByRole('button', { name: 'Place a training hold' }));
+    fireEvent.change(await screen.findByLabelText(/What this athlete reads/), { target: { value: 'Sentence for Jordan.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+    await within(rowOf('Jordan Doe')).findByRole('button', { name: 'Placing…' });
+
+    fireEvent.click(within(rowOf('Sam Lee')).getByRole('button', { name: 'Place a training hold' }));
+    // Jordan's own open control is locked while Jordan's place is still out.
+    expect((within(rowOf('Jordan Doe')).getByRole('button', { name: 'Place a training hold' }) as HTMLButtonElement).disabled).toBe(true);
+    const sam = within(rowOf('Sam Lee'));
+    fireEvent.change(sam.getByLabelText(/What this athlete reads/), { target: { value: 'Sentence for Sam, half written' } });
+
+    release?.({ ok: false, status: 409, json: async () => ({ error: 'Hold already exists -- lift it first' }) } as Response);
+    await within(rowOf('Jordan Doe')).findByText(/Training hold could not be read/);
+
+    expect((sam.getByLabelText(/What this athlete reads/) as HTMLTextAreaElement).value).toBe('Sentence for Sam, half written');
+    expect(within(rowOf('Jordan Doe')).getByText('Hold Not Placed')).toBeTruthy();
+  });
+});

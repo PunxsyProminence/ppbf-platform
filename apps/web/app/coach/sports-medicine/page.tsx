@@ -113,6 +113,9 @@ interface Refusal {
   athleteId: string;
   stamp: string;
   message: string;
+  // Said by this page about its own form, not by the server: it has nothing
+  // to say once that form is gone.
+  aboutTheOpenForm?: boolean;
 }
 
 // Room DNA (clinic): --locked (#A81E22) marks a medical or safeguarding FACT;
@@ -177,12 +180,12 @@ export default function SportsMedicinePage() {
   // One refusal per athlete. With a single slot for the board, pressing a
   // button on one row erased the "Hold Not Placed" stamp on another: a child
   // who is NOT held, and whose row no longer said so.
-  const [refusals, setRefusals] = useState<Record<string, Refusal>>({});
+  const [refusals, setRefusals] = useState<ReadonlyMap<string, Refusal>>(new Map());
   const setRefusalFor = useCallback((athleteId: string, refusal: Refusal | null) => {
     setRefusals((current) => {
-      const next = { ...current };
-      if (refusal) next[athleteId] = refusal;
-      else delete next[athleteId];
+      const next = new Map(current);
+      if (refusal) next.set(athleteId, refusal);
+      else next.delete(athleteId);
       return next;
     });
   }, []);
@@ -351,6 +354,7 @@ export default function SportsMedicinePage() {
         athleteId,
         stamp: 'Hold Not Placed',
         message: 'Write the sentence this athlete reads. A hold with no explanation for the child is not placed.',
+        aboutTheOpenForm: true,
       });
       return;
     }
@@ -538,7 +542,7 @@ export default function SportsMedicinePage() {
               {rows.map((row) => {
                 const badge = clearanceBadge(row);
                 const busy = busyAthletes.has(row.athlete_id);
-                const rowRefusal = refusals[row.athlete_id] ?? null;
+                const rowRefusal = refusals.get(row.athlete_id) ?? null;
                 return (
                   <li key={row.athlete_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                     <div className="flex flex-wrap items-center gap-[var(--s3)]">
@@ -778,6 +782,12 @@ export default function SportsMedicinePage() {
                             disabled={row.hold_read === 'unavailable' || busy}
                             aria-describedby={row.hold_read === 'unavailable' ? `hold-unread-${row.athlete_id}` : undefined}
                             onClick={() => {
+                              // Opening this row's form discards whichever form
+                              // was open. A prompt about THAT form ("write the
+                              // sentence") goes with it; what the server said
+                              // about another row stays on that row.
+                              const discarded = placing?.athleteId;
+                              if (discarded && refusals.get(discarded)?.aboutTheOpenForm) setRefusalFor(discarded, null);
                               setPlacing({ athleteId: row.athlete_id, form: { ...EMPTY_FORM } });
                               setRefusalFor(row.athlete_id, null);
                             }}
