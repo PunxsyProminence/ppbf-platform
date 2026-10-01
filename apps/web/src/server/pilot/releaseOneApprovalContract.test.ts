@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -59,15 +60,24 @@ function codeLines(text: string): string[] {
   return text.split('\n').filter((line) => !/^\s*#/.test(line));
 }
 
-/** One job: its key line through the line before the next 2-space key. */
+/**
+ * One job: its key line through the line before the next key at two spaces or
+ * fewer.
+ *
+ * A COMMENT at that depth does not end the job. The first version stopped at
+ * any shallow line, so a `# note` at column 0 followed by one more step put
+ * that step outside everything this suite reads.
+ */
 function jobText(workflow: string, job: string): string {
   const lines = workflow.split('\n');
   const start = lines.indexOf(`  ${job}:`);
   if (start === -1) throw new Error(`no job named ${job}`);
   let end = start + 1;
-  while (end < lines.length && !/^ {0,2}\S/.test(lines[end])) end += 1;
+  while (end < lines.length && !(/^ {0,2}\S/.test(lines[end]) && !/^\s*#/.test(lines[end]))) end += 1;
   return lines.slice(start, end).join('\n');
 }
+
+const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
 
 /** The lines of a job above its `steps:` -- environment, needs, concurrency. */
 function jobHeader(job: string): string[] {
@@ -225,6 +235,7 @@ const OWN: Record<'staging' | 'production', string[]> = {
     'Verify The Checkout Is The Frozen Commit',
     'Apply Staging Migrations',
     'Refuse Promotion While The Gate Athlete Fixture May Be Live',
+    'Say Whether The Staging Gate Ran',
   ],
   production: [
     'Refuse A Re-Run, A Wrong Ref Or A Wrong Commit',
@@ -257,7 +268,168 @@ const OMITTED: Record<SourceFile, Record<string, string>> = {
   'deploy-production.yml': {},
 };
 
+/**
+ * Source jobs whose steps are not copied step for step, because one step of
+ * this workflow stands in for several of theirs. Each of their steps is named
+ * with what replaces it, for the same reason OMITTED exists: a check ADDED to
+ * deploy-production's `guard` job, or to apply-migrations, fails this suite
+ * until someone decides whether this workflow needs it too.
+ */
+const REPLACED: Record<string, { file: string; job: string; steps: Record<string, string> }> = {
+  'deploy-production.yml guard': {
+    file: 'deploy-production.yml',
+    job: 'guard',
+    steps: {
+      'Verify running from main': 'The ref check in "Refuse A Re-Run, A Wrong Ref Or A Wrong Commit", first step of both jobs.',
+      'Verify supplied SHA matches the checked-out commit':
+        'The empty and mismatch checks on confirm_sha in the same step, plus "Verify The Checkout Is The Frozen Commit".',
+      'Verify migration confirmation':
+        'No counterpart, on purpose: there is no attestation. The run applies the migrations and the schema check verifies them.',
+      'Verify supplied release digest format':
+        '"Verify The Staged Digest Was Handed On", the same sha256 pattern applied to the staging job output.',
+    },
+  },
+  'apply-migrations.yml apply': {
+    file: 'apply-migrations.yml',
+    job: 'apply',
+    steps: {
+      'Confirm The Operator Named The Intended Target':
+        'confirm_production must be retyped as "production"; staging is not a choice, it is always the first half.',
+      'Resolve Target Resource Group':
+        'Production: the copied "Resolve Production Resource Group". Staging: the job-level literal, as in deploy-staging.yml.',
+      'Checkout Source Code': 'Copied from the deploy workflow of each job.',
+      'Set up Node': 'Copied from the deploy workflow of each job ("Set up Node For The Schema Check").',
+      'Install Locked Dependencies': 'Copied from the deploy workflow of each job.',
+      'Authenticate via Azure OIDC': 'Copied from the deploy workflow of each job.',
+      'Resolve Database Connection':
+        'Inside "Apply <Environment> Migrations", where the connection string stays in the step. The repository-variable '
+        + 'override of the expected host and database is NOT carried: the expected target is always derived.',
+      'Apply Migration':
+        '"Apply <Environment> Migrations": the `all` arm only, with the list read through migration-apply-order.mjs.',
+      'Record What Ran': '"Report What Production Now Runs" for production; the staging job has no counterpart.',
+    },
+  },
+};
+
+/**
+ * Everything in the workflow that is NOT a copied step, by SHA-256.
+ *
+ * The copied steps are held to their sources. That leaves the parts written
+ * for this workflow -- its triggers and permissions, each job's header, and
+ * the steps of its own -- and a list of properties cannot enumerate every way
+ * those could be weakened: `exit 0` at the top of the re-run guard, `|| true`
+ * in the migration loop, `continue-on-error` on the digest check,
+ * `defaults.run.shell` dropping `-e`, a self-hosted runner. An adversarial
+ * review found fourteen such edits the property tests did not see.
+ *
+ * So those parts are frozen. ANY change to one fails here, by name. That is
+ * not a claim the frozen text is right -- the property tests and the mutation
+ * proofs in the pull request argue that. It is a tripwire: you changed a part
+ * of the production release path that nothing else holds still, so re-read it,
+ * re-run the mutation proofs, and update the digest in the same change.
+ * The failure message prints the new value.
+ */
+const FROZEN: Record<string, string> = {
+  'workflow preamble (name, on, permissions, concurrency)': '90d4169d89a37190fd646f3ae8a9faa0fc62f84e4ad2873b373649e08ec314ec',
+  'staging job header': 'ad6b5068b92f343c5c5afd2c09c247593f798d7b52db470df09db24021e3a21d',
+  'production job header': '726676291ac4a79e79edd6f14f692dba81885f812bcbbfad753e6c891adb1366',
+  'staging: Refuse A Re-Run, A Wrong Ref Or A Wrong Commit': '36c3659904b636fb1b42fd435e89d136880e804cf34a589aa2de07d108dbc4cb',
+  'staging: Verify The Checkout Is The Frozen Commit': '7d97d51267ee66fb7109f05a7c20457250d0ca82647ca3b315e617b564b5d7a8',
+  'staging: Apply Staging Migrations': '1b525f6a569b158017cfd6b41f42553b7c8c5d3860b8d600c6b3a7f65cf83a21',
+  'staging: Refuse Promotion While The Gate Athlete Fixture May Be Live': 'ab309b7c837d4badb5b0a7f6712a883d31eaa75c1b072b2d490b523a623da070',
+  'staging: Say Whether The Staging Gate Ran': '4772b8f04643af15e6f7e2b6223277d98d792efd4edeb4427273dfa257b76afc',
+  'production: Refuse A Re-Run, A Wrong Ref Or A Wrong Commit': '36c3659904b636fb1b42fd435e89d136880e804cf34a589aa2de07d108dbc4cb',
+  'production: Verify The Staged Digest Was Handed On': 'be2771b43627ff52c12b39f1da879377162e582852816d7f12ad8550751c0caf',
+  'production: Verify The Checkout Is The Frozen Commit': '7d97d51267ee66fb7109f05a7c20457250d0ca82647ca3b315e617b564b5d7a8',
+  'production: Apply Production Migrations': '09d034ab01c0a7d64cc0e670b73c6d19bf6758e6c56f5dc6581c8466aa52a519',
+  'production: Report What Production Now Runs': '4d4976186939a489a093009064c1c5b7bbd7f11e014cb5997eb237a225905744',
+};
+
 const GUARD = 'Refuse A Re-Run, A Wrong Ref Or A Wrong Commit';
+
+describe('release-one-approval: nothing sits outside a named, accounted-for step', () => {
+  const stepRegion = (job: string): string[] => {
+    const lines = jobText(release, job).split('\n');
+    return lines.slice(lines.indexOf('    steps:') + 1);
+  };
+
+  test('the top-level keys are the five expected, and jobs is the last', () => {
+    expect(codeLines(release).filter((line) => /^\S/.test(line)))
+      .toEqual(['name: release-one-approval', 'on:', 'permissions:', 'concurrency:', 'jobs:']);
+  });
+
+  test('the production job runs to the end of the file', () => {
+    // Otherwise something follows it that no test here reads.
+    const jobs = release.slice(release.indexOf('\njobs:\n') + 1);
+    expect(jobs).toBe(`jobs:\n${jobText(release, 'staging')}\n${jobText(release, 'production')}`);
+  });
+
+  test.each(['staging', 'production'])('every step of the %s job has a name, and the first line is one', (job) => {
+    const region = stepRegion(job);
+    // A step is found by its `- name:` line. One written `- run:` or
+    // `- uses:` has no such line: ahead of the first named step it belongs to
+    // nothing, and after one it folds into that step's text.
+    const firstCode = region.find((line) => line.trim() !== '' && !/^\s*#/.test(line));
+    expect(firstCode).toMatch(/^ {6}- name: \S/);
+
+    const items = codeLines(region.join('\n')).filter((line) => /^ {0,7}- /.test(line));
+    expect(items.filter((line) => !/^ {6}- name: \S/.test(line))).toEqual([]);
+
+    // And nothing in the region is shallower than a step.
+    expect(codeLines(region.join('\n')).filter((line) => line.trim() !== '' && !/^ {6}/.test(line))).toEqual([]);
+  });
+
+  test('the app is updated exactly twice in the whole file, once per copied deploy step', () => {
+    // The environment inventory, token budget and provider timeout tests each
+    // insist on ONE assignment block per deploy workflow. Step parity holds
+    // this file's two blocks equal to those. This holds that there is no
+    // third: a second update anywhere would deploy values nothing inventoried.
+    const code = codeLines(release);
+    expect(code.filter((line) => /containerapp\s+update/.test(line))).toHaveLength(2);
+    expect(code.filter((line) => /--set-env-vars/.test(line))).toHaveLength(2);
+    expect(code.filter((line) => /--(replace|remove)-env-vars|containerapp\s+(secret\s+set|revision\s+(copy|set-mode|activate|deactivate)|ingress)/.test(line)))
+      .toEqual([]);
+
+    for (const [steps, name] of [
+      [staging, 'Deploy to Azure Container App'],
+      [production, 'Deploy Tested Digest to Azure Container App (Production)'],
+    ] as const) {
+      const text = codeLines(step(steps, name).text).join('\n');
+      expect(text.match(/containerapp\s+update/g)).toHaveLength(1);
+      expect(text.match(/--set-env-vars/g)).toHaveLength(1);
+    }
+  });
+
+  test('every part that is not a copied step is frozen', () => {
+    const preamble = release.slice(release.indexOf('\nname: ') + 1, release.indexOf('\njobs:\n') + 1);
+    const header = (job: string): string => {
+      const lines = jobText(release, job).split('\n');
+      return lines.slice(0, lines.indexOf('    steps:') + 1).join('\n');
+    };
+
+    const actual: Record<string, string> = {
+      'workflow preamble (name, on, permissions, concurrency)': sha256(preamble),
+      'staging job header': sha256(header('staging')),
+      'production job header': sha256(header('production')),
+    };
+    for (const name of OWN.staging) actual[`staging: ${name}`] = sha256(step(staging, name).text);
+    for (const name of OWN.production) actual[`production: ${name}`] = sha256(step(production, name).text);
+
+    expect(actual).toEqual(FROZEN);
+  });
+
+  test.each(Object.entries(REPLACED))(
+    'every step of %s is named with what stands in for it',
+    (_label, { file, job, steps }) => {
+      const names = stepsOf(jobText(readWorkflow(file), job)).map((candidate) => candidate.name);
+      expect(names.length).toBeGreaterThan(3);
+      expect(names.filter((name) => !(name in steps))).toEqual([]);
+      expect(Object.keys(steps).filter((name) => !names.includes(name))).toEqual([]);
+      expect(Object.entries(steps).filter(([, reason]) => reason.trim().length < 40).map(([name]) => name))
+        .toEqual([]);
+    },
+  );
+});
 
 describe('release-one-approval: one run, two jobs, one production approval', () => {
   test('the workflow was read and its steps were found (guard against a vacuous suite)', () => {
@@ -475,7 +647,13 @@ describe('release-one-approval: staging builds once and hands the digest on', ()
     const refusal = step(staging, 'Refuse Promotion While The Gate Athlete Fixture May Be Live').text;
     // Keyed on that step's own outcome: a continue-on-error step's failure
     // never sets failure(), so nothing else would see it.
-    expect(refusal).toMatch(/^ {8}if: always\(\) && steps\.deactivate-gate-athlete\.outcome == 'failure'$/m);
+    // And only when this run minted a PIN: the cleanup is always(), so after
+    // an early refusal it runs with no connection and fails, with no
+    // credential anywhere to be live.
+    expect(refusal).toMatch(
+      /^ {8}if: always\(\) && steps\.mint-gate-pin\.outcome == 'success' && steps\.deactivate-gate-athlete\.outcome == 'failure'$/m,
+    );
+    expect(step(staging, 'Mint Ephemeral Gate Athlete PIN').text).toMatch(/^ {8}id: mint-gate-pin$/m);
     expect(refusal).not.toMatch(/continue-on-error/);
     // The last thing the script does, unconditionally.
     expect(refusal.trimEnd().split('\n').pop()).toBe('          exit 1');
@@ -697,7 +875,7 @@ describe('release-one-approval: every copied step equals its source', () => {
     expect(unreasoned).toEqual([]);
   });
 
-  test('only id lines are ignored by the comparison, and only these three were added', () => {
+  test('only id lines are ignored by the comparison, and these are all the ids in the file', () => {
     const added = [...staging, ...production]
       .flatMap(({ name, text }) => text.split('\n').filter((line) => /^ {8}id: /.test(line)).map((line) => `${name} | ${line.trim()}`))
       .sort();
@@ -707,6 +885,7 @@ describe('release-one-approval: every copied step equals its source', () => {
       'Build and Push Container Image to ACR | id: build-image',
       'Deactivate Gate Athlete Fixture | id: deactivate-gate-athlete',
       'Deploy Tested Digest to Azure Container App (Production) | id: deploy-production',
+      'Mint Ephemeral Gate Athlete PIN | id: mint-gate-pin',
       'Pilot API Smoke Checks | id: smoke',
     ]);
   });
@@ -718,6 +897,12 @@ describe('release-one-approval: every run block is parseable shell', () => {
     const lines = release.split('\n');
     const found: { line: number; script: string }[] = [];
     lines.forEach((line, index) => {
+      // The one-line form too: `run: npm ci` is shell like any other.
+      const inline = /^\s+run: (?!\|)(\S.*)$/.exec(line);
+      if (inline) {
+        found.push({ line: index + 1, script: inline[1] });
+        return;
+      }
       if (!/\brun: \|\s*$/.test(line)) return;
       const openIndent = line.length - line.trimStart().length;
       const body: string[] = [];

@@ -435,6 +435,7 @@ jobs:
           echo "GATE_DEFAULT_ORG_ID=$ORG_ID" >> "$GITHUB_ENV"
 
       - name: Mint Ephemeral Gate Athlete PIN
+        id: mint-gate-pin
         if: inputs.enable_shadow_gate
         run: |
           PIN="$(python3 - <<'PY'
@@ -618,8 +619,13 @@ jobs:
       # verdict is what releases the production approval, and "a working PIN
       # may still be live on a public login" is not promotion-ready. So this
       # one FAILS the job, and the production job never starts.
+      #
+      # Only when this run actually minted a PIN. The cleanup step is always(),
+      # so it also runs -- and fails, for want of a connection -- after a
+      # refusal or a failed migration that happened before any PIN existed.
+      # Crying "credential may be live" there would bury the real failure.
       - name: Refuse Promotion While The Gate Athlete Fixture May Be Live
-        if: always() && steps.deactivate-gate-athlete.outcome == 'failure'
+        if: always() && steps.mint-gate-pin.outcome == 'success' && steps.deactivate-gate-athlete.outcome == 'failure'
         run: |
           echo "::error title=Gate athlete fixture may still be live::Deactivating gate_shadow_athlete (athlete GATE-SHADOW-ATH-1) FAILED. Its ephemeral PIN may still authenticate against the staging login. Production will not be offered for approval. Clear the fixture, then dispatch a fresh run."
 
@@ -634,6 +640,23 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           exit 1
+
+      # The approver reads this run page. With the gate off, staging was
+      # deployed and its revision is serving, and nothing exercised it.
+      - name: Say Whether The Staging Gate Ran
+        env:
+          GATE_ENABLED: ${{ inputs.enable_shadow_gate }}
+        run: |
+          {
+            echo ''
+            echo '### Staging gate'
+            echo ''
+            if [ "$GATE_ENABLED" = "true" ]; then
+              echo 'The SHADOW E2E gate, the guardian-contact probe and the runtime ledger ran and passed on the staging revision this run deployed.'
+            else
+              echo '**The staging gate was OFF for this run (enable_shadow_gate=false).** Staging was migrated and deployed and its new revision is serving, but no probe exercised it. Approving production promotes an image whose behaviour on staging nothing checked.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report Release Digest Last
         if: always()
@@ -1119,8 +1142,10 @@ jobs:
               echo 'Production runs this commit and this digest.'
             elif [ "$DEPLOY_OUTCOME" = "success" ]; then
               echo '**The image was updated but the run did not finish green.** Read the failed step before calling this deployed.'
+            elif [ "$DEPLOY_OUTCOME" = "failure" ] || [ "$DEPLOY_OUTCOME" = "cancelled" ]; then
+              echo '**The deploy step did not finish, and whether production changed is NOT known from this run.** If it stopped before the update command, nothing changed; if the update was sent, Azure may still roll the new revision out. Production migrations were applied. Read back the running image digest and PPBF_RELEASE_SHA before doing anything else.'
             elif [ -n "$MIGRATE_OUTCOME" ] && [ "$MIGRATE_OUTCOME" != "skipped" ]; then
-              echo '**This is NOT a production deploy.** Production migrations were attempted and the deploy did not complete: production schema may be AHEAD of the running app. Nothing is rolled back. Fix the cause and dispatch a fresh run; the migrations are idempotent.'
+              echo '**This is NOT a production deploy.** Production migrations were attempted and the deploy step was never reached: production schema may be AHEAD of the running app. Nothing is rolled back. Fix the cause and dispatch a fresh run; the migrations are idempotent.'
             else
               echo 'Nothing was written to production: the run stopped at a read-only refusal.'
             fi

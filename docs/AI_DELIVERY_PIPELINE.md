@@ -160,9 +160,16 @@ own.
   pair.
 
 A release that needs Jason's signed-in look at staging (sign-in, minors' data
-or safety screens) CAN use it: the run waits at the approval for as long as he
-needs, with the new image live on staging. Nothing in the workflow checks that
-he looked. That check stays a rule the operator keeps.
+or safety screens) CAN use it: the run waits at the approval while he looks,
+with the new image live on staging (GitHub ends a pending approval after 30
+days). Nothing in the workflow checks that he looked. That check stays a rule
+the operator keeps.
+
+`enable_shadow_gate: false` skips the SHADOW E2E gate, the guardian-contact
+probe and the runtime ledger. What is left before the approval is the schema
+check and the revision reaching 100% of traffic: no request is made to
+staging. The run summary says so in a "Staging gate" section. Leave it on
+unless Jason has said otherwise for that release.
 
 ### Dispatch
 
@@ -183,15 +190,24 @@ the `staging` job's output; the migrations are applied and verified by the run.
 - **`staging` failed.** Production was never offered. Staging may still have
   been migrated and deployed (the deploy and its gates are different steps).
 - **`staging` failed at "Refuse Promotion While The Gate Athlete Fixture May
-  Be Live".** The gate athlete's PIN may still work on staging's public login.
-  Clear it before anything else. `deploy-staging` only reports this; here it
-  stops the release.
+  Be Live".** This run minted a gate PIN and could not deactivate the account,
+  so the PIN may still work on staging's public login. Clear it before
+  anything else. `deploy-staging` only reports this; here it stops the
+  release. (A red "Deactivate Gate Athlete Fixture" WITHOUT this step means
+  the run failed before any PIN was minted; read the earlier failure.)
 - **`production` failed before "Apply Production Migrations".** Nothing was
   written to production.
-- **`production` failed at or after "Apply Production Migrations" and before
-  the deploy completed.** This is NOT `PRODUCTION_DEPLOYED`. Production's
-  schema may be AHEAD of the running app. Nothing is rolled back. Fix the
-  cause and dispatch a fresh run; the migrations are idempotent.
+- **`production` failed at "Apply Production Migrations", or after it and
+  before the deploy step started.** This is NOT `PRODUCTION_DEPLOYED`.
+  Production's schema may be AHEAD of the running app. Nothing is rolled back.
+  Fix the cause and dispatch a fresh run; the migrations are idempotent.
+- **The deploy step itself failed or was cancelled.** Whether production
+  changed is NOT known from the run: if the update command was sent, Azure may
+  still roll the revision out. Read back the running image digest and
+  `PPBF_RELEASE_SHA` (*Verify production* below) before doing anything else.
+- **The deploy step succeeded and a later step failed.** The image was
+  updated. Read the failed step: the wait step failing means the new revision
+  did not take traffic.
 - **Green.** `PRODUCTION_DEPLOYED` for that commit and digest. *Verify
   production* below still applies before `PRODUCTION_RUNTIME_VERIFIED`.
 
@@ -244,8 +260,27 @@ step; approving it changes nothing. Dispatch a fresh run.
    `confirm_target: production`, `migration: list-check` (it touches no
    database). Note whether it is pending behind A or itself waiting for
    approval, then cancel it. Record the answer here.
-4. Record all three with the run ids in this section, replacing "It has never
+4. **Run the whole `all` list against staging once, on its own.** This
+   workflow applies every routine migration on every run. Recent
+   `apply-migrations` runs applied single migrations (their apply step took a
+   second or less, read from run history 2026-10-01), so the full list has not
+   recently been re-applied in one pass, and its first pass against production
+   should not be the first pass anywhere. Dispatch `apply-migrations` with
+   `target: staging`, `migration: all`, and read every runner's output.
+5. Record all four with the run ids in this section, replacing "It has never
    been run".
+
+Two differences from `apply-migrations` to know: the repository variables
+`PPBF_EXPECTED_POSTGRES_HOSTNAME` / `_DATABASE`, which `apply-migrations`
+prefers when set, are not read here (the expected target is always derived
+from the target-named app's own connection string); and there is no
+single-migration or base-schema choice.
+
+The production approval is given by the `PunxsyProminence` account, the same
+account sessions act through, and GitHub does not prevent self-review on that
+environment (read 2026-10-01). That is unchanged by this workflow, but one
+approval here covers the production migrations AND the deploy. The rule under
+*Who releases* is what keeps it Jason's click.
 
 ## Verify production
 
