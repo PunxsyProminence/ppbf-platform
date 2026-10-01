@@ -123,9 +123,25 @@ function readMedicalStatus(envelope: Record<string, unknown>, fallbackMessage: s
   return status as MedicalStatusRow;
 }
 
-function readList<T>(envelope: Record<string, unknown>, key: string, fallbackMessage: string): T[] {
+/* `textFields` are the fields the page prints or slices for each row. A row
+   without one of them would throw in the middle of rendering and take the
+   whole page down, which is a worse answer than "could not be read". */
+function readList<T>(
+  envelope: Record<string, unknown>,
+  key: string,
+  textFields: readonly string[],
+  fallbackMessage: string,
+): T[] {
   const list = envelope[key];
-  if (!Array.isArray(list) || list.some((item) => !item || typeof item !== 'object')) {
+  if (
+    !Array.isArray(list)
+    || list.some(
+      (item) =>
+        !item
+        || typeof item !== 'object'
+        || textFields.some((field) => typeof (item as Record<string, unknown>)[field] !== 'string'),
+    )
+  ) {
     throw new Error(fallbackMessage);
   }
   return list as T[];
@@ -300,16 +316,19 @@ export default function DecisionLoopReviewPage() {
         recommendations: readList<RecommendationRow>(
           await readEnvelopeOrThrow(recsRes, 'Failed to load recommendations.'),
           'recommendations',
+          ['recommendation_id', 'recommendation_text', 'expected_outcome', 'status', 'expires_at'],
           'Failed to load recommendations.',
         ),
         decisions: readList<DecisionRow>(
           await readEnvelopeOrThrow(decisionsRes, 'Failed to load decisions.'),
           'decisions',
+          ['decision_id', 'decision_text', 'expected_outcome', 'decided_by_role', 'decided_at'],
           'Failed to load decisions.',
         ),
         nearMisses: readList<NearMissRow>(
           await readEnvelopeOrThrow(nearMissesRes, 'Failed to load near-misses.'),
           'nearMisses',
+          ['near_miss_id', 'description', 'severity', 'created_at'],
           'Failed to load near-misses.',
         ),
         outcomesByDecision: {},
@@ -604,6 +623,7 @@ export default function DecisionLoopReviewPage() {
       const outcomes = readList<DecisionOutcomeRow>(
         await readEnvelopeOrThrow(response, 'Failed to load decision outcomes.'),
         'outcomes',
+        ['outcome_id', 'match_state'],
         'Failed to load decision outcomes.',
       );
       if (athleteId !== selectedAthleteRef.current) return;

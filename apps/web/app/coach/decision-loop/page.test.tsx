@@ -1045,6 +1045,9 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     ['decisions: no list', '/decisions?', () => jsonResponse({})],
     ['near-misses: body will not parse', '/near-misses', unparseable],
     ['near-misses: list is an object', '/near-misses', () => jsonResponse({ nearMisses: {} })],
+    ['recommendations: a row with no text', '/recommendations', () => jsonResponse({ recommendations: [{ recommendation_id: 'r1', status: 'provisional' }] })],
+    ['decisions: a row with no text', '/decisions?', () => jsonResponse({ decisions: [{ decision_id: 'd1' }] })],
+    ['near-misses: a row with no description', '/near-misses', () => jsonResponse({ nearMisses: [{ near_miss_id: 'n1', severity: 'low' }] })],
   ];
 
   test.each(MALFORMED_READS)('%s: all four panels are unreadable, and none says "none on record"', async (_name, fragment, responder) => {
@@ -1079,5 +1082,51 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
 
     expect(await screen.findByText('Failed to load decision outcomes.')).toBeTruthy();
     expect(screen.queryByText('No outcomes evaluated yet.')).toBeNull();
+  });
+
+  test('no commit has the new athlete selected with the previous athlete’s "Incident filed" confirmation up', async () => {
+    installSwitchFetch();
+    await openAthleteA();
+    fireEvent.change(screen.getByLabelText('What happened'), { target: { value: 'incident for A' } });
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+    await screen.findByText('Incident filed -- it is now in the escalation queue.');
+    committed.length = 0;
+
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+
+    const underB = committed.filter((commit) => commit.selected === 'ath-b');
+    expect(underB.length).toBeGreaterThan(0);
+    expect(underB.filter((commit) => commit.text.includes('Incident filed'))).toEqual([]);
+  });
+
+  test('"Loading…" does not stick when the coach clears the selection while a read is out', async () => {
+    installSwitchFetch({ readB: () => new Promise<Response>(() => {}) });
+    await openAthleteA();
+    switchToB();
+    await screen.findByText('Loading…');
+
+    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: '' } });
+
+    await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
+    expect(screen.getByText('Select or enter an athlete to review their decision loop.')).toBeTruthy();
+  });
+
+  test('a late answer for the previous athlete does not switch off the new athlete’s "Loading…"', async () => {
+    let releaseA: (() => void) | undefined;
+    const heldA = new Promise<Response>((resolve) => {
+      releaseA = () => resolve(jsonResponse({}));
+    });
+    installSwitchFetch({ readA: () => heldA, readB: () => new Promise<Response>(() => {}) });
+    render(<DecisionLoopReviewPage />);
+    const input = await screen.findByPlaceholderText('athlete-id');
+    fireEvent.change(input, { target: { value: 'ath-a' } });
+    fireEvent.change(input, { target: { value: 'ath-b' } });
+    await screen.findByText('Loading…');
+
+    releaseA?.();
+    await settle();
+
+    expect(screen.getByText('Loading…')).toBeTruthy();
   });
 });

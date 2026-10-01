@@ -107,11 +107,16 @@ describe('a hold check nobody could read never looks like "no hold"', () => {
       {},
       { ...HOLD, scope: undefined },
       { ...HOLD, scope: 'sparring' },
+      // Inherited names are not scopes: `in` would have let these through.
+      { ...HOLD, scope: '__proto__' },
+      { ...HOLD, scope: 'toString' },
+      { ...HOLD, scope: 'constructor' },
       { ...HOLD, athlete_explanation: undefined },
       { ...HOLD, athlete_explanation: '   ' },
       { ...HOLD, athlete_explanation: 7 },
       { ...HOLD, placed_by_name: undefined },
       { ...HOLD, placed_by_name: '' },
+      { ...HOLD, placed_by_name: '   ' },
       { ...HOLD, placed_by_name: { first: 'Coach' } },
       { ...HOLD, lift_condition_text: 12 },
     ];
@@ -132,7 +137,7 @@ describe('a hold check nobody could read never looks like "no hold"', () => {
   test('a hold with no lift condition is still a hold: the stamp, with the ask-your-coach path back', async () => {
     // The route requires the athlete's sentence and not a lift condition, so
     // an empty or null one is a real shape, not a malformed one.
-    for (const lift of ['', null]) {
+    for (const lift of ['', '   ', null]) {
       mockHoldRead(() => ({ ok: true, json: async () => ({ ok: true, hold: { ...HOLD, lift_condition_text: lift } }) }) as Response);
 
       const { container, unmount } = render(<TrainingHoldBanner />);

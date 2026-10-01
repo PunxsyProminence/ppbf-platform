@@ -77,7 +77,7 @@ function isActiveHold(value: unknown): value is ActiveHold {
   const hold = value as Record<string, unknown>;
   return (
     typeof hold.hold_id === 'string' && hold.hold_id.length > 0
-    && typeof hold.scope === 'string' && hold.scope.length > 0
+    && typeof hold.scope === 'string' && hold.scope.trim().length > 0
     && typeof hold.athlete_explanation === 'string' && hold.athlete_explanation.trim().length > 0
     && typeof hold.lift_condition_text === 'string'
   );

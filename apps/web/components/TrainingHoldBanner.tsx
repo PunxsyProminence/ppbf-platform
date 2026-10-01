@@ -38,7 +38,7 @@ import RefusalStamp from './RefusalStamp';
 interface AthleteFacingHold {
   scope: 'all_training' | 'contact_only' | 'conditioning_only';
   athlete_explanation: string;
-  lift_condition_text: string;
+  lift_condition_text: string | null;
   placed_at: string;
   expires_at: string | null;
   placed_by_name: string;
@@ -59,7 +59,7 @@ function isAthleteFacingHold(value: unknown): value is AthleteFacingHold {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const hold = value as Record<string, unknown>;
   return (
-    typeof hold.scope === 'string' && hold.scope in SCOPE_HEADLINE
+    typeof hold.scope === 'string' && Object.hasOwn(SCOPE_HEADLINE, hold.scope)
     && typeof hold.athlete_explanation === 'string' && hold.athlete_explanation.trim().length > 0
     && typeof hold.placed_by_name === 'string' && hold.placed_by_name.trim().length > 0
     && (hold.lift_condition_text === null || hold.lift_condition_text === undefined || typeof hold.lift_condition_text === 'string')
@@ -134,7 +134,7 @@ export default function TrainingHoldBanner() {
         // an honest fallback that still points at a real point of contact,
         // never a fabricated condition standing in for one that was never
         // written.
-        endsWhen={hold.lift_condition_text || `Ask ${hold.placed_by_name} what has to happen next.`}
+        endsWhen={hold.lift_condition_text?.trim() || `Ask ${hold.placed_by_name} what has to happen next.`}
       />
     </section>
   );

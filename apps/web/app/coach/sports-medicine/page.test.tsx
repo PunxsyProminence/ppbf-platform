@@ -644,7 +644,10 @@ describe('a hold nobody could read never reads as "no hold"', () => {
       {},
       'hold',
       { ...HOLD, hold_id: undefined },
+      { ...HOLD, hold_id: '' },
       { ...HOLD, scope: undefined },
+      { ...HOLD, scope: '' },
+      { ...HOLD, scope: ' ' },
       { ...HOLD, athlete_explanation: '   ' },
       { ...HOLD, athlete_explanation: 7 },
       { ...HOLD, lift_condition_text: null },
@@ -1034,6 +1037,72 @@ describe('a refused placement is news about the row', () => {
       expect((screen.getByRole('button', { name: 'Check again' }) as HTMLButtonElement).disabled).toBe(false),
     );
     expect(screen.getByText('Hold Not Placed')).toBeTruthy();
+  });
+
+  test('after that, a "Check again" that finds no hold gives back the place control, not the old form by itself', async () => {
+    // The form was CLOSED, not merely hidden behind the unknown state: a form
+    // that pops back open with a sentence nobody is looking at is one click
+    // from a hold nobody meant to place.
+    let holdReads = 0;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        return { ok: false, status: 400, json: async () => ({ error: 'Scope not supported.' }) } as Response;
+      }
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        holdReads += 1;
+        if (holdReads === 2) return { ok: false, status: 503, json: async () => ({}) } as Response;
+        return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<SportsMedicinePage />);
+    await openPlaceForm();
+    fireEvent.change(screen.getByLabelText(/What this athlete reads/), { target: { value: 'Resting your wrist.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+    await screen.findByText(/Training hold could not be read/);
+
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Check again' }) as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+
+    await waitFor(() => expect(screen.queryByText(/Training hold could not be read/)).toBeNull());
+    expect(screen.queryByLabelText(/What this athlete reads/)).toBeNull();
+    expect((screen.getByRole('button', { name: 'Place a training hold' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test('a placement whose response carries something that is not a hold, and whose re-read fails, is unknown', async () => {
+    // The POST said ok and handed back `{}` under `hold`. That is not a hold
+    // to paint on the board.
+    let holdReads = 0;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') return { ok: true, json: async () => ({ ok: true, hold: {} }) } as Response;
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        holdReads += 1;
+        if (holdReads === 1) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+        return { ok: false, status: 503, json: async () => ({}) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<SportsMedicinePage />);
+    await openPlaceForm();
+    fireEvent.change(screen.getByLabelText(/What this athlete reads/), { target: { value: 'Resting your wrist.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+
+    expect(await screen.findByText(/Training hold could not be read/)).toBeTruthy();
+    expect(screen.queryByText(/Active Training Hold/)).toBeNull();
   });
 
   test('a refusal whose re-read finds no hold keeps the form open with what was typed', async () => {
