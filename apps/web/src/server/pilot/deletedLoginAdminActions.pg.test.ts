@@ -404,6 +404,12 @@ describe('redeeming a code that belongs to a deleted login', () => {
     expect(token?.consumed).toBe(false);
   });
 
+  test('an unknown code gets the same generic failure', async () => {
+    await expect(activation.redeemActivationCode('ABCD-2345-EFGH', '482913')).rejects.toThrow(
+      'Unauthorized: activation code is invalid, already used, or expired',
+    );
+  });
+
   test('a code for a login that is not deleted still redeems', async () => {
     await insertAthlete('ATH-1');
     await insertAccount('acct-pending', 'athlete', { athleteId: 'ATH-1', active: false, pinHash: null });
@@ -413,6 +419,158 @@ describe('redeeming a code that belongs to a deleted login', () => {
     expect(redeemed.accountId).toBe('acct-pending');
     expect((await accountRow('acct-pending'))?.active_flag).toBe(true);
     expect(await membershipActive('acct-pending')).toBe(true);
+  });
+});
+
+// LOCK ORDER: the account row, then its codes -- for deletion, a PIN reset,
+// issuance and redemption alike. These run two or three real connections
+// against each other. The "deletion" here is deletion's own two statements for
+// an athlete login, replayed in an open transaction in the order
+// deleteAthleteRecord runs them (dataDeletion.ts: the account update, then
+// supersedeOutstandingActivationCodes); deleteAthleteRecord itself is not
+// run, because it needs the full schema.
+describe('issuance, redemption and deletion take the account row before its codes', () => {
+  const ACCOUNT = 'acct-racing';
+  const settleTime = () => new Promise((resolve) => setTimeout(resolve, 500));
+
+  async function connect(): Promise<Client> {
+    const client = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await client.connect();
+    return client;
+  }
+
+  const DELETE_ACCOUNT_SQL =
+    'update pilot.accounts set deleted_at = now(), active_flag = false, updated_at = now() where account_id = $1';
+  const SUPERSEDE_SQL =
+    `update pilot.account_activation_tokens set superseded_at = now()
+     where account_id = $1 and consumed_at is null and superseded_at is null`;
+
+  async function liveCodes(): Promise<number> {
+    const rows = await db.query(
+      `select 1 from pilot.account_activation_tokens
+       where account_id = $1 and consumed_at is null and superseded_at is null`,
+      [ACCOUNT],
+    );
+    return rows.length;
+  }
+
+  /** A promise's outcome, and whether it has one yet. */
+  function watch<T>(promise: Promise<T>) {
+    const state: { settled: boolean; value?: T; error?: unknown } = { settled: false };
+    const done = promise.then(
+      (value) => { state.settled = true; state.value = value; },
+      (error: unknown) => { state.settled = true; state.error = error; },
+    );
+    return { state, done };
+  }
+
+  beforeEach(async () => {
+    await insertAthlete('ATH-RACING');
+    await insertAccount(ACCOUNT, 'athlete', { athleteId: 'ATH-RACING', active: false, pinHash: null });
+  });
+
+  test('deletion first, not yet committed: issuance waits, then is refused, and no live code is left', async () => {
+    const deletion = await connect();
+    try {
+      await deletion.query('begin');
+      await deletion.query(DELETE_ACCOUNT_SQL, [ACCOUNT]);
+      await deletion.query(SUPERSEDE_SQL, [ACCOUNT]);
+
+      const issuing = watch(activation.issueActivationCode({ accountId: ACCOUNT, organizationId: ORG, ...ISSUER }));
+      await settleTime();
+      // Without the account lock this had already returned a code.
+      expect(issuing.state.settled).toBe(false);
+
+      await deletion.query('commit');
+      await issuing.done;
+
+      expect(issuing.state.value).toBeUndefined();
+      expect(issuing.state.error).toMatchObject({ status: 409, code: 'DELETED_LOGIN' });
+      expect(await liveCodes()).toBe(0);
+    } finally {
+      await deletion.query('rollback').catch(() => undefined);
+      await deletion.end();
+    }
+  });
+
+  test('issuance first, not yet committed: deletion waits, then supersedes the code issuance wrote', async () => {
+    const gate = await connect();
+    const deletion = await connect();
+    try {
+      // Holds issuance open after it has taken the account lock: its first
+      // write to the codes table waits on this.
+      await gate.query('begin');
+      await gate.query('lock table pilot.account_activation_tokens in exclusive mode');
+
+      const issuing = watch(activation.issueActivationCode({ accountId: ACCOUNT, organizationId: ORG, ...ISSUER }));
+      await settleTime();
+      expect(issuing.state.settled).toBe(false);
+
+      await deletion.query('begin');
+      const deleting = watch(deletion.query(DELETE_ACCOUNT_SQL, [ACCOUNT]));
+      await settleTime();
+      // The deletion cannot mark the login deleted while issuance holds it.
+      expect(deleting.state.settled).toBe(false);
+
+      await gate.query('commit');
+      await issuing.done;
+      expect(issuing.state.error).toBeUndefined();
+      expect(issuing.state.value?.code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+
+      await deleting.done;
+      expect(deleting.state.error).toBeUndefined();
+      await deletion.query(SUPERSEDE_SQL, [ACCOUNT]);
+      await deletion.query('commit');
+
+      expect((await accountRow(ACCOUNT))?.deleted).toBe(true);
+      expect(await liveCodes()).toBe(0);
+    } finally {
+      await gate.query('rollback').catch(() => undefined);
+      await deletion.query('rollback').catch(() => undefined);
+      await gate.end();
+      await deletion.end();
+    }
+  });
+
+  test('a redemption waiting for the account row does not hold the code row', async () => {
+    const issued = await activation.issueActivationCode({ accountId: ACCOUNT, organizationId: ORG, ...ISSUER });
+    const holder = await connect();
+    try {
+      await holder.query('begin');
+      await holder.query('select 1 from pilot.accounts where account_id = $1 for update', [ACCOUNT]);
+
+      const redeeming = watch(activation.redeemActivationCode(issued.code, '482913'));
+      await settleTime();
+      expect(redeeming.state.settled).toBe(false);
+
+      // Account first, then code. The old order locked the code and then
+      // waited for the account, and this statement would fail (55P03).
+      await expect(
+        holder.query('select 1 from pilot.account_activation_tokens where account_id = $1 for update nowait', [ACCOUNT]),
+      ).resolves.toMatchObject({ rowCount: 1 });
+
+      await holder.query('commit');
+      await redeeming.done;
+      expect(redeeming.state.error).toBeUndefined();
+      expect((await accountRow(ACCOUNT))?.active_flag).toBe(true);
+    } finally {
+      await holder.query('rollback').catch(() => undefined);
+      await holder.end();
+    }
+  });
+
+  test('two redemptions of one code at once: exactly one succeeds', async () => {
+    const issued = await activation.issueActivationCode({ accountId: ACCOUNT, organizationId: ORG, ...ISSUER });
+
+    const outcomes = await Promise.allSettled([
+      activation.redeemActivationCode(issued.code, '482913'),
+      activation.redeemActivationCode(issued.code, '482913'),
+    ]);
+
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+    const refused = outcomes.find((outcome) => outcome.status === 'rejected') as PromiseRejectedResult;
+    expect(String(refused.reason)).toContain('Unauthorized: activation code is invalid, already used, or expired');
+    expect(await liveCodes()).toBe(0);
   });
 });
 
@@ -485,36 +643,36 @@ describe('a staff or guardian re-invite', () => {
     expect((await accountRow('acct-parent'))?.role).toBe('coach');
   });
 
+  test('a login moved to another organization between the read and the write is refused, generically, and stays there', async () => {
+    await insertAccount('acct-coach', 'coach', { email: EMAIL, microsoft: true });
+
+    const realQueryOne = db.queryOne;
+    jest.spyOn(db, 'queryOne').mockImplementation((async (sql: string, params?: unknown[]) => {
+      const row = await realQueryOne(sql, params);
+      if (sql.includes('lower(login_email) = $1')) {
+        // Moved, and deleted there: neither fact is this organization's to learn.
+        await db.query(
+          'update pilot.accounts set organization_id = $2, deleted_at = now(), active_flag = false where account_id = $1',
+          ['acct-coach', OTHER_ORG],
+        );
+      }
+      return row;
+    }) as typeof db.queryOne);
+
+    const refusal = staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+      loginEmail: EMAIL, organizationId: ORG, role: 'coach',
+    });
+    await expect(refusal).rejects.toThrow('Forbidden: account already exists in another organization');
+    await expect(refusal).rejects.not.toMatchObject({ code: 'DELETED_LOGIN' });
+
+    expect(await accountRow('acct-coach')).toMatchObject({ organization_id: OTHER_ORG, deleted: true, active_flag: false });
+  });
+
   test('a re-invite of a deactivated, not deleted, login still reactivates it', async () => {
     await insertAccount('acct-coach', 'coach', { email: EMAIL, microsoft: true, active: false });
 
     await staffProvisioning.createOrUpdateMicrosoftStaffAccount({ loginEmail: EMAIL, organizationId: ORG, role: 'coach' });
     expect(await accountRow('acct-coach')).toMatchObject({ active_flag: true, deleted: false });
-  });
-
-  test('a guardian invite linked to a withdrawn athlete is refused 409, and no login, record or link is written', async () => {
-    await insertAthlete('ATH-WITHDRAWN', { deleted: true });
-
-    await expect(
-      staffProvisioning.createOrUpdateMicrosoftStaffAccount({
-        loginEmail: 'new.guardian@example.org', organizationId: ORG, role: 'parent',
-        guardian: { athleteId: 'ATH-WITHDRAWN', fullName: 'New Guardian', relationshipToAthlete: 'mother' },
-      }),
-    ).rejects.toMatchObject({ status: 409, code: 'WITHDRAWN_ATHLETE_RECORD' });
-
-    expect(await accountRow('new.guardian@example.org')).toBeNull();
-    expect(await db.query('select 1 from pilot.parents where organization_id = $1', [ORG])).toHaveLength(0);
-    expect(await db.query('select 1 from pilot.guardian_links where organization_id = $1', [ORG])).toHaveLength(0);
-  });
-
-  test('a guardian invite linked to an enrolled athlete still writes the login and the link', async () => {
-    await insertAthlete('ATH-ENROLLED');
-
-    const result = await staffProvisioning.createOrUpdateMicrosoftStaffAccount({
-      loginEmail: 'new.guardian@example.org', organizationId: ORG, role: 'parent',
-      guardian: { athleteId: 'ATH-ENROLLED', fullName: 'New Guardian', relationshipToAthlete: 'mother' },
-    });
-    expect(result.guardianLink?.athleteId).toBe('ATH-ENROLLED');
   });
 });
 

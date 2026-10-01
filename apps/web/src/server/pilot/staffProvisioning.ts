@@ -309,12 +309,10 @@ function deactivatedGuardianLoginConflict(loginEmail: string): ConflictError {
  * (`refuseDeletedLogin`, removed): a re-invite set a deleted login active
  * again, and it showed as a working account that could never sign in.
  *
- * Deletion, and for intake a role change or a deactivation, are refused on
- * the read below and again in the account write itself, so a login that is
- * deleted, re-roled or deactivated between the two is still left as it is.
- *
- * A guardian link to a withdrawn athlete is refused too: the guardian would
- * have been given a login whose only child is a withdrawn record.
+ * Deletion and a move to another organization, and for intake a role change
+ * or a deactivation, are refused on the read below and again in the account
+ * write itself, so a login that is deleted, moved, re-roled or deactivated
+ * between the two is still left as it is.
  *
  * `refuseDeactivatedLogin` is intake promotion's only as well: an existing
  * account with active_flag false is refused (409) rather than reactivated
@@ -463,9 +461,11 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     // deactivated one comes back as no row, and the refusal below rolls the
     // transaction back before the membership is written.
     //
-    // The same for a deletion (every caller) and, for intake, a role change:
-    // each is a condition of the update, so the row is written only if it is
-    // still what the read above saw.
+    // The same for a deletion and a move to another organization (every
+    // caller) and, for intake, a role change: each is a condition of the
+    // update, so the row is written only if it is still what the read above
+    // saw. Without the organization condition a login moved to another gym
+    // after the read was pulled back into this one.
     const written = await client.query<{ account_id: string }>(
       `insert into pilot.accounts as acct (
          account_id,
@@ -490,6 +490,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
          active_flag = true,
          updated_at = now()
        where not ${accountDeletedSql('acct')}
+         and acct.organization_id = excluded.organization_id
          and (not $5::boolean or acct.active_flag)
          and (not $6::boolean or acct.role = excluded.role)
        returning account_id`,
@@ -504,15 +505,20 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     );
 
     if (written.rows.length === 0) {
-      // Which condition refused it, read in the same transaction. Deletion
-      // first: it is the one that applies to every caller.
+      // Which condition refused it, read in the same transaction and only
+      // within this organization: a login that is now another gym's gets the
+      // answer the read above gives for one, and nothing about it is said.
       const current = await client.query<{ role: PilotRole; account_deleted: boolean }>(
-        `select role, ${accountDeletedSql('a')} as account_deleted from pilot.accounts a where account_id = $1`,
-        [accountId],
+        `select role, ${accountDeletedSql('a')} as account_deleted
+         from pilot.accounts a where account_id = $1 and organization_id = $2`,
+        [accountId, organizationId],
       );
       const row = current.rows[0];
 
-      if (!row || isDeletedAccount(row)) {
+      if (!row) {
+        throw new Error('Forbidden: account already exists in another organization');
+      }
+      if (isDeletedAccount(row)) {
         throw deletedLoginRefusal();
       }
       if (params.refuseRoleChange && row.role !== role) {
@@ -548,27 +554,14 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
       // constraint violation surfaces as an opaque 500, and an admin who
       // mistyped a record id needs to be told which id had no athlete behind it.
       // Inside the transaction, so the athlete cannot be removed between the
-      // check and the link. `for share` holds the row against a withdrawal
-      // (which locks it for update) for the same reason.
-      const athlete = await client.query<{ withdrawn: boolean }>(
-        `select deleted_at is not null as withdrawn from pilot.athletes
-         where organization_id = $1 and athlete_id = $2 for share`,
+      // check and the link.
+      const athlete = await client.query<{ athlete_id: string }>(
+        'select athlete_id from pilot.athletes where organization_id = $1 and athlete_id = $2',
         [organizationId, guardian.athleteId],
       );
 
       if (athlete.rowCount === 0) {
         throw new Error(`Missing athlete_id: no athlete record "${guardian.athleteId}" in this organization`);
-      }
-
-      // A withdrawn child (OD-2026-09-30-004 e2). The lookup did not read
-      // deleted_at, so a guardian could be invited, or re-invited, onto a
-      // withdrawn athlete record.
-      if (athlete.rows[0]?.withdrawn !== false) {
-        throw new ConflictError(
-          `Conflict: athlete record "${guardian.athleteId}" was withdrawn. A guardian cannot be linked to a `
-          + 'withdrawn athlete. Link them to an athlete on the roster.',
-          'WITHDRAWN_ATHLETE_RECORD',
-        );
       }
 
       // One pilot.parents record per account, reused across invites so a

@@ -101,12 +101,12 @@ const GUARDIAN = { athleteId: 'ath-1', fullName: 'Dana Johnson', relationshipToA
 // the healthy case: the athlete exists, and the account holds no guardian
 // record yet.
 function guardianClient(options: {
-  athleteRows?: Array<{ withdrawn: boolean }>;
+  athleteRows?: Array<{ athlete_id: string }>;
   parentRows?: Array<{ parent_id: string; account_id: string | null; email_matches?: boolean }>;
 } = {}) {
   return fakeClient((sql) => {
     if (sql.includes('from pilot.athletes')) {
-      const rows = options.athleteRows ?? [{ withdrawn: false }];
+      const rows = options.athleteRows ?? [{ athlete_id: 'ath-1' }];
       return { rows, rowCount: rows.length };
     }
     if (sql.includes('from pilot.parents')) {
@@ -1339,6 +1339,7 @@ describe('intake guardian login: a deleted login is refused, not reactivated', (
 
       const [sql, params] = accountUpsertCalls()[0];
       expect(sql).toContain('where not (acct.deleted_at is not null)');
+      expect(sql).toContain('and acct.organization_id = excluded.organization_id');
       expect(sql).toContain('and (not $5::boolean or acct.active_flag)');
       expect(sql).toContain('and (not $6::boolean or acct.role = excluded.role)');
       expect(params?.slice(4)).toEqual([true, true]);
@@ -1350,6 +1351,26 @@ describe('intake guardian login: a deleted login is refused, not reactivated', (
       await createOrUpdateMicrosoftStaffAccount({ loginEmail: 'dana@example.com', organizationId: 'org-1', role: 'parent' });
 
       expect(accountUpsertCalls()[0][1]?.slice(4)).toEqual([false, false]);
+    });
+
+    // The reason is looked up only inside the caller's organization. A login
+    // that is another gym's by the time of the write gets the answer the
+    // read gives for one, and nothing about it -- deleted or not -- is said.
+    test('moved to another organization in between: the generic refusal, from a lookup scoped to this organization', async () => {
+      stubLookups({ existingByEmail: existingLogin() });
+      currentClient = fakeClient((sql) => {
+        if (sql.includes('insert into pilot.accounts')) return { rows: [], rowCount: 0 };
+        return undefined; // the scoped lookup finds no row in this organization
+      });
+
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({ loginEmail: 'dana@example.com', organizationId: 'org-1', role: 'parent' }),
+      ).rejects.toThrow('Forbidden: account already exists in another organization');
+
+      const lookup = currentClient.query.mock.calls.find(([sql]) => String(sql).includes('as account_deleted'));
+      expect(String(lookup?.[0])).toContain('where account_id = $1 and organization_id = $2');
+      expect(lookup?.[1]).toEqual(['acct-existing', 'org-1']);
+      expect(membershipCalls()).toHaveLength(0);
     });
 
     test('deleted in between, for intake: its own 409, and no membership is written', async () => {
@@ -1431,32 +1452,6 @@ describe('intake guardian login: a deleted login is refused, not reactivated', (
 // OD-2026-09-30-004 d1 (Jason, A): a guardian login an admin deactivated
 // (active_flag false, deleted_at null) is refused on intake's path rather than
 // turned back on; the admin reactivates it on purpose.
-// OD-2026-09-30-004 e2: the guardian-link athlete lookup did not read
-// deleted_at, so a guardian could be invited onto a withdrawn athlete record.
-describe('a guardian link to a withdrawn athlete is refused', () => {
-  test.each([[{ withdrawn: true }], [{}]])('refused 409 and no guardian record or link is written (%o)', async (athleteRow) => {
-    stubLookups({});
-    currentClient = guardianClient({ athleteRows: [athleteRow as { withdrawn: boolean }] });
-
-    const refusal = createOrUpdateMicrosoftStaffAccount({
-      loginEmail: 'dana@example.com',
-      organizationId: 'org-1',
-      role: 'parent',
-      guardian: { athleteId: 'ath-1', fullName: 'Dana Guardian', relationshipToAthlete: 'mother' },
-    });
-
-    await expect(refusal).rejects.toMatchObject({ status: 409, code: 'WITHDRAWN_ATHLETE_RECORD' });
-    await expect(refusal).rejects.toThrow(
-      'Conflict: athlete record "ath-1" was withdrawn. A guardian cannot be linked to a withdrawn athlete. '
-      + 'Link them to an athlete on the roster.',
-    );
-    const writes = currentClient.query.mock.calls.filter(
-      ([sql]) => String(sql).includes('pilot.parents') || String(sql).includes('pilot.guardian_links'),
-    );
-    expect(writes).toHaveLength(0);
-  });
-});
-
 describe('intake guardian login: a deactivated login is refused, not reactivated', () => {
   const DEACTIVATED_MESSAGE =
     'Conflict: dana@example.com belongs to a guardian login that was deactivated. Intake does not turn a '

@@ -185,7 +185,10 @@ describe('issueActivationCode', () => {
 
     const [lookupSql] = callsMatching(/^\s*select account_id\s+from pilot\.accounts a/)[0];
     expect(lookupSql).toContain('and not (a.deleted_at is not null)');
-    expect(lookupSql).not.toContain('for share');
+    // The account row is locked before any code row is touched: the order
+    // deletion takes them in.
+    expect(lookupSql).toContain('for update');
+    expect(currentClient.query.mock.calls[0][0]).toBe(lookupSql);
     const [insertSql] = callsMatching(/insert into pilot\.account_activation_tokens/)[0];
     expect(insertSql).toContain('from pilot.accounts a');
     expect(insertSql).toContain("and a.role = 'athlete'");
@@ -341,15 +344,43 @@ describe('redeemActivationCode', () => {
     expect(mockWithTransaction).not.toHaveBeenCalled();
   });
 
+  // The selector here was "the first read of the code". Redemption now takes
+  // the account row's lock before the code's -- the order deletion, a PIN
+  // reset and issuance take them in -- so the first read is unlocked and only
+  // learns whose code it is. This asserts on the read that locks, and that the
+  // account lock comes before it. That exactly one of two concurrent
+  // redemptions succeeds is proved on real Postgres in
+  // deletedLoginAdminActions.pg.test.ts.
   test('locks the token row so a code cannot be redeemed twice concurrently', async () => {
     stubRedeemableToken();
     await redeemActivationCode('ABCD-2345-EFGH', '481902');
 
-    const [sql] = callsMatching(/from pilot\.account_activation_tokens/)[0];
+    const statements = currentClient.query.mock.calls.map(([statement]) => String(statement));
+    const lockingRead = statements.findIndex(
+      (statement) => /from pilot\.account_activation_tokens/.test(statement) && statement.includes('for update'),
+    );
+    const sql = statements[lockingRead];
     expect(sql).toContain('for update');
     expect(sql).toContain('consumed_at is null');
     expect(sql).toContain('superseded_at is null');
     expect(sql).toContain('expires_at > now()');
+
+    const accountLock = statements.findIndex((statement) =>
+      /select 1 from pilot\.accounts where account_id = \$1 for update/.test(statement));
+    expect(accountLock).toBeGreaterThan(-1);
+    expect(accountLock).toBeLessThan(lockingRead);
+    // The first read of the code takes no lock.
+    expect(statements[0]).toMatch(/from pilot\.account_activation_tokens/);
+    expect(statements[0]).not.toContain('for update');
+  });
+
+  test('an unknown code costs one read and takes no lock on any account', async () => {
+    await expect(redeemActivationCode('ABCD-2345-EFGH', '481902')).rejects.toThrow(
+      'Unauthorized: activation code is invalid, already used, or expired',
+    );
+
+    expect(currentClient.query).toHaveBeenCalledTimes(1);
+    expect(String(currentClient.query.mock.calls[0][0])).not.toContain('for update');
   });
 
   /* The athlete has just chosen a PIN nobody else has seen, so the flag that

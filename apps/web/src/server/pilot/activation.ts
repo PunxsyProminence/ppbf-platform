@@ -238,11 +238,18 @@ export async function issueActivationCode(params: {
     //
     // Nor a deleted login (OD-2026-09-30-004 e2): a code was issued for a
     // login that could never sign in. That one is named, to the admin of the
-    // organization it is in and to nobody else. The insert below carries the
-    // same conditions, so the code is written only for a login that is still
-    // one of these when it is written. No row lock here: a redemption locks
-    // the code and then updates the account, and locking the account first
-    // here could deadlock against it.
+    // organization it is in and to nobody else.
+    //
+    // LOCK ORDER: THE ACCOUNT ROW, THEN ITS CODES. `for update` here is the
+    // first lock this transaction takes, and it is what serializes issuance
+    // with a deletion, which updates the account row and then supersedes its
+    // codes (dataDeletion.ts). Without it a deletion still uncommitted had
+    // already superseded the codes it could see, this read still saw the old
+    // row, and a new code was written and returned for a login deleted a
+    // moment later. With it, whichever comes second waits: a deletion first
+    // means this read re-checks the row and finds it deleted; issuance first
+    // means the deletion supersedes the code written below. A PIN reset and a
+    // redemption take the same two locks in the same order.
     const target = await client.query<{ account_id: string }>(
       `select account_id
        from pilot.accounts a
@@ -250,7 +257,8 @@ export async function issueActivationCode(params: {
          and organization_id = $2
          and role = 'athlete'
          and is_platform_owner = false
-         and not ${accountDeletedSql('a')}`,
+         and not ${accountDeletedSql('a')}
+       for update`,
       [accountId, organizationId],
     );
 
@@ -327,10 +335,35 @@ export async function redeemActivationCode(rawCode: string, pin: string): Promis
   const pinHash = await hashPin(pin);
 
   return withTransaction(async (client) => {
+    // LOCK ORDER: THE ACCOUNT ROW, THEN ITS CODES -- the order a deletion, a
+    // PIN reset and issuance take them in. This used to lock the code first
+    // and update the account after, the inverse, so a redemption racing any
+    // of those could deadlock. The code is therefore read once without a
+    // lock, only to learn whose it is; an unknown, used or expired code stops
+    // there with one read and no lock, as before.
+    const owner = await client.query<{ account_id: string }>(
+      `select account_id
+       from pilot.account_activation_tokens
+       where token_hash = $1
+         and consumed_at is null
+         and superseded_at is null
+         and expires_at > now()`,
+      [tokenHash],
+    );
+
+    if (owner.rows.length > 0) {
+      // No conditions and no result read: this only takes the lock. What the
+      // account must be is decided by the update below, in one place.
+      await client.query('select 1 from pilot.accounts where account_id = $1 for update', [
+        owner.rows[0].account_id,
+      ]);
+    }
+
     // `for update` serializes concurrent redemptions of the same code: the
     // second one blocks, then sees consumed_at set and is rejected, so a code
-    // can never be redeemed twice.
-    const tokenRows = await client.query<{
+    // can never be redeemed twice. Read again under the lock, with the same
+    // conditions, because the read above promised nothing.
+    const tokenRows = owner.rows.length === 0 ? { rows: [] } : await client.query<{
       account_id: string;
       organization_id: string;
     }>(

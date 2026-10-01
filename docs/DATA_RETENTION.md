@@ -223,9 +223,13 @@ the login is left as deletion left it. An action on the deleted login itself ans
 (`deletedLoginConflict`, `apps/web/src/server/pilot/deletedAccountSignIn.ts`: the login was
 deleted, nothing here changes it, and a returning person needs a new login -- a new `account_id`,
 or for a staff or guardian login a different email address, because the deleted row keeps its
-email and the email is unique). An action on a withdrawn athlete record answers its own message.
-The rule is a condition of the write statement itself, not only a check before it; the two
-withdrawn-athlete checks are a read that locks the athlete row until the write commits:
+email and the email is unique). Creating a login for a withdrawn athlete record answers its own
+message. The rule is a condition of the write statement itself, not only a check before it;
+creating a login for a withdrawn athlete is a read that locks the athlete row until the write
+commits. A new activation code, a PIN reset, a redemption and a deletion all take the account
+row's lock before they touch its codes, so one that races another waits for it: a code issued
+while a deletion is in progress is either refused or superseded by that deletion, never left
+live:
 
 - a new activation code, and a PIN reset (`issueActivationCode`, `provisionAthleteActivation`,
   `apps/web/src/server/pilot/activation.ts`);
@@ -235,7 +239,7 @@ withdrawn-athlete checks are a read that locks the athlete row until the write c
   nothing and answers the same generic failure as any other unusable code;
 - re-inviting a deleted login's email as staff or guardian, from the gym's People page or the
   platform owner's (`createOrUpdateMicrosoftStaffAccount`,
-  `apps/web/src/server/pilot/staffProvisioning.ts`), and linking a guardian to a withdrawn athlete;
+  `apps/web/src/server/pilot/staffProvisioning.ts`);
 - the platform owner's user-status route, in both directions, and membership route
   (`setAccountActiveStatus`, `upsertOrganizationMembership`, `apps/web/src/server/pilot/auth.ts`);
 - assigning or transferring the gym's admin seat to or from a deleted login, and granting or
@@ -243,7 +247,11 @@ withdrawn-athlete checks are a read that locks the athlete row until the write c
   `transferOrganizationAdmin`, `setAccountMasterShadowAccess`).
 
 Intake re-promoting a withdrawn athlete, or naming a deleted login, is refused the same way
-(#1047). A gym's admin is told a login is deleted only when it is in their own gym.
+(#1047). A gym's admin is told a login is deleted only when it is in their own gym: every lookup
+that names the reason is scoped to the caller's organization, and a login that belongs to another
+gym, or moves to one while an invite is being written, gets only "account already exists in
+another organization". The platform owner's routes are cross-organization by role and are not
+scoped. Linking a guardian to a withdrawn athlete's record is not refused; that is unchanged.
 
 **Still open (checked 2026-09-30):** three routed paths still write to a login without reading
 `deleted_at`: the platform owner's athlete-shell route (`createAthleteAccount`,
