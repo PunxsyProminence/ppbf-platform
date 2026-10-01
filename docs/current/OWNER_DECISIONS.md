@@ -329,12 +329,22 @@ this section is the detailed wording that PR #1061 builds.
   whole message, 17:52Z: *"q14 A"*. The athlete text now opens "The gym's dry,
   dark, sarcastic humor is part of how this place talks."; the parent text is
   unchanged.
-- **NOT YET CONFIRMED: humour inside injury answers.** Lane S relayed *"Q8 B"*
-  as his answer that humour is not kept out of injury, head-knock, pain and
-  emergency answers. Overwatch did not find that reply as a typed message in
-  the thread's transcript (it may have been given through a choice prompt). It
-  is recorded as REPORTED only: it supersedes nothing and authorizes nothing
-  until he confirms it to overwatch. PR #1061 adds no injury rule either way.
+- **Humour inside injury answers: confirmed to overwatch.** Lane S relayed
+  *"Q8 B"* as his answer that humour is not kept out of injury, head-knock,
+  pain and emergency answers. Overwatch did not find that reply as a typed
+  message in the thread's transcript, so it asked him directly: 'Confirm to
+  overwatch your Lane S answer "Q8 B": SHADOW's humour is NOT kept out of
+  ordinary injury, head-knock and pain answers. Yes / no.', with the plain
+  line that the fixed emergency replies stay humour-free either way. His
+  reply, whole message: *"yes i said NOT in the s lane"*. So: the humour
+  register also governs model-written answers to ordinary injury, head-knock
+  and pain questions. This matters to PR #1061, which is not neutral on it:
+  it edits no classifier and no fixed reply, but by replacing the athlete
+  register's blanket "No dark or sarcastic humor" it lets the new register
+  reach model-written educational answers that no fixed fallback intercepts
+  (for example an allowed `head_trauma` question). His confirmation is the
+  authority for that effect. What it does not cover: the fixed urgent and
+  emergency replies, which carry no humour and which no PR changes.
 
 Until PR #1061 merges, today's registers stand as OD-2026-10-01-001 section 7
 quotes them. The fixed emergency replies carry no humour and no PR changes
