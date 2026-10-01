@@ -82,8 +82,8 @@ const WRITE_NOT_CONFIRMED =
    an incident report answered by a proxy's HTML page printed "Incident filed
    -- it is now in the escalation queue." Three outcomes, and only one of them
    is a success:
-     - not ok, or a 200 that says `ok: false`: a refusal, with the server's
-       own reason;
+     - not ok, or a 200 that says `ok: false`: the server said no, or broke;
+       shown with the server's own reason;
      - `{ ok: true, ... }` carrying what that route promises (`acknowledged`):
        confirmed;
      - anything else under a 200: NOT CONFIRMED. Not "failed" either -- the
@@ -337,6 +337,13 @@ export default function DecisionLoopReviewPage() {
   const selectedAthleteRef = useRef('');
   const readSeqRef = useRef(0);
   const [errorMessage, setErrorMessage] = useState('');
+  /* "Something you submitted for the athlete you were on before did not go
+     through." Its own slot, not the error line: every read blanks or
+     overwrites the error line, so the next thing that happened under the new
+     athlete used to erase this before the coach had seen it -- and for an
+     incident report that is the only trace that it failed. It stays until
+     the coach changes the selection. */
+  const [previousAthleteNotice, setPreviousAthleteNotice] = useState('');
 
   /* DRAFTS BELONG TO AN ATHLETE. Every box and selector below used to be its
      own piece of page state, and the page sends whatever is in them with the
@@ -460,7 +467,7 @@ export default function DecisionLoopReviewPage() {
     })();
   }, []);
 
-  const refreshAll = useCallback(async (targetAthleteId: string) => {
+  const refreshAll = useCallback(async (targetAthleteId: string, keepErrorLine = false) => {
     // A write for athlete A that finishes after the coach moved to B asks to
     // re-read A. B is on screen; A's records do not belong there.
     if (targetAthleteId !== selectedAthleteRef.current) {
@@ -478,7 +485,7 @@ export default function DecisionLoopReviewPage() {
       return;
     }
     setLoading(true);
-    setErrorMessage('');
+    if (!keepErrorLine) setErrorMessage('');
     try {
       const [statusRes, recsRes, decisionsRes, nearMissesRes] = await Promise.all([
         fetch(`${apiBase()}/api/pilot/shadow/medical-status?athleteId=${encodeURIComponent(targetAthleteId)}`, { credentials: 'include' }),
@@ -582,6 +589,7 @@ export default function DecisionLoopReviewPage() {
     setMessageHomeMessage('');
     setLoading(false);
     setErrorMessage('');
+    setPreviousAthleteNotice('');
   }
 
 
@@ -601,10 +609,16 @@ export default function DecisionLoopReviewPage() {
      that silently failed is worse than a vague line. */
   function reportWriteError(forAthleteId: string, error: unknown, fallback: string) {
     if (forAthleteId !== selectedAthleteRef.current) {
-      setErrorMessage(PREVIOUS_ATHLETE_WRITE_FAILED);
+      setPreviousAthleteNotice(PREVIOUS_ATHLETE_WRITE_FAILED);
       return;
     }
-    setErrorMessage(error instanceof Error ? error.message : fallback);
+    const message = error instanceof Error ? error.message : fallback;
+    setErrorMessage(message);
+    // "Check before sending it again" has to be checkable. A write that was
+    // not confirmed may have landed: read the athlete again, keeping this
+    // line up, so the status, decisions and near-misses on screen are what
+    // the server holds now.
+    if (message === WRITE_NOT_CONFIRMED) void refreshAll(forAthleteId, true);
   }
 
   async function handleSetMedicalStatus(event: React.FormEvent<HTMLFormElement>) {
@@ -647,7 +661,7 @@ export default function DecisionLoopReviewPage() {
       // shadow/recommendations/decide answers { ok: true, recommendation: <row> }.
       await confirmWriteOrThrow(response, 'Failed to record decision on recommendation.', (envelope) => {
         const row = returnedRow(envelope, 'recommendation');
-        return !!row && row.recommendation_id === recommendationId;
+        return !!row && row.recommendation_id === recommendationId && row.status === decision;
       });
       if (athleteId !== selectedAthleteRef.current) return;
       await refreshAll(athleteId);
@@ -945,6 +959,7 @@ export default function DecisionLoopReviewPage() {
                 already made this correction and states the reason -- red is
                 left to mean a child is in danger. */}
             {errorMessage && <p className="mt-[var(--s3)] text-[length:var(--t-sm)] font-bold text-[var(--restricted-ink)]">{errorMessage}</p>}
+            {previousAthleteNotice && <p className="mt-[var(--s3)] text-[length:var(--t-sm)] font-bold text-[var(--restricted-ink)]">{previousAthleteNotice}</p>}
           </section>
 
           {!athleteId ? (

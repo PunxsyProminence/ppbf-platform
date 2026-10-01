@@ -1851,7 +1851,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       return { ok: true, json: async () => ({ ...((await real.json()) as object), ok: 1 }) } as Response;
     }],
     ['the acknowledgement of a write for a DIFFERENT athlete or record', (url) => {
-      if (url.includes('/shadow/medical-status')) return jsonResponse({ ok: true, status: { status_id: 's', athlete_id: 'someone-else', status: 'cleared' } });
+      if (url.includes('/shadow/medical-status')) return jsonResponse({ ok: true, status: { status_id: 's', athlete_id: 'someone-else', status: 'pending' } });
       if (url.includes('/recommendations/decide')) return jsonResponse({ ok: true, recommendation: { recommendation_id: 'another-rec' } });
       if (url.includes('/shadow/decisions')) return jsonResponse({ ok: true, decision: { decision_id: 'd', athlete_id: 'someone-else' } });
       if (url.includes('/shadow/near-misses')) return jsonResponse({ ok: true, nearMiss: { near_miss_id: 'n', athlete_id: 'someone-else' } });
@@ -1860,8 +1860,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       return jsonResponse({ ok: true, outcome: { outcome_id: 'o', decision_id: 'another-decision' } });
     }],
     ['an acknowledgement with no id in it', (url) => {
-      if (url.includes('/shadow/medical-status')) return jsonResponse({ ok: true, status: { athlete_id: 'ath-a', status: 'cleared' } });
-      if (url.includes('/recommendations/decide')) return jsonResponse({ ok: true, recommendation: {} });
+      if (url.includes('/shadow/medical-status')) return jsonResponse({ ok: true, status: { athlete_id: 'ath-a', status: 'pending' } });
+      if (url.includes('/recommendations/decide')) return jsonResponse({ ok: true, recommendation: { status: 'accepted' } });
       if (url.includes('/shadow/decisions')) return jsonResponse({ ok: true, decision: { athlete_id: 'ath-a' } });
       if (url.includes('/shadow/near-misses')) return jsonResponse({ ok: true, nearMiss: { athlete_id: 'ath-a' } });
       if (url.includes('/api/pilot/incidents')) return jsonResponse({ ok: true, escalation: { athlete_id: 'ath-a' } });
@@ -1869,6 +1869,112 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       return jsonResponse({ ok: true, outcome: { decision_id: 'dec-a' } });
     }],
   ];
+
+  test('Set Status: a row for this athlete with an id but a DIFFERENT status than the one sent is not the acknowledgement', async () => {
+    installSwitchFetch({ post: () => jsonResponse({ ok: true, status: { status_id: 's', athlete_id: 'ath-a', status: 'cleared' } }) });
+    await openAthleteA();
+
+    type('New status', 'restricted');
+    fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+
+    expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
+  });
+
+  test.each([
+    ['Behavior Note', 'Note', 'Log Note', 'Note logged.'],
+    ['Message Home', 'Message', 'Send to Family', 'Sent to the family.'],
+  ])('%s: an acknowledgement for some other kind of record is not this write’s', async (_name, label, button, confirmation) => {
+    installSwitchFetch({ post: () => jsonResponse({ ok: true, entity_type: 'something_else', entity_id: 'obs-1', athlete_id: 'ath-a' }) });
+    await openAthleteA();
+
+    type(label, A_TEXT);
+    fireEvent.click(screen.getByRole('button', { name: button }));
+
+    expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
+    expect(screen.queryByText(confirmation)).toBeNull();
+    expect(field<HTMLTextAreaElement>(label).value).toBe(A_TEXT);
+  });
+
+  test('a not-confirmed write re-reads the athlete, so "check" has something to check, and the line stays up', async () => {
+    // The status set DID land; only the answer was lost.
+    let written = false;
+    const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+      const key = String(url);
+      if (init?.method === 'POST') {
+        written = true;
+        return unreadable200();
+      }
+      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+      if (key.includes('/medical-status')) return jsonResponse({ status: { ...A_STATUS, status: written ? 'restricted' : 'cleared' } });
+      if (key.includes('/recommendations')) return jsonResponse({ recommendations: [] });
+      if (key.includes('/decisions')) return jsonResponse({ decisions: [] });
+      return jsonResponse({ nearMisses: [] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<DecisionLoopReviewPage />);
+    fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    await within(medicalSection()).findByText('cleared');
+
+    type('New status', 'restricted');
+    fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+
+    expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
+    expect(await within(medicalSection()).findByText('restricted')).toBeTruthy();
+    expect(within(medicalSection()).queryByText('cleared')).toBeNull();
+    expect(screen.getByText(NOT_CONFIRMED)).toBeTruthy();
+  });
+
+  test('a not-confirmed answer for the previous athlete, arriving after the switch: the neutral line under the new one, and the draft still there on return', async () => {
+    const held = heldResponse();
+    installSwitchFetch({ post: () => held.promise });
+    await openAthleteA();
+    type('Message', A_TEXT);
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+    held.release(unreadable200());
+
+    expect(await screen.findByText(PREVIOUS_FAILED)).toBeTruthy();
+    expect(screen.queryByText(NOT_CONFIRMED)).toBeNull();
+    expect(screen.queryByText('Sent to the family.')).toBeNull();
+    expect(field<HTMLTextAreaElement>('Message').value).toBe('');
+
+    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    await screen.findByText(/ref-for-athlete-a/);
+    expect(field<HTMLTextAreaElement>('Message').value).toBe(A_TEXT);
+  });
+
+  test('the previous-athlete line is not erased by what happens next under the new athlete', async () => {
+    // It used to share the error line, which every read blanks: a write for B
+    // that succeeded a moment later wiped the only trace that A's incident
+    // report had failed.
+    const held = heldResponse();
+    installSwitchFetch({
+      post: (url, init) => (String(init.body).includes('ath-a') ? held.promise : acknowledge(url, init)),
+    });
+    await openAthleteA();
+    type('What happened', 'incident for A');
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+    held.release(jsonResponse({ error: 'Service unavailable' }, false));
+    await screen.findByText(PREVIOUS_FAILED);
+
+    // B's own write succeeds and re-reads B.
+    type('Description', 'near miss for B');
+    fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
+    await waitFor(() => expect(field<HTMLTextAreaElement>('Description').value).toBe(''));
+    await settle();
+
+    expect(screen.getByText(PREVIOUS_FAILED)).toBeTruthy();
+
+    // It goes when the coach changes the selection.
+    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    await screen.findByText(/ref-for-athlete-a/);
+    expect(screen.queryByText(PREVIOUS_FAILED)).toBeNull();
+  });
 
   describe.each(WRITES)('$name', ({ submit, confirmation, draft }) => {
     test.each(NOT_AN_ACKNOWLEDGEMENT)('a 200 carrying %s is not a confirmation: no success line, a visible failure, and the draft is kept', async (_shape, respond) => {
@@ -1912,7 +2018,10 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     });
   });
 
-  test('an id typed with a trailing space: the note route trims it, and its acknowledgement for the trimmed id still counts', async () => {
+  test.each([
+    ['Note', 'Log Note', 'Note logged.'],
+    ['Message', 'Send to Family', 'Sent to the family.'],
+  ])('an id typed with a trailing space: the route trims it, and its acknowledgement for the trimmed id still counts (%s)', async (label, button, confirmation) => {
     const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
       const key = String(url);
       if (init?.method === 'POST') {
@@ -1929,9 +2038,18 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-z ' } });
     await screen.findByText('No medical administrative status recorded yet.');
 
-    type('Note', 'a note');
-    fireEvent.click(screen.getByRole('button', { name: 'Log Note' }));
+    type(label, 'some text');
+    fireEvent.click(screen.getByRole('button', { name: button }));
 
-    expect(await screen.findByText('Note logged.')).toBeTruthy();
+    expect(await screen.findByText(confirmation)).toBeTruthy();
+  });
+
+  test('Accept: a row for the right recommendation that is NOT in the decided state is not the acknowledgement', async () => {
+    installSwitchFetch({ post: () => jsonResponse({ ok: true, recommendation: { recommendation_id: 'rec-a', status: 'provisional' } }) });
+    await openAthleteA();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+
+    expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
   });
 });
