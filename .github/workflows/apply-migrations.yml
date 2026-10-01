@@ -199,8 +199,39 @@ concurrency:
   # Two migrations against one database at the same time is never intended.
   # The shadow-runtime runner's advisory lock would serialize its own SQL, but
   # nothing coordinates across different runners, so serialize per target here.
-  group: apply-migrations-${{ inputs.target }}
+  #
+  # The group is the DEPLOY workflow's group for the same environment, not one
+  # of this workflow's own: deploy-staging.yml's for staging, and
+  # deploy-production.yml's for production. A migration and a deploy of one
+  # environment therefore never run at the same time either, which a separate
+  # apply-migrations-<target> group could not promise.
+  #
+  # `queue: max` IS PART OF THE LOCK, on this workflow and on both deploy
+  # workflows. Without it a group holds one running and ONE pending run, and a
+  # third arrival cancels the pending one whatever cancel-in-progress says --
+  # so a queued migration could be cancelled by a later deploy dispatch, and
+  # the deploy would then run without it. With it, up to 100 runs wait and none
+  # is replaced. It has to be on every workflow that names the group: one
+  # member left on the default brings the cancelling back.
+  #
+  # WHAT IT STILL COSTS AN OPERATOR. Runs of one environment go one at a time:
+  #   - a dispatch here waits behind a deploy of the same environment, and a
+  #     deploy waits behind a migration;
+  #   - a run WAITING FOR THE PRODUCTION APPROVAL counts as running and holds
+  #     the group (deploy-production run 30786409061 sat behind 30772571138
+  #     for the 26 minutes that one waited at its approval, 2026-08-03). A
+  #     production migration left unapproved therefore blocks every production
+  #     deploy behind it. `queue: max` does not change that.
+  # BEFORE AN EMERGENCY ROLLBACK: cancel any production run that is waiting for
+  # an approval nobody is going to give, or the rollback queues behind it.
+  #
+  # This serializes releases and migrations. It does NOT serialize every
+  # workflow that writes to an environment: seed-reference-data and the other
+  # target-taking workflows are outside these two groups.
+  # releaseConcurrencyContract.test.ts pins the mapping and names them.
+  group: ${{ inputs.target == 'production' && 'deploy-production-main' || 'deploy-staging-app-ppbf-staging' }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   apply:
