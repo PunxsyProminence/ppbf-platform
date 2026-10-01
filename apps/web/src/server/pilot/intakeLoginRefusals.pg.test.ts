@@ -265,7 +265,6 @@ describe('d1: intake does not turn a deactivated guardian login back on', () => 
         role: 'parent',
         accountIdHint: ACCOUNT,
         refuseRoleChange: true,
-        refuseDeletedLogin: true,
         refuseDeactivatedLogin: true,
       }),
     ).rejects.toMatchObject({ status: 409, code: 'DEACTIVATED_GUARDIAN_LOGIN' });
@@ -299,7 +298,6 @@ describe('d1: intake does not turn a deactivated guardian login back on', () => 
           role: 'parent',
           accountIdHint: ACCOUNT,
           refuseRoleChange: true,
-          refuseDeletedLogin: true,
           refuseDeactivatedLogin: true,
         }),
       ).rejects.toMatchObject({ status: 409, code: 'DEACTIVATED_GUARDIAN_LOGIN' });
@@ -321,7 +319,6 @@ describe('d1: intake does not turn a deactivated guardian login back on', () => 
       role: 'parent',
       accountIdHint: ACCOUNT,
       refuseRoleChange: true,
-      refuseDeletedLogin: true,
       refuseDeactivatedLogin: true,
     });
 
@@ -337,7 +334,6 @@ describe('d1: intake does not turn a deactivated guardian login back on', () => 
       role: 'parent',
       accountIdHint: 'acct-new-parent',
       refuseRoleChange: true,
-      refuseDeletedLogin: true,
       refuseDeactivatedLogin: true,
     });
 

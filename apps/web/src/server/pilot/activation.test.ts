@@ -170,6 +170,46 @@ describe('issueActivationCode', () => {
     ).rejects.toThrow('Not found');
   });
 
+  // OD-2026-09-30-004 e2. The rule is in the read, which names the reason,
+  // and in the insert, which is what writes the code. Each is pinned here; the
+  // refusal itself is proved against real Postgres in
+  // deletedLoginAdminActions.pg.test.ts.
+  test('the lookup and the code insert both exclude a deleted login', async () => {
+    stubIssuableAthlete();
+    await issueActivationCode({
+      accountId: 'ath-1',
+      organizationId: 'org-1',
+      issuedByAccountId: 'admin-1',
+      issuedByRole: 'organization_admin',
+    });
+
+    const [lookupSql] = callsMatching(/^\s*select account_id\s+from pilot\.accounts a/)[0];
+    expect(lookupSql).toContain('and not (a.deleted_at is not null)');
+    // The account row is locked before any code row is touched: the order
+    // deletion takes them in.
+    expect(lookupSql).toContain('for no key update');
+    expect(currentClient.query.mock.calls[0][0]).toBe(lookupSql);
+    const [insertSql] = callsMatching(/insert into pilot\.account_activation_tokens/)[0];
+    expect(insertSql).toContain('from pilot.accounts a');
+    expect(insertSql).toContain("and a.role = 'athlete'");
+    expect(insertSql).toContain('and not (a.deleted_at is not null)');
+  });
+
+  test('a login the insert no longer matches gets no code, and one deleted since the read is refused by name', async () => {
+    respond(/insert into pilot\.account_activation_tokens/, []);
+    respond(/^\s*select account_id\s+from pilot\.accounts a/, [{ account_id: 'ath-1' }]);
+    respond(/select 1 from pilot\.accounts a/, [{ found: 1 }]);
+
+    await expect(
+      issueActivationCode({
+        accountId: 'ath-1',
+        organizationId: 'org-1',
+        issuedByAccountId: 'admin-1',
+        issuedByRole: 'organization_admin',
+      }),
+    ).rejects.toMatchObject({ status: 409, code: 'DELETED_LOGIN' });
+  });
+
   test('scopes the lookup to athletes who are not platform owners', async () => {
     stubIssuableAthlete();
     await issueActivationCode({
@@ -230,9 +270,7 @@ describe('provisionAthleteActivation', () => {
   // not catch it: the athlete IS on that gym's roster, which is the point.
   test('create mode refuses an athlete who already holds an account, before any write', async () => {
     respond(/select athlete_id from pilot\.athletes/, [{ athlete_id: 'ath-9' }]);
-    respond(/select account_id from pilot\.accounts where organization_id/, [
-      { account_id: 'the-childs-own-account' },
-    ]);
+    respond(/from pilot\.accounts a where organization_id = \$1 and athlete_id = \$2/, [{ account_deleted: false }]);
 
     await expect(
       provisionAthleteActivation({
@@ -252,12 +290,12 @@ describe('provisionAthleteActivation', () => {
   });
 
   test('reset removes the old PIN, deactivates membership, revokes sessions, and supersedes old codes', async () => {
-    respond(/update pilot\.accounts set pin_hash = null/, [{ athlete_id: 'ath-1' }]);
+    respond(/update pilot\.accounts a set pin_hash = null/, [{ athlete_id: 'ath-1' }]);
     respond(/insert into pilot\.account_activation_tokens/, [{ expires_at: '2026-08-26T00:00:00Z' }]);
 
     await provisionAthleteActivation({ accountId: 'acct-1', organizationId: 'org-1', issuedByAccountId: 'admin-1', issuedByRole: 'organization_admin', mode: 'reset' });
 
-    expect(callsMatching(/update pilot\.accounts set pin_hash = null/)).toHaveLength(1);
+    expect(callsMatching(/update pilot\.accounts a set pin_hash = null/)).toHaveLength(1);
     expect(callsMatching(/update pilot\.session_tokens set revoked_at = now\(\)/)).toHaveLength(1);
     expect(callsMatching(/set superseded_at = now\(\)/)).toHaveLength(1);
     const [membershipSql] = callsMatching(/insert into pilot\.organization_memberships/)[0];
@@ -306,15 +344,43 @@ describe('redeemActivationCode', () => {
     expect(mockWithTransaction).not.toHaveBeenCalled();
   });
 
+  // The selector here was "the first read of the code". Redemption now takes
+  // the account row's lock before the code's -- the order deletion, a PIN
+  // reset and issuance take them in -- so the first read is unlocked and only
+  // learns whose code it is. This asserts on the read that locks, and that the
+  // account lock comes before it. That exactly one of two concurrent
+  // redemptions succeeds is proved on real Postgres in
+  // deletedLoginAdminActions.pg.test.ts.
   test('locks the token row so a code cannot be redeemed twice concurrently', async () => {
     stubRedeemableToken();
     await redeemActivationCode('ABCD-2345-EFGH', '481902');
 
-    const [sql] = callsMatching(/from pilot\.account_activation_tokens/)[0];
+    const statements = currentClient.query.mock.calls.map(([statement]) => String(statement));
+    const lockingRead = statements.findIndex(
+      (statement) => /from pilot\.account_activation_tokens/.test(statement) && statement.includes('for update'),
+    );
+    const sql = statements[lockingRead];
     expect(sql).toContain('for update');
     expect(sql).toContain('consumed_at is null');
     expect(sql).toContain('superseded_at is null');
     expect(sql).toContain('expires_at > now()');
+
+    const accountLock = statements.findIndex((statement) =>
+      /select 1 from pilot\.accounts where account_id = \$1 for no key update/.test(statement));
+    expect(accountLock).toBeGreaterThan(-1);
+    expect(accountLock).toBeLessThan(lockingRead);
+    // The first read of the code takes no lock.
+    expect(statements[0]).toMatch(/from pilot\.account_activation_tokens/);
+    expect(statements[0]).not.toContain('for update');
+  });
+
+  test('an unknown code costs one read and takes no lock on any account', async () => {
+    await expect(redeemActivationCode('ABCD-2345-EFGH', '481902')).rejects.toThrow(
+      'Unauthorized: activation code is invalid, already used, or expired',
+    );
+
+    expect(currentClient.query).toHaveBeenCalledTimes(1);
+    expect(String(currentClient.query.mock.calls[0][0])).not.toMatch(/for (no key )?update/);
   });
 
   /* The athlete has just chosen a PIN nobody else has seen, so the flag that
