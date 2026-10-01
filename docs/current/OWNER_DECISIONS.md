@@ -164,6 +164,240 @@ and should not try to.
 
 ---
 
+## OD-2026-09-30-007 -- What Jason authorized overwatch to do (lane questions, spending, the staging app) and his 2026-09-30 / 10-01 answers
+
+**Provenance: PRIMARY** where Jason's words were typed in the overwatch thread;
+**REPORTED** where a lane relayed them (each marked). **Date:** 2026-09-30 and
+2026-10-01. The overwatch thread is the session that took over from the
+housekeeping thread on 2026-09-30 (OD-2026-09-30-003); its transcript,
+`~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`, is
+outside this repository. Ids -005 and -006 are taken by open PR #1036 and are
+not on `main` when this is written. Questions were put in official form, then
+in plain English, each with one option marked recommended.
+
+### 1. What Jason authorized overwatch to do
+
+1. **Lane questions.** After several lanes' plan messages expired waiting for
+   his approval, Jason: *"You can answer the lanes questions"*. Overwatch
+   answers the lanes' technical, how-to and scope questions without routing
+   them to him. This restates G8 (OD-2026-09-30-003); it does not move product
+   intent, design, safety or minors' privacy away from him. ChatGPT, reviewing
+   PR #1050 on 2026-10-01, held overwatch to that line: removing an operator
+   override on a minor's login was not a lane question (item 4 below).
+2. **Spending.** Jason: *"Spend is ok as long as its not a new product"*.
+   Overwatch's reading, told to him at once and not corrected: more usage or
+   capacity on things PPBF already pays for is overwatch's to approve; a new
+   subscription, vendor, paid service or product line goes to him first. This
+   narrows G8's "spending goes to Jason".
+3. **One answer for the questions then open.** Jason, when the same questions
+   had been put to him more than once: *"go with your recomendation i feel like
+   i have answered that a million times"*. It selected the recommended option
+   on the questions already put to him and still open at that moment; they are
+   listed in section 2 and it reaches no further. It is not a standing
+   authorization to act on later recommendations without asking. Overwatch
+   told him it would from then on act on its recommendation and report
+   afterwards, and he did not answer; silence is not a grant, so a later
+   question is still put to him, once, with a recommendation. If he gives
+   standing authority of that kind, it is recorded from his own words.
+4. **The staging app.** Jason, signed in on staging: *"ok im logged into the
+   org ppbf@   you have my permision top do what ever you need to do in the app
+   there are no real people or sensitive info in them"*. Overwatch may act
+   inside the staging application. It does not cover production, and it does
+   not cover credentials: he enters those.
+5. **Overnight.** *"im going to bed make sure you keep check in and updating
+   lanes, do you have any nore that needs starting"* and *"can you chek on the
+   lanes every 15 mins"*: overwatch checks the lanes on a 15-minute schedule
+   while its session is open, merges what is green, in scope and cleared by
+   review, and never dispatches production.
+6. **One approval click, on his words.** Three read-only production runs were
+   waiting for the environment approval; overwatch listed them and Jason
+   answered *"approve reviews"*. Overwatch clicked the approval for one (run
+   36806464883, the research-repair dry run) in his signed-in browser; the
+   app's permission check refused the second click, and Jason approved the
+   other two himself. This is the per-run, contemporaneous instruction
+   OD-2026-09-30-001 item 3 describes; it is not standing production approval.
+
+### 2. Answers taken as recommended
+
+Under *"go with your recommendations, A for both, and find me what lanes are
+left"* (2026-09-30):
+
+- **Lanes L1, L2, L3 start.** L1 intake logins (d1, e1 and the intake 500 bug),
+  L2 deleted athletes off the admin safety screens (#1027 Q1-B), L3 the parent
+  Passbook (d3); each with one PR, a file allowlist, one "done when" sentence
+  and "update overwatch before each step".
+- **One approval for migrate-and-deploy: commissioned.** As put: one GitHub run
+  that builds staging, applies migrations and deploys production behind a
+  single approval click; A, yes, as its own Opus lane after the next release
+  (recommended); B, not now. **A.** Jason had asked for it the same day: *"can
+  i have multiple lanes migrate and then deploy under the same deployment"*.
+
+Under *"A for 6 and 7 and drift check we have a staging already"*: lanes 6
+(d4, the cleanup skips `gate_*` ids) and 7 (the People page athlete-ID box)
+start; and overwatch checks staging for drift (section 3).
+
+Under *"go with your recomendation i feel like i have answered that a million
+times"*, read as bounded to the questions below, which were the ones already
+put to him and open when he said it; each as put, and the recommended option
+taken:
+
+- **Failing safety gates of a deleted athlete.** A, hide them from the safety
+  review page at once (their open holds, escalations and violations still stay
+  until resolved); B, leave them until the retention purge and correct the
+  document; C, build a dismiss action. **A.** This changes option B of "#1027
+  Q1" (OD-2026-09-30-004) for failing gates only: a failing gate is a standing
+  state with no action once the athlete is gone, and nothing in the app can
+  produce the passing evaluation that would clear it. Built in PR #1048.
+- **V1, the `room--` class ceiling.** A, replace the count ceiling in
+  `legacyVisualVocabulary.test.ts` with a check against the approved-room list;
+  B, keep the count. **A.** Built in PR #941.
+- **PR #1026 (the look board).** Close it or keep it; the visual lane
+  recommended against merging it, because it proposes a Floor look that
+  competes with the one approved on `local/coach-floor-board`. **Closed**
+  2026-10-01; the branch `local/look-board` is kept.
+- **C1, two rules relayed through lanes, confirmed.** (a) For this phase the
+  visual and UI work is Jason's and the visual lane's, and only overwatch and
+  the visual lane use ChatGPT, each in its own chat. His words as the visual
+  lane relayed them (REPORTED): *"it can help you mapp things out  but you and
+  i will build the visual and UI, we will keep house keeping updated so that
+  other lanes can fix anything that needs done to make it work"*, and *"i may
+  change that later after we get everything mapped and figured out UI and
+  design wise"*. He later widened it himself: Lane S may read ChatGPT (section
+  4). (b) A lane updates overwatch before acting on each new step.
+- **S3.** Derive `SHADOW_CONTEXT_CONTRACT_VERSION` from the code instead of
+  bumping it by hand; A, a small lane later (recommended); B, leave it manual.
+  **A.** Not built.
+- **W1.** Reword the production-approval clause of Jason's L2 rule file so it
+  protects his per-run instruction, not who opened the page (the ACTIVE_WORK
+  build row); A, reword; B, keep. **A.** Not yet done: the wording goes to him
+  first, because it is a rule about authorization.
+- **U1, lane models.** Sign-in, permissions, migrations, minors' data and
+  safety lanes on Opus at high effort; other lanes on Sonnet at medium effort.
+  **Applied.** It follows his usage direction, relayed by the housekeeping
+  thread (REPORTED): *"add a conserve usage to what we are doing dont overkill
+  models and effort, but at the same time the model and effort has to fit the
+  task"*.
+- **The policy-shelf move, production dry run.** A, run it read-only to count
+  the citing evidence items; B, first build a way to move them. **A**; result
+  in section 3.
+
+Relayed answers, recorded as REPORTED: through the housekeeping thread, *"i
+approve 2  1 doesnt matter"* (2 = send ChatGPT the PR #1036 review request; 1 =
+paste the updated instruction texts into ChatGPT, skipped); through the AI/ML
+lane, *"that also is an overwatch task"* (the signed-in SHADOW check on staging
+after PR #1036 is overwatch's; he still enters every credential). The second
+narrows G3's "Jason's own signed-in check on staging" for that check.
+
+### 3. Staging has the gym organization; the policy-shelf move is blocked by citations
+
+Put to Jason: create the `punxsy_prominence` organization on staging so staging
+matches production; A, he creates it signed in as Admin@ (recommended); B, a
+lane builds a provisioning step; C, leave it. **Jason:** *"A, open the staging
+admin page"*, then the permission in section 1 item 4. Overwatch created it
+through the app's setup wizard on 2026-09-30 from his Admin@ session, id
+`punxsy_prominence`, name "Punxsy Prominence Boxing and Fitness"
+(`check-database` seed-identity on staging, run 36760731887, lists three
+organizations). The wizard's "add gym admin" step was skipped: the app refuses
+to add `ppbf@` to a second organization, so on staging `ppbf@` stays in
+`ppbf-default-org`.
+
+The move tool's dry runs then found what blocks it: saved SHADOW evidence items
+cite the rows that would move, by a composite key that includes the owning
+organization, and the tool refuses to move rows out from under them
+(`EVIDENCE_ITEMS_CITE_ROWS`). Staging, run 36760879516: 25 sources, 10
+documents, 60 chunks, 853 citing items. Production, run 36806469377
+(2026-10-01, read-only, approved by Jason): 22 sources, 7 documents, 49 chunks,
+**2** citing items. Nothing was moved. What to do with the two is not decided.
+
+The other two read-only production checks of 2026-10-01: the research-repair
+confirming dry run reads REPAIRED with nothing pending (run 36806464883), and
+`library-scope` reads 981 live sources plus 213 retired under `__platform__`
+(run 36806467005). Of the checks OD-2026-09-29-006 owed, one remains: a
+signed-in SHADOW question in production, with Jason entering the credentials.
+
+### 4. Lane S: SHADOW's model and personality, owner-driven
+
+Jason's words, in order: *"Create a lane to talk about the LLM for shadow and
+its personality let it preference chat gpt"*; *"Reference chat gpt and the
+drives once to get a feel"*; *"You do it for reference and open that lane have
+it do the same thing and I will answer questions and work with it until we get
+the direction and anything fixed thats broken then I will hand it back to
+you"*; and, with the first word read as "update", *"First date the lanes Aks
+chat gpt to look for shadow personality and check the repo"*.
+
+What it decides: a lane works with Jason directly on which model SHADOW runs on
+and how it sounds; it and overwatch each read ChatGPT and the drives once for
+context; it hands back to overwatch when the direction is set. Nothing about
+SHADOW's voice is decided by this entry. What the passes found is evidence for
+that lane, not a ruling: the persona is `SHADOW_SYSTEM_PROMPT`
+(`apps/web/src/server/pilot/shadowChat.ts:959`) with audience registers at
+`:1086`; no document found defines the voice; ChatGPT found no record of Jason
+choosing its "tough but caring mentor", dark-humour layer; and the lane found
+his 2026-08-25 visual approval of "AMPLECTERE MISERIAM (Embrace the suck)" as a
+gym saying (REPORTED).
+
+### 5. Decided by overwatch under item 1, for Jason to reverse if he wants
+
+These are not Jason's rulings. They are listed so a later session does not
+mistake them for his.
+
+- **The phone-apostrophe fix is split out of PR #1036** into PR #1049, to ship
+  without waiting for #1036's review rounds: on `main` and in production the
+  SHADOW urgent patterns matched "can't breathe" only with a straight
+  apostrophe. Jason's rulings to the AI/ML lane on the content, as that lane
+  relayed them (REPORTED): *"Normalise input + patch"* and *"Fix all blocking,
+  then re-review"*.
+- **A live athlete whose login the cleanup deleted** gets one refusal from
+  intake (`ATHLETE_RECORD_HELD_BY_DELETED_LOGIN`, PR #1047; fixed by hand as in
+  e3 B) until the cleanup stops retiring such logins (PR #1050).
+- **PR #1050 also stops the cleanup retiring a NAMED login whose athlete record
+  is live.** ChatGPT ruled this needs Jason. It was put to him and he answered
+  on 2026-10-01 (section 7): never. That half is now his ruling, not
+  overwatch's.
+- **e2's scope** (the L1 lane's next PR): admin actions on a deleted login
+  refuse in both directions (status and membership included); assign-admin,
+  transfer-admin and master SHADOW access are included; redeeming an activation
+  code for a deleted login writes nothing and gives the same generic answer.
+
+### 6. A defect in this record's own period
+
+On 2026-10-01 overwatch re-ran one failed CI job (run 36809463596, on PR #941)
+with no words of Jason's naming that action. ChatGPT's WRITES audit found it.
+It changed no code and deployed nothing. Jason was then asked for standing
+authorization to re-run failed CI jobs on open PRs, and gave it on 2026-10-01
+(section 7). The re-run of 36809463596 itself stays a defect: it came first.
+
+### 7. Answers of 2026-10-01
+
+Three questions were put to Jason together, in official form then plain
+English; two carried a recommendation. His answer, verbatim: *"agree with
+recomendations"*. It answers the two that had one.
+
+- **A named login whose athlete record is live.** As put: may the account
+  cleanup ever retire a specifically named login while that athlete's record
+  is still live in the same gym? A, no, never (recommended); B, yes, if an
+  operator names it. **A: never.** The login is turned off in the app, or the
+  athlete is deleted first. PR #1050 already builds this.
+- **Re-running failed CI jobs.** As put: may overwatch re-run failed CI jobs on
+  open PRs without asking each time? A, yes (recommended); B, ask each time.
+  **A.** It covers re-running a failed job on an open pull request. It does not
+  cover dispatching a workflow, a deploy, or anything in production.
+- **Standing authority to act on recommendations.** As put: A, yes, for
+  decisions that are reversible and are not production, a new product, or
+  minors' safety or privacy; B, no, ask each time. Overwatch gave no
+  recommendation, so *"agree with recomendations"* does not answer it. **Not
+  answered**; section 1 item 3 stands, and each new decision is put to him.
+
+The same morning, on finishing the staging check before a production release
+(A, bring the three signed-in browser windows forward and overwatch walks the
+changed screens, recommended; B, he checks them himself; C, release on tests
+alone), Jason: *"sych permissions  abd Q4 A ... i can not see the other 3
+questions"*. **A**; and "sych permissions" is his instruction to give the lane
+sessions the same permission mode as the overwatch session, so messages between
+them are delivered. Done for lanes 11 to 14.
+
+---
+
 ## OD-2026-09-30-004 -- Answers to the housekeeping question batch (2026-09-30)
 
 **Provenance: PRIMARY.** **Date:** 2026-09-30. Between 12:08Z and 13:58Z the

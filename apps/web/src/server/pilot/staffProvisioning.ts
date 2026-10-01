@@ -243,6 +243,28 @@ function deletedGuardianLoginConflict(loginEmail: string): ConflictError {
 }
 
 /**
+ * The refusal for naming a guardian login an admin deactivated (active_flag
+ * false, deleted_at null) during intake. Provisioning's upsert sets active_flag
+ * and the membership back to true, so promoting a child used to switch the
+ * login back on as a side effect. Jason 2026-09-30 (OD-2026-09-30-004 d1, A):
+ * intake refuses it, and the admin reactivates the login on purpose. The
+ * reactivation named here is the People page's parent invite, which does set it
+ * back on (it leaves refuseDeactivatedLogin unset). That invite must link the
+ * guardian to an athlete record that exists, so the message also gives the
+ * order for a family whose only child is the one being promoted.
+ */
+function deactivatedGuardianLoginConflict(loginEmail: string): ConflictError {
+  return new ConflictError(
+    `Conflict: ${loginEmail} belongs to a guardian login that was deactivated. Intake does not turn a `
+    + 'deactivated login back on. To reactivate it on purpose, add this guardian again on People, '
+    + '"Add Coach, Staff Or Guardian", linked to one of their children already on the roster, then promote '
+    + 'again. If none is, promote without guardian.account_id first, then add the guardian on People linked '
+    + 'to this child.',
+    'DEACTIVATED_GUARDIAN_LOGIN',
+  );
+}
+
+/**
  * Creates or updates a Microsoft-authenticated staff account and its
  * organization membership.
  *
@@ -285,6 +307,13 @@ function deletedGuardianLoginConflict(loginEmail: string): ConflictError {
  * surfaces leave it unset; what they should do with a deleted login is not
  * decided. It reads deleted_at in a query of its own, only when set, so the
  * invite path does not depend on the column.
+ *
+ * `refuseDeactivatedLogin` is intake promotion's only as well: an existing
+ * account with active_flag false is refused (409) rather than reactivated
+ * (OD-2026-09-30-004 d1). The invite surfaces leave it unset, because
+ * re-inviting is how an admin reactivates a login on purpose. It is refused
+ * on the read and again in the account write itself, so a login deactivated
+ * between the two is still not turned back on.
  */
 export async function createOrUpdateMicrosoftStaffAccount(params: {
   loginEmail: string;
@@ -296,6 +325,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
   volunteer?: VolunteerRosterAssignment;
   refuseRoleChange?: boolean;
   refuseDeletedLogin?: boolean;
+  refuseDeactivatedLogin?: boolean;
 }): Promise<StaffProvisionResult> {
   const loginEmail = normalizeEmail(params.loginEmail);
   const organizationId = params.organizationId.trim();
@@ -337,8 +367,9 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     role: PilotRole;
     auth_provider: AuthProvider;
     is_platform_owner: boolean;
+    active_flag: boolean;
   }>(
-    `select account_id, organization_id, role, auth_provider, is_platform_owner
+    `select account_id, organization_id, role, auth_provider, is_platform_owner, active_flag
      from pilot.accounts
      where lower(login_email) = $1`,
     [loginEmail],
@@ -384,6 +415,12 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
       throw new Error('Forbidden: this email is already used by a PIN-based athlete account');
     }
 
+    // After the PIN refusal, so a PIN-based login is told what it is rather
+    // than sent to a re-invite that would refuse it.
+    if (params.refuseDeactivatedLogin && !existing.active_flag) {
+      throw deactivatedGuardianLoginConflict(loginEmail);
+    }
+
     // Peer protection. Re-inviting an address is how a role gets changed, and
     // without this an invite could silently demote a sitting organization
     // admin or board member -- roles the inviting admin cannot grant and
@@ -411,7 +448,13 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
   }
 
   const { guardianLink, volunteerLink } = await withTransaction(async (client) => {
-    await client.query(
+    // refuseDeactivatedLogin is held in this statement, not only in the read
+    // above: that read is outside the transaction, so an admin deactivating
+    // the login after it would otherwise have it turned back on here. With
+    // the flag set, the conflict update touches only an active row; a
+    // deactivated one comes back as no row, and the refusal below rolls the
+    // transaction back before the membership is written.
+    const written = await client.query<{ account_id: string }>(
       `insert into pilot.accounts (
          account_id,
          login_email,
@@ -433,9 +476,15 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
          athlete_id = null,
          pin_hash = null,
          active_flag = true,
-         updated_at = now()`,
-      [accountId, loginEmail, role, organizationId],
+         updated_at = now()
+       where not $5::boolean or pilot.accounts.active_flag
+       returning account_id`,
+      [accountId, loginEmail, role, organizationId, params.refuseDeactivatedLogin === true],
     );
+
+    if (params.refuseDeactivatedLogin && written.rows.length === 0) {
+      throw deactivatedGuardianLoginConflict(loginEmail);
+    }
 
     await client.query(
       `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
@@ -662,7 +711,8 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
 /**
  * Refuses, before anything is written, every guardian login that intake
  * promotion's call to createOrUpdateMicrosoftStaffAccount (role parent,
- * refuseRoleChange, refuseDeletedLogin) would refuse or would not use as named.
+ * refuseRoleChange, refuseDeletedLogin, refuseDeactivatedLogin) would refuse or
+ * would not use as named.
  *
  * Intake promotion has no transaction around its writes and provisions the
  * guardian's login after the athlete record and the athlete's account. A
@@ -680,6 +730,8 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
  *    Provisioning would reactivate it; see deletedGuardianLoginConflict;
  *  - an existing parent account that signs in with a PIN, which provisioning
  *    refuses to convert;
+ *  - an existing parent login an admin deactivated (active_flag false) -- 409.
+ *    Provisioning would reactivate it; see deactivatedGuardianLoginConflict;
  *  - an account_id hint the email's existing login would override.
  *    Provisioning resolves by email first and keeps the login an email already
  *    has, ignoring the hint, so a caller that went on using its own hint --
@@ -706,9 +758,10 @@ export async function assertGuardianLoginProvisionable(params: {
     auth_provider: AuthProvider;
     is_platform_owner: boolean;
     deleted_at: string | null;
+    active_flag: boolean;
   }>(
     `select account_id, organization_id, role, auth_provider, is_platform_owner,
-            deleted_at::text as deleted_at
+            deleted_at::text as deleted_at, active_flag
      from pilot.accounts
      where lower(login_email) = $1`,
     [loginEmail],
@@ -735,6 +788,10 @@ export async function assertGuardianLoginProvisionable(params: {
       throw new Error(
         'Forbidden: this email is already used by a PIN-based account, which cannot be provisioned as a Microsoft login',
       );
+    }
+
+    if (!existing.active_flag) {
+      throw deactivatedGuardianLoginConflict(loginEmail);
     }
 
     if (hint && existing.account_id !== hint) {

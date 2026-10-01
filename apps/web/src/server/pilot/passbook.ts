@@ -1,4 +1,5 @@
 import { isOrganizationAdminRole } from './access';
+import { countCompletedSessions } from './achievements';
 import type { PilotRole } from './contracts';
 import { isSystemCheckInNote } from '../../shared/sessionNoteSemantics';
 
@@ -395,6 +396,12 @@ function belongsToOrganization(row: { organization_id: string }, organizationId:
  * page of this book is audience-scoped (see the note_type lists above), and a
  * caller that forgot to say who is reading must fail to compile rather than
  * fall back to the widest audience.
+ *
+ * NOT THE GUARDIAN'S BOOK. GET /api/pilot/passbook hands a linked guardian
+ * getGuardianPassbook (below) and never calls this for one. The 'parent'
+ * handling that remains here (PASSBOOK_GUARDIAN_NOTE_TYPES, the absent notes
+ * key) is a floor for any other caller, not permission to use this book as a
+ * guardian's: it still carries dated rows, which OD-2026-09-30-004 d3 closed.
  */
 export async function getAthletePassbook(
   organizationId: string,
@@ -409,8 +416,11 @@ export async function getAthletePassbook(
    *
    * The note_type filter above answers "which ROWS belong in this book". It
    * has never answered "which COLUMNS", and this book is read by the athlete
-   * themself and by every linked guardian (the route's own gate admits both).
-   * Two staff-only fields were reaching them:
+   * themself. It was read by every linked guardian too, until the Passbook
+   * route began sending guardians only to getGuardianPassbook
+   * (OD-2026-09-30-004 d3); the family filtering below stays as a defensive
+   * floor for any direct or future caller that passes a family role.
+   * Two staff-only fields were reaching family readers:
    *
    *   pilot.attendance.notes  Already staff-only on both of its other
    *                           readers -- the domain-get route and
@@ -452,21 +462,27 @@ export async function getAthletePassbook(
   //
   // An ALLOWLIST, not `!== 'parent'`. The athlete's own note is theirs and
   // staff already read it through the dedicated coach route; every other
-  // reader -- starting with the linked guardian this closes -- gets no note
+  // reader -- starting with the linked guardian this closed -- gets no note
   // key. Written this way round so a role added later is silently excluded
   // rather than silently included, which is the direction a mistake here
   // should fail.
   //
-  // A guardian is not a lesser reader of their child's record generally; this
-  // one column is free text written for a coach -- in practice by the child,
-  // though the row cannot prove it -- and nobody has
-  // decided a parent is its audience.
+  // The Passbook route no longer brings a guardian here at all: it sends them
+  // only to getGuardianPassbook (OD-2026-09-30-004 d3). This exclusion stays
+  // as a defensive floor for any direct or future caller. The column is free
+  // text written for a coach -- in practice by the child, though the row
+  // cannot prove it -- and nobody has decided a parent is its audience.
   const sessionNotesReader = staffReader || viewerRole === 'athlete';
 
+  // Scope B (OD-2026-09-29-002 item 10): a deleted athlete's book is marked
+  // deleted with them. The mark is the athlete row's own deleted_at, so the
+  // lookup that opens the book is the one place it has to be read: no row
+  // here, no child query below, and the route answers exactly as it does for
+  // an athlete id that does not exist.
   const athlete = await queryOne<AthleteRow>(
     `select organization_id, athlete_id, full_name, dob, weight_class, gym_status, active_flag, coach_id, created_at
      from pilot.athletes
-     where organization_id = $1 and athlete_id = $2`,
+     where organization_id = $1 and athlete_id = $2 and deleted_at is null`,
     [organizationId, athleteId],
   );
 
@@ -637,6 +653,51 @@ export async function getAthletePassbook(
         note: 'gym_status is a roster membership state, not a stamp code',
       },
     },
+  };
+}
+
+/**
+ * THE GUARDIAN'S BOOK (OD-2026-09-30-004 d3; the owner chose A: narrow this
+ * read for a linked guardian to match ParentDigest, with no dated session
+ * rows).
+ *
+ * ParentDigest is the parent's disclosure model: the child's name, coach
+ * recognitions, milestones, and the completed-session COUNT -- never the
+ * session log ("every date, RPE and note"). The first and last are all this
+ * book holds that the digest also shows, so they are all a guardian gets.
+ * Recognitions and milestones are not folded in: they have their own routes,
+ * and adding them here would widen this read, not narrow it.
+ *
+ * A separate function rather than a branch in getAthletePassbook, so that no
+ * query for a dated row runs on a guardian's behalf at all, and the return
+ * type itself cannot carry a page. The count is countCompletedSessions, the
+ * one the digest already shows, so the two cannot drift apart.
+ */
+export interface GuardianPassbook {
+  athlete: Pick<AthleteRow, 'athlete_id' | 'full_name'>;
+  completed_sessions: number;
+}
+
+export async function getGuardianPassbook(
+  organizationId: string,
+  athleteId: string,
+): Promise<GuardianPassbook | null> {
+  const athlete = await queryOne<Pick<AthleteRow, 'organization_id' | 'athlete_id' | 'full_name'>>(
+    // Scope B, as in getAthletePassbook: a deleted athlete has no book, and
+    // the count below is never taken for one.
+    `select organization_id, athlete_id, full_name
+     from pilot.athletes
+     where organization_id = $1 and athlete_id = $2 and deleted_at is null`,
+    [organizationId, athleteId],
+  );
+
+  if (!athlete || !belongsToOrganization(athlete, organizationId)) {
+    return null;
+  }
+
+  return {
+    athlete: { athlete_id: athlete.athlete_id, full_name: athlete.full_name },
+    completed_sessions: await countCompletedSessions(organizationId, athleteId),
   };
 }
 
