@@ -1108,7 +1108,7 @@ describe('typographic normalisation before matching', () => {
   // \s+, which folded newlines away, and the newline was the only bound on
   // the unbounded `.` gaps in this file. Both of these were fine on main, were
   // withheld by that version, and are fine again: the fold no longer touches
-  // whitespace at all, apart from U+FEFF.
+  // whitespace at all.
   // ALL FOUR ECMAScript LINE TERMINATORS, because the first repair preserved
   // \n alone and CR, U+2028 and U+2029 were still folded into spaces -- CRLF
   // is what a Windows client sends, and U+2028/U+2029 arrive from pasted rich

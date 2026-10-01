@@ -128,11 +128,11 @@
     {
       "path": "src/server/pilot/shadowChat.test.ts",
       "minimumTests": 201,
-      "guards": "The SHADOW chat classifier: which messages are withheld from the model and queued for a human, including the phone-apostrophe emergency reports (\"I can’t breathe\") that main let through. Not registered before #1049, so the whole suite could fail to load and the run stay green."
+      "guards": "The SHADOW chat classifier: which messages are withheld from the model and queued for a human, including the phone-apostrophe emergency reports (\"I can’t breathe\") that main let through. Not registered before #1049."
     },
     {
       "path": "src/server/pilot/shadowChatSensitivity.test.ts",
-      "minimumTests": 48,
+      "minimumTests": 49,
       "guards": "The differential guard on that classifier: a frozen copy of main's seven withholding returns, and the argument, with its premises tested, that folding apostrophe and quote look-alikes releases nothing main withheld and downgrades no emergency. If it stops loading, a later edit to the fold or its call sites ships unguarded."
     },
     {

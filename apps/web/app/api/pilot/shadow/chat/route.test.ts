@@ -331,8 +331,8 @@ describe('the athlete\'s own words survive normalisation', () => {
   // EQUIVALENCE, NOT TODAY'S OUTCOME.
   //
   // This asserted status 400 and that the provider was never called. Both are
-  // true today and both are about to stop being true: OD-2026-09-30-006
-  // replaces the refusal with a real answer, so a test pinned to the refusal
+  // true today and both are about to stop being true: #1036 replaces the
+  // refusal with a real answer, so a test pinned to the refusal
   // would fail on a change that is not a regression, and someone would
   // "fix" it by deleting it.
   //
