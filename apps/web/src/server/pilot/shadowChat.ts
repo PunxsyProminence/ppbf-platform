@@ -136,128 +136,67 @@ export const SHADOW_SAFE_FILTERED_RESPONSE =
   'I can’t safely provide that generated answer. SHADOW filtered it before display. Consult a qualified coach or medical professional for the next decision. RESEARCH NEEDED — the answer did not pass safety validation.';
 
 /**
- * Fold the typographic variation a phone keyboard produces, ONCE, before any
- * pattern in this file runs.
+ * Substitute the apostrophe and quote look-alikes a phone keyboard produces,
+ * ONE CHARACTER FOR ONE CHARACTER, and nothing else.
  *
- * THE DEFECT THIS CLOSES IS LIVE IN PRODUCTION. Measured against this file
- * before the change:
+ * THE DEFECT THIS CLOSES IS LIVE IN PRODUCTION. Measured against main before
+ * the change:
  *
  *   "I can't breathe after that hit"        straight  -> withheld, human queued
- *   "I can\u2019t breathe after that hit"        CURLY     -> allowed through to the model
+ *   "I can\u2019t breathe after that hit"        CURLY     -> allowed to the model
  *
- * Allowed through means the athlete gets an ordinary chat answer instead of
- * the safeguarding response, and nobody is told. The same holds for "I can\u2019t
- * see" and "I can\u2019t move". The curly apostrophe is what iOS and Android type
- * BY DEFAULT, so this is the common case, not an edge case.
+ * U+2019 is what iOS and Android type by default, so for an athlete on a phone
+ * that is the common case. The file already knew: the loss_of_consciousness
+ * pattern carries ['\u2019] for KO'd, fixed by hand, while every can't and
+ * cannot pattern stayed straight-only.
  *
- * The file already knew. The loss_of_consciousness pattern carries `['\u2019]`
- * for KO'd -- one pattern, fixed by hand -- while every can't and cannot
- * pattern stayed straight-only. shadowChat.test.ts even uses a curly
- * apostrophe in a case that passes by luck, matching on "seeing stars" rather
- * than on its apostrophe.
+ * WHY THIS IS THE WHOLE FUNCTION, AND WHY IT USED TO DO MORE.
  *
- * Which is why this is central rather than another character class.
- * Per-pattern fixes are how you get one correct pattern and fourteen broken
- * ones, and the next pattern anybody writes starts broken again. Normalising
- * the INPUT makes it impossible for a pattern author to get wrong.
+ * It also deleted zero-width characters and the soft hyphen, folded dashes,
+ * folded the NBSP class to a space, collapsed whitespace, trimmed, and ran
+ * NFKC. Every one of those was added for tidiness rather than for the defect,
+ * and between them they caused SIX regressions -- each one a message main
+ * WITHHELD that this code then allowed through to the model with nobody told,
+ * which is precisely the production defect it exists to close:
  *
- * MATCHING ONLY. The return value is never persisted, never sent to the
- * model, and never shown back: the athlete's own words are the record. It is
- * used only inside the two functions below, and only inside `.test(...)`.
+ *   NFKC EXPANDS. U+2026 became three periods, overflowing the
+ *   character-counted windows -- `vision.{0,12}blurr`, `bleeding.{0,20}`.
+ *   NFKC CREATES WORD CHARACTERS. U+2122 became "TM", so "\u2122my shoulder
+ *   hurts" read as "TMmy shoulder hurts" and `\b(i|me|my|...)\b` went false.
+ *   DELETION MERGES WORDS. "my\u200Bshoulder hurts" became "myshoulder hurts",
+ *   so `\bmy\b` failed and the personal-health refusal was lost. Same for
+ *   U+00AD.
+ *   WHITESPACE COLLAPSING shortens text, which moves every counted window.
  *
- * TWO PROPERTIES THIS MUST KEEP, both asserted over the whole BMP in
- * shadowChatSensitivity.test.ts, because violating either silently moves
- * every pattern in this file:
+ * One root cause: the patterns in this file count characters, assert word
+ * boundaries, and test whitespace. A fold that changes LENGTH, changes the
+ * WORD CLASS of a position, or changes the WHITESPACE CLASS of a position
+ * silently moves all of them. So the fold is now restricted to substitutions
+ * that cannot do any of those three things, and all three are asserted over
+ * the whole BMP in shadowChatSensitivity.test.ts.
  *
- *   1. IT NEVER LENGTHENS. The patterns count characters -- `vision.{0,12}`,
- *      `bleeding.{0,20}`, `after.{0,30}hit.{0,60}`. A fold that turns one
- *      character into three pushes a real report out of its window.
- *   2. IT NEVER TURNS A NON-WORD CHARACTER INTO A WORD CHARACTER. The
- *      patterns assert boundaries -- `\b(i|me|my|mine|we|our)\b`. A fold that
- *      makes "<U+2122>my" into "TMmy" destroys the boundary and with it the
- *      personal-context test every urgent branch depends on.
+ * ANYTHING NOT FOLDED HERE BEHAVES EXACTLY AS IT DOES ON MAIN, which is the
+ * standard this hotfix is measured against. Widening it is #1036 work.
  *
- * Both were broken by `.normalize('NFKC')`, which is why it is not here. Add
- * a fold only if it satisfies both, and the sweep will tell you if it does
- * not.
+ * MATCHING ONLY. The result is never persisted, never sent to the model and
+ * never shown back: the athlete's own words are the record.
  */
 export function normaliseForMatching(text: string): string {
   return text
-    // THE EXPLICIT CLASSES RUN BEFORE NFKC, and the order is load-bearing.
-    // With NFKC first, U+00B4 ACUTE ACCENT decomposes to a space plus a
-    // combining acute, so by the time this class ran the character it was
-    // looking for no longer existed and "can\u00B4t" came out as "can t". Caught
-    // by the unit test for this function, not by reading it.
+    // Apostrophe look-alikes -> ASCII apostrophe. The fix. Every member is a
+    // single UTF-16 unit and a non-word character, as is the replacement, so
+    // length, word class and whitespace class are all preserved.
     .replace(/[\u2018\u2019\u201A\u201B\u2032\u02B9\u02BB\u02BC\u00B4\uFF07\uFF40`]/g, "'")
+    // Quote look-alikes -> ASCII quote. Same reasoning.
     .replace(/[\u201C\u201D\u201E\u201F\u2033\uFF02]/g, '"')
-    .replace(/[\u2010-\u2015\u2212]/g, '-')
-    // NFKC WAS HERE AND HAS BEEN REMOVED. It was never needed for the defect
-    // this fixes -- the curly apostrophe is handled by the explicit class
-    // above -- and it caused two regressions of its own, both of the shape
-    // this PR exists to prevent:
-    //
-    //   IT EXPANDS. U+2026 becomes three periods, so "my vision is<U+2026>
-    //   really blurry" grew past the 12-character window in
-    //   `vision.{0,12}blurr` and stopped matching. main WITHHELD it; with
-    //   NFKC the current code ALLOWED it through to the model with nobody
-    //   told. A BMP sweep of that one carrier found 476 such code points.
-    //
-    //   IT CREATES WORD CHARACTERS. U+2122 becomes "TM", so "<U+2122>my
-    //   shoulder hurts" became "TMmy shoulder hurts", "my" was no longer a
-    //   whole word, and the personal-context test that every urgent branch
-    //   depends on went false. 1,168 code points do something of this kind.
-    //
-    // Both are the same root cause: a fold that is not length-preserving and
-    // not word-boundary-preserving silently moves every pattern in this file
-    // that counts characters or asserts a boundary. That is a property, and
-    // it is asserted as one in shadowChatSensitivity.test.ts rather than left
-    // to a list of characters somebody thought of.
-    //
-    // The handful of full-width forms NFKC was wanted for are folded
-    // explicitly in the classes above, one character to one character.
-    // INVISIBLE, AND NOT WHITESPACE -> deleted. U+200B-U+200D sit inside a word
-    // and defeat a boundary with nothing visible to explain why. U+00AD SOFT
-    // HYPHEN belongs here too: it renders as nothing mid-word, so
-    // "signifi<AD>cant" IS "significant" to the person who typed it, and
-    // leaving it in let a hyphen-shaped non-word character re-open the
-    // contraction hole below.
-    .replace(/[\u200B-\u200D\u00AD]/g, '')
-    // U+FEFF IS DELIBERATELY NOT IN THAT CLASS, and this is the sharpest
-    // mistake in this PR's history. It was, and deleting it REINTRODUCED THE
-    // VERY DEFECT THIS PR EXISTS TO CLOSE: ECMAScript \s counts U+FEFF as
-    // whitespace, so main's `can(?:not|'t)\s+breathe` already matched
-    // "I can't<FEFF>breathe after that hit" and withheld it. Stripping the
-    // character joined the words, no pattern matched, and the message was
-    // allowed through to the model with nobody told -- on a branch whose
-    // entire purpose is stopping exactly that. Found by a reviewer sweeping
-    // every BMP code point and diffing against main; it was the sole
-    // regression. It becomes a SPACE, which is what the engine already
-    // treated it as.
-    .replace(/\uFEFF/g, ' ')
-    // Exotic spaces become ordinary ones.
-    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
-    // HORIZONTAL WHITESPACE ONLY. Collapsing \s+ folded NEWLINES into spaces,
-    // and the newline was the only thing bounding the unbounded `.` gaps in
-    // this file -- `weight.*cut`, `return.*play`, the diagnosis `.*`, and the
-    // bounded `.{0,30}` windows. None carries the /s flag, so `.` never
-    // crossed a line break before. Measured: "Bodyweight work today felt
-    // good.\nTomorrow I want to cut the warm-up short." was fine on main and
-    // was withheld as weight_cutting after the collapse, as was "I need to
-    // return the gloves I borrowed.\nWe can play it by ear for Saturday."
-    // Two ordinary two-line messages, refused.
-    //
-    // Every \s+ in this file already matched a newline, so the apostrophe fix
-    // never needed this. The class keeps the doubled-space case working and
-    // leaves the line break exactly where the patterns expect it.
-    //
-    // ALL FOUR ECMAScript LINE TERMINATORS, not just \n. The first version of
-    // this fix excluded \n alone, so CR, U+2028 and U+2029 were still folded
-    // into spaces and the same two-line messages were still withheld -- I had
-    // fixed the example I was shown rather than the class it belonged to.
-    // Windows clients send CRLF, and U+2028/U+2029 arrive from pasted
-    // rich text.
-    .replace(/[^\S\n\r\u2028\u2029]+/g, ' ')
-    .trim();
+    // U+FEFF -> space. The one fold that changes the whitespace class of a
+    // position, and it is correct because the engine ALREADY counts U+FEFF as
+    // whitespace: main's `can(?:not|'t)\s+breathe` matched
+    // "I can't<FEFF>breathe after that hit" and withheld it. An earlier
+    // version of this function DELETED it, which joined the words and let that
+    // message through -- the production defect reintroduced through a
+    // different character.
+    .replace(/\uFEFF/g, ' ');
 }
 
 // Classify high-risk topics and determine routing

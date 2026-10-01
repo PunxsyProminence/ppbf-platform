@@ -1192,14 +1192,26 @@ describe('typographic normalisation before matching', () => {
     expect(validateShadowRequest(message, 'athlete', 'org-123').valid).toBe(false);
   });
 
-  // The paired control, and the reason U+200B is NOT treated as a space:
-  // it is not in ECMAScript \\s, so main did not match it either. Deleting it
-  // preserves main's behaviour; turning it into a space would CHANGE
-  // behaviour, which a hotfix should not do by accident in either direction.
-  test('a zero-width space stays deleted, as it was on main', () => {
-    expect(normaliseForMatching('I can\u2019t\u200Bbreathe')).toBe("I can'tbreathe");
-    expect(normaliseForMatching('signifi\u00ADcant')).toBe('significant');
+  // THE REASONING IN THE PREVIOUS VERSION OF THIS TEST WAS BACKWARDS, and the
+  // correction is worth leaving visible.
+  //
+  // It asserted that U+200B "stays deleted, as it was on main". Main does not
+  // delete it. Main leaves it in place and simply does not match across it.
+  // Deleting it was a CHANGE from main, not a preservation of it, and that
+  // change is what turned "my<ZWSP>shoulder hurts" into "myshoulder hurts",
+  // failed the word boundary, and lost the refusal.
+  //
+  // U+FEFF is the genuine opposite case, and the distinction is exact: the
+  // ECMAScript \s class CONTAINS U+FEFF and does NOT contain U+200B. Main was
+  // already matching across U+FEFF, so folding it to a space preserves that.
+  // Main never matched across U+200B, so touching it can only differ from main.
+  test('U+FEFF becomes a space; U+200B and U+00AD are left exactly as typed', () => {
     expect(normaliseForMatching('I can\u2019t\uFEFFbreathe')).toBe("I can't breathe");
+    expect(normaliseForMatching('I can\u2019t\u200Bbreathe')).toBe('I can\'t\u200Bbreathe');
+    expect(normaliseForMatching('signifi\u00ADcant')).toBe('signifi\u00ADcant');
+    // The distinction all of this rests on, asserted rather than described.
+    expect(/\s/.test('\uFEFF')).toBe(true);
+    expect(/\s/.test('\u200B')).toBe(false);
   });
 
   // The paired positive: the real report the boundary must not break.
@@ -1208,9 +1220,26 @@ describe('typographic normalisation before matching', () => {
     expect(result.valid).toBe(false);
   });
 
-  test('folds doubled spaces, and a zero-width character inside a word', () => {
+  // THE FOLD NO LONGER TOUCHES EITHER OF THESE, and that is the fix rather
+  // than a loss.
+  //
+  // It used to strip zero-width characters and collapse runs of whitespace.
+  // Both were added for tidiness, neither was needed for the curly apostrophe,
+  // and between them they caused three regressions -- each a message main
+  // WITHHELD that the fold then allowed through to the model with nobody told.
+  // Collapsing whitespace shortens text, which moves every character-counted
+  // window in the file.
+  //
+  // So anything the fold does not substitute now behaves EXACTLY as it does on
+  // main, which is the standard this hotfix is measured against.
+  test('doubled spaces still match, and a zero-width character is left alone', () => {
+    // A run of spaces was never a problem: the patterns use \s+, which matches
+    // a run. This passes because main passes it, not because the fold acts.
     expect(validateShadowRequest('I have  chest   pain right now', 'athlete', 'org-123').valid).toBe(false);
-    expect(validateShadowRequest('I can\u200B\u2019t breathe after that hit', 'athlete', 'org-123').valid).toBe(false);
+    // NOT withheld -- and main does not withhold it either, because its
+    // patterns do not match across a zero-width character. Catching this is
+    // #1036 work; silently differing from main is not.
+    expect(validateShadowRequest('I can\u200B\u2019t breathe after that hit', 'athlete', 'org-123').valid).toBe(true);
   });
 
   describe('normaliseForMatching itself', () => {
@@ -1219,8 +1248,13 @@ describe('typographic normalisation before matching', () => {
       expect(normaliseForMatching('\u201Cquoted\u201D')).toBe('"quoted"');
     });
 
-    test('collapses whitespace and strips zero-width characters', () => {
-      expect(normaliseForMatching('a\u00A0\u00A0b\u200Bc   d')).toBe('a bc d');
+    test('leaves alone everything it does not substitute', () => {
+      // No whitespace collapsing, no NBSP folding, no zero-width stripping, no
+      // trim. Each was removed after causing a regression. What is left is
+      // one-to-one substitution of an apostrophe or quote look-alike, plus
+      // U+FEFF to a space.
+      expect(normaliseForMatching('a\u00A0\u00A0b\u200Bc   d')).toBe('a\u00A0\u00A0b\u200Bc   d');
+      expect(normaliseForMatching(' leading and trailing ')).toBe(' leading and trailing ');
     });
 
     // MATCHING ONLY. The athlete's own words are the record: the folded text
