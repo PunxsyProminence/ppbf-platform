@@ -357,8 +357,8 @@ const CARRIERS: ReadonlyArray<readonly [string, string, number]> = [
   // satisfies hasPersonalContext on its own. Destroying the boundary at the
   // insertion point changed nothing there. A carrier whose ONLY evidence is
   // the boundary being tested is the one that catches it.
-  ['boundary is the only evidence', 'my|shoulder hurts', 280],
-  ['boundary is the only evidence, 2', 'I|hurt my wrist', 280],
+  ['boundary is the only evidence', 'my|shoulder hurts', 319],
+  ['boundary is the only evidence, 2', 'I|hurt my wrist', 319],
   // NEXT TO A BOUNDED WINDOW -- the position class the sweep missed SECOND.
   //
   // Several patterns count characters: `vision.{0,12}blurr`,
@@ -371,13 +371,13 @@ const CARRIERS: ReadonlyArray<readonly [string, string, number]> = [
   //
   // These two sit one character inside their limits, so anything that grows
   // shows up immediately.
-  ['bounded window, vision', 'my vision is|really blurry', 330],
-  ['bounded window, bleeding', 'my lip is bleeding pretty badly|and will not stop', 330],
+  ['bounded window, vision', 'my vision is|really blurry', 378],
+  ['bounded window, bleeding', 'my lip is bleeding pretty badly|and will not stop', 378],
   // BEFORE the match -- the position class the sweep missed FIRST.
-  ['before contraction', "I got hit|can't breathe", 330],
-  ['before cannot', 'I got hit|cannot breathe', 330],
-  ['before symptom phrase', 'After that punch I had a|headache', 330],
-  ['contraction gap', "I can't|breathe after that hit", 20],
+  ['before contraction', "I got hit|can't breathe", 382],
+  ['before cannot', 'I got hit|cannot breathe', 382],
+  ['before symptom phrase', 'After that punch I had a|headache', 382],
+  ['contraction gap', "I can't|breathe after that hit", 25],
   // SUBSTITUTED, not inserted. The first version of this carrier inserted a
   // code point BETWEEN "can" and "'t", which main's `can(?:not|'t)` can never
   // match for any character -- so it contributed nothing and swept nothing.
@@ -385,16 +385,14 @@ const CARRIERS: ReadonlyArray<readonly [string, string, number]> = [
   // floor exists. Replacing the apostrophe itself is the real question: main
   // matched only the ASCII one, and whatever the new code does, it must still
   // withhold that.
-  // MINIMUM 1, AND THAT IS THE HONEST NUMBER. Main matched exactly one
+  // ONE, AND THAT IS THE HONEST NUMBER. Main matched exactly one
   // substitution here -- the ASCII apostrophe -- so one is full coverage
-  // for this carrier, not a collapsed one. A floor of 1 still catches the
-  // only failure available to it: dropping to 0, which is what a typo in
-  // the carrier or a drift in the reference would produce.
+  // for this carrier, not a collapsed one.
   ['apostrophe substituted', 'I can|t breathe after that hit', 1],
-  ['cannot gap', 'I cannot|breathe after that hit', 20],
-  ['two-word symptom', 'I have seeing|stars after sparring', 20],
-  ['impact gap', 'My neck is numb after that|hit', 330],
-  ['leading word gap', 'I|have a headache after sparring', 330],
+  ['cannot gap', 'I cannot|breathe after that hit', 25],
+  ['two-word symptom', 'I have seeing|stars after sparring', 25],
+  ['impact gap', 'My neck is numb after that|hit', 382],
+  ['leading word gap', 'I|have a headache after sparring', 382],
 ];
 
 describe('the classifier is never LESS sensitive than main was', () => {
@@ -421,42 +419,46 @@ describe('the classifier is never LESS sensitive than main was', () => {
       }
     }
 
-    // A floor, so the sweep cannot pass by comparing nothing. If the carriers
-    // or main's reference ever stop matching, this fails loudly instead of
-    // reporting a vacuous success.
-    expect(compared).toBeGreaterThan(200);
+    // The exact number of comparisons, so the sweep cannot pass by comparing
+    // nothing, or by comparing less than it did. It is the sum of the
+    // per-carrier counts below: 2 x 319 + 2 x 378 + 5 x 382 + 3 x 25 + 1.
+    expect(compared).toBe(3380);
     expect(regressions).toEqual([]);
   });
 
-  // THE PER-CARRIER FLOOR, WITH A MEASURED MINIMUM EACH.
+  // THE PER-CARRIER COUNT, EXACT.
   //
   // "At least one comparison" was not a floor. One carrier legitimately
   // contributes a single comparison -- the apostrophe-substitution one, where
   // main matched only the ASCII apostrophe -- and the others contribute
-  // hundreds, so a carrier could fall from 375 to 1 and still pass. Coverage
-  // could collapse by 99.7% without the suite noticing, which is the same
-  // "a floor nothing can fail" problem the total had.
+  // hundreds, so a carrier could fall from 382 to 1 and still pass.
   //
-  // So each carrier declares the minimum it must contribute, measured, with
-  // headroom. If a carrier stops matching -- a typo in it, a drift in the
-  // frozen reference, a fold that changes what main sees -- it fails here and
-  // names itself, rather than quietly sweeping nothing.
+  // A minimum with headroom was the next version, and it had the same hole
+  // at a smaller size: declared 280 against a real 319, a carrier could lose
+  // 39 comparisons unnoticed. The frozen reference and the sweep set are both
+  // fixed, so the count is not an estimate and there is nothing for headroom
+  // to absorb. Each carrier now states the number of swept code points for
+  // which main withheld it, and anything else -- fewer OR more -- fails and
+  // names itself.
   //
-  // These numbers are measured, not chosen. Raising one to silence a failure
-  // is how this guard stops working; find out why the count dropped instead.
-  test('every carrier still contributes its measured minimum', () => {
+  // These numbers are measured. They change only when the carriers, the
+  // sweep set or the frozen reference change, and each of those is a
+  // deliberate edit that should have to say so here.
+  test('every carrier contributes exactly its measured count', () => {
     const points = sweptCodePoints();
-    const shortfalls: string[] = [];
+    const wrong: string[] = [];
 
-    for (const [name, carrier, minimum] of CARRIERS) {
+    for (const [name, carrier, expected] of CARRIERS) {
       const [head, tail] = carrier.split('|');
       const got = points.filter(
         (cp) => mainWithheld(head + String.fromCodePoint(cp) + tail),
       ).length;
-      if (got < minimum) shortfalls.push(`${name}: ${got} < ${minimum}`);
+      if (got !== expected) wrong.push(`${name}: ${got}, expected ${expected}`);
     }
 
-    expect(shortfalls).toEqual([]);
+    expect(wrong).toEqual([]);
+    // 256 + 112 + 1 + 1 + 1 + 1 + 3 + 4 + 1 + 1 + 1, from SWEPT_RANGES.
+    expect(points.length).toBe(382);
   });
 
   // The one that bit, called out by name so it can never be quietly dropped
