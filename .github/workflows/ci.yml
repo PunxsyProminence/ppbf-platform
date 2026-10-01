@@ -602,6 +602,13 @@ jobs:
         if: steps.changes.outputs.docs_only != 'true' && steps.changes.outputs.golden_era_e2e == 'true'
         run: npm --workspace web run test:e2e:golden-era
 
+      # The E2E suites above each start a Next dev server, which writes
+      # .next/dev/types/validator.ts; tsconfig.json includes that path, so a copy
+      # left truncated by a teardown mid-write fails the build type check (TS1128).
+      - name: Clear dev-server type artefacts before the production build
+        if: steps.changes.outputs.docs_only != 'true'
+        run: rm -rf apps/web/.next/dev apps/web/.next-offline/dev
+
       - name: Build production application
         if: steps.changes.outputs.docs_only != 'true'
         run: npm run build

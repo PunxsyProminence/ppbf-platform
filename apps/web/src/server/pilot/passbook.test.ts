@@ -899,3 +899,39 @@ describe('getGuardianPassbook', () => {
     expect(mockQueryOne).toHaveBeenCalledTimes(1);
   });
 });
+
+/* Deletion scope B (OD-2026-09-29-002 item 10): a deleted athlete's book is
+   marked deleted with them. The db is mocked here, so what these pin is that
+   the lookup which opens each book reads the mark and that nothing further is
+   read when it finds no live row; deletionScopeB.pg.test.ts runs both readers
+   against a real database before and after a deletion. */
+describe('a deleted athlete has no passbook', () => {
+  test.each<[string, () => Promise<unknown>]>([
+    ['getAthletePassbook', () => getAthletePassbook('org-1', 'ath-gone', 'coach')],
+    ['getGuardianPassbook', () => getGuardianPassbook('org-1', 'ath-gone')],
+  ])('%s looks up only a live athlete row and reads nothing else without one', async (_name, read) => {
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    await expect(read()).resolves.toBeNull();
+
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    expect(String(sql)).toMatch(
+      /from pilot\.athletes\s+where organization_id = \$1 and athlete_id = \$2 and deleted_at is null/,
+    );
+    expect(params).toEqual(['org-1', 'ath-gone']);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test.each<PilotRole>(['athlete', 'coach', 'organization_admin', 'admin', 'parent'])(
+    'getAthletePassbook reads the mark for a %s reader too',
+    async (role) => {
+      mockQueryOne.mockResolvedValueOnce(null);
+
+      await expect(getAthletePassbook('org-1', 'ath-gone', role)).resolves.toBeNull();
+
+      expect(String(mockQueryOne.mock.calls[0][0])).toContain('deleted_at is null');
+      expect(mockQuery).not.toHaveBeenCalled();
+    },
+  );
+});
