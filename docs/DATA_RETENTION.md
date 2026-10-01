@@ -223,10 +223,8 @@ the login is left as deletion left it. An action on the deleted login itself ans
 (`deletedLoginConflict`, `apps/web/src/server/pilot/deletedAccountSignIn.ts`: the login was
 deleted, nothing here changes it, and a returning person needs a new login -- a new `account_id`,
 or for a staff or guardian login a different email address, because the deleted row keeps its
-email and the email is unique). Creating a login for a withdrawn athlete record answers its own
-message. The rule is a condition of the write statement itself, not only a check before it;
-creating a login for a withdrawn athlete is a read that locks the athlete row until the write
-commits. A new activation code, a PIN reset, a redemption and a deletion all take the account
+email and the email is unique). The rule is a condition of the write statement itself, not only
+a check before it. A new activation code, a PIN reset, a redemption and a deletion all take the account
 row's lock before they lock or write its codes (a redemption first reads the code once, unlocked,
 to learn whose it is), so one that races another waits for it: a code issued
 while a deletion is in progress is either refused or superseded by that deletion, never left
@@ -234,8 +232,10 @@ live:
 
 - a new activation code, and a PIN reset (`issueActivationCode`, `provisionAthleteActivation`,
   `apps/web/src/server/pilot/activation.ts`);
-- creating a login for a withdrawn athlete, or for an athlete record a deleted login still holds
-  (the same function, mode `create`);
+- creating a login for an athlete record a deleted login still holds (the same function, mode
+  `create`): refused with its own message, which does not name the old login. Whether the athlete
+  record itself was withdrawn is not checked: a withdrawn record whose login was deleted with it is
+  refused for that reason, and one that never had a login can still be given one, as before;
 - redeeming an activation code that belongs to a deleted login (`redeemActivationCode`): it writes
   nothing and answers the same generic failure as any other unusable code;
 - re-inviting a deleted login's email as staff or guardian, from the gym's People page or the

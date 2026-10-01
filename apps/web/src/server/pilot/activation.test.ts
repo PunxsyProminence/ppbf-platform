@@ -249,7 +249,7 @@ describe('issueActivationCode', () => {
 
 describe('provisionAthleteActivation', () => {
   test('creates an inactive account with no shared bootstrap PIN and issues one hashed code atomically', async () => {
-    respond(/from pilot\.athletes/, [{ withdrawn: false }]);
+    respond(/select athlete_id from pilot\.athletes/, [{ athlete_id: 'ath-1' }]);
     respond(/insert into pilot\.account_activation_tokens/, [{ expires_at: '2026-08-26T00:00:00Z' }]);
 
     const result = await provisionAthleteActivation({ accountId: 'acct-1', athleteId: 'ath-1', organizationId: 'org-1', issuedByAccountId: 'admin-1', issuedByRole: 'organization_admin', mode: 'create' });
@@ -269,7 +269,7 @@ describe('provisionAthleteActivation', () => {
   // account answers to whoever redeems the code. The roster check above does
   // not catch it: the athlete IS on that gym's roster, which is the point.
   test('create mode refuses an athlete who already holds an account, before any write', async () => {
-    respond(/from pilot\.athletes/, [{ withdrawn: false }]);
+    respond(/select athlete_id from pilot\.athletes/, [{ athlete_id: 'ath-9' }]);
     respond(/from pilot\.accounts a where organization_id = \$1 and athlete_id = \$2/, [{ account_deleted: false }]);
 
     await expect(

@@ -330,15 +330,26 @@ describe('a PIN reset', () => {
 });
 
 describe('creating an athlete login', () => {
-  test('is refused 409 for a withdrawn athlete record, and no login is written', async () => {
+  // Whether an athlete RECORD was withdrawn is not this change's rule and is
+  // not read: what is refused is a record a deleted LOGIN still holds. The
+  // two outcomes for a withdrawn record are stated here so neither is implied.
+  test('a withdrawn athlete record is not itself refused: its deleted login refuses it, and with no login one is created as before', async () => {
+    // Withdrawn the way deletion leaves it: the record and its login both marked.
     await insertAthlete('ATH-WITHDRAWN', { deleted: true });
-
+    await insertAccount('acct-withdrawn-old', 'athlete', { athleteId: 'ATH-WITHDRAWN', deleted: true });
     await expect(
       activation.provisionAthleteActivation({
         accountId: 'acct-new', athleteId: 'ATH-WITHDRAWN', organizationId: ORG, ...ISSUER, mode: 'create',
       }),
-    ).rejects.toMatchObject({ status: 409, code: 'WITHDRAWN_ATHLETE_RECORD' });
+    ).rejects.toMatchObject({ status: 409, code: 'ATHLETE_RECORD_HELD_BY_DELETED_LOGIN' });
     expect(await accountRow('acct-new')).toBeNull();
+
+    // A withdrawn record that never had a login: unchanged from before.
+    await insertAthlete('ATH-WITHDRAWN-NO-LOGIN', { deleted: true });
+    await activation.provisionAthleteActivation({
+      accountId: 'acct-new-2', athleteId: 'ATH-WITHDRAWN-NO-LOGIN', organizationId: ORG, ...ISSUER, mode: 'create',
+    });
+    expect(await accountRow('acct-new-2')).toMatchObject({ athlete_id: 'ATH-WITHDRAWN-NO-LOGIN', deleted: false });
   });
 
   test('is refused 409 when a deleted login still holds the record, without naming that login', async () => {

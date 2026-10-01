@@ -55,24 +55,15 @@ export async function provisionAthleteActivation(params: {
   const expiresAt = await withTransaction(async (client) => {
     if (params.mode === 'create') {
       if (!params.athleteId) throw new Error('Missing athlete_id');
-      // `for share` holds the athlete row until this commits, so a withdrawal
-      // (which locks it for update) cannot land between this read and the
-      // insert and leave a new login on a withdrawn athlete.
-      const athlete = await client.query<{ withdrawn: boolean }>(
-        `select deleted_at is not null as withdrawn from pilot.athletes
-         where organization_id = $1 and athlete_id = $2 for share`,
+      const athlete = await client.query(
+        'select athlete_id from pilot.athletes where organization_id = $1 and athlete_id = $2',
         [params.organizationId, params.athleteId],
       );
       if (athlete.rows.length === 0) throw new Error('Athlete not found in organization');
-      // OD-2026-09-30-004 e2: a login was created for a withdrawn athlete,
-      // who could then redeem its code and still not reach their record.
-      if (athlete.rows[0].withdrawn !== false) {
-        throw new ConflictError(
-          `Conflict: athlete record "${params.athleteId}" was withdrawn. A login cannot be created for a withdrawn `
-          + 'athlete. A returning athlete is enrolled again as a new athlete record with a new login.',
-          'WITHDRAWN_ATHLETE_RECORD',
-        );
-      }
+      // A record whose login was deleted (OD-2026-09-30-004 e2): the deleted
+      // login still holds it, so this was "already linked to another
+      // account" with no reason given. Whether the athlete record itself was
+      // withdrawn is not read here and decides nothing.
       const bound = await client.query<{ account_deleted: boolean }>(
         `select ${accountDeletedSql('a')} as account_deleted
          from pilot.accounts a where organization_id = $1 and athlete_id = $2 limit 1`,
