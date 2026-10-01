@@ -178,12 +178,13 @@ export default function SportsMedicinePage() {
       { method: 'GET', credentials: 'include' },
     );
     if (!response.ok) throw new Error('Unable to read this athlete’s holds.');
-    const payload = (await response.json()) as { holds?: unknown } | null;
-    // The route always answers a staff read with a `holds` array. A 200 that
-    // does not carry one is not a statement that there are no holds -- and an
-    // EMPTY array is the only array that is. `[null]`, `[false]` or `[{}]` has
-    // an entry, and an entry that is not a hold is an unread hold.
-    if (!payload || !Array.isArray(payload.holds) || !payload.holds.every(isActiveHold)) {
+    const payload = (await response.json()) as { ok?: unknown; holds?: unknown } | null;
+    // The route's success is `{ ok: true, holds: [...] }`. A 200 that does not
+    // say ok, or does not carry the array, is not a statement that there are
+    // no holds -- and an EMPTY array is the only array that is. `[null]`,
+    // `[false]` or `[{}]` has an entry, and an entry that is not a hold is an
+    // unread hold.
+    if (!payload || payload.ok !== true || !Array.isArray(payload.holds) || !payload.holds.every(isActiveHold)) {
       throw new Error('Unable to read this athlete’s holds.');
     }
     return (payload.holds as ActiveHold[])[0] ?? null;
@@ -269,15 +270,18 @@ export default function SportsMedicinePage() {
    * passes the outcome the server has already told it is true -- and where the
    * server told it nothing it can show (a PLACE whose response carried no
    * hold, or a PLACE the server refused), the fallback is 'unavailable', never
-   * "no hold". Returns what the row was settled to.
+   * "no hold". A caller with nothing the server confirmed (a lift whose answer
+   * was not a confirmation) passes 'keep': a failed re-read then leaves the
+   * row exactly as it was. Returns what the row was settled to, or null if it
+   * was kept.
    */
   const refreshHold = useCallback(
     async (
       athleteId: string,
-      fallback: { hold: ActiveHold | null; hold_read: HoldRead },
+      fallback: { hold: ActiveHold | null; hold_read: HoldRead } | 'keep',
       justPlaced = false,
-    ): Promise<{ hold: ActiveHold | null; hold_read: HoldRead }> => {
-      let next = fallback;
+    ): Promise<{ hold: ActiveHold | null; hold_read: HoldRead } | null> => {
+      let next: { hold: ActiveHold | null; hold_read: HoldRead } | null = fallback === 'keep' ? null : fallback;
       try {
         const hold = await readActiveHold(athleteId);
         // The server has just confirmed a placed hold and the read says there
@@ -287,6 +291,7 @@ export default function SportsMedicinePage() {
       } catch {
         // Keep the committed outcome; the board is refreshed on the next load.
       }
+      if (!next) return null;
       const settled = next;
       setRows((current) => current.map((row) => (row.athlete_id === athleteId ? { ...row, ...settled } : row)));
       return settled;
@@ -305,7 +310,7 @@ export default function SportsMedicinePage() {
     }
   };
 
-  const postHoldAction = async (body: Record<string, unknown>): Promise<{ hold?: ActiveHold } | null> => {
+  const postHoldAction = async (body: Record<string, unknown>): Promise<{ ok?: unknown; hold?: unknown } | null> => {
     const response = await fetch(`${apiBase()}/api/pilot/training-holds`, {
       method: 'POST',
       credentials: 'include',
@@ -316,7 +321,24 @@ export default function SportsMedicinePage() {
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       throw new Error(payload.error || `The gym’s server refused this (${response.status}).`);
     }
-    return (await response.json().catch(() => null)) as { hold?: ActiveHold } | null;
+    return (await response.json().catch(() => null)) as { ok?: unknown; hold?: unknown } | null;
+  };
+
+  /* A 2xx is not a confirmation. The route's answer to a lift is
+     `{ ok: true, hold }` where hold is THE hold that was asked about, now
+     'lifted'. Only that lets the board say "no hold" without having read it. */
+  const isConfirmedLift = (
+    result: { ok?: unknown; hold?: unknown } | null,
+    athleteId: string,
+    holdId: string,
+  ): boolean => {
+    if (!result || result.ok !== true || !isActiveHold(result.hold)) return false;
+    const hold = result.hold as ActiveHold & { status?: unknown; athlete_id?: unknown };
+    return (
+      hold.hold_id === holdId
+      && hold.status === 'lifted'
+      && (hold.athlete_id === undefined || hold.athlete_id === athleteId)
+    );
   };
 
   const placeHold = async (athleteId: string) => {
@@ -346,7 +368,9 @@ export default function SportsMedicinePage() {
       });
       await refreshHold(
         athleteId,
-        isActiveHold(result?.hold) ? { hold: result.hold, hold_read: 'loaded' } : { hold: null, hold_read: 'unavailable' },
+        result?.ok === true && isActiveHold(result.hold)
+          ? { hold: result.hold, hold_read: 'loaded' }
+          : { hold: null, hold_read: 'unavailable' },
         true,
       );
       setOpenFor(null);
@@ -365,7 +389,7 @@ export default function SportsMedicinePage() {
       // the last successful read is not something to keep showing. The
       // refusal's own text stays on the row either way.
       const settled = await refreshHold(athleteId, { hold: null, hold_read: 'unavailable' });
-      if (settled.hold || settled.hold_read === 'unavailable') {
+      if (settled && (settled.hold || settled.hold_read === 'unavailable')) {
         setOpenFor((current) => (current === athleteId ? null : current));
       }
     } finally {
@@ -377,16 +401,28 @@ export default function SportsMedicinePage() {
     setBusy(athleteId, true);
     setRefusal(null);
     try {
-      await postHoldAction({
+      const result = await postHoldAction({
         action: 'lift',
         hold_id: holdId,
         lift_note: (liftNotes[athleteId] ?? '').trim(),
       });
-      // The server allows one active hold per athlete and has just confirmed
-      // this one lifted, so "no hold" is what it told us even if the re-read
-      // fails.
-      await refreshHold(athleteId, { hold: null, hold_read: 'loaded' });
-      setLiftNotes((current) => ({ ...current, [athleteId]: '' }));
+      if (isConfirmedLift(result, athleteId, holdId)) {
+        // The server allows one active hold per athlete and has just
+        // confirmed THIS one lifted, so "no hold" is what it told us even if
+        // the re-read fails.
+        await refreshHold(athleteId, { hold: null, hold_read: 'loaded' });
+        setLiftNotes((current) => ({ ...current, [athleteId]: '' }));
+        return;
+      }
+      // A 2xx that did not confirm the lift. The board does not get to say
+      // "no hold" on the strength of it: only a read can, and if the read
+      // fails too the hold that was on screen stays on screen.
+      const settled = await refreshHold(athleteId, 'keep');
+      if (settled && !settled.hold && settled.hold_read === 'loaded') {
+        setLiftNotes((current) => ({ ...current, [athleteId]: '' }));
+        return;
+      }
+      throw new Error('The gym’s server did not confirm this lift. The hold is still shown; check again before relying on it.');
     } catch (error) {
       setRefusal({
         athleteId,

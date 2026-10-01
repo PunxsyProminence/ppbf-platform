@@ -1031,12 +1031,23 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     global.fetch = fetchMock as unknown as typeof fetch;
   }
 
+  const B_STATUS = { ...A_STATUS, status_id: 'st-b', athlete_id: 'ath-b', source_reference: null };
+
   const MALFORMED_READS: Array<[string, string, () => Response]> = [
     ['medical status: body will not parse', '/medical-status', unparseable],
     ['medical status: no `status` key', '/medical-status', () => jsonResponse({ ok: true })],
     ['medical status: `status` is a string', '/medical-status', () => jsonResponse({ status: 'cleared' })],
     ['medical status: a row with an unknown status value', '/medical-status', () => jsonResponse({ status: { status: 'fine' } })],
     ['medical status: body is an array', '/medical-status', () => jsonResponse([])],
+    // "cleared" and nothing else used to render "Current status: cleared --
+    // Set by undefined (undefined) at undefined".
+    ['medical status: a row with only a status', '/medical-status', () => jsonResponse({ ok: true, status: { status: 'cleared' } })],
+    ['medical status: a row for a DIFFERENT athlete', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, athlete_id: 'ath-a' } })],
+    ['medical status: no status_id', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, status_id: undefined } })],
+    ['medical status: blank set_by_account_id', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, set_by_account_id: ' ' } })],
+    ['medical status: no set_by_role', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, set_by_role: undefined } })],
+    ['medical status: no effective_at', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, effective_at: null } })],
+    ['medical status: source_reference is a number', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, source_reference: 7 } })],
     ['recommendations: body will not parse', '/recommendations', unparseable],
     ['recommendations: no list', '/recommendations', () => jsonResponse({ ok: true })],
     ['recommendations: list is null', '/recommendations', () => jsonResponse({ recommendations: null })],
@@ -1063,6 +1074,18 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     expect(screen.queryByText('No recommendations yet.')).toBeNull();
     expect(screen.queryByText('No decisions recorded yet.')).toBeNull();
     expect(screen.queryByText('No near-misses flagged yet.')).toBeNull();
+    // And no status value is printed from a row that could not be read.
+    expect(screen.queryByText('cleared')).toBeNull();
+    expect(screen.queryByText(/Set by/)).toBeNull();
+  });
+
+  test('a complete status row for the athlete asked about is shown, null reference and all', async () => {
+    installReadsForB({ '/medical-status': () => jsonResponse({ ok: true, status: B_STATUS }) });
+    render(<DecisionLoopReviewPage />);
+    fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+
+    expect(await screen.findByText(/Set by organization_admin \(acct-1\)/)).toBeTruthy();
+    expect(screen.queryByText(/could not be read/i)).toBeNull();
   });
 
   test('outcomes that will not parse are an error, not "No outcomes evaluated yet."', async () => {

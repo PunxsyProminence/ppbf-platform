@@ -108,15 +108,35 @@ async function readEnvelopeOrThrow(response: Response, fallbackMessage: string):
 
 const MEDICAL_STATUS_VALUES: ReadonlySet<string> = new Set(['cleared', 'restricted', 'not_cleared', 'pending']);
 
-function readMedicalStatus(envelope: Record<string, unknown>, fallbackMessage: string): MedicalStatusRow | null {
+function isFilled(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/* The status panel prints who set the status, in what role and when. A row
+   that says "cleared" and nothing else is not a readable record: it would
+   render "Current status: cleared -- Set by undefined (undefined) at
+   undefined". And a row that belongs to a different athlete than the one
+   asked about is not this athlete's status at all. */
+function readMedicalStatus(
+  envelope: Record<string, unknown>,
+  forAthleteId: string,
+  fallbackMessage: string,
+): MedicalStatusRow | null {
   if (!('status' in envelope)) throw new Error(fallbackMessage);
   const status = envelope.status;
   if (status === null) return null;
+  if (!status || typeof status !== 'object' || Array.isArray(status)) throw new Error(fallbackMessage);
+  const row = status as Record<string, unknown>;
   if (
-    !status
-    || typeof status !== 'object'
-    || typeof (status as { status?: unknown }).status !== 'string'
-    || !MEDICAL_STATUS_VALUES.has((status as { status: string }).status)
+    !isFilled(row.status_id)
+    || !isFilled(row.athlete_id)
+    || row.athlete_id !== forAthleteId
+    || typeof row.status !== 'string'
+    || !MEDICAL_STATUS_VALUES.has(row.status)
+    || !isFilled(row.set_by_account_id)
+    || !isFilled(row.set_by_role)
+    || !isFilled(row.effective_at)
+    || !(row.source_reference === null || typeof row.source_reference === 'string')
   ) {
     throw new Error(fallbackMessage);
   }
@@ -311,6 +331,7 @@ export default function DecisionLoopReviewPage() {
       const records: AthleteRecords = {
         medicalStatus: readMedicalStatus(
           await readEnvelopeOrThrow(statusRes, 'Failed to load medical status.'),
+          targetAthleteId,
           'Failed to load medical status.',
         ),
         recommendations: readList<RecommendationRow>(
