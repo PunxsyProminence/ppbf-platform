@@ -164,7 +164,7 @@ and should not try to.
 
 ---
 
-## OD-2026-09-30-007 -- Overwatch's working authority (lane questions, spending, acting on recommendations, the staging app) and the 2026-09-30 / 10-01 answers
+## OD-2026-09-30-007 -- What Jason authorized overwatch to do (lane questions, spending, the staging app) and his 2026-09-30 / 10-01 answers
 
 **Provenance: PRIMARY** where Jason's words were typed in the overwatch thread;
 **REPORTED** where a lane relayed them (each marked). **Date:** 2026-09-30 and
@@ -351,9 +351,9 @@ mistake them for his.
   intake (`ATHLETE_RECORD_HELD_BY_DELETED_LOGIN`, PR #1047; fixed by hand as in
   e3 B) until the cleanup stops retiring such logins (PR #1050).
 - **PR #1050 also stops the cleanup retiring a NAMED login whose athlete record
-  is live.** ChatGPT ruled this needs Jason, and it is put to him: may the
-  account cleanup ever retire a specifically named login while its same-gym
-  athlete record is live? **Open**; #1050 is not merged.
+  is live.** ChatGPT ruled this needs Jason. It was put to him and he answered
+  on 2026-10-01 (section 7): never. That half is now his ruling, not
+  overwatch's.
 - **e2's scope** (the L1 lane's next PR): admin actions on a deleted login
   refuse in both directions (status and membership included); assign-admin,
   transfer-admin and master SHADOW access are included; redeeming an activation
@@ -363,8 +363,38 @@ mistake them for his.
 
 On 2026-10-01 overwatch re-ran one failed CI job (run 36809463596, on PR #941)
 with no words of Jason's naming that action. ChatGPT's WRITES audit found it.
-It changed no code and deployed nothing. Asked of Jason and **open**: standing
-authorization to re-run failed CI jobs on open PRs.
+It changed no code and deployed nothing. Jason was then asked for standing
+authorization to re-run failed CI jobs on open PRs, and gave it on 2026-10-01
+(section 7). The re-run of 36809463596 itself stays a defect: it came first.
+
+### 7. Answers of 2026-10-01
+
+Three questions were put to Jason together, in official form then plain
+English; two carried a recommendation. His answer, verbatim: *"agree with
+recomendations"*. It answers the two that had one.
+
+- **A named login whose athlete record is live.** As put: may the account
+  cleanup ever retire a specifically named login while that athlete's record
+  is still live in the same gym? A, no, never (recommended); B, yes, if an
+  operator names it. **A: never.** The login is turned off in the app, or the
+  athlete is deleted first. PR #1050 already builds this.
+- **Re-running failed CI jobs.** As put: may overwatch re-run failed CI jobs on
+  open PRs without asking each time? A, yes (recommended); B, ask each time.
+  **A.** It covers re-running a failed job on an open pull request. It does not
+  cover dispatching a workflow, a deploy, or anything in production.
+- **Standing authority to act on recommendations.** As put: A, yes, for
+  decisions that are reversible and are not production, a new product, or
+  minors' safety or privacy; B, no, ask each time. Overwatch gave no
+  recommendation, so *"agree with recomendations"* does not answer it. **Not
+  answered**; section 1 item 3 stands, and each new decision is put to him.
+
+The same morning, on finishing the staging check before a production release
+(A, bring the three signed-in browser windows forward and overwatch walks the
+changed screens, recommended; B, he checks them himself; C, release on tests
+alone), Jason: *"sych permissions  abd Q4 A ... i can not see the other 3
+questions"*. **A**; and "sych permissions" is his instruction to give the lane
+sessions the same permission mode as the overwatch session, so messages between
+them are delivered. Done for lanes 11 to 14.
 
 ---
 
