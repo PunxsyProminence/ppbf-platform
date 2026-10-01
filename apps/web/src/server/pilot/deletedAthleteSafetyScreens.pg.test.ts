@@ -1125,11 +1125,15 @@ describe('after deleteAthleteRecord(GONE)', () => {
   });
 
   test('a purge the database refuses unlinks nothing: purgeExpiredDeletedData is all or nothing', async () => {
-    // pilot.one_percent_nominations RESTRICTS the athlete delete. In the
-    // function that aborts the whole transaction, so the purgeable athlete
-    // beside it is not removed either, and neither login is unlinked.
-    const NOMINATED = 'ATH-L2-NOMINATED';
-    const BESIDE = 'ATH-L2-BESIDE-NOMINATED';
+    // A foreign key onto pilot.athletes with no delete action refuses the
+    // athlete delete. Every real one now cascades (the last, the 1% Club
+    // nominations, since OD-2026-08-29-007), so the refusal is staged with a
+    // table of this test's own: the case is the next foreign key that ships
+    // without a delete action. In the function that aborts the whole
+    // transaction, so the purgeable athlete beside it is not removed either,
+    // and neither login is unlinked.
+    const NOMINATED = 'ATH-L2-HELD';
+    const BESIDE = 'ATH-L2-BESIDE-HELD';
     for (const athleteId of [NOMINATED, BESIDE]) {
       await run(
         `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
@@ -1144,18 +1148,20 @@ describe('after deleteAthleteRecord(GONE)', () => {
       );
     }
     await run(
-      `insert into pilot.one_percent_nominations
-         (organization_id, nomination_id, athlete_id, source, nominated_by_account_id, nominated_by_role, expires_at)
-       values ($1, 'NOM-L2', $2, 'coach_nomination', $3, 'coach', now() + interval '30 days')`,
-      [ORG, NOMINATED, COACH],
+      `create table pilot.l2_test_holds_athlete (
+         organization_id text not null,
+         athlete_id text not null,
+         foreign key (organization_id, athlete_id) references pilot.athletes(organization_id, athlete_id)
+       )`,
     );
+    await run(`insert into pilot.l2_test_holds_athlete (organization_id, athlete_id) values ($1, $2)`, [ORG, NOMINATED]);
     for (const athleteId of [NOMINATED, BESIDE]) {
       await run(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, athleteId]);
       await run(`update pilot.accounts set deleted_at = now(), active_flag = false where account_id = $1`, [`acct-${athleteId}`]);
       await expire(ORG, athleteId);
     }
 
-    await expect(purgeExpiredDeletedData()).rejects.toThrow();
+    await expect(purgeExpiredDeletedData()).rejects.toThrow(/l2_test_holds_athlete/);
 
     for (const athleteId of [NOMINATED, BESIDE]) {
       expect(await athleteExists(ORG, athleteId)).toBe(true);
