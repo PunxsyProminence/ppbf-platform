@@ -167,11 +167,11 @@ most of these rows with it.
 - Everything else tied to them: the public wall board and Wall of Names, class registrations,
   attendance and coaching requests (the admin's scheduler view, the class roster, the weekly
   trend, and the seat count -- a deleted athlete holds no seat), community-service and floor
-  hours, floor plans, the passbook gap queue, program headcounts, competition entries, league
-  rosters, 1% Club nominations and members, mentorships with them, coach-coverage grants on
-  them, guardian links in the duplicate-guardian check and in a guardian's link to a coach's
-  portrait, the admin PIN directory, the roster CSV export, and SHADOW research requirements
-  about them.
+  hours, floor plans, the passbook (the book itself, for every reader, and the gap queue),
+  program headcounts, competition entries, league rosters, 1% Club nominations and members,
+  mentorships with them, coach-coverage grants on them, guardian links in the
+  duplicate-guardian check and in a guardian's link to a coach's portrait, the admin PIN
+  directory, the roster CSV export, and SHADOW research requirements about them.
 
 **Not changed, pending Jason** (safeguarding; the "10 C" question did not cover them): the
 org-admin safety screens -- safety escalations, safety flags, training holds, failing safety

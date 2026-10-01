@@ -474,10 +474,15 @@ export async function getAthletePassbook(
   // cannot prove it -- and nobody has decided a parent is its audience.
   const sessionNotesReader = staffReader || viewerRole === 'athlete';
 
+  // Scope B (OD-2026-09-29-002 item 10): a deleted athlete's book is marked
+  // deleted with them. The mark is the athlete row's own deleted_at, so the
+  // lookup that opens the book is the one place it has to be read: no row
+  // here, no child query below, and the route answers exactly as it does for
+  // an athlete id that does not exist.
   const athlete = await queryOne<AthleteRow>(
     `select organization_id, athlete_id, full_name, dob, weight_class, gym_status, active_flag, coach_id, created_at
      from pilot.athletes
-     where organization_id = $1 and athlete_id = $2`,
+     where organization_id = $1 and athlete_id = $2 and deleted_at is null`,
     [organizationId, athleteId],
   );
 
@@ -678,9 +683,11 @@ export async function getGuardianPassbook(
   athleteId: string,
 ): Promise<GuardianPassbook | null> {
   const athlete = await queryOne<Pick<AthleteRow, 'organization_id' | 'athlete_id' | 'full_name'>>(
+    // Scope B, as in getAthletePassbook: a deleted athlete has no book, and
+    // the count below is never taken for one.
     `select organization_id, athlete_id, full_name
      from pilot.athletes
-     where organization_id = $1 and athlete_id = $2`,
+     where organization_id = $1 and athlete_id = $2 and deleted_at is null`,
     [organizationId, athleteId],
   );
 
