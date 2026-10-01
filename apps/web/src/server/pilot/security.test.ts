@@ -104,6 +104,20 @@ describe('security password hashing', () => {
     await expect(verifyPassword(PASSWORD, `scrypt$${N}$8$1$${salt}$${stored}`)).resolves.toBe(true);
   });
 
+  // Genuine hashes of the right password, so the ONLY thing refusing them is
+  // the cost bound: with the bound gone each of these derives and verifies.
+  test.each([
+    ['one step past the ceiling', { N: 2 ** 18, r: 8, p: 1 }],
+    ['a block size this code never wrote', { N: 2 ** 14, r: 16, p: 1 }],
+    ['a parallelism this code never wrote', { N: 2 ** 14, r: 8, p: 2 }],
+  ])('a correct hash at a cost outside the bounds is refused: %s', async (_label, cost) => {
+    const { scryptSync } = jest.requireActual('node:crypto') as typeof import('node:crypto');
+    const salt = 'c3'.repeat(16);
+    const stored = scryptSync(PASSWORD, salt, 64, { ...cost, maxmem: 256 * cost.N * cost.r }).toString('hex');
+
+    await expect(verifyPassword(PASSWORD, `scrypt$${cost.N}$${cost.r}$${cost.p}$${salt}$${stored}`)).resolves.toBe(false);
+  });
+
   test('a stored key of the wrong length does not verify, and does not throw', async () => {
     const hashed = await hashPassword(PASSWORD);
 
