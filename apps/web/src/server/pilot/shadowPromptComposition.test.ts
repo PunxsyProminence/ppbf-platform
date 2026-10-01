@@ -3,6 +3,7 @@ import {
   buildRegisterPrompt,
   buildResponseLengthPrompt,
   composeShadowSystemPrompt,
+  validateShadowRequest,
 } from './shadowChat';
 
 // The base prompt had no length guidance and one line of youth protection, and
@@ -36,30 +37,80 @@ describe('response length budget', () => {
   });
 });
 
+// Owner, 2026-10-01: "dark humor for everyone that part of the gym identity",
+// and on the athlete wording, "A but it should not take responsibility away
+// from the kid or make excuses for them". Both registers are pinned whole:
+// this text is read by a model talking to minors, so a reworded line should
+// fail here and be looked at, not slip through a toContain.
+const ATHLETE_REGISTER = `## AUDIENCE REGISTER
+You are speaking with an athlete. Assume they may be a minor.
+- The gym's dry, dark humor is part of how this place talks. Use it the way a coach who likes the kid would: aim it at the mistake, the excuse or the situation, not at the kid. Keep the language clean.
+- Hold them to it. Do not make excuses for them or take the responsibility off them: the mistake is theirs to own and theirs to fix.
+- Short sentences. Plain words -- about an 8th-grade reading level.
+- Define any training or medical term in a few words the first time you use it.
+- Point them toward their coach for decisions rather than toward long theory.`;
+
+const PARENT_REGISTER = `## AUDIENCE REGISTER
+You are speaking with a parent or guardian. Assume no boxing or sports-science background.
+- Plain language. Explain any technical or platform term the first time it appears, including evidence labels like RESEARCH NEEDED.
+- The gym's dry, dark humor is welcome. Put the plain meaning beside any gym slang.
+- Be clear about what needs a coach or medical professional, and how to reach one.`;
+
+const STAFF_REGISTER = `## AUDIENCE REGISTER
+You are speaking with staff. Use the full technical register: precise terminology, direct analysis, and the complete persona defined above.`;
+
 describe('audience register', () => {
-  test('athletes are assumed minors: no dark humor, plain reading level', () => {
+  test('the athlete register is exactly the approved text', () => {
+    expect(buildRegisterPrompt('athlete')).toBe(ATHLETE_REGISTER);
+  });
+
+  test('athletes are still assumed minors, in clean language, at a plain reading level', () => {
     const prompt = buildRegisterPrompt('athlete');
-    expect(prompt).toContain('may be a minor');
-    expect(prompt).toContain('No dark or sarcastic humor');
+    expect(prompt).toContain('Assume they may be a minor');
+    expect(prompt).toContain('Keep the language clean');
     expect(prompt).toContain('8th-grade');
   });
 
-  test('parents get plain language and term explanations', () => {
-    const prompt = buildRegisterPrompt('parent');
-    expect(prompt).toContain('parent or guardian');
-    expect(prompt).toContain('Explain any technical or platform term');
-    // The evidence vocabulary is exactly the jargon a parent hits first.
-    expect(prompt).toContain('RESEARCH NEEDED');
+  test('the athlete register no longer forbids the humor the base persona asks for', () => {
+    const prompt = buildRegisterPrompt('athlete');
+    expect(prompt).not.toContain('No dark or sarcastic humor');
+    expect(prompt).toContain('not at the kid');
+    expect(prompt).toContain('Do not make excuses for them or take the responsibility off them');
+  });
+
+  test('the parent register is exactly the approved text', () => {
+    expect(buildRegisterPrompt('parent')).toBe(PARENT_REGISTER);
   });
 
   test.each(['coach', 'organization_admin', 'admin', 'platform_owner', 'staff', 'volunteer'])(
-    '%s keeps the full technical register',
+    '%s keeps the full technical register, unchanged',
     (role) => {
-      const prompt = buildRegisterPrompt(role);
-      expect(prompt).toContain('full technical register');
-      expect(prompt).not.toContain('may be a minor');
+      expect(buildRegisterPrompt(role)).toBe(STAFF_REGISTER);
     },
   );
+});
+
+// The register is prompt text. The urgent and emergency replies are canned
+// strings returned before any model is called, so no register -- and no humor
+// -- can reach them. Pinned byte for byte, for an athlete and for staff.
+describe('canned urgent replies do not vary with the audience', () => {
+  const EMERGENCY = 'Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.';
+  const PERSONAL_HEALTH = 'Personal pain, injury, and treatment questions require evaluation by a qualified medical professional. SHADOW can only provide general educational information.';
+
+  test.each([
+    ['I cannot breathe after that hit', EMERGENCY],
+    ['I have a headache and blurry vision right now', EMERGENCY],
+    ['I passed out during training', EMERGENCY],
+    ['My shoulder is sore after sparring', PERSONAL_HEALTH],
+  ])('%s', (message, expected) => {
+    const asAthlete = validateShadowRequest(message, 'athlete', 'org-1');
+    const asParent = validateShadowRequest(message, 'parent', 'org-1');
+    const asCoach = validateShadowRequest(message, 'coach', 'org-1');
+    expect(asAthlete.valid).toBe(false);
+    expect(asAthlete.error).toBe(expected);
+    expect(asParent).toEqual(asAthlete);
+    expect(asCoach).toEqual(asAthlete);
+  });
 });
 
 describe('composed prompt', () => {
@@ -73,7 +124,7 @@ describe('composed prompt', () => {
   test('an athlete quick round gets both the budget and the youth register', () => {
     const prompt = composeShadowSystemPrompt({ role: 'athlete', sessionType: 'quick_round' });
     expect(prompt).toContain('150 words');
-    expect(prompt).toContain('No dark or sarcastic humor');
+    expect(prompt).toContain(ATHLETE_REGISTER);
   });
 
   test('a coach heavy bag gets long-form and the staff register', () => {

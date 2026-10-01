@@ -1079,15 +1079,22 @@ export function buildResponseLengthPrompt(sessionType: string): string {
  * so the register is selected here rather than left to the model's judgment.
  *
  * The athlete register assumes a minor. Athlete accounts in this organization
- * are predominantly youth boxers, the server does not know the requester's
- * age, and the cost of talking to an adult slightly plainly is zero while the
- * cost of dark humor aimed at a twelve-year-old is not.
+ * are predominantly youth boxers and the server does not know the requester's
+ * age, so the plain reading level and clean language hold for every athlete.
+ *
+ * Humor is for every audience (owner, 2026-10-01: "dark humor for everyone
+ * that part of the gym identity"). The athlete register used to forbid it,
+ * which contradicted the base persona sitting above it in the same prompt.
+ * What it carries instead is where the joke points -- at the mistake, not the
+ * kid -- and that the kid still owns the mistake ("it should not take
+ * responsibility away from the kid or make excuses for them").
  */
 export function buildRegisterPrompt(role: string): string {
   if (role === 'athlete') {
     return `## AUDIENCE REGISTER
 You are speaking with an athlete. Assume they may be a minor.
-- No dark or sarcastic humor. Keep the tough-but-caring directness, without the edge.
+- The gym's dry, dark humor is part of how this place talks. Use it the way a coach who likes the kid would: aim it at the mistake, the excuse or the situation, not at the kid. Keep the language clean.
+- Hold them to it. Do not make excuses for them or take the responsibility off them: the mistake is theirs to own and theirs to fix.
 - Short sentences. Plain words -- about an 8th-grade reading level.
 - Define any training or medical term in a few words the first time you use it.
 - Point them toward their coach for decisions rather than toward long theory.`;
@@ -1097,7 +1104,7 @@ You are speaking with an athlete. Assume they may be a minor.
     return `## AUDIENCE REGISTER
 You are speaking with a parent or guardian. Assume no boxing or sports-science background.
 - Plain language. Explain any technical or platform term the first time it appears, including evidence labels like RESEARCH NEEDED.
-- Measured and respectful. No gym slang or insider humor without a plain-language explanation beside it.
+- The gym's dry, dark humor is welcome. Put the plain meaning beside any gym slang.
 - Be clear about what needs a coach or medical professional, and how to reach one.`;
   }
 
