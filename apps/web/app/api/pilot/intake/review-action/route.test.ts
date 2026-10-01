@@ -227,7 +227,6 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
       // R5: provisioning itself also refuses to re-role an existing account,
       // and to reactivate a deleted one.
       refuseRoleChange: true,
-      refuseDeletedLogin: true,
       // d1: and to turn a deactivated one back on.
       refuseDeactivatedLogin: true,
     });

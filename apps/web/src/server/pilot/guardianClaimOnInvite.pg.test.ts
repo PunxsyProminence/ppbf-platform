@@ -728,7 +728,6 @@ describe('intake does not restore a deleted guardian login', () => {
         role: 'parent',
         accountIdHint: DELETED_ID,
         refuseRoleChange: true,
-        refuseDeletedLogin: true,
       }),
     ).rejects.toMatchObject({ status: 409, code: 'DELETED_GUARDIAN_LOGIN' });
 

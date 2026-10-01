@@ -138,6 +138,12 @@ beforeAll(async () => {
   await client.query(
     await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_volunteer_program_migration.sql'), 'utf8'),
   );
+  // pilot.accounts.deleted_at: provisioning refuses a deleted login for every
+  // caller now, so it reads the column on every invite. Production applies
+  // this through apply-migrations.yml's data-retention-deletion entry.
+  await client.query(
+    await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8'),
+  );
 
   for (const orgId of [ORG_A, ORG_B]) {
     await client.query(
