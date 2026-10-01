@@ -175,7 +175,7 @@ outside this repository. Ids -005 and -006 are taken by open PR #1036 and are
 not on `main` when this is written. Questions were put in official form, then
 in plain English, each with one option marked recommended.
 
-### 1. Standing authority Jason gave overwatch
+### 1. What Jason authorized overwatch to do
 
 1. **Lane questions.** After several lanes' plan messages expired waiting for
    his approval, Jason: *"You can answer the lanes questions"*. Overwatch
@@ -189,13 +189,16 @@ in plain English, each with one option marked recommended.
    capacity on things PPBF already pays for is overwatch's to approve; a new
    subscription, vendor, paid service or product line goes to him first. This
    narrows G8's "spending goes to Jason".
-3. **Acting on recommendations.** Jason, when the same questions had been put
-   to him more than once: *"go with your recomendation i feel like i have
-   answered that a million times"*. Overwatch took the recommended option on
-   every question then open (section 2) and told him it would from then on act
-   on its recommendation and report afterwards, stopping only for what needs
-   his hand (the production approval click) or a new product. He has not
-   corrected that; it is overwatch's reading (INFERRED), not his sentence.
+3. **One answer for the questions then open.** Jason, when the same questions
+   had been put to him more than once: *"go with your recomendation i feel like
+   i have answered that a million times"*. It selected the recommended option
+   on the questions already put to him and still open at that moment; they are
+   listed in section 2 and it reaches no further. It is not a standing
+   authorization to act on later recommendations without asking. Overwatch
+   told him it would from then on act on its recommendation and report
+   afterwards, and he did not answer; silence is not a grant, so a later
+   question is still put to him, once, with a recommendation. If he gives
+   standing authority of that kind, it is recorded from his own words.
 4. **The staging app.** Jason, signed in on staging: *"ok im logged into the
    org ppbf@   you have my permision top do what ever you need to do in the app
    there are no real people or sensitive info in them"*. Overwatch may act
@@ -234,7 +237,9 @@ Under *"A for 6 and 7 and drift check we have a staging already"*: lanes 6
 start; and overwatch checks staging for drift (section 3).
 
 Under *"go with your recomendation i feel like i have answered that a million
-times"*, each as put and the recommended option taken:
+times"*, read as bounded to the questions below, which were the ones already
+put to him and open when he said it; each as put, and the recommended option
+taken:
 
 - **Failing safety gates of a deleted athlete.** A, hide them from the safety
   review page at once (their open holds, escalations and violations still stay
