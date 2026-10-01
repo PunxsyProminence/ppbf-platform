@@ -79,6 +79,10 @@ const isMigrationPath = (file) =>
     'infra/azure/',
     'apps/web/src/server/pilot/',
     'apps/web/scripts/pilot-',
+    /* The account cleanup's read and retire statements live here, not in the
+       pilot-cleanup-accounts.mjs runner the prefix above matches, and
+       accountCleanupSql.pg.test.ts is what runs them. */
+    'apps/web/scripts/lib/account-cleanup-plan.',
   ]) ||
   [
     'apps/web/package.json',
