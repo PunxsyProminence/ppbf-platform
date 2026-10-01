@@ -120,8 +120,9 @@ alter table pilot.calibration_adjudications
 -- listed after this one is held back with it. The only way forward is for a
 -- person to decide which of the tied answers stands and for the data to be
 -- changed to say so. Nothing here makes that choice and no tool for it exists.
--- apps/web/scripts/pilot-preflight-calibration-adjudication-revisions.mjs
--- reports the count read-only, so it can be known before a dispatch.
+-- The read-only check `calibration-adjudication-ties` (check-database and
+-- run-checks workflows; apps/web/scripts/pilot-check-calibration-adjudication-
+-- ties.mjs) reports the count, so it can be known before a dispatch.
 --
 -- Only rows with a null revision are examined, so once the migration has been
 -- applied this finds nothing: every later row is numbered as it is written.

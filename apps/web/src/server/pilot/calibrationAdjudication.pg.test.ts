@@ -14,7 +14,7 @@
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
 
-import { type ChildProcessByStdio, spawn } from 'node:child_process';
+import { type ChildProcessByStdio, spawn, spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import net from 'node:net';
@@ -59,6 +59,10 @@ const REVISIONS_SQL = 'pilot_slice_postgres_calibration_adjudication_revisions_m
 const REVISIONS_RUNNER_PATH = path.resolve(
   __dirname,
   '../../../scripts/pilot-apply-calibration-adjudication-revisions-migration.mjs',
+);
+const TIES_CHECK_PATH = path.resolve(
+  __dirname,
+  '../../../scripts/pilot-check-calibration-adjudication-ties.mjs',
 );
 const PAIR_REVISION_CONSTRAINT = 'pilot_calibration_adjudications_decision_revision_uq';
 
@@ -1638,8 +1642,23 @@ describe('the shipped revisions migration runner', () => {
   }
 
   async function loadPreflight(): Promise<(client: Client) => Promise<TieReport>> {
-    const runnerModule = await nativeDynamicImport(pathToFileURL(REVISIONS_RUNNER_PATH).href);
-    return runnerModule.countBackfillTies as (client: Client) => Promise<TieReport>;
+    const checkModule = await nativeDynamicImport(pathToFileURL(TIES_CHECK_PATH).href);
+    return checkModule.countBackfillTies as (client: Client) => Promise<TieReport>;
+  }
+
+  /** The check as an operator or a workflow runs it: its own process, given
+   *  only a connection string. */
+  function runTiesCheck(database: string) {
+    const result = spawnSync(process.execPath, [TIES_CHECK_PATH], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        AZURE_POSTGRES_CONNECTION_STRING: connectionStringFor(database),
+        NODE_ENV: 'test',
+        PPBF_POSTGRES_DISABLE_SSL: 'true',
+      },
+    });
+    return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   }
 
   /** A database at the pre-revisions schema with the four tenancy foreign keys
@@ -1863,12 +1882,29 @@ describe('the shipped revisions migration runner', () => {
       await writeHistory(client, { id: 'adj-fine-1', ea: 'evt-a9', eb: 'evt-b9', at: '2026-02-02T00:00:00Z' });
       await writeHistory(client, { id: 'adj-fine-2', ea: 'evt-a9', eb: 'evt-b9', at: '2026-02-03T00:00:00Z' });
 
-      // The read-only preflight says so BEFORE anything is attempted.
+      // The read-only check says so BEFORE anything is attempted -- on a
+      // database where the revision column does not exist yet, which is the
+      // state it is meant to be run in.
+      const columnBefore = await client.query(
+        `select 1 from information_schema.columns
+          where table_schema = 'pilot' and table_name = 'calibration_adjudications'
+            and column_name = 'revision'`,
+      );
+      expect(columnBefore.rowCount).toBe(0);
       expect(await countBackfillTies(client)).toEqual({
         already_applied: false,
         existing_adjudications: 6,
         tied_disagreements: 2,
       });
+
+      // And as a process, the way check-database and run-checks run it: exit
+      // 2, the count, and no ids in the output.
+      const reported = runTiesCheck('ppbf_test_calib_rev_tie');
+      expect(reported.status).toBe(2);
+      expect(reported.stdout).toContain('"already_applied":false');
+      expect(reported.stdout).toContain('"tied_disagreements":2');
+      expect(reported.stdout).toMatch(/TIES CHECK REPORTED: 2 disagreement\(s\)/);
+      expect(reported.stdout).not.toMatch(/adj-tied|adj-lone|evt-a|clip-backfill/);
 
       const migrationSql = await readMigration(REVISIONS_SQL);
       await expect(applyMigrationTransaction(client, migrationSql)).rejects.toThrow(
@@ -1917,6 +1953,19 @@ describe('the shipped revisions migration runner', () => {
         existing_adjudications: 6,
         tied_disagreements: 0,
       });
+      const passed = runTiesCheck('ppbf_test_calib_rev_tie');
+      expect(passed.status).toBe(0);
+      expect(passed.stdout).toContain('"already_applied":true');
+      expect(passed.stdout).toMatch(/TIES CHECK PASS/);
+
+      // Without a connection string it fails as a failed check (1), never as
+      // "no ties" (0).
+      const unset = spawnSync(process.execPath, [TIES_CHECK_PATH], {
+        encoding: 'utf8',
+        env: { ...process.env, AZURE_POSTGRES_CONNECTION_STRING: '' },
+      });
+      expect(unset.status).toBe(1);
+      expect(unset.stderr).toMatch(/TIES CHECK FAIL/);
     } finally {
       await client.end();
     }
@@ -1940,7 +1989,7 @@ describe('the shipped revisions migration runner', () => {
 
       // The transaction is opened READ ONLY, so PostgreSQL itself would refuse
       // a write inside it; everything between is a SELECT; and it rolls back.
-      expect(sent[0]).toBe('BEGIN READ ONLY');
+      expect(sent[0]).toBe('BEGIN TRANSACTION READ ONLY');
       expect(sent[sent.length - 1]).toBe('ROLLBACK');
       const between = sent.slice(1, -1);
       expect(between.length).toBeGreaterThan(0);
@@ -1959,15 +2008,61 @@ describe('the shipped revisions migration runner', () => {
     }
   });
 
-  test('the preflight entry point has no apply path', async () => {
+  test('the check runs in both states: before the migration, and after it without erroring', async () => {
+    const applyMigrationTransaction = await loadApply();
+    const countBackfillTies = await loadPreflight();
+    const client = await historyDatabase('ppbf_test_calib_rev_check_states');
+    try {
+      await writeHistory(client, { id: 'adj-1', ea: 'evt-a', eb: 'evt-b', at: '2026-02-02T00:00:00Z' });
+      await writeHistory(client, { id: 'adj-2', ea: 'evt-a', eb: 'evt-b', at: '2026-02-03T00:00:00Z' });
+
+      // BEFORE: no revision column. Every existing row is examined.
+      expect(await countBackfillTies(client)).toEqual({
+        already_applied: false,
+        existing_adjudications: 2,
+        tied_disagreements: 0,
+      });
+
+      await applyMigrationTransaction(client, await readMigration(REVISIONS_SQL));
+
+      // AFTER: the column exists. Two rows written at one instant AFTER the
+      // migration are not a backfill tie -- each was numbered as it was
+      // written -- and the check must neither error nor report them.
+      await writeHistory(client, { id: 'adj-3', ea: 'evt-a', eb: 'evt-b', at: '2026-02-04T00:00:00Z' });
+      await writeHistory(client, { id: 'adj-4', ea: 'evt-a', eb: 'evt-b', at: '2026-02-04T00:00:00Z' });
+      expect(await countBackfillTies(client)).toEqual({
+        already_applied: true,
+        existing_adjudications: 4,
+        tied_disagreements: 0,
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the check refuses to guess on a database that has no adjudications table', async () => {
+    const countBackfillTies = await loadPreflight();
+    const client = await runnerDatabase('ppbf_test_calib_rev_check_notable');
+    try {
+      await expect(countBackfillTies(client)).rejects.toThrow(/CALIBRATION_ADJUDICATIONS_TABLE_MISSING/);
+      const state = await client.query<{ in_tx: boolean }>(
+        `select now() <> statement_timestamp() as in_tx`,
+      );
+      expect(state.rows[0]?.in_tx).toBe(false);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the check has no apply path', async () => {
     // It is a separate file so that a lost flag can never turn a look into a
-    // migration. Read as text: it must not import or call anything that writes.
-    const source = await fs.readFile(
-      path.resolve(__dirname, '../../../scripts/pilot-preflight-calibration-adjudication-revisions.mjs'),
-      'utf8',
-    );
+    // migration. Read as text: it imports nothing from the apply runner, reads
+    // no file, and opens no transaction other than a read-only one.
+    const source = await fs.readFile(TIES_CHECK_PATH, 'utf8');
     expect(source).toContain('countBackfillTies');
-    expect(source).not.toMatch(/applyMigrationTransaction|readFile|\.sql|BEGIN(?! READ ONLY)|COMMIT/);
+    expect(source).not.toMatch(
+      /pilot-apply-|applyMigrationTransaction|readFile|\.sql|BEGIN(?! TRANSACTION READ ONLY)|COMMIT/,
+    );
   });
 
   test('"no mark" and a mark whose id is the empty string are different disagreements', async () => {

@@ -9,7 +9,7 @@ import { Client } from 'pg';
 // pilot:apply-* script: the operator must state which host and database they
 // believe they are pointing at, and a mismatch refuses before any DDL runs.
 
-export function required(name) {
+function required(name) {
   const value = process.env[name];
   if (!value?.trim()) {
     throw new Error(`Missing required environment variable: ${name}`);
@@ -38,7 +38,7 @@ export function parseConnectionTarget(connectionString) {
   return { hostname, database };
 }
 
-export function assertExpectedTarget(target, expectedHostname, expectedDatabase) {
+function assertExpectedTarget(target, expectedHostname, expectedDatabase) {
   if (
     target.hostname !== expectedHostname.toLowerCase()
     || target.database !== expectedDatabase
@@ -47,7 +47,7 @@ export function assertExpectedTarget(target, expectedHostname, expectedDatabase)
   }
 }
 
-export function resolveSslConfig() {
+function resolveSslConfig() {
   if (process.env.NODE_ENV === 'test' && process.env.PPBF_POSTGRES_DISABLE_SSL === 'true') {
     return false;
   }
@@ -157,69 +157,9 @@ export async function applyMigrationTransaction(client, sql) {
   }
 }
 
-// WHAT THE APPLY WOULD REFUSE, READ WITHOUT APPLYING ANYTHING.
-//
-// The migration stops when one disagreement holds two existing adjudications
-// with the same adjudicated_at, because which of them is current cannot be
-// read from the data. On an `all` dispatch that stop also holds back every
-// migration listed after this one, so it is worth knowing before dispatching.
-//
-// Runs inside BEGIN READ ONLY and always rolls back: PostgreSQL itself refuses
-// a write in that transaction, so this cannot change a row even by mistake.
-//
-// IT HAS ITS OWN ENTRY POINT, pilot-preflight-calibration-adjudication-
-// revisions.mjs, which contains no apply path. It is deliberately NOT a flag
-// on this script: `npm run <script> --flag` without the `--` separator hands
-// the flag to npm instead of the script, and an apply entry point that falls
-// through to applying when its "read-only" flag goes missing is how a look
-// turns into a migration.
-//
-// The grouping is the migration's own (step 2). On a database where the
-// migration is already applied there is nothing left to backfill and the
-// answer is 0 by definition; `already_applied` says which case it was. The
-// column is looked up first and the count query is chosen from that, because a
-// statement naming a column that does not exist fails to parse.
-export async function countBackfillTies(client) {
-  await client.query('BEGIN READ ONLY');
-  try {
-    const table = await client.query(
-      `select to_regclass('pilot.calibration_adjudications') is not null as present`,
-    );
-    if (table.rows[0]?.present !== true) {
-      throw new Error('CALIBRATION_ADJUDICATIONS_TABLE_MISSING');
-    }
-    const column = await client.query(
-      `select exists (
-         select 1 from information_schema.columns
-         where table_schema = 'pilot'
-           and table_name = 'calibration_adjudications'
-           and column_name = 'revision'
-       ) as present`,
-    );
-    const alreadyApplied = column.rows[0]?.present === true;
-    const counted = await client.query(
-      `select
-         (select count(*)::int from pilot.calibration_adjudications) as existing_adjudications,
-         (select count(*)::int from (
-            select 1
-              from pilot.calibration_adjudications
-             ${alreadyApplied ? 'where revision is null' : ''}
-             group by organization_id, calibration_clip_id,
-                      annotation_set_id_a, annotation_set_id_b,
-                      source_event_id_a, source_event_id_b,
-                      adjudicated_at
-            having count(*) > 1
-          ) tied) as tied_disagreements`,
-    );
-    return {
-      already_applied: alreadyApplied,
-      existing_adjudications: counted.rows[0].existing_adjudications,
-      tied_disagreements: counted.rows[0].tied_disagreements,
-    };
-  } finally {
-    await client.query('ROLLBACK').catch(() => {});
-  }
-}
+// WHAT THE APPLY WOULD REFUSE can be read beforehand, without applying
+// anything, with pilot-check-calibration-adjudication-ties.mjs. That is a
+// separate entry point with no apply path, and deliberately not a flag here.
 
 export async function run() {
   const connectionString = required('AZURE_POSTGRES_CONNECTION_STRING');

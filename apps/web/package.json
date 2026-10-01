@@ -39,6 +39,7 @@
     "pilot:check-video-readiness": "node scripts/pilot-check-video-readiness.mjs",
     "pilot:check-cue-source-provenance": "node scripts/pilot-check-cue-source-provenance.mjs",
     "pilot:check-reference-content": "node scripts/pilot-check-reference-content.mjs",
+    "pilot:check-calibration-adjudication-ties": "node scripts/pilot-check-calibration-adjudication-ties.mjs",
     "pilot:apply-shadow-runtime": "node scripts/pilot-apply-shadow-runtime-migration.mjs",
     "pilot:apply-research-triage-view": "node scripts/pilot-apply-research-triage-view-migration.mjs",
     "pilot:apply-magic-link": "node scripts/pilot-apply-magic-link-migration.mjs",
