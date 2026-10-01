@@ -36,6 +36,10 @@ interface AccountRow {
   is_platform_owner: boolean;
   active_flag: boolean;
   deleted_at: string | null;
+  // As ACCOUNTS_READ_SQL returns them. Left off the older fixture tables,
+  // whose rows have no athlete link.
+  athlete_id?: string | null;
+  athlete_record_live?: boolean | null | string | number;
 }
 
 function account(overrides: Partial<AccountRow> & { account_id: string }): AccountRow {
@@ -118,6 +122,161 @@ const ROWS: AccountRow[] = [
   }),
 ];
 
+// The staging gate's own accounts (.github/workflows/deploy-staging.yml), in a
+// table of their own so they do not disturb the cases above. Each one is placed
+// to reach a different rule, because the owner's ruling (OD-2026-09-30-004 d4,
+// option A) is that no rule may retire one -- not only the inactive-residue
+// rule that retired gate_shadow_athlete after every gate run.
+const GATE_ORG = 'gate_org_default';
+const GATE_ROWS: AccountRow[] = [
+  // Rule 10: the real post-gate state, left inactive by --deactivate-athlete.
+  account({ account_id: 'gate_shadow_athlete', role: 'athlete', organization_id: GATE_ORG, active_flag: false }),
+  // Rule 9: active, on no list.
+  account({ account_id: 'gate_probe_coach', role: 'coach', organization_id: GATE_ORG }),
+  // Rule 2: a platform owner by flag.
+  account({
+    account_id: 'gate_probe_platform_owner',
+    role: 'platform_owner',
+    organization_id: GATE_ORG,
+    is_platform_owner: true,
+  }),
+  // Rule 4: a parent.
+  account({ account_id: 'gate_shadow_guardian', role: 'parent', organization_id: GATE_ORG }),
+  // Rule 5: the only active admin of its own organization.
+  account({ account_id: 'gate_probe_org_admin', role: 'organization_admin', organization_id: 'gate_org_solo' }),
+  // Rule 6: a login-email case collision.
+  account({ account_id: 'gate_probe_guardian_a', login_email: 'Gate.Probe@example.org', active_flag: false }),
+  account({ account_id: 'gate_probe_guardian_b', login_email: 'gate.probe@example.org', active_flag: false }),
+  // Differently cased id, inactive.
+  account({ account_id: 'GATE_Shadow_Upper', role: 'athlete', organization_id: GATE_ORG, active_flag: false }),
+  // Rule 1 still comes first: an already-deleted fixture is reported as such.
+  account({
+    account_id: 'gate_deleted_fixture',
+    role: 'athlete',
+    organization_id: GATE_ORG,
+    active_flag: false,
+    deleted_at: '2026-09-01T00:00:00Z',
+  }),
+  // Look-alikes that are NOT gate fixtures: inactive, so still residue.
+  account({ account_id: 'gategym_x', role: 'coach', organization_id: GATE_ORG, active_flag: false }),
+  account({ account_id: 'x_gate_y', role: 'coach', organization_id: GATE_ORG, active_flag: false }),
+  account({ account_id: 'gate-hyphen', role: 'coach', organization_id: GATE_ORG, active_flag: false }),
+];
+
+const GATE_CASES: Record<string, { alsoRetire?: string[]; allowOrphanOrganizationIds?: string[] }> = {
+  plain: {},
+  confirm_shadow_athlete: { alsoRetire: ['gate_shadow_athlete'] },
+  confirm_solo_admin_with_orphan_allowance: {
+    alsoRetire: ['gate_probe_org_admin'],
+    allowOrphanOrganizationIds: ['gate_org_solo'],
+  },
+  confirm_collision_row_by_account_id: { alsoRetire: ['gate_probe_guardian_b'] },
+};
+
+// Logins with an athlete link, each placed to reach a different rule. The
+// ruling (overwatch, "C, with A until C lands") is that no rule retires a login
+// while a live athlete record stands behind it, whatever the account's role.
+const ATHLETE_ROWS: AccountRow[] = [
+  // Rule 10, and the reported case: a child added to the roster who never
+  // redeemed an activation code. Inactive, on no list.
+  account({
+    account_id: 'ath-never-activated', role: 'athlete', active_flag: false,
+    athlete_id: 'A1', athlete_record_live: true,
+  }),
+  // Rule 9: active, on no list.
+  account({ account_id: 'ath-active', role: 'athlete', athlete_id: 'A2', athlete_record_live: true }),
+  // Any role: the link decides, not the role.
+  account({
+    account_id: 'ath-coach-linked', role: 'coach', active_flag: false,
+    athlete_id: 'A3', athlete_record_live: true,
+  }),
+  // Rule 4: a parent-role login that also carries an athlete link.
+  account({ account_id: 'ath-parent-linked', role: 'parent', athlete_id: 'A4', athlete_record_live: true }),
+  // Rule 5: the only active admin of its organization.
+  account({
+    account_id: 'ath-solo-admin', role: 'organization_admin', organization_id: 'solo-org',
+    athlete_id: 'A5', athlete_record_live: true,
+  }),
+  // Rule 6: a login-email case collision.
+  account({
+    account_id: 'ath-collision-a', login_email: 'Kid@example.org', role: 'athlete', active_flag: false,
+    athlete_id: 'A6', athlete_record_live: true,
+  }),
+  account({
+    account_id: 'ath-collision-b', login_email: 'kid@example.org', role: 'athlete', active_flag: false,
+    athlete_id: 'A7', athlete_record_live: true,
+  }),
+  // Rule 8: on the hold list by account id.
+  account({
+    account_id: 'admin-local-probe', role: 'admin', active_flag: false,
+    athlete_id: 'A8', athlete_record_live: true,
+  }),
+  // Rule 1 still comes first: the login is already deleted while its athlete
+  // record is live -- the state this rule exists to stop creating.
+  account({
+    account_id: 'ath-login-already-deleted', role: 'athlete', active_flag: false,
+    deleted_at: '2026-09-01T00:00:00Z', athlete_id: 'A9', athlete_record_live: true,
+  }),
+  // Rule 1a still comes before 1b.
+  account({
+    account_id: 'gate_shadow_athlete', role: 'athlete', active_flag: false,
+    athlete_id: 'A10', athlete_record_live: true,
+  }),
+  // NOT protected: the athlete record is deleted or missing, or there is no link.
+  account({
+    account_id: 'ath-record-not-live', role: 'athlete', active_flag: false,
+    athlete_id: 'A11', athlete_record_live: false,
+  }),
+  account({
+    account_id: 'ath-no-link', role: 'athlete', active_flag: false,
+    athlete_id: null, athlete_record_live: false,
+  }),
+  // Linked, but the caller did not say whether the record is live.
+  account({ account_id: 'ath-state-missing', role: 'athlete', active_flag: false, athlete_id: 'A12' }),
+  account({
+    account_id: 'ath-state-null', role: 'athlete', active_flag: false,
+    athlete_id: 'A13', athlete_record_live: null,
+  }),
+  // An answer that is not a boolean, with and without a link. A database
+  // driver that handed back 't' or 1 for "live" must not read as "not live".
+  account({
+    account_id: 'ath-state-string-linked', role: 'athlete', active_flag: false,
+    athlete_id: 'A14', athlete_record_live: 'true',
+  }),
+  account({
+    account_id: 'ath-state-string-unlinked', role: 'athlete', active_flag: false,
+    athlete_id: null, athlete_record_live: 't',
+  }),
+  account({
+    account_id: 'ath-state-number-unlinked', role: 'athlete', active_flag: false,
+    athlete_id: null, athlete_record_live: 1,
+  }),
+];
+
+const LIVE_ATHLETE_LOGIN_IDS = [
+  'admin-local-probe',
+  'ath-active',
+  'ath-coach-linked',
+  'ath-collision-a',
+  'ath-collision-b',
+  'ath-never-activated',
+  'ath-parent-linked',
+  'ath-solo-admin',
+];
+
+const ATHLETE_CASES: Record<string, { alsoRetire?: string[]; allowOrphanOrganizationIds?: string[] }> = {
+  plain: {},
+  confirm_never_activated: { alsoRetire: ['ath-never-activated'] },
+  confirm_active: { alsoRetire: ['ath-active'] },
+  confirm_solo_admin_with_orphan_allowance: {
+    alsoRetire: ['ath-solo-admin'],
+    allowOrphanOrganizationIds: ['solo-org'],
+  },
+  confirm_collision_row_by_account_id: { alsoRetire: ['ath-collision-b'] },
+  confirm_hold_list_row: { alsoRetire: ['admin-local-probe'] },
+  confirm_state_missing: { alsoRetire: ['ath-state-missing'] },
+};
+
 type Plan = {
   decisions: Array<{
     account_id: string;
@@ -130,6 +289,9 @@ type Plan = {
   refusedNames: Array<{ account_id: string; reason: string }>;
   blockedNames: Array<{ account_id: string; reason: string }>;
   collisions: Array<{ account_id: string }>;
+  gateFixtures?: Array<{ account_id: string }>;
+  liveAthleteLogins?: Array<{ account_id: string }>;
+  alreadySoftDeleted?: Array<{ account_id: string }>;
 };
 
 // Each case is a set of options the operator could supply.
@@ -154,16 +316,31 @@ const CASES: Record<string, { alsoRetire?: string[]; allowOrphanOrganizationIds?
 };
 
 let plans: Record<string, Plan>;
+let gatePlans: Record<string, Plan>;
+let athletePlans: Record<string, Plan>;
 let masked: Record<string, string | null>;
+let reasonCounts: Record<string, Record<string, number>>;
 
 beforeAll(() => {
   const script = `
-    import { planAccountCleanup, maskEmailForRole } from ${JSON.stringify(MODULE_URL)};
+    import { planAccountCleanup, maskEmailForRole, countRetiredReasons } from ${JSON.stringify(MODULE_URL)};
     const rows = ${JSON.stringify(ROWS)};
     const cases = ${JSON.stringify(CASES)};
     const plans = {};
     for (const [name, options] of Object.entries(cases)) {
       plans[name] = planAccountCleanup(rows, options);
+    }
+    const gateRows = ${JSON.stringify(GATE_ROWS)};
+    const gateCases = ${JSON.stringify(GATE_CASES)};
+    const gatePlans = {};
+    for (const [name, options] of Object.entries(gateCases)) {
+      gatePlans[name] = planAccountCleanup(gateRows, options);
+    }
+    const athleteRows = ${JSON.stringify(ATHLETE_ROWS)};
+    const athleteCases = ${JSON.stringify(ATHLETE_CASES)};
+    const athletePlans = {};
+    for (const [name, options] of Object.entries(athleteCases)) {
+      athletePlans[name] = planAccountCleanup(athleteRows, options);
     }
     const masked = {
       athlete: maskEmailForRole('jonah.ruiz@example.org', 'athlete'),
@@ -171,8 +348,20 @@ beforeAll(() => {
       coach: maskEmailForRole('coach@punxsyprominence.org', 'coach'),
       null_email: maskEmailForRole(null, 'athlete'),
       malformed: maskEmailForRole('not-an-email', 'athlete'),
+      linked_volunteer: maskEmailForRole('teen.helper@example.org', 'volunteer', true),
+      unlinked_volunteer: maskEmailForRole('adult.helper@example.org', 'volunteer', false),
     };
-    process.stdout.write(JSON.stringify({ plans, masked }));
+    // confirm_jason retires three INACTIVE_RESIDUE rows and one
+    // NAMED_FOR_RETIREMENT row; each case below is what the retire statement
+    // could hand back for that plan.
+    const planned = plans.confirm_jason.retire;
+    const reasonCounts = {
+      all_retired: countRetiredReasons(planned, planned.map((entry) => entry.account_id)),
+      one_residue_row_refused: countRetiredReasons(planned, ['residue-1', 'residue-3', 'acct-jason']),
+      named_row_refused: countRetiredReasons(planned, ['residue-1', 'residue-2', 'residue-3']),
+      none_retired: countRetiredReasons(planned, []),
+    };
+    process.stdout.write(JSON.stringify({ plans, gatePlans, athletePlans, masked, reasonCounts }));
   `;
 
   const stdout = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
@@ -180,8 +369,34 @@ beforeAll(() => {
   });
   const parsed = JSON.parse(stdout);
   plans = parsed.plans;
+  gatePlans = parsed.gatePlans;
+  athletePlans = parsed.athletePlans;
   masked = parsed.masked;
+  reasonCounts = parsed.reasonCounts;
 });
+
+function athleteDecisionFor(caseName: string, accountId: string) {
+  const decision = athletePlans[caseName].decisions.find((entry) => entry.account_id === accountId);
+  if (!decision) throw new Error(`no decision for ${accountId} in athlete case ${caseName}`);
+  return decision;
+}
+
+function gateDecisionFor(caseName: string, accountId: string) {
+  const decision = gatePlans[caseName].decisions.find((entry) => entry.account_id === accountId);
+  if (!decision) throw new Error(`no decision for ${accountId} in gate case ${caseName}`);
+  return decision;
+}
+
+const GATE_FIXTURE_IDS = [
+  'GATE_Shadow_Upper',
+  'gate_probe_coach',
+  'gate_probe_guardian_a',
+  'gate_probe_guardian_b',
+  'gate_probe_org_admin',
+  'gate_probe_platform_owner',
+  'gate_shadow_athlete',
+  'gate_shadow_guardian',
+];
 
 function decisionFor(caseName: string, accountId: string) {
   const decision = plans[caseName].decisions.find((entry) => entry.account_id === accountId);
@@ -373,6 +588,173 @@ describe('guards a name alone does not lift', () => {
   });
 });
 
+describe('staging-gate fixtures (account_id starts with gate_)', () => {
+  test('THE POINT: the inactive gate_shadow_athlete a gate run leaves behind is skipped, not retired', () => {
+    // Retiring it sets deleted_at, and the next gate run cannot sign in as it.
+    expect(gateDecisionFor('plain', 'gate_shadow_athlete')).toMatchObject({
+      disposition: 'skip',
+      reason: 'GATE_FIXTURE',
+    });
+  });
+
+  test.each(Object.keys(GATE_CASES))('no gate fixture is retired in case %s', (caseName) => {
+    const retiredGateIds = gatePlans[caseName].decisions
+      .filter((entry) => entry.disposition === 'retire' && entry.account_id.toLowerCase().startsWith('gate_'));
+    expect(retiredGateIds).toEqual([]);
+  });
+
+  test.each(GATE_FIXTURE_IDS)('%s is skipped whichever rule it would otherwise reach', (accountId) => {
+    expect(gateDecisionFor('plain', accountId)).toMatchObject({ disposition: 'skip', reason: 'GATE_FIXTURE' });
+  });
+
+  test('the plan lists the skipped fixtures on their own, apart from already soft-deleted rows', () => {
+    expect(gatePlans.plain.gateFixtures?.map((entry) => entry.account_id).sort()).toEqual(GATE_FIXTURE_IDS);
+    expect(gatePlans.plain.alreadySoftDeleted?.map((entry) => entry.account_id)).toEqual(['gate_deleted_fixture']);
+  });
+
+  test('an already soft-deleted fixture is still reported as already soft-deleted', () => {
+    expect(gateDecisionFor('plain', 'gate_deleted_fixture')).toMatchObject({
+      disposition: 'skip',
+      reason: 'ALREADY_SOFT_DELETED',
+    });
+  });
+
+  test('naming a gate fixture is refused, not honoured and not silently ignored', () => {
+    expect(gateDecisionFor('confirm_shadow_athlete', 'gate_shadow_athlete').disposition).toBe('skip');
+    expect(gatePlans.confirm_shadow_athlete.refusedNames).toEqual([
+      { account_id: 'gate_shadow_athlete', reason: 'GATE_FIXTURE' },
+    ]);
+  });
+
+  test('a name plus an orphan allowance does not retire a gate admin either', () => {
+    expect(gateDecisionFor('confirm_solo_admin_with_orphan_allowance', 'gate_probe_org_admin').disposition)
+      .toBe('skip');
+    expect(gatePlans.confirm_solo_admin_with_orphan_allowance.refusedNames).toEqual([
+      { account_id: 'gate_probe_org_admin', reason: 'GATE_FIXTURE' },
+    ]);
+  });
+
+  test('look-alike ids that do not start with gate_ are still ordinary residue', () => {
+    for (const accountId of ['gategym_x', 'x_gate_y', 'gate-hyphen']) {
+      expect(gateDecisionFor('plain', accountId)).toMatchObject({
+        disposition: 'retire',
+        reason: 'INACTIVE_RESIDUE',
+      });
+    }
+  });
+});
+
+describe('logins with a live athlete record behind them', () => {
+  test('THE POINT: a child who never redeemed an activation code keeps the login', () => {
+    // Inactive and on no list, so the residue rule would retire it -- leaving a
+    // live athlete record held by a deleted login, which intake cannot replace.
+    expect(athleteDecisionFor('plain', 'ath-never-activated')).toMatchObject({
+      disposition: 'skip',
+      reason: 'LIVE_ATHLETE_RECORD',
+    });
+  });
+
+  test.each(Object.keys(ATHLETE_CASES))('no login with a live athlete record is retired in case %s', (caseName) => {
+    const retired = athletePlans[caseName].decisions
+      .filter((entry) => entry.disposition === 'retire')
+      .map((entry) => entry.account_id)
+      .sort();
+    // Exactly the two unprotected rows, in every case: nothing named is added.
+    expect(retired).toEqual(['ath-no-link', 'ath-record-not-live']);
+  });
+
+  test.each(LIVE_ATHLETE_LOGIN_IDS)('%s is skipped whichever rule it would otherwise reach', (accountId) => {
+    expect(athleteDecisionFor('plain', accountId)).toMatchObject({
+      disposition: 'skip',
+      reason: 'LIVE_ATHLETE_RECORD',
+    });
+  });
+
+  test('the plan lists them on their own', () => {
+    expect(athletePlans.plain.liveAthleteLogins?.map((entry) => entry.account_id).sort())
+      .toEqual(LIVE_ATHLETE_LOGIN_IDS);
+  });
+
+  test.each([
+    ['confirm_never_activated', 'ath-never-activated'],
+    ['confirm_active', 'ath-active'],
+    ['confirm_solo_admin_with_orphan_allowance', 'ath-solo-admin'],
+    ['confirm_collision_row_by_account_id', 'ath-collision-b'],
+    ['confirm_hold_list_row', 'admin-local-probe'],
+  ])('naming one is refused, not honoured and not silently ignored (%s)', (caseName, accountId) => {
+    expect(athleteDecisionFor(caseName, accountId).disposition).toBe('skip');
+    expect(athletePlans[caseName].refusedNames).toEqual([{ account_id: accountId, reason: 'LIVE_ATHLETE_RECORD' }]);
+  });
+
+  test('an athlete login whose record is deleted, missing, or absent is still ordinary residue', () => {
+    for (const accountId of ['ath-record-not-live', 'ath-no-link']) {
+      expect(athleteDecisionFor('plain', accountId)).toMatchObject({
+        disposition: 'retire',
+        reason: 'INACTIVE_RESIDUE',
+      });
+    }
+  });
+
+  test('a linked login whose record state was not supplied is held, never retired', () => {
+    // Not knowing is not "not live". A caller that forgot the join must not
+    // turn every athlete login back into residue.
+    for (const accountId of ['ath-state-missing', 'ath-state-null']) {
+      expect(athleteDecisionFor('plain', accountId)).toMatchObject({
+        disposition: 'hold',
+        reason: 'ATHLETE_RECORD_STATE_UNKNOWN',
+      });
+    }
+  });
+
+  test('a record state that is not a boolean is held, with or without an athlete link', () => {
+    for (const accountId of [
+      'ath-state-string-linked',
+      'ath-state-string-unlinked',
+      'ath-state-number-unlinked',
+    ]) {
+      expect(athleteDecisionFor('plain', accountId)).toMatchObject({
+        disposition: 'hold',
+        reason: 'ATHLETE_RECORD_STATE_UNKNOWN',
+      });
+    }
+  });
+
+  test('naming a login in that unknown state does not lift the hold', () => {
+    expect(athleteDecisionFor('confirm_state_missing', 'ath-state-missing').disposition).toBe('hold');
+    expect(athletePlans.confirm_state_missing.blockedNames).toEqual([
+      { account_id: 'ath-state-missing', reason: 'ATHLETE_RECORD_STATE_UNKNOWN' },
+    ]);
+  });
+
+  test('an already-deleted login and a gate fixture keep their own, earlier reasons', () => {
+    expect(athleteDecisionFor('plain', 'ath-login-already-deleted').reason).toBe('ALREADY_SOFT_DELETED');
+    expect(athleteDecisionFor('plain', 'gate_shadow_athlete').reason).toBe('GATE_FIXTURE');
+  });
+});
+
+describe('countRetiredReasons, the reason counts in the audit row', () => {
+  const total = (counts: Record<string, number>) => Object.values(counts).reduce((sum, n) => sum + n, 0);
+
+  test('counts every planned row when the statement retired them all', () => {
+    expect(reasonCounts.all_retired).toEqual({ INACTIVE_RESIDUE: 3, NAMED_FOR_RETIREMENT: 1 });
+  });
+
+  test('THE POINT: a planned row the statement refused is not counted', () => {
+    // Four rows planned, three returned. Counting from the plan would record
+    // reasons adding up to 4 beside a retired_count of 3.
+    expect(reasonCounts.one_residue_row_refused).toEqual({ INACTIVE_RESIDUE: 2, NAMED_FOR_RETIREMENT: 1 });
+    expect(total(reasonCounts.one_residue_row_refused)).toBe(3);
+  });
+
+  test('a reason with no retired row is left out rather than recorded as zero', () => {
+    expect(reasonCounts.named_row_refused).toEqual({ INACTIVE_RESIDUE: 3 });
+  });
+
+  test('nothing retired counts nothing', () => {
+    expect(reasonCounts.none_retired).toEqual({});
+  });
+});
+
 describe('maskEmailForRole', () => {
   test('masks an athlete address, which is a minor', () => {
     expect(masked.athlete).toBe('j***@example.org');
@@ -384,6 +766,12 @@ describe('maskEmailForRole', () => {
 
   test('prints a staff address in full, because it is what gets confirmed', () => {
     expect(masked.coach).toBe('coach@punxsyprominence.org');
+  });
+
+  test('masks any login with an athlete record behind it, whatever its role', () => {
+    // A minor can hold a volunteer or staff login; the role alone would print it.
+    expect(masked.linked_volunteer).toBe('t***@example.org');
+    expect(masked.unlinked_volunteer).toBe('adult.helper@example.org');
   });
 
   test('handles a null email and a malformed one without leaking either', () => {

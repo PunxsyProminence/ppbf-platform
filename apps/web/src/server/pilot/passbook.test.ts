@@ -4,6 +4,7 @@ import { query, queryOne } from './db';
 import {
   getAthletePassbook,
   getCoachPassbookGapQueue,
+  getGuardianPassbook,
   passbookObservationNoteTypes,
   PASSBOOK_ATHLETE_NOTE_TYPES,
   PASSBOOK_ATTENDANCE_STATUSES,
@@ -851,4 +852,86 @@ describe('the passbook withholds staff-only fields from a family reader', () => 
       expect(entry).toMatchObject({ date: '2026-07-31', rpe: 3 });
     });
   });
+});
+
+/* OD-2026-09-30-004 d3 (owner chose A): the guardian's book matches
+   ParentDigest -- name and completed-session count, no dated rows. */
+describe('getGuardianPassbook', () => {
+  test('returns only the name and the completed-session count', async () => {
+    mockQueryOne
+      .mockResolvedValueOnce({ organization_id: 'org-1', athlete_id: 'ath-1', full_name: 'Avery Boxer' })
+      .mockResolvedValueOnce({ completed: '12' });
+
+    await expect(getGuardianPassbook('org-1', 'ath-1')).resolves.toEqual({
+      athlete: { athlete_id: 'ath-1', full_name: 'Avery Boxer' },
+      completed_sessions: 12,
+    });
+  });
+
+  test('reads no row-returning table and touches sessions only through a completed count', async () => {
+    mockQueryOne
+      .mockResolvedValueOnce({ organization_id: 'org-1', athlete_id: 'ath-1', full_name: 'Avery Boxer' })
+      .mockResolvedValueOnce({ completed: '0' });
+
+    await getGuardianPassbook('org-1', 'ath-1');
+
+    expect(mockQuery).not.toHaveBeenCalled();
+    const sqls = mockQueryOne.mock.calls.map(([sql]) => String(sql));
+    expect(sqls).toHaveLength(2);
+    expect(sqls[0]).toMatch(/select organization_id, athlete_id, full_name\s+from pilot\.athletes/);
+    expect(sqls[1]).toMatch(/select count\(\*\)::text as completed\s+from pilot\.sessions[\s\S]*completed_flag = true/);
+    for (const [, params] of mockQueryOne.mock.calls) {
+      expect(params).toEqual(['org-1', 'ath-1']);
+    }
+  });
+
+  test('returns null without counting when the athlete is missing', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    await expect(getGuardianPassbook('org-1', 'ath-missing')).resolves.toBeNull();
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+  });
+
+  test('fails closed when the athlete row belongs to another organization', async () => {
+    mockQueryOne.mockResolvedValueOnce({ organization_id: 'org-2', athlete_id: 'ath-1', full_name: 'Wrong Organization' });
+
+    await expect(getGuardianPassbook('org-1', 'ath-1')).resolves.toBeNull();
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* Deletion scope B (OD-2026-09-29-002 item 10): a deleted athlete's book is
+   marked deleted with them. The db is mocked here, so what these pin is that
+   the lookup which opens each book reads the mark and that nothing further is
+   read when it finds no live row; deletionScopeB.pg.test.ts runs both readers
+   against a real database before and after a deletion. */
+describe('a deleted athlete has no passbook', () => {
+  test.each<[string, () => Promise<unknown>]>([
+    ['getAthletePassbook', () => getAthletePassbook('org-1', 'ath-gone', 'coach')],
+    ['getGuardianPassbook', () => getGuardianPassbook('org-1', 'ath-gone')],
+  ])('%s looks up only a live athlete row and reads nothing else without one', async (_name, read) => {
+    mockQueryOne.mockResolvedValueOnce(null);
+
+    await expect(read()).resolves.toBeNull();
+
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    expect(String(sql)).toMatch(
+      /from pilot\.athletes\s+where organization_id = \$1 and athlete_id = \$2 and deleted_at is null/,
+    );
+    expect(params).toEqual(['org-1', 'ath-gone']);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test.each<PilotRole>(['athlete', 'coach', 'organization_admin', 'admin', 'parent'])(
+    'getAthletePassbook reads the mark for a %s reader too',
+    async (role) => {
+      mockQueryOne.mockResolvedValueOnce(null);
+
+      await expect(getAthletePassbook('org-1', 'ath-gone', role)).resolves.toBeNull();
+
+      expect(String(mockQueryOne.mock.calls[0][0])).toContain('deleted_at is null');
+      expect(mockQuery).not.toHaveBeenCalled();
+    },
+  );
 });

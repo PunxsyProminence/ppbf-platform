@@ -98,12 +98,36 @@ describe('createOrUpdateAthleteAccount', () => {
     expect(refusal).toMatchObject({ status: 409, code: 'EXISTING_ATHLETE_ACCOUNT_CONFLICT' });
     expect((refusal as Error).message).toBe(
       'Conflict: account_id "acct_1" cannot be made the login for athlete record "athlete_1". '
-      + 'Only an athlete login in this organization that belongs to no athlete record, or already to '
-      + 'this one, can be. Use a different account_id.',
+      + 'Only an athlete login in this organization that is not deleted and belongs to no athlete record, '
+      + 'or already to this one, can be. Use a different account_id.',
     );
     // No membership write and no session revocation: the coach, or the other
     // child, keeps their sessions.
     expect(currentClient.query).toHaveBeenCalledTimes(1);
+  });
+
+  // OD-2026-09-29-002 item 4: the one-login-per-athlete constraint, under
+  // either name it has had, is a 409 naming the athlete record; any other
+  // unique violation is passed on unchanged.
+  test.each(['accounts_organization_id_athlete_id_key', 'uq_pilot_accounts_org_athlete'])(
+    'a new login refused by %s is a 409, not a raw unique violation',
+    async (constraint) => {
+      mockQuery.mockResolvedValueOnce([]);
+      currentClient.query.mockRejectedValueOnce(Object.assign(new Error('duplicate key'), { code: '23505', constraint }));
+
+      await expect(createOrUpdateAthleteAccount('acct_2', 'athlete_1', 'org_1')).rejects.toMatchObject({
+        status: 409,
+        code: 'ATHLETE_ALREADY_HAS_LOGIN',
+      });
+    },
+  );
+
+  test('any other unique violation is passed on unchanged', async () => {
+    mockQuery.mockResolvedValueOnce([]);
+    const other = Object.assign(new Error('duplicate key'), { code: '23505', constraint: 'accounts_pkey' });
+    currentClient.query.mockRejectedValueOnce(other);
+
+    await expect(createOrUpdateAthleteAccount('acct_2', 'athlete_1', 'org_1')).rejects.toBe(other);
   });
 
   test('rejects reassigning an account that belongs to another organization', async () => {

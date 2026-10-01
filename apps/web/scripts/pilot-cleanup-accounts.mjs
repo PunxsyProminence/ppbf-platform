@@ -62,7 +62,13 @@
 import { Pool } from 'pg';
 
 import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mjs';
-import { maskEmailForRole, planAccountCleanup } from './lib/account-cleanup-plan.mjs';
+import {
+  ACCOUNTS_READ_SQL,
+  RETIRE_ACCOUNTS_SQL,
+  countRetiredReasons,
+  maskEmailForRole,
+  planAccountCleanup,
+} from './lib/account-cleanup-plan.mjs';
 
 const connectionString = process.env.AZURE_POSTGRES_CONNECTION_STRING;
 if (!connectionString) {
@@ -105,7 +111,11 @@ const pool = new Pool({ connectionString });
 function describe(decision) {
   return {
     account_id: decision.account_id,
-    login_email: maskEmailForRole(decision.login_email, decision.role),
+    login_email: maskEmailForRole(
+      decision.login_email,
+      decision.role,
+      decision.athlete_record_live === true || (decision.athlete_id ?? '') !== '',
+    ),
     role: decision.role,
     organization_id: decision.organization_id,
     organization_status: decision.organization_status ?? null,
@@ -123,20 +133,7 @@ async function main() {
     // convention in this file.
     await client.query(apply ? 'begin' : 'begin read only');
 
-    const accounts = await client.query(
-      `select a.account_id,
-              a.login_email,
-              a.role,
-              a.organization_id,
-              a.is_platform_owner,
-              a.athlete_id,
-              a.active_flag,
-              a.deleted_at,
-              o.status as organization_status
-         from pilot.accounts a
-         left join pilot.organizations o on o.organization_id = a.organization_id
-        order by a.organization_id, a.role, a.login_email nulls last, a.account_id`,
-    );
+    const accounts = await client.query(ACCOUNTS_READ_SQL);
 
     const plan = planAccountCleanup(accounts.rows, { alsoRetire, allowOrphanOrganizationIds });
 
@@ -151,10 +148,33 @@ async function main() {
         keep: plan.keep.length,
         hold: plan.hold.length,
         retire: plan.retire.length,
-        already_soft_deleted: plan.skip.length,
+        already_soft_deleted: plan.alreadySoftDeleted.length,
+        gate_fixture_skipped: plan.gateFixtures.length,
+        live_athlete_login_skipped: plan.liveAthleteLogins.length,
       },
       accounts: plan.decisions.map(describe),
     }, null, 2));
+
+    // The staging gate's own accounts. Listed on their own, on every run, so a
+    // reader can see they were passed over on purpose and not missed.
+    if (plan.gateFixtures.length > 0) {
+      console.log(JSON.stringify({
+        event: 'account.cleanup.gate-fixtures-skipped',
+        note: 'staging-gate fixtures (account_id starts with gate_) are never retired; the gate signs in as them',
+        accounts: plan.gateFixtures.map(describe),
+      }));
+    }
+
+    // Logins with a live athlete record behind them. Listed for the same
+    // reason: retiring one would leave a child's record held by a deleted
+    // login, so they are passed over on purpose.
+    if (plan.liveAthleteLogins.length > 0) {
+      console.log(JSON.stringify({
+        event: 'account.cleanup.live-athlete-logins-skipped',
+        note: 'logins with a live athlete record behind them are never retired here; deactivate one in the app instead',
+        accounts: plan.liveAthleteLogins.map(describe),
+      }));
+    }
 
     // Two rows sharing a login email once case is folded. Reported separately
     // because the plan above shows them as `keep` -- correctly, since nothing
@@ -237,22 +257,16 @@ async function main() {
 
     const ids = plan.retire.map((decision) => decision.account_id);
 
-    // `role <> 'parent'` and `deleted_at is null` restate guarantees the planner
-    // already makes. They are here because this statement is the one that can
-    // fire pilot.cascade_parent_deletion across minors' records, and a
-    // WHERE clause is cheaper than trusting that no future edit to the planner
-    // ever lets a parent through.
+    // The statement and the reason for each of its guards are in
+    // lib/account-cleanup-plan.mjs, where a real-database test runs it.
     const retired = await client.query(
-      `update pilot.accounts
-          set deleted_at = now(),
-              active_flag = false,
-              updated_at = now()
-        where account_id = any($1::text[])
-          and role <> 'parent'
-          and deleted_at is null
-        returning account_id`,
+      RETIRE_ACCOUNTS_SQL,
       [ids],
     );
+
+    // Only the rows the statement above actually retired go on to lose their
+    // memberships and sessions, so a row its guards refused is left whole.
+    const retiredIds = retired.rows.map((row) => row.account_id);
 
     // Memberships are a separate table with its own active_flag; leaving them
     // active would keep a retired account listed as staff of its organization.
@@ -262,7 +276,7 @@ async function main() {
               updated_at = now()
         where account_id = any($1::text[])
           and active_flag = true`,
-      [ids],
+      [retiredIds],
     );
 
     const revoked = await client.query(
@@ -271,7 +285,7 @@ async function main() {
         where account_id = any($1::text[])
           and revoked_at is null
         returning token_hash`,
-      [ids],
+      [retiredIds],
     );
 
     // organization_id is null: this run spans organizations, and the column is a
@@ -282,14 +296,13 @@ async function main() {
       [
         'data_deletion_initiated',
         JSON.stringify({
-          retired_account_ids: retired.rows.map((row) => row.account_id),
-          retired_count: retired.rows.length,
+          retired_account_ids: retiredIds,
+          retired_count: retiredIds.length,
           sessions_revoked: revoked.rows.length,
           held_count: plan.hold.length,
-          reasons: plan.retire.reduce((totals, decision) => ({
-            ...totals,
-            [decision.reason]: (totals[decision.reason] ?? 0) + 1,
-          }), {}),
+          // Counted over the rows actually retired, so the reasons always add
+          // up to retired_count even if a SQL guard refused a planned row.
+          reasons: countRetiredReasons(plan.retire, retiredIds),
           confirmed_identities: alsoRetire,
           orphan_organizations_allowed: allowOrphanOrganizationIds,
         }),
