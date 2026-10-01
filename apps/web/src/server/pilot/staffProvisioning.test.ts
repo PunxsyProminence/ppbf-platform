@@ -6,9 +6,19 @@ interface FakeResult {
 // The guardian writes read rows back inside the transaction (does this athlete
 // exist, does this account already hold a guardian record), so the fake client
 // answers per statement rather than returning one fixed empty result.
+//
+// The account upsert returns the row it wrote, and the module reads no row
+// back as "this login is deleted, re-roled or deactivated". So the default
+// answer to that one statement is a written row; a test of the refusal says so
+// with its own responder.
 function fakeClient(responder?: (sql: string, params?: unknown[]) => FakeResult | undefined) {
   return {
-    query: jest.fn(async (sql: string, params?: unknown[]) => responder?.(sql, params) ?? { rows: [], rowCount: 0 }),
+    query: jest.fn(async (sql: string, params?: unknown[]) => {
+      const answered = responder?.(sql, params);
+      if (answered) return answered;
+      if (sql.includes('insert into pilot.accounts')) return { rows: [{ account_id: 'written' }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    }),
   };
 }
 
@@ -48,7 +58,10 @@ function stubLookups(options: {
   mockQueryOne.mockResolvedValueOnce(
     options.organizationExists === false ? null : { organization_id: 'org-1' },
   );
-  mockQueryOne.mockResolvedValueOnce(options.existingByEmail ?? null);
+  // An existing login is active and not deleted unless the test says otherwise.
+  mockQueryOne.mockResolvedValueOnce(
+    options.existingByEmail ? { active_flag: true, account_deleted: false, ...options.existingByEmail } : null,
+  );
   mockQueryOne.mockResolvedValueOnce(options.accountIdCollision ?? null);
 }
 
@@ -100,7 +113,7 @@ function guardianClient(options: {
       const rows = options.parentRows ?? [];
       return { rows, rowCount: rows.length };
     }
-    return { rows: [], rowCount: 0 };
+    return undefined;
   });
 }
 
@@ -1007,6 +1020,7 @@ function existingLogin(overrides: Record<string, unknown> = {}) {
     auth_provider: 'microsoft',
     is_platform_owner: false,
     active_flag: true,
+    account_deleted: false,
     ...overrides,
   };
 }
@@ -1222,10 +1236,16 @@ describe('assertGuardianLoginProvisionable', () => {
 describe('intake guardian login: a deleted login is refused, not reactivated', () => {
   const DELETED_AT = '2026-03-01 12:00:00+00';
 
-  test('provisioning with refuseDeletedLogin refuses a deleted parent login with 409 and writes nothing', async () => {
-    mockQueryOne.mockResolvedValueOnce({ organization_id: 'org-1' });
-    mockQueryOne.mockResolvedValueOnce(existingLogin({ account_id: 'acct-deleted' }));
-    mockQueryOne.mockResolvedValueOnce({ deleted_at: DELETED_AT });
+  const DELETED_MESSAGE =
+    'Conflict: the login "dana@example.com" was deleted. A deleted login cannot sign in and nothing here changes it; '
+    + 'a deletion is not undone from the app. A returning person needs a new login: a new account_id, or for a '
+    + 'staff or guardian login a different email address, because the deleted login keeps its own.';
+
+  // OD-2026-09-30-004 e2 (A): refused for every caller, not only intake. A
+  // re-invite used to set a deleted login active again.
+  // Intake's own refusal is unchanged, code and wording.
+  test('provisioning as intake calls it refuses a deleted parent login with 409 and writes nothing', async () => {
+    stubLookups({ existingByEmail: existingLogin({ account_id: 'acct-deleted', account_deleted: true, active_flag: false }) });
 
     const refusal = createOrUpdateMicrosoftStaffAccount({
       loginEmail: ' Dana@Example.com ',
@@ -1233,25 +1253,58 @@ describe('intake guardian login: a deleted login is refused, not reactivated', (
       role: 'parent',
       accountIdHint: 'acct-deleted',
       refuseRoleChange: true,
-      refuseDeletedLogin: true,
+      refuseDeactivatedLogin: true,
     });
 
-    await expect(refusal).rejects.toBeInstanceOf(ConflictError);
     await expect(refusal).rejects.toMatchObject({ status: 409, code: 'DELETED_GUARDIAN_LOGIN' });
     await expect(refusal).rejects.toThrow(
       'Conflict: dana@example.com belongs to a guardian login that was deleted. Intake does not restore a deleted login.',
     );
-    expect(mockQueryOne).toHaveBeenLastCalledWith(
-      expect.stringContaining('select deleted_at::text as deleted_at from pilot.accounts where account_id = $1'),
-      ['acct-deleted'],
-    );
     expect(currentClient.query).not.toHaveBeenCalled();
   });
 
-  test('provisioning with refuseDeletedLogin still provisions a parent login that was never deleted', async () => {
+  test.each([
+    ['a parent invite', { role: 'parent' as const }],
+    ['a staff invite at another role', { role: 'coach' as const }],
+  ])('provisioning refuses a deleted login with 409 and writes nothing: %s', async (_caller, callerParams) => {
+    stubLookups({ existingByEmail: existingLogin({ account_id: 'acct-deleted', account_deleted: true, active_flag: false }) });
+
+    const refusal = createOrUpdateMicrosoftStaffAccount({
+      loginEmail: ' Dana@Example.com ',
+      organizationId: 'org-1',
+      accountIdHint: 'acct-deleted',
+      ...callerParams,
+    });
+
+    await expect(refusal).rejects.toBeInstanceOf(ConflictError);
+    await expect(refusal).rejects.toMatchObject({ status: 409, code: 'DELETED_LOGIN' });
+    await expect(refusal).rejects.toThrow(DELETED_MESSAGE);
+    expect(currentClient.query).not.toHaveBeenCalled();
+  });
+
+  // Fail closed: a lookup that did not select the flag refuses.
+  test('a login row with no deletion flag is refused', async () => {
     mockQueryOne.mockResolvedValueOnce({ organization_id: 'org-1' });
-    mockQueryOne.mockResolvedValueOnce(existingLogin());
-    mockQueryOne.mockResolvedValueOnce({ deleted_at: null });
+    mockQueryOne.mockResolvedValueOnce({
+      account_id: 'acct-existing', organization_id: 'org-1', role: 'parent', auth_provider: 'microsoft',
+      is_platform_owner: false, active_flag: true,
+    });
+
+    await expect(
+      createOrUpdateMicrosoftStaffAccount({ loginEmail: 'dana@example.com', organizationId: 'org-1', role: 'parent' }),
+    ).rejects.toMatchObject({ code: 'DELETED_LOGIN' });
+  });
+
+  test('a deleted login in another organization is refused as another organization, and not named as deleted', async () => {
+    stubLookups({ existingByEmail: existingLogin({ organization_id: 'org-other', account_deleted: true }) });
+
+    await expect(
+      createOrUpdateMicrosoftStaffAccount({ loginEmail: 'dana@example.com', organizationId: 'org-1', role: 'parent' }),
+    ).rejects.toThrow('Forbidden: account already exists in another organization');
+  });
+
+  test('a login that was never deleted is still provisioned', async () => {
+    stubLookups({ existingByEmail: existingLogin() });
 
     const result = await createOrUpdateMicrosoftStaffAccount({
       loginEmail: 'dana@example.com',
@@ -1259,25 +1312,115 @@ describe('intake guardian login: a deleted login is refused, not reactivated', (
       role: 'parent',
       accountIdHint: 'acct-existing',
       refuseRoleChange: true,
-      refuseDeletedLogin: true,
     });
 
     expect(result.accountId).toBe('acct-existing');
     expect(accountUpsertCalls()).toHaveLength(1);
   });
 
-  // Scope: the invite surfaces are unchanged, and do not read the column.
-  test('without refuseDeletedLogin nothing about deletion is read, as before', async () => {
-    stubLookups({ existingByEmail: existingLogin() });
+  // The read is outside the transaction. The account write carries the same
+  // conditions, and when it writes no row the reason is read back inside it.
+  describe('the account write refuses what changed after the read', () => {
+    function clientWhereTheWriteMatchesNothing(current: Record<string, unknown>) {
+      return fakeClient((sql) => {
+        if (sql.includes('insert into pilot.accounts')) return { rows: [], rowCount: 0 };
+        if (sql.includes('from pilot.accounts a where account_id = $1')) return { rows: [current], rowCount: 1 };
+        return undefined;
+      });
+    }
 
-    await createOrUpdateMicrosoftStaffAccount({
-      loginEmail: 'dana@example.com',
-      organizationId: 'org-1',
-      role: 'parent',
+    test('the upsert is conditional on not deleted, and for intake on active and same role', async () => {
+      stubLookups({ existingByEmail: existingLogin() });
+
+      await createOrUpdateMicrosoftStaffAccount({
+        loginEmail: 'dana@example.com', organizationId: 'org-1', role: 'parent',
+        refuseRoleChange: true, refuseDeactivatedLogin: true,
+      });
+
+      const [sql, params] = accountUpsertCalls()[0];
+      expect(sql).toContain('where not (acct.deleted_at is not null)');
+      expect(sql).toContain('and acct.organization_id = excluded.organization_id');
+      expect(sql).toContain('and (not $5::boolean or acct.active_flag)');
+      expect(sql).toContain('and (not $6::boolean or acct.role = excluded.role)');
+      expect(params?.slice(4)).toEqual([true, true]);
     });
 
-    expect(mockQueryOne.mock.calls.some(([sql]) => String(sql).includes('deleted_at'))).toBe(false);
-    expect(accountUpsertCalls()).toHaveLength(1);
+    test('an invite passes neither intake condition', async () => {
+      stubLookups({ existingByEmail: existingLogin() });
+
+      await createOrUpdateMicrosoftStaffAccount({ loginEmail: 'dana@example.com', organizationId: 'org-1', role: 'parent' });
+
+      expect(accountUpsertCalls()[0][1]?.slice(4)).toEqual([false, false]);
+    });
+
+    // The reason is looked up only inside the caller's organization. A login
+    // that is another gym's by the time of the write gets the answer the
+    // read gives for one, and nothing about it -- deleted or not -- is said.
+    test('moved to another organization in between: the generic refusal, from a lookup scoped to this organization', async () => {
+      stubLookups({ existingByEmail: existingLogin() });
+      currentClient = fakeClient((sql) => {
+        if (sql.includes('insert into pilot.accounts')) return { rows: [], rowCount: 0 };
+        return undefined; // the scoped lookup finds no row in this organization
+      });
+
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({ loginEmail: 'dana@example.com', organizationId: 'org-1', role: 'parent' }),
+      ).rejects.toThrow('Forbidden: account already exists in another organization');
+
+      const lookup = currentClient.query.mock.calls.find(([sql]) => String(sql).includes('as account_deleted'));
+      expect(String(lookup?.[0])).toContain('where account_id = $1 and organization_id = $2');
+      expect(lookup?.[1]).toEqual(['acct-existing', 'org-1']);
+      expect(membershipCalls()).toHaveLength(0);
+    });
+
+    test('deleted in between, for intake: its own 409, and no membership is written', async () => {
+      stubLookups({ existingByEmail: existingLogin() });
+      currentClient = clientWhereTheWriteMatchesNothing({ role: 'parent', account_deleted: true });
+
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({
+          loginEmail: 'dana@example.com', organizationId: 'org-1', role: 'parent',
+          refuseRoleChange: true, refuseDeactivatedLogin: true,
+        }),
+      ).rejects.toMatchObject({ status: 409, code: 'DELETED_GUARDIAN_LOGIN' });
+      expect(membershipCalls()).toHaveLength(0);
+    });
+
+    test('deleted in between: 409 DELETED_LOGIN, and no membership is written', async () => {
+      stubLookups({ existingByEmail: existingLogin() });
+      currentClient = clientWhereTheWriteMatchesNothing({ role: 'parent', account_deleted: true });
+
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({ loginEmail: 'dana@example.com', organizationId: 'org-1', role: 'parent' }),
+      ).rejects.toMatchObject({ status: 409, code: 'DELETED_LOGIN' });
+      expect(membershipCalls()).toHaveLength(0);
+    });
+
+    test('re-roled in between, for intake: 409 EXISTING_ACCOUNT_ROLE_CONFLICT', async () => {
+      stubLookups({ existingByEmail: existingLogin() });
+      currentClient = clientWhereTheWriteMatchesNothing({ role: 'coach', account_deleted: false });
+
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({
+          loginEmail: 'dana@example.com', organizationId: 'org-1', role: 'parent',
+          refuseRoleChange: true, refuseDeactivatedLogin: true,
+        }),
+      ).rejects.toMatchObject({ status: 409, code: 'EXISTING_ACCOUNT_ROLE_CONFLICT' });
+      expect(membershipCalls()).toHaveLength(0);
+    });
+
+    test('deactivated in between, for intake: 409 DEACTIVATED_GUARDIAN_LOGIN', async () => {
+      stubLookups({ existingByEmail: existingLogin() });
+      currentClient = clientWhereTheWriteMatchesNothing({ role: 'parent', account_deleted: false });
+
+      await expect(
+        createOrUpdateMicrosoftStaffAccount({
+          loginEmail: 'dana@example.com', organizationId: 'org-1', role: 'parent',
+          refuseRoleChange: true, refuseDeactivatedLogin: true,
+        }),
+      ).rejects.toMatchObject({ status: 409, code: 'DEACTIVATED_GUARDIAN_LOGIN' });
+      expect(membershipCalls()).toHaveLength(0);
+    });
   });
 
   test('the pre-write check refuses a deleted parent login with 409', async () => {
