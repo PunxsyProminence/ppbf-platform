@@ -280,12 +280,14 @@ step; approving it changes nothing. Dispatch a fresh run.
    recently been re-applied in one pass, and its first pass against production
    should not be the first pass anywhere. Dispatch `apply-migrations` with
    `target: staging`, `migration: all`, and read every runner's output.
-5. **Confirm GitHub accepts `queue: max` where it is written.** GitHub
-   documents it for a workflow's `concurrency` block (read 2026-10-01); for a
-   JOB's `concurrency` block, which this workflow uses twice, the
-   documentation read that day shows no example. A workflow GitHub cannot
-   validate does not start at all, so the first dispatch in step 2 settles it:
-   if the run is rejected as invalid, that is this.
+5. **Confirm GitHub accepts `queue: max` where it is written.** At workflow
+   level it is observed accepted (`apply-migrations` run 36883139484,
+   2026-10-01). In a JOB's `concurrency` block, which this workflow uses
+   twice, it is documented (ChatGPT's read of `jobs.<job_id>.concurrency`,
+   2026-10-01; the two pages Claude read that day showed it only at workflow
+   level) and its runtime behaviour is unobserved until first use. A workflow
+   GitHub cannot validate does not start at all, so the first dispatch in step
+   2 settles it: if the run is rejected as invalid, that is this.
 6. Record all five with the run ids in this section, replacing "It has never
    been run".
 
