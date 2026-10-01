@@ -4,9 +4,16 @@ jest.mock('./db', () => ({
 }));
 
 import { setAccountMasterShadowAccess } from './auth';
-import { queryOne } from './db';
+import { query, queryOne } from './db';
 
 const mockQueryOne = queryOne as jest.Mock;
+const mockQuery = query as jest.Mock;
+
+// The "was it deleted?" lookup after an update that matched nothing. No row:
+// the account is not a deleted staff login.
+beforeEach(() => {
+  mockQuery.mockResolvedValue([]);
+});
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -69,5 +76,20 @@ describe('setAccountMasterShadowAccess', () => {
     await expect(setAccountMasterShadowAccess('athlete-1', true)).rejects.toThrow(
       'Not found: no such account, or its role cannot hold cross-organization access',
     );
+    // The deleted lookup excludes those roles too, so a deleted athlete or
+    // parent gets this same answer.
+    expect(mockQuery.mock.calls[0][0]).toContain("a.role not in ('athlete', 'parent')");
+  });
+
+  // OD-2026-09-30-004 e2: a deleted login is given, or stripped of, nothing.
+  test('the update excludes a deleted login, and a deleted staff login is refused 409 by name', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    mockQuery.mockResolvedValueOnce([{ '?column?': 1 }]);
+
+    await expect(setAccountMasterShadowAccess('staff-deleted', true)).rejects.toMatchObject({
+      status: 409,
+      code: 'DELETED_LOGIN',
+    });
+    expect(mockQueryOne.mock.calls[0][0]).toContain('and not (a.deleted_at is not null)');
   });
 });
