@@ -92,7 +92,10 @@ describe('audience register', () => {
 
 // The register is prompt text. The urgent and emergency replies are canned
 // strings returned before any model is called, so no register -- and no humor
-// -- can reach them. Pinned byte for byte, for an athlete and for staff.
+// -- can reach them. Pinned byte for byte, for an athlete, a parent and a coach.
+// validateShadowRequest ignores its role argument today, so the cross-role
+// equality bites only if someone makes it role-aware; the toBe on the text is
+// the pin that bites now. It does not cover FALLBACK_RESPONSES in the route.
 describe('canned urgent replies do not vary with the audience', () => {
   const EMERGENCY = 'Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.';
   const PERSONAL_HEALTH = 'Personal pain, injury, and treatment questions require evaluation by a qualified medical professional. SHADOW can only provide general educational information.';
@@ -125,6 +128,12 @@ describe('composed prompt', () => {
     const prompt = composeShadowSystemPrompt({ role: 'athlete', sessionType: 'quick_round' });
     expect(prompt).toContain('150 words');
     expect(prompt).toContain(ATHLETE_REGISTER);
+  });
+
+  test('a parent quick round gets the parent register', () => {
+    const prompt = composeShadowSystemPrompt({ role: 'parent', sessionType: 'quick_round' });
+    expect(prompt).toContain(PARENT_REGISTER);
+    expect(prompt).not.toContain(ATHLETE_REGISTER);
   });
 
   test('a coach heavy bag gets long-form and the staff register', () => {
