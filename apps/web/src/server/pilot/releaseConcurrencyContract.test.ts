@@ -19,6 +19,10 @@ import path from 'node:path';
  *     fails here instead of quietly splitting the lock in two;
  *   - cancel-in-progress false on all three: a cancelled migration or deploy is
  *     the half-applied state the lock exists to prevent;
+ *   - `queue: max` on all three, so a later dispatch waits instead of
+ *     cancelling the run already pending (GitHub's default keeps one pending
+ *     run per group and replaces it). It only holds while EVERY member of the
+ *     group carries it, which is why it is pinned on each;
  *   - the target choices are exactly staging and production, because the
  *     expression sends anything that is not `production` to the staging group;
  *   - which workflows are inside the lock, and which target-taking workflows
@@ -55,7 +59,7 @@ const workflowFiles = fs
  * and comment lines are dropped first, so prose that happens to say `group:`
  * cannot satisfy an assertion.
  */
-function workflowConcurrency(file: string): { group: string; cancelInProgress: string } {
+function workflowConcurrency(file: string): { group: string; cancelInProgress: string; body: string[] } {
   const lines = readWorkflow(file).split('\n');
   const start = lines.indexOf('concurrency:');
   if (start === -1) throw new Error(`${file}: no top-level concurrency block`);
@@ -63,7 +67,7 @@ function workflowConcurrency(file: string): { group: string; cancelInProgress: s
   const body: string[] = [];
   for (const line of lines.slice(start + 1)) {
     if (line.trim() !== '' && !/^\s/.test(line)) break;
-    if (!/^\s*#/.test(line)) body.push(line);
+    if (line.trim() !== '' && !/^\s*#/.test(line)) body.push(line);
   }
 
   const read = (key: string): string => {
@@ -76,7 +80,7 @@ function workflowConcurrency(file: string): { group: string; cancelInProgress: s
     return found[0][1];
   };
 
-  return { group: read('group'), cancelInProgress: read('cancel-in-progress') };
+  return { group: read('group'), cancelInProgress: read('cancel-in-progress'), body };
 }
 
 /** Every `group:` value in a file, at any depth, comments removed. */
@@ -227,8 +231,18 @@ describe('migrations and deploys of one environment share one concurrency group'
     ['apply-migrations.yml', migrations],
     ['deploy-staging.yml', stagingDeploy],
     ['deploy-production.yml', productionDeploy],
-  ])('%s never cancels a run in progress', (_file, concurrency) => {
-    expect(concurrency.cancelInProgress).toBe('false');
+  ])('%s never cancels a run in progress, and queues instead of replacing a pending run', (_file, concurrency) => {
+    // The WHOLE block, key for key, on every workflow that names a shared
+    // group. `queue: max` is a property of the group only while every member
+    // carries it: by default a group holds one pending run and a newer arrival
+    // cancels it whatever cancel-in-progress says, so one member edited back
+    // to the default is enough for a queued migration to be cancelled by the
+    // next deploy dispatch. A fourth key would be a setting nobody ruled on.
+    expect(concurrency.body).toEqual([
+      `  group: ${concurrency.group}`,
+      '  cancel-in-progress: false',
+      '  queue: max',
+    ]);
   });
 });
 
