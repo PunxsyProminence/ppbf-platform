@@ -62,6 +62,49 @@ describe('audience register', () => {
   );
 });
 
+// OD-2026-09-30-006: high-risk questions get education, not a refusal. The model
+// copies its examples, and the old diagnosis example opened with "that's not my
+// lane" and taught only if asked again -- measured on 2026-10-01, a sore
+// shoulder was answered "stop sparring ... get checked" with no teaching.
+describe('teach first', () => {
+  test('the base prompt orders health answers: teach, coach, then the limit', () => {
+    expect(SHADOW_SYSTEM_PROMPT).toContain('TEACH FIRST');
+    expect(SHADOW_SYSTEM_PROMPT).toContain('Never open with what you cannot do');
+    expect(SHADOW_SYSTEM_PROMPT).toContain('Never answer with only "see a professional"');
+    const teach = SHADOW_SYSTEM_PROMPT.indexOf('1. Teach the thing');
+    const coach = SHADOW_SYSTEM_PROMPT.indexOf('2. Say what to tell the coach');
+    const limit = SHADOW_SYSTEM_PROMPT.indexOf('3. Last, in one sentence, say what you cannot do');
+    expect(teach).toBeGreaterThan(-1);
+    expect(coach).toBeGreaterThan(teach);
+    expect(limit).toBeGreaterThan(coach);
+  });
+
+  test('teaching does not loosen the doctrine', () => {
+    expect(SHADOW_SYSTEM_PROMPT).toContain('1. Never diagnose a condition');
+    expect(SHADOW_SYSTEM_PROMPT).toContain('2. Never prescribe treatment or medication.');
+    expect(SHADOW_SYSTEM_PROMPT).toContain('3. Never grant medical clearance or return-to-play approval.');
+    expect(SHADOW_SYSTEM_PROMPT).toContain('Do not prescribe exercises, stretches, ice, heat or medication as treatment');
+  });
+
+  test('the health examples teach before they state the limit', () => {
+    for (const heading of ['EXAMPLE — diagnosis request', 'EXAMPLE — soreness after training']) {
+      const start = SHADOW_SYSTEM_PROMPT.indexOf(heading);
+      expect(start).toBeGreaterThan(-1);
+      const next = SHADOW_SYSTEM_PROMPT.indexOf('EXAMPLE —', start + heading.length);
+      const example = SHADOW_SYSTEM_PROMPT.slice(start, next === -1 ? undefined : next);
+      const body = example.slice(example.indexOf('\n') + 1);
+      const limit = body.indexOf("I can't tell you");
+      expect(limit).toBeGreaterThan(body.length / 2);
+      expect(body).toContain('Tell your coach');
+    }
+  });
+
+  test('the deflect-first example is gone', () => {
+    expect(SHADOW_SYSTEM_PROMPT).not.toContain("that's not my lane");
+    expect(SHADOW_SYSTEM_PROMPT).not.toContain('Want that?');
+  });
+});
+
 describe('composed prompt', () => {
   test('doctrine and persona are carried unchanged', () => {
     const prompt = composeShadowSystemPrompt({ role: 'athlete', sessionType: 'quick_round' });
