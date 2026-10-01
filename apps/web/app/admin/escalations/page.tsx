@@ -226,6 +226,9 @@ export default function EscalationsPage() {
   }
 
   const isLoading = items === null;
+  // The failed load empties `items`, so every figure counted from it would
+  // read 0. The tiles take the same test the list below already takes.
+  const listUnavailable = errorMessage !== '';
 
   return (
     <RoleSessionGate allowedRoles={['admin', 'coach']}>
@@ -283,15 +286,15 @@ export default function EscalationsPage() {
           <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-3">
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">Critical (this view)</p>
-              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : counts.critical}</p>
+              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : listUnavailable ? 'Unavailable' : counts.critical}</p>
             </article>
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">High (this view)</p>
-              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : counts.high}</p>
+              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : listUnavailable ? 'Unavailable' : counts.high}</p>
             </article>
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">Total (this view)</p>
-              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : counts.total}</p>
+              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : listUnavailable ? 'Unavailable' : counts.total}</p>
             </article>
           </section>
 
