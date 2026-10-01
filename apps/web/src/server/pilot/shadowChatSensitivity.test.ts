@@ -430,12 +430,13 @@ const MAIN_PATTERNS: Pattern[] = [...patternsOf(MAIN_CLASSIFY), ...patternsOf(MA
 // Write f for the fold and main(m) for what main did with message m.
 //
 // STEP 1. The current code is main with the fold in front: now(m) =
-// main(f(m)). The two functions carry main's patterns and phrases unchanged,
-// and validateShadowRequest every one of main's string literals [S1a]; every
-// pattern reads the folded text, and the raw message goes only to the fold
-// and to the classifier, which folds it [S1b]; and the fold is exactly the
-// two replace lines [S1c]. The control flow around the patterns is not
-// parsed; it is checked by running: now(m) equals main(f(m)), field for
+// main(f(m)). The two shipping functions are main's two functions,
+// statement for statement, once a short named list of differences is undone
+// -- the fold call, the folded text where main read the message, the
+// `examples` table, three type annotations [S1d]; and the fold is exactly
+// the two replace lines [S1c]. S1a and S1b say the same thing about the
+// patterns and about what each pattern reads, separately, so that a failure
+// names what moved. It is also run: now(m) equals main(f(m)), field for
 // field, on every generated message in the seed differential and the
 // call-site run below.
 //
@@ -475,9 +476,9 @@ const MAIN_PATTERNS: Pattern[] = [...patternsOf(MAIN_CLASSIFY), ...patternsOf(MA
 //
 // STEP 5. Read main's returns in order. This step is by reading the frozen
 // reference above. The seed differential runs it: its seeds include one for
-// each move the step allows -- from R4, R5, R6, R7 and R8 to R3, from R9 to
-// R3 and to R8, and a topic becoming loss_of_consciousness under R8 -- and
-// the count of each move is asserted.
+// each change of return the step allows -- from R4, R5, R6, R7 and R8 to R3,
+// from R9 to R3 and to R8 -- and for a topic changing under an unchanged
+// return at R1, R2, R3, R6 and R8, and the count of each is asserted.
 //
 //   R1 withhold   prescription or weight-cut language        same for m, f(m)
 //   R2 ALLOW      educational framing, not personal          same for m, f(m)
@@ -508,11 +509,21 @@ const MAIN_PATTERNS: Pattern[] = [...patternsOf(MAIN_CLASSIFY), ...patternsOf(MA
 //      urgent_personal_symptom at R3 and the topic at R2 and R8, and a topic
 //      in the critical list stays itself or becomes loss_of_consciousness.
 //
-// WHAT THIS DOES NOT COVER. It is an argument about main's patterns as
-// frozen here; S1a ties the shipping patterns to them, and that test has to
-// be retired, deliberately, by whoever next changes a pattern. It says
-// nothing about characters outside the eighteen: those behave as on main,
-// including every astral look-alike.
+// WHAT THIS DOES NOT COVER.
+//
+// It is an argument about main's two functions as frozen here. S1d ties the
+// shipping functions to them, and has to be edited, deliberately, by whoever
+// next changes either.
+//
+// It says nothing about characters outside the eighteen: those behave as on
+// main, including every astral look-alike.
+//
+// IT STOPS AT validateShadowRequest'S RETURN VALUE. Properties 1-3 are about
+// `valid`, `error` and `classification`. What the chat route then does with
+// `topic` and `classification` is not in the argument, and one thing it does
+// changes: see "an educational question that names KO'd" below. An ALLOWED
+// educational question whose topic becomes loss_of_consciousness is answered
+// by the model where main answered it with a stock line and queued a review.
 // ---------------------------------------------------------------------------
 describe('the premises of the argument, read from source', () => {
   const NOW_PATTERNS: Pattern[] = [...patternsOf(NOW_CLASSIFY), ...patternsOf(NOW_VALIDATE)];
@@ -592,6 +603,79 @@ describe('the premises of the argument, read from source', () => {
     expect([...spelled].sort((a, b) => a[0] - b[0])).toEqual([...EXPECTED_FOLD].sort((a, b) => a[0] - b[0]));
   });
 
+  // S1d. THE WHOLE OF BOTH FUNCTIONS, STATEMENT FOR STATEMENT.
+  //
+  // S1a and S1b look at particular things -- patterns, phrases, what each
+  // `.test` is handed -- and a harmful edit can be none of those: `text`
+  // reassigned on the next line to the output of a helper, an early
+  // `return { valid: true }` on the caller's role or the message's length, an
+  // extra `&& !quoted(text)` on the urgent return. A reviewer wrote each of
+  // those and every earlier test here passed.
+  //
+  // So the two shipping functions are printed without comments, the short
+  // list of differences below is undone, each exactly as many times as
+  // stated, and what is left must be main's two functions, statement for
+  // statement and parameter for parameter. ANY other edit to either function
+  // fails here. That is the intent: after this change the classifier is
+  // main's plus the fold, and the next change to it has to come and say what
+  // it is by editing this list.
+  //
+  // It does not reach outside the two functions: what the route does with
+  // the message before and after is not covered by this file.
+  test('S1d: the two shipping functions are main\'s, statement for statement, but for the named differences', () => {
+    const printer = ts.createPrinter({ removeComments: true });
+    const print = (node: ts.Node, file: ts.SourceFile): string => printer.printNode(ts.EmitHint.Unspecified, node, file).replace(/\s+/g, ' ').trim();
+    const shape = (fn: ts.FunctionDeclaration, file: ts.SourceFile) => ({
+      parameters: fn.parameters.map((p) => print(p, file)),
+      statements: fn.body!.statements.map((s) => print(s, file)),
+    });
+
+    /** Undo one named difference, and insist it was there exactly `times` times. */
+    const undo = (statements: string[], from: string, to: string, times: number): string[] => {
+      let seen = 0;
+      const out = statements.map((s) => {
+        const parts = s.split(from);
+        seen += parts.length - 1;
+        return parts.join(to);
+      });
+      if (seen !== times) throw new Error(`expected ${JSON.stringify(from)} ${times} time(s), found ${seen}`);
+      return out;
+    };
+    const drop = (statements: string[], startsWith: string): string[] => {
+      const kept = statements.filter((s) => !s.startsWith(startsWith));
+      if (kept.length !== statements.length - 1) throw new Error(`expected exactly one statement starting ${JSON.stringify(startsWith)}`);
+      return kept;
+    };
+
+    // classifyHighRiskTopic: the fold in front of the lowercasing; the
+    // HighRiskTopic type where the frozen copy says string or nothing; and
+    // the `examples` table, which no decision reads.
+    const nowClassify = shape(NOW_CLASSIFY, PRODUCTION);
+    let classify = nowClassify.statements;
+    classify = undo(classify, 'normaliseForMatching(userMessage).toLowerCase()', 'userMessage.toLowerCase()', 1);
+    classify = undo(classify, 'Array<[ HighRiskTopic, RegExp ]>', 'Array<[ string, RegExp ]>', 1);
+    classify = undo(classify, 'let classifiedTopic: HighRiskTopic = ', 'let classifiedTopic = ', 1);
+    classify = drop(classify, 'const examples: ');
+    classify = undo(classify, ', examples: examples[classifiedTopic]', '', 1);
+    const mainClassifyShape = shape(MAIN_CLASSIFY, GUARD);
+    expect(classify).toEqual(mainClassifyShape.statements);
+    expect(nowClassify.parameters).toEqual(mainClassifyShape.parameters);
+    expect(mainClassifyShape.statements.length).toBe(MAIN_CLASSIFY_STATEMENTS);
+
+    // validateShadowRequest: the one added line that folds, and the folded
+    // text where main read the message.
+    const nowValidate = shape(NOW_VALIDATE, PRODUCTION);
+    let validate = nowValidate.statements;
+    validate = undo(validate, 'classifyHighRiskTopic(message)', 'mainClassify(message)', 1);
+    validate = drop(validate, 'const text = normaliseForMatching(message);');
+    validate = undo(validate, 'text.toLowerCase()', 'message.toLowerCase()', 1);
+    validate = undo(validate, '.test(text)', '.test(message)', 17);
+    const mainValidateShape = shape(MAIN_VALIDATE, GUARD);
+    expect(validate).toEqual(mainValidateShape.statements);
+    expect(nowValidate.parameters).toEqual(mainValidateShape.parameters);
+    expect(mainValidateShape.statements.length).toBe(MAIN_VALIDATE_STATEMENTS);
+  });
+
   // The twenty characters the argument is about: eighteen sources, two outputs.
   const TWENTY = [...SOURCES, "'", '"'];
   const mentions = (p: Pattern): boolean => TWENTY.some((ch) => p.source.includes(ch));
@@ -609,7 +693,8 @@ describe('the premises of the argument, read from source', () => {
     }
     // A pattern could also reach one of the twenty without spelling it: by an
     // escape, a property class, or a range. None of main's patterns has any.
-    const INDIRECT = /\\u|\\x|\\p|\\P|\\c|\[[^\]]*[^\\\]]-[^\]]/;
+    // (\0-\7 is the legacy octal escape: \47 and \047 are an apostrophe.)
+    const INDIRECT = /\\u|\\x|\\p|\\P|\\c|\\[0-7]|\[[^\]]*[^\\\]]-[^\]]/;
     expect(MAIN_PATTERNS.filter((p) => INDIRECT.test(p.source)).map((p) => p.owner)).toEqual([]);
     // And the one look-alike is the only non-ASCII character in any of them,
     // which is what makes a non-ASCII letter's case forms invisible to them.
@@ -1011,13 +1096,18 @@ const SEEDS: ReadonlyArray<readonly [string, string]> = [
   // or "KO'd" would be, so it leaves main by the return declared here, and
   // the variant with a look-alike in that slot is the phone-typed sentence,
   // which must now move to R3 (or, for the last, keep R8 with the topic
-  // becoming loss_of_consciousness). One per move Step 5 allows.
+  // becoming loss_of_consciousness). One per change of return Step 5 allows.
   ['R4 personal health', 'my shoulder hurts and I can t breathe'],
   ['R5 diagnosis', 'do i have a concussion if i can t see'],
   ['R6 clearance', 'am I cleared to spar if I can t see'],
   ['R7 medication', 'do i get a pill if i can t breathe'],
   ['R8 high-risk fallback', 'I fainted and I can t breathe'],
   ['R8 high-risk fallback', 'chest pain and she got ko d'],
+  // The same slot under returns that do not change: the topic becomes
+  // loss_of_consciousness and the return stays. The R2 one is the case the
+  // chat route treats differently afterwards; see the test that names it.
+  ['R2 educational, allowed', 'What does research say about return to play after being ko d'],
+  ['R3 urgent', "I can't see straight after I got ko d"],
   ['R4 personal health', 'my shoulder hurts'],
   ['R4 personal health', 'I hurt my wrist'],
   ['R4 personal health', 'our bag session left me sore'],
@@ -1056,7 +1146,7 @@ describe('main against the current code: every look-alike at every position of e
       .filter(([declared, seed]) => returnOf(main(seed)) !== declared)
       .map(([declared, seed]) => `${JSON.stringify(seed)}: declared ${declared}, main gives ${returnOf(main(seed))}`);
     expect(wrong).toEqual([]);
-    expect(SEEDS.length).toBe(50);
+    expect(SEEDS.length).toBe(52);
     expect([...new Set(SEEDS.map(([declared]) => declared))].sort()).toEqual([
       'R1 prescription or weight cut',
       'R2 educational, allowed',
@@ -1180,6 +1270,39 @@ describe('main against the current code: every look-alike at every position of e
     }
   });
 
+  // WHAT PROPERTIES 1-3 DO NOT SAY, PINNED.
+  //
+  // This question is educational and ALLOWED, on main and here. Its topic is
+  // loss_of_consciousness when "KO'd" is recognised and return_to_play when
+  // it is not. Main recognised the ASCII apostrophe and U+2019; the fold adds
+  // the other eleven apostrophe look-alikes. Nothing is released and nothing
+  // is downgraded in the sense of properties 1-3 -- the verdict is `valid`
+  // either way -- but the chat route answers a return_to_play question with
+  // a stock line and a review row and a loss_of_consciousness one with the
+  // model and no row. route.test.ts pins that half, with the route run.
+  test('an educational question that names KO\'d: eleven more spellings get the topic the ASCII apostrophe already gets', () => {
+    const ask = (apostrophe: string): Verdict => main(`What does research say about return to play after being ko${apostrophe}d`);
+    const askNow = (apostrophe: string): Verdict => now(`What does research say about return to play after being ko${apostrophe}d`);
+    const RIGHT_SINGLE = String.fromCharCode(0x2019);
+
+    expect(ask("'")).toEqual({ valid: true, highRisk: true, topic: 'loss_of_consciousness', classification: 'loss_of_consciousness' });
+    expect(ask(RIGHT_SINGLE)).toEqual(ask("'"));
+    expect(askNow("'")).toEqual(ask("'"));
+
+    const changed: string[] = [];
+    for (const unit of APOSTROPHE_SOURCES) {
+      const ch = String.fromCharCode(unit);
+      expect(askNow(ch)).toEqual(ask("'"));
+      if (!same(ask(ch), askNow(ch))) {
+        expect(ask(ch)).toEqual({ valid: true, highRisk: true, topic: 'return_to_play', classification: 'return_to_play' });
+        changed.push(unitLabel(unit));
+      }
+    }
+    // Every apostrophe look-alike but the one main already knew.
+    expect(changed.length).toBe(11);
+    expect(changed).not.toContain('U+2019');
+  });
+
   // KNOWN GAP, ON MAIN AND HERE, MOVED TO #1036. Main's first return sits
   // above its emergency return, so an emergency report that also contains a
   // weight-cut phrase gets the medication text and no critical
@@ -1202,7 +1325,7 @@ describe('main against the current code: every look-alike at every position of e
 // character DELETED after the fold -- at the call site rather than in the
 // fold -- joins the two words and shows here as the current code parting
 // from main(f(m)). A rewrite that leaves the verdict on these two messages
-// alone -- NBSP or U+FEFF to a space, a trim -- does NOT show here. S1b is
+// alone -- NBSP or U+FEFF to a space, a trim -- does NOT show here. S1d is
 // what stops every call-site edit; this is its check for the one class that
 // has already released a message.
 // ---------------------------------------------------------------------------
@@ -1424,43 +1547,48 @@ describe('a word merely containing "cant" is not withheld', () => {
 // ---------------------------------------------------------------------------
 // The string literals of main's validateShadowRequest.
 const MAIN_VALIDATE_STRING_LITERALS = 18;
+// The top-level statements of main's two functions.
+const MAIN_CLASSIFY_STATEMENTS = 8;
+const MAIN_VALIDATE_STATEMENTS = 17;
 const RANDOM_STRINGS_TOUCHED = 19565;
 const CARRIER_COMPARISONS_FOLDED = 162;
-// The sum over the 50 seeds of (2 x length + 1).
-const SEED_FEFF_COMPARISONS = 3014;
+// The sum over the 52 seeds of (2 x length + 1).
+const SEED_FEFF_COMPARISONS = 3210;
 const SEED_DIFFERENTIAL_COUNTS = {
-  // 18 x 3,014.
-  compared: 54252,
+  // 18 x 3,210.
+  compared: 57780,
   // The return MAIN gave each generated message. A look-alike dropped into
   // the middle of a keyword breaks it, which is why more land on R9 than
   // there are R9 seeds. The nine sum to `compared`.
   byMainReturn: {
     'R1 prescription or weight cut': 5238,
-    'R2 educational, allowed': 3456,
-    'R3 urgent': 9612,
+    'R2 educational, allowed': 5634,
+    'R3 urgent': 10656,
     'R4 personal health': 3132,
     'R5 diagnosis': 1278,
     'R6 clearance': 3294,
     'R7 medication': 1854,
     'R8 high-risk fallback': 10495,
-    'R9 nothing matched, allowed': 15893,
+    'R9 nothing matched, allowed': 16199,
   },
   // Messages main allowed that are now withheld: the fix. Each of them
   // carries the emergency text, which the test asserts separately.
-  newlyWithheld: 71,
-  // Those 71, and 48 that main withheld without the emergency text and that
+  newlyWithheld: 83,
+  // Those 83, and 48 that main withheld without the emergency text and that
   // now get it: 12 from each of R4, R5, R6 and R7.
-  newlyEmergency: 119,
+  newlyEmergency: 131,
   // Messages where any field differs from main's.
-  anyFieldDiffers: 177,
-  // Those 177, by what changed. Every move Step 5 of the argument allows is
-  // here and nothing else is: to R3 from R4, R5, R6, R7, R8 and R9; from R9
-  // to R8; and a topic changing under an unchanged return, to
-  // urgent_symptom from none or to loss_of_consciousness. The eleven
-  // counts sum to 177.
+  anyFieldDiffers: 211,
+  // Those 211, by what changed: the return, or the topic under an unchanged
+  // return. These thirteen are the kinds this seed set produces, and they
+  // sum to 211. Step 5 of the argument allows no others: a return changes
+  // only to R3, or from R9 to R8; a topic changes only to urgent_symptom
+  // from none, or to loss_of_consciousness.
   moves: {
     'R1 prescription or weight cut, topic none -> urgent_symptom': 12,
     'R2 educational, allowed, topic none -> urgent_symptom': 12,
+    'R2 educational, allowed, topic return_to_play -> loss_of_consciousness': 11,
+    'R3 urgent, topic urgent_symptom -> loss_of_consciousness': 11,
     'R4 personal health -> R3 urgent': 12,
     'R5 diagnosis -> R3 urgent': 12,
     'R6 clearance -> R3 urgent': 12,
@@ -1468,7 +1596,7 @@ const SEED_DIFFERENTIAL_COUNTS = {
     'R7 medication -> R3 urgent': 12,
     'R8 high-risk fallback -> R3 urgent': 12,
     'R8 high-risk fallback, topic chest_pain -> loss_of_consciousness': 11,
-    'R9 nothing matched, allowed -> R3 urgent': 60,
+    'R9 nothing matched, allowed -> R3 urgent': 72,
     'R9 nothing matched, allowed -> R8 high-risk fallback': 11,
   },
 };

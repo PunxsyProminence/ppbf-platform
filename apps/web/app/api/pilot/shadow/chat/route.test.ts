@@ -373,6 +373,114 @@ describe('the athlete\'s own words survive normalisation', () => {
     // one that turns out to be.
     expect(straight.reviewQueued).toBe(true);
   });
+
+  // THE ROUTE'S HALF, BY VALUE.
+  //
+  // The equivalence test above compares the curly spelling with the straight
+  // one, so anything that changes both alike gets past it: take
+  // 'urgent_personal_symptom' out of the route's critical list and both
+  // become 'high' and stay equal. The classifier's guard cannot see that
+  // either -- its critical list is a copy. So the severity the review row is
+  // actually queued at is pinned here, on the phone-typed report.
+  //
+  // Only the review row is asserted, not the status or whether the provider
+  // was called: #1036 replaces the refusal with an answer and keeps the row.
+  test('a phone-typed emergency report is queued for a human at severity critical', async () => {
+    global.fetch = jest.fn() as unknown as typeof fetch;
+
+    await POST(postRequest({ message: 'I can\u{2019}t breathe after that hit' }));
+
+    expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
+    expect(mockQueueHumanReview.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      severity: 'critical',
+      category: 'urgent_symptom',
+      metadata: expect.objectContaining({ validationClassification: 'urgent_personal_symptom' }),
+    }));
+  });
+
+  // The fold is the only thing that may stand between what was typed and the
+  // classifier. This message is an emergency BECAUSE of its doubled space:
+  // with one space it contains main's weight-cut phrase and takes the
+  // medication return instead, which sits above the emergency one (a
+  // pre-existing ordering flaw, moved to #1036). So a route that tidied the
+  // message before classifying it -- collapsed the spaces, normalised it --
+  // would show here as the emergency classification going missing.
+  test('the route classifies the message as typed: a doubled space is not collapsed on the way', async () => {
+    global.fetch = jest.fn() as unknown as typeof fetch;
+
+    const response = await POST(postRequest({ message: 'I can\u{2019}t breathe and I need to lose weight  quickly' }));
+    const body = await response.json();
+
+    expect(body.response).toBe('Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.');
+    expect(mockQueueHumanReview.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      severity: 'critical',
+      metadata: expect.objectContaining({ validationClassification: 'urgent_personal_symptom' }),
+    }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ONE THING THE FOLD CHANGES THAT IS NOT MORE CAUTION, STATED AND PINNED.
+//
+// An EDUCATIONAL question is allowed by the classifier, on main and here.
+// What the route does with it depends on its topic: for concussion,
+// weight_cutting, return_to_play and medical_clearance it answers with a
+// stock line and queues a human review; for every other topic, including
+// loss_of_consciousness, it calls the model and queues nothing.
+//
+// loss_of_consciousness sits above those in the classifier's first-match
+// topic list, and its pattern matches "KO'd". Main's pattern knew the ASCII
+// apostrophe and U+2019. So on main:
+//
+//   "...return to play after being ko'd"        -> loss_of_consciousness -> model, no review
+//   "...return to play after being ko<U+2019>d" -> loss_of_consciousness -> model, no review
+//   "...return to play after being ko<U+2018>d" -> return_to_play        -> stock line, review
+//
+// The fold makes the third behave like the first two, along with the ten
+// other look-alikes. That is the fold doing what it is for -- a look-alike
+// apostrophe is treated as an apostrophe -- and it is also eleven spellings
+// of an educational question for which a review row is no longer written.
+// No report of a person's own symptoms is involved: those are not
+// educational, and are withheld.
+//
+// The underlying oddity is main's: an educational question about being
+// knocked out skips the stock line and the review queue. It is recorded for
+// #1036, which removes the stock lines altogether.
+// ---------------------------------------------------------------------------
+describe('an educational question that names KO\'d', () => {
+  const ask = async (ko: string) => {
+    jest.clearAllMocks();
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'Protocols vary by governing body.' } }] }),
+    });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const response = await POST(postRequest({
+      message: `What does research say about return to play after being ${ko}`,
+    }));
+    const body = await response.json();
+
+    return {
+      state: body.state,
+      providerCalled: fetchSpy.mock.calls.length > 0,
+      reviewQueued: mockQueueHumanReview.mock.calls.length > 0,
+    };
+  };
+
+  test.each([
+    ['the ASCII apostrophe, as on main', "ko'd"],
+    ['U+2019, as on main', 'ko\u{2019}d'],
+    ['U+2018, which main sent to the stock line', 'ko\u{2018}d'],
+    ['a backtick, which main sent to the stock line', 'ko`d'],
+  ])('is answered by the model, with no review row: %s', async (_name, ko) => {
+    expect(await ask(ko)).toEqual({ state: 'ok', providerCalled: true, reviewQueued: false });
+  });
+
+  // The control: the same question without the word takes the stock line.
+  test('CONTROL: without "KO\'d" the same question gets the stock line and a review row', async () => {
+    expect(await ask('knocked down')).toEqual({ state: 'filtered', providerCalled: false, reviewQueued: true });
+  });
 });
 
 describe('POST /api/pilot/shadow/chat trust boundary', () => {

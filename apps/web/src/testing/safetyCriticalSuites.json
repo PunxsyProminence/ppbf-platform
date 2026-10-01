@@ -37,7 +37,7 @@
     },
     {
       "path": "src/design/cornerColor.test.ts",
-      "minimumTests": 49,
+      "minimumTests": 51,
       "guards": "A member's red or blue corner may never be mistakable for a safety state. Chroma below every rung, delta-E 20 from every rung and ink tint. The same harm as a non-medical state wearing --locked, approached from the other side."
     },
     {
@@ -132,7 +132,7 @@
     },
     {
       "path": "src/server/pilot/shadowChatSensitivity.test.ts",
-      "minimumTests": 49,
+      "minimumTests": 51,
       "guards": "The differential guard on that classifier: a frozen copy of main's seven withholding returns, and the argument, with its premises tested, that folding apostrophe and quote look-alikes releases nothing main withheld and downgrades no emergency. If it stops loading, a later edit to the fold or its call sites ships unguarded."
     },
     {
