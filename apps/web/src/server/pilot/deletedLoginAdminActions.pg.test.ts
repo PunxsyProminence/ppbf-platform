@@ -667,29 +667,45 @@ describe('a staff or guardian re-invite', () => {
     expect((await accountRow('acct-parent'))?.role).toBe('coach');
   });
 
-  test('a login moved to another organization between the read and the write is refused, generically, and stays there', async () => {
+  // Two cases, because each proves a different line. Moved and still live:
+  // only the write's own organization condition stops the invite pulling the
+  // login back into this gym. Moved and deleted there: the reason lookup is
+  // scoped, so this gym is not told the login was deleted.
+  test.each([
+    ['still live there', false],
+    ['deleted there', true],
+  ])('a login moved to another organization between the read and the write (%s) is refused, generically, and stays there', async (_label, deletedThere) => {
     await insertAccount('acct-coach', 'coach', { email: EMAIL, microsoft: true });
 
     const realQueryOne = db.queryOne;
     jest.spyOn(db, 'queryOne').mockImplementation((async (sql: string, params?: unknown[]) => {
       const row = await realQueryOne(sql, params);
       if (sql.includes('lower(login_email) = $1')) {
-        // Moved, and deleted there: neither fact is this organization's to learn.
         await db.query(
-          'update pilot.accounts set organization_id = $2, deleted_at = now(), active_flag = false where account_id = $1',
-          ['acct-coach', OTHER_ORG],
+          `update pilot.accounts
+           set organization_id = $2,
+               deleted_at = case when $3 then now() else null end,
+               active_flag = not $3
+           where account_id = $1`,
+          ['acct-coach', OTHER_ORG, deletedThere],
         );
       }
       return row;
     }) as typeof db.queryOne);
 
     const refusal = staffProvisioning.createOrUpdateMicrosoftStaffAccount({
-      loginEmail: EMAIL, organizationId: ORG, role: 'coach',
+      loginEmail: EMAIL, organizationId: ORG, role: 'staff',
     });
     await expect(refusal).rejects.toThrow('Forbidden: account already exists in another organization');
     await expect(refusal).rejects.not.toMatchObject({ code: 'DELETED_LOGIN' });
 
-    expect(await accountRow('acct-coach')).toMatchObject({ organization_id: OTHER_ORG, deleted: true, active_flag: false });
+    // Not pulled back, not re-roled, and nothing about it changed.
+    expect(await accountRow('acct-coach')).toMatchObject({
+      organization_id: OTHER_ORG,
+      role: 'coach',
+      deleted: deletedThere,
+      active_flag: !deletedThere,
+    });
   });
 
   test('a re-invite of a deactivated, not deleted, login still reactivates it', async () => {
