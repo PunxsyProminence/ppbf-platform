@@ -209,10 +209,11 @@ const CASES: Record<string, { alsoRetire?: string[]; allowOrphanOrganizationIds?
 let plans: Record<string, Plan>;
 let gatePlans: Record<string, Plan>;
 let masked: Record<string, string | null>;
+let reasonCounts: Record<string, Record<string, number>>;
 
 beforeAll(() => {
   const script = `
-    import { planAccountCleanup, maskEmailForRole } from ${JSON.stringify(MODULE_URL)};
+    import { planAccountCleanup, maskEmailForRole, countRetiredReasons } from ${JSON.stringify(MODULE_URL)};
     const rows = ${JSON.stringify(ROWS)};
     const cases = ${JSON.stringify(CASES)};
     const plans = {};
@@ -232,7 +233,17 @@ beforeAll(() => {
       null_email: maskEmailForRole(null, 'athlete'),
       malformed: maskEmailForRole('not-an-email', 'athlete'),
     };
-    process.stdout.write(JSON.stringify({ plans, gatePlans, masked }));
+    // confirm_jason retires three INACTIVE_RESIDUE rows and one
+    // NAMED_FOR_RETIREMENT row; each case below is what the retire statement
+    // could hand back for that plan.
+    const planned = plans.confirm_jason.retire;
+    const reasonCounts = {
+      all_retired: countRetiredReasons(planned, planned.map((entry) => entry.account_id)),
+      one_residue_row_refused: countRetiredReasons(planned, ['residue-1', 'residue-3', 'acct-jason']),
+      named_row_refused: countRetiredReasons(planned, ['residue-1', 'residue-2', 'residue-3']),
+      none_retired: countRetiredReasons(planned, []),
+    };
+    process.stdout.write(JSON.stringify({ plans, gatePlans, masked, reasonCounts }));
   `;
 
   const stdout = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
@@ -242,6 +253,7 @@ beforeAll(() => {
   plans = parsed.plans;
   gatePlans = parsed.gatePlans;
   masked = parsed.masked;
+  reasonCounts = parsed.reasonCounts;
 });
 
 function gateDecisionFor(caseName: string, accountId: string) {
@@ -504,6 +516,29 @@ describe('staging-gate fixtures (account_id starts with gate_)', () => {
         reason: 'INACTIVE_RESIDUE',
       });
     }
+  });
+});
+
+describe('countRetiredReasons, the reason counts in the audit row', () => {
+  const total = (counts: Record<string, number>) => Object.values(counts).reduce((sum, n) => sum + n, 0);
+
+  test('counts every planned row when the statement retired them all', () => {
+    expect(reasonCounts.all_retired).toEqual({ INACTIVE_RESIDUE: 3, NAMED_FOR_RETIREMENT: 1 });
+  });
+
+  test('THE POINT: a planned row the statement refused is not counted', () => {
+    // Four rows planned, three returned. Counting from the plan would record
+    // reasons adding up to 4 beside a retired_count of 3.
+    expect(reasonCounts.one_residue_row_refused).toEqual({ INACTIVE_RESIDUE: 2, NAMED_FOR_RETIREMENT: 1 });
+    expect(total(reasonCounts.one_residue_row_refused)).toBe(3);
+  });
+
+  test('a reason with no retired row is left out rather than recorded as zero', () => {
+    expect(reasonCounts.named_row_refused).toEqual({ INACTIVE_RESIDUE: 3 });
+  });
+
+  test('nothing retired counts nothing', () => {
+    expect(reasonCounts.none_retired).toEqual({});
   });
 });
 

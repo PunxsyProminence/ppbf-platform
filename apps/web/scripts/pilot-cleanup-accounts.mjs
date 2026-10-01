@@ -62,7 +62,7 @@
 import { Pool } from 'pg';
 
 import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mjs';
-import { maskEmailForRole, planAccountCleanup } from './lib/account-cleanup-plan.mjs';
+import { countRetiredReasons, maskEmailForRole, planAccountCleanup } from './lib/account-cleanup-plan.mjs';
 
 const connectionString = process.env.AZURE_POSTGRES_CONNECTION_STRING;
 if (!connectionString) {
@@ -299,14 +299,13 @@ async function main() {
       [
         'data_deletion_initiated',
         JSON.stringify({
-          retired_account_ids: retired.rows.map((row) => row.account_id),
-          retired_count: retired.rows.length,
+          retired_account_ids: retiredIds,
+          retired_count: retiredIds.length,
           sessions_revoked: revoked.rows.length,
           held_count: plan.hold.length,
-          reasons: plan.retire.reduce((totals, decision) => ({
-            ...totals,
-            [decision.reason]: (totals[decision.reason] ?? 0) + 1,
-          }), {}),
+          // Counted over the rows actually retired, so the reasons always add
+          // up to retired_count even if a SQL guard refused a planned row.
+          reasons: countRetiredReasons(plan.retire, retiredIds),
           confirmed_identities: alsoRetire,
           orphan_organizations_allowed: allowOrphanOrganizationIds,
         }),

@@ -278,6 +278,28 @@ export function planAccountCleanup(rows, options = {}) {
 }
 
 /**
+ * Reason counts for the audit row, over the accounts the retire statement
+ * actually retired -- not over the plan.
+ *
+ * The runner's UPDATE carries its own guards (not a parent, not already
+ * deleted, not a gate fixture), so it can return fewer rows than the plan
+ * listed. Counting reasons from the plan would then leave a durable audit
+ * record whose reasons add up to more than its retired_count.
+ *
+ * @param retireDecisions The plan's `retire` list.
+ * @param retiredIds Account ids the UPDATE returned.
+ */
+export function countRetiredReasons(retireDecisions, retiredIds) {
+  const retired = new Set(retiredIds);
+  const totals = {};
+  for (const decision of retireDecisions) {
+    if (!retired.has(decision.account_id)) continue;
+    totals[decision.reason] = (totals[decision.reason] ?? 0) + 1;
+  }
+  return totals;
+}
+
+/**
  * Masks the local part of a minor's or guardian's login email.
  *
  * The report exists to be read, and the accounts being confirmed are staff, so
