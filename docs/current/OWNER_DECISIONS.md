@@ -794,9 +794,21 @@ them are delivered. Done for lanes 11 to 14.
 
 **Status, 2026-10-01:** recorded on `main` by a records PR ahead of PR #1036, which builds it and is not merged; Jason, asked whether to move this record so PR #1058 need not wait on #1036: *"Yes to 1 and 2"*. The text below is as written on PR #1036's branch at `9208457a`; nothing in it is built on `main` until #1036 lands.
 
+**Checked against the transcript, 2026-10-01** (the closed AI/ML lane's thread; a
+read-only pass that read each reply with the message or option set it answered).
+His sentence and each of the five selections match the transcript, options and
+all. Three things a reader should know: two of the option labels he selected
+carried "(Recommended)" in the prompt ("Refund on failure (Recommended)",
+"Education + act-now line (Recommended)") and are quoted here without it; his
+governing sentence was typed while a question about the guard was open, so it
+was unprompted only in that no question asked for it; and two statements in
+this entry were corrected on the way to `main`: "four selections" was five, and
+chest pain was called the owner's own example when it was the question's
+wording.
+
 **Provenance: PRIMARY** for the owner's words and for the options exactly as
 they were put to him. The governing sentence is his own free text, not a
-selection. The four selections that follow it are reproduced with their full
+selection. The five selections that follow it are reproduced with their full
 option sets, because a chosen label does not carry a decision on its own.
 
 **Date:** 2026-09-30. **Governs:** what the SHADOW chat route does with a
@@ -827,8 +839,9 @@ Established by running the real classifier, not by reading it:
 | "I cannot breathe after that hit" | `urgent_personal_symptom` | yes |
 | "I passed out during training" | `loss_of_consciousness` | yes |
 
-Chest pain -- the example the owner himself used when he first ruled on this --
-was filed in the same bucket as a sore shoulder. And the response body for any
+Chest pain -- the example in the question he answered when he first ruled on
+this (OD-2026-09-30-005; "someone reporting chest pain" is that question's
+wording, not his) -- was filed in the same bucket as a sore shoulder. And the response body for any
 of them was `requestValidation.error` and nothing else: one sentence,
 `success: false`, the model never called. A sore shoulder received, in full,
 "Personal pain, injury, and treatment questions require evaluation by a
@@ -841,7 +854,7 @@ what to watch for. The doctrine forbids diagnosing, prescribing and clearing.
 It has never said refuse. The gate was not implementing the doctrine; it was
 preventing it.
 
-### The four selections
+### The five selections
 
 **1. What counts against the review-queue quota**, after it was found that the
 limiter increments before the write, so failed inserts consume the hour.
@@ -940,6 +953,16 @@ lane holding an id for any length of time will keep losing it. Recorded rather
 than silently corrected, because the code comments citing this entry moved with
 it and a reader tracing an old id needs to land somewhere.
 
+
+**Checked against the transcript, 2026-10-01** (same pass). The question, his
+answer "a", the authorization follow-up and "3 per hour" match the transcript.
+Three things a reader should know: his "a" was his whole reply to a message
+carrying three questions that said to reply like "1a 2a 3a"; in the option he
+selected the prompt has an em dash where this entry writes " -- ", and the
+option this entry glosses as "the second reviewer's argument" read "The second
+Claude's argument."; and the statement below that the same omission "was
+caught on #975 four days earlier by Codex" was NOT verified (the lane's own
+message in that thread says "#973 a day ago").
 
 **Provenance: PRIMARY** for the owner's answers and for the options exactly as
 they were put to him. The options were drafted by Claude, and his input in each
