@@ -211,15 +211,19 @@ and the role (athlete, guardian, staff), not from how the login reads today:
   gym), nothing proves the writer is gone, and the submission stays.
 - after the cleanup job removes a deleted athlete, the roster can give the same athlete id to a
   new child. When the cleanup job removes an athlete record it also unlinks that athlete's login
-  from the id. The login is kept and names nobody; if it was somehow still live it is marked
-  deleted at that moment, so intake cannot give it to another child (a login that has since
-  become a coach's or guardian's is unlinked and left as it is). The new child therefore has no
+  from the id. Which login that is, is settled before the record is removed, so a login moved
+  into the gym in the meantime is never taken for it. The login is kept and names nobody; if it
+  was somehow still live it is marked deleted at that moment and signed out (its sessions are
+  ended and any unused activation code is cancelled), so intake cannot give it to another child
+  (a login that has since become a coach's or guardian's is unlinked and left as it is). The new child therefore has no
   connection to the old login: the deleted athlete's closed submissions stay hidden, their open
   ones show with no athlete name, and the new child can be given a login of their own. No date
   is compared.
-  **UNVERIFIED:** whether production holds a deleted athlete login whose athlete record was
-  removed before this unlinking existed; for such a login the old id is still attached until
-  somebody clears it, and a new child given that id would be taken for the writer.
+  The one case this does not cover is an athlete record removed by the cleanup job BEFORE the
+  unlinking existed, whose id has since been given to a new child: that old login would still
+  carry the id. None can exist: the cleanup job only removes an athlete deleted more than two
+  years earlier, and the app has had no live use (owner's statement, 2026-10-01). That is
+  **REPORTED**, not read from a database.
 
 The platform owner's cross-gym feedback list, which
 names nobody and withholds safeguarding text, is unchanged. The video-compliance publication

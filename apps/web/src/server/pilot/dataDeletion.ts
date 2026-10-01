@@ -518,12 +518,44 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
     let totalDeleted = 0;
 
     // Delete athletes soft-deleted more than 2 years ago
-    const athleteDelete = await client.query<{ organization_id: string; athlete_id: string }>(
-      `delete from pilot.athletes
-       where deleted_at is not null
-         and deleted_at < (now() - interval '2 years')
-       returning organization_id, athlete_id`,
+    /* Which athletes, and which login names each, are decided and LOCKED
+       before anything is deleted -- athlete rows first, then accounts, the
+       order deleteAthleteRecord takes them in. The reason is in
+       scripts/pilot-cleanup-deleted-data.mjs: asking which account has
+       (organization_id, athlete_id) after the delete can answer with a login
+       that was moved into the gym in between. */
+    const expired = await client.query<{ organization_id: string; athlete_id: string }>(
+      `select organization_id, athlete_id
+         from pilot.athletes
+        where deleted_at is not null
+          and deleted_at < (now() - interval '2 years')
+          for update`,
     );
+    const expiredOrgs = expired.rows.map((row) => row.organization_id);
+    const expiredIds = expired.rows.map((row) => row.athlete_id);
+    const linked = expired.rows.length === 0
+      ? { rows: [] as Array<{ account_id: string; organization_id: string; athlete_id: string; role: string; live: boolean }> }
+      : await client.query<{ account_id: string; organization_id: string; athlete_id: string; role: string; live: boolean }>(
+        `select acct.account_id, acct.organization_id, acct.athlete_id, acct.role, acct.deleted_at is null as live
+           from pilot.accounts acct
+           join unnest($1::text[], $2::text[]) as expired(organization_id, athlete_id)
+             on acct.organization_id = expired.organization_id
+            and acct.athlete_id = expired.athlete_id
+            for update of acct`,
+        [expiredOrgs, expiredIds],
+      );
+
+    // Delete athletes soft-deleted more than 2 years ago: exactly the rows locked above.
+    const athleteDelete = expired.rows.length === 0
+      ? { rows: [] as Array<{ organization_id: string; athlete_id: string }> }
+      : await client.query<{ organization_id: string; athlete_id: string }>(
+        `delete from pilot.athletes ath
+          using unnest($1::text[], $2::text[]) as expired(organization_id, athlete_id)
+          where ath.organization_id = expired.organization_id
+            and ath.athlete_id = expired.athlete_id
+         returning ath.organization_id, ath.athlete_id`,
+        [expiredOrgs, expiredIds],
+      );
     totalDeleted += athleteDelete.rows.length;
 
     /* The login stops naming the athlete in the same transaction -- the same
@@ -534,24 +566,36 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
        athlete login still live is marked deleted as well, so intake cannot
        bind it to a different child; a login that is no longer an athlete's is
        only unlinked. */
-    let loginsUnlinked = 0;
-    if (athleteDelete.rows.length > 0) {
-      const unlinked = await client.query(
+    const purgedKeys = new Set(athleteDelete.rows.map((row) => JSON.stringify([row.organization_id, row.athlete_id])));
+    // Only the logins captured above, and only those whose athlete this
+    // statement actually deleted: by account_id, never by re-reading the link.
+    const toUnlink = linked.rows.filter((row) => purgedKeys.has(JSON.stringify([row.organization_id, row.athlete_id])));
+    const athleteLogins = toUnlink.filter((row) => row.role === 'athlete').map((row) => row.account_id);
+    const loginsUnlinked = toUnlink.length;
+    const loginsRetired = toUnlink.filter((row) => row.role === 'athlete' && row.live).length;
+    if (toUnlink.length > 0) {
+      await client.query(
         `update pilot.accounts acct
             set athlete_id = null,
                 deleted_at = case when acct.role = 'athlete' then coalesce(acct.deleted_at, now()) else acct.deleted_at end,
                 active_flag = case when acct.role = 'athlete' then false else acct.active_flag end,
                 updated_at = now()
-           from unnest($1::text[], $2::text[]) as purged(organization_id, athlete_id)
-          where acct.organization_id = purged.organization_id
-            and acct.athlete_id = purged.athlete_id
-          returning acct.account_id`,
-        [
-          athleteDelete.rows.map((row) => row.organization_id),
-          athleteDelete.rows.map((row) => row.athlete_id),
-        ],
+          where acct.account_id = any($1::text[])`,
+        [toUnlink.map((row) => row.account_id)],
       );
-      loginsUnlinked = unlinked.rows.length;
+    }
+    /* A login the purge retires is signed out, exactly as deleteAthleteRecord
+       signs one out: a session token already issued resolves without
+       re-reading active_flag, and an outstanding activation code would set a
+       PIN and turn the login active again. */
+    if (athleteLogins.length > 0) {
+      await client.query(
+        `update pilot.session_tokens
+         set revoked_at = now()
+         where account_id = any($1::text[]) and revoked_at is null`,
+        [athleteLogins],
+      );
+      await supersedeOutstandingActivationCodes(client, athleteLogins);
     }
 
     /* The guardian's own record goes first, and the account cannot be deleted
@@ -622,6 +666,7 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
             athletes_deleted: athleteDelete.rows.length,
             accounts_deleted: accountDelete.rows.length,
             athlete_logins_unlinked: loginsUnlinked,
+            live_athlete_logins_retired: loginsRetired,
             total_rows_deleted: totalDeleted,
           }),
         ],

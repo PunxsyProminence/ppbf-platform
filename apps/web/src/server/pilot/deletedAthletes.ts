@@ -105,9 +105,18 @@ export function accountNotDeletedSql(row: string, accountColumn = 'account_id'):
  *     can come free -- before it, the deleted row still holds the primary key.
  *     A new child later given the same athlete_id therefore has no link to
  *     the old login, and nothing here compares a date to tell them apart. A
- *     NULL athlete_id matches no row, so one `not exists` covers both the
- *     unlinked login and a login from a purge before the unlinking existed,
- *     which still carries an id that names nothing.
+ *     NULL athlete_id matches no row, so the same `not exists` also covers a
+ *     deleted login left carrying a stale id that names no row.
+ *
+ *     WHAT THAT CANNOT COVER: a stale id that has ALREADY been given to a new
+ *     athlete. The id then names a live row, the old writer reads as present,
+ *     and the queue's name join would put the new athlete's name on the old
+ *     rows. That needs an athlete hard-purged BEFORE the purge unlinked
+ *     logins. None can have happened: the purge only removes an athlete whose
+ *     deletion is more than two years old, and the app has had no live use
+ *     (owner's statement, Jason 2026-10-01: "the app has never been live").
+ *     REPORTED, not observed by a database read; the three read-only counts
+ *     that would observe it are on file with overwatch.
  * A cleared account REFERENCE proves nothing here: the purge removes parent
  * logins only.
  *
