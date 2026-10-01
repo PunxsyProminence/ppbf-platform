@@ -338,8 +338,9 @@ and staging migrations; and run a read-only production check -- a query or a
 check run that changes nothing -- when Jason says so, for that run (item 8,
 which supersedes OD-2026-08-28-001 on that point).
 
-A Claude session MAY NOT: dispatch `deploy-production` or production
-migrations without Jason's word (the session prepares and verifies them, then
+A Claude session MAY NOT: dispatch `deploy-production`, production
+migrations, or `release-one-approval` (which does both after its staging half)
+without Jason's word (the session prepares and verifies them, then
 asks); decide product scope; remove or disable a feature because it looks out
 of scope; fix unrelated defects inside its PR; or act on a scoping question as
 though it were a decision.

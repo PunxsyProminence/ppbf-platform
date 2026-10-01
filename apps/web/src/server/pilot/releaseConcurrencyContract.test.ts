@@ -158,7 +158,14 @@ const OUTSIDE_THE_LOCK = [
   'run-checks.yml',
 ];
 
-const INSIDE_THE_LOCK = ['apply-migrations.yml', 'deploy-production.yml', 'deploy-staging.yml'];
+// release-one-approval.yml holds both groups at JOB level, one per job;
+// releaseOneApprovalContract.test.ts pins which job holds which.
+const INSIDE_THE_LOCK = [
+  'apply-migrations.yml',
+  'deploy-production.yml',
+  'deploy-staging.yml',
+  'release-one-approval.yml',
+];
 
 describe('migrations and deploys of one environment share one concurrency group', () => {
   test('the deploy workflows declare the groups this contract is built from', () => {
