@@ -3659,11 +3659,13 @@ body.ppbf.on-canvas {
 
    NO LONGER EMPTY. This block was empty from the day the mechanism merged: it
    was wired and guarded before any art existed, so the attribute matched
-   nothing and changed nothing, and merging it was a no-op. The first two
-   variants are now below. Every room still carrying one plate needs no rule
-   here -- the declaration in the list above is already the right answer for
-   every one of its routes -- so the rooms absent from this block are absent on
-   purpose, not by omission. */
+   nothing and changed nothing, and merging it was a no-op. It now carries ten
+   rules across three rooms -- office on an of6, clinic an of4, night an of3.
+   Every room still carrying one plate needs no rule here, because the
+   declaration in the list above is already the right answer for every one of
+   its routes, so the rooms absent from this block are absent on purpose and
+   not by omission. Board and file are absent for a further reason given under
+   the room list: they are light walls with dark ink. */
 
 /* THE VARIANT SETS. Each room states its own split here, and the split IS the
    number of plates that room has -- this sheet is where that count lives.

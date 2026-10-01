@@ -51,9 +51,14 @@ take light plates or none.
 
 ## The generated set — plates 09 and up
 
-`plate-09` onward were made with `scripts/make-plate.mjs` rather than supplied by
-Grok. Owner instruction, 2026-09-26: "work with the connectors to make
-one", then "let's shift to making and filling the plate library".
+`plate-09` through `plate-14` were made with `scripts/make-plate.mjs` rather
+than supplied by Grok. Owner instruction, 2026-09-26: "work with the connectors
+to make one", then "let's shift to making and filling the plate library".
+
+**`plate-15-filmroom-landscape-01.jpg` is the exception and came from Grok**,
+in the batch generated 2026-10-01. The sentence above read "plate-09 onward"
+until that plate landed; it is scoped to 09-14 now rather than left to go
+quietly false.
 
 They run on Azure Foundry — FLUX.1-Kontext-pro, deployed as `flux-kontext-plates`
 on the `shadow-ai` account (ppbf-shadow-rg, eastus), GlobalStandard consumption.
@@ -69,9 +74,11 @@ plank, ceiling chains instead of the timber-and-pipe frames somebody built, one
 floor colour instead of the painted red / blue / grey / carpet zones. The script's
 DNA block was rewritten from the photographs on 2026-09-26 and now carries that.
 
-**None of these is declared by the stylesheet on this branch**, which is why they
-sit in the "Landed but not declared" table below rather than the first one. Binding one is a single
-`--plate` declaration in the scope that wants it.
+Of this generated set, `plate-14-frontdesk-landscape-01.jpg` is now declared — it
+is `.room--office` slot `5of6` — and so is `plate-15-filmroom-landscape-01.jpg`,
+as `.room--clinic` `4of4`. **The rest are still undeclared**, which is why they
+sit in the "Landed but not declared" table below rather than the first one.
+Binding one is a single `--plate` declaration in the scope that wants it.
 
 **Known imperfection, recorded rather than hidden:** the no-lettering rule is
 stated three ways in the prompt and still leaks. `plate-09` has faint illegible
@@ -157,6 +164,21 @@ this gym.
 A delivered image is committed as received — never re-encoded, never
 reconstructed; the reasons are in `AGENT_KERNEL.md` "Binary assets (plates)",
 and what Claude can fetch from a drive is in its capability table.
+
+**That rule and the byte contract cannot both hold for a Grok-sourced plate,
+and this is the record of it.** Grok emits 4:2:0; `plate-contract.json` requires
+4:4:4. So a Grok image committed as received fails the gate, and a Grok image
+that passes the gate was re-encoded on the way in. Every Grok-sourced plate in
+this directory went through that step, not only the recent ones.
+
+What the step does, OBSERVED by reading the JPEG markers rather than recalled:
+downscale to a contract geometry with no crop (Grok 1792x1008 and 1280x720 are
+both exactly 16:9); chroma 4:2:0 to 4:4:4; baseline SOF0 to progressive SOF2;
+JFIF, EXIF, XMP and comment segments stripped, leaving DQT and SOF only. The
+encoder is sharp, mozjpeg, quality 92.
+
+It is written here because it had been happening silently. Which of the two
+rules gives way is the owner's call, not this file's.
 
 ### Images from Grok or Canva, when Jason asks
 

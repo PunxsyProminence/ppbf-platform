@@ -751,7 +751,7 @@ const VARIANT_PLATES: Partial<Record<Room, readonly string[]>> = {
 };
 const SPLIT_ROOMS = new Set(Object.keys(VARIANT_PLATES) as Room[]);
 
-describe('the first variants: two rooms carry two plates, the rest carry one', () => {
+describe('three rooms carry a set of walls, the rest carry one', () => {
   it('declares exactly the variant rules this release adds, and no others', () => {
     /*
      * ART ARRIVED. The block this replaces asserted `variantRules` was empty and
