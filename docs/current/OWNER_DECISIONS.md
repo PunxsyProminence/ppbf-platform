@@ -883,6 +883,270 @@ them are delivered. Done for lanes 11 to 14.
 
 ---
 
+## OD-2026-09-30-006 -- High-risk chat questions get education, not a refusal; acute reports get education plus an act-now line
+
+**Status, 2026-10-01:** recorded on `main` by a records PR ahead of PR #1036, which builds it and is not merged; Jason, asked whether to move this record so PR #1058 need not wait on #1036: *"Yes to 1 and 2"*. The text below was PORTED from PR #1036's branch at `9208457a` and is not identical to it: on the way to `main` it gained this paragraph and the next, "four selections" became "five" in two places, and the chest-pain attribution was corrected. Nothing in it is built on `main` until #1036 lands.
+
+**Checked against the transcript, 2026-10-01** (the closed AI/ML lane's thread; a
+read-only pass that read each reply with the message or option set it answered).
+His sentence and each of the five selections match the transcript, options and
+all. Three things a reader should know: two of the option labels he selected
+carried "(Recommended)" in the prompt ("Refund on failure (Recommended)",
+"Education + act-now line (Recommended)") and are quoted here without it; his
+governing sentence was typed while a question about the guard was open, so it
+was unprompted only in that no question asked for it; and two statements in
+this entry were corrected on the way to `main`: "four selections" was five, and
+chest pain was called the owner's own example when it was the question's
+wording.
+
+**Provenance: PRIMARY** for the owner's words and for the options exactly as
+they were put to him. The governing sentence is his own free text, not a
+selection. The five selections that follow it are reproduced with their full
+option sets, because a chosen label does not carry a decision on its own.
+
+**Date:** 2026-09-30. **Governs:** what the SHADOW chat route does with a
+message the doctrine classifier marks high-risk.
+**Supersedes** the refusal behaviour built by #972 and everything downstream of
+it, including the shape of the guard published as PR #1036.
+
+### The decision
+
+Put to him as a question about how narrowly to scope a guard. He answered a
+different and larger question, verbatim and unprompted:
+
+> well they are supposed to get education not refusal
+
+That sentence governs this entry. It is not new policy: the standing rule has
+said since it was written that education creates safety, and that unrequested
+refusals and gates are not to be added. The code had drifted from it, and this
+is the owner restating it against the code rather than deciding something new.
+
+### What the code was actually doing
+
+Established by running the real classifier, not by reading it:
+
+| message | classification | emergency wording |
+|---|---|---|
+| "I have chest pain right now" | `personal_health_concern` | no |
+| "My shoulder is sore after sparring" | `personal_health_concern` | no |
+| "I cannot breathe after that hit" | `urgent_personal_symptom` | yes |
+| "I passed out during training" | `loss_of_consciousness` | yes |
+
+Chest pain -- the example in the question he answered when he first ruled on
+this (OD-2026-09-30-005; "someone reporting chest pain" is that question's
+wording, not his) -- was filed in the same bucket as a sore shoulder. And the response body for any
+of them was `requestValidation.error` and nothing else: one sentence,
+`success: false`, the model never called. A sore shoulder received, in full,
+"Personal pain, injury, and treatment questions require evaluation by a
+qualified medical professional. SHADOW can only provide general educational
+information." It claims it can educate and then does not.
+
+The system prompt already contained a worked example doing exactly what the
+owner asked for -- decline to diagnose, then offer to walk the athlete through
+what to watch for. The doctrine forbids diagnosing, prescribing and clearing.
+It has never said refuse. The gate was not implementing the doctrine; it was
+preventing it.
+
+### The five selections
+
+**1. What counts against the review-queue quota**, after it was found that the
+limiter increments before the write, so failed inserts consume the hour.
+Options as put: "Refund on failure *(recommended)*" . "Leave it -- count
+attempts" . "Count rows only". He chose:
+
+> Refund on failure
+
+**2. The scope of the #1036 guard.** First put as a two-way choice between
+urgent-only and any-invalid-request; he replied "explain in layman terms", and
+on the corrected options -- which established that narrowing to the code's own
+"urgent" flag would have dropped chest pain -- the set was "Keep it wide
+*(recommended)*" . "Narrow it anyway" . "Narrow it and fix the classifier".
+He chose:
+
+> Narrow it and fix the classifier
+
+This is the owner overriding a recommendation. The recommendation was to keep
+the wide guard and record why; he chose the more expensive and more correct
+option.
+
+**3. When the classifier gets fixed.** Options: "Record it, fix next lane
+*(recommended)*" . "Fix it now before deploy" . "Leave it alone". He chose:
+
+> Fix it now before deploy
+
+Also an override. It reopens a lane that was closing and holds a release that
+was ready to dispatch.
+
+**4. What the acute cases get.** Options: "Education + act-now line
+*(recommended)*" . "Act-now line only" . "Education only, same as the rest".
+He chose:
+
+> Education + act-now line
+
+**5. Who is flagged for a human.** Options: "Acute cases only *(recommended)*"
+. "Everything high-risk, as now" . "Nothing -- drop the flag". He chose:
+
+> Everything high-risk, as now
+
+A third departure from the recommendation, in the conservative direction: the
+queue keeps its current breadth.
+
+### What that means
+
+1. A high-risk message is no longer refused. It reaches the model, which
+   answers it under the existing doctrine -- never diagnosing, prescribing or
+   granting clearance, and deferring to a medical professional where that is
+   the real answer.
+2. The acute set -- chest pain, loss of consciousness, fainting, and the
+   urgent-symptom list -- additionally receives a canned act-now line. Canned
+   because it must still be delivered when the model is unavailable.
+3. The classifier is corrected so the acute set actually contains chest pain.
+4. The human-review write continues for **every** high-risk message, unchanged
+   in breadth, and keeps the `safety_review` bound from OD-2026-09-30-005 --
+   now with the slot refunded when the insert fails.
+5. The guard from OD-2026-09-30-005, which let a refusal past runtime readiness
+   and the global limits, narrows to the acute set only. For everything else
+   the reasoning inverts: an educational answer needs the model, so it needs
+   readiness and it should count against the limits like any other answer.
+
+### What it costs, stated because the options did not say so
+
+More high-risk traffic now reaches the model, so more of it consumes quota and
+depends on the worker being up. The refusal was, incidentally, a cheap and
+always-available path; education is neither. Answer quality for these questions
+is now a live question rather than a fixed string, and nothing in the test
+suite can establish it -- that needs a signed-in human journey, and the owner
+enters all credentials.
+
+### The evidence it rested on
+
+- The branch table above, produced by executing `validateShadowRequest` under
+  jest against the real module.
+- `route.ts`, safety-boundary responder: body is `requestValidation.error`,
+  `success: false`, `state: 'filtered'`, model not called.
+- `shadowChat.ts`, `SHADOW_SYSTEM_PROMPT`: doctrine items 1-3 forbid
+  diagnosis, prescription and clearance; the diagnosis-request example
+  demonstrates declining and then offering education.
+- Blast radius measured before the decision, not estimated after:
+  `shadow/chat/route.test.ts` (22 references / 67 tests) and
+  `shadowChat.test.ts` (17 / 68) carry the behaviour; seven other suites hold
+  one or two incidental references each.
+- No environment, database or log was read. The platform holds no real athlete
+  or user data (owner, 2026-09-29), so no real person was affected either way.
+
+## OD-2026-09-30-005 -- Safety outranks runtime readiness and the global chat limits; the review-queue write gets its own bound
+
+**Status, 2026-10-01:** recorded on `main` by the same records PR, ahead of PR #1036, which builds it and is not merged. PORTED from that branch at `9208457a` and not identical to it: on the way to `main` it gained this paragraph and the "Checked against the transcript" paragraph, the three authorization options were restored to the prompt's own wording, and the aside about an earlier PR under "Recorded late" was qualified.
+
+**Renumbered twice.** Published first as OD-2026-09-30-001, then -003, now
+-005. `main` took -001 for the release/migration decision, and overwatch's
+records PR took -003 and -004; both collisions surfaced only when the branches
+met. Ids are allocated by whoever writes first and reconciled at merge, so a
+lane holding an id for any length of time will keep losing it. Recorded rather
+than silently corrected, because the code comments citing this entry moved with
+it and a reader tracing an old id needs to land somewhere.
+
+
+**Checked against the transcript, 2026-10-01** (same pass). The question, his
+answer "a", the authorization follow-up and "3 per hour" match the transcript.
+Three things a reader should know: his "a" was his whole reply to a message
+carrying three questions that said to reply like "1a 2a 3a"; the three
+authorization options below are now given in the prompt's own wording (this
+entry first wrote " -- " for the prompt's em dash and "the second reviewer's
+argument" for "The second Claude's argument."); and the aside under "Recorded
+late" about an earlier PR was NOT verified and is now qualified where it
+stands.
+
+**Provenance: PRIMARY** for the owner's answers and for the options exactly as
+they were put to him. The options were drafted by Claude, and his input in each
+case was a selection rather than free text, so the options are reproduced here
+in full -- the word alone does not carry the decision.
+
+**Date:** 2026-09-26 (answered); recorded 2026-09-30, late, which is noted below
+rather than hidden. **Governs:** the order in which the SHADOW chat route may
+refuse a request, and what bounds the human-review queue write.
+**Supersedes** the classification recorded by #972, which argued the opposite
+in writing and pinned it in executable tests.
+
+### The decision
+
+Put to him as question 2 of three, verbatim as asked:
+
+> **2. Rate limit / readiness vs safety** -- a throttled or mid-migration
+> deployment answers "too many requests" to someone reporting chest pain.
+> -> **(a)** safety wins, with its own bounded throttle *(my recommendation)* .
+> **(b)** leave as is . **(c)** readiness only
+
+His answer, verbatim:
+
+> a
+
+Two follow-ups the same day fixed the boundary and the number. On whether the
+safeguarding response should also outrank athlete and conversation
+authorization, the options were "No — auth stays above safety" (ChatGPT's
+ruling), "Yes — safety wins there too" (the second Claude's argument), and
+"Split it". He chose, verbatim:
+
+> No — auth stays above safety
+
+On the size of the new throttle, offered 5, 3 or 10 per hour or delegation to
+Claude, he chose, verbatim:
+
+> 3 per hour
+
+### What that means
+
+1. The safeguarding response outranks **core SHADOW runtime readiness** and the
+   global **`chat`** and **`chat_daily`** limits. A throttled or unmigrated
+   deployment must not answer an urgent personal symptom with "too many
+   requests" or "temporarily unavailable".
+2. It does **not** outrank authentication, structural request validation, or
+   **athlete and conversation authorization**. A guessed athlete or
+   conversation id must not become reachable by typing a symptom. This half is
+   his explicit choice between two reviewers who disagreed, not a default.
+3. The human-review queue write -- which the global limits were incidentally
+   bounding -- gets its own bucket, `safety_review`, at **3 per hour per
+   account**. Exceeding it suppresses the WRITE ONLY and never the response.
+4. **Exhaustion and failure are different events.** A `safety_review` limiter
+   that errors for any reason other than exhaustion must not be treated as
+   exhausted: the write is attempted anyway. Treating "bucket storage
+   unavailable" as "quota used up" would discard safeguarding work at the
+   moment the database is already unwell. (Shape ruled by ChatGPT, 2026-09-30,
+   as architect; the owner ruled the precedence and the number.)
+
+### What it costs, stated because the options did not say so
+
+Two gates that previously refused an urgent request no longer do. If core
+readiness is failing, an urgent request now receives the safeguarding copy
+rather than a 503 naming the missing tables -- which is the intent, but it also
+means the 503 no longer surfaces on that path. And a suppressed queue write is
+a log line only: the response still reports `requiresHumanReview: true`, which
+means a human is needed, not that a row was persisted.
+
+### Recorded late, and why that matters
+
+This entry was written on 2026-09-30, after the implementation was built and
+published as PR #1036. `AGENT_KERNEL.md` requires the decision to be in this
+file BEFORE code or tests assert it, and the same omission had been caught once
+before on an earlier PR and corrected then. (Which PR and when is NOT verified:
+this entry first said "on #975 four days earlier by Codex"; the lane's own
+message of 2026-09-26 says "Codex caught the same omission on #973 a day ago".)
+It was not carried forward to
+this slice; the architect review caught it at merge. The ruling itself was
+never in doubt -- the record was, twice.
+
+### The evidence it rested on
+
+- The chokepoint comment in `apps/web/app/api/pilot/shadow/chat/route.ts`
+  stated in terms that safety did NOT outrank core readiness or the global
+  limits, with #972's reasoning: a throttle an urgent word could unlock is a
+  bypass, and the safety path still writes to the review queue.
+- `enforceShadowRateLimit` writes `pilot.shadow_rate_limit_buckets`, a table on
+  the runtime-readiness list, and throws both on a missing table and on limit
+  exceeded -- which is why the new throttle had to separate those cases.
+- No environment, database or log was read. The platform holds no real athlete
+  or user data (owner, 2026-09-29), so no real person was affected either way.
+
 ## OD-2026-09-30-004 -- Answers to the housekeeping question batch (2026-09-30)
 
 **Provenance: PRIMARY.** **Date:** 2026-09-30. Between 12:08Z and 13:58Z the

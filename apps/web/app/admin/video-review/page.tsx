@@ -31,7 +31,11 @@ interface ActiveReviewLinkState {
 
 function VideoReviewConsoleContent() {
   const [videos, setVideos] = useState<QuarantinedVideoItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Three-valued on purpose. `error` cannot stand in for "the list was not
+  // read": the review-link and decision calls write to it too, and a failed
+  // read used to leave `videos` at [] under a heading that counted it -- "(0)"
+  // and "No quarantined videos" on the safeguarding queue, beside the alert.
+  const [listState, setListState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
   const [error, setError] = useState('');
   const [activeReviewLink, setActiveReviewLink] = useState<ActiveReviewLinkState | null>(null);
   const [linkLoading, setLinkLoading] = useState(false);
@@ -74,10 +78,10 @@ function VideoReviewConsoleContent() {
       );
 
       setVideos(quarantined);
+      setListState('loaded');
     } catch (loadErr) {
       setError(loadErr instanceof Error ? loadErr.message : 'Unable to load videos for review');
-    } finally {
-      setLoading(false);
+      setListState('unavailable');
     }
   }, []);
 
@@ -177,7 +181,7 @@ function VideoReviewConsoleContent() {
         setActiveReviewLink(null);
       }
 
-      setLoading(true);
+      setListState('loading');
       await loadQuarantinedVideos();
     } catch (decisionErr) {
       setError(decisionErr instanceof Error ? decisionErr.message : 'Failed to submit review decision');
@@ -220,10 +224,19 @@ function VideoReviewConsoleContent() {
           <span className="rivet rivet--bl" />
           <span className="rivet rivet--br" />
           <div className="frame-in mat-leather p-[var(--s4)]">
-            <h2 className="t-eyebrow">Quarantined Videos ({videos.length})</h2>
+            <h2 className="t-eyebrow">
+              {listState === 'loaded' ? `Quarantined Videos (${videos.length})` : 'Quarantined Videos'}
+            </h2>
 
-            {loading ? (
+            {listState === 'loading' ? (
               <p className="t-body mt-[var(--s4)]">Loading quarantined videos...</p>
+            ) : listState === 'unavailable' ? (
+              // Also replaces a list read earlier: after a decision whose
+              // re-read fails, the rows on screen are no longer known to be
+              // the queue.
+              <p className="t-body mt-[var(--s4)]">
+                Quarantined videos could not be loaded. The list is unavailable, not empty. Reload to retry.
+              </p>
             ) : (
               <ul className="mt-[var(--s3)] space-y-[var(--s4)]">
                 {videos.map((video) => {

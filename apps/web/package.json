@@ -397,12 +397,13 @@
     "test:migrations:content-import-drills": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportDrills.pg.test.ts --testTimeout=300000",
     "test:migrations:content-import-templates-scripts": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportTemplatesScripts.pg.test.ts --testTimeout=300000",
     "test:migrations:content-import-upload": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportUpload.pg.test.ts --testTimeout=300000",
-    "test:migrations:seed-created-by-role": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/seedCreatedByRole.pg.test.ts --testTimeout=300000"
+    "test:migrations:seed-created-by-role": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/seedCreatedByRole.pg.test.ts --testTimeout=300000",
+    "test:migrations:decision-outcome-observation-ids": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowDecisionOutcomes.pg.test.ts --testTimeout=300000"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",
     "googleapis": "^176.0.0",
-    "jose": "^6.2.8",
+    "jose": "^6.2.12",
     "next": "16.3.2",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.19.1",
