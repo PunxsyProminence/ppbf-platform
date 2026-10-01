@@ -61,7 +61,12 @@ interface ClearanceRow {
   clearance: ClearanceValue | null | 'unavailable';
   effective_at: string | null;
   hold: ActiveHold | null;
+  // Whether `hold` was actually read. 'unavailable' = the hold read itself
+  // failed, so `hold: null` is NOT "no active hold" -- nobody could look.
+  hold_read: HoldRead;
 }
+
+type HoldRead = 'loaded' | 'unavailable';
 
 /**
  * The rungs a coach may PLACE, in the words of the capability's own contract
@@ -172,29 +177,37 @@ export default function SportsMedicinePage() {
               clearance: 'unavailable',
               effective_at: null,
               hold: null,
+              hold_read: 'unavailable',
             };
             try {
-              const [statusRes, hold] = await Promise.all([
+              const [statusRes, holdResult] = await Promise.all([
                 fetch(
                   `${apiBase()}/api/pilot/shadow/medical-status?athleteId=${encodeURIComponent(athlete.athlete_id)}`,
                   { method: 'GET', credentials: 'include' },
+                ).catch(() => null),
+                // A failed hold read never claims a hold it could not read --
+                // and never claims "no hold" either. It used to collapse to
+                // null, which is the same row a child with no hold gets.
+                readActiveHold(athlete.athlete_id).then(
+                  (hold) => ({ hold, hold_read: 'loaded' as const }),
+                  () => ({ hold: null, hold_read: 'unavailable' as const }),
                 ),
-                // A failed hold read stays null, exactly as it did before: this
-                // board never claims a hold it could not read.
-                readActiveHold(athlete.athlete_id).catch(() => null),
               ]);
 
-              if (statusRes.ok) {
+              // The hold first: a clearance body that will not parse must not
+              // take a hold that WAS read off the row.
+              base.hold = holdResult.hold;
+              base.hold_read = holdResult.hold_read;
+
+              if (statusRes?.ok) {
                 const payload = (await statusRes.json()) as {
                   status?: { status: ClearanceValue; effective_at: string } | null;
                 };
                 base.clearance = payload.status ? payload.status.status : null;
                 base.effective_at = payload.status?.effective_at ?? null;
               }
-
-              base.hold = hold;
             } catch {
-              // Leave the fail-closed defaults: unavailable, no hold claim.
+              // Leave the fail-closed defaults: clearance unavailable.
             }
             return base;
           }),
@@ -219,17 +232,19 @@ export default function SportsMedicinePage() {
    * so falling back to "no hold" would show a held child as free -- the
    * dangerous direction. After a LIFT, the write already committed too, so the
    * hold is gone and showing it as active would be the wrong claim. Each caller
-   * passes the outcome the server has already told it is true.
+   * passes the outcome the server has already told it is true -- and where the
+   * server told it nothing it can show (a PLACE whose response carried no
+   * hold), the fallback is 'unavailable', never "no hold".
    */
   const refreshHold = useCallback(
-    async (athleteId: string, fallback: ActiveHold | null) => {
-      let hold = fallback;
+    async (athleteId: string, fallback: { hold: ActiveHold | null; hold_read: HoldRead }) => {
+      let next = fallback;
       try {
-        hold = await readActiveHold(athleteId);
+        next = { hold: await readActiveHold(athleteId), hold_read: 'loaded' };
       } catch {
         // Keep the committed outcome; the board is refreshed on the next load.
       }
-      setRows((current) => current.map((row) => (row.athlete_id === athleteId ? { ...row, hold } : row)));
+      setRows((current) => current.map((row) => (row.athlete_id === athleteId ? { ...row, ...next } : row)));
     },
     [readActiveHold],
   );
@@ -273,7 +288,10 @@ export default function SportsMedicinePage() {
         lift_condition_text: form.lift_condition_text.trim(),
         reason_text: form.reason_text.trim(),
       });
-      await refreshHold(athleteId, result?.hold ?? null);
+      await refreshHold(
+        athleteId,
+        result?.hold ? { hold: result.hold, hold_read: 'loaded' } : { hold: null, hold_read: 'unavailable' },
+      );
       setOpenFor(null);
       setForm({ ...EMPTY_FORM });
     } catch (error) {
@@ -296,7 +314,7 @@ export default function SportsMedicinePage() {
         hold_id: holdId,
         lift_note: (liftNotes[athleteId] ?? '').trim(),
       });
-      await refreshHold(athleteId, null);
+      await refreshHold(athleteId, { hold: null, hold_read: 'loaded' });
       setLiftNotes((current) => ({ ...current, [athleteId]: '' }));
     } catch (error) {
       setRefusal({
@@ -449,6 +467,16 @@ export default function SportsMedicinePage() {
                       <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>
                         Clearance could not be read just now. Unknown is not cleared — check again before
                         making a call that depends on it.
+                      </p>
+                    ) : null}
+                    {!row.hold && row.hold_read === 'unavailable' ? (
+                      <p
+                        data-hold-read="unavailable"
+                        className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]"
+                        style={{ fontSize: 'var(--t-sm)' }}
+                      >
+                        Training hold could not be read just now. Unknown is not “no hold” — reload and
+                        check again before making a call that depends on it.
                       </p>
                     ) : null}
                     {row.hold ? (

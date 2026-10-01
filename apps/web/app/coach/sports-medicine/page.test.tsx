@@ -516,3 +516,145 @@ describe('a clearance board nobody could read never reads as a clear roster', ()
     expect(screen.queryByText('The clearance board could not be read')).toBeNull();
   });
 });
+
+/* ---------------------------------------------------------------------------
+   A hold nobody could read is not "no hold".
+   ------------------------------------------------------------------------- */
+
+/*
+ * The clearance half of each row was already three-valued (cleared / no record
+ * / unavailable). The hold half was two-valued: a failed hold read collapsed to
+ * null, and null is the row a child with no hold gets -- name, clearance badge,
+ * and a "Place a training hold" button, with nothing saying nobody could look.
+ * A coach reading that row before contact work concludes the child is not held.
+ */
+describe('a hold nobody could read never reads as "no hold"', () => {
+  const UNREAD = /Training hold could not be read/;
+
+  function holdRow(): HTMLElement {
+    return screen.getByText('Jordan Doe').closest('li') as HTMLElement;
+  }
+
+  test('a hold read the server refused says the hold is unknown on that row', async () => {
+    global.fetch = mockFetch({ '/training-holds': () => ({ ok: false, status: 503, json: async () => ({}) }) as Response });
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Jordan Doe');
+
+    expect(within(holdRow()).getByText(UNREAD)).toBeTruthy();
+    expect(within(holdRow()).getByText(/Unknown is not “no hold”/)).toBeTruthy();
+    // And it still does not claim a hold it could not read.
+    expect(screen.queryByText(/Active Training Hold/)).toBeNull();
+    // The clearance that WAS read is still shown: one failed read does not
+    // take the other off the row.
+    expect(within(holdRow()).getByText('cleared')).toBeTruthy();
+  });
+
+  test('a hold read that throws is treated the same as one the server refused', async () => {
+    global.fetch = mockFetch({ '/training-holds': () => Promise.reject(new Error('Network request failed')) });
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Jordan Doe');
+
+    expect(within(holdRow()).getByText(UNREAD)).toBeTruthy();
+    expect(screen.queryByText(/Active Training Hold/)).toBeNull();
+  });
+
+  test('a hold read whose body will not parse is unknown too', async () => {
+    global.fetch = mockFetch({
+      '/training-holds': () =>
+        ({ ok: true, json: async () => { throw new SyntaxError('Unexpected token <'); } }) as unknown as Response,
+    });
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Jordan Doe');
+
+    expect(within(holdRow()).getByText(UNREAD)).toBeTruthy();
+  });
+
+  test('a clearance read that throws does not take a hold that was read off the row', async () => {
+    global.fetch = mockFetch({
+      '/shadow/medical-status': () => Promise.reject(new Error('Network request failed')),
+      '/training-holds': () => ({ ok: true, json: async () => ({ ok: true, holds: [HOLD] }) }) as Response,
+    });
+
+    render(<SportsMedicinePage />);
+
+    await screen.findByText(/Active Training Hold — sparring/);
+    expect(screen.getByText('unavailable')).toBeTruthy();
+    expect(screen.queryByText(UNREAD)).toBeNull();
+  });
+
+  test('an athlete who genuinely has no hold is not told a read failed', async () => {
+    // The other direction: a board that says "could not be read" on every row
+    // teaches a coach to read past the one line that means something.
+    global.fetch = mockFetch();
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Jordan Doe');
+    await screen.findByRole('button', { name: 'Place a training hold' });
+
+    expect(screen.queryByText(UNREAD)).toBeNull();
+  });
+
+  test('a placed hold whose response and re-read both carry nothing is unknown, not "no hold"', async () => {
+    // The write committed. The POST body came back unparseable and the re-read
+    // failed, so the board has nothing it can show -- and "no hold" is the one
+    // thing it knows to be false.
+    let holdReads = 0;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        return { ok: true, json: async () => { throw new SyntaxError('Unexpected end of JSON'); } } as unknown as Response;
+      }
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        holdReads += 1;
+        if (holdReads === 1) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+        return { ok: false, status: 503, json: async () => ({}) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<SportsMedicinePage />);
+    await openPlaceForm();
+    expect(screen.queryByText(UNREAD)).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(/What this athlete reads/), { target: { value: 'Resting your wrist.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+
+    expect(await screen.findByText(UNREAD)).toBeTruthy();
+  });
+
+  test('after a successful re-read the row stops saying the hold is unknown', async () => {
+    // First read fails; the coach places a hold; the re-read succeeds.
+    let holdReads = 0;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') return { ok: true, json: async () => ({ ok: true, hold: PLACED }) } as Response;
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        holdReads += 1;
+        if (holdReads === 1) return { ok: false, status: 503, json: async () => ({}) } as Response;
+        return { ok: true, json: async () => ({ ok: true, holds: [PLACED] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<SportsMedicinePage />);
+    await screen.findByText(UNREAD);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Place a training hold' }));
+    fireEvent.change(await screen.findByLabelText(/What this athlete reads/), { target: { value: PLACED.athlete_explanation } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+
+    await screen.findByText(/Active Training Hold — contact only/);
+    expect(screen.queryByText(UNREAD)).toBeNull();
+  });
+});

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
@@ -125,10 +125,19 @@ export default function DecisionLoopReviewPage() {
   const [athletes, setAthletes] = useState<AthleteListItem[]>([]);
   const [athleteId, setAthleteId] = useState('');
   const [loading, setLoading] = useState(false);
-  /* Did the last load fail? Distinct from `loading` and from an empty list:
-     it is the difference between "the platform looked and there is nothing"
-     and "nobody could look". */
-  const [loadFailed, setLoadFailed] = useState(false);
+  /* What the four data sets below can be trusted to mean for the athlete now
+     selected. 'loaded' is the only state in which an empty one is a fact
+     ("the platform looked and there is nothing"); 'loading' and 'unavailable'
+     both mean nobody has looked yet, or nobody could. */
+  const [loadState, setLoadState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+  const loadFailed = loadState === 'unavailable';
+  /* Which athlete the page is showing, and which read is the newest. A read
+     answers for the athlete it was asked about, not for whoever is selected
+     when it comes back: without these, a slow read for athlete A (or a write
+     for A that finishes late and re-reads A) paints A's medical status under
+     athlete B. */
+  const selectedAthleteRef = useRef('');
+  const readSeqRef = useRef(0);
   const [errorMessage, setErrorMessage] = useState('');
 
   const [medicalStatus, setMedicalStatus] = useState<MedicalStatusRow | null>(null);
@@ -180,7 +189,25 @@ export default function DecisionLoopReviewPage() {
     })();
   }, []);
 
+  /* The previous athlete's records. Called when the selection changes (before
+     the read) and when a read fails, so what is on screen is only ever the
+     selected athlete's, read successfully -- never the last child's medical
+     status under this one's name. */
+  const clearAthleteData = useCallback(() => {
+    setMedicalStatus(null);
+    setRecommendations([]);
+    setDecisions([]);
+    setNearMisses([]);
+    setOutcomesByDecision({});
+  }, []);
+
   const refreshAll = useCallback(async (targetAthleteId: string) => {
+    // A write for athlete A that finishes after the coach moved to B asks to
+    // re-read A. B is on screen; A's records do not belong there.
+    if (targetAthleteId !== selectedAthleteRef.current) {
+      return;
+    }
+    const seq = ++readSeqRef.current;
     // Round 9 review: these confirmation banners are scoped to whichever
     // athlete was on screen when the form was submitted. Without this they
     // survive a switch to a different athlete's data below them, reading as
@@ -206,32 +233,56 @@ export default function DecisionLoopReviewPage() {
       const decisionsPayload = await readJsonOrThrow<{ decisions: DecisionRow[] }>(decisionsRes, 'Failed to load decisions.');
       const nearMissesPayload = await readJsonOrThrow<{ nearMisses: NearMissRow[] }>(nearMissesRes, 'Failed to load near-misses.');
 
+      if (seq !== readSeqRef.current) return;
       setMedicalStatus(statusPayload.status ?? null);
       setRecommendations(recsPayload.recommendations ?? []);
       setDecisions(decisionsPayload.decisions ?? []);
       setNearMisses(nearMissesPayload.nearMisses ?? []);
       setOutcomesByDecision({});
-      setLoadFailed(false);
+      setLoadState('loaded');
     } catch (error) {
+      if (seq !== readSeqRef.current) return;
       /* ALL FOUR SECTIONS BELOW ARE NOW UNREADABLE, NOT EMPTY. This one load
          feeds the medical status, the recommendations, the decisions and the
-         near-misses; on failure none of the four setters ran, so all four
-         still hold their initial empties and each would assert a fact --
-         "No medical administrative status recorded yet" most of all, which is
+         near-misses, and each of their empty states asserts a fact -- "No
+         medical administrative status recorded yet" most of all, which is
          what a coach reads before putting a child into contact work. The
          error line alone was not enough: it renders in the picker header
-         while four sections below independently say "clear". */
-      setLoadFailed(true);
+         while four sections below independently say "clear".
+
+         They are also CLEARED, not left as they were. Whatever they hold was
+         read before this failure: after a failed re-read that follows a
+         write, the old medical status would otherwise still read "Current
+         status" under an error line. */
+      clearAthleteData();
+      setLoadState('unavailable');
       setErrorMessage(error instanceof Error ? error.message : 'Failed to load decision loop data.');
     } finally {
-      setLoading(false);
+      if (seq === readSeqRef.current) setLoading(false);
     }
-  }, []);
+  }, [clearAthleteData]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    /* THE SELECTION CHANGED: the previous athlete's records go before the new
+       read starts, not when it lands. They used to stay until a successful
+       read replaced them, so a FAILED switch to athlete B left athlete A's
+       medical administrative status on screen under B -- and the render
+       checks for a status before it checks for a failure. The selections
+       that carry A's recommendation and decision ids go with them; a decision
+       recorded for B must not link A's recommendation. */
+    selectedAthleteRef.current = athleteId;
+    readSeqRef.current += 1;
+    /* eslint-disable react-hooks/set-state-in-effect */
+    clearAthleteData();
+    setDecisionRecommendationId('');
+    setNearMissDecisionId('');
+    setOutcomeDecisionId('');
+    setLoadState('loading');
+    setLoading(false);
+    setErrorMessage('');
     void refreshAll(athleteId);
-  }, [athleteId, refreshAll]);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [athleteId, refreshAll, clearAthleteData]);
 
   async function handleSetMedicalStatus(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -555,6 +606,8 @@ export default function DecisionLoopReviewPage() {
                     This athlete&apos;s medical administrative status could not be read. UNKNOWN —
                     not &quot;no restriction on record&quot;.
                   </p>
+                ) : loadState === 'loading' ? (
+                  <p className="t-muted mt-[var(--s3)]">Reading medical administrative status…</p>
                 ) : (
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">No medical administrative status recorded yet.</p>
                 )}
@@ -598,7 +651,7 @@ export default function DecisionLoopReviewPage() {
                   Always created provisional. Only a human decision below can move one to accepted or rejected.
                 </p>
                 <div className="mt-[var(--s3)] max-h-[360px] space-y-[var(--s3)] overflow-y-auto">
-                  {recommendations.length === 0 && (loadFailed
+                  {recommendations.length === 0 && loadState !== 'loading' && (loadFailed
                     ? <p className="t-body text-[var(--restricted-ink)]">Recommendations could not be read — not a statement that there are none.</p>
                     : <p className="t-body text-[color:var(--bone-300)]">No recommendations yet.</p>)}
                   {recommendations.map((rec) => (
@@ -639,7 +692,7 @@ export default function DecisionLoopReviewPage() {
                   A decision always requires a human. It may reference a still-live recommendation, or be logged directly.
                 </p>
                 <div className="mt-[var(--s3)] max-h-[280px] space-y-[var(--s3)] overflow-y-auto">
-                  {decisions.length === 0 && (loadFailed
+                  {decisions.length === 0 && loadState !== 'loading' && (loadFailed
                     ? <p className="t-body text-[var(--restricted-ink)]">Decisions could not be read — not a statement that none were recorded.</p>
                     : <p className="t-body text-[color:var(--bone-300)]">No decisions recorded yet.</p>)}
                   {decisions.map((decision) => (
@@ -730,7 +783,7 @@ export default function DecisionLoopReviewPage() {
                   Human-flagged only. Use this when something almost went wrong that a Decision didn&apos;t already cover.
                 </p>
                 <div className="mt-[var(--s3)] max-h-[220px] space-y-[var(--s3)] overflow-y-auto">
-                  {nearMisses.length === 0 && (loadFailed
+                  {nearMisses.length === 0 && loadState !== 'loading' && (loadFailed
                     ? <p className="t-body text-[var(--restricted-ink)]">Near-misses could not be read — not a statement that none were flagged.</p>
                     : <p className="t-body text-[color:var(--bone-300)]">No near-misses flagged yet.</p>)}
                   {nearMisses.map((nearMiss) => (
