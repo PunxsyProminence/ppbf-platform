@@ -194,26 +194,38 @@ async function attemptPurge(client, athletes, accountIds) {
     await client.query('savepoint purge_athlete');
     try {
       const key = [athlete.organization_id, athlete.athlete_id];
+      // The lock repeats the test the athlete was listed by. The list was read
+      // without locks: by now the row may be gone, or -- the id reissued by
+      // the roster -- be a different, live child's. Either way it is not this
+      // run's to delete, and nothing below runs for it.
       const held = await client.query(
-        'select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2 for update',
+        `select 1 from pilot.athletes
+          where organization_id = $1 and athlete_id = $2
+            and deleted_at is not null and deleted_at < (now() - ${ATHLETE_RETENTION})
+            for update`,
         key,
       );
-      const linked = held.rows.length === 0
-        ? { rows: [] }
-        : await client.query(
-          `select account_id, role, deleted_at is null as live
-             from pilot.accounts
-            where organization_id = $1 and athlete_id = $2
-              for update`,
-          key,
-        );
+      if (held.rows.length === 0) {
+        await client.query('release savepoint purge_athlete');
+        continue;
+      }
+      const linked = await client.query(
+        `select account_id, role, deleted_at is null as live
+           from pilot.accounts
+          where organization_id = $1 and athlete_id = $2
+            for update`,
+        key,
+      );
       const removed = await client.query(
         'delete from pilot.athletes where organization_id = $1 and athlete_id = $2 returning athlete_id',
         key,
       );
-      // Counted from what the delete removed, not from having tried: the audit
-      // row is the only record of a purge and must not claim one this run did
-      // not do (the row can be gone by the time the lock is granted).
+      // Counted from what the delete removed, not from having tried, and only
+      // once the savepoint is released: the audit row is the only record of a
+      // purge and must not claim a deletion, or an unlinking, that was rolled
+      // back or never happened.
+      let unlinkedHere = 0;
+      let retiredHere = 0;
       if (removed.rows.length > 0) {
         for (const login of linked.rows) {
           await client.query(
@@ -225,7 +237,7 @@ async function attemptPurge(client, athletes, accountIds) {
               where account_id = $1`,
             [login.account_id],
           );
-          loginsUnlinked += 1;
+          unlinkedHere += 1;
           if (login.role === 'athlete') {
             await client.query(
               'update pilot.session_tokens set revoked_at = now() where account_id = $1 and revoked_at is null',
@@ -236,12 +248,14 @@ async function attemptPurge(client, athletes, accountIds) {
                 where account_id = $1 and consumed_at is null and superseded_at is null`,
               [login.account_id],
             );
-            if (login.live) loginsRetired += 1;
+            if (login.live) retiredHere += 1;
           }
         }
-        athletesDeleted += 1;
       }
       await client.query('release savepoint purge_athlete');
+      if (removed.rows.length > 0) athletesDeleted += 1;
+      loginsUnlinked += unlinkedHere;
+      loginsRetired += retiredHere;
     } catch (error) {
       await client.query('rollback to savepoint purge_athlete');
       record(error);
