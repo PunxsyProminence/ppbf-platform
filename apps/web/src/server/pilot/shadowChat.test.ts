@@ -1060,18 +1060,35 @@ describe('typographic normalisation before matching', () => {
     expect(result.error).toContain('Potential emergency');
   });
 
-  // NO APOSTROPHE AT ALL. Normalisation folds a curly quote into a straight
-  // one; it cannot invent one nobody typed, and "cant" is how this is
-  // actually typed at speed. Fixed alongside, because it is the same defect
-  // and the fold alone does not reach it.
+  // STILL MISSED, DELIBERATELY, AND MOVED TO #1036.
+  //
+  // Normalisation folds a curly apostrophe into a straight one. It cannot
+  // invent an apostrophe nobody typed, and "cant" is how this gets typed at
+  // speed -- so these are NOT caught, on main or here.
+  //
+  // This PR briefly did catch them, by widening the pattern to make the
+  // apostrophe optional. That widening produced a regression in four
+  // consecutive rounds -- "significant" and "vacant" fired the emergency
+  // path, then "cantilever" and "cantina", then "signifi-cant" and its
+  // soft-hyphen form, then any contraction preceded by punctuation stopped
+  // being caught at all. Every round fixed the example rather than the class,
+  // because "what is the edge of a word" is not expressible as a list of
+  // characters.
+  //
+  // So it was taken out. The curly apostrophe is the production defect and
+  // the fold closes it without touching these patterns; the missing-apostrophe
+  // family -- "cant", "couldn't", "couldnt", "can not", "wont stop" -- is one
+  // problem and belongs in #1036, solved once with an instrument that
+  // survives scrutiny rather than patched a fifth time under release
+  // pressure.
+  //
+  // Asserted as NOT caught so the gap is visible in the suite rather than
+  // merely absent from it. When #1036 closes it, this test flips.
   test.each([
     ['i cant breathe after that hit'],
     ['i cant see after that punch'],
-  ])('an omitted apostrophe still reports an emergency: %s', (message) => {
-    const result = validateShadowRequest(message, 'athlete', 'org-123');
-
-    expect(result.valid).toBe(false);
-    expect(result.classification).toBe('urgent_personal_symptom');
+  ])('KNOWN GAP, moved to #1036 -- an omitted apostrophe is not caught: %s', (message) => {
+    expect(validateShadowRequest(message, 'athlete', 'org-123').valid).toBe(true);
   });
 
   // CONTROL, NOT EVIDENCE. KO'd is the one pattern that already carried

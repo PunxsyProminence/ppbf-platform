@@ -164,6 +164,22 @@ export const SHADOW_SAFE_FILTERED_RESPONSE =
  * MATCHING ONLY. The return value is never persisted, never sent to the
  * model, and never shown back: the athlete's own words are the record. It is
  * used only inside the two functions below, and only inside `.test(...)`.
+ *
+ * TWO PROPERTIES THIS MUST KEEP, both asserted over the whole BMP in
+ * shadowChatSensitivity.test.ts, because violating either silently moves
+ * every pattern in this file:
+ *
+ *   1. IT NEVER LENGTHENS. The patterns count characters -- `vision.{0,12}`,
+ *      `bleeding.{0,20}`, `after.{0,30}hit.{0,60}`. A fold that turns one
+ *      character into three pushes a real report out of its window.
+ *   2. IT NEVER TURNS A NON-WORD CHARACTER INTO A WORD CHARACTER. The
+ *      patterns assert boundaries -- `\b(i|me|my|mine|we|our)\b`. A fold that
+ *      makes "<U+2122>my" into "TMmy" destroys the boundary and with it the
+ *      personal-context test every urgent branch depends on.
+ *
+ * Both were broken by `.normalize('NFKC')`, which is why it is not here. Add
+ * a fold only if it satisfies both, and the sweep will tell you if it does
+ * not.
  */
 export function normaliseForMatching(text: string): string {
   return text
@@ -172,17 +188,33 @@ export function normaliseForMatching(text: string): string {
     // combining acute, so by the time this class ran the character it was
     // looking for no longer existed and "can\u00B4t" came out as "can t". Caught
     // by the unit test for this function, not by reading it.
-    .replace(/[\u2018\u2019\u201A\u201B\u2032\u02BC\u00B4`]/g, "'")
-    .replace(/[\u201C\u201D\u201E\u201F\u2033]/g, '"')
+    .replace(/[\u2018\u2019\u201A\u201B\u2032\u02B9\u02BB\u02BC\u00B4\uFF07\uFF40`]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F\u2033\uFF02]/g, '"')
     .replace(/[\u2010-\u2015\u2212]/g, '-')
-    // NFKC after them, for full-width Latin and the rest.
-    .normalize('NFKC')
-    // A SECOND APOSTROPHE PASS, because the order above cuts both ways: NFKC
-    // maps the full-width forms (U+FF07, U+FF40) onto ASCII and onto the
-    // grave, which the first pass has already been and gone past. One more
-    // cheap replace closes that without reintroducing the U+00B4
-    // decomposition problem the ordering exists to avoid.
-    .replace(/[\u2018\u2019\u2032\u02BC`]/g, "'")
+    // NFKC WAS HERE AND HAS BEEN REMOVED. It was never needed for the defect
+    // this fixes -- the curly apostrophe is handled by the explicit class
+    // above -- and it caused two regressions of its own, both of the shape
+    // this PR exists to prevent:
+    //
+    //   IT EXPANDS. U+2026 becomes three periods, so "my vision is<U+2026>
+    //   really blurry" grew past the 12-character window in
+    //   `vision.{0,12}blurr` and stopped matching. main WITHHELD it; with
+    //   NFKC the current code ALLOWED it through to the model with nobody
+    //   told. A BMP sweep of that one carrier found 476 such code points.
+    //
+    //   IT CREATES WORD CHARACTERS. U+2122 becomes "TM", so "<U+2122>my
+    //   shoulder hurts" became "TMmy shoulder hurts", "my" was no longer a
+    //   whole word, and the personal-context test that every urgent branch
+    //   depends on went false. 1,168 code points do something of this kind.
+    //
+    // Both are the same root cause: a fold that is not length-preserving and
+    // not word-boundary-preserving silently moves every pattern in this file
+    // that counts characters or asserts a boundary. That is a property, and
+    // it is asserted as one in shadowChatSensitivity.test.ts rather than left
+    // to a list of characters somebody thought of.
+    //
+    // The handful of full-width forms NFKC was wanted for are folded
+    // explicitly in the classes above, one character to one character.
     // INVISIBLE, AND NOT WHITESPACE -> deleted. U+200B-U+200D sit inside a word
     // and defeat a boundary with nothing visible to explain why. U+00AD SOFT
     // HYPHEN belongs here too: it renders as nothing mid-word, so
@@ -250,7 +282,7 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
     ['return_to_play', /(return.*play|cleared.*play|cleared\s+to)/i],
     ['medical_clearance', /(medical|doctor)\s+clear|cleared|clearance/i],
     ['youth_safety', /(minor|child|kid|young)\s+(safety|harm)/i],
-    ['urgent_symptom', /((?<![^\s(\[\"'])can(?:not|'?t)(?![^\s)\]\"'.,!?;:])\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|(?<![^\s(\[\"'])can(?:not|'?t)(?![^\s)\]\"'.,!?;:])\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|(?<![^\s(\[\"'])can(?:not|'?t)(?![^\s)\]\"'.,!?;:])\s+move|sudden\s+weakness)/i],
+    ['urgent_symptom', /(can(?:not|'t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'t)\s+move|sudden\s+weakness)/i],
   ];
 
   let classifiedTopic: HighRiskTopic = 'none';
@@ -379,34 +411,8 @@ export function validateShadowRequest(
 
   const hasPersonalContext = /\b(i|me|my|mine|we|our)\b/i.test(text)
     || /\b(now|currently|today|just happened|during training|after sparring|after (?:a|that|the) hit)\b/i.test(text);
-  const hasUrgentSymptom = /((?<![^\s(\[\"'])can(?:not|'?t)(?![^\s)\]\"'.,!?;:])\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|(?<![^\s(\[\"'])can(?:not|'?t)(?![^\s)\]\"'.,!?;:])\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|(?<![^\s(\[\"'])can(?:not|'?t)(?![^\s)\]\"'.,!?;:])\s+move|sudden\s+weakness)/i.test(text);
-  // SEPARATOR-BOUNDED, NOT WORD-BOUNDED, and this is the site that needs it.
-  // Every other occurrence is followed by a literal (breathe/see/move) which
-  // anchors it; this one ends the alternation, so it matched bare.
-  //
-  // `cannot` and `can't` cannot occur inside another word, which is why the
-  // unanchored form was safe until `'?` made the apostrophe optional. What
-  // followed was three rounds of the same error, each fixing the example
-  // rather than the class:
-  //
-  //   no boundary     -> "signifi|cant", "va|cant" matched on the suffix
-  //   leading \b only -> "cantilever", "cantina" matched on the prefix
-  //   both \b         -> "signifi-cant", "signifi<AD>cant", "cant\u00F3" STILL matched
-  //
-  // The third round is why this no longer uses \b at all. \b asserts a
-  // transition between \w and non-\w, and \w is [A-Za-z0-9_] -- so a hyphen,
-  // a soft hyphen or an accented letter is an edge as far as \b is concerned,
-  // and "signifi-cant improvement" was answered "stop participation and
-  // contact local emergency services". Rounds one to three enumerated
-  // boundary POSITIONS; the class was never positions, it was what counts as
-  // the edge of a word.
-  //
-  // Naming the separators explicitly is the smallest thing that is actually
-  // about the right class: the token must be preceded by whitespace, a
-  // string start or an opening bracket or quote, and followed by whitespace,
-  // a string end, closing punctuation or sentence punctuation. A hyphen is
-  // none of those, and neither is a letter with an accent.
-  const hasAcuteImpactConcern = /(?:after|from).{0,30}(?:hit|blow|punch|fall).{0,60}(?:pain|numb|weak|tingl|blur|bleed|dizz|confus|vomit|(?<![^\s(\[\"'])can(?:not|'?t)(?![^\s)\]\"'.,!?;:]))/i.test(text);
+  const hasUrgentSymptom = /(can(?:not|'t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'t)\s+move|sudden\s+weakness)/i.test(text);
+  const hasAcuteImpactConcern = /(?:after|from).{0,30}(?:hit|blow|punch|fall).{0,60}(?:pain|numb|weak|tingl|blur|bleed|dizz|confus|vomit|can(?:not|'t))/i.test(text);
   const hasPersonalHealthConcern = /\b(hurt|hurts|hurting|pain|painful|sore|soreness|swollen|swelling|injured|injury|sprain(?:ed|ing)?|strain(?:ed|ing)?|bruised|bruising|numb|numbness|tingling|stiff|stiffness)\b/i.test(text);
 
   // Direct prescription or weight-cutting directives are blocked even when phrased as questions.
