@@ -324,23 +324,50 @@ describe('the athlete\'s own words survive normalisation', () => {
     );
   });
 
-  test('a curly-quote emergency report still takes the safety path at the route', async () => {
-    const fetchSpy = jest.fn();
-    global.fetch = fetchSpy as unknown as typeof fetch;
+  // EQUIVALENCE, NOT TODAY'S OUTCOME.
+  //
+  // This asserted status 400 and that the provider was never called. Both are
+  // true today and both are about to stop being true: OD-2026-09-30-006
+  // replaces the refusal with a real answer, so a test pinned to the refusal
+  // would fail on a change that is not a regression, and someone would
+  // "fix" it by deleting it.
+  //
+  // What this hotfix actually claims is narrower and permanent: a curly
+  // apostrophe must make NO DIFFERENCE. So the two spellings are run through
+  // the real route and compared to each other. Whatever the path becomes,
+  // they must do the same thing -- and if they ever diverge again, this fails
+  // without needing to know what the right answer is.
+  test('a curly apostrophe changes nothing the route does', async () => {
+    const run = async (message: string) => {
+      jest.clearAllMocks();
+      const fetchSpy = jest.fn();
+      global.fetch = fetchSpy as unknown as typeof fetch;
 
-    const response = await POST(postRequest({
-      message: 'I can\u2019t breathe after that hit',
-    }));
-    const body = await response.json();
+      const response = await POST(postRequest({ message }));
+      const body = await response.json();
 
-    // Withheld, a human queued, and the provider never called -- which is
-    // exactly why this cannot be the same test as the one above.
-    expect(response.status).toBe(400);
-    expect(body.requiresHumanReview).toBe(true);
-    expect(mockQueueHumanReview).toHaveBeenCalledWith(
-      expect.objectContaining({ severity: 'critical' }),
-    );
-    expect(fetchSpy).not.toHaveBeenCalled();
+      return {
+        status: response.status,
+        state: body.state,
+        requiresHumanReview: body.requiresHumanReview,
+        highRiskTopic: body.highRiskTopic,
+        filtered: body.filtered,
+        providerCalled: fetchSpy.mock.calls.length > 0,
+        reviewQueued: mockQueueHumanReview.mock.calls.length > 0,
+        reviewSeverity: (mockQueueHumanReview.mock.calls[0]?.[0] as { severity?: string })?.severity,
+        reviewCategory: (mockQueueHumanReview.mock.calls[0]?.[0] as { category?: string })?.category,
+      };
+    };
+
+    const straight = await run("I can't breathe after that hit");
+    const curly = await run('I can\u2019t breathe after that hit');
+
+    expect(curly).toEqual(straight);
+
+    // One floor, so the comparison cannot pass by both sides being nothing:
+    // this message must reach the safety machinery on SOME path, whichever
+    // one that turns out to be.
+    expect(straight.reviewQueued).toBe(true);
   });
 });
 

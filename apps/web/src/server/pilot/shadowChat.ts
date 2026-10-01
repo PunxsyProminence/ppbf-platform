@@ -183,9 +183,25 @@ export function normaliseForMatching(text: string): string {
     // cheap replace closes that without reintroducing the U+00B4
     // decomposition problem the ordering exists to avoid.
     .replace(/[\u2018\u2019\u2032\u02BC`]/g, "'")
-    // Zero-width characters sit INSIDE a word and defeat a \b boundary with
-    // nothing visible to explain why.
-    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    // INVISIBLE, AND NOT WHITESPACE -> deleted. U+200B-U+200D sit inside a word
+    // and defeat a boundary with nothing visible to explain why. U+00AD SOFT
+    // HYPHEN belongs here too: it renders as nothing mid-word, so
+    // "signifi<AD>cant" IS "significant" to the person who typed it, and
+    // leaving it in let a hyphen-shaped non-word character re-open the
+    // contraction hole below.
+    .replace(/[\u200B-\u200D\u00AD]/g, '')
+    // U+FEFF IS DELIBERATELY NOT IN THAT CLASS, and this is the sharpest
+    // mistake in this PR's history. It was, and deleting it REINTRODUCED THE
+    // VERY DEFECT THIS PR EXISTS TO CLOSE: ECMAScript \s counts U+FEFF as
+    // whitespace, so main's `can(?:not|'t)\s+breathe` already matched
+    // "I can't<FEFF>breathe after that hit" and withheld it. Stripping the
+    // character joined the words, no pattern matched, and the message was
+    // allowed through to the model with nobody told -- on a branch whose
+    // entire purpose is stopping exactly that. Found by a reviewer sweeping
+    // every BMP code point and diffing against main; it was the sole
+    // regression. It becomes a SPACE, which is what the engine already
+    // treated it as.
+    .replace(/\uFEFF/g, ' ')
     // Exotic spaces become ordinary ones.
     .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
     // HORIZONTAL WHITESPACE ONLY. Collapsing \s+ folded NEWLINES into spaces,
@@ -199,9 +215,16 @@ export function normaliseForMatching(text: string): string {
     // Two ordinary two-line messages, refused.
     //
     // Every \s+ in this file already matched a newline, so the apostrophe fix
-    // never needed this. `[^\S\n]` keeps the doubled-space case working and
+    // never needed this. The class keeps the doubled-space case working and
     // leaves the line break exactly where the patterns expect it.
-    .replace(/[^\S\n]+/g, ' ')
+    //
+    // ALL FOUR ECMAScript LINE TERMINATORS, not just \n. The first version of
+    // this fix excluded \n alone, so CR, U+2028 and U+2029 were still folded
+    // into spaces and the same two-line messages were still withheld -- I had
+    // fixed the example I was shown rather than the class it belonged to.
+    // Windows clients send CRLF, and U+2028/U+2029 arrive from pasted
+    // rich text.
+    .replace(/[^\S\n\r\u2028\u2029]+/g, ' ')
     .trim();
 }
 
@@ -227,7 +250,7 @@ export function classifyHighRiskTopic(userMessage: string): HighRiskClassificati
     ['return_to_play', /(return.*play|cleared.*play|cleared\s+to)/i],
     ['medical_clearance', /(medical|doctor)\s+clear|cleared|clearance/i],
     ['youth_safety', /(minor|child|kid|young)\s+(safety|harm)/i],
-    ['urgent_symptom', /(\bcan(?:not|'?t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|\bcan(?:not|'?t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|\bcan(?:not|'?t)\s+move|sudden\s+weakness)/i],
+    ['urgent_symptom', /((?<![^\s(\[\"'])can(?:not|'?t)(?![^\s)\]\"'.,!?;:])\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|(?<![^\s(\[\"'])can(?:not|'?t)(?![^\s)\]\"'.,!?;:])\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|(?<![^\s(\[\"'])can(?:not|'?t)(?![^\s)\]\"'.,!?;:])\s+move|sudden\s+weakness)/i],
   ];
 
   let classifiedTopic: HighRiskTopic = 'none';
@@ -356,8 +379,34 @@ export function validateShadowRequest(
 
   const hasPersonalContext = /\b(i|me|my|mine|we|our)\b/i.test(text)
     || /\b(now|currently|today|just happened|during training|after sparring|after (?:a|that|the) hit)\b/i.test(text);
-  const hasUrgentSymptom = /(\bcan(?:not|'?t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|\bcan(?:not|'?t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|\bcan(?:not|'?t)\s+move|sudden\s+weakness)/i.test(text);
-  const hasAcuteImpactConcern = /(?:after|from).{0,30}(?:hit|blow|punch|fall).{0,60}(?:pain|numb|weak|tingl|blur|bleed|dizz|confus|vomit|\bcan(?:not|'?t))/i.test(text);
+  const hasUrgentSymptom = /((?<![^\s(\[\"'])can(?:not|'?t)(?![^\s)\]\"'.,!?;:])\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|(?<![^\s(\[\"'])can(?:not|'?t)(?![^\s)\]\"'.,!?;:])\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|(?<![^\s(\[\"'])can(?:not|'?t)(?![^\s)\]\"'.,!?;:])\s+move|sudden\s+weakness)/i.test(text);
+  // SEPARATOR-BOUNDED, NOT WORD-BOUNDED, and this is the site that needs it.
+  // Every other occurrence is followed by a literal (breathe/see/move) which
+  // anchors it; this one ends the alternation, so it matched bare.
+  //
+  // `cannot` and `can't` cannot occur inside another word, which is why the
+  // unanchored form was safe until `'?` made the apostrophe optional. What
+  // followed was three rounds of the same error, each fixing the example
+  // rather than the class:
+  //
+  //   no boundary     -> "signifi|cant", "va|cant" matched on the suffix
+  //   leading \b only -> "cantilever", "cantina" matched on the prefix
+  //   both \b         -> "signifi-cant", "signifi<AD>cant", "cant\u00F3" STILL matched
+  //
+  // The third round is why this no longer uses \b at all. \b asserts a
+  // transition between \w and non-\w, and \w is [A-Za-z0-9_] -- so a hyphen,
+  // a soft hyphen or an accented letter is an edge as far as \b is concerned,
+  // and "signifi-cant improvement" was answered "stop participation and
+  // contact local emergency services". Rounds one to three enumerated
+  // boundary POSITIONS; the class was never positions, it was what counts as
+  // the edge of a word.
+  //
+  // Naming the separators explicitly is the smallest thing that is actually
+  // about the right class: the token must be preceded by whitespace, a
+  // string start or an opening bracket or quote, and followed by whitespace,
+  // a string end, closing punctuation or sentence punctuation. A hyphen is
+  // none of those, and neither is a letter with an accent.
+  const hasAcuteImpactConcern = /(?:after|from).{0,30}(?:hit|blow|punch|fall).{0,60}(?:pain|numb|weak|tingl|blur|bleed|dizz|confus|vomit|(?<![^\s(\[\"'])can(?:not|'?t)(?![^\s)\]\"'.,!?;:]))/i.test(text);
   const hasPersonalHealthConcern = /\b(hurt|hurts|hurting|pain|painful|sore|soreness|swollen|swelling|injured|injury|sprain(?:ed|ing)?|strain(?:ed|ing)?|bruised|bruising|numb|numbness|tingling|stiff|stiffness)\b/i.test(text);
 
   // Direct prescription or weight-cutting directives are blocked even when phrased as questions.

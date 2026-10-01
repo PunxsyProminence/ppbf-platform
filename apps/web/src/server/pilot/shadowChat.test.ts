@@ -1099,23 +1099,90 @@ describe('typographic normalisation before matching', () => {
   // newline was the only bound on the unbounded `.` gaps in this file. Both of
   // these were fine on main, were withheld after the first version of this
   // fix, and are fine again.
+  // ALL FOUR ECMAScript LINE TERMINATORS. The first version of this fix
+  // preserved \n alone, so CR, U+2028 and U+2029 were still folded into
+  // spaces and the same messages were still withheld -- CRLF is what a
+  // Windows client sends, and U+2028/U+2029 arrive from pasted rich text.
   test.each([
-    ['Bodyweight work today felt good.\nTomorrow I want to cut the warm-up short.'],
-    ['I need to return the gloves I borrowed.\nWe can play it by ear for Saturday.'],
-  ])('a two-line message is not withheld by a gap spanning the break: %s', (message) => {
-    expect(validateShadowRequest(message, 'coach', 'org-123').valid).toBe(true);
+    ['LF', '\n'],
+    ['CR', '\r'],
+    ['U+2028', '\u2028'],
+    ['U+2029', '\u2029'],
+  ])('a %s line break still bounds the pattern gaps', (_name, br) => {
+    expect(validateShadowRequest(
+      `Bodyweight work today felt good.${br}Tomorrow I want to cut the warm-up short.`,
+      'coach', 'org-123',
+    ).valid).toBe(true);
+    expect(validateShadowRequest(
+      `I need to return the gloves I borrowed.${br}We can play it by ear for Saturday.`,
+      'coach', 'org-123',
+    ).valid).toBe(true);
   });
 
-  // "signifi|cant". Making the apostrophe optional without a word boundary
-  // meant any word ending in those four letters reached the emergency branch,
-  // and an ordinary training note was answered "stop participation and
-  // contact local emergency services" with a critical review row.
+  // THE SAME ERROR, TWICE. Making the apostrophe optional without a word
+  // boundary meant any word CONTAINING those four letters reached the
+  // emergency branch. The first fix added a leading \b and closed the suffix
+  // cases (significant, vacant, scant); the prefix cases (cantilever,
+  // cantina) stayed open until both boundaries went on. Each round fixed the
+  // example rather than the class, so both rounds are pinned here.
   test.each([
+    // ROUND 1 -- suffix, matched with no boundary at all
     ['I felt great after the punch drill today and my footwork showed significant improvement'],
     ['I moved from the fall bag over to the vacant station'],
     ['After that punch combo my notes were scant'],
-  ])('a word ending in "cant" is not an emergency: %s', (message) => {
+    // ROUND 2 -- prefix, still matched with a LEADING word boundary
+    ['I moved from the fall bag over to the cantilever station after that punch drill'],
+    ['After that punch we all went to the cantina down the road'],
+    // ROUND 3 -- still matched with word boundaries on BOTH sides, because a
+    // word boundary is a \\w / non-\\w transition and \\w is [A-Za-z0-9_]. A
+    // hyphen, a soft hyphen, a dash or an accented letter is an edge as far
+    // as it is concerned. The soft-hyphen row is the worst of these: the
+    // athlete sees the word "significant" on screen, with nothing to explain
+    // why the gym app declared a medical emergency.
+    ['After that punch my footwork showed signifi-cant improvement'],
+    ['After that punch my footwork showed signifi\u00ADcant improvement'],
+    ['After that punch my footwork showed signifi\u2013cant improvement'],
+    ['After that punch I heard my coach cant\u00F3 along with the radio'],
+    // DELIBERATELY ABSENT: "the coach used the word 'cant' about my stance".
+    // A reviewer raised it and it does still match, because a quote mark is
+    // an accepted boundary. Narrowing to exclude it would also stop
+    // "'I can't breathe'" matching when an athlete puts their own words in
+    // quotes, and the owner's rule is that missing a real report is the worse
+    // error. A false positive on someone quoting the word is noise; a false
+    // negative on a quoted emergency is the thing this branch exists to stop.
+    // Recorded as a chosen trade-off rather than left to look like an
+    // oversight.
+  ])('a word merely containing "cant" is not an emergency: %s', (message) => {
     expect(validateShadowRequest(message, 'athlete', 'org-123').valid).toBe(true);
+  });
+
+  // THE REGRESSION THIS BRANCH ITSELF INTRODUCED, AND THE ONE THAT MATTERS
+  // MOST. U+FEFF is whitespace to the ECMAScript engine, so main's
+  // `can(?:not|'t)\\s+breathe` ALREADY matched "I can't<FEFF>breathe after
+  // that hit" and withheld it. An earlier version of this fix stripped
+  // U+FEFF as a zero-width character, which joined the words, matched
+  // nothing, and allowed the message through to the model with nobody told
+  // -- reintroducing the exact production defect this branch exists to
+  // close, through a different character.
+  //
+  // Found by a reviewer sweeping every BMP code point against main. It was
+  // the only regression in the sweep, which is the reason it is pinned by
+  // code point rather than described.
+  test.each([
+    ['U+FEFF between the contraction and the symptom', 'I can\u2019t\uFEFFbreathe after that hit'],
+    ['U+FEFF after cannot', 'I cannot\uFEFFbreathe after that hit'],
+  ])('a separator the engine calls whitespace is not deleted: %s', (_name, message) => {
+    expect(validateShadowRequest(message, 'athlete', 'org-123').valid).toBe(false);
+  });
+
+  // The paired control, and the reason U+200B is NOT treated as a space:
+  // it is not in ECMAScript \\s, so main did not match it either. Deleting it
+  // preserves main's behaviour; turning it into a space would CHANGE
+  // behaviour, which a hotfix should not do by accident in either direction.
+  test('a zero-width space stays deleted, as it was on main', () => {
+    expect(normaliseForMatching('I can\u2019t\u200Bbreathe')).toBe("I can'tbreathe");
+    expect(normaliseForMatching('signifi\u00ADcant')).toBe('significant');
+    expect(normaliseForMatching('I can\u2019t\uFEFFbreathe')).toBe("I can't breathe");
   });
 
   // The paired positive: the real report the boundary must not break.
