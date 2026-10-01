@@ -92,6 +92,7 @@
     "pilot:apply-session-rpe-semantics": "node scripts/pilot-apply-session-rpe-semantics-migration.mjs",
     "pilot:apply-attendance-precedence": "node scripts/pilot-apply-attendance-precedence-migration.mjs",
     "pilot:apply-one-percent-club": "node scripts/pilot-apply-one-percent-club-migration.mjs",
+    "pilot:apply-one-percent-nomination-athlete-cascade": "node scripts/pilot-apply-one-percent-nomination-athlete-cascade-migration.mjs",
     "pilot:apply-data-retention-deletion": "node scripts/pilot-apply-data-retention-deletion-migration.mjs",
     "pilot:apply-guardian-media-consent": "node scripts/pilot-apply-guardian-media-consent-migration.mjs",
     "pilot:apply-parent-task-state": "node scripts/pilot-apply-parent-task-state-migration.mjs",

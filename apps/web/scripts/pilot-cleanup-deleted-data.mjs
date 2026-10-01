@@ -138,11 +138,13 @@ async function attemptPurge(client, athletes, accountIds) {
     blocked[name] = (blocked[name] ?? 0) + 1;
   };
 
-  /* ONE ATHLETE AT A TIME, for the same reason as the accounts below. Almost
-     everything hanging off pilot.athletes cascades -- 60 of the 61 foreign
-     keys pointing at it -- but pilot.one_percent_nominations restricts, and
-     onePercentClub.ts writes those by athlete_id. As a single statement, one
-     nominated athlete would take every OTHER athlete's purge down with it. */
+  /* ONE ATHLETE AT A TIME, for the same reason as the accounts below. As a
+     single statement, one athlete Postgres refused would take every OTHER
+     athlete's purge down with it. That happened: pilot.one_percent_nominations
+     restricted until its foreign key was made ON DELETE CASCADE
+     (OD-2026-08-29-007, one_percent_nomination_athlete_cascade_migration.sql).
+     The savepoint stays for the next foreign key that ships without a delete
+     action. */
   /* THE LOGIN STOPS NAMING THE ATHLETE IN THE SAME SAVEPOINT. An athlete's
      login is not purged with them (only parent logins are, below), and
      pilot.accounts.athlete_id has no foreign key, so until this statement

@@ -1044,8 +1044,10 @@ describe('a guardian who was actually recorded as one', () => {
         path.join(INFRA_DIR, 'pilot_slice_postgres_guardian_media_consent_migration.sql'), 'utf8',
       ),
     );
-    // pilot.one_percent_nominations is the one restricting foreign key onto
-    // pilot.athletes, and the athlete-isolation test below needs it to exist.
+    // pilot.one_percent_nominations as it was first created: the one
+    // restricting foreign key onto pilot.athletes. The athlete-isolation test
+    // below needs a real refusal, so the cascade migration that removes it
+    // (OD-2026-08-29-007) is applied only by the test after that one.
     await guardianClient.query(
       await fs.readFile(
         path.join(INFRA_DIR, 'pilot_slice_postgres_one_percent_club_migration.sql'), 'utf8',
@@ -1224,12 +1226,16 @@ describe('a guardian who was actually recorded as one', () => {
   });
 
   test('one athlete the platform cannot purge does not take the others with it', async () => {
-    /* pilot.athletes is the healthy half -- 60 of the 61 foreign keys pointing
-       at it cascade -- but pilot.one_percent_nominations RESTRICTS, and
-       onePercentClub.ts writes those by athlete_id. As one statement the
-       athlete delete was all-or-nothing, so a single nominated athlete would
-       have blocked every other athlete's purge in the same sweep. Same
-       savepoint treatment as the accounts. */
+    /* As one statement the athlete delete was all-or-nothing, so a single
+       athlete Postgres refused would have blocked every other athlete's purge
+       in the same sweep. Same savepoint treatment as the accounts.
+
+       THE REFUSAL HERE IS THE ONE THAT REALLY HAPPENED. This database has the
+       one-percent-club migration and NOT yet the cascade migration, so
+       pilot_one_percent_nominations_athlete_fk still restricts -- the shape
+       every environment had before OD-2026-08-29-007 was built. It is used
+       because the savepoint needs a real foreign-key refusal to be measured
+       against; the next test applies the cascade and the refusal is gone. */
     const NOMINATED = 'ATH-GUARDIAN-NOMINATED';
     const PURGEABLE_ATHLETE = 'ATH-GUARDIAN-PURGEABLE';
     for (const athleteId of [NOMINATED, PURGEABLE_ATHLETE]) {
@@ -1273,6 +1279,12 @@ describe('a guardian who was actually recorded as one', () => {
       );
     }
     await guardianClient.query(
+      `insert into pilot.one_percent_votes
+         (organization_id, nomination_id, voter_account_id, voter_role, vote)
+       values ($1, 'NOM-1', $2, 'coach', 'yes')`,
+      [G_ORG, G_COACH],
+    );
+    await guardianClient.query(
       `update pilot.athletes set deleted_at = now() - interval '3 years'
         where organization_id = $1 and athlete_id = any($2::text[])`,
       [G_ORG, [NOMINATED, PURGEABLE_ATHLETE, STAFF_NOW]],
@@ -1303,6 +1315,57 @@ describe('a guardian who was actually recorded as one', () => {
     );
     expect(gone.rows.map((r: { athlete_id: string }) => r.athlete_id)).toEqual([NOMINATED]);
     expect(event.blocked_by).toMatchObject({ pilot_one_percent_nominations_athlete_fk: 1 });
+  });
+
+  test('once the cascade migration is applied, the nomination is deleted with the athlete it names', async () => {
+    /* OD-2026-08-29-007, the option the owner selected: "Delete it with the
+       athlete (Recommended)". The previous test left ATH-GUARDIAN-NOMINATED
+       withdrawn three years ago and unpurgeable, held by NOM-1. Applying the
+       migration is the only thing that changes between that sweep and this
+       one. */
+    const NOMINATED = 'ATH-GUARDIAN-NOMINATED';
+    const before = await guardianClient.query(
+      `select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [G_ORG, NOMINATED],
+    );
+    expect(before.rowCount).toBe(1);
+
+    await guardianClient.query(
+      await fs.readFile(
+        path.join(INFRA_DIR, 'pilot_slice_postgres_one_percent_nomination_athlete_cascade_migration.sql'),
+        'utf8',
+      ),
+    );
+
+    const { event } = await runCleanup({ ...guardianEnv, PPBF_RETENTION_APPLY: 'true' });
+    expect(event.athletes).toBe(1);
+    // The blocked guardian from the earlier tests is still reported, and is
+    // now the ONLY refusal: the nomination is not one, and nothing new is.
+    expect(event.blocked).toBe(1);
+    expect(event.blocked_by).toEqual({ coach_observations_coach_account_id_fkey: 1 });
+
+    const athlete = await guardianClient.query(
+      `select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [G_ORG, NOMINATED],
+    );
+    expect(athlete.rowCount).toBe(0);
+    const nominations = await guardianClient.query(
+      `select nomination_id from pilot.one_percent_nominations where organization_id = $1`,
+      [G_ORG],
+    );
+    expect(nominations.rows).toEqual([]);
+    // The votes hang off the nomination and go with it.
+    const votes = await guardianClient.query(
+      `select 1 from pilot.one_percent_votes where organization_id = $1`,
+      [G_ORG],
+    );
+    expect(votes.rowCount).toBe(0);
+    // The enrolled athlete in the same organization is untouched.
+    const enrolled = await guardianClient.query(
+      `select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [G_ORG, G_ATHLETE],
+    );
+    expect(enrolled.rowCount).toBe(1);
   });
 
   test('a purge that removes no row unlinks nothing', async () => {
