@@ -403,6 +403,15 @@ describe('the 009 mockup did not delete or invent clinic controls', () => {
     'Place hold',
     'Cancel',
     'Lift this hold',
+    // Added 2026-10-01 by an owner decision, not by a mockup: when a row's
+    // hold could not be read, 'Place a training hold' is disabled (Jason,
+    // "3 B": disabled until a reload succeeds) and this is the re-read that
+    // can succeed. Keeping it per row instead of a page reload was overwatch's
+    // call, told to Jason. The guard's purpose is unchanged: a visual pass may
+    // not invent or delete a clinic control, and the count below still pins
+    // that. The disabled state is the SAME 'Place a training hold' button, so
+    // it adds no label.
+    'Check again',
     'Progression Intelligence',
     'Performance Analytics',
   ] as const;
