@@ -1924,6 +1924,44 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     expect(screen.getByText(NOT_CONFIRMED)).toBeTruthy();
   });
 
+  test.each([
+    ['is refused', () => jsonResponse({ error: 'Service unavailable' }, false)],
+    ['throws', () => { throw new Error('Network request failed'); }],
+  ])('a not-confirmed write whose verification read %s: the exact line stays, the panels are unreadable, no confirmation, the draft is kept', async (_how, failedRead) => {
+    let written = false;
+    const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+      const key = String(url);
+      if (init?.method === 'POST') {
+        written = true;
+        return unreadable200();
+      }
+      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+      if (written) return failedRead();
+      if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS });
+      if (key.includes('/recommendations')) return jsonResponse({ recommendations: [A_RECOMMENDATION] });
+      if (key.includes('/decisions')) return jsonResponse({ decisions: [A_DECISION] });
+      return jsonResponse({ nearMisses: [A_NEAR_MISS] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await openAthleteA();
+
+    type('Message', A_TEXT);
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+
+    // The verification read has failed: the panels say so...
+    expect(await screen.findByText(/medical administrative status could not be read/i)).toBeTruthy();
+    expect(screen.getByText(/Recommendations could not be read/i)).toBeTruthy();
+    expect(screen.getByText(/Decisions could not be read/i)).toBeTruthy();
+    expect(screen.getByText(/Near-misses could not be read/i)).toBeTruthy();
+    // ...and the line about the WRITE is still there, word for word.
+    expect(
+      screen.getByText('The server did not confirm this. It may or may not have gone through: check before sending it again.'),
+    ).toBeTruthy();
+    expect(screen.queryByText('Sent to the family.')).toBeNull();
+    expect(field<HTMLTextAreaElement>('Message').value).toBe(A_TEXT);
+    expectNothingOfAthleteA();
+  });
+
   test('a not-confirmed answer for the previous athlete, arriving after the switch: the neutral line under the new one, and the draft still there on return', async () => {
     const held = heldResponse();
     installSwitchFetch({ post: () => held.promise });
@@ -2044,8 +2082,19 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     expect(await screen.findByText(confirmation)).toBeTruthy();
   });
 
+  test('Accept: the right recommendation in the right decided state, but for ANOTHER athlete, is not the acknowledgement', async () => {
+    installSwitchFetch({
+      post: () => jsonResponse({ ok: true, recommendation: { recommendation_id: 'rec-a', athlete_id: 'someone-else', status: 'accepted' } }),
+    });
+    await openAthleteA();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+
+    expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
+  });
+
   test('Accept: a row for the right recommendation that is NOT in the decided state is not the acknowledgement', async () => {
-    installSwitchFetch({ post: () => jsonResponse({ ok: true, recommendation: { recommendation_id: 'rec-a', status: 'provisional' } }) });
+    installSwitchFetch({ post: () => jsonResponse({ ok: true, recommendation: { recommendation_id: 'rec-a', athlete_id: 'ath-a', status: 'provisional' } }) });
     await openAthleteA();
 
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));

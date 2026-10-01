@@ -263,8 +263,11 @@ test("the masthead stands on the room's own furniture", async () => {
    The write surface: placing and lifting a hold.
    ------------------------------------------------------------------------- */
 
+// The route answers a place with the whole row: this athlete's, active.
 const PLACED = {
   hold_id: 'hold-9',
+  athlete_id: 'ath-1',
+  status: 'active',
   scope: 'contact_only',
   athlete_explanation: 'No contact for now while your wrist settles.',
   lift_condition_text: 'A pain-free grip and a coach check-in.',
@@ -1728,5 +1731,71 @@ describe('whose refusal is whose, and when it goes', () => {
 
     expect((sam.getByLabelText(/What this athlete reads/) as HTMLTextAreaElement).value).toBe('Sentence for Sam, half written');
     expect(within(rowOf('Jordan Doe')).getByText('Hold Not Placed')).toBeTruthy();
+  });
+});
+
+/*
+ * A placement's answer is painted on the row without a read only when it IS
+ * this placement's answer: ok, an active hold, for this athlete.
+ */
+describe('a place response that is not this athlete’s active hold is never painted on this athlete', () => {
+  const UNREAD = /Training hold could not be read/;
+  const OTHERS = {
+    hold_id: 'hold-of-b',
+    athlete_id: 'ath-b',
+    status: 'active',
+    scope: 'all_training',
+    athlete_explanation: 'A SENTENCE WRITTEN FOR ANOTHER CHILD.',
+    lift_condition_text: 'Their path back.',
+  };
+
+  function placeBoard(placeAnswer: unknown) {
+    let holdReads = 0;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') return { ok: true, json: async () => placeAnswer } as Response;
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        holdReads += 1;
+        if (holdReads === 1) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+        return { ok: false, status: 503, json: async () => ({}) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  async function place() {
+    render(<SportsMedicinePage />);
+    await openPlaceForm();
+    fireEvent.change(screen.getByLabelText(/What this athlete reads/), { target: { value: 'Resting your wrist.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+  }
+
+  test.each([
+    ['a full active hold for ANOTHER athlete', { ok: true, hold: OTHERS }],
+    ['this athlete’s hold, but lifted', { ok: true, hold: { ...PLACED, status: 'lifted' } }],
+    ['this athlete’s hold with no status', { ok: true, hold: { ...PLACED, status: undefined } }],
+    ['a hold that names no athlete', { ok: true, hold: { ...PLACED, athlete_id: undefined } }],
+  ])('%s, then a re-read that fails: unknown, with nothing of that hold on screen', async (_name, answer) => {
+    placeBoard(answer);
+    await place();
+
+    expect(await screen.findByText(UNREAD)).toBeTruthy();
+    expect(screen.queryByText(/Active Training Hold/)).toBeNull();
+    expect(screen.queryByText(/A SENTENCE WRITTEN FOR ANOTHER CHILD/)).toBeNull();
+    expect(screen.queryByText(/Their path back/)).toBeNull();
+    expect((screen.getByRole('button', { name: 'Place a training hold' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('this athlete’s own active hold, then a re-read that fails: that hold is shown', async () => {
+    placeBoard({ ok: true, hold: PLACED });
+    await place();
+
+    await screen.findByText(/Active Training Hold — contact only/);
+    expect(screen.getByText(PLACED.athlete_explanation)).toBeTruthy();
+    expect(screen.queryByText(UNREAD)).toBeNull();
   });
 });

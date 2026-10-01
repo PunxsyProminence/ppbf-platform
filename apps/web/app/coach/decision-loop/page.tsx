@@ -538,7 +538,14 @@ export default function DecisionLoopReviewPage() {
          write, the old medical status would otherwise still read "Current
          status" under an error line. */
       setReadFor({ athleteId: targetAthleteId, state: 'unavailable', records: NO_RECORDS });
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load decision loop data.');
+      // A line that was deliberately kept up for this read ("the server did
+      // not confirm this ... check before sending it again") is not replaced
+      // by the news that the check itself failed. The four panels already say
+      // they could not be read; the line the coach must not lose is the one
+      // about the write.
+      if (!keepErrorLine) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to load decision loop data.');
+      }
     } finally {
       if (seq === readSeqRef.current) setLoading(false);
     }
@@ -661,7 +668,12 @@ export default function DecisionLoopReviewPage() {
       // shadow/recommendations/decide answers { ok: true, recommendation: <row> }.
       await confirmWriteOrThrow(response, 'Failed to record decision on recommendation.', (envelope) => {
         const row = returnedRow(envelope, 'recommendation');
-        return !!row && row.recommendation_id === recommendationId && row.status === decision;
+        return (
+          !!row
+          && row.recommendation_id === recommendationId
+          && row.athlete_id === athleteId
+          && row.status === decision
+        );
       });
       if (athleteId !== selectedAthleteRef.current) return;
       await refreshAll(athleteId);

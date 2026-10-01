@@ -378,6 +378,20 @@ export default function SportsMedicinePage() {
     return (await response.json().catch(() => null)) as { ok?: unknown; hold?: unknown } | null;
   };
 
+  /* The same for a PLACE: `{ ok: true, hold }` where hold is an ACTIVE hold
+     for THIS athlete. Only that row may be painted on this athlete's row
+     without a read. A well-formed hold that belongs to someone else, or that
+     is not active, is not this placement's confirmation -- and showing it
+     here would put another child's hold sentence under this child's name. */
+  const isConfirmedPlace = (
+    result: { ok?: unknown; hold?: unknown } | null,
+    athleteId: string,
+  ): result is { ok: true; hold: ActiveHold } => {
+    if (!result || result.ok !== true || !isActiveHold(result.hold)) return false;
+    const hold = result.hold as ActiveHold & { status?: unknown; athlete_id?: unknown };
+    return hold.athlete_id === athleteId && hold.status === 'active';
+  };
+
   /* A 2xx is not a confirmation. The route's answer to a lift is
      `{ ok: true, hold }` where hold is THE hold that was asked about, now
      'lifted'. Only that lets the board say "no hold" without having read it. */
@@ -419,7 +433,7 @@ export default function SportsMedicinePage() {
       });
       await refreshHold(
         athleteId,
-        result?.ok === true && isActiveHold(result.hold)
+        isConfirmedPlace(result, athleteId)
           ? { hold: result.hold, hold_read: 'loaded' }
           : { hold: null, hold_read: 'unavailable' },
         true,
