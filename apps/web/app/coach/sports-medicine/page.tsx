@@ -151,8 +151,11 @@ export default function SportsMedicinePage() {
       { method: 'GET', credentials: 'include' },
     );
     if (!response.ok) throw new Error('Unable to read this athlete’s holds.');
-    const payload = (await response.json()) as { holds?: ActiveHold[] };
-    return payload.holds?.[0] ?? null;
+    const payload = (await response.json()) as { holds?: ActiveHold[] } | null;
+    // The route always answers a staff read with a `holds` array. A 200 that
+    // does not carry one is not a statement that there are no holds.
+    if (!payload || !Array.isArray(payload.holds)) throw new Error('Unable to read this athlete’s holds.');
+    return payload.holds[0] ?? null;
   }, []);
 
   useEffect(() => {
@@ -237,10 +240,18 @@ export default function SportsMedicinePage() {
    * hold), the fallback is 'unavailable', never "no hold".
    */
   const refreshHold = useCallback(
-    async (athleteId: string, fallback: { hold: ActiveHold | null; hold_read: HoldRead }) => {
+    async (
+      athleteId: string,
+      fallback: { hold: ActiveHold | null; hold_read: HoldRead },
+      justPlaced = false,
+    ) => {
       let next = fallback;
       try {
-        next = { hold: await readActiveHold(athleteId), hold_read: 'loaded' };
+        const hold = await readActiveHold(athleteId);
+        // The server has just confirmed a placed hold and the read says there
+        // is none. One of them is stale, and "no hold" is the dangerous one to
+        // believe: the row says unknown until a read agrees.
+        next = justPlaced && !hold ? { hold: null, hold_read: 'unavailable' } : { hold, hold_read: 'loaded' };
       } catch {
         // Keep the committed outcome; the board is refreshed on the next load.
       }
@@ -248,6 +259,17 @@ export default function SportsMedicinePage() {
     },
     [readActiveHold],
   );
+
+  // The way back from 'unavailable' without reloading the whole board: one
+  // more read of this athlete's hold, through the same refreshHold.
+  const recheckHold = async (athleteId: string) => {
+    setBusyFor(athleteId);
+    try {
+      await refreshHold(athleteId, { hold: null, hold_read: 'unavailable' });
+    } finally {
+      setBusyFor(null);
+    }
+  };
 
   const postHoldAction = async (body: Record<string, unknown>): Promise<{ hold?: ActiveHold } | null> => {
     const response = await fetch(`${apiBase()}/api/pilot/training-holds`, {
@@ -291,6 +313,7 @@ export default function SportsMedicinePage() {
       await refreshHold(
         athleteId,
         result?.hold ? { hold: result.hold, hold_read: 'loaded' } : { hold: null, hold_read: 'unavailable' },
+        true,
       );
       setOpenFor(null);
       setForm({ ...EMPTY_FORM });
@@ -314,6 +337,9 @@ export default function SportsMedicinePage() {
         hold_id: holdId,
         lift_note: (liftNotes[athleteId] ?? '').trim(),
       });
+      // The server allows one active hold per athlete and has just confirmed
+      // this one lifted, so "no hold" is what it told us even if the re-read
+      // fails.
       await refreshHold(athleteId, { hold: null, hold_read: 'loaded' });
       setLiftNotes((current) => ({ ...current, [athleteId]: '' }));
     } catch (error) {
@@ -469,16 +495,6 @@ export default function SportsMedicinePage() {
                         making a call that depends on it.
                       </p>
                     ) : null}
-                    {!row.hold && row.hold_read === 'unavailable' ? (
-                      <p
-                        data-hold-read="unavailable"
-                        className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]"
-                        style={{ fontSize: 'var(--t-sm)' }}
-                      >
-                        Training hold could not be read just now. Unknown is not “no hold” — reload and
-                        check again before making a call that depends on it.
-                      </p>
-                    ) : null}
                     {row.hold ? (
                       <div data-refusal-stamp="training_hold" className="mt-[var(--s3)]">
                         {/* Same brass, non-punitive mark as the floor room's
@@ -556,6 +572,43 @@ export default function SportsMedicinePage() {
                               </button>
                             </div>
                           ) : null}
+                        </div>
+                      </div>
+                    ) : row.hold_read === 'unavailable' ? (
+                      /* NOBODY COULD LOOK. Not the hold stamp (this board never
+                         claims a hold it could not read) and not the open
+                         place control either, which is the row a child with no
+                         hold gets. Owner decision 2026-10-01 (Jason, "3 B"):
+                         the place control is DISABLED until a read succeeds --
+                         shown, with its reason beside it, not hidden. */
+                      <div data-hold-read="unavailable" className="mt-[var(--s3)]">
+                        <p
+                          id={`hold-unread-${row.athlete_id}`}
+                          className="t-body text-[color:var(--bone-300)]"
+                          style={{ fontSize: 'var(--t-sm)' }}
+                        >
+                          Training hold could not be read just now. Unknown is not “no hold” — check again
+                          before making a call that depends on it. A hold cannot be placed from this row
+                          until it has been read.
+                        </p>
+                        <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            disabled
+                            aria-describedby={`hold-unread-${row.athlete_id}`}
+                          >
+                            Place a training hold
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            disabled={busy}
+                            aria-busy={busy}
+                            onClick={() => void recheckHold(row.athlete_id)}
+                          >
+                            {busy ? 'Checking…' : 'Check again'}
+                          </button>
                         </div>
                       </div>
                     ) : openFor === row.athlete_id ? (

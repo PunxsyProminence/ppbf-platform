@@ -535,6 +535,19 @@ describe('a hold nobody could read never reads as "no hold"', () => {
     return screen.getByText('Jordan Doe').closest('li') as HTMLElement;
   }
 
+  // Owner decision 2026-10-01 (Jason, "3 B"): on an unread hold the place
+  // control is disabled -- present, with its reason beside it, not hidden.
+  function expectPlaceDisabledWithReason() {
+    const place = within(holdRow()).getByRole('button', { name: 'Place a training hold' }) as HTMLButtonElement;
+    expect(place.disabled).toBe(true);
+    const reason = document.getElementById(place.getAttribute('aria-describedby') ?? '');
+    expect(reason?.textContent).toMatch(/Training hold could not be read/);
+    expect(reason?.textContent).toMatch(/cannot be placed from this row until it has been read/);
+    // Disabled means disabled: a click opens no form.
+    fireEvent.click(place);
+    expect(screen.queryByLabelText(/What this athlete reads/)).toBeNull();
+  }
+
   test('a hold read the server refused says the hold is unknown on that row', async () => {
     global.fetch = mockFetch({ '/training-holds': () => ({ ok: false, status: 503, json: async () => ({}) }) as Response });
 
@@ -543,6 +556,7 @@ describe('a hold nobody could read never reads as "no hold"', () => {
 
     expect(within(holdRow()).getByText(UNREAD)).toBeTruthy();
     expect(within(holdRow()).getByText(/Unknown is not “no hold”/)).toBeTruthy();
+    expectPlaceDisabledWithReason();
     // And it still does not claim a hold it could not read.
     expect(screen.queryByText(/Active Training Hold/)).toBeNull();
     // The clearance that WAS read is still shown: one failed read does not
@@ -558,6 +572,7 @@ describe('a hold nobody could read never reads as "no hold"', () => {
 
     expect(within(holdRow()).getByText(UNREAD)).toBeTruthy();
     expect(screen.queryByText(/Active Training Hold/)).toBeNull();
+    expectPlaceDisabledWithReason();
   });
 
   test('a hold read whose body will not parse is unknown too', async () => {
@@ -570,6 +585,7 @@ describe('a hold nobody could read never reads as "no hold"', () => {
     await screen.findByText('Jordan Doe');
 
     expect(within(holdRow()).getByText(UNREAD)).toBeTruthy();
+    expectPlaceDisabledWithReason();
   });
 
   test('a clearance read that throws does not take a hold that was read off the row', async () => {
@@ -585,6 +601,36 @@ describe('a hold nobody could read never reads as "no hold"', () => {
     expect(screen.queryByText(UNREAD)).toBeNull();
   });
 
+  test('a clearance body that will not parse does not take a hold that was read off the row', async () => {
+    global.fetch = mockFetch({
+      '/shadow/medical-status': () =>
+        ({ ok: true, json: async () => { throw new SyntaxError('Unexpected token <'); } }) as unknown as Response,
+      '/training-holds': () => ({ ok: true, json: async () => ({ ok: true, holds: [HOLD] }) }) as Response,
+    });
+
+    render(<SportsMedicinePage />);
+
+    await screen.findByText(/Active Training Hold — sparring/);
+    expect(screen.getByText('unavailable')).toBeTruthy();
+    expect(screen.queryByText(UNREAD)).toBeNull();
+  });
+
+  test('a 200 that carries no `holds` list is unknown, not "no hold"', async () => {
+    // The route always sends a `holds` array to staff. An empty object, an
+    // error body or a different shape served with 200 says nothing about holds
+    // -- and one of these bodies is carrying a real hold under another key.
+    for (const body of [{}, { error: 'upstream' }, { ok: true, hold: HOLD }, { holds: null }, { holds: { 0: HOLD } }]) {
+      global.fetch = mockFetch({ '/training-holds': () => ({ ok: true, json: async () => body }) as Response });
+
+      const { unmount } = render(<SportsMedicinePage />);
+      await screen.findByText('Jordan Doe');
+
+      expect(within(holdRow()).getByText(UNREAD)).toBeTruthy();
+      expectPlaceDisabledWithReason();
+      unmount();
+    }
+  });
+
   test('an athlete who genuinely has no hold is not told a read failed', async () => {
     // The other direction: a board that says "could not be read" on every row
     // teaches a coach to read past the one line that means something.
@@ -592,9 +638,11 @@ describe('a hold nobody could read never reads as "no hold"', () => {
 
     render(<SportsMedicinePage />);
     await screen.findByText('Jordan Doe');
-    await screen.findByRole('button', { name: 'Place a training hold' });
+    const place = (await screen.findByRole('button', { name: 'Place a training hold' })) as HTMLButtonElement;
 
     expect(screen.queryByText(UNREAD)).toBeNull();
+    expect(place.disabled).toBe(false);
+    expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
   });
 
   test('a placed hold whose response and re-read both carry nothing is unknown, not "no hold"', async () => {
@@ -627,10 +675,102 @@ describe('a hold nobody could read never reads as "no hold"', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
 
     expect(await screen.findByText(UNREAD)).toBeTruthy();
+    expectPlaceDisabledWithReason();
   });
 
-  test('after a successful re-read the row stops saying the hold is unknown', async () => {
-    // First read fails; the coach places a hold; the re-read succeeds.
+  /** First `failures` hold reads are refused; every read after returns `then`. */
+  function mockRecheckFetch(failures: number, then: Array<Record<string, unknown>>) {
+    let holdReads = 0;
+    const posted: Array<Record<string, unknown>> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        posted.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return { ok: true, json: async () => ({ ok: true, hold: PLACED }) } as Response;
+      }
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        holdReads += 1;
+        if (holdReads <= failures) return { ok: false, status: 503, json: async () => ({}) } as Response;
+        return { ok: true, json: async () => ({ ok: true, holds: then }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+    return { posted, holdReads: () => holdReads };
+  }
+
+  test('after a successful re-read that finds no hold, the place control is enabled again and works', async () => {
+    const harness = mockRecheckFetch(1, []);
+
+    render(<SportsMedicinePage />);
+    await screen.findByText(UNREAD);
+    expectPlaceDisabledWithReason();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+
+    await waitFor(() => expect(screen.queryByText(UNREAD)).toBeNull());
+    expect(harness.holdReads()).toBe(2);
+    const place = screen.getByRole('button', { name: 'Place a training hold' }) as HTMLButtonElement;
+    expect(place.disabled).toBe(false);
+    expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+
+    fireEvent.click(place);
+    expect(await screen.findByLabelText(/What this athlete reads/)).toBeTruthy();
+  });
+
+  test('after a successful re-read that finds a hold, the row shows the hold', async () => {
+    mockRecheckFetch(1, [HOLD]);
+
+    render(<SportsMedicinePage />);
+    await screen.findByText(UNREAD);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+
+    await screen.findByText(/Active Training Hold — sparring/);
+    expect(screen.queryByText(UNREAD)).toBeNull();
+  });
+
+  test('a re-read that fails again leaves the hold unknown and the place control disabled', async () => {
+    const harness = mockRecheckFetch(2, []);
+
+    render(<SportsMedicinePage />);
+    await screen.findByText(UNREAD);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+
+    await waitFor(() => expect(harness.holdReads()).toBe(2));
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Check again' }) as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect(within(holdRow()).getByText(UNREAD)).toBeTruthy();
+    expectPlaceDisabledWithReason();
+    expect(harness.posted).toHaveLength(0);
+  });
+});
+
+/*
+ * After a write, the two directions are not symmetric, and each is pinned.
+ */
+describe('what the board says when the re-read after a write does not agree', () => {
+  const UNREAD = /Training hold could not be read/;
+
+  test('a hold the server just confirmed, then a re-read that says there is none: unknown, not "no hold"', async () => {
+    // One of the two is stale. Believing the read shows a held child as free.
+    mockWriteFetch({ holdsBefore: [], holdsAfter: [] });
+
+    render(<SportsMedicinePage />);
+    await openPlaceForm();
+    fireEvent.change(screen.getByLabelText(/What this athlete reads/), { target: { value: PLACED.athlete_explanation } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+
+    expect(await screen.findByText(UNREAD)).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Place a training hold' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('a hold the server just confirmed, then a re-read that fails: the confirmed hold is shown', async () => {
     let holdReads = 0;
     global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -641,20 +781,48 @@ describe('a hold nobody could read never reads as "no hold"', () => {
       }
       if (url.includes('/training-holds')) {
         holdReads += 1;
-        if (holdReads === 1) return { ok: false, status: 503, json: async () => ({}) } as Response;
-        return { ok: true, json: async () => ({ ok: true, holds: [PLACED] }) } as Response;
+        if (holdReads === 1) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+        return Promise.reject(new Error('Network request failed'));
       }
       return { ok: true, json: async () => ({ items: [] }) } as Response;
     }) as unknown as typeof fetch;
 
     render(<SportsMedicinePage />);
-    await screen.findByText(UNREAD);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Place a training hold' }));
-    fireEvent.change(await screen.findByLabelText(/What this athlete reads/), { target: { value: PLACED.athlete_explanation } });
+    await openPlaceForm();
+    fireEvent.change(screen.getByLabelText(/What this athlete reads/), { target: { value: PLACED.athlete_explanation } });
     fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
 
     await screen.findByText(/Active Training Hold — contact only/);
     expect(screen.queryByText(UNREAD)).toBeNull();
+  });
+
+  test('a lift the server confirmed, then a re-read that fails: no hold, and the place control is live', async () => {
+    // One active hold per athlete, and the server has just said this one is
+    // lifted: "no hold" is the committed outcome, not a guess.
+    let holdReads = 0;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        return { ok: true, json: async () => ({ ok: true, hold: { ...HOLD, status: 'lifted' } }) } as Response;
+      }
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        holdReads += 1;
+        if (holdReads === 1) return { ok: true, json: async () => ({ ok: true, holds: [HOLD] }) } as Response;
+        return { ok: false, status: 503, json: async () => ({}) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<SportsMedicinePage />);
+    await screen.findByText(/Active Training Hold — sparring/);
+    fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+
+    await waitFor(() => expect(screen.queryByText(/Active Training Hold/)).toBeNull());
+    expect(screen.queryByText(UNREAD)).toBeNull();
+    expect((screen.getByRole('button', { name: 'Place a training hold' }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

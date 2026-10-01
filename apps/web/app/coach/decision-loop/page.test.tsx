@@ -643,4 +643,132 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     expect(within(medicalSection()).getByText('cleared')).toBeTruthy();
     expect(screen.queryByText(/could not be read/i)).toBeNull();
   });
+
+  async function settle() {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+  }
+
+  function heldResponse() {
+    let release: ((response: Response) => void) | undefined;
+    const promise = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    return { promise, release: (response: Response) => release?.(response) };
+  }
+
+  test('a write for the previous athlete that is refused late does not print their medical status under the new one', async () => {
+    // The refusal text is the server's, and it quotes the athlete's status.
+    const held = heldResponse();
+    installSwitchFetch({ post: () => held.promise });
+    await openAthleteA();
+
+    fireEvent.change(screen.getByLabelText('Decision text'), { target: { value: 'Athlete A: two rounds of sparring.' } });
+    const decisionSection = screen.getByRole('heading', { name: 'Decisions' }).closest('section') as HTMLElement;
+    fireEvent.change(within(decisionSection).getByLabelText('Expected outcome'), { target: { value: 'No symptoms.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Record Decision' }));
+
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+
+    held.release(
+      jsonResponse({ error: "Blocked: this athlete's medical administrative status is 'restricted', not 'cleared'." }, false),
+    );
+    await settle();
+
+    expect(screen.queryByText(/Blocked/)).toBeNull();
+    expect(screen.queryByText(/restricted/)).toBeNull();
+    expect(screen.getByText('No medical administrative status recorded yet.')).toBeTruthy();
+  });
+
+  test('the same refusal IS shown when the coach is still on that athlete', async () => {
+    // The other direction: the guard must not swallow a refusal the coach
+    // needs to read.
+    installSwitchFetch({
+      post: () => jsonResponse({ error: "Blocked: this athlete's medical administrative status is 'restricted', not 'cleared'." }, false),
+    });
+    await openAthleteA();
+
+    fireEvent.change(screen.getByLabelText('Decision text'), { target: { value: 'Athlete A: two rounds of sparring.' } });
+    const decisionSection = screen.getByRole('heading', { name: 'Decisions' }).closest('section') as HTMLElement;
+    fireEvent.change(within(decisionSection).getByLabelText('Expected outcome'), { target: { value: 'No symptoms.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Record Decision' }));
+
+    expect(await screen.findByText(/Blocked/)).toBeTruthy();
+  });
+
+  test('an incident filed for the previous athlete that lands late is not confirmed under the new one', async () => {
+    const held = heldResponse();
+    installSwitchFetch({ post: () => held.promise });
+    await openAthleteA();
+
+    fireEvent.change(screen.getByLabelText('What happened'), { target: { value: 'Athlete A was struck after the bell.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+
+    held.release(jsonResponse({ ok: true, escalation_id: 'esc-1' }));
+    await settle();
+
+    expect(screen.queryByText('Incident filed -- it is now in the escalation queue.')).toBeNull();
+    // The button is not left stuck on "Filing…".
+    expect(screen.getByRole('button', { name: 'File Incident Report' })).not.toBeDisabled();
+  });
+
+  test('a decision selected for the previous athlete is not attached to a near-miss for the new one', async () => {
+    const fetchMock = installSwitchFetch();
+    await openAthleteA();
+
+    fireEvent.change(screen.getByLabelText('Related decision (optional)'), { target: { value: 'dec-a' } });
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Athlete B: glove came loose.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === 'POST')).toBe(true);
+    });
+    const call = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === 'POST');
+    const body = JSON.parse(String((call?.[1] as RequestInit).body));
+    expect(body.athleteId).toBe('ath-b');
+    expect(body.decisionId).toBeUndefined();
+  });
+
+  test('a decision selected for evaluation under the previous athlete cannot be evaluated from the new one', async () => {
+    const fetchMock = installSwitchFetch();
+    await openAthleteA();
+
+    fireEvent.change(screen.getByLabelText('Decision'), { target: { value: 'dec-a' } });
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Evaluate Outcome' }));
+    await settle();
+
+    expect(fetchMock.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === 'POST')).toBe(false);
+  });
+
+  test('a slow read for the previous athlete that FAILS late does not wipe the new athlete or show its error', async () => {
+    let failA: (() => void) | undefined;
+    const heldA = new Promise<Response>((_resolve, reject) => {
+      failA = () => reject(new Error('Network request failed for athlete A'));
+    });
+    installSwitchFetch({ readA: () => heldA });
+
+    render(<DecisionLoopReviewPage />);
+    const input = await screen.findByPlaceholderText('athlete-id');
+    fireEvent.change(input, { target: { value: 'ath-a' } });
+    fireEvent.change(input, { target: { value: 'ath-b' } });
+    await screen.findByText('No medical administrative status recorded yet.');
+
+    failA?.();
+    await settle();
+
+    expect(screen.getByText('No medical administrative status recorded yet.')).toBeTruthy();
+    expect(screen.queryByText(/could not be read/i)).toBeNull();
+    expect(screen.queryByText(/Network request failed for athlete A/)).toBeNull();
+  });
 });

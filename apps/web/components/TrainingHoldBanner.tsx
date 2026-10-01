@@ -8,10 +8,17 @@ import RefusalStamp from './RefusalStamp';
 /**
  * The athlete-facing face of a training hold (capability #82).
  *
- * Self-contained like ProfileHeader: fetches its own data, renders nothing
- * when there is no active hold (or when the fetch fails -- an error here
- * must never dress itself up as "you are held"), so mounting it is a single
+ * Self-contained like ProfileHeader: fetches its own data and renders nothing
+ * when a read established there is no active hold, so mounting it is a single
  * insertion into the workspace.
+ *
+ * A read that FAILED is a third state, not "no hold". It must never dress
+ * itself up as "you are held" -- and it used to render nothing at all, which
+ * is exactly what an athlete with no hold sees, so a held child whose check
+ * could not be read saw an ordinary training day. Owner decision, 2026-10-01
+ * (Jason, asked what an athlete sees when the hold check cannot be read:
+ * "Talk to your Coach about todays training"): that one line, and nothing
+ * else -- no stamp, no red, no account of what went wrong.
  *
  * The language contract: this shows ONLY the athlete-safe projection the
  * training-holds route builds -- the explanation written for the athlete,
@@ -43,8 +50,13 @@ const SCOPE_HEADLINE: Record<AthleteFacingHold['scope'], string> = {
   conditioning_only: 'Conditioning is paused for you right now',
 };
 
+const HOLD_UNREAD_LINE = 'Talk to your coach about today’s training.';
+
 export default function TrainingHoldBanner() {
   const [hold, setHold] = useState<AthleteFacingHold | null>(null);
+  // Silence is only a statement once a read has established it: 'loaded'
+  // with no hold is the one state in which rendering nothing means "no hold".
+  const [readState, setReadState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -54,15 +66,36 @@ export default function TrainingHoldBanner() {
           credentials: 'include',
           signal: controller.signal,
         });
-        if (!response.ok) return;
-        const payload = (await response.json()) as { hold?: AthleteFacingHold | null };
+        if (!response.ok) {
+          setReadState('unavailable');
+          return;
+        }
+        const payload = (await response.json()) as { hold?: AthleteFacingHold | null } | null;
+        // The route always answers with a `hold` key, null or the hold. A 200
+        // that does not carry one answered some other question, and is not a
+        // statement that there is no hold.
+        if (!payload || typeof payload !== 'object' || !('hold' in payload)) {
+          setReadState('unavailable');
+          return;
+        }
         if (payload.hold) setHold(payload.hold);
+        setReadState('loaded');
       } catch {
-        // Render nothing on failure: an unreachable API is not a hold.
+        // An unreachable API is not a hold -- and not "no hold" either. The
+        // abort on unmount is neither: nobody is left to tell.
+        if (!controller.signal.aborted) setReadState('unavailable');
       }
     })();
     return () => controller.abort();
   }, []);
+
+  if (readState === 'unavailable') {
+    return (
+      <section data-hold-read="unavailable">
+        <p className="t-body">{HOLD_UNREAD_LINE}</p>
+      </section>
+    );
+  }
 
   if (!hold) return null;
 

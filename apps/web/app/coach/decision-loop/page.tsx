@@ -284,6 +284,13 @@ export default function DecisionLoopReviewPage() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [athleteId, refreshAll, clearAthleteData]);
 
+  /* EVERY HANDLER BELOW answers for the athlete it was submitted under --
+     the `athleteId` its closure captured -- and says nothing once the coach
+     has moved on. A write for athlete A that lands after the switch to B used
+     to print its result under B: a refusal that quotes A's medical status
+     ("this athlete's medical administrative status is 'restricted'"), or
+     "Incident filed" / "Sent to the family" for a child nobody is looking at.
+     The write itself is not undone; only its message has nowhere true to go. */
   async function handleSetMedicalStatus(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!athleteId) return;
@@ -299,9 +306,11 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to set medical status.');
+      if (athleteId !== selectedAthleteRef.current) return;
       setMedicalSourceRef('');
       await refreshAll(athleteId);
     } catch (error) {
+      if (athleteId !== selectedAthleteRef.current) return;
       setErrorMessage(error instanceof Error ? error.message : 'Failed to set medical status.');
     }
   }
@@ -315,8 +324,10 @@ export default function DecisionLoopReviewPage() {
         body: JSON.stringify({ athleteId, recommendationId, decision }),
       });
       await readJsonOrThrow(response, 'Failed to record decision on recommendation.');
+      if (athleteId !== selectedAthleteRef.current) return;
       await refreshAll(athleteId);
     } catch (error) {
+      if (athleteId !== selectedAthleteRef.current) return;
       setErrorMessage(error instanceof Error ? error.message : 'Failed to record decision on recommendation.');
     }
   }
@@ -344,11 +355,13 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to record decision.');
+      if (athleteId !== selectedAthleteRef.current) return;
       setDecisionText('');
       setDecisionExpectedOutcome('');
       setDecisionRecommendationId('');
       await refreshAll(athleteId);
     } catch (error) {
+      if (athleteId !== selectedAthleteRef.current) return;
       setErrorMessage(error instanceof Error ? error.message : 'Failed to record decision.');
     }
   }
@@ -369,11 +382,13 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to flag near-miss.');
+      if (athleteId !== selectedAthleteRef.current) return;
       setNearMissDescription('');
       setNearMissDecisionId('');
       setNearMissSeverity('low');
       await refreshAll(athleteId);
     } catch (error) {
+      if (athleteId !== selectedAthleteRef.current) return;
       setErrorMessage(error instanceof Error ? error.message : 'Failed to flag near-miss.');
     }
   }
@@ -401,11 +416,13 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to file incident report.');
+      if (athleteId !== selectedAthleteRef.current) return;
       setIncidentDescription('');
       setIncidentSeverity('high');
       setIncidentOccurredAt('');
       setIncidentFiledMessage('Incident filed -- it is now in the escalation queue.');
     } catch (error) {
+      if (athleteId !== selectedAthleteRef.current) return;
       setErrorMessage(error instanceof Error ? error.message : 'Failed to file incident report.');
     } finally {
       setIncidentSubmitting(false);
@@ -438,9 +455,11 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to log the note.');
+      if (athleteId !== selectedAthleteRef.current) return;
       setBehaviorNoteText('');
       setBehaviorNoteMessage('Note logged.');
     } catch (error) {
+      if (athleteId !== selectedAthleteRef.current) return;
       setErrorMessage(error instanceof Error ? error.message : 'Failed to log the note.');
     } finally {
       setBehaviorNoteSubmitting(false);
@@ -472,9 +491,11 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to send the message.');
+      if (athleteId !== selectedAthleteRef.current) return;
       setMessageHomeText('');
       setMessageHomeMessage('Sent to the family.');
     } catch (error) {
+      if (athleteId !== selectedAthleteRef.current) return;
       setErrorMessage(error instanceof Error ? error.message : 'Failed to send the message.');
     } finally {
       setMessageHomeSubmitting(false);
@@ -487,8 +508,10 @@ export default function DecisionLoopReviewPage() {
         credentials: 'include',
       });
       const payload = await readJsonOrThrow<{ outcomes: DecisionOutcomeRow[] }>(response, 'Failed to load decision outcomes.');
+      if (athleteId !== selectedAthleteRef.current) return;
       setOutcomesByDecision((prev) => ({ ...prev, [decisionId]: payload.outcomes ?? [] }));
     } catch (error) {
+      if (athleteId !== selectedAthleteRef.current) return;
       setErrorMessage(error instanceof Error ? error.message : 'Failed to load decision outcomes.');
     }
   }
@@ -514,10 +537,12 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to evaluate decision outcome.');
+      if (athleteId !== selectedAthleteRef.current) return;
       setOutcomeObservationIds('');
       setOutcomeNotes('');
       await handleLoadOutcomes(outcomeDecisionId);
     } catch (error) {
+      if (athleteId !== selectedAthleteRef.current) return;
       setErrorMessage(error instanceof Error ? error.message : 'Failed to evaluate decision outcome.');
     }
   }
