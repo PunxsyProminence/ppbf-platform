@@ -121,6 +121,50 @@ function StatusBadge({ status }: { readonly status: string }) {
   );
 }
 
+/* Everything a coach can type or choose on this page before pressing a button.
+   One object, because it has one owner: the athlete it was written for. */
+interface Drafts {
+  medicalStatusDraft: MedicalStatusValue;
+  medicalSourceRef: string;
+  decisionText: string;
+  decisionExpectedOutcome: string;
+  decisionRecommendationId: string;
+  nearMissDescription: string;
+  nearMissSeverity: NearMissSeverity;
+  nearMissDecisionId: string;
+  incidentDescription: string;
+  incidentSeverity: IncidentSeverity;
+  incidentOccurredAt: string;
+  behaviorNoteText: string;
+  messageHomeText: string;
+  outcomeDecisionId: string;
+  outcomeObservationIds: string;
+  outcomeMatchState: MatchState;
+  outcomeNotes: string;
+}
+
+const EMPTY_DRAFTS: Drafts = {
+  medicalStatusDraft: 'pending',
+  medicalSourceRef: '',
+  decisionText: '',
+  decisionExpectedOutcome: '',
+  decisionRecommendationId: '',
+  nearMissDescription: '',
+  nearMissSeverity: 'low',
+  nearMissDecisionId: '',
+  incidentDescription: '',
+  incidentSeverity: 'high',
+  incidentOccurredAt: '',
+  behaviorNoteText: '',
+  messageHomeText: '',
+  outcomeDecisionId: '',
+  outcomeObservationIds: '',
+  outcomeMatchState: 'match',
+  outcomeNotes: '',
+};
+
+type SubmitKind = 'incident' | 'behaviorNote' | 'messageHome';
+
 const PREVIOUS_ATHLETE_WRITE_FAILED =
   'Something you submitted for the athlete you were on before did not go through. Go back to them and check.';
 
@@ -149,35 +193,83 @@ export default function DecisionLoopReviewPage() {
   const [nearMisses, setNearMisses] = useState<NearMissRow[]>([]);
   const [outcomesByDecision, setOutcomesByDecision] = useState<Record<string, DecisionOutcomeRow[]>>({});
 
-  const [medicalStatusDraft, setMedicalStatusDraft] = useState<MedicalStatusValue>('pending');
-  const [medicalSourceRef, setMedicalSourceRef] = useState('');
+  /* DRAFTS BELONG TO AN ATHLETE. Every box and selector below used to be its
+     own piece of page state, and the page sends whatever is in them with the
+     athlete selected AT THE MOMENT THE BUTTON IS PRESSED. So a Message Home
+     written about athlete A, then a switch to B, then one click, went to B's
+     family; "Cleared" plus A's physician reference could be set on B; A's
+     incident could be filed against B.
 
-  const [decisionText, setDecisionText] = useState('');
-  const [decisionExpectedOutcome, setDecisionExpectedOutcome] = useState('');
-  const [decisionRecommendationId, setDecisionRecommendationId] = useState('');
+     The drafts now carry the athlete they were written for. A draft is shown,
+     and can be submitted, only while its owner is the athlete on screen: for
+     anyone else the forms are their empty defaults, in the same render as
+     the switch -- there is no moment where A's text sits under B, and no
+     request for B can be built from it. Typing under a new athlete starts a
+     fresh set. (The athlete-ID box changes the selection on every keystroke,
+     so "switch" cannot mean a deliberate act: ownership is checked on every
+     render and every submit instead.) */
+  const [ownedDrafts, setOwnedDrafts] = useState<{ owner: string; drafts: Drafts }>({ owner: '', drafts: EMPTY_DRAFTS });
+  const drafts = ownedDrafts.owner === athleteId ? ownedDrafts.drafts : EMPTY_DRAFTS;
+  const {
+    medicalStatusDraft,
+    medicalSourceRef,
+    decisionText,
+    decisionExpectedOutcome,
+    decisionRecommendationId,
+    nearMissDescription,
+    nearMissSeverity,
+    nearMissDecisionId,
+    incidentDescription,
+    incidentSeverity,
+    incidentOccurredAt,
+    behaviorNoteText,
+    messageHomeText,
+    outcomeDecisionId,
+    outcomeObservationIds,
+    outcomeMatchState,
+    outcomeNotes,
+  } = drafts;
 
-  const [nearMissDescription, setNearMissDescription] = useState('');
-  const [nearMissSeverity, setNearMissSeverity] = useState<NearMissSeverity>('low');
-  const [nearMissDecisionId, setNearMissDecisionId] = useState('');
+  function editDraft<K extends keyof Drafts>(key: K, value: Drafts[K]) {
+    setOwnedDrafts((current) => ({
+      owner: athleteId,
+      drafts: { ...(current.owner === athleteId ? current.drafts : EMPTY_DRAFTS), [key]: value },
+    }));
+  }
 
-  const [incidentDescription, setIncidentDescription] = useState('');
-  const [incidentSeverity, setIncidentSeverity] = useState<IncidentSeverity>('high');
-  const [incidentOccurredAt, setIncidentOccurredAt] = useState('');
+  /* After a write lands: empty the fields it sent -- for the athlete it was
+     sent for, and only where the box still holds what was sent. A late answer
+     for athlete A must not wipe what the coach has since typed for B, or
+     typed again for A. */
+  function clearSentDrafts(forAthleteId: string, sent: Partial<Drafts>) {
+    setOwnedDrafts((current) => {
+      if (current.owner !== forAthleteId) return current;
+      const next: Drafts = { ...current.drafts };
+      for (const key of Object.keys(sent) as Array<keyof Drafts>) {
+        if (next[key] === sent[key]) Object.assign(next, { [key]: EMPTY_DRAFTS[key] });
+      }
+      return { owner: current.owner, drafts: next };
+    });
+  }
+
   const [incidentFiledMessage, setIncidentFiledMessage] = useState('');
-  const [incidentSubmitting, setIncidentSubmitting] = useState(false);
-
-  const [behaviorNoteText, setBehaviorNoteText] = useState('');
   const [behaviorNoteMessage, setBehaviorNoteMessage] = useState('');
-  const [behaviorNoteSubmitting, setBehaviorNoteSubmitting] = useState(false);
-
-  const [messageHomeText, setMessageHomeText] = useState('');
   const [messageHomeMessage, setMessageHomeMessage] = useState('');
-  const [messageHomeSubmitting, setMessageHomeSubmitting] = useState(false);
 
-  const [outcomeDecisionId, setOutcomeDecisionId] = useState('');
-  const [outcomeObservationIds, setOutcomeObservationIds] = useState('');
-  const [outcomeMatchState, setOutcomeMatchState] = useState<MatchState>('match');
-  const [outcomeNotes, setOutcomeNotes] = useState('');
+  /* In flight, per athlete. One flag for the page left athlete B's button
+     reading "Filing…" and locked while a report for A was still out. */
+  const [submitting, setSubmitting] = useState<ReadonlySet<string>>(new Set());
+  function markSubmitting(kind: SubmitKind, forAthleteId: string, on: boolean) {
+    setSubmitting((current) => {
+      const next = new Set(current);
+      if (on) next.add(`${kind}:${forAthleteId}`);
+      else next.delete(`${kind}:${forAthleteId}`);
+      return next;
+    });
+  }
+  const incidentSubmitting = submitting.has(`incident:${athleteId}`);
+  const behaviorNoteSubmitting = submitting.has(`behaviorNote:${athleteId}`);
+  const messageHomeSubmitting = submitting.has(`messageHome:${athleteId}`);
 
   useEffect(() => {
     void (async () => {
@@ -270,16 +362,13 @@ export default function DecisionLoopReviewPage() {
        read starts, not when it lands. They used to stay until a successful
        read replaced them, so a FAILED switch to athlete B left athlete A's
        medical administrative status on screen under B -- and the render
-       checks for a status before it checks for a failure. The selections
-       that carry A's recommendation and decision ids go with them; a decision
-       recorded for B must not link A's recommendation. */
+       checks for a status before it checks for a failure. (The form
+       selections that carry A's recommendation and decision ids are drafts,
+       and drafts are owned by their athlete: see ownedDrafts.) */
     selectedAthleteRef.current = athleteId;
     readSeqRef.current += 1;
     /* eslint-disable react-hooks/set-state-in-effect */
     clearAthleteData();
-    setDecisionRecommendationId('');
-    setNearMissDecisionId('');
-    setOutcomeDecisionId('');
     setLoadState('loading');
     setLoading(false);
     setErrorMessage('');
@@ -323,7 +412,7 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to set medical status.');
-      setMedicalSourceRef('');
+      clearSentDrafts(athleteId, { medicalSourceRef });
       if (athleteId !== selectedAthleteRef.current) return;
       await refreshAll(athleteId);
     } catch (error) {
@@ -370,9 +459,7 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to record decision.');
-      setDecisionText('');
-      setDecisionExpectedOutcome('');
-      setDecisionRecommendationId('');
+      clearSentDrafts(athleteId, { decisionText, decisionExpectedOutcome, decisionRecommendationId });
       if (athleteId !== selectedAthleteRef.current) return;
       await refreshAll(athleteId);
     } catch (error) {
@@ -396,9 +483,7 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to flag near-miss.');
-      setNearMissDescription('');
-      setNearMissDecisionId('');
-      setNearMissSeverity('low');
+      clearSentDrafts(athleteId, { nearMissDescription, nearMissDecisionId, nearMissSeverity });
       if (athleteId !== selectedAthleteRef.current) return;
       await refreshAll(athleteId);
     } catch (error) {
@@ -415,7 +500,7 @@ export default function DecisionLoopReviewPage() {
     event.preventDefault();
     if (!athleteId || !incidentDescription.trim() || incidentSubmitting) return;
     setIncidentFiledMessage('');
-    setIncidentSubmitting(true);
+    markSubmitting('incident', athleteId, true);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/incidents`, {
         method: 'POST',
@@ -429,15 +514,13 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to file incident report.');
-      setIncidentDescription('');
-      setIncidentSeverity('high');
-      setIncidentOccurredAt('');
+      clearSentDrafts(athleteId, { incidentDescription, incidentSeverity, incidentOccurredAt });
       if (athleteId !== selectedAthleteRef.current) return;
       setIncidentFiledMessage('Incident filed -- it is now in the escalation queue.');
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to file incident report.');
     } finally {
-      setIncidentSubmitting(false);
+      markSubmitting('incident', athleteId, false);
     }
   }
 
@@ -454,7 +537,7 @@ export default function DecisionLoopReviewPage() {
     event.preventDefault();
     if (!athleteId || !behaviorNoteText.trim() || behaviorNoteSubmitting) return;
     setBehaviorNoteMessage('');
-    setBehaviorNoteSubmitting(true);
+    markSubmitting('behaviorNote', athleteId, true);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/intake/domain-upsert`, {
         method: 'POST',
@@ -467,13 +550,13 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to log the note.');
-      setBehaviorNoteText('');
+      clearSentDrafts(athleteId, { behaviorNoteText });
       if (athleteId !== selectedAthleteRef.current) return;
       setBehaviorNoteMessage('Note logged.');
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to log the note.');
     } finally {
-      setBehaviorNoteSubmitting(false);
+      markSubmitting('behaviorNote', athleteId, false);
     }
   }
 
@@ -489,7 +572,7 @@ export default function DecisionLoopReviewPage() {
     event.preventDefault();
     if (!athleteId || !messageHomeText.trim() || messageHomeSubmitting) return;
     setMessageHomeMessage('');
-    setMessageHomeSubmitting(true);
+    markSubmitting('messageHome', athleteId, true);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/intake/domain-upsert`, {
         method: 'POST',
@@ -502,13 +585,13 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to send the message.');
-      setMessageHomeText('');
+      clearSentDrafts(athleteId, { messageHomeText });
       if (athleteId !== selectedAthleteRef.current) return;
       setMessageHomeMessage('Sent to the family.');
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to send the message.');
     } finally {
-      setMessageHomeSubmitting(false);
+      markSubmitting('messageHome', athleteId, false);
     }
   }
 
@@ -547,8 +630,7 @@ export default function DecisionLoopReviewPage() {
         }),
       });
       await readJsonOrThrow(response, 'Failed to evaluate decision outcome.');
-      setOutcomeObservationIds('');
-      setOutcomeNotes('');
+      clearSentDrafts(athleteId, { outcomeObservationIds, outcomeNotes });
       if (athleteId !== selectedAthleteRef.current) return;
       await handleLoadOutcomes(outcomeDecisionId);
     } catch (error) {
@@ -651,7 +733,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">New status</span>
                     <select
                       value={medicalStatusDraft}
-                      onChange={(event) => setMedicalStatusDraft(event.target.value as MedicalStatusValue)}
+                      onChange={(event) => editDraft('medicalStatusDraft', event.target.value as MedicalStatusValue)}
                       className="select"
                     >
                       <option value="pending">Pending</option>
@@ -664,7 +746,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Source reference (optional)</span>
                     <input
                       value={medicalSourceRef}
-                      onChange={(event) => setMedicalSourceRef(event.target.value)}
+                      onChange={(event) => editDraft('medicalSourceRef', event.target.value)}
                       placeholder="e.g. physician note, incident id"
                       className="input"
                     />
@@ -766,7 +848,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Link to recommendation (optional)</span>
                     <select
                       value={decisionRecommendationId}
-                      onChange={(event) => setDecisionRecommendationId(event.target.value)}
+                      onChange={(event) => editDraft('decisionRecommendationId', event.target.value)}
                       className="select"
                     >
                       <option value="">None — log directly</option>
@@ -781,7 +863,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Decision text</span>
                     <textarea
                       value={decisionText}
-                      onChange={(event) => setDecisionText(event.target.value)}
+                      onChange={(event) => editDraft('decisionText', event.target.value)}
                       className="textarea min-h-[72px]"
                     />
                   </label>
@@ -789,7 +871,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Expected outcome</span>
                     <textarea
                       value={decisionExpectedOutcome}
-                      onChange={(event) => setDecisionExpectedOutcome(event.target.value)}
+                      onChange={(event) => editDraft('decisionExpectedOutcome', event.target.value)}
                       className="textarea min-h-[56px]"
                     />
                   </label>
@@ -835,7 +917,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Description</span>
                     <textarea
                       value={nearMissDescription}
-                      onChange={(event) => setNearMissDescription(event.target.value)}
+                      onChange={(event) => editDraft('nearMissDescription', event.target.value)}
                       className="textarea min-h-[56px]"
                     />
                   </label>
@@ -843,7 +925,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Severity</span>
                     <select
                       value={nearMissSeverity}
-                      onChange={(event) => setNearMissSeverity(event.target.value as NearMissSeverity)}
+                      onChange={(event) => editDraft('nearMissSeverity', event.target.value as NearMissSeverity)}
                       className="select"
                     >
                       <option value="low">Low</option>
@@ -856,7 +938,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Related decision (optional)</span>
                     <select
                       value={nearMissDecisionId}
-                      onChange={(event) => setNearMissDecisionId(event.target.value)}
+                      onChange={(event) => editDraft('nearMissDecisionId', event.target.value)}
                       className="select"
                     >
                       <option value="">None</option>
@@ -890,7 +972,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">What happened</span>
                     <textarea
                       value={incidentDescription}
-                      onChange={(event) => setIncidentDescription(event.target.value)}
+                      onChange={(event) => editDraft('incidentDescription', event.target.value)}
                       className="textarea min-h-[56px]"
                     />
                   </label>
@@ -898,7 +980,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Severity</span>
                     <select
                       value={incidentSeverity}
-                      onChange={(event) => setIncidentSeverity(event.target.value as IncidentSeverity)}
+                      onChange={(event) => editDraft('incidentSeverity', event.target.value as IncidentSeverity)}
                       className="select"
                     >
                       <option value="high">High</option>
@@ -910,7 +992,7 @@ export default function DecisionLoopReviewPage() {
                     <input
                       type="text"
                       value={incidentOccurredAt}
-                      onChange={(event) => setIncidentOccurredAt(event.target.value)}
+                      onChange={(event) => editDraft('incidentOccurredAt', event.target.value)}
                       placeholder="e.g. 2026-08-05"
                       className="input"
                     />
@@ -938,7 +1020,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Note</span>
                     <textarea
                       value={behaviorNoteText}
-                      onChange={(event) => setBehaviorNoteText(event.target.value)}
+                      onChange={(event) => editDraft('behaviorNoteText', event.target.value)}
                       className="textarea min-h-[56px]"
                     />
                   </label>
@@ -965,7 +1047,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Message</span>
                     <textarea
                       value={messageHomeText}
-                      onChange={(event) => setMessageHomeText(event.target.value)}
+                      onChange={(event) => editDraft('messageHomeText', event.target.value)}
                       className="textarea min-h-[56px]"
                     />
                   </label>
@@ -986,7 +1068,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Decision</span>
                     <select
                       value={outcomeDecisionId}
-                      onChange={(event) => setOutcomeDecisionId(event.target.value)}
+                      onChange={(event) => editDraft('outcomeDecisionId', event.target.value)}
                       className="select"
                     >
                       <option value="">Select a decision…</option>
@@ -1001,7 +1083,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Match state</span>
                     <select
                       value={outcomeMatchState}
-                      onChange={(event) => setOutcomeMatchState(event.target.value as MatchState)}
+                      onChange={(event) => editDraft('outcomeMatchState', event.target.value as MatchState)}
                       className="select"
                     >
                       <option value="match">Match</option>
@@ -1014,7 +1096,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Observation IDs (comma-separated)</span>
                     <input
                       value={outcomeObservationIds}
-                      onChange={(event) => setOutcomeObservationIds(event.target.value)}
+                      onChange={(event) => editDraft('outcomeObservationIds', event.target.value)}
                       placeholder="obs-1, obs-2"
                       className="input"
                     />
@@ -1023,7 +1105,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Notes</span>
                     <textarea
                       value={outcomeNotes}
-                      onChange={(event) => setOutcomeNotes(event.target.value)}
+                      onChange={(event) => editDraft('outcomeNotes', event.target.value)}
                       className="textarea min-h-[56px]"
                     />
                   </label>

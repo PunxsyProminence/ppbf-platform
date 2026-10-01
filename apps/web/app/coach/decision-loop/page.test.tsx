@@ -914,4 +914,316 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
 
     await waitFor(() => expect(screen.queryByText(/SERVER-TEXT-ABOUT-ATHLETE-A/)).toBeNull());
   });
+
+  /* -------------------------------------------------------------------------
+     DRAFTS BELONG TO THE ATHLETE THEY WERE WRITTEN FOR.
+
+     Every form on this page sends whatever is in its boxes with the athlete
+     selected when the button is pressed. Before this, nothing emptied a box on
+     a switch: a Message Home written about athlete A went to athlete B's
+     family with one click; "Cleared" plus A's physician reference could be
+     set on B; A's incident could be filed against B. One row per form.
+     ----------------------------------------------------------------------- */
+
+  function field<T extends HTMLElement>(label: string, sectionHeading?: string): T {
+    if (!sectionHeading) return screen.getByLabelText(label) as T;
+    const section = screen.getByRole('heading', { name: sectionHeading }).closest('section') as HTMLElement;
+    return within(section).getByLabelText(label) as T;
+  }
+
+  function type(label: string, value: string, sectionHeading?: string) {
+    fireEvent.change(field(label, sectionHeading), { target: { value } });
+  }
+
+  function posts(fetchMock: jest.Mock): Array<{ url: string; body: Record<string, unknown> }> {
+    return fetchMock.mock.calls
+      .filter((c) => (c[1] as RequestInit | undefined)?.method === 'POST')
+      .map((c) => ({ url: String(c[0]), body: JSON.parse(String((c[1] as RequestInit).body)) as Record<string, unknown> }));
+  }
+
+  const A_TEXT = 'WRITTEN-ABOUT-ATHLETE-A';
+
+  /**
+   * `fill` writes a draft about athlete A without submitting. `values` reads
+   * every box of that form back. `press` presses the form's button.
+   * `defaults` is what an untouched form holds.
+   */
+  const FORMS: Array<{
+    name: string;
+    whatCouldGoWrong: string;
+    fill: () => void;
+    values: () => string[];
+    defaults: string[];
+    press: () => void;
+  }> = [
+    {
+      name: 'Message Home',
+      whatCouldGoWrong: 'a message about A is sent to B’s family',
+      fill: () => type('Message', A_TEXT),
+      values: () => [field<HTMLTextAreaElement>('Message').value],
+      defaults: [''],
+      press: () => fireEvent.click(screen.getByRole('button', { name: 'Send to Family' })),
+    },
+    {
+      name: 'Behavior & Habit Note',
+      whatCouldGoWrong: 'a note about A is logged on B’s record',
+      fill: () => type('Note', A_TEXT),
+      values: () => [field<HTMLTextAreaElement>('Note').value],
+      defaults: [''],
+      press: () => fireEvent.click(screen.getByRole('button', { name: 'Log Note' })),
+    },
+    {
+      name: 'Report Incident',
+      whatCouldGoWrong: 'A’s incident is filed against B, into the escalation queue',
+      fill: () => {
+        type('What happened', A_TEXT);
+        type('Severity', 'critical', 'Report Incident');
+        type('When it happened (optional, if not today)', '2026-08-05');
+      },
+      values: () => [
+        field<HTMLTextAreaElement>('What happened').value,
+        field<HTMLSelectElement>('Severity', 'Report Incident').value,
+        field<HTMLInputElement>('When it happened (optional, if not today)').value,
+      ],
+      defaults: ['', 'high', ''],
+      press: () => fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' })),
+    },
+    {
+      name: 'Record Decision',
+      whatCouldGoWrong: 'a decision about A is recorded for B',
+      fill: () => {
+        type('Decision text', A_TEXT);
+        type('Expected outcome', A_TEXT, 'Decisions');
+        type('Link to recommendation (optional)', 'rec-a');
+      },
+      values: () => [
+        field<HTMLTextAreaElement>('Decision text').value,
+        field<HTMLTextAreaElement>('Expected outcome', 'Decisions').value,
+        field<HTMLSelectElement>('Link to recommendation (optional)').value,
+      ],
+      defaults: ['', '', ''],
+      press: () => fireEvent.click(screen.getByRole('button', { name: 'Record Decision' })),
+    },
+    {
+      name: 'Flag Near-Miss',
+      whatCouldGoWrong: 'A’s near-miss is flagged on B',
+      fill: () => {
+        type('Description', A_TEXT);
+        type('Severity', 'critical', 'Near-Misses');
+        type('Related decision (optional)', 'dec-a');
+      },
+      values: () => [
+        field<HTMLTextAreaElement>('Description').value,
+        field<HTMLSelectElement>('Severity', 'Near-Misses').value,
+        field<HTMLSelectElement>('Related decision (optional)').value,
+      ],
+      defaults: ['', 'low', ''],
+      press: () => fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' })),
+    },
+    {
+      name: 'Set Status (medical)',
+      whatCouldGoWrong: '"Cleared" and A’s physician reference are set on B',
+      fill: () => {
+        type('New status', 'cleared');
+        type('Source reference (optional)', A_TEXT);
+      },
+      values: () => [
+        field<HTMLSelectElement>('New status').value,
+        field<HTMLInputElement>('Source reference (optional)').value,
+      ],
+      defaults: ['pending', ''],
+      press: () => fireEvent.click(screen.getByRole('button', { name: 'Set Status' })),
+    },
+    {
+      name: 'Evaluate a Decision Outcome',
+      whatCouldGoWrong: 'A’s observation ids and notes are attached to a decision chosen under B',
+      fill: () => {
+        type('Decision', 'dec-a');
+        type('Match state', 'miss');
+        type('Observation IDs (comma-separated)', 'obs-of-athlete-a');
+        type('Notes', A_TEXT);
+      },
+      values: () => [
+        field<HTMLSelectElement>('Decision').value,
+        field<HTMLSelectElement>('Match state').value,
+        field<HTMLInputElement>('Observation IDs (comma-separated)').value,
+        field<HTMLTextAreaElement>('Notes').value,
+      ],
+      defaults: ['', 'match', '', ''],
+      press: () => fireEvent.click(screen.getByRole('button', { name: 'Evaluate Outcome' })),
+    },
+  ];
+
+  /** Nothing A wrote may be in any request made while B is selected. */
+  function expectNoRequestCarriesAthleteA(fetchMock: jest.Mock) {
+    for (const post of posts(fetchMock)) {
+      const sent = JSON.stringify(post.body);
+      expect(sent).not.toContain(A_TEXT);
+      expect(sent).not.toContain('obs-of-athlete-a');
+      expect(sent).not.toContain('rec-a');
+      expect(sent).not.toContain('dec-a');
+      expect(sent).not.toContain('cleared');
+      expect(sent).not.toContain('critical');
+      expect(sent).not.toContain('2026-08-05');
+    }
+  }
+
+  describe.each(FORMS)('$name: so that never $whatCouldGoWrong', ({ fill, values, defaults, press }) => {
+    test('after a switch that succeeds, the form is empty and pressing its button sends nothing of the previous athlete', async () => {
+      const fetchMock = installSwitchFetch();
+      await openAthleteA();
+      fill();
+      expect(values()).not.toEqual(defaults);
+
+      switchToB();
+      await screen.findByText('No medical administrative status recorded yet.');
+
+      expect(values()).toEqual(defaults);
+      press();
+      await settle();
+      expectNoRequestCarriesAthleteA(fetchMock);
+    });
+
+    test('after a switch that FAILS, the same', async () => {
+      const fetchMock = installSwitchFetch({ readB: () => jsonResponse({ error: 'Service unavailable' }, false) });
+      await openAthleteA();
+      fill();
+
+      switchToB();
+      await screen.findByText(/medical administrative status could not be read/i);
+
+      expect(values()).toEqual(defaults);
+      press();
+      await settle();
+      expectNoRequestCarriesAthleteA(fetchMock);
+    });
+
+    test('while the new athlete is still loading, the same -- there is no window in which the old draft can be sent', async () => {
+      const fetchMock = installSwitchFetch({ readB: () => new Promise<Response>(() => {}) });
+      await openAthleteA();
+      fill();
+
+      switchToB();
+      // No waiting for anything: the very next thing the coach does is press.
+      expect(values()).toEqual(defaults);
+      press();
+      await settle();
+      expectNoRequestCarriesAthleteA(fetchMock);
+    });
+
+    test('the draft is still there for the athlete it was written for', async () => {
+      // The ID box changes the selection on every keystroke, and a coach who
+      // picks the wrong name and picks back has not thrown their writing away.
+      installSwitchFetch();
+      await openAthleteA();
+      fill();
+      const written = values();
+
+      switchToB();
+      await screen.findByText('No medical administrative status recorded yet.');
+      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+      await screen.findByText(/ref-for-athlete-a/);
+
+      expect(values()).toEqual(written);
+    });
+  });
+
+  test('a message typed for A and sent from A still goes to A, with A’s text', async () => {
+    // The other direction: ownership must not stop the ordinary send.
+    const fetchMock = installSwitchFetch();
+    await openAthleteA();
+
+    type('Message', A_TEXT);
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+
+    await screen.findByText('Sent to the family.');
+    expect(posts(fetchMock)).toEqual([
+      {
+        url: expect.stringContaining('/api/pilot/intake/domain-upsert'),
+        body: { entity_type: 'coach_note', athlete_id: 'ath-a', payload: { note_type: 'parent_message', note_text: A_TEXT } },
+      },
+    ]);
+  });
+
+  test('typing an id that passes through another valid id does not carry a draft from one to the other', async () => {
+    // "ath-a" is a real athlete and so is "ath-ab": the box selects "ath-a" on
+    // the way to "ath-ab", and back again on a backspace.
+    const fetchMock = installSwitchFetch();
+    render(<DecisionLoopReviewPage />);
+    const idBox = await screen.findByPlaceholderText('athlete-id');
+
+    fireEvent.change(idBox, { target: { value: 'ath-a' } });
+    await screen.findByText('Message Home');
+    type('Message', A_TEXT);
+
+    fireEvent.change(idBox, { target: { value: 'ath-ab' } });
+    expect(field<HTMLTextAreaElement>('Message').value).toBe('');
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    await settle();
+    expect(posts(fetchMock)).toHaveLength(0);
+
+    type('Message', 'written for ath-ab');
+    fireEvent.change(idBox, { target: { value: 'ath-a' } });
+    expect(field<HTMLTextAreaElement>('Message').value).toBe('');
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    await settle();
+    expect(posts(fetchMock)).toHaveLength(0);
+  });
+
+  test('a late success for the previous athlete does not wipe what the coach has typed for the new one', async () => {
+    const held = heldResponse();
+    installSwitchFetch({ post: () => held.promise });
+    await openAthleteA();
+    type('Message', A_TEXT);
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+    type('Message', 'written for B');
+
+    held.release(jsonResponse({ ok: true }));
+    await settle();
+
+    expect(field<HTMLTextAreaElement>('Message').value).toBe('written for B');
+    expect(screen.queryByText('Sent to the family.')).toBeNull();
+  });
+
+  test('a late success clears only what it sent: text retyped for the same athlete since is kept', async () => {
+    const held = heldResponse();
+    installSwitchFetch({ post: () => held.promise });
+    await openAthleteA();
+    type('Note', 'first note');
+    fireEvent.click(screen.getByRole('button', { name: 'Log Note' }));
+    type('Note', 'a second note, typed while the first was still out');
+
+    held.release(jsonResponse({ ok: true }));
+    await screen.findByText('Note logged.');
+
+    expect(field<HTMLTextAreaElement>('Note').value).toBe('a second note, typed while the first was still out');
+  });
+
+  test('a report still out for the previous athlete does not lock the new athlete’s form, and stays locked for its own', async () => {
+    const held = heldResponse();
+    const fetchMock = installSwitchFetch({ post: () => held.promise });
+    await openAthleteA();
+    type('What happened', A_TEXT);
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+    await screen.findByRole('button', { name: 'Filing…' });
+
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+    const forB = screen.getByRole('button', { name: 'File Incident Report' });
+    expect(forB).not.toBeDisabled();
+
+    // Back on A, the one that is out is still out: no second filing.
+    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
+    const forA = await screen.findByRole('button', { name: 'Filing…' });
+    expect(forA).toBeDisabled();
+    fireEvent.click(forA);
+    expect(posts(fetchMock)).toHaveLength(1);
+
+    held.release(jsonResponse({ ok: true, escalation_id: 'esc-1' }));
+    await screen.findByText('Incident filed -- it is now in the escalation queue.');
+    expect(screen.getByRole('button', { name: 'File Incident Report' })).not.toBeDisabled();
+  });
 });
