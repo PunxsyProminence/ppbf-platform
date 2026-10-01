@@ -164,6 +164,210 @@ and should not try to.
 
 ---
 
+## OD-2026-10-01-001 -- Lanes finish and close; closed lanes are archived; the safety fix lanes; parents get a password; a second approver login, timing his; release 2
+
+**Provenance: PRIMARY** where Jason's words were typed in the overwatch thread
+(transcript as in OD-2026-09-30-007); **REPORTED** where a lane relayed them
+(each marked). **Date:** 2026-10-01. Questions were put in official form, then
+in plain English.
+
+### 1. Lanes finish and close; an add-on only if it closes the lane
+
+Jason: *"ok lets get the lanes finished and closed, we will edit the add to
+rule to only inculd if the add on is need to close the lane"*.
+
+This replaces G6 of OD-2026-09-30-003 ("continue it, and continue only with a
+next item in the same area and files"). The rule now, as written the same day
+into the overwatch section of his L2 rule file
+(`~/.claude/rules/ppbf-workspace.md`, outside this repository; read at
+writing): overwatch closes a lane when its scope is complete; a lane takes on
+added work only when that add-on is needed to close its own item (a review
+finding on its PR, a fix its PR depends on); any other next item goes to a new
+lane. "No parking" stands.
+
+Two calls overwatch made under it, told to Jason the same hour and not his
+rulings: add-ons already BUILT when the rule changed were let finish (the L1
+lane's deleted-login refusals, PR #1055; the cleanup lane's PR #1050); add-ons
+not yet started were cancelled and become new lanes (the remaining
+deleted-athlete screens; the calibration stale-view fix).
+
+### 2. Closed lanes are archived
+
+Asked whether overwatch may archive a lane thread once its scope is finished
+(A, yes, standing; B, ask each time), after his *"are you able to archive the
+lanes when thierscope is finished"* and *"can i give you permission based on
+when thier scope is met to archive on your own"*, Jason: *"go with your
+recomendations and archive closed lanes that dont have follow on work"*.
+
+Overwatch archives a lane's thread when the lane is closed and has no follow-on
+work in it: its PR merged or its report delivered, its `node_modules` junctions
+unlinked, the shared install confirmed. It tells him each time. It does not
+archive a lane with an open PR, and not the lanes he drives himself (the visual
+lane, Lane S). Archiving is reversible; nothing is deleted.
+
+### 3. The safety fix lanes start now; the rest wait
+
+Lane 14 (read-only) reported 49 confirmed places where a screen renders
+"nothing here" when the read that fills it FAILED (the #991 class;
+`ACTIVE_WORK.md`'s lead row), grouped into eight fix batches. Fixing them is
+already decided (OD-2026-09-29-002 item 4: live bugs go on the build list).
+Put to Jason: when do the fix lanes start? A, the two safety batches now
+(recommended); B, after the day's lanes close; C, all eight at once. His
+answer, in the same sentence as section 2: *"go with your recomendations"*.
+**A.**
+
+- Lane H: a failed training-hold read must not look like "no hold" (the
+  athlete's hold banner, the coach's sports-medicine board), and a failed
+  athlete switch must not leave the previous child's medical status on the
+  coach's decision screen. One question inside it is his and is not yet
+  answered: what an athlete sees when the hold check could not be read.
+- Lane Q: the admin safety queues and counts (quarantined videos, escalation
+  tiles, the SHADOW intake, feedback-review and flags panels) must not read
+  zero on a failed load.
+
+Batches 3 to 8 are on the build list in `ACTIVE_WORK.md`.
+
+### 4. Parents sign in with a password
+
+Jason, having never seen the parent side signed in: *"do parents not get an
+easier way to sign in with a password"*. Told that parents sign in only by an
+emailed link, and asked whether they should get a second way (A, keep the link
+only; B, an account ID and PIN as athletes have; C, a password), he answered:
+*"yes they will need away to sign in with a password, open a lane to do that,
+the parent open in chrome browser i dont think the magic link will let it open
+in in app browser, the magic link should prompt them to make a password"*.
+
+What it decides: parents get a password sign-in, and the emailed sign-in link
+prompts them to create it. Lane P designs it first; the design goes to the
+architect and the owner questions to him. NOT decided by this entry: whether it
+is parents only or every email-link role, whether the link stays as the way
+back in when a password is forgotten, the password rules, and what an admin
+may do to a parent's password.
+
+### 5. A second approver login for production: yes, and the timing is his
+
+On GitHub's production environment "prevent self-review" is off, and the
+required reviewer is the account the Claude sessions act through (REPORTED by
+Lane 13 from a read of the environment settings, 2026-10-01). Put to Jason: A,
+leave it (his click is the control; a session never approves without his
+instruction for that run); B, turn on "prevent self-review" and approve from a
+second GitHub account that only he uses. He asked *"what do you recommend"*;
+overwatch recommended B, set up before the one-approval release workflow's
+first real run. Jason: *"B but i decide if we need to do it or keep pushing
+forward"*.
+
+**B, when he says.** Nothing is set up, and nothing is made to wait on it.
+Overwatch raises it once when the one-approval workflow is ready for first use,
+and he decides then. Until he says so, production approval works as it does
+today.
+
+### 6. Release 2 (2026-10-01)
+
+Jason: *"check in with lanes and update do we have anything to deploy"*. `main`
+was twelve commits ahead of production (`f597a4a5` to `51ada37f`, counted
+with `git rev-list`) with no migration among them.
+
+- Staged at `51ada37f220b7b02988893fbd2a9b5cc85cd60dc`: `deploy-staging` run
+  36868958454, digest
+  `sha256:596ec36920558ebf41de35a3ac283e9a6aa5e4553e4e6238960b299cdd2d1878`
+  from that run's artifact. (An earlier staging run that morning, 36863295775
+  at `4067e30e`, was superseded when the records PR #1053 merged.)
+- The signed-in staging check (OD-2026-09-30-007 section 7, Q4 A). Jason:
+  *"use the extensions to navigate and verify staging"*, then *"all are logged
+  in"*. Walked by overwatch through his signed-in browser windows; he entered
+  every credential. OBSERVED: as gym admin, the People page lists its 12
+  people, the Add Athlete ID box offers the next free id after a mode switch
+  and back (nothing submitted), the escalations page and feedback queue load;
+  as coach, the drill library and Passbook gaps load; as the test athlete, the
+  dashboard loads, his own Passbook opens, another athlete's is refused.
+- The parent side had never been walked. Jason: *"i dont think we actually
+  have ever logged into the parent side, can you run a test parent in the in
+  app browser"*. He created a test parent on staging and signed it in himself.
+  OBSERVED as that parent: the Parent Hub shows the linked athlete; the
+  Passbook returns only the athlete's id, name and a count of completed
+  sessions, with no dated rows (the change in this release, OD-2026-09-30-004
+  d3); another athlete's Passbook is refused; the coach's gap queue is refused;
+  the admin People page sends the parent back to the Parent Hub.
+- NOT walked, resting on tests and review: the intake refusals, and what a
+  deleted athlete's screens show.
+- Production: `deploy-production` run 36872957122 at the same commit and
+  digest. Jason: *"i approved production"*, then *"producting green"*. Live as
+  revision `app-ppbf-production--0000160` on that digest (read from Azure after
+  the run). No signed-in check was made in production.
+
+What shipped: deletion scope B (#1027), the two door fixes (#1041, #1042), the
+People page ID box (#1045), the cleanup skipping gate fixtures (#1044), the
+parent Passbook (#1046), the intake login rules (#1047), a deleted athlete's
+Passbook unreadable (#1051), the CI build fix (#1052), and three records
+commits.
+
+### 7. Rulings he gave in other lanes, as relayed (REPORTED, NOT YET CONFIRMED)
+
+Each was relayed to overwatch by the lane named. **This section is evidence of
+what was relayed. It supersedes no existing decision and authorizes no build.**
+A ruling here becomes a decision of record when Jason confirms it to overwatch
+or the lane's readback to him is answered, and it is then recorded in its own
+entry. What was checked on 2026-10-01: a text search of each lane's transcript
+finds the quoted words in it. That shows the words are in the lane's thread;
+it does not establish, for each, the question they answered. Every sentence
+below that interprets his words is the lane's reading, not his ruling.
+
+- Visual lane: the visual work restarts from scratch, *"we are building this
+  from scratch and only using the previous work and yesterdays photos as
+  refrence"*; *"we will work the plates in grok, then use canva to do the UI
+  ux"*. So `docs/ROOM-MAP.md`'s build order is reference while the room layout
+  is open, and no lane is scheduled against it. PR #941 (the drill cabinet):
+  *"Hold it, decide later"*; it stays open and unmerged. The ring corner pads:
+  *"Worn and indistinct"*; the lock's row stands, marked disputed, until he
+  settles it.
+- Lane S (SHADOW's model and personality), first answers: *"Q1 those are two
+  different parts, one is chat the other is the AI/ML that supports the chats
+  responses  Q2 us the dark humor Q3 A  Q4 A i am also not tied to a single
+  engine, if there is better that is covered bu the azure grant we can use it,
+  things may have changed since the first design"*. Later the same day, to
+  three questions (Q2, which audiences get dark humour: A staff only,
+  recommended; B staff and parents; C everyone, athletes included. Q6, an
+  athlete asks how to cut weight: A teach how it works and how to do it as
+  safely as possible, age-tuned, the coach decides; B risks only; C as it is.
+  Q7, build the teach-first prompt change as a PR now): *"Q2 dark humor for
+  everyone that part of the gym identity, i want the weight cutting in usa
+  boxing has classes and recomendations for it, we can educate it in a safe
+  way,  Q6 A we will go off of research from real sources, yes the app should
+  rarely say dont Q7 yes, as far as the model goes we should stick with the
+  free models, the pay for does not give a good enough increase in
+  capabilities"*. The lane's reading, NOT CONFIRMED and changing nothing
+  until it is: dark humour for every audience, athletes and parents included;
+  SHADOW teaches weight cutting safely from real sources; the prompt is
+  rewritten to teach first; SHADOW stays on the models already deployed. Until
+  he confirms, today's registers stand (`buildRegisterPrompt`,
+  `apps/web/src/server/pilot/shadowChat.ts`, read on main at `c2c4df67`): the
+  athlete register's "No dark or sarcastic humor." and the parent register's
+  "Measured and respectful. No gym slang or insider humor without a
+  plain-language explanation beside it."; and so do the request
+  gate and response filter on weight cutting. Nothing of this is built when
+  written.
+- Lane 12 (the calibration revision migration, OD-2026-08-29-005): asked
+  which "pair" a revision is scoped to (A, the pair of MARKS in disagreement:
+  the clip, both annotation sets and the two marked events, recommended; B, the
+  clip's pair of annotation SETS), Jason: *"go with recomendations"*. The
+  lane reads that as A. NOT CONFIRMED: it does not correct or supersede
+  OD-2026-08-29-004, whose "What was asked" reads "a clip's pair of annotation
+  sets" (his own quoted words there say only that the newer adjudication
+  supersedes the older and name a unique index on (pair, revision)). The
+  lane's reason for A: one clip can hold several separate disagreements, and
+  only a second decision about the same two marks is a revision. Its
+  migration does not merge until he confirms A to overwatch.
+
+### 8. He asked overwatch to check itself
+
+*"also to keep you on track scope and drift check yourself"*. Overwatch's
+check of that hour found, beyond the two defects already in OD-2026-09-30-007:
+it told three lanes they had skipped sending plans when those messages had been
+held on its own side (retracted); and it merged the records PR #1053 while
+release 2 was staged, which moved `main` and cost a second staging run.
+
+---
+
 ## OD-2026-09-30-007 -- What Jason authorized overwatch to do (lane questions, spending, the staging app) and his 2026-09-30 / 10-01 answers
 
 **Provenance: PRIMARY** where Jason's words were typed in the overwatch thread;
