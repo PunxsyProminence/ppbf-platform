@@ -86,11 +86,11 @@ export default function TrainingHoldBanner() {
           setReadState('unavailable');
           return;
         }
-        const payload = (await response.json()) as { hold?: AthleteFacingHold | null } | null;
-        // The route always answers with a `hold` key, null or the hold. A 200
-        // that does not carry one answered some other question, and is not a
-        // statement that there is no hold.
-        if (!payload || typeof payload !== 'object' || !('hold' in payload)) {
+        const payload = (await response.json()) as { ok?: unknown; hold?: AthleteFacingHold | null } | null;
+        // The route's success is `{ ok: true, hold }`, hold null or the hold.
+        // A 200 that does not say ok, or does not carry the key, answered some
+        // other question, and is not a statement that there is no hold.
+        if (!payload || typeof payload !== 'object' || payload.ok !== true || !('hold' in payload)) {
           setReadState('unavailable');
           return;
         }

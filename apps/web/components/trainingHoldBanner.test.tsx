@@ -88,7 +88,7 @@ describe('a hold check nobody could read never looks like "no hold"', () => {
   test('a 200 that carries no `hold` key answered some other question, and is unread', async () => {
     // The route always sends `hold`, null or the hold itself. A proxy page, an
     // error body or an empty object served with 200 is not "no hold".
-    for (const body of [{}, { error: 'upstream' }, { ok: true, holds: [] }, { hold: false }, { hold: '' }, { hold: [] }]) {
+    for (const body of [{}, { error: 'upstream' }, { ok: true, holds: [] }, { ok: true, hold: false }, { ok: true, hold: '' }, { ok: true, hold: [] }]) {
       mockHoldRead(() => ({ ok: true, json: async () => body }) as Response);
 
       const { container, unmount } = render(<TrainingHoldBanner />);
@@ -144,6 +144,20 @@ describe('a hold check nobody could read never looks like "no hold"', () => {
 
       await screen.findByText('Contact work is paused for you right now');
       expect(bannerText(container)).toContain('Ask Coach Rivera what has to happen next.');
+      unmount();
+    }
+  });
+
+  test('a 200 that does not say ok is not a read: "no hold" under ok:false, or with no ok at all, is unread', async () => {
+    // The route's success is `{ ok: true, hold }`. `{ ok: false, hold: null }`
+    // used to be silence -- the screen of an athlete with no hold.
+    for (const body of [{ ok: false, hold: null }, { hold: null }, { ok: 'true', hold: null }, { ok: false, hold: HOLD }]) {
+      mockHoldRead(() => ({ ok: true, json: async () => body }) as Response);
+
+      const { container, unmount } = render(<TrainingHoldBanner />);
+
+      await waitFor(() => expect(bannerText(container)).not.toBe(''));
+      expect(bannerText(container)).toBe('Talk to your coach about today’s training.');
       unmount();
     }
   });
