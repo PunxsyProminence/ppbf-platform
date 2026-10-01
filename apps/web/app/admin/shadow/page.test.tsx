@@ -364,7 +364,7 @@ describe('the intake queue', () => {
   // earlier count and rows standing as if they were the queue.
   it('says unavailable, and refuses the review keys, when a re-read after an upload fails', async () => {
     let queueReads = 0;
-    renderConsoleWith({
+    const fetchMock = renderConsoleWith({
       '/shadow/review-projection': async () => {
         queueReads += 1;
         return queueReads > 1 ? notOk() : jsonResponse({ ok: true, queue: [queueEntry] });
@@ -389,10 +389,27 @@ describe('the intake queue', () => {
     expect(pageText()).not.toMatch(/Pending: \d/);
     expect(screen.queryByRole('button', { name: 'APPROVE' })).toBeNull();
     expect(queueReads).toBe(2);
-    // Not pinned here: with the list gone the A / R / I keys are refused
-    // ("Review action blocked: backend review queue is unavailable."), but
-    // that refusal is thrown into an unhandled rejection, which jest fails
-    // the test on. Showing it to the admin is a separate fix.
+
+    // The upload left its row selected and in memory. With the list gone, the
+    // keys and the typed commands are refused in words, before any write is
+    // launched. (A refusal that threw instead would fail this test: jest
+    // fails on the unhandled rejection.)
+    const refusals = () => (pageText().match(/blocked: backend review queue is unavailable\./g) ?? []).length;
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(refusals()).toBe(1));
+    fireEvent.keyDown(window, { key: 'r' });
+    await waitFor(() => expect(refusals()).toBe(2));
+    fireEvent.keyDown(window, { key: 'i' });
+    await waitFor(() => expect(refusals()).toBe(3));
+    expect(pageText()).toContain('MESSAGE: Promotion blocked: backend review queue is unavailable.');
+    runCommand('approve');
+    await waitFor(() => expect(refusals()).toBe(4));
+    runCommand('reject');
+    await waitFor(() => expect(refusals()).toBe(5));
+    expect(pageText()).toContain('MESSAGE: Review action blocked: backend review queue is unavailable.');
+
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/intake/review-action'))).toBe(false);
+    expect(queueReads).toBe(2);
   });
 });
 
@@ -488,6 +505,55 @@ describe('the telemetry and authority streams', () => {
     expect(await screen.findByText(AUTHORITY_EMPTY)).toBeTruthy();
     expect(screen.queryByText(TELEMETRY_UNAVAILABLE)).toBeNull();
     expect(screen.queryByText(AUTHORITY_UNAVAILABLE)).toBeNull();
+  });
+});
+
+// A body that parses is not yet a read. Each list takes its answer only when
+// the application says ok AND the list is actually in it; `{ ok: false, <list>:
+// [] }` and `{ ok: true }` used to be taken as "loaded, and empty".
+describe('a 200 that parses but is not the list', () => {
+  interface ListUnderTest {
+    route: string;
+    key: string;
+    unavailable: string;
+    empty: string;
+    // The zero this list would print if the body were taken as loaded-empty.
+    zero: RegExp | null;
+    behindLever: boolean;
+  }
+  const lists: Array<[string, ListUnderTest]> = [
+    ['intake queue', { route: '/shadow/review-projection', key: 'queue', unavailable: INTAKE_UNAVAILABLE, empty: INTAKE_EMPTY, zero: /Pending: \d/, behindLever: false }],
+    ['feedback review queue', { route: '/shadow/feedback', key: 'items', unavailable: FEEDBACK_UNAVAILABLE, empty: FEEDBACK_EMPTY, zero: /Awaiting review \(\d+\)/, behindLever: false }],
+    ['telemetry stream', { route: '/shadow/telemetry', key: 'telemetry', unavailable: TELEMETRY_UNAVAILABLE, empty: TELEMETRY_EMPTY, zero: null, behindLever: true }],
+    ['authority stream', { route: '/shadow/authority', key: 'authority_checks', unavailable: AUTHORITY_UNAVAILABLE, empty: AUTHORITY_EMPTY, zero: null, behindLever: true }],
+  ];
+  const shapes: Array<[string, (key: string) => unknown]> = [
+    ['ok:false with an empty list present', (key) => ({ ok: false, [key]: [] })],
+    ['ok:true with the list absent', () => ({ ok: true })],
+  ];
+  const cases = lists.flatMap(([name, list]) =>
+    shapes.map(([shape, body]) => [name, shape, list, body] as const),
+  );
+
+  it.each(cases)('%s is unavailable, never empty or zero, for %s', async (_name, _shape, list, body) => {
+    renderConsoleWith({ [list.route]: async () => jsonResponse(body(list.key)) });
+    if (list.behindLever) {
+      fireEvent.click(await screen.findByRole('button', { name: /telemetry and authority streams/ }));
+    }
+
+    expect(await screen.findByText(list.unavailable)).toBeTruthy();
+    expect(screen.queryByText(list.empty)).toBeNull();
+    if (list.zero) expect(pageText()).not.toMatch(list.zero);
+  });
+
+  it.each(shapes)('review flags heading carries no count for %s', async (_shape, body) => {
+    renderConsoleWith({ '/shadow/library/review-flags': async () => jsonResponse(body('flags')) });
+    await screen.findByText(/Board packet intake/);
+
+    await waitFor(() => expect(screen.queryByText('Loading flags…')).toBeNull());
+    expect(screen.getByRole('heading', { name: /Review Flags/ }).textContent).toBe('Review Flags');
+    expect(screen.queryByText(/No pending flags\./)).toBeNull();
+    expect(screen.getByText('Failed to load library review flags')).toBeTruthy();
   });
 });
 

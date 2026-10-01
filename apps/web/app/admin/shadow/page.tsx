@@ -641,10 +641,12 @@ function LibraryReviewFlagsPanel() {
         credentials: 'include',
       });
       const payload = await response.json().catch(() => null);
-      if (!response.ok || !payload?.ok) {
+      // Both halves: the application's own ok, and the list actually being
+      // there. `{ ok: true }` with no list is not "no flags".
+      if (!response.ok || payload?.ok !== true || !Array.isArray(payload.flags)) {
         throw new Error(payload?.error || 'Failed to load library review flags');
       }
-      setFlags((payload.flags ?? []) as LibraryReviewFlag[]);
+      setFlags(payload.flags as LibraryReviewFlag[]);
       setFlagsRead('loaded');
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load library review flags');
@@ -1216,10 +1218,11 @@ export default function AdminShadowConsolePage() {
         body: JSON.stringify({}),
       });
 
-      const payload = (await response.json()) as ReviewQueueApiResponse | { error?: string };
-      if (!response.ok || !('ok' in payload)) {
-        const message = 'error' in payload && payload.error ? payload.error : 'Failed to load review queue';
-        throw new Error(message);
+      const payload = (await response.json()) as (Partial<ReviewQueueApiResponse> & { error?: string }) | null;
+      // `{ ok: false, queue: [] }` and `{ ok: true }` are both a read that
+      // did not come back, not an empty queue.
+      if (!response.ok || payload?.ok !== true || !Array.isArray(payload.queue)) {
+        throw new Error(payload?.error || 'Failed to load review queue');
       }
 
       const mapped: IntakeItem[] = payload.queue.map((entry) => {
@@ -1268,12 +1271,12 @@ export default function AdminShadowConsolePage() {
         | (Partial<ShadowFeedbackApiResponse> & { error?: string })
         | null;
 
-      if (!response.ok || !payload?.ok) {
+      if (!response.ok || payload?.ok !== true || !Array.isArray(payload.items)) {
         throw new Error(payload?.error || 'Failed to load SHADOW feedback review queue');
       }
 
       setFeedbackSummary(payload.summary ?? null);
-      setFeedbackReviewQueue(selectShadowFeedbackReviewQueue(payload.items ?? []));
+      setFeedbackReviewQueue(selectShadowFeedbackReviewQueue(payload.items));
       setFeedbackQueueRead('loaded');
       setFeedbackError('');
     } catch (error) {
@@ -1363,24 +1366,25 @@ export default function AdminShadowConsolePage() {
       throw error;
     }
 
-    // A refused read, or a body that will not parse, leaves that stream
-    // 'unavailable'. It used to leave the array empty and say nothing, so the
-    // panel read "No SHADOW telemetry events returned."
+    // A refused read, a body that will not parse, an application ok that is
+    // not true, or a missing list leaves that stream 'unavailable'. It used to
+    // leave the array empty and say nothing, so the panel read "No SHADOW
+    // telemetry events returned."
     const telemetryPayload = telemetryResponse.ok
-      ? ((await telemetryResponse.json().catch(() => null)) as ShadowTelemetryApiResponse | null)
+      ? ((await telemetryResponse.json().catch(() => null)) as Partial<ShadowTelemetryApiResponse> | null)
       : null;
-    if (telemetryPayload) {
-      setShadowTelemetry(telemetryPayload.telemetry ?? []);
+    if (telemetryPayload?.ok === true && Array.isArray(telemetryPayload.telemetry)) {
+      setShadowTelemetry(telemetryPayload.telemetry);
       setShadowTelemetryRead('loaded');
     } else {
       setShadowTelemetryRead('unavailable');
     }
 
     const authorityPayload = authorityResponse.ok
-      ? ((await authorityResponse.json().catch(() => null)) as ShadowAuthorityApiResponse | null)
+      ? ((await authorityResponse.json().catch(() => null)) as Partial<ShadowAuthorityApiResponse> | null)
       : null;
-    if (authorityPayload) {
-      setShadowAuthorityChecks(authorityPayload.authority_checks ?? []);
+    if (authorityPayload?.ok === true && Array.isArray(authorityPayload.authority_checks)) {
+      setShadowAuthorityChecks(authorityPayload.authority_checks);
       setShadowAuthorityRead('loaded');
     } else {
       setShadowAuthorityRead('unavailable');
@@ -1540,6 +1544,24 @@ export default function AdminShadowConsolePage() {
         dataType: item.dataType,
         status: 'Blocked',
         message: intakeWriteRefusal,
+        destination: 'SHADOW Local State',
+      });
+      return;
+    }
+
+    // The queue's last read failed, so the row is no longer on screen. Refuse
+    // here, where the keys and the typed commands arrive, and say so: the
+    // guards inside processReviewAction / processPromotion stay as the second
+    // line, but they throw, and nothing on those paths shows a throw.
+    if (!backendQueueReady) {
+      appendConsoleLog({
+        source: 'SHADOW',
+        dataType: item.dataType,
+        status: 'Blocked',
+        message:
+          action === 'IMPORT'
+            ? 'Promotion blocked: backend review queue is unavailable.'
+            : 'Review action blocked: backend review queue is unavailable.',
         destination: 'SHADOW Local State',
       });
       return;
