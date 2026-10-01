@@ -80,6 +80,38 @@ export function accountNotDeletedSql(row: string, accountColumn = 'account_id'):
 }
 
 /**
+ * SQL predicate for a row WRITTEN BY an account (a feedback submission), where
+ * the question is whether the PERSON is gone, not whether their login is.
+ *
+ * accountNotDeletedSql above treats a deleted login as enough. That is wrong
+ * for an athlete: a live athlete's login can be deleted on its own (the state
+ * intake refuses to re-provision, ATHLETE_RECORD_HELD_BY_DELETED_LOGIN), and
+ * what a child who is still in the gym told it must not change because their
+ * login did. So:
+ *  - an athlete's login: the athlete row decides -- the writer is gone unless
+ *    a live athlete row (deleted_at is null) stands behind the login;
+ *  - any other login (guardian, staff): the account's own deleted_at decides,
+ *    there being no other row that is the person.
+ * A row whose account reference is null is the CALLER's to decide; this
+ * predicate is true for it, as the two above are.
+ */
+export function accountHolderNotDeletedSql(row: string, accountColumn = 'account_id'): string {
+  const r = identifier(row);
+  const account = identifier(accountColumn);
+  return `not exists (
+    select 1 from pilot.accounts holder_account
+     where holder_account.account_id = ${r}.${account}
+       and case
+             when holder_account.athlete_id is not null then not exists (
+               select 1 from pilot.athletes live_athlete
+                where live_athlete.organization_id = holder_account.organization_id
+                  and live_athlete.athlete_id = holder_account.athlete_id
+                  and live_athlete.deleted_at is null)
+             else holder_account.deleted_at is not null
+           end)`;
+}
+
+/**
  * The same test for rows already in memory: which of these athlete ids name
  * an athlete of this organization marked deleted. For a reader whose athlete
  * is resolved in code rather than in its query (a subject named in JSON

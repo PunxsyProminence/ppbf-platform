@@ -588,12 +588,40 @@ describe('after deleteAthleteRecord(GONE)', () => {
     }
   });
 
+  test("a LIVE athlete whose login alone was deleted keeps every feedback row, closed ones included", async () => {
+    // The state intake names ATHLETE_RECORD_HELD_BY_DELETED_LOGIN: the child is still in the gym.
+    await activeClient!.query(
+      `update pilot.accounts set deleted_at = now(), active_flag = false where account_id = $1`,
+      [LIVE_ACCOUNT],
+    );
+    try {
+      expect(await feedbackScreen()).toEqual(
+        expect.arrayContaining(ids(LIVE, [...FEEDBACK_UNRESOLVED, ...FEEDBACK_RESOLVED])),
+      );
+    } finally {
+      await activeClient!.query(
+        `update pilot.accounts set deleted_at = null, active_flag = true where account_id = $1`,
+        [LIVE_ACCOUNT],
+      );
+    }
+  });
+
   test("a purged guardian's closed feedback stays hidden when the purge empties its account reference", async () => {
+    // Before anything happens to the guardian, all five rows show.
+    expect(await feedbackScreen()).toEqual(
+      expect.arrayContaining(ids('GUARDIAN', [...FEEDBACK_UNRESOLVED, ...FEEDBACK_RESOLVED])),
+    );
     // What both retention paths do to a parent account deleted over a year ago.
     await activeClient!.query(
       `update pilot.accounts set deleted_at = now() - interval '2 years', active_flag = false where account_id = $1`,
       [PURGED_GUARDIAN],
     );
+    // Deleted, not yet purged: a guardian's own mark is their account's.
+    const deletedNotPurged = await feedbackScreen();
+    expect(deletedNotPurged).toEqual(expect.arrayContaining(ids('GUARDIAN', FEEDBACK_UNRESOLVED)));
+    for (const item of ids('GUARDIAN', FEEDBACK_RESOLVED)) {
+      expect(deletedNotPurged).not.toContain(item);
+    }
     await activeClient!.query(`delete from pilot.accounts where account_id = $1`, [PURGED_GUARDIAN]);
     const cleared = await activeClient!.query(
       `select count(*)::int as n from pilot.feedback_submissions where body like 'GUARDIAN:%' and submitted_by_account_id is null`,
