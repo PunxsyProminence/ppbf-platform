@@ -782,10 +782,12 @@ export default function SportsMedicinePage() {
                             disabled={row.hold_read === 'unavailable' || busy}
                             aria-describedby={row.hold_read === 'unavailable' ? `hold-unread-${row.athlete_id}` : undefined}
                             onClick={() => {
-                              // Opening this row's form discards whichever form
-                              // was open. A prompt about THAT form ("write the
-                              // sentence") goes with it; what the server said
-                              // about another row stays on that row.
+                              // Opening the form of this row discards whichever
+                              // form was open. A prompt about THAT form (write
+                              // the sentence) goes with it; what the server
+                              // said about another row stays on that row. (No
+                              // quote marks in here: the clinic control guard
+                              // reads this tag with a quote-aware scanner.)
                               const discarded = placing?.athleteId;
                               if (discarded && refusals.get(discarded)?.aboutTheOpenForm) setRefusalFor(discarded, null);
                               setPlacing({ athleteId: row.athlete_id, form: { ...EMPTY_FORM } });
