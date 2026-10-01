@@ -164,6 +164,194 @@ and should not try to.
 
 ---
 
+## OD-2026-10-01-002 -- His later answers of 2026-10-01: what "pair" means; records and read-only checks and staging migrations without asking; the hold screens; the parent password starts; the Lane S rulings confirmed; the cross-athlete draft bug
+
+**Provenance: PRIMARY** where Jason's words were typed in the overwatch thread
+(transcript as in OD-2026-09-30-007); **REPORTED** where a lane relayed them
+(each marked, with what was checked). **Date:** 2026-10-01. Each question was
+put in official form, then in plain English. This entry is new and edits no
+earlier one; where it clarifies an earlier entry it says so.
+
+### 1. Five answers in one message
+
+Five questions were put together, four with A marked recommended and one a
+yes-or-change confirmation with no option marked. Jason, whole message: *"ye go
+with the recomendations"*.
+
+1. **A guardian may still be linked to a withdrawn athlete's record.** Asked:
+   "Guardian link to a WITHDRAWN athlete's record: A, allow as today
+   (recommended); B, refuse." **A.** PR #1055 had added a refusal; ChatGPT's
+   review ruled it a minors'-privacy product rule he had not been asked about.
+   It was removed from that PR and no lane is opened for it.
+2. **The Lane S rulings, confirmed to overwatch.** Asked: "Confirm your Lane S
+   rulings to overwatch: dark humour for everyone including athletes and
+   parents; safe weight-cut education from real sources; teach-first; stay on
+   the free models. Yes / change." No option was marked recommended; overwatch
+   read "ye" as yes (INFERRED) and Lane S reported that this matches what he
+   told it directly. ChatGPT's review of PR #1058 ruled the answer sufficient
+   for teach-first, and that the trailing "go with the recomendations" must not
+   be used to widen it beyond the items listed. Section 6 records later wording
+   on the humour item only; it is not evidence for the other three items.
+3. **A calibration revision is scoped to the pair of MARKS.** Asked: 'Confirm
+   Lane 12 "pair" = A, the pair of MARKS in disagreement (recommended). Yes /
+   B.' **A.** This clarifies what "pair" means for OD-2026-08-29-005 and its
+   migration (PR #1059): the clip, both annotation sets and the two marked
+   events. One clip can hold several separate disagreements, and only a second
+   decision about the same two marks is a revision. OD-2026-08-29-004's "What
+   was asked" paragraph, which speaks of a clip's pair of annotation sets, is
+   left as written; this entry is the later clarification.
+4. **Overwatch writes records without asking each time.** Asked: "Authorize
+   overwatch to commit, push and open records PRs for `OWNER_DECISIONS.md` and
+   `ACTIVE_WORK.md` without asking each time: A, yes (recommended); B, ask
+   each time." **A, standing, from this answer forward.** The records writes
+   made before it (PR #1056's first three commits, their pushes and its early
+   body edits) had no words of his naming those action types; that PR's body
+   records them as a historical defect and nothing here authorizes them
+   backwards.
+5. **Overwatch runs read-only check workflows on `main` without asking each
+   time.** Asked: "Authorize overwatch to run read-only check workflows
+   (migration list-check, database check) on main: A, yes (recommended); B, ask
+   each time." **A.** An earlier list-check dispatched from a lane's unmerged
+   branch (run 36883139484) was ruled an unauthorized write by ChatGPT and is
+   not covered by this answer.
+
+### 2. Four answers in one message
+
+Jason, whole message: *"1 yes 2 Talk to your Coach about todays training 3 B 4
+A bud update chat gpt of the design change"*.
+
+1. **Merged migrations are applied to staging without asking each time.**
+   Asked: "Apply the 1% Club migration (#1057, merged) to the STAGING database,
+   and may overwatch apply merged migrations to staging without asking each
+   time: A, yes (recommended); B, ask each time." **Yes.** Production is
+   unchanged: every production migration run takes his approval click.
+2. **What an athlete sees when the training-hold check fails: his own
+   wording.** Asked: A, "We could not check your training status just now. Ask
+   your coach before you train." (recommended); B, nothing, as today; C, his
+   own wording. **C.** The line is "Talk to your coach about today's training."
+   and it is the whole line. Overwatch normalised two things from his typing
+   ("Coach" to "coach", "todays" to "today's") and told him so.
+3. **The coach board's "Place a training hold" control when the hold check is
+   unavailable.** Asked: A, kept (recommended); B, disabled until a reload
+   succeeds; C, hidden. **B**, against the recommendation. Lane H added a
+   per-athlete "Check again" control so a coach can retry without reloading the
+   whole board; that control is overwatch's decision, told to him, not his
+   ruling.
+4. **The parent password lane starts building now.** Asked: "Lane P (parent
+   password) start: A, build part 1 now on the lane's own technical design,
+   ChatGPT reviews the PR (recommended); B, hold until ChatGPT's design verdict
+   is read." **A, and ChatGPT is told of the change of sequence** (done the
+   same hour). ChatGPT's design verdict had been written but overwatch could
+   not read it; it still governs, through the PR review.
+
+### 3. The parent password questions (asked and answered in the Lane P thread)
+
+Relayed by Lane P, and then read by overwatch in that thread's own transcript
+on 2026-10-01. The lane's message immediately before his reply listed seven
+questions, each official then plain, each with A marked recommended, and ended
+'reply "go with recommendations" to take the recommended option on each'. His
+reply, whole message, 16:00Z: *"agree with recomendations"*. So A on each:
+
+1. the password prompt on the emailed link is offered with "Not now", not
+   mandatory before the dashboard;
+2. parents only, not coaches, staff or volunteers;
+3. minimum 10 characters, no forced symbols or capitals;
+4. on `/login`, a password box under the email box with two buttons, "Sign In"
+   and "Email Me A Link Instead";
+5. the same slow-down the athlete PIN has, with no hard lockout;
+6. a password is changed only through a fresh emailed link;
+7. an organization admin gets "Clear Password" on the People page, which signs
+   the parent out and sends them back to the email link.
+
+These answer the four points OD-2026-10-01-001 section 4 listed as not decided.
+A second message of his in that thread, *"go with you recomendations"* (17:10Z),
+followed a status line with no question open; it is read as deciding nothing
+new.
+
+### 4. Other instructions the same day
+
+- *"stay on the parents its a fresh thread"*: read as "stay", this thread
+  remains overwatch. The second half was not understood and nothing was done
+  on it.
+- *"open git hub when we have stuff read to deploy to productions"*: overwatch
+  opens GitHub for him when a release is staged and ready for his approval.
+- *"fix q permission mode"*: overwatch set the Lane Q thread's permission mode
+  to match its own so that held lane messages deliver. It did the same for the
+  Lane H thread, which had the same fault and which his words do not name;
+  reported to him.
+
+### 5. The cross-athlete draft bug
+
+Lane H's reviewer reproduced a defect that is live in production (REPORTED by
+the lane; not checked by overwatch): on the coach's decision screen, a draft
+written about one athlete stays in its box when the coach switches to another
+athlete, and one click sends it to the second athlete. Described to him, Jason:
+*"we need to fix this"*. Asked beforehand whether Lane H should take it as a
+second PR (recommended) or a new lane, he did not choose; overwatch gave it to
+Lane H as a second PR. The lane's reading of the screen found the same defect
+in seven actions: Message Home, the behaviour note, an incident report, a
+recorded decision, a near-miss flag, the medical status with its source
+reference, and a decision outcome.
+
+### 6. Lane S: the humour wording (asked and answered in the Lane S thread)
+
+Relayed by Lane S. For each quote below except the one marked, overwatch read
+that thread's own transcript on 2026-10-01 and names the lane message his reply
+followed. Section 1 item 2 is the direct confirmation of the high-level ruling;
+this section is the detailed wording that PR #1061 builds.
+
+- **Which audiences.** The lane's message asked Q2, which audiences get dark
+  humour: staff only (its recommendation), staff and parents, or everyone,
+  athletes included. His reply (15:30Z) begins *"Q2 dark humor for everyone
+  that part of the gym identity"*.
+- **The register text.** The lane's message (its Q10) showed the proposed
+  athlete and parent text and offered A, as written, including the line "aim
+  it at the mistake, not at the kid"; B, without that line; C, his rewording.
+  His reply, whole message, 17:20Z: *"A but it should not take responsibility
+  away from the kid or make excuses for them"*. Built as: "Hold them to it. Do
+  not make excuses for them or take the responsibility off them".
+- **Four reviewer points.** The lane's message listed Q11 (say that being
+  hurt, in pain or treated badly is not a mistake or an excuse), Q12 (jokes
+  never target body, weight, ability, family or an injury), Q13 (keep
+  "Respectful" for parents) and Q14 (is sarcasm included for athletes), with
+  overwatch's and the lane's recommendation to add Q11 and Q12. His reply
+  (17:40Z) ends: *"Q11 ill agree with treated badly Hurt and pain go with
+  boxing,  q12  leave not at the kid  specifics leave holes  q13 yes"*. Built
+  as: the athlete text says being treated badly by someone else is not a
+  mistake and not an excuse, and does not say that of being hurt or in pain
+  (narrower than recommended; his call); no list of what a joke may never
+  target, "not at the kid" stays the whole rule; the parent text keeps
+  "Respectful" and aims humour at the situation, never at the parent or their
+  child. The same reply opens by saying dark humour may also be applied to
+  four fixed fallback answers; nothing is built for that, and PR #1036 removes
+  those answers.
+- **Sarcasm.** The lane's message left Q14 open as "A yes / B no". His reply,
+  whole message, 17:52Z: *"q14 A"*. The athlete text now opens "The gym's dry,
+  dark, sarcastic humor is part of how this place talks."; the parent text is
+  unchanged.
+- **Humour inside injury answers: confirmed to overwatch.** Lane S relayed
+  *"Q8 B"* as his answer that humour is not kept out of injury, head-knock,
+  pain and emergency answers. Overwatch did not find that reply as a typed
+  message in the thread's transcript, so it asked him directly: 'Confirm to
+  overwatch your Lane S answer "Q8 B": SHADOW's humour is NOT kept out of
+  ordinary injury, head-knock and pain answers. Yes / no.', with the plain
+  line that the fixed emergency replies stay humour-free either way. His
+  reply, whole message: *"yes i said NOT in the s lane"*. So: the humour
+  register also governs model-written answers to ordinary injury, head-knock
+  and pain questions. This matters to PR #1061, which is not neutral on it:
+  it edits no classifier and no fixed reply, but by replacing the athlete
+  register's blanket "No dark or sarcastic humor" it lets the new register
+  reach model-written educational answers that no fixed fallback intercepts
+  (for example an allowed `head_trauma` question). His confirmation is the
+  authority for that effect. What it does not cover: the fixed urgent and
+  emergency replies, which carry no humour and which no PR changes.
+
+Until PR #1061 merges, today's registers stand as OD-2026-10-01-001 section 7
+quotes them. The fixed emergency replies carry no humour and no PR changes
+them.
+
+---
+
 ## OD-2026-10-01-001 -- Lanes finish and close; closed lanes are archived; the safety fix lanes; parents get a password; a second approver login, timing his; release 2
 
 **Provenance: PRIMARY** where Jason's words were typed in the overwatch thread
