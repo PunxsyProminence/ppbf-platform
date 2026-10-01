@@ -199,9 +199,18 @@ The first four readers changed (`escalationLadder.ts` `listEscalations`, `traini
 `listTrainingHolds`, `compliance.ts` `getOrganizationViolations`, `feedback.ts`
 `listOrganizationFeedback`), and `safetyReview.ts` for the failing gates. Safety flags, the rest
 of the safety review page and the board summary already behaved this way and are pinned by the
-same test, `apps/web/src/server/pilot/deletedAthleteSafetyScreens.pg.test.ts`. The feedback queue is
-keyed by the writer's account, so it also hides a deleted guardian's or staff member's
-submissions once they are done or declined. The platform owner's cross-gym feedback list, which
+same test, `apps/web/src/server/pilot/deletedAthleteSafetyScreens.pg.test.ts`. The feedback queue
+decides "the writer is deleted" from what each submission recorded when it was written, the gym
+and the role (athlete, guardian, staff), not from how the login reads today:
+- written as an athlete: the athlete record decides. A live athlete whose login alone was
+  deleted keeps everything they wrote.
+- written as a guardian or staff member: the login decides, so a deleted guardian's or staff
+  member's submissions also leave once they are done or declined, and stay gone after the
+  cleanup job removes the login.
+- if the login no longer matches the submission (it was given another role, or moved to another
+  gym), nothing proves the writer is gone, and the submission stays.
+
+The platform owner's cross-gym feedback list, which
 names nobody and withholds safeguarding text, is unchanged. The video-compliance publication
 queue is not in this table: it drops a deleted athlete's publications at once (videos, above).
 

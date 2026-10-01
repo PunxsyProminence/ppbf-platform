@@ -80,35 +80,70 @@ export function accountNotDeletedSql(row: string, accountColumn = 'account_id'):
 }
 
 /**
- * SQL predicate for a row WRITTEN BY an account (a feedback submission), where
- * the question is whether the PERSON is gone, not whether their login is.
+ * SQL predicate for a row WRITTEN BY a person and stamped, at write time, with
+ * the gym and the capacity they wrote it in (a feedback submission): true
+ * unless the writer is PROVEN gone.
  *
- * accountNotDeletedSql above treats a deleted login as enough. That is wrong
- * for an athlete: a live athlete's login can be deleted on its own (the state
- * intake refuses to re-provision, ATHLETE_RECORD_HELD_BY_DELETED_LOGIN), and
- * what a child who is still in the gym told it must not change because their
- * login did. So:
- *  - an athlete's login: the athlete row decides -- the writer is gone unless
- *    a live athlete row (deleted_at is null) stands behind the login;
- *  - any other login (guardian, staff): the account's own deleted_at decides,
- *    there being no other row that is the person.
- * A row whose account reference is null is the CALLER's to decide; this
- * predicate is true for it, as the two above are.
+ * It decides from the row's own frozen columns, not from the account as it
+ * reads today. An account drifts -- a role changes, upsertOrganizationMembership
+ * (auth.ts) moves it to another gym, and both leave athlete_id where it was --
+ * so "is this an athlete?" and "which gym?" are asked of the submission, and
+ * the account is believed only while it still agrees with it: same gym, and
+ * still (or still not) an athlete's login. Where it no longer agrees, the
+ * original writer cannot be proven gone and the row STAYS. Failing that way
+ * keeps a closed record on a safeguarding queue; failing the other way hides
+ * one.
+ *
+ * Written as an athlete: the ATHLETE ROW decides, never the login alone. A
+ * live athlete's login can be deleted on its own (the state intake names
+ * ATHLETE_RECORD_HELD_BY_DELETED_LOGIN). Gone means the athlete this gym's
+ * login names is marked deleted -- or, after the retention purge has removed
+ * that row (accounts.athlete_id has no foreign key, and the purge leaves the
+ * athlete's login behind, deleted), that the login is deleted and names no
+ * athlete row at all. A cleared account reference proves nothing here: the
+ * purge removes parent logins only.
+ *
+ * Written in any other capacity (guardian, staff): the account is the person.
+ * Gone means this gym's login is marked deleted, or the reference has cleared
+ * -- `on delete set null`, which only the retention purge triggers, and it
+ * removes only logins already marked deleted.
  */
-export function accountHolderNotDeletedSql(row: string, accountColumn = 'account_id'): string {
+export function submissionWriterNotDeletedSql(
+  row: string,
+  accountColumn: string,
+  roleColumn: string,
+  orgColumn = 'organization_id',
+): string {
   const r = identifier(row);
   const account = identifier(accountColumn);
-  return `not exists (
-    select 1 from pilot.accounts holder_account
-     where holder_account.account_id = ${r}.${account}
-       and case
-             when holder_account.athlete_id is not null then not exists (
-               select 1 from pilot.athletes live_athlete
-                where live_athlete.organization_id = holder_account.organization_id
-                  and live_athlete.athlete_id = holder_account.athlete_id
-                  and live_athlete.deleted_at is null)
-             else holder_account.deleted_at is not null
-           end)`;
+  const role = identifier(roleColumn);
+  const org = identifier(orgColumn);
+  return `not (
+    case when ${r}.${role} = 'athlete' then exists (
+      select 1 from pilot.accounts writer_account
+       where writer_account.account_id = ${r}.${account}
+         and writer_account.organization_id = ${r}.${org}
+         and writer_account.role = 'athlete'
+         and writer_account.athlete_id is not null
+         and (
+           exists (
+             select 1 from pilot.athletes deleted_athlete
+              where deleted_athlete.organization_id = ${r}.${org}
+                and deleted_athlete.athlete_id = writer_account.athlete_id
+                and deleted_athlete.deleted_at is not null)
+           or (
+             writer_account.deleted_at is not null
+             and not exists (
+               select 1 from pilot.athletes any_athlete
+                where any_athlete.organization_id = ${r}.${org}
+                  and any_athlete.athlete_id = writer_account.athlete_id))))
+    else ${r}.${account} is null or exists (
+      select 1 from pilot.accounts writer_account
+       where writer_account.account_id = ${r}.${account}
+         and writer_account.organization_id = ${r}.${org}
+         and writer_account.role <> 'athlete'
+         and writer_account.deleted_at is not null)
+    end)`;
 }
 
 /**

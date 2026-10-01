@@ -133,6 +133,28 @@ const GONE_ACCOUNT = 'acct-l2-athlete-gone';
 /** Never deleted: the control. */
 const LIVE = 'ATH-L2-LIVE';
 const LIVE_ACCOUNT = 'acct-l2-athlete-live';
+/* ACCOUNTS THAT DRIFT. A submission freezes the gym and the capacity it was
+   written in; the account behind it can be re-roled or moved to another gym
+   afterwards, keeping its athlete_id (auth.ts upsertOrganizationMembership).
+   Each of these has feedback and no other safety item. */
+/** An athlete who becomes a coach on the same login; the athlete record is later deleted. */
+const AGED = 'ATH-L2-AGED';
+const AGED_ACCOUNT = 'acct-l2-athlete-aged';
+/** One athlete_id in both gyms: live in ORG, deleted in OTHER_ORG. The ORG login later moves to OTHER_ORG. */
+const SHARED = 'ATH-L2-SHARED';
+const SHARED_ACCOUNT = 'acct-l2-athlete-shared';
+/** A guardian whose login moves to OTHER_ORG and is deleted there. */
+const MOVED_GUARDIAN = 'acct-l2-guardian-moved';
+/** An athlete deleted, then removed by the retention purge, which leaves the login behind.
+    The second gym has a live athlete with the same id. */
+const PURGED_ATHLETE = 'ATH-L2-PURGED';
+const PURGED_ATHLETE_ACCOUNT = 'acct-l2-athlete-purged';
+/** A coach whose login is later re-roled to athlete and then deleted. */
+const COACH_TURNED_ATHLETE = 'acct-l2-coach-turned-athlete';
+/** A live athlete whose login is later re-roled to parent, deleted and purged, clearing the reference. */
+const TURNED = 'ATH-L2-TURNED';
+const TURNED_ACCOUNT = 'acct-l2-athlete-turned-parent';
+
 /** Open critical escalations only. With GONE and LIVE that is six athletes; losing GONE would read five, still over the floor of 5, so the count itself shows it. */
 const FILLERS = ['ATH-L2-F1', 'ATH-L2-F2', 'ATH-L2-F3', 'ATH-L2-F4'];
 
@@ -200,6 +222,8 @@ async function seed(client: Client): Promise<void> {
     [OTHER_ADMIN, 'organization_admin', OTHER_ORG],
     [OTHER_COACH, 'coach', OTHER_ORG],
     [PURGED_GUARDIAN, 'parent', ORG],
+    [MOVED_GUARDIAN, 'parent', ORG],
+    [COACH_TURNED_ATHLETE, 'coach', ORG],
   ] as const) {
     await q(
       `insert into pilot.accounts (account_id, role, organization_id, auth_provider, active_flag, login_email)
@@ -212,6 +236,12 @@ async function seed(client: Client): Promise<void> {
     [ORG, LIVE, COACH],
     ...FILLERS.map((filler) => [ORG, filler, COACH] as const),
     [OTHER_ORG, GONE, OTHER_COACH],
+    [ORG, AGED, COACH],
+    [ORG, SHARED, COACH],
+    [OTHER_ORG, SHARED, OTHER_COACH],
+    [ORG, PURGED_ATHLETE, COACH],
+    [OTHER_ORG, PURGED_ATHLETE, OTHER_COACH],
+    [ORG, TURNED, COACH],
   ] as const) {
     await q(
       `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
@@ -224,6 +254,10 @@ async function seed(client: Client): Promise<void> {
     [GONE_ACCOUNT, ORG, GONE],
     [LIVE_ACCOUNT, ORG, LIVE],
     [OTHER_GONE_ACCOUNT, OTHER_ORG, GONE],
+    [AGED_ACCOUNT, ORG, AGED],
+    [SHARED_ACCOUNT, ORG, SHARED],
+    [PURGED_ATHLETE_ACCOUNT, ORG, PURGED_ATHLETE],
+    [TURNED_ACCOUNT, ORG, TURNED],
   ] as const) {
     await q(
       `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag, login_email)
@@ -305,28 +339,39 @@ async function seed(client: Client): Promise<void> {
   await hold(OTHER_ORG, GONE, 'hold-lifted-other-gym', 'lifted');
   await violation(OTHER_ORG, GONE, 'violation-resolved-other-gym', 'resolved');
 
-  // Feedback is keyed by the writer's account. Written as the athletes the
-  // safeguarding lane exists for; triage set the way setFeedbackTriage sets it.
-  for (const [account, org, role, athlete] of [
+  // Feedback is keyed by the writer's account, and freezes the gym and the
+  // capacity it was written in.
+  for (const [account, org, role, tag] of [
     [GONE_ACCOUNT, ORG, 'athlete', GONE],
     [LIVE_ACCOUNT, ORG, 'athlete', LIVE],
     [PURGED_GUARDIAN, ORG, 'parent', 'GUARDIAN'],
     [OTHER_GONE_ACCOUNT, OTHER_ORG, 'athlete', 'OTHER-GYM'],
+    [AGED_ACCOUNT, ORG, 'athlete', 'AGED-AS-ATHLETE'],
+    [SHARED_ACCOUNT, ORG, 'athlete', 'SHARED'],
+    [MOVED_GUARDIAN, ORG, 'parent', 'MOVED-GUARDIAN'],
+    [PURGED_ATHLETE_ACCOUNT, ORG, 'athlete', 'PURGED-ATHLETE'],
+    [COACH_TURNED_ATHLETE, ORG, 'coach', 'COACH-TURNED-ATHLETE'],
+    [TURNED_ACCOUNT, ORG, 'athlete', 'ATHLETE-TURNED-PARENT'],
   ] as const) {
-    for (const status of ['new', 'triaged', 'planned', 'done', 'declined']) {
-      await q(
-        `insert into pilot.feedback_submissions (organization_id, submitted_by_account_id, submitted_by_role, kind, body, route)
-         values ($1, $2, $3, 'other', $4, $5)`,
-        [org, account, role, `${athlete}:feedback-${status}`, role === 'athlete' ? 'safeguarding' : 'product'],
+    await feedbackSet(client, org, account, role, tag);
+  }
+}
+
+/** Five submissions, one per triage status, bodies `<tag>:feedback-<status>`; triage set the way setFeedbackTriage sets it. */
+async function feedbackSet(client: Client, org: string, account: string, role: string, tag: string): Promise<void> {
+  for (const status of ['new', 'triaged', 'planned', 'done', 'declined']) {
+    await client.query(
+      `insert into pilot.feedback_submissions (organization_id, submitted_by_account_id, submitted_by_role, kind, body, route)
+       values ($1, $2, $3, 'other', $4, $5)`,
+      [org, account, role, `${tag}:feedback-${status}`, role === 'athlete' ? 'safeguarding' : 'product'],
+    );
+    if (status !== 'new') {
+      await client.query(
+        `update pilot.feedback_submissions
+            set triage_status = $2, triaged_by_account_id = $3, triaged_at = now(), updated_at = now()
+          where body = $1`,
+        [`${tag}:feedback-${status}`, status, ADMIN],
       );
-      if (status !== 'new') {
-        await q(
-          `update pilot.feedback_submissions
-              set triage_status = $2, triaged_by_account_id = $3, triaged_at = now(), updated_at = now()
-            where body = $1`,
-          [`${athlete}:feedback-${status}`, status, ADMIN],
-        );
-      }
     }
   }
 }
@@ -633,6 +678,106 @@ describe('after deleteAthleteRecord(GONE)', () => {
     for (const item of ids('GUARDIAN', FEEDBACK_RESOLVED)) {
       expect(shown).not.toContain(item);
     }
+  });
+
+  /* DRIFTED ACCOUNTS: the submission's frozen gym and role decide, and where
+     the account no longer proves who wrote the row, the row stays. */
+  const FEEDBACK_ALL = [...FEEDBACK_UNRESOLVED, ...FEEDBACK_RESOLVED];
+  const run = (sql: string, params: unknown[] = []) => activeClient!.query(sql, params);
+
+  test('a login re-roled away from athlete, athlete_id still set: nothing it wrote is judged by the athlete record', async () => {
+    // The athlete ages into a coach on the same login, writes again as a coach,
+    // and the old athlete record is then deleted. The person is still here.
+    await run(`update pilot.accounts set role = 'coach' where account_id = $1`, [AGED_ACCOUNT]);
+    await feedbackSet(activeClient!, ORG, AGED_ACCOUNT, 'coach', 'AGED-AS-COACH');
+    await run(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, AGED]);
+    const kept = (await run(`select athlete_id from pilot.accounts where account_id = $1`, [AGED_ACCOUNT])).rows[0];
+    expect(kept.athlete_id).toBe(AGED);
+
+    let shown = await feedbackScreen();
+    expect(shown).toEqual(expect.arrayContaining(ids('AGED-AS-ATHLETE', FEEDBACK_ALL)));
+    expect(shown).toEqual(expect.arrayContaining(ids('AGED-AS-COACH', FEEDBACK_ALL)));
+
+    // The coach's login is then deleted: what they wrote as a coach closes out
+    // of the queue; what the child wrote stays, because this login no longer
+    // proves an athlete wrote it.
+    await run(`update pilot.accounts set deleted_at = now(), active_flag = false where account_id = $1`, [AGED_ACCOUNT]);
+    shown = await feedbackScreen();
+    expect(shown).toEqual(expect.arrayContaining(ids('AGED-AS-ATHLETE', FEEDBACK_ALL)));
+    expect(shown).toEqual(expect.arrayContaining(ids('AGED-AS-COACH', FEEDBACK_UNRESOLVED)));
+    for (const item of ids('AGED-AS-COACH', FEEDBACK_RESOLVED)) {
+      expect(shown).not.toContain(item);
+    }
+  });
+
+  test("one athlete_id in both gyms: the other gym's deletion, and the login moving there, hide nothing here", async () => {
+    await run(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [OTHER_ORG, SHARED]);
+    expect(await feedbackScreen()).toEqual(expect.arrayContaining(ids('SHARED', FEEDBACK_ALL)));
+
+    // upsertOrganizationMembership's rewrite: the gym changes, athlete_id does
+    // not, so the login now names the OTHER gym's deleted athlete.
+    await run(`update pilot.accounts set organization_id = $2 where account_id = $1`, [SHARED_ACCOUNT, OTHER_ORG]);
+    expect(await feedbackScreen()).toEqual(expect.arrayContaining(ids('SHARED', FEEDBACK_ALL)));
+
+    // This gym's SHARED is then deleted too. The login is no longer this gym's,
+    // so it no longer proves which athlete wrote these rows: they stay.
+    await run(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, SHARED]);
+    expect(await feedbackScreen()).toEqual(expect.arrayContaining(ids('SHARED', FEEDBACK_ALL)));
+  });
+
+  test("a coach's login later re-roled to athlete and deleted hides nothing the coach wrote", async () => {
+    // A deleted athlete login is not a deleted person (a live athlete's login
+    // can be deleted on its own), so it no longer proves the coach is gone.
+    await run(
+      `update pilot.accounts set role = 'athlete', deleted_at = now(), active_flag = false where account_id = $1`,
+      [COACH_TURNED_ATHLETE],
+    );
+    expect(await feedbackScreen()).toEqual(expect.arrayContaining(ids('COACH-TURNED-ATHLETE', FEEDBACK_ALL)));
+  });
+
+  test("an athlete's submission whose account reference cleared stays: only a non-athlete's cleared reference proves a deletion", async () => {
+    // The purge deletes by the login's CURRENT role, so an athlete's login
+    // re-roled to parent, deleted and purged clears the reference on rows a
+    // child wrote, while the athlete record is still live.
+    await run(
+      `update pilot.accounts set role = 'parent', deleted_at = now() - interval '2 years', active_flag = false where account_id = $1`,
+      [TURNED_ACCOUNT],
+    );
+    await run(`delete from pilot.accounts where account_id = $1`, [TURNED_ACCOUNT]);
+    const cleared = await run(
+      `select count(*)::int as n from pilot.feedback_submissions
+        where body like 'ATHLETE-TURNED-PARENT:%' and submitted_by_account_id is null and submitted_by_role = 'athlete'`,
+    );
+    expect(cleared.rows[0].n).toBe(5);
+    expect(await feedbackScreen()).toEqual(expect.arrayContaining(ids('ATHLETE-TURNED-PARENT', FEEDBACK_ALL)));
+  });
+
+  test('a guardian login moved to another gym and deleted there hides nothing in the gym it wrote in', async () => {
+    await run(
+      `update pilot.accounts set organization_id = $2, deleted_at = now(), active_flag = false where account_id = $1`,
+      [MOVED_GUARDIAN, OTHER_ORG],
+    );
+    expect(await feedbackScreen()).toEqual(expect.arrayContaining(ids('MOVED-GUARDIAN', FEEDBACK_ALL)));
+  });
+
+  test("a deleted athlete's closed feedback stays hidden after the retention purge removes the athlete row", async () => {
+    const expectClosedHidden = async () => {
+      const shown = await feedbackScreen();
+      expect(shown).toEqual(expect.arrayContaining(ids('PURGED-ATHLETE', FEEDBACK_UNRESOLVED)));
+      for (const item of ids('PURGED-ATHLETE', FEEDBACK_RESOLVED)) {
+        expect(shown).not.toContain(item);
+      }
+    };
+    expect(await feedbackScreen()).toEqual(expect.arrayContaining(ids('PURGED-ATHLETE', FEEDBACK_ALL)));
+    await deleteAthleteRecord({ accountId: ADMIN, role: 'organization_admin', organizationId: ORG }, PURGED_ATHLETE, 'Left the gym');
+    await expectClosedHidden();
+    // The purge: the athlete row goes, the login stays, deleted, naming nothing
+    // in THIS gym (the second gym's live athlete with the same id is not it).
+    await run(`delete from pilot.athletes where organization_id = $1 and athlete_id = $2`, [ORG, PURGED_ATHLETE]);
+    const login = (await run(`select athlete_id, deleted_at from pilot.accounts where account_id = $1`, [PURGED_ATHLETE_ACCOUNT])).rows[0];
+    expect(login.athlete_id).toBe(PURGED_ATHLETE);
+    expect(login.deleted_at).not.toBeNull();
+    await expectClosedHidden();
   });
 
   test("the second gym's athlete with GONE's id keeps its resolved items", async () => {

@@ -2,7 +2,7 @@ import { FEEDBACK_ACKNOWLEDGEMENT } from '@/lib/feedbackWording';
 
 import type { PilotRole } from './contracts';
 import { query } from './db';
-import { accountHolderNotDeletedSql } from './deletedAthletes';
+import { submissionWriterNotDeletedSql } from './deletedAthletes';
 import { scanForSafetyLanguage } from './feedbackSafetyScan';
 
 /**
@@ -115,14 +115,10 @@ export interface FeedbackQueueFilter {
 // 'done' or 'declined' -- and stays until then (Jason, 2026-09-30,
 // OD-2026-09-30-004 "B"). A safeguarding disclosure from a child who has since
 // been deleted is still somebody's to deal with; 'triaged' only means somebody
-// looked. "Deleted writer" means the PERSON, not the login
-// (accountHolderNotDeletedSql): a live athlete whose login alone was deleted
-// keeps every row here. A closed row whose account reference has CLEARED is
-// hidden too: the retention purge removes only accounts already marked deleted
-// (dataDeletion.ts, pilot-cleanup-deleted-data.mjs), and the column's
-// `on delete set null` is the only way it empties -- createFeedbackSubmission
-// always writes it. Without that, a deleted guardian's closed submission would
-// come back a year later, when their account is purged. The owner's
+// looked. "Deleted writer" is decided from the submission's own frozen role
+// and gym, and means the PERSON, not the login; where the account no longer
+// proves who wrote the row, the row stays (submissionWriterNotDeletedSql,
+// which also covers a reference the retention purge has cleared). The owner's
 // de-identified statement below is unchanged.
 const ORGANIZATION_FEEDBACK_SQL = `
   select s.submission_id,
@@ -148,8 +144,7 @@ const ORGANIZATION_FEEDBACK_SQL = `
     and ($2::text is null or s.route = $2)
     and ($3::text is null or s.triage_status = $3)
     and (s.triage_status not in ('done', 'declined')
-         or (s.submitted_by_account_id is not null
-             and ${accountHolderNotDeletedSql('s', 'submitted_by_account_id')}))
+         or ${submissionWriterNotDeletedSql('s', 'submitted_by_account_id', 'submitted_by_role')})
   order by case when s.route = 'safeguarding' then 0 else 1 end, s.created_at desc
   limit $4`;
 
