@@ -169,12 +169,19 @@ and what Claude can fetch from a drive is in its capability table.
 ### The one exception: a declared format conversion
 
 **Owner decision, 2026-10-01 (OD-2026-10-01-004).** The rule above and the byte
-contract could not both hold. Grok emits `4:2:0`; `plate-contract.json` requires
-`4:4:4`. So a Grok image committed as received fails the gate, and a Grok image
-that passes the gate was re-encoded on the way in. **Every Grok-sourced plate in
-this directory had already gone through that step, silently, for weeks before
-anyone wrote it down.** Jason chose to keep `4:4:4` and make the step declared,
+contract could not both hold for the 2026-10-01 Grok batch: it arrived `4:2:0`
+and `plate-contract.json` requires `4:4:4`, so committed as received it fails the
+gate, and the files that passed the gate had been re-encoded locally without that
+being declared anywhere. Jason chose to keep `4:4:4` and make the step declared,
 rather than drop Grok as a source.
+
+**This applies to the 2026-10-01 batch and to nothing before it**, which is
+narrower than an earlier draft of this section claimed. Measured on the committed
+bytes: every plate predating that batch is baseline (`SOF0`) and already `4:4:4`;
+all seven of the batch are progressive (`SOF2`) with metadata stripped, the
+fingerprint of the local step. The sets separate cleanly. The earlier plates came
+in under the arrangement in `docs/GROK-VISUAL-LANE.md`, where Grok re-encodes to
+`4:4:4` in its own pipeline before shipping.
 
 Three conditions come with it. A conversion that skips any of them is a defect,
 not a delivery:

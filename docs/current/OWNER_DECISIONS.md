@@ -203,15 +203,37 @@ night to three.
 Raised by ChatGPT reviewing #1068. Two rules could not both hold:
 `apps/web/public/plates/README.md` said a delivered image is *"committed as
 received -- never re-encoded"*, and `design-system/plate-contract.json` requires
-chroma `4:4:4`, while Grok emits `4:2:0`. So a Grok image committed as received
-fails the byte gate, and one that passes it was re-encoded. **Every
-Grok-sourced plate in the repository had already gone through that step
-silently**, including the two in #1064 then staged for production. This was a
-real defect in how the lane had been working, not a technicality.
+chroma `4:4:4`, while the 2026-10-01 Grok batch arrived `4:2:0`. So those images
+committed as received would fail the byte gate, and the ones that passed it were
+re-encoded locally by this lane without that being declared anywhere — the two
+in #1064 then staged for production among them.
+
+**An earlier draft of this entry said "every Grok-sourced plate in the
+repository" had gone through that step. That was false and is corrected here
+before it could be relied on.** ChatGPT raised it in review; the committed bytes
+settle it. Measured 2026-10-01: every plate predating the 2026-10-01 batch is
+baseline (`SOF0`) and already `4:4:4`, while all seven of that batch are
+progressive (`SOF2`) with metadata stripped, which is the fingerprint of the
+local sharp step. The two sets separate cleanly with no overlap. So the earlier
+plates were prepared under the older arrangement recorded in
+`docs/GROK-VISUAL-LANE.md` — Grok re-encoding to `4:4:4` in its own pipeline
+before shipping — and the local conversion applies to the 2026-10-01 batch and
+to nothing before it.
 
 Asked: "A, amend the rule, record the conversion, and keep the originals
 (recommended); B, amend the rule only; C, keep 'as received' and drop Grok as a
 plate source; D, hold until staging." **A.**
+
+**Checked against the transcript** (run read-only by overwatch at this entry's
+request, because the entry turns on what he knew when he chose). Two facts, and
+no more than these. First: at 2026-10-01T21:10Z, before he answered, this lane's
+message to him said *"The originals are gone. For these five plates the
+pre-conversion Grok files no longer exist on disk"*. Second: the option he
+selected at 22:19Z, "Amend rule, keep originals (Recommended)", itself read that
+a later comparison *"is exactly what nobody can do for the five in this PR"*.
+**He was not asked, in so many words, whether that batch is grandfathered.** So
+condition 3 is recorded as binding going forward, and the batch that predates it
+is recorded as unprovable, which is what the conversion table says.
 
 This closes the item **OD-2026-10-01-003 section 3 records as still open**
 ("Open with him in the visual lane, not decided here"). That entry was written

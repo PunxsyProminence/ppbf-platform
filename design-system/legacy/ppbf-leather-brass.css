@@ -3721,9 +3721,18 @@ body.ppbf.on-canvas {
   --plate: url("/plates/plate-06-night-03.jpg");
 }
 
-/* The gym tablet stands upright. A landscape wall cropped to a portrait
-   viewport loses the courses that make it read as masonry, so the floor
-   room carries its own portrait plate rather than being scaled into one. */
+/* In a portrait viewport — a phone held upright, or a tablet standing on a
+   counter — a landscape wall cropped to fit loses the courses that make it
+   read as masonry, so the floor room carries its own portrait plate rather
+   than being scaled into one.
+
+   HOW THE GYM'S OWN DEVICES SIT IS NOT RECORDED ANYWHERE. This comment used to
+   open "The gym tablet stands upright." Nothing in this repository supported
+   that and the owner has not confirmed it (OD-2026-10-01-004 section 4). It is
+   quoted once above as REMOVED, not carried forward as a fact about the gym.
+   The rule does not depend on the answer: a
+   portrait viewport is a portrait viewport, and every phone held upright is
+   one. */
 @media (orientation: portrait) {
   .room--floor { --plate: url("/plates/plate-02b-floor-portrait-01.jpg"); }
 }
