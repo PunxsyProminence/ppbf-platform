@@ -122,6 +122,7 @@ orientation block, per "Adding a variant" below.
 | `plate-02b-floor-portrait-ring-01.jpg` | 810×1440 | 82,185 | a ring-side portrait floor alternative |
 | `plate-03-clinic-portrait-01.jpg` | 810×1440 | 119,124 | a portrait crop the clinic does not have today |
 | `plate-09-drillcase-landscape-01.jpg` | 1280×720 | 200,989 | the Drill Cabinet room: gear shelves, gloves on hooks, a card-index cabinet |
+| `plate-09-drillcase-portrait-01.jpg` | 810×1440 | 198,467 | the same cabinet upright. It was committed with its landscape pair and listed in neither table until 2026-10-01 |
 | `plate-10-floor-landscape-01.jpg` | 1280×720 | 181,156 | the gym floor: the ring on the red floor, bags on the timber frame, plank walls |
 | `plate-11-floor-portrait-01.jpg` | 810×1440 | 195,227 | the gym floor upright, for the tablet that stands on the counter |
 | `plate-12-locker-landscape-01.jpg` | 1280×720 | 200,442 | the athletes corner: grey lockers with a red bank, benches |
