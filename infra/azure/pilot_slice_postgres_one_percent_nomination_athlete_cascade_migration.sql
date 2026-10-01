@@ -22,8 +22,9 @@
 -- nomination whose athlete is still enrolled: the cascade fires only when the
 -- pilot.athletes row itself is deleted. In this repository's code the only
 -- statements that do that are the two retention purges (dataDeletion.ts and
--- pilot-cleanup-deleted-data.mjs), both limited to athletes withdrawn more
--- than two years ago. Withdrawing or expiring a nomination still keeps the row.
+-- pilot-cleanup-deleted-data.mjs), both limited to athletes whose deleted_at
+-- is more than two years old. Withdrawing or expiring a nomination still keeps
+-- the row.
 --
 -- SAME NAME, DROPPED AND RE-ADDED, guarded on the constraint's own delete
 -- action -- the pattern parent_authored_purge_migration.sql:117-150 used. The
