@@ -8,6 +8,29 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 
 import DecisionLoopReviewPage from './page';
 
+/* A PROBE ON EVERY COMMIT. WorkAxis sits at the foot of the page and renders
+   whenever the page does. This stand-in records, after each commit and before
+   anything else can run, which athlete the ID box says is selected and all
+   the text on screen -- so a test can ask whether there was EVER a commit
+   with athlete B selected and athlete A's records up, not just whether the
+   last one is clean. An effect that clears the old records after the new
+   selection has rendered produces exactly such a commit. */
+const committed: Array<{ selected: string; text: string }> = [];
+jest.mock('@/components/WorkAxis', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { useLayoutEffect } = require('react') as typeof import('react');
+  return {
+    __esModule: true,
+    default: function WorkAxisProbe() {
+      useLayoutEffect(() => {
+        const box = document.querySelector('input[placeholder="athlete-id"]') as HTMLInputElement | null;
+        committed.push({ selected: box?.value ?? '', text: document.body.textContent ?? '' });
+      });
+      return null;
+    },
+  };
+});
+
 jest.mock('@/components/RoleStandaloneView', () => ({
   __esModule: true,
   default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
@@ -913,5 +936,148 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: '' } });
 
     await waitFor(() => expect(screen.queryByText(/SERVER-TEXT-ABOUT-ATHLETE-A/)).toBeNull());
+  });
+
+  /* -------------------------------------------------------------------------
+     Never, in any commit: not "gone by the time the test looks".
+     ----------------------------------------------------------------------- */
+
+  const OF_ATHLETE_A = [
+    'ref-for-athlete-a',
+    'Athlete A: return to light sparring.',
+    'Athlete A: cleared for pad work.',
+    'Athlete A: slipped on the apron.',
+  ];
+
+  function commitsShowingAUnder(selected: string) {
+    return committed
+      .filter((commit) => commit.selected === selected)
+      .filter((commit) => OF_ATHLETE_A.some((text) => commit.text.includes(text)));
+  }
+
+  test.each([
+    ['the ID box', () => fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } })],
+    ['the dropdown', () => fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-b' } })],
+  ])('switching by %s: no commit ever has the new athlete selected with the previous athlete’s records on screen', async (_how, doSwitch) => {
+    installSwitchFetch();
+    await openAthleteA();
+    await screen.findByRole('option', { name: 'Athlete B' });
+    // The probe is live: it saw A's records under A.
+    expect(commitsShowingAUnder('ath-a').length).toBeGreaterThan(0);
+    committed.length = 0;
+
+    doSwitch();
+    await screen.findByText('No medical administrative status recorded yet.');
+
+    expect(committed.some((commit) => commit.selected === 'ath-b')).toBe(true);
+    expect(commitsShowingAUnder('ath-b')).toEqual([]);
+  });
+
+  test('no commit has the new athlete selected with the previous athlete’s error line, confirmation or status still up', async () => {
+    installSwitchFetch({ post: () => jsonResponse({ error: 'SERVER-TEXT-ABOUT-ATHLETE-A' }, false) });
+    await openAthleteA();
+    fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+    await screen.findByText(/SERVER-TEXT-ABOUT-ATHLETE-A/);
+    committed.length = 0;
+
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+
+    const underB = committed.filter((commit) => commit.selected === 'ath-b');
+    expect(underB.length).toBeGreaterThan(0);
+    expect(underB.filter((commit) => commit.text.includes('SERVER-TEXT-ABOUT-ATHLETE-A'))).toEqual([]);
+  });
+
+  test('a write for the previous athlete that resolves in the same tick as the switch is not treated as the new selection’s', async () => {
+    // The refs move in the selection event, not in an effect after it.
+    const held = heldResponse();
+    installSwitchFetch({ post: () => held.promise });
+    await openAthleteA();
+    fireEvent.change(screen.getByLabelText('What happened'), { target: { value: 'incident for A' } });
+    fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+
+    await act(async () => {
+      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+      held.release(jsonResponse({ ok: true, escalation_id: 'esc-1' }));
+      await Promise.resolve();
+    });
+    await screen.findByText('No medical administrative status recorded yet.');
+    await settle();
+
+    expect(screen.queryByText('Incident filed -- it is now in the escalation queue.')).toBeNull();
+    expect(committed.filter((c) => c.selected === 'ath-b' && c.text.includes('Incident filed'))).toEqual([]);
+  });
+
+  /* -------------------------------------------------------------------------
+     A 200 that does not carry the envelope is not "nothing on record".
+     ----------------------------------------------------------------------- */
+
+  const unparseable = () => ({ ok: true, json: async () => { throw new SyntaxError('Unexpected token <'); } }) as unknown as Response;
+
+  /** B's four reads, each overridable by route fragment. */
+  function installReadsForB(overrides: Record<string, () => Response>) {
+    const fetchMock = jest.fn(async (url: string) => {
+      const key = String(url);
+      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+      for (const [fragment, responder] of Object.entries(overrides)) {
+        if (key.includes(fragment)) return responder();
+      }
+      if (key.includes('/medical-status')) return jsonResponse({ status: null });
+      if (key.includes('/recommendations')) return jsonResponse({ recommendations: [] });
+      if (key.includes('/decisions?')) return jsonResponse({ decisions: [] });
+      if (key.includes('/near-misses')) return jsonResponse({ nearMisses: [] });
+      throw new Error(`Unexpected fetch: ${key}`);
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+  }
+
+  const MALFORMED_READS: Array<[string, string, () => Response]> = [
+    ['medical status: body will not parse', '/medical-status', unparseable],
+    ['medical status: no `status` key', '/medical-status', () => jsonResponse({ ok: true })],
+    ['medical status: `status` is a string', '/medical-status', () => jsonResponse({ status: 'cleared' })],
+    ['medical status: a row with an unknown status value', '/medical-status', () => jsonResponse({ status: { status: 'fine' } })],
+    ['medical status: body is an array', '/medical-status', () => jsonResponse([])],
+    ['recommendations: body will not parse', '/recommendations', unparseable],
+    ['recommendations: no list', '/recommendations', () => jsonResponse({ ok: true })],
+    ['recommendations: list is null', '/recommendations', () => jsonResponse({ recommendations: null })],
+    ['recommendations: a null entry', '/recommendations', () => jsonResponse({ recommendations: [null] })],
+    ['decisions: body will not parse', '/decisions?', unparseable],
+    ['decisions: no list', '/decisions?', () => jsonResponse({})],
+    ['near-misses: body will not parse', '/near-misses', unparseable],
+    ['near-misses: list is an object', '/near-misses', () => jsonResponse({ nearMisses: {} })],
+  ];
+
+  test.each(MALFORMED_READS)('%s: all four panels are unreadable, and none says "none on record"', async (_name, fragment, responder) => {
+    installReadsForB({ [fragment]: responder });
+    render(<DecisionLoopReviewPage />);
+    fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+
+    expect(await screen.findByText(/medical administrative status could not be read/i)).toBeTruthy();
+    expect(screen.getByText(/Recommendations could not be read/i)).toBeTruthy();
+    expect(screen.getByText(/Decisions could not be read/i)).toBeTruthy();
+    expect(screen.getByText(/Near-misses could not be read/i)).toBeTruthy();
+    expect(screen.queryByText('No medical administrative status recorded yet.')).toBeNull();
+    expect(screen.queryByText('No recommendations yet.')).toBeNull();
+    expect(screen.queryByText('No decisions recorded yet.')).toBeNull();
+    expect(screen.queryByText('No near-misses flagged yet.')).toBeNull();
+  });
+
+  test('outcomes that will not parse are an error, not "No outcomes evaluated yet."', async () => {
+    const fetchMock = jest.fn(async (url: string) => {
+      const key = String(url);
+      if (key.includes('/decision-outcomes')) return unparseable();
+      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+      if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS });
+      if (key.includes('/recommendations')) return jsonResponse({ recommendations: [A_RECOMMENDATION] });
+      if (key.includes('/decisions')) return jsonResponse({ decisions: [A_DECISION] });
+      return jsonResponse({ nearMisses: [A_NEAR_MISS] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await openAthleteA();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load Outcomes' }));
+
+    expect(await screen.findByText('Failed to load decision outcomes.')).toBeTruthy();
+    expect(screen.queryByText('No outcomes evaluated yet.')).toBeNull();
   });
 });

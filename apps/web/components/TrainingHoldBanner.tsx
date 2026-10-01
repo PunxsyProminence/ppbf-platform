@@ -50,6 +50,22 @@ const SCOPE_HEADLINE: Record<AthleteFacingHold['scope'], string> = {
   conditioning_only: 'Conditioning is paused for you right now',
 };
 
+/* The route's athlete-facing projection, checked before anything renders it.
+   RefusalStamp THROWS on a blank explanation or name (a hold that reads as
+   blank is worse than none), so a partial object here would take the
+   athlete's whole screen down instead of telling them to talk to their coach.
+   A `hold` that is not this is an unread hold. */
+function isAthleteFacingHold(value: unknown): value is AthleteFacingHold {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const hold = value as Record<string, unknown>;
+  return (
+    typeof hold.scope === 'string' && hold.scope in SCOPE_HEADLINE
+    && typeof hold.athlete_explanation === 'string' && hold.athlete_explanation.trim().length > 0
+    && typeof hold.placed_by_name === 'string' && hold.placed_by_name.trim().length > 0
+    && (hold.lift_condition_text === null || hold.lift_condition_text === undefined || typeof hold.lift_condition_text === 'string')
+  );
+}
+
 const HOLD_UNREAD_LINE = 'Talk to your coach about today’s training.';
 
 export default function TrainingHoldBanner() {
@@ -78,8 +94,9 @@ export default function TrainingHoldBanner() {
           setReadState('unavailable');
           return;
         }
-        // Null is "no hold". Anything else that is not a hold object is not.
-        if (payload.hold !== null && (typeof payload.hold !== 'object' || Array.isArray(payload.hold))) {
+        // Null is "no hold". Anything else has to BE a hold: every field the
+        // stamp renders, present and of the right type.
+        if (payload.hold !== null && !isAthleteFacingHold(payload.hold)) {
           setReadState('unavailable');
           return;
         }

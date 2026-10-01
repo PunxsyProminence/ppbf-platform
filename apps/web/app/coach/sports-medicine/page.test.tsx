@@ -635,6 +635,42 @@ describe('a hold nobody could read never reads as "no hold"', () => {
     }
   });
 
+  test('an EMPTY list is the only list that means no hold: an entry that is not a hold is unknown', async () => {
+    // `[null]` and `[false]` used to read as "no hold" (first entry falsy);
+    // `[{}]` used to render a hold with no sentence and no way to lift it.
+    const entries: unknown[] = [
+      null,
+      false,
+      {},
+      'hold',
+      { ...HOLD, hold_id: undefined },
+      { ...HOLD, scope: undefined },
+      { ...HOLD, athlete_explanation: '   ' },
+      { ...HOLD, athlete_explanation: 7 },
+      { ...HOLD, lift_condition_text: null },
+    ];
+    for (const entry of entries) {
+      global.fetch = mockFetch({
+        '/training-holds': () => ({ ok: true, json: async () => ({ ok: true, holds: [entry] }) }) as Response,
+      });
+
+      const { unmount } = render(<SportsMedicinePage />);
+      await screen.findByText('Jordan Doe');
+
+      expect(within(holdRow()).getByText(UNREAD)).toBeTruthy();
+      expect(screen.queryByText(/Active Training Hold/)).toBeNull();
+      expectPlaceDisabledWithReason();
+      unmount();
+    }
+    // And a real hold behind a malformed one is not shown as a clean read.
+    global.fetch = mockFetch({
+      '/training-holds': () => ({ ok: true, json: async () => ({ ok: true, holds: [HOLD, null] }) }) as Response,
+    });
+    render(<SportsMedicinePage />);
+    await screen.findByText('Jordan Doe');
+    expect(within(holdRow()).getByText(UNREAD)).toBeTruthy();
+  });
+
   test('an athlete who genuinely has no hold is not told a read failed', async () => {
     // The other direction: a board that says "could not be read" on every row
     // teaches a coach to read past the one line that means something.
@@ -959,7 +995,7 @@ describe('a refused placement is news about the row', () => {
     expect(harness.holdReads()).toBe(2);
   });
 
-  test('a refusal whose re-read fails leaves the row and the open form as they were', async () => {
+  test('a refusal whose re-read FAILS leaves the hold unknown: the form closes, the place control is disabled, the refusal stays', async () => {
     let holdReads = 0;
     global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -978,15 +1014,47 @@ describe('a refused placement is news about the row', () => {
       return { ok: true, json: async () => ({ items: [] }) } as Response;
     }) as unknown as typeof fetch;
 
+    // The server has just contradicted the board (it may be saying "Hold
+    // already exists") and the board could not look again. Its last
+    // successful read -- "no hold" -- is not something to keep showing.
     render(<SportsMedicinePage />);
     await openPlaceForm();
     fireEvent.change(screen.getByLabelText(/What this athlete reads/), { target: { value: 'Resting your wrist.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
 
     await screen.findByText('Hold Not Placed');
-    await waitFor(() => expect(holdReads).toBe(2));
+    expect(screen.getByText('Scope not supported.')).toBeTruthy();
+    expect(await screen.findByText(/Training hold could not be read/)).toBeTruthy();
+    expect(holdReads).toBe(2);
+    // The form is gone, and the only way forward is a read that succeeds.
+    expect(screen.queryByLabelText(/What this athlete reads/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Place hold' })).toBeNull();
+    expect((screen.getByRole('button', { name: 'Place a training hold' }) as HTMLButtonElement).disabled).toBe(true);
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Check again' }) as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect(screen.getByText('Hold Not Placed')).toBeTruthy();
+  });
+
+  test('a refusal whose re-read finds no hold keeps the form open with what was typed', async () => {
+    // The other direction: an ordinary refusal with a board that CAN look
+    // again must not cost the coach their sentence.
+    const harness = mockWriteFetch({
+      holdsBefore: [],
+      holdsAfter: [],
+      post: () => ({ ok: false, status: 400, json: async () => ({ error: 'Scope not supported.' }) }) as Response,
+    });
+
+    render(<SportsMedicinePage />);
+    await openPlaceForm();
+    fireEvent.change(screen.getByLabelText(/What this athlete reads/), { target: { value: 'Resting your wrist.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+
+    await screen.findByText('Hold Not Placed');
+    await waitFor(() => expect(harness.holdReads()).toBe(2));
     await waitFor(() => expect((screen.getByRole('button', { name: 'Place hold' }) as HTMLButtonElement).disabled).toBe(false));
     expect(screen.queryByText(/Training hold could not be read/)).toBeNull();
     expect((screen.getByLabelText(/What this athlete reads/) as HTMLTextAreaElement).value).toBe('Resting your wrist.');
   });
+
 });

@@ -68,6 +68,21 @@ interface ClearanceRow {
 
 type HoldRead = 'loaded' | 'unavailable';
 
+/* What this board needs from a hold before it will show one. An entry that
+   is not this -- null, false, an empty object, a row with no sentence for the
+   athlete -- is not a hold and is not "no hold" either: the read did not
+   deliver what the route always sends, so the hold is unread. */
+function isActiveHold(value: unknown): value is ActiveHold {
+  if (!value || typeof value !== 'object') return false;
+  const hold = value as Record<string, unknown>;
+  return (
+    typeof hold.hold_id === 'string' && hold.hold_id.length > 0
+    && typeof hold.scope === 'string' && hold.scope.length > 0
+    && typeof hold.athlete_explanation === 'string' && hold.athlete_explanation.trim().length > 0
+    && typeof hold.lift_condition_text === 'string'
+  );
+}
+
 /**
  * The rungs a coach may PLACE, in the words of the capability's own contract
  * (docs/capabilities/GATES.md §7) -- only the ones the platform actually
@@ -163,11 +178,15 @@ export default function SportsMedicinePage() {
       { method: 'GET', credentials: 'include' },
     );
     if (!response.ok) throw new Error('Unable to read this athlete’s holds.');
-    const payload = (await response.json()) as { holds?: ActiveHold[] } | null;
+    const payload = (await response.json()) as { holds?: unknown } | null;
     // The route always answers a staff read with a `holds` array. A 200 that
-    // does not carry one is not a statement that there are no holds.
-    if (!payload || !Array.isArray(payload.holds)) throw new Error('Unable to read this athlete’s holds.');
-    return payload.holds[0] ?? null;
+    // does not carry one is not a statement that there are no holds -- and an
+    // EMPTY array is the only array that is. `[null]`, `[false]` or `[{}]` has
+    // an entry, and an entry that is not a hold is an unread hold.
+    if (!payload || !Array.isArray(payload.holds) || !payload.holds.every(isActiveHold)) {
+      throw new Error('Unable to read this athlete’s holds.');
+    }
+    return (payload.holds as ActiveHold[])[0] ?? null;
   }, []);
 
   useEffect(() => {
@@ -249,16 +268,15 @@ export default function SportsMedicinePage() {
    * hold is gone and showing it as active would be the wrong claim. Each caller
    * passes the outcome the server has already told it is true -- and where the
    * server told it nothing it can show (a PLACE whose response carried no
-   * hold), the fallback is 'unavailable', never "no hold". A caller with no
-   * committed outcome to fall back on (a refused write) passes null: a failed
-   * re-read then leaves the row exactly as it was.
+   * hold, or a PLACE the server refused), the fallback is 'unavailable', never
+   * "no hold". Returns what the row was settled to.
    */
   const refreshHold = useCallback(
     async (
       athleteId: string,
-      fallback: { hold: ActiveHold | null; hold_read: HoldRead } | null,
+      fallback: { hold: ActiveHold | null; hold_read: HoldRead },
       justPlaced = false,
-    ) => {
+    ): Promise<{ hold: ActiveHold | null; hold_read: HoldRead }> => {
       let next = fallback;
       try {
         const hold = await readActiveHold(athleteId);
@@ -269,9 +287,9 @@ export default function SportsMedicinePage() {
       } catch {
         // Keep the committed outcome; the board is refreshed on the next load.
       }
-      if (!next) return;
       const settled = next;
       setRows((current) => current.map((row) => (row.athlete_id === athleteId ? { ...row, ...settled } : row)));
+      return settled;
     },
     [readActiveHold],
   );
@@ -328,7 +346,7 @@ export default function SportsMedicinePage() {
       });
       await refreshHold(
         athleteId,
-        result?.hold ? { hold: result.hold, hold_read: 'loaded' } : { hold: null, hold_read: 'unavailable' },
+        isActiveHold(result?.hold) ? { hold: result.hold, hold_read: 'loaded' } : { hold: null, hold_read: 'unavailable' },
         true,
       );
       setOpenFor(null);
@@ -342,8 +360,14 @@ export default function SportsMedicinePage() {
       // A refusal is news about the row: "Hold already exists ... lift it
       // first" means the board's "no hold" is out of date. Read it again
       // rather than leave an open place control beside a hold someone else
-      // placed. If this read fails too, the row stays as it was.
-      await refreshHold(athleteId, null);
+      // placed. If this read FAILS, the row is unknown: the server has just
+      // contradicted what the board believed and nobody could look again, so
+      // the last successful read is not something to keep showing. The
+      // refusal's own text stays on the row either way.
+      const settled = await refreshHold(athleteId, { hold: null, hold_read: 'unavailable' });
+      if (settled.hold || settled.hold_read === 'unavailable') {
+        setOpenFor((current) => (current === athleteId ? null : current));
+      }
     } finally {
       setBusy(athleteId, false);
     }
