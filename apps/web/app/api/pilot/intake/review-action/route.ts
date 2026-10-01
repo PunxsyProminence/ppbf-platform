@@ -588,7 +588,9 @@ export async function POST(request: NextRequest) { // NOSONAR
         // same refusals as that check, repeated on provisioning's own read,
         // so an account that became a non-parent, or was deleted or
         // deactivated, before that read is still refused rather than re-roled
-        // or reactivated. A change between that read and its upsert is not.
+        // or reactivated. Deactivation is also refused in provisioning's
+        // account write; a role change or deletion between its read and that
+        // write is not.
         const provisioned = await createOrUpdateMicrosoftStaffAccount({
           loginEmail: guardian.email,
           organizationId: principal.organizationId,

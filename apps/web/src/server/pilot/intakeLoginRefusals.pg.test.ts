@@ -274,6 +274,77 @@ describe('d1: intake does not turn a deactivated guardian login back on', () => 
     expect(await membershipActive(ACCOUNT)).toBe(false);
   });
 
+  // Provisioning reads the login before its transaction. An admin who
+  // deactivates it after that read must not have it turned back on by the
+  // write: the account write refuses a deactivated row itself.
+  test('a login deactivated between provisioning\'s read and its write is refused and stays inactive', async () => {
+    await db.query('update pilot.accounts set active_flag = true where account_id = $1', [ACCOUNT]);
+    await db.query('update pilot.organization_memberships set active_flag = true where account_id = $1', [ACCOUNT]);
+
+    const realQueryOne = db.queryOne;
+    const spy = jest.spyOn(db, 'queryOne').mockImplementation((async (sql: string, params?: unknown[]) => {
+      const row = await realQueryOne(sql, params);
+      if (sql.includes('lower(login_email) = $1')) {
+        // The read saw an active login; the admin deactivates it now.
+        await auth.setAccountActiveStatus(ACCOUNT, ORG, false);
+      }
+      return row;
+    }) as typeof db.queryOne);
+
+    try {
+      await expect(
+        staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+          loginEmail: EMAIL,
+          organizationId: ORG,
+          role: 'parent',
+          accountIdHint: ACCOUNT,
+          refuseRoleChange: true,
+          refuseDeletedLogin: true,
+          refuseDeactivatedLogin: true,
+        }),
+      ).rejects.toMatchObject({ status: 409, code: 'DEACTIVATED_GUARDIAN_LOGIN' });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect((await accountRow(ACCOUNT))?.active_flag).toBe(false);
+    expect(await membershipActive(ACCOUNT)).toBe(false);
+  });
+
+  test('an active guardian login is still provisioned by intake\'s call, and stays active', async () => {
+    await db.query('update pilot.accounts set active_flag = true where account_id = $1', [ACCOUNT]);
+    await db.query('update pilot.organization_memberships set active_flag = true where account_id = $1', [ACCOUNT]);
+
+    const result = await staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+      loginEmail: EMAIL,
+      organizationId: ORG,
+      role: 'parent',
+      accountIdHint: ACCOUNT,
+      refuseRoleChange: true,
+      refuseDeletedLogin: true,
+      refuseDeactivatedLogin: true,
+    });
+
+    expect(result.accountId).toBe(ACCOUNT);
+    expect((await accountRow(ACCOUNT))?.active_flag).toBe(true);
+    expect(await membershipActive(ACCOUNT)).toBe(true);
+  });
+
+  test('a new guardian login is still created by intake\'s call', async () => {
+    const result = await staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'new.guardian@example.org',
+      organizationId: ORG,
+      role: 'parent',
+      accountIdHint: 'acct-new-parent',
+      refuseRoleChange: true,
+      refuseDeletedLogin: true,
+      refuseDeactivatedLogin: true,
+    });
+
+    expect(result.created).toBe(true);
+    expect((await accountRow('acct-new-parent'))?.active_flag).toBe(true);
+  });
+
   test('an active guardian login still passes the check', async () => {
     await db.query('update pilot.accounts set active_flag = true where account_id = $1', [ACCOUNT]);
     await expect(

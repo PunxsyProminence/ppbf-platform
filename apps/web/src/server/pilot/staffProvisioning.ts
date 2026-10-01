@@ -311,7 +311,9 @@ function deactivatedGuardianLoginConflict(loginEmail: string): ConflictError {
  * `refuseDeactivatedLogin` is intake promotion's only as well: an existing
  * account with active_flag false is refused (409) rather than reactivated
  * (OD-2026-09-30-004 d1). The invite surfaces leave it unset, because
- * re-inviting is how an admin reactivates a login on purpose.
+ * re-inviting is how an admin reactivates a login on purpose. It is refused
+ * on the read and again in the account write itself, so a login deactivated
+ * between the two is still not turned back on.
  */
 export async function createOrUpdateMicrosoftStaffAccount(params: {
   loginEmail: string;
@@ -446,7 +448,13 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
   }
 
   const { guardianLink, volunteerLink } = await withTransaction(async (client) => {
-    await client.query(
+    // refuseDeactivatedLogin is held in this statement, not only in the read
+    // above: that read is outside the transaction, so an admin deactivating
+    // the login after it would otherwise have it turned back on here. With
+    // the flag set, the conflict update touches only an active row; a
+    // deactivated one comes back as no row, and the refusal below rolls the
+    // transaction back before the membership is written.
+    const written = await client.query<{ account_id: string }>(
       `insert into pilot.accounts (
          account_id,
          login_email,
@@ -468,9 +476,15 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
          athlete_id = null,
          pin_hash = null,
          active_flag = true,
-         updated_at = now()`,
-      [accountId, loginEmail, role, organizationId],
+         updated_at = now()
+       where not $5::boolean or pilot.accounts.active_flag
+       returning account_id`,
+      [accountId, loginEmail, role, organizationId, params.refuseDeactivatedLogin === true],
     );
+
+    if (params.refuseDeactivatedLogin && written.rows.length === 0) {
+      throw deactivatedGuardianLoginConflict(loginEmail);
+    }
 
     await client.query(
       `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
