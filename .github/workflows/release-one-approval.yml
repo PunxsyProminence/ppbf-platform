@@ -1,0 +1,1159 @@
+# ─────────────────────────────────────────────────────────────────────────
+# One run, one production approval: staging, migrations and production for a
+# single frozen commit.
+#
+# WHY THIS EXISTS. The three-workflow path (apply-migrations, deploy-staging,
+# deploy-production) dispatches each stage separately, and each dispatch takes
+# main's head at that moment. A release takes about ten minutes; main moved
+# under four consecutive attempts on 2026-09-28 and 2026-09-30, and
+# deploy-production then refuses a digest staged from the older commit. Here
+# every stage uses THIS run's github.sha, so main moving after dispatch changes
+# nothing (OD-2026-09-30-001, OD-2026-09-30-007).
+#
+# SHAPE. Two jobs, one click.
+#   staging     `environment: staging`, which has no required reviewer, so it
+#               does not pause. Migrates staging, builds the image once, deploys
+#               it, runs the staging gates, and hands the digest on as a job
+#               output.
+#   production  `environment: production`. This is the ONE approval, and it is
+#               asked only after staging has passed, with staging's results on
+#               the same run page. Every read-only refusal runs before the
+#               production migration; the SHADOW queue is checked again
+#               immediately before the update.
+# If `staging` ever acquires a required reviewer this stops being one click.
+# Nothing here can pin that setting; docs/AI_DELIVERY_PIPELINE.md says to
+# re-read both environments before each use.
+#
+# WHERE THE STEPS COME FROM. The deploy, verify and gate steps are COPIES of the
+# steps of the same name in deploy-staging.yml and deploy-production.yml, and
+# releaseOneApprovalContract.test.ts fails when a copy and its source differ by
+# anything but the substitutions it declares (the digest comes from the staging
+# job, the SHA from github.sha). The reasoning for each step lives above its
+# source and is not repeated here. Change the source and this file together.
+#
+# The migration order is not copied at all: both jobs read it from
+# apps/web/scripts/migration-apply-order.mjs, the same reader the schema check
+# uses, which reads the `all` list of apply-migrations.yml.
+#
+# WHAT THIS DOES NOT DO.
+#   - It does not seed reference data. A release whose code depends on newly
+#     seeded reference content stays on the three-workflow path.
+#   - It is not transactional. If production migrations apply and a later step
+#     fails, the run is FAILED, the schema is NOT rolled back, and production's
+#     schema may be ahead of the running app. The next attempt is a fresh
+#     dispatch; the migrations are idempotent.
+#   - It does not support re-runs. Both jobs refuse any attempt after the first
+#     before changing anything: a re-run of the production job alone would reuse
+#     an old staging result and an old approval.
+#   - It does not replace the three existing workflows, which keep their own
+#     inputs and attestations.
+# ─────────────────────────────────────────────────────────────────────────
+
+name: release-one-approval
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_sha:
+        description: "Full commit SHA at main's head that this run releases (must exactly match the checked-out commit)"
+        required: true
+        type: string
+      confirm_production:
+        description: 'Retype "production": after one approval this run migrates and deploys production'
+        required: true
+        type: string
+      allow_rollback:
+        description: "Deploying a commit OLDER than what production runs? Choose YES. Leave NO otherwise."
+        required: false
+        default: "NO"
+        type: choice
+        options:
+          - "NO"
+          - "YES"
+      enable_shadow_gate:
+        description: Run the SHADOW E2E gate and runtime probes on staging before the production approval
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  # The whole run, so a second release cannot begin its staging half while the
+  # first waits at the production approval. A waiting run holds this group
+  # until it is approved, rejected or cancelled. `queue: max`: a later dispatch
+  # waits instead of cancelling the run already pending.
+  group: release-one-approval
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  staging:
+    environment: staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # The same group deploy-staging.yml and a staging apply-migrations use, so
+    # this job never runs beside either. `queue: max` as on every member of
+    # the group: one member on the default brings back the cancelling of a
+    # pending run.
+    concurrency:
+      group: deploy-staging-app-ppbf-staging
+      cancel-in-progress: false
+      queue: max
+    outputs:
+      digest: ${{ steps.build-image.outputs.digest }}
+    env:
+      ACR_NAME: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+      ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io
+      RESOURCE_GROUP: rg-ppbf-enterprise-staging
+    steps:
+      # Before the checkout, before Azure: free-text inputs reach the shell
+      # through env, never by interpolation.
+      - name: Refuse A Re-Run, A Wrong Ref Or A Wrong Commit
+        env:
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          REF: ${{ github.ref }}
+          HEAD_SHA: ${{ github.sha }}
+          CONFIRM_SHA: ${{ inputs.confirm_sha }}
+          CONFIRM_PRODUCTION: ${{ inputs.confirm_production }}
+        run: |
+          if [ "$RUN_ATTEMPT" != "1" ]; then
+            echo "::error::This is attempt $RUN_ATTEMPT of the run. release-one-approval does not support re-runs: a re-run would reuse an earlier attempt's staging result and approval. Nothing was changed. Dispatch a fresh run."
+            exit 1
+          fi
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::This workflow may only be dispatched from refs/heads/main (got '$REF')."
+            exit 1
+          fi
+          if [ -z "$CONFIRM_SHA" ]; then
+            echo "::error::confirm_sha is empty. Dispatch a fresh run with confirm_sha=$HEAD_SHA."
+            exit 1
+          fi
+          if [ "$CONFIRM_SHA" != "$HEAD_SHA" ]; then
+            echo "::error::confirm_sha ('$CONFIRM_SHA') does not match the commit this run froze ('$HEAD_SHA'). Pass the full 40-character SHA of main's head. Refusing to release."
+            exit 1
+          fi
+          if [ "$CONFIRM_PRODUCTION" != "production" ]; then
+            echo "::error::confirm_production must be exactly 'production'. This run deploys staging AND, after one approval, migrates and deploys production."
+            exit 1
+          fi
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+
+      - name: Verify The Checkout Is The Frozen Commit
+        run: |
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          if [ "$ACTUAL_SHA" != "$GITHUB_SHA" ]; then
+            echo "::error::Checked out $ACTUAL_SHA, but this run froze $GITHUB_SHA."
+            exit 1
+          fi
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Node For The Schema Check
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      # Schema before code, staging first.
+      - name: Apply Staging Migrations
+        id: migrate-staging
+        run: |
+          set -euo pipefail
+
+          # Read from the target-NAMED app and kept inside this step: the
+          # connection string is never written to GITHUB_ENV.
+          CONN="$(az containerapp secret show \
+            --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+
+          # Four runners refuse to write to a database nobody named. Derived
+          # from the string just fetched, parsed exactly as the runners parse it.
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) { process.exit(2); }
+            process.stdout.write(host + "\n" + db);
+          ')"
+          PPBF_EXPECTED_POSTGRES_HOSTNAME="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          PPBF_EXPECTED_POSTGRES_DATABASE="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          test -n "$PPBF_EXPECTED_POSTGRES_HOSTNAME"
+          test -n "$PPBF_EXPECTED_POSTGRES_DATABASE"
+          export AZURE_POSTGRES_CONNECTION_STRING="$CONN"
+          export PPBF_EXPECTED_POSTGRES_HOSTNAME PPBF_EXPECTED_POSTGRES_DATABASE
+
+          cd apps/web
+
+          # An assignment, so a refusal by the reader stops the step here. The
+          # empty check is for the one case a status cannot report: a reader
+          # that printed nothing and exited 0.
+          SLUGS="$(node scripts/migration-apply-order.mjs --slugs)"
+          if [ -z "$SLUGS" ]; then
+            echo "::error::The migration order came back empty. Refusing to treat no list as nothing to apply."
+            exit 1
+          fi
+
+          for m in $SLUGS; do
+            echo "::group::npm run pilot:apply-$m"
+            npm run "pilot:apply-$m"
+            echo "::endgroup::"
+          done
+
+      - name: Verify Staging Schema Matches This Commit
+        run: |
+          CONN="$(az containerapp secret show \
+            --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          if ! AZURE_POSTGRES_CONNECTION_STRING="$CONN" node apps/web/scripts/pilot-verify-schema.mjs; then
+            echo "::error::Staging is missing schema objects this commit expects. The migrations this run just applied did not produce them."
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Azure Container Registry
+        run: |
+          az acr login --name "$ACR_NAME"
+
+      # The only image build in this workflow. The production job promotes this
+      # digest and never builds.
+      - name: Build and Push Container Image to ACR
+        id: build-image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ env.ACR_LOGIN_SERVER }}/ppbf-frontend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Capture Staging Image Digest
+        run: |
+          DIGEST='${{ steps.build-image.outputs.digest }}'
+          test -n "$DIGEST"
+          printf '%s\n' "$DIGEST" > staging-image-digest.txt
+          {
+            echo '### Staging image digest'
+            echo ''
+            echo "$DIGEST"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Staging Digest Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: staging-image-digest
+          path: staging-image-digest.txt
+
+      - name: Validate Staging AI Configuration
+        env:
+          AZURE_AI_ENDPOINT: ${{ vars.AZURE_AI_ENDPOINT }}
+          AZURE_AI_DEPLOYMENT_NAME: ${{ vars.AZURE_AI_DEPLOYMENT_NAME }}
+          AZURE_AI_API_VERSION: ${{ vars.AZURE_AI_API_VERSION }}
+        run: |
+          test -n "$AZURE_AI_ENDPOINT"
+          # Quick Round resolves its deployment from this variable, not from the
+          # MODEL_REGISTRY in shadowRouter.ts. Both generations are accepted so the
+          # variable can be rolled back to the previous model without editing this
+          # workflow -- but an unrecognized value is still refused, because a typo
+          # here silently sends every SHADOW turn to a deployment that does not exist.
+          case "$AZURE_AI_DEPLOYMENT_NAME" in
+            gpt-5.6-luna-shadow|gpt-5-mini-shadow) ;;
+            *) echo "AZURE_AI_DEPLOYMENT_NAME '$AZURE_AI_DEPLOYMENT_NAME' is not a known SHADOW quick-tier deployment."; exit 1 ;;
+          esac
+          if [ "$AZURE_AI_API_VERSION" != "2024-12-01-preview" ]; then
+            echo "AZURE_AI_API_VERSION is '$AZURE_AI_API_VERSION', expected '2024-12-01-preview'."
+            exit 1
+          fi
+          case "$AZURE_AI_ENDPOINT" in
+            https://shadow-ai.cognitiveservices.azure.com|https://shadow-ai.cognitiveservices.azure.com/) ;;
+            *) echo "AZURE_AI_ENDPOINT '$AZURE_AI_ENDPOINT' is not the approved SHADOW endpoint."; exit 1 ;;
+          esac
+
+      - name: Deploy to Azure Container App
+        env:
+          AZURE_AI_ENDPOINT: ${{ vars.AZURE_AI_ENDPOINT }}
+          AZURE_AI_DEPLOYMENT_NAME: ${{ vars.AZURE_AI_DEPLOYMENT_NAME }}
+          AZURE_AI_API_VERSION: ${{ vars.AZURE_AI_API_VERSION }}
+          RESEARCH_BRIDGE_EXPORT_AUDIENCE: ${{ vars.RESEARCH_BRIDGE_EXPORT_AUDIENCE }}
+          RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS: ${{ vars.RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS }}
+          RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST: ${{ vars.RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST }}
+          # The origin magic-link sign-in emails are built against. Not a
+          # secret -- it is the public address of this environment -- so it
+          # is a var, checked below like the research bridge values.
+          #
+          # It is checked at DEPLOY time because it cannot be noticed at run
+          # time. magicLinkStore.ts throws MISSING_PPBF_APP_ORIGIN, and the
+          # request route swallows every issue failure on purpose so the
+          # endpoint cannot be used to test whether an address belongs to a
+          # family here. That silence is right for the roster, and it means
+          # an unset origin looks exactly like a link that was sent: the
+          # parent is told one is on the way and none ever arrives.
+          PPBF_APP_ORIGIN: ${{ vars.PPBF_APP_ORIGIN }}
+        run: |
+          for name in RESEARCH_BRIDGE_EXPORT_AUDIENCE RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST PPBF_APP_ORIGIN; do
+            if [ -z "${!name}" ]; then
+              echo "Required staging research bridge variable '$name' is not configured."
+              exit 1
+            fi
+          done
+
+          az containerapp update \
+            --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${ACR_LOGIN_SERVER}/ppbf-frontend@${{ steps.build-image.outputs.digest }}" \
+            --set-env-vars \
+              AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string \
+              AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string \
+              PPBF_MS_TENANT_ID=secretref:ppbf-ms-tenant-id \
+              PPBF_MS_CLIENT_ID=secretref:ppbf-ms-client-id \
+              PPBF_MS_CLIENT_SECRET=secretref:ppbf-ms-client-secret \
+              PPBF_MS_REDIRECT_URI=secretref:ppbf-ms-redirect-uri \
+              PPBF_MS_POST_LOGIN_PATH=secretref:ppbf-ms-post-login-path \
+              PPBF_APP_ORIGIN="$PPBF_APP_ORIGIN" \
+              AZURE_AI_ENDPOINT="$AZURE_AI_ENDPOINT" \
+              AZURE_AI_DEPLOYMENT_NAME="$AZURE_AI_DEPLOYMENT_NAME" \
+              AZURE_AI_API_VERSION="$AZURE_AI_API_VERSION" \
+              AZURE_AI_KEY=secretref:azure-ai-key \
+              PPBF_SHADOW_MAX_COMPLETION_TOKENS=8192 \
+              PPBF_SHADOW_PROVIDER_TIMEOUT_MS=120000 \
+              PPBF_SHADOW_WORKER_ENABLED=true \
+              PPBF_INTAKE_PROMOTION_ENABLED=true \
+              AZURE_AI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small \
+              AZURE_AI_VISION_DEPLOYMENT_NAME=gpt-5-vision-shadow \
+              PPBF_FILM_STUDY_DIAGNOSTIC_ENABLED=true \
+              PPBF_VIDEO_CONTENT_SCAN=vision \
+              PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
+              PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
+              PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \
+              PPBF_DURABLE_RATE_LIMIT=true \
+              RESEARCH_BRIDGE_EXPORT_ENABLED=true \
+              RESEARCH_BRIDGE_EXPORT_ENVIRONMENT=staging \
+              RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST="$RESEARCH_BRIDGE_EXPORT_ALLOWED_HOST" \
+              RESEARCH_BRIDGE_EXPORT_AUDIENCE="$RESEARCH_BRIDGE_EXPORT_AUDIENCE" \
+              RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS="$RESEARCH_BRIDGE_EXPORT_ALLOWED_CLIENT_IDS" \
+              RESEARCH_BRIDGE_ORGANIZATION_ID=secretref:ppbf-pilot-default-org-id \
+              AZURE_TENANT_ID=secretref:ppbf-ms-tenant-id
+
+      - name: Verify Staging AI Secret Reference
+        run: |
+          AI_KEY_REF="$(az containerapp show \
+            --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.template.containers[0].env[?name=='AZURE_AI_KEY'].secretRef | [0]" \
+            -o tsv)"
+          if [ "$AI_KEY_REF" != "azure-ai-key" ]; then
+            echo "AZURE_AI_KEY resolved to secretRef '$AI_KEY_REF', expected 'azure-ai-key'."
+            echo "The deployed revision would read the wrong secret, so this run stops here."
+            exit 1
+          fi
+
+      - name: Wait For New Revision To Take Traffic
+        run: |
+          LATEST="$(az containerapp show --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestRevisionName -o tsv)"
+          echo "Waiting on revision $LATEST"
+          for i in $(seq 1 60); do
+            READ="$(az containerapp revision show --name app-ppbf-staging \
+              --resource-group "$RESOURCE_GROUP" --revision "$LATEST" \
+              --query "[properties.runningState, properties.trafficWeight]" -o tsv | tr '\n' ' ')"
+            echo "  $i: $READ"
+            case "$READ" in
+              "Running 100"*) exit 0 ;;
+            esac
+            sleep 5
+          done
+          echo "::error::Revision $LATEST did not reach Running/100% traffic within 5 minutes."
+          exit 1
+
+      - name: Resolve Staging API Base URL
+        run: |
+          FQDN="$(az containerapp show --name app-ppbf-staging --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)"
+          test -n "$FQDN"
+          echo "PILOT_GATE_BASE_URL=https://$FQDN" >> "$GITHUB_ENV"
+
+      - name: Resolve Staging Database Connection For Gate
+        if: inputs.enable_shadow_gate
+        run: |
+          CONN="$(az containerapp secret show \
+            --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          echo "GATE_DB_CONNECTION=$CONN" >> "$GITHUB_ENV"
+
+          # The fixture provisioner refuses to write to a database nobody named
+          # (see apps/web/scripts/lib/postgres-write-target.mjs). Derive the
+          # expected target from the string we just fetched from the
+          # staging-NAMED app, so the assertion is a consistency check on a
+          # target that is already pinned to staging by the lookup above --
+          # this workflow reads app-ppbf-staging literally, never inputs.target.
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) { process.exit(2); }
+            process.stdout.write(host + "\n" + db);
+          ')"
+          GATE_HOST="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          GATE_DB="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          test -n "$GATE_HOST"
+          test -n "$GATE_DB"
+          echo "GATE_EXPECTED_POSTGRES_HOSTNAME=$GATE_HOST" >> "$GITHUB_ENV"
+          echo "GATE_EXPECTED_POSTGRES_DATABASE=$GATE_DB" >> "$GITHUB_ENV"
+
+      - name: Resolve Staging Default Organization For Gate
+        if: inputs.enable_shadow_gate
+        run: |
+          ORG_ID="$(az containerapp secret show \
+            --name app-ppbf-staging \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name ppbf-pilot-default-org-id \
+            --query value -o tsv)"
+          test -n "$ORG_ID"
+          echo "::add-mask::$ORG_ID"
+          echo "GATE_DEFAULT_ORG_ID=$ORG_ID" >> "$GITHUB_ENV"
+
+      - name: Mint Ephemeral Gate Athlete PIN
+        id: mint-gate-pin
+        if: inputs.enable_shadow_gate
+        run: |
+          PIN="$(python3 - <<'PY'
+          import secrets
+
+          ASCENDING = '01234567890123456789'
+          DESCENDING = '98765432109876543210'
+          DEFAULT_FIRST_LOGIN_PIN = '123456'
+          LENGTH = 6
+
+          def trivially_guessable(pin):
+              if len(set(pin)) == 1:                                  # 000000, 111111
+                  return True
+              if pin in ASCENDING or pin in DESCENDING:               # 123456, 654321, 890123
+                  return True
+              for size in (1, 2, 3):                                  # 121212, 123123
+                  if pin[:size] * (LENGTH // size) == pin:
+                      return True
+              if all(pin[i] == pin[i + 1] for i in (0, 2, 4)):        # 112233
+                  return True
+              if pin == pin[::-1]:                                    # 123321
+                  return True
+              return False
+
+          for _ in range(10_000):
+              candidate = f"{secrets.randbelow(900000) + 100000:06d}"
+              if candidate != DEFAULT_FIRST_LOGIN_PIN and not trivially_guessable(candidate):
+                  print(candidate)
+                  break
+          else:
+              raise SystemExit('could not mint a policy-satisfying PIN')
+          PY
+          )"
+          test -n "$PIN"
+          echo "::add-mask::$PIN"
+          echo "GATE_ATHLETE_PIN=$PIN" >> "$GITHUB_ENV"
+
+      - name: Provision Gate Fixture Accounts
+        if: inputs.enable_shadow_gate
+        env:
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
+          # Required by the provisioner's write-target guard; derived above from
+          # the staging app's own connection string.
+          PPBF_EXPECTED_POSTGRES_HOSTNAME: ${{ env.GATE_EXPECTED_POSTGRES_HOSTNAME }}
+          PPBF_EXPECTED_POSTGRES_DATABASE: ${{ env.GATE_EXPECTED_POSTGRES_DATABASE }}
+          PPBF_PILOT_DEFAULT_ORG_ID: ${{ env.GATE_DEFAULT_ORG_ID }}
+          PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+          # Same identities the gate step passes below: the provisioner creates
+          # the athlete directly (intake promotion cannot -- document approval
+          # is unreachable until the review feature is built, see the gate's
+          # known-gap branch), and when promotion works again both paths upsert
+          # the same rows.
+          PILOT_SHADOW_ATHLETE_ACCOUNT_ID: gate_shadow_athlete
+          PILOT_SHADOW_ATHLETE_PIN: ${{ env.GATE_ATHLETE_PIN }}
+          PILOT_SHADOW_ATHLETE_ID: GATE-SHADOW-ATH-1
+          # Read-only probe fixtures for the runtime-verification step below.
+          # The interesting probes are refusals -- an org-admin-gated route must
+          # refuse a coach, and must refuse the platform owner too -- and a
+          # refusal cannot be proven without a session of the role being
+          # refused. Both are provisioned Microsoft-authenticated with no PIN
+          # hash, so neither can ever authenticate through the login form.
+          PILOT_PROBE_COACH_ACCOUNT_ID: gate_probe_coach
+          PILOT_PROBE_PLATFORM_OWNER_ACCOUNT_ID: gate_probe_platform_owner
+          # The split household: two guardians on one athlete, the second of
+          # them also the emergency contact. The guardian-contact probe below
+          # asserts a NEGATIVE about a real response body -- that one household
+          # sees no trace of the other's phone, email or account_id -- and a
+          # negative asserted against a table with one guardian in it passes
+          # while proving nothing. Both are Microsoft-authenticated with no PIN
+          # hash, so neither can ever authenticate through the login form.
+          PILOT_PROBE_GUARDIAN_A_ACCOUNT_ID: gate_probe_guardian_a
+          PILOT_PROBE_GUARDIAN_B_ACCOUNT_ID: gate_probe_guardian_b
+        run: |
+          npm --prefix apps/web run gate:pilot:fixtures
+
+      - name: Run SHADOW E2E Gate
+        if: inputs.enable_shadow_gate
+        env:
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
+          PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+          PPBF_PILOT_DEFAULT_ORG_ID: ${{ env.GATE_DEFAULT_ORG_ID }}
+          PILOT_SHADOW_ATHLETE_ACCOUNT_ID: gate_shadow_athlete
+          PILOT_SHADOW_ATHLETE_PIN: ${{ env.GATE_ATHLETE_PIN }}
+          PILOT_SHADOW_ATHLETE_ID: GATE-SHADOW-ATH-1
+          PILOT_SHADOW_GUARDIAN_ACCOUNT_ID: gate_shadow_guardian
+          PILOT_SHADOW_GUARDIAN_PARENT_ID: gate_shadow_parent_1
+        run: |
+          npm --prefix apps/web run gate:pilot:shadow-e2e
+
+      - name: Guardian Contact Runtime Probe
+        if: inputs.enable_shadow_gate
+        env:
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
+          PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+          PILOT_SHADOW_ATHLETE_ACCOUNT_ID: gate_shadow_athlete
+          PILOT_SHADOW_ATHLETE_ID: GATE-SHADOW-ATH-1
+          PILOT_PROBE_GUARDIAN_A_ACCOUNT_ID: gate_probe_guardian_a
+          PILOT_PROBE_GUARDIAN_B_ACCOUNT_ID: gate_probe_guardian_b
+        run: |
+          {
+            echo ''
+            echo '### Guardian contact runtime probe'
+            echo ''
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          set +e
+          npm --prefix apps/web run gate:pilot:guardian-contact \
+            2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          status=${PIPESTATUS[0]}
+          set -e
+
+          {
+            echo '```'
+            echo ''
+            echo "Probe exit status: \`$status\`. Non-zero means a guardian's contact details"
+            echo 'reached a reader who must not have them, or that staff lost fields they need.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$status"
+
+      - name: Runtime Verification Ledger
+        if: inputs.enable_shadow_gate
+        env:
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
+          PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+          PILOT_PROBE_COACH_ACCOUNT_ID: gate_probe_coach
+          PILOT_PROBE_PLATFORM_OWNER_ACCOUNT_ID: gate_probe_platform_owner
+        run: |
+          {
+            echo ''
+            echo '### Runtime verification ledger'
+            echo ''
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # set +e, not pipefail: this shell runs with -e, so a failing probe
+          # would abort the step before the status could be captured and the
+          # summary would be left with an unterminated code fence and no verdict
+          # -- the failure case is exactly the one whose output matters most.
+          #
+          # tee so the ledger lands in both the step summary and the run log:
+          # the summary is what a gatekeeper reads, the log is what survives
+          # being scrolled past.
+          set +e
+          npm --prefix apps/web run pilot:runtime-verify -- --target=staging \
+            2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          status=${PIPESTATUS[0]}
+          set -e
+
+          {
+            echo '```'
+            echo ''
+            echo "Probe exit status: \`$status\` (non-zero means at least one probe FAILED or errored)."
+            echo 'A non-zero status fails this step and the deploy: since run 32770638337'
+            echo 'this ledger gates. A green ledger still does not clear RUNTIME_VERIFIED --'
+            echo 'see the outstanding-probe list the ledger prints, which is declared future'
+            echo 'work rather than probe failures, and is not what turns this step red.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$status"
+
+      - name: Deactivate Gate Athlete Fixture
+        id: deactivate-gate-athlete
+        if: always() && inputs.enable_shadow_gate
+        continue-on-error: true
+        env:
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ env.GATE_DB_CONNECTION }}
+          PPBF_EXPECTED_POSTGRES_HOSTNAME: ${{ env.GATE_EXPECTED_POSTGRES_HOSTNAME }}
+          PPBF_EXPECTED_POSTGRES_DATABASE: ${{ env.GATE_EXPECTED_POSTGRES_DATABASE }}
+          PPBF_PILOT_DEFAULT_ORG_ID: ${{ env.GATE_DEFAULT_ORG_ID }}
+          PILOT_ADMIN_ACCOUNT_ID: org_admin_shadow
+          PILOT_SHADOW_ATHLETE_ACCOUNT_ID: gate_shadow_athlete
+          PILOT_SHADOW_ATHLETE_ID: GATE-SHADOW-ATH-1
+          PILOT_SHADOW_ATHLETE_PIN: ${{ env.GATE_ATHLETE_PIN }}
+        run: |
+          npm --prefix apps/web run gate:pilot:fixtures -- --deactivate-athlete
+
+      # deploy-staging.yml reports a failed cleanup and stays green, so that a
+      # cleanup failure cannot overwrite the gate's verdict. Here the job's
+      # verdict is what releases the production approval, and "a working PIN
+      # may still be live on a public login" is not promotion-ready. So this
+      # one FAILS the job, and the production job never starts.
+      #
+      # Only when this run actually minted a PIN. The cleanup step is always(),
+      # so it also runs -- and fails, for want of a connection -- after a
+      # refusal or a failed migration that happened before any PIN existed.
+      # Crying "credential may be live" there would bury the real failure.
+      - name: Refuse Promotion While The Gate Athlete Fixture May Be Live
+        if: always() && steps.mint-gate-pin.outcome == 'success' && steps.deactivate-gate-athlete.outcome == 'failure'
+        run: |
+          echo "::error title=Gate athlete fixture may still be live::Deactivating gate_shadow_athlete (athlete GATE-SHADOW-ATH-1) FAILED. Its ephemeral PIN may still authenticate against the staging login. Production will not be offered for approval. Clear the fixture, then dispatch a fresh run."
+
+          {
+            echo ''
+            echo '### Gate athlete fixture cleanup FAILED -- production NOT offered'
+            echo ''
+            echo 'Account `gate_shadow_athlete` (athlete `GATE-SHADOW-ATH-1`) may still carry a'
+            echo 'working PIN on staging, which is publicly reachable. Clear it by hand:'
+            echo 'run `npm --prefix apps/web run gate:pilot:fixtures -- --deactivate-athlete`'
+            echo 'against staging, or deactivate the account directly. Then dispatch a fresh run.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit 1
+
+      # The approver reads this run page. With the gate off, staging was
+      # deployed and its revision is serving, and nothing exercised it.
+      - name: Say Whether The Staging Gate Ran
+        env:
+          GATE_ENABLED: ${{ inputs.enable_shadow_gate }}
+        run: |
+          {
+            echo ''
+            echo '### Staging gate'
+            echo ''
+            if [ "$GATE_ENABLED" = "true" ]; then
+              echo 'The SHADOW E2E gate, the guardian-contact probe and the runtime ledger ran and passed on the staging revision this run deployed.'
+            else
+              echo '**The staging gate was OFF for this run (enable_shadow_gate=false).** Staging was migrated and deployed and its new revision is serving, but no probe exercised it. Approving production promotes an image whose behaviour on staging nothing checked.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report Release Digest Last
+        if: always()
+        run: |
+          echo '--- release digest (for deploy-production release_digest) ---'
+          echo '${{ steps.build-image.outputs.digest }}'
+
+  production:
+    needs: staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # THE single approval. Asked only once the staging job has succeeded.
+    environment: production
+    # The same group deploy-production.yml and a production apply-migrations
+    # use, so this job never runs beside either. `queue: max` as on every
+    # member of the group.
+    concurrency:
+      group: deploy-production-main
+      cancel-in-progress: false
+      queue: max
+    env:
+      ACR_NAME: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+      ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io
+      RESOURCE_GROUP: ${{ secrets.AZURE_PRODUCTION_RESOURCE_GROUP }}
+      CONTAINER_APP_NAME: app-ppbf-production
+    steps:
+      # ── Read-only refusals. Nothing below this line and above the migration
+      # ── writes to production.
+      - name: Refuse A Re-Run, A Wrong Ref Or A Wrong Commit
+        env:
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          REF: ${{ github.ref }}
+          HEAD_SHA: ${{ github.sha }}
+          CONFIRM_SHA: ${{ inputs.confirm_sha }}
+          CONFIRM_PRODUCTION: ${{ inputs.confirm_production }}
+        run: |
+          if [ "$RUN_ATTEMPT" != "1" ]; then
+            echo "::error::This is attempt $RUN_ATTEMPT of the run. release-one-approval does not support re-runs: a re-run would reuse an earlier attempt's staging result and approval. Nothing was changed. Dispatch a fresh run."
+            exit 1
+          fi
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::This workflow may only be dispatched from refs/heads/main (got '$REF')."
+            exit 1
+          fi
+          if [ -z "$CONFIRM_SHA" ]; then
+            echo "::error::confirm_sha is empty. Dispatch a fresh run with confirm_sha=$HEAD_SHA."
+            exit 1
+          fi
+          if [ "$CONFIRM_SHA" != "$HEAD_SHA" ]; then
+            echo "::error::confirm_sha ('$CONFIRM_SHA') does not match the commit this run froze ('$HEAD_SHA'). Pass the full 40-character SHA of main's head. Refusing to release."
+            exit 1
+          fi
+          if [ "$CONFIRM_PRODUCTION" != "production" ]; then
+            echo "::error::confirm_production must be exactly 'production'. This run deploys staging AND, after one approval, migrates and deploys production."
+            exit 1
+          fi
+
+      - name: Verify The Staged Digest Was Handed On
+        env:
+          RELEASE_DIGEST: ${{ needs.staging.outputs.digest }}
+        run: |
+          if ! printf '%s' "$RELEASE_DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "::error::The staging job handed on '$RELEASE_DIGEST', which is not a sha256 digest. Refusing to promote."
+            exit 1
+          fi
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify The Checkout Is The Frozen Commit
+        run: |
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          if [ "$ACTUAL_SHA" != "$GITHUB_SHA" ]; then
+            echo "::error::Checked out $ACTUAL_SHA, but this run froze $GITHUB_SHA."
+            exit 1
+          fi
+
+      - name: Resolve Production Resource Group
+        run: |
+          if [ -z "$RESOURCE_GROUP" ]; then
+            echo "::error::secrets.AZURE_PRODUCTION_RESOURCE_GROUP is not set. Refusing to guess a resource group for a production operation."
+            exit 1
+          fi
+          echo "Production resource group is configured."
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Node For The Schema Check
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Locked Dependencies
+        run: npm ci
+
+      - name: Verify release digest exists in ACR and was built from this commit
+        env:
+          RELEASE_DIGEST: ${{ needs.staging.outputs.digest }}
+          CONFIRM_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          MANIFEST="$(az acr repository show-manifests \
+            --name "$ACR_NAME" --repository ppbf-frontend \
+            --query "[?digest=='${RELEASE_DIGEST}'] | [0]" -o json)"
+
+          MANIFEST_DIGEST="$(printf '%s' "$MANIFEST" | jq -r '.digest // empty')"
+          if [ "$MANIFEST_DIGEST" != "$RELEASE_DIGEST" ]; then
+            echo "::error::release digest '$RELEASE_DIGEST' was not found in ACR for ppbf-frontend."
+            exit 1
+          fi
+
+          if ! printf '%s' "$MANIFEST" | jq -e --arg sha "$CONFIRM_SHA" '(.tags // []) | index($sha)' >/dev/null; then
+            echo "::error::PROVENANCE MISMATCH. The image at ${RELEASE_DIGEST} does not carry the tag ${CONFIRM_SHA}, so it was not built from the commit this run is deploying."
+            echo "::error::Tags actually on that manifest: $(printf '%s' "$MANIFEST" | jq -rc '.tags // []')"
+            echo "::error::The staging job of this run pushed that digest tagged with this commit, so the tag has been moved or removed since. Do not approve a re-dispatch until that is explained."
+            exit 1
+          fi
+
+          echo "Digest ${RELEASE_DIGEST} carries tag ${CONFIRM_SHA} -- built from this commit."
+
+      - name: Refuse a Rollback Nobody Asked For
+        env:
+          INCOMING_SHA: ${{ github.sha }}
+          INCOMING_DIGEST: ${{ needs.staging.outputs.digest }}
+          ALLOW_ROLLBACK: ${{ inputs.allow_rollback }}
+        run: |
+          set -euo pipefail
+
+          RUNNING_IMAGE="$(az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.template.containers[0].image" -o tsv)"
+          RUNNING_DIGEST="${RUNNING_IMAGE##*@}"
+
+          # Recorded by this workflow on every deploy (see --set-env-vars
+          # below). Absent only on an app that has not been deployed since this
+          # guard shipped.
+          #
+          # THE `|| true` THAT USED TO BE HERE DISARMED THIS GUARD. It turned
+          # every az failure -- a throttled call, a transient 5xx, an expired
+          # token, a wrong resource group -- into an empty RUNNING_SHA, which
+          # falls into the `-z` branch below and exits 0 with a warning. So the
+          # ancestry check that exists because of the 2026-08-03 double-approval
+          # incident was contingent on one unrelated az call succeeding, and the
+          # stale-run failure mode it was written to catch is exactly the one it
+          # would have skipped.
+          #
+          # az distinguishes the two cases cleanly: a JMESPath that matches
+          # nothing exits 0 with empty output, while a call that FAILS exits
+          # non-zero. So "not recorded" stays a warning and "could not ask"
+          # becomes a refusal.
+          if ! RUNNING_SHA="$(az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.template.containers[0].env[?name=='PPBF_RELEASE_SHA'].value | [0]" \
+            -o tsv 2>/dev/null)"; then
+            echo "::error::Could not read PPBF_RELEASE_SHA from ${CONTAINER_APP_NAME}. The" \
+                 "rollback guard cannot run without it, and skipping it silently is how a" \
+                 "stale deploy gets promoted. Re-run; if it persists, check the Azure" \
+                 "credentials and resource group before deploying."
+            exit 1
+          fi
+
+          echo "running digest : ${RUNNING_DIGEST:-<none>}"
+          echo "incoming digest: ${INCOMING_DIGEST}"
+          echo "running commit : ${RUNNING_SHA:-<not recorded>}"
+          echo "incoming commit: ${INCOMING_SHA}"
+
+          if [ "$RUNNING_DIGEST" = "$INCOMING_DIGEST" ]; then
+            echo "Same image already running. This is a re-apply, not a change."
+            exit 0
+          fi
+
+          if [ -z "$RUNNING_SHA" ]; then
+            echo "::warning::Production carries no PPBF_RELEASE_SHA, so this deploy cannot be" \
+                 "checked for being older than what is running. It will be recorded from now on."
+            exit 0
+          fi
+
+          if ! git cat-file -e "${RUNNING_SHA}^{commit}" 2>/dev/null; then
+            echo "::warning::The commit production runs (${RUNNING_SHA}) is not in this" \
+                 "repository's history -- force-push, or an image built elsewhere. Ancestry" \
+                 "cannot be checked; proceeding on the digest comparison alone."
+            exit 0
+          fi
+
+          if [ "$RUNNING_SHA" = "$INCOMING_SHA" ]; then
+            echo "Same commit, different image -- a rebuild of what is already live. Allowed."
+            exit 0
+          fi
+
+          if git merge-base --is-ancestor "$INCOMING_SHA" "$RUNNING_SHA"; then
+            if [ "$ALLOW_ROLLBACK" = "YES" ]; then
+              echo "::warning::ROLLBACK: ${INCOMING_SHA} is an ancestor of the running" \
+                   "${RUNNING_SHA}. Proceeding because allow_rollback=YES."
+              exit 0
+            fi
+            echo "::error::REFUSING A SILENT ROLLBACK."
+            echo "::error::Production runs ${RUNNING_SHA}. This run would deploy ${INCOMING_SHA}," \
+                 "which is an ANCESTOR of it -- every change between the two would be reverted."
+            echo "::error::If that is what you want, dispatch again with allow_rollback=YES."
+            echo "::error::If it is not, this is probably a stale dispatch that has been sitting" \
+                 "at the approval gate while newer work shipped. Cancel it."
+            exit 1
+          fi
+
+          echo "Incoming commit is not an ancestor of what is running. Proceeding."
+
+      - name: Validate Production AI Configuration
+        run: |
+          AI_ENDPOINT="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-ai-endpoint \
+            --query value -o tsv)"
+          AI_DEPLOYMENT_NAME="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-ai-deployment-name \
+            --query value -o tsv)"
+          AI_API_VERSION="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-ai-api-version \
+            --query value -o tsv)"
+
+          test -n "$AI_ENDPOINT"
+          test -n "$AI_DEPLOYMENT_NAME"
+          test -n "$AI_API_VERSION"
+
+          case "$AI_ENDPOINT" in
+            https://shadow-ai.cognitiveservices.azure.com|https://shadow-ai.cognitiveservices.azure.com/) ;;
+            *) echo "azure-ai-endpoint '$AI_ENDPOINT' is not the approved SHADOW endpoint."; exit 1 ;;
+          esac
+
+          if [ "$AI_API_VERSION" != "2024-12-01-preview" ]; then
+            echo "azure-ai-api-version is '$AI_API_VERSION', expected '2024-12-01-preview'."
+            exit 1
+          fi
+
+          # Sane-format check only -- see the comment above this step for why
+          # this is not an exact whitelist like staging's.
+          if ! printf '%s' "$AI_DEPLOYMENT_NAME" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$'; then
+            echo "azure-ai-deployment-name '$AI_DEPLOYMENT_NAME' does not look like a plausible Azure OpenAI deployment name."
+            exit 1
+          fi
+
+      # Checked here so a run that would be refused at the deploy is refused
+      # before it migrates. It is checked AGAIN immediately before the update,
+      # because the queue can gain work while the migrations run.
+      - name: Refuse To Migrate While SHADOW Jobs Are Waiting
+        run: |
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          if ! AZURE_POSTGRES_CONNECTION_STRING="$CONN" node apps/web/scripts/pilot-check-shadow-job-queue.mjs; then
+            echo "::error::SHADOW background jobs are still pending or running. Each holds the context it will be answered from, written before this release, so deploying now leaves them to deliver the old behaviour afterwards. Let the worker drain and re-dispatch."
+            exit 1
+          fi
+
+      # ── Production writes begin here.
+      - name: Apply Production Migrations
+        id: migrate-production
+        run: |
+          set -euo pipefail
+
+          # Read from the target-NAMED app and kept inside this step: the
+          # connection string is never written to GITHUB_ENV.
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+
+          # Four runners refuse to write to a database nobody named. Derived
+          # from the string just fetched, parsed exactly as the runners parse it.
+          DERIVED="$(CONN="$CONN" node -e '
+            const u = new URL(process.env.CONN);
+            const host = u.hostname.toLowerCase();
+            const db = decodeURIComponent(u.pathname.replace(/^\/+/, ""));
+            if (!host || !db) { process.exit(2); }
+            process.stdout.write(host + "\n" + db);
+          ')"
+          PPBF_EXPECTED_POSTGRES_HOSTNAME="$(printf '%s' "$DERIVED" | sed -n 1p)"
+          PPBF_EXPECTED_POSTGRES_DATABASE="$(printf '%s' "$DERIVED" | sed -n 2p)"
+          test -n "$PPBF_EXPECTED_POSTGRES_HOSTNAME"
+          test -n "$PPBF_EXPECTED_POSTGRES_DATABASE"
+          export AZURE_POSTGRES_CONNECTION_STRING="$CONN"
+          export PPBF_EXPECTED_POSTGRES_HOSTNAME PPBF_EXPECTED_POSTGRES_DATABASE
+
+          cd apps/web
+
+          # An assignment, so a refusal by the reader stops the step here. The
+          # empty check is for the one case a status cannot report: a reader
+          # that printed nothing and exited 0.
+          SLUGS="$(node scripts/migration-apply-order.mjs --slugs)"
+          if [ -z "$SLUGS" ]; then
+            echo "::error::The migration order came back empty. Refusing to treat no list as nothing to apply."
+            exit 1
+          fi
+
+          for m in $SLUGS; do
+            echo "::group::npm run pilot:apply-$m"
+            npm run "pilot:apply-$m"
+            echo "::endgroup::"
+          done
+
+      - name: Verify Production Schema Matches This Commit
+        run: |
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          if ! AZURE_POSTGRES_CONNECTION_STRING="$CONN" node apps/web/scripts/pilot-verify-schema.mjs; then
+            echo "::error::Production is missing schema objects this commit expects. The migrations this run just applied did not produce them. Production schema may now be AHEAD of the running app."
+            exit 1
+          fi
+
+      - name: Refuse To Deploy While SHADOW Jobs Are Waiting
+        run: |
+          CONN="$(az containerapp secret show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --secret-name azure-postgres-connection-string \
+            --query value -o tsv)"
+          test -n "$CONN"
+          echo "::add-mask::$CONN"
+          if ! AZURE_POSTGRES_CONNECTION_STRING="$CONN" node apps/web/scripts/pilot-check-shadow-job-queue.mjs; then
+            echo "::error::SHADOW background jobs are still pending or running. Each holds the context it will be answered from, written before this release, so deploying now leaves them to deliver the old behaviour afterwards. Let the worker drain and re-dispatch."
+            exit 1
+          fi
+
+      - name: Deploy Tested Digest to Azure Container App (Production)
+        id: deploy-production
+        env:
+          PPBF_APP_ORIGIN: ${{ vars.PPBF_APP_ORIGIN }}
+          # Free-text dispatch inputs reach the shell through the environment,
+          # never by interpolation. The guard job has already checked both by
+          # the time this runs, so this is defence in depth -- but a guard that
+          # is reordered, weakened or skipped must not silently re-open a
+          # command-injection path into a step holding an Azure OIDC session.
+          RELEASE_DIGEST: ${{ needs.staging.outputs.digest }}
+          CONFIRM_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$PPBF_APP_ORIGIN" ]; then
+            echo "Required production variable 'PPBF_APP_ORIGIN' is not configured."
+            echo "Magic-link sign-in silently sends nothing without it. Set the"
+            echo "repository or environment variable and re-run."
+            exit 1
+          fi
+
+          az containerapp update \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${ACR_LOGIN_SERVER}/ppbf-frontend@${RELEASE_DIGEST}" \
+            --set-env-vars \
+              PPBF_RELEASE_SHA="$CONFIRM_SHA" \
+              AZURE_POSTGRES_CONNECTION_STRING=secretref:azure-postgres-connection-string \
+              AZURE_STORAGE_CONNECTION_STRING=secretref:azure-storage-connection-string \
+              PPBF_MS_TENANT_ID=secretref:ppbf-ms-tenant-id \
+              PPBF_MS_CLIENT_ID=secretref:ppbf-ms-client-id \
+              PPBF_MS_CLIENT_SECRET=secretref:ppbf-ms-client-secret \
+              PPBF_MS_REDIRECT_URI=secretref:ppbf-ms-redirect-uri \
+              PPBF_MS_POST_LOGIN_PATH=secretref:ppbf-ms-post-login-path \
+              PPBF_APP_ORIGIN="$PPBF_APP_ORIGIN" \
+              PPBF_PILOT_BOOTSTRAP_KEY=secretref:ppbf-pilot-bootstrap-key \
+              PPBF_PILOT_DEFAULT_ORG_ID=secretref:ppbf-pilot-default-org-id \
+              PPBF_PILOT_SHADOW_CONTAINER=secretref:ppbf-pilot-shadow-container \
+              PPBF_PRIMARY_OWNER_EMAIL=secretref:ppbf-primary-owner-email \
+              AZURE_AI_ENDPOINT=secretref:azure-ai-endpoint \
+              AZURE_AI_DEPLOYMENT_NAME=secretref:azure-ai-deployment-name \
+              AZURE_AI_API_VERSION=secretref:azure-ai-api-version \
+              AZURE_AI_KEY=secretref:azure-ai-key \
+              PPBF_SHADOW_MAX_COMPLETION_TOKENS=8192 \
+              PPBF_SHADOW_PROVIDER_TIMEOUT_MS=120000 \
+              PPBF_SHADOW_WORKER_ENABLED=true \
+              PPBF_INTAKE_PROMOTION_ENABLED=true \
+              AZURE_AI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small \
+              AZURE_AI_VISION_DEPLOYMENT_NAME=gpt-5-vision-shadow \
+              PPBF_VIDEO_CONTENT_SCAN=vision \
+              PPBF_DURABLE_RATE_LIMIT=true
+
+      - name: Wait For Promoted Revision To Take Traffic
+        env:
+          RELEASE_DIGEST: ${{ needs.staging.outputs.digest }}
+        run: |
+          LATEST="$(az containerapp show --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestRevisionName -o tsv)"
+          test -n "$LATEST"
+          REVISION_IMAGE="$(az containerapp revision show --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" --revision "$LATEST" \
+            --query "properties.template.containers[0].image" -o tsv)"
+          echo "Latest revision $LATEST runs image $REVISION_IMAGE"
+          case "$REVISION_IMAGE" in
+            *"@$RELEASE_DIGEST") ;;
+            *)
+              echo "::error::Latest revision $LATEST does not carry the promoted digest $RELEASE_DIGEST. The update did not produce the expected revision."
+              exit 1
+              ;;
+          esac
+          for i in $(seq 1 60); do
+            READ="$(az containerapp revision show --name "$CONTAINER_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" --revision "$LATEST" \
+              --query "[properties.runningState, properties.trafficWeight]" -o tsv | tr '\n' ' ')"
+            echo "  $i: $READ"
+            case "$READ" in
+              "Running 100"*) exit 0 ;;
+            esac
+            sleep 5
+          done
+          echo "::error::Revision $LATEST did not reach Running/100% traffic within 5 minutes."
+          exit 1
+
+      - name: Resolve Production Base URL
+        run: |
+          FQDN="$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)"
+          test -n "$FQDN"
+          echo "PROD_BASE_URL=https://$FQDN" >> "$GITHUB_ENV"
+
+      - name: Pilot API Smoke Checks
+        id: smoke
+        run: |
+          set -euo pipefail
+
+          LOGIN_STATUS="$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$PROD_BASE_URL/api/pilot/auth/login" -H "Content-Type: application/json" -d '{}')"
+          if [ "$LOGIN_STATUS" != "400" ]; then
+            echo "Expected /api/pilot/auth/login to return 400 for empty payload, got $LOGIN_STATUS"
+            exit 1
+          fi
+
+          SESSION_STATUS="$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$PROD_BASE_URL/api/pilot/auth/session" -H "Content-Type: application/json" -d '{}')"
+          if [ "$SESSION_STATUS" != "200" ]; then
+            echo "Expected /api/pilot/auth/session to return 200, got $SESSION_STATUS"
+            exit 1
+          fi
+
+          SHADOW_STATUS="$(curl -sS -o /dev/null -w "%{http_code}" -X POST "$PROD_BASE_URL/api/pilot/shadow/events" -H "Content-Type: application/json" -d '{}')"
+          if [ "$SHADOW_STATUS" != "401" ]; then
+            echo "Expected /api/pilot/shadow/events to return 401 without auth, got $SHADOW_STATUS"
+            exit 1
+          fi
+
+          echo "Production smoke checks passed."
+
+      # always(): the run that most needs a plain statement is the one that
+      # failed between the migration and the deploy.
+      - name: Report What Production Now Runs
+        if: always()
+        env:
+          RELEASE_DIGEST: ${{ needs.staging.outputs.digest }}
+          MIGRATE_OUTCOME: ${{ steps.migrate-production.outcome }}
+          DEPLOY_OUTCOME: ${{ steps.deploy-production.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          {
+            echo ''
+            echo '### Production release result'
+            echo ''
+            echo "- commit: \`$GITHUB_SHA\`"
+            echo "- digest: \`$RELEASE_DIGEST\`"
+            echo "- production migrations: \`${MIGRATE_OUTCOME:-not reached}\`"
+            echo "- production deploy: \`${DEPLOY_OUTCOME:-not reached}\`"
+            echo "- smoke checks: \`${SMOKE_OUTCOME:-not reached}\`"
+            echo ''
+            if [ "$SMOKE_OUTCOME" = "success" ]; then
+              echo 'Production runs this commit and this digest.'
+            elif [ "$DEPLOY_OUTCOME" = "success" ]; then
+              echo '**The image was updated but the run did not finish green.** Read the failed step before calling this deployed.'
+            elif [ "$DEPLOY_OUTCOME" = "failure" ] || [ "$DEPLOY_OUTCOME" = "cancelled" ]; then
+              echo '**The deploy step did not finish, and whether production changed is NOT known from this run.** If it stopped before the update command, nothing changed; if the update was sent, Azure may still roll the new revision out. Production migrations were applied. Read back the running image digest and PPBF_RELEASE_SHA before doing anything else.'
+            elif [ -n "$MIGRATE_OUTCOME" ] && [ "$MIGRATE_OUTCOME" != "skipped" ]; then
+              echo '**This is NOT a production deploy.** Production migrations were attempted and the deploy step was never reached: production schema may be AHEAD of the running app. Nothing is rolled back. Fix the cause and dispatch a fresh run; the migrations are idempotent.'
+            else
+              echo 'Nothing was written to production: the run stopped at a read-only refusal.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
