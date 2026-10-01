@@ -147,6 +147,35 @@ export function usesMicrosoft(subject: CredentialSubject): boolean {
 }
 
 /**
+ * Roles that may ALSO hold a password, beside the emailed link.
+ *
+ * Parents only (Jason, 2026-10-01: "yes they will need away to sign in with a
+ * password"; asked whether coaches, staff and volunteers get one too, "agree
+ * with recomendations" -> parents only). The emailed link stays a parent's
+ * credential and is the only way a password is set or replaced.
+ */
+export const PASSWORD_ROLES = ['parent'] as const satisfies readonly PilotRole[];
+
+/**
+ * Whether this person may set and use a password.
+ *
+ * A board-seat holder may not, whatever their role: a seat means Microsoft
+ * (seatRequiresMicrosoft), and a password must not become a second, weaker
+ * door to a governance identity. holdsBoardSeat is required for the reason it
+ * is on RuntimeCredentialEnvironment: an optional flag defaults to "no seat".
+ */
+export function passwordLoginPermitted(
+  subject: CredentialSubject,
+  environment: { holdsBoardSeat: boolean },
+): boolean {
+  if (seatRequiresMicrosoft(subject.boardSeats) || environment.holdsBoardSeat) {
+    return false;
+  }
+
+  return (PASSWORD_ROLES as readonly string[]).includes(subject.role);
+}
+
+/**
  * Roles the BASE-03 offline exception may admit, and no others.
  *
  * These are exactly the two base roles whose production credential depends on

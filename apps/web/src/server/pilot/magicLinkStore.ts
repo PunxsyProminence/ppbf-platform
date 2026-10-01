@@ -1,4 +1,5 @@
 import type { PilotRole } from './contracts';
+import { passwordLoginPermitted } from './credentialPolicy';
 import { query, queryOne, withTransaction } from './db';
 import { accountDeletedSql } from './deletedAccountSignIn';
 import { graphTokenProvider } from './managedIdentityToken';
@@ -82,6 +83,12 @@ export interface RedemptionResult {
   reason?: ConsumeFailure;
   session?: { token: string; expiresAt: Date };
   principal?: { accountId: string; organizationId: string; role: PilotRole };
+  /**
+   * Whether the link page should offer "create a password": 'offer' only for
+   * an account credentialPolicy admits to a password. A hint for the page --
+   * the set-password route decides for itself (parentPassword.ts).
+   */
+  passwordSetup?: 'offer' | 'none';
 }
 
 /**
@@ -108,11 +115,17 @@ export async function redeemMagicLink(token: string): Promise<RedemptionResult> 
   const tokenHash = hashToken(token);
 
   return withTransaction(async (client) => {
-    const found = await client.query<RedeemableTokenRow>(
+    const found = await client.query<RedeemableTokenRow & { holds_board_seat: boolean }>(
       `select t.account_id, t.organization_id, t.sent_to_email, t.expires_at,
               t.consumed_at, t.invalidated_at,
               a.role, a.active_flag, a.login_email,
-              ${accountDeletedSql('a')} as account_deleted
+              ${accountDeletedSql('a')} as account_deleted,
+              -- A scalar subselect, as in auth.ts: a join would multiply the row.
+              exists (
+                select 1 from pilot.board_seats bs
+                 where bs.organization_id = t.organization_id
+                   and bs.account_id = a.account_id
+              ) as holds_board_seat
          from pilot.magic_link_tokens t
          join pilot.accounts a on a.account_id = t.account_id
         where t.token_hash = $1
@@ -133,9 +146,12 @@ export async function redeemMagicLink(token: string): Promise<RedemptionResult> 
 
     const sessionToken = createOpaqueToken();
     const expiresAt = computeSessionExpiry();
+    // sign_in_method is the proof the set-password route asks for: only a
+    // session minted here, by someone who just opened the emailed link, may
+    // set or replace a password (parentPassword.ts).
     await client.query(
-      `insert into pilot.session_tokens (token_hash, account_id, organization_id, expires_at)
-       values ($1, $2, $3, $4)`,
+      `insert into pilot.session_tokens (token_hash, account_id, organization_id, expires_at, sign_in_method)
+       values ($1, $2, $3, $4, 'magic_link')`,
       [hashToken(sessionToken), row.account_id, row.organization_id, expiresAt],
     );
 
@@ -147,6 +163,9 @@ export async function redeemMagicLink(token: string): Promise<RedemptionResult> 
         organizationId: row.organization_id,
         role: row.role,
       },
+      passwordSetup: passwordLoginPermitted({ role: row.role }, { holdsBoardSeat: row.holds_board_seat })
+        ? 'offer'
+        : 'none',
     };
   });
 }

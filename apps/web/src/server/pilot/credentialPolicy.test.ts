@@ -3,6 +3,8 @@ import {
   MAGIC_LINK_ROLES,
   MICROSOFT_ROLES,
   OFFLINE_LOCAL_PIN_ROLES,
+  PASSWORD_ROLES,
+  passwordLoginPermitted,
   pinLoginPermitted,
   requiredCredentialFor,
   usesMicrosoft,
@@ -218,5 +220,28 @@ describe('offline local PIN exception (BASE-03)', () => {
     for (const role of OFFLINE_LOCAL_PIN_ROLES) {
       expect(pinLoginPermitted({ role, boardSeats: ['president'] }, OFFLINE)).toBe(false);
     }
+  });
+});
+
+describe('who may hold a password', () => {
+  const NO_SEAT = { holdsBoardSeat: false };
+
+  test('parents, and nobody else (Jason 2026-10-01: parents only)', () => {
+    expect([...PASSWORD_ROLES]).toEqual(['parent']);
+    for (const role of EVERY_ROLE) {
+      expect(passwordLoginPermitted({ role }, NO_SEAT)).toBe(role === 'parent');
+    }
+  });
+
+  test('every password role still has the emailed link, which is how a password is set', () => {
+    for (const role of PASSWORD_ROLES) {
+      expect(requiredCredentialFor({ role })).toBe('magic_link');
+    }
+  });
+
+  // A seat means Microsoft. Asked both ways, as pinLoginPermitted asks it.
+  test('a parent who holds a board seat may not, by either report of the seat', () => {
+    expect(passwordLoginPermitted({ role: 'parent' }, { holdsBoardSeat: true })).toBe(false);
+    expect(passwordLoginPermitted({ role: 'parent', boardSeats: ['treasurer'] }, NO_SEAT)).toBe(false);
   });
 });

@@ -37,9 +37,16 @@ create table if not exists pilot.accounts (
   must_change_pin boolean not null default false,
   active_flag boolean not null default true,
   has_master_shadow_access boolean not null default false,
+  -- A password the account holder chose (parent sign-in). Its own credential,
+  -- never the PIN. Same shape as pilot_slice_postgres_parent_password_migration.sql,
+  -- constraint names included, so that migration is a no-op on a new database.
+  password_hash text null,
+  password_set_at timestamptz null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (organization_id, athlete_id)
+  unique (organization_id, athlete_id),
+  constraint pilot_accounts_password_pair_check
+    check ((password_hash is null) = (password_set_at is null))
 );
 
 create unique index if not exists pilot_accounts_login_email_uq
@@ -52,7 +59,11 @@ create table if not exists pilot.session_tokens (
   organization_id text not null references pilot.organizations(organization_id),
   created_at timestamptz not null default now(),
   revoked_at timestamptz null,
-  expires_at timestamptz not null default (now() + interval '24 hours')
+  expires_at timestamptz not null default (now() + interval '24 hours'),
+  -- How the session was minted. Null = not recorded, never proof of a method.
+  sign_in_method text null,
+  constraint pilot_session_tokens_sign_in_method_check
+    check (sign_in_method is null or sign_in_method in ('magic_link', 'password', 'pin', 'microsoft'))
 );
 
 create index if not exists idx_pilot_session_tokens_expires_at on pilot.session_tokens(expires_at);

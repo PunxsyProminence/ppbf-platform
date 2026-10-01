@@ -61,6 +61,20 @@ describe('POST /api/pilot/auth/magic-link/consume', () => {
     expect(cookie?.path).toBe('/');
   });
 
+  test.each([
+    ['offer', 'offer'],
+    ['none', 'none'],
+    [undefined, 'none'],
+  ] as const)('the password-setup hint %s from the store reaches the page as %s', async (fromStore, onTheWire) => {
+    // The link page shows "create a password" on 'offer' and nothing else. A
+    // store result without the field must read as 'none', never as an offer.
+    (redeemMagicLink as jest.Mock).mockResolvedValue({ ...REDEEMED, passwordSetup: fromStore });
+
+    const response = await post({ token: 'good-token' });
+
+    expect((await response.json()).password_setup).toBe(onTheWire);
+  });
+
   test('the redeemed token is the one that was sent', async () => {
     await post({ token: 'good-token' });
     expect(redeemMagicLink).toHaveBeenCalledWith('good-token');
