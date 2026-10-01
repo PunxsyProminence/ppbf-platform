@@ -29,9 +29,12 @@ import path from 'node:path';
  * deployPromotionContract.test.ts (js-yaml is only an undeclared transitive
  * dependency here). WHAT THIS CANNOT SHOW: it is structural. It does not
  * evaluate the GitHub expression, and it cannot observe how GitHub queues,
- * holds or cancels a run -- in particular whether a run waiting at an
- * environment approval already holds its group. That is a behaviour check on
- * real runs, not something a test of the file can settle.
+ * holds or cancels a run. What is known about that comes from run history, not
+ * from here: a run waiting at the production approval DOES hold its
+ * workflow-level group (deploy-production run 30786409061 was created at
+ * 05:10:46Z on 2026-08-03 and its first job at 05:36:46Z, the second run
+ * 30772571138 -- waiting at the approval since 23:35 -- completed). Whether a
+ * JOB-level group behaves the same way has not been observed.
  */
 const WORKFLOW_DIR = path.resolve(__dirname, '../../../../../.github/workflows');
 
@@ -91,19 +94,56 @@ const productionDeploy = workflowConcurrency('deploy-production.yml');
 const migrations = workflowConcurrency('apply-migrations.yml');
 
 /**
- * Workflows that take a `target` environment and keep a concurrency group of
- * their own, so they are NOT serialized against a release or a migration of
- * that environment.
+ * A workflow's `type: choice` options for one dispatch input.
+ *
+ * Reads to the END of the options block -- the first line indented no deeper
+ * than `options:` -- rather than to the first line that is not an option. A
+ * reader that stops at a comment or a blank line never sees a choice added
+ * after one, and reports the list it expected. Anything in the block that is
+ * neither an option, a comment nor blank is refused, not skipped.
+ */
+function choiceOptions(workflow: string, input: string): string[] {
+  const lines = workflow.split('\n');
+  const inputAt = lines.indexOf(`      ${input}:`);
+  if (inputAt === -1) throw new Error(`no dispatch input named ${input}`);
+
+  let optionsAt = -1;
+  for (let i = inputAt + 1; i < lines.length; i += 1) {
+    if (lines[i].trim() !== '' && !/^ {8}/.test(lines[i])) break;
+    if (lines[i] === '        options:') {
+      optionsAt = i;
+      break;
+    }
+  }
+  if (optionsAt === -1) throw new Error(`input ${input} has no options block`);
+
+  const options: string[] = [];
+  for (const line of lines.slice(optionsAt + 1)) {
+    if (line.trim() === '' || /^\s*#/.test(line)) continue;
+    if (!/^ {9,}/.test(line)) break;
+    const option = /^ {10}- (\S+)$/.exec(line);
+    if (!option) throw new Error(`input ${input}: cannot read the options line "${line}"`);
+    options.push(option[1]);
+  }
+  return options;
+}
+
+/**
+ * Workflows that take a `target` environment and are outside the two shared
+ * groups, so they are NOT serialized against a release or a migration of that
+ * environment. Most keep a group of their own; check-database.yml has none.
  *
  * This list is a statement of what the lock does not cover, kept so nobody
  * reads "migrations and deploys share a group" as "every write to an
  * environment is serialized". Bringing one of these inside the lock is a
  * decision about that workflow; it moves out of this list when that is made.
  * A NEW target-taking workflow fails the discovery test below until it is
- * placed on one side or the other.
+ * placed on one side or the other. Discovery keys on `inputs.target`, so a
+ * workflow that hard-codes its environment, or names the input differently, is
+ * not found by it.
  */
 const OUTSIDE_THE_LOCK = [
-  // The eight that write to the environment they are pointed at.
+  // The eight the release ruling of 2026-10-01 counts as the other writers.
   'approve-library-baseline.yml',
   'cleanup-membership-orphans.yml',
   'import-shadow-research.yml',
@@ -112,7 +152,7 @@ const OUTSIDE_THE_LOCK = [
   'rescope-library-baseline.yml',
   'retention-cleanup.yml',
   'seed-reference-data.yml',
-  // Three more that take a target and are likewise outside it.
+  // Three more that take a target. Not classified here as writers or readers.
   'backup.yml',
   'check-database.yml',
   'run-checks.yml',
@@ -141,17 +181,46 @@ describe('migrations and deploys of one environment share one concurrency group'
     // A second `apply-migrations-<target>` group anywhere in the file -- at
     // job level, say -- would look harmless and would be the old behaviour.
     expect(everyGroup('apply-migrations.yml')).toEqual([migrations.group]);
-    expect(readWorkflow('apply-migrations.yml')).not.toMatch(/^\s+group:.*apply-migrations-/m);
+
+    // everyGroup reads the block form only. A job-level group can also be
+    // written `concurrency: name` or `concurrency: { group: name }`, so count
+    // the keys instead of trusting one spelling: there is exactly one, and it
+    // is the top-level block read above.
+    const code = readWorkflow('apply-migrations.yml')
+      .split('\n')
+      .filter((line) => !/^\s*#/.test(line));
+    expect(code.filter((line) => /^\s*concurrency\s*:/.test(line))).toEqual(['concurrency:']);
+    expect(code.filter((line) => /apply-migrations-\$\{\{/.test(line))).toEqual([]);
   });
 
   test('the only targets are staging and production', () => {
     // The expression sends every target that is not `production` to the
     // staging group. That is only right while there is no third target.
-    const workflow = readWorkflow('apply-migrations.yml');
-    const block = /\n {6}target:\n(?: {8}.*\n)*? {8}options:\n((?: {10}- .*\n)+)/.exec(workflow);
-    if (!block) throw new Error('apply-migrations.yml: could not read the target choices');
-    const options = block[1].split('\n').filter(Boolean).map((line) => line.trim().replace(/^- /, ''));
-    expect(options).toEqual(['staging', 'production']);
+    expect(choiceOptions(readWorkflow('apply-migrations.yml'), 'target'))
+      .toEqual(['staging', 'production']);
+  });
+
+  test('the choice reader sees an option added after a comment or a blank line', () => {
+    // The first version of this reader matched consecutive option lines and
+    // stopped at the first thing that was not one, so a third target placed
+    // after a comment was invisible and the test above stayed green.
+    const withThird = [
+      '      target:',
+      '        type: choice',
+      '        options:',
+      '          - staging',
+      '          - production',
+      '          # added later',
+      '',
+      '          - preview',
+      '      confirm_target:',
+      '        options:',
+      '          - not-this-one',
+    ].join('\n');
+    expect(choiceOptions(withThird, 'target')).toEqual(['staging', 'production', 'preview']);
+    expect(() => choiceOptions(withThird.replace('- preview', '-preview'), 'target'))
+      .toThrow(/cannot read the options line/);
+    expect(() => choiceOptions(withThird, 'migration')).toThrow(/no dispatch input named/);
   });
 
   test.each([

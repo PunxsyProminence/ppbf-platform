@@ -289,6 +289,27 @@ export function migrationApplySlugs(options = {}) {
   return [...resolveApplyOrder(options).allList];
 }
 
+/**
+ * Whether this file is the script node was asked to run, as opposed to a
+ * module something else imported.
+ *
+ * Both sides are resolved to their REAL path. Node resolves the main module
+ * through links before it sets `import.meta.url`, and leaves `process.argv[1]`
+ * as it was typed, so comparing the two as written is false whenever the
+ * checkout is reached through a symlink or a junction -- and a false answer
+ * here is the worst one available: nothing runs, nothing is printed, and the
+ * exit status is 0. A caller capturing the output would hold an empty list and
+ * a success.
+ */
+function invokedAsScript() {
+  if (!process.argv[1]) return false;
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
 /*
  * `node scripts/migration-apply-order.mjs --slugs` prints migrationApplySlugs(),
  * one per line.
@@ -296,20 +317,26 @@ export function migrationApplySlugs(options = {}) {
  * The whole list is resolved before anything is written, so a refusal leaves
  * stdout EMPTY and exits non-zero: a caller capturing the output can never be
  * handed the first half of a list. Imported as a module, none of this runs.
+ *
+ * FOR THE CALLER. The status only stops a shell that looks at it. Capture with
+ * an assignment -- `SLUGS="$(node ... --slugs)"` under `set -e` -- and refuse
+ * an empty result before looping. `for m in $(node ... --slugs)` discards the
+ * status, and a loop over nothing applies no migration and reports success.
  */
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (invokedAsScript()) {
   const args = process.argv.slice(2);
   if (args.length !== 1 || args[0] !== '--slugs') {
     process.stderr.write('usage: node scripts/migration-apply-order.mjs --slugs\n');
-    process.exit(2);
+    process.exitCode = 2;
+  } else {
+    // exitCode, not process.exit(): exiting straight after a write can cut the
+    // reason off when stderr is a pipe, and the reason is the whole message.
+    try {
+      const slugs = migrationApplySlugs();
+      process.stdout.write(`${slugs.join('\n')}\n`);
+    } catch (error) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    }
   }
-
-  let slugs;
-  try {
-    slugs = migrationApplySlugs();
-  } catch (error) {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    process.exit(1);
-  }
-  process.stdout.write(`${slugs.join('\n')}\n`);
 }

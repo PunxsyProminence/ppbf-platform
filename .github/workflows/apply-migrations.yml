@@ -204,14 +204,27 @@ concurrency:
   # of this workflow's own: deploy-staging.yml's for staging, and
   # deploy-production.yml's for production. A migration and a deploy of one
   # environment therefore never run at the same time either, which a separate
-  # apply-migrations-<target> group could not promise. The cost is GitHub's
-  # queue rule: a group holds one running and one PENDING run, so a dispatch
-  # here waits behind a deploy of the same environment, and a third arrival
-  # cancels whichever run is pending. A pending run has started no step.
+  # apply-migrations-<target> group could not promise.
+  #
+  # WHAT THAT COSTS AN OPERATOR. By default a group holds one running and one
+  # PENDING run, and a third arrival cancels the pending one whatever
+  # cancel-in-progress says. So:
+  #   - a dispatch here waits behind a deploy of the same environment, and a
+  #     deploy waits behind a migration;
+  #   - a run WAITING FOR THE PRODUCTION APPROVAL counts as running and holds
+  #     the group (deploy-production run 30786409061 sat behind 30772571138
+  #     for the 26 minutes that one waited at its approval, 2026-08-03). A
+  #     production migration left unapproved therefore blocks every production
+  #     deploy, an emergency rollback included, until it is approved or
+  #     cancelled;
+  #   - a pending migration can be cancelled by a later deploy dispatch. The
+  #     deploy then runs without it, and its schema check is what refuses.
+  # A cancelled pending run has started no step and wrote nothing. Dispatch one
+  # thing per environment at a time and none of this is reached.
   #
   # This serializes releases and migrations. It does NOT serialize every
   # workflow that writes to an environment: seed-reference-data and the other
-  # target-taking workflows keep their own groups.
+  # target-taking workflows are outside these two groups.
   # releaseConcurrencyContract.test.ts pins the mapping and names them.
   group: ${{ inputs.target == 'production' && 'deploy-production-main' || 'deploy-staging-app-ppbf-staging' }}
   cancel-in-progress: false

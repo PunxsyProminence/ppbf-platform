@@ -217,11 +217,30 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // The three extras are the only choices that are not a migration slug:
     // `all` and `list-check` are modes, and the base schema is deliberately
     // selectable while staying out of `all` (see the allowlist test above).
-    const block = /\n {6}migration:\n(?: {8}.*\n)*? {8}options:\n((?: {10}- .*\n)+)/.exec(
-      workflow.replace(/\r\n/g, '\n'),
-    );
-    if (!block) throw new Error('apply-migrations.yml: could not read the migration choices');
-    const options = block[1].split('\n').filter(Boolean).map((line) => line.trim().replace(/^- /, ''));
+    //
+    // Read to the END of the options block (the first line indented no deeper
+    // than `options:`), not to the first line that is not an option: a reader
+    // that stops at a comment or a blank line never sees a choice added after
+    // one. A line in the block that is none of option, comment or blank is
+    // refused rather than skipped.
+    const lines = workflow.replace(/\r\n/g, '\n').split('\n');
+    const inputAt = lines.indexOf('      migration:');
+    const optionsAt = lines.indexOf('        options:', inputAt);
+    if (inputAt === -1 || optionsAt === -1) {
+      throw new Error('apply-migrations.yml: could not read the migration choices');
+    }
+    // Nothing but the input's own keys may sit between the two, or the
+    // `options:` found belongs to a later input.
+    expect(lines.slice(inputAt + 1, optionsAt).filter((line) => !/^ {8}\S/.test(line))).toEqual([]);
+
+    const options: string[] = [];
+    for (const line of lines.slice(optionsAt + 1)) {
+      if (line.trim() === '' || /^\s*#/.test(line)) continue;
+      if (!/^ {9,}/.test(line)) break;
+      const option = /^ {10}- (\S+)$/.exec(line);
+      if (!option) throw new Error(`apply-migrations.yml: cannot read the options line "${line}"`);
+      options.push(option[1]);
+    }
 
     expect(options.length).toBeGreaterThan(20);
     expect(options.filter((option, index) => options.indexOf(option) !== index)).toEqual([]);

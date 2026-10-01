@@ -378,16 +378,6 @@ describe('the slugs a release applies come through the same read', () => {
     }
   });
 
-  test('the base schema is never among them', () => {
-    const fx = fixture(THREE, 'aaa-first mmm-second zzz-third');
-    try {
-      expect(value(slugsFor(fx))).not.toContain('schema');
-    } finally {
-      fx.cleanup();
-    }
-    expect(value('return migrationApplySlugs();')).not.toContain('schema');
-  });
-
   test('on the real tree they are the files of migrationApplyOrder(), slug for slug', () => {
     // Not a second parse of the workflow: the file order is mapped back through
     // slugFor, so this fails if the two exports ever stop being one read.
@@ -545,15 +535,63 @@ describe('the --slugs command line never hands over part of a list', () => {
     expect(result.stdout.trimEnd().split('\n')).toEqual(value('return migrationApplySlugs();'));
   });
 
-  test('importing the module prints nothing', () => {
+  test('reached through a linked directory it still prints the list', () => {
+    // Node resolves the main module through links and leaves argv[1] as typed.
+    // A guard comparing the two as written is FALSE here, and what that looks
+    // like is the dangerous part: no output, exit 0 -- an empty list and a
+    // success, handed to a loop that then applies nothing.
+    const fx = tree(['for m in zzz-second aaa-first; do']);
+    const link = path.join(path.dirname(path.dirname(path.dirname(path.dirname(fx.script)))), 'linked-scripts');
+    try {
+      // 'junction' needs no privilege on Windows and is ignored elsewhere,
+      // where this is an ordinary directory symlink.
+      fs.symlinkSync(path.dirname(fx.script), link, 'junction');
+      expect(cli(path.join(link, 'migration-apply-order.mjs'), ['--slugs'])).toEqual({
+        status: 0,
+        stdout: 'zzz-second\naaa-first\n',
+        stderr: '',
+      });
+    } finally {
+      // Unlink first: removing the tree through a live link is how a link's
+      // target gets deleted. A symlink goes with unlink, a junction with rmdir;
+      // neither follows the link.
+      try {
+        fs.unlinkSync(link);
+      } catch {
+        try { fs.rmdirSync(link); } catch { /* never created */ }
+      }
+      fx.cleanup();
+    }
+  });
+
+  test('importing the module prints nothing, whether or not another script is running', () => {
     // pilot-verify-schema.mjs and full-schema.mjs import it. A command line
     // that ran on import would write a migration list into their output.
-    const result = spawnSync(
+    const bare = spawnSync(
       process.execPath,
       ['--input-type=module', '-e', `await import(${JSON.stringify(orderModuleUrl)});`],
       { encoding: 'utf8' },
     );
-    expect({ status: result.status, stdout: result.stdout }).toEqual({ status: 0, stdout: '' });
+    expect({ status: bare.status, stdout: bare.stdout }).toEqual({ status: 0, stdout: '' });
+
+    // The case that matters: argv[1] IS set, to the importing script. `-e`
+    // leaves it undefined, which only exercises the guard's first half.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-apply-order-import-'));
+    const importer = path.join(root, 'importer.mjs');
+    try {
+      fs.writeFileSync(
+        importer,
+        `import { migrationApplySlugs } from ${JSON.stringify(orderModuleUrl)};\n`
+        + 'process.stdout.write(typeof migrationApplySlugs);\n',
+      );
+      // `--slugs` is passed on purpose: an import that mistook itself for the
+      // script would act on it.
+      const imported = spawnSync(process.execPath, [importer, '--slugs'], { encoding: 'utf8' });
+      expect({ status: imported.status, stdout: imported.stdout })
+        .toEqual({ status: 0, stdout: 'function' });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
