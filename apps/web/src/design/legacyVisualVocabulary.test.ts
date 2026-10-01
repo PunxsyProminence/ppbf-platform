@@ -83,58 +83,62 @@ const ALIAS_CEILINGS: Readonly<Record<string, number>> = {
 };
 
 /**
- * Class-level vocabulary, capped the same way and for the same reason.
+ * `room--*` IS CHECKED AGAINST THE APPROVED ROOMS, NOT COUNTED.
  *
- * `room--*` is counted as OCCURRENCES rather than files, because a file that
- * swaps one room for two has grown the debt while keeping its file count. 143
- * across 88 files, measured 2026-08-23 by the same walk this test performs; 142
- * across 87 since 2026-09-26, when /coach/drills stopped wearing `room--floor`.
+ * This was a frozen ceiling on the number of `room--*` occurrences: 167, then
+ * 143, then 142. Owner decision, 2026-09-30 (V1, "go with your recomendation"):
+ * replace the count with a check against the approved room list.
  *
- * THE CEILING COMES DOWN WITH EVERY REMOVAL, and that is the owner's 2026-09-26
- * ruling applied to this guard: finish the retirement by deleting the vocabulary
- * rather than carrying it at a fixed ceiling. Leaving this at 143 after a removal
- * would bank one occurrence of slack -- and this docblock already records what
- * slack does here, because a ceiling 24 above the real count let a deliberate new
- * `room--office` through. So a removal is not merely permitted, it is the point:
- * lower the number by what was removed, in the same change.
+ * WHY THE COUNT HAD TO GO. It was written when rooms were retired as a visual
+ * concept (2026-08-23) and the only job was to stop the vocabulary spreading.
+ * The owner has since reversed that premise: `docs/ROOM-MAP.md` is the single
+ * visual build order (OD-2026-09-28-009 item 3) and every screen is meant to be
+ * a room again. A ceiling then blocks the approved plan -- `/coach/drills`
+ * became a room of its own and had nowhere legal to hang its plate, because
+ * `plateVariant.test.ts` models every painted room as `.room--<room>`. Two
+ * guards, no legal move, which this file's own opening paragraph warned would
+ * "end with somebody weakening whichever guard is younger". Sixteen more rooms
+ * were queued behind it, and bumping a ceiling sixteen times is a ratchet.
  *
- * Measured that way ON PURPOSE. The first figure here was 167, taken from a
- * shell grep that filtered out matching LINES containing "test" rather than
- * test FILES. A ceiling 24 above the real count is slack, and slack is a guard
- * that quietly tolerates the thing it exists to stop -- a deliberate new
- * `room--office` slipped straight through it. A ceiling has to be measured by
- * the code that enforces it.
+ * WHAT THE NEW SHAPE CATCHES THAT THE COUNT NEVER DID. A count cannot tell a
+ * legitimate room from an invented one: `room--lounge` and `room--office` both
+ * cost exactly 1. This asserts the SLUG. A class naming a room on the approved
+ * list passes however often it appears; a class naming anything else fails by
+ * name, on its first occurrence, in the file that wrote it. That is a stronger
+ * guard than the ceiling it replaces, not a relaxation of it.
  *
- * Rooms may leave freely; they may not spread. A screen written from here on
- * does not paint one — buildingMapRooms.test.ts no longer requires it — and
- * this is the assertion that makes that real rather than advisory.
+ * THE APPROVED LIST IS READ FROM THE CODE, not restated here. `ROOM_ORDER` in
+ * `apps/web/components/buildingMap.ts` is what the app actually ships, and
+ * `plateVariant.test.ts` already asserts the plate inventory against the same
+ * constant. A room added to `ROOM_ORDER` is thereby allowed its class; a slug
+ * that is not a room is not.
  *
- * 143 AGAIN SINCE 2026-09-29, FOR ONE NAMED ROOM, and the reason is the
- * condition this docblock's own opening paragraph was written about: capping
- * `room--*` "would have left an author with no legal move, and that argument
- * always ends with somebody weakening whichever guard is younger". That
- * condition came back. `/coach/drills` became a room of its own
- * (OD-2026-09-26-001; `docs/ROOM-MAP.md`, merged in #983, is now the single
- * visual build order by OD-2026-09-28-009 item 3), and a painted room has
- * exactly one legal place to hang its plate: `plateVariant.test.ts` models
- * every room's paint as `.room--<room>` at one class and asserts the whole
- * inventory against `ROOM_ORDER`. So `room--cabinet` is not the retired
- * aesthetic growing back — it is the younger, approved plan needing the one
- * hook the older guard forbids.
- *
- * WHAT THIS DOES NOT DECIDE. The number is bumped by exactly one, for one room
- * that can be named, which is a measurement and not slack. But ROOM-MAP.md
- * lists sixteen more rooms, and each one will arrive here the same way. Bumping
- * this sixteen times would turn an exact ceiling into a ratchet, which is the
- * same slack this docblock already records a failure from. The premise —
- * "rooms are retired as a visual concept", 2026-08-23 — has been reversed by
- * the owner; the entry needs re-founding or removing before the next room, and
- * that is Jason's call, raised with him on 2026-09-29. Until he answers, this
- * stays a ceiling measured by the code that enforces it.
+ * TWO SLUGS ARE NOT ROOMS and are listed explicitly rather than pattern-matched.
+ * `room--lit-center` and `room--warm` are GROUND MODIFIERS, worn alongside a
+ * room class and never instead of one: `className="room room--office
+ * room--lit-center"`. Naming them here makes adding a third a deliberate edit
+ * rather than something that slips through a loosened regex.
  */
-const CLASS_CEILINGS: Readonly<Record<string, number>> = {
-  'room--': 143,
-};
+const MODIFIER_SLUGS: readonly string[] = ['lit-center', 'warm'];
+
+/** The rooms the app ships, read from ROOM_ORDER rather than restated. */
+const APPROVED_ROOM_SLUGS: readonly string[] = (() => {
+  const source = readFileSync(
+    path.join(REPO, 'apps/web/components/buildingMap.ts'),
+    'utf8',
+  );
+  const match = source.match(/export const ROOM_ORDER:[^=]*=\s*\[([^\]]*)\]/);
+  if (!match) {
+    throw new Error(
+      'ROOM_ORDER not found in buildingMap.ts - this guard cannot resolve the approved rooms',
+    );
+  }
+  const slugs = (match[1].match(/'[a-z-]+'/g) ?? []).map((raw) => raw.replace(/'/g, ''));
+  if (slugs.length === 0) {
+    throw new Error('ROOM_ORDER parsed to nothing - refusing to pass on an empty approved list');
+  }
+  return slugs;
+})();
 
 /**
  * The personality typefaces, retired with the aesthetic by owner decision on
@@ -241,34 +245,42 @@ describe('the retired aesthetic does not grow back', () => {
     },
   );
 
-  it.each(Object.entries(CLASS_CEILINGS))(
-    'uses the %s class no more than its frozen ceiling',
-    (token, ceiling) => {
-      const pattern = new RegExp(token.replace(/[-]/g, '\\$&'), 'g');
-      const hits: string[] = [];
+  it('every room-- class names an approved room or a listed ground modifier', () => {
+    const allowed = new Set([...APPROVED_ROOM_SLUGS, ...MODIFIER_SLUGS]);
+    const offenders: string[] = [];
+    let occurrences = 0;
 
-      for (const file of FILES) {
-        // Test files name these classes in order to assert about them, which
-        // is not the app wearing the aesthetic.
-        if (/\.test\.tsx?$/.test(file)) continue;
-        const found = readFileSync(file, 'utf8').match(pattern);
-        if (found) {
-          hits.push(`${path.relative(REPO, file)} x${found.length}`);
+    for (const file of FILES) {
+      // Test files name these classes in order to assert about them, which
+      // is not the app wearing the aesthetic.
+      if (/\.test\.tsx?$/.test(file)) continue;
+      const found = readFileSync(file, 'utf8').match(/room--[a-z-]+/g);
+      if (!found) continue;
+      occurrences += found.length;
+      for (const hit of new Set(found)) {
+        const slug = hit.slice('room--'.length);
+        if (!allowed.has(slug)) {
+          offenders.push(`${path.relative(REPO, file)} -> ${hit}`);
         }
       }
+    }
 
-      const total = hits.reduce(
-        (sum, entry) => sum + Number(entry.slice(entry.lastIndexOf('x') + 1)),
-        0,
-      );
+    // GUARDS THE GUARD. This is a walk over FILES, so a regex that silently
+    // stopped matching would leave `offenders` empty and turn the assertion
+    // below into a green no-op. 135 occurrences across the app's non-test files
+    // when this was written; the floor sits well under that so it fails loudly
+    // on a broken walk rather than tracking the real number.
+    expect(occurrences).toBeGreaterThan(100);
 
-      expect(
-        total <= ceiling
-          ? true
-          : `${token} used ${total} times, ceiling is ${ceiling}. In:\n  ${hits.join('\n  ')}`,
-      ).toBe(true);
-    },
-  );
+    expect(
+      offenders.length === 0
+        ? true
+        : `room-- classes naming no approved room:\n  ${offenders.join('\n  ')}\n` +
+          `approved rooms (ROOM_ORDER): ${APPROVED_ROOM_SLUGS.join(', ')}\n` +
+          `ground modifiers: ${MODIFIER_SLUGS.join(', ')}`,
+    ).toBe(true);
+  });
+
 
   it.each(RETIRED_FACES)('does not name the retired typeface %s', (face) => {
     const hits: string[] = [];
