@@ -206,21 +206,24 @@ concurrency:
   # environment therefore never run at the same time either, which a separate
   # apply-migrations-<target> group could not promise.
   #
-  # WHAT THAT COSTS AN OPERATOR. By default a group holds one running and one
-  # PENDING run, and a third arrival cancels the pending one whatever
-  # cancel-in-progress says. So:
+  # `queue: max` IS PART OF THE LOCK, on this workflow and on both deploy
+  # workflows. Without it a group holds one running and ONE pending run, and a
+  # third arrival cancels the pending one whatever cancel-in-progress says --
+  # so a queued migration could be cancelled by a later deploy dispatch, and
+  # the deploy would then run without it. With it, up to 100 runs wait and none
+  # is replaced. It has to be on every workflow that names the group: one
+  # member left on the default brings the cancelling back.
+  #
+  # WHAT IT STILL COSTS AN OPERATOR. Runs of one environment go one at a time:
   #   - a dispatch here waits behind a deploy of the same environment, and a
   #     deploy waits behind a migration;
   #   - a run WAITING FOR THE PRODUCTION APPROVAL counts as running and holds
   #     the group (deploy-production run 30786409061 sat behind 30772571138
   #     for the 26 minutes that one waited at its approval, 2026-08-03). A
   #     production migration left unapproved therefore blocks every production
-  #     deploy, an emergency rollback included, until it is approved or
-  #     cancelled;
-  #   - a pending migration can be cancelled by a later deploy dispatch. The
-  #     deploy then runs without it, and its schema check is what refuses.
-  # A cancelled pending run has started no step and wrote nothing. Dispatch one
-  # thing per environment at a time and none of this is reached.
+  #     deploy behind it. `queue: max` does not change that.
+  # BEFORE AN EMERGENCY ROLLBACK: cancel any production run that is waiting for
+  # an approval nobody is going to give, or the rollback queues behind it.
   #
   # This serializes releases and migrations. It does NOT serialize every
   # workflow that writes to an environment: seed-reference-data and the other
@@ -228,6 +231,7 @@ concurrency:
   # releaseConcurrencyContract.test.ts pins the mapping and names them.
   group: ${{ inputs.target == 'production' && 'deploy-production-main' || 'deploy-staging-app-ppbf-staging' }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   apply:
