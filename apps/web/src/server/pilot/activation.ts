@@ -3,6 +3,8 @@ import { randomInt } from 'node:crypto';
 import type { PilotRole } from './contracts';
 import { DEFAULT_ACTIVATION_TTL_HOURS, MAX_ACTIVATION_TTL_HOURS } from './activationPolicy';
 import { query, withTransaction } from './db';
+import { accountDeletedSql, refuseIfLoginDeleted } from './deletedAccountSignIn';
+import { ConflictError } from './errors';
 import { assertChosenPinAllowed, validatePinPolicy } from './pinPolicy';
 import { hashPin, hashToken } from './security';
 
@@ -53,18 +55,46 @@ export async function provisionAthleteActivation(params: {
   const expiresAt = await withTransaction(async (client) => {
     if (params.mode === 'create') {
       if (!params.athleteId) throw new Error('Missing athlete_id');
-      const athlete = await client.query(
-        'select athlete_id from pilot.athletes where organization_id = $1 and athlete_id = $2',
+      // `for share` holds the athlete row until this commits, so a withdrawal
+      // (which locks it for update) cannot land between this read and the
+      // insert and leave a new login on a withdrawn athlete.
+      const athlete = await client.query<{ withdrawn: boolean }>(
+        `select deleted_at is not null as withdrawn from pilot.athletes
+         where organization_id = $1 and athlete_id = $2 for share`,
         [params.organizationId, params.athleteId],
       );
       if (athlete.rows.length === 0) throw new Error('Athlete not found in organization');
-      const bound = await client.query(
-        'select account_id from pilot.accounts where organization_id = $1 and athlete_id = $2 limit 1',
+      // OD-2026-09-30-004 e2: a login was created for a withdrawn athlete,
+      // who could then redeem its code and still not reach their record.
+      if (athlete.rows[0].withdrawn !== false) {
+        throw new ConflictError(
+          `Conflict: athlete record "${params.athleteId}" was withdrawn. A login cannot be created for a withdrawn `
+          + 'athlete. A returning athlete is enrolled again as a new athlete record with a new login.',
+          'WITHDRAWN_ATHLETE_RECORD',
+        );
+      }
+      const bound = await client.query<{ account_deleted: boolean }>(
+        `select ${accountDeletedSql('a')} as account_deleted
+         from pilot.accounts a where organization_id = $1 and athlete_id = $2 limit 1`,
         [params.organizationId, params.athleteId],
       );
-      if (bound.rows.length > 0) throw new Error('Athlete is already linked to another account');
+      if (bound.rows.length > 0) {
+        // The deleted login's id is not named, as in intake's refusal.
+        if (bound.rows[0].account_deleted !== false) {
+          throw new ConflictError(
+            `Conflict: athlete record "${params.athleteId}" is still held by a login that was deleted. A deleted `
+            + 'login is not restored, and an athlete record takes one login, so a new one cannot be created for '
+            + "this record; the old login's hold on it needs a database fix.",
+            'ATHLETE_RECORD_HELD_BY_DELETED_LOGIN',
+          );
+        }
+        throw new Error('Athlete is already linked to another account');
+      }
       const existing = await client.query('select account_id from pilot.accounts where account_id = $1 limit 1', [params.accountId]);
-      if (existing.rows.length > 0) throw new Error('Account already exists');
+      if (existing.rows.length > 0) {
+        await refuseIfLoginDeleted(client, params.accountId, params.organizationId);
+        throw new Error('Account already exists');
+      }
       await client.query(
         `insert into pilot.accounts
            (account_id, role, organization_id, athlete_id, pin_hash, must_change_pin, active_flag, is_platform_owner)
@@ -72,13 +102,19 @@ export async function provisionAthleteActivation(params: {
         [params.accountId, params.organizationId, params.athleteId],
       );
     } else {
+      // A deleted login is not reset (OD-2026-09-30-004 e2): the reset cleared
+      // its PIN and issued a code for a login that could never sign in.
       const reset = await client.query(
-        `update pilot.accounts set pin_hash = null, must_change_pin = false, active_flag = false, updated_at = now()
+        `update pilot.accounts a set pin_hash = null, must_change_pin = false, active_flag = false, updated_at = now()
          where account_id = $1 and organization_id = $2 and role = 'athlete' and is_platform_owner = false
+           and not ${accountDeletedSql('a')}
          returning athlete_id`,
         [params.accountId, params.organizationId],
       );
-      if (reset.rows.length === 0) throw new Error('Account not found or cannot be reset');
+      if (reset.rows.length === 0) {
+        await refuseIfLoginDeleted(client, params.accountId, params.organizationId);
+        throw new Error('Account not found or cannot be reset');
+      }
       await client.query('update pilot.session_tokens set revoked_at = now() where account_id = $1 and revoked_at is null', [params.accountId]);
     }
 
@@ -199,17 +235,25 @@ export async function issueActivationCode(params: {
     // a coach, an admin, an account in a different organization, or one that
     // does not exist -- is rejected with the same message, so this endpoint
     // cannot be used to probe which accounts exist or what role they hold.
+    //
+    // Nor a deleted login (OD-2026-09-30-004 e2): a code was issued for a
+    // login that could never sign in. That one is named, to the admin of the
+    // organization it is in and to nobody else. `for share` holds the row, so
+    // a deletion cannot land between this read and the code being written.
     const target = await client.query<{ account_id: string }>(
       `select account_id
-       from pilot.accounts
+       from pilot.accounts a
        where account_id = $1
          and organization_id = $2
          and role = 'athlete'
-         and is_platform_owner = false`,
+         and is_platform_owner = false
+         and not ${accountDeletedSql('a')}
+       for share`,
       [accountId, organizationId],
     );
 
     if (target.rows.length === 0) {
+      await refuseIfLoginDeleted(client, accountId, organizationId);
       throw new Error('Not found: no pending athlete account matches that identifier');
     }
 
@@ -326,7 +370,7 @@ export async function redeemActivationCode(rawCode: string, pin: string): Promis
          a page telling them "you are signed in with the starting PIN your gym
          gave you" about a PIN they had chosen themselves thirty seconds
          earlier. */
-      `update pilot.accounts
+      `update pilot.accounts a
        set pin_hash = $1,
            active_flag = true,
            must_change_pin = false,
@@ -335,12 +379,17 @@ export async function redeemActivationCode(rawCode: string, pin: string): Promis
          and organization_id = $3
          and role = 'athlete'
          and is_platform_owner = false
+         and not ${accountDeletedSql('a')}
        returning athlete_id`,
       [pinHash, accountId, organizationId],
     );
 
     if (updated.rows.length === 0) {
-      // The account changed role or organization between issue and redemption.
+      // The account changed role or organization between issue and redemption,
+      // or was deleted while it held a live code. A deleted login is not set
+      // active, given a PIN or a membership, and the code is not consumed:
+      // this throw rolls the transaction back. Same generic answer as every
+      // other failure here, so redemption discloses nothing about the login.
       console.warn('pilot-auth activation rejected', { accountId, reason: 'account_role_or_org_changed' });
       throw new Error('Unauthorized: activation code is invalid, already used, or expired');
     }

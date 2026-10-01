@@ -216,17 +216,37 @@ gates' session minter (`apps/web/scripts/lib/gate-session.mjs`) and fixture step
 deletion preflight check (`apps/web/scripts/pilot-check-deletion-preflight.mjs`) reports a deleted
 login left active, and its sessions, as refused at sign-in rather than as exposure.
 
-**Still open (checked 2026-09-29):** the admin paths that used to turn a deleted login back on
-still write to it without reading `deleted_at`: issuing a new activation code, resetting an
-athlete's PIN or creating an account for a deleted athlete
-(`apps/web/src/server/pilot/activation.ts`); intake re-promoting a withdrawn athlete
-(`createOrUpdateAthleteAccount`, `apps/web/src/server/pilot/auth.ts`); re-inviting a deleted
-guardian's email as staff (`createOrUpdateMicrosoftStaffAccount` in
-`apps/web/src/server/pilot/staffProvisioning.ts`, which reads `deleted_at` only for intake's
-guardian login); and the platform owner's user-status and membership routes
-(`setAccountActiveStatus`, `upsertOrganizationMembership` in `apps/web/src/server/pilot/auth.ts`).
-They can no longer reopen the login, but they can leave an account marked active, with a PIN or
-a code, that can never sign in, and nothing tells the admin why. Nothing in the app clears
+**Admin actions on a deleted login are refused** (owner decision 2026-09-30, OD-2026-09-30-004
+e2, A). Each of these used to succeed on a login marked deleted and leave it shown as active, with
+a PIN or a code, while sign-in refused it and nothing said why. Each now answers 409 with one
+message (`deletedLoginConflict`, `apps/web/src/server/pilot/deletedAccountSignIn.ts`: the login was
+deleted, nothing here changes it, a returning person gets a new login), and the login is left as
+deletion left it. The refusal is a condition of the write statement itself, not only a check
+before it:
+
+- a new activation code, and a PIN reset (`issueActivationCode`, `provisionAthleteActivation`,
+  `apps/web/src/server/pilot/activation.ts`);
+- creating a login for a withdrawn athlete, or for an athlete record a deleted login still holds
+  (the same function, mode `create`);
+- redeeming an activation code that belongs to a deleted login (`redeemActivationCode`): it writes
+  nothing and answers the same generic failure as any other unusable code;
+- re-inviting a deleted login's email as staff or guardian, from the gym's People page or the
+  platform owner's (`createOrUpdateMicrosoftStaffAccount`,
+  `apps/web/src/server/pilot/staffProvisioning.ts`), and linking a guardian to a withdrawn athlete;
+- the platform owner's user-status route, in both directions, and membership route
+  (`setAccountActiveStatus`, `upsertOrganizationMembership`, `apps/web/src/server/pilot/auth.ts`);
+- assigning or transferring the gym's admin seat to or from a deleted login, and granting or
+  revoking master SHADOW access on one (`promoteAccountToOrganizationAdmin`,
+  `transferOrganizationAdmin`, `setAccountMasterShadowAccess`).
+
+Intake re-promoting a withdrawn athlete, or naming a deleted login, is refused the same way
+(#1047). A gym's admin is told a login is deleted only when it is in their own gym.
+
+**Still open (checked 2026-09-30):** two paths still write to a login without reading
+`deleted_at`: the platform owner's athlete-shell route (`createAthleteAccount`,
+`apps/web/src/server/pilot/auth.ts`) and the stranded-guardian repair
+(`repairStrandedGuardianAuthProvider`, same file). Neither can reopen the login, because sign-in
+refuses it. Revoking a deleted login's sessions is still allowed. Nothing in the app clears
 `deleted_at`, so a deletion cannot be undone from any screen (the 1-year restore is not built),
 and a person marked deleted cannot be deleted again from the screen (409).
 

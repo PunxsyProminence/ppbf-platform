@@ -209,7 +209,7 @@ describe('issueActivationCode', () => {
 
 describe('provisionAthleteActivation', () => {
   test('creates an inactive account with no shared bootstrap PIN and issues one hashed code atomically', async () => {
-    respond(/select athlete_id from pilot\.athletes/, [{ athlete_id: 'ath-1' }]);
+    respond(/from pilot\.athletes/, [{ withdrawn: false }]);
     respond(/insert into pilot\.account_activation_tokens/, [{ expires_at: '2026-08-26T00:00:00Z' }]);
 
     const result = await provisionAthleteActivation({ accountId: 'acct-1', athleteId: 'ath-1', organizationId: 'org-1', issuedByAccountId: 'admin-1', issuedByRole: 'organization_admin', mode: 'create' });
@@ -229,10 +229,8 @@ describe('provisionAthleteActivation', () => {
   // account answers to whoever redeems the code. The roster check above does
   // not catch it: the athlete IS on that gym's roster, which is the point.
   test('create mode refuses an athlete who already holds an account, before any write', async () => {
-    respond(/select athlete_id from pilot\.athletes/, [{ athlete_id: 'ath-9' }]);
-    respond(/select account_id from pilot\.accounts where organization_id/, [
-      { account_id: 'the-childs-own-account' },
-    ]);
+    respond(/from pilot\.athletes/, [{ withdrawn: false }]);
+    respond(/from pilot\.accounts a where organization_id = \$1 and athlete_id = \$2/, [{ account_deleted: false }]);
 
     await expect(
       provisionAthleteActivation({
@@ -252,12 +250,12 @@ describe('provisionAthleteActivation', () => {
   });
 
   test('reset removes the old PIN, deactivates membership, revokes sessions, and supersedes old codes', async () => {
-    respond(/update pilot\.accounts set pin_hash = null/, [{ athlete_id: 'ath-1' }]);
+    respond(/update pilot\.accounts a set pin_hash = null/, [{ athlete_id: 'ath-1' }]);
     respond(/insert into pilot\.account_activation_tokens/, [{ expires_at: '2026-08-26T00:00:00Z' }]);
 
     await provisionAthleteActivation({ accountId: 'acct-1', organizationId: 'org-1', issuedByAccountId: 'admin-1', issuedByRole: 'organization_admin', mode: 'reset' });
 
-    expect(callsMatching(/update pilot\.accounts set pin_hash = null/)).toHaveLength(1);
+    expect(callsMatching(/update pilot\.accounts a set pin_hash = null/)).toHaveLength(1);
     expect(callsMatching(/update pilot\.session_tokens set revoked_at = now\(\)/)).toHaveLength(1);
     expect(callsMatching(/set superseded_at = now\(\)/)).toHaveLength(1);
     const [membershipSql] = callsMatching(/insert into pilot\.organization_memberships/)[0];

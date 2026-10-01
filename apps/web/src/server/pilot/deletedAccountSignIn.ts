@@ -10,12 +10,13 @@
  * WHY AT SIGN-IN, AND NOT ON EACH PATH THAT CAN TURN A LOGIN BACK ON
  *
  * Deletion (dataDeletion.ts) sets pilot.accounts.deleted_at, clears active_flag
- * and revokes sessions. Several admin paths write to that login without
- * reading deleted_at, and can set active_flag back to true: redeeming a new
+ * and revokes sessions. Several admin paths wrote to that login without
+ * reading deleted_at, and could set active_flag back to true: redeeming a new
  * activation code (after an athlete PIN reset, re-provision, or intake
- * re-promoting a withdrawn athlete, which re-provisions the login inactive),
- * re-inviting an email as staff, and the platform owner's status and
- * membership routes (docs/DATA_RETENTION.md, "Still open"). Blocking each one
+ * re-promoting a withdrawn athlete), re-inviting an email as staff, and the
+ * platform owner's status and membership routes. Those now refuse a deleted
+ * login themselves (OD-2026-09-30-004 e2; deletedLoginConflict below, and
+ * docs/DATA_RETENTION.md for the ones that do not). Blocking each one alone
  * (option B) leaves the next such path to be missed. So the rule sits where
  * every login passes:
  *
@@ -36,6 +37,8 @@
  * as deleted, so a query that forgets to select the flag refuses everyone the
  * first time it runs, instead of quietly admitting the deleted.
  */
+
+import { ConflictError } from './errors';
 
 const PLAIN_SQL_ALIAS = /^[a-z_][a-z0-9_]*$/;
 
@@ -59,4 +62,57 @@ export interface AccountDeletionFlag {
 /** True unless the row says, explicitly, that the account is not deleted. */
 export function isDeletedAccount(row: AccountDeletionFlag): boolean {
   return row.account_deleted !== false;
+}
+
+/**
+ * The refusal for an admin action on a login marked deleted (Jason
+ * 2026-09-30, OD-2026-09-30-004 e2, A: refuse with a clear message, like
+ * intake's 409). Each of those actions used to succeed and leave the login
+ * shown as active, with a PIN or a code, while sign-in refused it and nothing
+ * said why. One message for all of them: a deleted login is changed by
+ * nothing in the app.
+ *
+ * `login` is what the caller named -- an account_id or an email -- never a
+ * value read from the row.
+ */
+export function deletedLoginConflict(login: string): ConflictError {
+  return new ConflictError(
+    `Conflict: the login "${login}" was deleted. A deleted login cannot sign in and nothing here changes it; `
+    + 'a deletion is not undone from the app. A returning person gets a new login.',
+    'DELETED_LOGIN',
+  );
+}
+
+/** The one method of a pg client, or a pool wrapper, this module needs. */
+export interface AccountLookupClient {
+  query(sql: string, params: unknown[]): Promise<{ rows: unknown[] }>;
+}
+
+/**
+ * For a write that carries `not accountDeletedSql(...)` in its own where
+ * clause and wrote nothing: throws deletedLoginConflict if that was because
+ * the login is deleted, and returns otherwise so the caller raises the error
+ * it always raised. The write is the guard; this only names the reason.
+ *
+ * `organizationId` scopes the lookup, so an organization's admin is told
+ * about a deleted login in their own organization and learns nothing about
+ * any other. Pass null only from a platform-owner route, which is
+ * cross-organization by role.
+ */
+export async function refuseIfLoginDeleted(
+  client: AccountLookupClient,
+  accountId: string,
+  organizationId: string | null,
+): Promise<void> {
+  const found = await client.query(
+    `select 1 from pilot.accounts a
+     where a.account_id = $1
+       and ($2::text is null or a.organization_id = $2)
+       and ${accountDeletedSql('a')}`,
+    [accountId, organizationId],
+  );
+
+  if (found.rows.length > 0) {
+    throw deletedLoginConflict(accountId);
+  }
 }
