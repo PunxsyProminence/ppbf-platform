@@ -408,21 +408,27 @@ describe('the athlete\'s own words survive normalisation', () => {
   // validateShadowRequest. Anything else done to it on the way -- normalised,
   // truncated, spaces collapsed, invisible characters stripped -- changes
   // what the classifier's patterns see without touching the classifier, and
-  // none of the classifier's own guards would notice. A reviewer wrote four
-  // such edits to the route; each lost or released an emergency report and
-  // every route test passed.
+  // none of the classifier's own guards would notice.
   //
-  // So the call is read from route.ts: one call, and its first argument is
-  // the `message` that was declared once as the trimmed raw message.
-  test('the route hands validateShadowRequest the trimmed message and nothing else', () => {
+  // So the text of route.ts is checked for two things: it contains exactly
+  // one `validateShadowRequest(...)`, spelled with `message` as its first
+  // argument, and exactly one declaration of `message`, as a const equal to
+  // the trimmed raw message.
+  //
+  // THIS IS A CHECK OF TEXT, AND A NARROW ONE. It catches the edit made in
+  // the obvious place, at the call or at the declaration. It does not catch
+  // the raw message being altered before it is trimmed, the validator being
+  // called through an alias or a wrapper, a `message` re-declared by
+  // destructuring in an inner scope, or the verdict being overridden after
+  // the call. Those are not covered by any test here.
+  test('route.ts spells one call, validateShadowRequest(message, ...), and declares message once, as the trimmed raw message', () => {
     const source = readFileSync(join(__dirname, 'route.ts'), 'utf8');
 
     expect(source.match(/validateShadowRequest\([^)]*\)/g)).toEqual([
       'validateShadowRequest(message, userRole, organizationId)',
     ]);
-    // `message` is bound once, and never assigned again.
+    // A const, so it cannot be assigned again.
     expect(source.match(/\b(?:const|let|var)\s+message\b[^;]*;/g)).toEqual(['const message = rawMessage.trim();']);
-    expect(source.match(/(?<![.\w])message\s*(?:[-+*/%&|^?]|\*\*|<<|>>>?|&&|\|\|)?=(?!=)/g)).toEqual(['message =']);
   });
 
   // The same thing, run, for the one kind of tidying that has a sentence to
@@ -431,8 +437,7 @@ describe('the athlete\'s own words survive normalisation', () => {
   // return instead, which sits above the emergency one (a pre-existing
   // ordering flaw, moved to #1036). A route that collapsed runs of spaces
   // before classifying would show here as the emergency classification going
-  // missing. Other kinds of tidying would not show here; the test above is
-  // what covers them.
+  // missing. Other kinds of tidying would not show here.
   test('a doubled space is not collapsed on the way to the classifier', async () => {
     global.fetch = jest.fn() as unknown as typeof fetch;
 
@@ -459,8 +464,10 @@ describe('the athlete\'s own words survive normalisation', () => {
 // classification. For concussion, weight_cutting, return_to_play and
 // medical_clearance it answers with a stock line, does not call the model,
 // and queues a human review. For anything else, loss_of_consciousness
-// included, it calls the model, and queues a review only if the generated
-// answer is itself filtered.
+// included, it goes on to generate an answer; whether a review is queued
+// then depends on that answer and on the evidence available, not on the
+// classification. In the tests below, with evidence present and a clean
+// answer, none is.
 //
 // The classifier's topic is the first row that matches, and
 // loss_of_consciousness is listed above weight_cutting, return_to_play and
@@ -487,9 +494,9 @@ describe('the athlete\'s own words survive normalisation', () => {
 // about being knocked out skips the stock line and the review queue, for
 // every spelling of the apostrophe. It is recorded for #1036.
 //
-// The route below is run for four of the twelve spellings and one of the
-// three topics; shadowChatSensitivity.test.ts runs the classifier for all
-// twelve and all three.
+// The route below is run for the ASCII apostrophe and three of the twelve
+// look-alikes, on one of the three topics; shadowChatSensitivity.test.ts
+// runs the classifier for the ASCII apostrophe and all twelve, on all three.
 // ---------------------------------------------------------------------------
 describe('an allowed question that names KO\'d', () => {
   const ask = async (message: string) => {

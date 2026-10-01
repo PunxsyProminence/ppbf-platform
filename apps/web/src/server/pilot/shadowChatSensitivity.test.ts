@@ -702,7 +702,7 @@ describe('the premises of the argument, read from source', () => {
   // text before the body ran; the real function left intact but no longer
   // the one exported (`export { wrapper as validateShadowRequest }`); and
   // code tucked into the one statement S1d drops, the `examples` table.
-  test('S1e: the three functions are plain exported declarations, named nowhere else, and the dropped table is only data', () => {
+  test('S1e: the three functions are plain exported declarations, named only where they are declared and called, and the dropped table is only data', () => {
     const printer = ts.createPrinter({ removeComments: true });
     const print = (node: ts.Node): string => printer.printNode(ts.EmitHint.Unspecified, node, PRODUCTION).replace(/\s+/g, ' ').trim();
     const header = (fn: ts.FunctionDeclaration) => ({
@@ -1203,7 +1203,7 @@ const SEEDS: ReadonlyArray<readonly [string, string]> = [
   // their return with the topic becoming loss_of_consciousness); the six
   // quote look-alikes in the slot change nothing. These five cover the moves
   // to R3 from R4, R5, R6, R7 and R8; R9 to R3 and R9 to R8 come from the
-  // seeds above.
+  // other seeds in this list.
   ['R4 personal health', 'my shoulder hurts and I can t breathe'],
   ['R5 diagnosis', 'do i have a concussion if i can t see'],
   ['R6 clearance', 'am I cleared to spar if I can t see'],
@@ -1329,6 +1329,22 @@ describe('main against the current code: every look-alike at every position of e
     expect({ compared, byMainReturn, newlyWithheld, newlyEmergency, anyFieldDiffers, moves }).toEqual(SEED_DIFFERENTIAL_COUNTS);
     // Every message main allowed that is now withheld carries the emergency text.
     expect(newlyWithheldWithoutEmergencyText).toBe(0);
+  });
+
+  // THE DEFECT ITSELF, BY NAME, FOR EVERY APOSTROPHE LOOK-ALIKE. The counts
+  // above contain this; here it is as a sentence.
+  test('"I can?t breathe after that hit" is an emergency with each of the twelve apostrophe look-alikes; on main it was with none of them', () => {
+    const onMain: string[] = [];
+    const notNow: string[] = [];
+    for (const unit of APOSTROPHE_SOURCES) {
+      const message = 'I can' + String.fromCharCode(unit) + 't breathe after that hit';
+      if (withheld(main(message))) onMain.push(unitLabel(unit));
+      const is = now(message);
+      if (!(emergency(is) && critical(is))) notNow.push(unitLabel(unit));
+    }
+    expect(APOSTROPHE_SOURCES.length).toBe(12);
+    expect(onMain).toEqual([]);
+    expect(notNow).toEqual([]);
   });
 
   // U+FEFF IN PLACE OF, AND BETWEEN, EVERY CHARACTER OF EVERY SEED.
@@ -1469,21 +1485,32 @@ describe('main against the current code: every look-alike at every position of e
 // ---------------------------------------------------------------------------
 describe('the current code is main applied to the folded message, with each code unit between two words of two messages', () => {
   test.each([
-    ['my|shoulder hurts'],
-    ["I can't|breathe after that hit"],
-  ])('%s', (carrier) => {
+    ['my|shoulder hurts', 65473], // all but the 63 word characters
+    ["I can't|breathe after that hit", 25], // the 25 units main's s matches
+  ])('%s', (carrier, expectedWithheldOnMain) => {
     const [head, tail] = carrier.split('|');
     const offenders: string[] = [];
     let released = 0;
+    let emergencyLost = 0;
+    let downgraded = 0;
+    let withheldOnMain = 0;
     for (let unit = 0; unit < UNITS; unit += 1) {
       const message = head + String.fromCharCode(unit) + tail;
       const was = main(message);
       const is = now(message);
+      if (withheld(was)) withheldOnMain += 1;
       if (withheld(was) && !withheld(is)) released += 1;
+      if (emergency(was) && !emergency(is)) emergencyLost += 1;
+      if (critical(was) && !critical(is)) downgraded += 1;
       if (!same(is, main(normaliseForMatching(message)))) offenders.push(unitLabel(unit));
     }
-    expect(released).toBe(0);
+    expect({ released, emergencyLost, downgraded }).toEqual({ released: 0, emergencyLost: 0, downgraded: 0 });
     expect(offenders.slice(0, 40)).toEqual([]);
+    // How many of the 65,536 main withholds: every unit that leaves the two
+    // words apart, for the first carrier; only the units main's `s` matches,
+    // for the second. For the rest "not released" has nothing to say, and
+    // what this test shows for them is the equality with main(f(m)).
+    expect(withheldOnMain).toBe(expectedWithheldOnMain);
   });
 });
 
@@ -1585,7 +1612,10 @@ describe('the carrier sweep: a separator at a marked position releases nothing m
         compared += 1;
         returnsReached.add(returnOf(was));
         if (normaliseForMatching(message) !== message) folded += 1;
-        if (!withheld(now(message))) {
+        const is = now(message);
+        if (emergency(was) && !emergency(is)) regressions.push(`${label}: ${unitLabel(cp)} -- emergency text lost`);
+        if (critical(was) && !critical(is)) regressions.push(`${label}: ${unitLabel(cp)} -- critical classification lost`);
+        if (!withheld(is)) {
           regressions.push(`${label}: ${unitLabel(cp)} -- main withheld this, the current code does not`);
         }
       }
@@ -1686,7 +1716,8 @@ describe('a word merely containing "cant" is not withheld', () => {
 // ---------------------------------------------------------------------------
 // The string literals of main's validateShadowRequest.
 const MAIN_VALIDATE_STRING_LITERALS = 18;
-// The top-level statements of main's two functions.
+// The top-level statements of the two frozen functions. (Real main's
+// classifier has one more, the `examples` table, which the frozen copy drops.)
 const MAIN_CLASSIFY_STATEMENTS = 8;
 const MAIN_VALIDATE_STATEMENTS = 17;
 const RANDOM_STRINGS_TOUCHED = 19565;
