@@ -128,8 +128,8 @@ nothing. The three workflows above are unchanged and remain valid.
 **It has never been run** (as of 2026-10-01). What is established about it is
 static: `releaseOneApprovalContract.test.ts` holds its shape and holds every
 copied step equal to its source in `deploy-staging.yml` and
-`deploy-production.yml`. Its first run needs overwatch and Jason, and the
-checks under *Before the first use* below.
+`deploy-production.yml`. Its first run needs overwatch and Jason, and follows
+the steps under *The first use* below.
 
 **Authority is the production rule, not the staging one.** Dispatching it is
 dispatching a production release: only on Jason's explicit word, like
@@ -250,46 +250,76 @@ step; approving it changes nothing. Dispatch a fresh run.
   schedule), `backup`, `check-database`, `run-checks`. Do not run one against
   an environment while a release of it is in flight.
 
-### Before the first use (overwatch; no production write)
+### The first use (overwatch and Jason; in this order)
+
+Steps 1 and 2 come before any dispatch of this workflow. Steps 3 to 9 are its
+first run. Nothing here writes to production before Jason's click in step 9.
 
 1. **Re-read both environments** and record the result with the date:
-   `staging` has no required reviewer and `production` has one. If `staging`
-   has acquired a reviewer, this is no longer one click; stop and revisit.
+   `staging` has no required reviewer, and `production` has the intended
+   required reviewer and no other. If `staging` has acquired a reviewer, this
+   is no longer one click; stop and revisit.
    ```text
-   gh api repos/PunxsyProminence/ppbf-platform/environments --jq '.environments[] | {name, rules: [.protection_rules[]?.type]}'
+   gh api repos/PunxsyProminence/ppbf-platform/environments --jq '.environments[] | {name, rules: [.protection_rules[]? | {type, reviewers: [.reviewers[]?.reviewer.login]}]}'
    ```
-2. **Prove a second run cannot start staging.** Dispatch run A and let it
-   finish `staging` and wait at the approval. Dispatch run B. B must stay
-   pending with no job started. Reject or cancel A; B must then start, or be
-   cancelled by hand. Run A reaches no production step: rejecting the approval
-   ends it before the `production` job's first step.
-3. **Settle what a waiting JOB holds.** Not known: whether the `production`
-   job, while it waits for approval, already holds the `deploy-production`
-   group (the observation above is for a workflow-level group). With run A
-   waiting, dispatch `apply-migrations` with `target: production`,
-   `confirm_target: production`, `migration: list-check` (it touches no
-   database). Note whether it is pending behind A or itself waiting for
-   approval, then cancel it. Record the answer here.
-4. **REQUIRED: run the whole `all` list against staging once, on its own.**
-   This workflow applies every routine migration on every run, by ruling
-   (2026-10-01: no per-release subset, which would be a second source of
-   truth). If the pass exposes a runner that is not idempotent, repair the
-   runner; do not work around it here. Recent
-   `apply-migrations` runs applied single migrations (their apply step took a
-   second or less, read from run history 2026-10-01), so the full list has not
-   recently been re-applied in one pass, and its first pass against production
-   should not be the first pass anywhere. Dispatch `apply-migrations` with
-   `target: staging`, `migration: all`, and read every runner's output.
-5. **Confirm GitHub accepts `queue: max` where it is written.** At workflow
-   level it is observed accepted (`apply-migrations` run 36883139484,
-   2026-10-01). In a JOB's `concurrency` block, which this workflow uses
-   twice, it is documented (ChatGPT's read of `jobs.<job_id>.concurrency`,
-   2026-10-01; the two pages Claude read that day showed it only at workflow
-   level) and its runtime behaviour is unobserved until first use. A workflow
-   GitHub cannot validate does not start at all, so the first dispatch in step
-   2 settles it: if the run is rejected as invalid, that is this.
-6. Record all five with the run ids in this section, replacing "It has never
-   been run".
+2. **REQUIRED: run the whole `all` list against staging once, on its own, at
+   current `main`.** This workflow applies every routine migration on every
+   run, by ruling (2026-10-01: no per-release subset, which would be a second
+   source of truth). Recent `apply-migrations` runs applied single migrations
+   (their apply step took a second or less, read from run history
+   2026-10-01), so the full list has not recently been re-applied in one pass,
+   and its first pass against production should not be the first pass
+   anywhere. Dispatch `apply-migrations` with `target: staging`,
+   `migration: all`, and read every runner's output: every runner green. If
+   the pass exposes a runner that is not idempotent, repair the runner; do not
+   work around it here.
+3. **Jason explicitly authorizes the first dispatch**, for that commit, in his
+   own words. Dispatch with `enable_shadow_gate: true`. If GitHub rejects the
+   run as invalid before any job starts, that is the one thing not yet
+   observed about the file: `queue: max` is observed accepted at workflow
+   level (`apply-migrations` run 36883139484, 2026-10-01); in a JOB's
+   `concurrency` block, which this workflow uses twice, it is documented
+   (ChatGPT's read of `jobs.<job_id>.concurrency`, 2026-10-01; the two pages
+   Claude read that day showed it only at workflow level) and its runtime
+   behaviour is unobserved until this run.
+4. **Observe the staging half in detail**, step by step, not by the job's
+   colour:
+   - the frozen SHA is exactly the one Jason authorized;
+   - every migration passed;
+   - schema verification passed;
+   - the staged revision carries the digest this run produced, at 100% of
+     traffic;
+   - the SHADOW E2E gate, the guardian-contact probe and the runtime ledger
+     passed;
+   - any gate-athlete credential the run minted was deactivated;
+   - when the release changes sign-in, minors' data or safety screens: Jason's
+     signed-in walk of staging, done now, while the run waits.
+5. **Confirm production shows "Waiting for approval" and no production step
+   has started.** The `production` job has no completed or running step.
+6. **Prove a second run cannot start staging.** With run A waiting, dispatch
+   run B (also on Jason's word). B must stay pending with no job started. If B
+   starts its staging job, stop: the whole-run lock is not holding. Cancel B
+   before going on, unless it is meant to follow A.
+7. **Probe the production group, read-only.** Not known: whether the
+   `production` job, while it waits for approval, already holds the
+   `deploy-production` group (the observation under *Concurrency* is for a
+   workflow-level group). With run A waiting, dispatch `apply-migrations` with
+   `target: production`, `confirm_target: production`,
+   `migration: list-check` (it touches no database). Note whether it is
+   pending behind A or itself waiting for approval, then cancel it. Record the
+   answer here.
+8. **Before the click, confirm the run page still shows the SHA and the
+   staging digest that were inspected in step 4.** Same commit, same
+   `sha256:` digest. If either differs, do not approve.
+9. **Jason approves** (the rule under *Who releases*). After the run: read
+   back `PPBF_RELEASE_SHA`, the running image digest, the active revision, its
+   traffic and the probes, as *Verify production* below says. A green run is
+   not that read-back.
+10. Record every step with its run ids in this section, replacing "It has
+    never been run".
+
+To stop after step 7 without touching production, reject the approval: the run
+ends before the `production` job's first step.
 
 Two differences from `apply-migrations` to know: the repository variables
 `PPBF_EXPECTED_POSTGRES_HOSTNAME` / `_DATABASE`, which `apply-migrations`
