@@ -53,6 +53,18 @@ export const HOLD_IDENTITIES = Object.freeze([
   'admin-local-probe',
 ]);
 
+/**
+ * Account ids the staging gate provisions for itself (gate_shadow_athlete,
+ * gate_probe_coach, ...; .github/workflows/deploy-staging.yml).
+ *
+ * The gate leaves gate_shadow_athlete inactive after every run
+ * (--deactivate-athlete), which is exactly what rule 10 below retires -- and the
+ * gate cannot sign in as a fixture whose deleted_at is set. The owner's ruling
+ * (OD-2026-09-30-004 d4, option A) is that the cleanup skips these ids under
+ * every rule, not only rule 10.
+ */
+export const GATE_FIXTURE_ID_PREFIX = 'gate_';
+
 /** Roles that can administer an organization, for the last-admin guard. */
 const ADMIN_ROLES = Object.freeze(['platform_owner', 'organization_admin', 'admin']);
 
@@ -76,6 +88,11 @@ function matchesIdentity(row, identities) {
     const wanted = normalize(identity);
     return wanted !== '' && (wanted === email || wanted === accountId);
   });
+}
+
+/** Case-folded, so a differently cased gate id is still skipped rather than retired. */
+export function isGateFixture(row) {
+  return normalize(row.account_id).startsWith(GATE_FIXTURE_ID_PREFIX);
 }
 
 function isSoftDeleted(row) {
@@ -167,6 +184,11 @@ export function planAccountCleanup(rows, options = {}) {
     // 1. Already soft-deleted. Hard deletion belongs to the retention job.
     if (isSoftDeleted(row)) return decide('skip', 'ALREADY_SOFT_DELETED');
 
+    // 1a. Staging-gate fixtures. Ahead of every rule that can grant a
+    //     retirement, including a name in `alsoRetire` -- naming one is refused
+    //     below rather than honoured.
+    if (isGateFixture(row)) return decide('skip', 'GATE_FIXTURE');
+
     // 2. Platform ownership, independent of the keep list. If the list is ever
     //    edited badly, this is what stops the run taking the last way in.
     if (row.is_platform_owner === true) return decide('keep', 'PLATFORM_OWNER');
@@ -227,9 +249,13 @@ export function planAccountCleanup(rows, options = {}) {
   ));
 
   // A named identity that lands on keep is a contradiction, not a precedence
-  // question. Refuse rather than pick a winner.
+  // question. Refuse rather than pick a winner. A named gate fixture is the
+  // same contradiction: the operator asked for a retirement the plan will not
+  // make, and a skip would otherwise pass silently.
   const refusedNames = decisions
-    .filter((decision) => decision.named && decision.disposition === 'keep')
+    .filter((decision) => decision.named && (
+      decision.disposition === 'keep' || decision.reason === 'GATE_FIXTURE'
+    ))
     .map((decision) => ({ account_id: decision.account_id, reason: decision.reason }));
 
   const blockedNames = decisions
@@ -242,11 +268,35 @@ export function planAccountCleanup(rows, options = {}) {
     hold: decisions.filter((decision) => decision.disposition === 'hold'),
     retire: decisions.filter((decision) => decision.disposition === 'retire'),
     skip: decisions.filter((decision) => decision.disposition === 'skip'),
+    alreadySoftDeleted: decisions.filter((decision) => decision.reason === 'ALREADY_SOFT_DELETED'),
+    gateFixtures: decisions.filter((decision) => decision.reason === 'GATE_FIXTURE'),
     collisions: decisions.filter((decision) => decision.collision),
     unmatchedNames,
     refusedNames,
     blockedNames,
   };
+}
+
+/**
+ * Reason counts for the audit row, over the accounts the retire statement
+ * actually retired -- not over the plan.
+ *
+ * The runner's UPDATE carries its own guards (not a parent, not already
+ * deleted, not a gate fixture), so it can return fewer rows than the plan
+ * listed. Counting reasons from the plan would then leave a durable audit
+ * record whose reasons add up to more than its retired_count.
+ *
+ * @param retireDecisions The plan's `retire` list.
+ * @param retiredIds Account ids the UPDATE returned.
+ */
+export function countRetiredReasons(retireDecisions, retiredIds) {
+  const retired = new Set(retiredIds);
+  const totals = {};
+  for (const decision of retireDecisions) {
+    if (!retired.has(decision.account_id)) continue;
+    totals[decision.reason] = (totals[decision.reason] ?? 0) + 1;
+  }
+  return totals;
 }
 
 /**
