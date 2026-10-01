@@ -159,7 +159,18 @@ export default function SportsMedicinePage() {
       return next;
     });
   }, []);
-  const [refusal, setRefusal] = useState<Refusal | null>(null);
+  // One refusal per athlete. With a single slot for the board, pressing a
+  // button on one row erased the "Hold Not Placed" stamp on another: a child
+  // who is NOT held, and whose row no longer said so.
+  const [refusals, setRefusals] = useState<Record<string, Refusal>>({});
+  const setRefusalFor = useCallback((athleteId: string, refusal: Refusal | null) => {
+    setRefusals((current) => {
+      const next = { ...current };
+      if (refusal) next[athleteId] = refusal;
+      else delete next[athleteId];
+      return next;
+    });
+  }, []);
 
   // The one hold read, used by the initial board load AND by the refresh after
   // a write, so a placed or lifted hold is displayed by exactly the same
@@ -279,6 +290,10 @@ export default function SportsMedicinePage() {
       }
       if (!next) return;
       const settled = next;
+      // A row that turns out to be held has no place form. Left in `placing`,
+      // the form came back by itself, old sentence and all, when the hold was
+      // later lifted.
+      if (settled.hold) setPlacing((current) => (current?.athleteId === athleteId ? null : current));
       setRows((current) => current.map((row) => (row.athlete_id === athleteId ? { ...row, ...settled } : row)));
     },
     [readActiveHold],
@@ -314,7 +329,7 @@ export default function SportsMedicinePage() {
     // for is a punishment, not a safety measure"). Checked here only so the
     // coach is told before the round trip, never instead of it.
     if (!form.athlete_explanation.trim()) {
-      setRefusal({
+      setRefusalFor(athleteId, {
         athleteId,
         stamp: 'Hold Not Placed',
         message: 'Write the sentence this athlete reads. A hold with no explanation for the child is not placed.',
@@ -323,7 +338,7 @@ export default function SportsMedicinePage() {
     }
 
     setBusy(athleteId, true);
-    setRefusal(null);
+    setRefusalFor(athleteId, null);
     try {
       const result = await postHoldAction({
         action: 'place',
@@ -341,7 +356,7 @@ export default function SportsMedicinePage() {
       );
       setPlacing((current) => (current?.athleteId === athleteId ? null : current));
     } catch (error) {
-      setRefusal({
+      setRefusalFor(athleteId, {
         athleteId,
         stamp: 'Hold Not Placed',
         message: error instanceof Error ? error.message : 'The hold was not placed.',
@@ -358,7 +373,7 @@ export default function SportsMedicinePage() {
 
   const liftHold = async (athleteId: string, holdId: string) => {
     setBusy(athleteId, true);
-    setRefusal(null);
+    setRefusalFor(athleteId, null);
     try {
       await postHoldAction({
         action: 'lift',
@@ -371,7 +386,7 @@ export default function SportsMedicinePage() {
       await refreshHold(athleteId, { hold: null, hold_read: 'loaded' });
       setLiftNotes((current) => ({ ...current, [athleteId]: '' }));
     } catch (error) {
-      setRefusal({
+      setRefusalFor(athleteId, {
         athleteId,
         stamp: 'Hold Not Lifted',
         message: error instanceof Error ? error.message : 'The hold was not lifted.',
@@ -499,7 +514,7 @@ export default function SportsMedicinePage() {
               {rows.map((row) => {
                 const badge = clearanceBadge(row);
                 const busy = busyAthletes.has(row.athlete_id);
-                const rowRefusal = refusal && refusal.athleteId === row.athlete_id ? refusal : null;
+                const rowRefusal = refusals[row.athlete_id] ?? null;
                 return (
                   <li key={row.athlete_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                     <div className="flex flex-wrap items-center gap-[var(--s3)]">
@@ -700,7 +715,7 @@ export default function SportsMedicinePage() {
                             type="button"
                             className="btn btn--ghost"
                             disabled={busy}
-                            onClick={() => { setPlacing(null); setRefusal(null); }}
+                            onClick={() => { setPlacing(null); setRefusalFor(row.athlete_id, null); }}
                           >
                             Cancel
                           </button>
@@ -736,11 +751,11 @@ export default function SportsMedicinePage() {
                           <button
                             type="button"
                             className="btn btn--ghost"
-                            disabled={row.hold_read === 'unavailable'}
+                            disabled={row.hold_read === 'unavailable' || busy}
                             aria-describedby={row.hold_read === 'unavailable' ? `hold-unread-${row.athlete_id}` : undefined}
                             onClick={() => {
                               setPlacing({ athleteId: row.athlete_id, form: { ...EMPTY_FORM } });
-                              setRefusal(null);
+                              setRefusalFor(row.athlete_id, null);
                             }}
                           >
                             Place a training hold

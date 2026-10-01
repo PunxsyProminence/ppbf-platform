@@ -122,7 +122,7 @@ function StatusBadge({ status }: { readonly status: string }) {
 }
 
 /* Everything a coach can type or choose on this page before pressing a button.
-   One object, because it has one owner: the athlete it was written for. */
+   One object per athlete: a draft belongs to the athlete it was written for. */
 interface Drafts {
   medicalStatusDraft: MedicalStatusValue;
   medicalSourceRef: string;
@@ -200,55 +200,79 @@ export default function DecisionLoopReviewPage() {
      family; "Cleared" plus A's physician reference could be set on B; A's
      incident could be filed against B.
 
-     The drafts now carry the athlete they were written for. A draft is shown,
-     and can be submitted, only while its owner is the athlete on screen: for
-     anyone else the forms are their empty defaults, in the same render as
-     the switch -- there is no moment where A's text sits under B, and no
-     request for B can be built from it. Typing under a new athlete starts a
-     fresh set. (The athlete-ID box changes the selection on every keystroke,
-     so "switch" cannot mean a deliberate act: ownership is checked on every
-     render and every submit instead.) */
-  const [ownedDrafts, setOwnedDrafts] = useState<{ owner: string; drafts: Drafts }>({ owner: '', drafts: EMPTY_DRAFTS });
-  const drafts = ownedDrafts.owner === athleteId ? ownedDrafts.drafts : EMPTY_DRAFTS;
+     The drafts are now kept PER ATHLETE, keyed by the athlete they were
+     written for. A draft is shown, and can be submitted, only while its
+     athlete is the one on screen: for anyone else the forms hold that
+     athlete's own draft or their empty defaults, in the same render as the
+     switch -- there is no moment where A's text sits under B, and no request
+     for B can be built from it. (The athlete-ID box changes the selection on
+     every keystroke, so "switch" cannot mean a deliberate act: the draft is
+     looked up by the selected id on every render instead.)
+
+     Per athlete rather than one slot with an owner, because one slot is
+     emptied by the first keystroke under the next athlete: an incident report
+     for A that fails after the coach has started typing for B must still be
+     there when the page says "go back to them and check".
+
+     Page memory only. Nothing here is written to storage or sent anywhere
+     until a button is pressed; a reload or a sign-out drops every draft. */
+  const [draftsByAthlete, setDraftsByAthlete] = useState<Record<string, Drafts>>({});
+  const drafts = draftsByAthlete[athleteId] ?? EMPTY_DRAFTS;
   const {
     medicalStatusDraft,
     medicalSourceRef,
     decisionText,
     decisionExpectedOutcome,
-    decisionRecommendationId,
     nearMissDescription,
     nearMissSeverity,
-    nearMissDecisionId,
     incidentDescription,
     incidentSeverity,
     incidentOccurredAt,
     behaviorNoteText,
     messageHomeText,
-    outcomeDecisionId,
     outcomeObservationIds,
     outcomeMatchState,
     outcomeNotes,
   } = drafts;
 
+  /* The three selections that point INTO the athlete's loaded records are
+     only real while the record they point at is on screen. A kept id whose
+     option is not in the list (the lists are cleared on every switch and on a
+     failed read) shows as "None" in its selector -- so it must be none in the
+     request too, not a link the coach cannot see. */
+  const decisionRecommendationId = recommendations.some(
+    (rec) => rec.recommendation_id === drafts.decisionRecommendationId && (rec.status === 'provisional' || rec.status === 'accepted'),
+  )
+    ? drafts.decisionRecommendationId
+    : '';
+  const nearMissDecisionId = decisions.some((decision) => decision.decision_id === drafts.nearMissDecisionId)
+    ? drafts.nearMissDecisionId
+    : '';
+  const outcomeDecisionId = decisions.some((decision) => decision.decision_id === drafts.outcomeDecisionId)
+    ? drafts.outcomeDecisionId
+    : '';
+
   function editDraft<K extends keyof Drafts>(key: K, value: Drafts[K]) {
-    setOwnedDrafts((current) => ({
-      owner: athleteId,
-      drafts: { ...(current.owner === athleteId ? current.drafts : EMPTY_DRAFTS), [key]: value },
+    setDraftsByAthlete((current) => ({
+      ...current,
+      [athleteId]: { ...(current[athleteId] ?? EMPTY_DRAFTS), [key]: value },
     }));
   }
 
-  /* After a write lands: empty the fields it sent -- for the athlete it was
-     sent for, and only where the box still holds what was sent. A late answer
-     for athlete A must not wipe what the coach has since typed for B, or
-     typed again for A. */
+  /* After a write lands: empty the fields it sent -- in the draft of the
+     athlete it was sent for, whoever is on screen now, and only where the box
+     still holds what was sent. A late answer for athlete A must not wipe what
+     the coach has typed for B, or typed again for A; and it must not leave the
+     sent text in A's box to be sent a second time. */
   function clearSentDrafts(forAthleteId: string, sent: Partial<Drafts>) {
-    setOwnedDrafts((current) => {
-      if (current.owner !== forAthleteId) return current;
-      const next: Drafts = { ...current.drafts };
+    setDraftsByAthlete((current) => {
+      const mine = current[forAthleteId];
+      if (!mine) return current;
+      const next: Drafts = { ...mine };
       for (const key of Object.keys(sent) as Array<keyof Drafts>) {
         if (next[key] === sent[key]) Object.assign(next, { [key]: EMPTY_DRAFTS[key] });
       }
-      return { owner: current.owner, drafts: next };
+      return { ...current, [forAthleteId]: next };
     });
   }
 
@@ -364,11 +388,27 @@ export default function DecisionLoopReviewPage() {
        medical administrative status on screen under B -- and the render
        checks for a status before it checks for a failure. (The form
        selections that carry A's recommendation and decision ids are drafts,
-       and drafts are owned by their athlete: see ownedDrafts.) */
+       kept per athlete and only honoured while the record they point at is
+       loaded: see draftsByAthlete.) */
     selectedAthleteRef.current = athleteId;
     readSeqRef.current += 1;
     /* eslint-disable react-hooks/set-state-in-effect */
     clearAthleteData();
+    /* The one draft that is NOT kept for its athlete: the medical status
+       selection and its source reference. A "Cleared" left selected from an
+       earlier visit is one click from being set; every arrival at an athlete
+       starts that form at its default, Pending with no reference. */
+    setDraftsByAthlete((current) => {
+      const next: Record<string, Drafts> = {};
+      for (const [id, kept] of Object.entries(current)) {
+        next[id] = {
+          ...kept,
+          medicalStatusDraft: EMPTY_DRAFTS.medicalStatusDraft,
+          medicalSourceRef: EMPTY_DRAFTS.medicalSourceRef,
+        };
+      }
+      return next;
+    });
     setLoadState('loading');
     setLoading(false);
     setErrorMessage('');
