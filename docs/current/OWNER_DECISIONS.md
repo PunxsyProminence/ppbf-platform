@@ -792,7 +792,7 @@ them are delivered. Done for lanes 11 to 14.
 
 ## OD-2026-09-30-006 -- High-risk chat questions get education, not a refusal; acute reports get education plus an act-now line
 
-**Status, 2026-10-01:** recorded on `main` by a records PR ahead of PR #1036, which builds it and is not merged; Jason, asked whether to move this record so PR #1058 need not wait on #1036: *"Yes to 1 and 2"*. The text below is as written on PR #1036's branch at `9208457a`; nothing in it is built on `main` until #1036 lands.
+**Status, 2026-10-01:** recorded on `main` by a records PR ahead of PR #1036, which builds it and is not merged; Jason, asked whether to move this record so PR #1058 need not wait on #1036: *"Yes to 1 and 2"*. The text below was PORTED from PR #1036's branch at `9208457a` and is not identical to it: on the way to `main` it gained this paragraph and the next, "four selections" became "five" in two places, and the chest-pain attribution was corrected. Nothing in it is built on `main` until #1036 lands.
 
 **Checked against the transcript, 2026-10-01** (the closed AI/ML lane's thread; a
 read-only pass that read each reply with the message or option set it answered).
@@ -943,7 +943,7 @@ enters all credentials.
 
 ## OD-2026-09-30-005 -- Safety outranks runtime readiness and the global chat limits; the review-queue write gets its own bound
 
-**Status, 2026-10-01:** recorded on `main` by the same records PR, ahead of PR #1036, which builds it and is not merged. Text as written on that branch at `9208457a`.
+**Status, 2026-10-01:** recorded on `main` by the same records PR, ahead of PR #1036, which builds it and is not merged. PORTED from that branch at `9208457a` and not identical to it: on the way to `main` it gained this paragraph and the "Checked against the transcript" paragraph, the three authorization options were restored to the prompt's own wording, and the aside about an earlier PR under "Recorded late" was qualified.
 
 **Renumbered twice.** Published first as OD-2026-09-30-001, then -003, now
 -005. `main` took -001 for the release/migration decision, and overwatch's
@@ -957,12 +957,12 @@ it and a reader tracing an old id needs to land somewhere.
 **Checked against the transcript, 2026-10-01** (same pass). The question, his
 answer "a", the authorization follow-up and "3 per hour" match the transcript.
 Three things a reader should know: his "a" was his whole reply to a message
-carrying three questions that said to reply like "1a 2a 3a"; in the option he
-selected the prompt has an em dash where this entry writes " -- ", and the
-option this entry glosses as "the second reviewer's argument" read "The second
-Claude's argument."; and the statement below that the same omission "was
-caught on #975 four days earlier by Codex" was NOT verified (the lane's own
-message in that thread says "#973 a day ago").
+carrying three questions that said to reply like "1a 2a 3a"; the three
+authorization options below are now given in the prompt's own wording (this
+entry first wrote " -- " for the prompt's em dash and "the second reviewer's
+argument" for "The second Claude's argument."); and the aside under "Recorded
+late" about an earlier PR was NOT verified and is now qualified where it
+stands.
 
 **Provenance: PRIMARY** for the owner's answers and for the options exactly as
 they were put to him. The options were drafted by Claude, and his input in each
@@ -990,11 +990,11 @@ His answer, verbatim:
 
 Two follow-ups the same day fixed the boundary and the number. On whether the
 safeguarding response should also outrank athlete and conversation
-authorization, the options were "No -- auth stays above safety" (ChatGPT's
-ruling), "Yes -- safety wins there too" (the second reviewer's argument), and
+authorization, the options were "No — auth stays above safety" (ChatGPT's
+ruling), "Yes — safety wins there too" (the second Claude's argument), and
 "Split it". He chose, verbatim:
 
-> No -- auth stays above safety
+> No — auth stays above safety
 
 On the size of the new throttle, offered 5, 3 or 10 per hour or delegation to
 Claude, he chose, verbatim:
@@ -1034,8 +1034,11 @@ means a human is needed, not that a row was persisted.
 
 This entry was written on 2026-09-30, after the implementation was built and
 published as PR #1036. `AGENT_KERNEL.md` requires the decision to be in this
-file BEFORE code or tests assert it, and the same omission was caught on #975
-four days earlier by Codex and corrected then. It was not carried forward to
+file BEFORE code or tests assert it, and the same omission had been caught once
+before on an earlier PR and corrected then. (Which PR and when is NOT verified:
+this entry first said "on #975 four days earlier by Codex"; the lane's own
+message of 2026-09-26 says "Codex caught the same omission on #973 a day ago".)
+It was not carried forward to
 this slice; the architect review caught it at merge. The ruling itself was
 never in doubt -- the record was, twice.
 
