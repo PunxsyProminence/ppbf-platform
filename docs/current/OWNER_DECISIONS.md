@@ -190,8 +190,8 @@ with the recomendations"*.
    read "ye" as yes (INFERRED) and Lane S reported that this matches what he
    told it directly. ChatGPT's review of PR #1058 ruled the answer sufficient
    for teach-first, and that the trailing "go with the recomendations" must not
-   be used to widen it beyond the items listed. Section 6 has his own words on
-   each item, as relayed.
+   be used to widen it beyond the items listed. Section 6 records later wording
+   on the humour item only; it is not evidence for the other three items.
 3. **A calibration revision is scoped to the pair of MARKS.** Asked: 'Confirm
    Lane 12 "pair" = A, the pair of MARKS in disagreement (recommended). Yes /
    B.' **A.** This clarifies what "pair" means for OD-2026-08-29-005 and its
@@ -244,19 +244,29 @@ A bud update chat gpt of the design change"*.
    same hour). ChatGPT's design verdict had been written but overwatch could
    not read it; it still governs, through the PR review.
 
-### 3. The parent password questions (REPORTED by Lane P)
+### 3. The parent password questions (asked and answered in the Lane P thread)
 
-Lane P put seven questions to him, each official then plain with A recommended.
-His words in that thread, as the lane relayed them: *"agree with
-recomendations"*. A text search of that thread's transcript finds those words in
-it; that does not establish the question they answered.
-The lane's reading, every question carrying a recommendation: the password
-prompt on the emailed link is offered with "Not now"; parents only; minimum 10
-characters with no composition rules; on `/login` a password box under the
-email box with "Sign In" and "Email Me A Link Instead"; the same slow-down as
-the athlete PIN and no hard lockout; a password is changed only through a fresh
-emailed link; an organization admin gets "Clear Password" on the People page.
+Relayed by Lane P, and then read by overwatch in that thread's own transcript
+on 2026-10-01. The lane's message immediately before his reply listed seven
+questions, each official then plain, each with A marked recommended, and ended
+'reply "go with recommendations" to take the recommended option on each'. His
+reply, whole message, 16:00Z: *"agree with recomendations"*. So A on each:
+
+1. the password prompt on the emailed link is offered with "Not now", not
+   mandatory before the dashboard;
+2. parents only, not coaches, staff or volunteers;
+3. minimum 10 characters, no forced symbols or capitals;
+4. on `/login`, a password box under the email box with two buttons, "Sign In"
+   and "Email Me A Link Instead";
+5. the same slow-down the athlete PIN has, with no hard lockout;
+6. a password is changed only through a fresh emailed link;
+7. an organization admin gets "Clear Password" on the People page, which signs
+   the parent out and sends them back to the email link.
+
 These answer the four points OD-2026-10-01-001 section 4 listed as not decided.
+A second message of his in that thread, *"go with you recomendations"* (17:10Z),
+followed a status line with no question open; it is read as deciding nothing
+new.
 
 ### 4. Other instructions the same day
 
@@ -283,33 +293,48 @@ in seven actions: Message Home, the behaviour note, an incident report, a
 recorded decision, a near-miss flag, the medical status with its source
 reference, and a decision outcome.
 
-### 6. Lane S: the humour wording (REPORTED by Lane S)
+### 6. Lane S: the humour wording (asked and answered in the Lane S thread)
 
-Each quote below was relayed by Lane S. A text search of that thread's
-transcript on 2026-10-01 finds the "Q2 dark humor", "A but it should not" and
-"Q11" sentences in it; "Q8 B" was not searched for. Earlier the same day, in that
-thread: *"Q2 dark humor for everyone that part of the gym identity"*, and
-*"Q8 B"* to whether humour is kept out of injury, head-knock, pain and
-emergency answers (B: it is not kept out). On the proposed athlete and parent
-register text (A, as written; B, without the line "aim it at the mistake ...
-not at the kid"; C, his rewording): *"A but it should not take responsibility
-away from the kid or make excuses for them"*.
+Relayed by Lane S. For each quote below except the one marked, overwatch read
+that thread's own transcript on 2026-10-01 and names the lane message his reply
+followed. Section 1 item 2 is the direct confirmation of the high-level ruling;
+this section is the detailed wording that PR #1061 builds.
 
-Two adversarial reviewers then raised four points. His reply, as relayed:
-*"Q11 ill agree with treated badly Hurt and pain go with boxing,  q12  leave
-not at the kid  specifics leave holes  q13 yes"*. As built in PR #1061: the
-athlete text says being treated badly by someone else is not a mistake and not
-an excuse, and does not say that of being hurt or in pain (overwatch and the
-lane had both recommended the wider line; his call); no list of what a joke may
-never target is added, "not at the kid" stays the whole rule; the parent text
-keeps "Respectful" and aims humour at the situation, never at the parent or
-their child. Asked a second time whether "dark humor" includes sarcasm for
-athletes (A, yes, dark and sarcastic; B, dark and dry, not sarcastic), his
-words as relayed: *"q14 A"*; the athlete text now opens "The gym's dry, dark,
-sarcastic humor is part of how this place talks." and the parent text is
-unchanged. In the same earlier reply he said dark humour may also be applied
-to four fixed fallback answers; nothing is built for that, and PR #1036 removes
-those answers.
+- **Which audiences.** The lane's message asked Q2, which audiences get dark
+  humour: staff only (its recommendation), staff and parents, or everyone,
+  athletes included. His reply (15:30Z) begins *"Q2 dark humor for everyone
+  that part of the gym identity"*.
+- **The register text.** The lane's message (its Q10) showed the proposed
+  athlete and parent text and offered A, as written, including the line "aim
+  it at the mistake, not at the kid"; B, without that line; C, his rewording.
+  His reply, whole message, 17:20Z: *"A but it should not take responsibility
+  away from the kid or make excuses for them"*. Built as: "Hold them to it. Do
+  not make excuses for them or take the responsibility off them".
+- **Four reviewer points.** The lane's message listed Q11 (say that being
+  hurt, in pain or treated badly is not a mistake or an excuse), Q12 (jokes
+  never target body, weight, ability, family or an injury), Q13 (keep
+  "Respectful" for parents) and Q14 (is sarcasm included for athletes), with
+  overwatch's and the lane's recommendation to add Q11 and Q12. His reply
+  (17:40Z) ends: *"Q11 ill agree with treated badly Hurt and pain go with
+  boxing,  q12  leave not at the kid  specifics leave holes  q13 yes"*. Built
+  as: the athlete text says being treated badly by someone else is not a
+  mistake and not an excuse, and does not say that of being hurt or in pain
+  (narrower than recommended; his call); no list of what a joke may never
+  target, "not at the kid" stays the whole rule; the parent text keeps
+  "Respectful" and aims humour at the situation, never at the parent or their
+  child. The same reply opens by saying dark humour may also be applied to
+  four fixed fallback answers; nothing is built for that, and PR #1036 removes
+  those answers.
+- **Sarcasm.** The lane's message left Q14 open as "A yes / B no". His reply,
+  whole message, 17:52Z: *"q14 A"*. The athlete text now opens "The gym's dry,
+  dark, sarcastic humor is part of how this place talks."; the parent text is
+  unchanged.
+- **NOT YET CONFIRMED: humour inside injury answers.** Lane S relayed *"Q8 B"*
+  as his answer that humour is not kept out of injury, head-knock, pain and
+  emergency answers. Overwatch did not find that reply as a typed message in
+  the thread's transcript (it may have been given through a choice prompt). It
+  is recorded as REPORTED only: it supersedes nothing and authorizes nothing
+  until he confirms it to overwatch. PR #1061 adds no injury rule either way.
 
 Until PR #1061 merges, today's registers stand as OD-2026-10-01-001 section 7
 quotes them. The fixed emergency replies carry no humour and no PR changes
