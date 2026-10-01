@@ -549,7 +549,11 @@ describe('a hold nobody could read never reads as "no hold"', () => {
   }
 
   test('a hold read the server refused says the hold is unknown on that row', async () => {
-    global.fetch = mockFetch({ '/training-holds': () => ({ ok: false, status: 503, json: async () => ({}) }) as Response });
+    // The refused body is a well-formed "no holds": it is the STATUS that says
+    // nobody looked, and the status has to be what the page believes.
+    global.fetch = mockFetch({
+      '/training-holds': () => ({ ok: false, status: 503, json: async () => ({ ok: true, holds: [] }) }) as Response,
+    });
 
     render(<SportsMedicinePage />);
     await screen.findByText('Jordan Doe');
@@ -824,5 +828,165 @@ describe('what the board says when the re-read after a write does not agree', ()
     await waitFor(() => expect(screen.queryByText(/Active Training Hold/)).toBeNull());
     expect(screen.queryByText(UNREAD)).toBeNull();
     expect((screen.getByRole('button', { name: 'Place a training hold' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+/*
+ * Two rows. Every test above has one athlete, and one athlete cannot show a
+ * button on one row being re-enabled by something finishing on another.
+ */
+describe('one row finishing does not release another row that is still out', () => {
+  const SECOND = { athlete_id: 'ath-2', full_name: 'Riley Poe' };
+
+  function rowOf(name: string): HTMLElement {
+    return screen.getByText(name).closest('li') as HTMLElement;
+  }
+
+  test('a lift in flight on one row stays disabled while a re-check on another row completes', async () => {
+    let releaseLift: (() => void) | undefined;
+    const liftHeld = new Promise<Response>((resolve) => {
+      releaseLift = () => resolve({ ok: true, json: async () => ({ ok: true, hold: { ...HOLD, status: 'lifted' } }) } as Response);
+    });
+    const posts: string[] = [];
+    let secondReads = 0;
+    let firstLifted = false;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        posts.push(String(init.body));
+        const response = await liftHeld;
+        firstLifted = true;
+        return response;
+      }
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, SECOND] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('athlete_id=ath-2')) {
+        secondReads += 1;
+        if (secondReads === 1) return { ok: false, status: 503, json: async () => ({}) } as Response;
+        return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        return { ok: true, json: async () => ({ ok: true, holds: firstLifted ? [] : [HOLD] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<SportsMedicinePage />);
+    await screen.findByText(/Active Training Hold — sparring/);
+
+    fireEvent.click(within(rowOf('Jordan Doe')).getByRole('button', { name: 'Lift this hold' }));
+    const lifting = (await within(rowOf('Jordan Doe')).findByRole('button', { name: 'Lifting…' })) as HTMLButtonElement;
+    expect(lifting.disabled).toBe(true);
+
+    fireEvent.click(within(rowOf('Riley Poe')).getByRole('button', { name: 'Check again' }));
+    await waitFor(() =>
+      expect(
+        (within(rowOf('Riley Poe')).getByRole('button', { name: 'Place a training hold' }) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+
+    // The other row finished. This one is still out, and still locked.
+    const stillLifting = within(rowOf('Jordan Doe')).getByRole('button', { name: 'Lifting…' }) as HTMLButtonElement;
+    expect(stillLifting.disabled).toBe(true);
+    fireEvent.click(stillLifting);
+    expect(posts).toHaveLength(1);
+
+    releaseLift?.();
+    await waitFor(() => expect(within(rowOf('Jordan Doe')).queryByText(/Active Training Hold/)).toBeNull());
+    expect(posts).toHaveLength(1);
+  });
+
+  test('"Check again" is locked while its own read is out', async () => {
+    let reads = 0;
+    let release: (() => void) | undefined;
+    const held = new Promise<Response>((resolve) => {
+      release = () => resolve({ ok: true, json: async () => ({ ok: true, holds: [] }) } as Response);
+    });
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        reads += 1;
+        if (reads === 1) return { ok: false, status: 503, json: async () => ({}) } as Response;
+        return held;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<SportsMedicinePage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Check again' }));
+
+    const checking = (await screen.findByRole('button', { name: 'Checking…' })) as HTMLButtonElement;
+    expect(checking.disabled).toBe(true);
+    fireEvent.click(checking);
+    expect(reads).toBe(2);
+
+    release?.();
+    await waitFor(() => expect(screen.queryByText(/Training hold could not be read/)).toBeNull());
+    expect(reads).toBe(2);
+  });
+});
+
+describe('a refused placement is news about the row', () => {
+  test('"already exists" makes the board read the hold it did not know about', async () => {
+    // Loaded with no hold; someone else placed one since. The server refuses
+    // the second, and the row must stop saying "no hold".
+    const harness = mockWriteFetch({
+      holdsBefore: [],
+      holdsAfter: [HOLD],
+      post: () =>
+        ({
+          ok: false,
+          status: 409,
+          json: async () => ({ error: 'Hold already exists: hold-7 is active for this athlete -- lift it first' }),
+        }) as Response,
+    });
+
+    render(<SportsMedicinePage />);
+    await openPlaceForm();
+    fireEvent.change(screen.getByLabelText(/What this athlete reads/), { target: { value: 'Resting your wrist.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+
+    await screen.findByText(/Active Training Hold — sparring/);
+    expect(screen.getByText('Hold Not Placed')).toBeTruthy();
+    expect(screen.getByText(/lift it first/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Place a training hold' })).toBeNull();
+    expect(harness.holdReads()).toBe(2);
+  });
+
+  test('a refusal whose re-read fails leaves the row and the open form as they were', async () => {
+    let holdReads = 0;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        return { ok: false, status: 400, json: async () => ({ error: 'Scope not supported.' }) } as Response;
+      }
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        holdReads += 1;
+        if (holdReads === 1) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+        return { ok: false, status: 503, json: async () => ({}) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<SportsMedicinePage />);
+    await openPlaceForm();
+    fireEvent.change(screen.getByLabelText(/What this athlete reads/), { target: { value: 'Resting your wrist.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+
+    await screen.findByText('Hold Not Placed');
+    await waitFor(() => expect(holdReads).toBe(2));
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Place hold' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.queryByText(/Training hold could not be read/)).toBeNull();
+    expect((screen.getByLabelText(/What this athlete reads/) as HTMLTextAreaElement).value).toBe('Resting your wrist.');
   });
 });

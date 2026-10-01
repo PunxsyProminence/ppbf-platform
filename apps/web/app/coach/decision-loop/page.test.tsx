@@ -416,6 +416,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
 
   type Responder = () => Response | Promise<Response>;
 
+  const PREVIOUS_FAILED = /Something you submitted for the athlete you were on before did not go through/;
+
   /**
    * A fetch double keyed by athlete. Athlete A always has a full record;
    * what athlete B's four reads do is the test's to decide. `posts` lets a
@@ -680,6 +682,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     expect(screen.queryByText(/Blocked/)).toBeNull();
     expect(screen.queryByText(/restricted/)).toBeNull();
     expect(screen.getByText('No medical administrative status recorded yet.')).toBeTruthy();
+    expect(screen.getByText(PREVIOUS_FAILED)).toBeTruthy();
   });
 
   test('the same refusal IS shown when the coach is still on that athlete', async () => {
@@ -770,5 +773,145 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     expect(screen.getByText('No medical administrative status recorded yet.')).toBeTruthy();
     expect(screen.queryByText(/could not be read/i)).toBeNull();
     expect(screen.queryByText(/Network request failed for athlete A/)).toBeNull();
+  });
+
+  /*
+   * Every write on the page, one row each. `submit` fills what the form
+   * needs and presses its button while athlete A is selected.
+   */
+  const WRITES: Array<{ name: string; route: string; submit: () => void; confirmation?: string; draft?: () => string }> = [
+    { name: 'Set Status', route: '/shadow/medical-status', submit: () => {
+      fireEvent.change(screen.getByLabelText('Source reference (optional)'), { target: { value: 'note for A' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+    }, draft: () => (screen.getByLabelText('Source reference (optional)') as HTMLInputElement).value },
+    { name: 'Accept a recommendation', route: '/recommendations/decide', submit: () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    } },
+    { name: 'Record Decision', route: '/shadow/decisions', submit: () => {
+      fireEvent.change(screen.getByLabelText('Decision text'), { target: { value: 'decision for A' } });
+      const section = screen.getByRole('heading', { name: 'Decisions' }).closest('section') as HTMLElement;
+      fireEvent.change(within(section).getByLabelText('Expected outcome'), { target: { value: 'outcome for A' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Record Decision' }));
+    }, draft: () => (screen.getByLabelText('Decision text') as HTMLTextAreaElement).value },
+    { name: 'Flag Near-Miss', route: '/shadow/near-misses', submit: () => {
+      fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'near miss for A' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
+    }, draft: () => (screen.getByLabelText('Description') as HTMLTextAreaElement).value },
+    { name: 'Report Incident', route: '/api/pilot/incidents', submit: () => {
+      fireEvent.change(screen.getByLabelText('What happened'), { target: { value: 'incident for A' } });
+      fireEvent.click(screen.getByRole('button', { name: 'File Incident Report' }));
+    }, confirmation: 'Incident filed -- it is now in the escalation queue.',
+      draft: () => (screen.getByLabelText('What happened') as HTMLTextAreaElement).value },
+    { name: 'Behavior Note', route: '/intake/domain-upsert', submit: () => {
+      fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'note for A' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Log Note' }));
+    }, confirmation: 'Note logged.', draft: () => (screen.getByLabelText('Note') as HTMLTextAreaElement).value },
+    { name: 'Message Home', route: '/intake/domain-upsert', submit: () => {
+      fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'message for A family' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    }, confirmation: 'Sent to the family.', draft: () => (screen.getByLabelText('Message') as HTMLTextAreaElement).value },
+    { name: 'Evaluate Outcome', route: '/shadow/decision-outcomes', submit: () => {
+      fireEvent.change(screen.getByLabelText('Decision'), { target: { value: 'dec-a' } });
+      fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'outcome notes for A' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Evaluate Outcome' }));
+    }, draft: () => (screen.getByLabelText('Notes') as HTMLTextAreaElement).value },
+  ];
+
+  test.each(WRITES)('$name refused late: the server text about the previous athlete is withheld, and the coach is still told', async ({ route, submit }) => {
+    const held = heldResponse();
+    const fetchMock = installSwitchFetch({ post: () => held.promise });
+    await openAthleteA();
+
+    submit();
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === 'POST');
+      expect(String(post?.[0])).toContain(route);
+    });
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+
+    held.release(jsonResponse({ error: 'SERVER-TEXT-ABOUT-ATHLETE-A is restricted' }, false));
+    await settle();
+
+    expect(screen.queryByText(/SERVER-TEXT-ABOUT-ATHLETE-A/)).toBeNull();
+    // Not silence: a report or a status that did not land must not vanish.
+    expect(screen.getByText(PREVIOUS_FAILED)).toBeTruthy();
+    expectNothingOfAthleteA();
+  });
+
+  test.each(WRITES)('$name refused while still on that athlete: the server text IS shown', async ({ submit }) => {
+    installSwitchFetch({ post: () => jsonResponse({ error: 'SERVER-TEXT-ABOUT-ATHLETE-A is restricted' }, false) });
+    await openAthleteA();
+
+    submit();
+
+    expect(await screen.findByText(/SERVER-TEXT-ABOUT-ATHLETE-A/)).toBeTruthy();
+    expect(screen.queryByText(PREVIOUS_FAILED)).toBeNull();
+  });
+
+  test.each(WRITES)('$name succeeding late: no confirmation under the new athlete, and the sent draft is not left in the box', async ({ submit, confirmation, draft }) => {
+    const held = heldResponse();
+    const fetchMock = installSwitchFetch({ post: () => held.promise });
+    await openAthleteA();
+
+    submit();
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === 'POST')).toBe(true),
+    );
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+
+    held.release(jsonResponse({ ok: true, outcomes: [] }));
+    await settle();
+
+    if (confirmation) expect(screen.queryByText(confirmation)).toBeNull();
+    // It was sent. Left in the box under B it reads as unsent, and one more
+    // click would post it against B.
+    if (draft) expect(draft()).toBe('');
+    expect(screen.queryByText(PREVIOUS_FAILED)).toBeNull();
+    expectNothingOfAthleteA();
+    expect(screen.getByText('No medical administrative status recorded yet.')).toBeTruthy();
+  });
+
+  test('outcomes loaded late for the previous athlete are dropped, with no error under the new one', async () => {
+    const held = heldResponse();
+    const fetchMock = jest.fn(async (url: string) => {
+      const key = String(url);
+      if (key.includes('/decision-outcomes')) return held.promise;
+      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+      if (key.includes('athleteId=ath-b')) {
+        if (key.includes('/medical-status')) return jsonResponse({ status: null });
+        if (key.includes('/recommendations')) return jsonResponse({ recommendations: [] });
+        if (key.includes('/decisions')) return jsonResponse({ decisions: [] });
+        return jsonResponse({ nearMisses: [] });
+      }
+      if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS });
+      if (key.includes('/recommendations')) return jsonResponse({ recommendations: [A_RECOMMENDATION] });
+      if (key.includes('/decisions')) return jsonResponse({ decisions: [A_DECISION] });
+      return jsonResponse({ nearMisses: [A_NEAR_MISS] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await openAthleteA();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load Outcomes' }));
+    switchToB();
+    await screen.findByText('No medical administrative status recorded yet.');
+
+    held.release(jsonResponse({ error: 'OUTCOMES-ERROR-FOR-A' }, false));
+    await settle();
+
+    expect(screen.queryByText(/OUTCOMES-ERROR-FOR-A/)).toBeNull();
+    expect(screen.queryByText(PREVIOUS_FAILED)).toBeNull();
+  });
+
+  test('switching to no athlete clears the previous athlete’s error line', async () => {
+    installSwitchFetch({ post: () => jsonResponse({ error: 'SERVER-TEXT-ABOUT-ATHLETE-A' }, false) });
+    await openAthleteA();
+    fireEvent.click(screen.getByRole('button', { name: 'Set Status' }));
+    await screen.findByText(/SERVER-TEXT-ABOUT-ATHLETE-A/);
+
+    fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: '' } });
+
+    await waitFor(() => expect(screen.queryByText(/SERVER-TEXT-ABOUT-ATHLETE-A/)).toBeNull());
   });
 });

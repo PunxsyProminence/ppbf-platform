@@ -138,7 +138,19 @@ export default function SportsMedicinePage() {
   const [openFor, setOpenFor] = useState<string | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [liftNotes, setLiftNotes] = useState<Record<string, string>>({});
-  const [busyFor, setBusyFor] = useState<string | null>(null);
+  // Per athlete, not one slot for the board: with a single slot, an action
+  // finishing on one row re-enabled a button on another row whose own request
+  // was still out, and a second click sent a second write or a second read
+  // whose stale answer could land last.
+  const [busyAthletes, setBusyAthletes] = useState<ReadonlySet<string>>(new Set());
+  const setBusy = useCallback((athleteId: string, busy: boolean) => {
+    setBusyAthletes((current) => {
+      const next = new Set(current);
+      if (busy) next.add(athleteId);
+      else next.delete(athleteId);
+      return next;
+    });
+  }, []);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
 
   // The one hold read, used by the initial board load AND by the refresh after
@@ -237,12 +249,14 @@ export default function SportsMedicinePage() {
    * hold is gone and showing it as active would be the wrong claim. Each caller
    * passes the outcome the server has already told it is true -- and where the
    * server told it nothing it can show (a PLACE whose response carried no
-   * hold), the fallback is 'unavailable', never "no hold".
+   * hold), the fallback is 'unavailable', never "no hold". A caller with no
+   * committed outcome to fall back on (a refused write) passes null: a failed
+   * re-read then leaves the row exactly as it was.
    */
   const refreshHold = useCallback(
     async (
       athleteId: string,
-      fallback: { hold: ActiveHold | null; hold_read: HoldRead },
+      fallback: { hold: ActiveHold | null; hold_read: HoldRead } | null,
       justPlaced = false,
     ) => {
       let next = fallback;
@@ -255,7 +269,9 @@ export default function SportsMedicinePage() {
       } catch {
         // Keep the committed outcome; the board is refreshed on the next load.
       }
-      setRows((current) => current.map((row) => (row.athlete_id === athleteId ? { ...row, ...next } : row)));
+      if (!next) return;
+      const settled = next;
+      setRows((current) => current.map((row) => (row.athlete_id === athleteId ? { ...row, ...settled } : row)));
     },
     [readActiveHold],
   );
@@ -263,11 +279,11 @@ export default function SportsMedicinePage() {
   // The way back from 'unavailable' without reloading the whole board: one
   // more read of this athlete's hold, through the same refreshHold.
   const recheckHold = async (athleteId: string) => {
-    setBusyFor(athleteId);
+    setBusy(athleteId, true);
     try {
       await refreshHold(athleteId, { hold: null, hold_read: 'unavailable' });
     } finally {
-      setBusyFor(null);
+      setBusy(athleteId, false);
     }
   };
 
@@ -298,7 +314,7 @@ export default function SportsMedicinePage() {
       return;
     }
 
-    setBusyFor(athleteId);
+    setBusy(athleteId, true);
     setRefusal(null);
     try {
       const result = await postHoldAction({
@@ -323,13 +339,18 @@ export default function SportsMedicinePage() {
         stamp: 'Hold Not Placed',
         message: error instanceof Error ? error.message : 'The hold was not placed.',
       });
+      // A refusal is news about the row: "Hold already exists ... lift it
+      // first" means the board's "no hold" is out of date. Read it again
+      // rather than leave an open place control beside a hold someone else
+      // placed. If this read fails too, the row stays as it was.
+      await refreshHold(athleteId, null);
     } finally {
-      setBusyFor(null);
+      setBusy(athleteId, false);
     }
   };
 
   const liftHold = async (athleteId: string, holdId: string) => {
-    setBusyFor(athleteId);
+    setBusy(athleteId, true);
     setRefusal(null);
     try {
       await postHoldAction({
@@ -349,7 +370,7 @@ export default function SportsMedicinePage() {
         message: error instanceof Error ? error.message : 'The hold was not lifted.',
       });
     } finally {
-      setBusyFor(null);
+      setBusy(athleteId, false);
     }
   };
 
@@ -470,7 +491,7 @@ export default function SportsMedicinePage() {
             <ul className="space-y-[var(--s3)]">
               {rows.map((row) => {
                 const badge = clearanceBadge(row);
-                const busy = busyFor === row.athlete_id;
+                const busy = busyAthletes.has(row.athlete_id);
                 const rowRefusal = refusal && refusal.athleteId === row.athlete_id ? refusal : null;
                 return (
                   <li key={row.athlete_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">

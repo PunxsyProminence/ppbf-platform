@@ -17,6 +17,7 @@
  * no stamp, no red.
  */
 
+import { StrictMode } from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 
 import TrainingHoldBanner from './TrainingHoldBanner';
@@ -87,7 +88,7 @@ describe('a hold check nobody could read never looks like "no hold"', () => {
   test('a 200 that carries no `hold` key answered some other question, and is unread', async () => {
     // The route always sends `hold`, null or the hold itself. A proxy page, an
     // error body or an empty object served with 200 is not "no hold".
-    for (const body of [{}, { error: 'upstream' }, { ok: true, holds: [] }]) {
+    for (const body of [{}, { error: 'upstream' }, { ok: true, holds: [] }, { hold: false }, { hold: '' }, { hold: [] }]) {
       mockHoldRead(() => ({ ok: true, json: async () => body }) as Response);
 
       const { container, unmount } = render(<TrainingHoldBanner />);
@@ -143,21 +144,29 @@ describe('the states a read did establish are unchanged', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  test('unmounting mid-read does not turn the abort into an "unread" claim', async () => {
-    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
-    global.fetch = jest.fn(
+  test('an aborted read is not a failed read: a cancelled first effect does not leave the unread line up', async () => {
+    // StrictMode mounts, cleans up and mounts again: the first read is aborted
+    // and its rejection lands while the component is still on screen with its
+    // second read still out. Without the abort check that rejection reads as
+    // "could not check" before anybody has.
+    const fetchMock = jest.fn(
       (_input: RequestInfo | URL, init?: RequestInit) =>
+        // Never answers; only an abort ends it. So the second, live read is
+        // still out when the first one's abort lands.
         new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
         }),
-    ) as unknown as typeof fetch;
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
 
-    const { container, unmount } = render(<TrainingHoldBanner />);
-    unmount();
+    const { container } = render(
+      <StrictMode>
+        <TrainingHoldBanner />
+      </StrictMode>,
+    );
     await settle();
 
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(bannerText(container)).toBe('');
-    expect(errors).not.toHaveBeenCalled();
-    errors.mockRestore();
   });
 });

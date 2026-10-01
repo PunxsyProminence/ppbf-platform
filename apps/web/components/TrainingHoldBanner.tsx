@@ -78,6 +78,11 @@ export default function TrainingHoldBanner() {
           setReadState('unavailable');
           return;
         }
+        // Null is "no hold". Anything else that is not a hold object is not.
+        if (payload.hold !== null && (typeof payload.hold !== 'object' || Array.isArray(payload.hold))) {
+          setReadState('unavailable');
+          return;
+        }
         if (payload.hold) setHold(payload.hold);
         setReadState('loaded');
       } catch {
