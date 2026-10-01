@@ -480,15 +480,22 @@ function assertEventInReading(
 /**
  * Records one adjudication and its field-level decisions.
  *
+ * WHICH TWO READINGS: the caller may NAME them, and only that.
+ *
+ *   * On a clip with exactly two submitted readings there is one pair. It is
+ *     taken from what the blinding gate returned, and `annotation_set_id_a` /
+ *     `_b` in the body are ignored.
+ *   * On a clip with three or more (OD-2026-08-29-003) the caller names which
+ *     two submitted readings this decision is between. Both ids are checked
+ *     against the gate's own list of candidates -- an id that is not among
+ *     them is refused, never fetched -- and the pair is then filed in the
+ *     GATE'S order, not the order the caller gave: `resolveComparisonPair`
+ *     returns it as `listAnnotationSetsForClip` lists it, `created_at asc,
+ *     annotation_set_id asc`. So A and B mean the same thing here as on the
+ *     comparison screen, and the caller cannot swap them.
+ *
  * WHAT THE CALLER MAY NOT SUPPLY, and why each one is derived instead:
  *
- *   * `annotation_set_id_a` / `_b` -- taken from what the blinding gate
- *     returned. A body-supplied pair is a body-supplied claim about which two
- *     readings were weighed, and the gate is the only thing on this path that
- *     knows which pair is eligible. Deriving them also makes A and B mean the
- *     same thing here as on the comparison screen: both take the ordering
- *     from `listAnnotationSetsForClip`, which is `created_at asc,
- *     annotation_set_id asc` and therefore stable.
  *   * `adjudicator_account_id` -- the authenticated principal. Accepting it
  *     from the body would let an administrator file a decision under another
  *     person's name, in the one column that makes the row evidence.

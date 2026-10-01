@@ -362,11 +362,17 @@ function AdjudicationDesk() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        /* WHAT IS NOT IN THIS BODY, on purpose: the two annotation set ids,
-           the adjudicator, the vocabulary version and the row's primary key.
-           Every one of them is derived on the server from what the blinding
-           gate returned, so a page cannot claim which pair of readings was
-           weighed or file a decision under another person's name. */
+        /* WHAT IS NOT IN THIS BODY, on purpose: the adjudicator, the
+           vocabulary version and the row's primary key. Each is derived on
+           the server, so a page cannot file a decision under another person's
+           name or under a vocabulary of its choosing.
+
+           The two annotation set ids are sent only when the clip has three or
+           more readings and this desk was opened on a chosen pair (just
+           below). They NAME which two submitted readings the decision is
+           between; the server checks both against the blinding gate's list
+           and files them in the gate's order whichever way round they are
+           sent. On a two-reading clip they are left out and would be ignored. */
         body: JSON.stringify({
           calibration_clip_id: clipId,
           /* The pair this desk was opened on. Still a claim about WHICH of the
