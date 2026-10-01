@@ -22,7 +22,7 @@ import type { Readable } from 'node:stream';
 
 import { Client } from 'pg';
 
-jest.setTimeout(180_000);
+jest.setTimeout(300_000);
 
 const PG_USER = 'postgres';
 const PG_PASSWORD = 'postgres';
@@ -69,6 +69,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let outcomes: typeof import('./shadowDecisionOutcomes');
 let db: typeof import('./db');
 let decisionId: string;
+let teammateDecisionId: string;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -170,6 +171,10 @@ beforeAll(async () => {
   await formulaObservation(TEAMMATE_FORMULA, ORG_ID, TEAMMATE_ID);
   await formulaObservation(OTHER_ORG_FORMULA, OTHER_ORG_ID, ATHLETE_ID);
   await formulaObservation(NO_ATHLETE_FORMULA, ORG_ID, null);
+  // The same string is BOTH a coach note id and a formula observation id for
+  // this athlete. It must count once: counted twice, it would cover for a
+  // missing id elsewhere in the array.
+  await formulaObservation(OWN_NOTE, ORG_ID, ATHLETE_ID);
   for (let index = 0; index <= MAX_IDS; index += 1) {
     await formulaObservation(`${BULK_PREFIX}${index}`, ORG_ID, ATHLETE_ID);
   }
@@ -183,14 +188,15 @@ beforeAll(async () => {
   await coachNote(TEAMMATE_NOTE, ORG_ID, TEAMMATE_ID, COACH_ID);
   await coachNote(OTHER_ORG_NOTE, OTHER_ORG_ID, ATHLETE_ID, OTHER_COACH_ID);
 
-  const decision = await migrateClient.query<{ decision_id: string }>(
+  const decision = async (athleteId: string) => (await migrateClient.query<{ decision_id: string }>(
     `insert into pilot.shadow_decisions
        (organization_id, athlete_id, decision_text, expected_outcome, decided_by_account_id, decided_by_role)
      values ($1, $2, 'Hold sparring one week', 'Contact exposure returns to baseline', $3, 'coach')
      returning decision_id`,
-    [ORG_ID, ATHLETE_ID, COACH_ID],
-  );
-  decisionId = decision.rows[0].decision_id;
+    [ORG_ID, athleteId, COACH_ID],
+  )).rows[0].decision_id;
+  decisionId = await decision(ATHLETE_ID);
+  teammateDecisionId = await decision(TEAMMATE_ID);
   await migrateClient.end();
 
   process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(TEST_DB_NAME);
@@ -232,7 +238,9 @@ async function storedCounts(): Promise<{ outcomes: number; audits: number }> {
   return rows[0];
 }
 
-function evaluate(observationIds: string[]) {
+type Overrides = Partial<Parameters<typeof outcomes.evaluateDecisionOutcome>[0]>;
+
+function evaluate(observationIds: string[], overrides: Overrides = {}) {
   return outcomes.evaluateDecisionOutcome({
     organizationId: ORG_ID,
     decisionId,
@@ -240,16 +248,20 @@ function evaluate(observationIds: string[]) {
     matchState: 'match',
     evaluatedByAccountId: COACH_ID,
     evaluatedByRole: 'coach',
+    ...overrides,
   });
 }
 
 // Runs the write, asserts it was refused and that NOTHING was written, and
 // returns what the caller would be told so refusals can be compared.
-async function refusal(observationIds: string[]): Promise<{ status: unknown; message: string; name: string }> {
+async function refusal(
+  observationIds: string[],
+  overrides: Overrides = {},
+): Promise<{ status: unknown; message: string; name: string }> {
   const before = await storedCounts();
   let caught: unknown;
   try {
-    await evaluate(observationIds);
+    await evaluate(observationIds, overrides);
   } catch (error) {
     caught = error;
   }
@@ -260,6 +272,8 @@ async function refusal(observationIds: string[]): Promise<{ status: unknown; mes
 }
 
 const bulkIds = (count: number) => Array.from({ length: count }, (_, index) => `${BULK_PREFIX}${index}`);
+
+const REFUSED = { status: 400, message: 'Decision outcome observation ids are invalid.', name: 'ValidationError' };
 
 describe('evaluateDecisionOutcome observation ids against the real schema', () => {
   test('positive control: stores ids from both observation tables for the decision athlete, with one audit entry', async () => {
@@ -283,9 +297,8 @@ describe('evaluateDecisionOutcome observation ids against the real schema', () =
     ['a teammate coach note in the same organization', TEAMMATE_NOTE],
     ['a formula observation with no athlete', NO_ATHLETE_FORMULA],
   ])('refuses %s, alone and mixed with valid ids, and writes nothing', async (_label, badId) => {
-    const expected = { status: 400, message: 'Decision outcome observation ids are invalid.', name: 'ValidationError' };
-    expect(await refusal([badId])).toEqual(expected);
-    expect(await refusal([OWN_FORMULA, badId, OWN_NOTE])).toEqual(expected);
+    expect(await refusal([badId])).toEqual(REFUSED);
+    expect(await refusal([OWN_FORMULA, badId, OWN_NOTE])).toEqual(REFUSED);
     // Same fixtures, bad id removed: the write itself works.
     await expect(evaluate([OWN_FORMULA, OWN_NOTE])).resolves.toMatchObject({ decision_id: decisionId });
   });
@@ -306,10 +319,33 @@ describe('evaluateDecisionOutcome observation ids against the real schema', () =
     expect([...seen]).toHaveLength(1);
   });
 
-  test('caps the array: the maximum of valid ids is accepted, one more is refused', async () => {
+  test('the athlete is the DECISION athlete: a teammate decision accepts the teammate ids and refuses this athlete ids', async () => {
+    const teammate = { decisionId: teammateDecisionId };
+    await expect(evaluate([TEAMMATE_FORMULA, TEAMMATE_NOTE], teammate)).resolves.toMatchObject({
+      decision_id: teammateDecisionId,
+    });
+    expect(await refusal([OWN_FORMULA], teammate)).toEqual(REFUSED);
+    expect(await refusal([OWN_NOTE], teammate)).toEqual(REFUSED);
+  });
+
+  test('the check does not depend on role, match state or notes', async () => {
+    const other = { evaluatedByRole: 'organization_admin', matchState: 'miss' as const, notes: 'Did not hold.' };
+    expect(await refusal([TEAMMATE_FORMULA], other)).toEqual(REFUSED);
+    await expect(evaluate([OWN_FORMULA], other)).resolves.toMatchObject({ match_state: 'miss' });
+  });
+
+  test('an id present in both tables counts once and cannot cover for a missing id', async () => {
+    await expect(evaluate([OWN_NOTE])).resolves.toMatchObject({ observation_ids: [OWN_NOTE] });
+    expect(await refusal([OWN_NOTE, 'obs-oo-does-not-exist'])).toEqual(REFUSED);
+  });
+
+  test('caps the array as sent: the maximum is accepted, one more is refused, repeats included', async () => {
     expect(outcomes.MAX_OUTCOME_OBSERVATION_IDS).toBe(MAX_IDS);
     const atCap = await evaluate(bulkIds(MAX_IDS));
     expect(atCap.observation_ids).toHaveLength(MAX_IDS);
-    expect((await refusal(bulkIds(MAX_IDS + 1))).status).toBe(400);
+    expect(await refusal(bulkIds(MAX_IDS + 1))).toEqual(REFUSED);
+    // One valid id repeated past the cap is a single distinct id, and is still refused.
+    expect(await refusal(Array.from({ length: MAX_IDS + 1 }, () => OWN_FORMULA))).toEqual(REFUSED);
+    await expect(evaluate(Array.from({ length: MAX_IDS }, () => OWN_FORMULA))).resolves.toBeDefined();
   });
 });

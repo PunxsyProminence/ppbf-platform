@@ -56,10 +56,13 @@ export async function evaluateDecisionOutcome(input: {
     // formula observation with no athlete (athlete_id null) is not about this
     // athlete and is refused. Checked on the same client as the insert so the
     // check and the write share one transaction.
-    const distinctIds = [...new Set(input.observationIds)];
-    if (distinctIds.length > MAX_OUTCOME_OBSERVATION_IDS) {
+    // The cap is on the array as sent, because the array as sent is what gets
+    // stored: capping only the distinct ids would let one valid id repeated a
+    // million times through.
+    if (input.observationIds.length > MAX_OUTCOME_OBSERVATION_IDS) {
       throw new ValidationError(OBSERVATION_IDS_REFUSAL);
     }
+    const distinctIds = [...new Set(input.observationIds)];
     if (distinctIds.length > 0) {
       const matched = await client.query<{ matched: number }>(
         `select count(*)::int as matched from (
