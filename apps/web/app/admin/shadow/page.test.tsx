@@ -269,9 +269,12 @@ const notOk = async () => jsonResponse({ error: 'Database unavailable' }, false,
 const rejects = async (): Promise<Response> => {
   throw new Error('network down');
 };
+const unparseable = async () =>
+  ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token'); } }) as unknown as Response;
 const FAILED_READS: Array<[string, () => Promise<Response>]> = [
   ['answers non-ok', notOk],
   ['rejects', rejects],
+  ['answers 200 with a body that will not parse', unparseable],
 ];
 
 function renderConsoleWith(reads: ReadOverrides) {
@@ -355,6 +358,42 @@ describe('the intake queue', () => {
     release(jsonResponse({ ok: true, queue: [] }));
     expect(await screen.findByText(INTAKE_EMPTY)).toBeTruthy();
   });
+
+  // The read runs again after every upload, review action and promotion. The
+  // state is set by the read itself, so a re-read that fails cannot leave the
+  // earlier count and rows standing as if they were the queue.
+  it('says unavailable, and refuses the review keys, when a re-read after an upload fails', async () => {
+    let queueReads = 0;
+    renderConsoleWith({
+      '/shadow/review-projection': async () => {
+        queueReads += 1;
+        return queueReads > 1 ? notOk() : jsonResponse({ ok: true, queue: [queueEntry] });
+      },
+      '/shadow/upload': async () =>
+        jsonResponse({
+          ok: true,
+          intake_case_id: 'case-2',
+          classification: 'general',
+          routed_queue: 'admin',
+          document_type: 'general_intake',
+        }),
+    });
+    await screen.findByText(/Board packet intake/);
+    expect(pageText()).toContain('Pending: 1');
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(['%PDF'], 'waiver.pdf', { type: 'application/pdf' })] } });
+
+    expect(await screen.findByText(INTAKE_UNAVAILABLE)).toBeTruthy();
+    expect(pageText()).toContain('Pending: unavailable');
+    expect(pageText()).not.toMatch(/Pending: \d/);
+    expect(screen.queryByRole('button', { name: 'APPROVE' })).toBeNull();
+    expect(queueReads).toBe(2);
+    // Not pinned here: with the list gone the A / R / I keys are refused
+    // ("Review action blocked: backend review queue is unavailable."), but
+    // that refusal is thrown into an unhandled rejection, which jest fails
+    // the test on. Showing it to the admin is a separate fix.
+  });
 });
 
 const FEEDBACK_UNAVAILABLE =
@@ -394,6 +433,14 @@ describe('the feedback review queue', () => {
     expect(await screen.findByText(FEEDBACK_UNAVAILABLE)).toBeTruthy();
     expect(screen.queryByText('Missed the point')).toBeNull();
     expect(pageText()).not.toMatch(/Awaiting review \(\d+\)/);
+
+    // And comes back, with its count, once a read answers again.
+    fail = false;
+    fireEvent.click(screen.getAllByRole('button', { name: 'Refresh' })[0]);
+
+    expect(await screen.findByText('Missed the point')).toBeTruthy();
+    expect(pageText()).toContain('Awaiting review (1)');
+    expect(screen.queryByText(FEEDBACK_UNAVAILABLE)).toBeNull();
   });
 });
 

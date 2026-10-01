@@ -340,6 +340,10 @@ describe('a quarantine list that could not be read', () => {
     ['answers non-ok', async () => jsonResponse({ error: 'Database unavailable' }, false, 500)],
     ['rejects', async () => { throw new Error('network down'); }],
     ['answers 200 without a list', async () => jsonResponse({ ok: true })],
+    [
+      'answers 200 with a body that will not parse',
+      async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token'); } }) as unknown as Response,
+    ],
   ];
 
   it.each(failures)('says unavailable, never zero or empty, when the read %s', async (_label, listRead) => {

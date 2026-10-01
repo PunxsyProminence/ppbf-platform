@@ -1250,6 +1250,10 @@ export default function AdminShadowConsolePage() {
       setIntakeQueueRead('loaded');
     } catch (error) {
       setIntakeQueueRead('unavailable');
+      // The list is no longer on screen, so the review and promotion writes
+      // are refused until a read comes back: the A / R / I keys would
+      // otherwise act on a selected row the admin cannot see.
+      setBackendQueueReady(false);
       throw error;
     }
   }

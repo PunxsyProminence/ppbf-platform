@@ -167,6 +167,12 @@ function tileValues() {
 test.each<[string, () => Promise<Response>]>([
   ['answers non-ok', async () => jsonResponse({ error: 'Unable to load escalations.' }, false)],
   ['rejects', async () => { throw new Error('network down'); }],
+  ['rejects with no message', async () => { throw new Error(''); }],
+  [
+    'answers 200 with a body that will not parse',
+    async () => ({ ok: true, json: async () => { throw new SyntaxError('Unexpected token'); } }) as unknown as Response,
+  ],
+  ['answers 200 without a list', async () => jsonResponse({ ok: true })],
 ])('the count tiles say unavailable, never zero, when the read %s', async (_label, listRead) => {
   global.fetch = jest.fn(async (input: RequestInfo | URL) => {
     if (String(input).includes('/auth/session')) return jsonResponse({ ok: true, role: 'admin' });

@@ -104,14 +104,18 @@ export default function EscalationsPage() {
       const qs = status === 'all' ? '' : `?status=${status}`;
       const response = await fetch(`${apiBase()}/api/pilot/escalations${qs}`, { credentials: 'include' });
       const payload = (await response.json().catch(() => ({}))) as { escalations?: SafetyEscalation[]; error?: string };
-      if (!response.ok) {
+      // A 2xx whose body would not parse, or carries no list, is a read that
+      // did not come back -- not an empty queue.
+      if (!response.ok || !Array.isArray(payload.escalations)) {
         throw new Error(payload.error || 'Unable to load escalations.');
       }
-      setItems(payload.escalations ?? []);
+      setItems(payload.escalations);
       setErrorMessage('');
     } catch (error) {
       setItems([]);
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to load escalations.');
+      // Never empty: the tiles and the list read this string to tell a failed
+      // read from an empty one.
+      setErrorMessage((error instanceof Error && error.message) || 'Unable to load escalations.');
     }
   }, []);
 
