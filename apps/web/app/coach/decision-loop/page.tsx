@@ -82,6 +82,88 @@ async function readJsonOrThrow<T>(response: Response, fallbackMessage: string): 
   return payload as T;
 }
 
+/* A READ is stricter than a write's acknowledgement. readJsonOrThrow turns a
+   body that will not parse into `{}`, which is harmless after a POST and
+   wrong after a GET: `{}` has no `status` and no lists, and "no status, no
+   lists" is exactly what a clean record looks like. A 200 that does not
+   carry the envelope the route always sends has answered some other
+   question -- a proxy page, a truncated body -- and is not a statement that
+   there is nothing on record. */
+async function readEnvelopeOrThrow(response: Response, fallbackMessage: string): Promise<Record<string, unknown>> {
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error(fallbackMessage);
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error(fallbackMessage);
+  }
+  const envelope = payload as Record<string, unknown>;
+  if (!response.ok || envelope.ok === false) {
+    throw new Error(typeof envelope.error === 'string' && envelope.error ? envelope.error : fallbackMessage);
+  }
+  return envelope;
+}
+
+const MEDICAL_STATUS_VALUES: ReadonlySet<string> = new Set(['cleared', 'restricted', 'not_cleared', 'pending']);
+
+function readMedicalStatus(envelope: Record<string, unknown>, fallbackMessage: string): MedicalStatusRow | null {
+  if (!('status' in envelope)) throw new Error(fallbackMessage);
+  const status = envelope.status;
+  if (status === null) return null;
+  if (
+    !status
+    || typeof status !== 'object'
+    || typeof (status as { status?: unknown }).status !== 'string'
+    || !MEDICAL_STATUS_VALUES.has((status as { status: string }).status)
+  ) {
+    throw new Error(fallbackMessage);
+  }
+  return status as MedicalStatusRow;
+}
+
+/* `textFields` are the fields the page prints or slices for each row. A row
+   without one of them would throw in the middle of rendering and take the
+   whole page down, which is a worse answer than "could not be read". */
+function readList<T>(
+  envelope: Record<string, unknown>,
+  key: string,
+  textFields: readonly string[],
+  fallbackMessage: string,
+): T[] {
+  const list = envelope[key];
+  if (
+    !Array.isArray(list)
+    || list.some(
+      (item) =>
+        !item
+        || typeof item !== 'object'
+        || textFields.some((field) => typeof (item as Record<string, unknown>)[field] !== 'string'),
+    )
+  ) {
+    throw new Error(fallbackMessage);
+  }
+  return list as T[];
+}
+
+/* The four things read for one athlete, plus the outcomes loaded on demand. */
+interface AthleteRecords {
+  medicalStatus: MedicalStatusRow | null;
+  recommendations: RecommendationRow[];
+  decisions: DecisionRow[];
+  nearMisses: NearMissRow[];
+  outcomesByDecision: Record<string, DecisionOutcomeRow[]>;
+}
+
+const NO_RECORDS: AthleteRecords = {
+  medicalStatus: null,
+  recommendations: [],
+  decisions: [],
+  nearMisses: [],
+  outcomesByDecision: {},
+};
+
 /* Every status on this page is a queue outcome or the safety gate itself, so
    it maps onto the design system's four-rung ladder and renders as a `.badge`:
    glyph + uppercase label, never colour alone (Laws 2 + 3). Lifecycle values
@@ -172,26 +254,33 @@ export default function DecisionLoopReviewPage() {
   const [athletes, setAthletes] = useState<AthleteListItem[]>([]);
   const [athleteId, setAthleteId] = useState('');
   const [loading, setLoading] = useState(false);
-  /* What the four data sets below can be trusted to mean for the athlete now
-     selected. 'loaded' is the only state in which an empty one is a fact
-     ("the platform looked and there is nothing"); 'loading' and 'unavailable'
-     both mean nobody has looked yet, or nobody could. */
-  const [loadState, setLoadState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+  /* THE RECORDS ON SCREEN CARRY THE ATHLETE THEY WERE READ FOR. They used to
+     be four loose pieces of state that only a successful read replaced, so a
+     failed switch from A to B left A's medical administrative status under
+     B; and clearing them in an effect still left one render in which the
+     selection said B and the records said A. Now they are one value with its
+     athlete's id on it, and the page looks at it only when that id is the
+     selected one. For anyone else it is 'loading': nobody has looked yet.
+
+     'loaded' is the only state in which an empty list is a fact ("the
+     platform looked and there is nothing"). */
+  const [readFor, setReadFor] = useState<{
+    athleteId: string;
+    state: 'loaded' | 'unavailable';
+    records: AthleteRecords;
+  } | null>(null);
+  const current = readFor && readFor.athleteId === athleteId ? readFor : null;
+  const loadState: 'loading' | 'loaded' | 'unavailable' = current ? current.state : 'loading';
   const loadFailed = loadState === 'unavailable';
-  /* Which athlete the page is showing, and which read is the newest. A read
-     answers for the athlete it was asked about, not for whoever is selected
-     when it comes back: without these, a slow read for athlete A (or a write
-     for A that finishes late and re-reads A) paints A's medical status under
-     athlete B. */
+  const { medicalStatus, recommendations, decisions, nearMisses, outcomesByDecision } = current?.records ?? NO_RECORDS;
+  /* Which athlete is selected, and which read is the newest, readable from
+     inside a request that started under a different render. A read or a write
+     answers for the athlete it was made for, not for whoever is selected when
+     it comes back. Both are moved in selectAthlete, in the same event as the
+     selection itself. */
   const selectedAthleteRef = useRef('');
   const readSeqRef = useRef(0);
   const [errorMessage, setErrorMessage] = useState('');
-
-  const [medicalStatus, setMedicalStatus] = useState<MedicalStatusRow | null>(null);
-  const [recommendations, setRecommendations] = useState<RecommendationRow[]>([]);
-  const [decisions, setDecisions] = useState<DecisionRow[]>([]);
-  const [nearMisses, setNearMisses] = useState<NearMissRow[]>([]);
-  const [outcomesByDecision, setOutcomesByDecision] = useState<Record<string, DecisionOutcomeRow[]>>({});
 
   /* DRAFTS BELONG TO AN ATHLETE. Every box and selector below used to be its
      own piece of page state, and the page sends whatever is in them with the
@@ -308,18 +397,6 @@ export default function DecisionLoopReviewPage() {
     })();
   }, []);
 
-  /* The previous athlete's records. Called when the selection changes (before
-     the read) and when a read fails, so what is on screen is only ever the
-     selected athlete's, read successfully -- never the last child's medical
-     status under this one's name. */
-  const clearAthleteData = useCallback(() => {
-    setMedicalStatus(null);
-    setRecommendations([]);
-    setDecisions([]);
-    setNearMisses([]);
-    setOutcomesByDecision({});
-  }, []);
-
   const refreshAll = useCallback(async (targetAthleteId: string) => {
     // A write for athlete A that finishes after the coach moved to B asks to
     // re-read A. B is on screen; A's records do not belong there.
@@ -347,18 +424,34 @@ export default function DecisionLoopReviewPage() {
         fetch(`${apiBase()}/api/pilot/shadow/near-misses?athleteId=${encodeURIComponent(targetAthleteId)}`, { credentials: 'include' }),
       ]);
 
-      const statusPayload = await readJsonOrThrow<{ status: MedicalStatusRow | null }>(statusRes, 'Failed to load medical status.');
-      const recsPayload = await readJsonOrThrow<{ recommendations: RecommendationRow[] }>(recsRes, 'Failed to load recommendations.');
-      const decisionsPayload = await readJsonOrThrow<{ decisions: DecisionRow[] }>(decisionsRes, 'Failed to load decisions.');
-      const nearMissesPayload = await readJsonOrThrow<{ nearMisses: NearMissRow[] }>(nearMissesRes, 'Failed to load near-misses.');
+      const records: AthleteRecords = {
+        medicalStatus: readMedicalStatus(
+          await readEnvelopeOrThrow(statusRes, 'Failed to load medical status.'),
+          'Failed to load medical status.',
+        ),
+        recommendations: readList<RecommendationRow>(
+          await readEnvelopeOrThrow(recsRes, 'Failed to load recommendations.'),
+          'recommendations',
+          ['recommendation_id', 'recommendation_text', 'expected_outcome', 'status', 'expires_at'],
+          'Failed to load recommendations.',
+        ),
+        decisions: readList<DecisionRow>(
+          await readEnvelopeOrThrow(decisionsRes, 'Failed to load decisions.'),
+          'decisions',
+          ['decision_id', 'decision_text', 'expected_outcome', 'decided_by_role', 'decided_at'],
+          'Failed to load decisions.',
+        ),
+        nearMisses: readList<NearMissRow>(
+          await readEnvelopeOrThrow(nearMissesRes, 'Failed to load near-misses.'),
+          'nearMisses',
+          ['near_miss_id', 'description', 'severity', 'created_at'],
+          'Failed to load near-misses.',
+        ),
+        outcomesByDecision: {},
+      };
 
       if (seq !== readSeqRef.current) return;
-      setMedicalStatus(statusPayload.status ?? null);
-      setRecommendations(recsPayload.recommendations ?? []);
-      setDecisions(decisionsPayload.decisions ?? []);
-      setNearMisses(nearMissesPayload.nearMisses ?? []);
-      setOutcomesByDecision({});
-      setLoadState('loaded');
+      setReadFor({ athleteId: targetAthleteId, state: 'loaded', records });
     } catch (error) {
       if (seq !== readSeqRef.current) return;
       /* ALL FOUR SECTIONS BELOW ARE NOW UNREADABLE, NOT EMPTY. This one load
@@ -369,52 +462,64 @@ export default function DecisionLoopReviewPage() {
          error line alone was not enough: it renders in the picker header
          while four sections below independently say "clear".
 
-         They are also CLEARED, not left as they were. Whatever they hold was
+         They are also EMPTIED, not left as they were. Whatever they hold was
          read before this failure: after a failed re-read that follows a
          write, the old medical status would otherwise still read "Current
          status" under an error line. */
-      clearAthleteData();
-      setLoadState('unavailable');
+      setReadFor({ athleteId: targetAthleteId, state: 'unavailable', records: NO_RECORDS });
       setErrorMessage(error instanceof Error ? error.message : 'Failed to load decision loop data.');
     } finally {
       if (seq === readSeqRef.current) setLoading(false);
     }
-  }, [clearAthleteData]);
+  }, []);
 
   useEffect(() => {
-    /* THE SELECTION CHANGED: the previous athlete's records go before the new
-       read starts, not when it lands. They used to stay until a successful
-       read replaced them, so a FAILED switch to athlete B left athlete A's
-       medical administrative status on screen under B -- and the render
-       checks for a status before it checks for a failure. (The form
-       selections that carry A's recommendation and decision ids are drafts,
-       kept per athlete and only honoured while the record they point at is
-       loaded: see draftsByAthlete.) */
-    selectedAthleteRef.current = athleteId;
+    // The read for whoever is selected. Everything that must be gone BEFORE
+    // this athlete is on screen was done in selectAthlete, in the event.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshAll(athleteId);
+  }, [athleteId, refreshAll]);
+
+  /* THE ONE PLACE THE SELECTION CHANGES, for the dropdown and for the ID box.
+     Everything that belonged to the previous athlete goes in the same event
+     that selects the next one, so React renders the new selection and the
+     emptied page together: there is no render with B selected and A's error
+     line or confirmation still up. (The records
+     themselves need no clearing here: they carry their athlete's id and are
+     not looked at for anyone else. See readFor.)
+
+     The refs move here too, not in an effect: a write for A that resolves
+     between this event and the next effect must already see that A is no
+     longer the selection. */
+  function selectAthlete(nextAthleteId: string) {
+    selectedAthleteRef.current = nextAthleteId;
     readSeqRef.current += 1;
-    /* eslint-disable react-hooks/set-state-in-effect */
-    clearAthleteData();
+    setAthleteId(nextAthleteId);
     /* The one draft that is NOT kept for its athlete: the medical status
        selection and its source reference. A "Cleared" left selected from an
        earlier visit is one click from being set; every arrival at an athlete
-       starts that form at its default, Pending with no reference. */
-    setDraftsByAthlete((current) => {
+       starts that form at its default, Pending with no reference. (The
+       selections that carry recommendation and decision ids are drafts too,
+       kept per athlete and honoured only while the record they point at is
+       loaded: see draftsByAthlete.) */
+    setDraftsByAthlete((kept) => {
       const next: Record<string, Drafts> = {};
-      for (const [id, kept] of Object.entries(current)) {
+      for (const [id, draft] of Object.entries(kept)) {
         next[id] = {
-          ...kept,
+          ...draft,
           medicalStatusDraft: EMPTY_DRAFTS.medicalStatusDraft,
           medicalSourceRef: EMPTY_DRAFTS.medicalSourceRef,
         };
       }
       return next;
     });
-    setLoadState('loading');
+    setIncidentFiledMessage('');
+    setBehaviorNoteMessage('');
+    setMessageHomeMessage('');
     setLoading(false);
     setErrorMessage('');
-    void refreshAll(athleteId);
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, [athleteId, refreshAll, clearAthleteData]);
+  }
+
 
   /* EVERY HANDLER BELOW answers for the athlete it was submitted under --
      the `athleteId` its closure captured. A write for athlete A that lands
@@ -640,9 +745,18 @@ export default function DecisionLoopReviewPage() {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/decision-outcomes?decisionId=${encodeURIComponent(decisionId)}`, {
         credentials: 'include',
       });
-      const payload = await readJsonOrThrow<{ outcomes: DecisionOutcomeRow[] }>(response, 'Failed to load decision outcomes.');
+      const outcomes = readList<DecisionOutcomeRow>(
+        await readEnvelopeOrThrow(response, 'Failed to load decision outcomes.'),
+        'outcomes',
+        ['outcome_id', 'match_state'],
+        'Failed to load decision outcomes.',
+      );
       if (athleteId !== selectedAthleteRef.current) return;
-      setOutcomesByDecision((prev) => ({ ...prev, [decisionId]: payload.outcomes ?? [] }));
+      setReadFor((held) =>
+        held && held.athleteId === athleteId
+          ? { ...held, records: { ...held.records, outcomesByDecision: { ...held.records.outcomesByDecision, [decisionId]: outcomes } } }
+          : held,
+      );
     } catch (error) {
       if (athleteId !== selectedAthleteRef.current) return;
       setErrorMessage(error instanceof Error ? error.message : 'Failed to load decision outcomes.');
@@ -706,7 +820,7 @@ export default function DecisionLoopReviewPage() {
               <span className="t-label">Athlete</span>
               <select
                 value={athleteId}
-                onChange={(event) => setAthleteId(event.target.value)}
+                onChange={(event) => selectAthlete(event.target.value)}
                 className="select max-w-md"
               >
                 <option value="">Select an athlete…</option>
@@ -721,7 +835,7 @@ export default function DecisionLoopReviewPage() {
               <span className="t-label">Or enter an athlete ID directly</span>
               <input
                 value={athleteId}
-                onChange={(event) => setAthleteId(event.target.value)}
+                onChange={(event) => selectAthlete(event.target.value)}
                 placeholder="athlete-id"
                 className="input max-w-md"
               />

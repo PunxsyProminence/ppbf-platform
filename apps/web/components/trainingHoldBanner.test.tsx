@@ -99,6 +99,55 @@ describe('a hold check nobody could read never looks like "no hold"', () => {
     }
   });
 
+  test('a hold that is partial or mistyped shows the owner’s line, never a crash and never a blank stamp', async () => {
+    // RefusalStamp throws on a blank explanation or name. Before the shape was
+    // checked, `{ hold: {} }` took the athlete's screen down.
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const malformed: unknown[] = [
+      {},
+      { ...HOLD, scope: undefined },
+      { ...HOLD, scope: 'sparring' },
+      // Inherited names are not scopes: `in` would have let these through.
+      { ...HOLD, scope: '__proto__' },
+      { ...HOLD, scope: 'toString' },
+      { ...HOLD, scope: 'constructor' },
+      { ...HOLD, athlete_explanation: undefined },
+      { ...HOLD, athlete_explanation: '   ' },
+      { ...HOLD, athlete_explanation: 7 },
+      { ...HOLD, placed_by_name: undefined },
+      { ...HOLD, placed_by_name: '' },
+      { ...HOLD, placed_by_name: '   ' },
+      { ...HOLD, placed_by_name: { first: 'Coach' } },
+      { ...HOLD, lift_condition_text: 12 },
+    ];
+    for (const hold of malformed) {
+      mockHoldRead(() => ({ ok: true, json: async () => ({ ok: true, hold }) }) as Response);
+
+      const { container, unmount } = render(<TrainingHoldBanner />);
+
+      await waitFor(() => expect(bannerText(container)).not.toBe(''));
+      expect(bannerText(container)).toBe('Talk to your coach about today’s training.');
+      expect(container.querySelector('[data-refusal-stamp]')).toBeNull();
+      unmount();
+    }
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
+  test('a hold with no lift condition is still a hold: the stamp, with the ask-your-coach path back', async () => {
+    // The route requires the athlete's sentence and not a lift condition, so
+    // an empty or null one is a real shape, not a malformed one.
+    for (const lift of ['', '   ', null]) {
+      mockHoldRead(() => ({ ok: true, json: async () => ({ ok: true, hold: { ...HOLD, lift_condition_text: lift } }) }) as Response);
+
+      const { container, unmount } = render(<TrainingHoldBanner />);
+
+      await screen.findByText('Contact work is paused for you right now');
+      expect(bannerText(container)).toContain('Ask Coach Rivera what has to happen next.');
+      unmount();
+    }
+  });
+
   test('a failed read never says the athlete is held: no stamp, no alert, no red', async () => {
     mockHoldRead(() => ({ ok: false, status: 500, json: async () => ({}) }) as Response);
 

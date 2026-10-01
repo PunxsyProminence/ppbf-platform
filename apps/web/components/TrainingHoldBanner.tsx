@@ -38,7 +38,7 @@ import RefusalStamp from './RefusalStamp';
 interface AthleteFacingHold {
   scope: 'all_training' | 'contact_only' | 'conditioning_only';
   athlete_explanation: string;
-  lift_condition_text: string;
+  lift_condition_text: string | null;
   placed_at: string;
   expires_at: string | null;
   placed_by_name: string;
@@ -49,6 +49,22 @@ const SCOPE_HEADLINE: Record<AthleteFacingHold['scope'], string> = {
   contact_only: 'Contact work is paused for you right now',
   conditioning_only: 'Conditioning is paused for you right now',
 };
+
+/* The route's athlete-facing projection, checked before anything renders it.
+   RefusalStamp THROWS on a blank explanation or name (a hold that reads as
+   blank is worse than none), so a partial object here would take the
+   athlete's whole screen down instead of telling them to talk to their coach.
+   A `hold` that is not this is an unread hold. */
+function isAthleteFacingHold(value: unknown): value is AthleteFacingHold {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const hold = value as Record<string, unknown>;
+  return (
+    typeof hold.scope === 'string' && Object.hasOwn(SCOPE_HEADLINE, hold.scope)
+    && typeof hold.athlete_explanation === 'string' && hold.athlete_explanation.trim().length > 0
+    && typeof hold.placed_by_name === 'string' && hold.placed_by_name.trim().length > 0
+    && (hold.lift_condition_text === null || hold.lift_condition_text === undefined || typeof hold.lift_condition_text === 'string')
+  );
+}
 
 const HOLD_UNREAD_LINE = 'Talk to your coach about today’s training.';
 
@@ -78,8 +94,9 @@ export default function TrainingHoldBanner() {
           setReadState('unavailable');
           return;
         }
-        // Null is "no hold". Anything else that is not a hold object is not.
-        if (payload.hold !== null && (typeof payload.hold !== 'object' || Array.isArray(payload.hold))) {
+        // Null is "no hold". Anything else has to BE a hold: every field the
+        // stamp renders, present and of the right type.
+        if (payload.hold !== null && !isAthleteFacingHold(payload.hold)) {
           setReadState('unavailable');
           return;
         }
@@ -117,7 +134,7 @@ export default function TrainingHoldBanner() {
         // an honest fallback that still points at a real point of contact,
         // never a fabricated condition standing in for one that was never
         // written.
-        endsWhen={hold.lift_condition_text || `Ask ${hold.placed_by_name} what has to happen next.`}
+        endsWhen={hold.lift_condition_text?.trim() || `Ask ${hold.placed_by_name} what has to happen next.`}
       />
     </section>
   );
