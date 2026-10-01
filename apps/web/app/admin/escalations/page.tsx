@@ -104,14 +104,18 @@ export default function EscalationsPage() {
       const qs = status === 'all' ? '' : `?status=${status}`;
       const response = await fetch(`${apiBase()}/api/pilot/escalations${qs}`, { credentials: 'include' });
       const payload = (await response.json().catch(() => ({}))) as { escalations?: SafetyEscalation[]; error?: string };
-      if (!response.ok) {
+      // A 2xx whose body would not parse, or carries no list, is a read that
+      // did not come back -- not an empty queue.
+      if (!response.ok || !Array.isArray(payload.escalations)) {
         throw new Error(payload.error || 'Unable to load escalations.');
       }
-      setItems(payload.escalations ?? []);
+      setItems(payload.escalations);
       setErrorMessage('');
     } catch (error) {
       setItems([]);
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to load escalations.');
+      // Never empty: the tiles and the list read this string to tell a failed
+      // read from an empty one.
+      setErrorMessage((error instanceof Error && error.message) || 'Unable to load escalations.');
     }
   }, []);
 
@@ -226,6 +230,9 @@ export default function EscalationsPage() {
   }
 
   const isLoading = items === null;
+  // The failed load empties `items`, so every figure counted from it would
+  // read 0. The tiles take the same test the list below already takes.
+  const listUnavailable = errorMessage !== '';
 
   return (
     <RoleSessionGate allowedRoles={['admin', 'coach']}>
@@ -283,15 +290,15 @@ export default function EscalationsPage() {
           <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-3">
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">Critical (this view)</p>
-              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : counts.critical}</p>
+              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : listUnavailable ? 'Unavailable' : counts.critical}</p>
             </article>
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">High (this view)</p>
-              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : counts.high}</p>
+              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : listUnavailable ? 'Unavailable' : counts.high}</p>
             </article>
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">Total (this view)</p>
-              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : counts.total}</p>
+              <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-100)]">{isLoading ? '—' : listUnavailable ? 'Unavailable' : counts.total}</p>
             </article>
           </section>
 
