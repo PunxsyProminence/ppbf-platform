@@ -42,8 +42,9 @@ import manifest from './safetyCriticalSuites.json';
  * ---------------------------------------------------------------------------
  * WHY THESE SUITES AND NOT THE OTHER SIXTY-TWO.
  *
- * When this was written `src/design/` held 22 test files and `components/` 59.
- * Twenty suites from those two folders are registered (fourteen and six); two
+ * When this was written `src/design/` held 22 test files and `components/` 59,
+ * nineteen of those 81 were registered, and the heading counts the rest. Today
+ * twenty suites from those two folders are registered (fourteen and six); two
  * from `src/server/pilot/`, the SHADOW chat classifier's suite and its
  * differential guard, the first entries from server code, which enter under
  * (a): they are what says a child's emergency report is treated as one; plus

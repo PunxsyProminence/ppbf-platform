@@ -1022,10 +1022,11 @@ describe('SHADOW Chat Validation - Doctrine Enforcement', () => {
 // ---------------------------------------------------------------------------
 // The phone keyboard
 //
-// Every one of these was measured against this file BEFORE the fix. The
-// straight-apostrophe form was withheld and queued a human; the curly form
-// -- which is what iOS and Android type by default -- was allowed straight
-// through to the model with nobody told.
+// The three sentences in the first test below were measured against main
+// before the fix. The straight-apostrophe form was withheld; the curly form
+// -- which is what iOS and Android type by default -- was allowed through to
+// the model. The rest of this describe is controls, known gaps and fences,
+// each labelled where it stands.
 // ---------------------------------------------------------------------------
 describe('typographic normalisation before matching', () => {
   const CURLY = '\u2019';
@@ -1052,7 +1053,7 @@ describe('typographic normalisation before matching', () => {
     ["I can't breathe after that hit"],
     ["I can't see after that punch"],
     ["I can't move my arm after that fall"],
-  ])('the straight apostrophe behaves exactly as before: %s', (message) => {
+  ])('the straight apostrophe is still an emergency: %s', (message) => {
     const result = validateShadowRequest(message, 'athlete', 'org-123');
 
     expect(result.valid).toBe(false);

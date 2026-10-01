@@ -433,8 +433,10 @@ const MAIN_PATTERNS: Pattern[] = [...patternsOf(MAIN_CLASSIFY), ...patternsOf(MA
 // main(f(m)). The two shipping functions are main's two functions,
 // statement for statement, once a short named list of differences is undone
 // -- the fold call, the folded text where main read the message, the
-// `examples` table, three type annotations [S1d]; and the fold is exactly
-// the two replace lines [S1c]. S1a and S1b say the same thing about the
+// classifier's name, the `examples` table, two type annotations [S1d]; they
+// are plain exported declarations that nothing else in the file names
+// [S1e]; and the fold is exactly the two replace lines [S1c]. S1a and S1b
+// say the same thing about the
 // patterns and about what each pattern reads, separately, so that a failure
 // names what moved. It is also run: now(m) equals main(f(m)), field for
 // field, on every generated message in the seed differential and the
@@ -452,9 +454,9 @@ const MAIN_PATTERNS: Pattern[] = [...patternsOf(MAIN_CLASSIFY), ...patternsOf(MA
 // lowercases, or case-folds under `i`, into one of the twenty, and none of
 // the twenty has another case [the case tests]. And lowercasing is not quite
 // one unit at a time: a Greek capital sigma lowercases to a different letter
-// depending on what follows it, and a look-alike and the apostrophe it folds
-// to can count differently there, so lower(f(m)) and lower(m) can differ at
-// a sigma. Both forms are non-ASCII letters, and main's patterns mention no
+// depending on the letters before and after it, and a look-alike and the
+// apostrophe it folds to can count differently as "after", so lower(f(m))
+// and lower(m) can differ at a sigma. Both forms are non-ASCII letters, and main's patterns mention no
 // non-ASCII character but the one look-alike [S3], so no pattern can tell
 // them apart.
 //
@@ -519,11 +521,22 @@ const MAIN_PATTERNS: Pattern[] = [...patternsOf(MAIN_CLASSIFY), ...patternsOf(MA
 // main, including every astral look-alike.
 //
 // IT STOPS AT validateShadowRequest'S RETURN VALUE. Properties 1-3 are about
-// `valid`, `error` and `classification`. What the chat route then does with
-// `topic` and `classification` is not in the argument, and one thing it does
-// changes: see "an educational question that names KO'd" below. An ALLOWED
-// educational question whose topic becomes loss_of_consciousness is answered
-// by the model where main answered it with a stock line and queued a review.
+// `valid`, `error` and `classification`. A look-alike that completes
+// "can't" or "KO'd" also changes `topic` -- to urgent_symptom from none, or
+// to loss_of_consciousness from any topic listed after it -- and the chat
+// route reads `topic` and `classification` for more than the three
+// properties cover. By reading route.ts and shadowHandoff.ts: the review
+// row's category, the `highRiskTopic` in the response, and the handoff
+// banner all follow the topic, so they change wherever it does. Each of
+// those is the route doing for a look-alike what it already does for the
+// ASCII apostrophe.
+//
+// One of them is LESS caution, not more, and is pinned on both layers: see
+// "an allowed question that names KO'd" below. The route answers an ALLOWED
+// message whose classification is weight_cutting, return_to_play or
+// medical_clearance with a stock line and queues a review. When a look-alike
+// makes such a message's topic loss_of_consciousness instead, the route
+// calls the model and queues nothing before generation.
 // ---------------------------------------------------------------------------
 describe('the premises of the argument, read from source', () => {
   const NOW_PATTERNS: Pattern[] = [...patternsOf(NOW_CLASSIFY), ...patternsOf(NOW_VALIDATE)];
@@ -609,19 +622,24 @@ describe('the premises of the argument, read from source', () => {
   // `.test` is handed -- and a harmful edit can be none of those: `text`
   // reassigned on the next line to the output of a helper, an early
   // `return { valid: true }` on the caller's role or the message's length, an
-  // extra `&& !quoted(text)` on the urgent return. A reviewer wrote each of
-  // those and every earlier test here passed.
+  // extra `&& !quoted(text)` on the urgent return.
   //
   // So the two shipping functions are printed without comments, the short
   // list of differences below is undone, each exactly as many times as
   // stated, and what is left must be main's two functions, statement for
-  // statement and parameter for parameter. ANY other edit to either function
-  // fails here. That is the intent: after this change the classifier is
-  // main's plus the fold, and the next change to it has to come and say what
-  // it is by editing this list.
+  // statement and parameter for parameter. An edit to the body or the
+  // parameters of either function that is not on the list fails here. That
+  // is the intent: after this change the classifier is main's plus the fold,
+  // and THE NEXT CHANGE TO IT HAS TO COME AND SAY WHAT IT IS BY EDITING THIS
+  // LIST. Changing the list is a deliberate act, not a way to make a red
+  // test green.
   //
-  // It does not reach outside the two functions: what the route does with
-  // the message before and after is not covered by this file.
+  // What it compares is printed text with runs of whitespace collapsed, so
+  // it does not see whitespace inside a literal (S1a compares the literals
+  // themselves) and it does not look at the functions' modifiers or return
+  // types (S1e does). It does not reach outside the two functions: what the
+  // route does with the message before and after is not covered by this
+  // file.
   test('S1d: the two shipping functions are main\'s, statement for statement, but for the named differences', () => {
     const printer = ts.createPrinter({ removeComments: true });
     const print = (node: ts.Node, file: ts.SourceFile): string => printer.printNode(ts.EmitHint.Unspecified, node, file).replace(/\s+/g, ' ').trim();
@@ -675,6 +693,79 @@ describe('the premises of the argument, read from source', () => {
     expect(nowValidate.parameters).toEqual(mainValidateShape.parameters);
     expect(mainValidateShape.statements.length).toBe(MAIN_VALIDATE_STATEMENTS);
   });
+
+  // S1e. WHAT S1c AND S1d DO NOT LOOK AT: how the three functions are
+  // declared, and how they are reached.
+  //
+  // S1d compares parameters and body statements. A reviewer got past it
+  // three ways: a second, defaulted parameter on the fold that rewrote the
+  // text before the body ran; the real function left intact but no longer
+  // the one exported (`export { wrapper as validateShadowRequest }`); and
+  // code tucked into the one statement S1d drops, the `examples` table.
+  test('S1e: the three functions are plain exported declarations, named nowhere else, and the dropped table is only data', () => {
+    const printer = ts.createPrinter({ removeComments: true });
+    const print = (node: ts.Node): string => printer.printNode(ts.EmitHint.Unspecified, node, PRODUCTION).replace(/\s+/g, ' ').trim();
+    const header = (fn: ts.FunctionDeclaration) => ({
+      modifiers: (fn.modifiers ?? []).map((m) => print(m)),
+      generator: Boolean(fn.asteriskToken),
+      typeParameters: (fn.typeParameters ?? []).length,
+      parameters: fn.parameters.map((p) => print(p)),
+      returns: fn.type ? print(fn.type) : '',
+    });
+
+    expect(header(NOW_FOLD)).toEqual({
+      modifiers: ['export'], generator: false, typeParameters: 0, parameters: ['text: string'], returns: 'string',
+    });
+    expect(header(NOW_CLASSIFY)).toEqual({
+      modifiers: ['export'], generator: false, typeParameters: 0, parameters: ['userMessage: string'], returns: 'HighRiskClassification',
+    });
+    expect(header(NOW_VALIDATE)).toEqual({
+      modifiers: ['export'], generator: false, typeParameters: 0,
+      parameters: ['message: string', '_userRole: string', '_organizationId: string'],
+      returns: 'ShadowValidationResult',
+    });
+
+    // Every mention of each name in the whole file, as code: its declaration
+    // and its calls. A re-export, an alias, a wrapper or a reassignment is
+    // one more.
+    const mentions = (name: string): number => {
+      let count = 0;
+      walk(PRODUCTION, (n) => { if (ts.isIdentifier(n) && n.text === name) count += 1; });
+      return count;
+    };
+    expect(mentions('normaliseForMatching')).toBe(3); // declared, and called at the two sites
+    expect(mentions('classifyHighRiskTopic')).toBe(2); // declared, and called by the validator
+    expect(mentions('validateShadowRequest')).toBe(1); // declared; called only from outside this file
+
+    // The `examples` statement S1d drops: one declarator, and nothing in its
+    // initialiser but object literals, arrays and strings.
+    const dropped = NOW_CLASSIFY.body!.statements.filter((s) => print(s).startsWith('const examples: '));
+    expect(dropped.length).toBe(1);
+    const statement = dropped[0];
+    if (!ts.isVariableStatement(statement)) throw new Error('the examples statement is not a variable statement');
+    expect(statement.declarationList.declarations.length).toBe(1);
+    const initialiser = statement.declarationList.declarations[0].initializer;
+    if (!initialiser) throw new Error('the examples table has no initialiser');
+    const allowed = new Set([
+      ts.SyntaxKind.ObjectLiteralExpression,
+      ts.SyntaxKind.PropertyAssignment,
+      ts.SyntaxKind.ArrayLiteralExpression,
+      ts.SyntaxKind.StringLiteral,
+      ts.SyntaxKind.Identifier, // property names only; checked below
+    ]);
+    const strangers: string[] = [];
+    walk(initialiser, (n) => {
+      if (!allowed.has(n.kind)) strangers.push(ts.SyntaxKind[n.kind]);
+      if (ts.isIdentifier(n) && !(ts.isPropertyAssignment(n.parent) && n.parent.name === n)) strangers.push('identifier ' + n.text);
+    });
+    expect(strangers).toEqual([]);
+  });
+
+  // NOT COVERED BY ANY OF S1a-S1e, and not coverable from inside the same
+  // process: code elsewhere in the module, or anywhere, that changes what
+  // the built-ins do -- a patched String.prototype.toLowerCase or
+  // RegExp.prototype.test. It would change the frozen reference in the same
+  // breath, so the differentials could not see it either.
 
   // The twenty characters the argument is about: eighteen sources, two outputs.
   const TWENTY = [...SOURCES, "'", '"'];
@@ -826,8 +917,11 @@ describe('what the fold does to every UTF-16 code unit', () => {
       if ([...lowered].some((c) => twenty.has(c))) {
         offenders.push(`${unitLabel(unit)} lowercases to ${show(lowered)}`);
       }
-      // What a non-unicode `i` regex compares: the uppercase form when that
-      // is a single unit, the character itself otherwise.
+      // Roughly what a non-unicode `i` regex compares: the uppercase form
+      // when that is a single unit, the character itself otherwise. (The
+      // specification adds an exception -- a non-ASCII character whose
+      // uppercase is ASCII stays itself -- which this check ignores, so it
+      // is the stricter of the two. The engine is asked directly below.)
       const upper = ch.toUpperCase();
       if (upper.length === 1 && twenty.has(upper)) {
         offenders.push(`${unitLabel(unit)} canonicalises to ${show(upper)} under the i flag`);
@@ -843,26 +937,36 @@ describe('what the fold does to every UTF-16 code unit', () => {
     }
   });
 
-  // THE SIGMA. Lowercasing is context-sensitive in exactly one place: a
-  // capital sigma becomes a final sigma (U+03C2) at the end of a word and a
-  // medial one (U+03C3) otherwise, and whether a following apostrophe-like
-  // character ends the word differs between a look-alike and the ASCII
-  // apostrophe. So the classifier's lowercased text can differ between m and
-  // f(m) at a sigma. No pattern mentions either sigma (S3: main's patterns
-  // are ASCII but for one look-alike), so the verdict cannot.
-  test('a sigma whose lowercase form the fold changes does not change the verdict', () => {
+  // THE SIGMA. Lowercasing is context-sensitive in one place: a capital
+  // sigma that follows a letter becomes a final sigma (U+03C2) when no
+  // letter follows it and a medial one (U+03C3) when one does, and the ASCII
+  // apostrophe is skipped over in deciding that where U+201A is not. So
+  // "a" + sigma + look-alike + "b" lowercases differently before and after
+  // the fold. No pattern mentions either sigma (S3: main's patterns are
+  // ASCII but for one look-alike), so the verdict should not move.
+  test('where the fold changes how a sigma lowercases, the current code still equals main applied to the folded message', () => {
     const sigma = String.fromCharCode(0x03a3);
     const low9 = String.fromCharCode(0x201a);
-    const before = ('A' + sigma + low9 + 'B').toLowerCase();
-    const after = normaliseForMatching('A' + sigma + low9 + 'B').toLowerCase();
-    // The premise: the two lowercased texts really do differ at the sigma.
-    expect(show(before)).toBe('U+0061 U+03C2 U+201A U+0062');
-    expect(show(after)).toBe('U+0061 U+03C3 U+0027 U+0062');
-    for (const [, seed] of SEEDS.slice(0, 12)) {
-      const message = seed + ' ' + sigma + low9 + 'b';
-      expect(same(now(message), main(normaliseForMatching(message)))).toBe(true);
-      expect(withheld(main(message)) && !withheld(now(message))).toBe(false);
+    const tail = ' a' + sigma + low9 + 'b';
+    // The premise, on the very text appended below: the two lowercased forms
+    // differ at the sigma.
+    expect(show(tail.toLowerCase())).toBe('U+0020 U+0061 U+03C2 U+201A U+0062');
+    expect(show(normaliseForMatching(tail).toLowerCase())).toBe('U+0020 U+0061 U+03C3 U+0027 U+0062');
+
+    const wrong: string[] = [];
+    for (const [, seed] of SEEDS) {
+      const message = seed + tail;
+      // The premise holds for this message, not just for the tail alone.
+      const at = seed.length + 2;
+      if (message.toLowerCase().charCodeAt(at) !== 0x03c2 || normaliseForMatching(message).toLowerCase().charCodeAt(at) !== 0x03c3) {
+        wrong.push('no sigma difference: ' + seed);
+      }
+      if (!same(now(message), main(normaliseForMatching(message)))) wrong.push('not main of fold: ' + seed);
+      if (withheld(main(message)) && !withheld(now(message))) wrong.push('released: ' + seed);
+      if (emergency(main(message)) && !emergency(now(message))) wrong.push('emergency lost: ' + seed);
+      if (critical(main(message)) && !critical(now(message))) wrong.push('downgraded: ' + seed);
     }
+    expect(wrong).toEqual([]);
   });
 
   // -------------------------------------------------------------------------
@@ -1058,8 +1162,8 @@ describe('what the fold does to every UTF-16 code unit', () => {
 // THE DIFFERENTIALS -- main against the current code.
 //
 // The argument above says what cannot happen. These run it. They are the
-// check on Step 5, which was done by reading, and on Step 1's "now(m) =
-// main(f(m))", whose control-flow half is not parsed.
+// check on Step 5, which was done by reading, and a second check, by
+// running, on Step 1's "now(m) = main(f(m))".
 // ---------------------------------------------------------------------------
 
 // Seed sentences, each declared with the return main gives it. Between them
@@ -1093,10 +1197,13 @@ const SEEDS: ReadonlyArray<readonly [string, string]> = [
   ['R3 urgent', 'after that punch I feel dizzy and confused'],
   ['R3 urgent', "from that fall I can't feel my hand"],
   // APOSTROPHE-SLOT SEEDS. Each has a space where the apostrophe of "can't"
-  // or "KO'd" would be, so it leaves main by the return declared here, and
-  // the variant with a look-alike in that slot is the phone-typed sentence,
-  // which must now move to R3 (or, for the last, keep R8 with the topic
-  // becoming loss_of_consciousness). One per change of return Step 5 allows.
+  // or "KO'd" would be, so it leaves main by the return declared here. The
+  // variants with one of the twelve APOSTROPHE look-alikes in that slot are
+  // the phone-typed sentence, and move to R3 (or, for the KO ones, keep
+  // their return with the topic becoming loss_of_consciousness); the six
+  // quote look-alikes in the slot change nothing. These five cover the moves
+  // to R3 from R4, R5, R6, R7 and R8; R9 to R3 and R9 to R8 come from the
+  // seeds above.
   ['R4 personal health', 'my shoulder hurts and I can t breathe'],
   ['R5 diagnosis', 'do i have a concussion if i can t see'],
   ['R6 clearance', 'am I cleared to spar if I can t see'],
@@ -1270,37 +1377,68 @@ describe('main against the current code: every look-alike at every position of e
     }
   });
 
-  // WHAT PROPERTIES 1-3 DO NOT SAY, PINNED.
+  // WHAT PROPERTIES 1-3 DO NOT SAY, PINNED: an allowed question that names
+  // KO'd.
   //
-  // This question is educational and ALLOWED, on main and here. Its topic is
-  // loss_of_consciousness when "KO'd" is recognised and return_to_play when
-  // it is not. Main recognised the ASCII apostrophe and U+2019; the fold adds
-  // the other eleven apostrophe look-alikes. Nothing is released and nothing
-  // is downgraded in the sense of properties 1-3 -- the verdict is `valid`
-  // either way -- but the chat route answers a return_to_play question with
-  // a stock line and a review row and a loss_of_consciousness one with the
-  // model and no row. route.test.ts pins that half, with the route run.
-  test('an educational question that names KO\'d: eleven more spellings get the topic the ASCII apostrophe already gets', () => {
-    const ask = (apostrophe: string): Verdict => main(`What does research say about return to play after being ko${apostrophe}d`);
-    const askNow = (apostrophe: string): Verdict => now(`What does research say about return to play after being ko${apostrophe}d`);
-    const RIGHT_SINGLE = String.fromCharCode(0x2019);
+  // Each message below is ALLOWED, on main and here: it has an educational
+  // framing word and no first-person or "now" word, which is all main's
+  // classifier means by educational. The last one shows what that includes:
+  // a first-hand account written without "I" or "my".
+  //
+  // The topic of each is loss_of_consciousness when "KO'd" is recognised and
+  // something listed after it when it is not. Main recognised the ASCII
+  // apostrophe and U+2019; the fold adds the other eleven apostrophe
+  // look-alikes. The six quote look-alikes are not apostrophes and change
+  // nothing. A topic listed BEFORE loss_of_consciousness -- concussion,
+  // head_trauma -- is not displaced, on main or here.
+  //
+  // Nothing is released or downgraded in the sense of properties 1-3: the
+  // verdict is `valid` on both sides. But when the displaced topic is
+  // return_to_play, weight_cutting or medical_clearance, the chat route
+  // answered with a stock line and queued a review, and for
+  // loss_of_consciousness it calls the model and queues nothing first.
+  // route.test.ts pins that half with the route run.
+  test.each([
+    ['return_to_play', 'What does research say about return to play after being ko?d'],
+    ['weight_cutting', 'What is a weight cut like after getting ko?d'],
+    ['medical_clearance', 'What is medical clearance after being ko?d'],
+    ['return_to_play', 'Got ko?d in sparring last night and still feel off. What is the return to play protocol'],
+  ])('an allowed question that names KO\'d: main\'s topic %s becomes loss_of_consciousness for eleven more spellings', (topicOnMain, template) => {
+    const withApostrophe = (apostrophe: string): string => template.replace('?', apostrophe);
+    const ASCII = main(withApostrophe("'"));
 
-    expect(ask("'")).toEqual({ valid: true, highRisk: true, topic: 'loss_of_consciousness', classification: 'loss_of_consciousness' });
-    expect(ask(RIGHT_SINGLE)).toEqual(ask("'"));
-    expect(askNow("'")).toEqual(ask("'"));
+    // What main already does with the apostrophe and with the phone default.
+    expect(ASCII).toEqual({ valid: true, highRisk: true, topic: 'loss_of_consciousness', classification: 'loss_of_consciousness' });
+    expect(main(withApostrophe(String.fromCharCode(0x2019)))).toEqual(ASCII);
+    expect(now(withApostrophe("'"))).toEqual(ASCII);
 
     const changed: string[] = [];
     for (const unit of APOSTROPHE_SOURCES) {
-      const ch = String.fromCharCode(unit);
-      expect(askNow(ch)).toEqual(ask("'"));
-      if (!same(ask(ch), askNow(ch))) {
-        expect(ask(ch)).toEqual({ valid: true, highRisk: true, topic: 'return_to_play', classification: 'return_to_play' });
+      const message = withApostrophe(String.fromCharCode(unit));
+      expect(now(message)).toEqual(ASCII);
+      if (!same(main(message), now(message))) {
+        expect(main(message)).toEqual({ valid: true, highRisk: true, topic: topicOnMain, classification: topicOnMain });
         changed.push(unitLabel(unit));
       }
     }
     // Every apostrophe look-alike but the one main already knew.
     expect(changed.length).toBe(11);
     expect(changed).not.toContain('U+2019');
+
+    // A quote look-alike in the same place is not an apostrophe: no change.
+    for (const unit of QUOTE_SOURCES) {
+      const message = withApostrophe(String.fromCharCode(unit));
+      expect(now(message)).toEqual(main(message));
+      expect(main(message).topic).toBe(topicOnMain);
+    }
+  });
+
+  test('a topic listed before loss_of_consciousness is not displaced by KO\'d, on main or here', () => {
+    for (const apostrophe of ["'", '`', String.fromCharCode(0x2018)]) {
+      const message = `What is a concussion protocol after being ko${apostrophe}d`;
+      expect(main(message).topic).toBe('concussion');
+      expect(now(message)).toEqual(main(message));
+    }
   });
 
   // KNOWN GAP, ON MAIN AND HERE, MOVED TO #1036. Main's first return sits
@@ -1329,7 +1467,7 @@ describe('main against the current code: every look-alike at every position of e
 // what stops every call-site edit; this is its check for the one class that
 // has already released a message.
 // ---------------------------------------------------------------------------
-describe('the current code is main applied to the folded message, for every code unit', () => {
+describe('the current code is main applied to the folded message, with each code unit between two words of two messages', () => {
   test.each([
     ['my|shoulder hurts'],
     ["I can't|breathe after that hit"],
@@ -1404,12 +1542,13 @@ function sweptCodePoints(): number[] {
 // swept code points for which main withholds it.
 //
 // The first seven carriers put their mark at one of three kinds of position:
-// where the word boundary under test is the ONLY evidence of personal
-// context; beside a counted window (`vision.{0,12}blurr`, with 11 of its 12
+// where the word boundary at the mark is the ONLY evidence of something the
+// return needs (personal context in the first, the health concern in the
+// second); beside a counted window (`vision.{0,12}blurr`, with 11 of its 12
 // characters used, and `bleeding.{0,20}`, with 18 of 20); and immediately
-// before the match. The other six mark a gap inside or after the match. It
-// is not every position, and no carrier marks more than one; the seed
-// differential above is the one that visits every position.
+// before the match. The other six mark a gap inside, after or well before
+// the match. It is not every position, and no carrier marks more than one;
+// the seed differential above is the one that visits every position.
 const CARRIERS: ReadonlyArray<readonly [string, string, number]> = [
   ['boundary is the only evidence', 'my|shoulder hurts', 319],
   ['boundary is the only evidence, 2', 'I|hurt my wrist', 319],
@@ -1581,9 +1720,12 @@ const SEED_DIFFERENTIAL_COUNTS = {
   anyFieldDiffers: 211,
   // Those 211, by what changed: the return, or the topic under an unchanged
   // return. These thirteen are the kinds this seed set produces, and they
-  // sum to 211. Step 5 of the argument allows no others: a return changes
-  // only to R3, or from R9 to R8; a topic changes only to urgent_symptom
-  // from none, or to loss_of_consciousness.
+  // sum to 211. Each is of a kind Step 5 of the argument allows -- a return
+  // changes only to R3, or from R9 to R8; a topic changes only to
+  // urgent_symptom from none, or to loss_of_consciousness -- and anything
+  // of another kind would appear here as a fourteenth. Step 5 allows more
+  // combinations than these seeds produce: a topic change under R4, R5 or
+  // R7, for one, is allowed and not seeded.
   moves: {
     'R1 prescription or weight cut, topic none -> urgent_symptom': 12,
     'R2 educational, allowed, topic none -> urgent_symptom': 12,
