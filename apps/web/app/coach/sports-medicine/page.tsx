@@ -68,6 +68,21 @@ interface ClearanceRow {
 
 type HoldRead = 'loaded' | 'unavailable';
 
+const CLEARANCE_VALUES: ReadonlySet<string> = new Set(['cleared', 'restricted', 'not_cleared', 'pending']);
+
+function isClearanceRow(
+  value: unknown,
+  athleteId: string,
+): value is { status: ClearanceValue; effective_at: string } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.status === 'string' && CLEARANCE_VALUES.has(row.status)
+    && row.athlete_id === athleteId
+    && typeof row.effective_at === 'string' && row.effective_at.trim().length > 0
+  );
+}
+
 /* What this board needs from a hold before it will show one. An entry that
    is not this -- null, false, an empty object, a row with no sentence for the
    athlete -- is not a hold and is not "no hold" either: the read did not
@@ -198,8 +213,12 @@ export default function SportsMedicinePage() {
           credentials: 'include',
         });
         if (!rosterRes.ok) throw new Error('Unable to load your roster.');
-        const rosterPayload = (await rosterRes.json()) as { items?: RosterAthlete[] };
-        const roster = rosterPayload.items ?? [];
+        const rosterPayload = (await rosterRes.json()) as { items?: unknown } | null;
+        // The route always answers with an `items` array. A 200 without one
+        // is not "you have no athletes" -- and on this page an empty roster
+        // reads as "nothing to check".
+        if (!rosterPayload || !Array.isArray(rosterPayload.items)) throw new Error('Unable to load your roster.');
+        const roster = rosterPayload.items as RosterAthlete[];
 
         // One clearance read and one hold read per athlete, through the same
         // routes that enforce coach-of-record/coverage access server-side. A
@@ -235,11 +254,20 @@ export default function SportsMedicinePage() {
               base.hold_read = holdResult.hold_read;
 
               if (statusRes?.ok) {
-                const payload = (await statusRes.json()) as {
-                  status?: { status: ClearanceValue; effective_at: string } | null;
-                };
-                base.clearance = payload.status ? payload.status.status : null;
-                base.effective_at = payload.status?.effective_at ?? null;
+                // "cleared" is the most consequential word on this row, so it
+                // is printed only from a success envelope carrying a status row
+                // that is this athlete's: `{ ok: true, status }`, status null
+                // (no record) or a row with an allowed value. Anything else
+                // leaves the fail-closed default, 'unavailable'.
+                const payload = (await statusRes.json()) as { ok?: unknown; status?: unknown } | null;
+                if (payload && payload.ok === true && 'status' in payload) {
+                  if (payload.status === null) {
+                    base.clearance = null;
+                  } else if (isClearanceRow(payload.status, athlete.athlete_id)) {
+                    base.clearance = payload.status.status;
+                    base.effective_at = payload.status.effective_at;
+                  }
+                }
               }
             } catch {
               // Leave the fail-closed defaults: clearance unavailable.
@@ -334,11 +362,7 @@ export default function SportsMedicinePage() {
   ): boolean => {
     if (!result || result.ok !== true || !isActiveHold(result.hold)) return false;
     const hold = result.hold as ActiveHold & { status?: unknown; athlete_id?: unknown };
-    return (
-      hold.hold_id === holdId
-      && hold.status === 'lifted'
-      && (hold.athlete_id === undefined || hold.athlete_id === athleteId)
-    );
+    return hold.hold_id === holdId && hold.status === 'lifted' && hold.athlete_id === athleteId;
   };
 
   const placeHold = async (athleteId: string) => {
@@ -400,6 +424,7 @@ export default function SportsMedicinePage() {
   const liftHold = async (athleteId: string, holdId: string) => {
     setBusy(athleteId, true);
     setRefusal(null);
+    let rereadAfterAnswer = false;
     try {
       const result = await postHoldAction({
         action: 'lift',
@@ -418,17 +443,28 @@ export default function SportsMedicinePage() {
       // "no hold" on the strength of it: only a read can, and if the read
       // fails too the hold that was on screen stays on screen.
       const settled = await refreshHold(athleteId, 'keep');
+      rereadAfterAnswer = true;
       if (settled && !settled.hold && settled.hold_read === 'loaded') {
         setLiftNotes((current) => ({ ...current, [athleteId]: '' }));
         return;
       }
-      throw new Error('The gym’s server did not confirm this lift. The hold is still shown; check again before relying on it.');
+      throw new Error(
+        settled?.hold && settled.hold.hold_id !== holdId
+          ? 'The gym’s server did not confirm this lift, and a different hold is now active for this athlete. It is the one shown.'
+          : 'The gym’s server did not confirm this lift. The hold is still shown; check again before relying on it.',
+      );
     } catch (error) {
       setRefusal({
         athleteId,
         stamp: 'Hold Not Lifted',
         message: error instanceof Error ? error.message : 'The hold was not lifted.',
       });
+      // A refusal is news about the row here too: "hold is 'lifted' and
+      // cannot be lifted" means the hold on screen is already gone. Without
+      // this read the row kept a lifted hold as active, with no place control
+      // and no way forward but a page reload. If the read fails the row
+      // stays as it was.
+      if (!rereadAfterAnswer) await refreshHold(athleteId, 'keep');
     } finally {
       setBusy(athleteId, false);
     }

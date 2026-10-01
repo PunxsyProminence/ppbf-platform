@@ -36,8 +36,16 @@ jest.mock('@/components/RoleStandaloneView', () => ({
   default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
 }));
 
+/* Every route this page reads answers success as `{ ok: true, ... }`, and
+   the page now requires it. A fixture that does not say otherwise is a
+   success body; one that carries its own `ok` (or is not a plain object) is
+   sent exactly as written. */
 function jsonResponse(body: unknown, ok = true) {
-  return { ok, json: async () => body } as Response;
+  const sent =
+    ok && body && typeof body === 'object' && !Array.isArray(body) && !('ok' in (body as object))
+      ? { ok: true, ...(body as object) }
+      : body;
+  return { ok, json: async () => sent } as Response;
 }
 
 function installFetch(overrides: Record<string, unknown> = {}) {
@@ -1038,6 +1046,12 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     ['medical status: no `status` key', '/medical-status', () => jsonResponse({ ok: true })],
     ['medical status: `status` is a string', '/medical-status', () => jsonResponse({ status: 'cleared' })],
     ['medical status: a row with an unknown status value', '/medical-status', () => jsonResponse({ status: { status: 'fine' } })],
+    ['medical status: a WHOLE row whose status is not one of the four', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, status: 'fine' } })],
+    ['medical status: ok is 0', '/medical-status', () => jsonResponse({ ok: 0, status: null })],
+    ['medical status: ok is the string "false"', '/medical-status', () => jsonResponse({ ok: 'false', status: null })],
+    ['medical status: ok is null beside an error', '/medical-status', () => jsonResponse({ ok: null, error: 'upstream timeout', status: null })],
+    ['medical status: ok is "error" beside a whole row', '/medical-status', () => jsonResponse({ ok: 'error', status: B_STATUS })],
+    ['recommendations: ok is missing-as-false', '/recommendations', () => jsonResponse({ ok: 0, recommendations: [] })],
     ['medical status: body is an array', '/medical-status', () => jsonResponse([])],
     // "cleared" and nothing else used to render "Current status: cleared --
     // Set by undefined (undefined) at undefined".

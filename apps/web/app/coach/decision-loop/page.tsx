@@ -100,7 +100,9 @@ async function readEnvelopeOrThrow(response: Response, fallbackMessage: string):
     throw new Error(fallbackMessage);
   }
   const envelope = payload as Record<string, unknown>;
-  if (!response.ok || envelope.ok === false) {
+  // Every read route here answers success as `{ ok: true, ... }`. Anything
+  // else under a 200 -- ok missing, 0, "false", null -- is not a success.
+  if (!response.ok || envelope.ok !== true) {
     throw new Error(typeof envelope.error === 'string' && envelope.error ? envelope.error : fallbackMessage);
   }
   return envelope;
