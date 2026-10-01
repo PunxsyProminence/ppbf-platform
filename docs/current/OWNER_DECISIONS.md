@@ -313,13 +313,40 @@ against that lane's own transcript.
   *"Hold it, decide later"*; it stays open and unmerged. The ring corner pads:
   *"Worn and indistinct"*; the lock's row stands, marked disputed, until he
   settles it.
-- Lane S (SHADOW's model and personality): *"Q1 those are two different parts,
-  one is chat the other is the AI/ML that supports the chats responses  Q2 us
-  the dark humor Q3 A  Q4 A i am also not tied to a single engine, if there is
-  better that is covered bu the azure grant we can use it, things may have
-  changed since the first design"*. That lane is confirming its reading with
-  him; which audiences get dark humour is not settled, and until it is the
-  athlete and parent registers keep none.
+- Lane S (SHADOW's model and personality), first answers: *"Q1 those are two
+  different parts, one is chat the other is the AI/ML that supports the chats
+  responses  Q2 us the dark humor Q3 A  Q4 A i am also not tied to a single
+  engine, if there is better that is covered bu the azure grant we can use it,
+  things may have changed since the first design"*. Later the same day, to
+  three questions (Q2, which audiences get dark humour: A staff only,
+  recommended; B staff and parents; C everyone, athletes included. Q6, an
+  athlete asks how to cut weight: A teach how it works and how to do it as
+  safely as possible, age-tuned, the coach decides; B risks only; C as it is.
+  Q7, build the teach-first prompt change as a PR now): *"Q2 dark humor for
+  everyone that part of the gym identity, i want the weight cutting in usa
+  boxing has classes and recomendations for it, we can educate it in a safe
+  way,  Q6 A we will go off of research from real sources, yes the app should
+  rarely say dont Q7 yes, as far as the model goes we should stick with the
+  free models, the pay for does not give a good enough increase in
+  capabilities"*. As that lane reads them: dark humour is for every audience,
+  athletes and parents included, which overrides its own recommendation and
+  the "no dark or sarcastic humor" line in today's athlete and parent
+  registers (`buildRegisterPrompt`, `apps/web/src/server/pilot/shadowChat.ts`);
+  SHADOW teaches weight cutting safely from real sources, where today both the
+  request gate and the response filter block it; the prompt is rewritten to
+  teach first; and SHADOW stays on the models already deployed. Nothing of
+  this is built when written. The humour change waits on the exact register
+  wording, which goes to him; weight cutting is scoped as its own lane, with
+  sourced content and coach-set limits as data (OD-2026-09-21-001 item 4).
+- Lane 12 (the calibration revision migration, OD-2026-08-29-005): asked
+  which "pair" a revision is scoped to (A, the pair of MARKS in disagreement:
+  the clip, both annotation sets and the two marked events, recommended; B, the
+  clip's pair of annotation SETS), Jason: *"go with recomendations"*. **A.**
+  This corrects the paraphrase under OD-2026-08-29-004, "What was asked", which
+  reads "a clip's pair of annotation sets"; his own quoted words there say only
+  that the newer adjudication supersedes the older and name a unique index on
+  (pair, revision). One clip can hold several separate disagreements, and only
+  a second decision about the same two marks is a revision.
 
 ### 8. He asked overwatch to check itself
 
