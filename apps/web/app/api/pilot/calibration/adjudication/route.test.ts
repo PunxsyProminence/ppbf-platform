@@ -1083,18 +1083,18 @@ describe('two administrators deciding the same disagreement at once', () => {
     expect(JSON.stringify(await response.json())).not.toContain('while you were deciding');
   });
 
-  test('a successful decision carries its revision back, and the caller cannot name one', async () => {
+  test('the caller cannot name the revision', async () => {
     mockPrincipal.mockResolvedValue(ADMIN);
     bothSubmitted();
 
     // `revision` in the body is ignored: the server computes the revision it
     // writes. A caller that could name it could collide on purpose, or skip
-    // ahead and leave a gap that reads as a missing answer.
+    // ahead and leave a gap that reads as a missing answer. That the stored
+    // row carries the computed revision back is proved against real
+    // PostgreSQL in calibrationAdjudication.pg.test.ts, not here, where the
+    // row is a mock.
     const response = await POST(post({ ...DECISION, revision: 99 }));
     expect(response.status).toBe(200);
-
-    const body = await response.json();
-    expect(body.adjudication.revision).toBe(1);
 
     const passed = mockRecord.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(passed).not.toHaveProperty('revision');

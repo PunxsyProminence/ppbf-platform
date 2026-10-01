@@ -242,8 +242,10 @@ export async function recordAdjudication(
      * insert with 23505, and the route turns that into a 409 telling them to
      * read the answer that landed while they were deciding.
      *
-     * coalesce(max, 0) + 1 rather than count(*) + 1: a count would reuse a
-     * revision if a row for the pair were ever removed.
+     * coalesce(max, 0) + 1 rather than count(*) + 1: a count would hand out a
+     * revision that is still in use if an EARLIER row were ever removed, and
+     * the insert would then collide with nobody racing it. Neither form
+     * avoids reusing the number of a removed HIGHEST row.
      *
      * WHAT THIS DOES NOT CATCH: a decision made on a view that went stale
      * minutes ago. A second adjudication recorded after the first has

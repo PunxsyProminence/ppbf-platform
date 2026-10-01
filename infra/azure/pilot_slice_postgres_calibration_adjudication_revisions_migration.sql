@@ -50,6 +50,15 @@
 -- trigger exists on this table (the gold migration's three are all on
 -- pilot.calibration_gold_records), so the backfill UPDATE is not refused.
 --
+-- RELEASE WINDOW. The column is NOT NULL with no default, so this migration
+-- and the application image that writes `revision` have to go out together:
+--   * this schema + the PREVIOUS image: every adjudication write fails on the
+--     NOT NULL (reads still work);
+--   * the new image + the PREVIOUS schema: reads and writes of adjudications
+--     fail on the missing column.
+-- Apply this, then deploy, close together, and do not roll the image back
+-- past this change once it is applied.
+--
 -- Additive and idempotent. No `begin;`/`commit;` here on purpose: the runner
 -- (apps/web/scripts/pilot-apply-calibration-adjudication-revisions-migration.mjs)
 -- opens the transaction itself.
