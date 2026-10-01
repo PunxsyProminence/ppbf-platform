@@ -62,7 +62,13 @@
 import { Pool } from 'pg';
 
 import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mjs';
-import { countRetiredReasons, maskEmailForRole, planAccountCleanup } from './lib/account-cleanup-plan.mjs';
+import {
+  ACCOUNTS_READ_SQL,
+  RETIRE_ACCOUNTS_SQL,
+  countRetiredReasons,
+  maskEmailForRole,
+  planAccountCleanup,
+} from './lib/account-cleanup-plan.mjs';
 
 const connectionString = process.env.AZURE_POSTGRES_CONNECTION_STRING;
 if (!connectionString) {
@@ -123,20 +129,7 @@ async function main() {
     // convention in this file.
     await client.query(apply ? 'begin' : 'begin read only');
 
-    const accounts = await client.query(
-      `select a.account_id,
-              a.login_email,
-              a.role,
-              a.organization_id,
-              a.is_platform_owner,
-              a.athlete_id,
-              a.active_flag,
-              a.deleted_at,
-              o.status as organization_status
-         from pilot.accounts a
-         left join pilot.organizations o on o.organization_id = a.organization_id
-        order by a.organization_id, a.role, a.login_email nulls last, a.account_id`,
-    );
+    const accounts = await client.query(ACCOUNTS_READ_SQL);
 
     const plan = planAccountCleanup(accounts.rows, { alsoRetire, allowOrphanOrganizationIds });
 
@@ -153,6 +146,7 @@ async function main() {
         retire: plan.retire.length,
         already_soft_deleted: plan.alreadySoftDeleted.length,
         gate_fixture_skipped: plan.gateFixtures.length,
+        live_athlete_login_skipped: plan.liveAthleteLogins.length,
       },
       accounts: plan.decisions.map(describe),
     }, null, 2));
@@ -164,6 +158,17 @@ async function main() {
         event: 'account.cleanup.gate-fixtures-skipped',
         note: 'staging-gate fixtures (account_id starts with gate_) are never retired; the gate signs in as them',
         accounts: plan.gateFixtures.map(describe),
+      }));
+    }
+
+    // Logins with a live athlete record behind them. Listed for the same
+    // reason: retiring one would leave a child's record held by a deleted
+    // login, so they are passed over on purpose.
+    if (plan.liveAthleteLogins.length > 0) {
+      console.log(JSON.stringify({
+        event: 'account.cleanup.live-athlete-logins-skipped',
+        note: 'logins with a live athlete record behind them are never retired here; deactivate one in the app instead',
+        accounts: plan.liveAthleteLogins.map(describe),
       }));
     }
 
@@ -248,22 +253,10 @@ async function main() {
 
     const ids = plan.retire.map((decision) => decision.account_id);
 
-    // `role <> 'parent'` and `deleted_at is null` restate guarantees the planner
-    // already makes. They are here because this statement is the one that can
-    // fire pilot.cascade_parent_deletion across minors' records, and a
-    // WHERE clause is cheaper than trusting that no future edit to the planner
-    // ever lets a parent through. The gate-fixture clause is the same second
-    // lock for the staging gate's accounts (`\_` is a literal underscore).
+    // The statement and the reason for each of its guards are in
+    // lib/account-cleanup-plan.mjs, where a real-database test runs it.
     const retired = await client.query(
-      `update pilot.accounts
-          set deleted_at = now(),
-              active_flag = false,
-              updated_at = now()
-        where account_id = any($1::text[])
-          and role <> 'parent'
-          and deleted_at is null
-          and account_id not ilike 'gate\\_%'
-        returning account_id`,
+      RETIRE_ACCOUNTS_SQL,
       [ids],
     );
 
