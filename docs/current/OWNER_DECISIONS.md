@@ -164,6 +164,170 @@ and should not try to.
 
 ---
 
+## OD-2026-10-01-003 -- His later answers of 2026-10-01 (afternoon): the coach-board control and failure line approved; working files; plates and who owns the visual lane; observation ids; the knockout cases; release 3 staged then cancelled
+
+**Provenance: PRIMARY** where Jason's words were typed in the overwatch thread
+(transcript as in OD-2026-09-30-007); **REPORTED** where a lane relayed them
+(each marked). **Date:** 2026-10-01. This entry is new and edits no earlier
+one; where it changes what an earlier entry reports, it says so.
+
+### 1. Three approvals in one message
+
+Three questions were put together, each official then plain, each with A marked
+recommended. Jason, whole message: *"Approve the 3 recommendations  to the 3
+questions"*.
+
+1. **Working files under `Documents\PPBF-overwatch`.** Asked: "Working files
+   under `Documents\PPBF-overwatch` (relay notes to lanes, review relays,
+   images shown to you): A, overwatch may write them without asking each time
+   (recommended); B, ask each time." **A, from this answer forward.** Files
+   written there before it (lane relay notes by overwatch and by lanes; two
+   plate image copies) had no words of his at the time and stay recorded as
+   unauthorized writes; section 7 lists them.
+2. **The "Check again" control on the coach board is his.** Asked: 'The "Check
+   again" button beside a disabled "Place a training hold" on the coach's
+   board: A, keep it (recommended, also by ChatGPT); B, remove it.' **A.** This
+   changes what OD-2026-10-01-002 section 2 item 3 reports: there the control
+   was overwatch's decision, told to him and not his ruling. It is now
+   owner-approved. The commits that added it were made before this approval
+   and remain unauthorized writes in PR #1063's own record.
+3. **The line shown when a submission for the previous athlete fails late is
+   his.** Asked: "When something a coach submitted for the previous athlete
+   fails after they've switched to another athlete, the screen shows: A,
+   'Something you submitted for the athlete you were on before did not go
+   through. Go back to them and check.' (recommended, also by ChatGPT); B, your
+   own wording; C, nothing." **A.** The same note applies: written before the
+   approval, approved after.
+
+### 2. The visual lane is his and the lane's; overwatch lands what they build
+
+Overwatch had set an order of work for the visual lane, held its Drill Cabinet
+room pending an answer on PR #941, and put two visual questions to him. Jason:
+*"Ok member back that the visual was me and it that your job was just to get
+what we build into the app"*, and then *"Correct your extra comments are just
+reverting us back to previous decisions"*.
+
+So: what the visual lane builds, in what order and how it is split is between
+him and that lane. Overwatch's part is to get its PRs into the app: CI, the
+reviewer's findings relayed without additions of its own, merge, staging
+deploy, and production when he approves. Where a review cites an older visual
+decision against something he has since changed, overwatch brings it to him as
+a conflict and does not relay it to the lane as a requirement. The order of
+work, the hold and the two questions were withdrawn the same hour.
+
+### 3. Plates
+
+- **The two plates in PR #1064 accepted.** He was shown the exact committed
+  bytes of `plate-01-office-02.jpg` and `plate-03-clinic-02.jpg` and asked for
+  "plates ok" as item 1 of two things then waiting on him (item 2 was moving
+  one decision record to `main` ahead of PR #1036). Jason, whole message:
+  *"Yes to 1 and 2"*. Before that he had written *"Grok original 15  works well
+  too if you remove the extras"*, which overwatch did not treat as acceptance
+  of those two files.
+- **He names the plates that do not work; he does not approve each by name.**
+  Jason: *"I'll identify one that dont work in the visual lane not approve by
+  name"*. In the visual lane's thread, as relayed (REPORTED): *"Im reviewing we
+  will do the opposite ill tell you wich ones dont work 90 is alot to approve
+  by name everything looks good"*. ChatGPT's review of PR #1068 accepted this
+  as a valid human review under the reference lock, provided the look covers
+  the file that ships.
+- **Open with him in the visual lane, not decided here:** Grok's output is not
+  in the colour format the plate contract requires, so every Grok plate that
+  passes the byte gate has been resized and re-encoded locally, while the
+  delivery rule says a plate is committed as received. Which rule gives way is
+  his; the lane has put it to him.
+- Relayed by the visual lane from its thread (REPORTED), on why its plates go
+  into existing rooms and not new ones: *"Ok let's get them homes and get them
+  in the app"*, then *"Drift check we talked about doors allowing variety of
+  each room"*.
+
+### 4. Two answers in one message, and one more
+
+Two questions were open, each with a recommendation. Jason, whole message:
+*"Go with both recommendations"*.
+
+1. **Observation ids on a decision outcome may name either kind.** Asked: 'On
+   the coach's "decision outcome" form, the "Observation IDs" box may
+   reference: A, formula observations only (the app's computed metrics); B,
+   coach observations only (notes a coach wrote); C, either (recommended, and
+   what's built).' **C**, as long as each id belongs to the decision's athlete
+   and organization. Built by PR #1065.
+2. **Release 3, start now.** Asked whether to release what was on `main`
+   (plate variants, the humour registers, the deleted-login refusals): A, stage
+   it and start (recommended); B, wait for the phone-apostrophe fix and the
+   coach-screen fixes. **A.** Section 6 records what happened.
+
+Earlier the same afternoon, on whether an admin may create a new login for an
+athlete record that has been withdrawn (A, allowed, as production behaves
+today, recommended for now; B, refused), Jason: *"yes to thw question"*.
+Overwatch read that as A (INFERRED); the code already behaves that way and no
+work followed.
+
+### 5. Six plain questions, one answer
+
+He asked for the open questions plainly: *"Ask me the questions  plainly"*. Six
+were put, each with overwatch's pick marked. Jason, whole message: *"Go off
+recommendation"*.
+
+1. **Release 3 later, not now.** The pick: cancel it, merge the finished PRs
+   held behind it, and do one bigger release when he has time to look.
+2. **Odd apostrophes in "ko'd".** A general knockout question typed with a
+   normal apostrophe already gets a model answer and no flag to a human; typed
+   with one of eleven rare look-alike characters it got a stock line and a
+   flag. The phone-apostrophe fix (PR #1049) makes the rare ones behave like
+   the normal one. The pick: accept that, stated and pinned by tests.
+3. **A first-hand knockout report with no "I" or "my" gets no human review
+   today**, in every spelling, because the classifier reads it as a general
+   question. The pick: fix it in PR #1036, as a named requirement of that
+   work.
+4. **When the app cannot tell whether a coach's write was saved**, the screen
+   says: "The server did not confirm this. It may or may not have gone
+   through: check before sending it again."
+5. **A lapsed medical clearance can still read "cleared" on the coach's
+   screen** (REPORTED by Lane H's reviewer; not checked by overwatch). The
+   pick: start a lane for it. It starts when he clicks its task chip.
+6. **Dependency-update PRs opened by GitHub's Dependabot** (#1069 to #1073):
+   overwatch checks them, sends them to ChatGPT and merges what it clears.
+
+### 6. Release 3: staged, then cancelled
+
+On his "Go with both recommendations", overwatch deployed staging at
+`2ace4c671c06969f4246ae8401321446b69695ee` (`deploy-staging` run 36918896986,
+digest `sha256:d10080b4808a8f1bab078d5a6bb4e553f45c17a53c230cbc8011313fc4d47b2b`
+from that run's artifact) and dispatched the production migration
+`one-percent-nomination-athlete-cascade` (`apply-migrations` run 36918902244),
+which waited for his approval. Merges were frozen. Neither his approval nor his
+signed-in look on staging came; five reviewed PRs queued behind the freeze. On
+his "Go off recommendation" (section 5 item 1) overwatch requested cancellation
+of run 36918902244 and lifted the freeze. Nothing was deployed to production
+and no production migration ran. Production remains release 2.
+
+### 7. Writes that had no words of his at the time
+
+Each was reported to him when found; ChatGPT's reviews classed them. Later
+approvals do not authorize them backwards.
+
+- A re-run of a CANCELLED CI job on PR #1061 (run 36903135578): his
+  authorization covers re-running failed jobs.
+- Two plate image copies written to `Documents\PPBF-overwatch\plates-1064`, and
+  the relay notes written under `Documents\PPBF-overwatch\lane-inbox` by
+  overwatch and by lanes, before his working-files answer (section 1 item 1).
+- The permission mode of the Lane H thread, changed with Lane Q's when his
+  words named only Q (OD-2026-10-01-002 section 4).
+- In PR #1063, the commits adding "Check again" and the previous-athlete
+  failure sentence, before section 1 items 2 and 3.
+
+### 8. A fact he stated (REPORTED by Lane L2)
+
+In the Lane L2 thread, as relayed: *"dont make tghings up the app has never
+been live"*. ChatGPT's review of PR #1048 did not accept that as proof that no
+retention purge ever ran on these databases and asked for a read-only count.
+Staging, read by overwatch from the run log: "Retention purge events: 0"
+(`check-database`, `deletion-preflight`, run 36922408382). The production run
+of the same check (36922416115) was waiting on his approval when written.
+
+---
+
 ## OD-2026-10-01-002 -- His later answers of 2026-10-01: what "pair" means; records and read-only checks and staging migrations without asking; the hold screens; the parent password starts; the Lane S rulings confirmed; the cross-athlete draft bug
 
 **Provenance: PRIMARY** where Jason's words were typed in the overwatch thread
