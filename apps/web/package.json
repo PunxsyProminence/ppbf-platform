@@ -39,6 +39,7 @@
     "pilot:check-video-readiness": "node scripts/pilot-check-video-readiness.mjs",
     "pilot:check-cue-source-provenance": "node scripts/pilot-check-cue-source-provenance.mjs",
     "pilot:check-reference-content": "node scripts/pilot-check-reference-content.mjs",
+    "pilot:check-calibration-adjudication-ties": "node scripts/pilot-check-calibration-adjudication-ties.mjs",
     "pilot:apply-shadow-runtime": "node scripts/pilot-apply-shadow-runtime-migration.mjs",
     "pilot:apply-research-triage-view": "node scripts/pilot-apply-research-triage-view-migration.mjs",
     "pilot:apply-magic-link": "node scripts/pilot-apply-magic-link-migration.mjs",
@@ -288,6 +289,7 @@
     "pilot:apply-calibration-projects": "node scripts/pilot-apply-calibration-projects-migration.mjs",
     "pilot:apply-calibration-annotations": "node scripts/pilot-apply-calibration-annotations-migration.mjs",
     "pilot:apply-calibration-adjudication": "node scripts/pilot-apply-calibration-adjudication-migration.mjs",
+    "pilot:apply-calibration-adjudication-revisions": "node scripts/pilot-apply-calibration-adjudication-revisions-migration.mjs",
     "pilot:apply-session-scripts-discipline-fk": "node scripts/pilot-apply-session-scripts-discipline-fk-migration.mjs",
     "pilot:apply-drill-library-discipline-fk": "node scripts/pilot-apply-drill-library-discipline-fk-migration.mjs",
     "pilot:apply-drill-library-check-drop": "node scripts/pilot-apply-drill-library-check-drop-migration.mjs",
@@ -397,12 +399,13 @@
     "test:migrations:content-import-drills": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportDrills.pg.test.ts --testTimeout=300000",
     "test:migrations:content-import-templates-scripts": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportTemplatesScripts.pg.test.ts --testTimeout=300000",
     "test:migrations:content-import-upload": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportUpload.pg.test.ts --testTimeout=300000",
-    "test:migrations:seed-created-by-role": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/seedCreatedByRole.pg.test.ts --testTimeout=300000"
+    "test:migrations:seed-created-by-role": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/seedCreatedByRole.pg.test.ts --testTimeout=300000",
+    "test:migrations:decision-outcome-observation-ids": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowDecisionOutcomes.pg.test.ts --testTimeout=300000"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",
     "googleapis": "^176.0.0",
-    "jose": "^6.2.8",
+    "jose": "^6.2.12",
     "next": "16.3.2",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.19.1",
