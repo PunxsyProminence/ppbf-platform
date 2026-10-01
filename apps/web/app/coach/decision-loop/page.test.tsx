@@ -1962,6 +1962,46 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     expectNothingOfAthleteA();
   });
 
+  test('the not-confirmed line is not erased by ANOTHER write that was already out and then confirms', async () => {
+    // Accept and Flag Near-Miss both in flight. Accept comes back unconfirmed;
+    // a moment later the near-miss confirms and re-reads the athlete. The
+    // line about Accept has to still be there.
+    const acceptHeld = heldResponse();
+    const nearMissHeld = heldResponse();
+    installSwitchFetch({
+      post: (url) => (url.includes('/recommendations/decide') ? acceptHeld.promise : nearMissHeld.promise),
+    });
+    await openAthleteA();
+    type('Description', 'near miss for A');
+    fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+
+    acceptHeld.release(unreadable200());
+    expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
+
+    nearMissHeld.release(ACK);
+    await waitFor(() => expect(field<HTMLTextAreaElement>('Description').value).toBe(''));
+    await settle();
+
+    expect(screen.getByText(NOT_CONFIRMED)).toBeTruthy();
+  });
+
+  test('the not-confirmed line goes when a write started AFTER it is confirmed', async () => {
+    let confirming = false;
+    installSwitchFetch({ post: (url, init) => (confirming ? acknowledge(url, init) : unreadable200()) });
+    await openAthleteA();
+    type('Message', A_TEXT);
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+    expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
+
+    // The coach checks, and sends again; this time the server answers.
+    confirming = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Family' }));
+
+    await screen.findByText('Sent to the family.');
+    expect(screen.queryByText(NOT_CONFIRMED)).toBeNull();
+  });
+
   test('a not-confirmed answer for the previous athlete, arriving after the switch: the neutral line under the new one, and the draft still there on return', async () => {
     const held = heldResponse();
     installSwitchFetch({ post: () => held.promise });

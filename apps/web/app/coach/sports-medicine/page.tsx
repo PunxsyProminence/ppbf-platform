@@ -221,7 +221,21 @@ export default function SportsMedicinePage() {
     // no holds -- and an EMPTY array is the only array that is. `[null]`,
     // `[false]` or `[{}]` has an entry, and an entry that is not a hold is an
     // unread hold.
-    if (!payload || payload.ok !== true || !Array.isArray(payload.holds) || !payload.holds.every(isActiveHold)) {
+    // And an entry has to be THIS athlete's, and active: the read asked for
+    // exactly that, so a row that is someone else's or already lifted means
+    // the answer is not the answer to this question. Painting it would put
+    // another child's hold sentence on this row.
+    const isThisAthletesActiveHold = (entry: unknown): boolean => {
+      if (!isActiveHold(entry)) return false;
+      const hold = entry as ActiveHold & { status?: unknown; athlete_id?: unknown };
+      return hold.athlete_id === athleteId && hold.status === 'active';
+    };
+    if (
+      !payload
+      || payload.ok !== true
+      || !Array.isArray(payload.holds)
+      || !payload.holds.every(isThisAthletesActiveHold)
+    ) {
       throw new Error('Unable to read this athlete’s holds.');
     }
     return (payload.holds as ActiveHold[])[0] ?? null;
@@ -431,14 +445,24 @@ export default function SportsMedicinePage() {
         lift_condition_text: form.lift_condition_text.trim(),
         reason_text: form.reason_text.trim(),
       });
-      await refreshHold(
+      const confirmed = isConfirmedPlace(result, athleteId);
+      const settled = await refreshHold(
         athleteId,
-        isConfirmedPlace(result, athleteId)
-          ? { hold: result.hold, hold_read: 'loaded' }
-          : { hold: null, hold_read: 'unavailable' },
+        confirmed ? { hold: result.hold, hold_read: 'loaded' } : { hold: null, hold_read: 'unavailable' },
         true,
       );
       setPlacing((current) => (current?.athleteId === athleteId ? null : current));
+      // A 2xx that was not this placement's confirmation, and no hold found by
+      // the read either: the coach pressed "Place hold" and the row shows no
+      // hold. Say why, on the row, instead of leaving an unknown row and an
+      // emptied form with no explanation.
+      if (!confirmed && !settled?.hold) {
+        setRefusalFor(athleteId, {
+          athleteId,
+          stamp: 'Hold Not Placed',
+          message: 'The gym’s server did not confirm this hold. Check again before relying on it; if no hold shows, place it again.',
+        });
+      }
     } catch (error) {
       setRefusalFor(athleteId, {
         athleteId,

@@ -344,6 +344,23 @@ export default function DecisionLoopReviewPage() {
      incident report that is the only trace that it failed. It stays until
      the coach changes the selection. */
   const [previousAthleteNotice, setPreviousAthleteNotice] = useState('');
+  /* THE NOT-CONFIRMED LINE OUTLIVES READS. "The server did not confirm this
+     ... check before sending it again" is the one thing standing between a
+     coach and a second send, and every read used to blank the error line: a
+     different write confirming a moment later (its re-read) erased it within
+     milliseconds. A read no longer touches that line. It goes when the coach
+     changes the selection, when another message replaces it, or when a write
+     that was STARTED AFTER it appeared is confirmed -- which is what
+     `beginWrite` hands each handler the means to say. */
+  const unconfirmedSeqRef = useRef(0);
+  function beginWrite(): () => void {
+    const startedAt = unconfirmedSeqRef.current;
+    return () => {
+      if (startedAt === unconfirmedSeqRef.current) {
+        setErrorMessage((shown) => (shown === WRITE_NOT_CONFIRMED ? '' : shown));
+      }
+    };
+  }
 
   /* DRAFTS BELONG TO AN ATHLETE. Every box and selector below used to be its
      own piece of page state, and the page sends whatever is in them with the
@@ -485,7 +502,7 @@ export default function DecisionLoopReviewPage() {
       return;
     }
     setLoading(true);
-    if (!keepErrorLine) setErrorMessage('');
+    if (!keepErrorLine) setErrorMessage((shown) => (shown === WRITE_NOT_CONFIRMED ? shown : ''));
     try {
       const [statusRes, recsRes, decisionsRes, nearMissesRes] = await Promise.all([
         fetch(`${apiBase()}/api/pilot/shadow/medical-status?athleteId=${encodeURIComponent(targetAthleteId)}`, { credentials: 'include' }),
@@ -543,9 +560,8 @@ export default function DecisionLoopReviewPage() {
       // by the news that the check itself failed. The four panels already say
       // they could not be read; the line the coach must not lose is the one
       // about the write.
-      if (!keepErrorLine) {
-        setErrorMessage(error instanceof Error ? error.message : 'Failed to load decision loop data.');
-      }
+      const readFailure = error instanceof Error ? error.message : 'Failed to load decision loop data.';
+      setErrorMessage((shown) => (keepErrorLine || shown === WRITE_NOT_CONFIRMED ? shown : readFailure));
     } finally {
       if (seq === readSeqRef.current) setLoading(false);
     }
@@ -625,12 +641,16 @@ export default function DecisionLoopReviewPage() {
     // not confirmed may have landed: read the athlete again, keeping this
     // line up, so the status, decisions and near-misses on screen are what
     // the server holds now.
-    if (message === WRITE_NOT_CONFIRMED) void refreshAll(forAthleteId, true);
+    if (message === WRITE_NOT_CONFIRMED) {
+      unconfirmedSeqRef.current += 1;
+      void refreshAll(forAthleteId, true);
+    }
   }
 
   async function handleSetMedicalStatus(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!athleteId) return;
+    const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/medical-status`, {
         method: 'POST',
@@ -651,6 +671,7 @@ export default function DecisionLoopReviewPage() {
       // it was set is one click from being set again.
       clearSentDrafts(athleteId, { medicalSourceRef, medicalStatusDraft });
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       await refreshAll(athleteId);
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to set medical status.');
@@ -658,6 +679,7 @@ export default function DecisionLoopReviewPage() {
   }
 
   async function handleDecideRecommendation(recommendationId: string, decision: 'accepted' | 'rejected') {
+    const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/recommendations/decide`, {
         method: 'POST',
@@ -676,6 +698,7 @@ export default function DecisionLoopReviewPage() {
         );
       });
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       await refreshAll(athleteId);
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to record decision on recommendation.');
@@ -685,6 +708,7 @@ export default function DecisionLoopReviewPage() {
   async function handleRecordDecision(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!athleteId || !decisionText.trim() || !decisionExpectedOutcome.trim()) return;
+    const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/decisions`, {
         method: 'POST',
@@ -711,6 +735,7 @@ export default function DecisionLoopReviewPage() {
       });
       clearSentDrafts(athleteId, { decisionText, decisionExpectedOutcome }, ['decisionRecommendationId']);
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       await refreshAll(athleteId);
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to record decision.');
@@ -720,6 +745,7 @@ export default function DecisionLoopReviewPage() {
   async function handleFlagNearMiss(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!athleteId || !nearMissDescription.trim()) return;
+    const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/near-misses`, {
         method: 'POST',
@@ -739,6 +765,7 @@ export default function DecisionLoopReviewPage() {
       });
       clearSentDrafts(athleteId, { nearMissDescription, nearMissSeverity }, ['nearMissDecisionId']);
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       await refreshAll(athleteId);
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to flag near-miss.');
@@ -755,6 +782,7 @@ export default function DecisionLoopReviewPage() {
     if (!athleteId || !incidentDescription.trim() || incidentSubmitting) return;
     setIncidentFiledMessage('');
     markSubmitting('incident', athleteId, true);
+    const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/incidents`, {
         method: 'POST',
@@ -774,6 +802,7 @@ export default function DecisionLoopReviewPage() {
       });
       clearSentDrafts(athleteId, { incidentDescription, incidentSeverity, incidentOccurredAt });
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       setIncidentFiledMessage('Incident filed -- it is now in the escalation queue.');
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to file incident report.');
@@ -796,6 +825,7 @@ export default function DecisionLoopReviewPage() {
     if (!athleteId || !behaviorNoteText.trim() || behaviorNoteSubmitting) return;
     setBehaviorNoteMessage('');
     markSubmitting('behaviorNote', athleteId, true);
+    const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/intake/domain-upsert`, {
         method: 'POST',
@@ -814,6 +844,7 @@ export default function DecisionLoopReviewPage() {
       );
       clearSentDrafts(athleteId, { behaviorNoteText });
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       setBehaviorNoteMessage('Note logged.');
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to log the note.');
@@ -835,6 +866,7 @@ export default function DecisionLoopReviewPage() {
     if (!athleteId || !messageHomeText.trim() || messageHomeSubmitting) return;
     setMessageHomeMessage('');
     markSubmitting('messageHome', athleteId, true);
+    const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/intake/domain-upsert`, {
         method: 'POST',
@@ -853,6 +885,7 @@ export default function DecisionLoopReviewPage() {
       );
       clearSentDrafts(athleteId, { messageHomeText });
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       setMessageHomeMessage('Sent to the family.');
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to send the message.');
@@ -887,6 +920,7 @@ export default function DecisionLoopReviewPage() {
   async function handleEvaluateOutcome(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!outcomeDecisionId) return;
+    const writeConfirmed = beginWrite();
     try {
       const observationIds = outcomeObservationIds
         .split(',')
@@ -911,6 +945,7 @@ export default function DecisionLoopReviewPage() {
       });
       clearSentDrafts(athleteId, { outcomeObservationIds, outcomeNotes });
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       await handleLoadOutcomes(outcomeDecisionId);
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to evaluate decision outcome.');
