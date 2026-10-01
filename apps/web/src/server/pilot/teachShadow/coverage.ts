@@ -1,3 +1,4 @@
+import { currentAdjudicationPredicate } from '@/src/server/pilot/calibration/adjudication';
 import { query } from '@/src/server/pilot/db';
 import {
   BOXING_ONTOLOGY_VERSION,
@@ -247,9 +248,13 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
             having count(*) >= 2
           ) c)
            as clips_with_two_submitted_sets,
+         -- Current answers only. A correction is a later revision of the same
+         -- disagreement, not a second thing settled, so a superseded row is
+         -- not counted (OD-2026-08-29-005).
          (select count(*)::int from pilot.calibration_adjudications a
             ${TEACHING_SOURCE_JOIN('a')}
-           where a.organization_id = $1 and a.ontology_version = $2)
+           where a.organization_id = $1 and a.ontology_version = $2
+             and ${currentAdjudicationPredicate('a')})
            as adjudications,
          -- Gold carries its own video_session_id as provenance, so it needs no
          -- hop through the clip.
