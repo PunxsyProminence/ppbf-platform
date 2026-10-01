@@ -1,4 +1,5 @@
 import { query, withTransaction } from './db';
+import { ValidationError } from './errors';
 import { writeShadowAuditEntry } from './shadowAuditEntries';
 
 export type ShadowDecisionMatchState = 'match' | 'partial' | 'miss' | 'confounded';
@@ -13,6 +14,15 @@ export interface ShadowDecisionOutcomeRow {
   evaluated_by_account_id: string;
   evaluated_at: string;
 }
+
+export const MAX_OUTCOME_OBSERVATION_IDS = 50;
+
+// ONE refusal for every way an observation id can be wrong -- it does not
+// exist, it belongs to another organization, it belongs to another athlete,
+// or there are too many of them. Distinguishing those would turn this write
+// into a lookup: a caller could learn that a foreign id exists by reading
+// which refusal came back.
+const OBSERVATION_IDS_REFUSAL = 'Decision outcome observation ids are invalid.';
 
 // Closes the loop: a human reviewer compares a decision's expected_outcome
 // text against what actually happened and records the match. This is
@@ -29,13 +39,43 @@ export async function evaluateDecisionOutcome(input: {
   evaluatedByRole: string;
 }): Promise<ShadowDecisionOutcomeRow> {
   return withTransaction(async (client) => {
-    const decision = await client.query<{ decision_id: string }>(
-      `select decision_id from pilot.shadow_decisions
+    const decision = await client.query<{ decision_id: string; athlete_id: string }>(
+      `select decision_id, athlete_id from pilot.shadow_decisions
        where organization_id = $1 and decision_id = $2`,
       [input.organizationId, input.decisionId],
     );
     if (decision.rows.length === 0) {
       throw new Error('Decision not found in this organization scope.');
+    }
+
+    // observation_ids is an untyped text[] -- no foreign key can cover an
+    // array -- so this is the only place a foreign id can be stopped. The
+    // column has never said which table it holds and the form is free text,
+    // so an id is accepted from EITHER observation table, but only when it is
+    // in the decision's organization AND about the decision's athlete. A
+    // formula observation with no athlete (athlete_id null) is not about this
+    // athlete and is refused. Checked on the same client as the insert so the
+    // check and the write share one transaction.
+    const distinctIds = [...new Set(input.observationIds)];
+    if (distinctIds.length > MAX_OUTCOME_OBSERVATION_IDS) {
+      throw new ValidationError(OBSERVATION_IDS_REFUSAL);
+    }
+    if (distinctIds.length > 0) {
+      const matched = await client.query<{ matched: number }>(
+        `select count(*)::int as matched from (
+           select observation_id as id
+           from pilot.shadow_formula_observations
+           where organization_id = $1 and athlete_id = $2 and observation_id = any($3::text[])
+           union
+           select note_id::text as id
+           from pilot.coach_observations
+           where organization_id = $1 and athlete_id = $2 and note_id::text = any($3::text[])
+         ) owned`,
+        [input.organizationId, decision.rows[0].athlete_id, distinctIds],
+      );
+      if (matched.rows[0]?.matched !== distinctIds.length) {
+        throw new ValidationError(OBSERVATION_IDS_REFUSAL);
+      }
     }
 
     const result = await client.query<ShadowDecisionOutcomeRow>(
