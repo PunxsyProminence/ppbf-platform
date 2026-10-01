@@ -1012,7 +1012,7 @@ describe('the door in front of this route', () => {
 
 /* OD-2026-08-29-005 translated the ONE collision it chose to allow.
  *
- * The decision assigns a revision per pair with no row lock, so two
+ * The decision assigns a revision per disagreement with no row lock, so two
  * administrators deciding at once is an expected outcome, not a fault. What the
  * ruling bought is the explanation: the loser is told somebody answered while
  * they were deciding and is sent to read it. The ruling says a lane
@@ -1029,7 +1029,7 @@ describe('two administrators deciding the same disagreement at once', () => {
     mockPrincipal.mockResolvedValue(ADMIN);
     bothSubmitted();
     mockRecord.mockRejectedValue(
-      duplicateKeyOn('pilot_calibration_adjudications_pair_revision_uq'),
+      duplicateKeyOn('pilot_calibration_adjudications_decision_revision_uq'),
     );
 
     const response = await POST(post(DECISION));
@@ -1045,7 +1045,7 @@ describe('two administrators deciding the same disagreement at once', () => {
     // the whole serialised body, because a leak could arrive in any field.
     const serialised = JSON.stringify(body);
     expect(serialised).not.toContain('duplicate key');
-    expect(serialised).not.toContain('pilot_calibration_adjudications_pair_revision_uq');
+    expect(serialised).not.toContain('pilot_calibration_adjudications_decision_revision_uq');
     expect(serialised).not.toContain('23505');
 
     // A refused write is not an event. An audit row here would record a
@@ -1074,7 +1074,7 @@ describe('two administrators deciding the same disagreement at once', () => {
   test('the right constraint under another SQLSTATE is not translated either', async () => {
     mockPrincipal.mockResolvedValue(ADMIN);
     bothSubmitted();
-    const other = duplicateKeyOn('pilot_calibration_adjudications_pair_revision_uq');
+    const other = duplicateKeyOn('pilot_calibration_adjudications_decision_revision_uq');
     other.code = '23503';
     mockRecord.mockRejectedValue(other);
 

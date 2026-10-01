@@ -55,34 +55,38 @@ function resolveSslConfig() {
 }
 
 // Every clause can go false against a database where this migration has not run.
-// Asserted BY NAME out of pg_constraint and information_schema rather than by
-// deparsing a definition -- Postgres rebuilds a CHECK from the parsed tree
-// instead of echoing its source, which blocked a real staging dispatch once
-// (issue #488).
 //
-// THE UNIQUE CONSTRAINT IS THE ONE THAT MATTERS MOST. Without a lock it is the
-// only thing standing between two concurrent administrators and two rows both
-// claiming to be revision N of the same pair. A table carrying the column and
-// the CHECK but not this constraint looks migrated and arbitrates nothing, and
-// the route's 409 translation would never fire because no 23505 would be raised.
+// THE UNIQUE INDEX IS THE ONE THAT MATTERS MOST. Without a lock it is the only
+// thing standing between two concurrent administrators and two rows both
+// claiming to be revision N of the same disagreement. A table carrying the
+// column and the CHECK but not this index looks migrated and arbitrates
+// nothing, and the route's 409 translation would never fire because no 23505
+// would be raised.
+//
+// IT IS ASSERTED BY SHAPE, NOT ONLY BY NAME. The migration creates it with
+// `if not exists`, which goes by name alone, so an index of that name keyed on
+// something else -- the two annotation sets without the source events, say,
+// which numbers unrelated decisions on a clip as corrections of each other --
+// would be left in place and would pass a name check. The clauses below require
+// it to be unique, valid, not partial, and to cover both coalesced source
+// events and the revision. pg_get_indexdef deparses those expressions stably
+// (`COALESCE(source_event_id_a, ''::text)`); nothing here matches a CHECK body
+// (issue #488).
 //
 // revision_required_and_undefaulted carries two things at once. With a DEFAULT,
 // an insert that omitted the revision would land a plausible row rather than
-// failing, and the value it landed would be wrong for every pair that already
-// had revisions. And `is_nullable = 'NO'` is ALSO the backfill assertion:
-// PostgreSQL refuses `set not null` on a column that still contains a null, so
-// the constraint existing is proof the backfill completed. That is strictly
-// stronger than scanning the table, because the database enforced it at ALTER
-// time rather than at the moment somebody happened to look.
+// failing, and the value it landed would be wrong for every disagreement that
+// already had an answer. And `is_nullable = 'NO'` is ALSO the backfill
+// assertion: PostgreSQL refuses `set not null` on a column that still contains
+// a null, so the constraint existing is proof the backfill completed.
 //
 // EVERY CLAUSE READS A CATALOG, NEVER THE TABLE'S DATA, and that is load-bearing
 // rather than stylistic. A clause like `where revision is null` cannot report
 // false on an unmigrated database: PostgreSQL parses the whole statement before
 // running any of it, so the reference to a column that does not exist raises
 // `column "revision" does not exist` and the gate throws that instead of
-// CALIBRATION_ADJUDICATION_REVISIONS_NOT_READY. A readiness gate that errors
-// where it should report "not ready" tells the operator the wrong thing about
-// the wrong problem. Caught by
+// CALIBRATION_ADJUDICATION_REVISIONS_NOT_READY. to_regclass() rather than a
+// cast, for the same reason. Caught by
 // 'REFUSES a database where the revisions migration never ran'.
 const READINESS_QUERY = `
   select
@@ -91,6 +95,7 @@ const READINESS_QUERY = `
       where table_schema = 'pilot'
         and table_name = 'calibration_adjudications'
         and column_name = 'revision'
+        and data_type = 'integer'
     ) as revision_column_ready,
     exists (
       select 1 from information_schema.columns
@@ -106,10 +111,17 @@ const READINESS_QUERY = `
         and conname = 'pilot_calibration_adjudications_revision_positive'
     ) as revision_positive_ready,
     exists (
-      select 1 from pg_constraint
-      where conrelid = to_regclass('pilot.calibration_adjudications')
-        and conname = 'pilot_calibration_adjudications_pair_revision_uq'
-    ) as pair_revision_arbiter_ready
+      select 1
+      from pg_index i
+      join pg_class c on c.oid = i.indexrelid
+      where i.indrelid = to_regclass('pilot.calibration_adjudications')
+        and c.relname = 'pilot_calibration_adjudications_decision_revision_uq'
+        and i.indisunique
+        and i.indisvalid
+        and i.indpred is null
+        and pg_get_indexdef(i.indexrelid) like
+          '%(organization_id, calibration_clip_id, annotation_set_id_a, annotation_set_id_b, COALESCE(source_event_id_a, %), COALESCE(source_event_id_b, %), revision)'
+    ) as decision_revision_arbiter_ready
 `;
 
 function assertReadiness(row) {

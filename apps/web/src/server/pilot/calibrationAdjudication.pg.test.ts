@@ -60,7 +60,7 @@ const REVISIONS_RUNNER_PATH = path.resolve(
   __dirname,
   '../../../scripts/pilot-apply-calibration-adjudication-revisions-migration.mjs',
 );
-const PAIR_REVISION_CONSTRAINT = 'pilot_calibration_adjudications_pair_revision_uq';
+const PAIR_REVISION_CONSTRAINT = 'pilot_calibration_adjudications_decision_revision_uq';
 
 const ORG_ID = 'org-adj';
 const OTHER_ORG_ID = 'org-adj-other';
@@ -763,13 +763,15 @@ describe('the shipped migration runner', () => {
 
 /* OD-2026-08-29-005. Supersession, and the race the decision left open on purpose.
  *
- * The decision assigns a revision per pair with NO row lock, so the unique
- * constraint is the only arbiter. Three things are worth proving against a real
- * database rather than reasoning about: that a second adjudication of the same
- * pair is RETAINED at the next revision rather than replacing anything, that a
- * duplicate revision is refused by the named constraint, and that the real
- * module, racing a real concurrent writer, loses with exactly the error shape
- * the route translates. */
+ * The decision assigns a revision per disagreement -- the pair of MARKS a
+ * decision names, inside the pair of readings -- with NO row lock, so the
+ * unique index is the only arbiter. Proved against a real database rather than
+ * reasoned about: that a second adjudication of the same disagreement is
+ * RETAINED at the next revision rather than replacing anything, that a
+ * duplicate revision is refused by the named index, that the real module,
+ * racing a real concurrent writer, loses with exactly the error shape the
+ * route translates, and that a DIFFERENT disagreement on the same clip is
+ * neither numbered as a correction nor made to collide. */
 describe('a later adjudication supersedes an earlier one without replacing it', () => {
   function decisionFor(staged: Awaited<ReturnType<typeof stagedDisagreement>>) {
     return {
@@ -883,7 +885,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
      *   module:  select max(revision) -> 0           (the rival's row is invisible)
      *   module:  insert revision 1    -> WAITS on the rival's index entry
      *   rival:   COMMIT
-     *   module:  23505 on pilot_calibration_adjudications_pair_revision_uq
+     *   module:  23505 on pilot_calibration_adjudications_decision_revision_uq
      *
      * The commit is released only once pg_stat_activity shows a backend
      * waiting on a lock, so the order above is observed, not hoped for. */
@@ -967,6 +969,123 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
       await rival.query('rollback').catch(() => {});
       await rival.end();
       await observer.end();
+    }
+  });
+
+  test('a different pair of marks on the same clip is its own disagreement and starts at 1', async () => {
+    /* A clip carries one row per disagreement, all sharing the clip and the
+     * two readings. Keyed on the readings alone, the second and third
+     * decisions below would be revisions 2 and 3 and would read as
+     * corrections of the first. The staged clip has one mark per reading, so
+     * the three disagreements it can carry are (A's mark, B's mark),
+     * (A's mark, nothing from B) and (nothing from A, B's mark). */
+    const staged = await stagedDisagreement(`ADJ-MARKS-${crypto.randomUUID().slice(0, 8)}`);
+
+    const both = await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_a',
+    });
+    const onlyA = await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      sourceEventIdB: null,
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_a',
+      missedEventVerdict: 'a_event_real',
+    });
+    const onlyB = await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      sourceEventIdA: null,
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_b',
+      missedEventVerdict: 'b_event_real',
+    });
+    expect([both, onlyA, onlyB].map((made) => made.adjudication.revision)).toEqual([1, 1, 1]);
+
+    // Correcting ONE of them advances that one and no other.
+    const corrected = await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      sourceEventIdB: null,
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'unresolvable',
+      missedEventVerdict: 'unresolvable',
+    });
+    expect(corrected.adjudication.revision).toBe(2);
+
+    const again = await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_b',
+    });
+    expect(again.adjudication.revision).toBe(2);
+  });
+
+  test('a decision about one lone mark collides with another about the same lone mark', async () => {
+    // The null side is why the arbiter is an index over coalesce(): a plain
+    // unique constraint treats NULLs as distinct and would let both rows land.
+    const staged = await stagedDisagreement(`ADJ-LONE-${crypto.randomUUID().slice(0, 8)}`);
+    await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      sourceEventIdB: null,
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_a',
+    });
+
+    const client = await freshClient();
+    try {
+      let raised: { code?: string; constraint?: string } | null = null;
+      try {
+        await client.query(
+          `insert into pilot.calibration_adjudications
+             (organization_id, adjudication_id, calibration_clip_id,
+              annotation_set_id_a, annotation_set_id_b,
+              source_event_id_a, source_event_id_b,
+              resolution_type, revision, adjudicator_account_id, ontology_version)
+           values ($1, $2, $3, $4, $5, $6, null, 'accept_a', 1, $7, $8)`,
+          [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
+            staged.eventA, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+        );
+      } catch (error) {
+        raised = error as { code?: string; constraint?: string };
+      }
+      expect(raised?.code).toBe('23505');
+      expect(raised?.constraint).toBe(PAIR_REVISION_CONSTRAINT);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a colleague settling a DIFFERENT disagreement on the clip does not block or refuse this one', async () => {
+    /* The false 409 a readings-only key would produce: the rival below holds
+     * an uncommitted revision 1 of another disagreement on the same clip. The
+     * module's write must complete while that transaction is still open --
+     * it neither waits on it nor collides with it. */
+    const staged = await stagedDisagreement(`ADJ-APART-${crypto.randomUUID().slice(0, 8)}`);
+    const rival = await freshClient();
+    try {
+      await rival.query('begin');
+      await rival.query(
+        `insert into pilot.calibration_adjudications
+           (organization_id, adjudication_id, calibration_clip_id,
+            annotation_set_id_a, annotation_set_id_b,
+            source_event_id_a, source_event_id_b,
+            resolution_type, revision, adjudicator_account_id, ontology_version)
+         values ($1, $2, $3, $4, $5, $6, null, 'accept_a', 1, $7, $8)`,
+        [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
+          staged.eventA, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+      );
+
+      const settled = await adjudication.recordAdjudication({
+        ...decisionFor(staged),
+        adjudicationId: crypto.randomUUID(),
+        resolutionType: 'accept_b',
+      });
+      expect(settled.adjudication.revision).toBe(1);
+
+      await rival.query('commit');
+    } finally {
+      await rival.query('rollback').catch(() => {});
+      await rival.end();
     }
   });
 
@@ -1084,9 +1203,11 @@ describe('the shipped revisions migration runner', () => {
        *
        * Raw SQL with the four tenancy foreign keys dropped, because the point
        * is the backfill and not the write path. Inserted deliberately out of
-       * chronological order; two rows of one pair share a timestamp so the
-       * adjudication_id tiebreak is exercised; a second pair and a second
-       * organization prove the numbering restarts per pair. */
+       * chronological order; two rows of one disagreement share a timestamp so
+       * the adjudication_id tiebreak is exercised; other marks inside the same
+       * two readings, a lone-mark disagreement decided twice, a second pair of
+       * readings and a second organization prove the numbering restarts per
+       * disagreement and that NULL sides group together. */
       for (const orgId of [ORG_ID, OTHER_ORG_ID]) {
         await client.query(
           `insert into pilot.organizations (organization_id, organization_name, status)
@@ -1107,45 +1228,54 @@ describe('the shipped revisions migration runner', () => {
            drop constraint pilot_calibration_adjudications_source_b_fk`,
       );
 
-      const existing = [
-        { org: ORG_ID, id: 'adj-late', b: 'set-b', at: '2026-03-03T00:00:00Z' },
-        { org: ORG_ID, id: 'adj-early', b: 'set-b', at: '2026-01-01T00:00:00Z' },
-        { org: ORG_ID, id: 'adj-tie-2', b: 'set-b', at: '2026-02-02T00:00:00Z' },
-        { org: ORG_ID, id: 'adj-tie-1', b: 'set-b', at: '2026-02-02T00:00:00Z' },
-        { org: ORG_ID, id: 'adj-other-pair', b: 'set-c', at: '2026-04-04T00:00:00Z' },
-        { org: OTHER_ORG_ID, id: 'adj-other-org', b: 'set-b', at: '2026-05-05T00:00:00Z' },
+      const existing: Array<{ org: string; id: string; b: string; ea: string | null; eb: string | null; at: string }> = [
+        { org: ORG_ID, id: 'adj-late', b: 'set-b', ea: 'evt-a', eb: 'evt-b', at: '2026-03-03T00:00:00Z' },
+        { org: ORG_ID, id: 'adj-early', b: 'set-b', ea: 'evt-a', eb: 'evt-b', at: '2026-01-01T00:00:00Z' },
+        { org: ORG_ID, id: 'adj-tie-2', b: 'set-b', ea: 'evt-a', eb: 'evt-b', at: '2026-02-02T00:00:00Z' },
+        { org: ORG_ID, id: 'adj-tie-1', b: 'set-b', ea: 'evt-a', eb: 'evt-b', at: '2026-02-02T00:00:00Z' },
+        // Other marks inside the SAME two readings: their own disagreement.
+        { org: ORG_ID, id: 'adj-other-marks', b: 'set-b', ea: 'evt-a2', eb: 'evt-b2', at: '2026-01-15T00:00:00Z' },
+        // One lone mark, decided twice: NULL sides must group together.
+        { org: ORG_ID, id: 'adj-lone-2', b: 'set-b', ea: 'evt-a', eb: null, at: '2026-02-20T00:00:00Z' },
+        { org: ORG_ID, id: 'adj-lone-1', b: 'set-b', ea: 'evt-a', eb: null, at: '2026-02-10T00:00:00Z' },
+        { org: ORG_ID, id: 'adj-other-pair', b: 'set-c', ea: 'evt-a', eb: 'evt-b', at: '2026-04-04T00:00:00Z' },
+        { org: OTHER_ORG_ID, id: 'adj-other-org', b: 'set-b', ea: 'evt-a', eb: 'evt-b', at: '2026-05-05T00:00:00Z' },
       ];
       for (const row of existing) {
         await client.query(
           `insert into pilot.calibration_adjudications
              (organization_id, adjudication_id, calibration_clip_id,
-              annotation_set_id_a, annotation_set_id_b, source_event_id_a,
+              annotation_set_id_a, annotation_set_id_b, source_event_id_a, source_event_id_b,
               resolution_type, adjudicator_account_id, adjudicated_at, ontology_version)
-           values ($1, $2, 'clip-backfill', 'set-a', $3, 'evt-a',
-                   'accept_a', $4, $5, 'v1')`,
-          [row.org, row.id, row.b, ADJUDICATOR, row.at],
+           values ($1, $2, 'clip-backfill', 'set-a', $3, $4, $5,
+                   'accept_a', $6, $7, 'v1')`,
+          [row.org, row.id, row.b, row.ea, row.eb, ADJUDICATOR, row.at],
         );
       }
 
       const read = async () => (await client.query<{ k: string }>(
-        `select organization_id || '/' || annotation_set_id_b || '/' || adjudication_id
-                || '=' || revision as k
+        `select organization_id || '/' || annotation_set_id_b || '/'
+                || source_event_id_a || '+' || coalesce(source_event_id_b, 'none') || '/'
+                || adjudication_id || '=' || revision as k
            from pilot.calibration_adjudications
-          order by organization_id, annotation_set_id_b, revision`,
-      )).rows.map((row) => row.k);
+          order by 1`,
+      )).rows.map((row) => row.k).sort();
 
       const migrationSql = await readMigration(REVISIONS_SQL);
       await applyMigrationTransaction(client, migrationSql);
 
       const numbered = await read();
       expect(numbered).toEqual([
-        `${ORG_ID}/set-b/adj-early=1`,
-        `${ORG_ID}/set-b/adj-tie-1=2`,
-        `${ORG_ID}/set-b/adj-tie-2=3`,
-        `${ORG_ID}/set-b/adj-late=4`,
-        `${ORG_ID}/set-c/adj-other-pair=1`,
-        `${OTHER_ORG_ID}/set-b/adj-other-org=1`,
-      ]);
+        `${ORG_ID}/set-b/evt-a+evt-b/adj-early=1`,
+        `${ORG_ID}/set-b/evt-a+evt-b/adj-tie-1=2`,
+        `${ORG_ID}/set-b/evt-a+evt-b/adj-tie-2=3`,
+        `${ORG_ID}/set-b/evt-a+evt-b/adj-late=4`,
+        `${ORG_ID}/set-b/evt-a2+evt-b2/adj-other-marks=1`,
+        `${ORG_ID}/set-b/evt-a+none/adj-lone-1=1`,
+        `${ORG_ID}/set-b/evt-a+none/adj-lone-2=2`,
+        `${ORG_ID}/set-c/evt-a+evt-b/adj-other-pair=1`,
+        `${OTHER_ORG_ID}/set-b/evt-a+evt-b/adj-other-org=1`,
+      ].sort());
 
       // A row written after the migration, then a re-apply (every `all`
       // dispatch re-runs this file): nothing is renumbered.
@@ -1158,12 +1288,38 @@ describe('the shipped revisions migration runner', () => {
                  'accept_a', 5, $2, '2025-12-12T00:00:00Z', 'v1')`,
         [ORG_ID, ADJUDICATOR],
       );
+      await client.query(
+        `update pilot.calibration_adjudications set source_event_id_b = 'evt-b'
+          where adjudication_id = 'adj-after'`,
+      );
       await applyMigrationTransaction(client, migrationSql);
-      expect(await read()).toEqual([
-        ...numbered.slice(0, 4),
-        `${ORG_ID}/set-b/adj-after=5`,
-        ...numbered.slice(4),
-      ]);
+      expect(await read()).toEqual(
+        [...numbered, `${ORG_ID}/set-b/evt-a+evt-b/adj-after=5`].sort(),
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('REFUSES an arbiter of the right name keyed on the two readings alone', async () => {
+    /* `create unique index if not exists` goes by name. An index of this name
+     * that leaves the marks out -- the shape that numbers unrelated decisions
+     * on a clip as corrections of each other -- would be left in place by the
+     * migration, so the readiness query has to see the difference. */
+    const applyMigrationTransaction = await loadApply();
+    const client = await runnerDatabase('ppbf_test_calib_rev_shape');
+    try {
+      await client.query(await readMigration(ADJUDICATION_SQL));
+      await client.query(
+        `alter table pilot.calibration_adjudications add column revision integer;
+         create unique index ${PAIR_REVISION_CONSTRAINT}
+           on pilot.calibration_adjudications (
+             organization_id, calibration_clip_id,
+             annotation_set_id_a, annotation_set_id_b, revision)`,
+      );
+      await expect(
+        applyMigrationTransaction(client, await readMigration(REVISIONS_SQL)),
+      ).rejects.toThrow(/CALIBRATION_ADJUDICATION_REVISIONS_NOT_READY/);
     } finally {
       await client.end();
     }

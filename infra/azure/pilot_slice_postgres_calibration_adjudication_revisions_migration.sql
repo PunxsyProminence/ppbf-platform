@@ -6,32 +6,51 @@
 -- migration is how two environments end up believing different things about the
 -- same table.
 --
--- WHAT WAS MISSING. A pair could be adjudicated twice and nothing said which
--- answer stood. Ordering by adjudicated_at is not the same guarantee: two
--- adjudications can share a timestamp, and a timestamp is a clock reading rather
--- than a declaration that one decision replaces another. `revision` makes the
--- supersession explicit -- highest revision for a pair IS the current answer,
--- and every earlier revision is retained as the record of what was thought
--- before.
+-- WHAT WAS MISSING. One disagreement could be adjudicated twice and nothing
+-- said which answer stood. Ordering by adjudicated_at is not the same guarantee:
+-- two adjudications can share a timestamp, and a timestamp is a clock reading
+-- rather than a declaration that one decision replaces another. `revision`
+-- makes the supersession explicit -- the highest revision for a disagreement IS
+-- the current answer, and every earlier revision is retained as the record of
+-- what was thought before.
 --
--- THE PAIR IS THE ONE THE ROUTE ALREADY USES:
---   (organization_id, calibration_clip_id, annotation_set_id_a, annotation_set_id_b)
+-- THE PAIR IS THE PAIR OF MARKS A DECISION IS ABOUT:
+--   (organization_id, calibration_clip_id,
+--    annotation_set_id_a, annotation_set_id_b,
+--    source_event_id_a, source_event_id_b)
+-- A row of this table is ONE decision about ONE disagreement -- the two source
+-- events it names -- and a clip carries as many rows as it has disagreements,
+-- all sharing one clip and one pair of annotation sets. Scoping the revision to
+-- the two sets alone would number unrelated decisions 1..N on a clip, make the
+-- latest of them read as superseding the others, and tell an administrator
+-- settling one disagreement that somebody had corrected it when a colleague
+-- had settled a different one. (Owner, 2026-10-01, on being shown both
+-- readings of "pair": "go with recomendations" -- this one.)
+--
+-- EITHER SOURCE EVENT MAY BE NULL: an EVENT_MISSED decision has an event on one
+-- side only. Two such decisions about the same lone event ARE the same
+-- disagreement and must collide, which a plain unique constraint would not do
+-- (NULLs are distinct there). The arbiter is therefore a unique INDEX over
+-- coalesce(source_event_id, ''). '' cannot be a real event id on the route's
+-- path: it normalises '' to "no event on this side" before the write. NULLS
+-- NOT DISTINCT would say the same thing but needs PostgreSQL 15.
+--
 -- No unordered-pair rule is introduced. (A, B) and (B, A) remain distinct here,
 -- exactly as the existing source_a/source_b FKs and the two_sets CHECK already
 -- treat them -- A's event belongs to set A, and collapsing the orientation would
 -- attribute an observation to the wrong annotator.
 --
 -- NO ROW LOCK, BY DECISION. Two administrators may compute the same next
--- revision concurrently. Neither waits on the other, and the unique constraint
+-- revision concurrently. Neither waits on the other, and the unique index
 -- below is the arbiter: the second writer's insert fails with 23505 naming
--- pilot_calibration_adjudications_pair_revision_uq, and the route translates
--- exactly that into a 409 telling them to read the answer that landed while they
--- were deciding. A lock would serialise administrators behind each other for a
--- decision that takes minutes of human thought, and would still not tell the
--- loser that somebody else had answered.
+-- pilot_calibration_adjudications_decision_revision_uq, and the route
+-- translates exactly that into a 409 telling them to read the answer that
+-- landed while they were deciding. A lock would serialise administrators behind
+-- each other for a decision that takes minutes of human thought, and would
+-- still not tell the loser that somebody else had answered.
 --
--- THE CONSTRAINT NAME IS LOAD-BEARING. The route matches SQLSTATE 23505 AND
--- this exact name, so an unrelated duplicate-key error is never reported as a
+-- THE INDEX NAME IS LOAD-BEARING. The route matches SQLSTATE 23505 AND this
+-- exact name, so an unrelated duplicate-key error is never reported as a
 -- concurrent-correction conflict. Renaming it silently turns that translation
 -- back into a raw duplicate-key dump.
 --
@@ -40,9 +59,9 @@
 -- and what retention applies to superseded revisions. This migration only makes
 -- supersession expressible and the race detectable.
 --
--- NOT CAUGHT BY THIS CONSTRAINT: a decision made on a view that went stale. A
+-- NOT CAUGHT BY THIS INDEX: a decision made on a view that went stale. A
 -- second adjudication recorded after the first has committed is simply the
--- next revision. The constraint refuses two inserts that overlap, nothing more.
+-- next revision. The index refuses two inserts that overlap, nothing more.
 --
 -- SAFE ON A TABLE THAT ALREADY HOLDS ROWS. The column is added nullable,
 -- backfilled, and only then made NOT NULL and unique, all inside the runner's
@@ -70,7 +89,7 @@ alter table pilot.calibration_adjudications
   add column if not exists revision integer;
 
 -- ---------------------------------------------------------------------------
--- 2. Backfill, deterministically, per canonical pair in historical order.
+-- 2. Backfill, deterministically, per disagreement in historical order.
 --
 -- The table is NOT assumed to be empty. Whether this schema has been applied to
 -- a populated database is not knowable from here, and a backfill that only
@@ -81,7 +100,11 @@ alter table pilot.calibration_adjudications
 -- row receives matches the sequence the application has always displayed.
 -- adjudication_id breaks ties because adjudicated_at can repeat; without it two
 -- rows could receive the same revision and step 4 would then refuse to build
--- the constraint, which is the correct direction but a worse diagnosis.
+-- the index, which is the correct direction but a worse diagnosis.
+--
+-- PARTITION BY treats NULLs as equal, so two EVENT_MISSED decisions about the
+-- same lone event land in one partition -- the same grouping the index in
+-- step 4 enforces through coalesce.
 --
 -- Only rows with a null revision are touched, so re-running assigns nothing
 -- twice and cannot renumber a row the server has since written.
@@ -92,7 +115,8 @@ with ordered as (
     adjudication_id,
     row_number() over (
       partition by organization_id, calibration_clip_id,
-                   annotation_set_id_a, annotation_set_id_b
+                   annotation_set_id_a, annotation_set_id_b,
+                   source_event_id_a, source_event_id_b
       order by adjudicated_at asc, adjudication_id asc
     ) as computed_revision
   from pilot.calibration_adjudications
@@ -108,10 +132,10 @@ update pilot.calibration_adjudications as target
 -- ---------------------------------------------------------------------------
 -- 3. Required, and positive.
 --
--- No DEFAULT on purpose. The server computes the next revision for the pair it
--- is writing; a default would let an insert that forgot to supply one land a
--- plausible-looking row instead of failing, and the value it landed would be
--- wrong for every pair that already had revisions.
+-- No DEFAULT on purpose. The server computes the next revision for the
+-- disagreement it is writing; a default would let an insert that forgot to
+-- supply one land a plausible-looking row instead of failing, and the value it
+-- landed would be wrong for every disagreement that already had an answer.
 -- ---------------------------------------------------------------------------
 do $$
 begin
@@ -146,23 +170,16 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- 4. The arbiter. This is what makes the lock unnecessary.
+--
+-- An index rather than a table constraint because of the coalesce (see the
+-- header). `if not exists` goes by name; the runner's readiness query checks
+-- the SHAPE, so a same-named index of another shape fails the dispatch instead
+-- of passing as this one.
 -- ---------------------------------------------------------------------------
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint
-    where conrelid = to_regclass('pilot.calibration_adjudications')
-      and conname = 'pilot_calibration_adjudications_pair_revision_uq'
-  )
-  then
-    alter table pilot.calibration_adjudications
-      add constraint pilot_calibration_adjudications_pair_revision_uq
-      unique (organization_id, calibration_clip_id,
-              annotation_set_id_a, annotation_set_id_b, revision);
-  end if;
-end
-$$;
-
--- Reading the current answer for a pair is a max(revision) lookup, and the
--- unique constraint's own index serves it: its leading columns are exactly the
--- pair. No second index is added for that.
+create unique index if not exists pilot_calibration_adjudications_decision_revision_uq
+  on pilot.calibration_adjudications (
+    organization_id, calibration_clip_id,
+    annotation_set_id_a, annotation_set_id_b,
+    coalesce(source_event_id_a, ''), coalesce(source_event_id_b, ''),
+    revision
+  );

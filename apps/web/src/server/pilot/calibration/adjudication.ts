@@ -70,9 +70,10 @@ export interface AdjudicationRow {
   source_event_id_b: string | null;
   resolution_type: string;
   missed_event_verdict: string | null;
-  /** Which answer this is for its pair (OD-2026-08-29-005). The highest
-   * revision is the current one; earlier revisions are retained as the record
-   * of what was thought before. Assigned by the server, never by a caller. */
+  /** Which answer this is for its disagreement -- the pair of marks it names
+   * (OD-2026-08-29-005). The highest revision is the current one; earlier
+   * revisions are retained as the record of what was thought before. Assigned
+   * by the server, never by a caller. */
   revision: number;
   adjudicator_account_id: string;
   adjudicated_at: string;
@@ -101,15 +102,16 @@ const ADJUDICATION_COLUMNS = `
   adjudicator_account_id, adjudicated_at, ontology_version, notes, created_at
 `;
 
-/** The unique constraint that arbitrates two concurrent writers, named here
- * because the route matches it by name. OD-2026-08-29-005 chose no row lock,
- * so this constraint is the ONLY thing that stops two administrators landing
- * two rows that both claim to be the same revision of the same pair. The
- * route's 409 matches SQLSTATE 23505 together with this exact string, so an
- * unrelated duplicate key is never reported as a concurrent correction.
+/** The unique index that arbitrates two concurrent writers, named here because
+ * the route matches it by name (the pg driver reports a unique index's name in
+ * the error's `constraint` field). OD-2026-08-29-005 chose no row lock, so this
+ * index is the ONLY thing that stops two administrators landing two rows that
+ * both claim to be the same revision of the same disagreement. The route's 409
+ * matches SQLSTATE 23505 together with this exact string, so an unrelated
+ * duplicate key is never reported as a concurrent correction.
  * Declared in pilot_slice_postgres_calibration_adjudication_revisions_migration.sql. */
 export const ADJUDICATION_PAIR_REVISION_CONSTRAINT =
-  'pilot_calibration_adjudications_pair_revision_uq';
+  'pilot_calibration_adjudications_decision_revision_uq';
 
 /** What the administrator who lost that collision is told. The wording is
  * part of the owner's decision, not a nicety: it says what happened and what
@@ -233,12 +235,19 @@ export async function recordAdjudication(
   const annotationSetIdB = requireNonEmpty(input.annotationSetIdB, 'annotation_set_id_b');
 
   return withTransaction(async (client) => {
-    /* THE NEXT REVISION FOR THIS PAIR, DELIBERATELY WITHOUT A LOCK
+    /* THE NEXT REVISION FOR THIS DISAGREEMENT, DELIBERATELY WITHOUT A LOCK
      * (OD-2026-08-29-005).
+     *
+     * A disagreement is the pair of MARKS this decision names, inside the pair
+     * of readings: a clip carries one row per disagreement, so counting over
+     * the two readings alone would number unrelated decisions as corrections
+     * of each other. `is not distinct from` because either mark may be null
+     * (one annotator recorded nothing), and two decisions about the same lone
+     * mark are the same disagreement.
      *
      * No `for update`, no advisory lock, no serialisable retry. Two
      * administrators may read the same highest revision and both compute the
-     * same next one; the unique constraint named above refuses the second
+     * same next one; the unique index named above refuses the second
      * insert with 23505, and the route turns that into a 409 telling them to
      * read the answer that landed while they were deciding.
      *
@@ -250,16 +259,25 @@ export async function recordAdjudication(
      * WHAT THIS DOES NOT CATCH: a decision made on a view that went stale
      * minutes ago. A second adjudication recorded after the first has
      * committed simply becomes the next revision, whether or not its author
-     * had the first one on screen. The constraint only refuses two inserts
-     * that overlap. */
+     * had the first one on screen. The index only refuses two inserts that
+     * overlap. */
     const currentResult = await client.query<{ current_revision: number }>(
       `select coalesce(max(revision), 0)::int as current_revision
          from pilot.calibration_adjudications
         where organization_id = $1
           and calibration_clip_id = $2
           and annotation_set_id_a = $3
-          and annotation_set_id_b = $4`,
-      [input.organizationId, calibrationClipId, annotationSetIdA, annotationSetIdB],
+          and annotation_set_id_b = $4
+          and source_event_id_a is not distinct from $5
+          and source_event_id_b is not distinct from $6`,
+      [
+        input.organizationId,
+        calibrationClipId,
+        annotationSetIdA,
+        annotationSetIdB,
+        sourceEventIdA,
+        sourceEventIdB,
+      ],
     );
     const currentRevision = currentResult.rows[0]?.current_revision;
     if (typeof currentRevision !== 'number' || !Number.isInteger(currentRevision) || currentRevision < 0) {

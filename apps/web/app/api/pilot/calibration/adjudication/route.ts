@@ -39,9 +39,11 @@ export const runtime = 'nodejs';
 
 /* THE ONE COLLISION OD-2026-08-29-005 CHOSE TO EXPLAIN.
  *
- * That decision assigns a revision per pair with NO row lock, so two
- * administrators settling the same pair at the same moment both compute the
- * same next revision and the unique constraint refuses the second. Left
+ * That decision assigns a revision per disagreement -- the pair of marks a
+ * decision names -- with NO row lock, so two administrators settling the same
+ * disagreement at the same moment both compute the same next revision and the
+ * unique index refuses the second. Two administrators settling DIFFERENT
+ * disagreements on one clip do not collide, and neither is told anything. Left
  * untranslated the loser gets a duplicate-key dump naming a constraint, which
  * is the outcome the decision was made to avoid.
  *
@@ -501,11 +503,13 @@ function assertEventInReading(
  * non-member, so a wrong label is a 400 naming the field rather than a stored
  * row. Written once, here, rather than at each field.
  *
- * A SECOND ADJUDICATION OF THE SAME PAIR IS A CORRECTION (OD-2026-08-29-004)
- * and is stored as the pair's next revision (OD-2026-08-29-005); the highest
- * revision is the current answer and every earlier one is kept. The revision
- * is computed by `recordAdjudication` and is never read from the body. Two
- * writers computing the same one collide on the unique constraint, and
+ * A SECOND ADJUDICATION OF THE SAME PAIR OF MARKS IS A CORRECTION
+ * (OD-2026-08-29-004) and is stored as that disagreement's next revision
+ * (OD-2026-08-29-005); the highest revision is the current answer and every
+ * earlier one is kept. A decision about a different pair of marks on the same
+ * clip is its own disagreement and starts at 1. The revision is computed by
+ * `recordAdjudication` and is never read from the body. Two writers computing
+ * the same one collide on the unique index, and
  * `asConcurrentCorrectionConflict` turns that into a 409 saying so.
  *
  * NOT ENFORCED: a decision submitted from a page loaded before somebody
