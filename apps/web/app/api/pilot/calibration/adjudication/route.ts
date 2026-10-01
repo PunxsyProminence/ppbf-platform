@@ -30,7 +30,7 @@ import {
   resolveComparisonPair,
 } from '@/src/server/pilot/calibration/comparison';
 import type { CalibrationClipRow } from '@/src/server/pilot/calibration/projects';
-import { ConflictError } from '@/src/server/pilot/errors';
+import { ConflictError, ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 import { blankToNull, loadPlayableClip, writeCalibrationAuditEvent } from '../annotatorGate';
@@ -422,6 +422,10 @@ interface AdjudicationBody {
   source_event_id_b?: unknown;
   resolution_type?: unknown;
   missed_event_verdict?: unknown;
+  /* The revision of this disagreement the administrator had on screen when
+   * they decided, 0 for one nobody had settled. A claim about what was
+   * REVIEWED; never the revision to write. */
+  expected_current_revision?: unknown;
   notes?: unknown;
   fields?: unknown;
 }
@@ -512,16 +516,18 @@ function assertEventInReading(
  * the same one collide on the unique index, and
  * `asConcurrentCorrectionConflict` turns that into a 409 saying so.
  *
- * "The same pair of marks" means the same marks with the readings in the same
- * order. With two readings the gate fixes that order. With three or more the
- * caller names it, and the same two marks filed as (Y, X) instead of (X, Y)
- * are a separate sequence: no unordered-pair rule exists in this schema.
+ * THE ORDER OF THE TWO READINGS IS NOT THE CALLER'S. `resolveComparisonPair`
+ * returns the pair in the gate's own order whichever way round a caller names
+ * them, so over this route the same two marks are always the same
+ * disagreement. The table itself keeps (A, B) and (B, A) distinct, which only
+ * a direct caller of `recordAdjudication` could reach.
  *
- * NOT ENFORCED: a decision submitted from a page loaded before somebody
- * else's correction landed is accepted as the next revision. Only inserts
- * that overlap are refused. The GET above returns everything already recorded
- * on the clip, with each row's revision; the page in front of it does not
- * show the revision yet.
+ * A DECISION MADE ON A STALE VIEW IS REFUSED. The page sends back the
+ * revision of this disagreement it actually displayed; `recordAdjudication`
+ * compares it with what stands now and refuses with the same sentence if
+ * somebody has answered since. A request that carries no such number is a
+ * malformed request, not a conflict: it gets a 400 telling the administrator
+ * to reload, never a story about a colleague who does not exist.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -568,6 +574,25 @@ export async function POST(request: NextRequest) {
     if (rawFields !== undefined && rawFields !== null && !Array.isArray(rawFields)) {
       throw new Error('Missing fields: the field decisions must be a list');
     }
+
+    /* WHAT THE ADMINISTRATOR ACTUALLY REVIEWED. Input, validated as input.
+     *
+     * 0 is legitimate -- it is what an unsettled disagreement reports. Whole
+     * numbers only: "1" or 1.5 is a caller defect, and coercing either would
+     * invent an expectation nobody held. The sentence is written for the
+     * person most likely to meet it: an administrator whose browser is still
+     * running a copy of this page from before it sent the number. */
+    const expectedCurrentRevision = body.expected_current_revision;
+    if (
+      typeof expectedCurrentRevision !== 'number'
+      || !Number.isInteger(expectedCurrentRevision)
+      || expectedCurrentRevision < 0
+    ) {
+      throw new ValidationError(
+        'Reload the page before recording a decision. This screen did not say which earlier answer you were looking at, so your decision was not recorded.',
+        'CALIBRATION_ADJUDICATION_EXPECTED_REVISION_INVALID',
+      );
+    }
     const fields = ((Array.isArray(rawFields) ? rawFields : []) as AdjudicatedFieldBody[]).map(
       (field) => ({
         adjudicatedFieldId: randomUUID(),
@@ -597,6 +622,7 @@ export async function POST(request: NextRequest) {
         ? body.notes.trim()
         : null,
       fields,
+      expectedCurrentRevision,
     } as unknown as RecordAdjudicationInput).catch(asConcurrentCorrectionConflict);
 
     /* AN AUDIT ROW, AND THE VOCABULARY WAS CHECKED RATHER THAN ASSUMED.

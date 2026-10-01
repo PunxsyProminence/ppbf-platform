@@ -8,6 +8,7 @@
 // either.
 
 import type { AdjudicationRow } from './adjudication';
+import { currentAdjudications } from './qaReadModel';
 import type { AnnotationEventRow, AnnotationSetRow } from './annotations';
 import { compareAnnotationSets } from './comparison';
 import {
@@ -443,5 +444,70 @@ describe('determinism', () => {
     const first = studyOf(staged);
     const second = studyOf(staged);
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
+  });
+});
+
+/* OD-2026-08-29-004, -005. A second adjudication of the same disagreement is a
+ * correction, and the report counts answers, not history. */
+describe('superseded adjudications are history, not answers', () => {
+  function row(overrides: Partial<AdjudicationRow>): AdjudicationRow {
+    return {
+      organization_id: ORG,
+      adjudication_id: 'adj',
+      calibration_clip_id: 'clip-0',
+      annotation_set_id_a: 'clip-0-set-a',
+      annotation_set_id_b: 'clip-0-set-b',
+      source_event_id_a: 'clip-0-evt-a',
+      source_event_id_b: 'clip-0-evt-b',
+      resolution_type: 'accept_a',
+      missed_event_verdict: null,
+      revision: 1,
+      adjudicator_account_id: 'acct-reviewer',
+      adjudicated_at: '2026-08-27T02:00:00.000Z',
+      ontology_version: ONTOLOGY,
+      notes: null,
+      created_at: '2026-08-27T02:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  const HISTORY: AdjudicationRow[] = [
+    // One disagreement: unresolvable, then corrected to a real answer.
+    row({ adjudication_id: 'x-1', revision: 1, resolution_type: 'unresolvable' }),
+    row({ adjudication_id: 'x-2', revision: 2, resolution_type: 'accept_b' }),
+    // The same A mark against NOTHING from B: a different disagreement.
+    row({ adjudication_id: 'y-1', source_event_id_b: null, resolution_type: 'unresolvable' }),
+    // ... and against a B mark whose id is the empty string: different again.
+    row({ adjudication_id: 'z-1', source_event_id_b: '', resolution_type: 'accept_a' }),
+    // Other marks, corrected the other way: resolved, then unresolvable.
+    row({ adjudication_id: 'w-2', source_event_id_a: 'e2', source_event_id_b: 'f2', revision: 2, resolution_type: 'unresolvable' }),
+    row({ adjudication_id: 'w-1', source_event_id_a: 'e2', source_event_id_b: 'f2', revision: 1, resolution_type: 'accept_a' }),
+  ];
+
+  test('the highest revision of each disagreement is kept, whatever order the rows arrive in', () => {
+    const kept = (rows: AdjudicationRow[]) => currentAdjudications(rows)
+      .map((entry) => entry.adjudication_id).sort();
+    expect(kept(HISTORY)).toEqual(['w-2', 'x-2', 'y-1', 'z-1']);
+    expect(kept([...HISTORY].reverse())).toEqual(['w-2', 'x-2', 'y-1', 'z-1']);
+  });
+
+  test('the report counts current answers: four adjudications, two of them unresolvable', () => {
+    const staged = fullStudy();
+    const report = buildCalibrationQaReport({
+      organizationId: ORG,
+      calibrationProjectId: PROJECT,
+      ontologyVersion: ONTOLOGY,
+      clips: staged.map((entry) => entry.clip),
+      sets: staged.flatMap((entry) => entry.sets),
+      events: staged.flatMap((entry) => entry.events),
+      comparisons: staged.map((entry) => entry.comparison),
+      adjudications: HISTORY,
+    });
+
+    // Six rows of history, four answers. x-1 (unresolvable, since corrected)
+    // is not counted; w-2 (unresolvable NOW) is.
+    expect(report.adjudicationRate.count).toBe(4);
+    expect(report.unresolvableRate.count).toBe(2);
+    expect(report.unresolvableRate.denominator).toBe(4);
   });
 });

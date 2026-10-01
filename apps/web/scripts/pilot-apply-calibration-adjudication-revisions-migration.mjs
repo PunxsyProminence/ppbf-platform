@@ -65,28 +65,32 @@ function resolveSslConfig() {
 //
 // IT IS ASSERTED BY SHAPE, NOT ONLY BY NAME. The migration creates it with
 // `if not exists`, which goes by name alone, so an index of that name keyed on
-// something else -- the two annotation sets without the source events, say,
-// which numbers unrelated decisions on a clip as corrections of each other --
-// would be left in place and would pass a name check. The clauses below require
-// it to be unique, valid, not partial, and to cover both coalesced source
-// events and the revision. pg_get_indexdef deparses those expressions stably
-// (`COALESCE(source_event_id_a, ''::text)`); nothing here matches a CHECK body
-// (issue #488).
+// something else -- the two annotation sets without the source events, which
+// numbers unrelated decisions on a clip as corrections of each other, or the
+// marks without their nullness, which makes "no mark" the same key as a mark
+// whose id is '' -- would be left in place and would pass a name check. The
+// clauses below require it to be unique, valid, not partial, nine key parts
+// long, and to carry each mark's nullness and value and then the revision, in
+// that order. Nothing here matches a CHECK body (issue #488).
 //
-// revision_required_and_undefaulted carries two things at once. With a DEFAULT,
-// an insert that omitted the revision would land a plausible row rather than
-// failing, and the value it landed would be wrong for every disagreement that
-// already had an answer. And `is_nullable = 'NO'` is ALSO the backfill
-// assertion: PostgreSQL refuses `set not null` on a column that still contains
-// a null, so the constraint existing is proof the backfill completed.
+// THE TRIGGER IS ASSERTED TOO, because it is what keeps the previous image
+// writing on this schema: enabled, BEFORE, per ROW, on INSERT (tgtype 7), and
+// calling the assign function. Without it the NOT NULL refuses every insert
+// that names no revision.
+//
+// revision_required_and_undefaulted: `is_nullable = 'NO'` is ALSO the backfill
+// assertion -- PostgreSQL refuses `set not null` on a column that still
+// contains a null, so the constraint existing is proof the backfill completed.
+// And no DEFAULT: a constant would be wrong for every disagreement that already
+// has an answer.
 //
 // EVERY CLAUSE READS A CATALOG, NEVER THE TABLE'S DATA, and that is load-bearing
 // rather than stylistic. A clause like `where revision is null` cannot report
 // false on an unmigrated database: PostgreSQL parses the whole statement before
 // running any of it, so the reference to a column that does not exist raises
 // `column "revision" does not exist` and the gate throws that instead of
-// CALIBRATION_ADJUDICATION_REVISIONS_NOT_READY. to_regclass() rather than a
-// cast, for the same reason. Caught by
+// CALIBRATION_ADJUDICATION_REVISIONS_NOT_READY. to_regclass()/to_regprocedure()
+// rather than casts, for the same reason. Caught by
 // 'REFUSES a database where the revisions migration never ran'.
 const READINESS_QUERY = `
   select
@@ -119,9 +123,19 @@ const READINESS_QUERY = `
         and i.indisunique
         and i.indisvalid
         and i.indpred is null
+        and i.indnatts = 9
         and pg_get_indexdef(i.indexrelid) like
-          '%(organization_id, calibration_clip_id, annotation_set_id_a, annotation_set_id_b, COALESCE(source_event_id_a, %), COALESCE(source_event_id_b, %), revision)'
-    ) as decision_revision_arbiter_ready
+          '%(organization_id, calibration_clip_id, annotation_set_id_a, annotation_set_id_b, %source_event_id_a IS NULL%, COALESCE(source_event_id_a, %), %source_event_id_b IS NULL%, COALESCE(source_event_id_b, %), revision)'
+    ) as decision_revision_arbiter_ready,
+    exists (
+      select 1 from pg_trigger t
+      where t.tgrelid = to_regclass('pilot.calibration_adjudications')
+        and t.tgname = 'pilot_calibration_adjudications_assign_revision'
+        and not t.tgisinternal
+        and t.tgenabled = 'O'
+        and t.tgtype = 7
+        and t.tgfoid = to_regprocedure('pilot.calibration_adjudications_assign_revision()')
+    ) as previous_image_insert_numbered
 `;
 
 function assertReadiness(row) {
@@ -143,7 +157,64 @@ export async function applyMigrationTransaction(client, sql) {
   }
 }
 
-export async function run() {
+// WHAT THE APPLY WOULD REFUSE, READ WITHOUT APPLYING ANYTHING.
+//
+// The migration stops when one disagreement holds two existing adjudications
+// with the same adjudicated_at, because which of them is current cannot be
+// read from the data. On an `all` dispatch that stop also holds back every
+// migration listed after this one, so it is worth knowing before dispatching.
+//
+// Runs inside BEGIN READ ONLY and always rolls back: PostgreSQL itself refuses
+// a write in that transaction, so this cannot change a row even by mistake.
+//
+// The grouping is the migration's own (step 2). On a database where the
+// migration is already applied there is nothing left to backfill and the
+// answer is 0 by definition; `already_applied` says which case it was. The
+// column is looked up first and the count query is chosen from that, because a
+// statement naming a column that does not exist fails to parse.
+export async function countBackfillTies(client) {
+  await client.query('BEGIN READ ONLY');
+  try {
+    const table = await client.query(
+      `select to_regclass('pilot.calibration_adjudications') is not null as present`,
+    );
+    if (table.rows[0]?.present !== true) {
+      throw new Error('CALIBRATION_ADJUDICATIONS_TABLE_MISSING');
+    }
+    const column = await client.query(
+      `select exists (
+         select 1 from information_schema.columns
+         where table_schema = 'pilot'
+           and table_name = 'calibration_adjudications'
+           and column_name = 'revision'
+       ) as present`,
+    );
+    const alreadyApplied = column.rows[0]?.present === true;
+    const counted = await client.query(
+      `select
+         (select count(*)::int from pilot.calibration_adjudications) as existing_adjudications,
+         (select count(*)::int from (
+            select 1
+              from pilot.calibration_adjudications
+             ${alreadyApplied ? 'where revision is null' : ''}
+             group by organization_id, calibration_clip_id,
+                      annotation_set_id_a, annotation_set_id_b,
+                      source_event_id_a, source_event_id_b,
+                      adjudicated_at
+            having count(*) > 1
+          ) tied) as tied_disagreements`,
+    );
+    return {
+      already_applied: alreadyApplied,
+      existing_adjudications: counted.rows[0].existing_adjudications,
+      tied_disagreements: counted.rows[0].tied_disagreements,
+    };
+  } finally {
+    await client.query('ROLLBACK').catch(() => {});
+  }
+}
+
+export async function run({ preflight = false } = {}) {
   const connectionString = required('AZURE_POSTGRES_CONNECTION_STRING');
   const expectedHostname = required('PPBF_EXPECTED_POSTGRES_HOSTNAME');
   const expectedDatabase = required('PPBF_EXPECTED_POSTGRES_DATABASE');
@@ -167,6 +238,19 @@ export async function run() {
 
   await client.connect();
   try {
+    if (preflight) {
+      const report = await countBackfillTies(client);
+      console.log(`target_hostname: ${target.hostname}`);
+      console.log(`target_database: ${target.database}`);
+      console.log(JSON.stringify({ event: 'calibration_adjudication_revisions.preflight', ...report }));
+      console.log(
+        report.tied_disagreements === 0
+          ? 'PILOT CALIBRATION ADJUDICATION REVISIONS PREFLIGHT PASS (read-only; nothing applied)'
+          : 'PILOT CALIBRATION ADJUDICATION REVISIONS PREFLIGHT TIES FOUND (read-only; nothing applied)',
+      );
+      if (report.tied_disagreements !== 0) process.exitCode = 2;
+      return;
+    }
     await applyMigrationTransaction(client, sql);
   } finally {
     await client.end();
@@ -181,7 +265,7 @@ export async function run() {
 const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMainModule) {
   try {
-    await run();
+    await run({ preflight: process.argv.includes('--preflight') });
   } catch (error) {
     console.error('PILOT CALIBRATION ADJUDICATION REVISIONS MIGRATION FAIL');
     console.error(String(error));

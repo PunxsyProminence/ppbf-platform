@@ -1,4 +1,5 @@
 import { query, queryOne, withTransaction } from '../db';
+import { ConflictError } from '../errors';
 import { DISAGREEMENT_CATEGORIES, type DisagreementCategory } from './comparison';
 import { isInVocabulary } from './ontology';
 
@@ -113,12 +114,45 @@ const ADJUDICATION_COLUMNS = `
 export const ADJUDICATION_PAIR_REVISION_CONSTRAINT =
   'pilot_calibration_adjudications_decision_revision_uq';
 
-/** What the administrator who lost that collision is told. The wording is
- * part of the owner's decision, not a nicety: it says what happened and what
- * to do about it, in place of a duplicate-key dump naming a constraint. */
+/** What an administrator is told when their decision was made against an
+ * answer that is no longer the current one. One wording, two detection points:
+ * the reviewed-revision check in `recordAdjudication` catches the ordinary
+ * case before anything is written, and the unique index catches the narrow
+ * one where two requests pass that check before either commits. They are the
+ * same event to the person it happens to, so they read the same. The wording
+ * is part of the owner's decision, not a nicety: it says what happened and
+ * what to do about it, in place of a duplicate-key dump naming a constraint. */
 export const ADJUDICATION_SUPERSEDED_CODE = 'CALIBRATION_ADJUDICATION_SUPERSEDED';
 export const ADJUDICATION_SUPERSEDED_MESSAGE =
   'Someone corrected this adjudication while you were deciding. Reload and review their answer before replacing it.';
+
+/**
+ * "This row is the current answer to its disagreement", as SQL, for a reader
+ * that must not count or act on superseded history.
+ *
+ * `alias` is the reader's alias for pilot.calibration_adjudications. The
+ * grouping is the one the index, the trigger, the backfill and
+ * `recordAdjudication` use: the two readings and the two marks, NULL-safe.
+ * Written once here so a reader cannot drift onto a different idea of what
+ * one disagreement is. The alias is interpolated, so it is checked rather
+ * than trusted.
+ */
+export function currentAdjudicationPredicate(alias: string): string {
+  if (!/^[a-z_][a-z0-9_]*$/.test(alias)) {
+    throw new Error('CALIBRATION_ADJUDICATION_ALIAS_INVALID');
+  }
+  return `not exists (
+    select 1
+      from pilot.calibration_adjudications later_revision
+     where later_revision.organization_id = ${alias}.organization_id
+       and later_revision.calibration_clip_id = ${alias}.calibration_clip_id
+       and later_revision.annotation_set_id_a = ${alias}.annotation_set_id_a
+       and later_revision.annotation_set_id_b = ${alias}.annotation_set_id_b
+       and later_revision.source_event_id_a is not distinct from ${alias}.source_event_id_a
+       and later_revision.source_event_id_b is not distinct from ${alias}.source_event_id_b
+       and later_revision.revision > ${alias}.revision
+  )`;
+}
 
 const FIELD_COLUMNS = `
   organization_id, adjudicated_field_id, adjudication_id, field_name,
@@ -148,6 +182,13 @@ export interface RecordAdjudicationInput {
   ontologyVersion: string;
   notes?: string | null;
   fields?: readonly AdjudicatedFieldInput[];
+  /** The revision of this disagreement the adjudicator actually had in front
+   * of them, or 0 if they were looking at one nobody had settled. It is a
+   * claim about WHAT WAS REVIEWED and is only ever compared: the server
+   * computes the revision it writes. Required, with no default -- a caller
+   * that omitted it would get the stale overwrite back, and a default of 0
+   * would refuse every correction. */
+  expectedCurrentRevision: number;
 }
 
 function requireNonEmpty(value: unknown, field: string): string {
@@ -230,6 +271,16 @@ export async function recordAdjudication(
     }
   }
 
+  if (
+    typeof input.expectedCurrentRevision !== 'number'
+    || !Number.isInteger(input.expectedCurrentRevision)
+    || input.expectedCurrentRevision < 0
+  ) {
+    throw new Error(
+      'Missing expected_current_revision: the revision this decision was reviewed against must be a whole number, 0 or more',
+    );
+  }
+
   const calibrationClipId = requireNonEmpty(input.calibrationClipId, 'calibration_clip_id');
   const annotationSetIdA = requireNonEmpty(input.annotationSetIdA, 'annotation_set_id_a');
   const annotationSetIdB = requireNonEmpty(input.annotationSetIdB, 'annotation_set_id_b');
@@ -256,11 +307,8 @@ export async function recordAdjudication(
      * the insert would then collide with nobody racing it. Neither form
      * avoids reusing the number of a removed HIGHEST row.
      *
-     * WHAT THIS DOES NOT CATCH: a decision made on a view that went stale
-     * minutes ago. A second adjudication recorded after the first has
-     * committed simply becomes the next revision, whether or not its author
-     * had the first one on screen. The index only refuses two inserts that
-     * overlap. */
+     * The index alone only refuses two inserts that OVERLAP. The far more
+     * likely case is handled just below, before anything is written. */
     const currentResult = await client.query<{ current_revision: number }>(
       `select coalesce(max(revision), 0)::int as current_revision
          from pilot.calibration_adjudications
@@ -282,6 +330,26 @@ export async function recordAdjudication(
     const currentRevision = currentResult.rows[0]?.current_revision;
     if (typeof currentRevision !== 'number' || !Number.isInteger(currentRevision) || currentRevision < 0) {
       throw new Error('CALIBRATION_ADJUDICATION_REVISION_UNRESOLVED');
+    }
+
+    /* THE STALE DECISION, REFUSED BEFORE ANYTHING IS WRITTEN.
+     *
+     * An administrator opens the desk at revision 1, thinks for ten minutes
+     * while somebody else records revision 2, and submits. Numbering that as
+     * revision 3 would make current a decision reached without ever seeing
+     * revision 2 -- the harm the refusal sentence describes, and the reason
+     * the owner chose a collision that sends the second person to read the
+     * first correction.
+     *
+     * Compared, never coerced: an expectation that is BEHIND and one that is
+     * AHEAD both mean the reviewer was looking at something other than what
+     * stands now.
+     *
+     * Still no lock. This narrows the window to the gap between the read
+     * above and the insert below; the unique index closes that remainder, and
+     * both give the same refusal. */
+    if (currentRevision !== input.expectedCurrentRevision) {
+      throw new ConflictError(ADJUDICATION_SUPERSEDED_MESSAGE, ADJUDICATION_SUPERSEDED_CODE);
     }
 
     const adjudicationResult = await client.query<AdjudicationRow>(

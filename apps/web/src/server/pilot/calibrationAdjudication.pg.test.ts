@@ -348,6 +348,7 @@ describe('an adjudication records a decision without altering the readings', () 
       resolutionType: 'accept_a',
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
       fields: [
         {
           adjudicatedFieldId: crypto.randomUUID(),
@@ -382,6 +383,7 @@ describe('an adjudication records a decision without altering the readings', () 
       resolutionType: 'new_adjudicated_value',
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
       notes: 'Neither reading matched the frames.',
       fields: [
         {
@@ -452,6 +454,7 @@ describe('the adjudication and its fields are one transaction', () => {
         resolutionType: 'new_adjudicated_value',
         adjudicatorAccountId: ADJUDICATOR,
         ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+        expectedCurrentRevision: 0,
         fields: [
           {
             adjudicatedFieldId: crypto.randomUUID(),
@@ -491,6 +494,7 @@ describe('the adjudication and its fields are one transaction', () => {
         resolutionType: 'new_adjudicated_value',
         adjudicatorAccountId: ADJUDICATOR,
         ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+        expectedCurrentRevision: 0,
         fields: [],
       }),
     ).rejects.toThrow(/must record the value the adjudicator supplied/);
@@ -513,6 +517,7 @@ describe('the adjudication and its fields are one transaction', () => {
         resolutionType: 'new_adjudicated_value',
         adjudicatorAccountId: ADJUDICATOR,
         ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+        expectedCurrentRevision: 0,
         fields: [
           {
             adjudicatedFieldId: crypto.randomUUID(),
@@ -587,6 +592,7 @@ describe('a verdict must be answerable from the events present', () => {
         missedEventVerdict: 'neither_valid',
         adjudicatorAccountId: ADJUDICATOR,
         ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+        expectedCurrentRevision: 0,
       }),
     ).rejects.toThrow(/only applies where one annotator recorded no event/);
   });
@@ -608,6 +614,7 @@ describe('a verdict must be answerable from the events present', () => {
       missedEventVerdict: 'both_distinct',
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
     });
     expect(row.missed_event_verdict).toBe('both_distinct');
   });
@@ -622,6 +629,7 @@ describe('a verdict must be answerable from the events present', () => {
       sourceEventIdA: staged.eventA,
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
     };
 
     await expect(
@@ -700,6 +708,7 @@ describe('an adjudication cannot misattribute a reading', () => {
       resolutionType: 'accept_a',
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
     });
 
     expect(await adjudication.getAdjudication(OTHER_ORG_ID, row.adjudication_id)).toBeNull();
@@ -735,6 +744,7 @@ describe('an adjudication never blocks a deletion request', () => {
         resolutionType: 'accept_a',
         adjudicatorAccountId: ADJUDICATOR,
         ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+        expectedCurrentRevision: 0,
         fields: [
           {
             adjudicatedFieldId: crypto.randomUUID(),
@@ -812,7 +822,59 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
       sourceEventIdB: staged.eventB,
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      // What the adjudicator had on screen: nothing settled. A test that
+      // corrects an existing answer says which revision it reviewed.
+      expectedCurrentRevision: 0,
     };
+  }
+
+  /** THE PREVIOUS IMAGE'S OWN INSERT, copied from
+   *  apps/web/src/server/pilot/calibration/adjudication.ts:212-218 at main
+   *  739aa4508850a5883bc203cd1ece454e4eb0286f, with the column list it
+   *  returned (ADJUDICATION_COLUMNS at :92-98 there). It names no revision
+   *  and reads none back. This is the statement a rolled-back or
+   *  not-yet-replaced image sends to the migrated schema. */
+  const PREVIOUS_IMAGE_INSERT = `insert into pilot.calibration_adjudications
+         (organization_id, adjudication_id, calibration_clip_id,
+          annotation_set_id_a, annotation_set_id_b,
+          source_event_id_a, source_event_id_b,
+          resolution_type, missed_event_verdict,
+          adjudicator_account_id, ontology_version, notes)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       returning
+  organization_id, adjudication_id, calibration_clip_id,
+  annotation_set_id_a, annotation_set_id_b,
+  source_event_id_a, source_event_id_b,
+  resolution_type, missed_event_verdict,
+  adjudicator_account_id, adjudicated_at, ontology_version, notes, created_at
+`;
+
+  function previousImageParams(
+    staged: Awaited<ReturnType<typeof stagedDisagreement>>,
+    adjudicationId: string,
+    resolutionType: string,
+  ) {
+    return [ORG_ID, adjudicationId, staged.clipId, staged.setA, staged.setB,
+      staged.eventA, staged.eventB, resolutionType, null,
+      ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION, null];
+  }
+
+  async function revisionsOf(staged: Awaited<ReturnType<typeof stagedDisagreement>>) {
+    const client = await freshClient();
+    try {
+      const rows = await client.query<{ revision: number; resolution_type: string }>(
+        `select revision, resolution_type
+           from pilot.calibration_adjudications
+          where organization_id = $1 and calibration_clip_id = $2
+            and annotation_set_id_a = $3 and annotation_set_id_b = $4
+            and source_event_id_a = $5 and source_event_id_b = $6
+          order by revision asc`,
+        [ORG_ID, staged.clipId, staged.setA, staged.setB, staged.eventA, staged.eventB],
+      );
+      return rows.rows;
+    } finally {
+      await client.end();
+    }
   }
 
   test('revisions for one disagreement start at 1 and increment, and every revision is kept', async () => {
@@ -829,6 +891,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
       ...decisionFor(staged),
       adjudicationId: crypto.randomUUID(),
       resolutionType: 'accept_b',
+      expectedCurrentRevision: 1,
     });
     expect(second.adjudication.revision).toBe(2);
 
@@ -992,6 +1055,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
         ...decisionFor(staged),
         adjudicationId: crypto.randomUUID(),
         resolutionType: 'accept_a',
+        expectedCurrentRevision: 1,
       });
       expect(retried.adjudication.revision).toBe(2);
     } finally {
@@ -1038,6 +1102,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
       adjudicationId: crypto.randomUUID(),
       resolutionType: 'unresolvable',
       missedEventVerdict: 'unresolvable',
+      expectedCurrentRevision: 1,
     });
     expect(corrected.adjudication.revision).toBe(2);
 
@@ -1045,6 +1110,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
       ...decisionFor(staged),
       adjudicationId: crypto.randomUUID(),
       resolutionType: 'accept_b',
+      expectedCurrentRevision: 1,
     });
     expect(again.adjudication.revision).toBe(2);
   });
@@ -1084,6 +1150,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
       sourceEventIdB: staged.eventB2,
       adjudicationId: crypto.randomUUID(),
       resolutionType: 'accept_a',
+      expectedCurrentRevision: 1,
     });
     expect(corrected.adjudication.revision).toBe(2);
 
@@ -1193,12 +1260,14 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
     }
   });
 
-  test('the swapped orientation of a pair keeps its own revision sequence', async () => {
-    // The index keys on the readings in the order given, (A, B). No
-    // unordered-pair rule is introduced here, so the same two marks filed
-    // with the readings swapped are NOT arbitrated against each other. The
-    // route fixes the order when a clip has two readings; with three or more
-    // the caller names it. Pinned so that changing it is a decision.
+  test('LOWER LAYER ONLY: called directly with the readings swapped, the module keeps a separate sequence', async () => {
+    // Not reachable through the HTTP route: resolveComparisonPair returns the
+    // pair in the gate's own order whichever way round a caller names it
+    // (comparison.ts, "Canonical order, per the docblock"). The table and
+    // this module key on the readings in the order GIVEN, as the source_a /
+    // source_b foreign keys do, so a direct caller that swapped them would
+    // start a second sequence. Pinned as a property of this layer, not as a
+    // rule about what callers may choose.
     const staged = await stagedDisagreement(`ADJ-SCOPE-${crypto.randomUUID().slice(0, 8)}`);
 
     const first = await adjudication.recordAdjudication({
@@ -1241,36 +1310,376 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
     }
   });
 
-  test('an insert that names no revision is refused rather than defaulted', async () => {
-    // No DEFAULT on purpose: a default of 1 would be wrong for every pair that
-    // already has an answer, and would land as a collision blamed on a person.
-    const staged = await stagedDisagreement(`ADJ-NODEF-${crypto.randomUUID().slice(0, 8)}`);
+  test("the PREVIOUS image's own insert still records a decision, numbered by the database", async () => {
+    /* The schema has to carry the image that predates the column: between the
+     * migration and the deploy, after a failed deploy, and after a rollback.
+     * That image's insert names no revision. The trigger gives it the
+     * disagreement's next one, before the NOT NULL is checked. */
+    const staged = await stagedDisagreement(`ADJ-OLDIMG-${crypto.randomUUID().slice(0, 8)}`);
     const client = await freshClient();
     try {
-      await expect(
-        client.query(
-          `insert into pilot.calibration_adjudications
-             (organization_id, adjudication_id, calibration_clip_id,
-              annotation_set_id_a, annotation_set_id_b,
-              source_event_id_a, source_event_id_b,
-              resolution_type, adjudicator_account_id, ontology_version)
-           values ($1, $2, $3, $4, $5, $6, $7, 'accept_a', $8, $9)`,
-          [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
-            staged.eventA, staged.eventB, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
-        ),
-      ).rejects.toThrow(/null value in column "revision"/);
+      const first = await client.query(
+        PREVIOUS_IMAGE_INSERT,
+        previousImageParams(staged, crypto.randomUUID(), 'accept_a'),
+      );
+      expect(first.rowCount).toBe(1);
+      // What that image reads back is exactly the shape it always read.
+      expect(Object.keys(first.rows[0])).not.toContain('revision');
+
+      await client.query(
+        PREVIOUS_IMAGE_INSERT,
+        previousImageParams(staged, crypto.randomUUID(), 'accept_b'),
+      );
     } finally {
       await client.end();
     }
+
+    expect(await revisionsOf(staged)).toEqual([
+      { revision: 1, resolution_type: 'accept_a' },
+      { revision: 2, resolution_type: 'accept_b' },
+    ]);
+
+    // And the newer image carries on from where the older one left off.
+    const next = await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'unresolvable',
+      expectedCurrentRevision: 2,
+    });
+    expect(next.adjudication.revision).toBe(3);
+  });
+
+  test("two of the PREVIOUS image's inserts racing: one lands, the other is refused and leaves nothing", async () => {
+    const staged = await stagedDisagreement(`ADJ-OLDRACE-${crypto.randomUUID().slice(0, 8)}`);
+    const winner = await freshClient();
+    const loser = await freshClient();
+    const observer = await freshClient();
+    const losingId = crypto.randomUUID();
+    try {
+      await winner.query('begin');
+      await winner.query(
+        PREVIOUS_IMAGE_INSERT,
+        previousImageParams(staged, crypto.randomUUID(), 'accept_a'),
+      );
+
+      // That image wraps its write in a transaction, as withTransaction does.
+      await loser.query('begin');
+      const losing = loser.query(
+        PREVIOUS_IMAGE_INSERT,
+        previousImageParams(staged, losingId, 'accept_b'),
+      ).then(
+        () => ({ raised: null as null | { code?: string; constraint?: string } }),
+        (error: unknown) => ({ raised: error as { code?: string; constraint?: string } }),
+      );
+
+      let waiting = 0;
+      for (let attempt = 0; attempt < 200 && waiting === 0; attempt += 1) {
+        const activity = await observer.query<{ n: number }>(
+          `select count(*)::int as n
+             from pg_stat_activity
+            where datname = current_database()
+              and wait_event_type = 'Lock'
+              and query ilike '%insert into pilot.calibration_adjudications%'`,
+        );
+        waiting = activity.rows[0]?.n ?? 0;
+        if (waiting === 0) await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(waiting).toBe(1);
+
+      await winner.query('commit');
+      const { raised } = await losing;
+      expect(raised?.code).toBe('23505');
+      expect(raised?.constraint).toBe(PAIR_REVISION_CONSTRAINT);
+      await loser.query('rollback');
+
+      expect(await revisionsOf(staged)).toEqual([{ revision: 1, resolution_type: 'accept_a' }]);
+      expect(await adjudication.getAdjudication(ORG_ID, losingId)).toBeNull();
+    } finally {
+      await winner.query('rollback').catch(() => {});
+      await loser.query('rollback').catch(() => {});
+      await winner.end();
+      await loser.end();
+      await observer.end();
+    }
+  });
+
+  test('an insert that names its revision is left exactly as written', async () => {
+    // The trigger fills a MISSING revision only. It must not renumber a writer
+    // that named one, or the newer image's stale check would be overridden.
+    const staged = await stagedDisagreement(`ADJ-NAMED-${crypto.randomUUID().slice(0, 8)}`);
+    const client = await freshClient();
+    try {
+      await client.query(
+        `insert into pilot.calibration_adjudications
+           (organization_id, adjudication_id, calibration_clip_id,
+            annotation_set_id_a, annotation_set_id_b,
+            source_event_id_a, source_event_id_b,
+            resolution_type, revision, adjudicator_account_id, ontology_version)
+         values ($1, $2, $3, $4, $5, $6, $7, 'accept_a', 4, $8, $9)`,
+        [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
+          staged.eventA, staged.eventB, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+      );
+    } finally {
+      await client.end();
+    }
+    expect(await revisionsOf(staged)).toEqual([{ revision: 4, resolution_type: 'accept_a' }]);
+  });
+});
+
+/* THE STALE DECISION, which the unique index alone does not catch.
+ *
+ * The index protects two writers whose inserts overlap. It does nothing about
+ * the likelier case: an administrator opens the desk at revision 1, thinks for
+ * ten minutes, somebody else records revision 2 in that gap, and the first one
+ * submits. Numbered as revision 3, a decision made without ever seeing
+ * revision 2 would silently become the current answer -- the harm the refusal
+ * sentence describes. The caller therefore says which revision it reviewed and
+ * the server refuses when that is no longer the current one. */
+describe('an administrator whose view went stale cannot replace the answer they never saw', () => {
+  function decisionFor(staged: Awaited<ReturnType<typeof stagedDisagreement>>) {
+    return {
+      organizationId: ORG_ID,
+      calibrationClipId: staged.clipId,
+      annotationSetIdA: staged.setA,
+      annotationSetIdB: staged.setB,
+      sourceEventIdA: staged.eventA,
+      sourceEventIdB: staged.eventB,
+      adjudicatorAccountId: ADJUDICATOR,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+    };
+  }
+
+  async function rowsOf(staged: Awaited<ReturnType<typeof stagedDisagreement>>) {
+    const client = await freshClient();
+    try {
+      const rows = await client.query<{ revision: number; resolution_type: string }>(
+        `select revision, resolution_type
+           from pilot.calibration_adjudications
+          where organization_id = $1 and calibration_clip_id = $2
+          order by revision asc`,
+        [ORG_ID, staged.clipId],
+      );
+      const fields = await client.query<{ n: number }>(
+        `select count(*)::int as n
+           from pilot.calibration_adjudicated_fields f
+           join pilot.calibration_adjudications a
+             on a.organization_id = f.organization_id and a.adjudication_id = f.adjudication_id
+          where a.organization_id = $1 and a.calibration_clip_id = $2`,
+        [ORG_ID, staged.clipId],
+      );
+      return { rows: rows.rows, fieldRows: fields.rows[0]?.n };
+    } finally {
+      await client.end();
+    }
+  }
+
+  test('a decision reviewed against a superseded revision is refused, and writes nothing', async () => {
+    const staged = await stagedDisagreement(`ADJ-STALE-${crypto.randomUUID().slice(0, 8)}`);
+
+    // A opens the desk: revision 1 is on screen.
+    await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_a',
+      expectedCurrentRevision: 0,
+    });
+    // B answers while A is thinking.
+    await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_b',
+      expectedCurrentRevision: 1,
+    });
+
+    // A submits, still holding revision 1.
+    const staleId = crypto.randomUUID();
+    const refused = await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      adjudicationId: staleId,
+      resolutionType: 'new_adjudicated_value',
+      expectedCurrentRevision: 1,
+      fields: [
+        {
+          adjudicatedFieldId: crypto.randomUUID(),
+          fieldName: 'punch_type',
+          disagreementCategory: 'PUNCH_TYPE',
+          resolvedFrom: 'adjudicator',
+          resolvedValue: 'rear_hook',
+        },
+      ],
+    }).then(() => null, (error: unknown) => error as { message?: string; code?: string; status?: number });
+
+    expect(refused?.message).toBe(adjudication.ADJUDICATION_SUPERSEDED_MESSAGE);
+    expect(refused?.code).toBe(adjudication.ADJUDICATION_SUPERSEDED_CODE);
+    expect(refused?.status).toBe(409);
+
+    // No revision 3, both real answers untouched, and no field decisions from
+    // the refused write.
+    expect(await rowsOf(staged)).toEqual({
+      rows: [
+        { revision: 1, resolution_type: 'accept_a' },
+        { revision: 2, resolution_type: 'accept_b' },
+      ],
+      fieldRows: 0,
+    });
+    expect(await adjudication.getAdjudication(ORG_ID, staleId)).toBeNull();
+  });
+
+  test('a first decision is refused when somebody has already settled the disagreement', async () => {
+    // The commonest stale view: the desk showed nothing settled.
+    const staged = await stagedDisagreement(`ADJ-STALE0-${crypto.randomUUID().slice(0, 8)}`);
+    await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_a',
+      expectedCurrentRevision: 0,
+    });
+    await expect(adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_b',
+      expectedCurrentRevision: 0,
+    })).rejects.toThrow(adjudication.ADJUDICATION_SUPERSEDED_MESSAGE);
+    expect((await rowsOf(staged)).rows).toEqual([{ revision: 1, resolution_type: 'accept_a' }]);
+  });
+
+  test('a revision AHEAD of what stands is refused too, never coerced', async () => {
+    const staged = await stagedDisagreement(`ADJ-AHEAD-${crypto.randomUUID().slice(0, 8)}`);
+    await expect(adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_a',
+      expectedCurrentRevision: 3,
+    })).rejects.toThrow(adjudication.ADJUDICATION_SUPERSEDED_MESSAGE);
+    expect((await rowsOf(staged)).rows).toEqual([]);
+  });
+
+  test('a decision reviewed against the current revision is accepted', async () => {
+    // The other half: a guard that refused everything would pass the tests
+    // above and break the desk.
+    const staged = await stagedDisagreement(`ADJ-FRESH-${crypto.randomUUID().slice(0, 8)}`);
+    for (const [expected, resolution] of [[0, 'accept_a'], [1, 'accept_b'], [2, 'unresolvable']] as const) {
+      const made = await adjudication.recordAdjudication({
+        ...decisionFor(staged),
+        adjudicationId: crypto.randomUUID(),
+        resolutionType: resolution,
+        expectedCurrentRevision: expected,
+      });
+      expect(made.adjudication.revision).toBe(expected + 1);
+    }
+  });
+
+  test("another disagreement's revision is not this one's", async () => {
+    // The check reads the disagreement being settled. Reading the clip's
+    // highest revision instead would refuse a first decision about other marks.
+    const staged = await stagedDisagreement(`ADJ-OTHERS-${crypto.randomUUID().slice(0, 8)}`, VIDEO_ID, 2);
+    for (const expected of [0, 1]) {
+      await adjudication.recordAdjudication({
+        ...decisionFor(staged),
+        adjudicationId: crypto.randomUUID(),
+        resolutionType: 'accept_a',
+        expectedCurrentRevision: expected,
+      });
+    }
+    const other = await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      sourceEventIdA: staged.eventA2,
+      sourceEventIdB: staged.eventB2,
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_b',
+      expectedCurrentRevision: 0,
+    });
+    expect(other.adjudication.revision).toBe(1);
+  });
+
+  test.each([
+    ['missing', undefined],
+    ['a string', '1'],
+    ['fractional', 1.5],
+    ['negative', -1],
+    ['null', null],
+  ])('a %s reviewed revision is refused as bad input and nothing is written', async (_label, value) => {
+    const staged = await stagedDisagreement(`ADJ-BADEXP-${crypto.randomUUID().slice(0, 8)}`);
+    await expect(adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_a',
+      expectedCurrentRevision: value as never,
+    })).rejects.toThrow(/^Missing expected_current_revision/);
+    expect((await rowsOf(staged)).rows).toEqual([]);
+  });
+});
+
+describe('the current-revision predicate readers share', () => {
+  test('the current-revision predicate refuses an alias it could not safely interpolate', () => {
+    expect(() => adjudication.currentAdjudicationPredicate('a; drop table x')).toThrow(
+      /CALIBRATION_ADJUDICATION_ALIAS_INVALID/,
+    );
+    expect(adjudication.currentAdjudicationPredicate('adj')).toContain('adj.revision');
   });
 });
 
 describe('the shipped revisions migration runner', () => {
   type Apply = (client: Client, sql: string) => Promise<void>;
 
+  type TieReport = {
+    already_applied: boolean;
+    existing_adjudications: number;
+    tied_disagreements: number;
+  };
+
   async function loadApply(): Promise<Apply> {
     const runnerModule = await nativeDynamicImport(pathToFileURL(REVISIONS_RUNNER_PATH).href);
     return runnerModule.applyMigrationTransaction as Apply;
+  }
+
+  async function loadPreflight(): Promise<(client: Client) => Promise<TieReport>> {
+    const runnerModule = await nativeDynamicImport(pathToFileURL(REVISIONS_RUNNER_PATH).href);
+    return runnerModule.countBackfillTies as (client: Client) => Promise<TieReport>;
+  }
+
+  /** A database at the pre-revisions schema with the four tenancy foreign keys
+   *  dropped, so rows can be written as raw history without staging a clip. */
+  async function historyDatabase(name: string): Promise<Client> {
+    const client = await runnerDatabase(name);
+    await client.query(await readMigration(ADJUDICATION_SQL));
+    for (const orgId of [ORG_ID, OTHER_ORG_ID]) {
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status)
+         values ($1, $1, 'active') on conflict do nothing`,
+        [orgId],
+      );
+    }
+    await client.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider)
+       values ($1, 'admin', $2, 'microsoft') on conflict do nothing`,
+      [ADJUDICATOR, ORG_ID],
+    );
+    await client.query(
+      `alter table pilot.calibration_adjudications
+         drop constraint pilot_calibration_adjudications_set_a_fk,
+         drop constraint pilot_calibration_adjudications_set_b_fk,
+         drop constraint pilot_calibration_adjudications_source_a_fk,
+         drop constraint pilot_calibration_adjudications_source_b_fk`,
+    );
+    return client;
+  }
+
+  async function writeHistory(
+    client: Client,
+    row: { org?: string; id: string; b?: string; ea: string | null; eb: string | null; at: string; revision?: number },
+  ) {
+    const named = row.revision !== undefined;
+    await client.query(
+      `insert into pilot.calibration_adjudications
+         (organization_id, adjudication_id, calibration_clip_id,
+          annotation_set_id_a, annotation_set_id_b, source_event_id_a, source_event_id_b,
+          resolution_type, adjudicator_account_id, adjudicated_at, ontology_version${named ? ', revision' : ''})
+       values ($1, $2, 'clip-backfill', 'set-a', $3, $4, $5,
+               'unresolvable', $6, $7, 'v1'${named ? ', $8' : ''})`,
+      [row.org ?? ORG_ID, row.id, row.b ?? 'set-b', row.ea, row.eb, ADJUDICATOR, row.at,
+        ...(named ? [row.revision] : [])],
+    );
   }
 
   test('REFUSES a database where the revisions migration never ran', async () => {
@@ -1310,8 +1719,7 @@ describe('the shipped revisions migration runner', () => {
        *
        * Raw SQL with the four tenancy foreign keys dropped, because the point
        * is the backfill and not the write path. Inserted deliberately out of
-       * chronological order; two rows of one disagreement share a timestamp so
-       * the adjudication_id tiebreak is exercised; other marks inside the same
+       * chronological order; other marks inside the same
        * two readings, a lone-mark disagreement decided twice, a second pair of
        * readings and a second organization prove the numbering restarts per
        * disagreement and that NULL sides group together. */
@@ -1338,8 +1746,10 @@ describe('the shipped revisions migration runner', () => {
       const existing: Array<{ org: string; id: string; b: string; ea: string | null; eb: string | null; at: string }> = [
         { org: ORG_ID, id: 'adj-late', b: 'set-b', ea: 'evt-a', eb: 'evt-b', at: '2026-03-03T00:00:00Z' },
         { org: ORG_ID, id: 'adj-early', b: 'set-b', ea: 'evt-a', eb: 'evt-b', at: '2026-01-01T00:00:00Z' },
-        { org: ORG_ID, id: 'adj-tie-2', b: 'set-b', ea: 'evt-a', eb: 'evt-b', at: '2026-02-02T00:00:00Z' },
-        { org: ORG_ID, id: 'adj-tie-1', b: 'set-b', ea: 'evt-a', eb: 'evt-b', at: '2026-02-02T00:00:00Z' },
+        { org: ORG_ID, id: 'adj-mid-2', b: 'set-b', ea: 'evt-a', eb: 'evt-b', at: '2026-02-02T00:00:01Z' },
+        { org: ORG_ID, id: 'adj-mid-1', b: 'set-b', ea: 'evt-a', eb: 'evt-b', at: '2026-02-02T00:00:00Z' },
+        // The SAME timestamp as adj-mid-1, on a DIFFERENT disagreement: not a tie.
+        { org: ORG_ID, id: 'adj-same-instant', b: 'set-b', ea: 'evt-a3', eb: 'evt-b3', at: '2026-02-02T00:00:00Z' },
         // Other marks inside the SAME two readings: their own disagreement.
         { org: ORG_ID, id: 'adj-other-marks', b: 'set-b', ea: 'evt-a2', eb: 'evt-b2', at: '2026-01-15T00:00:00Z' },
         // One lone mark, decided twice: NULL sides must group together.
@@ -1374,8 +1784,9 @@ describe('the shipped revisions migration runner', () => {
       const numbered = await read();
       expect(numbered).toEqual([
         `${ORG_ID}/set-b/evt-a+evt-b/adj-early=1`,
-        `${ORG_ID}/set-b/evt-a+evt-b/adj-tie-1=2`,
-        `${ORG_ID}/set-b/evt-a+evt-b/adj-tie-2=3`,
+        `${ORG_ID}/set-b/evt-a+evt-b/adj-mid-1=2`,
+        `${ORG_ID}/set-b/evt-a+evt-b/adj-mid-2=3`,
+        `${ORG_ID}/set-b/evt-a3+evt-b3/adj-same-instant=1`,
         `${ORG_ID}/set-b/evt-a+evt-b/adj-late=4`,
         `${ORG_ID}/set-b/evt-a2+evt-b2/adj-other-marks=1`,
         `${ORG_ID}/set-b/evt-a+none/adj-lone-1=1`,
@@ -1427,6 +1838,199 @@ describe('the shipped revisions migration runner', () => {
       await expect(
         applyMigrationTransaction(client, await readMigration(REVISIONS_SQL)),
       ).rejects.toThrow(/CALIBRATION_ADJUDICATION_REVISIONS_NOT_READY/);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a history whose order cannot be established is REFUSED, counted, and left untouched', async () => {
+    const applyMigrationTransaction = await loadApply();
+    const countBackfillTies = await loadPreflight();
+    const client = await historyDatabase('ppbf_test_calib_rev_tie');
+    try {
+      // Two answers to one disagreement at the same instant: nothing recorded
+      // says which came second, and a random id must not be allowed to.
+      await writeHistory(client, { id: 'adj-tied-b', ea: 'evt-a', eb: 'evt-b', at: '2026-02-02T00:00:00Z' });
+      await writeHistory(client, { id: 'adj-tied-a', ea: 'evt-a', eb: 'evt-b', at: '2026-02-02T00:00:00Z' });
+      // A lone mark tied with itself is a tie too (NULL sides group together).
+      await writeHistory(client, { id: 'adj-lone-x', ea: 'evt-a', eb: null, at: '2026-03-03T00:00:00Z' });
+      await writeHistory(client, { id: 'adj-lone-y', ea: 'evt-a', eb: null, at: '2026-03-03T00:00:00Z' });
+      // Not ties: same instant on other marks, and an ordered pair.
+      await writeHistory(client, { id: 'adj-fine-1', ea: 'evt-a9', eb: 'evt-b9', at: '2026-02-02T00:00:00Z' });
+      await writeHistory(client, { id: 'adj-fine-2', ea: 'evt-a9', eb: 'evt-b9', at: '2026-02-03T00:00:00Z' });
+
+      // The read-only preflight says so BEFORE anything is attempted.
+      expect(await countBackfillTies(client)).toEqual({
+        already_applied: false,
+        existing_adjudications: 6,
+        tied_disagreements: 2,
+      });
+
+      const migrationSql = await readMigration(REVISIONS_SQL);
+      await expect(applyMigrationTransaction(client, migrationSql)).rejects.toThrow(
+        /CALIBRATION_ADJUDICATION_BACKFILL_TIE: 2 disagreement\(s\)/,
+      );
+
+      // Rolled back whole: no column, no trigger, no index, rows as they were.
+      const left = await client.query<{ col: boolean; trg: boolean; idx: boolean; n: number }>(
+        `select
+           exists (select 1 from information_schema.columns
+                    where table_schema = 'pilot' and table_name = 'calibration_adjudications'
+                      and column_name = 'revision') as col,
+           exists (select 1 from pg_trigger
+                    where tgrelid = 'pilot.calibration_adjudications'::regclass
+                      and not tgisinternal) as trg,
+           exists (select 1 from pg_indexes
+                    where schemaname = 'pilot'
+                      and indexname = '${PAIR_REVISION_CONSTRAINT}') as idx,
+           (select count(*)::int from pilot.calibration_adjudications) as n`,
+      );
+      expect(left.rows[0]).toEqual({ col: false, trg: false, idx: false, n: 6 });
+
+      // Once a person has said which answer came second, it applies.
+      await client.query(
+        `update pilot.calibration_adjudications
+            set adjudicated_at = adjudicated_at + interval '1 second'
+          where adjudication_id in ('adj-tied-a', 'adj-lone-y')`,
+      );
+      expect((await countBackfillTies(client)).tied_disagreements).toBe(0);
+      await applyMigrationTransaction(client, migrationSql);
+      const numbered = await client.query<{ adjudication_id: string; revision: number }>(
+        `select adjudication_id, revision from pilot.calibration_adjudications
+          where adjudication_id like 'adj-tied-%' or adjudication_id like 'adj-lone-%'
+          order by adjudication_id`,
+      );
+      expect(numbered.rows).toEqual([
+        { adjudication_id: 'adj-lone-x', revision: 1 },
+        { adjudication_id: 'adj-lone-y', revision: 2 },
+        { adjudication_id: 'adj-tied-a', revision: 2 },
+        { adjudication_id: 'adj-tied-b', revision: 1 },
+      ]);
+
+      // On an applied database there is nothing left to backfill.
+      expect(await countBackfillTies(client)).toEqual({
+        already_applied: true,
+        existing_adjudications: 6,
+        tied_disagreements: 0,
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the preflight cannot write, and leaves no transaction open', async () => {
+    const countBackfillTies = await loadPreflight();
+    const client = await historyDatabase('ppbf_test_calib_rev_preflight');
+    try {
+      await writeHistory(client, { id: 'adj-one', ea: 'evt-a', eb: 'evt-b', at: '2026-02-02T00:00:00Z' });
+      await countBackfillTies(client);
+      const state = await client.query<{ in_tx: boolean }>(
+        `select now() <> statement_timestamp() as in_tx`,
+      );
+      expect(state.rows[0]?.in_tx).toBe(false);
+
+      // The transaction it runs in is read-only at the database, not by
+      // convention: the same statement shape with a write in it is refused.
+      await client.query('BEGIN READ ONLY');
+      await expect(
+        client.query(`delete from pilot.calibration_adjudications`),
+      ).rejects.toThrow(/read-only transaction/);
+      await client.query('ROLLBACK');
+      const kept = await client.query<{ n: number }>(
+        `select count(*)::int as n from pilot.calibration_adjudications`,
+      );
+      expect(kept.rows[0]?.n).toBe(1);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('"no mark" and a mark whose id is the empty string are different disagreements', async () => {
+    /* Nothing in the events table forbids '' as an id. An arbiter that
+     * encoded NULL as '' would make (no mark, X) and ('', X) one key while the
+     * server's `is not distinct from` treats them as two -- so the allocator
+     * and the arbiter would disagree about what one disagreement is. */
+    const applyMigrationTransaction = await loadApply();
+    const client = await historyDatabase('ppbf_test_calib_rev_nullkey');
+    try {
+      await applyMigrationTransaction(client, await readMigration(REVISIONS_SQL));
+
+      // NULL + X, then '' + X, both at revision 1: two disagreements, both land.
+      await writeHistory(client, { id: 'adj-null-x', ea: null, eb: 'evt-x', at: '2026-01-01T00:00:00Z', revision: 1 });
+      await writeHistory(client, { id: 'adj-empty-x', ea: '', eb: 'evt-x', at: '2026-01-01T00:00:00Z', revision: 1 });
+
+      // NULL + X again at revision 1 collides with NULL + X ...
+      await expect(
+        writeHistory(client, { id: 'adj-null-x-dup', ea: null, eb: 'evt-x', at: '2026-01-02T00:00:00Z', revision: 1 }),
+      ).rejects.toMatchObject({ code: '23505', constraint: PAIR_REVISION_CONSTRAINT });
+      // ... and '' + X again collides with '' + X.
+      await expect(
+        writeHistory(client, { id: 'adj-empty-x-dup', ea: '', eb: 'evt-x', at: '2026-01-02T00:00:00Z', revision: 1 }),
+      ).rejects.toMatchObject({ code: '23505', constraint: PAIR_REVISION_CONSTRAINT });
+
+      // The database's own numbering keeps them apart as well: the next
+      // un-numbered insert for each is revision 2 of ITS disagreement.
+      await writeHistory(client, { id: 'adj-null-x-2', ea: null, eb: 'evt-x', at: '2026-01-03T00:00:00Z' });
+      await writeHistory(client, { id: 'adj-empty-x-2', ea: '', eb: 'evt-x', at: '2026-01-03T00:00:00Z' });
+      const rows = await client.query<{ adjudication_id: string; revision: number }>(
+        `select adjudication_id, revision from pilot.calibration_adjudications order by adjudication_id`,
+      );
+      expect(rows.rows).toEqual([
+        { adjudication_id: 'adj-empty-x', revision: 1 },
+        { adjudication_id: 'adj-empty-x-2', revision: 2 },
+        { adjudication_id: 'adj-null-x', revision: 1 },
+        { adjudication_id: 'adj-null-x-2', revision: 2 },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('REFUSES an arbiter of the right name that folds "no mark" into the empty string', async () => {
+    const applyMigrationTransaction = await loadApply();
+    const client = await runnerDatabase('ppbf_test_calib_rev_shape2');
+    try {
+      await client.query(await readMigration(ADJUDICATION_SQL));
+      await client.query(
+        `alter table pilot.calibration_adjudications add column revision integer;
+         create unique index ${PAIR_REVISION_CONSTRAINT}
+           on pilot.calibration_adjudications (
+             organization_id, calibration_clip_id,
+             annotation_set_id_a, annotation_set_id_b,
+             coalesce(source_event_id_a, ''), coalesce(source_event_id_b, ''), revision)`,
+      );
+      await expect(
+        applyMigrationTransaction(client, await readMigration(REVISIONS_SQL)),
+      ).rejects.toThrow(/CALIBRATION_ADJUDICATION_REVISIONS_NOT_READY/);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('REFUSES a database whose numbering trigger was dropped or disabled', async () => {
+    // Without it the image that names no revision cannot write at all.
+    const applyMigrationTransaction = await loadApply();
+    const client = await runnerDatabase('ppbf_test_calib_rev_notrigger');
+    try {
+      await client.query(await readMigration(ADJUDICATION_SQL));
+      await applyMigrationTransaction(client, await readMigration(REVISIONS_SQL));
+
+      await client.query(
+        `alter table pilot.calibration_adjudications
+           disable trigger pilot_calibration_adjudications_assign_revision`,
+      );
+      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        /CALIBRATION_ADJUDICATION_REVISIONS_NOT_READY/,
+      );
+      await client.query(
+        `drop trigger pilot_calibration_adjudications_assign_revision
+           on pilot.calibration_adjudications`,
+      );
+      await expect(applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        /CALIBRATION_ADJUDICATION_REVISIONS_NOT_READY/,
+      );
+      // Re-applying the migration puts it back.
+      await applyMigrationTransaction(client, await readMigration(REVISIONS_SQL));
     } finally {
       await client.end();
     }

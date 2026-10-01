@@ -103,8 +103,13 @@ interface AdjudicatedField {
 
 interface Adjudication {
   adjudication_id: string;
+  annotation_set_id_a: string;
+  annotation_set_id_b: string;
   source_event_id_a: string | null;
   source_event_id_b: string | null;
+  /** Which answer this is for its disagreement. The highest is the current
+   *  one (OD-2026-08-29-005). */
+  revision: number;
   resolution_type: string;
   missed_event_verdict: string | null;
   adjudicator_account_id: string;
@@ -133,6 +138,37 @@ interface DeskResponse {
    *  choose, and it is handed no reading until a pair exists. */
   pair_selection_required?: boolean;
   candidate_sets?: CandidateSet[];
+}
+
+/** One disagreement: the two readings and the two marks, "no mark" kept apart
+ *  from any mark. The same grouping the server and the database use. */
+function disagreementKey(row: {
+  annotation_set_id_a: string;
+  annotation_set_id_b: string;
+  source_event_id_a: string | null;
+  source_event_id_b: string | null;
+}): string {
+  return JSON.stringify([
+    row.annotation_set_id_a,
+    row.annotation_set_id_b,
+    row.source_event_id_a,
+    row.source_event_id_b,
+  ]);
+}
+
+/** The highest revision SHOWN for each disagreement. Built from the rows this
+ *  page is displaying and from nothing else, so "what the administrator was
+ *  looking at" and "what the page tells the server they were looking at" are
+ *  the same list by construction. */
+function shownRevisions(adjudications: readonly Adjudication[]): Map<string, number> {
+  const highest = new Map<string, number>();
+  for (const adjudication of adjudications) {
+    const key = disagreementKey(adjudication);
+    if (adjudication.revision > (highest.get(key) ?? 0)) {
+      highest.set(key, adjudication.revision);
+    }
+  }
+  return highest;
 }
 
 interface CandidateSet {
@@ -275,6 +311,7 @@ function AdjudicationDesk() {
   const sets = payload?.sets;
   const events = payload?.events;
   const clip = payload?.clip;
+  const currentRevisions = shownRevisions(payload?.adjudications ?? []);
 
   function addField() {
     setFields((current) => [
@@ -303,6 +340,24 @@ function AdjudicationDesk() {
     setSubmitError(null);
     setRecordedId(null);
     try {
+      /* WHAT THIS ADMINISTRATOR WAS LOOKING AT, for the disagreement being
+         settled: the highest revision in the list on screen, or 0 if nothing
+         about these two marks is shown. A blank side is "no mark", which the
+         server stores as null.
+
+         Refused here rather than guessed when the readings are not loaded: a
+         page that cannot say what it showed has nothing true to send. */
+      if (!sets) {
+        setSubmitError('Reload this clip before recording a decision.');
+        return;
+      }
+      const reviewedRevision = currentRevisions.get(disagreementKey({
+        annotation_set_id_a: sets.a.annotation_set_id,
+        annotation_set_id_b: sets.b.annotation_set_id,
+        source_event_id_a: sourceEventIdA === '' ? null : sourceEventIdA,
+        source_event_id_b: sourceEventIdB === '' ? null : sourceEventIdB,
+      })) ?? 0;
+
       const response = await fetch(`${apiBase()}/api/pilot/calibration/adjudication`, {
         method: 'POST',
         credentials: 'include',
@@ -324,6 +379,10 @@ function AdjudicationDesk() {
             : {}),
           source_event_id_a: sourceEventIdA,
           source_event_id_b: sourceEventIdB,
+          /* A claim about what was REVIEWED, not a choice of revision: the
+             server compares it with what stands now, refuses if somebody has
+             answered since, and computes the revision it writes itself. */
+          expected_current_revision: reviewedRevision,
           resolution_type: resolutionType,
           missed_event_verdict: missedEventVerdict,
           notes,
@@ -689,6 +748,7 @@ function AdjudicationDesk() {
                 <thead>
                   <tr>
                     <th scope="col">Between</th>
+                    <th scope="col">Revision</th>
                     <th scope="col">Concluded</th>
                     <th scope="col">Field decisions</th>
                     <th scope="col">Recorded by</th>
@@ -700,6 +760,13 @@ function AdjudicationDesk() {
                       <td>
                         {adjudication.source_event_id_a ?? 'nothing from A'} /{' '}
                         {adjudication.source_event_id_b ?? 'nothing from B'}
+                      </td>
+                      <td>
+                        {adjudication.revision}
+                        {' · '}
+                        {adjudication.revision === currentRevisions.get(disagreementKey(adjudication))
+                          ? 'current'
+                          : 'superseded'}
                       </td>
                       <td>
                         {adjudication.resolution_type}
@@ -734,16 +801,17 @@ function AdjudicationDesk() {
                 </p>
               )}
 
-              {/* Stated rather than left to be discovered. Nothing marks one
-                  decision as superseding another, so a second decision about
-                  the same pair of marks sits beside the first with only its
-                  timestamp separating them. Which is the decision of record is
-                  an owner question, and this screen does not answer it by
-                  hiding either one. */}
+              {/* Stated rather than left to be discovered. A second decision
+                  about the same pair of marks is a correction: it becomes the
+                  next revision and the current answer, and the earlier one
+                  stays in this list as history (OD-2026-08-29-004, -005).
+                  Whether a screen should show only the current answer is an
+                  open owner question, and this one does not answer it by
+                  hiding either. */}
               <p className="t-muted mt-[var(--s3)]">
                 A decision is never edited or removed. Recording a second one about the same pair
-                of marks adds a row beside the first; nothing here marks either as superseding the
-                other.
+                of marks is a correction: it becomes the current answer, and the earlier one stays
+                here marked superseded.
               </p>
             </section>
           </>

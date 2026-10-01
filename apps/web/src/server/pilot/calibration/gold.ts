@@ -1,4 +1,6 @@
 import { query, queryOne, withTransaction } from '../db';
+import { ConflictError } from '../errors';
+import { currentAdjudicationPredicate } from './adjudication';
 import { isInVocabulary } from './ontology';
 
 // Gold / reference-dataset governance -- the deliberate act by which one
@@ -112,6 +114,9 @@ interface AdjudicationProvenanceRow {
   annotation_set_id_b: string;
   resolution_type: string;
   missed_event_verdict: string | null;
+  /** True when a later revision of the same disagreement exists, so this
+   *  adjudication is history and not the answer of record. */
+  superseded: boolean;
   /** Null when the clip's source was not recorded to teach Shadow, or when
    *  the video row is gone. Both mean the reading is not reference data. */
   capture_take_id: string | null;
@@ -191,6 +196,7 @@ export async function nominateGoldCandidate(
          adj.annotation_set_id_b,
          adj.resolution_type,
          adj.missed_event_verdict,
+         not (${currentAdjudicationPredicate('adj')}) as superseded,
          clip.calibration_project_id,
          clip.video_session_id,
          -- LEFT, so a missing video row still reports as "no such
@@ -211,6 +217,24 @@ export async function nominateGoldCandidate(
     const source = provenance.rows[0];
     if (!source) {
       throw new Error('Not found: no such adjudication in this organization');
+    }
+
+    /*
+     * ONLY THE ANSWER OF RECORD MAY BECOME REFERENCE DATA.
+     *
+     * A second adjudication of the same disagreement is a correction and
+     * supersedes the first (OD-2026-08-29-004, -005). The earlier row is kept
+     * as history, and history is exactly what a gold record must not be built
+     * from: it is the reading somebody went back and replaced.
+     *
+     * Checked at nomination. A record nominated from an adjudication that is
+     * corrected AFTERWARDS is not reached by this.
+     */
+    if (source.superseded) {
+      throw new ConflictError(
+        'This adjudication has been corrected by a later one, so it cannot become reference data. Nominate the current answer instead.',
+        'CALIBRATION_ADJUDICATION_SUPERSEDED',
+      );
     }
 
     /*

@@ -241,6 +241,9 @@ const DECISION = {
   source_event_id_a: 'evt-a1',
   source_event_id_b: 'evt-b1',
   resolution_type: 'accept_a',
+  /* What the administrator had on screen for this disagreement, carried from
+     the page. 0: these fixtures settle one nobody has adjudicated. */
+  expected_current_revision: 0,
 };
 
 /** A clip whose footage is fine and whose two readings are both finished. */
@@ -651,6 +654,7 @@ describe('what the caller may and may not supply', () => {
       source_event_id_b: '',
       resolution_type: 'accept_a',
       missed_event_verdict: '',
+      expected_current_revision: 0,
     }));
 
     expect(response.status).toBe(200);
@@ -1098,5 +1102,91 @@ describe('two administrators deciding the same disagreement at once', () => {
 
     const passed = mockRecord.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(passed).not.toHaveProperty('revision');
+  });
+});
+
+/* THE REVIEWED REVISION IS INPUT, and a bad one is the caller's defect -- not
+ * a story about a second administrator.
+ *
+ * The stale-view refusal itself lives in recordAdjudication and is proved
+ * against real PostgreSQL in calibrationAdjudication.pg.test.ts. What is
+ * proved here is the route's half: it requires the number, hands it on
+ * unchanged, never lets the caller name the revision to write, and tells an
+ * administrator whose browser is running an older copy of the page what to do
+ * about it. */
+describe('the revision the administrator reviewed', () => {
+  test.each([
+    ['missing', undefined],
+    ['a string', '1'],
+    ['fractional', 1.5],
+    ['negative', -1],
+    ['null', null],
+    ['a boolean', true],
+  ])('%s: a 400 that says to reload, not a conflict, and nothing is written', async (_label, value) => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+
+    const decision: Record<string, unknown> = { ...DECISION };
+    if (value === undefined) delete decision.expected_current_revision;
+    else decision.expected_current_revision = value;
+
+    const response = await POST(post(decision));
+    expect(response.status).toBe(400);
+
+    const body = await response.json();
+    expect(body.error).toMatch(/^Reload the page before recording a decision\./);
+    expect(body.code).toBe('CALIBRATION_ADJUDICATION_EXPECTED_REVISION_INVALID');
+    expect(body.code).not.toBe('CALIBRATION_ADJUDICATION_SUPERSEDED');
+    expect(JSON.stringify(body)).not.toContain('while you were deciding');
+
+    expect(mockRecord).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test.each([0, 1, 7])('%d reaches recordAdjudication unchanged', async (reviewed) => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+
+    const response = await POST(post({ ...DECISION, expected_current_revision: reviewed }));
+    expect(response.status).toBe(200);
+    expect(mockRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedCurrentRevision: reviewed }),
+    );
+  });
+
+  test('a stale-view refusal from the module is the same 409 as a lost race, and leaves no audit row', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    bothSubmitted();
+    const { ConflictError } = jest.requireActual('@/src/server/pilot/errors');
+    mockRecord.mockRejectedValue(new ConflictError(
+      'Someone corrected this adjudication while you were deciding. Reload and review their answer before replacing it.',
+      'CALIBRATION_ADJUDICATION_SUPERSEDED',
+    ));
+
+    const response = await POST(post({ ...DECISION, expected_current_revision: 1 }));
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.code).toBe('CALIBRATION_ADJUDICATION_SUPERSEDED');
+    expect(body.error).toMatch(/while you were deciding/);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('the two readings are filed in the gate order however the caller names them', async () => {
+    /* Why "the same two marks with the readings swapped" is not something a
+     * caller of this route can produce: resolveComparisonPair returns the
+     * pair in the gate's own order. Three readings, named back to front. */
+    mockPrincipal.mockResolvedValue(ADMIN);
+    const SET_C = { ...SET_B, annotation_set_id: 'set-c', annotator_account_id: 'coach-c' };
+    bothSubmitted([SET_A, SET_B, SET_C]);
+
+    const response = await POST(post({
+      ...DECISION,
+      annotation_set_id_a: 'set-b',
+      annotation_set_id_b: 'set-a',
+    }));
+    expect(response.status).toBe(200);
+    expect(mockRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ annotationSetIdA: 'set-a', annotationSetIdB: 'set-b' }),
+    );
   });
 });

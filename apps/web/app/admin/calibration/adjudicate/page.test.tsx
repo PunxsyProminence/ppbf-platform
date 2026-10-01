@@ -87,8 +87,11 @@ const DESK = {
   adjudications: [
     {
       adjudication_id: 'adj-1',
+      annotation_set_id_a: 'set-a',
+      annotation_set_id_b: 'set-b',
       source_event_id_a: 'evt-a2',
       source_event_id_b: null,
+      revision: 1,
       resolution_type: 'unresolvable',
       missed_event_verdict: 'unresolvable',
       adjudicator_account_id: 'admin-1',
@@ -415,5 +418,146 @@ describe('which two readings, when there are more than two', () => {
 
     await screen.findByText('Coach A marked');
     expect(screen.queryByTestId('pair-selection')).not.toBeInTheDocument();
+  });
+});
+
+/* OD-2026-08-29-005. A second decision about the same pair of marks is a
+ * correction. Two things this screen owes that ruling: it says which answer is
+ * current, and it tells the server which answer the administrator was looking
+ * at, so a decision made on a view that went stale is refused instead of
+ * silently replacing an answer nobody read.
+ *
+ * jsdom only. Nothing here establishes how the Revision cell reads on a gym
+ * tablet. */
+describe('corrections: which answer is current, and which one was reviewed', () => {
+  const CORRECTED = {
+    ...DESK,
+    adjudications: [
+      DESK.adjudications[0],
+      {
+        ...DESK.adjudications[0],
+        adjudication_id: 'adj-2',
+        revision: 2,
+        resolution_type: 'accept_a',
+        missed_event_verdict: 'a_event_real',
+        fields: [],
+      },
+      // Another pair of readings on the same clip, at a higher revision. The
+      // GET is clip-wide; this row must not be taken for this desk's.
+      {
+        ...DESK.adjudications[0],
+        adjudication_id: 'adj-other-pair',
+        annotation_set_id_b: 'set-c',
+        revision: 7,
+        fields: [],
+      },
+    ],
+  };
+
+  function deskThatRecords(desk: unknown = CORRECTED) {
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => (
+      init?.method === 'POST'
+        ? respondWith({ ok: true, adjudication: { adjudication_id: 'adj-new' }, fields: [] })
+        : respondWith(desk)
+    ));
+  }
+
+  async function sentBody() {
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true);
+    });
+    const postCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
+    return JSON.parse((postCall?.[1] as RequestInit).body as string);
+  }
+
+  test('each settled row says its revision and whether it still stands', async () => {
+    deskThatRecords();
+    render(<CalibrationAdjudicationPage />);
+    await screen.findByText('Clip C-01');
+
+    expect(screen.getByText('1 · superseded')).toBeInTheDocument();
+    expect(screen.getByText('2 · current')).toBeInTheDocument();
+    // The other pair's only row is the current answer to ITS disagreement.
+    expect(screen.getByText('7 · current')).toBeInTheDocument();
+  });
+
+  test('the screen no longer says nothing marks a decision as superseding another', async () => {
+    deskThatRecords();
+    render(<CalibrationAdjudicationPage />);
+    await screen.findByText('Clip C-01');
+
+    expect(screen.queryByText(/nothing here marks either as superseding/)).not.toBeInTheDocument();
+    expect(screen.getByText(/is a correction: it becomes the current answer/)).toBeInTheDocument();
+  });
+
+  test('correcting a settled disagreement sends the highest revision shown for THOSE marks', async () => {
+    deskThatRecords();
+    render(<CalibrationAdjudicationPage />);
+    await screen.findByText('Clip C-01');
+
+    // evt-a2 against nothing from B: revisions 1 and 2 are on screen.
+    fireEvent.change(screen.getByLabelText("Coach A's mark"), { target: { value: 'evt-a2' } });
+    fireEvent.change(screen.getByLabelText('What was concluded'), { target: { value: 'accept_a' } });
+    fireEvent.click(screen.getByText('Record this decision'));
+
+    const sent = await sentBody();
+    expect(sent.expected_current_revision).toBe(2);
+    // The page says what was reviewed. It never names the revision to write.
+    expect(sent).not.toHaveProperty('revision');
+  });
+
+  test('a disagreement with nothing shown about it is sent as 0', async () => {
+    deskThatRecords();
+    render(<CalibrationAdjudicationPage />);
+    await screen.findByText('Clip C-01');
+
+    // evt-a1 against evt-b1: nothing in the settled list is about these marks,
+    // though the same clip carries revisions 2 and 7 about others.
+    fireEvent.change(screen.getByLabelText("Coach A's mark"), { target: { value: 'evt-a1' } });
+    fireEvent.change(screen.getByLabelText("Coach B's mark"), { target: { value: 'evt-b1' } });
+    fireEvent.change(screen.getByLabelText('What was concluded'), { target: { value: 'accept_a' } });
+    fireEvent.click(screen.getByText('Record this decision'));
+
+    expect((await sentBody()).expected_current_revision).toBe(0);
+  });
+
+  test('a mark against "nothing" is not the same disagreement as that mark against another mark', async () => {
+    deskThatRecords();
+    render(<CalibrationAdjudicationPage />);
+    await screen.findByText('Clip C-01');
+
+    // evt-a2 has answers only against nothing from B. Against evt-b1 it is new.
+    fireEvent.change(screen.getByLabelText("Coach A's mark"), { target: { value: 'evt-a2' } });
+    fireEvent.change(screen.getByLabelText("Coach B's mark"), { target: { value: 'evt-b1' } });
+    fireEvent.change(screen.getByLabelText('What was concluded'), { target: { value: 'accept_a' } });
+    fireEvent.click(screen.getByText('Record this decision'));
+
+    expect((await sentBody()).expected_current_revision).toBe(0);
+  });
+
+  test("being told somebody answered first is shown in the server's words, and nothing is confirmed", async () => {
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => (
+      init?.method === 'POST'
+        ? respondWith(
+          {
+            error: 'Someone corrected this adjudication while you were deciding. Reload and review their answer before replacing it.',
+            code: 'CALIBRATION_ADJUDICATION_SUPERSEDED',
+          },
+          false,
+          409,
+        )
+        : respondWith(CORRECTED)
+    ));
+    render(<CalibrationAdjudicationPage />);
+    await screen.findByText('Clip C-01');
+
+    fireEvent.change(screen.getByLabelText("Coach A's mark"), { target: { value: 'evt-a2' } });
+    fireEvent.change(screen.getByLabelText('What was concluded'), { target: { value: 'accept_a' } });
+    fireEvent.click(screen.getByText('Record this decision'));
+
+    expect(
+      await screen.findByText(/Someone corrected this adjudication while you were deciding/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/is on the record/)).not.toBeInTheDocument();
   });
 });
