@@ -207,6 +207,30 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     expect(allList.filter((entry) => !allowList.includes(entry))).toEqual([]);
   });
 
+  test('the dropdown offers exactly the `all` set plus its three named extras', () => {
+    // The per-file test above proves every migration is IN the dropdown. This
+    // is the converse and the exactness: nothing selectable that `all` does not
+    // run, nothing listed twice. An option with no migration behind it reaches
+    // `run_one` and dies on a missing npm script -- against whichever database
+    // the operator had already confirmed.
+    //
+    // The three extras are the only choices that are not a migration slug:
+    // `all` and `list-check` are modes, and the base schema is deliberately
+    // selectable while staying out of `all` (see the allowlist test above).
+    const block = /\n {6}migration:\n(?: {8}.*\n)*? {8}options:\n((?: {10}- .*\n)+)/.exec(
+      workflow.replace(/\r\n/g, '\n'),
+    );
+    if (!block) throw new Error('apply-migrations.yml: could not read the migration choices');
+    const options = block[1].split('\n').filter(Boolean).map((line) => line.trim().replace(/^- /, ''));
+
+    expect(options.length).toBeGreaterThan(20);
+    expect(options.filter((option, index) => options.indexOf(option) !== index)).toEqual([]);
+
+    const extras = ['all', 'list-check', 'base-schema-new-environment-only'];
+    expect(extras.filter((extra) => !options.includes(extra))).toEqual([]);
+    expect(options.filter((option) => !extras.includes(option)).sort()).toEqual([...allList].sort());
+  });
+
   test('every `all` entry is a real migration file', () => {
     const slugs = new Set(migrationFiles.map(slugFor));
     expect(allList.filter((entry) => !slugs.has(entry))).toEqual([]);

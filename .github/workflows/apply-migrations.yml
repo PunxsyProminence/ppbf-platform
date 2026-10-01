@@ -199,7 +199,21 @@ concurrency:
   # Two migrations against one database at the same time is never intended.
   # The shadow-runtime runner's advisory lock would serialize its own SQL, but
   # nothing coordinates across different runners, so serialize per target here.
-  group: apply-migrations-${{ inputs.target }}
+  #
+  # The group is the DEPLOY workflow's group for the same environment, not one
+  # of this workflow's own: deploy-staging.yml's for staging, and
+  # deploy-production.yml's for production. A migration and a deploy of one
+  # environment therefore never run at the same time either, which a separate
+  # apply-migrations-<target> group could not promise. The cost is GitHub's
+  # queue rule: a group holds one running and one PENDING run, so a dispatch
+  # here waits behind a deploy of the same environment, and a third arrival
+  # cancels whichever run is pending. A pending run has started no step.
+  #
+  # This serializes releases and migrations. It does NOT serialize every
+  # workflow that writes to an environment: seed-reference-data and the other
+  # target-taking workflows keep their own groups.
+  # releaseConcurrencyContract.test.ts pins the mapping and names them.
+  group: ${{ inputs.target == 'production' && 'deploy-production-main' || 'deploy-staging-app-ppbf-staging' }}
   cancel-in-progress: false
 
 jobs:
