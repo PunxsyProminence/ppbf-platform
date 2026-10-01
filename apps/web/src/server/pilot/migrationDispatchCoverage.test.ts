@@ -207,6 +207,49 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     expect(allList.filter((entry) => !allowList.includes(entry))).toEqual([]);
   });
 
+  test('the dropdown offers exactly the `all` set plus its three named extras', () => {
+    // The per-file test above proves every migration is IN the dropdown. This
+    // is the converse and the exactness: nothing selectable that `all` does not
+    // run, nothing listed twice. An option with no migration behind it reaches
+    // `run_one` and dies on a missing npm script -- against whichever database
+    // the operator had already confirmed.
+    //
+    // The three extras are the only choices that are not a migration slug:
+    // `all` and `list-check` are modes, and the base schema is deliberately
+    // selectable while staying out of `all` (see the allowlist test above).
+    //
+    // Read to the END of the options block (the first line indented no deeper
+    // than `options:`), not to the first line that is not an option: a reader
+    // that stops at a comment or a blank line never sees a choice added after
+    // one. A line in the block that is none of option, comment or blank is
+    // refused rather than skipped.
+    const lines = workflow.replace(/\r\n/g, '\n').split('\n');
+    const inputAt = lines.indexOf('      migration:');
+    const optionsAt = lines.indexOf('        options:', inputAt);
+    if (inputAt === -1 || optionsAt === -1) {
+      throw new Error('apply-migrations.yml: could not read the migration choices');
+    }
+    // Nothing but the input's own keys may sit between the two, or the
+    // `options:` found belongs to a later input.
+    expect(lines.slice(inputAt + 1, optionsAt).filter((line) => !/^ {8}\S/.test(line))).toEqual([]);
+
+    const options: string[] = [];
+    for (const line of lines.slice(optionsAt + 1)) {
+      if (line.trim() === '' || /^\s*#/.test(line)) continue;
+      if (!/^ {9,}/.test(line)) break;
+      const option = /^ {10}- (\S+)$/.exec(line);
+      if (!option) throw new Error(`apply-migrations.yml: cannot read the options line "${line}"`);
+      options.push(option[1]);
+    }
+
+    expect(options.length).toBeGreaterThan(20);
+    expect(options.filter((option, index) => options.indexOf(option) !== index)).toEqual([]);
+
+    const extras = ['all', 'list-check', 'base-schema-new-environment-only'];
+    expect(extras.filter((extra) => !options.includes(extra))).toEqual([]);
+    expect(options.filter((option) => !extras.includes(option)).sort()).toEqual([...allList].sort());
+  });
+
   test('every `all` entry is a real migration file', () => {
     const slugs = new Set(migrationFiles.map(slugFor));
     expect(allList.filter((entry) => !slugs.has(entry))).toEqual([]);

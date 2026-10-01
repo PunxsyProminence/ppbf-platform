@@ -33,7 +33,7 @@ concurrency:
   # runs, not the queue. There the evicted run WAS the required check, and 16 of
   # 30 pushes to main lost theirs.
   #
-  # Here concurrency IS the safety property and eviction is the cheap outcome.
+  # Here concurrency IS the safety property.
   # One job pushes ppbf-frontend to one ACR, repoints one Container App
   # (app-ppbf-staging), and -- when enable_shadow_gate is true -- mints an
   # ephemeral PIN for the single shared fixture account gate_shadow_athlete
@@ -51,15 +51,21 @@ concurrency:
   # state.
   #
   # The contended resources are named by literals, so no per-run key can make
-  # this safe. An evicted PENDING run costs nothing: it never started a step, so
-  # it holds no fixture, minted no PIN, pushed no image, left no residue. This
-  # workflow is dispatch-only, so a human sees the cancellation and dispatches
-  # again.
+  # this safe.
+  #
+  # Since 2026-10-01 a staging apply-migrations run holds this same group, and
+  # the group carries `queue: max`: later dispatches WAIT (up to 100) instead of
+  # the newest one cancelling the run already pending. That replaced the earlier
+  # stance here, that an evicted pending run was a cheap outcome. It stopped
+  # being cheap once the evicted run could be the migration the next deploy
+  # depends on. `queue: max` must stay on every workflow that names this group;
+  # releaseConcurrencyContract.test.ts holds all of them to it.
   #
   # cancel-in-progress stays false and is load-bearing: cancelling a RUNNING gate
   # is the one case the always() teardown may not survive.
   group: deploy-staging-app-ppbf-staging
   cancel-in-progress: false
+  queue: max
 
 jobs:
   build-and-deploy:
