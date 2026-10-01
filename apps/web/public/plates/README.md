@@ -161,24 +161,42 @@ human has opened the image and checked it against
 `docs/REAL-GYM-REFERENCE-LOCK.md` — the gate cannot tell whether the room is
 this gym.
 
-A delivered image is committed as received — never re-encoded, never
-reconstructed; the reasons are in `AGENT_KERNEL.md` "Binary assets (plates)",
+A delivered image is committed as received — never reconstructed, never
+quietly improved. The reasons are in `AGENT_KERNEL.md` "Binary assets (plates)",
 and what Claude can fetch from a drive is in its capability table.
 
-**That rule and the byte contract cannot both hold for a Grok-sourced plate,
-and this is the record of it.** Grok emits 4:2:0; `plate-contract.json` requires
-4:4:4. So a Grok image committed as received fails the gate, and a Grok image
-that passes the gate was re-encoded on the way in. Every Grok-sourced plate in
-this directory went through that step, not only the recent ones.
+### The one exception: a declared format conversion
 
-What the step does, OBSERVED by reading the JPEG markers rather than recalled:
-downscale to a contract geometry with no crop (Grok 1792x1008 and 1280x720 are
-both exactly 16:9); chroma 4:2:0 to 4:4:4; baseline SOF0 to progressive SOF2;
-JFIF, EXIF, XMP and comment segments stripped, leaving DQT and SOF only. The
-encoder is sharp, mozjpeg, quality 92.
+**Owner decision, 2026-10-01 (OD-2026-10-01-004).** The rule above and the byte
+contract could not both hold. Grok emits `4:2:0`; `plate-contract.json` requires
+`4:4:4`. So a Grok image committed as received fails the gate, and a Grok image
+that passes the gate was re-encoded on the way in. **Every Grok-sourced plate in
+this directory had already gone through that step, silently, for weeks before
+anyone wrote it down.** Jason chose to keep `4:4:4` and make the step declared,
+rather than drop Grok as a source.
 
-It is written here because it had been happening silently. Which of the two
-rules gives way is the owner's call, not this file's.
+Three conditions come with it. A conversion that skips any of them is a defect,
+not a delivery:
+
+1. **Format only, never content.** Downscale to a contract geometry at the SAME
+   aspect ratio, so nothing is cropped out; chroma; encoding; metadata. No
+   reframing, no retouching, no colour grading, no regeneration. If the source
+   aspect ratio does not match a contract geometry, the plate goes back to the
+   generator — it is not cropped to fit.
+2. **The parameters are recorded**, in the table below.
+3. **The original is kept**, so the two can be compared. It lives beside the
+   converted file in the owner's reference folder, OUTSIDE this repository: a
+   `4:2:0` original cannot pass the byte gate and has no business in `public/`.
+
+### Conversion record
+
+| Batch | Conversion applied | Original kept |
+|---|---|---|
+| Grok, 2026-10-01 — `plate-01-office-02/03/04`, `plate-03-clinic-02/03`, `plate-06-night-03`, `plate-15-filmroom-landscape-01` | downscale `1792x1008` to `1280x720` (both exactly 16:9, no crop); chroma `4:2:0` to `4:4:4`; baseline `SOF0` to progressive `SOF2`; JFIF/EXIF/XMP/comment segments stripped, leaving `DQT` and `SOF`; sharp, mozjpeg, quality 92 | **NO — not retained.** These predate the rule and the originals were not kept. The conversion is stated from the JPEG markers of the committed files, and cannot be shown by comparison for this batch |
+| Grok, 2026-10-02 onward | as recorded per batch | YES, required |
+
+The first row is the honest cost of having run the step silently: the record
+exists, the proof does not. Condition 3 is there so no later row reads like it.
 
 ### Images from Grok or Canva, when Jason asks
 
