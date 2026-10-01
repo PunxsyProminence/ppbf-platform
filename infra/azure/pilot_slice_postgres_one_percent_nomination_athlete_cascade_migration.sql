@@ -26,6 +26,15 @@
 -- is more than two years old. Withdrawing or expiring a nomination still keeps
 -- the row.
 --
+-- ONE KEY, BY NAME. The decision names pilot_one_percent_nominations_athlete_fk
+-- and this file alters that constraint and nothing else. Any OTHER foreign key
+-- from this table onto pilot.athletes is left exactly as it is, whatever its
+-- delete action: `all` re-runs this file on every dispatch, so a rule that
+-- dropped every restricting athlete key would silently remove a key some later
+-- migration added on purpose. If such a key exists and restricts, the purge
+-- would still be blocked, so the runner's readiness check refuses and the
+-- transaction rolls back -- reported, not repaired.
+--
 -- SAME NAME, DROPPED AND RE-ADDED, guarded on the constraint's own delete
 -- action -- the pattern parent_authored_purge_migration.sql:117-150 used. The
 -- one-percent-club migration re-runs on every `all` dispatch and its `create
@@ -40,27 +49,22 @@
 -- apps/web/scripts/pilot-apply-one-percent-nomination-athlete-cascade-migration.mjs.
 
 do $pilot_one_percent_nominations_athlete_fk$
-declare
-  fk record;
 begin
   if to_regclass('pilot.one_percent_nominations') is null then
     raise exception 'ONE_PERCENT_NOMINATION_ATHLETE_CASCADE_NOT_READY: pilot.one_percent_nominations does not exist -- apply the one percent club migration first';
   end if;
 
-  -- Found by what it points at rather than by name alone: any foreign key from
-  -- this table onto pilot.athletes that does not already cascade is the one
-  -- that blocks the purge, whatever it is called.
-  for fk in
-    select c.conname
-      from pg_constraint c
-     where c.conrelid = to_regclass('pilot.one_percent_nominations')
-       and c.confrelid = to_regclass('pilot.athletes')
+  -- Only the named constraint, and only when it does not already cascade.
+  if exists (
+    select 1 from pg_constraint c
+     where c.conname = 'pilot_one_percent_nominations_athlete_fk'
+       and c.conrelid = to_regclass('pilot.one_percent_nominations')
        and c.contype = 'f'
        and c.confdeltype <> 'c'
-  loop
-    execute format(
-      'alter table pilot.one_percent_nominations drop constraint %I', fk.conname);
-  end loop;
+  ) then
+    alter table pilot.one_percent_nominations
+      drop constraint pilot_one_percent_nominations_athlete_fk;
+  end if;
 
   if not exists (
     select 1 from pg_constraint

@@ -67,7 +67,10 @@ function resolveSslConfig() {
 // then refuse a correctly migrated database.
 // `no_restricting_athlete_fk`: no OTHER foreign key from this table onto
 // pilot.athletes is left restricting -- one would block the purge just the
-// same, under a different name.
+// same, under a different name. The migration deliberately does not touch
+// such a key (it alters the one named constraint only), so this clause is
+// where it is caught: the run is refused and rolled back, and the key is
+// still there for somebody to decide about.
 // `votes_still_cascade`: asserts what was NOT touched. The decision removes a
 // nomination with its athlete; the votes follow only because
 // pilot_one_percent_votes_nomination_fk already cascades. If that were ever

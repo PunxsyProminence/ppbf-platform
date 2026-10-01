@@ -597,11 +597,53 @@ describe('nomination-athlete cascade migration', () => {
     }
   });
 
+  test('a second restricting key that exists BEFORE the migration is not dropped by it, and the runner refuses', async () => {
+    // OD-2026-08-29-007 names one constraint. `all` re-runs this migration on
+    // every dispatch, so if it dropped every restricting key onto
+    // pilot.athletes it would silently remove one a later migration added on
+    // purpose.
+    const client = await freshDatabase('onepct_cascade_other_key_first');
+    const athleteKeys = async () => (await client.query<{ conname: string; confdeltype: string }>(
+      `select c.conname, c.confdeltype from pg_constraint c
+        where c.conrelid = 'pilot.one_percent_nominations'::regclass
+          and c.confrelid = 'pilot.athletes'::regclass
+          and c.contype = 'f'
+        order by c.conname`,
+    )).rows;
+    try {
+      await client.query(migrationSql);
+      await client.query(
+        `alter table pilot.one_percent_nominations
+           add constraint test_other_athlete_fk
+           foreign key (organization_id, athlete_id)
+           references pilot.athletes(organization_id, athlete_id)`,
+      );
+
+      // Through the runner: refused, and rolled back -- both keys as they were.
+      await expect(applyCascadeMigration(client, cascadeSql)).rejects.toThrow(
+        /ONE_PERCENT_NOMINATION_ATHLETE_CASCADE_NOT_READY/,
+      );
+      expect(await athleteKeys()).toEqual([
+        { conname: 'pilot_one_percent_nominations_athlete_fk', confdeltype: 'a' },
+        { conname: 'test_other_athlete_fk', confdeltype: 'a' },
+      ]);
+
+      // The SQL alone, with no runner to refuse it: the named key cascades and
+      // the other key is untouched.
+      await client.query(cascadeSql);
+      expect(await athleteKeys()).toEqual([
+        { conname: 'pilot_one_percent_nominations_athlete_fk', confdeltype: 'c' },
+        { conname: 'test_other_athlete_fk', confdeltype: 'a' },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the real runner REFUSES a second, restricting key onto pilot.athletes, and rolls its own work back', async () => {
     // The named key cascades after the SQL runs, so `athlete_fk_cascades` is
-    // true here; only `no_restricting_athlete_fk` can refuse. The second key
-    // is added by the SQL the runner is handed, after the real migration, so
-    // the migration's own drop loop has already run and cannot remove it.
+    // true here; only `no_restricting_athlete_fk` can refuse. Here the second
+    // key arrives in the same transaction, after the migration's own SQL.
     const client = await freshDatabase('onepct_cascade_rdy_second_key');
     try {
       await client.query(migrationSql);
