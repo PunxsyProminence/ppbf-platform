@@ -414,5 +414,9 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // against a missing table.
     expect(at('calibration-adjudication-revisions'))
       .toBeGreaterThan(at('calibration-adjudication'));
+    // one-percent-nomination-athlete-cascade replaces a foreign key on
+    // pilot.one_percent_nominations, which one-percent-club creates, and its
+    // SQL refuses to run without that table.
+    expect(at('one-percent-nomination-athlete-cascade')).toBeGreaterThan(at('one-percent-club'));
   });
 });
