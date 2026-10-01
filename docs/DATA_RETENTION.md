@@ -209,6 +209,14 @@ and the role (athlete, guardian, staff), not from how the login reads today:
   cleanup job removes the login.
 - if the login no longer matches the submission (it was given another role, or moved to another
   gym), nothing proves the writer is gone, and the submission stays.
+- after the cleanup job removes a deleted athlete, the roster can give the same athlete id to a
+  new child, while the deleted athlete's login still carries that id. The queue only treats an
+  athlete record as the writer's if it already existed when the submission was written, so the
+  deleted athlete's closed submissions stay hidden and their open ones show with no athlete
+  name, never the new child's. This rests on the athlete record's creation date. The roster's
+  add-athlete screen takes that date from the admin's device, so a device clock that is wrong
+  can defeat it either way: a new record dated before the old submissions is taken for the
+  writer, and a record dated after something its own athlete wrote is not.
 
 The platform owner's cross-gym feedback list, which
 names nobody and withholds safeguarding text, is unchanged. The video-compliance publication

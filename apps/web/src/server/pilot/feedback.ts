@@ -2,7 +2,7 @@ import { FEEDBACK_ACKNOWLEDGEMENT } from '@/lib/feedbackWording';
 
 import type { PilotRole } from './contracts';
 import { query } from './db';
-import { submissionWriterNotDeletedSql } from './deletedAthletes';
+import { submissionWriterAthleteSql, submissionWriterNotDeletedSql } from './deletedAthletes';
 import { scanForSafetyLanguage } from './feedbackSafetyScan';
 
 /**
@@ -118,8 +118,11 @@ export interface FeedbackQueueFilter {
 // looked. "Deleted writer" is decided from the submission's own frozen role
 // and gym, and means the PERSON, not the login; where the account no longer
 // proves who wrote the row, the row stays (submissionWriterNotDeletedSql,
-// which also covers a reference the retention purge has cleared). The owner's
-// de-identified statement below is unchanged.
+// which also covers a reference the retention purge has cleared). The NAME is
+// joined by the same test of who the writer's athlete is
+// (submissionWriterAthleteSql): once a purged athlete's id has been given to a
+// new child, the old rows carry no athlete name rather than the new child's.
+// The owner's de-identified statement below is unchanged.
 const ORGANIZATION_FEEDBACK_SQL = `
   select s.submission_id,
          s.organization_id,
@@ -138,8 +141,7 @@ const ORGANIZATION_FEEDBACK_SQL = `
     on account.account_id = s.submitted_by_account_id
    and account.organization_id = s.organization_id
   left join pilot.athletes athlete
-    on athlete.athlete_id = account.athlete_id
-   and athlete.organization_id = s.organization_id
+    on ${submissionWriterAthleteSql('athlete', 'account', 's')}
   where s.organization_id = $1
     and ($2::text is null or s.route = $2)
     and ($3::text is null or s.triage_status = $3)

@@ -218,7 +218,11 @@ describe('a gym admin reads their own gym, named', () => {
     // Both joins stay inside the same organization, so a shared account id can
     // never pull a name across a gym boundary.
     expect(sqlOfCall(0)).toContain('and account.organization_id = s.organization_id');
-    expect(sqlOfCall(0)).toContain('and athlete.organization_id = s.organization_id');
+    expect(sqlOfCall(0)).toContain('on athlete.organization_id = s.organization_id');
+    // The athlete named is the one the login carried when the row was written:
+    // a row created afterwards under the same id is a different child.
+    expect(sqlOfCall(0)).toContain('and athlete.athlete_id = account.athlete_id');
+    expect(sqlOfCall(0)).toContain('and athlete.created_at <= s.created_at');
   });
 
   test('an unset filter reads both lanes rather than defaulting to one', async () => {
