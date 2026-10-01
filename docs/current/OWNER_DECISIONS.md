@@ -224,16 +224,30 @@ Asked: "A, amend the rule, record the conversion, and keep the originals
 (recommended); B, amend the rule only; C, keep 'as received' and drop Grok as a
 plate source; D, hold until staging." **A.**
 
-**Checked against the transcript** (run read-only by overwatch at this entry's
-request, because the entry turns on what he knew when he chose). Two facts, and
-no more than these. First: at 2026-10-01T21:10Z, before he answered, this lane's
-message to him said *"The originals are gone. For these five plates the
-pre-conversion Grok files no longer exist on disk"*. Second: the option he
-selected at 22:19Z, "Amend rule, keep originals (Recommended)", itself read that
-a later comparison *"is exactly what nobody can do for the five in this PR"*.
-**He was not asked, in so many words, whether that batch is grandfathered.** So
-condition 3 is recorded as binding going forward, and the batch that predates it
-is recorded as unprovable, which is what the conversion table says.
+**Checked against the visual-lane transcript, 2026-10-01** (run read-only by
+overwatch at this entry's request, because the entry turns on what he knew when
+he chose).
+
+What the transcript shows, and no more than this. At 21:10Z, **before** he
+answered, this lane's message to him said *"The originals are gone. For these
+five plates the pre-conversion Grok files no longer exist on disk"*. At 22:19Z
+he selected "Amend rule, keep originals (Recommended)" -- an option whose own
+text read that a later comparison *"is exactly what nobody can do for the five
+in this PR"*. So the selection was made with the gap disclosed twice, once in
+the message and once in the option itself.
+
+The two halves are not the same kind of claim, and are labelled accordingly:
+
+- **PRIMARY** -- the prospective requirement. From his selection: originals are
+  kept from now on, which is condition 3 above.
+- **INFERRED** -- that the five already-converted plates stay, as the disclosed
+  pre-rule exception. This follows from an informed selection; it is not
+  something he said. **He was never asked, in so many words, whether that batch
+  is grandfathered, and he never used the word.** If he says otherwise, the
+  inference is what gives way, not the record of it.
+
+No further owner decision was sought for the five, and the conversion table
+records them as unprovable rather than as approved.
 
 This closes the item **OD-2026-10-01-003 section 3 records as still open**
 ("Open with him in the visual lane, not decided here"). That entry was written
