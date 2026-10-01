@@ -191,19 +191,11 @@ function readMigrationDirectory(infraDir) {
 }
 
 /**
- * Every migration SQL file, as absolute paths, in the order a rebuild applies
- * them: the base schema, then the `all` list.
- *
- * Duplicates in `all` are kept rather than collapsed -- the workflow loop would
- * run them twice, and this models what runs.
- *
- * `pilot-apply-shadow-runtime-migration.mjs` additionally applies six files
- * that each also appear at their own position in `all`. Only the named file is
- * modelled here, and that is equivalent for the resulting object set: a file
- * applied early AND at its own position ends in the state its own position
- * leaves it in, which is the position modelled.
+ * The one read-and-validate path: the `all` list, checked both ways against
+ * the SQL on disk. Both exports below are views of what this returns, so
+ * neither can accept a list the other would refuse.
  */
-export function migrationApplyOrder({
+function resolveApplyOrder({
   infraDir = INFRA_DIR,
   workflowPath = WORKFLOW_PATH,
 } = {}) {
@@ -257,8 +249,94 @@ export function migrationApplyOrder({
     );
   }
 
+  return { infraDir, allList, fileForSlug };
+}
+
+/**
+ * Every migration SQL file, as absolute paths, in the order a rebuild applies
+ * them: the base schema, then the `all` list.
+ *
+ * Duplicates in `all` are kept rather than collapsed -- the workflow loop would
+ * run them twice, and this models what runs.
+ *
+ * `pilot-apply-shadow-runtime-migration.mjs` additionally applies six files
+ * that each also appear at their own position in `all`. Only the named file is
+ * modelled here, and that is equivalent for the resulting object set: a file
+ * applied early AND at its own position ends in the state its own position
+ * leaves it in, which is the position modelled.
+ */
+export function migrationApplyOrder(options = {}) {
+  const { infraDir, allList, fileForSlug } = resolveApplyOrder(options);
+
   return [
     path.join(infraDir, BASE_SCHEMA_FILE),
     ...allList.map((slug) => path.join(infraDir, fileForSlug.get(slug))),
   ];
+}
+
+/**
+ * The routine migrations as the slugs a workflow runs (`npm run
+ * pilot:apply-<slug>`), in apply order. The base schema is not among them: it
+ * has no place in `all`.
+ *
+ * For a workflow that must apply the same set in the same order without
+ * carrying a second copy of the list. It is the same validated read as
+ * migrationApplyOrder(), so the order a release applies and the order the
+ * schema gate verifies against cannot differ, and every refusal above is a
+ * refusal here.
+ */
+export function migrationApplySlugs(options = {}) {
+  return [...resolveApplyOrder(options).allList];
+}
+
+/**
+ * Whether this file is the script node was asked to run, as opposed to a
+ * module something else imported.
+ *
+ * Both sides are resolved to their REAL path. Node resolves the main module
+ * through links before it sets `import.meta.url`, and leaves `process.argv[1]`
+ * as it was typed, so comparing the two as written is false whenever the
+ * checkout is reached through a symlink or a junction -- and a false answer
+ * here is the worst one available: nothing runs, nothing is printed, and the
+ * exit status is 0. A caller capturing the output would hold an empty list and
+ * a success.
+ */
+function invokedAsScript() {
+  if (!process.argv[1]) return false;
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+/*
+ * `node scripts/migration-apply-order.mjs --slugs` prints migrationApplySlugs(),
+ * one per line.
+ *
+ * The whole list is resolved before anything is written, so a refusal leaves
+ * stdout EMPTY and exits non-zero: a caller capturing the output can never be
+ * handed the first half of a list. Imported as a module, none of this runs.
+ *
+ * FOR THE CALLER. The status only stops a shell that looks at it. Capture with
+ * an assignment -- `SLUGS="$(node ... --slugs)"` under `set -e` -- and refuse
+ * an empty result before looping. `for m in $(node ... --slugs)` discards the
+ * status, and a loop over nothing applies no migration and reports success.
+ */
+if (invokedAsScript()) {
+  const args = process.argv.slice(2);
+  if (args.length !== 1 || args[0] !== '--slugs') {
+    process.stderr.write('usage: node scripts/migration-apply-order.mjs --slugs\n');
+    process.exitCode = 2;
+  } else {
+    // exitCode, not process.exit(): exiting straight after a write can cut the
+    // reason off when stderr is a pipe, and the reason is the whole message.
+    try {
+      const slugs = migrationApplySlugs();
+      process.stdout.write(`${slugs.join('\n')}\n`);
+    } catch (error) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    }
+  }
 }

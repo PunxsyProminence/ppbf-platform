@@ -66,8 +66,15 @@ permissions:
   contents: read
 
 concurrency:
+  # Shared with a production apply-migrations run, so a migration and a deploy
+  # of production never run at the same time. `queue: max` lets later
+  # dispatches wait (up to 100) instead of the newest one cancelling the run
+  # already pending; it must stay on every workflow that names this group.
+  # A run waiting for approval still holds the group: cancel an abandoned one
+  # BEFORE dispatching an emergency rollback. See apply-migrations.yml.
   group: deploy-production-main
   cancel-in-progress: false
+  queue: max
 
 jobs:
   guard:

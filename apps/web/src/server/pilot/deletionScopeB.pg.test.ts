@@ -112,7 +112,7 @@ import { listCompetitionEntries } from './externalCompetition';
 import { getFloorHoursAdmin, listPersonActivities } from './floorHours';
 import { requireMicrosoftAuthenticatedPrincipal, requireMicrosoftOrAttestedLocalPinPrincipal, requirePrincipal } from './http';
 import { getNomination, listMembers, listNominations } from './onePercentClub';
-import { getCoachPassbookGapQueue } from './passbook';
+import { getAthletePassbook, getCoachPassbookGapQueue, getGuardianPassbook } from './passbook';
 import { getSubjectIdentity, listPendingReviewPortraits, resolveRelationship } from './profileDb';
 import { listProgramsWithCounts } from './programs';
 import { getOrganizationPublications, getPublicationForPublish, getResearchLibrary } from './publication';
@@ -690,6 +690,23 @@ const READERS: Reader[] = [
   },
   { name: 'floor hours, admin', read: async () => athleteIdsOf(await getFloorHoursAdmin(ORG)) },
   { name: 'passbook gap queue', read: async () => athleteIdsOf(await getCoachPassbookGapQueue(ORG, null)) },
+  {
+    // Read as the athlete: the access guard's athlete arm compares ids and
+    // never reads the mark, so for that reader this lookup is the only thing
+    // between a session that outlived the deletion and the book.
+    name: 'passbook, the full book by athlete id',
+    read: async () =>
+      (await Promise.all([getAthletePassbook(ORG, GONE, 'athlete'), getAthletePassbook(ORG, LIVE, 'athlete')]))
+        .filter((book): book is NonNullable<typeof book> => book !== null)
+        .map((book) => book.athlete.athlete_id),
+  },
+  {
+    name: "passbook, the guardian's book by athlete id",
+    read: async () =>
+      (await Promise.all([getGuardianPassbook(ORG, GONE), getGuardianPassbook(ORG, LIVE)]))
+        .filter((book): book is NonNullable<typeof book> => book !== null)
+        .map((book) => book.athlete.athlete_id),
+  },
   {
     name: 'scheduler store: registrations, requests, attendance',
     read: async () => {

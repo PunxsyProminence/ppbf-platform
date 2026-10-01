@@ -8,7 +8,13 @@ import { seedDefaultDisciplines } from './disciplineSeeds';
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { pinLoginPermitted, usesPin } from './credentialPolicy';
-import { accountDeletedSql, isDeletedAccount, type AccountDeletionFlag } from './deletedAccountSignIn';
+import {
+  accountDeletedSql,
+  deletedLoginConflict,
+  isDeletedAccount,
+  refuseIfLoginDeleted,
+  type AccountDeletionFlag,
+} from './deletedAccountSignIn';
 import { getPilotDefaultOrganizationId, PILOT_SESSION_COOKIE } from './env';
 import { isPlatformLibraryOrganization } from './platformLibraryScope';
 import { seedDefaultSafetyGates } from './safetyGateSeeds';
@@ -814,6 +820,37 @@ export async function changeOwnPin(accountId: string, currentPin: string, newPin
   });
 }
 
+/**
+ * One login per athlete record in an organization, under both names it has:
+ * the base schema's unique (organization_id, athlete_id)
+ * (infra/azure/pilot_slice_postgres.sql:42, named by Postgres), and the index
+ * the multi-organization migration added for databases built before it
+ * (pilot_slice_postgres_multiorg_migration.sql:204). A database can hold both,
+ * and a violation names whichever one refused it.
+ *
+ * Naming a second login for an athlete record that already has one met it
+ * here, and it reached the admin as "Internal server error" (OD-2026-09-29-002
+ * item 4). intake.ts's assertAthleteAccountIdProvisionable refuses that before
+ * promotion's first write; this turns the same refusal into a 409 when it is
+ * raised in the write instead.
+ */
+const ATHLETE_LOGIN_UNIQUE_CONSTRAINTS: readonly string[] = [
+  'accounts_organization_id_athlete_id_key',
+  'uq_pilot_accounts_org_athlete',
+];
+
+function athleteAlreadyHasLoginConflict(error: unknown, athleteId: string): unknown {
+  const pgError = error as { code?: string; constraint?: string } | null;
+  if (pgError?.code !== '23505' || !ATHLETE_LOGIN_UNIQUE_CONSTRAINTS.includes(pgError.constraint ?? '')) {
+    return error;
+  }
+  return new ConflictError(
+    `Conflict: athlete record "${athleteId}" already has a login in this organization, and an athlete record `
+    + 'has one login. Leave account_id out to keep that login as it is.',
+    'ATHLETE_ALREADY_HAS_LOGIN',
+  );
+}
+
 export async function createOrUpdateAthleteAccount(
   accountId: string,
   athleteId: string,
@@ -821,6 +858,12 @@ export async function createOrUpdateAthleteAccount(
   maybeOrganizationId?: string,
 ): Promise<void> {
   const organizationId = maybeOrganizationId ?? organizationIdOrLegacyPin;
+
+  // A second login for this athlete record, refused by the table's unique
+  // constraint inside either write, becomes the 409 the pre-write check gives.
+  const refuseSecondLogin = (error: unknown): never => {
+    throw athleteAlreadyHasLoginConflict(error, athleteId);
+  };
 
   // Check if account exists and verify ownership
   const existingAccount = await query<{ organization_id: string }>(
@@ -846,8 +889,12 @@ export async function createOrUpdateAthleteAccount(
       // intake.ts's assertAthleteAccountIdProvisionable refuses both before
       // promotion's first write; this holds the rule in the write itself, so
       // a change between that check and this statement is still refused.
+      //
+      // Nor a login marked deleted: this update left deleted_at set, so the
+      // re-provisioned login could never sign in. A re-enrolled athlete gets a
+      // new login and the deleted one stays deleted (OD-2026-09-30-004 e1).
       const updated = await client.query<{ account_id: string }>(
-        `update pilot.accounts set
+        `update pilot.accounts a set
            role = $1,
            athlete_id = $2,
            pin_hash = $3,
@@ -856,6 +903,7 @@ export async function createOrUpdateAthleteAccount(
          where account_id = $5 and organization_id = $6
            and role = 'athlete'
            and (athlete_id is null or athlete_id = $2)
+           and not ${accountDeletedSql('a')}
          returning account_id`,
         ['athlete', athleteId, null, false, accountId, organizationId],
       );
@@ -866,8 +914,8 @@ export async function createOrUpdateAthleteAccount(
         // miss, since this statement cannot tell which one it was.
         throw new ConflictError(
           `Conflict: account_id "${accountId}" cannot be made the login for athlete record "${athleteId}". `
-          + 'Only an athlete login in this organization that belongs to no athlete record, or already to '
-          + 'this one, can be. Use a different account_id.',
+          + 'Only an athlete login in this organization that is not deleted and belongs to no athlete record, '
+          + 'or already to this one, can be. Use a different account_id.',
           'EXISTING_ATHLETE_ACCOUNT_CONFLICT',
         );
       }
@@ -881,7 +929,7 @@ export async function createOrUpdateAthleteAccount(
         [accountId, organizationId],
       );
       await revokeAllSessionsForAccountTx(client, accountId);
-    });
+    }).catch(refuseSecondLogin);
   } else {
     await withTransaction(async (client) => {
       // New account—create it
@@ -899,7 +947,7 @@ export async function createOrUpdateAthleteAccount(
                updated_at = now()`,
         [accountId, organizationId],
       );
-    });
+    }).catch(refuseSecondLogin);
   }
 }
 
@@ -1241,16 +1289,20 @@ export async function getAccountRoleInOrganization(
 
 export async function setAccountActiveStatus(accountId: string, organizationId: string, activeFlag: boolean): Promise<void> {
   await withTransaction(async (client) => {
+    // A deleted login is changed in neither direction (OD-2026-09-30-004 e2):
+    // activating it left it shown as active while sign-in refused it.
     const rows = await client.query<{ account_id: string }>(
-      `update pilot.accounts
+      `update pilot.accounts a
        set active_flag = $3,
            updated_at = now()
        where account_id = $1 and organization_id = $2
+         and not ${accountDeletedSql('a')}
        returning account_id`,
       [accountId, organizationId, activeFlag],
     );
 
     if (rows.rows.length === 0) {
+      await refuseIfLoginDeleted(client, accountId, organizationId);
       throw new Error('Missing account_id or organization_id');
     }
 
@@ -1280,19 +1332,24 @@ export async function upsertOrganizationMembership(accountId: string, organizati
       [accountId, organizationId, role, activeFlag],
     );
 
+    // A deleted login is given no role, organization or active flag
+    // (OD-2026-09-30-004 e2). The refusal rolls back the membership row
+    // written above. Unscoped lookup: this is the platform owner's route.
     const rows = await client.query<{ account_id: string }>(
-      `update pilot.accounts
+      `update pilot.accounts a
        set role = $3,
            organization_id = $2,
            active_flag = $4,
            is_platform_owner = case when $3 = 'platform_owner' then true else false end,
            updated_at = now()
        where account_id = $1
+         and not ${accountDeletedSql('a')}
        returning account_id`,
       [accountId, organizationId, role, activeFlag],
     );
 
     if (rows.rows.length === 0) {
+      await refuseIfLoginDeleted(client, accountId, null);
       throw new Error('Missing account_id');
     }
 
@@ -1321,8 +1378,11 @@ export async function transferOrganizationAdmin(
     // off the owner's own row. Both are structural refusals now: the WHERE
     // pins the target to this organization, and the platform owner is excluded
     // outright rather than demoted into an organization seat.
+    //
+    // Neither side may be a deleted login (OD-2026-09-30-004 e2): the transfer
+    // set active_flag true on both, and made a deleted login the gym's admin.
     const promotedRows = await client.query<{ account_id: string }>(
-      `update pilot.accounts
+      `update pilot.accounts a
        set role = 'organization_admin',
            active_flag = true,
            updated_at = now()
@@ -1330,26 +1390,30 @@ export async function transferOrganizationAdmin(
          and organization_id = $2
          and is_platform_owner = false
          and role <> 'platform_owner'
+         and not ${accountDeletedSql('a')}
        returning account_id`,
       [toAccountId, organizationId],
     );
 
     if (promotedRows.rows.length === 0) {
+      await refuseIfLoginDeleted(client, toAccountId, organizationId);
       throw new Error('Missing target account for admin transfer');
     }
 
     const demotedRows = await client.query<{ account_id: string }>(
-      `update pilot.accounts
+      `update pilot.accounts a
        set role = $3,
            active_flag = true,
            is_platform_owner = false,
            updated_at = now()
        where account_id = $1 and organization_id = $2
+         and not ${accountDeletedSql('a')}
        returning account_id`,
       [fromAccountId, organizationId, demoteRole],
     );
 
     if (demotedRows.rows.length === 0) {
+      await refuseIfLoginDeleted(client, fromAccountId, organizationId);
       throw new Error('Missing source admin in organization');
     }
 
@@ -1418,16 +1482,29 @@ export async function setAccountMasterShadowAccess(
     organization_id: string | null;
     has_master_shadow_access: boolean;
   }>(
-    `update pilot.accounts
+    `update pilot.accounts a
      set has_master_shadow_access = $2,
          updated_at = now()
      where account_id = $1
        and role not in ('athlete', 'parent')
+       and not ${accountDeletedSql('a')}
      returning account_id, role, organization_id, has_master_shadow_access`,
     [accountId, granted],
   );
 
   if (!result) {
+    // A deleted login holds no cross-organization privilege, granted or
+    // revoked here (OD-2026-09-30-004 e2). Unscoped: a platform-owner route.
+    // Only for a role that could have held it: an athlete or parent target
+    // keeps the one answer below whether it exists, is deleted, or neither.
+    const deleted = await query(
+      `select 1 from pilot.accounts a
+       where a.account_id = $1 and a.role not in ('athlete', 'parent') and ${accountDeletedSql('a')}`,
+      [accountId],
+    );
+    if (deleted.length > 0) {
+      throw deletedLoginConflict(accountId);
+    }
     throw new Error('Not found: no such account, or its role cannot hold cross-organization access');
   }
 
@@ -1441,19 +1518,23 @@ export async function setAccountMasterShadowAccess(
 
 export async function promoteAccountToOrganizationAdmin(accountId: string, organizationId: string): Promise<void> {
   await withTransaction(async (client) => {
+    // Nor a deleted login (OD-2026-09-30-004 e2): it became the gym's admin
+    // while it could never sign in.
     const rows = await client.query<{ account_id: string }>(
-      `update pilot.accounts
+      `update pilot.accounts a
        set role = 'organization_admin',
            updated_at = now()
        where account_id = $1
          and organization_id = $2
          and is_platform_owner = false
          and role <> 'platform_owner'
+         and not ${accountDeletedSql('a')}
        returning account_id`,
       [accountId, organizationId],
     );
 
     if (rows.rows.length === 0) {
+      await refuseIfLoginDeleted(client, accountId, organizationId);
       throw new Error('Missing target account in organization');
     }
 

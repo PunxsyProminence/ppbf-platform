@@ -1497,7 +1497,20 @@ function PeopleConsoleContent() {
                         // one is being invented, the other is being chosen off
                         // a list. Carrying a value across would submit an id
                         // the admin never picked in this mode.
-                        setAthleteId('');
+                        if (rosterCreatedFor) {
+                          // Leaving a record that was written but never got its
+                          // sign-in: this is the "start a different athlete"
+                          // the locked note advertises, so drop that child's
+                          // details along with the id. Clearing only the id
+                          // would leave them unlocked under the next free number,
+                          // one press from a second record for the same child.
+                          resetAthleteForm();
+                        } else {
+                          setAthleteId('');
+                          // Untouched again, so "new" offers the next free id
+                          // rather than an empty box.
+                          setAthleteIdTouched(false);
+                        }
                       }}
                       className="mt-1 accent-[var(--brass-500)]"
                     />
