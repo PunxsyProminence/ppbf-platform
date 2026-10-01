@@ -74,18 +74,52 @@ interface DecisionOutcomeRow {
   evaluated_at: string;
 }
 
-async function readJsonOrThrow<T>(response: Response, fallbackMessage: string): Promise<T> {
-  const payload = (await response.json().catch(() => ({}))) as (T & { ok?: boolean; error?: string }) | { error?: string };
-  if (!response.ok || (payload as { ok?: boolean }).ok === false) {
-    throw new Error((payload as { error?: string }).error || fallbackMessage);
+const WRITE_NOT_CONFIRMED =
+  'The server did not confirm this. It may or may not have gone through: check before sending it again.';
+
+/* A WRITE IS CONFIRMED BY ITS ROUTE'S OWN ACKNOWLEDGEMENT, not by a 2xx. This
+   used to read any 2xx as success and a body that would not parse as `{}`, so
+   an incident report answered by a proxy's HTML page printed "Incident filed
+   -- it is now in the escalation queue." Three outcomes, and only one of them
+   is a success:
+     - not ok, or a 200 that says `ok: false`: a refusal, with the server's
+       own reason;
+     - `{ ok: true, ... }` carrying what that route promises (`acknowledged`):
+       confirmed;
+     - anything else under a 200: NOT CONFIRMED. Not "failed" either -- the
+       write may have landed -- so the coach is told exactly that, and what
+       they typed stays in the box. */
+async function confirmWriteOrThrow(
+  response: Response,
+  fallbackMessage: string,
+  acknowledged: (envelope: Record<string, unknown>) => boolean,
+): Promise<void> {
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
   }
-  return payload as T;
+  const envelope = payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>)
+    : null;
+  if (!response.ok || envelope?.ok === false) {
+    throw new Error(typeof envelope?.error === 'string' && envelope.error ? envelope.error : fallbackMessage);
+  }
+  if (!envelope || envelope.ok !== true || !acknowledged(envelope)) {
+    throw new Error(WRITE_NOT_CONFIRMED);
+  }
 }
 
-/* A READ is stricter than a write's acknowledgement. readJsonOrThrow turns a
-   body that will not parse into `{}`, which is harmless after a POST and
-   wrong after a GET: `{}` has no `status` and no lists, and "no status, no
-   lists" is exactly what a clean record looks like. A 200 that does not
+/** The row a write route returns under `key`, if it is one. */
+function returnedRow(envelope: Record<string, unknown>, key: string): Record<string, unknown> | null {
+  const row = envelope[key];
+  return row && typeof row === 'object' && !Array.isArray(row) ? (row as Record<string, unknown>) : null;
+}
+
+/* A READ. A body that will not parse used to become `{}`, and `{}` has no
+   `status` and no lists -- and "no status, no lists" is exactly what a clean
+   record looks like. A 200 that does not
    carry the envelope the route always sends has answered some other
    question -- a proxy page, a truncated body -- and is not a statement that
    there is nothing on record. */
@@ -587,7 +621,11 @@ export default function DecisionLoopReviewPage() {
           sourceReference: medicalSourceRef || undefined,
         }),
       });
-      await readJsonOrThrow(response, 'Failed to set medical status.');
+      // shadow/medical-status answers { ok: true, status: <the new row> }.
+      await confirmWriteOrThrow(response, 'Failed to set medical status.', (envelope) => {
+        const row = returnedRow(envelope, 'status');
+        return !!row && isFilled(row.status_id) && row.athlete_id === athleteId && row.status === medicalStatusDraft;
+      });
       // The selection goes back to Pending too: a status left selected after
       // it was set is one click from being set again.
       clearSentDrafts(athleteId, { medicalSourceRef, medicalStatusDraft });
@@ -606,7 +644,11 @@ export default function DecisionLoopReviewPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ athleteId, recommendationId, decision }),
       });
-      await readJsonOrThrow(response, 'Failed to record decision on recommendation.');
+      // shadow/recommendations/decide answers { ok: true, recommendation: <row> }.
+      await confirmWriteOrThrow(response, 'Failed to record decision on recommendation.', (envelope) => {
+        const row = returnedRow(envelope, 'recommendation');
+        return !!row && row.recommendation_id === recommendationId;
+      });
       if (athleteId !== selectedAthleteRef.current) return;
       await refreshAll(athleteId);
     } catch (error) {
@@ -636,7 +678,11 @@ export default function DecisionLoopReviewPage() {
           expectedOutcome: decisionExpectedOutcome,
         }),
       });
-      await readJsonOrThrow(response, 'Failed to record decision.');
+      // shadow/decisions answers { ok: true, decision: <row> }.
+      await confirmWriteOrThrow(response, 'Failed to record decision.', (envelope) => {
+        const row = returnedRow(envelope, 'decision');
+        return !!row && isFilled(row.decision_id) && row.athlete_id === athleteId;
+      });
       clearSentDrafts(athleteId, { decisionText, decisionExpectedOutcome }, ['decisionRecommendationId']);
       if (athleteId !== selectedAthleteRef.current) return;
       await refreshAll(athleteId);
@@ -660,7 +706,11 @@ export default function DecisionLoopReviewPage() {
           severity: nearMissSeverity,
         }),
       });
-      await readJsonOrThrow(response, 'Failed to flag near-miss.');
+      // shadow/near-misses answers { ok: true, nearMiss: <row> }.
+      await confirmWriteOrThrow(response, 'Failed to flag near-miss.', (envelope) => {
+        const row = returnedRow(envelope, 'nearMiss');
+        return !!row && isFilled(row.near_miss_id) && row.athlete_id === athleteId;
+      });
       clearSentDrafts(athleteId, { nearMissDescription, nearMissSeverity }, ['nearMissDecisionId']);
       if (athleteId !== selectedAthleteRef.current) return;
       await refreshAll(athleteId);
@@ -691,7 +741,11 @@ export default function DecisionLoopReviewPage() {
           occurredAt: incidentOccurredAt || undefined,
         }),
       });
-      await readJsonOrThrow(response, 'Failed to file incident report.');
+      // incidents answers { ok: true, escalation: <the escalation row> }.
+      await confirmWriteOrThrow(response, 'Failed to file incident report.', (envelope) => {
+        const row = returnedRow(envelope, 'escalation');
+        return !!row && isFilled(row.escalation_id) && row.athlete_id === athleteId;
+      });
       clearSentDrafts(athleteId, { incidentDescription, incidentSeverity, incidentOccurredAt });
       if (athleteId !== selectedAthleteRef.current) return;
       setIncidentFiledMessage('Incident filed -- it is now in the escalation queue.');
@@ -727,7 +781,11 @@ export default function DecisionLoopReviewPage() {
           payload: { note_type: 'behavior_standard', note_text: behaviorNoteText },
         }),
       });
-      await readJsonOrThrow(response, 'Failed to log the note.');
+      // intake/domain-upsert answers { ok: true, entity_type, entity_id,
+      // athlete_id }, with the athlete id TRIMMED (the route trims it).
+      await confirmWriteOrThrow(response, 'Failed to log the note.', (envelope) =>
+        envelope.entity_type === 'coach_note' && isFilled(envelope.entity_id) && envelope.athlete_id === athleteId.trim(),
+      );
       clearSentDrafts(athleteId, { behaviorNoteText });
       if (athleteId !== selectedAthleteRef.current) return;
       setBehaviorNoteMessage('Note logged.');
@@ -762,7 +820,11 @@ export default function DecisionLoopReviewPage() {
           payload: { note_type: 'parent_message', note_text: messageHomeText },
         }),
       });
-      await readJsonOrThrow(response, 'Failed to send the message.');
+      // intake/domain-upsert answers { ok: true, entity_type, entity_id,
+      // athlete_id }, with the athlete id TRIMMED (the route trims it).
+      await confirmWriteOrThrow(response, 'Failed to send the message.', (envelope) =>
+        envelope.entity_type === 'coach_note' && isFilled(envelope.entity_id) && envelope.athlete_id === athleteId.trim(),
+      );
       clearSentDrafts(athleteId, { messageHomeText });
       if (athleteId !== selectedAthleteRef.current) return;
       setMessageHomeMessage('Sent to the family.');
@@ -816,7 +878,11 @@ export default function DecisionLoopReviewPage() {
           notes: outcomeNotes || undefined,
         }),
       });
-      await readJsonOrThrow(response, 'Failed to evaluate decision outcome.');
+      // shadow/decision-outcomes answers { ok: true, outcome: <row> }.
+      await confirmWriteOrThrow(response, 'Failed to evaluate decision outcome.', (envelope) => {
+        const row = returnedRow(envelope, 'outcome');
+        return !!row && isFilled(row.outcome_id) && row.decision_id === outcomeDecisionId;
+      });
       clearSentDrafts(athleteId, { outcomeObservationIds, outcomeNotes });
       if (athleteId !== selectedAthleteRef.current) return;
       await handleLoadOutcomes(outcomeDecisionId);

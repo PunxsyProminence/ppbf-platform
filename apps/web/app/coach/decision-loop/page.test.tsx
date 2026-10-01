@@ -48,6 +48,63 @@ function jsonResponse(body: unknown, ok = true) {
   return { ok, json: async () => sent } as Response;
 }
 
+/* WHAT EACH WRITE ROUTE ANSWERS ON SUCCESS, read from the routes themselves:
+     shadow/medical-status      { ok: true, status: <row>, effectiveStatus }
+     shadow/recommendations/decide { ok: true, recommendation: <row> }
+     shadow/decisions           { ok: true, decision: <row> }
+     shadow/near-misses         { ok: true, nearMiss: <row> }
+     incidents                  { ok: true, escalation: <row> }
+     intake/domain-upsert       { ok: true, entity_type, entity_id, athlete_id }
+     shadow/decision-outcomes   { ok: true, outcome: <row> }
+   `acknowledge` builds that answer for the request it was sent. A test that
+   wants "the server accepted it" releases ACK; the fetch doubles turn ACK into
+   the right acknowledgement for the route that was called. */
+const ACK = { ok: true, json: async () => ({ ok: true, __genericAck: true }) } as Response;
+
+function acknowledge(url: string, init?: RequestInit): Response {
+  const sent = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+  if (url.includes('/shadow/medical-status')) {
+    return jsonResponse({
+      ok: true,
+      status: {
+        status_id: 'st-new',
+        athlete_id: sent.athleteId,
+        status: sent.status,
+        restriction_flags: {},
+        source_reference: sent.sourceReference ?? null,
+        set_by_account_id: 'acct-1',
+        set_by_role: 'coach',
+        effective_at: '2026-10-01T12:00:00.000Z',
+        created_at: '2026-10-01T12:00:00.000Z',
+      },
+    });
+  }
+  if (url.includes('/recommendations/decide')) {
+    return jsonResponse({ ok: true, recommendation: { recommendation_id: sent.recommendationId, athlete_id: sent.athleteId, status: sent.decision } });
+  }
+  if (url.includes('/shadow/decisions')) {
+    return jsonResponse({ ok: true, decision: { decision_id: 'dec-new', athlete_id: sent.athleteId } });
+  }
+  if (url.includes('/shadow/near-misses')) {
+    return jsonResponse({ ok: true, nearMiss: { near_miss_id: 'nm-new', athlete_id: sent.athleteId } });
+  }
+  if (url.includes('/api/pilot/incidents')) {
+    return jsonResponse({ ok: true, escalation: { escalation_id: 'esc-1', athlete_id: sent.athleteId, source_type: 'incident' } });
+  }
+  if (url.includes('/intake/domain-upsert')) {
+    return jsonResponse({ ok: true, entity_type: sent.entity_type, entity_id: 'obs-1', athlete_id: sent.athlete_id });
+  }
+  if (url.includes('/shadow/decision-outcomes')) {
+    return jsonResponse({ ok: true, outcome: { outcome_id: 'out-1', decision_id: sent.decisionId, match_state: sent.matchState } });
+  }
+  throw new Error(`No acknowledgement known for ${url}`);
+}
+
+async function answer(url: string, init: RequestInit | undefined, given: Response | Promise<Response>): Promise<Response> {
+  const response = await given;
+  return response === ACK ? acknowledge(url, init) : response;
+}
+
 function installFetch(overrides: Record<string, unknown> = {}) {
   const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
     const key = String(url);
@@ -74,11 +131,11 @@ function installFetch(overrides: Record<string, unknown> = {}) {
     }
     if (key.includes('/api/pilot/intake/domain-upsert')) {
       const handler = overrides.domainUpsert as ((init?: RequestInit) => Response) | undefined;
-      return handler ? handler(init) : jsonResponse({ ok: true, entity_type: 'coach_note', entity_id: 'obs-1', athlete_id: 'ath-1' });
+      return handler ? answer(key, init, handler(init)) : acknowledge(key, init);
     }
     if (key.includes('/api/pilot/incidents')) {
       const handler = overrides.incidents as ((init?: RequestInit) => Response) | undefined;
-      return handler ? handler(init) : jsonResponse({ ok: true, escalation_id: 'esc-1', source_type: 'incident' });
+      return handler ? answer(key, init, handler(init)) : acknowledge(key, init);
     }
     throw new Error(`Unexpected fetch: ${key}`);
   });
@@ -306,7 +363,7 @@ describe('Report Incident (#152)', () => {
     const fetchMock = installFetch({
       incidents: async () => {
         await pending;
-        return jsonResponse({ ok: true, escalation_id: 'esc-1' });
+        return ACK;
       },
     });
     await selectAthlete();
@@ -462,7 +519,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
       const key = String(url);
       if (init?.method === 'POST') {
-        return options.post ? options.post(key, init) : jsonResponse({ ok: true });
+        return options.post ? answer(key, init, options.post(key, init)) : acknowledge(key, init);
       }
       if (key.includes('/api/pilot/athletes/list')) {
         return jsonResponse({
@@ -588,7 +645,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   test('a write for the previous athlete that finishes late does not re-read them onto the new athlete', async () => {
     let releasePost: (() => void) | undefined;
     const heldPost = new Promise<Response>((resolve) => {
-      releasePost = () => resolve(jsonResponse({ ok: true }));
+      releasePost = () => resolve(ACK);
     });
     installSwitchFetch({ post: () => heldPost });
     await openAthleteA();
@@ -637,7 +694,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     installSwitchFetch({
       post: () => {
         failReads = true;
-        return jsonResponse({ ok: true });
+        return ACK;
       },
       readA: () => {
         if (failReads) throw new Error('Network request failed');
@@ -743,7 +800,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     switchToB();
     await screen.findByText('No medical administrative status recorded yet.');
 
-    held.release(jsonResponse({ ok: true, escalation_id: 'esc-1' }));
+    held.release(ACK);
     await settle();
 
     expect(screen.queryByText('Incident filed -- it is now in the escalation queue.')).toBeNull();
@@ -892,7 +949,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     switchToB();
     await screen.findByText('No medical administrative status recorded yet.');
 
-    held.release(jsonResponse({ ok: true, outcomes: [] }));
+    held.release(ACK);
     await settle();
 
     if (confirmation) expect(screen.queryByText(confirmation)).toBeNull();
@@ -1227,7 +1284,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     await screen.findByText('No medical administrative status recorded yet.');
     type('Message', 'written for B');
 
-    held.release(jsonResponse({ ok: true }));
+    held.release(ACK);
     await settle();
 
     expect(field<HTMLTextAreaElement>('Message').value).toBe('written for B');
@@ -1242,7 +1299,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     fireEvent.click(screen.getByRole('button', { name: 'Log Note' }));
     type('Note', 'a second note, typed while the first was still out');
 
-    held.release(jsonResponse({ ok: true }));
+    held.release(ACK);
     await screen.findByText('Note logged.');
 
     expect(field<HTMLTextAreaElement>('Note').value).toBe('a second note, typed while the first was still out');
@@ -1271,7 +1328,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     fireEvent.click(forA);
     expect(posts(fetchMock)).toHaveLength(1);
 
-    held.release(jsonResponse({ ok: true, escalation_id: 'esc-1' }));
+    held.release(ACK);
     await screen.findByText(confirmation);
     expect(screen.getByRole('button', { name: button })).not.toBeDisabled();
   });
@@ -1336,7 +1393,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
 
     await act(async () => {
       fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
-      held.release(jsonResponse({ ok: true, escalation_id: 'esc-1' }));
+      held.release(ACK);
       await Promise.resolve();
     });
     await screen.findByText('No medical administrative status recorded yet.');
@@ -1527,7 +1584,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
 
     switchToB();
     await screen.findByText('No medical administrative status recorded yet.');
-    held.release(jsonResponse({ ok: true }));
+    held.release(ACK);
     await settle();
 
     fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-a' } });
@@ -1605,7 +1662,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     ['Evaluate Outcome', () => { type('Decision', 'dec-a'); type('Observation IDs (comma-separated)', 'obs-1'); type('Notes', 'notes for A'); fireEvent.click(screen.getByRole('button', { name: 'Evaluate Outcome' })); },
       () => field<HTMLInputElement>('Observation IDs (comma-separated)').value + field<HTMLTextAreaElement>('Notes').value],
   ])('%s: what was sent is emptied once the server has it', async (_name, submit, sentFields) => {
-    const fetchMock = installSwitchFetch({ post: () => jsonResponse({ ok: true, outcomes: [] }) });
+    const fetchMock = installSwitchFetch({ post: () => ACK });
     await openAthleteA();
 
     submit();
@@ -1622,7 +1679,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
       const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
         const key = String(url);
-        if (init?.method === 'POST') return jsonResponse({ ok: true });
+        if (init?.method === 'POST') return acknowledge(key, init);
         if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
         if (key.includes('athleteId=ath-a')) {
           if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS });
@@ -1675,7 +1732,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       const key = String(url);
       if (init?.method === 'POST') {
         if (key.includes('/medical-status')) rejected = true;
-        return jsonResponse({ ok: true });
+        return acknowledge(key, init);
       }
       if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
       if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS });
@@ -1769,5 +1826,112 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
 
     expect(posts(fetchMock).find((post) => post.url.includes('/shadow/decisions'))?.body.recommendationId).toBe('rec-a');
     expect(posts(fetchMock).find((post) => post.url.includes('/near-misses'))?.body).toMatchObject({ decisionId: 'dec-a', severity: 'critical' });
+  });
+
+  /* -------------------------------------------------------------------------
+     A CONFIRMATION IS PRINTED ONLY FOR A WRITE THE SERVER ACKNOWLEDGED.
+
+     Each handler used to treat any 2xx as success, and a body that would not
+     parse as `{}`: an incident report answered by a proxy's HTML page printed
+     "Incident filed -- it is now in the escalation queue." The route's own
+     success answer (see `acknowledge` above) is now what counts.
+     ----------------------------------------------------------------------- */
+
+  const NOT_CONFIRMED = /The server did not confirm this/;
+
+  const unreadable200 = () => ({ ok: true, json: async () => { throw new SyntaxError('Unexpected token <'); } }) as unknown as Response;
+
+  /** Bodies that arrive with a 200 and are not the route's acknowledgement. */
+  const NOT_AN_ACKNOWLEDGEMENT: Array<[string, (url: string, init: RequestInit) => Response]> = [
+    ['a body that will not parse', unreadable200],
+    ['an empty object', () => jsonResponse({ __empty: true, ok: undefined })],
+    ['ok:true and nothing else', () => jsonResponse({ ok: true })],
+    ['ok that is truthy but not true', (url, init) => {
+      const real = acknowledge(url, init);
+      return { ok: true, json: async () => ({ ...((await real.json()) as object), ok: 1 }) } as Response;
+    }],
+    ['the acknowledgement of a write for a DIFFERENT athlete or record', (url) => {
+      if (url.includes('/shadow/medical-status')) return jsonResponse({ ok: true, status: { status_id: 's', athlete_id: 'someone-else', status: 'cleared' } });
+      if (url.includes('/recommendations/decide')) return jsonResponse({ ok: true, recommendation: { recommendation_id: 'another-rec' } });
+      if (url.includes('/shadow/decisions')) return jsonResponse({ ok: true, decision: { decision_id: 'd', athlete_id: 'someone-else' } });
+      if (url.includes('/shadow/near-misses')) return jsonResponse({ ok: true, nearMiss: { near_miss_id: 'n', athlete_id: 'someone-else' } });
+      if (url.includes('/api/pilot/incidents')) return jsonResponse({ ok: true, escalation: { escalation_id: 'e', athlete_id: 'someone-else' } });
+      if (url.includes('/intake/domain-upsert')) return jsonResponse({ ok: true, entity_type: 'coach_note', entity_id: 'o', athlete_id: 'someone-else' });
+      return jsonResponse({ ok: true, outcome: { outcome_id: 'o', decision_id: 'another-decision' } });
+    }],
+    ['an acknowledgement with no id in it', (url) => {
+      if (url.includes('/shadow/medical-status')) return jsonResponse({ ok: true, status: { athlete_id: 'ath-a', status: 'cleared' } });
+      if (url.includes('/recommendations/decide')) return jsonResponse({ ok: true, recommendation: {} });
+      if (url.includes('/shadow/decisions')) return jsonResponse({ ok: true, decision: { athlete_id: 'ath-a' } });
+      if (url.includes('/shadow/near-misses')) return jsonResponse({ ok: true, nearMiss: { athlete_id: 'ath-a' } });
+      if (url.includes('/api/pilot/incidents')) return jsonResponse({ ok: true, escalation: { athlete_id: 'ath-a' } });
+      if (url.includes('/intake/domain-upsert')) return jsonResponse({ ok: true, entity_type: 'coach_note', entity_id: ' ', athlete_id: 'ath-a' });
+      return jsonResponse({ ok: true, outcome: { decision_id: 'dec-a' } });
+    }],
+  ];
+
+  describe.each(WRITES)('$name', ({ submit, confirmation, draft }) => {
+    test.each(NOT_AN_ACKNOWLEDGEMENT)('a 200 carrying %s is not a confirmation: no success line, a visible failure, and the draft is kept', async (_shape, respond) => {
+      const fetchMock = installSwitchFetch({ post: (url, init) => respond(url, init) });
+      await openAthleteA();
+
+      submit();
+      const before = draft ? draft() : undefined;
+
+      expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
+      expect(posts(fetchMock)).toHaveLength(1);
+      if (confirmation) expect(screen.queryByText(confirmation)).toBeNull();
+      // What was written is still there to send again or to check against.
+      if (draft) {
+        expect(draft()).toBe(before);
+        expect(draft()).not.toBe('');
+      }
+    });
+
+    test('a 200 that says ok:false is a refusal, shown as one', async () => {
+      installSwitchFetch({ post: () => jsonResponse({ ok: false, error: 'REFUSED-UNDER-200' }) });
+      await openAthleteA();
+
+      submit();
+
+      expect(await screen.findByText('REFUSED-UNDER-200')).toBeTruthy();
+      if (confirmation) expect(screen.queryByText(confirmation)).toBeNull();
+    });
+
+    test('the route’s real acknowledgement is a success: no failure line', async () => {
+      const fetchMock = installSwitchFetch();
+      await openAthleteA();
+
+      submit();
+
+      await waitFor(() => expect(posts(fetchMock)).toHaveLength(1));
+      if (confirmation) expect(await screen.findByText(confirmation)).toBeTruthy();
+      else await settle();
+      expect(screen.queryByText(NOT_CONFIRMED)).toBeNull();
+      expect(screen.queryByText(/^Failed to /)).toBeNull();
+    });
+  });
+
+  test('an id typed with a trailing space: the note route trims it, and its acknowledgement for the trimmed id still counts', async () => {
+    const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+      const key = String(url);
+      if (init?.method === 'POST') {
+        return jsonResponse({ ok: true, entity_type: 'coach_note', entity_id: 'obs-1', athlete_id: 'ath-z' });
+      }
+      if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
+      if (key.includes('/medical-status')) return jsonResponse({ status: null });
+      if (key.includes('/recommendations')) return jsonResponse({ recommendations: [] });
+      if (key.includes('/decisions')) return jsonResponse({ decisions: [] });
+      return jsonResponse({ nearMisses: [] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<DecisionLoopReviewPage />);
+    fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-z ' } });
+    await screen.findByText('No medical administrative status recorded yet.');
+
+    type('Note', 'a note');
+    fireEvent.click(screen.getByRole('button', { name: 'Log Note' }));
+
+    expect(await screen.findByText('Note logged.')).toBeTruthy();
   });
 });
