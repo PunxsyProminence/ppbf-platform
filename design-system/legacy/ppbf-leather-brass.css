@@ -3628,10 +3628,10 @@ body.ppbf.on-canvas {
    plus one declaration in this block, with no TypeScript edit at all -- and it
    keeps the plate URLs where the one-source-of-truth rule says they live.
 
-   ADDING A PLATE TO A ROOM is that one declaration. Office carries six, so
-   it is on an `of6` and its second wall reads:
+   ADDING A PLATE TO A ROOM is that one declaration. Office carries five, so
+   it is on an `of5` and its second wall reads:
 
-       :where([data-plate-variant~="2of6"]) .room--office {
+       :where([data-plate-variant~="2of5"]) .room--office {
          --plate: url("/plates/plate-01-office-02.jpg");
        }
 
@@ -3659,8 +3659,8 @@ body.ppbf.on-canvas {
 
    NO LONGER EMPTY. This block was empty from the day the mechanism merged: it
    was wired and guarded before any art existed, so the attribute matched
-   nothing and changed nothing, and merging it was a no-op. It now carries ten
-   rules across three rooms -- office on an of6, clinic an of4, night an of3.
+   nothing and changed nothing, and merging it was a no-op. It now carries nine
+   rules across three rooms -- office on an of5, clinic an of4, night an of3.
    Every room still carrying one plate needs no rule here, because the
    declaration in the list above is already the right answer for every one of
    its routes, so the rooms absent from this block are absent on purpose and
@@ -3676,7 +3676,7 @@ body.ppbf.on-canvas {
    WHY THE SPLITS DIFFER BY ROOM, AND WHY THEY ARE NOT ALL SIX. A split only
    produces as many walls as the room has DOORS to land on them, because the
    slot is a hash of the route and nothing else. Counted from buildingMap.ts,
-   129 doors: office has 52 and fills all six slots of an of6; clinic has 10
+   129 doors: office has 52 and fills all five slots of an of5; clinic has 10
    and fills four of an of4; night has 3 and fills all three of an of3.
 
    Night is the one that proves the rule rather than following it. On an of2
@@ -3685,20 +3685,23 @@ body.ppbf.on-canvas {
    is therefore chosen from the door list, not from how many plates happen to
    exist. Any room whose plates outrun its doors keeps the surplus unbound. */
 
-/* OFFICE -- 52 doors, six walls, all six slots occupied. */
-:where([data-plate-variant~="2of6"]) .room--office {
+/* OFFICE -- 52 doors, five walls, all five slots occupied.
+   IT WAS SIX. plate-14-frontdesk-landscape-01.jpg was the sixth and is gone
+   from here: opened at full size on 2026-10-01 it carries a wall banner of
+   invented, illegible lettering and an invented crest on the ring apron. The
+   reference lock allows the ring canvas's REAL sponsor marks and nothing else,
+   and forbids drawing a gym logo outright. It was bound off a 300x180 contact
+   sheet, which is too small to read a banner; the lesson is in the README. */
+:where([data-plate-variant~="2of5"]) .room--office {
   --plate: url("/plates/plate-01-office-02.jpg");
 }
-:where([data-plate-variant~="3of6"]) .room--office {
+:where([data-plate-variant~="3of5"]) .room--office {
   --plate: url("/plates/plate-01-office-03.jpg");
 }
-:where([data-plate-variant~="4of6"]) .room--office {
+:where([data-plate-variant~="4of5"]) .room--office {
   --plate: url("/plates/plate-01-office-04.jpg");
 }
-:where([data-plate-variant~="5of6"]) .room--office {
-  --plate: url("/plates/plate-14-frontdesk-landscape-01.jpg");
-}
-:where([data-plate-variant~="6of6"]) .room--office {
+:where([data-plate-variant~="5of5"]) .room--office {
   --plate: url("/plates/plate-08-bell-gym-landscape-01.jpg");
 }
 

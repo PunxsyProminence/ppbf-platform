@@ -21,16 +21,15 @@ A room with more than one plate states a SPLIT, and which of its walls a given
 door shows is a hash of that door's route -- same door, same wall, every load.
 The split is chosen from the DOOR COUNT, not from how many plates exist: a rule
 on a slot none of that room's doors reach is dead CSS. Office has 52 doors and
-fills an of6; clinic has 10 and fills an of4; night has 3 and fills an of3.
+fills an of5; clinic has 10 and fills an of4; night has 3 and fills an of3.
 
 | File | Applied to | Dimensions | Bytes |
 |---|---|---|---|
-| `plate-01-office-01.jpg` | `.room--office`, slot 1 of 6 | 1280×720 | 148,739 |
-| `plate-01-office-02.jpg` | `.room--office`, `2of6` | 1280×720 | 226,436 |
-| `plate-01-office-03.jpg` | `.room--office`, `3of6` | 1280×720 | 317,154 |
-| `plate-01-office-04.jpg` | `.room--office`, `4of6` -- chalkboard wall | 1280×720 | 207,549 |
-| `plate-14-frontdesk-landscape-01.jpg` | `.room--office`, `5of6` | 1280×720 | 203,244 |
-| `plate-08-bell-gym-landscape-01.jpg` | `.ge-bell.on-canvas::after` (The Bell, /login) AND `.room--office`, `6of6` | 1280×720 | 189,771 |
+| `plate-01-office-01.jpg` | `.room--office`, slot 1 of 5 | 1280×720 | 148,739 |
+| `plate-01-office-02.jpg` | `.room--office`, `2of5` | 1280×720 | 226,436 |
+| `plate-01-office-03.jpg` | `.room--office`, `3of5` | 1280×720 | 317,154 |
+| `plate-01-office-04.jpg` | `.room--office`, `4of5` -- chalkboard wall | 1280×720 | 207,549 |
+| `plate-08-bell-gym-landscape-01.jpg` | `.ge-bell.on-canvas::after` (The Bell, /login) AND `.room--office`, `5of5` | 1280×720 | 189,771 |
 | `plate-03-clinic-01.jpg` | `.room--clinic`, slot 1 of 4 | 1280×720 | 52,209 |
 | `plate-03-clinic-02.jpg` | `.room--clinic`, `2of4` | 1280×720 | 202,304 |
 | `plate-03-clinic-03.jpg` | `.room--clinic`, `3of4` | 1280×720 | 202,289 |
@@ -81,12 +80,33 @@ sit in the "Landed but not declared" table below rather than the first one.
 Binding one is a single `--plate` declaration in the scope that wants it.
 
 **Known imperfection, recorded rather than hidden:** the no-lettering rule is
-stated three ways in the prompt and still leaks. `plate-09` has faint illegible
-marks on a clipboard; `plate-10` has them inside the canvas roundel. It leaks
-exactly where a real gym carries branding, which is where the model expects it.
-The ring canvas is now the one place lettering is allowed (IRON CITY; see the
-top of this file). Whether the `plate-10` roundel marks read as that lettering
-has not been judged; the `plate-09` clipboard marks are outside the exception.
+stated three ways in the prompt and still leaks. It leaks exactly where a real
+gym carries branding, which is where the model expects it. The ring canvas is
+the one place lettering is allowed (IRON CITY; see the top of this file).
+
+**JUDGED 2026-10-01, at full size, and two of them FAIL.** This paragraph used
+to say the `plate-10` roundel "has not been judged". It has been now, by opening
+the files and enlarging the marks rather than glancing at a contact sheet:
+
+- `plate-09` — faint illegible marks on a clipboard. Outside the exception,
+  as recorded before. Not bound.
+- `plate-10` — **FAILS.** The canvas roundel is an invented crest carrying
+  invented circular lettering. It does not read as IRON CITY or ALT NATION, so
+  the exception does not cover it, and a crest is the one thing the reference
+  lock names outright: a gym logo is not ours to draw. Not bound.
+- `plate-14` — **FAILS, and this one had been bound.** A large wall banner
+  of invented illegible lettering, plus an invented crest on the ring apron.
+  It was bound as an office variant earlier in this same PR and is unbound
+  again here.
+- `plate-08-bell-gym-landscape-01` and `plate-06-night-02` were checked the
+  same way at the same time and are CLEAN. They stay bound.
+
+**THE LESSON, which is the useful part.** `plate-14` was bound off a 34-image
+contact sheet at 300×180 per tile. A banner of invented lettering is simply
+not legible at that size — the thumbnail showed a dark rectangle on a wall.
+The byte gate cannot see lettering at all, and the reference lock asks for a
+human look precisely because of this. **A contact sheet is for choosing
+candidates. Nothing is bound until it has been opened at full size.**
 
 ## The gym floor no longer takes a plate
 
@@ -127,6 +147,7 @@ orientation block, per "Adding a variant" below.
 | `plate-11-floor-portrait-01.jpg` | 810×1440 | 195,227 | the gym floor upright, for the tablet that stands on the counter |
 | `plate-12-locker-landscape-01.jpg` | 1280×720 | 200,442 | the athletes corner: grey lockers with a red bank, benches |
 | `plate-13-scripts-landscape-01.jpg` | 1280×720 | 201,153 | the coaches corner: desk, timing clock, empty boards |
+| `plate-14-frontdesk-landscape-01.jpg` | 1280×720 | 203,244 | the Front Desk room: counter, stool, key box, the floor beyond. **Do not bind:** invented banner lettering and an invented apron crest, judged 2026-10-01 |
 | `plate-04-board-portrait-01.jpg` | 810×1440 | 104,274 | a portrait crop the board room does not have today |
 | `plate-05-file-portrait-01.jpg` | 810×1440 | 222,851 | a portrait crop the file room does not have today |
 | `plate-06-night-portrait-01.jpg` | 810×1440 | 80,048 | a portrait crop the night room does not have today |

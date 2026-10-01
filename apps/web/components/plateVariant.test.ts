@@ -664,11 +664,11 @@ describe('the resolver reads the sheet it is pointed at', () => {
     ]));
     // Six rooms, the portrait floor, the warm canvas ground, and
     // `.room--floor { --plate: none }` in the current theme, which is what takes
-    // the photograph off the gym floor -- nine. Then the variant rules: five
-    // for office (of6), three for clinic (of4) and two for night (of3), which
-    // is nineteen.
+    // the photograph off the gym floor -- nine. Then the variant rules: four
+    // for office (of5), three for clinic (of4) and two for night (of3), which
+    // is eighteen.
     expect(declared.filter((selector) => selector === '.room--floor')).toHaveLength(3);
-    expect(declared).toHaveLength(19);
+    expect(declared).toHaveLength(18);
   });
 
   it('still routes every plate through --plate, so resolving it means something', () => {
@@ -716,7 +716,7 @@ describe('the PLATES cascade is decided by source order, not by specificity', ()
   it('documents the recipe next to the rules it governs', () => {
     // The one declaration a person adds when art arrives. If the worked example
     // drifts from what the tests prove, the next person follows the comment.
-    expect(CSS).toContain(':where([data-plate-variant~="2of6"]) .room--office');
+    expect(CSS).toContain(':where([data-plate-variant~="2of5"]) .room--office');
     expect(CSS).toContain('data-plate-variant="2of2 1of3 4of4 3of5 5of6"');
   });
 });
@@ -725,7 +725,7 @@ describe('the PLATES cascade is decided by source order, not by specificity', ()
    (c) THE NO-CHANGE GUARANTEE, AND THE LADDER UNDER IT
    ========================================================================== */
 
-/* THE SPLIT ROOMS, AND EVERY WALL EACH ONE CARRIES. Office is on an of6,
+/* THE SPLIT ROOMS, AND EVERY WALL EACH ONE CARRIES. Office is on an of5,
    clinic an of4, night an of3; board and file carry one plate each. Written
    out here rather than derived from the sheet on purpose: the sheet is the
    thing under test, and a guard that reads its answer out of the file it is
@@ -736,7 +736,6 @@ const VARIANT_PLATES: Partial<Record<Room, readonly string[]>> = {
     '/plates/plate-01-office-02.jpg',
     '/plates/plate-01-office-03.jpg',
     '/plates/plate-01-office-04.jpg',
-    '/plates/plate-14-frontdesk-landscape-01.jpg',
     '/plates/plate-08-bell-gym-landscape-01.jpg',
   ],
   clinic: [
@@ -769,14 +768,13 @@ describe('three rooms carry a set of walls, the rest carry one', () => {
     expect(variantRules).toEqual([
       ':where([data-plate-variant~="2of3"]) .room--night',
       ':where([data-plate-variant~="2of4"]) .room--clinic',
-      ':where([data-plate-variant~="2of6"]) .room--office',
+      ':where([data-plate-variant~="2of5"]) .room--office',
       ':where([data-plate-variant~="3of3"]) .room--night',
       ':where([data-plate-variant~="3of4"]) .room--clinic',
-      ':where([data-plate-variant~="3of6"]) .room--office',
+      ':where([data-plate-variant~="3of5"]) .room--office',
       ':where([data-plate-variant~="4of4"]) .room--clinic',
-      ':where([data-plate-variant~="4of6"]) .room--office',
-      ':where([data-plate-variant~="5of6"]) .room--office',
-      ':where([data-plate-variant~="6of6"]) .room--office',
+      ':where([data-plate-variant~="4of5"]) .room--office',
+      ':where([data-plate-variant~="5of5"]) .room--office',
     ]);
   });
 
