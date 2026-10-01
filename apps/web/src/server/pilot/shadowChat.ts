@@ -169,11 +169,17 @@ export const SHADOW_SAFE_FILTERED_RESPONSE =
  *   WHITESPACE COLLAPSING shortens text, which moves every counted window.
  *
  * One root cause: the patterns in this file count characters, assert word
- * boundaries, and test whitespace. A fold that changes LENGTH, changes the
- * WORD CLASS of a position, or changes the WHITESPACE CLASS of a position
- * silently moves all of them. So the fold is now restricted to substitutions
- * that cannot do any of those three things, and all three are asserted over
- * the whole BMP in shadowChatSensitivity.test.ts.
+ * boundaries, test whitespace, and let `.` stop at a line terminator. A fold
+ * that changes LENGTH, or the WORD, WHITESPACE or LINE-TERMINATOR CLASS of a
+ * position, silently moves all of them. So the fold is restricted to
+ * substitutions that cannot do any of those four things.
+ *
+ * shadowChatSensitivity.test.ts holds this function to that: the nineteen
+ * code units below are written out there a second time as an exact map and
+ * checked against every UTF-16 code unit, and the fold of a string is
+ * checked to be the fold of each of its units. KEEP EVERY LINE BELOW A
+ * GLOBAL REPLACE OF A SINGLE-UNIT CHARACTER CLASS BY A FIXED ONE-UNIT
+ * STRING. A line of any other shape is a different kind of change.
  *
  * ANYTHING NOT FOLDED HERE BEHAVES EXACTLY AS IT DOES ON MAIN, which is the
  * standard this hotfix is measured against. Widening it is #1036 work.
@@ -189,10 +195,12 @@ export function normaliseForMatching(text: string): string {
     .replace(/[\u2018\u2019\u201A\u201B\u2032\u02B9\u02BB\u02BC\u00B4\uFF07\uFF40`]/g, "'")
     // Quote look-alikes -> ASCII quote. Same reasoning.
     .replace(/[\u201C\u201D\u201E\u201F\u2033\uFF02]/g, '"')
-    // U+FEFF -> space. The one fold that changes the whitespace class of a
-    // position, and it is correct because the engine ALREADY counts U+FEFF as
-    // whitespace: main's `can(?:not|'t)\s+breathe` matched
-    // "I can't<FEFF>breathe after that hit" and withheld it. An earlier
+    // U+FEFF -> space. The one fold whose target is not punctuation. It does
+    // NOT change the whitespace class of the position: the engine ALREADY
+    // counts U+FEFF as whitespace, so main's `can(?:not|'t)\s+breathe` matched
+    // "I can't<FEFF>breathe after that hit" and withheld it. What it changes
+    // is that literal-space matches (`after sparring`, the `.includes(...)`
+    // phrases) now see a space there. An earlier
     // version of this function DELETED it, which joined the words and let that
     // message through -- the production defect reintroduced through a
     // different character.

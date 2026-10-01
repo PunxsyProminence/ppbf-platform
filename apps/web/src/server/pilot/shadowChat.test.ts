@@ -1104,22 +1104,15 @@ describe('typographic normalisation before matching', () => {
     expect(result.valid).toBe(false);
   });
 
-  // Whitespace and zero-width characters arrive from copy-paste and from
-  // predictive keyboards, and are invisible in a bug report.
-  // A zero-width space BETWEEN two words joins them when stripped, which is
-  // correct -- U+200B renders as nothing, so "chest<ZWSP>pain" reads as
-  // "chestpain" to the person typing it too. The case that matters is one
-  // sitting INSIDE a word, where it is invisible and silently defeats a \b
-  // boundary. My first version of this test asserted the join should still
-  // match and was simply wrong about what the user sees.
-  // A LINE BREAK IS NOT A SPACE. Collapsing \s+ folded newlines away, and the
-  // newline was the only bound on the unbounded `.` gaps in this file. Both of
-  // these were fine on main, were withheld after the first version of this
-  // fix, and are fine again.
-  // ALL FOUR ECMAScript LINE TERMINATORS. The first version of this fix
-  // preserved \n alone, so CR, U+2028 and U+2029 were still folded into
-  // spaces and the same messages were still withheld -- CRLF is what a
-  // Windows client sends, and U+2028/U+2029 arrive from pasted rich text.
+  // A LINE BREAK IS NOT A SPACE. An earlier version of this fix collapsed
+  // \s+, which folded newlines away, and the newline was the only bound on
+  // the unbounded `.` gaps in this file. Both of these were fine on main, were
+  // withheld by that version, and are fine again: the fold no longer touches
+  // whitespace at all, apart from U+FEFF.
+  // ALL FOUR ECMAScript LINE TERMINATORS, because the first repair preserved
+  // \n alone and CR, U+2028 and U+2029 were still folded into spaces -- CRLF
+  // is what a Windows client sends, and U+2028/U+2029 arrive from pasted rich
+  // text.
   test.each([
     ['LF', '\n'],
     ['CR', '\r'],
@@ -1136,12 +1129,13 @@ describe('typographic normalisation before matching', () => {
     ).valid).toBe(true);
   });
 
-  // THE SAME ERROR, TWICE. Making the apostrophe optional without a word
-  // boundary meant any word CONTAINING those four letters reached the
-  // emergency branch. The first fix added a leading \b and closed the suffix
-  // cases (significant, vacant, scant); the prefix cases (cantilever,
-  // cantina) stayed open until both boundaries went on. Each round fixed the
-  // example rather than the class, so both rounds are pinned here.
+  // HISTORY, KEPT AS A FENCE. An earlier version of this fix made the
+  // apostrophe optional, and any word CONTAINING those four letters reached
+  // the emergency branch. A leading \b closed the suffix cases (significant,
+  // vacant, scant); the prefix cases (cantilever, cantina) stayed open; with
+  // boundaries on both sides the hyphenated and accented forms still fired.
+  // The optional apostrophe was then removed altogether, so none of these can
+  // match today. They stay pinned for whoever reintroduces it in #1036.
   test.each([
     // ROUND 1 -- suffix, matched with no boundary at all
     ['I felt great after the punch drill today and my footwork showed significant improvement'],
@@ -1160,15 +1154,11 @@ describe('typographic normalisation before matching', () => {
     ['After that punch my footwork showed signifi\u00ADcant improvement'],
     ['After that punch my footwork showed signifi\u2013cant improvement'],
     ['After that punch I heard my coach cant\u00F3 along with the radio'],
-    // DELIBERATELY ABSENT: "the coach used the word 'cant' about my stance".
-    // A reviewer raised it and it does still match, because a quote mark is
-    // an accepted boundary. Narrowing to exclude it would also stop
-    // "'I can't breathe'" matching when an athlete puts their own words in
-    // quotes, and the owner's rule is that missing a real report is the worse
-    // error. A false positive on someone quoting the word is noise; a false
-    // negative on a quoted emergency is the thing this branch exists to stop.
-    // Recorded as a chosen trade-off rather than left to look like an
-    // oversight.
+    // NOT IN THIS LIST: "the coach used the word 'cant' about my stance".
+    // While the apostrophe was optional that sentence matched, and it was
+    // accepted as a trade. It does not match now -- "cant" is not a pattern
+    // -- and shadowChatSensitivity.test.ts asserts that, beside the quoted
+    // real report "'I can't breathe'" which must keep matching.
   ])('a word merely containing "cant" is not an emergency: %s', (message) => {
     expect(validateShadowRequest(message, 'athlete', 'org-123').valid).toBe(true);
   });
@@ -1214,10 +1204,15 @@ describe('typographic normalisation before matching', () => {
     expect(/\s/.test('\u200B')).toBe(false);
   });
 
-  // The paired positive: the real report the boundary must not break.
-  test('a genuine apostrophe-less report still fires', () => {
+  // NOT evidence that an omitted apostrophe is caught -- it is not; see the
+  // KNOWN GAP above. This message is withheld because of "hurts", on the
+  // personal-health return, and the "cant" in it contributes nothing. It is
+  // here so that a report which happens to contain an omitted apostrophe is
+  // seen to be no worse off for it.
+  test('a report containing an omitted apostrophe is still withheld when something else in it matches', () => {
     const result = validateShadowRequest('my arm hurts after that punch and i cant lift it', 'athlete', 'org-123');
     expect(result.valid).toBe(false);
+    expect(result.classification).toBe('personal_health_concern');
   });
 
   // THE FOLD NO LONGER TOUCHES EITHER OF THESE, and that is the fix rather

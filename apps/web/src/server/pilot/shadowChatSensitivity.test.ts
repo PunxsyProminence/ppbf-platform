@@ -27,15 +27,16 @@
 //
 //   ANYTHING MAIN WITHHELD, THE CURRENT CODE MUST STILL WITHHOLD.
 //
-// Not "behaves identically". The whole point of the change is to flag MORE --
-// phone apostrophes, omitted apostrophes, exotic separators. Becoming more
-// sensitive is the feature. Becoming LESS sensitive, anywhere, for any
-// character, is the regression, and it is invisible to a test written from
-// phrases somebody imagined.
+// Not "behaves identically". The whole point of the change is to flag MORE:
+// a report typed with a phone's apostrophe. Omitted apostrophes and exotic
+// separators were in scope once and are not now; they behave as on main.
+// Becoming more sensitive is the feature. Becoming LESS sensitive, anywhere,
+// for any character, is the regression, and it is invisible to a test written
+// from phrases somebody imagined.
 //
-// The reference below is main's WITHHOLDING predicates at b4f58159 -- both
-// branches, urgent and personal-health -- frozen
-// verbatim. It is deliberately a COPY and must not be refactored to import
+// The reference below is main's WITHHOLDING code at b4f58159 -- all seven
+// withholding returns of validateShadowRequest plus classifyHighRiskTopic --
+// frozen verbatim. It is deliberately a COPY and must not be refactored to import
 // anything: its job is to keep saying what main said even after the real
 // implementation has moved on. If it ever needs to change, that is a decision
 // about dropping coverage and belongs in front of an owner.
@@ -120,7 +121,9 @@ function mainClassify(userMessage: string): { topic: string; isHighRisk: boolean
 
 function mainValidate(
   message: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _userRole: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _organizationId: string,
 ): { valid: boolean; error?: string; highRisk?: boolean; topic?: string; classification?: string } {
   const classification = mainClassify(message);
@@ -271,9 +274,10 @@ function nowWithholds(message: string): boolean {
 //
 //   U+0000-U+00FF   Latin-1. Carries U+00A0 NBSP, U+00AD SOFT HYPHEN,
 //                   U+00B4 ACUTE, U+0085 NEL, and every ASCII control.
-//   U+2000-U+206F   General Punctuation. Every exotic space, every dash and
-//                   quote the fold table touches, U+200B-U+200D, U+2028,
-//                   U+2029, and the invisible format characters.
+//   U+2000-U+206F   General Punctuation. Every exotic space and dash (none
+//                   of which the fold touches any more), the curly quotes
+//                   and primes it does, U+200B-U+200D, U+2028, U+2029, and
+//                   the invisible format characters.
 //   U+FEFF          The one that actually bit.
 //   U+02B9-U+02BC, U+FF02, U+FF07, U+FF40   the fold's own targets that the
 //                   ranges above miss; see the note on them below.
@@ -465,19 +469,36 @@ describe('the classifier is never LESS sensitive than main was', () => {
 });
 
 // ---------------------------------------------------------------------------
-// THE FOUR PROPERTIES OF THE FOLD
+// WHAT THE FOLD IS ALLOWED TO DO, PINNED THREE WAYS
 //
 // Carriers and code points are enumeration: they test the positions and
 // characters somebody thought of, and three times that enumeration had a hole
-// the code did not. These four tests are the class itself, over every code
-// point in the BMP, and between them they make the whole family of fold
-// defects unrepresentable rather than merely unobserved.
+// the code did not. The tests in this block do not depend on anyone thinking
+// of a phrase.
 //
-// They exist because the patterns in shadowChat.ts do four things a fold can
-// silently break: they COUNT CHARACTERS (`vision.{0,12}blurr`,
-// `bleeding.{0,20}`, `after.{0,30}hit.{0,60}`), they ASSERT WORD BOUNDARIES
-// (`\b(i|me|my|mine|we|our)\b`, which every urgent branch depends on), and
-// they TEST WHITESPACE (`\s+`). Each property below pins one of those.
+//   THE EXACT MAP. Every UTF-16 code unit folds to itself, except nineteen
+//   named ones, each to its named output. This is the proof of what the fold
+//   does to one character; it is written out as data a second time so that a
+//   change to the fold has to be made in two places to go unnoticed.
+//
+//   THE FOUR CLASS PROPERTIES. Length, word class, whitespace class and
+//   line-terminator class are preserved. With the exact map in place these
+//   are CONSEQUENCES of it, not independent evidence: nineteen non-word
+//   characters each become one non-word character. They stay because they
+//   say WHY the map is safe -- the day someone adds a twentieth entry, the
+//   map test will be edited to match, and these are what tell them whether
+//   the new entry breaks a pattern.
+//
+//   ONE CHARACTER AT A TIME. The fold of a string is the fold of each of its
+//   code units, in order. That is what makes a statement about single
+//   characters a statement about messages.
+//
+// The class properties exist because the patterns in shadowChat.ts do four
+// things a fold can silently break: they COUNT CHARACTERS
+// (`vision.{0,12}blurr`, `bleeding.{0,20}`, `after.{0,30}hit.{0,60}`), they
+// ASSERT WORD BOUNDARIES (`\b(i|me|my|mine|we|our)\b`, which every urgent
+// branch depends on), they TEST WHITESPACE (`\s+`), and they let `.` STOP AT
+// A LINE TERMINATOR. Each class property pins one of those.
 //
 // Six regressions were caused by violating them, each one a message main
 // WITHHELD that the fold then allowed through to the model with nobody told:
@@ -586,8 +607,296 @@ describe('the fold preserves what the patterns depend on', () => {
     expect(offenders.slice(0, 40)).toEqual([]);
   });
 
-  // The floor: if normaliseForMatching became the identity function, all
-  // three properties above would pass trivially and the fix would be gone.
+  // -------------------------------------------------------------------------
+  // THE EXACT MAP -- answers "the properties do not constrain identity".
+  //
+  // The four class properties above are satisfied by a fold that rewrites one
+  // letter into another letter of the same class: U+00E9 into U+00E8, say.
+  // Nothing in them says WHICH character a position ends up holding, and the
+  // patterns match on which character it is.
+  //
+  // So the whole of the fold is written out here as data, and every one of
+  // the 65,536 UTF-16 code units is checked against it -- lone surrogate
+  // units included, because the fold works on code units and a unit it
+  // altered would be half of somebody's emoji.
+  // -------------------------------------------------------------------------
+  const APOSTROPHE_TARGETS: readonly number[] = [
+    0x0060, // GRAVE ACCENT (the ASCII backtick)
+    0x00b4, // ACUTE ACCENT
+    0x02b9, // MODIFIER LETTER PRIME
+    0x02bb, // MODIFIER LETTER TURNED COMMA
+    0x02bc, // MODIFIER LETTER APOSTROPHE
+    0x2018, // LEFT SINGLE QUOTATION MARK
+    0x2019, // RIGHT SINGLE QUOTATION MARK -- the phone default, and the defect
+    0x201a, // SINGLE LOW-9 QUOTATION MARK
+    0x201b, // SINGLE HIGH-REVERSED-9 QUOTATION MARK
+    0x2032, // PRIME
+    0xff07, // FULLWIDTH APOSTROPHE
+    0xff40, // FULLWIDTH GRAVE ACCENT
+  ];
+  const QUOTE_TARGETS: readonly number[] = [
+    0x201c, // LEFT DOUBLE QUOTATION MARK
+    0x201d, // RIGHT DOUBLE QUOTATION MARK
+    0x201e, // DOUBLE LOW-9 QUOTATION MARK
+    0x201f, // DOUBLE HIGH-REVERSED-9 QUOTATION MARK
+    0x2033, // DOUBLE PRIME
+    0xff02, // FULLWIDTH QUOTATION MARK
+  ];
+  const EXPECTED_FOLD: ReadonlyMap<number, string> = new Map<number, string>([
+    ...APOSTROPHE_TARGETS.map((unit) => [unit, "'"] as [number, string]),
+    ...QUOTE_TARGETS.map((unit) => [unit, '"'] as [number, string]),
+    [0xfeff, ' '],
+  ]);
+  const UNITS = 0x10000;
+
+  function unitLabel(unit: number): string {
+    return 'U+' + unit.toString(16).toUpperCase().padStart(4, '0');
+  }
+
+  test('the map names nineteen code units: twelve apostrophes, six quotes, U+FEFF', () => {
+    expect(APOSTROPHE_TARGETS.length).toBe(12);
+    expect(QUOTE_TARGETS.length).toBe(6);
+    // A Map silently keeps the last of two equal keys, so a unit listed twice
+    // would shrink it and the two counts above would not notice.
+    expect(EXPECTED_FOLD.size).toBe(19);
+  });
+
+  test('every code unit folds to itself, except the nineteen named ones, each to its named output', () => {
+    const offenders: string[] = [];
+    let rewritten = 0;
+
+    for (let unit = 0; unit < UNITS; unit += 1) {
+      const ch = String.fromCharCode(unit);
+      const expected = EXPECTED_FOLD.get(unit) ?? ch;
+      if (expected !== ch) rewritten += 1;
+
+      // Alone AND between two letters: the same answer in both places is
+      // what lets the later tests treat the fold of one unit as a fact about
+      // that unit rather than about where it was standing.
+      const alone = normaliseForMatching(ch);
+      const between = normaliseForMatching('a' + ch + 'b');
+      if (alone !== expected || between !== 'a' + expected + 'b') {
+        offenders.push(
+          `${unitLabel(unit)}: expected ${JSON.stringify(expected)}, `
+          + `got ${JSON.stringify(alone)} alone and ${JSON.stringify(between)} between letters`,
+        );
+      }
+    }
+
+    // The loop above cannot pass by the table being empty.
+    expect(rewritten).toBe(19);
+    expect(offenders.slice(0, 40)).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // ONE CHARACTER AT A TIME -- answers "the properties test one code point in
+  // one fixed context".
+  //
+  // Everything above feeds the fold a single unit. A rule that fires on MORE
+  // than one character -- "..." into an ellipsis, two apostrophes into a
+  // quote, a trim, a run of spaces collapsed, an apostrophe folded only
+  // before a "t" -- is invisible to all of it. Whitespace collapsing, in this
+  // fix's own history, was exactly that shape.
+  //
+  // The property that rules the shape out: the fold of a string is the fold
+  // of each of its code units, concatenated. fold(xy) = fold(x) + fold(y).
+  //
+  // WHAT A TEST ADDS HERE, HONESTLY. Today this is true by construction:
+  // normaliseForMatching is three global replaces, each of a single-unit
+  // character class with a fixed one-unit string, and reading it proves more
+  // than running it. The tests below are for the next edit. They are what
+  // goes red when someone adds a fourth line that is not of that form.
+  //
+  // WHAT THEY DO NOT PROVE. "For every string" is not something a test can
+  // finish. What is run is: every code unit with every member of a named
+  // 161-character context set immediately before and after it; every code
+  // unit first and last in a message; every string of one, two or three ASCII
+  // characters; and twenty thousand seeded random strings weighted toward
+  // the fold's own targets. A rule keyed on two or more adjacent characters
+  // that are all outside the context set, or on an ASCII sequence longer than
+  // three, or on something more than one character away, would be seen only
+  // by the random strings, if at all.
+  // -------------------------------------------------------------------------
+  describe('the fold of a string is the fold of each of its characters', () => {
+    // What the fold does to each unit alone. Pinned to the named map by the
+    // test above, so this is not the fold marking its own homework.
+    const UNIT_CHARS: string[] = [];
+    const UNIT_FOLD: string[] = [];
+    for (let unit = 0; unit < UNITS; unit += 1) {
+      UNIT_CHARS.push(String.fromCharCode(unit));
+      UNIT_FOLD.push(normaliseForMatching(UNIT_CHARS[unit]));
+    }
+
+    function unitwise(text: string): string {
+      const out: string[] = new Array(text.length);
+      for (let i = 0; i < text.length; i += 1) out[i] = UNIT_FOLD[text.charCodeAt(i)];
+      return out.join('');
+    }
+
+    function show(text: string): string {
+      return Array.from({ length: text.length }, (_, i) => unitLabel(text.charCodeAt(i))).join(' ');
+    }
+
+    // The neighbours worth standing beside: all of ASCII (every character the
+    // patterns are written in, every ASCII space and control), everything the
+    // fold reads or writes, and the characters behind each earlier defect.
+    const CONTEXT_UNITS: readonly number[] = [
+      ...Array.from({ length: 0x80 }, (_, unit) => unit),
+      ...EXPECTED_FOLD.keys(),
+      0x0085, // NEL
+      0x00a0, // NBSP
+      0x00ad, // SOFT HYPHEN
+      0x00e9, // a non-ASCII letter
+      0x0301, // COMBINING ACUTE ACCENT
+      0x200b, 0x200c, 0x200d, // zero-width space, non-joiner, joiner
+      0x2026, // HORIZONTAL ELLIPSIS, which NFKC expanded
+      0x2028, 0x2029, // the two non-ASCII line terminators
+      0x2122, // TRADE MARK SIGN, which NFKC turned into letters
+      0x3000, // IDEOGRAPHIC SPACE
+      0xd83e, 0xdd4a, // the two halves of U+1F94A
+    ].filter((unit, index, all) => all.indexOf(unit) === index);
+
+    // One string per context character c: "c x0 c x1 c x2 ... c" over all
+    // 65,536 units, so every unit stands with c immediately before it AND
+    // immediately after it. 161 strings rather than 21 million two-character
+    // ones, which is the same adjacencies in about a hundredth of the time
+    // (the pairwise form was measured at 83 seconds on this suite).
+    test('every code unit with every context character on both sides of it', () => {
+      const offenders: string[] = [];
+
+      for (const context of CONTEXT_UNITS) {
+        const c = String.fromCharCode(context);
+        const foldedC = UNIT_FOLD[context];
+        const parts: string[] = [c];
+        const expectedParts: string[] = [foldedC];
+        for (let unit = 0; unit < UNITS; unit += 1) {
+          parts.push(UNIT_CHARS[unit], c);
+          expectedParts.push(UNIT_FOLD[unit], foldedC);
+        }
+        const text = parts.join('');
+
+        const folded = normaliseForMatching(text);
+        const expected = expectedParts.join('');
+        if (folded === expected) continue;
+
+        // Name the first place they part company, with a little either side.
+        let at = 0;
+        while (at < folded.length && at < expected.length && folded[at] === expected[at]) at += 1;
+        offenders.push(
+          `context ${unitLabel(context)}: differs at index ${at} `
+          + `(lengths ${folded.length} vs ${expected.length}), near ${show(text.slice(Math.max(0, at - 2), at + 3))}`,
+        );
+      }
+
+      expect(offenders.slice(0, 40)).toEqual([]);
+      // Stated so the number in the pull request is the number that ran.
+      expect(CONTEXT_UNITS.length).toBe(161);
+    });
+
+    // The interleaved strings above put nothing but c at either END, so a
+    // rule anchored to the start or end of the message -- a trim, a `^`, a
+    // `$` -- needs its own look. Every unit first and last, beside a letter,
+    // a space and an apostrophe.
+    test('every code unit at the start and at the end of a message', () => {
+      const offenders: string[] = [];
+      let compared = 0;
+
+      for (const c of ['a', ' ', "'"]) {
+        for (let unit = 0; unit < UNITS && offenders.length < 40; unit += 1) {
+          const x = String.fromCharCode(unit);
+          for (const text of [x + c, c + x]) {
+            compared += 1;
+            if (normaliseForMatching(text) !== unitwise(text)) offenders.push(show(text));
+          }
+        }
+      }
+
+      expect(offenders).toEqual([]);
+      expect(compared).toBe(3 * UNITS * 2);
+    });
+
+    test('every ASCII string of one, two or three characters', () => {
+      const offenders: string[] = [];
+      let compared = 0;
+      const ascii = Array.from({ length: 0x80 }, (_, unit) => String.fromCharCode(unit));
+
+      for (const a of ascii) {
+        compared += 1;
+        if (normaliseForMatching(a) !== unitwise(a)) offenders.push(show(a));
+        for (const b of ascii) {
+          compared += 1;
+          if (normaliseForMatching(a + b) !== unitwise(a + b)) offenders.push(show(a + b));
+          for (const c of ascii) {
+            compared += 1;
+            const text = a + b + c;
+            if (normaliseForMatching(text) !== unitwise(text)) offenders.push(show(text));
+          }
+        }
+        if (offenders.length >= 40) break;
+      }
+
+      expect(offenders.slice(0, 40)).toEqual([]);
+      expect(compared).toBe(128 + 128 * 128 + 128 * 128 * 128);
+    });
+
+    test('twenty thousand seeded random strings, weighted toward the fold\'s own targets', () => {
+      // mulberry32. Seeded, so a failure is the same failure on every machine.
+      let state = 0x1049;
+      const random = (): number => {
+        state = (state + 0x6d2b79f5) | 0;
+        let t = Math.imul(state ^ (state >>> 15), 1 | state);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+      const targets = [...EXPECTED_FOLD.keys()];
+      const pick = (): number => {
+        const roll = random();
+        if (roll < 0.4) return targets[Math.floor(random() * targets.length)];
+        if (roll < 0.7) return Math.floor(random() * 0x80);
+        return Math.floor(random() * UNITS);
+      };
+
+      const offenders: string[] = [];
+      let touched = 0;
+      for (let n = 0; n < 20000 && offenders.length < 40; n += 1) {
+        const length = 1 + Math.floor(random() * 64);
+        let text = '';
+        for (let i = 0; i < length; i += 1) text += String.fromCharCode(pick());
+        const folded = normaliseForMatching(text);
+        if (folded !== text) touched += 1;
+        if (folded !== unitwise(text)) offenders.push(show(text));
+      }
+
+      expect(offenders).toEqual([]);
+      // If the generator stopped producing targets this would compare
+      // unchanged strings with unchanged strings and prove nothing.
+      expect(touched).toBeGreaterThan(19000);
+    });
+
+    // SURROGATE PAIRS, STATED RATHER THAN ASSUMED.
+    //
+    // The fold has no `u` flag and works on UTF-16 code units. Every unit it
+    // rewrites is outside U+D800-U+DFFF and so is everything it writes, so it
+    // can neither split a pair nor alter half of one; the exact-map test
+    // covers each surrogate unit alone, and this covers a whole astral
+    // character standing directly against each of the nineteen targets.
+    //
+    // This is NOT astral coverage of the classifier. U+E0027 below is TAG
+    // APOSTROPHE, an astral apostrophe look-alike, and it is deliberately
+    // asserted as NOT folded: astral look-alikes behave as they do on main.
+    test.each(['\u{1F94A}', '\u{E0027}'])('an astral character against each target is neither split nor altered: %j', (astral) => {
+      expect(astral.length).toBe(2);
+      for (const [unit, output] of EXPECTED_FOLD) {
+        const target = String.fromCharCode(unit);
+        expect(normaliseForMatching(astral + target + astral)).toBe(astral + output + astral);
+        expect(normaliseForMatching(target + astral + target)).toBe(output + astral + output);
+      }
+    });
+  });
+
+  // The floor: if normaliseForMatching became the identity function, the
+  // four class properties above would pass trivially and the fix would be
+  // gone. (The exact-map test would fail too; this one says so in a line.)
   test('the fold still folds', () => {
     expect(normaliseForMatching('can\u2019t')).toBe("can't");
     expect(normaliseForMatching('can\u00B4t')).toBe("can't");

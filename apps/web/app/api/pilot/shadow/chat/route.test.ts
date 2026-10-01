@@ -294,8 +294,10 @@ afterEach(() => {
 // separately on one that must not.
 // ---------------------------------------------------------------------------
 describe('the athlete\'s own words survive normalisation', () => {
-  // Contains a curly apostrophe AND a doubled space, so it exercises two of
-  // the folds at once. Deliberately benign: it has to reach the provider.
+  // Contains a curly apostrophe, which the fold rewrites, AND a doubled
+  // space, which it does not: an earlier version collapsed whitespace, and
+  // the doubled space is kept so that a collapse coming back would show up
+  // in the record. Deliberately benign: it has to reach the provider.
   const TYPED = 'I can\u2019t decide which glove size  suits me';
 
   test('a curly-quote message reaches the model and the conversation exactly as typed', async () => {
