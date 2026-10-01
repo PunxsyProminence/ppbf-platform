@@ -814,6 +814,37 @@ export async function changeOwnPin(accountId: string, currentPin: string, newPin
   });
 }
 
+/**
+ * One login per athlete record in an organization, under both names it has:
+ * the base schema's unique (organization_id, athlete_id)
+ * (infra/azure/pilot_slice_postgres.sql:42, named by Postgres), and the index
+ * the multi-organization migration added for databases built before it
+ * (pilot_slice_postgres_multiorg_migration.sql:204). A database can hold both,
+ * and a violation names whichever one refused it.
+ *
+ * Naming a second login for an athlete record that already has one met it
+ * here, and it reached the admin as "Internal server error" (OD-2026-09-29-002
+ * item 4). intake.ts's assertAthleteAccountIdProvisionable refuses that before
+ * promotion's first write; this turns the same refusal into a 409 when it is
+ * raised in the write instead.
+ */
+const ATHLETE_LOGIN_UNIQUE_CONSTRAINTS: readonly string[] = [
+  'accounts_organization_id_athlete_id_key',
+  'uq_pilot_accounts_org_athlete',
+];
+
+function athleteAlreadyHasLoginConflict(error: unknown, athleteId: string): unknown {
+  const pgError = error as { code?: string; constraint?: string } | null;
+  if (pgError?.code !== '23505' || !ATHLETE_LOGIN_UNIQUE_CONSTRAINTS.includes(pgError.constraint ?? '')) {
+    return error;
+  }
+  return new ConflictError(
+    `Conflict: athlete record "${athleteId}" already has a login in this organization, and an athlete record `
+    + 'has one login. Leave account_id out to keep that login as it is.',
+    'ATHLETE_ALREADY_HAS_LOGIN',
+  );
+}
+
 export async function createOrUpdateAthleteAccount(
   accountId: string,
   athleteId: string,
@@ -821,6 +852,12 @@ export async function createOrUpdateAthleteAccount(
   maybeOrganizationId?: string,
 ): Promise<void> {
   const organizationId = maybeOrganizationId ?? organizationIdOrLegacyPin;
+
+  // A second login for this athlete record, refused by the table's unique
+  // constraint inside either write, becomes the 409 the pre-write check gives.
+  const refuseSecondLogin = (error: unknown): never => {
+    throw athleteAlreadyHasLoginConflict(error, athleteId);
+  };
 
   // Check if account exists and verify ownership
   const existingAccount = await query<{ organization_id: string }>(
@@ -846,8 +883,12 @@ export async function createOrUpdateAthleteAccount(
       // intake.ts's assertAthleteAccountIdProvisionable refuses both before
       // promotion's first write; this holds the rule in the write itself, so
       // a change between that check and this statement is still refused.
+      //
+      // Nor a login marked deleted: this update left deleted_at set, so the
+      // re-provisioned login could never sign in. A re-enrolled athlete gets a
+      // new login and the deleted one stays deleted (OD-2026-09-30-004 e1).
       const updated = await client.query<{ account_id: string }>(
-        `update pilot.accounts set
+        `update pilot.accounts a set
            role = $1,
            athlete_id = $2,
            pin_hash = $3,
@@ -856,6 +897,7 @@ export async function createOrUpdateAthleteAccount(
          where account_id = $5 and organization_id = $6
            and role = 'athlete'
            and (athlete_id is null or athlete_id = $2)
+           and not ${accountDeletedSql('a')}
          returning account_id`,
         ['athlete', athleteId, null, false, accountId, organizationId],
       );
@@ -866,8 +908,8 @@ export async function createOrUpdateAthleteAccount(
         // miss, since this statement cannot tell which one it was.
         throw new ConflictError(
           `Conflict: account_id "${accountId}" cannot be made the login for athlete record "${athleteId}". `
-          + 'Only an athlete login in this organization that belongs to no athlete record, or already to '
-          + 'this one, can be. Use a different account_id.',
+          + 'Only an athlete login in this organization that is not deleted and belongs to no athlete record, '
+          + 'or already to this one, can be. Use a different account_id.',
           'EXISTING_ATHLETE_ACCOUNT_CONFLICT',
         );
       }
@@ -881,7 +923,7 @@ export async function createOrUpdateAthleteAccount(
         [accountId, organizationId],
       );
       await revokeAllSessionsForAccountTx(client, accountId);
-    });
+    }).catch(refuseSecondLogin);
   } else {
     await withTransaction(async (client) => {
       // New account—create it
@@ -899,7 +941,7 @@ export async function createOrUpdateAthleteAccount(
                updated_at = now()`,
         [accountId, organizationId],
       );
-    });
+    }).catch(refuseSecondLogin);
   }
 }
 
