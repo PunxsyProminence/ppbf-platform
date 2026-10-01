@@ -83,9 +83,11 @@ permissions:
 concurrency:
   # The whole run, so a second release cannot begin its staging half while the
   # first waits at the production approval. A waiting run holds this group
-  # until it is approved, rejected or cancelled.
+  # until it is approved, rejected or cancelled. `queue: max`: a later dispatch
+  # waits instead of cancelling the run already pending.
   group: release-one-approval
   cancel-in-progress: false
+  queue: max
 
 jobs:
   staging:
@@ -93,10 +95,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     # The same group deploy-staging.yml and a staging apply-migrations use, so
-    # this job never runs beside either.
+    # this job never runs beside either. `queue: max` as on every member of
+    # the group: one member on the default brings back the cancelling of a
+    # pending run.
     concurrency:
       group: deploy-staging-app-ppbf-staging
       cancel-in-progress: false
+      queue: max
     outputs:
       digest: ${{ steps.build-image.outputs.digest }}
     env:
@@ -671,10 +676,12 @@ jobs:
     # THE single approval. Asked only once the staging job has succeeded.
     environment: production
     # The same group deploy-production.yml and a production apply-migrations
-    # use, so this job never runs beside either.
+    # use, so this job never runs beside either. `queue: max` as on every
+    # member of the group.
     concurrency:
       group: deploy-production-main
       cancel-in-progress: false
+      queue: max
     env:
       ACR_NAME: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
       ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io

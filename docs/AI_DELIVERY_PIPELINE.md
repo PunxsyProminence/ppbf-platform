@@ -226,13 +226,23 @@ step; approving it changes nothing. Dispatch a fresh run.
 - Its `staging` job shares the group of `deploy-staging` and of a staging
   `apply-migrations`; its `production` job shares the group of
   `deploy-production` and of a production `apply-migrations`.
-- A run waiting at the production approval holds its workflow group (observed
-  on `deploy-production` runs 30772571138 and 30786409061, 2026-08-03). So a
+- Every one of these groups carries `queue: max`: a later dispatch WAITS (up
+  to 100 can) instead of cancelling the run already pending, which is GitHub's
+  default. So a queued migration is not cancelled by the next deploy dispatch.
+  The setting only holds while every workflow naming a group carries it; the
+  contract tests hold all of them to it.
+- `queue: max` does not stop one run blocking the rest. A run waiting at the
+  production approval holds its workflow group (observed on
+  `deploy-production` runs 30772571138 and 30786409061, 2026-08-03). So a
   release left waiting blocks the next release, and a production
-  `apply-migrations` left unapproved blocks `deploy-production`, an emergency
-  rollback included, until it is approved or cancelled.
-- By default a group holds one running and one pending run; a third dispatch
-  cancels the pending one. A cancelled pending run has started no step.
+  `apply-migrations` left unapproved blocks `deploy-production`.
+- **Before an emergency rollback: cancel any production run that is waiting
+  for an approval nobody is going to give** (an abandoned `apply-migrations`,
+  `deploy-production` or `release-one-approval`). Otherwise the rollback queues
+  behind it. Check first:
+  ```text
+  gh run list --repo PunxsyProminence/ppbf-platform --status waiting
+  ```
 - **NOT serialized** against any of the above: `seed-reference-data`,
   `approve-library-baseline`, `cleanup-membership-orphans`,
   `import-shadow-research`, `move-policy-shelf`, `repair-research-baseline`,
@@ -260,14 +270,23 @@ step; approving it changes nothing. Dispatch a fresh run.
    `confirm_target: production`, `migration: list-check` (it touches no
    database). Note whether it is pending behind A or itself waiting for
    approval, then cancel it. Record the answer here.
-4. **Run the whole `all` list against staging once, on its own.** This
-   workflow applies every routine migration on every run. Recent
+4. **REQUIRED: run the whole `all` list against staging once, on its own.**
+   This workflow applies every routine migration on every run, by ruling
+   (2026-10-01: no per-release subset, which would be a second source of
+   truth). If the pass exposes a runner that is not idempotent, repair the
+   runner; do not work around it here. Recent
    `apply-migrations` runs applied single migrations (their apply step took a
    second or less, read from run history 2026-10-01), so the full list has not
    recently been re-applied in one pass, and its first pass against production
    should not be the first pass anywhere. Dispatch `apply-migrations` with
    `target: staging`, `migration: all`, and read every runner's output.
-5. Record all four with the run ids in this section, replacing "It has never
+5. **Confirm GitHub accepts `queue: max` where it is written.** GitHub
+   documents it for a workflow's `concurrency` block (read 2026-10-01); for a
+   JOB's `concurrency` block, which this workflow uses twice, the
+   documentation read that day shows no example. A workflow GitHub cannot
+   validate does not start at all, so the first dispatch in step 2 settles it:
+   if the run is rejected as invalid, that is this.
+6. Record all five with the run ids in this section, replacing "It has never
    been run".
 
 Two differences from `apply-migrations` to know: the repository variables

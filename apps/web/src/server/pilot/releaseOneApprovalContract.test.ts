@@ -330,9 +330,9 @@ const REPLACED: Record<string, { file: string; job: string; steps: Record<string
  * The failure message prints the new value.
  */
 const FROZEN: Record<string, string> = {
-  'workflow preamble (name, on, permissions, concurrency)': '90d4169d89a37190fd646f3ae8a9faa0fc62f84e4ad2873b373649e08ec314ec',
-  'staging job header': 'ad6b5068b92f343c5c5afd2c09c247593f798d7b52db470df09db24021e3a21d',
-  'production job header': '726676291ac4a79e79edd6f14f692dba81885f812bcbbfad753e6c891adb1366',
+  'workflow preamble (name, on, permissions, concurrency)': 'f56fa7c13e140f2af49cf8ebfb63926b89db6d14cd558451d34ac384c56319a4',
+  'staging job header': 'd5cf0f313b7ddb1a336c1769d41752f48ff9e654120b2b60f51c7cc07bd8902f',
+  'production job header': '7ac9185ab7a8e5384496f355a6779c37cdb705a91aca738879fd2b71a15d97a7',
   'staging: Refuse A Re-Run, A Wrong Ref Or A Wrong Commit': '36c3659904b636fb1b42fd435e89d136880e804cf34a589aa2de07d108dbc4cb',
   'staging: Verify The Checkout Is The Frozen Commit': '7d97d51267ee66fb7109f05a7c20457250d0ca82647ca3b315e617b564b5d7a8',
   'staging: Apply Staging Migrations': '1b525f6a569b158017cfd6b41f42553b7c8c5d3860b8d600c6b3a7f65cf83a21',
@@ -547,7 +547,13 @@ describe('release-one-approval: concurrency', () => {
     const header = jobHeader(job);
     const start = header.indexOf('    concurrency:');
     if (start === -1) throw new Error(`job ${job} has no concurrency block`);
-    return header.slice(start + 1, start + 3);
+    // The whole block: every line nested under the key, however many.
+    const block: string[] = [];
+    for (const line of header.slice(start + 1)) {
+      if (!/^ {6}\S/.test(line)) break;
+      block.push(line);
+    }
+    return block;
   };
   const deployGroup = (file: SourceFile): string => {
     const group = topLevel(SOURCES[file]).find((line) => /^ {2}group: /.test(line));
@@ -556,24 +562,48 @@ describe('release-one-approval: concurrency', () => {
   };
 
   test('one whole-run group, so a second release cannot start staging while the first waits', () => {
-    expect(topLevel(release)).toEqual(['  group: release-one-approval', '  cancel-in-progress: false']);
+    // `queue: max`: a third release dispatched while one runs and one waits
+    // queues behind them; by default it would cancel the one waiting.
+    expect(topLevel(release)).toEqual([
+      '  group: release-one-approval',
+      '  cancel-in-progress: false',
+      '  queue: max',
+    ]);
   });
 
-  test('each job holds the deploy group of its environment', () => {
+  test('each job holds the deploy group of its environment, queueing like every other member', () => {
     // Read from the deploy workflows, so a renamed group there fails here.
+    // `queue: max` is a property of a group only while every member carries
+    // it, and these two jobs are members: releaseConcurrencyContract.test.ts
+    // holds apply-migrations and the two deploy workflows to the same three
+    // keys.
     expect(jobConcurrency('staging')).toEqual([
       `      group: ${deployGroup('deploy-staging.yml')}`,
       '      cancel-in-progress: false',
+      '      queue: max',
     ]);
     expect(jobConcurrency('production')).toEqual([
       `      group: ${deployGroup('deploy-production.yml')}`,
       '      cancel-in-progress: false',
+      '      queue: max',
     ]);
   });
 
-  test('nothing in the file cancels a run in progress', () => {
-    expect(codeLines(release).filter((line) => /cancel-in-progress/.test(line)))
+  test('the deploy workflows it shares groups with carry the same queue setting', () => {
+    for (const file of Object.keys(SOURCES) as SourceFile[]) {
+      expect({ file, block: topLevel(SOURCES[file]).slice(1) })
+        .toEqual({ file, block: ['  cancel-in-progress: false', '  queue: max'] });
+    }
+  });
+
+  test('nothing in the file cancels a run in progress, and every group queues', () => {
+    const code = codeLines(release);
+    expect(code.filter((line) => /cancel-in-progress/.test(line)))
       .toEqual(['  cancel-in-progress: false', '      cancel-in-progress: false', '      cancel-in-progress: false']);
+    expect(code.filter((line) => /^\s*queue\s*:/.test(line)))
+      .toEqual(['  queue: max', '      queue: max', '      queue: max']);
+    expect(code.filter((line) => /^\s*concurrency\s*:/.test(line)))
+      .toEqual(['concurrency:', '    concurrency:', '    concurrency:']);
   });
 });
 
