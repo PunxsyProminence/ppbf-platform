@@ -171,6 +171,32 @@ interface ShadowFeedbackReviewApiResponse {
 
 type QueueSort = 'newest' | 'oldest' | 'status';
 
+// What a list on this console knows about its own last read. An empty array
+// alone cannot say whether the read came back empty or did not come back, and
+// every "none" sentence and count below is a claim only 'loaded' can make.
+type ReadState = 'loading' | 'loaded' | 'unavailable';
+
+const INTAKE_QUEUE_UNAVAILABLE =
+  'The intake queue could not be loaded. The list is unavailable, not empty. Reload to retry.';
+const INTAKE_QUEUE_LOADING = 'Loading intake queue…';
+
+function readShadowOperationalStreams() {
+  return Promise.all([
+    fetch(`${apiBase()}/api/pilot/shadow/telemetry`, {
+      credentials: 'include',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 40 }),
+    }),
+    fetch(`${apiBase()}/api/pilot/shadow/authority`, {
+      credentials: 'include',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 40 }),
+    }),
+  ]);
+}
+
 const DESTINATION_OPTIONS: IntakeDestination[] = [
   'Athlete Workspace',
   'Coach Workspace',
@@ -601,6 +627,9 @@ interface LibraryReviewFlag {
 function LibraryReviewFlagsPanel() {
   const [flags, setFlags] = useState<LibraryReviewFlag[]>([]);
   const [loading, setLoading] = useState(true);
+  // `error` also carries a failed verdict, so it cannot say whether the count
+  // in the heading was read.
+  const [flagsRead, setFlagsRead] = useState<ReadState>('loading');
   const [busyFlagId, setBusyFlagId] = useState('');
   const [error, setError] = useState('');
 
@@ -612,12 +641,16 @@ function LibraryReviewFlagsPanel() {
         credentials: 'include',
       });
       const payload = await response.json().catch(() => null);
-      if (!response.ok || !payload?.ok) {
+      // Both halves: the application's own ok, and the list actually being
+      // there. `{ ok: true }` with no list is not "no flags".
+      if (!response.ok || payload?.ok !== true || !Array.isArray(payload.flags)) {
         throw new Error(payload?.error || 'Failed to load library review flags');
       }
-      setFlags((payload.flags ?? []) as LibraryReviewFlag[]);
+      setFlags(payload.flags as LibraryReviewFlag[]);
+      setFlagsRead('loaded');
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load library review flags');
+      setFlagsRead('unavailable');
     } finally {
       setLoading(false);
     }
@@ -655,7 +688,9 @@ function LibraryReviewFlagsPanel() {
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="t-eyebrow">Library Quality</p>
-          <h3 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>Review Flags ({flags.length})</h3>
+          <h3 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>
+            {flagsRead === 'loaded' ? `Review Flags (${flags.length})` : 'Review Flags'}
+          </h3>
         </div>
         <button
           type="button"
@@ -907,6 +942,7 @@ function renderFeedbackReviewPanel(props: {
   summary: ShadowFeedbackApiResponse['summary'];
   reviewQueue: ShadowFeedbackItem[];
   retryQueue: ShadowFeedbackItem[];
+  queueRead: ReadState;
   loading: boolean;
   error: string;
   pendingFeedbackId: number | null;
@@ -914,7 +950,7 @@ function renderFeedbackReviewPanel(props: {
   onReview: (item: ShadowFeedbackItem, decision: 'approve' | 'reject') => void;
   onRefresh: () => void;
 }) {
-  const { summary, reviewQueue, retryQueue, loading, error, pendingFeedbackId, reviewRefusal, onReview, onRefresh } = props;
+  const { summary, reviewQueue, retryQueue, queueRead, loading, error, pendingFeedbackId, reviewRefusal, onReview, onRefresh } = props;
 
   const renderItem = (item: ShadowFeedbackItem, mode: 'review' | 'retry') => {
     const busy = pendingFeedbackId === item.feedback_id;
@@ -1034,11 +1070,17 @@ function renderFeedbackReviewPanel(props: {
       )}
 
       <p className="t-eyebrow mb-[var(--s3)]">
-        Awaiting review ({reviewQueue.length})
+        {queueRead === 'loaded' ? `Awaiting review (${reviewQueue.length})` : 'Awaiting review'}
       </p>
-      {reviewQueue.length === 0 ? (
+      {queueRead === 'unavailable' ? (
+        // `error` above may be a failed review, with the queue intact; this is
+        // the queue itself not having been read.
         <p className="t-muted">
-          {loading ? 'Loading feedback…' : 'No feedback is awaiting human review.'}
+          Feedback awaiting review could not be loaded. The list is unavailable, not empty. Refresh to retry.
+        </p>
+      ) : reviewQueue.length === 0 ? (
+        <p className="t-muted">
+          {loading || queueRead === 'loading' ? 'Loading feedback…' : 'No feedback is awaiting human review.'}
         </p>
       ) : (
         <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
@@ -1065,7 +1107,13 @@ export default function AdminShadowConsolePage() {
   ]);
   const [commandInput, setCommandInput] = useState('');
   const [pendingQueue, setPendingQueue] = useState<IntakeItem[]>([]);
+  const [intakeQueueRead, setIntakeQueueRead] = useState<ReadState>('loading');
   const [backendQueueReady, setBackendQueueReady] = useState(false);
+  // The same fact, readable without waiting for a render. The A / R / I keys
+  // reach handleItemAction through a ref that is refreshed in an effect, so
+  // for one commit they can still hold the closure in which the state above
+  // was true; the refusal in handleItemAction reads this instead.
+  const backendQueueReadyRef = useRef(false);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [queueFilterStatus, setQueueFilterStatus] = useState<'ALL' | IntakeStatus>('ALL');
@@ -1074,6 +1122,8 @@ export default function AdminShadowConsolePage() {
   const [showTelemetry, setShowTelemetry] = useState(false);
   const [shadowTelemetry, setShadowTelemetry] = useState<ShadowTelemetryApiResponse['telemetry']>([]);
   const [shadowAuthorityChecks, setShadowAuthorityChecks] = useState<ShadowAuthorityApiResponse['authority_checks']>([]);
+  const [shadowTelemetryRead, setShadowTelemetryRead] = useState<ReadState>('loading');
+  const [shadowAuthorityRead, setShadowAuthorityRead] = useState<ReadState>('loading');
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -1087,6 +1137,7 @@ export default function AdminShadowConsolePage() {
   const [metricsError, setMetricsError] = useState('');
   const [feedbackSummary, setFeedbackSummary] = useState<ShadowFeedbackApiResponse['summary']>(null);
   const [feedbackReviewQueue, setFeedbackReviewQueue] = useState<ShadowFeedbackItem[]>([]);
+  const [feedbackQueueRead, setFeedbackQueueRead] = useState<ReadState>('loading');
   // Items whose review was recorded but whose learning promotion returned a
   // retryable failure. The GET projection cannot identify these (it does not
   // expose learning-event presence), so they are tracked for this session only.
@@ -1108,6 +1159,7 @@ export default function AdminShadowConsolePage() {
 
   useEffect(() => {
     void refreshBackendQueue().catch((error) => {
+      backendQueueReadyRef.current = false;
       setBackendQueueReady(false);
       setPendingQueue([]);
       appendConsoleLog({
@@ -1120,7 +1172,8 @@ export default function AdminShadowConsolePage() {
     });
 
     void refreshShadowOperationalReads().catch(() => {
-      // Keep console operational when SHADOW telemetry/authority reads are unavailable.
+      // Keep console operational when SHADOW telemetry/authority reads are
+      // unavailable. The read marks each stream 'unavailable' itself.
     });
 
     void refreshShadowFeedbackReviews().catch((error) => {
@@ -1160,45 +1213,60 @@ export default function AdminShadowConsolePage() {
 
   const selectedItem = useMemo(() => pendingQueue.find((item) => item.id === selectedItemId) ?? null, [pendingQueue, selectedItemId]);
 
+  // The read state is set here, not in a caller's catch: this runs on mount
+  // and again after every review action, promotion and upload.
   async function refreshBackendQueue() {
-    const response = await fetch(`${apiBase()}/api/pilot/shadow/review-projection`, {
-      credentials: 'include',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/shadow/review-projection`, {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
 
-    const payload = (await response.json()) as ReviewQueueApiResponse | { error?: string };
-    if (!response.ok || !('ok' in payload)) {
-      const message = 'error' in payload && payload.error ? payload.error : 'Failed to load review queue';
-      throw new Error(message);
+      const payload = (await response.json()) as (Partial<ReviewQueueApiResponse> & { error?: string }) | null;
+      // `{ ok: false, queue: [] }` and `{ ok: true }` are both a read that
+      // did not come back, not an empty queue.
+      if (!response.ok || payload?.ok !== true || !Array.isArray(payload.queue)) {
+        throw new Error(payload?.error || 'Failed to load review queue');
+      }
+
+      const mapped: IntakeItem[] = payload.queue.map((entry) => {
+        const athleteSuffix = entry.primary_athlete_id ? ` | Athlete: ${entry.primary_athlete_id}` : '';
+        const eventSuffix = entry.shadow_event_name ? ` | Event: ${entry.shadow_event_name}` : '';
+
+        return {
+        id: entry.intake_case_id,
+        intakeCaseId: entry.intake_case_id,
+        itemName: entry.summary,
+        dataType: 'File Intake',
+        source: 'SHADOW Upload',
+        suggestedDestination: 'Admin Hub',
+        status: fromBackendStatus(entry.status),
+        reviewNeeded: entry.status === 'pending_review',
+        requiresJasonReview: entry.status === 'pending_review',
+        detectedType: 'File Intake',
+        confidence: 'Medium',
+        notes: `Documents in case: ${entry.document_count}${athleteSuffix}${eventSuffix}`,
+        destinationRoute: '/admin/shadow',
+        timestamp: entry.created_at,
+        lastUpdatedAt: entry.updated_at,
+        };
+      });
+
+      setPendingQueue(mapped);
+      backendQueueReadyRef.current = true;
+      setBackendQueueReady(true);
+      setIntakeQueueRead('loaded');
+    } catch (error) {
+      setIntakeQueueRead('unavailable');
+      // The list is no longer on screen, so the review and promotion writes
+      // are refused until a read comes back: the A / R / I keys would
+      // otherwise act on a selected row the admin cannot see.
+      backendQueueReadyRef.current = false;
+      setBackendQueueReady(false);
+      throw error;
     }
-
-    const mapped: IntakeItem[] = payload.queue.map((entry) => {
-      const athleteSuffix = entry.primary_athlete_id ? ` | Athlete: ${entry.primary_athlete_id}` : '';
-      const eventSuffix = entry.shadow_event_name ? ` | Event: ${entry.shadow_event_name}` : '';
-
-      return {
-      id: entry.intake_case_id,
-      intakeCaseId: entry.intake_case_id,
-      itemName: entry.summary,
-      dataType: 'File Intake',
-      source: 'SHADOW Upload',
-      suggestedDestination: 'Admin Hub',
-      status: fromBackendStatus(entry.status),
-      reviewNeeded: entry.status === 'pending_review',
-      requiresJasonReview: entry.status === 'pending_review',
-      detectedType: 'File Intake',
-      confidence: 'Medium',
-      notes: `Documents in case: ${entry.document_count}${athleteSuffix}${eventSuffix}`,
-      destinationRoute: '/admin/shadow',
-      timestamp: entry.created_at,
-      lastUpdatedAt: entry.updated_at,
-      };
-    });
-
-    setPendingQueue(mapped);
-    setBackendQueueReady(true);
   }
 
   async function refreshShadowFeedbackReviews() {
@@ -1211,13 +1279,17 @@ export default function AdminShadowConsolePage() {
         | (Partial<ShadowFeedbackApiResponse> & { error?: string })
         | null;
 
-      if (!response.ok || !payload?.ok) {
+      if (!response.ok || payload?.ok !== true || !Array.isArray(payload.items)) {
         throw new Error(payload?.error || 'Failed to load SHADOW feedback review queue');
       }
 
       setFeedbackSummary(payload.summary ?? null);
-      setFeedbackReviewQueue(selectShadowFeedbackReviewQueue(payload.items ?? []));
+      setFeedbackReviewQueue(selectShadowFeedbackReviewQueue(payload.items));
+      setFeedbackQueueRead('loaded');
       setFeedbackError('');
+    } catch (error) {
+      setFeedbackQueueRead('unavailable');
+      throw error;
     } finally {
       setFeedbackLoading(false);
     }
@@ -1292,29 +1364,38 @@ export default function AdminShadowConsolePage() {
   }
 
   async function refreshShadowOperationalReads() {
-    const [telemetryResponse, authorityResponse] = await Promise.all([
-      fetch(`${apiBase()}/api/pilot/shadow/telemetry`, {
-        credentials: 'include',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 40 }),
-      }),
-      fetch(`${apiBase()}/api/pilot/shadow/authority`, {
-        credentials: 'include',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 40 }),
-      }),
-    ]);
-
-    if (telemetryResponse.ok) {
-      const telemetryPayload = (await telemetryResponse.json()) as ShadowTelemetryApiResponse;
-      setShadowTelemetry(telemetryPayload.telemetry ?? []);
+    let telemetryResponse: Response;
+    let authorityResponse: Response;
+    try {
+      [telemetryResponse, authorityResponse] = await readShadowOperationalStreams();
+    } catch (error) {
+      setShadowTelemetryRead('unavailable');
+      setShadowAuthorityRead('unavailable');
+      throw error;
     }
 
-    if (authorityResponse.ok) {
-      const authorityPayload = (await authorityResponse.json()) as ShadowAuthorityApiResponse;
-      setShadowAuthorityChecks(authorityPayload.authority_checks ?? []);
+    // A refused read, a body that will not parse, an application ok that is
+    // not true, or a missing list leaves that stream 'unavailable'. It used to
+    // leave the array empty and say nothing, so the panel read "No SHADOW
+    // telemetry events returned."
+    const telemetryPayload = telemetryResponse.ok
+      ? ((await telemetryResponse.json().catch(() => null)) as Partial<ShadowTelemetryApiResponse> | null)
+      : null;
+    if (telemetryPayload?.ok === true && Array.isArray(telemetryPayload.telemetry)) {
+      setShadowTelemetry(telemetryPayload.telemetry);
+      setShadowTelemetryRead('loaded');
+    } else {
+      setShadowTelemetryRead('unavailable');
+    }
+
+    const authorityPayload = authorityResponse.ok
+      ? ((await authorityResponse.json().catch(() => null)) as Partial<ShadowAuthorityApiResponse> | null)
+      : null;
+    if (authorityPayload?.ok === true && Array.isArray(authorityPayload.authority_checks)) {
+      setShadowAuthorityChecks(authorityPayload.authority_checks);
+      setShadowAuthorityRead('loaded');
+    } else {
+      setShadowAuthorityRead('unavailable');
     }
   }
 
@@ -1476,6 +1557,24 @@ export default function AdminShadowConsolePage() {
       return;
     }
 
+    // The queue's last read failed, so the queue list is no longer on screen. Refuse
+    // here, where the keys and the typed commands arrive, and say so: the
+    // guards inside processReviewAction / processPromotion stay as the second
+    // line, but they throw, and nothing on those paths shows a throw.
+    if (!backendQueueReadyRef.current) {
+      appendConsoleLog({
+        source: 'SHADOW',
+        dataType: item.dataType,
+        status: 'Blocked',
+        message:
+          action === 'IMPORT'
+            ? 'Promotion blocked: backend review queue is unavailable.'
+            : 'Review action blocked: backend review queue is unavailable.',
+        destination: 'SHADOW Local State',
+      });
+      return;
+    }
+
     if (action === 'APPROVE' || action === 'REJECT') {
       await handleReviewAction(item, action);
       return;
@@ -1483,6 +1582,16 @@ export default function AdminShadowConsolePage() {
 
     await handleImportAction(item);
   }
+
+  // What the console says about the queue when it has no read to speak from;
+  // null once a read has come back. The typed commands answer from this before
+  // they count the queue, the same as the panel does.
+  const intakeQueueNotRead =
+    intakeQueueRead === 'unavailable'
+      ? INTAKE_QUEUE_UNAVAILABLE
+      : intakeQueueRead === 'loading'
+        ? INTAKE_QUEUE_LOADING
+        : null;
 
   function handleCommandSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -1505,7 +1614,7 @@ export default function AdminShadowConsolePage() {
         source: 'SHADOW',
         dataType: 'System',
         status: 'Status',
-        message: `Queue=${pendingQueue.length} | Selected=${selectedItem ? selectedItem.itemName : 'None'}`,
+        message: `Queue=${intakeQueueRead === 'loaded' ? pendingQueue.length : intakeQueueRead} | Selected=${selectedItem ? selectedItem.itemName : 'None'}`,
         destination: 'SHADOW Local State',
       });
     } else if (submitted === 'list') {
@@ -1514,9 +1623,10 @@ export default function AdminShadowConsolePage() {
         dataType: 'System',
         status: 'List',
         message:
-          pendingQueue.length === 0
-            ? 'No pending intake items in queue.'
-            : `Pending items: ${pendingQueue.map((item) => item.itemName).join(' | ')}`,
+          intakeQueueNotRead
+            ?? (pendingQueue.length === 0
+              ? 'No pending intake items in queue.'
+              : `Pending items: ${pendingQueue.map((item) => item.itemName).join(' | ')}`),
         destination: 'SHADOW Local State',
       });
     } else if (submitted === 'clear') {
@@ -1536,7 +1646,9 @@ export default function AdminShadowConsolePage() {
         source: 'SHADOW',
         dataType: 'System',
         status: 'Summary',
-        message: `Queue status: ${pendingQueue.length} pending item(s). Review documents, then APPROVE and IMPORT.`,
+        message:
+          intakeQueueNotRead
+            ?? `Queue status: ${pendingQueue.length} pending item(s). Review documents, then APPROVE and IMPORT.`,
         destination: 'Admin Hub',
       });
     } else if (submitted === 'approve' || submitted === 'reject') {
@@ -1783,6 +1895,7 @@ export default function AdminShadowConsolePage() {
           summary: feedbackSummary,
           reviewQueue: feedbackReviewQueue,
           retryQueue: feedbackRetryQueue,
+          queueRead: feedbackQueueRead,
           loading: feedbackLoading,
           error: feedbackError,
           pendingFeedbackId: feedbackPendingId,
@@ -1820,8 +1933,8 @@ export default function AdminShadowConsolePage() {
 
           <section className="rounded-[var(--r-md)] border border-[color:rgba(230,227,214,.16)] bg-[rgba(0,0,0,.25)] p-[var(--s4)]">
             <div className="mb-[var(--s4)] flex flex-wrap gap-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--brass-300)]">
-              <span>Pending: {queueCounts.pending}</span>
-              <span>Approved: {queueCounts.approved}</span>
+              <span>Pending: {intakeQueueRead === 'loaded' ? queueCounts.pending : intakeQueueRead === 'loading' ? '—' : 'unavailable'}</span>
+              <span>Approved: {intakeQueueRead === 'loaded' ? queueCounts.approved : intakeQueueRead === 'loading' ? '—' : 'unavailable'}</span>
             </div>
             <div className="max-h-[500px] space-y-3 overflow-y-auto pr-1">
               {consoleLogs.map((log) => (
@@ -1916,7 +2029,9 @@ export default function AdminShadowConsolePage() {
               </label>
             </div>
 
-            {filteredSortedQueue.length === 0 ? (
+            {intakeQueueNotRead ? (
+              <p className="t-body">{intakeQueueNotRead}</p>
+            ) : filteredSortedQueue.length === 0 ? (
               <p className="t-body">No pending intake items. Use Upload File or Quick Add to create staging entries.</p>
             ) : (
               <div className="space-y-3">
@@ -2146,8 +2261,14 @@ export default function AdminShadowConsolePage() {
 
                 <div className="border-t border-[color:rgb(var(--brass-400-rgb)_/_.28)] pt-[var(--s3)]">
                   <p className="t-eyebrow mb-[var(--s3)]">SHADOW telemetry read model</p>
-                  {shadowTelemetry.length === 0 && <p className="t-muted p-[var(--s3)]">No SHADOW telemetry events returned.</p>}
-                  {shadowTelemetry.map((event) => (
+                  {shadowTelemetryRead === 'unavailable' ? (
+                    <p className="t-muted p-[var(--s3)]">SHADOW telemetry could not be loaded. Unavailable, not empty.</p>
+                  ) : shadowTelemetryRead === 'loading' ? (
+                    <p className="t-muted p-[var(--s3)]">Loading…</p>
+                  ) : shadowTelemetry.length === 0 ? (
+                    <p className="t-muted p-[var(--s3)]">No SHADOW telemetry events returned.</p>
+                  ) : null}
+                  {shadowTelemetryRead === 'loaded' && shadowTelemetry.map((event) => (
                     <pre key={`shadow-telemetry-${event.shadow_telemetry_event_id}`} className="t-data whitespace-pre-wrap border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-[var(--s3)]">
 {JSON.stringify(event, null, 2)}
                     </pre>
@@ -2156,8 +2277,14 @@ export default function AdminShadowConsolePage() {
 
                 <div className="border-t border-[color:rgb(var(--brass-400-rgb)_/_.28)] pt-[var(--s3)]">
                   <p className="t-eyebrow mb-[var(--s3)]">SHADOW authority read model</p>
-                  {shadowAuthorityChecks.length === 0 && <p className="t-muted p-[var(--s3)]">No SHADOW authority checks returned.</p>}
-                  {shadowAuthorityChecks.map((check) => (
+                  {shadowAuthorityRead === 'unavailable' ? (
+                    <p className="t-muted p-[var(--s3)]">SHADOW authority checks could not be loaded. Unavailable, not empty.</p>
+                  ) : shadowAuthorityRead === 'loading' ? (
+                    <p className="t-muted p-[var(--s3)]">Loading…</p>
+                  ) : shadowAuthorityChecks.length === 0 ? (
+                    <p className="t-muted p-[var(--s3)]">No SHADOW authority checks returned.</p>
+                  ) : null}
+                  {shadowAuthorityRead === 'loaded' && shadowAuthorityChecks.map((check) => (
                     <pre key={`shadow-authority-${check.authority_check_id}`} className="t-data whitespace-pre-wrap border border-[color:var(--hide-600)] bg-[var(--hide-950)] p-[var(--s3)]">
 {JSON.stringify(check, null, 2)}
                     </pre>
