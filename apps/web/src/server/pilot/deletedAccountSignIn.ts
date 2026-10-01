@@ -72,13 +72,19 @@ export function isDeletedAccount(row: AccountDeletionFlag): boolean {
  * said why. One message for all of them: a deleted login is changed by
  * nothing in the app.
  *
+ * It says what a returning person needs, because "gets a new login" alone was
+ * a dead end for an email login: the deleted row keeps its login_email, the
+ * column is unique, and an invite resolves by it, so the same address is
+ * refused every time until the row is purged.
+ *
  * `login` is what the caller named -- an account_id or an email -- never a
  * value read from the row.
  */
 export function deletedLoginConflict(login: string): ConflictError {
   return new ConflictError(
     `Conflict: the login "${login}" was deleted. A deleted login cannot sign in and nothing here changes it; `
-    + 'a deletion is not undone from the app. A returning person gets a new login.',
+    + 'a deletion is not undone from the app. A returning person needs a new login: a new account_id, or for a '
+    + 'staff or guardian login a different email address, because the deleted login keeps its own.',
     'DELETED_LOGIN',
   );
 }

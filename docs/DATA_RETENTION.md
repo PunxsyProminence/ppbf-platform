@@ -218,11 +218,14 @@ login left active, and its sessions, as refused at sign-in rather than as exposu
 
 **Admin actions on a deleted login are refused** (owner decision 2026-09-30, OD-2026-09-30-004
 e2, A). Each of these used to succeed on a login marked deleted and leave it shown as active, with
-a PIN or a code, while sign-in refused it and nothing said why. Each now answers 409 with one
-message (`deletedLoginConflict`, `apps/web/src/server/pilot/deletedAccountSignIn.ts`: the login was
-deleted, nothing here changes it, a returning person gets a new login), and the login is left as
-deletion left it. The refusal is a condition of the write statement itself, not only a check
-before it:
+a PIN or a code, while sign-in refused it and nothing said why. Each is now refused with a 409 and
+the login is left as deletion left it. An action on the deleted login itself answers one message
+(`deletedLoginConflict`, `apps/web/src/server/pilot/deletedAccountSignIn.ts`: the login was
+deleted, nothing here changes it, and a returning person needs a new login -- a new `account_id`,
+or for a staff or guardian login a different email address, because the deleted row keeps its
+email and the email is unique). An action on a withdrawn athlete record answers its own message.
+The rule is a condition of the write statement itself, not only a check before it; the two
+withdrawn-athlete checks are a read that locks the athlete row until the write commits:
 
 - a new activation code, and a PIN reset (`issueActivationCode`, `provisionAthleteActivation`,
   `apps/web/src/server/pilot/activation.ts`);
@@ -242,11 +245,16 @@ before it:
 Intake re-promoting a withdrawn athlete, or naming a deleted login, is refused the same way
 (#1047). A gym's admin is told a login is deleted only when it is in their own gym.
 
-**Still open (checked 2026-09-30):** two paths still write to a login without reading
+**Still open (checked 2026-09-30):** three routed paths still write to a login without reading
 `deleted_at`: the platform owner's athlete-shell route (`createAthleteAccount`,
-`apps/web/src/server/pilot/auth.ts`) and the stranded-guardian repair
-(`repairStrandedGuardianAuthProvider`, same file). Neither can reopen the login, because sign-in
-refuses it. Revoking a deleted login's sessions is still allowed. Nothing in the app clears
+`apps/web/src/server/pilot/auth.ts`), the stranded-guardian repair
+(`repairStrandedGuardianAuthProvider`, same file), and the platform-owner bootstrap
+(`createOrUpdateMicrosoftPlatformOwnerAccount`, same file). None can reopen the login, because
+sign-in refuses it. Four more functions in that file have no deleted check and no caller in the
+app (`resetAccountPin`, `activateAccountPin`, `createCoachAccount`, `createParentAccount`).
+Revoking a deleted login's sessions is still allowed. A returning staff member or guardian cannot
+be given a login at the email their deleted login holds until that row is purged or the email is
+freed by a database fix. Nothing in the app clears
 `deleted_at`, so a deletion cannot be undone from any screen (the 1-year restore is not built),
 and a person marked deleted cannot be deleted again from the screen (409).
 

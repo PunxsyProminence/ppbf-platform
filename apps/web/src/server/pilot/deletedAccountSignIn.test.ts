@@ -53,7 +53,8 @@ describe('deletedLoginConflict', () => {
     expect(refusal).toMatchObject({ status: 409, code: 'DELETED_LOGIN' });
     expect(refusal.message).toBe(
       'Conflict: the login "acct-1" was deleted. A deleted login cannot sign in and nothing here changes it; '
-      + 'a deletion is not undone from the app. A returning person gets a new login.',
+      + 'a deletion is not undone from the app. A returning person needs a new login: a new account_id, or for a '
+      + 'staff or guardian login a different email address, because the deleted login keeps its own.',
     );
   });
 });

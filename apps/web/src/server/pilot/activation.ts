@@ -238,8 +238,11 @@ export async function issueActivationCode(params: {
     //
     // Nor a deleted login (OD-2026-09-30-004 e2): a code was issued for a
     // login that could never sign in. That one is named, to the admin of the
-    // organization it is in and to nobody else. `for share` holds the row, so
-    // a deletion cannot land between this read and the code being written.
+    // organization it is in and to nobody else. The insert below carries the
+    // same conditions, so the code is written only for a login that is still
+    // one of these when it is written. No row lock here: a redemption locks
+    // the code and then updates the account, and locking the account first
+    // here could deadlock against it.
     const target = await client.query<{ account_id: string }>(
       `select account_id
        from pilot.accounts a
@@ -247,8 +250,7 @@ export async function issueActivationCode(params: {
          and organization_id = $2
          and role = 'athlete'
          and is_platform_owner = false
-         and not ${accountDeletedSql('a')}
-       for share`,
+         and not ${accountDeletedSql('a')}`,
       [accountId, organizationId],
     );
 
@@ -275,10 +277,23 @@ export async function issueActivationCode(params: {
          issued_by_role,
          expires_at
        )
-       values ($1, $2, $3, $4, $5, now() + ($6 || ' hours')::interval)
+       select $1, a.account_id, a.organization_id, $4, $5, now() + ($6 || ' hours')::interval
+       from pilot.accounts a
+       where a.account_id = $2
+         and a.organization_id = $3
+         and a.role = 'athlete'
+         and a.is_platform_owner = false
+         and not ${accountDeletedSql('a')}
        returning expires_at`,
       [tokenHash, accountId, organizationId, params.issuedByAccountId, params.issuedByRole, ttlHours],
     );
+
+    if (inserted.rows.length === 0) {
+      // Deleted, or no longer an athlete here, since the read above. The
+      // throw rolls back the supersede, so the earlier code is left live.
+      await refuseIfLoginDeleted(client, accountId, organizationId);
+      throw new Error('Not found: no pending athlete account matches that identifier');
+    }
 
     return inserted.rows[0].expires_at;
   });

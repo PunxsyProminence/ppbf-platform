@@ -170,6 +170,43 @@ describe('issueActivationCode', () => {
     ).rejects.toThrow('Not found');
   });
 
+  // OD-2026-09-30-004 e2. The rule is in the read, which names the reason,
+  // and in the insert, which is what writes the code. Each is pinned here; the
+  // refusal itself is proved against real Postgres in
+  // deletedLoginAdminActions.pg.test.ts.
+  test('the lookup and the code insert both exclude a deleted login', async () => {
+    stubIssuableAthlete();
+    await issueActivationCode({
+      accountId: 'ath-1',
+      organizationId: 'org-1',
+      issuedByAccountId: 'admin-1',
+      issuedByRole: 'organization_admin',
+    });
+
+    const [lookupSql] = callsMatching(/^\s*select account_id\s+from pilot\.accounts a/)[0];
+    expect(lookupSql).toContain('and not (a.deleted_at is not null)');
+    expect(lookupSql).not.toContain('for share');
+    const [insertSql] = callsMatching(/insert into pilot\.account_activation_tokens/)[0];
+    expect(insertSql).toContain('from pilot.accounts a');
+    expect(insertSql).toContain("and a.role = 'athlete'");
+    expect(insertSql).toContain('and not (a.deleted_at is not null)');
+  });
+
+  test('a login the insert no longer matches gets no code, and one deleted since the read is refused by name', async () => {
+    respond(/insert into pilot\.account_activation_tokens/, []);
+    respond(/^\s*select account_id\s+from pilot\.accounts a/, [{ account_id: 'ath-1' }]);
+    respond(/select 1 from pilot\.accounts a/, [{ found: 1 }]);
+
+    await expect(
+      issueActivationCode({
+        accountId: 'ath-1',
+        organizationId: 'org-1',
+        issuedByAccountId: 'admin-1',
+        issuedByRole: 'organization_admin',
+      }),
+    ).rejects.toMatchObject({ status: 409, code: 'DELETED_LOGIN' });
+  });
+
   test('scopes the lookup to athletes who are not platform owners', async () => {
     stubIssuableAthlete();
     await issueActivationCode({

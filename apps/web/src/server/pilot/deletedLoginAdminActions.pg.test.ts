@@ -267,7 +267,8 @@ afterEach(async () => {
 
 const DELETED_MESSAGE = (login: string) =>
   `Conflict: the login "${login}" was deleted. A deleted login cannot sign in and nothing here changes it; `
-  + 'a deletion is not undone from the app. A returning person gets a new login.';
+  + 'a deletion is not undone from the app. A returning person needs a new login: a new account_id, or for a '
+  + 'staff or guardian login a different email address, because the deleted login keeps its own.';
 
 const ISSUER = { issuedByAccountId: COACH_ID, issuedByRole: 'organization_admin' as const };
 

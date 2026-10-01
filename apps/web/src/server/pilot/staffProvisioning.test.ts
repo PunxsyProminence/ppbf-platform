@@ -1238,7 +1238,8 @@ describe('intake guardian login: a deleted login is refused, not reactivated', (
 
   const DELETED_MESSAGE =
     'Conflict: the login "dana@example.com" was deleted. A deleted login cannot sign in and nothing here changes it; '
-    + 'a deletion is not undone from the app. A returning person gets a new login.';
+    + 'a deletion is not undone from the app. A returning person needs a new login: a new account_id, or for a '
+    + 'staff or guardian login a different email address, because the deleted login keeps its own.';
 
   // OD-2026-09-30-004 e2 (A): refused for every caller, not only intake. A
   // re-invite used to set a deleted login active again.
