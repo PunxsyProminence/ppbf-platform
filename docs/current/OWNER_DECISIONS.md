@@ -189,15 +189,19 @@ questions"*.
    board: A, keep it (recommended, also by ChatGPT); B, remove it.' **A.** This
    changes what OD-2026-10-01-002 section 2 item 3 reports: there the control
    was overwatch's decision, told to him and not his ruling. It is now
-   owner-approved. The commits that added it were made before this approval
-   and remain unauthorized writes in PR #1063's own record.
+   owner-approved. Within PR #1063, the "Check again" addition in commit
+   `8a459c61` and its guard-label addition in `c4329503` were unauthorized
+   writes at the time (those commits also carry authorized work: the
+   athlete's line, the disabled Place control, the one-control-two-states
+   change); he later approved keeping the behaviour.
 3. **The line shown when a submission for the previous athlete fails late is
    his.** Asked: "When something a coach submitted for the previous athlete
    fails after they've switched to another athlete, the screen shows: A,
    'Something you submitted for the athlete you were on before did not go
    through. Go back to them and check.' (recommended, also by ChatGPT); B, your
-   own wording; C, nothing." **A.** The same note applies: written before the
-   approval, approved after.
+   own wording; C, nothing." **A.** The sentence was added in commit `ca66674a` of PR #1063,
+   which also carries authorized review fixes; that one addition was an
+   unauthorized write at the time, and he later approved keeping the wording.
 
 ### 2. The visual lane is his and the lane's; overwatch lands what they build
 
@@ -299,23 +303,31 @@ from that run's artifact) and dispatched the production migration
 which waited for his approval. Merges were frozen. Neither his approval nor his
 signed-in look on staging came; five reviewed PRs queued behind the freeze. On
 his "Go off recommendation" (section 5 item 1) overwatch requested cancellation
-of run 36918902244 and lifted the freeze. Nothing was deployed to production
-and no production migration ran. Production remains release 2.
+of run 36918902244 and lifted the freeze. Release 3 made no production change:
+the migration run ended cancelled with no step executed, and no
+`deploy-production` was dispatched for it. Read from Azure by overwatch at
+2026-10-01T22:18Z: container app `app-ppbf-production`, latest ready revision
+`app-ppbf-production--0000160`, image digest
+`sha256:596ec36920558ebf41de35a3ac283e9a6aa5e4553e4e6238960b299cdd2d1878`,
+the revision and digest release 2 deployed (OD-2026-10-01-001 section 6).
 
 ### 7. Writes that had no words of his at the time
 
 Each was reported to him when found; ChatGPT's reviews classed them. Later
 approvals do not authorize them backwards.
 
-- A re-run of a CANCELLED CI job on PR #1061 (run 36903135578): his
-  authorization covers re-running failed jobs.
+- A re-run of a CI job on PR #1061 (run 36903135578). He authorized re-running
+  FAILED jobs on open PRs. That job was CANCELLED, not failed. The re-run was
+  therefore an UNAUTHORIZED WRITE / HISTORICAL DEFECT.
 - Two plate image copies written to `Documents\PPBF-overwatch\plates-1064`, and
   the relay notes written under `Documents\PPBF-overwatch\lane-inbox` by
   overwatch and by lanes, before his working-files answer (section 1 item 1).
 - The permission mode of the Lane H thread, changed with Lane Q's when his
   words named only Q (OD-2026-10-01-002 section 4).
-- In PR #1063, the commits adding "Check again" and the previous-athlete
-  failure sentence, before section 1 items 2 and 3.
+- In PR #1063, three additions made before section 1 items 2 and 3: "Check
+  again" in `8a459c61`, its guard label in `c4329503`, and the
+  previous-athlete failure sentence in `ca66674a`. Only those additions; the
+  rest of each commit was authorized work.
 
 ### 8. A fact he stated (REPORTED by Lane L2)
 
