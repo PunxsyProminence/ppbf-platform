@@ -283,15 +283,17 @@ afterEach(() => {
 //
 // normaliseForMatching folds a curly apostrophe so the safety classifier sees
 // "can't" where the athlete typed "can\u2019t". What must NOT happen is the
-// folded text becoming the record: the message sent to the model, written to
-// the conversation, and echoed back has to stay byte-for-byte what they typed.
+// folded text becoming the record: the message sent to the model and the
+// message written to the conversation have to stay what they typed. Those two
+// are what the first test reads. (The response body is not read for the typed
+// text: the route does not echo the user's message back.)
 //
 // THIS IS TWO TESTS, NOT ONE, AND THE REASON IS THE FIX ITSELF. A curly-quote
-// EMERGENCY report cannot also reach the model: route.ts returns the
-// safeguarding response before the provider is ever called, which is the
-// behaviour this hotfix restores. So byte-for-byte preservation is proven on
-// a message that DOES reach the model, and the acute path is proven
-// separately on one that must not.
+// EMERGENCY report does not reach the model today: route.ts returns the
+// safeguarding response first, which is the behaviour this hotfix restores.
+// So preservation is shown on a message that DOES reach the model, and the
+// second test shows, on an emergency report, that the curly spelling and the
+// straight one take the route through the same nine observed outcomes.
 // ---------------------------------------------------------------------------
 describe('the athlete\'s own words survive normalisation', () => {
   // Contains a curly apostrophe, which the fold rewrites, AND a doubled

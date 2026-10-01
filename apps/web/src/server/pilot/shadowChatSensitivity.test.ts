@@ -1,80 +1,66 @@
 // DIFFERENTIAL SENSITIVITY GUARD for the SHADOW safety classifier.
 //
-// WHY THIS FILE EXISTS, AND WHY IT IS NOT MORE EXAMPLES.
+// WHAT IS BEING GUARDED. shadowChat.ts folds eighteen apostrophe and quote
+// look-alikes to the ASCII apostrophe and quote before its patterns run, so
+// that "I can\u2019t breathe", typed on a phone, is treated as "I can't
+// breathe". Nothing else about the classifier changes.
 //
-// The curly-apostrophe hotfix went through three rounds of the same defect,
-// each one found by someone thinking of a phrase nobody had thought of before:
+// THE PROPERTY, and it is a one-way one. Against main as it stood at b4f58159:
 //
-//   round 1  no word boundary      -> "significant", "vacant" fired the emergency path
-//   round 2  leading boundary only -> "cantilever", "cantina" still fired
-//   round 3  boundaries both sides -> "signifi-cant", soft-hyphenated and accented forms STILL fired
+//   1. ANYTHING MAIN WITHHELD IS STILL WITHHELD.
+//   2. ANYTHING MAIN ANSWERED WITH THE EMERGENCY TEXT STILL GETS IT.
+//   3. ANYTHING MAIN RECORDED AT A CRITICAL CLASSIFICATION STILL IS.
 //
-// and separately, the worst one, in the other direction:
+// Not "behaves identically": flagging more is the point. Becoming LESS
+// sensitive, for any message, is the regression.
 //
-//   stripping U+FEFF as "zero-width" ALLOWED THROUGH a message main withheld.
-//   U+FEFF is whitespace to the ECMAScript engine, so main's
-//   `can(?:not|'t)\s+breathe` already matched "I can't<FEFF>breathe after that
-//   hit". Deleting it joined the words, matched nothing, and sent the message
-//   to the model with nobody told -- reintroducing the exact production defect
-//   the branch existed to close, through a different character.
+// WHY THIS FILE IS NOT MORE EXAMPLES. Earlier versions of the fold did more
+// than this one, and each extra was found to be wrong by somebody thinking of
+// a message nobody had thought of: deleting U+FEFF released a message main
+// withheld; folding U+FEFF to a space took the emergency response away from
+// "I can't breathe and I need to lose weight<FEFF>quickly"; an optional
+// apostrophe made "significant" an emergency. Examples were the wrong
+// instrument each time. So this file has four parts, and only the last two
+// are examples:
 //
-// That last one was found by sweeping every code point against main, not by
-// anyone being clever. Three rounds of example-chasing is the evidence that
-// examples are the wrong instrument, so the sweep is committed here as a
-// permanent guard rather than left as a one-off that found something once.
+//   THE ARGUMENT   why two character classes folding to two characters cannot
+//                  break properties 1-3, with each premise tested from source
+//   THE FOLD       what the fold does to every UTF-16 code unit, exactly, and
+//                  that it does it one unit at a time
+//   THE DIFFERENTIALS  main against the current code, over generated messages
+//   THE CORPUS     sentences that must not be withheld
 //
-// THE PROPERTY, and it is a one-way one:
-//
-//   ANYTHING MAIN WITHHELD, THE CURRENT CODE MUST STILL WITHHOLD.
-//
-// Not "behaves identically". The whole point of the change is to flag MORE:
-// a report typed with a phone's apostrophe. Omitted apostrophes and exotic
-// separators were in scope once and are not now; they behave as on main.
-// Becoming more sensitive is the feature. Becoming LESS sensitive, anywhere,
-// for any character, is the regression, and it is invisible to a test written
-// from phrases somebody imagined.
-//
-// The reference below is main's WITHHOLDING code at b4f58159 -- all seven
-// withholding returns of validateShadowRequest plus classifyHighRiskTopic --
-// frozen verbatim. It is deliberately a COPY and must not be refactored to import
-// anything: its job is to keep saying what main said even after the real
-// implementation has moved on. If it ever needs to change, that is a decision
-// about dropping coverage and belongs in front of an owner.
+// The reference below is main's classifier at b4f58159, frozen. It is a COPY
+// and must not be refactored to import anything: its job is to keep saying
+// what main said after the real implementation has moved on.
+
+import * as fs from 'fs';
+import * as path from 'path';
+import * as ts from 'typescript';
 
 import { normaliseForMatching, validateShadowRequest } from './shadowChat';
 
 // ---------------------------------------------------------------------------
-// FROZEN REFERENCE -- main's classifier, copied verbatim.
+// FROZEN REFERENCE -- main's classifier.
 //
-// SOURCE: b4f58159, apps/web/src/server/pilot/shadowChat.ts. The same file is
-// byte-identical at c2c4df672e55c543a46abff8472b1e3750aebc99 (verified: both
-// sha256 7c66a36491ae5e66ca3784691a1663a3), so the copy is current as of that
-// commit too.
+// SOURCE: b4f58159, apps/web/src/server/pilot/shadowChat.ts, sha256
+// 7c66a36491ae5e66ca3784691a1663a301580d49bfd365a3bdb611442e6a088f. The file
+// has the same sha256 at c2c4df672e55c543a46abff8472b1e3750aebc99.
 //
-// ALL SEVEN of main's withholding returns are here: prescription-or-weight-cut,
-// urgent-symptom, personal-health, diagnosis, clearance, medication, and the
-// isHighRisk fallback. An earlier version of this file froze TWO of the seven
-// and still claimed "anything main withheld, we still withhold" -- a claim
-// about a third of main's withholding code, stated as if it covered all of it.
-// The architect review found a defect on one of the five unfrozen paths, which
-// this harness could not have seen however many code points it swept.
+// Both of main's functions are here whole: classifyHighRiskTopic as
+// mainClassify and validateShadowRequest as mainValidate, with all seven
+// withholding returns -- prescription-or-weight-cut, urgent, personal-health,
+// diagnosis, clearance, medication, and the isHighRisk fallback -- and both
+// allowing ones. The differences from main's text are: the two function
+// names; the `examples` table and the `examples` property of mainClassify's
+// return, which no decision reads; and three type annotations
+// (`HighRiskTopic` written as `string`, and the two return types written
+// out). Every regex literal, every string literal and the order of every
+// statement is main's.
 //
-// classifyHighRiskTopic is included because the isHighRisk fallback depends on
-// it, and because the fold changes the text its topic patterns see -- so it is
-// the return this PR can move most broadly. Its `examples` table is the one
-// thing dropped: it is returned for presentation and no withholding decision
-// reads it.
-//
-// IT IS A SNAPSHOT AND MUST NOT BE UPDATED TO FOLLOW MAIN. Its entire job is
-// to keep saying what main said at that commit, so that "we are never less
-// sensitive than main was" has a fixed referent. If main's classifier changes
-// deliberately, that is a decision to re-baseline, and it belongs in front of
-// an owner, not in a test edit. DELETE THIS BLOCK when the behaviour it
-// guards has been re-established some better way; do not quietly re-sync it.
-//
-// EXTRACTED MECHANICALLY, not hand-copied: 220 lines of regex transcribed by
-// hand is exactly where this would go wrong, and the value of the reference
-// is that it is exact.
+// IT IS A SNAPSHOT AND MUST NOT BE UPDATED TO FOLLOW MAIN. If main's
+// classifier changes deliberately, that is a decision to re-baseline, and it
+// belongs in front of an owner, not in a test edit.
 // ---------------------------------------------------------------------------
 function mainClassify(userMessage: string): { topic: string; isHighRisk: boolean; educationalApproach: boolean } {
   const msg = userMessage.toLowerCase();
@@ -239,431 +225,407 @@ function mainValidate(
 
   return { valid: true, highRisk: false, topic: 'none' };
 }
-/** True when main withheld the message on ANY of its seven returns. */
-function mainWithheld(message: string): boolean {
-  return mainValidate(message, 'athlete', 'org-123').valid === false;
+
+type Verdict = { valid: boolean; error?: string; highRisk?: boolean; topic?: string; classification?: string };
+
+const main = (message: string): Verdict => mainValidate(message, 'athlete', 'org-123');
+const now = (message: string): Verdict => validateShadowRequest(message, 'athlete', 'org-123');
+
+const EMERGENCY_TEXT = 'Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.';
+// The classifications the chat route queues at severity 'critical'
+// (route.ts, the two `severity:` expressions). Copied, not imported: this
+// file's job is to say what main's results MEANT at b4f58159.
+const CRITICAL = ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom'];
+
+const withheld = (v: Verdict): boolean => v.valid === false;
+const emergency = (v: Verdict): boolean => v.valid === false && v.error === EMERGENCY_TEXT;
+const critical = (v: Verdict): boolean => CRITICAL.includes(v.classification ?? '');
+/** Field-for-field equality; a property that is `undefined` equals one that is absent. */
+const same = (a: Verdict, b: Verdict): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** Which of main's nine returns produced this result, in source order. */
+function returnOf(v: Verdict): string {
+  if (v.valid) return 'classification' in v ? 'R2 educational, allowed' : 'R9 nothing matched, allowed';
+  if (v.error === 'Medication and prescription recommendations require prescription authority and professional medical oversight.') return 'R1 prescription or weight cut';
+  if (v.classification === 'urgent_personal_symptom') return 'R3 urgent';
+  if (v.classification === 'personal_health_concern') return 'R4 personal health';
+  if (v.error === 'Diagnosis and personal health assessment require professional medical evaluation.') return 'R5 diagnosis';
+  if (v.error === 'Medical clearance decisions require professional medical authority.') return 'R6 clearance';
+  if (v.error === 'Medication and prescription recommendations require professional medical oversight.') return 'R7 medication';
+  return 'R8 high-risk fallback';
 }
 
-/** The current implementation's answer to the same question. */
-function nowWithholds(message: string): boolean {
-  return validateShadowRequest(message, 'athlete', 'org-123').valid === false;
+function unitLabel(unit: number): string {
+  return 'U+' + unit.toString(16).toUpperCase().padStart(4, '0');
 }
 
-//
-// WHAT THIS FILE DOES NOT COVER: ANYTHING ASTRAL.
-//
-// Every code point the three folds can produce is in the BMP, and both the
-// sweep and the four properties iterate the BMP only. So an astral
-// apostrophe or quote look-alike -- a styled mathematical form pasted from
-// social media, for instance -- is NOT folded and NOT tested. It behaves as
-// it does on main, which is the standard this hotfix is held to, so it is a
-// gap in coverage rather than a regression. Closing it means deciding which
-// astral characters are apostrophes, which is a judgement, and judgements of
-// that kind belong in #1036 with the rest of the look-alike work rather than
-// in a hotfix.
-//
-// Stated here rather than discovered later: a reader should not have to infer
-// the limit from the loop bounds.
+function show(text: string): string {
+  return Array.from({ length: text.length }, (_, i) => unitLabel(text.charCodeAt(i))).join(' ');
+}
+
 // ---------------------------------------------------------------------------
-// THE SWEEP SET, stated explicitly because a cap nobody can see is a lie.
+// THE FOLD, WRITTEN OUT A SECOND TIME, AS DATA.
 //
-// Not the whole BMP: that is ~65k code points x 6 phrases x every gap, which
-// would dominate the suite's runtime for coverage that is almost entirely
-// ordinary letters. What is swept is every range that can plausibly behave as
-// a separator or vanish:
-//
-//   U+0000-U+00FF   Latin-1. Carries U+00A0 NBSP, U+00AD SOFT HYPHEN,
-//                   U+00B4 ACUTE, U+0085 NEL, and every ASCII control.
-//   U+2000-U+206F   General Punctuation. Every exotic space and dash (none
-//                   of which the fold touches any more), the curly quotes
-//                   and primes it does, U+200B-U+200D, U+2028, U+2029, and
-//                   the invisible format characters.
-//   U+FEFF          The one that actually bit.
-//   U+02B9-U+02BC, U+FF02, U+FF07, U+FF40   the fold's own targets that the
-//                   ranges above miss; see the note on them below.
-//   U+1680 U+180E U+3000 U+FFF9-U+FFFB   stragglers outside those ranges.
-//
-// SKIPPED, SAID OUT LOUD: U+0100-U+167F, U+1681-U+1FFF, U+2070-U+2FFF,
-// U+3001-U+FEFE and U+FF00-U+FFFF, EXCEPT WHERE NAMED ABOVE -- and what is
-// named above now includes every code point the fold rewrites. Those ranges are
-// overwhelmingly letters and symbols; a letter inserted mid-word does not
-// create a separator, it creates a different word. If a regression is ever
-// found in one of those ranges, widen this list rather than adding the one
-// character.
+// Everything below is checked against this table, and the table is checked
+// against the fold three ways: by running it on every code unit, by reading
+// the character classes out of its source, and by counting.
 // ---------------------------------------------------------------------------
-const SWEPT_RANGES: ReadonlyArray<readonly [number, number]> = [
-  [0x0000, 0x00ff],
-  [0x2000, 0x206f],
-  [0x1680, 0x1680],
-  [0x180e, 0x180e],
-  [0x3000, 0x3000],
-  [0xfeff, 0xfeff],
-  [0xfff9, 0xfffb],
-  // THE FOLD'S OWN TARGETS, WHICH THIS LIST DID NOT COVER.
-  //
-  // Six of the nineteen code points normaliseForMatching rewrites fell in
-  // the skipped ranges above: U+02B9, U+02BB, U+02BC (modifier letters) and
-  // U+FF02, U+FF07, U+FF40 (full-width forms). The skip rationale said those
-  // ranges are "overwhelmingly letters and symbols" that cannot act as
-  // separators -- true in general, and false for exactly the characters this
-  // fold acts on. The guard was not sweeping the characters it exists to
-  // guard, and the comment claimed otherwise.
-  //
-  // Measured before adding them: no behaviour was lost through any of the
-  // six, but they were 54 real comparisons the sweep was not making.
-  [0x02b9, 0x02bc],
-  [0xff02, 0xff02],
-  [0xff07, 0xff07],
-  [0xff40, 0xff40],
+const APOSTROPHE_SOURCES: readonly number[] = [
+  0x0060, // GRAVE ACCENT (the ASCII backtick)
+  0x00b4, // ACUTE ACCENT
+  0x02b9, // MODIFIER LETTER PRIME
+  0x02bb, // MODIFIER LETTER TURNED COMMA
+  0x02bc, // MODIFIER LETTER APOSTROPHE
+  0x2018, // LEFT SINGLE QUOTATION MARK
+  0x2019, // RIGHT SINGLE QUOTATION MARK -- the phone default, and the defect
+  0x201a, // SINGLE LOW-9 QUOTATION MARK
+  0x201b, // SINGLE HIGH-REVERSED-9 QUOTATION MARK
+  0x2032, // PRIME
+  0xff07, // FULLWIDTH APOSTROPHE
+  0xff40, // FULLWIDTH GRAVE ACCENT
 ];
+const QUOTE_SOURCES: readonly number[] = [
+  0x201c, // LEFT DOUBLE QUOTATION MARK
+  0x201d, // RIGHT DOUBLE QUOTATION MARK
+  0x201e, // DOUBLE LOW-9 QUOTATION MARK
+  0x201f, // DOUBLE HIGH-REVERSED-9 QUOTATION MARK
+  0x2033, // DOUBLE PRIME
+  0xff02, // FULLWIDTH QUOTATION MARK
+];
+const EXPECTED_FOLD: ReadonlyMap<number, string> = new Map<number, string>([
+  ...APOSTROPHE_SOURCES.map((unit) => [unit, "'"] as [number, string]),
+  ...QUOTE_SOURCES.map((unit) => [unit, '"'] as [number, string]),
+]);
+const SOURCES: readonly string[] = [...EXPECTED_FOLD.keys()].map((unit) => String.fromCharCode(unit));
+const UNITS = 0x10000;
 
-function sweptCodePoints(): number[] {
-  const out: number[] = [];
-  for (const [lo, hi] of SWEPT_RANGES) {
-    for (let cp = lo; cp <= hi; cp += 1) out.push(cp);
+// ---------------------------------------------------------------------------
+// READING THE SOURCE.
+//
+// Several premises below are facts about the TEXT of a function -- which
+// characters its patterns mention, what its call sites look like -- and a
+// fact about text is checked by parsing the text, not by running it and
+// hoping an input exists that would have shown the difference.
+// ---------------------------------------------------------------------------
+type Pattern = { owner: string; source: string; flags: string };
+
+function parse(file: string): ts.SourceFile {
+  return ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
+}
+
+function functionNamed(sourceFile: ts.SourceFile, name: string): ts.FunctionDeclaration {
+  const found = sourceFile.statements.filter(
+    (s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === name,
+  );
+  if (found.length !== 1) throw new Error(`expected exactly one function ${name}, found ${found.length}`);
+  return found[0];
+}
+
+function walk(node: ts.Node, visit: (n: ts.Node) => void): void {
+  visit(node);
+  node.forEachChild((child) => walk(child, visit));
+}
+
+/** What a regex literal belongs to: a topic row, a named constant, or an `if`. */
+function ownerOf(node: ts.Node): string {
+  for (let at: ts.Node | undefined = node.parent; at; at = at.parent) {
+    if (ts.isArrayLiteralExpression(at) && at.elements.length === 2 && ts.isStringLiteral(at.elements[0])) {
+      return 'topic ' + at.elements[0].text;
+    }
+    if (ts.isVariableDeclaration(at) && ts.isIdentifier(at.name)) return at.name.text;
+    if (ts.isIfStatement(at)) return 'if';
   }
+  return '?';
+}
+
+function patternsOf(fn: ts.FunctionDeclaration): Pattern[] {
+  const out: Pattern[] = [];
+  walk(fn, (n) => {
+    if (n.kind !== ts.SyntaxKind.RegularExpressionLiteral) return;
+    const text = n.getText();
+    const close = text.lastIndexOf('/');
+    out.push({ owner: ownerOf(n), source: text.slice(1, close), flags: text.slice(close + 1) });
+  });
   return out;
 }
 
-// Phrases main's patterns DO flag, each with the positions where a separator
-// character can be inserted. `|` marks an insertion point.
-//
-// THE POSITION BEFORE THE MATCH WAS MISSING, AND IT WAS THE ONE THAT MATTERED.
-//
-// The first version of this file carried six carriers and every one of them
-// inserted AT or AFTER the contraction. None inserted immediately BEFORE it.
-// A reviewer added one -- "I got hit|can't breathe" -- and it found 328
-// regressions on code this sweep had just passed 19/19.
-//
-// That is the same mistake this file exists to prevent, made inside the file
-// that prevents it: six positions were enumerated and the class ("every
-// position a separator can occupy relative to the match") was not. A guard
-// written by enumeration inherits the blind spot of whoever enumerated.
-//
-// So the carriers below now cover, for each phrase: before the match, inside
-// it, and after it. If a future reader adds a pattern with a new shape, the
-// question to ask is not "which characters" but "which positions".
-const CARRIERS: ReadonlyArray<readonly [string, string, number]> = [
-  // THE BOUNDARY UNDER TEST IS THE ONLY EVIDENCE -- the position class the
-  // sweep missed THIRD, raised by the architect review.
-  //
-  // "my|shoulder hurts" takes the personal-health path on main through
-  // `\b(i|me|my|mine|we|our)\b` AND `\b(hurt|hurts|...)\b`. Insert a deleted
-  // character and the fold produces "myshoulder hurts": `\bmy\b` fails,
-  // hasPersonalContext goes false, and the refusal is lost.
-  //
-  // The sweep could not see it because the carrier that came closest --
-  // "I|have a headache after sparring" -- contains "after sparring", which
-  // satisfies hasPersonalContext on its own. Destroying the boundary at the
-  // insertion point changed nothing there. A carrier whose ONLY evidence is
-  // the boundary being tested is the one that catches it.
-  ['boundary is the only evidence', 'my|shoulder hurts', 319],
-  ['boundary is the only evidence, 2', 'I|hurt my wrist', 319],
-  // NEXT TO A BOUNDED WINDOW -- the position class the sweep missed SECOND.
-  //
-  // Several patterns count characters: `vision.{0,12}blurr`,
-  // `bleeding.{0,20}`, `after.{0,30}hit.{0,60}`. A fold that turns one
-  // character into several pushes a real report out of its window. Every
-  // earlier carrier sat on an unbounded gap or well inside a roomy window,
-  // so a sweep of 2,500 code points passed 19/19 while `.normalize('NFKC')`
-  // was silently expanding an ellipsis into three periods and losing
-  // "my vision is<U+2026> really blurry" -- a message main withheld.
-  //
-  // These two sit one character inside their limits, so anything that grows
-  // shows up immediately.
-  ['bounded window, vision', 'my vision is|really blurry', 378],
-  ['bounded window, bleeding', 'my lip is bleeding pretty badly|and will not stop', 378],
-  // BEFORE the match -- the position class the sweep missed FIRST.
-  ['before contraction', "I got hit|can't breathe", 382],
-  ['before cannot', 'I got hit|cannot breathe', 382],
-  ['before symptom phrase', 'After that punch I had a|headache', 382],
-  ['contraction gap', "I can't|breathe after that hit", 25],
-  // SUBSTITUTED, not inserted. The first version of this carrier inserted a
-  // code point BETWEEN "can" and "'t", which main's `can(?:not|'t)` can never
-  // match for any character -- so it contributed nothing and swept nothing.
-  // Caught by the per-carrier floor below, which is the whole reason that
-  // floor exists. Replacing the apostrophe itself is the real question: main
-  // matched only the ASCII one, and whatever the new code does, it must still
-  // withhold that.
-  // ONE, AND THAT IS THE HONEST NUMBER. Main matched exactly one
-  // substitution here -- the ASCII apostrophe -- so one is full coverage
-  // for this carrier, not a collapsed one.
-  ['apostrophe substituted', 'I can|t breathe after that hit', 1],
-  ['cannot gap', 'I cannot|breathe after that hit', 25],
-  ['two-word symptom', 'I have seeing|stars after sparring', 25],
-  ['impact gap', 'My neck is numb after that|hit', 382],
-  ['leading word gap', 'I|have a headache after sparring', 382],
-];
+/** The string literals handed to `.includes(...)`. */
+function includesLiteralsOf(fn: ts.FunctionDeclaration): string[] {
+  const out: string[] = [];
+  walk(fn, (n) => {
+    if (
+      ts.isCallExpression(n)
+      && ts.isPropertyAccessExpression(n.expression)
+      && n.expression.name.text === 'includes'
+      && n.arguments.length === 1
+      && ts.isStringLiteral(n.arguments[0])
+    ) out.push(n.arguments[0].text);
+  });
+  return out;
+}
 
-describe('the classifier is never LESS sensitive than main was', () => {
-  // One assertion over the whole sweep rather than one per code point: 2,500
-  // jest cases would bury the signal, and the failure message below names
-  // every offender with its code point, which is what a reader needs.
-  test('no swept code point makes an urgent message slip through', () => {
-    const codePoints = sweptCodePoints();
-    const regressions: string[] = [];
-    let compared = 0;
+function identifierCount(fn: ts.FunctionDeclaration, name: string): number {
+  let count = 0;
+  walk(fn, (n) => { if (ts.isIdentifier(n) && n.text === name) count += 1; });
+  return count;
+}
 
-    for (const [label, carrier] of CARRIERS) {
-      const [head, tail] = carrier.split('|');
-      for (const cp of codePoints) {
-        const message = head + String.fromCodePoint(cp) + tail;
-        if (!mainWithheld(message)) continue;
-        compared += 1;
-        if (!nowWithholds(message)) {
-          regressions.push(
-            `${label}: U+${cp.toString(16).toUpperCase().padStart(4, '0')} `
-            + `-- main withheld this, the current code does not`,
-          );
+function initializerOf(fn: ts.FunctionDeclaration, name: string): string {
+  const found: string[] = [];
+  walk(fn, (n) => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === name && n.initializer) {
+      found.push(n.initializer.getText());
+    }
+  });
+  if (found.length !== 1) throw new Error(`expected exactly one declaration of ${name}, found ${found.length}`);
+  return found[0];
+}
+
+/** The receiver and argument text of every `.test(...)` and `.includes(...)` call. */
+function matchCallsOf(fn: ts.FunctionDeclaration): Array<{ method: string; receiverKind: string; argument: string }> {
+  const out: Array<{ method: string; receiverKind: string; argument: string }> = [];
+  walk(fn, (n) => {
+    if (!ts.isCallExpression(n) || !ts.isPropertyAccessExpression(n.expression)) return;
+    const method = n.expression.name.text;
+    if (method !== 'test' && method !== 'includes') return;
+    const receiver = n.expression.expression;
+    out.push({
+      method,
+      receiverKind: receiver.kind === ts.SyntaxKind.RegularExpressionLiteral ? 'regex' : receiver.getText(),
+      argument: n.arguments.map((a) => a.getText()).join(', '),
+    });
+  });
+  return out;
+}
+
+const GUARD = parse(__filename);
+const PRODUCTION = parse(path.join(__dirname, 'shadowChat.ts'));
+
+const MAIN_CLASSIFY = functionNamed(GUARD, 'mainClassify');
+const MAIN_VALIDATE = functionNamed(GUARD, 'mainValidate');
+const NOW_CLASSIFY = functionNamed(PRODUCTION, 'classifyHighRiskTopic');
+const NOW_VALIDATE = functionNamed(PRODUCTION, 'validateShadowRequest');
+const NOW_FOLD = functionNamed(PRODUCTION, 'normaliseForMatching');
+
+const MAIN_PATTERNS: Pattern[] = [...patternsOf(MAIN_CLASSIFY), ...patternsOf(MAIN_VALIDATE)];
+
+// ---------------------------------------------------------------------------
+// THE ARGUMENT, from "eighteen punctuation characters become two" to
+// properties 1-3. Each step names the test that holds it up.
+//
+// Write f for the fold and main(m) for what main did with message m.
+//
+// STEP 1. The current code is main with the fold in front: now(m) =
+// main(f(m)). The two functions carry main's patterns and literals unchanged
+// [S1a], every pattern reads the folded text and nothing reads the raw
+// message [S1b], and the fold is exactly the two replace lines [S1c]. The
+// control flow around the patterns is not parsed; it is checked by running:
+// now(m) equals main(f(m)), field for field, on every generated message in
+// the differentials below.
+//
+// STEP 2. f changes a message only by turning one of eighteen characters
+// into ' or " in place [the exact map], one unit at a time [the per-unit
+// tests]. All twenty characters are non-word, non-whitespace and not line
+// terminators [the class properties]. So `\b`, `\w`, `\s`, `\d` and `.` see
+// the same thing at every position of m and of f(m), and so does a literal
+// or a class that mentions none of the twenty.
+//
+// STEP 3. So a pattern can tell m from f(m) only if it mentions one of the
+// twenty characters, and main has exactly four that do [S3]: the
+// loss_of_consciousness and urgent_symptom topic rows, hasUrgentSymptom and
+// hasAcuteImpactConcern. EVERY OTHER PREDICATE IN MAIN GIVES THE SAME ANSWER
+// FOR m AND f(m) -- including both `.includes(...)` phrases [S3], and
+// including the two predicates behind the only early ALLOW,
+// hasEducationalFraming and hasPersonalFraming, and the two behind the first
+// return, hasPrescriptionLanguage and hasRapidWeightCutLanguage.
+//
+// STEP 4. Those four can only GAIN matches. A pattern built from literals,
+// positive classes, groups, alternation and quantifiers, with no negated
+// class, no \W \S \D \B, no lookaround and no backreference [S4a], that
+// matched m matches f(m) at the same place provided every one of the
+// eighteen sources it mentions sits in a class beside the character it
+// folds to [S4b]. There is one such mention, `ko['\u2019]?d`.
+//
+// STEP 5. Read main's returns in order (this step is by reading the frozen
+// reference above; the differentials are its check):
+//
+//   R1 withhold   prescription or weight-cut language        same for m, f(m)
+//   R2 ALLOW      educational framing, not personal          same for m, f(m)
+//   R3 withhold   personal context AND (urgent OR impact)    can only be GAINED
+//                 -> emergency text, urgent_personal_symptom
+//   R4 withhold   personal context AND health concern        same
+//   R5 withhold   diagnosis question                         same
+//   R6 withhold   clearance question                         same
+//   R7 withhold   medication question                        same
+//   R8 withhold   a high-risk topic matched                  can only be GAINED
+//                 -> emergency text for chest_pain, fainting,
+//                    loss_of_consciousness
+//   R9 ALLOW      nothing matched
+//
+// and the topic, which is the first matching row: only two rows can gain a
+// match, so topic(f(m)) is topic(m), or loss_of_consciousness, or -- when
+// topic(m) was none -- urgent_symptom.
+//
+// So main(f(m)) leaves by the return main(m) left by, or by R3, or (from R9
+// only) by R8. From which:
+//
+//   1. Withheld stays withheld. R1 and R3-R8 withhold, and from any of them
+//      the only other exit is R3.
+//   2. Emergency text stays. It comes from R3, which is kept, and from R8
+//      under an emergency topic, which becomes R3 or stays R8 with the same
+//      topic or loss_of_consciousness -- emergency either way.
+//   3. Critical stays critical. The classification is
+//      urgent_personal_symptom at R3 and the topic at R2 and R8, and a topic
+//      in the critical list stays itself or becomes loss_of_consciousness.
+//
+// WHAT THIS DOES NOT COVER. It is an argument about main's patterns as
+// frozen here; S1a ties the shipping patterns to them, and that test has to
+// be retired, deliberately, by whoever next changes a pattern. It says
+// nothing about characters outside the eighteen: those behave as on main,
+// including every astral look-alike.
+// ---------------------------------------------------------------------------
+describe('the premises of the argument, read from source', () => {
+  const NOW_PATTERNS: Pattern[] = [...patternsOf(NOW_CLASSIFY), ...patternsOf(NOW_VALIDATE)];
+
+  test('S1a: the shipping functions carry exactly main\'s patterns and phrases, in order', () => {
+    expect(NOW_PATTERNS).toEqual(MAIN_PATTERNS);
+    expect(includesLiteralsOf(NOW_VALIDATE)).toEqual(includesLiteralsOf(MAIN_VALIDATE));
+    // So that the comparison above cannot pass by both sides being empty.
+    expect(patternsOf(MAIN_CLASSIFY).length).toBe(20);
+    expect(patternsOf(MAIN_VALIDATE).length).toBe(17);
+    expect(includesLiteralsOf(MAIN_VALIDATE)).toEqual(['lose weight quickly', 'cut weight for my weight class']);
+  });
+
+  test('S1b: every pattern reads the folded text, and the raw message is read only to fold it', () => {
+    // classifyHighRiskTopic: the message is folded once, and only `msg` is matched.
+    expect(initializerOf(NOW_CLASSIFY, 'msg')).toBe('normaliseForMatching(userMessage).toLowerCase()');
+    expect(identifierCount(NOW_CLASSIFY, 'userMessage')).toBe(2); // the parameter, and the fold
+    const classifyCalls = matchCallsOf(NOW_CLASSIFY);
+    expect(classifyCalls.length).toBe(4);
+    expect(classifyCalls.filter((c) => c.argument !== 'msg')).toEqual([]);
+
+    // validateShadowRequest: folded once into `text`; lowercased from `text`.
+    expect(initializerOf(NOW_VALIDATE, 'text')).toBe('normaliseForMatching(message)');
+    expect(initializerOf(NOW_VALIDATE, 'normalizedMessage')).toBe('text.toLowerCase()');
+    expect(initializerOf(NOW_VALIDATE, 'classification')).toBe('classifyHighRiskTopic(message)');
+    expect(identifierCount(NOW_VALIDATE, 'message')).toBe(3); // the parameter, the classifier, the fold
+    const validateCalls = matchCallsOf(NOW_VALIDATE);
+    expect(validateCalls.filter((c) => c.method === 'test').length).toBe(17);
+    expect(validateCalls.filter((c) => c.method === 'test' && (c.receiverKind !== 'regex' || c.argument !== 'text'))).toEqual([]);
+    expect(validateCalls.filter((c) => c.method === 'includes').length).toBe(2);
+    expect(validateCalls.filter((c) => c.method === 'includes' && c.receiverKind !== 'normalizedMessage')).toEqual([]);
+  });
+
+  test('S1c: the fold is two global replaces of a plain character class by one character, and they spell the table', () => {
+    const body = NOW_FOLD.body!.statements;
+    expect(body.length).toBe(1);
+    const returned = body[0];
+    if (!ts.isReturnStatement(returned) || !returned.expression) throw new Error('the fold is not a single return');
+
+    // Unwind text.replace(a, b).replace(c, d) from the outside in.
+    const steps: Array<{ pattern: string; replacement: string }> = [];
+    let at: ts.Expression = returned.expression;
+    while (ts.isCallExpression(at)) {
+      if (!ts.isPropertyAccessExpression(at.expression) || at.expression.name.text !== 'replace') {
+        throw new Error('a call in the fold is not .replace: ' + at.getText().slice(0, 60));
+      }
+      const [pattern, replacement] = at.arguments;
+      if (at.arguments.length !== 2 || !ts.isStringLiteral(replacement)) {
+        throw new Error('a replace in the fold does not have a string literal replacement');
+      }
+      steps.unshift({ pattern: pattern.getText(), replacement: replacement.text });
+      at = at.expression.expression;
+    }
+    expect(at.getText()).toBe('text');
+    expect(steps.length).toBe(2);
+
+    // One class, no negation, no range, members either a \uXXXX escape or a
+    // single literal character; flag g and nothing else.
+    const PLAIN_CLASS = /^\/\[((?:\\u[0-9A-Fa-f]{4}|[^\\\][^-])+)\]\/g$/;
+    const spelled = new Map<number, string>();
+    for (const step of steps) {
+      const shape = PLAIN_CLASS.exec(step.pattern);
+      if (!shape) throw new Error('not a plain single-unit character class with flag g: ' + step.pattern);
+      expect(step.replacement.length).toBe(1);
+      for (const member of shape[1].match(/\\u[0-9A-Fa-f]{4}|[^\\]/g) ?? []) {
+        const unit = member.length === 6 ? parseInt(member.slice(2), 16) : member.charCodeAt(0);
+        expect(spelled.has(unit)).toBe(false);
+        spelled.set(unit, step.replacement);
+      }
+    }
+    expect([...spelled].sort((a, b) => a[0] - b[0])).toEqual([...EXPECTED_FOLD].sort((a, b) => a[0] - b[0]));
+  });
+
+  // The twenty characters the argument is about: eighteen sources, two outputs.
+  const TWENTY = [...SOURCES, "'", '"'];
+  const mentions = (p: Pattern): boolean => TWENTY.some((ch) => p.source.includes(ch));
+
+  test('S3: exactly four of main\'s thirty-seven patterns mention an apostrophe, a quote or a look-alike; neither phrase does', () => {
+    expect(MAIN_PATTERNS.length).toBe(37);
+    expect(MAIN_PATTERNS.filter(mentions).map((p) => p.owner)).toEqual([
+      'topic loss_of_consciousness',
+      'topic urgent_symptom',
+      'hasUrgentSymptom',
+      'hasAcuteImpactConcern',
+    ]);
+    for (const phrase of includesLiteralsOf(MAIN_VALIDATE)) {
+      expect(TWENTY.filter((ch) => phrase.includes(ch))).toEqual([]);
+    }
+    // A pattern could also reach one of the twenty without spelling it: by an
+    // escape, a property class, or a range. None of main's patterns has any.
+    const INDIRECT = /\\u|\\x|\\p|\\P|\\c|\[[^\]]*[^\\\]]-[^\]]/;
+    expect(MAIN_PATTERNS.filter((p) => INDIRECT.test(p.source)).map((p) => p.owner)).toEqual([]);
+    // The predicates the argument names as unchanged are among the thirty-three.
+    const unchanged = MAIN_PATTERNS.filter((p) => !mentions(p)).map((p) => p.owner);
+    for (const name of ['hasEducationalFraming', 'hasPersonalFraming', 'hasPrescriptionLanguage', 'hasRapidWeightCutLanguage', 'hasPersonalContext', 'hasPersonalHealthConcern']) {
+      expect(unchanged).toContain(name);
+    }
+  });
+
+  test('S4a: none of main\'s patterns has a construct that could turn a new apostrophe into a lost match', () => {
+    // Negated class; \W \S \D \B; lookahead or lookbehind of either sign;
+    // backreference, numbered or named.
+    const NON_MONOTONE = /\[\^|\\[WSDB]|\(\?=|\(\?!|\(\?<[=!]|\\[1-9]|\\k</;
+    expect(MAIN_PATTERNS.filter((p) => NON_MONOTONE.test(p.source)).map((p) => p.owner)).toEqual([]);
+    // And no flag but `i`: no `s` to change what `.` matches, no `u`, no `m`.
+    expect([...new Set(MAIN_PATTERNS.map((p) => p.flags))]).toEqual(['i']);
+  });
+
+  test('S4b: wherever a pattern names a look-alike, it names it in a class beside the character it folds to', () => {
+    const naming: string[] = [];
+    for (const p of MAIN_PATTERNS) {
+      for (const [unit, output] of EXPECTED_FOLD) {
+        const ch = String.fromCharCode(unit);
+        for (let i = p.source.indexOf(ch); i >= 0; i = p.source.indexOf(ch, i + 1)) {
+          const open = p.source.lastIndexOf('[', i);
+          const close = p.source.indexOf(']', i);
+          const inClass = open >= 0 && close > i && p.source.lastIndexOf(']', i) < open;
+          const besideOutput = inClass && p.source.slice(open, close).includes(output);
+          naming.push(`${p.owner}: ${unitLabel(unit)} ${besideOutput ? 'in a class beside its output' : 'ALONE'}`);
         }
       }
     }
-
-    // The exact number of comparisons, so the sweep cannot pass by comparing
-    // nothing, or by comparing less than it did. It is the sum of the
-    // per-carrier counts below: 2 x 319 + 2 x 378 + 5 x 382 + 3 x 25 + 1.
-    expect(compared).toBe(3380);
-    expect(regressions).toEqual([]);
-  });
-
-  // THE PER-CARRIER COUNT, EXACT.
-  //
-  // "At least one comparison" was not a floor. One carrier legitimately
-  // contributes a single comparison -- the apostrophe-substitution one, where
-  // main matched only the ASCII apostrophe -- and the others contribute
-  // hundreds, so a carrier could fall from 382 to 1 and still pass.
-  //
-  // A minimum with headroom was the next version, and it had the same hole
-  // at a smaller size: declared 280 against a real 319, a carrier could lose
-  // 39 comparisons unnoticed. The frozen reference and the sweep set are both
-  // fixed, so the count is not an estimate and there is nothing for headroom
-  // to absorb. Each carrier now states the number of swept code points for
-  // which main withheld it, and anything else -- fewer OR more -- fails and
-  // names itself.
-  //
-  // These numbers are measured. They change only when the carriers, the
-  // sweep set or the frozen reference change, and each of those is a
-  // deliberate edit that should have to say so here.
-  test('every carrier contributes exactly its measured count', () => {
-    const points = sweptCodePoints();
-    const wrong: string[] = [];
-
-    for (const [name, carrier, expected] of CARRIERS) {
-      const [head, tail] = carrier.split('|');
-      const got = points.filter(
-        (cp) => mainWithheld(head + String.fromCodePoint(cp) + tail),
-      ).length;
-      if (got !== expected) wrong.push(`${name}: ${got}, expected ${expected}`);
-    }
-
-    expect(wrong).toEqual([]);
-    // 256 + 112 + 1 + 1 + 1 + 1 + 3 + 4 + 1 + 1 + 1, from SWEPT_RANGES.
-    expect(points.length).toBe(382);
-  });
-
-  // The one that bit, called out by name so it can never be quietly dropped
-  // from the sweep set without a test going red.
-  test('U+FEFF specifically, which main treated as whitespace', () => {
-    const message = "I can't﻿breathe after that hit";
-    expect(mainWithheld(message)).toBe(true);
-    expect(nowWithholds(message)).toBe(true);
+    // One mention in the whole of main: the hand-patched KO'd.
+    expect(naming).toEqual(['topic loss_of_consciousness: U+2019 in a class beside its output']);
   });
 });
 
 // ---------------------------------------------------------------------------
-// WHAT THE FOLD IS ALLOWED TO DO, PINNED THREE WAYS
-//
-// Carriers and code points are enumeration: they test the positions and
-// characters somebody thought of, and three times that enumeration had a hole
-// the code did not. The tests in this block do not depend on anyone thinking
-// of a phrase.
-//
-//   THE EXACT MAP. Every UTF-16 code unit folds to itself, except nineteen
-//   named ones, each to its named output. This is the proof of what the fold
-//   does to one character; it is written out as data a second time so that a
-//   change to the fold has to be made in two places to go unnoticed.
-//
-//   THE FOUR CLASS PROPERTIES. Length, word class, whitespace class and
-//   line-terminator class are preserved. With the exact map in place these
-//   are CONSEQUENCES of it, not independent evidence: nineteen non-word
-//   characters each become one non-word character. They stay because they
-//   say WHY the map is safe -- the day someone adds a twentieth entry, the
-//   map test will be edited to match, and these are what tell them whether
-//   the new entry breaks a pattern.
-//
-//   ONE CHARACTER AT A TIME. The fold of a string is the fold of each of its
-//   code units, in order. That is what makes a statement about single
-//   characters a statement about messages.
-//
-// The class properties exist because the patterns in shadowChat.ts do four
-// things a fold can silently break: they COUNT CHARACTERS
-// (`vision.{0,12}blurr`, `bleeding.{0,20}`, `after.{0,30}hit.{0,60}`), they
-// ASSERT WORD BOUNDARIES (`\b(i|me|my|mine|we|our)\b`, which every urgent
-// branch depends on), they TEST WHITESPACE (`\s+`), and they let `.` STOP AT
-// A LINE TERMINATOR. Each class property pins one of those.
-//
-// Six regressions were caused by violating them, each one a message main
-// WITHHELD that the fold then allowed through to the model with nobody told:
-// NFKC expanded (property 1), NFKC created word characters (property 2),
-// deleting U+200B-U+200D and U+00AD merged adjacent words (properties 1 and
-// 2), whitespace collapsing shortened text (property 1), and an earlier
-// version DELETED U+FEFF where main treated it as whitespace (property 3).
+// THE FOLD, ONE CODE UNIT AT A TIME.
 // ---------------------------------------------------------------------------
-describe('the fold preserves what the patterns depend on', () => {
-  const BMP = 0x10000;
-  const WORD = /[A-Za-z0-9_]/;
-  const SPACE = /\s/;
-
-  /** Every BMP code point that is a real character someone could type. */
-  function codePoints(): string[] {
-    const out: string[] = [];
-    for (let cp = 0; cp < BMP; cp += 1) {
-      // Lone surrogates are not characters; skip rather than assert on
-      // malformed input.
-      if (cp >= 0xd800 && cp <= 0xdfff) continue;
-      out.push(String.fromCodePoint(cp));
-    }
-    return out;
-  }
-
-  function label(ch: string): string {
-    return 'U+' + ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0');
-  }
-
-  // PROPERTY 1 -- LENGTH IS PRESERVED EXACTLY.
-  //
-  // Stronger than "never lengthens", which was the earlier form and was not
-  // enough: whitespace collapsing and deletion both SHORTEN, and shortening
-  // moves a counted window just as surely. Exactly equal is the only form
-  // that cannot be worked around.
-  test('every code point folds to exactly one character', () => {
-    const offenders = codePoints()
-      .filter((ch) => normaliseForMatching('a' + ch + 'b').length !== 3)
-      .map((ch) => label(ch) + ' -> ' + JSON.stringify(normaliseForMatching('a' + ch + 'b')));
-    expect(offenders.slice(0, 40)).toEqual([]);
-  });
-
-  // PROPERTY 2 -- THE WORD CLASS OF EVERY POSITION IS PRESERVED.
-  //
-  // A word character must stay one and a non-word character must stay one.
-  // NFKC turned U+2122 into "TM" (non-word to word); deleting U+200B turned
-  // "my<ZWSP>shoulder" into "myshoulder", which destroys the boundary a
-  // different way. Both are caught here.
-  test('no code point changes the word class of its position', () => {
-    const offenders = codePoints()
-      .filter((ch) => {
-        const folded = normaliseForMatching('a' + ch + 'b');
-        if (folded.length !== 3) return false; // property 1 reports that
-        return WORD.test(ch) !== WORD.test(folded[1]);
-      })
-      .map((ch) => label(ch) + ' -> ' + JSON.stringify(normaliseForMatching('a' + ch + 'b')[1]));
-    expect(offenders.slice(0, 40)).toEqual([]);
-  });
-
-  // PROPERTY 3 -- THE WHITESPACE CLASS OF EVERY POSITION IS PRESERVED.
-  //
-  // The patterns use `\s+` between words. A fold that makes a non-space into
-  // a space creates matches main did not have; one that makes a space into a
-  // non-space destroys matches main did.
-  //
-  // NO EXCEPTION IS NEEDED, which is tighter than the instruction asked for.
-  // The one fold that changes a character into a space is U+FEFF -> ' ', and
-  // ECMAScript `\s` ALREADY counts U+FEFF as whitespace, so the class is
-  // preserved rather than excepted. That is also exactly why deleting it was
-  // a regression: main had been matching on it all along.
-  test('no code point changes the whitespace class of its position', () => {
-    const offenders = codePoints()
-      .filter((ch) => {
-        const folded = normaliseForMatching('a' + ch + 'b');
-        if (folded.length !== 3) return false;
-        return SPACE.test(ch) !== SPACE.test(folded[1]);
-      })
-      .map((ch) => label(ch) + ' -> ' + JSON.stringify(normaliseForMatching('a' + ch + 'b')[1]));
-    expect(offenders.slice(0, 40)).toEqual([]);
-  });
-
-  // PROPERTY 4 -- THE LINE-TERMINATOR CLASS OF EVERY POSITION IS PRESERVED.
-  //
-  // Distinct from property 3, and not implied by it. Every line terminator is
-  // whitespace, so a fold turning U+2028 into a space would satisfy property 3
-  // while changing what `.` matches: no pattern in shadowChat.ts carries the
-  // /s flag, so `.` stops at a line terminator and does not stop at a space.
-  // The unbounded gaps -- `weight.*cut`, `return.*play`, the diagnosis `.*` --
-  // and every bounded `.{0,N}` window are bounded by exactly that.
-  //
-  // This already bit once. Collapsing all whitespace folded newlines away and
-  // two ordinary two-line messages were withheld. It was fixed by excluding
-  // the terminators from the collapse, then the collapse was removed
-  // altogether -- so nothing in the current fold can violate this. The
-  // property is here so that nothing added later can either, and U+FEFF to a
-  // space is exactly the shape of fold that would.
-  test('no code point changes the line-terminator class of its position', () => {
-    const TERMINATOR = /[\n\r\u2028\u2029]/;
-    const offenders = codePoints()
-      .filter((ch) => {
-        const folded = normaliseForMatching('a' + ch + 'b');
-        if (folded.length !== 3) return false;
-        return TERMINATOR.test(ch) !== TERMINATOR.test(folded[1]);
-      })
-      .map((ch) => label(ch) + ' -> ' + JSON.stringify(normaliseForMatching('a' + ch + 'b')[1]));
-    expect(offenders.slice(0, 40)).toEqual([]);
-  });
-
-  // -------------------------------------------------------------------------
-  // THE EXACT MAP -- answers "the properties do not constrain identity".
-  //
-  // The four class properties above are satisfied by a fold that rewrites one
-  // letter into another letter of the same class: U+00E9 into U+00E8, say.
-  // Nothing in them says WHICH character a position ends up holding, and the
-  // patterns match on which character it is.
-  //
-  // So the whole of the fold is written out here as data, and every one of
-  // the 65,536 UTF-16 code units is checked against it -- lone surrogate
-  // units included, because the fold works on code units and a unit it
-  // altered would be half of somebody's emoji.
-  // -------------------------------------------------------------------------
-  const APOSTROPHE_TARGETS: readonly number[] = [
-    0x0060, // GRAVE ACCENT (the ASCII backtick)
-    0x00b4, // ACUTE ACCENT
-    0x02b9, // MODIFIER LETTER PRIME
-    0x02bb, // MODIFIER LETTER TURNED COMMA
-    0x02bc, // MODIFIER LETTER APOSTROPHE
-    0x2018, // LEFT SINGLE QUOTATION MARK
-    0x2019, // RIGHT SINGLE QUOTATION MARK -- the phone default, and the defect
-    0x201a, // SINGLE LOW-9 QUOTATION MARK
-    0x201b, // SINGLE HIGH-REVERSED-9 QUOTATION MARK
-    0x2032, // PRIME
-    0xff07, // FULLWIDTH APOSTROPHE
-    0xff40, // FULLWIDTH GRAVE ACCENT
-  ];
-  const QUOTE_TARGETS: readonly number[] = [
-    0x201c, // LEFT DOUBLE QUOTATION MARK
-    0x201d, // RIGHT DOUBLE QUOTATION MARK
-    0x201e, // DOUBLE LOW-9 QUOTATION MARK
-    0x201f, // DOUBLE HIGH-REVERSED-9 QUOTATION MARK
-    0x2033, // DOUBLE PRIME
-    0xff02, // FULLWIDTH QUOTATION MARK
-  ];
-  const EXPECTED_FOLD: ReadonlyMap<number, string> = new Map<number, string>([
-    ...APOSTROPHE_TARGETS.map((unit) => [unit, "'"] as [number, string]),
-    ...QUOTE_TARGETS.map((unit) => [unit, '"'] as [number, string]),
-    [0xfeff, ' '],
-  ]);
-  const UNITS = 0x10000;
-
-  function unitLabel(unit: number): string {
-    return 'U+' + unit.toString(16).toUpperCase().padStart(4, '0');
-  }
-
-  test('the map names nineteen code units: twelve apostrophes, six quotes, U+FEFF', () => {
-    expect(APOSTROPHE_TARGETS.length).toBe(12);
-    expect(QUOTE_TARGETS.length).toBe(6);
+describe('what the fold does to every UTF-16 code unit', () => {
+  test('the table names eighteen code units: twelve apostrophe look-alikes and six quote look-alikes', () => {
+    expect(APOSTROPHE_SOURCES.length).toBe(12);
+    expect(QUOTE_SOURCES.length).toBe(6);
     // A Map silently keeps the last of two equal keys, so a unit listed twice
     // would shrink it and the two counts above would not notice.
-    expect(EXPECTED_FOLD.size).toBe(19);
+    expect(EXPECTED_FOLD.size).toBe(18);
   });
 
-  test('every code unit folds to itself, except the nineteen named ones, each to its named output', () => {
+  // THE EXACT MAP. Every one of the 65,536 UTF-16 code units, lone surrogate
+  // units included -- the fold works on code units, and a unit it altered
+  // would be half of somebody's emoji.
+  test('every code unit folds to itself, except the eighteen named ones, each to its named output', () => {
     const offenders: string[] = [];
     let rewritten = 0;
 
@@ -686,42 +648,77 @@ describe('the fold preserves what the patterns depend on', () => {
     }
 
     // The loop above cannot pass by the table being empty.
-    expect(rewritten).toBe(19);
+    expect(rewritten).toBe(18);
     expect(offenders.slice(0, 40)).toEqual([]);
   });
 
+  // U+FEFF BY NAME. It was deleted once, which released a message main
+  // withheld, and folded to a space once, which took the emergency response
+  // away from another. It is left exactly as typed, as it is on main, where
+  // `\s` already matches it.
+  test('U+FEFF is left exactly as typed', () => {
+    expect(normaliseForMatching('a\uFEFFb')).toBe('a\uFEFFb');
+    expect(/\s/.test('\uFEFF')).toBe(true);
+  });
+
+  // THE CLASS FACTS STEP 2 OF THE ARGUMENT USES. Given the exact map these
+  // follow from twenty characters, so they are checked on the twenty. They
+  // are what says WHY the map is safe: the day someone adds a nineteenth
+  // source the map test will be edited to match, and this is what tells them
+  // whether the new one breaks a pattern.
+  test('all eighteen sources and both outputs are one unit, non-word, non-whitespace, not a line terminator, and have no other case', () => {
+    const wrong: string[] = [];
+    for (const ch of [...SOURCES, "'", '"']) {
+      const facts = {
+        oneUnit: ch.length === 1,
+        nonWord: !/\w/.test(ch),
+        nonSpace: !/\s/.test(ch),
+        nonDigit: !/\d/.test(ch),
+        notTerminator: !/[\n\r\u2028\u2029]/.test(ch),
+        matchedByDot: /^.$/.test(ch),
+        caseless: ch.toLowerCase() === ch && ch.toUpperCase() === ch,
+      };
+      for (const [fact, holds] of Object.entries(facts)) {
+        if (!holds) wrong.push(`${unitLabel(ch.charCodeAt(0))}: not ${fact}`);
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  // LOWERCASING. classifyHighRiskTopic lowercases after folding and the
+  // `.includes` phrases read lowercased text, so a unit that lowercases INTO
+  // a source, or a source that lowercases away, would get past the fold.
+  test('lowercasing neither creates nor destroys a look-alike', () => {
+    const offenders: string[] = [];
+    for (let unit = 0; unit < UNITS; unit += 1) {
+      const ch = String.fromCharCode(unit);
+      const lowered = ch.toLowerCase();
+      if (lowered === ch) continue;
+      if ([...lowered].some((c) => EXPECTED_FOLD.has(c.charCodeAt(0)) || c === "'" || c === '"')) {
+        offenders.push(`${unitLabel(unit)} lowercases to ${show(lowered)}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   // -------------------------------------------------------------------------
-  // ONE CHARACTER AT A TIME -- answers "the properties test one code point in
-  // one fixed context".
+  // ONE UNIT AT A TIME. The fold of a string is the fold of each of its code
+  // units, concatenated.
   //
-  // Everything above feeds the fold a single unit. A rule that fires on MORE
-  // than one character -- "..." into an ellipsis, two apostrophes into a
-  // quote, a trim, a run of spaces collapsed, an apostrophe folded only
-  // before a "t" -- is invisible to all of it. Whitespace collapsing, in this
-  // fix's own history, was exactly that shape.
-  //
-  // The property that rules the shape out: the fold of a string is the fold
-  // of each of its code units, concatenated. fold(xy) = fold(x) + fold(y).
-  //
-  // WHAT A TEST ADDS HERE, HONESTLY. Today this is true by construction:
-  // normaliseForMatching is three global replaces, each of a single-unit
-  // character class with a fixed one-unit string, and reading it proves more
-  // than running it. The tests below are for the next edit. They are what
-  // goes red when someone adds a fourth line that is not of that form.
-  //
-  // WHAT THEY DO NOT PROVE. "For every string" is not something a test can
-  // finish. What is run is: every code unit with every member of a named
-  // 161-character context set immediately before and after it; every code
-  // unit first and last in a message; every string of one, two or three ASCII
-  // characters; and twenty thousand seeded random strings weighted toward
-  // the fold's own targets. A rule keyed on two or more adjacent characters
-  // that are all outside the context set, or on an ASCII sequence longer than
-  // three, or on something more than one character away, would be seen only
-  // by the random strings, if at all.
+  // S1c above reads this off the source: two global replaces of a plain
+  // class by one character cannot do anything else. These tests run it as
+  // well, so that the property does not rest on one parser's reading of one
+  // function. What is run: every code unit with every member of a
+  // 161-character context set immediately before and after it; every unit
+  // first and last in a message; every ASCII string of one, two or three
+  // characters; twenty thousand seeded random strings. That is not "every
+  // string", and a rule keyed on a longer or stranger sequence -- "wont"
+  // into "won't" is four ASCII characters -- gets past all four. S1c is what
+  // stops that one.
   // -------------------------------------------------------------------------
-  describe('the fold of a string is the fold of each of its characters', () => {
-    // What the fold does to each unit alone. Pinned to the named map by the
-    // test above, so this is not the fold marking its own homework.
+  describe('the fold of a string is the fold of each of its code units', () => {
+    // What the fold does to each unit alone. Pinned to the table by the
+    // exact-map test, so this is not the fold marking its own homework.
     const UNIT_CHARS: string[] = [];
     const UNIT_FOLD: string[] = [];
     for (let unit = 0; unit < UNITS; unit += 1) {
@@ -735,12 +732,7 @@ describe('the fold preserves what the patterns depend on', () => {
       return out.join('');
     }
 
-    function show(text: string): string {
-      return Array.from({ length: text.length }, (_, i) => unitLabel(text.charCodeAt(i))).join(' ');
-    }
-
-    // The neighbours worth standing beside: all of ASCII (every character the
-    // patterns are written in, every ASCII space and control), everything the
+    // The neighbours worth standing beside: all of ASCII, everything the
     // fold reads or writes, and the characters behind each earlier defect.
     const CONTEXT_UNITS: readonly number[] = [
       ...Array.from({ length: 0x80 }, (_, unit) => unit),
@@ -756,18 +748,17 @@ describe('the fold preserves what the patterns depend on', () => {
       0x2122, // TRADE MARK SIGN, which NFKC turned into letters
       0x3000, // IDEOGRAPHIC SPACE
       0xd83e, 0xdd4a, // the two halves of U+1F94A
+      0xfeff, // ZERO WIDTH NO-BREAK SPACE, once deleted and once folded
     ].filter((unit, index, all) => all.indexOf(unit) === index);
 
     // One string per context character c: "c x0 c x1 c x2 ... c" over all
     // 65,536 units, so every unit stands with c immediately before it AND
-    // immediately after it. 161 strings rather than 21 million two-character
-    // ones, which is the same adjacencies in about a hundredth of the time
-    // (the pairwise form was measured at 83 seconds on this suite).
+    // immediately after it.
     test('every code unit with every context character on both sides of it', () => {
       const offenders: string[] = [];
 
       for (const context of CONTEXT_UNITS) {
-        const c = String.fromCharCode(context);
+        const c = UNIT_CHARS[context];
         const foldedC = UNIT_FOLD[context];
         const parts: string[] = [c];
         const expectedParts: string[] = [foldedC];
@@ -791,21 +782,20 @@ describe('the fold preserves what the patterns depend on', () => {
       }
 
       expect(offenders.slice(0, 40)).toEqual([]);
-      // Stated so the number in the pull request is the number that ran.
+      // 128 ASCII, 17 sources outside ASCII, 16 others.
       expect(CONTEXT_UNITS.length).toBe(161);
     });
 
     // The interleaved strings above put nothing but c at either END, so a
     // rule anchored to the start or end of the message -- a trim, a `^`, a
-    // `$` -- needs its own look. Every unit first and last, beside a letter,
-    // a space and an apostrophe.
+    // `$` -- needs its own look.
     test('every code unit at the start and at the end of a message', () => {
       const offenders: string[] = [];
       let compared = 0;
 
       for (const c of ['a', ' ', "'"]) {
         for (let unit = 0; unit < UNITS && offenders.length < 40; unit += 1) {
-          const x = String.fromCharCode(unit);
+          const x = UNIT_CHARS[unit];
           for (const text of [x + c, c + x]) {
             compared += 1;
             if (normaliseForMatching(text) !== unitwise(text)) offenders.push(show(text));
@@ -820,7 +810,7 @@ describe('the fold preserves what the patterns depend on', () => {
     test('every ASCII string of one, two or three characters', () => {
       const offenders: string[] = [];
       let compared = 0;
-      const ascii = Array.from({ length: 0x80 }, (_, unit) => String.fromCharCode(unit));
+      const ascii = UNIT_CHARS.slice(0, 0x80);
 
       for (const a of ascii) {
         compared += 1;
@@ -841,7 +831,7 @@ describe('the fold preserves what the patterns depend on', () => {
       expect(compared).toBe(128 + 128 * 128 + 128 * 128 * 128);
     });
 
-    test('twenty thousand seeded random strings, weighted toward the fold\'s own targets', () => {
+    test('twenty thousand seeded random strings, weighted toward the look-alikes', () => {
       // mulberry32. Seeded, so a failure is the same failure on every machine.
       let state = 0x1049;
       const random = (): number => {
@@ -850,72 +840,431 @@ describe('the fold preserves what the patterns depend on', () => {
         t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
       };
-      const targets = [...EXPECTED_FOLD.keys()];
+      const sources = [...EXPECTED_FOLD.keys()];
       const pick = (): number => {
         const roll = random();
-        if (roll < 0.4) return targets[Math.floor(random() * targets.length)];
+        if (roll < 0.4) return sources[Math.floor(random() * sources.length)];
         if (roll < 0.7) return Math.floor(random() * 0x80);
         return Math.floor(random() * UNITS);
       };
 
       const offenders: string[] = [];
       let touched = 0;
+      let made = 0;
       for (let n = 0; n < 20000 && offenders.length < 40; n += 1) {
         const length = 1 + Math.floor(random() * 64);
         let text = '';
         for (let i = 0; i < length; i += 1) text += String.fromCharCode(pick());
+        made += 1;
         const folded = normaliseForMatching(text);
         if (folded !== text) touched += 1;
         if (folded !== unitwise(text)) offenders.push(show(text));
       }
 
       expect(offenders).toEqual([]);
-      // If the generator stopped producing targets this would compare
-      // unchanged strings with unchanged strings and prove nothing.
-      expect(touched).toBeGreaterThan(19000);
+      expect(made).toBe(20000);
+      // How many of them the fold actually changed. Measured; the generator
+      // is seeded, so it is the same number on every run.
+      expect(touched).toBe(RANDOM_STRINGS_TOUCHED);
     });
 
     // SURROGATE PAIRS, STATED RATHER THAN ASSUMED.
     //
     // The fold has no `u` flag and works on UTF-16 code units. Every unit it
     // rewrites is outside U+D800-U+DFFF and so is everything it writes, so it
-    // can neither split a pair nor alter half of one; the exact-map test
-    // covers each surrogate unit alone, and this covers a whole astral
-    // character standing directly against each of the nineteen targets.
+    // can neither split a pair nor alter half of one. The exact-map test
+    // covers each surrogate unit alone; this covers a whole astral character
+    // standing directly against each of the eighteen sources.
     //
-    // This is NOT astral coverage of the classifier. U+E0027 below is TAG
-    // APOSTROPHE, an astral apostrophe look-alike, and it is deliberately
-    // asserted as NOT folded: astral look-alikes behave as they do on main.
-    test.each(['\u{1F94A}', '\u{E0027}'])('an astral character against each target is neither split nor altered: %j', (astral) => {
+    // This is NOT astral coverage of the classifier. U+E0027 is TAG
+    // APOSTROPHE, an astral apostrophe look-alike, and it is asserted here as
+    // NOT folded: astral look-alikes behave as they do on main.
+    test.each(['\u{1F94A}', '\u{E0027}'])('an astral character against each look-alike is neither split nor altered: %j', (astral) => {
       expect(astral.length).toBe(2);
       for (const [unit, output] of EXPECTED_FOLD) {
-        const target = String.fromCharCode(unit);
-        expect(normaliseForMatching(astral + target + astral)).toBe(astral + output + astral);
-        expect(normaliseForMatching(target + astral + target)).toBe(output + astral + output);
+        const source = String.fromCharCode(unit);
+        expect(normaliseForMatching(astral + source + astral)).toBe(astral + output + astral);
+        expect(normaliseForMatching(source + astral + source)).toBe(output + astral + output);
       }
     });
-  });
-
-  // The floor: if normaliseForMatching became the identity function, the
-  // four class properties above would pass trivially and the fix would be
-  // gone. (The exact-map test would fail too; this one says so in a line.)
-  test('the fold still folds', () => {
-    expect(normaliseForMatching('can\u2019t')).toBe("can't");
-    expect(normaliseForMatching('can\u00B4t')).toBe("can't");
-    expect(normaliseForMatching('a\uFEFFb')).toBe('a b');
-    // And it leaves alone everything it no longer touches.
-    expect(normaliseForMatching('a\u200Bb')).toBe('a\u200Bb');
-    expect(normaliseForMatching('a\u00ADb')).toBe('a\u00ADb');
-    expect(normaliseForMatching('a  b')).toBe('a  b');
-    expect(normaliseForMatching(' a ')).toBe(' a ');
   });
 });
 
 // ---------------------------------------------------------------------------
-// THE OTHER DIRECTION. More sensitive is the feature; indiscriminate is not.
-// Every entry here is a benign training sentence that an earlier round of this
-// fix answered with "stop participation and contact local emergency services"
-// and a critical human-review row.
+// THE DIFFERENTIALS -- main against the current code.
+//
+// The argument above says what cannot happen. These run it. They are the
+// check on Step 5, which was done by reading, and on Step 1's "now(m) =
+// main(f(m))", whose control-flow half is not parsed.
+// ---------------------------------------------------------------------------
+
+// Seed sentences, each declared with the return main gives it. Between them
+// they leave by every one of main's nine returns. Every seed is plain ASCII.
+const SEEDS: ReadonlyArray<readonly [string, string]> = [
+  ['R1 prescription or weight cut', 'Should I take this medication before training'],
+  ['R1 prescription or weight cut', 'how do i cut weight fast'],
+  ['R1 prescription or weight cut', 'I need to lose weight quickly before Saturday'],
+  ['R1 prescription or weight cut', 'help me make weight by Friday'],
+  ['R1 prescription or weight cut', 'cut weight for my weight class'],
+  ['R1 prescription or weight cut', 'He was prescribed something for it'],
+  // Main's own ordering: R1 sits above R3, so this emergency report gets the
+  // medication text on main. Pre-existing; see the known-gap test below.
+  ['R1 prescription or weight cut', "I can't breathe and I need to lose weight quickly"],
+  ['R2 educational, allowed', 'What is a concussion?'],
+  ['R2 educational, allowed', 'What causes fainting?'],
+  ['R2 educational, allowed', 'What can cause shortness of breath?'],
+  ['R2 educational, allowed', 'What are the rules of boxing?'],
+  ['R2 educational, allowed', "What does can't breathe mean"],
+  ['R3 urgent', "I can't breathe after that hit"],
+  ['R3 urgent', 'I cannot see after that punch'],
+  ['R3 urgent', "I can't move my arm after that fall"],
+  ['R3 urgent', 'My neck is numb after that hit'],
+  ['R3 urgent', "my nose is bleeding and it won't stop"],
+  ['R3 urgent', 'I have a headache after sparring'],
+  ['R3 urgent', 'my vision is really blurry today'],
+  ['R3 urgent', "I told him 'I can't breathe' right after that hit"],
+  ['R4 personal health', 'my shoulder hurts'],
+  ['R4 personal health', 'I hurt my wrist'],
+  ['R4 personal health', 'our bag session left me sore'],
+  ['R5 diagnosis', 'do you have a concussion'],
+  ['R5 diagnosis', 'did you get an injury there'],
+  ['R6 clearance', 'is he cleared to spar'],
+  ['R6 clearance', 'when is she getting medical clearance'],
+  ['R6 clearance', "is he cleared to spar after he got ko'd"],
+  ['R7 medication', 'can you use an injection for that'],
+  ['R7 medication', 'do you get a pill for that'],
+  ['R8 high-risk fallback', 'he fainted at the gym'],
+  ['R8 high-risk fallback', 'she got knocked out'],
+  ['R8 high-risk fallback', "she got KO'd last round"],
+  ['R8 high-risk fallback', 'the kid seems dehydrated'],
+  ['R8 high-risk fallback', 'he had a seizure'],
+  ['R8 high-risk fallback', 'chest pain during the run'],
+  ['R8 high-risk fallback', 'that was a concussion'],
+  ['R9 nothing matched, allowed', 'How long should a round be'],
+  ['R9 nothing matched, allowed', 'show the drill list'],
+  ['R9 nothing matched, allowed', 'the coach said "keep your guard up"'],
+  ['R9 nothing matched, allowed', "that's a good jab"],
+  ['R9 nothing matched, allowed', "she can't make it to practice"],
+];
+
+/** Every string made by putting `ch` in place of one character of `seed`, or between two. */
+function variantsOf(seed: string, ch: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < seed.length; i += 1) out.push(seed.slice(0, i) + ch + seed.slice(i + 1));
+  for (let i = 0; i <= seed.length; i += 1) out.push(seed.slice(0, i) + ch + seed.slice(i));
+  return out;
+}
+
+describe('main against the current code: every look-alike at every position of every seed', () => {
+  test('the seeds leave main by all nine of its returns, as declared', () => {
+    const wrong = SEEDS
+      .filter(([declared, seed]) => returnOf(main(seed)) !== declared)
+      .map(([declared, seed]) => `${JSON.stringify(seed)}: declared ${declared}, main gives ${returnOf(main(seed))}`);
+    expect(wrong).toEqual([]);
+    expect(SEEDS.length).toBe(42);
+    expect([...new Set(SEEDS.map(([declared]) => declared))].sort()).toEqual([
+      'R1 prescription or weight cut',
+      'R2 educational, allowed',
+      'R3 urgent',
+      'R4 personal health',
+      'R5 diagnosis',
+      'R6 clearance',
+      'R7 medication',
+      'R8 high-risk fallback',
+      'R9 nothing matched, allowed',
+    ]);
+    // And with no look-alike in them, the current code treats every seed as main does.
+    expect(SEEDS.filter(([, seed]) => !same(main(seed), now(seed))).map(([, seed]) => seed)).toEqual([]);
+  });
+
+  // Each of the eighteen look-alikes, substituted for each character of each
+  // seed and inserted at each gap. Every one of these messages contains a
+  // character the fold rewrites, which the carrier sweep further down mostly
+  // does not.
+  test('nothing is released, no emergency response is lost, nothing critical is downgraded', () => {
+    const released: string[] = [];
+    const emergencyLost: string[] = [];
+    const downgraded: string[] = [];
+    const notMainOfFold: string[] = [];
+    const byMainReturn: Record<string, number> = {};
+    let compared = 0;
+    let newlyWithheld = 0;
+    let newlyEmergency = 0;
+    let anyFieldDiffers = 0;
+
+    for (const [, seed] of SEEDS) {
+      for (const source of SOURCES) {
+        for (const message of variantsOf(seed, source)) {
+          const was = main(message);
+          const is = now(message);
+          compared += 1;
+          byMainReturn[returnOf(was)] = (byMainReturn[returnOf(was)] ?? 0) + 1;
+
+          if (withheld(was) && !withheld(is)) released.push(show(message));
+          if (emergency(was) && !emergency(is)) emergencyLost.push(show(message));
+          if (critical(was) && !critical(is)) downgraded.push(show(message));
+          // Step 1 of the argument, run: the current code is main applied to
+          // the folded message, in every field.
+          if (!same(is, main(normaliseForMatching(message)))) notMainOfFold.push(show(message));
+
+          if (!withheld(was) && withheld(is)) newlyWithheld += 1;
+          if (!emergency(was) && emergency(is)) newlyEmergency += 1;
+          if (!same(was, is)) anyFieldDiffers += 1;
+        }
+      }
+    }
+
+    expect(released.slice(0, 20)).toEqual([]);
+    expect(emergencyLost.slice(0, 20)).toEqual([]);
+    expect(downgraded.slice(0, 20)).toEqual([]);
+    expect(notMainOfFold.slice(0, 20)).toEqual([]);
+
+    // HOW MUCH WAS COMPARED, AND WHERE IT LANDED ON MAIN. Measured. Every
+    // number is exact because the seeds, the eighteen look-alikes and the
+    // frozen reference are all fixed; a change to any of them changes these
+    // and has to say so.
+    expect({ compared, byMainReturn, newlyWithheld, newlyEmergency, anyFieldDiffers }).toEqual(SEED_DIFFERENTIAL_COUNTS);
+  });
+
+  // U+FEFF IN PLACE OF, AND BETWEEN, EVERY CHARACTER OF EVERY SEED.
+  //
+  // The fold leaves it alone, so the current code must do exactly what main
+  // does, in every field. This is the test that the U+FEFF-to-space fold
+  // failed: it made "lose weight<FEFF>quickly" match the weight-cut phrase,
+  // which main's did not, and R1 sits above R3.
+  test('U+FEFF anywhere in any seed: the current code gives main\'s answer in every field', () => {
+    const different: string[] = [];
+    let compared = 0;
+    for (const [, seed] of SEEDS) {
+      for (const message of variantsOf(seed, '\uFEFF')) {
+        compared += 1;
+        if (!same(main(message), now(message))) different.push(show(message));
+      }
+    }
+    expect(different.slice(0, 20)).toEqual([]);
+    expect(compared).toBe(SEED_FEFF_COMPARISONS);
+  });
+
+  test.each([
+    "I can't breathe and I need to lose weight\uFEFFquickly",
+    'He has chest pain and wants to lose weight\uFEFFquickly',
+    'He got knocked out and has to cut\uFEFFweight for my weight class',
+    'chest pain just\uFEFFhappened',
+    'cut weight\uFEFFfor my weight class',
+  ])('the messages the U+FEFF fold downgraded keep main\'s answer: %j', (message) => {
+    expect(now(message)).toEqual(main(message));
+    expect(withheld(main(message))).toBe(true);
+  });
+
+  test('the first four of those are emergencies on main, and still are', () => {
+    for (const message of [
+      "I can't breathe and I need to lose weight\uFEFFquickly",
+      'He has chest pain and wants to lose weight\uFEFFquickly',
+      'He got knocked out and has to cut\uFEFFweight for my weight class',
+      'chest pain just\uFEFFhappened',
+    ]) {
+      expect(emergency(main(message))).toBe(true);
+      expect(critical(main(message))).toBe(true);
+      expect(emergency(now(message))).toBe(true);
+      expect(critical(now(message))).toBe(true);
+    }
+  });
+
+  // KNOWN GAP, ON MAIN AND HERE, MOVED TO #1036. Main's first return sits
+  // above its emergency return, so an emergency report that also contains a
+  // weight-cut phrase gets the medication text and no critical
+  // classification -- with an ordinary space, on main, today. This change
+  // neither causes nor fixes that. Asserted on both sides so that it is
+  // visible, and so that it flips when #1036 reorders the returns.
+  test('KNOWN GAP, moved to #1036 -- an emergency report containing a weight-cut phrase gets the medication text, on main and here', () => {
+    const message = "I can't breathe and I need to lose weight quickly";
+    for (const verdict of [main(message), now(message)]) {
+      expect(withheld(verdict)).toBe(true);
+      expect(emergency(verdict)).toBe(false);
+      expect(critical(verdict)).toBe(false);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE CALL SITES, RUN. S1b reads them; this runs them, with every one of the
+// 65,536 code units between two words of two messages main withholds. A
+// character deleted, merged or rewritten AFTER the fold -- at the call site
+// rather than in the fold -- shows here as the current code parting from
+// main(f(m)).
+// ---------------------------------------------------------------------------
+describe('the current code is main applied to the folded message, for every code unit', () => {
+  test.each([
+    ['my|shoulder hurts'],
+    ["I can't|breathe after that hit"],
+  ])('%s', (carrier) => {
+    const [head, tail] = carrier.split('|');
+    const offenders: string[] = [];
+    let released = 0;
+    for (let unit = 0; unit < UNITS; unit += 1) {
+      const message = head + String.fromCharCode(unit) + tail;
+      const was = main(message);
+      const is = now(message);
+      if (withheld(was) && !withheld(is)) released += 1;
+      if (!same(is, main(normaliseForMatching(message)))) offenders.push(unitLabel(unit));
+    }
+    expect(released).toBe(0);
+    expect(offenders.slice(0, 40)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE CARRIER SWEEP.
+//
+// The oldest part of this file, kept for what it is good at: characters the
+// fold does NOT touch. Each carrier is a message main withholds, with one
+// marked position; 382 code points -- every plausible separator -- are put
+// there one at a time, and wherever main still withheld, the current code
+// must.
+//
+// WHAT IT IS AND IS NOT EVIDENCE FOR. Its carriers leave main by two of the
+// nine returns, R3 and R4, and only the comparisons counted as `folded`
+// below contain a character the fold rewrites. For this fold, the rest
+// cannot fail: the message reaches the patterns unchanged. They are here for
+// the next change to the fold, which is how each of the earlier defects
+// arrived -- a separator deleted, merged or expanded. The evidence for THIS
+// fold is the argument and the seed differential above.
+//
+// The swept set, stated because a cap nobody can see is a lie:
+//
+//   U+0000-U+00FF   Latin-1: NBSP, SOFT HYPHEN, ACUTE, NEL, every ASCII control
+//   U+2000-U+206F   General Punctuation: every exotic space and dash, the
+//                   curly quotes and primes, U+200B-U+200D, U+2028, U+2029
+//   U+02B9-U+02BC   three modifier-letter look-alikes, and U+02BA between them
+//   U+FF02 U+FF07 U+FF40   the full-width look-alikes
+//   U+1680 U+180E U+3000 U+FEFF U+FFF9-U+FFFB   stragglers
+//
+// which is all eighteen look-alikes and 364 others. NOT swept: the rest of
+// the BMP, and anything astral.
+// ---------------------------------------------------------------------------
+const SWEPT_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x0000, 0x00ff],
+  [0x2000, 0x206f],
+  [0x1680, 0x1680],
+  [0x180e, 0x180e],
+  [0x3000, 0x3000],
+  [0xfeff, 0xfeff],
+  [0xfff9, 0xfffb],
+  [0x02b9, 0x02bc],
+  [0xff02, 0xff02],
+  [0xff07, 0xff07],
+  [0xff40, 0xff40],
+];
+
+function sweptCodePoints(): number[] {
+  const out: number[] = [];
+  for (const [lo, hi] of SWEPT_RANGES) {
+    for (let cp = lo; cp <= hi; cp += 1) out.push(cp);
+  }
+  return out;
+}
+
+// name, carrier with `|` marking the one insertion point, and the number of
+// swept code points for which main withholds it.
+//
+// Each carrier puts its mark somewhere an earlier version of this sweep had
+// no mark at all, and missed a defect for it: immediately before the match;
+// beside a counted window (`vision.{0,12}blurr`, `bleeding.{0,20}`), one
+// character inside its limit; and where the word boundary under test is the
+// ONLY evidence of personal context. That is three kinds of position, found
+// one defect at a time. It is not every position, and no carrier marks more
+// than one; the seed differential above is the one that visits every
+// position.
+const CARRIERS: ReadonlyArray<readonly [string, string, number]> = [
+  ['boundary is the only evidence', 'my|shoulder hurts', 319],
+  ['boundary is the only evidence, 2', 'I|hurt my wrist', 319],
+  ['bounded window, vision', 'my vision is|really blurry', 378],
+  ['bounded window, bleeding', 'my lip is bleeding pretty badly|and will not stop', 378],
+  ['before contraction', "I got hit|can't breathe", 382],
+  ['before cannot', 'I got hit|cannot breathe', 382],
+  ['before symptom phrase', 'After that punch I had a|headache', 382],
+  ['contraction gap', "I can't|breathe after that hit", 25],
+  // SUBSTITUTED, not inserted: the swept character stands where the
+  // apostrophe would. Main matched exactly one of the 382 here, the ASCII
+  // apostrophe, so one is this carrier's full count.
+  ['apostrophe substituted', 'I can|t breathe after that hit', 1],
+  ['cannot gap', 'I cannot|breathe after that hit', 25],
+  ['two-word symptom', 'I have seeing|stars after sparring', 25],
+  ['impact gap', 'My neck is numb after that|hit', 382],
+  ['leading word gap', 'I|have a headache after sparring', 382],
+];
+
+describe('the carrier sweep: a separator at a marked position releases nothing main withheld', () => {
+  test('no swept code point, at any carrier\'s mark, releases a message main withheld', () => {
+    const codePoints = sweptCodePoints();
+    const regressions: string[] = [];
+    const returnsReached = new Set<string>();
+    let compared = 0;
+    let folded = 0;
+
+    for (const [label, carrier] of CARRIERS) {
+      const [head, tail] = carrier.split('|');
+      for (const cp of codePoints) {
+        const message = head + String.fromCodePoint(cp) + tail;
+        const was = main(message);
+        if (!withheld(was)) continue;
+        compared += 1;
+        returnsReached.add(returnOf(was));
+        if (normaliseForMatching(message) !== message) folded += 1;
+        if (!withheld(now(message))) {
+          regressions.push(`${label}: ${unitLabel(cp)} -- main withheld this, the current code does not`);
+        }
+      }
+    }
+
+    expect(regressions).toEqual([]);
+    // The sum of the per-carrier counts: 2 x 319 + 2 x 378 + 5 x 382 + 3 x 25 + 1.
+    expect(compared).toBe(3380);
+    // Of which this many contain a character the fold rewrites. Measured.
+    expect(folded).toBe(CARRIER_COMPARISONS_FOLDED);
+    // And every one of them left main by one of these two returns.
+    expect([...returnsReached].sort()).toEqual(['R3 urgent', 'R4 personal health']);
+  });
+
+  // THE PER-CARRIER COUNT, EXACT. The frozen reference and the swept set are
+  // both fixed, so the count is not an estimate and there is nothing for
+  // headroom to absorb. An earlier version declared minimums of 280, 330 and
+  // 20 against real counts of 319, 378 or 382, and 25.
+  test('every carrier contributes exactly its measured count', () => {
+    const points = sweptCodePoints();
+    const wrong: string[] = [];
+
+    for (const [name, carrier, expected] of CARRIERS) {
+      const parts = carrier.split('|');
+      if (parts.length !== 2) wrong.push(`${name}: a carrier has exactly one mark`);
+      const got = points.filter((cp) => withheld(main(parts[0] + String.fromCodePoint(cp) + parts[1]))).length;
+      if (got !== expected) wrong.push(`${name}: ${got}, expected ${expected}`);
+    }
+
+    expect(wrong).toEqual([]);
+    // 256 + 112 + 1 + 1 + 1 + 1 + 3 + 4 + 1 + 1 + 1, from SWEPT_RANGES, with no code point twice.
+    expect(points.length).toBe(382);
+    expect(new Set(points).size).toBe(382);
+    expect(SOURCES.filter((ch) => !points.includes(ch.charCodeAt(0)))).toEqual([]);
+  });
+
+  // Main's `\s` matches U+FEFF, so main withheld this, and deleting U+FEFF
+  // once released it. By name, so it cannot be dropped from the swept set
+  // without a test going red.
+  test('U+FEFF between the contraction and the symptom, which main treated as whitespace', () => {
+    const message = "I can't\uFEFFbreathe after that hit";
+    expect(withheld(main(message))).toBe(true);
+    expect(withheld(now(message))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE CORPUS. More sensitive is the feature; indiscriminate is not.
+//
+// Each of these was withheld as an emergency by an earlier version of this
+// change, which made the apostrophe in "can't" optional. That widening was
+// removed, so none of them can match on "cant" today. They stay for whoever
+// reintroduces the contraction family in #1036.
 // ---------------------------------------------------------------------------
 const BENIGN_CANT_CORPUS: ReadonlyArray<readonly [string, string]> = [
   ['significant', 'I felt great after the punch drill and my footwork showed significant improvement'],
@@ -924,84 +1273,64 @@ const BENIGN_CANT_CORPUS: ReadonlyArray<readonly [string, string]> = [
   ['cantilever', 'I moved from the fall bag over to the cantilever station after that punch drill'],
   ['cantina', 'After that punch we all went to the cantina down the road'],
   ['canto', 'After that punch I heard my coach canto along with the radio'],
-  ['canto accented', 'After that punch I heard my coach cantó along with the radio'],
+  ['canto accented', 'After that punch I heard my coach cant\u00F3 along with the radio'],
   ['recant', 'After that punch I had to recant what I said about the referee'],
   ['decant', 'After that punch I watched him decant the water bottle'],
   ['incantation', 'After that punch the corner was muttering like an incantation'],
   ['scanty', 'After that punch the lighting in the gym was scanty'],
   ['hyphenated', 'After that punch my footwork showed signifi-cant improvement'],
-  ['soft hyphen', 'After that punch my footwork showed signifi­cant improvement'],
-  ['en dash', 'After that punch my footwork showed signifi–cant improvement'],
+  ['soft hyphen', 'After that punch my footwork showed signifi\u00ADcant improvement'],
+  ['en dash', 'After that punch my footwork showed signifi\u2013cant improvement'],
   ['applicant', 'After that punch I added the new applicant to the intake list'],
 ];
 
-describe('a word merely containing "cant" is not an emergency', () => {
+describe('a word merely containing "cant" is not withheld', () => {
   test.each(BENIGN_CANT_CORPUS)('%s', (_label, message) => {
-    expect(nowWithholds(message)).toBe(false);
+    expect(withheld(now(message))).toBe(false);
+    // And main did not withhold it either: these are controls for a future
+    // change, not evidence about this one.
+    expect(withheld(main(message))).toBe(false);
   });
 
-  // NO EXCEPTION ANY MORE, because the thing that needed one is gone.
-  //
-  // While this PR widened the contraction, a quoted mention of the word
-  // "cant" matched, and that had to be accepted as a trade: narrowing it
-  // would also have stopped "'I can't breathe'" matching when an athlete
-  // quotes themselves. The widening has been removed, so neither problem
-  // exists here -- "cant" is not a pattern at all now.
-  //
-  // Both rows stay, because #1036 inherits this corpus and will reintroduce
-  // the contraction family. Whoever does that makes the quoted mention match
-  // again and has to decide the same trade deliberately. These two lines are
-  // where they will notice.
-  test('a quoted mention is not matched, now that "cant" is not a pattern', () => {
-    expect(nowWithholds("After that punch the coach used the word 'cant' about my stance")).toBe(false);
-    // The quoted REAL report, which must keep matching whatever happens to
-    // the contraction family. It does, on main's own pattern, with no
-    // boundary of any kind involved.
-    expect(nowWithholds("I told him 'I can't breathe' right after that hit")).toBe(true);
+  test('a quoted mention of the word is not withheld; a quoted real report is', () => {
+    expect(withheld(now("After that punch the coach used the word 'cant' about my stance"))).toBe(false);
+    expect(emergency(now("I told him 'I can't breathe' right after that hit"))).toBe(true);
+    // With the phone's quotes and apostrophe, which main did not catch.
+    const typed = 'I told him \u2018I can\u2019t breathe\u2019 right after that hit';
+    expect(withheld(main(typed))).toBe(false);
+    expect(emergency(now(typed))).toBe(true);
   });
 });
 
 // ---------------------------------------------------------------------------
-// THE ONE MEASURED DIFFERENCE THAT IS NOT A SENSITIVITY CHANGE
-//
-// Found by a differential reviewer sweeping ~439 million comparisons. It was
-// the ONLY both-withhold divergence in the whole sweep, and it is pinned here
-// rather than left in a pull-request body, because a persisted safety record
-// changes shape and nothing else in the diff says so.
-//
-// Folding U+FEFF to a space makes `normalizedMessage.includes('cut weight for
-// my weight class')` match where main did not -- main saw the BOM, not a
-// space, missed the literal, and fell through to the isHighRisk fallback,
-// which sets `classification: 'weight_cutting'`. The current code takes the
-// earlier rapid-weight-cut return instead, and that return sets no
-// `classification` field at all.
-//
-// WHAT CHANGES, EXACTLY: both versions WITHHOLD, and the review row's severity
-// is 'high' on both sides, because 'weight_cutting' is not in the critical
-// list. What differs is the row's `validationClassification`, which goes from
-// 'weight_cutting' to null. A reviewer opening that row loses the category.
-//
-// WHY IT IS NOT FIXED HERE: the fix is to add a classification to main's
-// rapid-weight-cut return, which means editing a branch this PR has committed
-// to leaving byte-identical to main, for a metadata field on a path that still
-// withholds. It belongs in #1036, which already rewrites that branch.
+// MEASURED COUNTS. Each is asserted exactly above. They are gathered here so
+// that a change which moves one shows up as one edited line with a reason.
 // ---------------------------------------------------------------------------
-describe('a known, measured divergence in review metadata', () => {
-  const BOM = '﻿';
-  const message = `cut weight${BOM}for my weight class`;
-
-  test('both versions still withhold; only the recorded category differs', () => {
-    expect(mainWithheld(message)).toBe(true);
-    expect(nowWithholds(message)).toBe(true);
-
-    // The difference, asserted so it cannot change unnoticed.
-    expect(mainValidate(message, 'athlete', 'org-123').classification).toBe('weight_cutting');
-    expect(validateShadowRequest(message, 'athlete', 'org-123').classification).toBeUndefined();
-  });
-
-  test('the ASCII-space form is unaffected on both sides', () => {
-    const plain = 'cut weight for my weight class';
-    expect(mainValidate(plain, 'athlete', 'org-123').classification).toBeUndefined();
-    expect(validateShadowRequest(plain, 'athlete', 'org-123').classification).toBeUndefined();
-  });
-});
+const RANDOM_STRINGS_TOUCHED = 19565;
+const CARRIER_COMPARISONS_FOLDED = 162;
+// The sum over the 42 seeds of (2 x length + 1).
+const SEED_FEFF_COMPARISONS = 2454;
+const SEED_DIFFERENTIAL_COUNTS = {
+  // 18 x 2,454.
+  compared: 44172,
+  // The return MAIN gave each generated message. A look-alike dropped into
+  // the middle of a keyword breaks it, which is why more land on R9 than
+  // there are R9 seeds. The nine sum to `compared`.
+  byMainReturn: {
+    'R1 prescription or weight cut': 5238,
+    'R2 educational, allowed': 3456,
+    'R3 urgent': 7560,
+    'R4 personal health': 1908,
+    'R5 diagnosis': 576,
+    'R6 clearance': 2340,
+    'R7 medication': 1008,
+    'R8 high-risk fallback': 8065,
+    'R9 nothing matched, allowed': 14021,
+  },
+  // Messages main allowed that are now withheld, every one of them with the
+  // emergency text: the fix.
+  newlyWithheld: 59,
+  newlyEmergency: 59,
+  // Messages where any field differs from main's, the 59 included.
+  anyFieldDiffers: 94,
+};

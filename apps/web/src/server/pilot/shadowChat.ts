@@ -152,12 +152,11 @@ export const SHADOW_SAFE_FILTERED_RESPONSE =
  *
  * WHY THIS IS THE WHOLE FUNCTION, AND WHY IT USED TO DO MORE.
  *
- * It also deleted zero-width characters and the soft hyphen, folded dashes,
- * folded the NBSP class to a space, collapsed whitespace, trimmed, and ran
- * NFKC. Every one of those was added for tidiness rather than for the defect,
- * and between them they caused SIX regressions -- each one a message main
- * WITHHELD that this code then allowed through to the model with nobody told,
- * which is precisely the production defect it exists to close:
+ * Earlier versions also deleted zero-width characters and the soft hyphen,
+ * folded dashes, folded the NBSP class to a space, collapsed whitespace,
+ * trimmed, ran NFKC, and turned U+FEFF into a space. None of those was needed
+ * for the defect, and each of the ones below changed what a pattern matched
+ * for a message main already handled:
  *
  *   NFKC EXPANDS. U+2026 became three periods, overflowing the
  *   character-counted windows -- `vision.{0,12}blurr`, `bleeding.{0,20}`.
@@ -165,21 +164,30 @@ export const SHADOW_SAFE_FILTERED_RESPONSE =
  *   hurts" read as "TMmy shoulder hurts" and `\b(i|me|my|...)\b` went false.
  *   DELETION MERGES WORDS. "my\u200Bshoulder hurts" became "myshoulder hurts",
  *   so `\bmy\b` failed and the personal-health refusal was lost. Same for
- *   U+00AD.
- *   WHITESPACE COLLAPSING shortens text, which moves every counted window.
+ *   U+00AD, and for U+FEFF, which main's `\s` already matches.
+ *   WHITESPACE COLLAPSING removed line breaks, which are the only bound on
+ *   the unbounded `.` gaps, so ordinary two-line messages were withheld.
+ *   U+FEFF TO A SPACE made the literal-space phrases match where main's did
+ *   not -- "lose weight<FEFF>quickly" -- and that return sits ABOVE the
+ *   emergency one, so "I can't breathe and I need to lose weight<FEFF>quickly"
+ *   lost its emergency response. U+FEFF is now left exactly as typed.
  *
  * One root cause: the patterns in this file count characters, assert word
- * boundaries, test whitespace, and let `.` stop at a line terminator. A fold
- * that changes LENGTH, or the WORD, WHITESPACE or LINE-TERMINATOR CLASS of a
- * position, silently moves all of them. So the fold is restricted to
- * substitutions that cannot do any of those four things.
+ * boundaries, test whitespace, match literal spaces, and let `.` stop at a
+ * line terminator. So the fold is restricted to substitutions that cannot
+ * move any of those: an apostrophe-like or quote-like punctuation character
+ * becoming the ASCII one, in place.
  *
- * shadowChatSensitivity.test.ts holds this function to that: the nineteen
+ * shadowChatSensitivity.test.ts holds this function to that. The eighteen
  * code units below are written out there a second time as an exact map and
- * checked against every UTF-16 code unit, and the fold of a string is
- * checked to be the fold of each of its units. KEEP EVERY LINE BELOW A
- * GLOBAL REPLACE OF A SINGLE-UNIT CHARACTER CLASS BY A FIXED ONE-UNIT
- * STRING. A line of any other shape is a different kind of change.
+ * checked against every UTF-16 code unit; the SHAPE of this function and of
+ * its two call sites is checked from this file's source; and the argument
+ * from "eighteen punctuation characters become two" to "nothing main
+ * withheld is released, and nothing main treated as an emergency stops being
+ * one" is written out there with its premises tested. KEEP EVERY LINE BELOW
+ * A GLOBAL REPLACE OF A SINGLE-UNIT CHARACTER CLASS BY A FIXED ONE-UNIT
+ * STRING. A line of any other shape, here or at the call sites, fails that
+ * suite by design.
  *
  * ANYTHING NOT FOLDED HERE BEHAVES EXACTLY AS IT DOES ON MAIN, which is the
  * standard this hotfix is measured against. Widening it is #1036 work.
@@ -190,21 +198,11 @@ export const SHADOW_SAFE_FILTERED_RESPONSE =
 export function normaliseForMatching(text: string): string {
   return text
     // Apostrophe look-alikes -> ASCII apostrophe. The fix. Every member is a
-    // single UTF-16 unit and a non-word character, as is the replacement, so
-    // length, word class and whitespace class are all preserved.
+    // single UTF-16 unit that is neither a word character nor whitespace, as
+    // is the replacement.
     .replace(/[\u2018\u2019\u201A\u201B\u2032\u02B9\u02BB\u02BC\u00B4\uFF07\uFF40`]/g, "'")
     // Quote look-alikes -> ASCII quote. Same reasoning.
-    .replace(/[\u201C\u201D\u201E\u201F\u2033\uFF02]/g, '"')
-    // U+FEFF -> space. The one fold whose target is not punctuation. It does
-    // NOT change the whitespace class of the position: the engine ALREADY
-    // counts U+FEFF as whitespace, so main's `can(?:not|'t)\s+breathe` matched
-    // "I can't<FEFF>breathe after that hit" and withheld it. What it changes
-    // is that literal-space matches (`after sparring`, the `.includes(...)`
-    // phrases) now see a space there. An earlier
-    // version of this function DELETED it, which joined the words and let that
-    // message through -- the production defect reintroduced through a
-    // different character.
-    .replace(/\uFEFF/g, ' ');
+    .replace(/[\u201C\u201D\u201E\u201F\u2033\uFF02]/g, '"');
 }
 
 // Classify high-risk topics and determine routing

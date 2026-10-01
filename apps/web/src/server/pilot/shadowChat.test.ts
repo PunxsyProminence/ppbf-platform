@@ -1163,18 +1163,13 @@ describe('typographic normalisation before matching', () => {
     expect(validateShadowRequest(message, 'athlete', 'org-123').valid).toBe(true);
   });
 
-  // THE REGRESSION THIS BRANCH ITSELF INTRODUCED, AND THE ONE THAT MATTERS
-  // MOST. U+FEFF is whitespace to the ECMAScript engine, so main's
-  // `can(?:not|'t)\\s+breathe` ALREADY matched "I can't<FEFF>breathe after
+  // U+FEFF is whitespace to the ECMAScript engine, so main's
+  // `can(?:not|'t)\s+breathe` ALREADY matched "I can't<FEFF>breathe after
   // that hit" and withheld it. An earlier version of this fix stripped
   // U+FEFF as a zero-width character, which joined the words, matched
   // nothing, and allowed the message through to the model with nobody told
-  // -- reintroducing the exact production defect this branch exists to
-  // close, through a different character.
-  //
-  // Found by a reviewer sweeping every BMP code point against main. It was
-  // the only regression in the sweep, which is the reason it is pinned by
-  // code point rather than described.
+  // -- the production defect this branch exists to close, reintroduced
+  // through a different character. Pinned by code point.
   test.each([
     ['U+FEFF between the contraction and the symptom', 'I can\u2019t\uFEFFbreathe after that hit'],
     ['U+FEFF after cannot', 'I cannot\uFEFFbreathe after that hit'],
@@ -1182,24 +1177,19 @@ describe('typographic normalisation before matching', () => {
     expect(validateShadowRequest(message, 'athlete', 'org-123').valid).toBe(false);
   });
 
-  // THE REASONING IN THE PREVIOUS VERSION OF THIS TEST WAS BACKWARDS, and the
-  // correction is worth leaving visible.
+  // U+FEFF, U+200B AND U+00AD ARE ALL LEFT EXACTLY AS TYPED, as on main.
   //
-  // It asserted that U+200B "stays deleted, as it was on main". Main does not
-  // delete it. Main leaves it in place and simply does not match across it.
-  // Deleting it was a CHANGE from main, not a preservation of it, and that
-  // change is what turned "my<ZWSP>shoulder hurts" into "myshoulder hurts",
-  // failed the word boundary, and lost the refusal.
-  //
-  // U+FEFF is the genuine opposite case, and the distinction is exact: the
-  // ECMAScript \s class CONTAINS U+FEFF and does NOT contain U+200B. Main was
-  // already matching across U+FEFF, so folding it to a space preserves that.
-  // Main never matched across U+200B, so touching it can only differ from main.
-  test('U+FEFF becomes a space; U+200B and U+00AD are left exactly as typed', () => {
-    expect(normaliseForMatching('I can\u2019t\uFEFFbreathe')).toBe("I can't breathe");
-    expect(normaliseForMatching('I can\u2019t\u200Bbreathe')).toBe('I can\'t\u200Bbreathe');
+  // Main does not delete any of them; it matches across U+FEFF, because the
+  // ECMAScript \s class contains it, and does not match across the other
+  // two. Deleting them was a change from main and released messages main
+  // withheld. Folding U+FEFF to a space was also a change from main: it made
+  // the literal-space weight-cut phrases match, and that return sits above
+  // the emergency one. shadowChatSensitivity.test.ts pins both.
+  test('U+FEFF, U+200B and U+00AD are left exactly as typed', () => {
+    expect(normaliseForMatching('I can\u2019t\uFEFFbreathe')).toBe("I can't\uFEFFbreathe");
+    expect(normaliseForMatching('I can\u2019t\u200Bbreathe')).toBe("I can't\u200Bbreathe");
     expect(normaliseForMatching('signifi\u00ADcant')).toBe('signifi\u00ADcant');
-    // The distinction all of this rests on, asserted rather than described.
+    // The distinction main's behaviour rests on, asserted rather than described.
     expect(/\s/.test('\uFEFF')).toBe(true);
     expect(/\s/.test('\u200B')).toBe(false);
   });
@@ -1215,17 +1205,14 @@ describe('typographic normalisation before matching', () => {
     expect(result.classification).toBe('personal_health_concern');
   });
 
-  // THE FOLD NO LONGER TOUCHES EITHER OF THESE, and that is the fix rather
-  // than a loss.
+  // THE FOLD TOUCHES NEITHER OF THESE.
   //
   // It used to strip zero-width characters and collapse runs of whitespace.
-  // Both were added for tidiness, neither was needed for the curly apostrophe,
-  // and between them they caused three regressions -- each a message main
-  // WITHHELD that the fold then allowed through to the model with nobody told.
-  // Collapsing whitespace shortens text, which moves every character-counted
-  // window in the file.
+  // Neither was needed for the curly apostrophe, and stripping a zero-width
+  // character released a message main withheld: "my<ZWSP>shoulder hurts"
+  // became "myshoulder hurts" and the word boundary failed.
   //
-  // So anything the fold does not substitute now behaves EXACTLY as it does on
+  // So anything the fold does not substitute behaves EXACTLY as it does on
   // main, which is the standard this hotfix is measured against.
   test('doubled spaces still match, and a zero-width character is left alone', () => {
     // A run of spaces was never a problem: the patterns use \s+, which matches
@@ -1238,16 +1225,16 @@ describe('typographic normalisation before matching', () => {
   });
 
   describe('normaliseForMatching itself', () => {
-    test('folds every apostrophe and quote variant to the ASCII form', () => {
+    test('folds the phone apostrophe and the curly quotes (the whole table is checked in shadowChatSensitivity.test.ts)', () => {
       expect(normaliseForMatching('can\u2019t can\u2018t can\u2032t can\u00B4t')).toBe("can't can't can't can't");
       expect(normaliseForMatching('\u201Cquoted\u201D')).toBe('"quoted"');
     });
 
-    test('leaves alone everything it does not substitute', () => {
+    test('leaves runs of spaces, NBSP, a zero-width space and leading or trailing space alone', () => {
       // No whitespace collapsing, no NBSP folding, no zero-width stripping, no
-      // trim. Each was removed after causing a regression. What is left is
-      // one-to-one substitution of an apostrophe or quote look-alike, plus
-      // U+FEFF to a space.
+      // trim, and U+FEFF is not touched. Each was removed after it changed
+      // what main did with some message. What is left is one-to-one
+      // substitution of an apostrophe or quote look-alike.
       expect(normaliseForMatching('a\u00A0\u00A0b\u200Bc   d')).toBe('a\u00A0\u00A0b\u200Bc   d');
       expect(normaliseForMatching(' leading and trailing ')).toBe(' leading and trailing ');
     });
