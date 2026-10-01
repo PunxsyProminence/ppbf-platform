@@ -923,6 +923,10 @@ const SEEDS: ReadonlyArray<readonly [string, string]> = [
   ['R3 urgent', 'I have a headache after sparring'],
   ['R3 urgent', 'my vision is really blurry today'],
   ['R3 urgent', "I told him 'I can't breathe' right after that hit"],
+  // Two that reach R3 through hasAcuteImpactConcern alone, with no urgent
+  // symptom phrase in them.
+  ['R3 urgent', 'after that punch I feel dizzy and confused'],
+  ['R3 urgent', "from that fall I can't feel my hand"],
   ['R4 personal health', 'my shoulder hurts'],
   ['R4 personal health', 'I hurt my wrist'],
   ['R4 personal health', 'our bag session left me sore'],
@@ -961,7 +965,7 @@ describe('main against the current code: every look-alike at every position of e
       .filter(([declared, seed]) => returnOf(main(seed)) !== declared)
       .map(([declared, seed]) => `${JSON.stringify(seed)}: declared ${declared}, main gives ${returnOf(main(seed))}`);
     expect(wrong).toEqual([]);
-    expect(SEEDS.length).toBe(42);
+    expect(SEEDS.length).toBe(44);
     expect([...new Set(SEEDS.map(([declared]) => declared))].sort()).toEqual([
       'R1 prescription or weight cut',
       'R2 educational, allowed',
@@ -1308,29 +1312,29 @@ describe('a word merely containing "cant" is not withheld', () => {
 // ---------------------------------------------------------------------------
 const RANDOM_STRINGS_TOUCHED = 19565;
 const CARRIER_COMPARISONS_FOLDED = 162;
-// The sum over the 42 seeds of (2 x length + 1).
-const SEED_FEFF_COMPARISONS = 2454;
+// The sum over the 44 seeds of (2 x length + 1).
+const SEED_FEFF_COMPARISONS = 2610;
 const SEED_DIFFERENTIAL_COUNTS = {
-  // 18 x 2,454.
-  compared: 44172,
+  // 18 x 2,610.
+  compared: 46980,
   // The return MAIN gave each generated message. A look-alike dropped into
   // the middle of a keyword breaks it, which is why more land on R9 than
   // there are R9 seeds. The nine sum to `compared`.
   byMainReturn: {
     'R1 prescription or weight cut': 5238,
     'R2 educational, allowed': 3456,
-    'R3 urgent': 7560,
+    'R3 urgent': 9612,
     'R4 personal health': 1908,
     'R5 diagnosis': 576,
     'R6 clearance': 2340,
     'R7 medication': 1008,
-    'R8 high-risk fallback': 8065,
-    'R9 nothing matched, allowed': 14021,
+    'R8 high-risk fallback': 8407,
+    'R9 nothing matched, allowed': 14435,
   },
   // Messages main allowed that are now withheld, every one of them with the
   // emergency text: the fix.
-  newlyWithheld: 59,
-  newlyEmergency: 59,
-  // Messages where any field differs from main's, the 59 included.
-  anyFieldDiffers: 94,
+  newlyWithheld: 71,
+  newlyEmergency: 71,
+  // Messages where any field differs from main's, the 71 included.
+  anyFieldDiffers: 106,
 };
