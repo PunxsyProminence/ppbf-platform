@@ -23,6 +23,7 @@ jest.mock('@/src/server/pilot/http', () => {
 });
 
 jest.mock('@/src/server/pilot/parentPassword', () => ({
+  ...jest.requireActual('@/src/server/pilot/parentPassword'),
   setOwnPasswordFromLinkSession: jest.fn(),
 }));
 
@@ -175,6 +176,23 @@ describe('POST /api/pilot/auth/password/set', () => {
     ]);
     expect(writePilotAuditEvent).not.toHaveBeenCalled();
   });
+
+  test.each(['coach', 'staff', 'volunteer', 'athlete', 'organization_admin', 'platform_owner', 'board'] as const)(
+    'a %s session is refused at the route with the same answer, and is counted',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValue({
+        accountId: 'parent-1', role, organizationId: 'org-1', athleteId: null,
+        sessionToken: 'session-token-value', authProvider: 'microsoft' as const,
+      } as never);
+
+      const res = await post({ password: GOOD_PASSWORD });
+
+      expect(res.status).toBe(403);
+      expect((await res.json()).code).toBe('PASSWORD_SETUP_LINK_REQUIRED');
+      expect(mockSetPassword).not.toHaveBeenCalled();
+      expect(rateLimit.recordDurableFailedAttempt).toHaveBeenCalledTimes(2);
+    },
+  );
 
   test('repeated refusals are throttled: the route answers 429 without reaching the password code', async () => {
     mockSetPassword.mockRejectedValue(linkRequired());

@@ -2,9 +2,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { sanitizedSqlState } from '@/src/server/pilot/db';
+import { PASSWORD_ROLES } from '@/src/server/pilot/credentialPolicy';
 import { ForbiddenError } from '@/src/server/pilot/errors';
-import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
-import { setOwnPasswordFromLinkSession } from '@/src/server/pilot/parentPassword';
+import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
+import { passwordSetupLinkRequired, setOwnPasswordFromLinkSession } from '@/src/server/pilot/parentPassword';
 import {
   checkDurableRateLimit,
   checkRateLimit,
@@ -73,6 +74,15 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+      // The role gate, by name, on credentialPolicy's own list. A role outside
+      // it gets the answer every other refusal here gets, not a different one.
+      // The board seat and the session proof are decided in parentPassword.ts.
+      try {
+        requireRole(principal, [...PASSWORD_ROLES]);
+      } catch {
+        throw passwordSetupLinkRequired();
+      }
+
       await setOwnPasswordFromLinkSession({
         accountId: principal.accountId,
         sessionToken: principal.sessionToken,

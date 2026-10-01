@@ -32,7 +32,7 @@ export const PASSWORD_SETUP_WINDOW_MINUTES = 15;
  * thing to say: go back to your email. Deleted, deactivated and wrong-role
  * accounts get it too -- this route does not explain an account to its caller.
  */
-function linkRequired(): ForbiddenError {
+export function passwordSetupLinkRequired(): ForbiddenError {
   return new ForbiddenError(
     'Forbidden: open a new sign-in link from your email to set a password',
     'PASSWORD_SETUP_LINK_REQUIRED',
@@ -85,15 +85,15 @@ export async function setOwnPasswordFromLinkSession(input: {
   // (deletedAccountSignIn.ts): an account can be active again and still deleted.
   if (!row || isDeletedAccount(row) || !row.active_flag) {
     console.warn('pilot-auth set-password rejected', { reason: 'unknown_deleted_or_inactive_account' });
-    throw linkRequired();
+    throw passwordSetupLinkRequired();
   }
   if (!passwordLoginPermitted({ role: row.role }, { holdsBoardSeat: row.holds_board_seat })) {
     console.warn('pilot-auth set-password rejected', { reason: 'role_not_password_eligible' });
-    throw linkRequired();
+    throw passwordSetupLinkRequired();
   }
   if (row.link_session_proof !== true) {
     console.warn('pilot-auth set-password rejected', { reason: 'no_recent_link_session' });
-    throw linkRequired();
+    throw passwordSetupLinkRequired();
   }
 
   // After the proof, so only someone entitled to set a password learns what
@@ -129,7 +129,7 @@ export async function setOwnPasswordFromLinkSession(input: {
 
     if (updated.rows.length === 0) {
       console.warn('pilot-auth set-password rejected', { reason: 'state_changed_before_write' });
-      throw linkRequired();
+      throw passwordSetupLinkRequired();
     }
 
     // Every OTHER session ends: if someone else was signed in to this account,
