@@ -20,7 +20,7 @@
 // stopped checking and does not say so. Every case below that ends in a throw
 // is that failure being refused out loud.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -40,10 +40,11 @@ const verifyModuleUrl = pathToFileURL(path.join(scriptsDir, 'pilot-verify-schema
 // PPBF_SCHEMA_VERIFY_SKIP_MAIN is set, so it is set for every child.
 function run(body: string): { ok: true; value: unknown } | { ok: false; message: string } {
   const script = `
-    import { migrationApplyOrder, parseAllList, slugFor, SLUG_OVERRIDES }
+    import { migrationApplyOrder, migrationApplySlugs, parseAllList, slugFor, SLUG_OVERRIDES }
       from ${JSON.stringify(orderModuleUrl)};
     import { expectedObjectsFrom } from ${JSON.stringify(verifyModuleUrl)};
-    void migrationApplyOrder; void parseAllList; void slugFor; void SLUG_OVERRIDES;
+    void migrationApplyOrder; void migrationApplySlugs; void parseAllList; void slugFor;
+    void SLUG_OVERRIDES;
     void expectedObjectsFrom;
     try {
       const value = await (async () => { ${body} })();
@@ -339,6 +340,258 @@ describe('a parse it cannot trust is refused, never degraded', () => {
     path.join(os.tmpdir(), 'ppbf-no-such-infra'),
   )} });
     `)).toMatch(/cannot read the migration directory/);
+  });
+});
+
+// A release applies the routine migrations by slug, and it must apply the set
+// the schema gate verifies against, in that order. migrationApplySlugs() is the
+// same validated read as migrationApplyOrder(), so the cases below are the
+// refusals above seen through the interface a workflow consumes -- plus the one
+// property only a command line has: what a caller capturing stdout is left
+// holding when the read refuses.
+describe('the slugs a release applies come through the same read', () => {
+  const THREE = {
+    'pilot_slice_postgres.sql': BASE,
+    'pilot_slice_postgres_aaa_first_migration.sql': ADD,
+    'pilot_slice_postgres_mmm_second_migration.sql': ADD,
+    'pilot_slice_postgres_zzz_third_migration.sql': ADD,
+  };
+
+  function slugsFor(fx: { infraDir: string; workflowPath: string }): string {
+    return `return migrationApplySlugs(${JSON.stringify({
+      infraDir: fx.infraDir,
+      workflowPath: fx.workflowPath,
+    })});`;
+  }
+
+  test('the slugs are the `all` list in its own order, and a reordered list reorders them', () => {
+    const forward = fixture(THREE, 'aaa-first mmm-second zzz-third');
+    const reordered = fixture(THREE, 'zzz-third aaa-first mmm-second');
+    try {
+      expect(value(slugsFor(forward))).toEqual(['aaa-first', 'mmm-second', 'zzz-third']);
+      // Same files on disk; only the list moved. An interface that sorted, or
+      // walked the directory, would return the first answer twice.
+      expect(value(slugsFor(reordered))).toEqual(['zzz-third', 'aaa-first', 'mmm-second']);
+    } finally {
+      forward.cleanup();
+      reordered.cleanup();
+    }
+  });
+
+  test('on the real tree they are the files of migrationApplyOrder(), slug for slug', () => {
+    // Not a second parse of the workflow: the file order is mapped back through
+    // slugFor, so this fails if the two exports ever stop being one read.
+    const { slugs, fromFiles } = value(`
+      const fromFiles = migrationApplyOrder().slice(1).map((f) => slugFor(f.split(/[\\\\/]/).pop()));
+      return { slugs: migrationApplySlugs(), fromFiles };
+    `) as { slugs: string[]; fromFiles: string[] };
+
+    expect(slugs.length).toBeGreaterThan(20);
+    expect(slugs).toEqual(fromFiles);
+  });
+
+  test('a SQL migration omitted from `all` refuses instead of returning the rest', () => {
+    const fx = fixture(THREE, 'aaa-first zzz-third');
+    try {
+      const message = thrownMessage(slugsFor(fx));
+      expect(message).toMatch(/not named in the `all` list/);
+      expect(message).toContain('pilot_slice_postgres_mmm_second_migration.sql');
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test('a slug with no SQL file refuses', () => {
+    const fx = fixture(THREE, 'aaa-first mmm-second zzz-third ghost-migration');
+    try {
+      expect(thrownMessage(slugsFor(fx))).toMatch(/no SQL file/);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test('a missing `all` declaration refuses', () => {
+    const fx = fixture(THREE, null);
+    try {
+      expect(thrownMessage(slugsFor(fx))).toMatch(/could not find the `all` list/);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test.each([
+    'for m in aaa-first MMM-second zzz-third; do',
+    'for m in aaa-first "mmm-second" zzz-third; do',
+    'for m in aaa-first mmm-second zzz-third',
+  ])('a malformed `all` declaration refuses: %s', (line) => {
+    // An uppercase slug, a stray quote, a missing `; do`: none of them match
+    // the one shape the reader accepts, and none may be read as a shorter list.
+    const fx = fixture(THREE, 'aaa-first mmm-second zzz-third');
+    try {
+      fs.writeFileSync(fx.workflowPath, `            all)\n              ${line}\n`);
+      expect(thrownMessage(slugsFor(fx))).toMatch(/could not find the `all` list/);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test('two `all` declarations refuse, even when each is complete on its own', () => {
+    const fx = fixture(THREE, 'aaa-first mmm-second zzz-third');
+    try {
+      fs.appendFileSync(
+        fx.workflowPath,
+        '              for m in aaa-first mmm-second zzz-third; do\n                run_one "$m"\n              done\n',
+      );
+      expect(thrownMessage(slugsFor(fx))).toMatch(/found 2 `all` lists/);
+    } finally {
+      fx.cleanup();
+    }
+  });
+});
+
+describe('the --slugs command line never hands over part of a list', () => {
+  // The module resolves the workflow and infra/azure relative to ITSELF, so a
+  // copy placed at the same depth in a disposable tree runs the real command
+  // line against a fixture, with no path option that exists only for tests.
+  function tree(allLines: string[]): { script: string; cleanup: () => void } {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-apply-order-cli-'));
+    const scripts = path.join(root, 'apps/web/scripts');
+    const infra = path.join(root, 'infra/azure');
+    const workflows = path.join(root, '.github/workflows');
+    for (const dir of [scripts, infra, workflows]) fs.mkdirSync(dir, { recursive: true });
+
+    fs.copyFileSync(
+      path.join(scriptsDir, 'migration-apply-order.mjs'),
+      path.join(scripts, 'migration-apply-order.mjs'),
+    );
+    fs.writeFileSync(path.join(infra, 'pilot_slice_postgres.sql'), BASE);
+    fs.writeFileSync(path.join(infra, 'pilot_slice_postgres_aaa_first_migration.sql'), ADD);
+    fs.writeFileSync(path.join(infra, 'pilot_slice_postgres_zzz_second_migration.sql'), ADD);
+    fs.writeFileSync(path.join(workflows, 'apply-migrations.yml'), `${allLines.join('\n')}\n`);
+
+    return {
+      script: path.join(scripts, 'migration-apply-order.mjs'),
+      cleanup: () => fs.rmSync(root, { recursive: true, force: true }),
+    };
+  }
+
+  function cli(script: string, args: string[]): { status: number | null; stdout: string; stderr: string } {
+    const result = spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' });
+    return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+  }
+
+  test('a good tree prints every slug, one per line, in order', () => {
+    const fx = tree(['for m in zzz-second aaa-first; do']);
+    try {
+      expect(cli(fx.script, ['--slugs'])).toEqual({
+        status: 0,
+        stdout: 'zzz-second\naaa-first\n',
+        stderr: '',
+      });
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test.each<[string, string[], RegExp]>([
+    ['a SQL migration omitted from `all`', ['for m in aaa-first; do'], /not named in the `all` list/],
+    ['a slug with no SQL file', ['for m in aaa-first zzz-second ghost; do'], /no SQL file/],
+    ['no `all` declaration', ['# the list has gone'], /could not find the `all` list/],
+    [
+      'two `all` declarations',
+      ['for m in aaa-first zzz-second; do', 'for m in aaa-first zzz-second; do'],
+      /found 2 `all` lists/,
+    ],
+  ])('%s exits non-zero with EMPTY stdout', (_label, allLines, reason) => {
+    const fx = tree(allLines);
+    try {
+      const result = cli(fx.script, ['--slugs']);
+      // Empty, not "shorter": a shell capturing this with $(...) must be left
+      // with nothing to loop over, and a status that stops it first.
+      expect({ status: result.status, stdout: result.stdout }).toEqual({ status: 1, stdout: '' });
+      expect(result.stderr).toMatch(reason);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  test.each<[string[]]>([[[]], [['--files']], [['--slugs', '--extra']]])(
+    'arguments %j are refused with nothing on stdout',
+    (args) => {
+      const fx = tree(['for m in aaa-first zzz-second; do']);
+      try {
+        const result = cli(fx.script, args);
+        expect({ status: result.status, stdout: result.stdout }).toEqual({ status: 2, stdout: '' });
+        expect(result.stderr).toMatch(/usage:/);
+      } finally {
+        fx.cleanup();
+      }
+    },
+  );
+
+  test('the real tree prints exactly what migrationApplySlugs() returns', () => {
+    const result = cli(path.join(scriptsDir, 'migration-apply-order.mjs'), ['--slugs']);
+    expect(result.status).toBe(0);
+    expect(result.stdout.trimEnd().split('\n')).toEqual(value('return migrationApplySlugs();'));
+  });
+
+  test('reached through a linked directory it still prints the list', () => {
+    // Node resolves the main module through links and leaves argv[1] as typed.
+    // A guard comparing the two as written is FALSE here, and what that looks
+    // like is the dangerous part: no output, exit 0 -- an empty list and a
+    // success, handed to a loop that then applies nothing.
+    const fx = tree(['for m in zzz-second aaa-first; do']);
+    const link = path.join(path.dirname(path.dirname(path.dirname(path.dirname(fx.script)))), 'linked-scripts');
+    try {
+      // 'junction' needs no privilege on Windows and is ignored elsewhere,
+      // where this is an ordinary directory symlink.
+      fs.symlinkSync(path.dirname(fx.script), link, 'junction');
+      expect(cli(path.join(link, 'migration-apply-order.mjs'), ['--slugs'])).toEqual({
+        status: 0,
+        stdout: 'zzz-second\naaa-first\n',
+        stderr: '',
+      });
+    } finally {
+      // Unlink first: removing the tree through a live link is how a link's
+      // target gets deleted. A symlink goes with unlink, a junction with rmdir;
+      // neither follows the link.
+      try {
+        fs.unlinkSync(link);
+      } catch {
+        try { fs.rmdirSync(link); } catch { /* never created */ }
+      }
+      fx.cleanup();
+    }
+  });
+
+  test('importing the module prints nothing, whether or not another script is running', () => {
+    // pilot-verify-schema.mjs and full-schema.mjs import it. A command line
+    // that ran on import would write a migration list into their output.
+    const bare = spawnSync(
+      process.execPath,
+      ['--input-type=module', '-e', `await import(${JSON.stringify(orderModuleUrl)});`],
+      { encoding: 'utf8' },
+    );
+    expect({ status: bare.status, stdout: bare.stdout }).toEqual({ status: 0, stdout: '' });
+
+    // The case that matters: argv[1] IS set, to the importing script. `-e`
+    // leaves it undefined, which only exercises the guard's first half.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-apply-order-import-'));
+    const importer = path.join(root, 'importer.mjs');
+    try {
+      fs.writeFileSync(
+        importer,
+        `import { migrationApplySlugs } from ${JSON.stringify(orderModuleUrl)};\n`
+        + 'process.stdout.write(typeof migrationApplySlugs);\n',
+      );
+      // `--slugs` is passed on purpose: an import that mistook itself for the
+      // script would act on it.
+      const imported = spawnSync(process.execPath, [importer, '--slugs'], { encoding: 'utf8' });
+      expect({ status: imported.status, stdout: imported.stdout })
+        .toEqual({ status: 0, stdout: 'function' });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

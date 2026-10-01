@@ -409,6 +409,15 @@ describe('a seed-data change runs the PostgreSQL suites that load it', () => {
     expect([flags.migrations, flags.docs_only, flags.unknown_code]).toEqual(['true', 'false', 'false']);
   });
 
+  it('sends the account cleanup\'s SQL module to the PostgreSQL suite on its own', () => {
+    // Both of the cleanup's statements are string constants in this file, run
+    // only by accountCleanupSql.pg.test.ts. It sits under scripts/lib/, which
+    // no migration prefix matched, so an edit to the SQL alone ran no pg suite.
+    const flags = classify(['apps/web/scripts/lib/account-cleanup-plan.mjs']);
+
+    expect([flags.migrations, flags.docs_only, flags.unknown_code]).toEqual(['true', 'false', 'false']);
+  });
+
   it('keeps a README under seed-data on the docs-only path', () => {
     const flags = classify(['apps/web/seed-data/drill-library/README.md']);
 
