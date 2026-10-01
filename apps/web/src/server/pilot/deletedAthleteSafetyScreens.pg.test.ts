@@ -8,12 +8,15 @@
 //   training holds       status 'lifted' or 'expired'          (active stays)
 //   compliance violations status 'resolved' or 'dismissed'     (new, acknowledged, escalated stay)
 //   feedback queue       triage_status 'done' or 'declined'    (new, triaged, planned stay)
-// Those four readers changed. Three screens already behaved this way and are
+// Those four readers changed. A fifth change is the one place B does not
+// apply: the safety review page's FAILING GATES leave at once (Jason,
+// 2026-09-30). A gate resolves only by a newer passing evaluation, and no path
+// can write one for a deleted athlete, so "until resolved" would have meant
+// "until the retention purge". Three screens already behaved this way and are
 // PINNED here, not changed, so a later edit cannot quietly break them:
 //   safety flags         lists status 'open' only
-//   safety review page   lists active holds, unresolved escalations, open
-//                        violations, and gates whose latest evaluation is not
-//                        'passed' (a newer pass is what resolves a gate)
+//   safety review page   lists active holds, unresolved escalations and open
+//                        violations
 //   board escalation summary counts status 'open' only, names nobody
 // The eighth, the video-compliance publication queue, hid a deleted athlete's
 // publications at once in #1027 and is not revisited here.
@@ -520,6 +523,13 @@ afterAll(async () => {
 });
 
 describe('before the deletion (the positive control)', () => {
+  test("the safety review page lists both athletes' failing gate, and neither's cleared one", async () => {
+    const shown = await safetyReviewScreen();
+    expect(shown).toEqual(expect.arrayContaining([`${GONE}:${GATE_FAILING}`, `${LIVE}:${GATE_FAILING}`]));
+    expect(shown).not.toContain(`${GONE}:${GATE_CLEARED}`);
+    expect(shown).not.toContain(`${LIVE}:${GATE_CLEARED}`);
+  });
+
   test.each(CHANGED_SCREENS.map((screen) => [screen.name, screen] as const))(
     '%s shows every item of both athletes, resolved or not',
     async (_name, screen) => {
@@ -628,12 +638,17 @@ describe('after deleteAthleteRecord(GONE)', () => {
     expect(shown).not.toContain(`${GONE}:flag-acknowledged`);
   });
 
+  test("the safety review page drops GONE's failing gate at once and keeps LIVE's", async () => {
+    const shown = await safetyReviewScreen();
+    expect(shown).not.toContain(`${GONE}:${GATE_FAILING}`);
+    expect(shown).toContain(`${LIVE}:${GATE_FAILING}`);
+  });
+
   test("the safety review page still shows GONE's unresolved items, and none resolved", async () => {
     const shown = await safetyReviewScreen();
     expect(shown).toEqual(
       expect.arrayContaining([
         `${GONE}:hold-active`,
-        `${GONE}:${GATE_FAILING}`,
         ...ids(GONE, ESCALATIONS_UNRESOLVED),
         ...ids(GONE, VIOLATIONS_UNRESOLVED),
       ]),

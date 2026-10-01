@@ -186,13 +186,20 @@ own state:
 | Compliance violations (compliance center) | new, acknowledged, escalated | resolved or dismissed |
 | Feedback queue (carries safeguarding disclosures) | new, triaged, planned | done or declined |
 | Safety flags | open | any other status (the screen has only ever listed open flags) |
-| Safety review page (holds, failing gates, escalations, violations) | active holds, unresolved escalations, open violations, a gate whose latest check did not pass | the same states as above; a gate once a newer check passes |
+| Safety review page (holds, escalations, violations) | active holds, unresolved escalations, open violations | the same states as above |
+| Safety review page, failing safety gates | nothing | at once, on deletion |
 | Board escalation summary (a count, no names) | open escalations | anything not open (it has only ever counted open ones) |
+
+Failing gates are the one exception to "until resolved" (owner decision 2026-09-30): a gate
+clears only when a newer check passes, and no screen can record a check for a deleted athlete,
+so it would otherwise sit on the page, with nothing anyone could do about it, until the cleanup
+job. A failing gate is a standing "may this athlete do X", not an incident about them.
 
 The first four readers changed (`escalationLadder.ts` `listEscalations`, `trainingHolds.ts`
 `listTrainingHolds`, `compliance.ts` `getOrganizationViolations`, `feedback.ts`
-`listOrganizationFeedback`). The last three already behaved this way and are pinned by the same
-test, `apps/web/src/server/pilot/deletedAthleteSafetyScreens.pg.test.ts`. The feedback queue is
+`listOrganizationFeedback`), and `safetyReview.ts` for the failing gates. Safety flags, the rest
+of the safety review page and the board summary already behaved this way and are pinned by the
+same test, `apps/web/src/server/pilot/deletedAthleteSafetyScreens.pg.test.ts`. The feedback queue is
 keyed by the writer's account, so it also hides a deleted guardian's or staff member's
 submissions once they are done or declined. The platform owner's cross-gym feedback list, which
 names nobody and withholds safeguarding text, is unchanged. The video-compliance publication
