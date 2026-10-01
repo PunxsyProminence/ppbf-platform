@@ -285,6 +285,7 @@
     "pilot:apply-calibration-projects": "node scripts/pilot-apply-calibration-projects-migration.mjs",
     "pilot:apply-calibration-annotations": "node scripts/pilot-apply-calibration-annotations-migration.mjs",
     "pilot:apply-calibration-adjudication": "node scripts/pilot-apply-calibration-adjudication-migration.mjs",
+    "pilot:apply-calibration-adjudication-revisions": "node scripts/pilot-apply-calibration-adjudication-revisions-migration.mjs",
     "pilot:apply-session-scripts-discipline-fk": "node scripts/pilot-apply-session-scripts-discipline-fk-migration.mjs",
     "pilot:apply-drill-library-discipline-fk": "node scripts/pilot-apply-drill-library-discipline-fk-migration.mjs",
     "pilot:apply-drill-library-check-drop": "node scripts/pilot-apply-drill-library-check-drop-migration.mjs",

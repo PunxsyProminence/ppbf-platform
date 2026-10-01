@@ -263,6 +263,7 @@ describe('every rate names its denominator, and they are not the same one', () =
         source_event_id_b: 'clip-0-evt-b',
         resolution_type: 'unresolvable',
         missed_event_verdict: null,
+        revision: 1,
         adjudicator_account_id: 'acct-reviewer',
         adjudicated_at: '2026-08-27T02:00:00.000Z',
         ontology_version: ONTOLOGY,

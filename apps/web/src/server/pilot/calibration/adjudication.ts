@@ -70,6 +70,10 @@ export interface AdjudicationRow {
   source_event_id_b: string | null;
   resolution_type: string;
   missed_event_verdict: string | null;
+  /** Which answer this is for its pair (OD-2026-08-29-005). The highest
+   * revision is the current one; earlier revisions are retained as the record
+   * of what was thought before. Assigned by the server, never by a caller. */
+  revision: number;
   adjudicator_account_id: string;
   adjudicated_at: string;
   ontology_version: string;
@@ -93,9 +97,26 @@ const ADJUDICATION_COLUMNS = `
   organization_id, adjudication_id, calibration_clip_id,
   annotation_set_id_a, annotation_set_id_b,
   source_event_id_a, source_event_id_b,
-  resolution_type, missed_event_verdict,
+  resolution_type, missed_event_verdict, revision,
   adjudicator_account_id, adjudicated_at, ontology_version, notes, created_at
 `;
+
+/** The unique constraint that arbitrates two concurrent writers, named here
+ * because the route matches it by name. OD-2026-08-29-005 chose no row lock,
+ * so this constraint is the ONLY thing that stops two administrators landing
+ * two rows that both claim to be the same revision of the same pair. The
+ * route's 409 matches SQLSTATE 23505 together with this exact string, so an
+ * unrelated duplicate key is never reported as a concurrent correction.
+ * Declared in pilot_slice_postgres_calibration_adjudication_revisions_migration.sql. */
+export const ADJUDICATION_PAIR_REVISION_CONSTRAINT =
+  'pilot_calibration_adjudications_pair_revision_uq';
+
+/** What the administrator who lost that collision is told. The wording is
+ * part of the owner's decision, not a nicety: it says what happened and what
+ * to do about it, in place of a duplicate-key dump naming a constraint. */
+export const ADJUDICATION_SUPERSEDED_CODE = 'CALIBRATION_ADJUDICATION_SUPERSEDED';
+export const ADJUDICATION_SUPERSEDED_MESSAGE =
+  'Someone corrected this adjudication while you were deciding. Reload and review their answer before replacing it.';
 
 const FIELD_COLUMNS = `
   organization_id, adjudicated_field_id, adjudication_id, field_name,
@@ -207,26 +228,62 @@ export async function recordAdjudication(
     }
   }
 
+  const calibrationClipId = requireNonEmpty(input.calibrationClipId, 'calibration_clip_id');
+  const annotationSetIdA = requireNonEmpty(input.annotationSetIdA, 'annotation_set_id_a');
+  const annotationSetIdB = requireNonEmpty(input.annotationSetIdB, 'annotation_set_id_b');
+
   return withTransaction(async (client) => {
+    /* THE NEXT REVISION FOR THIS PAIR, DELIBERATELY WITHOUT A LOCK
+     * (OD-2026-08-29-005).
+     *
+     * No `for update`, no advisory lock, no serialisable retry. Two
+     * administrators may read the same highest revision and both compute the
+     * same next one; the unique constraint named above refuses the second
+     * insert with 23505, and the route turns that into a 409 telling them to
+     * read the answer that landed while they were deciding.
+     *
+     * coalesce(max, 0) + 1 rather than count(*) + 1: a count would reuse a
+     * revision if a row for the pair were ever removed.
+     *
+     * WHAT THIS DOES NOT CATCH: a decision made on a view that went stale
+     * minutes ago. A second adjudication recorded after the first has
+     * committed simply becomes the next revision, whether or not its author
+     * had the first one on screen. The constraint only refuses two inserts
+     * that overlap. */
+    const currentResult = await client.query<{ current_revision: number }>(
+      `select coalesce(max(revision), 0)::int as current_revision
+         from pilot.calibration_adjudications
+        where organization_id = $1
+          and calibration_clip_id = $2
+          and annotation_set_id_a = $3
+          and annotation_set_id_b = $4`,
+      [input.organizationId, calibrationClipId, annotationSetIdA, annotationSetIdB],
+    );
+    const currentRevision = currentResult.rows[0]?.current_revision;
+    if (typeof currentRevision !== 'number' || !Number.isInteger(currentRevision) || currentRevision < 0) {
+      throw new Error('CALIBRATION_ADJUDICATION_REVISION_UNRESOLVED');
+    }
+
     const adjudicationResult = await client.query<AdjudicationRow>(
       `insert into pilot.calibration_adjudications
          (organization_id, adjudication_id, calibration_clip_id,
           annotation_set_id_a, annotation_set_id_b,
           source_event_id_a, source_event_id_b,
-          resolution_type, missed_event_verdict,
+          resolution_type, missed_event_verdict, revision,
           adjudicator_account_id, ontology_version, notes)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        returning ${ADJUDICATION_COLUMNS}`,
       [
         input.organizationId,
         requireNonEmpty(input.adjudicationId, 'adjudication_id'),
-        requireNonEmpty(input.calibrationClipId, 'calibration_clip_id'),
-        requireNonEmpty(input.annotationSetIdA, 'annotation_set_id_a'),
-        requireNonEmpty(input.annotationSetIdB, 'annotation_set_id_b'),
+        calibrationClipId,
+        annotationSetIdA,
+        annotationSetIdB,
         sourceEventIdA,
         sourceEventIdB,
         input.resolutionType,
         missedEventVerdict,
+        currentRevision + 1,
         requireNonEmpty(input.adjudicatorAccountId, 'adjudicator_account_id'),
         requireNonEmpty(input.ontologyVersion, 'ontology_version'),
         input.notes ?? null,

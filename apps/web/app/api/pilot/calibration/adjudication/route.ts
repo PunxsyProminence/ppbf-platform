@@ -5,7 +5,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import {
+  ADJUDICATION_PAIR_REVISION_CONSTRAINT,
   ADJUDICATION_RESOLUTION_TYPES,
+  ADJUDICATION_SUPERSEDED_CODE,
+  ADJUDICATION_SUPERSEDED_MESSAGE,
   MISSED_EVENT_VERDICTS,
   RESOLVED_FROM_SOURCES,
   listAdjudicatedFields,
@@ -27,11 +30,43 @@ import {
   resolveComparisonPair,
 } from '@/src/server/pilot/calibration/comparison';
 import type { CalibrationClipRow } from '@/src/server/pilot/calibration/projects';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 import { blankToNull, loadPlayableClip, writeCalibrationAuditEvent } from '../annotatorGate';
 
 export const runtime = 'nodejs';
+
+/* THE ONE COLLISION OD-2026-08-29-005 CHOSE TO EXPLAIN.
+ *
+ * That decision assigns a revision per pair with NO row lock, so two
+ * administrators settling the same pair at the same moment both compute the
+ * same next revision and the unique constraint refuses the second. Left
+ * untranslated the loser gets a duplicate-key dump naming a constraint, which
+ * is the outcome the decision was made to avoid.
+ *
+ * MATCHED ON BOTH SQLSTATE AND THE CONSTRAINT NAME, never on 23505 alone. This
+ * table has other unique constraints -- the primary key, and the provenance
+ * key the gold migration added -- and the adjudicated-fields table has its
+ * own. A bare 23505 branch would tell an administrator that somebody corrected
+ * their adjudication when what happened was a duplicate adjudication_id or a
+ * repeated field decision. Every other error, every other 23505 included, is
+ * rethrown untouched for jsonError to handle as it already does.
+ *
+ * `constraint` is the pg driver's own field, not a substring search of the
+ * message. calibrationAdjudication.pg.test.ts proves the real error carries
+ * both fields; the suite beside this file proves what is done with them.
+ */
+function asConcurrentCorrectionConflict(error: unknown): never {
+  const code = (error as { code?: unknown } | null)?.code;
+  const constraint = (error as { constraint?: unknown } | null)?.constraint;
+
+  if (code === '23505' && constraint === ADJUDICATION_PAIR_REVISION_CONSTRAINT) {
+    throw new ConflictError(ADJUDICATION_SUPERSEDED_MESSAGE, ADJUDICATION_SUPERSEDED_CODE);
+  }
+
+  throw error;
+}
 
 /**
  * HOW EACH DISAGREEMENT WAS SETTLED. The write half.
@@ -466,13 +501,18 @@ function assertEventInReading(
  * non-member, so a wrong label is a 400 naming the field rather than a stored
  * row. Written once, here, rather than at each field.
  *
- * NOT ENFORCED, AND FLAGGED RATHER THAN INVENTED: nothing below refuses a
- * SECOND adjudication naming the same pair of source events. There is no
- * superseding column on this table and no update path in `adjudication.ts`,
- * so whether a later decision corrects an earlier one or sits beside it as a
- * second answer is an owner decision. The GET above returns everything
- * already recorded on the clip so the administrator can see the earlier
- * decision rather than be silently protected from it.
+ * A SECOND ADJUDICATION OF THE SAME PAIR IS A CORRECTION (OD-2026-08-29-004)
+ * and is stored as the pair's next revision (OD-2026-08-29-005); the highest
+ * revision is the current answer and every earlier one is kept. The revision
+ * is computed by `recordAdjudication` and is never read from the body. Two
+ * writers computing the same one collide on the unique constraint, and
+ * `asConcurrentCorrectionConflict` turns that into a 409 saying so.
+ *
+ * NOT ENFORCED: a decision submitted from a page loaded before somebody
+ * else's correction landed is accepted as the next revision. Only inserts
+ * that overlap are refused. The GET above returns everything already recorded
+ * on the clip, with each row's revision, so the administrator can see the
+ * earlier decision.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -548,7 +588,7 @@ export async function POST(request: NextRequest) {
         ? body.notes.trim()
         : null,
       fields,
-    } as unknown as RecordAdjudicationInput);
+    } as unknown as RecordAdjudicationInput).catch(asConcurrentCorrectionConflict);
 
     /* AN AUDIT ROW, AND THE VOCABULARY WAS CHECKED RATHER THAN ASSUMED.
      *
