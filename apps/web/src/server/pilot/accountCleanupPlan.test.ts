@@ -39,7 +39,7 @@ interface AccountRow {
   // As ACCOUNTS_READ_SQL returns them. Left off the older fixture tables,
   // whose rows have no athlete link.
   athlete_id?: string | null;
-  athlete_record_live?: boolean | null;
+  athlete_record_live?: boolean | null | string | number;
 }
 
 function account(overrides: Partial<AccountRow> & { account_id: string }): AccountRow {
@@ -237,6 +237,20 @@ const ATHLETE_ROWS: AccountRow[] = [
     account_id: 'ath-state-null', role: 'athlete', active_flag: false,
     athlete_id: 'A13', athlete_record_live: null,
   }),
+  // An answer that is not a boolean, with and without a link. A database
+  // driver that handed back 't' or 1 for "live" must not read as "not live".
+  account({
+    account_id: 'ath-state-string-linked', role: 'athlete', active_flag: false,
+    athlete_id: 'A14', athlete_record_live: 'true',
+  }),
+  account({
+    account_id: 'ath-state-string-unlinked', role: 'athlete', active_flag: false,
+    athlete_id: null, athlete_record_live: 't',
+  }),
+  account({
+    account_id: 'ath-state-number-unlinked', role: 'athlete', active_flag: false,
+    athlete_id: null, athlete_record_live: 1,
+  }),
 ];
 
 const LIVE_ATHLETE_LOGIN_IDS = [
@@ -334,6 +348,8 @@ beforeAll(() => {
       coach: maskEmailForRole('coach@punxsyprominence.org', 'coach'),
       null_email: maskEmailForRole(null, 'athlete'),
       malformed: maskEmailForRole('not-an-email', 'athlete'),
+      linked_volunteer: maskEmailForRole('teen.helper@example.org', 'volunteer', true),
+      unlinked_volunteer: maskEmailForRole('adult.helper@example.org', 'volunteer', false),
     };
     // confirm_jason retires three INACTIVE_RESIDUE rows and one
     // NAMED_FOR_RETIREMENT row; each case below is what the retire statement
@@ -690,6 +706,19 @@ describe('logins with a live athlete record behind them', () => {
     }
   });
 
+  test('a record state that is not a boolean is held, with or without an athlete link', () => {
+    for (const accountId of [
+      'ath-state-string-linked',
+      'ath-state-string-unlinked',
+      'ath-state-number-unlinked',
+    ]) {
+      expect(athleteDecisionFor('plain', accountId)).toMatchObject({
+        disposition: 'hold',
+        reason: 'ATHLETE_RECORD_STATE_UNKNOWN',
+      });
+    }
+  });
+
   test('naming a login in that unknown state does not lift the hold', () => {
     expect(athleteDecisionFor('confirm_state_missing', 'ath-state-missing').disposition).toBe('hold');
     expect(athletePlans.confirm_state_missing.blockedNames).toEqual([
@@ -737,6 +766,12 @@ describe('maskEmailForRole', () => {
 
   test('prints a staff address in full, because it is what gets confirmed', () => {
     expect(masked.coach).toBe('coach@punxsyprominence.org');
+  });
+
+  test('masks any login with an athlete record behind it, whatever its role', () => {
+    // A minor can hold a volunteer or staff login; the role alone would print it.
+    expect(masked.linked_volunteer).toBe('t***@example.org');
+    expect(masked.unlinked_volunteer).toBe('adult.helper@example.org');
   });
 
   test('handles a null email and a malformed one without leaking either', () => {

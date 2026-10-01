@@ -111,7 +111,11 @@ const pool = new Pool({ connectionString });
 function describe(decision) {
   return {
     account_id: decision.account_id,
-    login_email: maskEmailForRole(decision.login_email, decision.role),
+    login_email: maskEmailForRole(
+      decision.login_email,
+      decision.role,
+      decision.athlete_record_live === true || (decision.athlete_id ?? '') !== '',
+    ),
     role: decision.role,
     organization_id: decision.organization_id,
     organization_status: decision.organization_status ?? null,

@@ -262,12 +262,15 @@ export function planAccountCleanup(rows, options = {}) {
     //     who wants such a login off deactivates it in the app.
     if (row.athlete_record_live === true) return decide('skip', 'LIVE_ATHLETE_RECORD');
 
-    // 1c. Linked to an athlete, but the caller did not say whether that record
-    //     is live (ACCOUNTS_READ_SQL always does). Not knowing is not the same
-    //     as "not live", so this waits rather than falling through to a rule
-    //     that could retire it.
-    if (hasAthleteLink(row) && row.athlete_record_live !== false) {
-      return decide('hold', 'ATHLETE_RECORD_STATE_UNKNOWN');
+    // 1c. The caller did not say, as a boolean, whether a live athlete record
+    //     stands behind this login (ACCOUNTS_READ_SQL always does): the row is
+    //     linked to an athlete and carries no answer, or carries one that is
+    //     neither true nor false. Not knowing is not the same as "not live",
+    //     so this waits rather than falling through to a rule that could
+    //     retire it. A row with no link and no answer has nothing to ask about.
+    if (row.athlete_record_live !== false) {
+      const unanswered = row.athlete_record_live === undefined || row.athlete_record_live === null;
+      if (hasAthleteLink(row) || !unanswered) return decide('hold', 'ATHLETE_RECORD_STATE_UNKNOWN');
     }
 
     // 2. Platform ownership, independent of the keep list. If the list is ever
@@ -391,10 +394,14 @@ export function countRetiredReasons(retireDecisions, retiredIds) {
  * their addresses print in full. Athlete and parent rows are in the same table
  * and would otherwise print a child's address into a terminal log for no
  * benefit -- nothing about confirming residue needs to read them.
+ *
+ * `athleteLinked` masks on the athlete link as well as the role: a login with
+ * an athlete record behind it can carry another role (volunteer, staff), and
+ * the role alone would print that address in full.
  */
-export function maskEmailForRole(loginEmail, role) {
+export function maskEmailForRole(loginEmail, role, athleteLinked = false) {
   if (typeof loginEmail !== 'string' || loginEmail === '') return null;
-  if (role !== 'athlete' && role !== 'parent') return loginEmail;
+  if (role !== 'athlete' && role !== 'parent' && athleteLinked !== true) return loginEmail;
 
   const at = loginEmail.indexOf('@');
   if (at <= 0) return '***';

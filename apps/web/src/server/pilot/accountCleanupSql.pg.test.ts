@@ -244,6 +244,9 @@ beforeAll(async () => {
   await seedAthlete({ athleteId: 'ATH-LIVE-3' });
   await seedAthlete({ athleteId: 'ATH-DELETED', deleted: true });
   await seedAthlete({ athleteId: 'ATH-ELSEWHERE', organizationId: OTHER_ORG });
+  // The same athlete_id live in BOTH organizations: a join that matched on
+  // athlete_id alone would return acs-kid-never-activated twice.
+  await seedAthlete({ athleteId: 'ATH-LIVE-1', organizationId: OTHER_ORG });
 
   await seedAccount({ accountId: 'acs-kid-never-activated', role: 'athlete', athleteId: 'ATH-LIVE-1' });
   await seedAccount({ accountId: 'acs-coach-with-athlete-link', role: 'coach', athleteId: 'ATH-LIVE-2' });
