@@ -408,5 +408,9 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     for (const prerequisite of ['drill-library-v3', 'drill-vocabulary-widening', 'workout-templates-v2']) {
       expect(at('content-import')).toBeGreaterThan(at(prerequisite));
     }
+    // one-percent-nomination-athlete-cascade replaces a foreign key on
+    // pilot.one_percent_nominations, which one-percent-club creates, and its
+    // SQL refuses to run without that table.
+    expect(at('one-percent-nomination-athlete-cascade')).toBeGreaterThan(at('one-percent-club'));
   });
 });
