@@ -17,16 +17,37 @@ Every row below is a plate the sheet actually points at. `plateBinaries.test.ts`
 requires each of these to exist on disk; it does **not** require the reverse, so
 the second table is legal and simply unpainted.
 
+A room with more than one plate states a SPLIT, and which of its walls a given
+door shows is a hash of that door's route -- same door, same wall, every load.
+The split is chosen from the DOOR COUNT, not from how many plates exist: a rule
+on a slot none of that room's doors reach is dead CSS. Office has 52 doors and
+fills an of6; clinic has 10 and fills an of4; night has 3 and fills an of3.
+
 | File | Applied to | Dimensions | Bytes |
 |---|---|---|---|
-| `plate-01-office-01.jpg` | `.room--office` | 1280×720 | 148,739 |
-| `plate-03-clinic-01.jpg` | `.room--clinic` | 1280×720 | 52,209 |
-| `plate-04-board-01.jpg` | `.room--board` | 1280×720 | 72,943 |
-| `plate-05-file-01.jpg` | `.room--file` | 1280×720 | 78,933 |
-| `plate-06-night-01.jpg` | `.room--night` | 1280×720 | 46,687 |
-| `plate-07-warm-ground-01.jpg` | `.on-canvas` (family surfaces only — T7) | 1280×720 | 39,150 |
-| `plate-08-bell-gym-landscape-01.jpg` | `.ge-bell.on-canvas::after` (The Bell, /login) | 1280×720 | 189,771 |
+| `plate-01-office-01.jpg` | `.room--office`, slot 1 of 6 | 1280×720 | 148,739 |
+| `plate-01-office-02.jpg` | `.room--office`, `2of6` | 1280×720 | 226,436 |
+| `plate-01-office-03.jpg` | `.room--office`, `3of6` | 1280×720 | 317,154 |
+| `plate-01-office-04.jpg` | `.room--office`, `4of6` -- chalkboard wall | 1280×720 | 207,549 |
+| `plate-14-frontdesk-landscape-01.jpg` | `.room--office`, `5of6` | 1280×720 | 203,244 |
+| `plate-08-bell-gym-landscape-01.jpg` | `.ge-bell.on-canvas::after` (The Bell, /login) AND `.room--office`, `6of6` | 1280×720 | 189,771 |
+| `plate-03-clinic-01.jpg` | `.room--clinic`, slot 1 of 4 | 1280×720 | 52,209 |
+| `plate-03-clinic-02.jpg` | `.room--clinic`, `2of4` | 1280×720 | 202,304 |
+| `plate-03-clinic-03.jpg` | `.room--clinic`, `3of4` | 1280×720 | 202,289 |
+| `plate-15-filmroom-landscape-01.jpg` | `.room--clinic`, `4of4` | 1280×720 | 157,678 |
+| `plate-06-night-01.jpg` | `.room--night`, slot 1 of 3 | 1280×720 | 46,687 |
+| `plate-06-night-02.jpg` | `.room--night`, `2of3` | 1280×720 | 86,167 |
+| `plate-06-night-03.jpg` | `.room--night`, `3of3` | 1280×720 | 268,746 |
+| `plate-04-board-01.jpg` | `.room--board` -- one plate, see the contrast note below | 1280×720 | 72,943 |
+| `plate-05-file-01.jpg` | `.room--file` -- one plate, see the contrast note below | 1280×720 | 78,933 |
+| `plate-07-warm-ground-01.jpg` | `.on-canvas` (family surfaces only -- T7) | 1280×720 | 39,150 |
 | `plate-08-bell-gym-portrait-01.jpg` | `.ge-bell.on-canvas::after`, `@media (orientation: portrait)` | 810×1440 | 99,891 |
+
+**Board and file deliberately stay on one plate.** Both set
+`color: var(--hide-900)` -- dark ink on a light wall -- so a dark plate behind
+either is the one failure mode this directory can ship invisibly. No test
+measures text against a room ground today. Until one exists, those two rooms
+take light plates or none.
 
 ## The generated set — plates 09 and up
 
@@ -98,10 +119,8 @@ orientation block, per "Adding a variant" below.
 | `plate-11-floor-portrait-01.jpg` | 810×1440 | 195,227 | the gym floor upright, for the tablet that stands on the counter |
 | `plate-12-locker-landscape-01.jpg` | 1280×720 | 200,442 | the athletes corner: grey lockers with a red bank, benches |
 | `plate-13-scripts-landscape-01.jpg` | 1280×720 | 201,153 | the coaches corner: desk, timing clock, empty boards |
-| `plate-14-frontdesk-landscape-01.jpg` | 1280×720 | 203,244 | the Front Desk room: counter, stool, key box, the floor beyond |
 | `plate-04-board-portrait-01.jpg` | 810×1440 | 104,274 | a portrait crop the board room does not have today |
 | `plate-05-file-portrait-01.jpg` | 810×1440 | 222,851 | a portrait crop the file room does not have today |
-| `plate-06-night-02.jpg` | 1280×720 | 86,167 | a **second landscape** night plate — wiring it changes a merged, reviewed room |
 | `plate-06-night-portrait-01.jpg` | 810×1440 | 80,048 | a portrait crop the night room does not have today |
 
 ## Requirements — enforced by `apps/web/src/design/plateBinaries.test.ts`

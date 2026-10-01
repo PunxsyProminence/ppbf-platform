@@ -3628,15 +3628,17 @@ body.ppbf.on-canvas {
    plus one declaration in this block, with no TypeScript edit at all -- and it
    keeps the plate URLs where the one-source-of-truth rule says they live.
 
-   ADDING A SECOND OFFICE PLATE is that one declaration:
+   ADDING A PLATE TO A ROOM is that one declaration. Office carries six, so
+   it is on an `of6` and its second wall reads:
 
-       :where([data-plate-variant~="2of2"]) .room--office {
+       :where([data-plate-variant~="2of6"]) .room--office {
          --plate: url("/plates/plate-01-office-02.jpg");
        }
 
-   A third replaces it with the two other thirds of an `of3` split. A portrait
-   variant goes INSIDE the orientation block below, after its generic rule --
-   never up here.
+   Growing a room from N plates to N+1 rewrites that room's rules from `ofN`
+   to `of(N+1)`, because the split is how this sheet states the count. A
+   portrait variant goes INSIDE the orientation block below, after its generic
+   rule -- never up here.
 
    :where() IS LOAD-BEARING, NOT DECORATION. Written plainly, a variant rule
    reads `.room--floor[data-plate-variant~="2of2"]` at specificity (0,2,0). The
@@ -3663,16 +3665,58 @@ body.ppbf.on-canvas {
    every one of its routes -- so the rooms absent from this block are absent on
    purpose, not by omission. */
 
-/* THE FIRST TWO VARIANTS. Office and clinic each grow a second plate here, in
-   the shape the block above documents: `:where()` keeps the rule at (0,1,0) so
-   the portrait floor plate below still wins on source order, and the split is
-   stated here rather than in TypeScript. A door whose route hashes to the
-   second half of a two-way split shows plate 02; every other door keeps 01. */
-:where([data-plate-variant~="2of2"]) .room--office {
+/* THE VARIANT SETS. Each room states its own split here, and the split IS the
+   number of plates that room has -- this sheet is where that count lives.
+   Slot 1 of any split needs no rule: the room list above is already the right
+   answer for it. So a room on an `ofN` split carries N-1 rules below, for
+   slots 2..N, and `:where()` keeps every one of them at (0,1,0).
+
+   WHY THE SPLITS DIFFER BY ROOM, AND WHY THEY ARE NOT ALL SIX. A split only
+   produces as many walls as the room has DOORS to land on them, because the
+   slot is a hash of the route and nothing else. Counted from buildingMap.ts,
+   129 doors: office has 52 and fills all six slots of an of6; clinic has 10
+   and fills four of an of4; night has 3 and fills all three of an of3.
+
+   Night is the one that proves the rule rather than following it. On an of2
+   all three of its doors hash to the SAME side, so a `2of2` rule for night
+   would be dead CSS -- correct, reviewable, and never once painted. The split
+   is therefore chosen from the door list, not from how many plates happen to
+   exist. Any room whose plates outrun its doors keeps the surplus unbound. */
+
+/* OFFICE -- 52 doors, six walls, all six slots occupied. */
+:where([data-plate-variant~="2of6"]) .room--office {
   --plate: url("/plates/plate-01-office-02.jpg");
 }
-:where([data-plate-variant~="2of2"]) .room--clinic {
+:where([data-plate-variant~="3of6"]) .room--office {
+  --plate: url("/plates/plate-01-office-03.jpg");
+}
+:where([data-plate-variant~="4of6"]) .room--office {
+  --plate: url("/plates/plate-01-office-04.jpg");
+}
+:where([data-plate-variant~="5of6"]) .room--office {
+  --plate: url("/plates/plate-14-frontdesk-landscape-01.jpg");
+}
+:where([data-plate-variant~="6of6"]) .room--office {
+  --plate: url("/plates/plate-08-bell-gym-landscape-01.jpg");
+}
+
+/* CLINIC -- 10 doors, four walls, all four slots occupied. */
+:where([data-plate-variant~="2of4"]) .room--clinic {
   --plate: url("/plates/plate-03-clinic-02.jpg");
+}
+:where([data-plate-variant~="3of4"]) .room--clinic {
+  --plate: url("/plates/plate-03-clinic-03.jpg");
+}
+:where([data-plate-variant~="4of4"]) .room--clinic {
+  --plate: url("/plates/plate-15-filmroom-landscape-01.jpg");
+}
+
+/* NIGHT -- 3 doors, three walls, one door each. An of2 here would be dead. */
+:where([data-plate-variant~="2of3"]) .room--night {
+  --plate: url("/plates/plate-06-night-02.jpg");
+}
+:where([data-plate-variant~="3of3"]) .room--night {
+  --plate: url("/plates/plate-06-night-03.jpg");
 }
 
 /* The gym tablet stands upright. A landscape wall cropped to a portrait

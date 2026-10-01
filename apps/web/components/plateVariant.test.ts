@@ -664,10 +664,11 @@ describe('the resolver reads the sheet it is pointed at', () => {
     ]));
     // Six rooms, the portrait floor, the warm canvas ground, and
     // `.room--floor { --plate: none }` in the current theme, which is what takes
-    // the photograph off the gym floor -- nine. Then the first two variants,
-    // office and clinic, which is eleven.
+    // the photograph off the gym floor -- nine. Then the variant rules: five
+    // for office (of6), three for clinic (of4) and two for night (of3), which
+    // is nineteen.
     expect(declared.filter((selector) => selector === '.room--floor')).toHaveLength(3);
-    expect(declared).toHaveLength(11);
+    expect(declared).toHaveLength(19);
   });
 
   it('still routes every plate through --plate, so resolving it means something', () => {
@@ -715,7 +716,7 @@ describe('the PLATES cascade is decided by source order, not by specificity', ()
   it('documents the recipe next to the rules it governs', () => {
     // The one declaration a person adds when art arrives. If the worked example
     // drifts from what the tests prove, the next person follows the comment.
-    expect(CSS).toContain(':where([data-plate-variant~="2of2"]) .room--office');
+    expect(CSS).toContain(':where([data-plate-variant~="2of6"]) .room--office');
     expect(CSS).toContain('data-plate-variant="2of2 1of3 4of4 3of5 5of6"');
   });
 });
@@ -724,15 +725,31 @@ describe('the PLATES cascade is decided by source order, not by specificity', ()
    (c) THE NO-CHANGE GUARANTEE, AND THE LADDER UNDER IT
    ========================================================================== */
 
-/* THE SPLIT ROOMS. Office and clinic each carry two plates; every other room
-   carries one. Written here rather than derived from the sheet on purpose: the
-   sheet is the thing under test, and a guard that reads its answer out of the
-   file it is checking proves nothing. */
-const SECOND_PLATE: Partial<Record<Room, string>> = {
-  office: '/plates/plate-01-office-02.jpg',
-  clinic: '/plates/plate-03-clinic-02.jpg',
+/* THE SPLIT ROOMS, AND EVERY WALL EACH ONE CARRIES. Office is on an of6,
+   clinic an of4, night an of3; board and file carry one plate each. Written
+   out here rather than derived from the sheet on purpose: the sheet is the
+   thing under test, and a guard that reads its answer out of the file it is
+   checking proves nothing.
+   Slot 1 of every split is DEFAULT_PLATE above, so these are slots 2..N. */
+const VARIANT_PLATES: Partial<Record<Room, readonly string[]>> = {
+  office: [
+    '/plates/plate-01-office-02.jpg',
+    '/plates/plate-01-office-03.jpg',
+    '/plates/plate-01-office-04.jpg',
+    '/plates/plate-14-frontdesk-landscape-01.jpg',
+    '/plates/plate-08-bell-gym-landscape-01.jpg',
+  ],
+  clinic: [
+    '/plates/plate-03-clinic-02.jpg',
+    '/plates/plate-03-clinic-03.jpg',
+    '/plates/plate-15-filmroom-landscape-01.jpg',
+  ],
+  night: [
+    '/plates/plate-06-night-02.jpg',
+    '/plates/plate-06-night-03.jpg',
+  ],
 };
-const SPLIT_ROOMS = new Set(Object.keys(SECOND_PLATE) as Room[]);
+const SPLIT_ROOMS = new Set(Object.keys(VARIANT_PLATES) as Room[]);
 
 describe('the first variants: two rooms carry two plates, the rest carry one', () => {
   it('declares exactly the variant rules this release adds, and no others', () => {
@@ -750,8 +767,16 @@ describe('the first variants: two rooms carry two plates, the rest carry one', (
       .map((entry) => entry.selector)
       .sort();
     expect(variantRules).toEqual([
-      ':where([data-plate-variant~="2of2"]) .room--clinic',
-      ':where([data-plate-variant~="2of2"]) .room--office',
+      ':where([data-plate-variant~="2of3"]) .room--night',
+      ':where([data-plate-variant~="2of4"]) .room--clinic',
+      ':where([data-plate-variant~="2of6"]) .room--office',
+      ':where([data-plate-variant~="3of3"]) .room--night',
+      ':where([data-plate-variant~="3of4"]) .room--clinic',
+      ':where([data-plate-variant~="3of6"]) .room--office',
+      ':where([data-plate-variant~="4of4"]) .room--clinic',
+      ':where([data-plate-variant~="4of6"]) .room--office',
+      ':where([data-plate-variant~="5of6"]) .room--office',
+      ':where([data-plate-variant~="6of6"]) .room--office',
     ]);
   });
 
@@ -777,13 +802,27 @@ describe('the first variants: two rooms carry two plates, the rest carry one', (
     }
   });
 
-  it('sends a split room to one of its two plates and nothing else', () => {
+  it('reaches every wall a split room declares, from the doors of that room alone', () => {
+    /*
+     * THE DEAD-SLOT GUARD, and the reason the splits are not all six. A slot is
+     * a hash of the route, so a rule only ever paints if one of the room's OWN
+     * doors lands on it -- which is why this maps `doorsIn(room)` and not all of
+     * BUILDING. Measured against every route in the building a three-door room
+     * appears to fill six slots; measured against its three real doors it fills
+     * three, and an of6 for it would leave three rules that are correct,
+     * reviewable, and never once painted.
+     *
+     * Night is the live example: on an of2 all three of its doors hash to the
+     * same side, so its second plate would never appear. Equality in both
+     * directions is the point -- no declared wall goes unreached, and no
+     * undeclared wall appears.
+     */
     for (const room of SPLIT_ROOMS) {
-      const resolved = new Set(
-        BUILDING.map((door) => resolvePlate(CSS, roomOn(room, door.href), SCREEN)?.url),
+      const reached = new Set(
+        doorsIn(room).map((href) => resolvePlate(CSS, roomOn(room, href), SCREEN)?.url),
       );
-      expect([...resolved].sort()).toEqual(
-        [DEFAULT_PLATE[room], SECOND_PLATE[room]].sort(),
+      expect([...reached].sort()).toEqual(
+        [DEFAULT_PLATE[room], ...VARIANT_PLATES[room]!].sort(),
       );
     }
   });
@@ -920,48 +959,55 @@ describe('a variant rule does not take the portrait plate off the gym tablet', (
     const sheet = asPhotographicRoom(cssWithVariant(WITH_WHERE));
     for (const room of Object.keys(DEFAULT_PLATE) as Room[]) {
       if (room === 'floor') continue;
-      /* A split room answers with its own second plate on this route, which is
-         the variant working rather than the floor rule leaking into it. */
-      const expected = SPLIT_ROOMS.has(room) ? SECOND_PLATE[room] : DEFAULT_PLATE[room];
+      /* The real sheet is the reference. A split room answers with whatever its
+         own rules give THIS route, which is the variant working rather than the
+         floor rule leaking into it; a single-plate room answers with its one
+         plate. Either way, adding a floor variant must change nothing here. */
+      const expected = resolvePlate(CSS, roomOn(room, secondHalf), SCREEN)?.url;
       expect(resolvePlate(sheet, roomOn(room, secondHalf), SCREEN)?.url).toBe(expected);
     }
   });
 });
 
-describe('a second office plate is one declaration and nothing else', () => {
-  // The recipe in the sheet, executed. Whoever adds plate-01-office-02.jpg
-  // should be able to read this test as the instructions.
-  const RULE = ':where([data-plate-variant~="2of2"]) .room--office {\n'
-    + '  --plate: url("/plates/plate-01-office-02.jpg");\n}';
+describe('a second board plate is one declaration and nothing else', () => {
+  /* The recipe in the sheet, executed. This example has now moved twice, and
+     the moves are the point of it: it was the clinic, then the office, and each
+     one moved on when that room grew a real variant set and stopped being an
+     example of adding a FIRST extra plate. The board is a room still on one.
 
-  it('splits the office doors between the two plates', () => {
+     The URL below is deliberately NOT a file in this repository. The sheet here
+     is synthetic and nothing in this block binds art -- it demonstrates the
+     declaration, which is why it can be read as the instructions. */
+  const RULE = ':where([data-plate-variant~="2of2"]) .room--board {\n'
+    + '  --plate: url("/plates/plate-04-board-02.jpg");\n}';
+
+  it('splits the board doors between the two plates', () => {
     const sheet = cssWithVariant(RULE);
     const painted = new Map<string, number>();
-    for (const href of doorsIn('office')) {
-      const url = resolvePlate(sheet, roomOn('office', href), SCREEN)?.url ?? 'none';
+    for (const href of doorsIn('board')) {
+      const url = resolvePlate(sheet, roomOn('board', href), SCREEN)?.url ?? 'none';
       painted.set(url, (painted.get(url) ?? 0) + 1);
     }
     expect([...painted.keys()].sort()).toEqual([
-      '/plates/plate-01-office-01.jpg',
-      '/plates/plate-01-office-02.jpg',
+      '/plates/plate-04-board-01.jpg',
+      '/plates/plate-04-board-02.jpg',
     ]);
-    for (const used of painted.values()) expect(used).toBeGreaterThan(doorsIn('office').length * 0.25);
+    for (const used of painted.values()) expect(used).toBeGreaterThan(doorsIn('board').length * 0.25);
   });
 
-  it('sends each office door to the same plate on every load', () => {
+  it('sends each board door to the same plate on every load', () => {
     const sheet = cssWithVariant(RULE);
-    for (const href of doorsIn('office')) {
-      const first = resolvePlate(sheet, roomOn('office', href), SCREEN)?.url;
-      expect(resolvePlate(sheet, roomOn('office', href), SCREEN)?.url).toBe(first);
+    for (const href of doorsIn('board')) {
+      const first = resolvePlate(sheet, roomOn('board', href), SCREEN)?.url;
+      expect(resolvePlate(sheet, roomOn('board', href), SCREEN)?.url).toBe(first);
     }
   });
 
   it('changes nothing for a room that has no second plate', () => {
-    /* The clinic used to be this example and now carries two plates of its own,
-       so the case moved to the board -- a room still on one. */
+    /* The file room is the one still on a single plate. */
     const sheet = cssWithVariant(RULE);
-    for (const href of doorsIn('board')) {
-      expect(resolvePlate(sheet, roomOn('board', href), SCREEN)?.url).toBe(DEFAULT_PLATE.board);
+    for (const href of doorsIn('file')) {
+      expect(resolvePlate(sheet, roomOn('file', href), SCREEN)?.url).toBe(DEFAULT_PLATE.file);
     }
   });
 });
