@@ -50,7 +50,7 @@ These are measured operating constraints, not general model folklore:
 
 ## 5. Database and schema rules
 
-- Migrations are additive, idempotent, and applied through `.github/workflows/apply-migrations.yml`, staging first.
+- Migrations are additive, idempotent, and applied through `.github/workflows/apply-migrations.yml`, staging first. `.github/workflows/release-one-approval.yml` applies the same runners in the same order (the `all` list, read through `apps/web/scripts/migration-apply-order.mjs`), staging first and production after its one approval (`docs/AI_DELIVERY_PIPELINE.md`). There is no third way.
 - No HTTP route changes the schema. Schema ownership remains in migration files and approved runners.
 - PostgreSQL has no general `ADD CONSTRAINT IF NOT EXISTS`; use the existing catalog-guarded migration pattern.
 - Migration runners execute parse-first transactions. A syntax error means the transaction does not partially apply.

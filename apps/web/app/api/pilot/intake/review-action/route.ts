@@ -584,20 +584,17 @@ export async function POST(request: NextRequest) { // NOSONAR
         // The check before the first write makes the two the same; this keeps
         // them the same if the email's account changes in between.
         //
-        // refuseRoleChange, refuseDeletedLogin and refuseDeactivatedLogin: the
-        // same refusals as that check, repeated on provisioning's own read,
-        // so an account that became a non-parent, or was deleted or
-        // deactivated, before that read is still refused rather than re-roled
-        // or reactivated. Deactivation is also refused in provisioning's
-        // account write; a role change or deletion between its read and that
-        // write is not.
+        // refuseRoleChange and refuseDeactivatedLogin: the same refusals as
+        // that check, repeated on provisioning's own read and held in its
+        // account write, so an account that became a non-parent or was
+        // deactivated in between is still refused rather than re-roled or
+        // reactivated. A deleted login is refused there for every caller.
         const provisioned = await createOrUpdateMicrosoftStaffAccount({
           loginEmail: guardian.email,
           organizationId: principal.organizationId,
           role: 'parent',
           accountIdHint: guardian.account_id,
           refuseRoleChange: true,
-          refuseDeletedLogin: true,
           refuseDeactivatedLogin: true,
         });
         guardianAccountId = provisioned.accountId;
