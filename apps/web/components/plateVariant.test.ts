@@ -662,11 +662,12 @@ describe('the resolver reads the sheet it is pointed at', () => {
       '.room--office', '.room--floor', '.room--board',
       '.room--file', '.room--clinic', '.room--night', '.on-canvas',
     ]));
-    // Six rooms, the portrait floor, the warm canvas ground -- and the ninth,
-    // `.room--floor { --plate: none }` in the current theme, which is what
-    // takes the photograph off the gym floor.
+    // Six rooms, the portrait floor, the warm canvas ground, and
+    // `.room--floor { --plate: none }` in the current theme, which is what takes
+    // the photograph off the gym floor -- nine. Then the first two variants,
+    // office and clinic, which is eleven.
     expect(declared.filter((selector) => selector === '.room--floor')).toHaveLength(3);
-    expect(declared).toHaveLength(9);
+    expect(declared).toHaveLength(11);
   });
 
   it('still routes every plate through --plate, so resolving it means something', () => {
@@ -723,29 +724,41 @@ describe('the PLATES cascade is decided by source order, not by specificity', ()
    (c) THE NO-CHANGE GUARANTEE, AND THE LADDER UNDER IT
    ========================================================================== */
 
-describe('with one variant per room, every route resolves to -01', () => {
-  it('declares no variant rule at all today', () => {
+/* THE SPLIT ROOMS. Office and clinic each carry two plates; every other room
+   carries one. Written here rather than derived from the sheet on purpose: the
+   sheet is the thing under test, and a guard that reads its answer out of the
+   file it is checking proves nothing. */
+const SECOND_PLATE: Partial<Record<Room, string>> = {
+  office: '/plates/plate-01-office-02.jpg',
+  clinic: '/plates/plate-03-clinic-02.jpg',
+};
+const SPLIT_ROOMS = new Set(Object.keys(SECOND_PLATE) as Room[]);
+
+describe('the first variants: two rooms carry two plates, the rest carry one', () => {
+  it('declares exactly the variant rules this release adds, and no others', () => {
     /*
-     * THE NO-CHANGE GUARANTEE, AND THE TRIPWIRE UNDER IT.
-     *
-     * Every room is at -01, and a room with one plate needs no rule: the
-     * declaration in the locked inventory is already the right answer for every
-     * route. So this branch resolves every door to exactly the plate it
-     * resolved to before, and merging it changes nothing anybody can see.
-     *
-     * WHEN ART ARRIVES this goes red on purpose, and it is not alone -- the two
-     * tests below it and 'finds the plate declarations that are actually there'
-     * all count today's inventory. That is the intended cost: adding a plate is
-     * a deliberate act with a short, named list of expectations to move, rather
-     * than a silent change to what the building looks like.
+     * ART ARRIVED. The block this replaces asserted `variantRules` was empty and
+     * said in as many words that it would "go red on purpose" when the first
+     * plate landed, so that adding one stayed a deliberate act with a named list
+     * of expectations to move rather than a silent change to the building. This
+     * is that list, moved. The guarantee is unchanged in kind: the sheet still
+     * has to say exactly which rooms split, and a third variant appearing
+     * without a decision still turns this red.
      */
-    const variantRules = platePropertyRules(CSS).filter((entry) => entry.selector.includes(PLATE_VARIANT_ATTRIBUTE));
-    expect(variantRules).toEqual([]);
+    const variantRules = platePropertyRules(CSS)
+      .filter((entry) => entry.selector.includes(PLATE_VARIANT_ATTRIBUTE))
+      .map((entry) => entry.selector)
+      .sort();
+    expect(variantRules).toEqual([
+      ':where([data-plate-variant~="2of2"]) .room--clinic',
+      ':where([data-plate-variant~="2of2"]) .room--office',
+    ]);
   });
 
-  it('paints the locked inventory on every door in the building', () => {
+  it('paints the locked inventory on every door of a room that has one plate', () => {
     const wrong: string[] = [];
     for (const door of BUILDING) {
+      if (SPLIT_ROOMS.has(door.room)) continue;
       const resolved = resolvePlate(CSS, roomOn(door.room, door.href), SCREEN);
       if (resolved?.url !== DEFAULT_PLATE[door.room]) {
         wrong.push(`${door.href} (${door.room}) resolved ${String(resolved?.url)}`);
@@ -754,12 +767,34 @@ describe('with one variant per room, every route resolves to -01', () => {
     expect(wrong).toEqual([]);
   });
 
-  it('paints the same plate whatever the route, for every room', () => {
+  it('paints the same plate whatever the route, for a room that has one plate', () => {
     for (const room of Object.keys(DEFAULT_PLATE) as Room[]) {
+      if (SPLIT_ROOMS.has(room)) continue;
       const resolved = new Set(
         BUILDING.map((door) => resolvePlate(CSS, roomOn(room, door.href), SCREEN)?.url),
       );
       expect([...resolved]).toEqual([DEFAULT_PLATE[room]]);
+    }
+  });
+
+  it('sends a split room to one of its two plates and nothing else', () => {
+    for (const room of SPLIT_ROOMS) {
+      const resolved = new Set(
+        BUILDING.map((door) => resolvePlate(CSS, roomOn(room, door.href), SCREEN)?.url),
+      );
+      expect([...resolved].sort()).toEqual(
+        [DEFAULT_PLATE[room], SECOND_PLATE[room]].sort(),
+      );
+    }
+  });
+
+  it('gives every door of a split room a plate, and the same one every load', () => {
+    for (const room of SPLIT_ROOMS) {
+      for (const href of doorsIn(room)) {
+        const first = resolvePlate(CSS, roomOn(room, href), SCREEN)?.url;
+        expect(first).toBeTruthy();
+        expect(resolvePlate(CSS, roomOn(room, href), SCREEN)?.url).toBe(first);
+      }
     }
   });
 });
@@ -885,7 +920,10 @@ describe('a variant rule does not take the portrait plate off the gym tablet', (
     const sheet = asPhotographicRoom(cssWithVariant(WITH_WHERE));
     for (const room of Object.keys(DEFAULT_PLATE) as Room[]) {
       if (room === 'floor') continue;
-      expect(resolvePlate(sheet, roomOn(room, secondHalf), SCREEN)?.url).toBe(DEFAULT_PLATE[room]);
+      /* A split room answers with its own second plate on this route, which is
+         the variant working rather than the floor rule leaking into it. */
+      const expected = SPLIT_ROOMS.has(room) ? SECOND_PLATE[room] : DEFAULT_PLATE[room];
+      expect(resolvePlate(sheet, roomOn(room, secondHalf), SCREEN)?.url).toBe(expected);
     }
   });
 });
@@ -919,9 +957,11 @@ describe('a second office plate is one declaration and nothing else', () => {
   });
 
   it('changes nothing for a room that has no second plate', () => {
+    /* The clinic used to be this example and now carries two plates of its own,
+       so the case moved to the board -- a room still on one. */
     const sheet = cssWithVariant(RULE);
-    for (const href of doorsIn('clinic')) {
-      expect(resolvePlate(sheet, roomOn('clinic', href), SCREEN)?.url).toBe(DEFAULT_PLATE.clinic);
+    for (const href of doorsIn('board')) {
+      expect(resolvePlate(sheet, roomOn('board', href), SCREEN)?.url).toBe(DEFAULT_PLATE.board);
     }
   });
 });

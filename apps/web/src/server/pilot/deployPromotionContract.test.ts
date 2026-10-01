@@ -104,15 +104,23 @@ describe('deploy-production promotes a tested digest and never builds', () => {
     expect(staging).toMatch(/tags:\s*\$\{\{ env\.ACR_LOGIN_SERVER \}\}\/ppbf-frontend:\$\{\{ github\.sha \}\}/);
   });
 
-  test('staging is the only workflow that builds the frontend image', () => {
+  test('only the two staging paths build the frontend image', () => {
     // The digest production promotes has to come from somewhere that tested
     // it. If this moves, the promotion story needs re-verifying, not just a
     // list update.
+    //
+    // It moved once, and was re-verified: release-one-approval.yml builds in
+    // its STAGING job, deploys and gates that image on staging, and its
+    // production job promotes the digest that job hands on. That it builds
+    // exactly once, in the staging job, and that its production job cannot
+    // build, is pinned in releaseOneApprovalContract.test.ts. deploy-production
+    // itself still never builds -- the first test in this file.
     const builders = fs
       .readdirSync(WORKFLOW_DIR)
       .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
-      .filter((f) => /docker\/build-push-action/.test(readWorkflow(f)));
-    expect(builders).toEqual(['deploy-staging.yml']);
+      .filter((f) => /docker\/build-push-action/.test(readWorkflow(f)))
+      .sort();
+    expect(builders).toEqual(['deploy-staging.yml', 'release-one-approval.yml']);
   });
 });
 

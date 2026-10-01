@@ -1,6 +1,7 @@
 import type { AuthProvider } from './authProviders';
 import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
+import { accountDeletedSql, deletedLoginConflict, isDeletedAccount } from './deletedAccountSignIn';
 import { ConflictError } from './errors';
 // The waiver_type string only, not the readers. Imported rather than
 // re-typed because a second copy of 'photo_media' is exactly how one of the
@@ -302,18 +303,21 @@ function deactivatedGuardianLoginConflict(loginEmail: string): ConflictError {
  * re-roled. The invite surfaces leave it unset, because re-inviting at a new
  * role is how they change a role deliberately.
  *
- * `refuseDeletedLogin` is also intake promotion's only: an existing account
- * whose deleted_at is set is refused (409) rather than reactivated. The invite
- * surfaces leave it unset; what they should do with a deleted login is not
- * decided. It reads deleted_at in a query of its own, only when set, so the
- * invite path does not depend on the column.
+ * An existing account marked deleted is refused (409) for every caller, the
+ * invite surfaces included, rather than reactivated (Jason 2026-09-30,
+ * OD-2026-09-30-004 e2, A). It used to be refused only for intake
+ * (`refuseDeletedLogin`, removed): a re-invite set a deleted login active
+ * again, and it showed as a working account that could never sign in.
+ *
+ * Deletion and a move to another organization, and for intake a role change
+ * or a deactivation, are refused on the read below and again in the account
+ * write itself, so a login that is deleted, moved, re-roled or deactivated
+ * between the two is still left as it is.
  *
  * `refuseDeactivatedLogin` is intake promotion's only as well: an existing
  * account with active_flag false is refused (409) rather than reactivated
  * (OD-2026-09-30-004 d1). The invite surfaces leave it unset, because
- * re-inviting is how an admin reactivates a login on purpose. It is refused
- * on the read and again in the account write itself, so a login deactivated
- * between the two is still not turned back on.
+ * re-inviting is how an admin reactivates a login on purpose.
  */
 export async function createOrUpdateMicrosoftStaffAccount(params: {
   loginEmail: string;
@@ -324,7 +328,6 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
   guardian?: GuardianAthleteLink;
   volunteer?: VolunteerRosterAssignment;
   refuseRoleChange?: boolean;
-  refuseDeletedLogin?: boolean;
   refuseDeactivatedLogin?: boolean;
 }): Promise<StaffProvisionResult> {
   const loginEmail = normalizeEmail(params.loginEmail);
@@ -345,6 +348,12 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
   }
 
   const guardian = params.guardian ? normalizeGuardian(params.guardian) : null;
+
+  // Intake's guardian login keeps the refusal it has always given for a
+  // deleted login, code and wording; every other caller gets the general one.
+  // refuseRoleChange is what marks the intake call.
+  const deletedLoginRefusal = (): ConflictError =>
+    params.refuseRoleChange ? deletedGuardianLoginConflict(loginEmail) : deletedLoginConflict(loginEmail);
 
   // Defense in depth: the type already excludes these, but this module is the
   // privilege boundary, so it re-checks rather than trusting its caller.
@@ -368,9 +377,11 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     auth_provider: AuthProvider;
     is_platform_owner: boolean;
     active_flag: boolean;
+    account_deleted: boolean;
   }>(
-    `select account_id, organization_id, role, auth_provider, is_platform_owner, active_flag
-     from pilot.accounts
+    `select account_id, organization_id, role, auth_provider, is_platform_owner, active_flag,
+            ${accountDeletedSql('a')} as account_deleted
+     from pilot.accounts a
      where lower(login_email) = $1`,
     [loginEmail],
   );
@@ -395,15 +406,10 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
       throw existingRoleConflict({ email: loginEmail }, existing.role, role);
     }
 
-    if (params.refuseDeletedLogin) {
-      const deletion = await queryOne<{ deleted_at: string | null }>(
-        'select deleted_at::text as deleted_at from pilot.accounts where account_id = $1',
-        [existing.account_id],
-      );
-
-      if (deletion?.deleted_at) {
-        throw deletedGuardianLoginConflict(loginEmail);
-      }
+    // After the cross-organization guard, so a deleted login in another gym
+    // is refused as "another organization" and nothing more is said of it.
+    if (isDeletedAccount(existing)) {
+      throw deletedLoginRefusal();
     }
 
     // An athlete authenticates by PIN. Converting that row to a Microsoft
@@ -454,8 +460,14 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
     // the flag set, the conflict update touches only an active row; a
     // deactivated one comes back as no row, and the refusal below rolls the
     // transaction back before the membership is written.
+    //
+    // The same for a deletion and a move to another organization (every
+    // caller) and, for intake, a role change: each is a condition of the
+    // update, so the row is written only if it is still what the read above
+    // saw. Without the organization condition a login moved to another gym
+    // after the read was pulled back into this one.
     const written = await client.query<{ account_id: string }>(
-      `insert into pilot.accounts (
+      `insert into pilot.accounts as acct (
          account_id,
          login_email,
          auth_provider,
@@ -477,12 +489,41 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
          pin_hash = null,
          active_flag = true,
          updated_at = now()
-       where not $5::boolean or pilot.accounts.active_flag
+       where not ${accountDeletedSql('acct')}
+         and acct.organization_id = excluded.organization_id
+         and (not $5::boolean or acct.active_flag)
+         and (not $6::boolean or acct.role = excluded.role)
        returning account_id`,
-      [accountId, loginEmail, role, organizationId, params.refuseDeactivatedLogin === true],
+      [
+        accountId,
+        loginEmail,
+        role,
+        organizationId,
+        params.refuseDeactivatedLogin === true,
+        params.refuseRoleChange === true,
+      ],
     );
 
-    if (params.refuseDeactivatedLogin && written.rows.length === 0) {
+    if (written.rows.length === 0) {
+      // Which condition refused it, read in the same transaction and only
+      // within this organization: a login that is now another gym's gets the
+      // answer the read above gives for one, and nothing about it is said.
+      const current = await client.query<{ role: PilotRole; account_deleted: boolean }>(
+        `select role, ${accountDeletedSql('a')} as account_deleted
+         from pilot.accounts a where account_id = $1 and organization_id = $2`,
+        [accountId, organizationId],
+      );
+      const row = current.rows[0];
+
+      if (!row) {
+        throw new Error('Forbidden: account already exists in another organization');
+      }
+      if (isDeletedAccount(row)) {
+        throw deletedLoginRefusal();
+      }
+      if (params.refuseRoleChange && row.role !== role) {
+        throw existingRoleConflict({ email: loginEmail }, row.role, role);
+      }
       throw deactivatedGuardianLoginConflict(loginEmail);
     }
 
@@ -711,8 +752,8 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
 /**
  * Refuses, before anything is written, every guardian login that intake
  * promotion's call to createOrUpdateMicrosoftStaffAccount (role parent,
- * refuseRoleChange, refuseDeletedLogin, refuseDeactivatedLogin) would refuse or
- * would not use as named.
+ * refuseRoleChange, refuseDeactivatedLogin) would refuse or would not use as
+ * named.
  *
  * Intake promotion has no transaction around its writes and provisions the
  * guardian's login after the athlete record and the athlete's account. A
@@ -727,7 +768,8 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
  *  - an existing account whose role is not parent (R5, Jason 2026-09-29) --
  *    409, and the account is left exactly as it was;
  *  - an existing parent login that was deleted (deleted_at set) -- 409.
- *    Provisioning would reactivate it; see deletedGuardianLoginConflict;
+ *    Provisioning refuses it too, for every caller; this is intake's wording
+ *    of it (deletedGuardianLoginConflict);
  *  - an existing parent account that signs in with a PIN, which provisioning
  *    refuses to convert;
  *  - an existing parent login an admin deactivated (active_flag false) -- 409.

@@ -154,3 +154,52 @@ test('a queue that would not load is not stamped as a medical emergency', async 
   expect(within(alert).getByText('Attention')).toBeTruthy();
   expect(within(alert).getByText('Unable to load escalations.')).toBeTruthy();
 });
+
+// The list under the tiles already said "unavailable, not empty" after a failed
+// read. The three tiles above it did not: the catch empties `items`, so they
+// counted that empty array and read Critical 0 / High 0 / Total 0.
+function tileValues() {
+  return ['Critical (this view)', 'High (this view)', 'Total (this view)'].map(
+    (label) => screen.getByText(label).parentElement?.textContent?.replace(label, ''),
+  );
+}
+
+test.each<[string, () => Promise<Response>]>([
+  ['answers non-ok', async () => jsonResponse({ error: 'Unable to load escalations.' }, false)],
+  ['rejects', async () => { throw new Error('network down'); }],
+  ['rejects with no message', async () => { throw new Error(''); }],
+  [
+    'answers 200 with a body that will not parse',
+    async () => ({ ok: true, json: async () => { throw new SyntaxError('Unexpected token'); } }) as unknown as Response,
+  ],
+  ['answers 200 without a list', async () => jsonResponse({ ok: true })],
+])('the count tiles say unavailable, never zero, when the read %s', async (_label, listRead) => {
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes('/auth/session')) return jsonResponse({ ok: true, role: 'admin' });
+    return listRead();
+  }) as unknown as typeof fetch;
+
+  render(<EscalationsPage />);
+
+  expect(await screen.findByText('Escalations could not be loaded')).toBeTruthy();
+  expect(tileValues()).toEqual(['Unavailable', 'Unavailable', 'Unavailable']);
+  expect(screen.queryByText('Nothing in this view')).toBeNull();
+});
+
+test('the count tiles still read zero when the read succeeded and nothing is open', async () => {
+  mockAdminFetch({ escalations: [] });
+
+  render(<EscalationsPage />);
+
+  expect(await screen.findByText('Nothing in this view')).toBeTruthy();
+  expect(tileValues()).toEqual(['0', '0', '0']);
+});
+
+test('the count tiles count what was read', async () => {
+  mockAdminFetch();
+
+  render(<EscalationsPage />);
+
+  await screen.findByText('Reported pain in the same joint three sessions running.');
+  expect(tileValues()).toEqual(['1', '0', '1']);
+});
