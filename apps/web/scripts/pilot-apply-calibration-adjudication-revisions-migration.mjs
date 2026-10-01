@@ -9,7 +9,7 @@ import { Client } from 'pg';
 // pilot:apply-* script: the operator must state which host and database they
 // believe they are pointing at, and a mismatch refuses before any DDL runs.
 
-function required(name) {
+export function required(name) {
   const value = process.env[name];
   if (!value?.trim()) {
     throw new Error(`Missing required environment variable: ${name}`);
@@ -38,7 +38,7 @@ export function parseConnectionTarget(connectionString) {
   return { hostname, database };
 }
 
-function assertExpectedTarget(target, expectedHostname, expectedDatabase) {
+export function assertExpectedTarget(target, expectedHostname, expectedDatabase) {
   if (
     target.hostname !== expectedHostname.toLowerCase()
     || target.database !== expectedDatabase
@@ -47,7 +47,7 @@ function assertExpectedTarget(target, expectedHostname, expectedDatabase) {
   }
 }
 
-function resolveSslConfig() {
+export function resolveSslConfig() {
   if (process.env.NODE_ENV === 'test' && process.env.PPBF_POSTGRES_DISABLE_SSL === 'true') {
     return false;
   }
@@ -167,6 +167,13 @@ export async function applyMigrationTransaction(client, sql) {
 // Runs inside BEGIN READ ONLY and always rolls back: PostgreSQL itself refuses
 // a write in that transaction, so this cannot change a row even by mistake.
 //
+// IT HAS ITS OWN ENTRY POINT, pilot-preflight-calibration-adjudication-
+// revisions.mjs, which contains no apply path. It is deliberately NOT a flag
+// on this script: `npm run <script> --flag` without the `--` separator hands
+// the flag to npm instead of the script, and an apply entry point that falls
+// through to applying when its "read-only" flag goes missing is how a look
+// turns into a migration.
+//
 // The grouping is the migration's own (step 2). On a database where the
 // migration is already applied there is nothing left to backfill and the
 // answer is 0 by definition; `already_applied` says which case it was. The
@@ -214,7 +221,7 @@ export async function countBackfillTies(client) {
   }
 }
 
-export async function run({ preflight = false } = {}) {
+export async function run() {
   const connectionString = required('AZURE_POSTGRES_CONNECTION_STRING');
   const expectedHostname = required('PPBF_EXPECTED_POSTGRES_HOSTNAME');
   const expectedDatabase = required('PPBF_EXPECTED_POSTGRES_DATABASE');
@@ -238,19 +245,6 @@ export async function run({ preflight = false } = {}) {
 
   await client.connect();
   try {
-    if (preflight) {
-      const report = await countBackfillTies(client);
-      console.log(`target_hostname: ${target.hostname}`);
-      console.log(`target_database: ${target.database}`);
-      console.log(JSON.stringify({ event: 'calibration_adjudication_revisions.preflight', ...report }));
-      console.log(
-        report.tied_disagreements === 0
-          ? 'PILOT CALIBRATION ADJUDICATION REVISIONS PREFLIGHT PASS (read-only; nothing applied)'
-          : 'PILOT CALIBRATION ADJUDICATION REVISIONS PREFLIGHT TIES FOUND (read-only; nothing applied)',
-      );
-      if (report.tied_disagreements !== 0) process.exitCode = 2;
-      return;
-    }
     await applyMigrationTransaction(client, sql);
   } finally {
     await client.end();
@@ -265,7 +259,7 @@ export async function run({ preflight = false } = {}) {
 const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMainModule) {
   try {
-    await run({ preflight: process.argv.includes('--preflight') });
+    await run();
   } catch (error) {
     console.error('PILOT CALIBRATION ADJUDICATION REVISIONS MIGRATION FAIL');
     console.error(String(error));

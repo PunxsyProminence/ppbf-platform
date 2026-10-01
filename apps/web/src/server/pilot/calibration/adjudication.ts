@@ -138,7 +138,10 @@ export const ADJUDICATION_SUPERSEDED_MESSAGE =
  * than trusted.
  */
 export function currentAdjudicationPredicate(alias: string): string {
-  if (!/^[a-z_][a-z0-9_]*$/.test(alias)) {
+  // `later_revision` is the name the subquery uses for the row it compares
+  // against. A reader that used it too would compare a row with itself and
+  // every row would read as current.
+  if (!/^[a-z_][a-z0-9_]*$/.test(alias) || alias === 'later_revision') {
     throw new Error('CALIBRATION_ADJUDICATION_ALIAS_INVALID');
   }
   return `not exists (

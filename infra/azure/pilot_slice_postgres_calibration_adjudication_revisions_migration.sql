@@ -113,9 +113,15 @@ alter table pilot.calibration_adjudications
 -- says which came second -- adjudication_id is a random UUID and created_at is
 -- the same clock reading -- and choosing one would invent which decision
 -- stands. So this stops, changes nothing (the runner rolls the whole file
--- back), and says how many disagreements are affected. Which of the tied
--- answers stands is a decision for a person; the runner's --preflight mode
--- reports the count read-only before an apply is attempted.
+-- back), and says how many disagreements are affected.
+--
+-- WHAT A TIE COSTS, stated plainly: this migration cannot be applied to that
+-- database until the tie is gone, and in an `all` dispatch every migration
+-- listed after this one is held back with it. The only way forward is for a
+-- person to decide which of the tied answers stands and for the data to be
+-- changed to say so. Nothing here makes that choice and no tool for it exists.
+-- apps/web/scripts/pilot-preflight-calibration-adjudication-revisions.mjs
+-- reports the count read-only, so it can be known before a dispatch.
 --
 -- Only rows with a null revision are examined, so once the migration has been
 -- applied this finds nothing: every later row is numbered as it is written.

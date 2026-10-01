@@ -220,20 +220,24 @@ export async function nominateGoldCandidate(
     }
 
     /*
-     * ONLY THE ANSWER OF RECORD MAY BECOME REFERENCE DATA.
+     * A SUPERSEDED ADJUDICATION CANNOT BE NOMINATED.
      *
      * A second adjudication of the same disagreement is a correction and
      * supersedes the first (OD-2026-08-29-004, -005). The earlier row is kept
-     * as history, and history is exactly what a gold record must not be built
-     * from: it is the reading somebody went back and replaced.
+     * as history, and history is the reading somebody went back and replaced.
      *
-     * Checked at nomination. A record nominated from an adjudication that is
-     * corrected AFTERWARDS is not reached by this.
+     * THIS IS A CHECK AT NOMINATION AND NOTHING WIDER. A candidate nominated
+     * while its adjudication was current, and corrected AFTERWARDS, is not
+     * reached: it can still be promoted, and it is still counted. Nor is the
+     * read above locked, so a correction that commits between it and the
+     * insert below is not seen. What a correction should do to a candidate or
+     * a gold record that already exists is an owner question nobody has
+     * answered.
      */
     if (source.superseded) {
       throw new ConflictError(
         'This adjudication has been corrected by a later one, so it cannot become reference data. Nominate the current answer instead.',
-        'CALIBRATION_ADJUDICATION_SUPERSEDED',
+        'CALIBRATION_GOLD_SOURCE_SUPERSEDED',
       );
     }
 

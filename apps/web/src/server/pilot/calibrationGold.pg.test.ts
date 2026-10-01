@@ -483,7 +483,7 @@ describe('nothing arrives as gold', () => {
       eligibility: 'TRAINING_ELIGIBLE',
     }).then(() => null, (error: unknown) => error as { message?: string; code?: string; status?: number });
     expect(refused?.message).toMatch(/has been corrected by a later one/);
-    expect(refused?.code).toBe('CALIBRATION_ADJUDICATION_SUPERSEDED');
+    expect(refused?.code).toBe('CALIBRATION_GOLD_SOURCE_SUPERSEDED');
     expect(refused?.status).toBe(409);
 
     const client = await freshClient();

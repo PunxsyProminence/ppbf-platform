@@ -395,10 +395,22 @@ function AdjudicationDesk() {
           })),
         }),
       });
-      const body = (await response.json()) as { error?: string; adjudication?: Adjudication };
+      const body = (await response.json()) as {
+        error?: string;
+        code?: string;
+        adjudication?: Adjudication;
+      };
 
       if (!response.ok) {
         setSubmitError(body.error ?? 'This decision could not be recorded.');
+        /* Somebody answered this disagreement first. Re-read the clip so
+           their answer is in the settled list below, next to the sentence
+           telling this administrator to look at it. The form is left as it
+           was typed. A failed re-read changes nothing: the refusal above is
+           still the thing to show. */
+        if (body.code === 'CALIBRATION_ADJUDICATION_SUPERSEDED') {
+          await load().catch(() => {});
+        }
       } else {
         setRecordedId(body.adjudication?.adjudication_id ?? null);
         setFields([]);
@@ -760,6 +772,17 @@ function AdjudicationDesk() {
                       <td>
                         {adjudication.source_event_id_a ?? 'nothing from A'} /{' '}
                         {adjudication.source_event_id_b ?? 'nothing from B'}
+                        {/* The list is the whole clip's. On a clip with three
+                            or more readings a row may be between two OTHER
+                            readings, where "A" and "B" are different coaches
+                            and the same mark ids are a different
+                            disagreement. Said on the row, so two "current"
+                            rows are never read as two answers to one. */}
+                        {sets
+                          && (adjudication.annotation_set_id_a !== sets.a.annotation_set_id
+                            || adjudication.annotation_set_id_b !== sets.b.annotation_set_id)
+                          ? ' (between another pair of readings)'
+                          : ''}
                       </td>
                       <td>
                         {adjudication.revision}

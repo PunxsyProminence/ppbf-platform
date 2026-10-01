@@ -477,8 +477,13 @@ describe('corrections: which answer is current, and which one was reviewed', () 
 
     expect(screen.getByText('1 · superseded')).toBeInTheDocument();
     expect(screen.getByText('2 · current')).toBeInTheDocument();
-    // The other pair's only row is the current answer to ITS disagreement.
-    expect(screen.getByText('7 · current')).toBeInTheDocument();
+    // The other pair's only row is the current answer to ITS disagreement,
+    // and the row says it is between other readings, so two "current" rows
+    // are not read as two answers to one question.
+    const otherPair = screen.getByText('7 · current').closest('tr');
+    expect(otherPair).toHaveTextContent('(between another pair of readings)');
+    expect(screen.getByText('2 · current').closest('tr'))
+      .not.toHaveTextContent('between another pair of readings');
   });
 
   test('the screen no longer says nothing marks a decision as superseding another', async () => {
@@ -559,5 +564,76 @@ describe('corrections: which answer is current, and which one was reviewed', () 
       await screen.findByText(/Someone corrected this adjudication while you were deciding/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/is on the record/)).not.toBeInTheDocument();
+  });
+
+  test('after that refusal the clip is re-read, so the answer that landed is on screen and is what the next decision reviews', async () => {
+    // The desk loads showing revision 1 only. Somebody records revision 2.
+    const BEFORE = { ...DESK };
+    const AFTER = {
+      ...DESK,
+      adjudications: [
+        DESK.adjudications[0],
+        { ...DESK.adjudications[0], adjudication_id: 'adj-theirs', revision: 2, fields: [] },
+      ],
+    };
+    let posts = 0;
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        posts += 1;
+        return posts === 1
+          ? respondWith(
+            {
+              error: 'Someone corrected this adjudication while you were deciding. Reload and review their answer before replacing it.',
+              code: 'CALIBRATION_ADJUDICATION_SUPERSEDED',
+            },
+            false,
+            409,
+          )
+          : respondWith({ ok: true, adjudication: { adjudication_id: 'adj-mine' }, fields: [] });
+      }
+      return respondWith(posts === 0 ? BEFORE : AFTER);
+    });
+
+    render(<CalibrationAdjudicationPage />);
+    await screen.findByText('Clip C-01');
+    expect(screen.getByText('1 · current')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Coach A's mark"), { target: { value: 'evt-a2' } });
+    fireEvent.change(screen.getByLabelText('What was concluded'), { target: { value: 'accept_a' } });
+    fireEvent.click(screen.getByText('Record this decision'));
+
+    // Their answer appears, the refusal stays, and the form was not cleared.
+    expect(await screen.findByText('2 · current')).toBeInTheDocument();
+    expect(screen.getByText('1 · superseded')).toBeInTheDocument();
+    expect(screen.getByText(/Someone corrected this adjudication/)).toBeInTheDocument();
+    expect((screen.getByLabelText("Coach A's mark") as HTMLSelectElement).value).toBe('evt-a2');
+
+    const firstSent = JSON.parse(
+      (fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')[0][1] as RequestInit).body as string,
+    );
+    expect(firstSent.expected_current_revision).toBe(1);
+
+    // Deciding again now reviews revision 2.
+    fireEvent.click(screen.getByText('Record this decision'));
+    await waitFor(() => expect(posts).toBe(2));
+    const secondSent = JSON.parse(
+      (fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')[1][1] as RequestInit).body as string,
+    );
+    expect(secondSent.expected_current_revision).toBe(2);
+  });
+
+  test('a refusal for any other reason does not re-read the clip', async () => {
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => (
+      init?.method === 'POST'
+        ? respondWith({ error: 'Reload the page before recording a decision.', code: 'OTHER' }, false, 400)
+        : respondWith(CORRECTED)
+    ));
+    render(<CalibrationAdjudicationPage />);
+    await screen.findByText('Clip C-01');
+    const readsBefore = fetchMock.mock.calls.filter(([, init]) => init?.method !== 'POST').length;
+
+    fireEvent.click(screen.getByText('Record this decision'));
+    expect(await screen.findByText(/Reload the page before recording a decision/)).toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method !== 'POST').length).toBe(readsBefore);
   });
 });

@@ -829,7 +829,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
   }
 
   /** THE PREVIOUS IMAGE'S OWN INSERT, copied from
-   *  apps/web/src/server/pilot/calibration/adjudication.ts:212-218 at main
+   *  apps/web/src/server/pilot/calibration/adjudication.ts:212-219 at main
    *  739aa4508850a5883bc203cd1ece454e4eb0286f, with the column list it
    *  returned (ADJUDICATION_COLUMNS at :92-98 there). It names no revision
    *  and reads none back. This is the statement a rolled-back or
@@ -1615,6 +1615,10 @@ describe('the current-revision predicate readers share', () => {
     expect(() => adjudication.currentAdjudicationPredicate('a; drop table x')).toThrow(
       /CALIBRATION_ADJUDICATION_ALIAS_INVALID/,
     );
+    // Its own inner name would make every row compare with itself.
+    expect(() => adjudication.currentAdjudicationPredicate('later_revision')).toThrow(
+      /CALIBRATION_ADJUDICATION_ALIAS_INVALID/,
+    );
     expect(adjudication.currentAdjudicationPredicate('adj')).toContain('adj.revision');
   });
 });
@@ -1918,24 +1922,34 @@ describe('the shipped revisions migration runner', () => {
     }
   });
 
-  test('the preflight cannot write, and leaves no transaction open', async () => {
+  test('the preflight runs read-only at the database, sends nothing but SELECTs, and leaves no transaction open', async () => {
     const countBackfillTies = await loadPreflight();
     const client = await historyDatabase('ppbf_test_calib_rev_preflight');
     try {
       await writeHistory(client, { id: 'adj-one', ea: 'evt-a', eb: 'evt-b', at: '2026-02-02T00:00:00Z' });
-      await countBackfillTies(client);
+
+      // Every statement the function sends, in order.
+      const sent: string[] = [];
+      const recording = {
+        query: (text: string, ...rest: unknown[]) => {
+          sent.push(text.trim().replace(/\s+/g, ' '));
+          return (client.query as (...args: unknown[]) => Promise<unknown>)(text, ...rest);
+        },
+      } as unknown as Client;
+      await countBackfillTies(recording);
+
+      // The transaction is opened READ ONLY, so PostgreSQL itself would refuse
+      // a write inside it; everything between is a SELECT; and it rolls back.
+      expect(sent[0]).toBe('BEGIN READ ONLY');
+      expect(sent[sent.length - 1]).toBe('ROLLBACK');
+      const between = sent.slice(1, -1);
+      expect(between.length).toBeGreaterThan(0);
+      for (const statement of between) expect(statement).toMatch(/^select /i);
+
       const state = await client.query<{ in_tx: boolean }>(
         `select now() <> statement_timestamp() as in_tx`,
       );
       expect(state.rows[0]?.in_tx).toBe(false);
-
-      // The transaction it runs in is read-only at the database, not by
-      // convention: the same statement shape with a write in it is refused.
-      await client.query('BEGIN READ ONLY');
-      await expect(
-        client.query(`delete from pilot.calibration_adjudications`),
-      ).rejects.toThrow(/read-only transaction/);
-      await client.query('ROLLBACK');
       const kept = await client.query<{ n: number }>(
         `select count(*)::int as n from pilot.calibration_adjudications`,
       );
@@ -1943,6 +1957,17 @@ describe('the shipped revisions migration runner', () => {
     } finally {
       await client.end();
     }
+  });
+
+  test('the preflight entry point has no apply path', async () => {
+    // It is a separate file so that a lost flag can never turn a look into a
+    // migration. Read as text: it must not import or call anything that writes.
+    const source = await fs.readFile(
+      path.resolve(__dirname, '../../../scripts/pilot-preflight-calibration-adjudication-revisions.mjs'),
+      'utf8',
+    );
+    expect(source).toContain('countBackfillTies');
+    expect(source).not.toMatch(/applyMigrationTransaction|readFile|\.sql|BEGIN(?! READ ONLY)|COMMIT/);
   });
 
   test('"no mark" and a mark whose id is the empty string are different disagreements', async () => {
