@@ -68,7 +68,11 @@ describe('audience register', () => {
 // shoulder was answered "stop sparring ... get checked" with no teaching.
 describe('teach first', () => {
   test('the base prompt orders health answers: teach, coach, then the limit', () => {
-    expect(SHADOW_SYSTEM_PROMPT).toContain('TEACH FIRST');
+    // The exact category list, not just the words TEACH FIRST. Weight-cut
+    // education is a separate piece of work with its own sources and limits;
+    // naming weight here would change those answers through this heading.
+    const heading = SHADOW_SYSTEM_PROMPT.split('\n').find((line) => line.startsWith('TEACH FIRST'));
+    expect(heading).toBe('TEACH FIRST — PAIN, INJURY, HEAD KNOCKS AND RECOVERY QUESTIONS:');
     expect(SHADOW_SYSTEM_PROMPT).toContain('Never open with what you cannot do');
     expect(SHADOW_SYSTEM_PROMPT).toContain('Never answer with only "see a professional"');
     const teach = SHADOW_SYSTEM_PROMPT.indexOf('1. Teach the thing');
