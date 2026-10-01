@@ -135,8 +135,16 @@ export default function SportsMedicinePage() {
 
   // Write state. One athlete at a time: a hold names one child, and a form
   // shared across rows cannot be submitted against the wrong one.
-  const [openFor, setOpenFor] = useState<string | null>(null);
-  const [form, setForm] = useState({ ...EMPTY_FORM });
+  // The open place form AND the athlete it is open for, as one value. They
+  // used to be two (`openFor`, `form`), and a place for athlete A that came
+  // back after the coach had opened B's form ran "close the form, empty the
+  // form" against whatever was open: B's half-written hold vanished. A form
+  // now belongs to its athlete, and only that athlete's own result closes it.
+  const [placing, setPlacing] = useState<{ athleteId: string; form: typeof EMPTY_FORM } | null>(null);
+  const openFor = placing?.athleteId ?? null;
+  const form = placing?.form ?? EMPTY_FORM;
+  const setForm = (update: (current: typeof EMPTY_FORM) => typeof EMPTY_FORM) =>
+    setPlacing((current) => (current ? { ...current, form: update(current.form) } : current));
   const [liftNotes, setLiftNotes] = useState<Record<string, string>>({});
   // Per athlete, not one slot for the board: with a single slot, an action
   // finishing on one row re-enabled a button on another row whose own request
@@ -331,8 +339,7 @@ export default function SportsMedicinePage() {
         result?.hold ? { hold: result.hold, hold_read: 'loaded' } : { hold: null, hold_read: 'unavailable' },
         true,
       );
-      setOpenFor(null);
-      setForm({ ...EMPTY_FORM });
+      setPlacing((current) => (current?.athleteId === athleteId ? null : current));
     } catch (error) {
       setRefusal({
         athleteId,
@@ -693,7 +700,7 @@ export default function SportsMedicinePage() {
                             type="button"
                             className="btn btn--ghost"
                             disabled={busy}
-                            onClick={() => { setOpenFor(null); setRefusal(null); }}
+                            onClick={() => { setPlacing(null); setRefusal(null); }}
                           >
                             Cancel
                           </button>
@@ -732,8 +739,7 @@ export default function SportsMedicinePage() {
                             disabled={row.hold_read === 'unavailable'}
                             aria-describedby={row.hold_read === 'unavailable' ? `hold-unread-${row.athlete_id}` : undefined}
                             onClick={() => {
-                              setOpenFor(row.athlete_id);
-                              setForm({ ...EMPTY_FORM });
+                              setPlacing({ athleteId: row.athlete_id, form: { ...EMPTY_FORM } });
                               setRefusal(null);
                             }}
                           >

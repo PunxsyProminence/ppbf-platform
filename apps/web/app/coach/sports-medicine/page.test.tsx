@@ -990,3 +990,89 @@ describe('a refused placement is news about the row', () => {
     expect((screen.getByLabelText(/What this athlete reads/) as HTMLTextAreaElement).value).toBe('Resting your wrist.');
   });
 });
+
+/*
+ * A place form belongs to the athlete it was opened for.
+ */
+describe('a place that comes back late does not touch another athlete’s open form', () => {
+  const SECOND = { athlete_id: 'ath-2', full_name: 'Riley Poe' };
+
+  function rowOf(name: string): HTMLElement {
+    return screen.getByText(name).closest('li') as HTMLElement;
+  }
+
+  function twoRowFetch(firstPlace: Promise<Response>) {
+    const posted: Array<Record<string, unknown>> = [];
+    let firstPlaced = false;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        posted.push(body);
+        if (body.athlete_id === 'ath-1') {
+          const response = await firstPlace;
+          firstPlaced = response.ok;
+          return response;
+        }
+        return { ok: true, json: async () => ({ ok: true, hold: { ...PLACED, hold_id: 'hold-for-2' } }) } as Response;
+      }
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, SECOND] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('athlete_id=ath-1')) {
+        return { ok: true, json: async () => ({ ok: true, holds: firstPlaced ? [PLACED] : [] }) } as Response;
+      }
+      if (url.includes('/training-holds')) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+    return posted;
+  }
+
+  async function placeForFirstThenOpenSecond() {
+    render(<SportsMedicinePage />);
+    await screen.findByText('Riley Poe');
+    fireEvent.click(within(rowOf('Jordan Doe')).getByRole('button', { name: 'Place a training hold' }));
+    fireEvent.change(await screen.findByLabelText(/What this athlete reads/), { target: { value: 'Sentence for Jordan.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+    await within(rowOf('Jordan Doe')).findByRole('button', { name: 'Placing…' });
+
+    // Jordan's place is still out. The coach moves on to Riley.
+    fireEvent.click(within(rowOf('Riley Poe')).getByRole('button', { name: 'Place a training hold' }));
+    const riley = within(rowOf('Riley Poe'));
+    // A fresh form, not Jordan's sentence.
+    expect((riley.getByLabelText(/What this athlete reads/) as HTMLTextAreaElement).value).toBe('');
+    fireEvent.change(riley.getByLabelText(/What this athlete reads/), { target: { value: 'Sentence for Riley, half written' } });
+  }
+
+  test('a late SUCCESS for the first athlete shows their hold and leaves the second athlete’s form open with its text', async () => {
+    let release: ((response: Response) => void) | undefined;
+    const posted = twoRowFetch(new Promise<Response>((resolve) => { release = resolve; }));
+    await placeForFirstThenOpenSecond();
+
+    release?.({ ok: true, json: async () => ({ ok: true, hold: PLACED }) } as Response);
+    await within(rowOf('Jordan Doe')).findByText(/Active Training Hold — contact only/);
+
+    const riley = within(rowOf('Riley Poe'));
+    expect((riley.getByLabelText(/What this athlete reads/) as HTMLTextAreaElement).value).toBe('Sentence for Riley, half written');
+
+    // And Riley's hold goes to Riley, with Riley's sentence.
+    fireEvent.click(riley.getByRole('button', { name: 'Place hold' }));
+    await waitFor(() => expect(posted).toHaveLength(2));
+    expect(posted[0]).toMatchObject({ athlete_id: 'ath-1', athlete_explanation: 'Sentence for Jordan.' });
+    expect(posted[1]).toMatchObject({ athlete_id: 'ath-2', athlete_explanation: 'Sentence for Riley, half written' });
+  });
+
+  test('a late REFUSAL for the first athlete lands on their row and leaves the second athlete’s form open with its text', async () => {
+    let release: ((response: Response) => void) | undefined;
+    twoRowFetch(new Promise<Response>((resolve) => { release = resolve; }));
+    await placeForFirstThenOpenSecond();
+
+    release?.({ ok: false, status: 409, json: async () => ({ error: 'Hold already exists -- lift it first' }) } as Response);
+    await within(rowOf('Jordan Doe')).findByText('Hold Not Placed');
+
+    const riley = within(rowOf('Riley Poe'));
+    expect((riley.getByLabelText(/What this athlete reads/) as HTMLTextAreaElement).value).toBe('Sentence for Riley, half written');
+    expect(riley.queryByText('Hold Not Placed')).toBeNull();
+  });
+});
