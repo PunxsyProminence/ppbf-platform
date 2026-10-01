@@ -233,6 +233,8 @@ export interface BuildQaReportInput {
   events: readonly AnnotationEventRow[];
   /** One comparison per clip where both sets are submitted. */
   comparisons: readonly AnnotationSetComparison[];
+  /** Every adjudication recorded, history included. The report reduces these
+   *  to the current revision of each disagreement itself. */
   adjudications: readonly AdjudicationRow[];
   minimumComparisons?: number;
 }
@@ -244,7 +246,47 @@ export interface BuildQaReportInput {
  * report, which is what lets this be recomputed on read rather than stored.
  * Its inputs are all frozen or derived from frozen rows.
  */
-export function buildCalibrationQaReport(input: BuildQaReportInput): CalibrationQaReport {
+/**
+ * The current answer to each disagreement, with superseded history removed.
+ *
+ * A second adjudication of the same disagreement is a correction
+ * (OD-2026-08-29-004, -005): the highest revision stands and the earlier ones
+ * are kept as history. Rates computed over every row would count one
+ * disagreement once per correction, and would count an 'unresolvable' that
+ * somebody later resolved.
+ *
+ * A disagreement is the two readings and the two marks, in that order, with
+ * "no mark" distinct from any mark -- the same grouping the database uses.
+ * JSON.stringify keeps null apart from '' and from the string "null".
+ */
+export function currentAdjudications(
+  rows: readonly AdjudicationRow[],
+): AdjudicationRow[] {
+  const current = new Map<string, AdjudicationRow>();
+  for (const row of rows) {
+    const key = JSON.stringify([
+      row.organization_id,
+      row.calibration_clip_id,
+      row.annotation_set_id_a,
+      row.annotation_set_id_b,
+      row.source_event_id_a,
+      row.source_event_id_b,
+    ]);
+    const held = current.get(key);
+    if (!held || row.revision > held.revision) {
+      current.set(key, row);
+    }
+  }
+  return [...current.values()];
+}
+
+export function buildCalibrationQaReport(rawInput: BuildQaReportInput): CalibrationQaReport {
+  // Superseded adjudications are history, not answers. Reduced once, here, so
+  // nothing below can count them by reading the raw list.
+  const input: BuildQaReportInput = {
+    ...rawInput,
+    adjudications: currentAdjudications(rawInput.adjudications),
+  };
   const minimumComparisons = input.minimumComparisons ?? CALIBRATION_MINIMUM_COMPARISONS;
   const comparisonCount = input.comparisons.length;
   const belowFloor = comparisonCount < minimumComparisons;

@@ -72,6 +72,7 @@ on:
           - reference-content
           - library-scope
           - deletion-preflight
+          - calibration-adjudication-ties
 
 permissions:
   id-token: write
@@ -186,6 +187,15 @@ jobs:
               # active, and their sessions, are counted as refused at sign-in
               # (OD-2026-09-29-003 Q9), not as exposure.
               npm run pilot:check-deletion-preflight | tee /tmp/check-output.txt
+              ;;
+            calibration-adjudication-ties)
+              # Read-only. Run it BEFORE applying calibration-adjudication-revisions: counts the
+              # disagreements holding two or more existing adjudications with the same
+              # adjudicated_at, which that migration refuses to order by guesswork. A count only;
+              # no ids. Exits non-zero when it finds any -- the apply would stop on them, and in an
+              # `all` dispatch would hold back every migration after it. Reports 0 with
+              # already_applied once the migration is in.
+              npm run pilot:check-calibration-adjudication-ties | tee /tmp/check-output.txt
               ;;
             seed-identity)
               # Read-only. Prints the organization ids and the PRIVILEGED account ids that the
