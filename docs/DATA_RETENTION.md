@@ -210,13 +210,16 @@ and the role (athlete, guardian, staff), not from how the login reads today:
 - if the login no longer matches the submission (it was given another role, or moved to another
   gym), nothing proves the writer is gone, and the submission stays.
 - after the cleanup job removes a deleted athlete, the roster can give the same athlete id to a
-  new child, while the deleted athlete's login still carries that id. The queue only treats an
-  athlete record as the writer's if it already existed when the submission was written, so the
-  deleted athlete's closed submissions stay hidden and their open ones show with no athlete
-  name, never the new child's. This rests on the athlete record's creation date. The roster's
-  add-athlete screen takes that date from the admin's device, so a device clock that is wrong
-  can defeat it either way: a new record dated before the old submissions is taken for the
-  writer, and a record dated after something its own athlete wrote is not.
+  new child. When the cleanup job removes an athlete record it also unlinks that athlete's login
+  from the id. The login is kept and names nobody; if it was somehow still live it is marked
+  deleted at that moment, so intake cannot give it to another child (a login that has since
+  become a coach's or guardian's is unlinked and left as it is). The new child therefore has no
+  connection to the old login: the deleted athlete's closed submissions stay hidden, their open
+  ones show with no athlete name, and the new child can be given a login of their own. No date
+  is compared.
+  **UNVERIFIED:** whether production holds a deleted athlete login whose athlete record was
+  removed before this unlinking existed; for such a login the old id is still attached until
+  somebody clears it, and a new child given that id would be taken for the writer.
 
 The platform owner's cross-gym feedback list, which
 names nobody and withholds safeguarding text, is unchanged. The video-compliance publication
@@ -242,7 +245,9 @@ queue is not in this table: it drops a deleted athlete's publications at once (v
 only stored-file deletes are a portrait its owner removes or a reviewer rejects, gym-wall
 photos and credential files (`apps/web/src/server/pilot/blob.ts:204, 281, 356`). The cleanup job
 also leaves the video rows (`pilot.video_sessions.athlete_id` has no foreign key to athletes)
-and the athlete's own account and portrait row (it removes parent accounts only). A playback
+and the athlete's own account and portrait row (it removes parent accounts only); the
+athlete's account is kept but no longer names the athlete record that was removed, and is
+marked deleted if it was not already (*Safety screens*, above). A playback
 link handed out before the deletion keeps working until it expires (60 minutes). No storage
 lifecycle rule is defined in `infra/`; whether the live storage account has one is
 **UNVERIFIED**.

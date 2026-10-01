@@ -143,14 +143,52 @@ async function attemptPurge(client, athletes, accountIds) {
      keys pointing at it -- but pilot.one_percent_nominations restricts, and
      onePercentClub.ts writes those by athlete_id. As a single statement, one
      nominated athlete would take every OTHER athlete's purge down with it. */
+  /* THE LOGIN STOPS NAMING THE ATHLETE IN THE SAME SAVEPOINT. An athlete's
+     login is not purged with them (only parent logins are, below), and
+     pilot.accounts.athlete_id has no foreign key, so until this statement
+     existed the deleted login went on carrying the athlete_id of a row that
+     was gone. The roster can then give that athlete_id to a different child
+     -- the purge is the one moment it comes free, the deleted row holding the
+     primary key until then -- and everything that reads "the athlete this
+     login names" would have read the NEW child: the feedback queue showed the
+     purged child's closed submissions again, under the new child's name.
+     Clearing the link here records, with no clock involved, that this login's
+     athlete was purged (deletedAthletes.ts submissionWriterNotDeletedSql reads
+     it). Scoped to the one athlete just deleted, and only when a row really
+     was deleted; if the delete is refused, the savepoint rollback leaves the
+     login exactly as it was.
+
+     AN ATHLETE LOGIN STILL LIVE AT THIS POINT IS MARKED DELETED TOO. Deleting
+     an athlete deletes their login in the same transaction (dataDeletion.ts),
+     so a live one here is a leftover from before that rule. Left live and
+     naming nobody, it would be an athlete login intake could bind to a
+     DIFFERENT child (createOrUpdateAthleteAccount accepts athlete_id null on
+     a login that is not deleted), who would inherit everything the purged
+     child did through it. A login already deleted keeps its own date. A login
+     that has since become a coach's or a guardian's is unlinked and otherwise
+     left alone: it is that adult's login now. */
   let athletesDeleted = 0;
+  let loginsUnlinked = 0;
   for (const athlete of athletes) {
     await client.query('savepoint purge_athlete');
     try {
-      await client.query(
-        'delete from pilot.athletes where organization_id = $1 and athlete_id = $2',
+      const removed = await client.query(
+        'delete from pilot.athletes where organization_id = $1 and athlete_id = $2 returning athlete_id',
         [athlete.organization_id, athlete.athlete_id],
       );
+      if (removed.rows.length > 0) {
+        const unlinked = await client.query(
+          `update pilot.accounts
+              set athlete_id = null,
+                  deleted_at = case when role = 'athlete' then coalesce(deleted_at, now()) else deleted_at end,
+                  active_flag = case when role = 'athlete' then false else active_flag end,
+                  updated_at = now()
+            where organization_id = $1 and athlete_id = $2
+            returning account_id`,
+          [athlete.organization_id, athlete.athlete_id],
+        );
+        loginsUnlinked += unlinked.rows.length;
+      }
       await client.query('release savepoint purge_athlete');
       athletesDeleted += 1;
     } catch (error) {
@@ -209,7 +247,7 @@ async function attemptPurge(client, athletes, accountIds) {
     }
   }
 
-  return { athletesDeleted, accountsDeleted, blocked };
+  return { athletesDeleted, accountsDeleted, loginsUnlinked, blocked };
 }
 
 async function main() {
@@ -249,7 +287,7 @@ async function main() {
 
     const accountIds = expiredAccounts.rows.map((row) => row.account_id);
     const outcome = total === 0
-      ? { athletesDeleted: 0, accountsDeleted: 0, blocked: {} }
+      ? { athletesDeleted: 0, accountsDeleted: 0, loginsUnlinked: 0, blocked: {} }
       : await attemptPurge(client, expiredAthletes.rows, accountIds);
     const blockedCount = Object.values(outcome.blocked).reduce((sum, n) => sum + n, 0);
 
@@ -262,6 +300,7 @@ async function main() {
         total,
         would_delete_athletes: outcome.athletesDeleted,
         would_delete_accounts: outcome.accountsDeleted,
+        would_unlink_athlete_logins: outcome.loginsUnlinked,
         blocked: blockedCount,
         blocked_by: outcome.blocked,
         note: 'set PPBF_RETENTION_APPLY=true to delete',
@@ -287,6 +326,7 @@ async function main() {
         JSON.stringify({
           athletes_deleted: outcome.athletesDeleted,
           accounts_deleted: outcome.accountsDeleted,
+          athlete_logins_unlinked: outcome.loginsUnlinked,
           total_rows_deleted: outcome.athletesDeleted + outcome.accountsDeleted,
           blocked: blockedCount,
           blocked_by: outcome.blocked,
@@ -300,6 +340,7 @@ async function main() {
       event: blockedCount > 0 ? 'retention.cleanup.incomplete' : 'retention.cleanup.completed',
       athletes: outcome.athletesDeleted,
       accounts: outcome.accountsDeleted,
+      athlete_logins_unlinked: outcome.loginsUnlinked,
       total: outcome.athletesDeleted + outcome.accountsDeleted,
       blocked: blockedCount,
       blocked_by: outcome.blocked,

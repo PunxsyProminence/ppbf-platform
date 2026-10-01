@@ -96,19 +96,20 @@ export function accountNotDeletedSql(row: string, accountColumn = 'account_id'):
  *
  * Written as an athlete: the ATHLETE ROW decides, never the login alone. A
  * live athlete's login can be deleted on its own (the state intake names
- * ATHLETE_RECORD_HELD_BY_DELETED_LOGIN). Gone means the athlete this gym's
- * login names is marked deleted -- or, after the retention purge has removed
- * that row (accounts.athlete_id has no foreign key, and the purge leaves the
- * athlete's login behind, deleted), that the login is deleted and names no
- * athlete row that can be the writer. A cleared account reference proves
- * nothing here: the purge removes parent logins only.
- *
- * "THE ATHLETE THE LOGIN NAMES" MEANS THE ONE WHO COULD HAVE WRITTEN THE ROW
- * (submissionWriterAthleteSql below). After the purge the roster lets the same
- * athlete_id be created again for a different child, and the old deleted login
- * still carries that id. An athlete row created after the submission was
- * written is somebody else, so it is not counted: the purged child's closed
- * rows stay hidden, and nothing of theirs is put under the new child's name.
+ * ATHLETE_RECORD_HELD_BY_DELETED_LOGIN). Gone means one of:
+ *  1. the athlete this gym's login names is marked deleted;
+ *  2. the login is deleted and names no athlete row. That is what the
+ *     retention purge leaves: when it removes an athlete row it clears
+ *     athlete_id on the login that named it (pilot-cleanup-deleted-data.mjs,
+ *     purgeExpiredDeletedData), because that is the one moment an athlete_id
+ *     can come free -- before it, the deleted row still holds the primary key.
+ *     A new child later given the same athlete_id therefore has no link to
+ *     the old login, and nothing here compares a date to tell them apart. A
+ *     NULL athlete_id matches no row, so one `not exists` covers both the
+ *     unlinked login and a login from a purge before the unlinking existed,
+ *     which still carries an id that names nothing.
+ * A cleared account REFERENCE proves nothing here: the purge removes parent
+ * logins only.
  *
  * Written in any other capacity (guardian, staff): the account is the person.
  * Gone means this gym's login is marked deleted, or the reference has cleared
@@ -120,31 +121,29 @@ export function submissionWriterNotDeletedSql(
   accountColumn: string,
   roleColumn: string,
   orgColumn = 'organization_id',
-  createdColumn = 'created_at',
 ): string {
   const r = identifier(row);
   const account = identifier(accountColumn);
   const role = identifier(roleColumn);
   const org = identifier(orgColumn);
-  const writerAthlete = (athlete: string) =>
-    submissionWriterAthleteSql(athlete, 'writer_account', row, orgColumn, createdColumn);
   return `not (
     case when ${r}.${role} = 'athlete' then exists (
       select 1 from pilot.accounts writer_account
        where writer_account.account_id = ${r}.${account}
          and writer_account.organization_id = ${r}.${org}
          and writer_account.role = 'athlete'
-         and writer_account.athlete_id is not null
          and (
            exists (
              select 1 from pilot.athletes deleted_athlete
-              where ${writerAthlete('deleted_athlete')}
+              where deleted_athlete.organization_id = ${r}.${org}
+                and deleted_athlete.athlete_id = writer_account.athlete_id
                 and deleted_athlete.deleted_at is not null)
            or (
              writer_account.deleted_at is not null
              and not exists (
                select 1 from pilot.athletes any_athlete
-                where ${writerAthlete('any_athlete')}))))
+                where any_athlete.organization_id = ${r}.${org}
+                  and any_athlete.athlete_id = writer_account.athlete_id))))
     else ${r}.${account} is null or exists (
       select 1 from pilot.accounts writer_account
        where writer_account.account_id = ${r}.${account}
@@ -152,52 +151,6 @@ export function submissionWriterNotDeletedSql(
          and writer_account.role <> 'athlete'
          and writer_account.deleted_at is not null)
     end)`;
-}
-
-/**
- * SQL condition: this pilot.athletes row is the athlete who could have written
- * the submission through this login -- the submission's gym, the id the login
- * carries, and a row that already existed when the submission was written.
- *
- * The last part is what tells a purged child from a new child given the same
- * athlete_id afterwards. The submission's date is the anchor because nothing
- * rewrites it. The login's deletion date is NOT usable: deleting the new
- * child addresses the login by athlete_id and re-stamps the old login's
- * deleted_at (dataDeletion.ts), after which the new child's row would predate
- * it. And a submission is written through a live login, so a row that existed
- * by then also existed before that login was first deleted.
- *
- * WHAT created_at CAN GET WRONG. It is written once (upsertAthlete never
- * updates it), by the server for the roster import and intake; the roster's
- * add-one-athlete route takes it from the request, which the People page
- * fills from the admin's device clock.
- *  - A row stamped EARLIER than an old submission (a device clock that is
- *    behind, or a deliberate backdate) still passes: the old closed rows come
- *    back under the new child's name.
- *  - A row stamped LATER than something its own athlete wrote (a device clock
- *    that is ahead, or a login provisioned and used before the roster row was
- *    added) fails: those rows show no athlete name, and if that athlete's
- *    login alone is later deleted their closed rows are treated as a gone
- *    writer's.
- *
- * Shared by the predicate above and by the reader's name join, so a row is
- * never hidden by one athlete and named after another.
- */
-export function submissionWriterAthleteSql(
-  athlete: string,
-  account: string,
-  row: string,
-  orgColumn = 'organization_id',
-  createdColumn = 'created_at',
-): string {
-  const a = identifier(athlete);
-  const acct = identifier(account);
-  const r = identifier(row);
-  const org = identifier(orgColumn);
-  const created = identifier(createdColumn);
-  return `${a}.organization_id = ${r}.${org}
-                and ${a}.athlete_id = ${acct}.athlete_id
-                and ${a}.created_at <= ${r}.${created}`;
 }
 
 /**

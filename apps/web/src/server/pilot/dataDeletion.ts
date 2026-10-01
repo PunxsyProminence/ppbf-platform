@@ -518,13 +518,41 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
     let totalDeleted = 0;
 
     // Delete athletes soft-deleted more than 2 years ago
-    const athleteDelete = await client.query(
+    const athleteDelete = await client.query<{ organization_id: string; athlete_id: string }>(
       `delete from pilot.athletes
        where deleted_at is not null
          and deleted_at < (now() - interval '2 years')
-       returning athlete_id`,
+       returning organization_id, athlete_id`,
     );
     totalDeleted += athleteDelete.rows.length;
+
+    /* The login stops naming the athlete in the same transaction -- the same
+       statement, for the same reason, as scripts/pilot-cleanup-deleted-data.mjs:
+       an athlete's login outlives the purge, athlete_id has no foreign key, and
+       the roster can give a purged athlete_id to a different child. Only the
+       athletes this statement actually deleted, each in its own gym. An
+       athlete login still live is marked deleted as well, so intake cannot
+       bind it to a different child; a login that is no longer an athlete's is
+       only unlinked. */
+    let loginsUnlinked = 0;
+    if (athleteDelete.rows.length > 0) {
+      const unlinked = await client.query(
+        `update pilot.accounts acct
+            set athlete_id = null,
+                deleted_at = case when acct.role = 'athlete' then coalesce(acct.deleted_at, now()) else acct.deleted_at end,
+                active_flag = case when acct.role = 'athlete' then false else acct.active_flag end,
+                updated_at = now()
+           from unnest($1::text[], $2::text[]) as purged(organization_id, athlete_id)
+          where acct.organization_id = purged.organization_id
+            and acct.athlete_id = purged.athlete_id
+          returning acct.account_id`,
+        [
+          athleteDelete.rows.map((row) => row.organization_id),
+          athleteDelete.rows.map((row) => row.athlete_id),
+        ],
+      );
+      loginsUnlinked = unlinked.rows.length;
+    }
 
     /* The guardian's own record goes first, and the account cannot be deleted
        without it. Owner decision, 2026-08-28 (D-8): "delete the parents row
@@ -593,6 +621,7 @@ export async function purgeExpiredDeletedData(): Promise<{ rowsDeleted: number }
           JSON.stringify({
             athletes_deleted: athleteDelete.rows.length,
             accounts_deleted: accountDelete.rows.length,
+            athlete_logins_unlinked: loginsUnlinked,
             total_rows_deleted: totalDeleted,
           }),
         ],

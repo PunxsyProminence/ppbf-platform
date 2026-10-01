@@ -34,7 +34,7 @@
 // Spins up the same disposable, local-only embedded Postgres the other suites
 // use. It NEVER connects to production or staging.
 
-import { type ChildProcessByStdio, spawn } from 'node:child_process';
+import { type ChildProcessByStdio, execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -99,8 +99,9 @@ import { GET as safetyFlagsGET } from '@/app/api/pilot/safety-flags/route';
 import { GET as trainingHoldsGET } from '@/app/api/pilot/training-holds/route';
 
 import type { PilotPrincipal } from './auth';
-import { deleteAthleteRecord } from './dataDeletion';
+import { deleteAthleteRecord, purgeExpiredDeletedData } from './dataDeletion';
 import { insertAthleteIfAbsent } from './entities';
+import { assertAthleteAccountIdProvisionable } from './intake';
 import { requireMicrosoftAuthenticatedPrincipal, requirePrincipal } from './http';
 import { raiseSafetyFlag, resolveSafetyFlag } from './safetyFlags';
 
@@ -111,6 +112,7 @@ const PG_PASSWORD = 'postgres';
 const DATA_DIR = path.join(os.tmpdir(), `ppbf-deleted-athlete-safety-screens-pg-test-${Date.now()}`);
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
+const CLEANUP_SCRIPT = path.resolve(__dirname, '../../../scripts/pilot-cleanup-deleted-data.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const DATABASE = 'deleted_athlete_safety_screens';
 
@@ -146,21 +148,18 @@ const SHARED = 'ATH-L2-SHARED';
 const SHARED_ACCOUNT = 'acct-l2-athlete-shared';
 /** A guardian whose login moves to OTHER_ORG and is deleted there. */
 const MOVED_GUARDIAN = 'acct-l2-guardian-moved';
-/** An athlete deleted, then removed by the retention purge, which leaves the login behind.
+/** An athlete deleted, then removed by a purge from BEFORE the tombstone: the login still carries the id.
     The second gym has a live athlete with the same id. */
 const PURGED_ATHLETE = 'ATH-L2-PURGED';
 const PURGED_ATHLETE_ACCOUNT = 'acct-l2-athlete-purged';
-/** An athlete deleted and purged, whose athlete_id the roster then gives to a different child. */
+/** An athlete deleted and purged by the real purge, whose athlete_id the roster then gives to a different child. */
 const REUSED = 'ATH-L2-REUSED';
 const REUSED_ACCOUNT = 'acct-l2-athlete-reused';
-/** As REUSED, but the old login is also purged (re-roled to parent first), so the new child can hold a login. */
-const FREED = 'ATH-L2-FREED';
-const FREED_ACCOUNT = 'acct-l2-athlete-freed';
-const FREED_NEW_ACCOUNT = 'acct-l2-athlete-freed-new';
-/** An athlete row removed while its login stayed live; the id then goes to a new child, who is later deleted. */
+const REUSED_NEW_ACCOUNT = 'acct-l2-athlete-reused-new';
+/** An athlete row deleted and purged while its login was still live; the id then goes to a new child. */
 const ORPHANED = 'ATH-L2-ORPHANED';
 const ORPHANED_ACCOUNT = 'acct-l2-athlete-orphaned';
-/** A login that exists before its athlete row does; the row is created mid-suite, then the athlete writes. */
+/** A login that exists, and writes, before its athlete row does. */
 const LATE_ROW = 'ATH-L2-LATE-ROW';
 const LATE_ROW_ACCOUNT = 'acct-l2-athlete-late-row';
 /** A coach whose login is later re-roled to athlete and then deleted. */
@@ -257,14 +256,15 @@ async function seed(client: Client): Promise<void> {
     [OTHER_ORG, PURGED_ATHLETE, OTHER_COACH],
     [ORG, TURNED, COACH],
     [ORG, REUSED, COACH],
-    [ORG, FREED, COACH],
     [ORG, ORPHANED, COACH],
   ] as const) {
     await q(
       `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
          emergency_contact, active_flag, coach_id, created_at, updated_at)
-       values ($1, $2, $2, '2011-05-06', 'fly', 'active', 'contact', true, $3, now() - interval '1 year', now())`,
-      [org, athlete, coach],
+       values ($1, $2, $4, '2011-05-06', 'fly', 'active', 'contact', true, $3, now() - interval '1 year', now())`,
+      // Named after its id in ORG; the second gym's athlete under the same id
+      // has a different name, so a name pulled across gyms shows.
+      [org, athlete, coach, org === ORG ? athlete : `other gym ${athlete}`],
     );
   }
   for (const [account, org, athlete] of [
@@ -276,7 +276,6 @@ async function seed(client: Client): Promise<void> {
     [PURGED_ATHLETE_ACCOUNT, ORG, PURGED_ATHLETE],
     [TURNED_ACCOUNT, ORG, TURNED],
     [REUSED_ACCOUNT, ORG, REUSED],
-    [FREED_ACCOUNT, ORG, FREED],
     [ORPHANED_ACCOUNT, ORG, ORPHANED],
     // No athlete row yet: accounts.athlete_id has no foreign key.
     [LATE_ROW_ACCOUNT, ORG, LATE_ROW],
@@ -375,7 +374,6 @@ async function seed(client: Client): Promise<void> {
     [COACH_TURNED_ATHLETE, ORG, 'coach', 'COACH-TURNED-ATHLETE'],
     [TURNED_ACCOUNT, ORG, 'athlete', 'ATHLETE-TURNED-PARENT'],
     [REUSED_ACCOUNT, ORG, 'athlete', 'REUSED-OLD'],
-    [FREED_ACCOUNT, ORG, 'athlete', 'FREED-OLD'],
     [ORPHANED_ACCOUNT, ORG, 'athlete', 'ORPHANED-OLD'],
   ] as const) {
     await feedbackSet(client, org, account, role, tag);
@@ -815,7 +813,7 @@ describe('after deleteAthleteRecord(GONE)', () => {
     expect(await feedbackScreen()).toEqual(expect.arrayContaining(ids('MOVED-GUARDIAN', FEEDBACK_ALL)));
   });
 
-  test("a deleted athlete's closed feedback stays hidden after the retention purge removes the athlete row", async () => {
+  test("a purge from before the tombstone (the login still names the missing row): the closed feedback stays hidden", async () => {
     const expectClosedHidden = async () => {
       const shown = await feedbackScreen();
       expect(shown).toEqual(expect.arrayContaining(ids('PURGED-ATHLETE', FEEDBACK_UNRESOLVED)));
@@ -826,8 +824,9 @@ describe('after deleteAthleteRecord(GONE)', () => {
     expect(await feedbackScreen()).toEqual(expect.arrayContaining(ids('PURGED-ATHLETE', FEEDBACK_ALL)));
     await deleteAthleteRecord({ accountId: ADMIN, role: 'organization_admin', organizationId: ORG }, PURGED_ATHLETE, 'Left the gym');
     await expectClosedHidden();
-    // The purge: the athlete row goes, the login stays, deleted, naming nothing
-    // in THIS gym (the second gym's live athlete with the same id is not it).
+    // What the purge left before it wrote a tombstone: the athlete row gone,
+    // the login deleted and still carrying an id that names nothing in THIS
+    // gym (the second gym's live athlete with the same id is not it).
     await run(`delete from pilot.athletes where organization_id = $1 and athlete_id = $2`, [ORG, PURGED_ATHLETE]);
     const login = (await run(`select athlete_id, deleted_at from pilot.accounts where account_id = $1`, [PURGED_ATHLETE_ACCOUNT])).rows[0];
     expect(login.athlete_id).toBe(PURGED_ATHLETE);
@@ -835,142 +834,184 @@ describe('after deleteAthleteRecord(GONE)', () => {
     await expectClosedHidden();
   });
 
-  test("a purged athlete's id given to a new child: the old rows stay closed-hidden and are never put under the new child's name", async () => {
-    // Before: the athlete's rows show, under the athlete's own name (the seed
-    // names each athlete after its id).
+  /** Runs the real cleanup script as its own process, as the scheduled job does. */
+  const runCleanupScript = (extraEnv: Record<string, string>) =>
+    new Promise<Record<string, unknown>>((resolve, reject) => {
+      execFile(
+        process.execPath,
+        [CLEANUP_SCRIPT],
+        {
+          env: {
+            ...process.env,
+            AZURE_POSTGRES_CONNECTION_STRING: connectionStringFor(DATABASE),
+            PPBF_EXPECTED_POSTGRES_HOSTNAME: 'localhost',
+            PPBF_EXPECTED_POSTGRES_DATABASE: DATABASE,
+            PPBF_POSTGRES_DISABLE_SSL: 'true',
+            ...extraEnv,
+          },
+        },
+        (_error, stdout, stderr) => {
+          const line = `${stdout}${stderr}`.split('\n').find((entry) => entry.trim().startsWith('{'));
+          if (!line) {
+            reject(new Error(`No JSON output. stdout=${stdout} stderr=${stderr}`));
+            return;
+          }
+          resolve(JSON.parse(line) as Record<string, unknown>);
+        },
+      );
+    });
+  const expire = (org: string, athleteId: string) =>
+    run(
+      `update pilot.athletes set deleted_at = now() - interval '3 years' where organization_id = $1 and athlete_id = $2`,
+      [org, athleteId],
+    );
+  const loginOf = async (accountId: string) =>
+    (await run(
+      `select athlete_id, role, organization_id, active_flag, deleted_at::text as deleted_at
+         from pilot.accounts where account_id = $1`,
+      [accountId],
+    )).rows[0] as {
+      athlete_id: string | null;
+      role: string;
+      organization_id: string;
+      active_flag: boolean;
+      deleted_at: string | null;
+    };
+  const athleteExists = async (org: string, athleteId: string) =>
+    (await run(`select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2`, [org, athleteId])).rows.length > 0;
+
+  test("a purged athlete's id given to a new child: the purge unlinks the old login, so the old rows are nobody's and the new child's are their own", async () => {
     let names = await feedbackNames();
     for (const item of ids('REUSED-OLD', FEEDBACK_ALL)) {
       expect(names.get(item)).toBe(REUSED);
     }
 
-    // Deleted, then purged the way the cleanup job does it: the athlete row
-    // goes, the deleted login stays and still carries the athlete_id.
+    // Deleted, then purged by the application's own purge once the retention
+    // window has passed.
     await deleteAthleteRecord({ accountId: ADMIN, role: 'organization_admin', organizationId: ORG }, REUSED, 'Left the gym');
-    await run(`delete from pilot.athletes where organization_id = $1 and athlete_id = $2`, [ORG, REUSED]);
-    const oldLogin = (await run(`select athlete_id, deleted_at from pilot.accounts where account_id = $1`, [REUSED_ACCOUNT])).rows[0];
-    expect(oldLogin.athlete_id).toBe(REUSED);
+    await expire(ORG, REUSED);
+    await purgeExpiredDeletedData();
+    expect(await athleteExists(ORG, REUSED)).toBe(false);
+    const oldLogin = await loginOf(REUSED_ACCOUNT);
+    // The tombstone: the deleted login is kept, and names nobody.
+    expect(oldLogin).toMatchObject({ athlete_id: null, role: 'athlete', organization_id: ORG, active_flag: false });
     expect(oldLogin.deleted_at).not.toBeNull();
 
-    // The roster's own create path gives the id to a different child.
+    // The roster's own create path gives the id to a different child, who can
+    // now hold a login of their own, and writes.
     await newChild(REUSED, 'New Child');
-
-    names = await feedbackNames();
-    // The purged child's unresolved rows are still on the queue, with no athlete name...
-    for (const item of ids('REUSED-OLD', FEEDBACK_UNRESOLVED)) {
-      expect(names.has(item)).toBe(true);
-      expect(names.get(item)).toBeNull();
-    }
-    // ...and their closed rows stay hidden: the live row with that id is not them.
-    for (const item of ids('REUSED-OLD', FEEDBACK_RESOLVED)) {
-      expect(names.has(item)).toBe(false);
-    }
-    expect(Array.from(names.values())).not.toContain('New Child');
-
-    // The control: naming still works for an athlete who is who their login says.
-    for (const item of ids(LIVE, FEEDBACK_ALL)) {
-      expect(names.get(item)).toBe(LIVE);
-    }
-
-    // Deleting the NEW child re-stamps the old login's deleted_at (the deletion
-    // addresses the login by athlete_id), so "created before the login was
-    // deleted" would now be true of the new child. Nothing changes here,
-    // because the test of identity is the submission's own date.
-    const stampBefore = (await run(`select deleted_at::text as at from pilot.accounts where account_id = $1`, [REUSED_ACCOUNT])).rows[0].at;
-    await deleteAthleteRecord({ accountId: ADMIN, role: 'organization_admin', organizationId: ORG }, REUSED, 'New child left too');
-    const stampAfter = (await run(`select deleted_at::text as at from pilot.accounts where account_id = $1`, [REUSED_ACCOUNT])).rows[0].at;
-    expect(stampAfter).not.toBe(stampBefore);
-    names = await feedbackNames();
-    for (const item of ids('REUSED-OLD', FEEDBACK_UNRESOLVED)) {
-      expect(names.has(item)).toBe(true);
-      expect(names.get(item)).toBeNull();
-    }
-    for (const item of ids('REUSED-OLD', FEEDBACK_RESOLVED)) {
-      expect(names.has(item)).toBe(false);
-    }
-
-    // The new child has no feedback of their own to test here: one login per
-    // athlete_id per gym, and the purged child's deleted login still holds it
-    // (the next test frees it).
-    await expect(
-      run(
-        `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag, login_email)
-         values ('acct-l2-new-child', 'athlete', $1, $2, 'ppbf_local', true, null)`,
-        [ORG, REUSED],
-      ),
-    ).rejects.toThrow(/duplicate key|unique/i);
-  });
-
-  test("once the old login is purged too, the new child gets a login: their own feedback is theirs, the old child's is nobody's", async () => {
-    await deleteAthleteRecord({ accountId: ADMIN, role: 'organization_admin', organizationId: ORG }, FREED, 'Left the gym');
-    await run(`delete from pilot.athletes where organization_id = $1 and athlete_id = $2`, [ORG, FREED]);
-    // The purge removes logins by their CURRENT role: re-roled to parent, the
-    // old athlete login goes, and the one-login-per-athlete slot is free.
-    await run(
-      `update pilot.accounts set role = 'parent', deleted_at = now() - interval '2 years' where account_id = $1`,
-      [FREED_ACCOUNT],
-    );
-    await run(`delete from pilot.accounts where account_id = $1`, [FREED_ACCOUNT]);
-
-    await newChild(FREED, 'Freed New Child');
     await run(
       `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag, login_email)
        values ($1, 'athlete', $2, $3, 'ppbf_local', true, null)`,
-      [FREED_NEW_ACCOUNT, ORG, FREED],
+      [REUSED_NEW_ACCOUNT, ORG, REUSED],
     );
-    await feedbackSet(activeClient!, ORG, FREED_NEW_ACCOUNT, 'athlete', 'FREED-NEW');
+    await feedbackSet(activeClient!, ORG, REUSED_NEW_ACCOUNT, 'athlete', 'REUSED-NEW');
 
-    const names = await feedbackNames();
+    const expectOldRowsNobodys = (shown: Map<string, string | null>) => {
+      // The purged child's unresolved rows are still on the queue, with no athlete name...
+      for (const item of ids('REUSED-OLD', FEEDBACK_UNRESOLVED)) {
+        expect(shown.has(item)).toBe(true);
+        expect(shown.get(item)).toBeNull();
+      }
+      // ...and their closed rows stay hidden.
+      for (const item of ids('REUSED-OLD', FEEDBACK_RESOLVED)) {
+        expect(shown.has(item)).toBe(false);
+      }
+    };
+    names = await feedbackNames();
+    expectOldRowsNobodys(names);
+    // A deleted, not yet purged athlete is still named on what is left of
+    // theirs -- by their own gym's record, not the second gym's athlete who
+    // shares the id.
+    for (const item of ids(GONE, FEEDBACK_UNRESOLVED)) {
+      expect(names.get(item)).toBe(GONE);
+    }
     // The new child's own feedback behaves like any live athlete's: all five, named.
-    for (const item of ids('FREED-NEW', FEEDBACK_ALL)) {
-      expect(names.get(item)).toBe('Freed New Child');
+    for (const item of ids('REUSED-NEW', FEEDBACK_ALL)) {
+      expect(names.get(item)).toBe('New Child');
     }
-    // The old child's rows have a cleared reference on an athlete-written row:
-    // nothing proves who wrote them, so they all stay, and carry no name.
-    for (const item of ids('FREED-OLD', FEEDBACK_ALL)) {
-      expect(names.has(item)).toBe(true);
-      expect(names.get(item)).toBeNull();
+
+    // The new child is deleted in turn. Their closed rows leave, their open
+    // ones stay under their name, and the first child's login is not touched
+    // again: it no longer carries the id the deletion addresses.
+    await deleteAthleteRecord({ accountId: ADMIN, role: 'organization_admin', organizationId: ORG }, REUSED, 'New child left too');
+    expect((await loginOf(REUSED_ACCOUNT)).deleted_at).toBe(oldLogin.deleted_at);
+    names = await feedbackNames();
+    expectOldRowsNobodys(names);
+    for (const item of ids('REUSED-NEW', FEEDBACK_UNRESOLVED)) {
+      expect(names.get(item)).toBe('New Child');
     }
-  });
-
-  test("a new child under an old LIVE login's id is not the writer, even once the new child is deleted", async () => {
-    // The athlete row went without the login being deleted (a guardian's
-    // deletion withdraws the athlete row only); the id is then given to a new
-    // child, and the new child is later deleted.
-    await run(`delete from pilot.athletes where organization_id = $1 and athlete_id = $2`, [ORG, ORPHANED]);
-    await newChild(ORPHANED, 'Orphaned New Child');
-    await run(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, ORPHANED]);
-
-    const names = await feedbackNames();
-    // The deleted row is the NEW child's, not the writer's: it proves nothing
-    // about the writer, so every old row stays, unnamed.
-    for (const item of ids('ORPHANED-OLD', FEEDBACK_ALL)) {
-      expect(names.has(item)).toBe(true);
-      expect(names.get(item)).toBeNull();
+    for (const item of ids('REUSED-NEW', FEEDBACK_RESOLVED)) {
+      expect(names.has(item)).toBe(false);
     }
   });
 
-  test('an athlete whose record was created after their login is still the writer of what they write afterwards', async () => {
-    // Intake can provision a login before the athlete row exists. What matters
-    // is the row existing when the SUBMISSION is written, not when the login was.
+  test("an athlete purged while their login was still live: the purge retires the login, and a login that became a coach's is only unlinked", async () => {
+    // A leftover the deletion path no longer produces: the athlete row deleted
+    // without its login. Beside it, an athlete who became a coach on the same
+    // login before their athlete record was deleted.
+    const STAFF_NOW = 'ATH-L2-STAFF-NOW';
+    const STAFF_NOW_ACCOUNT = 'acct-l2-staff-now';
     await run(
       `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
          emergency_contact, active_flag, coach_id, created_at, updated_at)
-       values ($1, $2, 'Late Row Athlete', '2011-05-06', 'fly', 'active', 'contact', true, $3, now(), now())`,
-      [ORG, LATE_ROW, COACH],
+       values ($1, $2, $2, '2011-05-06', 'fly', 'active', 'contact', true, $3, now() - interval '4 years', now())`,
+      [ORG, STAFF_NOW, COACH],
     );
-    const order = (await run(
-      `select (ath.created_at > acct.created_at) as row_after_login
-         from pilot.athletes ath, pilot.accounts acct
-        where ath.organization_id = $1 and ath.athlete_id = $2 and acct.account_id = $3`,
-      [ORG, LATE_ROW, LATE_ROW_ACCOUNT],
-    )).rows[0];
-    expect(order.row_after_login).toBe(true);
-    await feedbackSet(activeClient!, ORG, LATE_ROW_ACCOUNT, 'athlete', 'LATE-ROW');
+    await run(
+      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag, login_email)
+       values ($1, 'coach', $2, $3, 'microsoft', true, $1 || '@gym.test')`,
+      [STAFF_NOW_ACCOUNT, ORG, STAFF_NOW],
+    );
+    for (const athleteId of [ORPHANED, STAFF_NOW]) {
+      await run(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, athleteId]);
+      await expire(ORG, athleteId);
+    }
+    expect(await loginOf(ORPHANED_ACCOUNT)).toMatchObject({ athlete_id: ORPHANED, deleted_at: null, active_flag: true });
 
+    await purgeExpiredDeletedData();
+
+    // The athlete's own login: unlinked AND retired, so nothing can bind it to another child.
+    const retired = await loginOf(ORPHANED_ACCOUNT);
+    expect(retired).toMatchObject({ athlete_id: null, role: 'athlete', active_flag: false });
+    expect(retired.deleted_at).not.toBeNull();
+    await expect(
+      assertAthleteAccountIdProvisionable({ accountId: ORPHANED_ACCOUNT, athleteId: LIVE, organizationId: ORG }),
+    ).rejects.toThrow(/DELETED_ATHLETE_LOGIN|was deleted/);
+    // The coach's login: unlinked, and otherwise the coach's as it was.
+    expect(await loginOf(STAFF_NOW_ACCOUNT)).toMatchObject({ athlete_id: null, role: 'coach', active_flag: true, deleted_at: null });
+
+    // A new child given the id is not the writer of the purged child's rows:
+    // open ones stay, unnamed; closed ones are a gone writer's.
+    await newChild(ORPHANED, 'Orphaned New Child');
+    const names = await feedbackNames();
+    for (const item of ids('ORPHANED-OLD', FEEDBACK_UNRESOLVED)) {
+      expect(names.has(item)).toBe(true);
+      expect(names.get(item)).toBeNull();
+    }
+    for (const item of ids('ORPHANED-OLD', FEEDBACK_RESOLVED)) {
+      expect(names.has(item)).toBe(false);
+    }
+  });
+
+  test('a login that writes before its athlete record exists is that athlete once the record is added', async () => {
+    // A login can be provisioned, and used, before the roster row is added.
+    expect(await athleteExists(ORG, LATE_ROW)).toBe(false);
+    await feedbackSet(activeClient!, ORG, LATE_ROW_ACCOUNT, 'athlete', 'LATE-ROW');
     let names = await feedbackNames();
+    for (const item of ids('LATE-ROW', FEEDBACK_ALL)) {
+      expect(names.has(item)).toBe(true);
+      expect(names.get(item)).toBeNull();
+    }
+
+    // The record arrives afterwards: no date is compared, so the rows written
+    // before it are theirs, named, and all still there.
+    await newChild(LATE_ROW, 'Late Row Athlete');
+    names = await feedbackNames();
     for (const item of ids('LATE-ROW', FEEDBACK_ALL)) {
       expect(names.get(item)).toBe('Late Row Athlete');
     }
+
     // And the rule still bites for them: deleted, their closed rows leave.
     await deleteAthleteRecord({ accountId: ADMIN, role: 'organization_admin', organizationId: ORG }, LATE_ROW, 'Left the gym');
     names = await feedbackNames();
@@ -980,6 +1021,147 @@ describe('after deleteAthleteRecord(GONE)', () => {
     for (const item of ids('LATE-ROW', FEEDBACK_RESOLVED)) {
       expect(names.has(item)).toBe(false);
     }
+  });
+
+  test('the two purge paths leave the same thing behind: the scheduled script and purgeExpiredDeletedData', async () => {
+    // Two athletes that differ only in which purge removes them, each with a
+    // deleted login; the second gym has live athletes, with live logins, under
+    // the same two ids.
+    const BY_SCRIPT = 'ATH-L2-PARITY-SCRIPT';
+    const BY_FUNCTION = 'ATH-L2-PARITY-FUNCTION';
+    for (const athleteId of [BY_SCRIPT, BY_FUNCTION]) {
+      for (const [org, coach] of [[ORG, COACH], [OTHER_ORG, OTHER_COACH]] as const) {
+        await run(
+          `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+             emergency_contact, active_flag, coach_id, created_at, updated_at)
+           values ($1, $2, $2, '2011-05-06', 'fly', 'active', 'contact', true, $3, now() - interval '4 years', now())`,
+          [org, athleteId, coach],
+        );
+        await run(
+          `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag, login_email)
+           values ($1, 'athlete', $2, $3, 'ppbf_local', true, null)`,
+          [`acct-${org}-${athleteId}`, org, athleteId],
+        );
+      }
+      await feedbackSet(activeClient!, ORG, `acct-${ORG}-${athleteId}`, 'athlete', athleteId);
+      await deleteAthleteRecord({ accountId: ADMIN, role: 'organization_admin', organizationId: ORG }, athleteId, 'Left the gym');
+    }
+    const lastAuditBefore = (await run(`select coalesce(max(audit_id), 0)::int as id from pilot.audit_events`)).rows[0].id as number;
+    const before = {
+      script: await loginOf(`acct-${ORG}-${BY_SCRIPT}`),
+      fn: await loginOf(`acct-${ORG}-${BY_FUNCTION}`),
+    };
+    expect(before.script.athlete_id).toBe(BY_SCRIPT);
+    expect(before.fn.athlete_id).toBe(BY_FUNCTION);
+
+    // The script: a dry run performs the purge and rolls it back, so the login
+    // must come out of it still linked.
+    await expire(ORG, BY_SCRIPT);
+    const dryRun = await runCleanupScript({ PPBF_RETENTION_APPLY: 'false' });
+    expect(dryRun).toMatchObject({
+      event: 'retention.cleanup.dry-run',
+      athletes: 1,
+      accounts: 0,
+      would_delete_athletes: 1,
+      would_unlink_athlete_logins: 1,
+    });
+    expect(await athleteExists(ORG, BY_SCRIPT)).toBe(true);
+    expect((await loginOf(`acct-${ORG}-${BY_SCRIPT}`)).athlete_id).toBe(BY_SCRIPT);
+
+    const applied = await runCleanupScript({ PPBF_RETENTION_APPLY: 'true' });
+    expect(applied).toMatchObject({
+      event: 'retention.cleanup.completed',
+      athletes: 1,
+      accounts: 0,
+      total: 1,
+      athlete_logins_unlinked: 1,
+    });
+
+    // The function.
+    await expire(ORG, BY_FUNCTION);
+    await purgeExpiredDeletedData();
+
+    const after = {
+      script: await loginOf(`acct-${ORG}-${BY_SCRIPT}`),
+      fn: await loginOf(`acct-${ORG}-${BY_FUNCTION}`),
+    };
+    for (const [athleteId, was, is] of [
+      [BY_SCRIPT, before.script, after.script],
+      [BY_FUNCTION, before.fn, after.fn],
+    ] as const) {
+      expect(await athleteExists(ORG, athleteId)).toBe(false);
+      // Unlinked, and otherwise exactly the login it was: still deleted, on
+      // its original date, still this gym's athlete login.
+      expect(is).toEqual({ ...was, athlete_id: null });
+      // The second gym's athlete and login under the same id are untouched.
+      expect(await athleteExists(OTHER_ORG, athleteId)).toBe(true);
+      expect(await loginOf(`acct-${OTHER_ORG}-${athleteId}`)).toMatchObject({ athlete_id: athleteId, deleted_at: null });
+    }
+    // Same end state from both paths.
+    expect({ ...after.script, deleted_at: null }).toEqual({ ...after.fn, deleted_at: null });
+
+    // Both record it in the audit row that is the only trace of a purge:
+    // exactly two new rows, one per path.
+    const audits = await run(
+      `select details from pilot.audit_events where event_type = 'data_purged' and audit_id > $1 order by audit_id`,
+      [lastAuditBefore],
+    );
+    expect(audits.rows).toHaveLength(2);
+    for (const row of audits.rows as Array<{ details: Record<string, unknown> }>) {
+      expect(row.details).toMatchObject({ athletes_deleted: 1, accounts_deleted: 0, athlete_logins_unlinked: 1 });
+    }
+
+    // And the queue reads the script's purge exactly as it reads the function's.
+    const names = await feedbackNames();
+    for (const tag of [BY_SCRIPT, BY_FUNCTION]) {
+      for (const item of ids(tag, FEEDBACK_UNRESOLVED)) {
+        expect(names.has(item)).toBe(true);
+        expect(names.get(item)).toBeNull();
+      }
+      for (const item of ids(tag, FEEDBACK_RESOLVED)) {
+        expect(names.has(item)).toBe(false);
+      }
+    }
+  });
+
+  test('a purge the database refuses unlinks nothing: purgeExpiredDeletedData is all or nothing', async () => {
+    // pilot.one_percent_nominations RESTRICTS the athlete delete. In the
+    // function that aborts the whole transaction, so the purgeable athlete
+    // beside it is not removed either, and neither login is unlinked.
+    const NOMINATED = 'ATH-L2-NOMINATED';
+    const BESIDE = 'ATH-L2-BESIDE-NOMINATED';
+    for (const athleteId of [NOMINATED, BESIDE]) {
+      await run(
+        `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+           emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, $2, $2, '2011-05-06', 'fly', 'active', 'contact', true, $3, now() - interval '4 years', now())`,
+        [ORG, athleteId, COACH],
+      );
+      await run(
+        `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag, login_email)
+         values ($1, 'athlete', $2, $3, 'ppbf_local', true, null)`,
+        [`acct-${athleteId}`, ORG, athleteId],
+      );
+    }
+    await run(
+      `insert into pilot.one_percent_nominations
+         (organization_id, nomination_id, athlete_id, source, nominated_by_account_id, nominated_by_role, expires_at)
+       values ($1, 'NOM-L2', $2, 'coach_nomination', $3, 'coach', now() + interval '30 days')`,
+      [ORG, NOMINATED, COACH],
+    );
+    for (const athleteId of [NOMINATED, BESIDE]) {
+      await run(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2`, [ORG, athleteId]);
+      await run(`update pilot.accounts set deleted_at = now(), active_flag = false where account_id = $1`, [`acct-${athleteId}`]);
+      await expire(ORG, athleteId);
+    }
+
+    await expect(purgeExpiredDeletedData()).rejects.toThrow();
+
+    for (const athleteId of [NOMINATED, BESIDE]) {
+      expect(await athleteExists(ORG, athleteId)).toBe(true);
+      expect((await loginOf(`acct-${athleteId}`)).athlete_id).toBe(athleteId);
+    }
+    // Left unpurgeable on purpose; nothing after this test purges.
   });
 
   test("the second gym's athlete with GONE's id keeps its resolved items", async () => {
