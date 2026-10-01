@@ -41,8 +41,15 @@ export async function verifyPin(pin: string, encodedHash: string): Promise<boole
  */
 export const PASSWORD_SCRYPT_COST = { N: 2 ** 15, r: 8, p: 1 } as const;
 
-/** Refuses a stored cost no hash written here could carry, before deriving. */
-const MAX_STORED_SCRYPT_N = 2 ** 20;
+/**
+ * The costs verifyPassword will derive at: hashPin's N up to four times the
+ * current one, at the r and p every hash written here carries. A stored cost
+ * outside that was not written by this code, and deriving at whatever a row
+ * claims is how one bad row costs gigabytes and seconds. Raise the ceiling in
+ * the same change that raises PASSWORD_SCRYPT_COST past it.
+ */
+const MIN_STORED_SCRYPT_N = 2 ** 14;
+const MAX_STORED_SCRYPT_N = 2 ** 17;
 
 function scryptOptions(cost: { N: number; r: number; p: number }) {
   return { ...cost, maxmem: 256 * cost.N * cost.r };
@@ -88,15 +95,22 @@ export async function verifyPassword(password: string, encodedHash: string): Pro
 
   const [, rawN, rawR, rawP, salt, storedHex] = parts;
   const cost = { N: Number(rawN), r: Number(rawR), p: Number(rawP) };
-  const costIsSane = Number.isInteger(cost.N) && cost.N >= 2 ** 14 && cost.N <= MAX_STORED_SCRYPT_N
+  const costIsSane = Number.isInteger(cost.N) && cost.N >= MIN_STORED_SCRYPT_N && cost.N <= MAX_STORED_SCRYPT_N
     && (cost.N & (cost.N - 1)) === 0
-    && Number.isInteger(cost.r) && cost.r >= 1 && cost.r <= 32
-    && Number.isInteger(cost.p) && cost.p >= 1 && cost.p <= 16;
+    && cost.r === PASSWORD_SCRYPT_COST.r
+    && cost.p === PASSWORD_SCRYPT_COST.p;
   if (!costIsSane || !salt || !storedHex) {
     return false;
   }
 
-  const derived = await scryptWithCost(normalizePassword(password), salt, cost);
+  let derived: Buffer;
+  try {
+    derived = await scryptWithCost(normalizePassword(password), salt, cost);
+  } catch {
+    // A derivation that cannot run (memory refused) is "does not verify",
+    // never an exception out of a sign-in path.
+    return false;
+  }
   const stored = Buffer.from(storedHex, 'hex');
 
   if (derived.length !== stored.length) {

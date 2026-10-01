@@ -30,7 +30,7 @@ const COMMON_PASSWORDS: readonly string[] = [
 ];
 
 /**
- * Words that are a password only with digits or symbols tacked on, here: the
+ * Words that are a password only with digits, spaces or symbols added, here: the
  * gym's own name in the forms a parent would type, and the two generic ones.
  * "Punxsy2026!!" is the first thing a stranger who knows the gym would try.
  */
@@ -39,13 +39,13 @@ const WEAK_BASE_WORDS: readonly string[] = [
   'punxsyprominence', 'punxsyboxing', 'prominenceboxing', 'punxsyprominenceboxing',
 ];
 
-/** The password with everything but its letters dropped from both ends, lower-cased. */
-function lettersCore(value: string): string {
-  return value.toLowerCase().replace(/^[^a-z]+|[^a-z]+$/g, '');
+/** Only the letters a-z, lower-cased: "Punxsy-Prominence 2026!" is "punxsyprominence". */
+function lettersOnly(value: string): string {
+  return value.toLowerCase().replace(/[^a-z]/g, '');
 }
 
 export interface PasswordContext {
-  /** The account's sign-in email. Its name part may not be the password. */
+  /** The account's sign-in email. Neither it nor its name part may be the password. */
   loginEmail?: string | null;
 }
 
@@ -62,8 +62,16 @@ export const PASSWORD_RULE_SUMMARY =
   + `${PASSWORD_RULES_REFUSED_EXAMPLES[1]}, and not the gym's name or your email name with numbers added.`;
 
 export function validatePasswordPolicy(password: string, context: PasswordContext = {}): void {
-  // Counted in characters as a person sees them, not UTF-16 units, and on the
-  // same NFKC form hashPassword hashes.
+  // Before anything walks the string: a body of megabytes is not a password.
+  if (password.length > MAX_PASSWORD_LENGTH * 4) {
+    throw new ValidationError(
+      `Password must be at most ${MAX_PASSWORD_LENGTH} characters`,
+      'PASSWORD_TOO_LONG',
+    );
+  }
+
+  // Counted in code points, not UTF-16 units, on the same NFKC form
+  // hashPassword hashes.
   const normalized = password.normalize('NFKC');
   const length = [...normalized].length;
 
@@ -84,16 +92,18 @@ export function validatePasswordPolicy(password: string, context: PasswordContex
   }
 
   const lowered = normalized.toLowerCase();
-  const core = lettersCore(normalized);
-  const emailName = lettersCore((context.loginEmail ?? '').split('@')[0] ?? '');
+  const letters = lettersOnly(normalized);
+  const loginEmail = (context.loginEmail ?? '').trim().toLowerCase();
+  const emailName = lettersOnly(loginEmail.split('@')[0] ?? '');
 
   if (
     new Set(lowered).size === 1
     || COMMON_PASSWORDS.includes(lowered)
-    || WEAK_BASE_WORDS.includes(core)
-    // An email name of one or two letters is not a base word; "jo" would
-    // refuse every password that happens to start and end around it.
-    || (emailName.length >= 3 && core === emailName)
+    || WEAK_BASE_WORDS.includes(letters)
+    || (loginEmail !== '' && lowered === loginEmail)
+    // An email name of one or two letters is not a base word: "jo" would
+    // refuse every password whose only letters happen to be those two.
+    || (emailName.length >= 3 && letters === emailName)
   ) {
     throw new ValidationError(
       'That password is too easy to guess. Choose something longer or less obvious.',

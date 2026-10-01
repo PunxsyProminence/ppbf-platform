@@ -121,10 +121,11 @@ export async function redeemMagicLink(token: string): Promise<RedemptionResult> 
               a.role, a.active_flag, a.login_email,
               ${accountDeletedSql('a')} as account_deleted,
               -- A scalar subselect, as in auth.ts: a join would multiply the row.
+              -- A seat on ANY board: a password belongs to the account, not
+              -- to one organization (parentPassword.ts asks the same way).
               exists (
                 select 1 from pilot.board_seats bs
-                 where bs.organization_id = t.organization_id
-                   and bs.account_id = a.account_id
+                 where bs.account_id = a.account_id
               ) as holds_board_seat
          from pilot.magic_link_tokens t
          join pilot.accounts a on a.account_id = t.account_id

@@ -53,17 +53,29 @@ describe('password policy', () => {
     ['the gym name with a year', 'Punxsy2026!!'],
     ['the gym name with digits in front', '2026prominence'],
     ['the word password dressed up', '!!Password2026'],
+    ['the gym name spelled out with a year', 'Punxsy Prominence 2026'],
+    ['two gym words joined by a symbol', 'punxsy-boxing1'],
   ])('%s is too guessable: %s', (_label, password) => {
     expect(refusalCode(password)).toBe('PASSWORD_TOO_GUESSABLE');
   });
 
   test('the email name with numbers added is refused, for that account only', () => {
     expect(refusalCode('mariagarcia2026', 'mariagarcia@example.com')).toBe('PASSWORD_TOO_GUESSABLE');
+    expect(refusalCode('mariagarcia2026', 'Maria.Garcia@example.com')).toBe('PASSWORD_TOO_GUESSABLE');
     expect(refusalCode('mariagarcia2026', 'someone.else@example.com')).toBeNull();
   });
 
-  test('a one- or two-letter email name refuses nothing by itself', () => {
-    expect(refusalCode('1234jo56789x', 'jo@example.com')).toBeNull();
+  test('the sign-in email itself is refused as a password', () => {
+    expect(refusalCode('Maria.Garcia@Example.com', 'maria.garcia@example.com')).toBe('PASSWORD_TOO_GUESSABLE');
+  });
+
+  test('an email name of three letters counts; one of two does not', () => {
+    expect(refusalCode('1234-ann-5678', 'ann@example.com')).toBe('PASSWORD_TOO_GUESSABLE');
+    expect(refusalCode('1234-jo-56789', 'jo@example.com')).toBeNull();
+  });
+
+  test('a body-sized string is refused before it is walked', () => {
+    expect(refusalCode('x'.repeat(MAX_PASSWORD_LENGTH * 4 + 1))).toBe('PASSWORD_TOO_LONG');
   });
 
   test('a gym word inside a longer password is fine; only the bare word plus padding is refused', () => {

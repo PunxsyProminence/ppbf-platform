@@ -50,7 +50,9 @@ const rateLimit = jest.requireMock('@/src/server/pilot/rateLimit') as {
   recordDurableFailedAttempt: jest.Mock;
   clearDurableRateLimit: jest.Mock;
   clearRateLimit: (key: string) => void;
+  recordFailedAttempt: (key: string) => unknown;
 };
+const actualRateLimit = jest.requireActual('@/src/server/pilot/rateLimit') as typeof import('@/src/server/pilot/rateLimit');
 
 const GOOD_PASSWORD = 'three small boats';
 
@@ -82,6 +84,8 @@ beforeEach(() => {
     authProvider: 'microsoft' as const,
   } as never);
   mockSetPassword.mockResolvedValue(undefined);
+  // clearAllMocks keeps implementations; put the real durable check back.
+  rateLimit.checkDurableRateLimit.mockImplementation(actualRateLimit.checkDurableRateLimit);
 });
 
 describe('POST /api/pilot/auth/password/set', () => {
@@ -189,13 +193,26 @@ describe('POST /api/pilot/auth/password/set', () => {
     expect(reached).toBeLessThan(8);
   });
 
-  test('a durable limit is honoured before anything else runs', async () => {
-    rateLimit.checkDurableRateLimit.mockResolvedValueOnce({ isLimited: true, delayMs: 30_000 });
+  // Each of the four checks, limited alone while the other three are clear.
+  test.each([
+    ['the durable account bucket', 'durable', 'password_set_account:parent-1'],
+    ['the durable IP bucket', 'durable', 'password_set_ip:203.0.113.9'],
+    ['the in-memory account bucket', 'volatile', 'password_set_account:parent-1'],
+    ['the in-memory IP bucket', 'volatile', 'password_set_ip:203.0.113.9'],
+  ])('%s alone is enough for a 429, before anything else runs', async (_label, store, limitedKey) => {
+    if (store === 'durable') {
+      rateLimit.checkDurableRateLimit.mockImplementation(async (key: string) => (
+        key === limitedKey ? { isLimited: true, delayMs: 30_000 } : { isLimited: false }
+      ));
+    } else {
+      rateLimit.recordFailedAttempt(limitedKey);
+    }
 
     const res = await post({ password: GOOD_PASSWORD });
 
     expect(res.status).toBe(429);
     expect(mockSetPassword).not.toHaveBeenCalled();
+    rateLimit.clearRateLimit(limitedKey);
   });
 
   test('success clears both buckets', async () => {

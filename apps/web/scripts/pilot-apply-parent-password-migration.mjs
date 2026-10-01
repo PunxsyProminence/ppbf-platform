@@ -6,7 +6,7 @@ import { Client } from 'pg';
 
 import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mjs';
 
-// Asks for each column and each constraint by name AND by what it says. The
+// Asks for each column, and for each constraint by name AND by what it names. The
 // columns alone are not readiness: a database that has them without the
 // checks accepts half a credential and any sign_in_method string.
 //
@@ -31,6 +31,8 @@ const READINESS_QUERY = `
        where c.conname = 'pilot_accounts_password_pair_check'
          and c.conrelid = to_regclass('pilot.accounts')
          and c.contype = 'c' and c.convalidated
+         and pg_get_constraintdef(c.oid) ilike '%password_hash%'
+         and pg_get_constraintdef(c.oid) ilike '%password_set_at%'
     ) as password_pair_check_ready,
     exists (
       select 1 from pg_constraint c

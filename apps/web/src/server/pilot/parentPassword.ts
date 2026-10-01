@@ -1,5 +1,5 @@
 import type { PilotRole } from './contracts';
-import { passwordLoginPermitted } from './credentialPolicy';
+import { PASSWORD_ROLES, passwordLoginPermitted } from './credentialPolicy';
 import { queryOne, withTransaction } from './db';
 import { accountDeletedSql, isDeletedAccount, type AccountDeletionFlag } from './deletedAccountSignIn';
 import { ForbiddenError } from './errors';
@@ -45,6 +45,15 @@ const LINK_SESSION_PROOF_SQL = `st.revoked_at is null
   and st.sign_in_method = 'magic_link'
   and st.created_at > now() - interval '${PASSWORD_SETUP_WINDOW_MINUTES} minutes'`;
 
+/**
+ * "Holds a board seat", for the account under `a`: a seat on ANY board, not
+ * only the session organization's. The password lives on the account, which
+ * is not per-organization, so a seat anywhere is a seat for this purpose.
+ */
+const HOLDS_ANY_BOARD_SEAT_SQL = `exists (
+  select 1 from pilot.board_seats bs where bs.account_id = a.account_id
+)`;
+
 interface SetupRow extends AccountDeletionFlag {
   role: PilotRole;
   login_email: string | null;
@@ -63,11 +72,7 @@ export async function setOwnPasswordFromLinkSession(input: {
   const row = await queryOne<SetupRow>(
     `select a.role, a.login_email, a.active_flag,
             ${accountDeletedSql('a')} as account_deleted,
-            exists (
-              select 1 from pilot.board_seats bs
-               where bs.organization_id = st.organization_id
-                 and bs.account_id = a.account_id
-            ) as holds_board_seat,
+            ${HOLDS_ANY_BOARD_SEAT_SQL} as holds_board_seat,
             (${LINK_SESSION_PROOF_SQL}) as link_session_proof
        from pilot.session_tokens st
        join pilot.accounts a on a.account_id = st.account_id
@@ -99,14 +104,19 @@ export async function setOwnPasswordFromLinkSession(input: {
   await withTransaction(async (client) => {
     // The read above is outside this transaction and a scrypt sits between
     // them. So the write restates every condition it relied on: an account
-    // deleted or deactivated, or a session revoked (a role change revokes
-    // them all, staffProvisioning.ts) or aged out in that gap, matches no row.
+    // deleted, deactivated, re-roled or given a board seat, or a session
+    // revoked or aged out in that gap, matches no row. A role change revokes
+    // the account's sessions; a seat grant (boardSeats.ts) does not, which is
+    // why the role and the seat are restated and not left to the session.
+    // The roles are passwordLoginPermitted's own list, passed in, not named.
     const updated = await client.query<{ account_id: string }>(
       `update pilot.accounts a
           set password_hash = $1, password_set_at = now(), updated_at = now()
         where a.account_id = $2
           and a.active_flag
           and not ${accountDeletedSql('a')}
+          and a.role = any($4::text[])
+          and not ${HOLDS_ANY_BOARD_SEAT_SQL}
           and exists (
             select 1 from pilot.session_tokens st
              where st.token_hash = $3
@@ -114,7 +124,7 @@ export async function setOwnPasswordFromLinkSession(input: {
                and ${LINK_SESSION_PROOF_SQL}
           )
         returning a.account_id`,
-      [passwordHash, input.accountId, tokenHash],
+      [passwordHash, input.accountId, tokenHash, [...PASSWORD_ROLES]],
     );
 
     if (updated.rows.length === 0) {

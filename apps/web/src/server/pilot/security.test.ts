@@ -84,11 +84,31 @@ describe('security password hashing', () => {
     ['a cost that is not a power of two', 'scrypt$30000$8$1$aa$bb'],
     ['a cost below any this code wrote', 'scrypt$2$8$1$aa$bb'],
     ['a cost large enough to exhaust memory', `scrypt$${2 ** 24}$8$1$aa$bb`],
+    ['a cost one step past the ceiling', `scrypt$${2 ** 18}$8$1$aa$bb`],
+    ['a block size this code never wrote', 'scrypt$32768$32$1$aa$bb'],
+    ['a parallelism this code never wrote', 'scrypt$32768$8$16$aa$bb'],
+    ['a zero block size', 'scrypt$32768$0$1$aa$bb'],
     ['a non-numeric cost', 'scrypt$N$8$1$aa$bb'],
     ['an empty salt', 'scrypt$32768$8$1$$bb'],
     ['an empty string', ''],
   ])('a malformed stored hash refuses without deriving: %s', async (_label, stored) => {
     await expect(verifyPassword(PASSWORD, stored)).resolves.toBe(false);
+  });
+
+  test('the highest cost it accepts still verifies, so the ceiling is a real one', async () => {
+    const { scryptSync } = jest.requireActual('node:crypto') as typeof import('node:crypto');
+    const salt = 'b2'.repeat(16);
+    const N = 2 ** 17;
+    const stored = scryptSync(PASSWORD, salt, 64, { N, r: 8, p: 1, maxmem: 256 * N * 8 }).toString('hex');
+
+    await expect(verifyPassword(PASSWORD, `scrypt$${N}$8$1$${salt}$${stored}`)).resolves.toBe(true);
+  });
+
+  test('a stored key of the wrong length does not verify, and does not throw', async () => {
+    const hashed = await hashPassword(PASSWORD);
+
+    await expect(verifyPassword(PASSWORD, hashed.slice(0, -2))).resolves.toBe(false);
+    await expect(verifyPassword(PASSWORD, `${hashed}00`)).resolves.toBe(false);
   });
 
   test('an empty password is refused, not hashed', async () => {

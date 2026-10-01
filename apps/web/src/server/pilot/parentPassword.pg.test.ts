@@ -91,6 +91,8 @@ const MIGRATIONS = [
 ];
 
 const ORG_ID = 'org-pp';
+// A second gym, for a board seat held somewhere other than the session's organization.
+const OTHER_ORG_ID = 'org-pp-other';
 const GOOD_PASSWORD = 'three small boats';
 
 // ts-jest downlevels a plain dynamic import into require(), which cannot load
@@ -255,6 +257,11 @@ beforeAll(async () => {
      values ($1, $1, 'active')`,
     [ORG_ID],
   );
+  await client.query(
+    `insert into pilot.organizations (organization_id, organization_name, status)
+     values ($1, $1, 'active')`,
+    [OTHER_ORG_ID],
+  );
   activeClient = client;
 });
 
@@ -361,6 +368,29 @@ describe('the parent-password migration, through its runner', () => {
     expect(await shape()).toEqual({ columns: [], constraints: [] });
   });
 
+  test('a pair check under the right name that checks something else is refused too', async () => {
+    const wrongBody = migrationSql.replace(
+      'check ((password_hash is null) = (password_set_at is null));',
+      'check (password_hash is null or length(password_hash) > 0);',
+    );
+    expect(wrongBody).not.toBe(migrationSql);
+
+    await expect(applyMigrationTransaction(runnerDb, wrongBody))
+      .rejects.toThrow(/PARENT_PASSWORD_MIGRATION_NOT_READY.*"password_pair_check_ready":false/);
+    expect(await shape()).toEqual({ columns: [], constraints: [] });
+  });
+
+  test('a migration that leaves a column out is refused', async () => {
+    const withoutTimestamp = migrationSql
+      .replace(/alter table pilot\.accounts\s+add column if not exists password_set_at timestamptz null;/, '')
+      .replace('check ((password_hash is null) = (password_set_at is null));', 'check (password_hash is null or password_hash <> \'password_set_at\');');
+    expect(withoutTimestamp).not.toBe(migrationSql);
+
+    await expect(applyMigrationTransaction(runnerDb, withoutTimestamp))
+      .rejects.toThrow(/PARENT_PASSWORD_MIGRATION_NOT_READY.*"account_columns_ready":false/);
+    expect(await shape()).toEqual({ columns: [], constraints: [] });
+  });
+
   test('it adds the three columns and both checks, and applying it again changes nothing', async () => {
     await applyMigrationTransaction(runnerDb, migrationSql);
     const first = await shape();
@@ -447,6 +477,21 @@ describe('redeeming an emailed link', () => {
     await client.query(
       `insert into pilot.board_seats (organization_id, seat, account_id) values ($1, 'treasurer', $2)`,
       [ORG_ID, parent],
+    );
+
+    const result = await redeemMagicLink(await seedLink(parent));
+
+    expect(result.ok).toBe(true);
+    expect(result.passwordSetup).toBe('none');
+  });
+
+  // The password is the account's, not one organization's: a seat on another
+  // gym's board is still a seat.
+  test('a parent who holds a seat on the board of ANOTHER organization is offered no password', async () => {
+    const parent = await seedAccount('parent');
+    await client.query(
+      `insert into pilot.board_seats (organization_id, seat, account_id) values ($1, 'treasurer', $2)`,
+      [OTHER_ORG_ID, parent],
     );
 
     const result = await redeemMagicLink(await seedLink(parent));
@@ -635,6 +680,17 @@ describe('set-password refuses everything but a fresh emailed-link session on a 
     expect(await refusalOf({ accountId: parent, sessionToken: token })).toBe('ACCEPTED');
   });
 
+  test('a seat on the board of ANOTHER organization refuses it just the same', async () => {
+    const parent = await seedAccount('parent');
+    const token = await seedSession(parent);
+    await client.query(
+      `insert into pilot.board_seats (organization_id, seat, account_id) values ($1, 'secretary', $2)`,
+      [OTHER_ORG_ID, parent],
+    );
+
+    await expectRefused(parent, token, 'role_not_password_eligible');
+  });
+
   test('a refusal logs a reason and never who it was', async () => {
     const parent = await seedAccount('parent');
     await refusalOf({ accountId: parent, sessionToken: await seedSession(parent, { method: null }) });
@@ -727,6 +783,34 @@ describe('a change between the check and the write is refused by the write', () 
         `update pilot.session_tokens set created_at = now() - interval '16 minutes' where token_hash = $1`,
         [hashToken(token)],
       );
+    });
+  });
+
+  // A seat grant revokes no session (boardSeats.ts), so the session proof
+  // alone would let this one through.
+  test('the account is given a board seat', async () => {
+    await refusedAfter(async (accountId) => {
+      await client.query(
+        `insert into pilot.board_seats (organization_id, seat, account_id) values ($1, 'chair', $2)`,
+        [ORG_ID, accountId],
+      );
+    });
+  });
+
+  test('the account is given a seat on the board of another organization', async () => {
+    await refusedAfter(async (accountId) => {
+      await client.query(
+        `insert into pilot.board_seats (organization_id, seat, account_id) values ($1, 'chair', $2)`,
+        [OTHER_ORG_ID, accountId],
+      );
+    });
+  });
+
+  // Every role change in the app revokes the account's sessions. This one
+  // deliberately does not, so the role is what the write is seen to refuse on.
+  test('the account stops being a parent, with its session left alive', async () => {
+    await refusedAfter(async (accountId) => {
+      await client.query(`update pilot.accounts set role = 'coach' where account_id = $1`, [accountId]);
     });
   });
 
