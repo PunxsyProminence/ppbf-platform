@@ -303,8 +303,11 @@ an excuse, and does not say that of being hurt or in pain (overwatch and the
 lane had both recommended the wider line; his call); no list of what a joke may
 never target is added, "not at the kid" stays the whole rule; the parent text
 keeps "Respectful" and aims humour at the situation, never at the parent or
-their child. Whether "dark humor" includes sarcasm for athletes was asked twice
-and is not answered. In the same reply he said dark humour may also be applied
+their child. Asked a second time whether "dark humor" includes sarcasm for
+athletes (A, yes, dark and sarcastic; B, dark and dry, not sarcastic), his
+words as relayed: *"q14 A"*; the athlete text now opens "The gym's dry, dark,
+sarcastic humor is part of how this place talks." and the parent text is
+unchanged. In the same earlier reply he said dark humour may also be applied
 to four fixed fallback answers; nothing is built for that, and PR #1036 removes
 those answers.
 
