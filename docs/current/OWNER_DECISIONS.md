@@ -264,7 +264,8 @@ today.
 ### 6. Release 2 (2026-10-01)
 
 Jason: *"check in with lanes and update do we have anything to deploy"*. `main`
-was eleven commits ahead of production with no migration among them.
+was twelve commits ahead of production (`f597a4a5` to `51ada37f`, counted
+with `git rev-list`) with no migration among them.
 
 - Staged at `51ada37f220b7b02988893fbd2a9b5cc85cd60dc`: `deploy-staging` run
   36868958454, digest
@@ -300,10 +301,16 @@ parent Passbook (#1046), the intake login rules (#1047), a deleted athlete's
 Passbook unreadable (#1051), the CI build fix (#1052), and three records
 commits.
 
-### 7. Rulings he gave in other lanes, as relayed (REPORTED)
+### 7. Rulings he gave in other lanes, as relayed (REPORTED, NOT YET CONFIRMED)
 
-Each was relayed to overwatch by the lane named, and has not been checked
-against that lane's own transcript.
+Each was relayed to overwatch by the lane named. **This section is evidence of
+what was relayed. It supersedes no existing decision and authorizes no build.**
+A ruling here becomes a decision of record when Jason confirms it to overwatch
+or the lane's readback to him is answered, and it is then recorded in its own
+entry. What was checked on 2026-10-01: a text search of each lane's transcript
+finds the quoted words in it. That shows the words are in the lane's thread;
+it does not establish, for each, the question they answered. Every sentence
+below that interprets his words is the lane's reading, not his ruling.
 
 - Visual lane: the visual work restarts from scratch, *"we are building this
   from scratch and only using the previous work and yesterdays photos as
@@ -328,25 +335,26 @@ against that lane's own transcript.
   way,  Q6 A we will go off of research from real sources, yes the app should
   rarely say dont Q7 yes, as far as the model goes we should stick with the
   free models, the pay for does not give a good enough increase in
-  capabilities"*. As that lane reads them: dark humour is for every audience,
-  athletes and parents included, which overrides its own recommendation and
-  the "no dark or sarcastic humor" line in today's athlete and parent
-  registers (`buildRegisterPrompt`, `apps/web/src/server/pilot/shadowChat.ts`);
-  SHADOW teaches weight cutting safely from real sources, where today both the
-  request gate and the response filter block it; the prompt is rewritten to
-  teach first; and SHADOW stays on the models already deployed. Nothing of
-  this is built when written. The humour change waits on the exact register
-  wording, which goes to him; weight cutting is scoped as its own lane, with
-  sourced content and coach-set limits as data (OD-2026-09-21-001 item 4).
+  capabilities"*. The lane's reading, NOT CONFIRMED and changing nothing
+  until it is: dark humour for every audience, athletes and parents included;
+  SHADOW teaches weight cutting safely from real sources; the prompt is
+  rewritten to teach first; SHADOW stays on the models already deployed. Until
+  he confirms, the "no dark or sarcastic humor" line in today's athlete and
+  parent registers (`buildRegisterPrompt`,
+  `apps/web/src/server/pilot/shadowChat.ts`) stands, and so do the request
+  gate and response filter on weight cutting. Nothing of this is built when
+  written.
 - Lane 12 (the calibration revision migration, OD-2026-08-29-005): asked
   which "pair" a revision is scoped to (A, the pair of MARKS in disagreement:
   the clip, both annotation sets and the two marked events, recommended; B, the
-  clip's pair of annotation SETS), Jason: *"go with recomendations"*. **A.**
-  This corrects the paraphrase under OD-2026-08-29-004, "What was asked", which
-  reads "a clip's pair of annotation sets"; his own quoted words there say only
-  that the newer adjudication supersedes the older and name a unique index on
-  (pair, revision). One clip can hold several separate disagreements, and only
-  a second decision about the same two marks is a revision.
+  clip's pair of annotation SETS), Jason: *"go with recomendations"*. The
+  lane reads that as A. NOT CONFIRMED: it does not correct or supersede
+  OD-2026-08-29-004, whose "What was asked" reads "a clip's pair of annotation
+  sets" (his own quoted words there say only that the newer adjudication
+  supersedes the older and name a unique index on (pair, revision)). The
+  lane's reason for A: one clip can hold several separate disagreements, and
+  only a second decision about the same two marks is a revision. Its
+  migration does not merge until he confirms A to overwatch.
 
 ### 8. He asked overwatch to check itself
 
