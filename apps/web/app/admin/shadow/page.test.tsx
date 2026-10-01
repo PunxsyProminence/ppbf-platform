@@ -530,6 +530,10 @@ describe('a 200 that parses but is not the list', () => {
   const shapes: Array<[string, (key: string) => unknown]> = [
     ['ok:false with an empty list present', (key) => ({ ok: false, [key]: [] })],
     ['ok:true with the list absent', () => ({ ok: true })],
+    // The two halves are exact: only `true` is ok, and only an array is a list.
+    ['a truthy ok that is not true, with an empty list', (key) => ({ ok: 1, [key]: [] })],
+    ['ok:true with an object where the list should be', (key) => ({ ok: true, [key]: {} })],
+    ['a null body', () => null],
   ];
   const cases = lists.flatMap(([name, list]) =>
     shapes.map(([shape, body]) => [name, shape, list, body] as const),

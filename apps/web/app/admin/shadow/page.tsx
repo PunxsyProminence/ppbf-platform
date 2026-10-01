@@ -1109,6 +1109,11 @@ export default function AdminShadowConsolePage() {
   const [pendingQueue, setPendingQueue] = useState<IntakeItem[]>([]);
   const [intakeQueueRead, setIntakeQueueRead] = useState<ReadState>('loading');
   const [backendQueueReady, setBackendQueueReady] = useState(false);
+  // The same fact, readable without waiting for a render. The A / R / I keys
+  // reach handleItemAction through a ref that is refreshed in an effect, so
+  // for one commit they can still hold the closure in which the state above
+  // was true; the refusal in handleItemAction reads this instead.
+  const backendQueueReadyRef = useRef(false);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [queueFilterStatus, setQueueFilterStatus] = useState<'ALL' | IntakeStatus>('ALL');
@@ -1154,6 +1159,7 @@ export default function AdminShadowConsolePage() {
 
   useEffect(() => {
     void refreshBackendQueue().catch((error) => {
+      backendQueueReadyRef.current = false;
       setBackendQueueReady(false);
       setPendingQueue([]);
       appendConsoleLog({
@@ -1249,6 +1255,7 @@ export default function AdminShadowConsolePage() {
       });
 
       setPendingQueue(mapped);
+      backendQueueReadyRef.current = true;
       setBackendQueueReady(true);
       setIntakeQueueRead('loaded');
     } catch (error) {
@@ -1256,6 +1263,7 @@ export default function AdminShadowConsolePage() {
       // The list is no longer on screen, so the review and promotion writes
       // are refused until a read comes back: the A / R / I keys would
       // otherwise act on a selected row the admin cannot see.
+      backendQueueReadyRef.current = false;
       setBackendQueueReady(false);
       throw error;
     }
@@ -1549,11 +1557,11 @@ export default function AdminShadowConsolePage() {
       return;
     }
 
-    // The queue's last read failed, so the row is no longer on screen. Refuse
+    // The queue's last read failed, so the queue list is no longer on screen. Refuse
     // here, where the keys and the typed commands arrive, and say so: the
     // guards inside processReviewAction / processPromotion stay as the second
     // line, but they throw, and nothing on those paths shows a throw.
-    if (!backendQueueReady) {
+    if (!backendQueueReadyRef.current) {
       appendConsoleLog({
         source: 'SHADOW',
         dataType: item.dataType,
