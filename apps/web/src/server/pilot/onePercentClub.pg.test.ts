@@ -597,6 +597,67 @@ describe('nomination-athlete cascade migration', () => {
     }
   });
 
+  test('the real runner REFUSES a second, restricting key onto pilot.athletes, and rolls its own work back', async () => {
+    // The named key cascades after the SQL runs, so `athlete_fk_cascades` is
+    // true here; only `no_restricting_athlete_fk` can refuse. The second key
+    // is added by the SQL the runner is handed, after the real migration, so
+    // the migration's own drop loop has already run and cannot remove it.
+    const client = await freshDatabase('onepct_cascade_rdy_second_key');
+    try {
+      await client.query(migrationSql);
+      const sql = `${cascadeSql}
+        alter table pilot.one_percent_nominations
+          add constraint test_second_athlete_fk
+          foreign key (organization_id, athlete_id)
+          references pilot.athletes(organization_id, athlete_id);`;
+      await expect(applyCascadeMigration(client, sql)).rejects.toThrow(
+        /ONE_PERCENT_NOMINATION_ATHLETE_CASCADE_NOT_READY/,
+      );
+      // Refusing rolled the whole transaction back, the migration included.
+      expect(await athleteFkDeleteActions(client)).toEqual(['a']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the real runner REFUSES a database where the votes no longer cascade from the nomination', async () => {
+    // The athlete delete reaches the votes through the nomination. If that
+    // key restricted, the purge would be refused one table further down.
+    const client = await freshDatabase('onepct_cascade_rdy_votes');
+    try {
+      await client.query(migrationSql);
+      await client.query(
+        `alter table pilot.one_percent_votes drop constraint pilot_one_percent_votes_nomination_fk`,
+      );
+      await client.query(
+        `alter table pilot.one_percent_votes
+           add constraint pilot_one_percent_votes_nomination_fk
+           foreign key (organization_id, nomination_id)
+           references pilot.one_percent_nominations(organization_id, nomination_id)`,
+      );
+      await expect(applyCascadeMigration(client, cascadeSql)).rejects.toThrow(
+        /ONE_PERCENT_NOMINATION_ATHLETE_CASCADE_NOT_READY/,
+      );
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the real runner ACCEPTS a migrated database when pilot is on the search_path', async () => {
+    // pg_get_constraintdef() drops the schema qualifier for a schema on the
+    // search_path, so a readiness check that matched its text would refuse
+    // here. The check compares column numbers instead.
+    const client = await freshDatabase('onepct_cascade_rdy_search_path');
+    try {
+      await client.query(migrationSql);
+      await client.query(`set search_path to pilot, public`);
+      await applyCascadeMigration(client, cascadeSql);
+      expect(await athleteFkDeleteActions(client)).toEqual(['c']);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('the real runner ACCEPTS a migrated database, and a re-apply stays a no-op', async () => {
     const client = await freshDatabase('onepct_cascade_rdy_ok');
     try {

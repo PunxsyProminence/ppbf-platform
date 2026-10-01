@@ -1298,9 +1298,10 @@ describe('a guardian who was actually recorded as one', () => {
 
     const { event } = await runCleanup({ ...guardianEnv, PPBF_RETENTION_APPLY: 'true' });
     expect(event.athletes).toBe(1);
-    // The blocked guardian from the earlier tests is still reported; the
-    // nomination is not.
-    expect(event.blocked_by).not.toHaveProperty('pilot_one_percent_nominations_athlete_fk');
+    // The blocked guardian from the earlier tests is still reported, and is
+    // now the ONLY refusal: the nomination is not one, and nothing new is.
+    expect(event.blocked).toBe(1);
+    expect(event.blocked_by).toEqual({ coach_observations_coach_account_id_fkey: 1 });
 
     const athlete = await guardianClient.query(
       `select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2`,

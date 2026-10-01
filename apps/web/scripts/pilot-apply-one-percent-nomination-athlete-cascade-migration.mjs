@@ -60,7 +60,11 @@ function resolveSslConfig() {
 // restricting, so a name check passes on a database that was never migrated.
 //
 // `athlete_fk_cascades`: the named constraint points at pilot.athletes on
-// (organization_id, athlete_id) and its confdeltype is 'c'.
+// (organization_id, athlete_id), is validated, and its confdeltype is 'c'.
+// The key columns are compared by attribute number, not by matching
+// pg_get_constraintdef() text: that text drops the `pilot.` qualifier when
+// the connecting role has pilot on its search_path, and a text match would
+// then refuse a correctly migrated database.
 // `no_restricting_athlete_fk`: no OTHER foreign key from this table onto
 // pilot.athletes is left restricting -- one would block the purge just the
 // same, under a different name.
@@ -82,7 +86,19 @@ const READINESS_QUERY = `
          and c.confrelid = to_regclass('pilot.athletes')
          and c.contype = 'f'
          and c.confdeltype = 'c'
-         and pg_get_constraintdef(c.oid) like 'FOREIGN KEY (organization_id, athlete_id) REFERENCES pilot.athletes(organization_id, athlete_id)%'
+         and c.convalidated
+         and c.conkey = array(
+               select a.attnum from pg_attribute a
+                where a.attrelid = to_regclass('pilot.one_percent_nominations')
+                  and a.attname in ('organization_id', 'athlete_id')
+                order by array_position(array['organization_id', 'athlete_id']::name[], a.attname)
+             )::int2[]
+         and c.confkey = array(
+               select a.attnum from pg_attribute a
+                where a.attrelid = to_regclass('pilot.athletes')
+                  and a.attname in ('organization_id', 'athlete_id')
+                order by array_position(array['organization_id', 'athlete_id']::name[], a.attname)
+             )::int2[]
     ) as athlete_fk_cascades,
     not exists (
       select 1 from pg_constraint c
