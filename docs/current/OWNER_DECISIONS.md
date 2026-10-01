@@ -339,9 +339,11 @@ below that interprets his words is the lane's reading, not his ruling.
   until it is: dark humour for every audience, athletes and parents included;
   SHADOW teaches weight cutting safely from real sources; the prompt is
   rewritten to teach first; SHADOW stays on the models already deployed. Until
-  he confirms, the "no dark or sarcastic humor" line in today's athlete and
-  parent registers (`buildRegisterPrompt`,
-  `apps/web/src/server/pilot/shadowChat.ts`) stands, and so do the request
+  he confirms, today's registers stand (`buildRegisterPrompt`,
+  `apps/web/src/server/pilot/shadowChat.ts`, read on main at `c2c4df67`): the
+  athlete register's "No dark or sarcastic humor." and the parent register's
+  "Measured and respectful. No gym slang or insider humor without a
+  plain-language explanation beside it."; and so do the request
   gate and response filter on weight cutting. Nothing of this is built when
   written.
 - Lane 12 (the calibration revision migration, OD-2026-08-29-005): asked
