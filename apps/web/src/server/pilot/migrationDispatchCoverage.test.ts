@@ -366,7 +366,7 @@ describe('every migration is dispatchable and in the rebuild path', () => {
       expect(at('content-import')).toBeGreaterThan(at(prerequisite));
     }
     // calibration-adjudication-revisions adds the revision column and its
-    // unique constraint to pilot.calibration_adjudications, which
+    // unique index to pilot.calibration_adjudications, which
     // calibration-adjudication creates. Applied first, a rebuild dies on ALTER
     // against a missing table.
     expect(at('calibration-adjudication-revisions'))

@@ -211,7 +211,7 @@ const WRITTEN = {
 
 /** A duplicate-key error shaped as the pg driver delivers it: a `code` and a
  * `constraint`, not a parseable message. calibrationAdjudication.pg.test.ts
- * proves a real collision on the pair's revision carries exactly these. */
+ * proves a real collision on a disagreement's revision carries exactly these. */
 function duplicateKeyOn(constraint: string): Error & { code: string; constraint: string } {
   const error = new Error(
     `duplicate key value violates unique constraint "${constraint}"`,

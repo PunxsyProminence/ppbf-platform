@@ -512,11 +512,16 @@ function assertEventInReading(
  * the same one collide on the unique index, and
  * `asConcurrentCorrectionConflict` turns that into a 409 saying so.
  *
+ * "The same pair of marks" means the same marks with the readings in the same
+ * order. With two readings the gate fixes that order. With three or more the
+ * caller names it, and the same two marks filed as (Y, X) instead of (X, Y)
+ * are a separate sequence: no unordered-pair rule exists in this schema.
+ *
  * NOT ENFORCED: a decision submitted from a page loaded before somebody
  * else's correction landed is accepted as the next revision. Only inserts
  * that overlap are refused. The GET above returns everything already recorded
- * on the clip, with each row's revision, so the administrator can see the
- * earlier decision.
+ * on the clip, with each row's revision; the page in front of it does not
+ * show the revision yet.
  */
 export async function POST(request: NextRequest) {
   try {

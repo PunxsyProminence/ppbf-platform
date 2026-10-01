@@ -161,8 +161,10 @@ async function seedTenancy(client: Client): Promise<void> {
   );
 }
 
-/** A clip with two submitted sets, one event each, ready to adjudicate. */
-async function stagedDisagreement(code: string, videoId = VIDEO_ID) {
+/** A clip with two submitted sets, ready to adjudicate. One event each by
+ *  default; with `marks = 2` each reading carries a second, later event
+ *  (eventA2 / eventB2), so the clip holds two separate disagreements. */
+async function stagedDisagreement(code: string, videoId = VIDEO_ID, marks: 1 | 2 = 1) {
   const clipId = crypto.randomUUID();
   await projects.createCalibrationClip({
     organizationId: ORG_ID,
@@ -206,12 +208,39 @@ async function stagedDisagreement(code: string, videoId = VIDEO_ID) {
       visibility: 'clear',
       certainty: 'clear',
     });
+    if (marks === 2) {
+      const second = await annotations.recordAnnotationEvent({
+        organizationId: ORG_ID,
+        eventId: crypto.randomUUID(),
+        annotationSetId: setId,
+        eventClass: 'punch',
+        actorTrack: 'red',
+        startMs: 5_000,
+        endMs: 5_400,
+        physicalHand: 'right',
+        handRole: 'rear',
+        punchType: key === 'a' ? 'rear_straight' : 'rear_hook',
+        targetZone: 'torso',
+        contactResult: 'clean_target_contact',
+        visibility: 'clear',
+        certainty: 'clear',
+      });
+      events[`${key}2`] = second.event_id;
+    }
     await annotations.submitAnnotationSet(ORG_ID, setId);
     made[key] = setId;
     events[key] = event.event_id;
   }
 
-  return { clipId, setA: made.a, setB: made.b, eventA: events.a, eventB: events.b };
+  return {
+    clipId,
+    setA: made.a,
+    setB: made.b,
+    eventA: events.a,
+    eventB: events.b,
+    eventA2: events.a2,
+    eventB2: events.b2,
+  };
 }
 
 beforeAll(async () => {
@@ -786,7 +815,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
     };
   }
 
-  test('revisions for one pair start at 1 and increment, and every revision is kept', async () => {
+  test('revisions for one disagreement start at 1 and increment, and every revision is kept', async () => {
     const staged = await stagedDisagreement(`ADJ-REV-${crypto.randomUUID().slice(0, 8)}`);
 
     const first = await adjudication.recordAdjudication({
@@ -830,7 +859,7 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
     expect(reread?.revision).toBe(2);
   });
 
-  test('a second row at the SAME pair and revision is refused by the named constraint', async () => {
+  test('a second row at the SAME disagreement and revision is refused by the named index', async () => {
     const staged = await stagedDisagreement(`ADJ-DUP-${crypto.randomUUID().slice(0, 8)}`);
 
     const landed = await adjudication.recordAdjudication({
@@ -1020,6 +1049,68 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
     expect(again.adjudication.revision).toBe(2);
   });
 
+  test('two disagreements between marks that both readings recorded are numbered apart', async () => {
+    /* The ordinary clip: each reading has several marks and several of them
+     * disagree. Every mark below is non-null, so this fails if the key only
+     * told a present mark from an absent one. */
+    const staged = await stagedDisagreement(`ADJ-TWO-${crypto.randomUUID().slice(0, 8)}`, VIDEO_ID, 2);
+    expect(staged.eventA2).toBeTruthy();
+    expect(staged.eventB2).toBeTruthy();
+
+    const first = await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_a',
+    });
+    const second = await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      sourceEventIdA: staged.eventA2,
+      sourceEventIdB: staged.eventB2,
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_b',
+    });
+    // A's first mark against B's SECOND is a third disagreement again.
+    const crossed = await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      sourceEventIdB: staged.eventB2,
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'unresolvable',
+    });
+    expect([first, second, crossed].map((made) => made.adjudication.revision)).toEqual([1, 1, 1]);
+
+    const corrected = await adjudication.recordAdjudication({
+      ...decisionFor(staged),
+      sourceEventIdA: staged.eventA2,
+      sourceEventIdB: staged.eventB2,
+      adjudicationId: crypto.randomUUID(),
+      resolutionType: 'accept_a',
+    });
+    expect(corrected.adjudication.revision).toBe(2);
+
+    // The database agrees with the module: revision 1 of the second
+    // disagreement is taken, revision 2 of the first is free.
+    const client = await freshClient();
+    try {
+      const insert = (eventA: string, eventB: string, revision: number) => client.query(
+        `insert into pilot.calibration_adjudications
+           (organization_id, adjudication_id, calibration_clip_id,
+            annotation_set_id_a, annotation_set_id_b,
+            source_event_id_a, source_event_id_b,
+            resolution_type, revision, adjudicator_account_id, ontology_version)
+         values ($1, $2, $3, $4, $5, $6, $7, 'accept_a', $8, $9, $10)`,
+        [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
+          eventA, eventB, revision, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+      );
+      await expect(insert(staged.eventA2, staged.eventB2, 1)).rejects.toMatchObject({
+        code: '23505',
+        constraint: PAIR_REVISION_CONSTRAINT,
+      });
+      await insert(staged.eventA, staged.eventB, 2);
+    } finally {
+      await client.end();
+    }
+  });
+
   test('a decision about one lone mark collides with another about the same lone mark', async () => {
     // The null side is why the arbiter is an index over coalesce(): a plain
     // unique constraint treats NULLs as distinct and would let both rows land.
@@ -1060,8 +1151,9 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
      * an uncommitted revision 1 of another disagreement on the same clip. The
      * module's write must complete while that transaction is still open --
      * it neither waits on it nor collides with it. */
-    const staged = await stagedDisagreement(`ADJ-APART-${crypto.randomUUID().slice(0, 8)}`);
+    const staged = await stagedDisagreement(`ADJ-APART-${crypto.randomUUID().slice(0, 8)}`, VIDEO_ID, 2);
     const rival = await freshClient();
+    let timer: NodeJS.Timeout | undefined;
     try {
       await rival.query('begin');
       await rival.query(
@@ -1070,28 +1162,43 @@ describe('a later adjudication supersedes an earlier one without replacing it', 
             annotation_set_id_a, annotation_set_id_b,
             source_event_id_a, source_event_id_b,
             resolution_type, revision, adjudicator_account_id, ontology_version)
-         values ($1, $2, $3, $4, $5, $6, null, 'accept_a', 1, $7, $8)`,
+         values ($1, $2, $3, $4, $5, $6, $7, 'accept_a', 1, $8, $9)`,
         [ORG_ID, crypto.randomUUID(), staged.clipId, staged.setA, staged.setB,
-          staged.eventA, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
+          staged.eventA2, staged.eventB2, ADJUDICATOR, ontology.BOXING_ONTOLOGY_VERSION],
       );
 
-      const settled = await adjudication.recordAdjudication({
+      // Raced against a timer so that a write which DOES wait on the rival is
+      // a failed assertion here, with the rival released in `finally`, rather
+      // than a suite hung until jest's timeout.
+      const write = adjudication.recordAdjudication({
         ...decisionFor(staged),
         adjudicationId: crypto.randomUUID(),
         resolutionType: 'accept_b',
-      });
-      expect(settled.adjudication.revision).toBe(1);
+      }).then(
+        (made) => ({ revision: made.adjudication.revision as number | null, error: null as unknown }),
+        (error: unknown) => ({ revision: null as number | null, error }),
+      );
+      const outcome = await Promise.race([
+        write,
+        new Promise<'blocked'>((resolve) => {
+          timer = setTimeout(() => resolve('blocked'), 15_000);
+        }),
+      ]);
 
-      await rival.query('commit');
+      expect(outcome).toEqual({ revision: 1, error: null });
     } finally {
+      if (timer) clearTimeout(timer);
       await rival.query('rollback').catch(() => {});
       await rival.end();
     }
   });
 
   test('the swapped orientation of a pair keeps its own revision sequence', async () => {
-    // The constraint keys on the pair as the route resolves it, (A, B) in
-    // order. No unordered-pair rule is introduced here.
+    // The index keys on the readings in the order given, (A, B). No
+    // unordered-pair rule is introduced here, so the same two marks filed
+    // with the readings swapped are NOT arbitrated against each other. The
+    // route fixes the order when a clip has two readings; with three or more
+    // the caller names it. Pinned so that changing it is a decision.
     const staged = await stagedDisagreement(`ADJ-SCOPE-${crypto.randomUUID().slice(0, 8)}`);
 
     const first = await adjudication.recordAdjudication({
@@ -1192,7 +1299,7 @@ describe('the shipped revisions migration runner', () => {
     }
   });
 
-  test('backfills rows that already exist, per pair in recorded order, and a re-apply renumbers nothing', async () => {
+  test('backfills rows that already exist, per disagreement in recorded order, and a re-apply renumbers nothing', async () => {
     const applyMigrationTransaction = await loadApply();
     const client = await runnerDatabase('ppbf_test_calib_rev_backfill');
     try {

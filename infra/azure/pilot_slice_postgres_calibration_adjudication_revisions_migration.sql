@@ -107,7 +107,12 @@ alter table pilot.calibration_adjudications
 -- step 4 enforces through coalesce.
 --
 -- Only rows with a null revision are touched, so re-running assigns nothing
--- twice and cannot renumber a row the server has since written.
+-- twice and cannot renumber a row the server has since written. That holds
+-- because this file runs as ONE transaction (the runner's): a null revision
+-- can then only exist before the first apply, when every row is null. Run
+-- statement by statement outside a transaction, with the application writing
+-- in between, the numbering would restart at 1 beside rows already numbered
+-- and step 4 would refuse to build the index.
 -- ---------------------------------------------------------------------------
 with ordered as (
   select
