@@ -416,8 +416,11 @@ export async function getAthletePassbook(
    *
    * The note_type filter above answers "which ROWS belong in this book". It
    * has never answered "which COLUMNS", and this book is read by the athlete
-   * themself and by every linked guardian (the route's own gate admits both).
-   * Two staff-only fields were reaching them:
+   * themself. It was read by every linked guardian too, until the Passbook
+   * route began sending guardians only to getGuardianPassbook
+   * (OD-2026-09-30-004 d3); the family filtering below stays as a defensive
+   * floor for any direct or future caller that passes a family role.
+   * Two staff-only fields were reaching family readers:
    *
    *   pilot.attendance.notes  Already staff-only on both of its other
    *                           readers -- the domain-get route and
@@ -459,15 +462,16 @@ export async function getAthletePassbook(
   //
   // An ALLOWLIST, not `!== 'parent'`. The athlete's own note is theirs and
   // staff already read it through the dedicated coach route; every other
-  // reader -- starting with the linked guardian this closes -- gets no note
+  // reader -- starting with the linked guardian this closed -- gets no note
   // key. Written this way round so a role added later is silently excluded
   // rather than silently included, which is the direction a mistake here
   // should fail.
   //
-  // A guardian is not a lesser reader of their child's record generally; this
-  // one column is free text written for a coach -- in practice by the child,
-  // though the row cannot prove it -- and nobody has
-  // decided a parent is its audience.
+  // The Passbook route no longer brings a guardian here at all: it sends them
+  // only to getGuardianPassbook (OD-2026-09-30-004 d3). This exclusion stays
+  // as a defensive floor for any direct or future caller. The column is free
+  // text written for a coach -- in practice by the child, though the row
+  // cannot prove it -- and nobody has decided a parent is its audience.
   const sessionNotesReader = staffReader || viewerRole === 'athlete';
 
   const athlete = await queryOne<AthleteRow>(
