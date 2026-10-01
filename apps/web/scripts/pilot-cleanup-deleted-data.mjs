@@ -319,8 +319,18 @@ async function main() {
   const client = await pool.connect();
 
   try {
-    // Count first, always -- in the same transaction that will do the deleting,
-    // so the rows counted are the rows removed.
+    // TWO COUNTS, AND THEY ARE NOT THE SAME NUMBER. The first, taken here in
+    // the transaction that will do the deleting, is the CANDIDATES: what the
+    // retention windows say is due. It is what the blast-radius guard measures
+    // and what a dry run reports as `athletes` / `accounts`. It is read without
+    // locks, so it is not a promise about what will be removed.
+    //
+    // The second is what attemptPurge ACTUALLY deleted: counted from each
+    // guarded DELETE's own result, after its savepoint is released. A
+    // candidate can be refused by the database, or be gone (or no longer
+    // expired) by the time its row is locked, and then it is not counted. Only
+    // this second count goes into `would_delete_*`, the applied run's output
+    // and the audit row.
     await client.query('begin');
 
     const expiredAccounts = await client.query(
