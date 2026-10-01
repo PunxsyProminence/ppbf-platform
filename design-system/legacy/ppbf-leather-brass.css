@@ -3661,6 +3661,18 @@ body.ppbf.on-canvas {
    is why wiring this mechanism is a no-op anybody can merge -- it is in place,
    and guarded, before the first variant is drawn. */
 
+/* THE FIRST TWO VARIANTS. Office and clinic each grow a second plate here, in
+   the shape the block above documents: `:where()` keeps the rule at (0,1,0) so
+   the portrait floor plate below still wins on source order, and the split is
+   stated here rather than in TypeScript. A door whose route hashes to the
+   second half of a two-way split shows plate 02; every other door keeps 01. */
+:where([data-plate-variant~="2of2"]) .room--office {
+  --plate: url("/plates/plate-01-office-02.jpg");
+}
+:where([data-plate-variant~="2of2"]) .room--clinic {
+  --plate: url("/plates/plate-03-clinic-02.jpg");
+}
+
 /* The gym tablet stands upright. A landscape wall cropped to a portrait
    viewport loses the courses that make it read as masonry, so the floor
    room carries its own portrait plate rather than being scaled into one. */
