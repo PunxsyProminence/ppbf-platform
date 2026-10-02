@@ -112,7 +112,10 @@ describe('make-plate --room', () => {
     }
     /* The canvas exception. Both sponsor marks are named because both are
        real: IRON CITY BEER at the centre and KO NATION beside it, from the same
-       professional fight (lock section 1, owner 2026-09-30). The centre mark
+       professional fight. THE TWO NAMES ARE OD-2026-10-02-003 (owner,
+       2026-10-02); his 2026-09-30 words named ALT NATION and he corrected
+       himself. That canvas lettering may remain at all is OD-2026-09-28-013,
+       a different and earlier decision. The centre mark
        is coaching equipment -- a fighter is told to hold their ground by
        being told to stay on the IRON -- so this assertion is protecting a
        cue, not a logo. */

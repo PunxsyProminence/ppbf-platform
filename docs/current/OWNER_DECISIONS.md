@@ -178,6 +178,30 @@ was enlarged and read.
 > red and blue opposite each other with whit  for the neutral colorsthe timber
 > post is part of the building structure that the gym is in"*
 
+**THE QUESTION THOSE ANSWERS WERE GIVEN TO, VERBATIM.** His first answer is the
+single character "1", which means nothing on its own, so the question and its
+options belong in the record beside it. Put to him through the structured
+question tool, 2026-10-02:
+
+> **Q.** *"Your ring canvas photographs as IRON CITY BEER.
+> `docs/REAL-GYM-REFERENCE-LOCK.md` §2 records it as IRON CITY BREWERY, marked
+> [CONFIRMED 2026-09-26] by you, and `scripts/make-plate.mjs` line 250 hardcodes
+> that string into every ring prompt. How should I resolve it?"*
+>
+> 1. *"Correct both to IRON CITY BEER (Recommended)"*
+> 2. *"Drop the brand from the prompt entirely"*
+> 3. *"Keep BREWERY — I know something the photo doesn't show"*
+
+**So "1" is him approving the exact words IRON CITY BEER**, not merely agreeing
+that something was wrong. That distinction is load-bearing:
+**OD-2026-10-02-001** permits a generator to be asked for specific words only
+where the owner supplied or approved them, and `scripts/make-plate.mjs` now asks
+for these words by name. He approved them by choosing the option that spelled
+them out.
+
+His other two answers were typed in his own words rather than chosen from the
+options, and are quoted above exactly as he typed them.
+
 **Why it was asked.** The lock said the canvas roundel reads **IRON CITY
 BREWERY**, marked `[CONFIRMED 2026-09-26]`. The photograph, enlarged, reads
 **IRON CITY BEER**. That is a conflict between the owner's stated state and

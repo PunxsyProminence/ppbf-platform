@@ -5,8 +5,11 @@ top in code; no plate substitutes for a stamp, ticket or passbook content, and
 nothing a reader NEEDS lives in the picture. **Lettering: a real mark on real
 equipment is allowed, invented lettering is not** — a maker's name on a bag or
 glove, and the IRON CITY BEER and KO NATION sponsor lettering on the ring canvas
-when the ring is in frame (owner, 2026-09-28, "no i like that you can leave it";
-OD-2026-09-28-013; `docs/REAL-GYM-REFERENCE-LOCK.md` Mode A item 4). Stated in
+when the ring is in frame. Two separate decisions, kept separate: that canvas
+lettering may remain **at all** is owner, 2026-09-28, "no i like that you can
+leave it" (OD-2026-09-28-013); the two **names** are **OD-2026-10-02-003**
+(owner, 2026-10-02), which corrected them from IRON CITY BREWERY and ALT NATION.
+See `docs/REAL-GYM-REFERENCE-LOCK.md` Mode A item 4. Stated in
 full below, under the 2026-10-02 rule change (OD-2026-10-02-001). A plate is a `background-image` layer on `.room::after` /
 `.on-canvas::after` — never an `<img>`. Missing files are safe by design: with
 this directory empty, the gradient wall in the design-system sheets
