@@ -856,6 +856,72 @@ describe('set-password refuses everything but a fresh emailed-link session on a 
   });
 });
 
+// The caller bounds how often the hash runs through this hook (the route's
+// per-account allowance). What matters here is WHERE it is called.
+describe('the beforeHash hook', () => {
+  test('runs once, after the proof and the rules pass and before the hash', async () => {
+    const parent = await seedAccount('parent');
+    const token = await seedSession(parent);
+    const order: string[] = [];
+    mockHashPassword.mockImplementationOnce(async (password) => {
+      order.push('hash');
+      return realHashPassword(password);
+    });
+
+    await setOwnPasswordFromLinkSession({
+      accountId: parent,
+      sessionToken: token,
+      password: GOOD_PASSWORD,
+      beforeHash: async () => { order.push('beforeHash'); },
+    });
+
+    expect(order).toEqual(['beforeHash', 'hash']);
+    expect((await storedPassword(parent)).password_hash).not.toBeNull();
+  });
+
+  test('a throw from it stops the request: no hash, nothing stored, no session ended', async () => {
+    const parent = await seedAccount('parent');
+    const token = await seedSession(parent);
+    await seedSession(parent, { method: null });
+
+    await expect(setOwnPasswordFromLinkSession({
+      accountId: parent,
+      sessionToken: token,
+      password: GOOD_PASSWORD,
+      beforeHash: async () => { throw new Error('allowance spent'); },
+    })).rejects.toThrow('allowance spent');
+
+    expect(mockHashPassword).not.toHaveBeenCalled();
+    expect(await storedPassword(parent)).toEqual({ password_hash: null, password_set_at: null });
+    expect(await liveSessionCount(parent)).toBe(2);
+  });
+
+  test.each([
+    ['a session that is not a link session', { method: null }, GOOD_PASSWORD],
+    ['a password the rules refuse', {}, 'password123'],
+  ])('is not called for %s', async (_label, session, password) => {
+    const parent = await seedAccount('parent');
+    const token = await seedSession(parent, session);
+    const beforeHash = jest.fn(async () => undefined);
+
+    await expect(setOwnPasswordFromLinkSession({ accountId: parent, sessionToken: token, password, beforeHash }))
+      .rejects.toBeDefined();
+
+    expect(beforeHash).not.toHaveBeenCalled();
+  });
+
+  test('is not called for a coach', async () => {
+    const coach = await seedAccount('coach');
+    const beforeHash = jest.fn(async () => undefined);
+
+    await expect(setOwnPasswordFromLinkSession({
+      accountId: coach, sessionToken: await seedSession(coach), password: GOOD_PASSWORD, beforeHash,
+    })).rejects.toBeDefined();
+
+    expect(beforeHash).not.toHaveBeenCalled();
+  });
+});
+
 describe('a password the rules refuse', () => {
   test.each([
     ['too short', 'nine char', 'PASSWORD_TOO_SHORT'],

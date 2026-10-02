@@ -70,6 +70,15 @@ export async function setOwnPasswordFromLinkSession(input: {
   accountId: string;
   sessionToken: string;
   password: string;
+  /**
+   * Called once, immediately before the hash is computed, and only for a
+   * request that has passed the early proof, role and password-rule checks.
+   * The hash is the expensive step, and a link session stays good for fifteen
+   * minutes and survives its own success, so the caller bounds how often it
+   * runs here. Throwing stops the request before any scrypt is spent and
+   * before anything is written.
+   */
+  beforeHash?: () => Promise<void>;
 }): Promise<void> {
   const tokenHash = hashToken(input.sessionToken);
 
@@ -102,6 +111,7 @@ export async function setOwnPasswordFromLinkSession(input: {
   // After the proof, so only someone entitled to set a password learns what
   // the rules refuse; before the hash, so a refused password costs no scrypt.
   validatePasswordPolicy(input.password, { loginEmail: row.login_email });
+  await input.beforeHash?.();
   const passwordHash = await hashPassword(input.password);
 
   await withTransaction(async (client) => {

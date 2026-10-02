@@ -39,18 +39,36 @@ async function auditPasswordSet(event: Parameters<typeof writePilotAuditEvent>[0
  * credentialPolicy admits to a password. This route adds the session check
  * every authenticated route has, and the attempt limit.
  *
- * Limited per account and per IP, durable and volatile, like change-pin. It
- * takes no existing secret, so there is nothing to guess here; the limit is on
- * refusals, so a session that is not entitled cannot be used to hammer the
- * route. A password the rules refuse is not counted: that is a parent choosing
- * a password, and it must not spend their attempts.
+ * TWO LIMITS, both the existing limiter (rateLimit.ts), durable and volatile.
+ *
+ * Refusals, per account and per IP, like change-pin: a session that is not
+ * entitled cannot be used to hammer the route. A success clears them. A
+ * password the rules refuse is not counted: that is a parent choosing a
+ * password, and it must not spend their attempts.
+ *
+ * Hashes, per account, and a success does NOT clear it. The hash is the
+ * expensive step, and the emailed-link session that permits it stays good for
+ * fifteen minutes and is the one session a successful set leaves alive. If
+ * success erased the count, one redeemed link could run the hash as often as
+ * it liked. So every request that reaches the hash is counted just before it,
+ * and once the limiter says wait, the hash is not run. It is the limiter's own
+ * slow-down, not a lockout: a 1-second pause after each of the first five,
+ * then doubling to a minute, forgotten fifteen minutes after the last.
+ *
+ * Per account and not also per IP: on a sign-up night many parents set a
+ * password from one gym address, and counting their successes together would
+ * make the sixth one wait.
  */
+
+/** The hash allowance is spent for now. Not a refusal of the caller: a wait. */
+class PasswordHashAllowanceSpent extends Error {}
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
 
     const accountKey = `password_set_account:${principal.accountId}`;
     const ipKey = `password_set_ip:${getClientIp(request)}`;
+    const hashKey = `password_set_hash_account:${principal.accountId}`;
 
     const durableAccountCheck = await checkDurableRateLimit(accountKey);
     const durableIpCheck = await checkDurableRateLimit(ipKey);
@@ -87,8 +105,23 @@ export async function POST(request: NextRequest) {
         accountId: principal.accountId,
         sessionToken: principal.sessionToken,
         password,
+        beforeHash: async () => {
+          const durableHashCheck = await checkDurableRateLimit(hashKey);
+          if (checkRateLimit(hashKey).isLimited || durableHashCheck.isLimited) {
+            throw new PasswordHashAllowanceSpent();
+          }
+          // "Failed attempt" is the limiter's name for a counted one. This
+          // counts a hash about to run, whatever becomes of the request.
+          await recordDurableFailedAttempt(hashKey);
+        },
       });
     } catch (error) {
+      if (error instanceof PasswordHashAllowanceSpent) {
+        return NextResponse.json(
+          { error: 'Too many attempts. Please try again later.' },
+          { status: 429 },
+        );
+      }
       if (error instanceof ForbiddenError) {
         await recordDurableFailedAttempt(accountKey);
         await recordDurableFailedAttempt(ipKey);
@@ -96,6 +129,7 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
+    // The refusal buckets only. hashKey is deliberately not cleared.
     await clearDurableRateLimit(accountKey);
     await clearDurableRateLimit(ipKey);
 

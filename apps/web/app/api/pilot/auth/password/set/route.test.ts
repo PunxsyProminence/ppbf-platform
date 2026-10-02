@@ -56,6 +56,15 @@ const rateLimit = jest.requireMock('@/src/server/pilot/rateLimit') as {
 const actualRateLimit = jest.requireActual('@/src/server/pilot/rateLimit') as typeof import('@/src/server/pilot/rateLimit');
 
 const GOOD_PASSWORD = 'three small boats';
+const HASH_KEY = 'password_set_hash_account:parent-1';
+/** Stands in for the scrypt: called by the fake set-password only when the route's beforeHash let it through. */
+const hashRan = jest.fn();
+
+/** What the real function does around the hash: the route's hook, then the hash. */
+async function hashingSetPassword(input: { beforeHash?: () => Promise<void> }): Promise<void> {
+  await input.beforeHash?.();
+  hashRan();
+}
 
 function post(body: unknown) {
   return POST(new NextRequest('http://localhost/api/pilot/auth/password/set', {
@@ -76,6 +85,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   rateLimit.clearRateLimit('password_set_account:parent-1');
   rateLimit.clearRateLimit('password_set_ip:203.0.113.9');
+  rateLimit.clearRateLimit(HASH_KEY);
   mockRequirePrincipal.mockResolvedValue({
     accountId: 'parent-1',
     role: 'parent' as const,
@@ -109,6 +119,7 @@ describe('POST /api/pilot/auth/password/set', () => {
       accountId: 'parent-1',
       sessionToken: 'session-token-value',
       password: `  ${GOOD_PASSWORD} `,
+      beforeHash: expect.any(Function),
     });
   });
 
@@ -240,6 +251,132 @@ describe('POST /api/pilot/auth/password/set', () => {
       'password_set_account:parent-1',
       'password_set_ip:203.0.113.9',
     ]);
+  });
+
+  // The emailed-link session that permits a set stays good for fifteen
+  // minutes and survives its own success. Every request that reaches the hash
+  // is counted, and a success does not erase the count.
+  describe('the hash allowance, per account, not cleared by success', () => {
+    let now: number;
+    let clock: jest.SpyInstance;
+
+    beforeEach(() => {
+      now = 1_800_000_000_000;
+      clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+      mockSetPassword.mockImplementation(hashingSetPassword as never);
+    });
+
+    afterEach(() => {
+      clock.mockRestore();
+      rateLimit.clearRateLimit(HASH_KEY);
+    });
+
+    test('an ordinary one-time set succeeds, and the hash runs once', async () => {
+      expect((await post({ password: GOOD_PASSWORD })).status).toBe(200);
+      expect(hashRan).toHaveBeenCalledTimes(1);
+    });
+
+    test('a set, then a replace a few seconds later, both succeed', async () => {
+      expect((await post({ password: GOOD_PASSWORD })).status).toBe(200);
+      now += 3_000;
+      expect((await post({ password: 'a different harbor' })).status).toBe(200);
+      expect(hashRan).toHaveBeenCalledTimes(2);
+    });
+
+    test('a second set within a second of a successful one waits: 429, and the hash is not run', async () => {
+      expect((await post({ password: GOOD_PASSWORD })).status).toBe(200);
+      now += 500;
+
+      const res = await post({ password: GOOD_PASSWORD });
+
+      expect(res.status).toBe(429);
+      expect(await res.json()).toEqual({ error: 'Too many attempts. Please try again later.' });
+      expect(hashRan).toHaveBeenCalledTimes(1);
+      expect(writePilotAuditEvent).toHaveBeenCalledTimes(1);
+    });
+
+    test('repeated successful sets on one link session reach the bound, and the hash stops running', async () => {
+      const statuses: number[] = [];
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        statuses.push((await post({ password: GOOD_PASSWORD })).status);
+        now += 1_500;
+      }
+
+      // Six go through a second and a half apart (the sixth starts the
+      // doubling); after that the waits outgrow the spacing.
+      expect(statuses.slice(0, 6)).toEqual([200, 200, 200, 200, 200, 200]);
+      expect(statuses.slice(6)).toContain(429);
+      expect(statuses.filter((status) => status === 200).length).toBeLessThan(12);
+      // The hash ran exactly as many times as a request was let through.
+      expect(hashRan).toHaveBeenCalledTimes(statuses.filter((status) => status === 200).length);
+    });
+
+    test('at most about two dozen hashes in fifteen minutes, however hard one link is driven', async () => {
+      // One request every 100 ms for the fifteen minutes a link session is proof.
+      for (let elapsed = 0; elapsed < 15 * 60 * 1000; elapsed += 100) {
+        await post({ password: GOOD_PASSWORD });
+        now += 100;
+      }
+
+      expect(hashRan.mock.calls.length).toBeGreaterThanOrEqual(5);
+      expect(hashRan.mock.calls.length).toBeLessThanOrEqual(25);
+    });
+
+    test('success does not clear the hash allowance; it clears only the refusal buckets', async () => {
+      await post({ password: GOOD_PASSWORD });
+
+      expect(rateLimit.clearDurableRateLimit.mock.calls.map(([key]) => key)).toEqual([
+        'password_set_account:parent-1',
+        'password_set_ip:203.0.113.9',
+      ]);
+      expect(rateLimit.recordDurableFailedAttempt.mock.calls.map(([key]) => key)).toEqual([HASH_KEY]);
+    });
+
+    test('it is per account: another account behind the same address is not slowed by this one', async () => {
+      expect((await post({ password: GOOD_PASSWORD })).status).toBe(200);
+      mockRequirePrincipal.mockResolvedValue({
+        accountId: 'parent-2', role: 'parent' as const, organizationId: 'org-1', athleteId: null,
+        sessionToken: 'another-session', authProvider: 'microsoft' as const,
+      } as never);
+
+      expect((await post({ password: GOOD_PASSWORD })).status).toBe(200);
+      expect(hashRan).toHaveBeenCalledTimes(2);
+      rateLimit.clearRateLimit('password_set_hash_account:parent-2');
+      rateLimit.clearRateLimit('password_set_account:parent-2');
+    });
+
+    test('a durable hash limit is honoured: 429 and no hash', async () => {
+      rateLimit.checkDurableRateLimit.mockImplementation(async (key: string) => (
+        key === HASH_KEY ? { isLimited: true, delayMs: 30_000 } : { isLimited: false }
+      ));
+
+      expect((await post({ password: GOOD_PASSWORD })).status).toBe(429);
+      expect(hashRan).not.toHaveBeenCalled();
+    });
+
+    test('a request that never reaches the hash does not spend the allowance', async () => {
+      // A weak password and a missing proof are both decided before the hook.
+      mockSetPassword.mockImplementationOnce(async ({ password }) => validatePasswordPolicy(password));
+      expect((await post({ password: 'password123' })).status).toBe(400);
+      mockSetPassword.mockRejectedValueOnce(linkRequired());
+      expect((await post({ password: GOOD_PASSWORD })).status).toBe(403);
+
+      expect(rateLimit.recordDurableFailedAttempt.mock.calls.map(([key]) => key)).not.toContain(HASH_KEY);
+      rateLimit.clearRateLimit('password_set_account:parent-1');
+      rateLimit.clearRateLimit('password_set_ip:203.0.113.9');
+      // And the next good request goes straight through.
+      expect((await post({ password: GOOD_PASSWORD })).status).toBe(200);
+      expect(hashRan).toHaveBeenCalledTimes(1);
+    });
+
+    test('being made to wait for the hash is not counted as a refusal', async () => {
+      await post({ password: GOOD_PASSWORD });
+      rateLimit.recordDurableFailedAttempt.mockClear();
+      now += 200;
+
+      expect((await post({ password: GOOD_PASSWORD })).status).toBe(429);
+      expect(rateLimit.recordDurableFailedAttempt).not.toHaveBeenCalled();
+    });
   });
 
   test('an unexpected failure is a 500 that says nothing', async () => {
