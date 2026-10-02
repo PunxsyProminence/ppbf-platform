@@ -164,6 +164,99 @@ and should not try to.
 
 ---
 
+## OD-2026-10-02-010 -- Two "Yes" answers: the look-pin tests are covered by "remove anything that will hinder this"; the Label Agreement screen, what coaches see on it, and the tablet hand-over
+
+**Provenance: PRIMARY.** Typed by Jason in the UI lane's thread and in the
+agreement-report lane's thread on 2026-10-02, and read by overwatch in each
+transcript (`~/.claude/projects/C--Dev/a84862b0-abd8-495f-bf7a-ade6114cc50c.jsonl`
+and `~/.claude/projects/C--Dev/07cd0b14-cb11-403c-871d-01b351819222.jsonl`).
+This entry is new and edits no earlier one. Section 1 answers the reading
+OD-2026-10-02-009 recorded as inferred.
+
+### 1. The UI lane's four items
+
+The UI lane's message (21:13:29Z) told him that two of the suites its test
+PR deletes fail on this PC and pass on CI, and ended:
+
+"Waiting on your answers (a reply like "1A 2A 3A, yes to 4" is enough):
+1. "Remove anything that will hinder this" covers the look-pin tests: A yes
+(recommended) / B no.
+2. Corner-colour check: A keep (recommended) / B remove.
+3. Remaining look-bound tests: A fix each with its screen (recommended) / B
+rewrite all now.
+4. /login dark panel; board/file fix what's hard to read, no new art."
+
+Jason, whole message (21:42:10Z): *"Yes"*.
+
+**Item 1: yes.** His "Ok remove anything that will hinder this"
+(OD-2026-10-02-009) covers the tests that pin a look. They are removed now.
+
+**Item 4: yes.** The /login readability fix is a dark panel behind the text;
+the board and file screens get a fix to what is hard to read, with no new art.
+
+**Items 2 and 3 are A-or-B questions and he answered "Yes" without a
+letter.** Read as taking the recommended option in each, A and A: the
+corner-colour check stays, and the remaining look-bound tests are fixed one
+at a time with the screen each belongs to. **INFERRED** (the UI lane's reading
+and overwatch's); both are the option that removes nothing. So the question
+OD-2026-10-02-007 left open, whether "decoration must not be mistakable for a
+safety state" binds, is not answered by a letter of his: the test that holds
+it stays in place on this reading, and the proposition stays unratified.
+
+### 2. The agreement-report lane's four recommendations
+
+Earlier in that thread: *"It needs to be simpler to use,"* (19:28:35Z) and
+*"Ok also make it that it does not have to be 5 separate accounts, I can hand
+the tablet over to another and not have to log out"* (19:33:46Z). Then *"Ok
+tell me how your recommendations work in Lyman terms"* (21:36:29Z). The lane
+set out four (21:36:39Z), under these headings and with these closing words:
+
+"1. The screen ("Label Agreement")": two coaches each label the same clip,
+the screen says where they saw it differently, one sentence, more behind
+"Show detail"; "it does not grade a coach or a boxer."
+
+"2. Show coaches the "still to do" line": "a line like "3 of 10 clips still
+need a second coach." ... The only thing it gives away is that another coach
+has or hasn't started, never what they tapped."
+
+"3. Below 5 clips, show counts but no percentages": "ChatGPT would rather show
+nothing at all until 5. Its worry is that a third coach could peek at how the
+first two differed on a clip before labelling it and be nudged by that. I
+recommend keeping the counts. ... If you later add a third labeller, this is a
+one-line switch."
+
+"4. Tablet hand-over: pick your name, then a short PIN": "coach one finishes
+and taps "Switch labeller"; coach two taps their own name and types a 4-digit
+PIN ... The screen clears, so coach two can't see coach one's answers. ...
+This is a separate piece of work from the screen, because it changes how
+sign-in works."
+
+"If those four sound right, "yes to all four" is enough and I'll pass your
+exact words to overwatch."
+
+Jason, whole message (21:38:44Z): *"Yes"*.
+
+**1.** The screen is named Label Agreement and takes the simpler layout.
+**2.** Coaches see the still-to-do line.
+**3.** Below 5 compared clips coaches see counts and no percentages. This is
+his choice over the architect's recommendation, made with the third-coach
+point in front of him.
+**4.** The tablet hand-over is wanted in that shape: a labeller switch by
+name and a short PIN, the screen cleared between labellers. It is not built
+and is not part of the report; it goes to the architect as its own work
+order. The two-labeller study needs 2 labellers and 5 clips, not 5 accounts.
+
+Not covered by that "Yes": the wording of the door to the screen on the Teach
+Shadow page. The lane asked him separately (21:41:12Z): "Official: approve the
+door wording on the Teach Shadow home page: section "Stage five: Measure",
+text "See where two coaches labelled the same clip differently. It measures
+the labelling, not a coach and not an athlete.", button "Label Agreement".
+Options: A approve as written (recommended); B your wording." and, in plain
+words, "Say "yes" or give me the words you want." Jason, whole message
+(21:43:18Z): *"Yes"*. **The door wording is approved as written.**
+
+---
+
 ## OD-2026-10-02-009 -- "Remove anything that will hinder this": read as removing now the tests that pin a look
 
 **Provenance: PRIMARY.** Typed by Jason in the UI lane's thread on 2026-10-02
