@@ -1031,8 +1031,12 @@ export async function createShadowLibraryChunk(input: {
  * -- carries no intake_method and is untouched by this predicate.
  *
  * Written against alias d = pilot.shadow_library_documents.
+ *
+ * Exported for one reason: scripts/pilot-approve-library-baseline.mjs indexes
+ * documents with its own SQL and carries a copy of this text (a plain .mjs
+ * cannot import this module). shadowLibraryPipeline.pg.test.ts compares the two.
  */
-const MANUAL_TEXT_INTAKE_COMPLETE_SQL = `(
+export const MANUAL_TEXT_INTAKE_COMPLETE_SQL = `(
   d.metadata->>'intake_method' is distinct from 'manual_text'
   or case
     when d.metadata->>'chunk_count' ~ '^[1-9][0-9]{0,5}$' then (

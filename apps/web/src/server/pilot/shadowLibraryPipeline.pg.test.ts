@@ -22,7 +22,7 @@
 // connects to production or staging: the database is created fresh here and
 // the instance is torn down at the end of the run.
 
-import { type ChildProcessByStdio, spawn } from 'node:child_process';
+import { type ChildProcessByStdio, execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -800,5 +800,157 @@ describe('organization scoping (real database)', () => {
       document_name: 'Adopted document',
     }));
     expect(adopt.status).toBe(404);
+  });
+});
+
+// RINT-01, the second door. scripts/pilot-approve-library-baseline.mjs indexes
+// and approves every pending document in an organization with its own SQL, and
+// its workflow accepts a gym. It must refuse exactly what the server gate
+// refuses. This runs the REAL script as a child process against this suite's
+// database -- not a copy of its queries -- in an organization of its own, so
+// its "everything pending" sweep cannot touch the rows the suites above made.
+describe('the bulk approval script leaves an incomplete manual-text excerpt alone (real script, real database)', () => {
+  const BULK_ORG_ID = 'org-library-bulk';
+  const OWNER_ID = 'acct-platform-owner';
+  const SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/pilot-approve-library-baseline.mjs');
+  const ids: Record<string, string> = {};
+
+  function runScript(apply: boolean): Promise<{ stdout: string; stderr: string; code: number }> {
+    return new Promise((resolve) => {
+      execFile(process.execPath, [SCRIPT_PATH], {
+        env: {
+          ...process.env,
+          AZURE_POSTGRES_CONNECTION_STRING: connectionStringFor(TEST_DB_NAME),
+          PPBF_EXPECTED_POSTGRES_HOSTNAME: 'localhost',
+          PPBF_EXPECTED_POSTGRES_DATABASE: TEST_DB_NAME,
+          PPBF_LIBRARY_APPROVAL_ORG: BULK_ORG_ID,
+          PPBF_LIBRARY_APPROVAL_APPLY: apply ? 'true' : 'false',
+        },
+      }, (error, stdout, stderr) => {
+        const exit = error ? (error as { code?: unknown }).code : 0;
+        resolve({ stdout, stderr, code: typeof exit === 'number' ? exit : 1 });
+      });
+    });
+  }
+
+  async function make(key: string, metadata: Record<string, unknown>, parts: Array<[number, string]>) {
+    const created = await routes.postDocument(jsonRequest('/api/pilot/shadow/library/documents', 'POST', {
+      source_id: ids.source,
+      document_name: key,
+      metadata,
+    }));
+    expect(created.status).toBe(201);
+    ids[key] = (await created.json()).document.document_id;
+    for (const [ordinal, text] of parts) {
+      const written = await routes.postChunk(jsonRequest('/api/pilot/shadow/library/chunks', 'POST', {
+        document_id: ids[key], ordinal, text_content: text,
+      }));
+      expect(written.status).toBe(201);
+    }
+  }
+
+  async function states() {
+    const rows = await rawQuery<{ document_name: string; ingest_state: string; approval_state: string }>(
+      `select document_name, ingest_state, approval_state
+         from pilot.shadow_library_documents where organization_id = $1`,
+      [BULK_ORG_ID],
+    );
+    return Object.fromEntries(rows.map((row) => [row.document_name, `${row.ingest_state}/${row.approval_state}`]));
+  }
+
+  beforeAll(async () => {
+    await rawQuery(
+      `insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`,
+      [BULK_ORG_ID],
+    );
+    await rawQuery(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider, is_platform_owner)
+       values ($1, 'platform_owner', $2, 'microsoft', true)`,
+      [OWNER_ID, BULK_ORG_ID],
+    );
+  });
+
+  beforeEach(() => {
+    mockRequirePrincipal.mockResolvedValue({ ...principal(), organizationId: BULK_ORG_ID });
+  });
+
+  test("the bulk approval script carries the server's predicate, character for character", async () => {
+    const { MANUAL_TEXT_INTAKE_COMPLETE_SQL } = await import('./shadowLibrary');
+    const script = (await fs.readFile(SCRIPT_PATH, 'utf8')).replace(/\r\n/g, '\n');
+    const begin = '// MANUAL_TEXT_INTAKE_COMPLETE_SQL:BEGIN\nconst MANUAL_TEXT_INTAKE_COMPLETE_SQL = `';
+    const end = '`;\n// MANUAL_TEXT_INTAKE_COMPLETE_SQL:END';
+    const from = script.indexOf(begin);
+    const to = script.indexOf(end);
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    expect(script.slice(from + begin.length, to)).toBe(MANUAL_TEXT_INTAKE_COMPLETE_SQL);
+    // And the copy is what the three statements use: the count, the indexing
+    // update and the approval update.
+    expect(script.split('${MANUAL_TEXT_INTAKE_COMPLETE_SQL}')).toHaveLength(4);
+  });
+
+  test('setup: one source and six pending documents in a gym of their own', async () => {
+    const source = await routes.postSource(jsonRequest('/api/pilot/shadow/library/sources', 'POST', {
+      title: 'Bulk Sweep Monograph', source_type: 'peer_reviewed', authority_tier: 2, status: 'active',
+    }));
+    expect(source.status).toBe(201);
+    ids.source = (await source.json()).source.source_id;
+
+    await make('complete', { intake_method: 'manual_text', chunk_count: 2 }, [[0, 'Okapi complete one.'], [1, 'Okapi complete two.']]);
+    await make('partial', { intake_method: 'manual_text', chunk_count: 3 }, [[0, 'Okapi partial one.'], [1, 'Okapi partial two.']]);
+    await make('undeclared', { intake_method: 'manual_text' }, [[0, 'Okapi undeclared one.']]);
+    await make('empty', { intake_method: 'manual_text', chunk_count: 2 }, []);
+    await make('seeded', { canonical: true }, [[0, 'Okapi seeded one.']]);
+    // A pending document already marked indexed while incomplete. No screen can
+    // produce this now; a direct write could, and approval must still skip it.
+    await make('stale-indexed', { intake_method: 'manual_text', chunk_count: 4 }, [[0, 'Okapi stale one.']]);
+    await rawQuery(
+      `update pilot.shadow_library_documents set ingest_state = 'indexed', index_completed_at = now() where document_id = $1`,
+      [ids['stale-indexed']],
+    );
+  });
+
+  test('the dry run plans only the complete and the non-manual document, and counts the rest', async () => {
+    const run = await runScript(false);
+    expect(run.code).toBe(0);
+    expect(run.stdout).toMatch(/"documents_pending": 6/);
+    expect(run.stdout).toMatch(/"documents_without_content": 1/);
+    expect(run.stdout).toMatch(/"documents_incomplete_manual_text": 3/);
+    expect(run.stdout).toMatch(/"would_index": 2/);
+    // A dry run writes nothing.
+    expect((await states()).complete).toBe('chunking/pending_review');
+  });
+
+  test('the apply approves those two and leaves every incomplete excerpt pending and unserved', async () => {
+    const run = await runScript(true);
+    expect(run.stderr).toBe('');
+    expect(run.code).toBe(0);
+    expect(run.stdout).toMatch(/"event":"library.approval.completed"/);
+    expect(run.stdout).toMatch(/"documents_approved":2/);
+    expect(run.stdout).toMatch(/"documents_incomplete_manual_text":3/);
+
+    expect(await states()).toEqual({
+      complete: 'indexed/approved',
+      seeded: 'indexed/approved',
+      partial: 'chunking/pending_review',
+      undeclared: 'chunking/pending_review',
+      empty: 'pending/pending_review',
+      'stale-indexed': 'indexed/pending_review',
+    });
+
+    const served = await routes.searchShadowLibrary({
+      organizationId: BULK_ORG_ID,
+      actorAccountId: ACCOUNT_ID,
+      actorRole: 'organization_admin',
+      athleteId: null,
+      scope: 'scoped',
+      queryText: 'okapi',
+      limit: 20,
+    });
+    expect(served.map((result) => result.text_content).sort()).toEqual([
+      'Okapi complete one.',
+      'Okapi complete two.',
+      'Okapi seeded one.',
+    ]);
   });
 });
