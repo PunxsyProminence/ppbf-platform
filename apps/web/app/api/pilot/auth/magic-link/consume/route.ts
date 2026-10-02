@@ -116,6 +116,9 @@ export async function POST(request: NextRequest) {
       account_id: result.principal.accountId,
       role: result.principal.role,
       organization_id: result.principal.organizationId,
+      // 'offer' tells the link page to show "create a password". Absent from
+      // an older store result reads as 'none'.
+      password_setup: result.passwordSetup ?? 'none',
     });
 
     response.cookies.set(PILOT_SESSION_COOKIE, result.session.token, {

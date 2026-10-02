@@ -50,6 +50,10 @@ const AUTH_SURFACE = [
   path.join(APP_DIR, 'api', 'pilot', 'auth', 'login', 'route.ts'),
   path.join(APP_DIR, 'api', 'pilot', 'auth', 'session', 'route.ts'),
   path.join(APP_DIR, 'api', 'pilot', 'auth', 'activate', 'route.ts'),
+  /* Parent passwords. Who may hold one is passwordLoginPermitted's answer;
+     these two are where it is asked, and neither may name a role itself. */
+  path.join(PILOT_DIR, 'parentPassword.ts'),
+  path.join(APP_DIR, 'api', 'pilot', 'auth', 'password', 'set', 'route.ts'),
 ];
 
 /**
