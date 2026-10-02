@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { apiBase } from '@/lib/apiBase';
 import {
   INTAKE_MAX_TEXT_LENGTH,
+  formatIntakeCount,
   normalizeIntakeText,
   splitIntakeText,
   submitLibraryTextIntake,
@@ -132,7 +133,7 @@ export default function LibraryTextIntakePanel({ sources }: { readonly sources: 
           </div>
 
           <p className="t-muted">
-            {textLength.toLocaleString('en-US')} of {INTAKE_MAX_TEXT_LENGTH.toLocaleString('en-US')} characters
+            {formatIntakeCount(textLength)} of {formatIntakeCount(INTAKE_MAX_TEXT_LENGTH)} characters
             {partCount > 0 ? ` · saved as ${partCount} ${partCount === 1 ? 'part' : 'parts'}, in order` : ''}
           </p>
 

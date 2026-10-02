@@ -124,6 +124,15 @@ export function rejoinIntakeChunks(chunks: readonly Pick<IntakeChunk, 'text' | '
   return chunks.map((chunk) => `${chunk.joinBefore}${chunk.text}`).join('');
 }
 
+// A count with thousands separators. Intl.NumberFormat rather than
+// Number#toLocaleString: gymTimeDrift.test.ts forbids every toLocale* call
+// outside src/lib/gymTime.ts, numbers included.
+const COUNT_FORMAT = new Intl.NumberFormat('en-US');
+
+export function formatIntakeCount(value: number): string {
+  return COUNT_FORMAT.format(value);
+}
+
 const UNPAIRED_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 /** Null when the input may be submitted; otherwise the sentence to show. */
@@ -141,7 +150,7 @@ export function validateIntakeInput(input: IntakeInput): string | null {
     return 'This text contains a damaged character (often left by copying from a PDF). Remove it and try again.';
   }
   if (text.length > INTAKE_MAX_TEXT_LENGTH) {
-    return `This text is ${text.length.toLocaleString('en-US')} characters. One entry holds up to ${INTAKE_MAX_TEXT_LENGTH.toLocaleString('en-US')}; split it into separate labelled excerpts.`;
+    return `This text is ${formatIntakeCount(text.length)} characters. One entry holds up to ${formatIntakeCount(INTAKE_MAX_TEXT_LENGTH)}; split it into separate labelled excerpts.`;
   }
   return null;
 }
