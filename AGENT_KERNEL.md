@@ -135,6 +135,17 @@ transfer, narrow, or expand anyone's authority. Roles are the list above.
   it. An image rebuilt from a rendering is a new picture that could pass the
   byte gate while being the wrong plate, and silently correcting a bad input
   hides that the producer's pipeline is wrong.
+- **The one permitted exception: a DECLARED format-only conversion**
+  (OD-2026-10-01-004, 2026-10-01). The word doing the work above is *silently*.
+  A conversion is allowed only when it changes format and never content
+  (geometry at the same aspect ratio so nothing is cropped out, chroma,
+  encoding, metadata — no reframing, retouching, grading or
+  regeneration), its parameters are recorded in the conversion table in
+  `apps/web/public/plates/README.md`, and the original is kept outside this
+  repository for comparison. A source whose aspect ratio does not match a
+  contract geometry goes back to its producer; it is not cropped to fit. The
+  byte gate is unchanged and is still not to be weakened — a conversion
+  that does not reach 4:4:4 is still refused.
 - A drive folder, `Grok-Plates-Inbox` included, holds an archive copy, not a
   delivery. Nobody polls one as a prerequisite for a pull request.
 
