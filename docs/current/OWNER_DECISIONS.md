@@ -164,13 +164,13 @@ and should not try to.
 
 ---
 
-## OD-2026-10-01-007 -- Parent passwords: a board seat does not block one; a person on both sides uses two emails; a stored password is cleared when its holder becomes ineligible. Release 3 started. The hold-placement sentence approved
+## OD-2026-10-01-007 -- Parent passwords: a board seat does not block one; a person on both sides uses two emails; a stored password is cleared when its holder becomes ineligible. Release 3 started. The hold-placement sentence and the lapsed-clearance wording approved
 
 **Provenance: PRIMARY.** Section 1's two messages were typed by Jason in the
 Lane P thread and read by overwatch in that thread's transcript
 (`C--Dev-ppbf-platform--claude-worktrees-quizzical-jennings-7f224a/16d05dfd-59be-4b72-978f-c24b105b90d7.jsonl`),
-times UTC. Section 3's answer was typed in the Lane H thread and read in
-its transcript. The other quotes were typed in the overwatch thread
+times UTC. Section 3's answer was typed in the Lane H thread and section 4's
+in the Lane M thread; each was read in that thread's transcript. The other quotes were typed in the overwatch thread
 (transcript as in OD-2026-09-30-007). **Date:** 2026-10-01 (his evening; the UTC times run
 past midnight). This entry is new and edits no earlier one.
 
@@ -262,6 +262,28 @@ string uses a typographic apostrophe in "gym’s"; the question as typed used a
 straight one; the wording is otherwise the same. The commit that added the
 sentence was made before this approval and remains an unauthorized write in
 that PR's own record; the approval does not authorize it backwards.
+
+### 4. What a coach sees when a medical clearance has lapsed
+
+Both coach screens print the stored status, so a clearance past its end date
+still reads "cleared" while the server gates already treat it as expired
+(REPORTED by Lane M at `main` `c5d5c260`; no screen lets a coach enter an end
+date today, so this is latent). Lane M put four questions to him in its
+thread, each with A recommended: Q1 the badge label for a lapsed clearance,
+(A) "clearance expired", (B) "expired", (C) "lapsed"; Q2 the badge rung, (A)
+the amber restricted rung, same as pending and no record, with red kept for
+not cleared, (B) the red locked rung; Q3 the sentence under the badge, (A)
+"This clearance passed its end date, so it no longer counts. The medical gate
+blocks recommendations until a new clearance is recorded.", (B) reuse the
+server's existing sentence, (C) no sentence; Q4 the date on the clearance
+board beside a lapsed badge, (A) "expired <date>" in place of "since <date>",
+(B) keep "since <date>", (C) no date. Jason, whole message,
+2026-10-02T02:43:59Z (read by overwatch in the Lane M transcript,
+`C--Dev/deb77dfa-aa05-430d-900f-5ba3583fedc4.jsonl`):
+*"go with recomendations"*.
+
+**A on all four.** Label "clearance expired"; amber rung; that sentence;
+"expired <date>". Lane M builds it after PR #1076 is on `main`.
 
 ---
 
