@@ -386,6 +386,28 @@ describe('POST /api/pilot/auth/password/set', () => {
       expect(hashRan).toHaveBeenCalledTimes(1);
     });
 
+    // The count is written before the hash starts, not alongside it: with the
+    // durable store on, the hash must not be running while its own count is
+    // still on its way to the database.
+    test('the hash does not start until its count has been recorded', async () => {
+      let finishRecording!: () => void;
+      rateLimit.recordDurableFailedAttempt.mockImplementationOnce(async (key: string) => {
+        const recorded = actualRateLimit.recordFailedAttempt(key);
+        await new Promise<void>((resolve) => { finishRecording = resolve; });
+        return recorded;
+      });
+
+      const pending = post({ password: GOOD_PASSWORD });
+      for (let tick = 0; tick < 20; tick += 1) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      expect(hashRan).not.toHaveBeenCalled();
+
+      finishRecording();
+      expect((await pending).status).toBe(200);
+      expect(hashRan).toHaveBeenCalledTimes(1);
+    });
+
     test('a durable hash limit is honoured: 429 and no hash', async () => {
       rateLimit.checkDurableRateLimit.mockImplementation(async (key: string) => (
         key === HASH_KEY ? { isLimited: true, delayMs: 30_000 } : { isLimited: false }
