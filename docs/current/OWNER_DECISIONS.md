@@ -164,13 +164,14 @@ and should not try to.
 
 ---
 
-## OD-2026-10-01-007 -- Parent passwords: a board seat does not block one; a person on both sides uses two emails; a stored password is cleared when its holder becomes ineligible. Release 3 started
+## OD-2026-10-01-007 -- Parent passwords: a board seat does not block one; a person on both sides uses two emails; a stored password is cleared when its holder becomes ineligible. Release 3 started. The hold-placement sentence approved
 
 **Provenance: PRIMARY.** Section 1's two messages were typed by Jason in the
 Lane P thread and read by overwatch in that thread's transcript
 (`C--Dev-ppbf-platform--claude-worktrees-quizzical-jennings-7f224a/16d05dfd-59be-4b72-978f-c24b105b90d7.jsonl`),
-times UTC. The other quotes were typed in the overwatch thread (transcript as
-in OD-2026-09-30-007). **Date:** 2026-10-01 (his evening; the UTC times run
+times UTC. Section 3's answer was typed in the Lane H thread and read in
+its transcript. The other quotes were typed in the overwatch thread
+(transcript as in OD-2026-09-30-007). **Date:** 2026-10-01 (his evening; the UTC times run
 past midnight). This entry is new and edits no earlier one.
 
 ### 1. Parent passwords and board seats
@@ -240,6 +241,27 @@ read-only production checks: `check-database` run 36936700286
 run 36936798184 (`membership-orphans`: "retention purge history: 0 run(s), 0
 account(s) ever purged"). No production deploy had been dispatched when
 written.
+
+### 3. The sentence shown when a hold placement is not confirmed
+
+PR #1076 added one coach-facing sentence on the clearance board before he was
+asked; ChatGPT's review held the merge for his answer. In the Lane H thread he
+first asked what the question was; Lane H put it as: 'When a coach presses
+"Place hold" and the server's answer is not a proper confirmation, and a
+re-read finds no hold for that athlete, the row shows the existing "Hold Not
+Placed" stamp with: A (recommended): "The gym's server did not confirm this
+hold. Check again before relying on it; if no hold shows, place it again." B:
+your own wording. C: no sentence; the row only says "Training hold could not
+be read just now…".' Jason, whole message, 2026-10-02T02:40:57Z (read by
+overwatch in the Lane H transcript,
+`C--Dev-ppbf-platform--claude-worktrees-competent-leavitt-60cdcd/6bf8483c-6957-4b13-9add-f1c636a5584d.jsonl`):
+*"A"*.
+
+**A.** The sentence stays as built in PR #1076 at `7f6b07b8`. The source
+string uses a typographic apostrophe in "gym’s"; the question as typed used a
+straight one; the wording is otherwise the same. The commit that added the
+sentence was made before this approval and remains an unauthorized write in
+that PR's own record; the approval does not authorize it backwards.
 
 ---
 
