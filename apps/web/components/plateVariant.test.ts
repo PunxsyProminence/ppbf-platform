@@ -670,7 +670,9 @@ describe('the resolver reads the sheet it is pointed at', () => {
     // base + portrait override. The current theme's `--plate: none` is gone
     // (OD-2026-10-01-005); the 2of2 variant has a different selector.
     expect(declared.filter((selector) => selector === '.room--floor')).toHaveLength(2);
-    expect(declared).toHaveLength(18);
+    // nine base + four office (of5) + three clinic (of4) + two night (of3)
+    // + five floor (of6) = twenty-two.
+    expect(declared).toHaveLength(22);
   });
 
   it('still routes every plate through --plate, so resolving it means something', () => {
@@ -751,6 +753,10 @@ const VARIANT_PLATES: Partial<Record<Room, readonly string[]>> = {
   ],
   floor: [
     '/plates/plate-16-floor-room-02.jpg',
+    '/plates/plate-17-bags-landscape-01.jpg',
+    '/plates/plate-17-matroom-landscape-01.jpg',
+    '/plates/plate-17-speedbag-landscape-01.jpg',
+    '/plates/plate-17-bell-landscape-01.jpg',
   ],
 };
 const SPLIT_ROOMS = new Set(Object.keys(VARIANT_PLATES) as Room[]);
@@ -771,16 +777,20 @@ describe('three rooms carry a set of walls, the rest carry one', () => {
       .map((entry) => entry.selector)
       .sort();
     expect(variantRules).toEqual([
-      ':where([data-plate-variant~="2of2"]) .room--floor',
       ':where([data-plate-variant~="2of3"]) .room--night',
       ':where([data-plate-variant~="2of4"]) .room--clinic',
       ':where([data-plate-variant~="2of5"]) .room--office',
+      ':where([data-plate-variant~="2of6"]) .room--floor',
       ':where([data-plate-variant~="3of3"]) .room--night',
       ':where([data-plate-variant~="3of4"]) .room--clinic',
       ':where([data-plate-variant~="3of5"]) .room--office',
+      ':where([data-plate-variant~="3of6"]) .room--floor',
       ':where([data-plate-variant~="4of4"]) .room--clinic',
       ':where([data-plate-variant~="4of5"]) .room--office',
+      ':where([data-plate-variant~="4of6"]) .room--floor',
       ':where([data-plate-variant~="5of5"]) .room--office',
+      ':where([data-plate-variant~="5of6"]) .room--floor',
+      ':where([data-plate-variant~="6of6"]) .room--floor',
     ]);
   });
 
@@ -864,8 +874,8 @@ describe('the ladder below the variant still holds', () => {
      * portrait plate when the viewport is upright, whichever landscape wall
      * their route would otherwise have taken.
      */
-    const landscapeSide = doorsIn('floor').find((href) => plateVariantSlot(href, 2) === 2)!;
-    const defaultSide = doorsIn('floor').find((href) => plateVariantSlot(href, 2) === 1)!;
+    const landscapeSide = doorsIn('floor').find((href) => plateVariantSlot(href, 6) === 2)!;
+    const defaultSide = doorsIn('floor').find((href) => plateVariantSlot(href, 6) === 1)!;
     expect(landscapeSide).toBeDefined();
     expect(defaultSide).toBeDefined();
 
@@ -919,9 +929,14 @@ describe('a variant rule does not take the portrait plate off the gym tablet', (
   const WITHOUT_WHERE = '[data-plate-variant~="2of2"] .room--floor {\n'
     + '  --plate: url("/plates/plate-02a-floor-landscape-02.jpg");\n}';
 
-  /** A floor route that lands in the second half of an of2 split. */
+  /* A floor route in the second half of an of2 split, which the synthetic rule
+     below targets. And one in the FIRST half that is also slot 1 of the live
+     of6 -- without that second condition it would pick up one of the floor's
+     real variants and this proof would be comparing against the wrong wall. */
   const secondHalf = doorsIn('floor').find((href) => plateVariantSlot(href, 2) === 2)!;
-  const firstHalf = doorsIn('floor').find((href) => plateVariantSlot(href, 2) === 1)!;
+  const firstHalf = doorsIn('floor').find(
+    (href) => plateVariantSlot(href, 2) === 1 && plateVariantSlot(href, 6) === 1,
+  )!;
 
   it('has a real route on each side of the split to test with', () => {
     expect(secondHalf).toBeDefined();
