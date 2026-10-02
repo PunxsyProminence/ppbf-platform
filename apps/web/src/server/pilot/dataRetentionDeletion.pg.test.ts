@@ -1053,6 +1053,11 @@ describe('a guardian who was actually recorded as one', () => {
         path.join(INFRA_DIR, 'pilot_slice_postgres_one_percent_club_migration.sql'), 'utf8',
       ),
     );
+    // pilot.account_activation_tokens: the purge supersedes the outstanding
+    // codes of an athlete login it retires, as an athlete deletion does.
+    await guardianClient.query(
+      await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_onboarding_migration.sql'), 'utf8'),
+    );
     guardianEnv.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(GUARDIAN_DB);
 
     await guardianClient.query(
@@ -1252,25 +1257,101 @@ describe('a guardian who was actually recorded as one', () => {
        values ($1, 'NOM-1', $2, 'coach_nomination', $3, 'coach', now() + interval '30 days')`,
       [G_ORG, NOMINATED, G_COACH],
     );
+    /* THE LOGINS. The purge unlinks a login from the athlete it removes -- in
+       that athlete's own savepoint, so the one it could NOT remove must keep
+       its link: a login that named nobody while its athlete row still stood
+       would read as "this athlete was purged" to everything that checks.
+       Three logins, to pin what the unlinking does to each kind:
+         NOMINATED          deleted login; its athlete's purge is refused
+         PURGEABLE_ATHLETE  an athlete login still LIVE (a leftover: deleting
+                            an athlete deletes the login with it)
+         STAFF_NOW          an athlete who became a coach on the same login */
+    const STAFF_NOW = 'ATH-GUARDIAN-STAFF-NOW';
+    await guardianClient.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, $2, 'Purge Subject', '2013-07-08', 'fly', 'active', 'contact', true, $3, now(), now())`,
+      [G_ORG, STAFF_NOW, G_COACH],
+    );
+    for (const [athleteId, role, deleted] of [
+      [NOMINATED, 'athlete', true],
+      [PURGEABLE_ATHLETE, 'athlete', false],
+      [STAFF_NOW, 'coach', false],
+    ] as const) {
+      await guardianClient.query(
+        `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag, deleted_at)
+         values ($1, $2, $3, $4, 'ppbf_local', $5, case when $6 then now() - interval '3 years' else null end)`,
+        [`acct-${athleteId}`, role, G_ORG, athleteId, !deleted, deleted],
+      );
+    }
     await guardianClient.query(
       `insert into pilot.one_percent_votes
          (organization_id, nomination_id, voter_account_id, voter_role, vote)
        values ($1, 'NOM-1', $2, 'coach', 'yes')`,
       [G_ORG, G_COACH],
     );
+    /* Each login is signed in and holds an activation code nobody has
+       redeemed. A login the purge retires must lose both, as an athlete
+       deletion takes them (a session resolves without re-reading active_flag;
+       a code would set a PIN and turn the login active again). The refused
+       athlete's login and the coach's login must keep theirs. */
+    for (const athleteId of [NOMINATED, PURGEABLE_ATHLETE, STAFF_NOW]) {
+      await guardianClient.query(
+        `insert into pilot.session_tokens (token_hash, account_id, organization_id) values ($1, $2, $3)`,
+        [`session-${athleteId}`, `acct-${athleteId}`, G_ORG],
+      );
+      await guardianClient.query(
+        `insert into pilot.account_activation_tokens
+           (token_hash, account_id, organization_id, issued_by_account_id, issued_by_role, expires_at)
+         values ($1, $2, $3, $4, 'coach', now() + interval '14 days')`,
+        [`code-${athleteId}`, `acct-${athleteId}`, G_ORG, G_COACH],
+      );
+    }
     await guardianClient.query(
       `update pilot.athletes set deleted_at = now() - interval '3 years'
         where organization_id = $1 and athlete_id = any($2::text[])`,
-      [G_ORG, [NOMINATED, PURGEABLE_ATHLETE]],
+      [G_ORG, [NOMINATED, PURGEABLE_ATHLETE, STAFF_NOW]],
     );
 
     const { event } = await runCleanup({ ...guardianEnv, PPBF_RETENTION_APPLY: 'true' });
-    expect(event.athletes).toBe(1);
+    expect(event.athletes).toBe(2);
+    expect(event.athlete_logins_unlinked).toBe(2);
+    expect(event.live_athlete_logins_retired).toBe(1);
+
+    const access = await guardianClient.query(
+      `select a.account_id,
+              exists (select 1 from pilot.session_tokens t where t.account_id = a.account_id and t.revoked_at is null) as session_usable,
+              exists (select 1 from pilot.account_activation_tokens c
+                       where c.account_id = a.account_id and c.consumed_at is null and c.superseded_at is null) as code_usable
+         from pilot.accounts a where a.account_id = any($1::text[]) order by a.account_id`,
+      [[`acct-${NOMINATED}`, `acct-${PURGEABLE_ATHLETE}`, `acct-${STAFF_NOW}`]],
+    );
+    expect(access.rows).toEqual([
+      // Refused, rolled back: nothing of this login's was touched.
+      { account_id: `acct-${NOMINATED}`, session_usable: true, code_usable: true },
+      // Retired by the purge: signed out, and the code is dead.
+      { account_id: `acct-${PURGEABLE_ATHLETE}`, session_usable: false, code_usable: false },
+      // The coach's login: still signed in.
+      { account_id: `acct-${STAFF_NOW}`, session_usable: true, code_usable: true },
+    ]);
+
+    const logins = await guardianClient.query(
+      `select account_id, athlete_id, role, active_flag, deleted_at is not null as deleted
+         from pilot.accounts where account_id = any($1::text[]) order by account_id`,
+      [[`acct-${NOMINATED}`, `acct-${PURGEABLE_ATHLETE}`, `acct-${STAFF_NOW}`]],
+    );
+    expect(logins.rows).toEqual([
+      // Refused, rolled back: the login still names its athlete.
+      { account_id: `acct-${NOMINATED}`, athlete_id: NOMINATED, role: 'athlete', active_flag: false, deleted: true },
+      // Purged: the athlete login names nobody, and is retired with its athlete.
+      { account_id: `acct-${PURGEABLE_ATHLETE}`, athlete_id: null, role: 'athlete', active_flag: false, deleted: true },
+      // Purged: the coach's login names nobody, and is still the coach's.
+      { account_id: `acct-${STAFF_NOW}`, athlete_id: null, role: 'coach', active_flag: true, deleted: false },
+    ]);
 
     const gone = await guardianClient.query(
       `select athlete_id from pilot.athletes
         where organization_id = $1 and athlete_id = any($2::text[])`,
-      [G_ORG, [NOMINATED, PURGEABLE_ATHLETE]],
+      [G_ORG, [NOMINATED, PURGEABLE_ATHLETE, STAFF_NOW]],
     );
     expect(gone.rows.map((r: { athlete_id: string }) => r.athlete_id)).toEqual([NOMINATED]);
     expect(event.blocked_by).toMatchObject({ pilot_one_percent_nominations_athlete_fk: 1 });
@@ -1325,5 +1406,290 @@ describe('a guardian who was actually recorded as one', () => {
       [G_ORG, G_ATHLETE],
     );
     expect(enrolled.rowCount).toBe(1);
+  });
+
+  test('a purge that removes no row unlinks nothing', async () => {
+    /* The unlink follows the athlete delete only when that delete removed a
+       row. The one way it removes none without failing is a race: the job has
+       already counted the athlete, and somebody else's transaction deletes the
+       row before the job's own delete reaches it. Staged here with a second
+       connection that deletes the row and holds its transaction open, so the
+       job's own lock on the athlete row waits and then finds nothing. The
+       login must come out still naming the athlete, and the run must not
+       count, or audit, a deletion: this run purged nobody. */
+    const RACED = 'ATH-GUARDIAN-RACED';
+    await guardianClient.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
+       values ($1, $2, 'Purge Subject', '2013-07-08', 'fly', 'active', 'contact', true, $3, now(), now(), now() - interval '3 years')`,
+      [G_ORG, RACED, G_COACH],
+    );
+    await guardianClient.query(
+      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag, deleted_at)
+       values ($1, 'athlete', $2, $3, 'ppbf_local', false, now() - interval '3 years')`,
+      [`acct-${RACED}`, G_ORG, RACED],
+    );
+
+    const rival = new Client({ connectionString: connectionStringFor(GUARDIAN_DB) });
+    await rival.connect();
+    let job: ReturnType<typeof runCleanup> | undefined;
+    try {
+      await rival.query('begin');
+      await rival.query('delete from pilot.athletes where organization_id = $1 and athlete_id = $2', [G_ORG, RACED]);
+
+      job = runCleanup({ ...guardianEnv, PPBF_RETENTION_APPLY: 'true' });
+      // Wait until the job is actually waiting on the rival's lock.
+      let waiting = 0;
+      for (let attempt = 0; attempt < 100 && waiting === 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const blocked = await guardianClient.query(
+          `select count(*)::int as n from pg_stat_activity
+            where datname = $1 and wait_event_type = 'Lock' and query like 'select 1 from pilot.athletes%'`,
+          [GUARDIAN_DB],
+        );
+        waiting = blocked.rows[0].n;
+      }
+      expect(waiting).toBe(1);
+      await rival.query('commit');
+
+      const { event } = await job;
+      // The job had counted one athlete to purge; it purged none.
+      expect(event.athletes).toBe(0);
+      expect(event.athlete_logins_unlinked).toBe(0);
+      const audited = await guardianClient.query<{ details: Record<string, unknown> }>(
+        `select details from pilot.audit_events where event_type = 'data_purged' order by audit_id desc limit 1`,
+      );
+      expect(audited.rows[0].details).toMatchObject({ athletes_deleted: 0, athlete_logins_unlinked: 0 });
+    } finally {
+      // Release the rival first, then let a job that was started finish, so a
+      // failed assertion cannot leave it running into the next test.
+      await rival.query('rollback').catch(() => {});
+      await job?.catch(() => {});
+      await rival.end().catch(() => {});
+    }
+
+    const login = await guardianClient.query(
+      `select athlete_id, deleted_at is not null as deleted from pilot.accounts where account_id = $1`,
+      [`acct-${RACED}`],
+    );
+    expect(login.rows).toEqual([{ athlete_id: RACED, deleted: true }]);
+  });
+
+  test("an athlete_id reissued to a new child while the job waits is not purged in the old child's place", async () => {
+    /* The job lists expired athletes without locking them. If the listed row
+       is hard-deleted by somebody else and the roster gives the same id to a
+       new child before the job's turn comes, a delete by (organization_id,
+       athlete_id) alone would remove the NEW child. The job's lock repeats the
+       expiry test and the athlete is skipped when it finds no such row. */
+    const REISSUED = 'ATH-GUARDIAN-REISSUED';
+    await guardianClient.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
+       values ($1, $2, 'Old Child', '2013-07-08', 'fly', 'active', 'contact', true, $3, now(), now(), now() - interval '3 years')`,
+      [G_ORG, REISSUED, G_COACH],
+    );
+
+    const rival = new Client({ connectionString: connectionStringFor(GUARDIAN_DB) });
+    await rival.connect();
+    let job: ReturnType<typeof runCleanup> | undefined;
+    try {
+      await rival.query('begin');
+      await rival.query('delete from pilot.athletes where organization_id = $1 and athlete_id = $2', [G_ORG, REISSUED]);
+      await rival.query(
+        `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+         values ($1, $2, 'New Child', '2015-01-02', 'fly', 'active', 'contact', true, $3, now(), now())`,
+        [G_ORG, REISSUED, G_COACH],
+      );
+
+      job = runCleanup({ ...guardianEnv, PPBF_RETENTION_APPLY: 'true' });
+      let waiting = 0;
+      for (let attempt = 0; attempt < 100 && waiting === 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const blocked = await guardianClient.query(
+          `select count(*)::int as n from pg_stat_activity
+            where datname = $1 and wait_event_type = 'Lock' and query like 'select 1 from pilot.athletes%'`,
+          [GUARDIAN_DB],
+        );
+        waiting = blocked.rows[0].n;
+      }
+      expect(waiting).toBe(1);
+      await rival.query('commit');
+
+      const { event } = await job;
+      expect(event.athletes).toBe(0);
+    } finally {
+      await rival.query('rollback').catch(() => {});
+      await job?.catch(() => {});
+      await rival.end().catch(() => {});
+    }
+
+    const child = await guardianClient.query(
+      `select full_name, deleted_at is not null as deleted from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [G_ORG, REISSUED],
+    );
+    expect(child.rows).toEqual([{ full_name: 'New Child', deleted: false }]);
+  });
+
+  test("a login moved into the gym while its athlete_id is being purged is not the purged athlete's login", async () => {
+    /* WHICH login the purge unlinks is decided before the athlete is deleted.
+       upsertOrganizationMembership (auth.ts) moves a login to another gym and
+       leaves its athlete_id where it was, and athlete ids are issued per gym:
+       a present child's login from a gym that issued the same id can arrive
+       in this gym in the middle of the purge. Asked after the delete, "which
+       account has (organization_id, athlete_id)" would answer with that
+       child's login, and the purge would unlink it and mark it deleted.
+
+       Staged with three connections. The purged athlete has no login and one
+       goal. A rival holds a lock on the goal row, so the job -- having locked
+       the athlete and looked for its login -- waits inside its delete, on the
+       cascade. While it waits, the other gym's login is moved in. */
+    const MOVED_ORG = 'org-guardian-purge-other';
+    const COLLIDING = 'ATH-GUARDIAN-COLLIDING';
+    const PRESENT_CHILD_LOGIN = 'acct-guardian-present-child';
+    await guardianClient.query(
+      `insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`,
+      [MOVED_ORG],
+    );
+    for (const [org, deleted] of [[G_ORG, true], [MOVED_ORG, false]] as const) {
+      await guardianClient.query(
+        `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
+         values ($1, $2, 'Purge Subject', '2013-07-08', 'fly', 'active', 'contact', true, $3, now(), now(),
+                 case when $4 then now() - interval '3 years' else null end)`,
+        [org, COLLIDING, G_COACH, deleted],
+      );
+    }
+    await guardianClient.query(
+      `insert into pilot.goals (organization_id, goal_id, athlete_id, title, target_date, metric, status, created_at, updated_at)
+       values ($1, 'goal-colliding', $2, 'x', now(), 'x', 'active', now(), now())`,
+      [G_ORG, COLLIDING],
+    );
+    await guardianClient.query(
+      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag)
+       values ($1, 'athlete', $2, $3, 'ppbf_local', true)`,
+      [PRESENT_CHILD_LOGIN, MOVED_ORG, COLLIDING],
+    );
+    await guardianClient.query(
+      `insert into pilot.session_tokens (token_hash, account_id, organization_id) values ('session-present-child', $1, $2)`,
+      [PRESENT_CHILD_LOGIN, MOVED_ORG],
+    );
+
+    const rival = new Client({ connectionString: connectionStringFor(GUARDIAN_DB) });
+    await rival.connect();
+    let job: ReturnType<typeof runCleanup> | undefined;
+    try {
+      await rival.query('begin');
+      await rival.query(`select 1 from pilot.goals where organization_id = $1 and goal_id = 'goal-colliding' for update`, [G_ORG]);
+
+      job = runCleanup({ ...guardianEnv, PPBF_RETENTION_APPLY: 'true' });
+      let waiting = 0;
+      for (let attempt = 0; attempt < 100 && waiting === 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const blocked = await guardianClient.query(
+          `select count(*)::int as n from pg_stat_activity
+            where datname = $1 and wait_event_type = 'Lock' and query like 'delete from pilot.athletes%'`,
+          [GUARDIAN_DB],
+        );
+        waiting = blocked.rows[0].n;
+      }
+      expect(waiting).toBe(1);
+
+      // The move, as upsertOrganizationMembership writes it: the gym changes, athlete_id does not.
+      await guardianClient.query(`update pilot.accounts set organization_id = $2 where account_id = $1`, [PRESENT_CHILD_LOGIN, G_ORG]);
+      await rival.query('commit');
+
+      const { event } = await job;
+      expect(event.athletes).toBe(1);
+      expect(event.athlete_logins_unlinked).toBe(0);
+    } finally {
+      // Release the rival first, then let a job that was started finish, so a
+      // failed assertion cannot leave it running into the next test.
+      await rival.query('rollback').catch(() => {});
+      await job?.catch(() => {});
+      await rival.end().catch(() => {});
+    }
+
+    const purged = await guardianClient.query(
+      `select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2`,
+      [G_ORG, COLLIDING],
+    );
+    expect(purged.rowCount).toBe(0);
+    const present = await guardianClient.query(
+      `select a.athlete_id, a.active_flag, a.deleted_at is not null as deleted,
+              exists (select 1 from pilot.session_tokens t where t.account_id = a.account_id and t.revoked_at is null) as session_usable
+         from pilot.accounts a where a.account_id = $1`,
+      [PRESENT_CHILD_LOGIN],
+    );
+    // The present child's login: still theirs, still live, still signed in.
+    expect(present.rows).toEqual([{ athlete_id: COLLIDING, active_flag: true, deleted: false, session_usable: true }]);
+  });
+
+  test("a login moved OUT of the gym while its athlete is being purged is no longer that athlete's login", async () => {
+    /* The capture LOCKS the login it reads. Without the lock it would read the
+       login as it was before a move that is already under way, and then write
+       it by account_id once the move had committed -- unlinking and retiring a
+       login that by then belongs to another gym. With the lock, the capture
+       waits for the move and re-reads: the login is no longer this gym's, so
+       it is not captured. Staged with a rival that moves the login and holds
+       its transaction open while the job waits on that row. */
+    const LEAVING_ORG = 'org-guardian-purge-leaving';
+    const LEFT = 'ATH-GUARDIAN-LEFT';
+    const LEAVING_LOGIN = 'acct-guardian-leaving';
+    await guardianClient.query(
+      `insert into pilot.organizations (organization_id, organization_name, status) values ($1, $1, 'active')`,
+      [LEAVING_ORG],
+    );
+    await guardianClient.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
+       values ($1, $2, 'Purge Subject', '2013-07-08', 'fly', 'active', 'contact', true, $3, now(), now(), now() - interval '3 years')`,
+      [G_ORG, LEFT, G_COACH],
+    );
+    await guardianClient.query(
+      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, auth_provider, active_flag)
+       values ($1, 'athlete', $2, $3, 'ppbf_local', true)`,
+      [LEAVING_LOGIN, G_ORG, LEFT],
+    );
+    await guardianClient.query(
+      `insert into pilot.session_tokens (token_hash, account_id, organization_id) values ('session-leaving', $1, $2)`,
+      [LEAVING_LOGIN, G_ORG],
+    );
+
+    const rival = new Client({ connectionString: connectionStringFor(GUARDIAN_DB) });
+    await rival.connect();
+    let job: ReturnType<typeof runCleanup> | undefined;
+    try {
+      await rival.query('begin');
+      await rival.query(`update pilot.accounts set organization_id = $2 where account_id = $1`, [LEAVING_LOGIN, LEAVING_ORG]);
+
+      job = runCleanup({ ...guardianEnv, PPBF_RETENTION_APPLY: 'true' });
+      let waiting = 0;
+      for (let attempt = 0; attempt < 100 && waiting === 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const blocked = await guardianClient.query(
+          `select count(*)::int as n from pg_stat_activity
+            where datname = $1 and wait_event_type = 'Lock' and query like 'select account_id, role%'`,
+          [GUARDIAN_DB],
+        );
+        waiting = blocked.rows[0].n;
+      }
+      expect(waiting).toBe(1);
+      await rival.query('commit');
+
+      const { event } = await job;
+      expect(event.athletes).toBe(1);
+      expect(event.athlete_logins_unlinked).toBe(0);
+      expect(event.live_athlete_logins_retired).toBe(0);
+    } finally {
+      await rival.query('rollback').catch(() => {});
+      await job?.catch(() => {});
+      await rival.end().catch(() => {});
+    }
+
+    const left = await guardianClient.query(
+      `select a.organization_id, a.athlete_id, a.active_flag, a.deleted_at is not null as deleted,
+              exists (select 1 from pilot.session_tokens t where t.account_id = a.account_id and t.revoked_at is null) as session_usable
+         from pilot.accounts a where a.account_id = $1`,
+      [LEAVING_LOGIN],
+    );
+    expect(left.rows).toEqual([
+      { organization_id: LEAVING_ORG, athlete_id: LEFT, active_flag: true, deleted: false, session_usable: true },
+    ]);
   });
 });

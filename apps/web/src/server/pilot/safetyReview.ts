@@ -95,6 +95,15 @@ interface GateFailureRow {
  * recent evaluation per (athlete, gate), and only where that outcome is
  * NOT 'passed' -- an inner join (not left), so an athlete/gate pair with no
  * evaluation at all is correctly absent rather than surfaced as a failure.
+ *
+ * A DELETED ATHLETE'S FAILING GATES ARE LEFT OUT AT ONCE (Jason, 2026-09-30).
+ * The other three feeds keep a deleted athlete's item until somebody resolves
+ * it; a gate has no such exit. Its only resolution is a newer passing
+ * evaluation, and every path that writes one demands a live athlete
+ * (access.ts assertAthleteBelongsToOrganization), so the row would sit here,
+ * unactionable, until the retention purge. A failing gate is a standing "may
+ * this athlete do X", not an event about them: it has no meaning once they
+ * are gone. Their open holds, escalations and violations still stay.
  */
 async function getOrganizationFailingGateEvaluations(organizationId: string): Promise<GateFailureRow[]> {
   return query<GateFailureRow>(
@@ -119,6 +128,7 @@ async function getOrganizationFailingGateEvaluations(organizationId: string): Pr
      ) latest on true
      where ath.organization_id = $1
        and ath.active_flag = true
+       and ath.deleted_at is null
        and latest.outcome <> 'passed'
      order by ath.full_name, g.name`,
     [organizationId],

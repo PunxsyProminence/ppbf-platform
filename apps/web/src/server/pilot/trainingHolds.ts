@@ -4,6 +4,7 @@ import type { PoolClient } from 'pg';
 
 import { isContactObservation } from './contactClearanceGate';
 import { query, queryOne, withTransaction } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 import { fileEscalation } from './escalationLadder';
 import { findNearMissByTriggerContext, flagNearMiss } from './shadowNearMisses';
 
@@ -353,6 +354,11 @@ export async function getTrainingHoldById(
  * "is this child protected right now", so it is the one read that cannot
  * settle for a read-time-only predicate: without the sweep it would show
  * an expired hold as 'active' while the athlete can in fact register.
+ *
+ * A deleted athlete's hold leaves this list once it is lifted or expired
+ * (Jason, 2026-09-30, OD-2026-09-30-004 "B"); an active one stays until
+ * somebody lifts it or its clock runs out. The sweep runs first, so a hold
+ * whose clock ran out is already 'expired' when the filter reads it.
  */
 export async function listTrainingHolds(
   organizationId: string,
@@ -366,6 +372,7 @@ export async function listTrainingHolds(
        where organization_id = $1
          and ($2::text is null or athlete_id = $2)
          and ($3::text is null or status = $3)
+         and (status = 'active' or ${athleteNotDeletedSql('pilot.training_holds')})
        order by placed_at desc`,
       [organizationId, filters.athleteId ?? null, filters.status ?? null],
     );

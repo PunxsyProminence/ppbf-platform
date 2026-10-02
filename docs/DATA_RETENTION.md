@@ -173,11 +173,66 @@ most of these rows with it.
   duplicate-guardian check and in a guardian's link to a coach's portrait, the admin PIN
   directory, the roster CSV export, and SHADOW research requirements about them.
 
-**Not changed, pending Jason** (safeguarding; the "10 C" question did not cover them): the
-org-admin safety screens -- safety escalations, safety flags, training holds, failing safety
-gates, video compliance violations, the safety review page, the board escalation summary -- and
-the feedback queue, which carries safeguarding disclosures. A deleted athlete's items stay on
-those screens for the organization admin, exactly as before. (Coaches already did not see them.)
+**Safety screens: hidden once resolved** (owner decision 2026-09-30, OD-2026-09-30-004, "#1027
+Q1", option B). On the organization admin's safety screens a deleted athlete's item stays until
+somebody deals with it, then leaves. Deleting a child does not deal with a red flag about them.
+(Coaches already did not see a deleted athlete's items.) What "dealt with" means is each screen's
+own state:
+
+| Screen | Still shown for a deleted athlete | Hidden once |
+|---|---|---|
+| Safety escalations | open, acknowledged | resolved |
+| Training holds | active | lifted or expired |
+| Compliance violations (compliance center) | new, acknowledged, escalated | resolved or dismissed |
+| Feedback queue (carries safeguarding disclosures) | new, triaged, planned | done or declined |
+| Safety flags | open | any other status (the screen has only ever listed open flags) |
+| Safety review page (holds, escalations, violations) | active holds, unresolved escalations, open violations | the same states as above |
+| Safety review page, failing safety gates | nothing | at once, on deletion |
+| Board escalation summary (a count, no names) | open escalations | anything not open (it has only ever counted open ones) |
+
+Failing gates are the one exception to "until resolved" (owner decision 2026-09-30): a gate
+clears only when a newer check passes, and no screen can record a check for a deleted athlete,
+so it would otherwise sit on the page, with nothing anyone could do about it, until the cleanup
+job. A failing gate is a standing "may this athlete do X", not an incident about them.
+
+The first four readers changed (`escalationLadder.ts` `listEscalations`, `trainingHolds.ts`
+`listTrainingHolds`, `compliance.ts` `getOrganizationViolations`, `feedback.ts`
+`listOrganizationFeedback`), and `safetyReview.ts` for the failing gates. Safety flags, the rest
+of the safety review page and the board summary already behaved this way and are pinned by the
+same test, `apps/web/src/server/pilot/deletedAthleteSafetyScreens.pg.test.ts`. The feedback queue
+decides "the writer is deleted" from what each submission recorded when it was written, the gym
+and the role (athlete, guardian, staff), not from how the login reads today:
+- written as an athlete: the athlete record decides. A live athlete whose login alone was
+  deleted keeps everything they wrote.
+- written as a guardian or staff member: the login decides, so a deleted guardian's or staff
+  member's submissions also leave once they are done or declined, and stay gone after the
+  cleanup job removes the login.
+- if the login no longer matches the submission (it was given another role, or moved to another
+  gym), nothing proves the writer is gone, and the submission stays.
+- after the cleanup job removes a deleted athlete, the roster can give the same athlete id to a
+  new child. When the cleanup job removes an athlete record it also unlinks that athlete's login
+  from the id. Which login that is, is settled before the record is removed, so a login moved
+  into the gym in the meantime is never taken for it. The login is kept and names nobody; if it
+  was somehow still live it is marked deleted at that moment and signed out (its sessions are
+  ended and any unused activation code is cancelled), so intake cannot give it to another child
+  (a login that has since become a coach's or guardian's is unlinked and left as it is). The new child therefore has no
+  connection to the old login: the deleted athlete's closed submissions stay hidden, their open
+  ones show with no athlete name, and the new child can be given a login of their own. No date
+  is compared.
+  The one case this does not cover is an athlete record removed by the cleanup job BEFORE the
+  unlinking existed, whose id has since been given to a new child: that old login would still
+  carry the id. None existed when the unlinking shipped: the cleanup job had never run.
+  **OBSERVED** by the read-only `membership-orphans` check, which counts the audit rows the
+  cleanup job writes (`data_purged`, `retention_cleanup`): "retention purge history: 0 run(s),
+  0 account(s) ever purged" on staging (run 36936795333, 2026-10-01T22:44Z) and on production
+  (run 36936798184, 2026-10-02T01:20Z). The deletion preflight's "Retention purge events" line counts every
+  `data_purged` row, including the membership-orphan cleanup's, and so is not this number (it
+  read 1 in production, run 36922416115). The owner's statement, 2026-10-01: "the app has
+  never been live".
+
+The platform owner's cross-gym feedback list, which
+names nobody and withholds safeguarding text, is unchanged. The video-compliance publication
+queue is not in this table: it drops a deleted athlete's publications at once (videos, above).
 
 **Left as they are, and why:**
 - Counts that name nobody (model-validation rates, SHADOW usage metrics, board competition and
@@ -199,7 +254,9 @@ those screens for the organization admin, exactly as before. (Coaches already di
 only stored-file deletes are a portrait its owner removes or a reviewer rejects, gym-wall
 photos and credential files (`apps/web/src/server/pilot/blob.ts:204, 281, 356`). The cleanup job
 also leaves the video rows (`pilot.video_sessions.athlete_id` has no foreign key to athletes)
-and the athlete's own account and portrait row (it removes parent accounts only). A playback
+and the athlete's own account and portrait row (it removes parent accounts only); the
+athlete's account is kept but no longer names the athlete record that was removed, and is
+marked deleted if it was not already (*Safety screens*, above). A playback
 link handed out before the deletion keeps working until it expires (60 minutes). No storage
 lifecycle rule is defined in `infra/`; whether the live storage account has one is
 **UNVERIFIED**.

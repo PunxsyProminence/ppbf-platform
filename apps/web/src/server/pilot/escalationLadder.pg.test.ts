@@ -251,6 +251,10 @@ beforeAll(async () => {
   });
 
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
+  // athletes.deleted_at: listEscalations now leaves a deleted athlete's resolved
+  // escalations out (OD-2026-09-30-004 "B"); production has had the column since
+  // the data-retention migration, and a database without it is one that never existed.
+  baseSchemaSql += await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_data_retention_deletion_migration.sql'), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
