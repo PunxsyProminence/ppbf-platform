@@ -77,7 +77,12 @@ code comment or a test that pins a particular look is not a reason to refuse,
 hold or raise a review finding against such a change. What a screen looks like
 and how it flows is decided by Jason with the lane doing the work.
 
-**What does bind UI work is this list, and only this list:**
+**What binds the look and flow of a screen is this list, and only this list.**
+It covers screen UI: layout, type, colour, materials, copy, markup and flow. It
+does not cover plates or generated images: the plate rules below, "Binary
+assets (plates)", `docs/REAL-GYM-REFERENCE-LOCK.md` and the image-text ruling
+(OD-2026-10-02-001) are separate rules that bind in full and are not loosened
+by anything in this section.
 
 1. *The floor.* Safety and safeguarding marks keep their meaning (`--locked`
    means a medical stop and nothing else; a safety or governance refusal stays
@@ -100,7 +105,7 @@ A test that only pins a look (an exact colour, a class name, a control count, a
 look. A test that carries an item on the list above stays until the same
 protection is proved elsewhere in the same PR.
 
-**Plates.** A plate passes `apps/web/src/design/plateBinaries.test.ts` on its
+**Plates (binding, separate from the list above).** A plate passes `apps/web/src/design/plateBinaries.test.ts` on its
 bytes AND somebody has opened the image and looked at it against
 `docs/REAL-GYM-REFERENCE-LOCK.md`. The byte gate cannot tell whether the room
 is this gym -- on 2026-09-26 two plates were bound to a room by filename
