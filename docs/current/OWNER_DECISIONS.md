@@ -173,8 +173,8 @@ answer was typed in the overwatch thread (transcript as in OD-2026-09-30-007).
 **Date:** 2026-10-01 (his evening; the UTC times in section 1 run past
 midnight). This entry is new. The same PR adds one dated status update
 to OD-2026-09-30-006's Status paragraph and changes nothing else in any
-earlier entry. Ids -004 and -005 are taken by the visual lane's open PRs #1068
-and #1077.
+earlier entry. OD-2026-10-01-004 is on `main` via PR #1068; OD-2026-10-01-005
+is reserved by the visual lane's open PR #1077.
 
 ### 1. Educate, not restrict; notifying a coach is part of it
 
