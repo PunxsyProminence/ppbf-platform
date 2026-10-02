@@ -1,5 +1,5 @@
 import type { PilotRole } from './contracts';
-import { PASSWORD_ROLES, passwordLoginPermitted } from './credentialPolicy';
+import { passwordLoginPermitted } from './credentialPolicy';
 import { queryOne, withTransaction } from './db';
 import { accountDeletedSql, isDeletedAccount, type AccountDeletionFlag } from './deletedAccountSignIn';
 import { ForbiddenError } from './errors';
@@ -103,34 +103,73 @@ export async function setOwnPasswordFromLinkSession(input: {
 
   await withTransaction(async (client) => {
     // The read above is outside this transaction and a scrypt sits between
-    // them. So the write restates every condition it relied on: an account
-    // deleted, deactivated, re-roled or given a board seat, or a session
-    // revoked or aged out in that gap, matches no row. A role change revokes
-    // the account's sessions; a seat grant (boardSeats.ts) does not, which is
-    // why the role and the seat are restated and not left to the session.
-    // The roles are passwordLoginPermitted's own list, passed in, not named.
-    const updated = await client.query<{ account_id: string }>(
-      `update pilot.accounts a
-          set password_hash = $1, password_set_at = now(), updated_at = now()
-        where a.account_id = $2
-          and a.active_flag
-          and not ${accountDeletedSql('a')}
-          and a.role = any($4::text[])
-          and not ${HOLDS_ANY_BOARD_SEAT_SQL}
-          and exists (
-            select 1 from pilot.session_tokens st
-             where st.token_hash = $3
-               and st.account_id = a.account_id
-               and ${LINK_SESSION_PROOF_SQL}
-          )
-        returning a.account_id`,
-      [passwordHash, input.accountId, tokenHash, [...PASSWORD_ROLES]],
+    // them, so nothing it saw is relied on here. The write takes two ROW LOCKS
+    // and decides on statements that run AFTER it holds them. Under READ
+    // COMMITTED (withTransaction is a plain BEGIN) each of those statements
+    // reads committed state, and the locks stop that state changing until
+    // this transaction ends. A restated EXISTS in the UPDATE would not do
+    // that: it reads a snapshot and locks nothing it reads.
+    //
+    // Lock order is account, then session -- the order deletion, deactivation
+    // and re-provisioning already write in, so this cannot deadlock with them.
+
+    // 1. The account row, FOR UPDATE. Deletion, deactivation and every role
+    //    change UPDATE this row, so they wait for this or this waits for them.
+    //    It is also what serializes a BOARD-SEAT GRANT, which revokes no
+    //    session and touches no account column: pilot.board_seats.account_id
+    //    is a foreign key to this row, so inserting a seat takes FOR KEY SHARE
+    //    on it, and FOR UPDATE conflicts with that. FOR NO KEY UPDATE would
+    //    not -- it must stay FOR UPDATE.
+    const account = (await client.query<AccountDeletionFlag & { role: PilotRole; active_flag: boolean }>(
+      `select a.role, a.active_flag, ${accountDeletedSql('a')} as account_deleted
+         from pilot.accounts a
+        where a.account_id = $1
+          for update`,
+      [input.accountId],
+    )).rows[0];
+
+    // 2. The proof session's row, FOR UPDATE. Every revocation is an UPDATE of
+    //    this row. One in flight makes this wait, and Postgres then re-checks
+    //    the proof against the committed row and returns none; one arriving
+    //    later waits for this transaction. A revoked proof cannot race the
+    //    credential change.
+    const proof = await client.query(
+      `select 1
+         from pilot.session_tokens st
+        where st.token_hash = $1
+          and st.account_id = $2
+          and ${LINK_SESSION_PROOF_SQL}
+          for update`,
+      [tokenHash, input.accountId],
     );
 
-    if (updated.rows.length === 0) {
+    // 3. The seat, read after the account lock: a seat insert that committed
+    //    before the lock is visible here, and none can commit while it is held.
+    const seat = (await client.query<{ holds_board_seat: boolean }>(
+      `select ${HOLDS_ANY_BOARD_SEAT_SQL} as holds_board_seat
+         from pilot.accounts a
+        where a.account_id = $1`,
+      [input.accountId],
+    )).rows[0];
+
+    if (
+      !account
+      || isDeletedAccount(account)
+      || !account.active_flag
+      || proof.rows.length !== 1
+      || seat?.holds_board_seat !== false
+      || !passwordLoginPermitted({ role: account.role }, { holdsBoardSeat: seat.holds_board_seat })
+    ) {
       console.warn('pilot-auth set-password rejected', { reason: 'state_changed_before_write' });
       throw passwordSetupLinkRequired();
     }
+
+    await client.query(
+      `update pilot.accounts
+          set password_hash = $1, password_set_at = now(), updated_at = now()
+        where account_id = $2`,
+      [passwordHash, input.accountId],
+    );
 
     // Every OTHER session ends: if someone else was signed in to this account,
     // the moment its owner sets a password is the moment that stops. This one

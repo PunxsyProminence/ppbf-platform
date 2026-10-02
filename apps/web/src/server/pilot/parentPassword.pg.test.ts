@@ -33,6 +33,10 @@ import { pathToFileURL } from 'node:url';
 import { Client } from 'pg';
 
 let activeClient: Client | null = null;
+// When set, withTransaction awaits it after the callback and before COMMIT:
+// the transaction is held open with its locks, so a second connection can be
+// shown to wait on them.
+let mockHoldBeforeCommit: (() => Promise<void>) | null = null;
 
 jest.mock('./db', () => ({
   query: jest.fn(async (text: string, params: unknown[] = []) => {
@@ -48,6 +52,7 @@ jest.mock('./db', () => ({
     await activeClient.query('BEGIN');
     try {
       const result = await fn(activeClient);
+      if (mockHoldBeforeCommit) await mockHoldBeforeCommit();
       await activeClient.query('COMMIT');
       return result;
     } catch (error) {
@@ -389,6 +394,77 @@ describe('the parent-password migration, through its runner', () => {
     await expect(applyMigrationTransaction(runnerDb, withoutTimestamp))
       .rejects.toThrow(/PARENT_PASSWORD_MIGRATION_NOT_READY.*"account_columns_ready":false/);
     expect(await shape()).toEqual({ columns: [], constraints: [] });
+  });
+
+  // The migration adds a check only when no constraint of that NAME exists.
+  // So a database that already holds the right name over the wrong rule is
+  // not repaired by it, and readiness is what has to notice.
+  describe('a constraint of the right name that does the wrong thing is already there', () => {
+    async function withPreExisting(setup: string, teardown: string, expected: RegExp): Promise<void> {
+      await runnerDb.query(setup);
+      try {
+        const before = await shape();
+        await expect(applyMigrationTransaction(runnerDb, migrationSql)).rejects.toThrow(expected);
+        // Rolled back whole: nothing the migration would have added is there.
+        expect(await shape()).toEqual(before);
+      } finally {
+        await runnerDb.query(teardown);
+      }
+      expect(await shape()).toEqual({ columns: [], constraints: [] });
+    }
+
+    test('a method check admitting only magic_link: refused, rolled back, reported not ready', async () => {
+      await withPreExisting(
+        `alter table pilot.session_tokens add column sign_in_method text null;
+         alter table pilot.session_tokens add constraint pilot_session_tokens_sign_in_method_check
+           check (sign_in_method is null or sign_in_method in ('magic_link'));`,
+        `alter table pilot.session_tokens drop constraint pilot_session_tokens_sign_in_method_check;
+         alter table pilot.session_tokens drop column sign_in_method;`,
+        /PARENT_PASSWORD_MIGRATION_NOT_READY:sign_in_method check refuses password/,
+      );
+    });
+
+    test('a method check that admits anything: refused', async () => {
+      await withPreExisting(
+        `alter table pilot.session_tokens add column sign_in_method text null;
+         alter table pilot.session_tokens add constraint pilot_session_tokens_sign_in_method_check
+           check (sign_in_method is null or sign_in_method <> 'magic_link' or sign_in_method in ('magic_link', 'password', 'pin', 'microsoft'));`,
+        `alter table pilot.session_tokens drop constraint pilot_session_tokens_sign_in_method_check;
+         alter table pilot.session_tokens drop column sign_in_method;`,
+        /PARENT_PASSWORD_MIGRATION_NOT_READY:sign_in_method check admits "emailed"/,
+      );
+    });
+
+    test('a method check that refuses "not recorded": refused', async () => {
+      await withPreExisting(
+        // The existing session gets a method first, or this check could not be added.
+        `alter table pilot.session_tokens add column sign_in_method text null;
+         update pilot.session_tokens set sign_in_method = 'magic_link';
+         alter table pilot.session_tokens add constraint pilot_session_tokens_sign_in_method_check
+           check (sign_in_method is not null and sign_in_method in ('magic_link', 'password', 'pin', 'microsoft'));`,
+        `alter table pilot.session_tokens drop constraint pilot_session_tokens_sign_in_method_check;
+         alter table pilot.session_tokens drop column sign_in_method;`,
+        /PARENT_PASSWORD_MIGRATION_NOT_READY:sign_in_method check refuses null/,
+      );
+    });
+
+    // Mentions both columns, so a text match on the definition is satisfied.
+    test.each([
+      ['a hash needs a timestamp, but a timestamp alone is allowed', 'password_hash is null or password_set_at is not null', '01:refuse'],
+      ['a timestamp needs a hash, but a hash alone is allowed', 'password_set_at is null or password_hash is not null', '10:refuse'],
+      ['exactly one of the two', '(password_hash is null) <> (password_set_at is null)', '00:admit'],
+    ])('a pair check that is not both-or-neither (%s): refused', async (_label, rule, failingCase) => {
+      await withPreExisting(
+        // The existing account gets a hash alone or nothing, whichever this rule allows.
+        `alter table pilot.accounts add column password_hash text null, add column password_set_at timestamptz null;
+         update pilot.accounts set password_hash = 'h' where ${failingCase === '00:admit'};
+         alter table pilot.accounts add constraint pilot_accounts_password_pair_check check (${rule}) not valid;
+         alter table pilot.accounts validate constraint pilot_accounts_password_pair_check;`,
+        `alter table pilot.accounts drop constraint pilot_accounts_password_pair_check;
+         alter table pilot.accounts drop column password_hash, drop column password_set_at;`,
+        new RegExp(`PARENT_PASSWORD_MIGRATION_NOT_READY:password pair check is not both-or-neither \\(case ${failingCase}\\)`),
+      );
+    });
   });
 
   test('it adds the three columns and both checks, and applying it again changes nothing', async () => {
@@ -817,6 +893,155 @@ describe('a change between the check and the write is refused by the write', () 
   test('the session stops being a link session', async () => {
     await refusedAfter(async (_accountId, token) => {
       await client.query('update pilot.session_tokens set sign_in_method = null where token_hash = $1', [hashToken(token)]);
+    });
+  });
+});
+
+// TWO INDEPENDENT CONNECTIONS. The tests above change state on the one
+// connection the code under test uses, between its read and its write: that
+// shows the write re-decides, not that it is safe against a writer running AT
+// THE SAME TIME. These hold a second transaction open on its own connection
+// and show the two cannot overlap, in both orders.
+describe('set-password against a concurrent writer on another connection', () => {
+  let other: Client;
+  let watcher: Client;
+  let mainPid: number;
+
+  beforeAll(async () => {
+    other = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    watcher = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await other.connect();
+    await watcher.connect();
+    mainPid = (await client.query('select pg_backend_pid() as pid')).rows[0].pid;
+  });
+
+  afterEach(async () => {
+    mockHoldBeforeCommit = null;
+    await other.query('rollback').catch(() => undefined);
+    await other.query('reset lock_timeout');
+  });
+
+  afterAll(async () => {
+    await other?.end();
+    await watcher?.end();
+  });
+
+  /** Resolves once the code under test is waiting on a lock, seen from a third connection. */
+  async function untilMainWaitsOnALock(): Promise<void> {
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+      const row = (await watcher.query(
+        'select wait_event_type from pg_stat_activity where pid = $1',
+        [mainPid],
+      )).rows[0];
+      if (row?.wait_event_type === 'Lock') return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error('set-password never waited on a lock: it ran straight past the other transaction');
+  }
+
+  type Writer = { label: string; reason: string; write: (db: Client, accountId: string, token: string) => Promise<unknown> };
+  const WRITERS: Writer[] = [
+    {
+      label: 'a revocation of the proof session',
+      reason: 'the session lock',
+      write: (db, _accountId, token) => db.query(
+        'update pilot.session_tokens set revoked_at = now() where token_hash = $1', [hashToken(token)],
+      ),
+    },
+    {
+      // By SQL, not through assignBoardSeat: the lock comes from the foreign
+      // key on pilot.board_seats.account_id, which any insert takes.
+      label: 'a board-seat grant',
+      reason: 'the account lock, through the seat\'s foreign key',
+      write: (db, accountId) => db.query(
+        `insert into pilot.board_seats (organization_id, seat, account_id) values ($1, 'at-large', $2)`, [ORG_ID, accountId],
+      ),
+    },
+    {
+      label: 'a board-seat grant in another organization',
+      reason: 'the account lock, through the seat\'s foreign key',
+      write: (db, accountId) => db.query(
+        `insert into pilot.board_seats (organization_id, seat, account_id) values ($1, 'at-large', $2)`, [OTHER_ORG_ID, accountId],
+      ),
+    },
+    {
+      label: 'a deletion',
+      reason: 'the account lock',
+      write: (db, accountId) => db.query('update pilot.accounts set deleted_at = now() where account_id = $1', [accountId]),
+    },
+    {
+      label: 'a deactivation',
+      reason: 'the account lock',
+      write: (db, accountId) => db.query('update pilot.accounts set active_flag = false where account_id = $1', [accountId]),
+    },
+    {
+      label: 'a role change',
+      reason: 'the account lock',
+      write: (db, accountId) => db.query(`update pilot.accounts set role = 'coach' where account_id = $1`, [accountId]),
+    },
+  ];
+
+  describe.each(WRITERS)('$label', ({ write }) => {
+    test('in flight first: set-password WAITS for it, and refuses once it commits', async () => {
+      const parent = await seedAccount('parent');
+      const token = await seedSession(parent);
+      await other.query('begin');
+      await write(other, parent, token);
+
+      const pending = refusalOf({ accountId: parent, sessionToken: token });
+      await untilMainWaitsOnALock();
+      // Still undecided while the other transaction is open. Read from the
+      // third connection: the one under test is the one that is waiting.
+      expect((await watcher.query('select password_hash from pilot.accounts where account_id = $1', [parent])).rows)
+        .toEqual([{ password_hash: null }]);
+      await other.query('commit');
+
+      expect(await pending).toBe('PASSWORD_SETUP_LINK_REQUIRED');
+      expect(await storedPassword(parent)).toEqual({ password_hash: null, password_set_at: null });
+      expect(loggedReasons()).toEqual(['state_changed_before_write']);
+    });
+
+    test('in flight first, then rolled back: set-password waits, then goes through', async () => {
+      const parent = await seedAccount('parent');
+      const token = await seedSession(parent);
+      await other.query('begin');
+      await write(other, parent, token);
+
+      const pending = refusalOf({ accountId: parent, sessionToken: token });
+      await untilMainWaitsOnALock();
+      await other.query('rollback');
+
+      expect(await pending).toBe('ACCEPTED');
+      expect((await storedPassword(parent)).password_hash).not.toBeNull();
+    });
+
+    test('set-password in flight first: the other writer cannot proceed until it commits', async () => {
+      const parent = await seedAccount('parent');
+      const token = await seedSession(parent);
+      let reached!: () => void;
+      let release!: () => void;
+      const reachedTheGate = new Promise<void>((resolve) => { reached = resolve; });
+      const released = new Promise<void>((resolve) => { release = resolve; });
+      mockHoldBeforeCommit = async () => { reached(); await released; };
+
+      const pending = refusalOf({ accountId: parent, sessionToken: token });
+      await reachedTheGate;
+      // The password write holds its locks, uncommitted. The other writer
+      // waits on them; with a lock timeout it gives up instead of overlapping.
+      await other.query(`set lock_timeout = '400ms'`);
+      await expect(write(other, parent, token)).rejects.toMatchObject({ code: '55P03' });
+      // And nothing is visible to it yet.
+      expect((await other.query('select password_hash from pilot.accounts where account_id = $1', [parent])).rows)
+        .toEqual([{ password_hash: null }]);
+
+      release();
+      expect(await pending).toBe('ACCEPTED');
+
+      // After the commit the other writer goes through, in that order: the
+      // password was set while the account and the proof were still good.
+      await other.query('reset lock_timeout');
+      await write(other, parent, token);
+      expect((await storedPassword(parent)).password_hash).not.toBeNull();
     });
   });
 });
