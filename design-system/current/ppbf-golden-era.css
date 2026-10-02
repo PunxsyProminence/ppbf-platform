@@ -4022,6 +4022,39 @@
   text-align: center;
 }
 
+/* THE FOOT STANDS ON ITS OWN PANEL, NOT ON THE PHOTOGRAPH (2026-10-02).
+   The bone voice above reads on a dark wall and nowhere else, and the wall is
+   a photograph that changes with the screen: the landscape plate is dark
+   timber, the portrait plate is a light grey wall. Measured on rendered
+   pixels before this rule, the help paragraph, the athlete-door button and
+   the work axis read 7.4-14:1 in landscape and 3.2-4.0:1 on every upright
+   screen (390x844, 810x1080, 1265x1842), against a 4.5:1 floor -- and the
+   seating vignette is position: fixed, so the figure moved as the page
+   scrolled. A stronger scrim would only fix the plate bound today.
+
+   So the two blocks that follow the frame get an opaque ground of their own.
+   Opaque and flat on purpose: a flat colour is one a contrast check can name,
+   and nothing of the plate shows through to change the answer. Bone-100 on
+   this ground is 15:1 whatever is behind it, on any plate, at any scroll
+   position, in either orientation. Owner's choice, 2026-10-02: the panel
+   route rather than a darker plate or a stronger scrim. */
+.ge-bell .frame ~ section,
+.ge-bell .frame ~ footer {
+  background-color: var(--hide-900);
+  border: 1px solid color-mix(in srgb, var(--brass-500) 55%, var(--hide-900));
+  border-radius: var(--r-md);
+  padding: var(--s5);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.5);
+}
+/* The base foot draws a top rule and top padding for a strip on a page; inside
+   a bordered panel that reads as a doubled edge. The shorthand above replaces
+   both. The arrows between the words are decoration (aria-hidden), but at
+   --brass-600 they measured 1.1-1.9:1 and simply vanished; one rung that reads
+   on this ground. */
+.ge-bell .frame ~ footer [aria-hidden="true"] {
+  color: var(--brass-300);
+}
+
 /* Phone (REFERENCE_MOBILE_APPROVED.jpg): card near full-width with safe side
    margins, a tighter frame band, title still dominant, methods already stack in
    a single column. Not a shrunk desktop -- the column claims the width. */

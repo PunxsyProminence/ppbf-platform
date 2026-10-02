@@ -164,6 +164,97 @@ test.describe('Public homepage', () => {
     await expect(page.getByRole('button', { name: 'Sign In', exact: true })).toBeVisible();
   });
 
+  /* NO TEXT ON THE PHOTOGRAPH AT THE DOOR.
+     The sign-in page stands on a plate, and the plate changes with the screen:
+     dark timber in landscape, a light grey wall in portrait. Until 2026-10-02
+     the help copy, the athlete-door link and the work axis were painted in
+     near-white straight onto it, and measured 3.2-4.0:1 on every upright
+     screen while reading fine on a desktop -- which is why nothing caught it.
+
+     This does not pin how the page looks. It asks two things of every piece of
+     text inside <main>, at a desktop, an upright tablet and a phone:
+       1. it stands on SOMETHING the page painted for it -- a panel, a card, a
+          button -- and not directly on the page ground, where the photograph
+          is the only thing behind it;
+       2. where that something is a flat colour, the ink reads against it.
+     A gradient or textured ground cannot be named by a computed style, so it
+     is left to the page-wide sweep rather than guessed at here. */
+  test('sign-in page puts no text straight onto the wall, at any screen shape', async ({ page }) => {
+    const shapes = [
+      { name: 'desktop', width: 1280, height: 720 },
+      { name: 'upright tablet', width: 810, height: 1080 },
+      { name: 'phone', width: 390, height: 844 },
+    ];
+    for (const shape of shapes) {
+      await page.setViewportSize({ width: shape.width, height: shape.height });
+      await page.goto('/login');
+      await expect(page.getByRole('heading', { name: 'The Bell' })).toBeVisible();
+
+      const audit = await page.evaluate(() => {
+        const main = document.querySelector('main');
+        const onTheWall: string[] = [];
+        const onFlat: string[] = [];
+        if (!main) return { onTheWall: ['no <main> on the page'], onFlat, checked: 0 };
+        let checked = 0;
+
+        for (const el of main.querySelectorAll('*')) {
+          const ownsText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent!.trim());
+          if (!ownsText) continue;
+          // WCAG 1.4.3 exempts inactive controls, and a disabled button is
+          // greyed out on purpose.
+          if (el.closest(':disabled, [aria-disabled="true"]')) continue;
+          const cs = getComputedStyle(el);
+          const box = el.getBoundingClientRect();
+          if (cs.visibility === 'hidden' || cs.display === 'none' || box.width === 0 || box.height === 0) continue;
+          checked += 1;
+          const label = `<${el.tagName.toLowerCase()}> ${(el.textContent || '').trim().slice(0, 30)}`;
+
+          // The nearest thing painted behind this text, short of the page itself.
+          let ground: { flat: string | null } | null = null;
+          let opacity = 1;
+          for (let node: Element | null = el; node && node !== main; node = node.parentElement) {
+            const style = getComputedStyle(node);
+            const parts = style.backgroundColor.match(/[\d.]+/g);
+            const alpha = parts && parts.length > 3 ? Number(parts[3]) : 1;
+            const painted = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && alpha > 0;
+            if (style.backgroundImage !== 'none') { ground = { flat: null }; break; }
+            if (painted) { ground = { flat: alpha === 1 ? style.backgroundColor : null }; break; }
+            // Opacity on something BETWEEN the text and its ground lets the
+            // ground show through the ink. Opacity on the ground itself fades
+            // both together and changes nothing between them.
+            opacity *= Number(style.opacity);
+          }
+
+          if (!ground) { onTheWall.push(label); continue; }
+          if (ground.flat) {
+            const size = parseFloat(cs.fontSize);
+            const large = size >= 24 || (size >= 18.66 && Number(cs.fontWeight) >= 700);
+            onFlat.push(JSON.stringify({ label, fg: cs.color, bg: ground.flat, opacity, floor: large ? 3 : 4.5 }));
+          }
+        }
+        return { onTheWall, onFlat, checked };
+      });
+
+      // A page with no text would pass both checks below by saying nothing.
+      expect(audit.checked, `${shape.name}: text found to check`).toBeGreaterThan(10);
+      expect(audit.onTheWall, `${shape.name}: text painted straight onto the page ground`).toEqual([]);
+
+      const failures = audit.onFlat
+        .map((row) => JSON.parse(row) as { label: string; fg: string; bg: string; opacity: number; floor: number })
+        .map((row) => {
+          // An element at opacity < 1 shows its ground through its ink.
+          const mix = (channel: number, behind: number) => Math.round(channel * row.opacity + behind * (1 - row.opacity));
+          const fg = (row.fg.match(/[\d.]+/g) ?? []).map(Number);
+          const bg = (row.bg.match(/[\d.]+/g) ?? []).map(Number);
+          const seen = `rgb(${mix(fg[0], bg[0])}, ${mix(fg[1], bg[1])}, ${mix(fg[2], bg[2])})`;
+          return { ...row, ratio: contrast(seen, row.bg) };
+        })
+        .filter((row) => row.ratio < row.floor)
+        .map((row) => `${row.label} — ${row.ratio.toFixed(2)}:1, needs ${row.floor}:1`);
+      expect(failures, `${shape.name}: text under the AA contrast floor on its own panel`).toEqual([]);
+    }
+  });
+
   test('protected routes still require authentication', async ({ page }) => {
     await page.goto('/operations');
 
