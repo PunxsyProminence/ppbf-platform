@@ -4,6 +4,7 @@ import type { PoolClient } from 'pg';
 
 import { BOARD_MINIMUM_COHORT_SIZE, boardCountMetric, type BoardCountMetric } from './boardSummary';
 import { query, queryOne, withTransaction } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 
 /**
  * Red Flag Escalation ladder (capability #194) -- the pull-based surface
@@ -364,7 +365,14 @@ export interface EscalationListFilters {
   excludeAthleteVoice?: boolean;
 }
 
-/** Org-wide list, newest first. Callers scope by athleteIds for a coach; omit it for org_admin/admin. */
+/**
+ * Org-wide list, newest first. Callers scope by athleteIds for a coach; omit it for org_admin/admin.
+ *
+ * A DELETED ATHLETE'S ESCALATION LEAVES ONCE IT IS RESOLVED (Jason,
+ * 2026-09-30, OD-2026-09-30-004 "B"). An open or acknowledged one stays on
+ * the screen until somebody resolves it: deleting a child does not deal with
+ * a red flag about them. See deletedAthletes.ts for the mark.
+ */
 export async function listEscalations(
   organizationId: string,
   filters: EscalationListFilters = {},
@@ -380,6 +388,7 @@ export async function listEscalations(
        and ($2::text is null or status = $2)
        and ($3::text[] is null or athlete_id = any($3))
        and ($4::boolean is not true or source_type <> 'athlete_voice')
+       and (status <> 'resolved' or ${athleteNotDeletedSql('pilot.safety_escalations')})
      order by
        case severity when 'critical' then 0 when 'high' then 1 when 'moderate' then 2 else 3 end asc,
        created_at desc`,

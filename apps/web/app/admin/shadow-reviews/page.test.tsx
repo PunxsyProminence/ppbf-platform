@@ -113,6 +113,25 @@ test('the order on screen is the order the server sent, not one this page invent
   expect(within(rows[1]).getByText('CRITICAL')).toBeTruthy();
 });
 
+// The queue holds three classes of ticket since the human-review foundation:
+// a high-risk request (which may have been answered), a generated answer the
+// safety boundary withheld or replaced, and the operational rows that already
+// existed, such as the empty-Library notice. The page's own words must not
+// say every ticket is a refusal.
+test('the page says what the queue holds: three classes of ticket, not only refusals', async () => {
+  fetchMock.mockResolvedValueOnce(jsonResponse({ reviews: [] }));
+
+  render(<ShadowReviewsPage />);
+
+  await screen.findByText('Nothing waiting. Tickets appear when SHADOW sends a chat or generated result for human review.');
+  // "\u{2014}" is the em dash in the page's sentence.
+  expect(screen.getByText(
+    'SHADOW chats sent for a human look. A ticket can come from a high-risk request, a generated answer that was withheld or replaced, or another route condition that needs review \u{2014} not necessarily because SHADOW failed.',
+  )).toBeTruthy();
+  expect(screen.queryByText(/refused to answer/)).toBeNull();
+  expect(screen.queryByText(/withholds an answer/)).toBeNull();
+});
+
 test('switching tabs asks the server for that status', async () => {
   fetchMock
     .mockResolvedValueOnce(jsonResponse({ reviews: [] }))

@@ -25,6 +25,14 @@
  * sheet, AND a number bumped over here, with nothing but a test to notice when
  * the third step is forgotten.
  *
+ * WHAT THIS BUYS, STATED EXACTLY, because the looser version of this sentence
+ * stopped being true on 2026-10-01. WITHIN a split this file already emits,
+ * adding or changing a plate needs a file and one CSS declaration and nothing
+ * here. Going BEYOND the largest split emitted is different: it takes an edit
+ * to PLATE_SPLITS below, and the guards that pin the token strings and the
+ * declaration count move with it. The first case is the common one and is the
+ * reason this file is shaped the way it is; the second has happened once.
+ *
  * So the count is never sent. Instead the route's hash is reduced to EVERY
  * useful number of variants at once and the results are emitted as one token
  * list:
@@ -34,8 +42,9 @@
  * Read `2of2` as "the second of two". The stylesheet then picks the split it
  * needs -- a room with two plates matches on `~="2of2"`, a room with three on
  * `~="2of3"` and `~="3of3"` -- so the SHEET states how many plates a room has,
- * which is where the plate files are already named. Adding a plate stays a new
- * file plus one declaration, and nothing in this file changes, ever, for art.
+ * which is where the plate files are already named. Adding a plate within an
+ * emitted split stays a new file plus one declaration, and nothing in this file
+ * changes for it.
  *
  * The whole cascade half of this -- why every such rule must be wrapped in
  * `:where()`, and why the orientation override has to come after them -- is
@@ -50,12 +59,17 @@ export const PLATE_VARIANT_ATTRIBUTE = 'data-plate-variant';
  * The splits emitted for every route.
  *
  * These are variant COUNTS a room could plausibly have, not variant indexes.
- * Two through six covers every set anyone has proposed; a seventh plate for one
- * room would add `7` here and cost one line. Nothing breaks while a number goes
- * unused -- a token no rule matches is inert -- so the list is allowed to run
- * ahead of the art rather than chase it.
+ * Nothing breaks while a number goes unused -- a token no rule matches is inert
+ * -- so the list is allowed to run ahead of the art rather than chase it.
+ *
+ * SEVEN AND EIGHT WERE ADDED 2026-10-01, and this is the line the old comment
+ * promised: it said "a seventh plate for one room would add `7` here and cost
+ * one line". It cost two numbers. The floor had filled all six slots and there
+ * was finished art with nowhere to go; the owner had already ruled out adding
+ * rooms for art, so the ceiling was the thing in the way. Measured on the real
+ * door list: office and floor each reach all 8 of an of8.
  */
-export const PLATE_SPLITS = [2, 3, 4, 5, 6] as const;
+export const PLATE_SPLITS = [2, 3, 4, 5, 6, 7, 8] as const;
 
 /**
  * FNV-1a (32-bit) with a murmur3 fmix32 finalizer.

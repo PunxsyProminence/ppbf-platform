@@ -369,6 +369,7 @@
     "test:migrations:shadow-research-import": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath scripts/import-shadow-research.pg.test.ts --testTimeout=180000",
     "test:migrations:embedded-pg-server-cleanup": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath scripts/embedded-pg-server-cleanup.pg.test.ts --testTimeout=180000",
     "test:migrations:feedback": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/feedback.pg.test.ts --testTimeout=180000",
+    "test:migrations:deleted-athlete-safety-screens": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/deletedAthleteSafetyScreens.pg.test.ts --testTimeout=600000",
     "test:migrations:compliance": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/complianceMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:compliance-film-study-filing": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/complianceFilmStudyFiling.pg.test.ts --testTimeout=180000",
     "test:migrations:progression": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/progressionMigration.pg.test.ts --testTimeout=180000",
@@ -402,10 +403,12 @@
     "test:migrations:content-import-templates-scripts": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportTemplatesScripts.pg.test.ts --testTimeout=300000",
     "test:migrations:content-import-upload": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportUpload.pg.test.ts --testTimeout=300000",
     "test:migrations:seed-created-by-role": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/seedCreatedByRole.pg.test.ts --testTimeout=300000",
-    "test:migrations:decision-outcome-observation-ids": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowDecisionOutcomes.pg.test.ts --testTimeout=300000"
+    "test:migrations:intake-domain-upsert-atomic": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/intakeDomainUpsertAtomic.pg.test.ts --testTimeout=180000",
+    "test:migrations:decision-outcome-observation-ids": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowDecisionOutcomes.pg.test.ts --testTimeout=300000",
+    "test:migrations:shadow-rate-limit-refund": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowRateLimitRefund.pg.test.ts --testTimeout=180000"
   },
   "dependencies": {
-    "@azure/storage-blob": "^12.28.0",
+    "@azure/storage-blob": "^12.34.0",
     "googleapis": "^176.0.0",
     "jose": "^6.2.12",
     "next": "16.3.2",
@@ -435,7 +438,7 @@
     "jest": "^30.5.2",
     "jest-environment-jsdom": "^30.4.1",
     "tailwindcss": "^4.3.3",
-    "ts-jest": "^29.4.12",
+    "ts-jest": "^29.4.14",
     "tsx": "^4.23.15",
     "typescript": "^5"
   }
