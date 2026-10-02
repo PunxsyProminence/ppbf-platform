@@ -287,10 +287,19 @@ better looking or more functional, or to raise a review finding against one.
 
 What still binds a UI change, by his standing rules and not by this entry:
 people's safety and safeguarding, minors' privacy, authorization, data
-integrity, and not shipping something false. The readability guards (tap
+integrity, and not shipping something false. The readability floors (tap
 size, type size, contrast, focus ring) stay; the UI lane and ChatGPT both read
-them as function, and `foundationMatchesLegacy` stays because it protects the
-tap-size and type-size minimums.
+them as function.
+
+One test needs saying plainly. `foundationMatchesLegacy` names the tap-size
+and type-size tokens, and it also requires every other token the foundation
+shares with the retired sheet (spacing, radius, proportion, motion) to equal
+the retired sheet's value
+(`apps/web/src/design/foundationMatchesLegacy.test.ts`, OBSERVED on main
+`aefa8361`). So today it enforces much more than the two floors and can fail a
+look change for no functional reason. The two floors remain; whether that test
+is narrowed or replaced belongs to the look-pin list of section 2 and is not
+decided here.
 
 ### 2. How the old standards are treated
 
