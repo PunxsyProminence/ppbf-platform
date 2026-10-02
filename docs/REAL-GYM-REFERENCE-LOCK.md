@@ -23,12 +23,26 @@ it and does not supersede it privately.
 
 **Punxsy Prominence Boxing & Fitness**  
 Real address / building already known to the owner.  
-Working name in DNA: **Iron City** (ring canvas branding: **IRON CITY BREWERY**).
+Working name in DNA: **Iron City** (ring canvas branding: **IRON CITY BEER**).
 
 **THE CANVAS CARRIES REAL SPONSOR MARKS, AND THEY ARE NOT DECORATION.**
 `[OWNER 2026-09-30]` Both are sponsors from a **professional fight held on
-this canvas**. **IRON CITY** sits at the **centre**; **ALT NATION** is a
-second sponsor from **the same fight**. Owner, 2026-09-30: *"iron city its
+this canvas**. **IRON CITY BEER** sits at the **centre**; **KO NATION** is a
+second sponsor from **the same fight**.
+
+`[OWNER 2026-10-02 — BOTH NAMES CORRECTED.]` The roundel reads **IRON CITY
+BEER**, not BREWERY, read off his own reference photograph
+`07-the-ring-red-floor.jpg` at full enlargement. The second sponsor is **KO
+NATION**, not ALT NATION — Jason, 2026-10-02: *"Its KO Nation it needs to
+stay tied to the canvas tho"*. **His 2026-09-30 words below are left exactly
+as he said them**, including "alt nation", because they are his: this is him
+correcting himself, not a transcription being tidied. Section 5's inventory
+independently recorded "KO NATION mat" off a different photograph, which is
+corroboration that the correction runs the right way round.
+
+**BOTH MARKS STAY TIED TO THE CANVAS THEY SPONSORED.** Jason, 2026-10-02, of
+the centre mark: *"it need sto stay associated with the canvas that it
+sponsored"*, and of the second: *"it needs to stay tied to the canvas tho"*. Owner, 2026-09-30: *"iron city its
 the center of the canvas, we use it as a way to get the fighters to hold
 there ground stay on the IRON"*, and *"alt nation was another sponsor for
 the same figh on the canvas"*.
@@ -51,8 +65,8 @@ This is a lived-in, rustic, nonprofit training space — **not** a polished comm
 
 | Element | Required character |
 |---------|--------------------|
-| **Ring canvas** | Teal / pale blue-green with a faded **red-and-white circular brewery roundel** printed across it; teal apron skirt. The roundel is the **IRON CITY** sponsor mark and it sits at the **CENTRE** of the canvas; **ALT NATION**, a second sponsor from the same professional fight, is also on it. `[CONFIRMED 2026-09-26]` `[OWNER 2026-09-30 -- centre placement, second sponsor, coaching use: see section 1]` |
-| **Ring corners** | **Red and blue corner posts**, each with a plain **white pad hanging across the front** of it. Dark ropes lashed to the posts with **red cord**. `[PHOTO 2026-09-26 — new row]` |
+| **Ring canvas** | Teal / pale blue-green with a faded **red-and-white circular sponsor roundel** printed across it; teal apron skirt. The roundel reads **IRON CITY BEER** and sits at the **CENTRE** of the canvas; **KO NATION**, a second sponsor from the same professional fight, is also on it. Both stay tied to this canvas. `[CONFIRMED 2026-09-26]` `[OWNER 2026-09-30 -- centre placement, second sponsor, coaching use: see section 1]` `[OWNER 2026-10-02 -- CORRECTED from IRON CITY BREWERY and ALT NATION, against his photograph and his words; see section 1]` |
+| **Ring corners** | The corners are **vertical steel I-beams**. **Red and blue opposite each other**, with **white for the two neutral corners** — the standard four, not styling. A pad hangs across the front of each. Dark ropes lashed with **red cord**. **The bare timber upright standing beside the ring is part of the BUILDING, not the ring** — a ring that grows a corner out of it, or that leaves a post standing free of the ropes, has drawn the building instead of the ring, which is one of the faults that got a generated ring corner rejected on 2026-10-01. `[PHOTO 2026-09-26]` `[OWNER 2026-10-02 -- I-beams, the opposite-corner arrangement, the white neutrals, and the timber upright]` |
 | **Ceiling** | **LOW and PALE**: white-painted plank, and a **white coffered drop ceiling with square recessed light panels**; surface-mounted fluorescent battens below. Rough timber beams where the structure shows. `[PHOTO 2026-09-26 — supersedes "blue foam insulation pads / gray plywood with white X"]` |
 | **Floors** | **PAINTED AND ZONED**, and the single most distinctive thing about the place: **red** at the ring, **blue** with pale tape grid lines on the mat floor, **grey** with white floor markings at the cardio end, **green carpet** in the locker area. `[PHOTO 2026-09-26 — new row; the 2026-08-24 table had no floor row at all]` |
 | **Structure** | Rough sawn timber posts and beams. The bags hang from **things somebody built**: a heavy pressure-treated **timber post-and-beam frame** standing on the floor with steel brackets, and a **black steel scaffold-pipe rail** braced to the wall with timber. `[PHOTO 2026-09-26 — expanded; bags do not hang from ceiling chains]` |
@@ -83,9 +97,9 @@ The Bags row above records that.
 
 ### Mode A (design / mockups)
 1. Always pass **at least 2–4 of the owner reference photos** into the image model when generating page mockups or new plate concepts. **The photographs live at `C:\Users\jason\PPBF-Gym-Reference\` on Jason's machine** (owner decision 2026-09-26: "where is it at now use it"). Ten frames, named for what they show. They are deliberately NOT committed — faces and minors — and that has not changed.
-2. For a training room, the prompt must name the DNA in section 2 above (other rooms follow `docs/ROOM-MAP.md`; `scripts/make-plate.mjs --room` does this): the brewery-roundel ring with red and blue posts and white pads, honey plank and blackboard-paint walls, the painted red / blue / grey floor zones, the homemade timber and pipe bag frames, flat fluorescent light.
+2. For a training room, the prompt must name the DNA in section 2 above (other rooms follow `docs/ROOM-MAP.md`; `scripts/make-plate.mjs --room` does this): the sponsor-roundel ring on steel I-beam corners, red and blue opposite with white neutrals, honey plank and blackboard-paint walls, the painted red / blue / grey floor zones, the homemade timber and pipe bag frames, flat fluorescent light.
 3. Quiet centre for UI; real gym interest only in outer thirds / edges.
-4. Zero lettering on the plate itself (UI text lives in code), with one exception: the sponsor lettering **on the ring canvas** stays when the ring is in frame. Owner, 2026-09-28: *"no i like that you can leave it"* (OD-2026-09-28-013). `[OWNER 2026-09-30]` That exception covers **both** canvas sponsors -- **IRON CITY** at the centre and **ALT NATION** -- because both are real marks from the same professional fight, not styling. It does **not** license lettering anywhere else. `[INFERRED, not owner-stated]` It also cannot apply where the ring is out of frame, since there is then no canvas to carry it -- asking for it anyway is what produced an invented brewery roundel on a hanging cloth (2026-09-30). That last sentence is reasoning from the owner facts above, not something the owner said; it is marked so a future session can overturn it without thinking it is overturning him.
+4. Zero lettering on the plate itself (UI text lives in code), with one exception: the sponsor lettering **on the ring canvas** stays when the ring is in frame. Owner, 2026-09-28: *"no i like that you can leave it"* (OD-2026-09-28-013). `[OWNER 2026-09-30]` That exception covers **both** canvas sponsors -- **IRON CITY BEER** at the centre and **KO NATION** -- because both are real marks from the same professional fight, not styling. `[OWNER 2026-10-02 -- both names corrected; see section 1]` It does **not** license lettering anywhere else. `[OWNER 2026-10-02]` It also cannot apply where the ring is out of frame, since there is then no canvas to carry it. Jason, asked about the canvas marks: *"it need sto stay associated with the canvas that it sponsored"*, and of the second *"it needs to stay tied to the canvas tho"*. **This sentence was marked `[INFERRED, not owner-stated]` until he was asked** — it reasoned from his earlier facts, and asking for the lettering with no canvas in frame is what produced an invented brewery roundel on a hanging cloth (2026-09-30). He has now said it himself, so it is his.
 
    **AMENDED 2026-10-02 (OD-2026-10-02-001).** This item said "zero lettering ... no other lettering is allowed". The owner widened it: *"names on the equiptment is fin long as its real"*. So a **real mark on real equipment** is allowed in a plate — a maker's name on a bag, a glove, a headguard or a turnbuckle pad, alongside the canvas sponsors. **Invented or garbled lettering stays forbidden**: made-up brands, mangled approximations of real ones, invented crests, and any logo for this club. The `GOLDEN GLOVES` poster in `plate-20-coachdesk` is permitted because he named that plate; that is not a general rule about posters.
 
@@ -116,7 +130,7 @@ Photos live with the owner and in Grok conversation assets (UUIDs below are the 
 
 | Asset / filename | What it locks |
 |------------------|---------------|
-| `1551b986-…` / ring low-angle | Teal IRON CITY BREWERY canvas, ropes, gloves hanging |
+| `1551b986-…` / ring low-angle | Teal IRON CITY BEER canvas, ropes, gloves hanging |
 | `b8a40254-…` / bags upward | Blue foam ceiling, Everlast/Powercore bags, fluorescent |
 | `a8a19b05-…` / mirror wall | Wood-framed mirror, heavy bag, American flag, gloves |
 | `dca611e2-…` / red bag + kitchenette | Red bag, blue foam, handwritten signs, lived-in |

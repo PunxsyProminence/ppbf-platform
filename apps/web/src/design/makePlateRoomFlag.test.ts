@@ -111,12 +111,12 @@ describe('make-plate --room', () => {
       expect(prompt).toContain(row);
     }
     /* The canvas exception. Both sponsor marks are named because both are
-       real: IRON CITY at the centre and ALT NATION beside it, from the same
+       real: IRON CITY BEER at the centre and KO NATION beside it, from the same
        professional fight (lock section 1, owner 2026-09-30). The centre mark
        is coaching equipment -- a fighter is told to hold their ground by
        being told to stay on the IRON -- so this assertion is protecting a
        cue, not a logo. */
-    expect(prompt).toContain('IRON CITY BREWERY at the centre of the canvas and ALT NATION');
+    expect(prompt).toContain('IRON CITY BEER at the centre of the canvas and KO NATION');
     expect(prompt).toContain('only when the ring canvas is in frame');
     expect(prompt).not.toContain('This room is not the training floor');
 
@@ -210,7 +210,7 @@ describe('make-plate --room', () => {
        to guess at a word and invent one. A training room may ask; a room with
        no ring in frame may not, because there is then no canvas to carry it. */
     const training = promptOf(run(['--room', 'floor'].slice()).output);
-    expect(training).toContain('IRON CITY BREWERY');
+    expect(training).toContain('IRON CITY BEER');
     for (const slug of otherRooms) {
       expect(promptOf(run(['--room', slug]).output)).not.toContain('IRON CITY');
     }
