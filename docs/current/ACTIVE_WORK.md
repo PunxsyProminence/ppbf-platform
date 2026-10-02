@@ -139,13 +139,23 @@ Two rules landed a day apart, each right, each with a passing suite:
 `assertVideoClippable` began REQUIRING a capture take (2026-09-24, `95f106e0`)
 and `GET /api/pilot/video/[videoId]` began REFUSING one (2026-09-25,
 `4982943d`). Every clip that could legally exist therefore had a source video
-the only playback route 404'd, and `app/teach-shadow/annotation/page.tsx:360`
-fetches exactly that route. It reached production and sat there, because no
-suite could see both halves. Fixed by giving teaching footage its own door,
-`GET /api/pilot/teach-shadow/footage/[videoId]/stream`, gated by
-`assertVideoClippable`; the Film Study route keeps its flat refusal.
-`src/server/pilot/teachingFootagePlayableContract.test.ts` now holds both
-halves at once, which is what neither suite could do.
+the only playback route 404'd, and `app/teach-shadow/annotation/page.tsx`
+fetched exactly that route. It reached production and sat there, because no
+suite could see both halves. #1018 (2026-09-30) gave teaching footage its own
+door, `GET /api/pilot/teach-shadow/footage/[videoId]/stream`, gated by
+`assertVideoClippable`, and wired the CUTTER to it; the Film Study route keeps
+its flat refusal.
+
+**This paragraph said "Fixed" from 2026-09-30 and it was not** (corrected
+2026-10-02, TEACH-DATA-01). #1018 did not change the labelling page: it went
+on fetching the Film Study route, its own page suite required exactly that,
+and `src/server/pilot/teachingFootagePlayableContract.test.ts` checked only the
+cutter. So on `main` from 2026-09-30 to 2026-10-02 the labelling page still
+asked a route that refuses every clip it may show (read from the code; nobody
+recorded seeing the empty player on a device). TEACH-DATA-01 points the labelling page at the
+teaching door and makes the contract test hold BOTH pages to it. Shown by
+tests and code reading only: whether a clip plays on the labelling screen is
+proven by a signed-in walk as a coach or organization admin, not by a suite.
 
 **The calibration migrations are applied** (corrected 2026-09-28; a BLOCKED
 row here said they had never been applied in any environment, and it is

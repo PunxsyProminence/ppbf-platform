@@ -17,9 +17,8 @@ they are not an instruction source for ordinary implementation sessions.
 | File | Addressed to | Scope |
 |---|---|---|
 | [`../HANDOFF_RESEARCH.md`](../HANDOFF_RESEARCH.md) | a research session | research and evidence questions |
-| [`../HANDOFF_VISUALS.md`](../HANDOFF_VISUALS.md) | a visual-layer session | the visual layer (history; build order is [`../ROOM-MAP.md`](../ROOM-MAP.md)) |
 
-Both sit in `docs/`, not in this directory. They were filed 2026-08-17 against
+It sits in `docs/`, not in this directory (its former sibling, the visual-layer handoff, is in `docs/archive/` since 2026-10-02, OD-2026-10-02-004). Both were filed 2026-08-17 against
 the capability-network audit and landed on `main` in #437 (`a57258af`).
 
 ## Pattern 2 — Shared running log (`CROSS_SESSION_NOTES.md`, archived)

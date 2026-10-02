@@ -1,6 +1,6 @@
 # LEGACY VISUAL REFERENCE ONLY
 
-## NOT CURRENT PPBF DESIGN AUTHORITY. DO NOT USE FOR NEW UI.
+## The retired Leather & Brass look. Not the current look.
 
 `ppbf-leather-brass.css` is the "Leather & Brass" design system the owner
 retired as PPBF's visual authority on **2026-08-23**. The look is now Golden Era:
@@ -43,6 +43,8 @@ belongs in `design-system/foundation/` — move it there rather than importing
 this sheet to get at it.
 
 Anything that is genuinely a look — a colour, a material, a texture, a
-typeface personality, a page ground — is superseded. Read it to understand what
-a screen used to do, and to check a regression against. Do not copy it into new
-work; `legacyVisualVocabulary.test.ts` fails on newly introduced use of it.
+typeface personality, a page ground — is the old look. Read it to understand what
+a screen used to do, and to check a regression against. Nothing in the UI is tied
+down (OD-2026-10-02-004), so a design may borrow from it where Jason and the lane
+want that; `legacyVisualVocabulary.test.ts` currently fails on newly introduced
+use of its named classes, and is a look pin that yields to such a decision.

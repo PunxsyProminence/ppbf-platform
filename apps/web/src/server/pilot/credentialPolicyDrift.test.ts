@@ -54,6 +54,10 @@ const AUTH_SURFACE = [
      these two are where it is asked, and neither may name a role itself. */
   path.join(PILOT_DIR, 'parentPassword.ts'),
   path.join(APP_DIR, 'api', 'pilot', 'auth', 'password', 'set', 'route.ts'),
+  /* Password sign-in: the same question, asked on every sign-in and again at
+     the mint. */
+  path.join(PILOT_DIR, 'parentPasswordSignIn.ts'),
+  path.join(APP_DIR, 'api', 'pilot', 'auth', 'password', 'login', 'route.ts'),
 ];
 
 /**

@@ -1309,8 +1309,9 @@ function PeopleConsoleContent() {
             <div>
               <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Add a coach, staff member, or guardian</h2>
               <p className="t-body mt-[var(--s3)]">
-                Coaches, staff, volunteers and guardians sign in with an emailed link — no password and no
-                Microsoft account. Enter the email address the link should reach.
+                Coaches, staff, volunteers and guardians sign in with an emailed link — no Microsoft account
+                needed. Guardians can also make a password after their first link. Enter the email address
+                the link should reach.
               </p>
             </div>
 

@@ -203,6 +203,17 @@ const NO_SESSION_GATE_ALLOWLIST = new Map<string, string>([
       + 'to avoid.',
   ],
   [
+    'app/api/pilot/auth/password/login/route.ts#POST',
+    'A parent signing in with email and password: a session comes from here, '
+      + 'so it cannot require one. Behind per-email and per-IP budgets on both '
+      + 'the volatile and the durable limiter, counted BEFORE the password is '
+      + 'verified so a burst cannot reach the scrypt together. Who is admitted '
+      + 'is parentPasswordSignIn.ts, which re-reads the account on every '
+      + 'sign-in (not deleted, active, organization active, a role '
+      + 'credentialPolicy admits to a password) and again on the locked row it '
+      + 'mints against; every refusal is one 401.',
+  ],
+  [
     'app/api/pilot/auth/microsoft/callback/route.ts#GET',
     'The OAuth redirect target: it runs before a session exists and is what '
       + 'creates one. Gated on the OAuth exchange -- the state cookie is '

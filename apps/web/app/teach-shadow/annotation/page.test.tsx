@@ -128,9 +128,21 @@ function mockFetch(options: Options = {}) {
       const outcome = options.eventsResponse?.() ?? { ok: true, body: { ok: true } };
       return json(outcome.body, outcome.ok);
     }
-    if (url.includes('/api/pilot/video/')) {
-      return json({ stream_url: 'https://blob.example/clip.mp4?sig=abc', title: 'Sparring' });
+    if (url.includes('/api/pilot/teach-shadow/footage/')) {
+      // The teaching door's own response shape, not the Film Study route's:
+      // it carries no `title`, and a mock that offered one would let a later
+      // change read a field the live route never sends.
+      return json({
+        ok: true,
+        video_session_id: 'vid-1',
+        file_name: 'take-1.mp4',
+        stream_url: 'https://blob.example/clip.mp4?sig=abc',
+        expires_in_minutes: 60,
+      });
     }
+    // NO BRANCH FOR THE FILM STUDY VIDEO ROUTE, deliberately. That route
+    // refuses take-backed footage, which is the only footage a clip can come
+    // from, so a page that asked it would get no stream -- and gets none here.
     return json({ ok: true });
   }) as unknown as typeof fetch;
 }
@@ -164,16 +176,29 @@ test('opening a clip starts the playhead at the clip start, not at zero', async 
   expect(screen.getByTestId('playhead').textContent).toContain('0:00.000 into the clip');
 });
 
-test('the stream comes from the ordinary protected video route, never the review link', async () => {
+test('the stream comes from the teaching footage door, never the Film Study route or the review link', async () => {
+  /*
+   * THIS TEST USED TO PIN THE DEFECT. It required the Film Study video route,
+   * which refuses take-backed footage -- the only footage a clip can be cut
+   * from -- so the suite was green while the labelling screen could not play
+   * a single clip it was allowed to show.
+   */
   global.fetch = mockFetch();
 
   await openClip();
 
-  const videoCalls = calls.filter((call) => call.url.includes('/api/pilot/video'));
-  expect(videoCalls).toHaveLength(1);
-  expect(videoCalls[0].url).toContain('/api/pilot/video/vid-1');
-  expect(videoCalls[0].method).toBe('GET');
+  const streamCalls = calls.filter((call) => call.url.includes('/api/pilot/teach-shadow/footage/'));
+  expect(streamCalls).toHaveLength(1);
+  expect(streamCalls[0].url).toMatch(/\/api\/pilot\/teach-shadow\/footage\/vid-1\/stream$/);
+  expect(streamCalls[0].method).toBe('GET');
+  expect(calls.some((call) => call.url.includes('/api/pilot/video'))).toBe(false);
   expect(calls.some((call) => call.url.includes('review-link'))).toBe(false);
+
+  // And the player actually received it: a page that asked the right door and
+  // dropped the answer would pass every assertion above.
+  await waitFor(() => {
+    expect(document.querySelector('video')?.getAttribute('src')).toBe('https://blob.example/clip.mp4?sig=abc');
+  });
 });
 
 test('seeking past the end of the clip lands on the end, not past it', async () => {

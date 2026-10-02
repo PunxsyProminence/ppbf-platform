@@ -64,7 +64,8 @@
  *                   not done. This script completes that transition under the
  *                   same condition completeShadowLibraryDocumentIndexing
  *                   enforces (the document must have a non-empty chunk in its
- *                   own organization) and never for a document that has none.
+ *                   own organization, and a manual-text-intake document must
+ *                   hold every part it declared) and never otherwise.
  *
  *   BLAST RADIUS    Refuses above PPBF_LIBRARY_APPROVAL_MAX (default 1500). The
  *                   platform baseline is 1,194 sources and 14 documents; a run
@@ -94,6 +95,36 @@ import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mj
 // Kept in lockstep with PLATFORM_LIBRARY_ORGANIZATION_ID in
 // src/server/pilot/platformLibraryScope.ts, the same way the migration runner is.
 const PLATFORM_ORGANIZATION_ID = '__platform__';
+
+// MANUAL TEXT INTAKE MUST BE COMPLETE. A second copy, kept identical to
+// MANUAL_TEXT_INTAKE_COMPLETE_SQL in src/server/pilot/shadowLibrary.ts, where
+// the reasoning lives. A document entered through /research (Add Source Text)
+// declares its part count and is written one part at a time; a run that stops
+// part-way leaves the first few parts, and this script's own indexing step
+// would otherwise index and approve that truncated excerpt -- a second door
+// past the gate completeShadowLibraryDocumentIndexing closes. Documents with
+// no intake_method (the corpus, the doctrine seed) pass this untouched.
+//
+// It is a copy because this is a plain .mjs run by node and cannot import the
+// TypeScript module. shadowLibraryPipeline.pg.test.ts fails if the two texts
+// differ ("the bulk approval script carries the server's predicate, character
+// for character"). Written against alias d = pilot.shadow_library_documents.
+// MANUAL_TEXT_INTAKE_COMPLETE_SQL:BEGIN
+const MANUAL_TEXT_INTAKE_COMPLETE_SQL = `(
+  d.metadata->>'intake_method' is distinct from 'manual_text'
+  or case
+    when d.metadata->>'chunk_count' ~ '^[1-9][0-9]{0,5}$' then (
+      select count(*) = (d.metadata->>'chunk_count')::int
+         and min(c.ordinal) = 0
+         and max(c.ordinal) = (d.metadata->>'chunk_count')::int - 1
+      from pilot.shadow_library_chunks c
+      where c.document_id = d.document_id
+        and c.organization_id = d.organization_id
+    )
+    else false
+  end
+)`;
+// MANUAL_TEXT_INTAKE_COMPLETE_SQL:END
 
 const connectionString = process.env.AZURE_POSTGRES_CONNECTION_STRING;
 if (!connectionString) {
@@ -228,11 +259,28 @@ async function main() {
                 where c.document_id = d.document_id
                   and c.organization_id = d.organization_id
                   and length(trim(c.text_content)) > 0
-             )) as documents_without_content`,
+             )) as documents_without_content,
+         -- Manual text intake left part-way: there is content, but not all of
+         -- the parts the document declared. Disjoint from the count above (this
+         -- one requires a non-empty chunk), so the two subtract cleanly. This
+         -- run must leave these alone too: indexing one would let a truncated
+         -- excerpt be cited as the whole.
+         (select count(*)::int from pilot.shadow_library_documents d
+           where d.organization_id = $1
+             and d.approval_state = 'pending_review'
+             and exists (
+               select 1 from pilot.shadow_library_chunks c
+                where c.document_id = d.document_id
+                  and c.organization_id = d.organization_id
+                  and length(trim(c.text_content)) > 0
+             )
+             and not ${MANUAL_TEXT_INTAKE_COMPLETE_SQL}) as documents_incomplete_manual_text`,
       [organizationId],
     );
     const counts = before.rows[0];
-    const approvableDocuments = counts.documents_pending - counts.documents_without_content;
+    const approvableDocuments = counts.documents_pending
+      - counts.documents_without_content
+      - counts.documents_incomplete_manual_text;
     const total = counts.sources_pending + approvableDocuments;
 
     // What this run would approve that the research corpus did not create.
@@ -354,12 +402,13 @@ async function main() {
                and c.organization_id = d.organization_id
                and length(trim(c.text_content)) > 0
           )
+          and ${MANUAL_TEXT_INTAKE_COMPLETE_SQL}
         returning d.document_id`,
       [organizationId],
     );
 
     const documents = await client.query(
-      `update pilot.shadow_library_documents
+      `update pilot.shadow_library_documents d
           set approval_state = 'approved',
               verification_state = 'verified',
               approved_by_account_id = $2,
@@ -367,11 +416,16 @@ async function main() {
               verified_by_account_id = $2,
               verified_at = now(),
               updated_at = now()
-        where organization_id = $1
-          and approval_state = 'pending_review'
-          and ingest_state = 'indexed'
-          and index_completed_at is not null
-        returning document_id`,
+        where d.organization_id = $1
+          and d.approval_state = 'pending_review'
+          and d.ingest_state = 'indexed'
+          and d.index_completed_at is not null
+          -- Also here, not only on the indexing step above: a pending document
+          -- already marked indexed must not be approved incomplete either, and
+          -- the plan's arithmetic excludes it, so approving it would trip
+          -- APPLY_DID_NOT_MATCH_PLAN.
+          and ${MANUAL_TEXT_INTAKE_COMPLETE_SQL}
+        returning d.document_id`,
       [organizationId, approver.account_id],
     );
 
@@ -417,6 +471,7 @@ async function main() {
           documents_indexed: indexed.rows.length,
           documents_approved: documents.rows.length,
           documents_left_unapproved_without_content: counts.documents_without_content,
+          documents_left_unapproved_incomplete_manual_text: counts.documents_incomplete_manual_text,
           approver_account_id: approver.account_id,
           verifier_account_id: approver.account_id,
           verification_basis: 'platform_owner_bulk_attestation',
@@ -436,6 +491,7 @@ async function main() {
       documents_indexed: indexed.rows.length,
       documents_approved: documents.rows.length,
       documents_without_content: counts.documents_without_content,
+      documents_incomplete_manual_text: counts.documents_incomplete_manual_text,
     }));
   } catch (error) {
     await client.query('rollback').catch(() => {});

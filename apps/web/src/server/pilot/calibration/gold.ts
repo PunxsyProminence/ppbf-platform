@@ -281,18 +281,18 @@ export async function nominateGoldCandidate(
     }
 
     /*
-     * TS-ANON-01: AND THE GUARDIAN MUST STILL AGREE, for the same reason the
-     * take check is here rather than left to assertVideoClippable -- that gate
-     * does not reach this path either.
+     * NO CONSENT CHECK HERE, AND THAT IS THE OWNER'S RULING, NOT AN OMISSION.
      *
-     * A gold record is the reference data a recognizer is taught and scored
-     * against, which makes nominating one the most consequential teaching use
-     * in the platform. The promise made to a guardian who withdraws is that
-     * existing footage stops being eligible for exactly this, not merely that
-     * no more is filmed.
+     * OD-2026-09-28-006 ruling 2: "Filming for teaching the ml should never
+     * be restricted." Teaching footage carries no consent step and names
+     * nobody, so a nomination has no guardian row to read and reads none.
      *
-     * Existing records stay as history. They do not become eligible again, and
-     * they do not become eligible now.
+     * A comment in this position used to say a guardian's withdrawal was
+     * checked here, over no code at all. Corrected 2026-10-02 (TEACH-DATA-01).
+     * What this function does refuse is all visible in it: a superseded
+     * adjudication, a source that is not teaching footage, archived footage,
+     * and (below) an adjudication that settled nothing. Consent is not among
+     * them.
      */
 
     if (source.resolution_type === 'unresolvable' || source.missed_event_verdict === 'unresolvable') {

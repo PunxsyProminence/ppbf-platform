@@ -79,7 +79,7 @@ the source.
 - Module audit logs, for example `docs/capabilities/modules/008-coach-review-system.md`
   and `130-evidence-quality-engine.md` -- the one blanket manual-verification
   sign-off of 2026-08-28 (not 47 separate inspections).
-- `docs/HANDOFF_VISUALS.md`, "Job 3" (owner decision, 2026-08-17), restated in
+- `docs/archive/2026-10-02_HANDOFF_VISUALS.md` (moved from `docs/HANDOFF_VISUALS.md` on 2026-10-02), "Job 3" (owner decision, 2026-08-17), restated in
   `docs/AGENT_BRIEFING_PROMPT.md` -- the six Capability Console pages stay
   unstyled, because they show fabricated data.
 - `apps/web/app/api/pilot/progression/assignments/cancel/route.ts`, header
@@ -163,6 +163,531 @@ policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
 
 ---
+
+## OD-2026-10-02-010 -- Two "Yes" answers: the look-pin tests are covered by "remove anything that will hinder this"; the Label Agreement screen, what coaches see on it, and the tablet hand-over
+
+**Provenance: PRIMARY.** Typed by Jason in the UI lane's thread and in the
+agreement-report lane's thread on 2026-10-02, and read by overwatch in each
+transcript (`~/.claude/projects/C--Dev/a84862b0-abd8-495f-bf7a-ade6114cc50c.jsonl`
+and `~/.claude/projects/C--Dev/07cd0b14-cb11-403c-871d-01b351819222.jsonl`).
+This entry is new and edits no earlier one. Section 1 answers the reading
+OD-2026-10-02-009 recorded as inferred.
+
+### 1. The UI lane's four items
+
+The UI lane's message (21:13:29Z) told him that two of the suites its test
+PR deletes fail on this PC and pass on CI, and ended:
+
+"Waiting on your answers (a reply like "1A 2A 3A, yes to 4" is enough):
+1. "Remove anything that will hinder this" covers the look-pin tests: A yes
+(recommended) / B no.
+2. Corner-colour check: A keep (recommended) / B remove.
+3. Remaining look-bound tests: A fix each with its screen (recommended) / B
+rewrite all now.
+4. /login dark panel; board/file fix what's hard to read, no new art."
+
+Jason, whole message (21:42:10Z): *"Yes"*.
+
+**Item 1: yes.** His "Ok remove anything that will hinder this"
+(OD-2026-10-02-009) covers the tests that pin a look. They are removed now.
+
+**Item 4: yes.** The /login readability fix is a dark panel behind the text;
+the board and file screens get a fix to what is hard to read, with no new art.
+
+**Items 2 and 3 are A-or-B questions and he answered "Yes" without a
+letter.** Read as taking the recommended option in each, A and A: the
+corner-colour check stays, and the remaining look-bound tests are fixed one
+at a time with the screen each belongs to. **INFERRED** (the UI lane's reading
+and overwatch's); both are the option that removes nothing. So the question
+OD-2026-10-02-007 left open, whether "decoration must not be mistakable for a
+safety state" binds, is not answered by a letter of his: the test that holds
+it stays in place on this reading, and the proposition stays unratified.
+
+### 2. The agreement-report lane's four recommendations
+
+Earlier in that thread: *"It needs to be simpler to use,"* (19:28:35Z) and
+*"Ok also make it that it does not have to be 5 separate accounts, I can hand
+the tablet over to another and not have to log out"* (19:33:46Z). Then *"Ok
+tell me how your recommendations work in Lyman terms"* (21:36:29Z). The lane
+set out four (21:36:39Z), under these headings and with these closing words:
+
+"1. The screen ("Label Agreement")": two coaches each label the same clip,
+the screen says where they saw it differently, one sentence, more behind
+"Show detail"; "it does not grade a coach or a boxer."
+
+"2. Show coaches the "still to do" line": "a line like "3 of 10 clips still
+need a second coach." ... The only thing it gives away is that another coach
+has or hasn't started, never what they tapped."
+
+"3. Below 5 clips, show counts but no percentages": "ChatGPT would rather show
+nothing at all until 5. Its worry is that a third coach could peek at how the
+first two differed on a clip before labelling it and be nudged by that. I
+recommend keeping the counts. ... If you later add a third labeller, this is a
+one-line switch."
+
+"4. Tablet hand-over: pick your name, then a short PIN": "coach one finishes
+and taps "Switch labeller"; coach two taps their own name and types a 4-digit
+PIN ... The screen clears, so coach two can't see coach one's answers. ...
+This is a separate piece of work from the screen, because it changes how
+sign-in works."
+
+"If those four sound right, "yes to all four" is enough and I'll pass your
+exact words to overwatch."
+
+Jason, whole message (21:38:44Z): *"Yes"*.
+
+**1.** The screen is named Label Agreement and takes the simpler layout.
+**2.** Coaches see the still-to-do line.
+**3.** Below 5 compared clips coaches see counts and no percentages. This is
+his choice over the architect's recommendation, made with the third-coach
+point in front of him.
+**4.** The tablet hand-over is wanted in that shape: a labeller switch by
+name and a short PIN, the screen cleared between labellers. It is not built
+and is not part of the report; it goes to the architect as its own work
+order. The two-labeller study needs 2 labellers and 5 clips, not 5 accounts.
+
+Not covered by that "Yes": the wording of the door to the screen on the Teach
+Shadow page. The lane asked him separately (21:41:12Z): "Official: approve the
+door wording on the Teach Shadow home page: section "Stage five: Measure",
+text "See where two coaches labelled the same clip differently. It measures
+the labelling, not a coach and not an athlete.", button "Label Agreement".
+Options: A approve as written (recommended); B your wording." and, in plain
+words, "Say "yes" or give me the words you want." Jason, whole message
+(21:43:18Z): *"Yes"*. **The door wording is approved as written.**
+
+---
+
+## OD-2026-10-02-009 -- "Remove anything that will hinder this": read as removing now the tests that pin a look
+
+**Provenance: PRIMARY.** Typed by Jason in the UI lane's thread on 2026-10-02
+and read by overwatch in that transcript
+(`~/.claude/projects/C--Dev/a84862b0-abd8-495f-bf7a-ade6114cc50c.jsonl`).
+This entry is new and edits no earlier one.
+
+No question about a test list was in front of him. The UI lane's message
+before his (19:41:11Z, read by overwatch in the transcript) was a status:
+"Status only, nothing for you to do: your "nothing in the UI is tied down"
+ruling is now on main (OD-2026-10-02-004, via #1087). #1089 has no conflict
+with the new main and is with ChatGPT; it merges after overwatch's Law 2
+record (#1092)." followed by two items still open with him (the /login panel
+and the board/file readability fix). Jason, whole message (19:42:53Z): *"Ok
+remove anything that will hinder this"*.
+
+**Reading, INFERRED (the UI lane's and overwatch's), his to correct:** "this"
+is the ruling that status named, that nothing in the UI's look or flow is tied
+down (OD-2026-10-02-004, -007); and "anything that will hinder" it includes
+the tests that fail a change only because a screen's look, markup, class names
+or control layout changed. On that reading those tests are removed now,
+without waiting for each to be tripped. It is the item OD-2026-10-02-004
+section 2 left open ("which tests are style pins and what happens to each").
+
+Outside the reading: tests that hold his standing floor (people's safety and
+safeguarding, minors' privacy, authorization, data integrity, not shipping
+something false) and the readability floors (tap size, type size, contrast,
+focus ring). Those stay. Whether a test that keeps decorative colour visually
+apart from safety colour is a safety guard or a look pin is the open question
+of OD-2026-10-02-007 and is not settled here.
+
+Which test is which is not decided by this entry. The case-by-case list is
+the UI lane's, checked by two adversarial reviewers and by ChatGPT, and lives
+in that lane's pull request.
+
+---
+
+## OD-2026-10-02-008 -- Teaching the recognizer body points: positions clicked at set moments; a 24-point list with glove and chin; a click range; a pose tool that pre-fills; the agreement report is built now
+
+**Provenance: PRIMARY.** Typed by Jason in the teach-data lane's thread on
+2026-10-02 and read by overwatch in that transcript
+(`~/.claude/projects/C--Dev/346c32ec-ec56-4fad-817d-8da2643fb879.jsonl`).
+This entry is new and edits no earlier one. It carries forward the direction
+recorded in OD-2026-10-02-006 section 1 item 4. Nothing in it is built.
+
+The lane put ChatGPT's six design decisions to him. He had it ask ChatGPT and
+Grok first: *"Ask chat gpt and also ask grok (navigate out of image)"*
+(19:23:21Z). Grok's answer is advice he asked for on this one question; Grok
+holds no standing role beyond images (OD-2026-09-28-001) and ChatGPT remains
+the architect.
+
+### 1. His shaping words, in order
+
+- *"Before picking anything can we have a range of clicks, not every video as
+  this evolves will provide the same number of clicks,"* (19:38:26Z). The lane
+  answered with a small required core of points plus optional further points
+  and moments, a skipped point stored as not marked. He replied: *"Good, as
+  far as points go, find real sources that name the bio mechanic point that
+  can be read, eventually the AI should be able to recognize punches of more
+  than one bi mechanic point"* (19:42:26Z).
+- After the lane's report of the standard landmark lists: *"Thats fine we are
+  building from scratch,  the more points the better"* (20:03:34Z).
+- *"Hands should be just be gloves, add chin show list"* (20:11:26Z).
+- *"We want a pose tool in the model,  multi size people and genders would
+  look different"* (20:21:33Z).
+- Told that no pose tool finds a glove or a chin: *"Then we put that node in"*
+  (20:25:52Z). Asked which of two readings he meant, "1. Add glove and chin as
+  new points the pose tool learns to find. Coaches mark them by hand at first;
+  those marks become the training data that teaches the tool the two extra
+  points." or "2. Put the pose tool in as a step of the system", he answered,
+  whole message: *"1"* (20:26:28Z).
+
+### 2. The list
+
+He asked the lane to *"Expand"* (20:28:17Z). Its write-up ended with the list
+and the sentence "Saying "yes" makes this the list ChatGPT designs to. Two
+placement rules come with it so coaches click the same spot: glove is the
+centre of the padded knuckle area; chin is the tip of the chin." Jason, whole
+message (20:32:39Z): *"Yes"*.
+
+**The ratified list, 24 points:** head (nose, chin); trunk (neck, mid-hip);
+each arm (shoulder, elbow, wrist, glove); each leg (hip, knee, ankle); each
+foot (heel, big toe, small toe). Glove is the centre of the padded knuckle
+area; chin is the tip of the chin. Hand points (index, pinky, thumb) are not
+in it. Glove and chin have no equivalent in the standard pose lists the lane
+read. The list can grow; adding a point is a new version of the label set.
+
+### 3. The remaining picks
+
+The lane asked whether that "Yes" also took its recommended option on the
+other eight, and listed them: "1A: click positions; 2A: standard list plus
+your additions; 3A: start, contact, end; 4A: old studies finish on old labels;
+5B: build the disagreement screen now; 6B: leave the skill-family map open;
+8A: pose tool pre-fills for coaches now; 9A: mark only the person throwing or
+defending". Jason, whole message (20:48:13Z): *"Yes it does"*.
+
+As each option was put to him in the expanded write-up:
+
+- **1A.** A label is a position: the coach clicks where each body point is on
+  the picture.
+- **2A.** The list starts from the standard lists, with his boxing points
+  added, and he signs it off (section 2).
+- **3A.** Points are marked at set moments: start, contact, end. "Peak" is
+  left out until it has a written rule.
+- **4A.** Studies already under way finish on today's labels; new studies get
+  body points; never mixed.
+- **5B.** The agreement report is built now for today's labels, with a line on
+  screen saying body points are not included yet.
+- **6B.** The punch-to-skill-family map (IMP-14) stays open.
+- **8A.** A pose tool places the standard points on the labelling screen and
+  coaches correct them; the same tool feeds the recognizer later. Each point
+  records accepted, corrected or not visible.
+- **9A.** Only the person throwing the punch or making the defence is marked;
+  the other person only when the event is contact against them.
+- **Wrist** stays in the list (it is in the list he ratified); the lane's
+  recommendation was that it be an optional point beside the glove.
+
+### 4. What this does not decide
+
+- **Which pose tool, its licence, and where it runs** (on the tablet, or on a
+  server, which means minors' footage going to it and possibly a bill). The
+  lane told him these come back to him before anything is built or spent.
+- **The contents of the required core** of the click range. The lane's example
+  was illustrative and is not ratified.
+- **Training.** Teaching a pose tool the glove and chin points is model
+  training, which is parked. His "1" states the intent; it does not un-park
+  training or approve spending. The lane told him so. **INFERRED** that he
+  accepted that limit: he did not object.
+- Scoring an athlete from video stays parked (OD-2026-09-28-006).
+
+8A replaces the "no pose model" line of the architect's first design; the
+design is the architect's to redo, for his approval.
+
+---
+
+## OD-2026-10-02-007 -- Law 2's palette limit no longer binds; nothing about the look binds
+
+**Provenance: PRIMARY.** Typed by Jason in the UI lane's thread on 2026-10-02
+and read by overwatch in that transcript
+(`~/.claude/projects/C--Dev/a84862b0-abd8-495f-bf7a-ade6114cc50c.jsonl`).
+This entry is new. It changes OD-2026-09-28-009 as far as that entry kept
+Law 2's palette limit; that entry's text is not edited.
+
+The UI lane put this to him (19:12:30Z):
+
+"Official: Does the palette limit in Law 2 (OD-2026-09-28-009) still bind UI
+work? A (recommended): Keep only the safety half as binding: `--locked` is a
+medical stop, and nothing decorative may be mistaken for a cleared, monitor or
+restricted mark. The "green, blue and orange for nothing else" limit is
+dropped. B: Keep Law 2 whole, as it is today."
+
+"Plain: A lets a design use green, blue or orange for looks, as long as nobody
+could confuse it with a safety status. B keeps those three colours reserved
+for safety and status only, everywhere."
+
+Jason, whole message (19:31:51Z): *"Nothing binding  visually look will be
+less conflict than anything binding at this point"*.
+
+**The palette limit is dropped.** Green, blue and orange are no longer reserved
+for safety and status; a design may use them for looks. More generally, no
+rule about the look itself binds UI work, which is OD-2026-10-02-004 said
+again for Law 2.
+
+He did not pick A or B by letter. What stays is not a look rule and is not
+from this answer: a safety or medical state shown on a screen must not be
+mistakable for decoration, and decoration must not be mistakable for a
+cleared, monitor or restricted mark. Overwatch and the UI lane read that as
+his standing floor (people's safety, and not shipping something false) and
+not as something this answer loosened. **INFERRED**; his to correct.
+
+---
+
+## OD-2026-10-02-006 -- Teaching the recognizer: TEACH-DATA-01 approved; the agreement report is next and is for coaches and organization admins; labelling is to cover the body parts of the movement. Research intake stores the source's own words
+
+**Provenance: PRIMARY.** Typed by Jason in two lane threads on 2026-10-02 and
+read by overwatch in each lane's transcript
+(`~/.claude/projects/C--Dev/346c32ec-ec56-4fad-817d-8da2643fb879.jsonl`, the
+teach-data lane; `~/.claude/projects/C--Dev/098e018b-1b76-4cdc-a641-17d2025a72c2.jsonl`,
+the research-intake lane). This entry is new and edits no earlier one.
+
+### 1. The teach-data lane's four questions
+
+The lane put four questions to him (18:30:42Z), each with a recommended A:
+
+"1. Approve TEACH-DATA-01 for build? Options: A approve (recommended); B hold."
+
+"2. Next item after that? Options: A agreement report on a screen
+(recommended); B gold nominate/promote screen; C governed export of labels; D
+none yet."
+
+"3. If 2A: who sees the agreement report, and does the minimum stay at 5
+compared clips? Options: A coaches and organization admins, keep 5
+(recommended); B organization admins only, keep 5; C other number."
+
+"4. IMP-14 punch-to-skill-family map (open since 2026-09-30): OK as written?
+Lead straight → Jab; rear straight → Rear-Hand; hooks → Hooks; uppercuts →
+Uppercuts; body target → Body Attack; defence → Defense-to-Counter. Options: A
+OK (recommended, with a body jab counting for both Jab and Body Attack); B
+edit."
+
+Jason, whole message (18:58:58Z): *"go with recomendations except 4) i think
+with the punch recognition we need to add more labeling while we teach the
+ml/AI, to in clude but not limited to ellbow shoulder hips knees toes heel,
+basicallly all the parts of the biomechanicsl of the movements in boxing"*.
+
+**1 is A.** TEACH-DATA-01 (point the labelling screen at the teaching playback
+route, with its tests and the stale comments) is approved for build.
+
+**2 is A.** The next item is the agreement (QA) report on a screen. It is a
+separate lane.
+
+**3 is A.** Coaches and organization admins see it; below 5 compared clips the
+screen shows counts and no percentages.
+
+**4 is not answered as asked.** The punch-to-skill-family map (IMP-14) stays
+open. In its place he gave a new direction: labelling for punch recognition is
+to cover the body parts of the movement, the elbow, shoulder, hips, knees,
+toes and heel named and the list not closed. That changes what is labelled and
+is not built or designed; it goes to the architect for a work order he
+approves.
+
+### 2. Research intake: the source's own words
+
+The research-intake lane put its question 6 to him (18:29:25Z):
+
+"A (recommended by ChatGPT and by me): verbatim, source-faithful excerpt split
+into deterministic ordered chunks. B: curator-written claim-style chunks."
+
+Jason, whole message (18:59:55Z): *"A"*.
+
+**A.** What the library stores from a source is the source's own words, split
+into ordered chunks, and not a curator's summary. This answers question 6
+only; the lane's other owner questions are open.
+
+---
+
+## OD-2026-10-02-005 -- The write log lists durable writes only; session scratch files are not listed
+
+**Provenance: PRIMARY.** Typed by Jason in the visual lane's thread on
+2026-10-02 and read by overwatch in that transcript
+(`~/.claude/projects/C--Dev/afc03b35-5731-4ad4-ab64-43db0e62ea6a.jsonl`).
+This entry is new and edits no earlier one. It narrows what the write log
+covers; OD-2026-10-01-008 section 6 is unchanged.
+
+ChatGPT's review of PR #1086 asked that two enlarged crops of a reference
+photograph and some patch scripts, all in a session scratch folder, either
+carry his authorizing words or be marked as write defects. The visual lane put
+this to him (18:53:31Z):
+
+"Official: should session scratch files be dropped from the WRITES table
+entirely, leaving it to cover durable writes only — repo, GitHub,
+OneDrive/SharePoint, database, production?
+
+Plain: should I stop logging the temporary junk files I make while working,
+and only log things that actually persist somewhere? I think yes. If you
+agree, this class of finding stops happening."
+
+Jason, whole message (19:00:23Z): *"yes"*.
+
+**From that answer forward** the WRITES list in a report, handoff or PR body
+covers durable writes: the repository, GitHub, SharePoint, OneDrive, Google
+Drive, a database, staging, production. Temporary files in a session's scratch
+folder are not listed. Everything else about the write log stands: each
+durable write carries what, where, its id or SHA and his exact authorizing
+words; a durable write without such words is a defect; "WRITES: NONE" is
+still stated when there are none.
+
+Not changed by this entry: his own rules file still words the rule as "each
+write made"; that file is his to edit. ChatGPT's project instruction carries
+the same wording and is his to edit or authorize.
+
+---
+
+## OD-2026-10-02-004 -- Nothing in the UI is tied down: the old look-and-flow standards stop binding, and their wording is changed, not labelled as history
+
+**Provenance: PRIMARY.** Typed by Jason in the UI lane's thread on 2026-10-02
+and read by overwatch in that transcript
+(`~/.claude/projects/C--Dev/a84862b0-abd8-495f-bf7a-ade6114cc50c.jsonl`).
+This entry is new and edits no earlier one.
+
+### 1. The ruling
+
+Jason, whole message (18:06:09Z): *"ok i want to you check in with chat gpt
+like the other lanes do, to be clear nothing in the UI is tied down we can
+change things to make itmore user friendly visually appealy functional ect, i
+dont want any laws, setting or verbage in docs hindering that, so before we
+start building anything i want to make sure we are set up in such a way that
+we dont start drift because of old standards"*.
+
+**Nothing in the UI's look or flow is fixed.** No law, setting or wording in a
+document is a ground to refuse a UI change that makes the app more usable,
+better looking or more functional, or to raise a review finding against one.
+
+What still binds a UI change, by his standing rules and not by this entry:
+people's safety and safeguarding, minors' privacy, authorization, data
+integrity, and not shipping something false. The readability floors (tap
+size, type size, contrast, focus ring) stay; the UI lane and ChatGPT both read
+them as function.
+
+One test needs saying plainly. `foundationMatchesLegacy` names the tap-size
+and type-size tokens, and it also requires every other token the foundation
+shares with the retired sheet (spacing, radius, proportion, motion) to equal
+the retired sheet's value
+(`apps/web/src/design/foundationMatchesLegacy.test.ts`, OBSERVED on main
+`aefa8361`). So today it enforces much more than the two floors and can fail a
+look change for no functional reason. The two floors remain; whether that test
+is narrowed or replaced belongs to the look-pin list of section 2 and is not
+decided here.
+
+### 2. How the old standards are treated
+
+The UI lane put the setup to him (18:16:35Z):
+
+"A (recommended): 1. Overwatch records your ruling as an owner decision. 2. I
+open one small PR adding a dated line to the five places above: reference and
+history for look and flow, not a ground to refuse a change or raise a review
+finding. 3. Floor and readability guards stay. 4. A style-pin test that a UI
+change trips is updated or deleted in that same PR; `legacyVisualVocabulary`
+and `brassAlphaChannel` come off the safety-critical list so that list means
+safety.
+
+B: A plus a clean sweep now: rewrite or archive the old visual docs and delete
+all style-pin tests up front.
+
+C: Record the ruling only; leave docs and tests as they are."
+
+Jason, whole message (19:01:30Z): *"no i want the binding changed we mark
+them historical before and the kept leaking in"*.
+
+**None of A, B or C as written.** A line marking the old documents as history
+is rejected: that was done before and the old rules kept coming back. The
+binding wording itself is to be changed, so that nothing a builder or reviewer
+reads still states a rule against changing the UI's look or flow.
+
+Not decided here: which tests are style pins and what happens to each. The UI
+lane brings that list to him and to ChatGPT before changing any test.
+
+Who decides UI design and flow is unchanged from his same-day instruction to
+the visual lane, relayed to overwatch and read in that lane's transcript
+(`afc03b35-…`): *"ok update overwatch what we are doing, same rules apply for
+new thread where overwatch gets what the thread builds into the app not direct
+the  uI design and flow"*.
+
+---
+
+## OD-2026-10-02-003 — The ring canvas reads IRON CITY BEER, the second sponsor is KO NATION, and the ring corners are steel I-beams
+
+**Provenance: PRIMARY.** Jason, in the visuals lane, 2026-10-02, answering three
+questions put to him after his own reference photograph `07-the-ring-red-floor.jpg`
+was enlarged and read.
+
+> *"1 but it need sto stay associated with the canvas that it sponsored"*
+>
+> *"Its KO Nation it needs to stay tied to the canvas tho"*
+>
+> *"the navy bule is semantics  the corners of the ring are vetical steel I-beams
+> red and blue opposite each other with whit  for the neutral colorsthe timber
+> post is part of the building structure that the gym is in"*
+
+**THE QUESTION THOSE ANSWERS WERE GIVEN TO, VERBATIM.** His first answer is the
+single character "1", which means nothing on its own, so the question and its
+options belong in the record beside it. Put to him through the structured
+question tool, 2026-10-02:
+
+> **Q.** *"Your ring canvas photographs as IRON CITY BEER.
+> `docs/REAL-GYM-REFERENCE-LOCK.md` §2 records it as IRON CITY BREWERY, marked
+> [CONFIRMED 2026-09-26] by you, and `scripts/make-plate.mjs` line 250 hardcodes
+> that string into every ring prompt. How should I resolve it?"*
+>
+> 1. *"Correct both to IRON CITY BEER (Recommended)"*
+> 2. *"Drop the brand from the prompt entirely"*
+> 3. *"Keep BREWERY — I know something the photo doesn't show"*
+
+**So "1" is him approving the exact words IRON CITY BEER**, not merely agreeing
+that something was wrong. That distinction is load-bearing:
+**OD-2026-10-02-001** permits a generator to be asked for specific words only
+where the owner supplied or approved them, and `scripts/make-plate.mjs` now asks
+for these words by name. He approved them by choosing the option that spelled
+them out.
+
+His other two answers were typed in his own words rather than chosen from the
+options, and are quoted above exactly as he typed them.
+
+**Why it was asked.** The lock said the canvas roundel reads **IRON CITY
+BREWERY**, marked `[CONFIRMED 2026-09-26]`. The photograph, enlarged, reads
+**IRON CITY BEER**. That is a conflict between the owner's stated state and
+direct observation, so the work stopped and he was asked rather than the row
+being edited.
+
+**It was not a cosmetic error.** `scripts/make-plate.mjs` hard-coded the string
+into the prompt of every training-room plate: *"the sponsor lettering printed on
+the boxing ring canvas itself, which reads IRON CITY BREWERY at the centre"*. So
+the generator had been instructing the image model to paint a word **that is not
+in this gym** — made-up text originating from our own prompt rather than from the
+model's invention. That is exactly what OD-2026-10-02-001 forbids, written the
+same morning. The rule caught a defect in the tooling that wrote the rule.
+
+**What is now recorded.**
+
+- The roundel reads **IRON CITY BEER**. It sits at the centre of the canvas.
+- The second sponsor is **KO NATION**, not ALT NATION.
+- **Both marks stay tied to the canvas they sponsored.** They are permitted
+  lettering *on that canvas*, and nowhere else.
+- The ring corners are **vertical steel I-beams**, **red and blue opposite each
+  other**, with **white for the two neutral corners**. "Navy versus blue" is, in
+  his word, semantics.
+- The **bare timber upright beside the ring is part of the building**, not part
+  of the ring. A generated ring that grows a corner out of it, or leaves a post
+  standing free of the ropes, has drawn the building instead of the ring — one of
+  the faults that got a generated ring corner rejected on 2026-10-01.
+
+**HIS EARLIER WORDS ARE LEFT EXACTLY AS HE SAID THEM.** On 2026-09-30 he said
+*"alt nation was another sponsor for the same figh on the canvas"*, and that
+quote stays in the lock unaltered. This is **him correcting himself**, not a
+transcription being tidied, and the two are not the same thing. The lock now
+carries both, with the later one governing.
+
+**Corroboration, found inside the lock itself.** Its reference inventory already
+recorded *"KO NATION mat"* from a different photograph of the same ring. The
+correction runs the right way round, and the lock had been contradicting itself
+in two places for days without anyone noticing.
+
+**One sentence stops being an inference.** The lock's Mode A item 4 carried
+`[INFERRED, not owner-stated]` on the reasoning that the canvas exception cannot
+apply where the ring is out of frame, because there is then no canvas to carry
+the mark. His *"it need sto stay associated with the canvas that it sponsored"*
+says it directly, so that sentence is now marked `[OWNER 2026-10-02]`.
+
+**Scope.** Facts about the building, and the generator strings that restate them.
+It does not change the lettering rule itself (OD-2026-10-02-001), the no-people
+rule, or anything about which plate is bound where.
 
 ## OD-2026-10-02-001 — Real marks on real equipment are allowed in a plate; invented or garbled lettering is not
 
