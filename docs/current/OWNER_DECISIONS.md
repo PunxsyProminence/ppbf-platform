@@ -164,26 +164,36 @@ and should not try to.
 
 ---
 
-## OD-2026-10-02-009 -- Tests that pin a look are removed now, not as each is tripped
+## OD-2026-10-02-009 -- "Remove anything that will hinder this": read as removing now the tests that pin a look
 
 **Provenance: PRIMARY.** Typed by Jason in the UI lane's thread on 2026-10-02
 and read by overwatch in that transcript
 (`~/.claude/projects/C--Dev/a84862b0-abd8-495f-bf7a-ade6114cc50c.jsonl`).
-This entry is new and edits no earlier one. It settles the item
-OD-2026-10-02-004 section 2 left open.
+This entry is new and edits no earlier one.
 
-By the UI lane's account (REPORTED), it had just told him its wording PR was
-with the reviewer and that the tests which pin a look would be a second PR.
-Jason, whole message (19:42:53Z):
-*"Ok remove anything that will hinder this"*.
+No question about a test list was in front of him. The UI lane's message
+before his (19:41:11Z, read by overwatch in the transcript) was a status:
+"Status only, nothing for you to do: your "nothing in the UI is tied down"
+ruling is now on main (OD-2026-10-02-004, via #1087). #1089 has no conflict
+with the new main and is with ChatGPT; it merges after overwatch's Law 2
+record (#1092)." followed by two items still open with him (the /login panel
+and the board/file readability fix). Jason, whole message (19:42:53Z): *"Ok
+remove anything that will hinder this"*.
 
-**The tests that fail a change only because a screen's look, markup, class
-names or control layout changed are removed now**, without waiting for each
-to be tripped by a UI change. "This" is read as the ruling of
-OD-2026-10-02-004 and -007, that nothing about the look binds. **INFERRED**
-(the UI lane's reading and overwatch's): it does not reach the tests that hold
-his standing floor or the readability floors (tap size, type size, contrast,
-focus ring), which stay.
+**Reading, INFERRED (the UI lane's and overwatch's), his to correct:** "this"
+is the ruling that status named, that nothing in the UI's look or flow is tied
+down (OD-2026-10-02-004, -007); and "anything that will hinder" it includes
+the tests that fail a change only because a screen's look, markup, class names
+or control layout changed. On that reading those tests are removed now,
+without waiting for each to be tripped. It is the item OD-2026-10-02-004
+section 2 left open ("which tests are style pins and what happens to each").
+
+Outside the reading: tests that hold his standing floor (people's safety and
+safeguarding, minors' privacy, authorization, data integrity, not shipping
+something false) and the readability floors (tap size, type size, contrast,
+focus ring). Those stay. Whether a test that keeps decorative colour visually
+apart from safety colour is a safety guard or a look pin is the open question
+of OD-2026-10-02-007 and is not settled here.
 
 Which test is which is not decided by this entry. The case-by-case list is
 the UI lane's, checked by two adversarial reviewers and by ChatGPT, and lives
