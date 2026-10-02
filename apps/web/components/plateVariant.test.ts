@@ -73,7 +73,7 @@ const UNPAINTED_ROOMS: ReadonlySet<Room> = new Set<Room>(['teach']);
 
 const DEFAULT_PLATE: Partial<Record<Room, string | null>> = {
   office: '/plates/plate-01-office-01.jpg',
-  floor: null,
+  floor: '/plates/plate-16-floor-room-01.jpg',
   board: '/plates/plate-04-board-01.jpg',
   file: '/plates/plate-05-file-01.jpg',
   clinic: '/plates/plate-03-clinic-01.jpg',
@@ -97,8 +97,8 @@ it('finds no plate rule at all for a room no screen paints', () => {
   }
 });
 
-const FLOOR_LANDSCAPE_PLATE = '/plates/plate-02a-floor-landscape-01.jpg';
-const FLOOR_PORTRAIT_PLATE = '/plates/plate-02b-floor-portrait-01.jpg';
+const FLOOR_LANDSCAPE_PLATE = '/plates/plate-16-floor-room-01.jpg';
+const FLOOR_PORTRAIT_PLATE = '/plates/plate-11-floor-portrait-01.jpg';
 
 /* ==========================================================================
    A CASCADE THE TESTS CAN INTERROGATE
@@ -506,12 +506,12 @@ describe('the same route resolves to the same variant, every time', () => {
      * of tidying the mixing function.
      */
     const PINNED: ReadonlyArray<readonly [string, string]> = [
-      ['/dashboard', '1of2 3of3 1of4 5of5 3of6'],
-      ['/coach/review-queue', '2of2 3of3 2of4 1of5 6of6'],
-      ['/wall', '2of2 1of3 4of4 1of5 4of6'],
-      ['/names', '1of2 3of3 3of4 1of5 3of6'],
-      ['/admin/attendance', '1of2 1of3 1of4 2of5 1of6'],
-      ['/board', '2of2 2of3 4of4 4of5 2of6'],
+      ['/dashboard', '1of2 3of3 1of4 5of5 3of6 5of7 1of8'],
+      ['/coach/review-queue', '2of2 3of3 2of4 1of5 6of6 5of7 6of8'],
+      ['/wall', '2of2 1of3 4of4 1of5 4of6 3of7 4of8'],
+      ['/names', '1of2 3of3 3of4 1of5 3of6 5of7 3of8'],
+      ['/admin/attendance', '1of2 1of3 1of4 2of5 1of6 5of7 1of8'],
+      ['/board', '2of2 2of3 4of4 4of5 2of6 7of7 4of8'],
     ];
     for (const [route, tokens] of PINNED) {
       expect(`${route} -> ${plateVariantTokens(route)}`).toBe(`${route} -> ${tokens}`);
@@ -636,15 +636,19 @@ describe('routes in a big room spread across the variants instead of piling up',
   }
 
   it('does not hand every route in the building the same tokens', () => {
-    // The token list is one hash reduced five ways, so it can take at most
-    // lcm(2,3,4,5,6) = 60 distinct values however many doors there are. 108
-    // doors thrown at 60 buckets fill about 50 of them, which is what a sound
-    // hash looks like -- and both bounds are asserted, because a mutation that
-    // collapsed the hash would undershoot and one that smuggled in per-call
-    // state would overshoot the ceiling that the arithmetic makes impossible.
+    // The token list is one hash reduced SEVEN ways now, so the arithmetic
+    // ceiling is lcm(2,3,4,5,6,7,8) = 840 distinct values. That is far above the
+    // door count, so the real ceiling became the door count itself -- one token
+    // string per door at most. It was 60 while the splits stopped at six, which
+    // is why this bound is written from BUILDING.length rather than a constant:
+    // it stops being a number somebody has to remember to change.
+    //
+    // Both bounds still matter, for the reasons they always did: a mutation that
+    // collapsed the hash undershoots, and one smuggling in per-call state
+    // overshoots a ceiling the arithmetic makes impossible.
     const distinct = new Set(BUILDING.map((door) => plateVariantTokens(door.href)));
-    expect(distinct.size).toBeGreaterThan(35);
-    expect(distinct.size).toBeLessThanOrEqual(60);
+    expect(distinct.size).toBeGreaterThan(Math.floor(BUILDING.length * 0.6));
+    expect(distinct.size).toBeLessThanOrEqual(BUILDING.length);
   });
 });
 
@@ -667,8 +671,14 @@ describe('the resolver reads the sheet it is pointed at', () => {
     // the photograph off the gym floor -- nine. Then the variant rules: four
     // for office (of5), three for clinic (of4) and two for night (of3), which
     // is eighteen.
-    expect(declared.filter((selector) => selector === '.room--floor')).toHaveLength(3);
-    expect(declared).toHaveLength(18);
+    // base + portrait override. The current theme's `--plate: none` is gone
+    // (OD-2026-10-01-005); the 2of2 variant has a different selector.
+    expect(declared.filter((selector) => selector === '.room--floor')).toHaveLength(2);
+    // Eight base rules -- six rooms, the portrait floor, the warm canvas ground
+    // (the current theme's `--plate: none` is gone, OD-2026-10-01-005) -- then
+    // five office (of6), four clinic (of5), two night (of3) and seven floor
+    // (of8). Twenty-six.
+    expect(declared).toHaveLength(26);
   });
 
   it('still routes every plate through --plate, so resolving it means something', () => {
@@ -716,8 +726,8 @@ describe('the PLATES cascade is decided by source order, not by specificity', ()
   it('documents the recipe next to the rules it governs', () => {
     // The one declaration a person adds when art arrives. If the worked example
     // drifts from what the tests prove, the next person follows the comment.
-    expect(CSS).toContain(':where([data-plate-variant~="2of5"]) .room--office');
-    expect(CSS).toContain('data-plate-variant="2of2 1of3 4of4 3of5 5of6"');
+    expect(CSS).toContain(':where([data-plate-variant~="2of6"]) .room--office');
+    expect(CSS).toContain('data-plate-variant="2of2 1of3 4of4 3of5 5of6 2of7 6of8"');
   });
 });
 
@@ -725,8 +735,9 @@ describe('the PLATES cascade is decided by source order, not by specificity', ()
    (c) THE NO-CHANGE GUARANTEE, AND THE LADDER UNDER IT
    ========================================================================== */
 
-/* THE SPLIT ROOMS, AND EVERY WALL EACH ONE CARRIES. Office is on an of5,
-   clinic an of4, night an of3; board and file carry one plate each. Written
+/* THE SPLIT ROOMS, AND EVERY WALL EACH ONE CARRIES. Floor is on an of8,
+   office an of6, clinic an of5, night an of3; board and file carry one plate
+   each. Written
    out here rather than derived from the sheet on purpose: the sheet is the
    thing under test, and a guard that reads its answer out of the file it is
    checking proves nothing.
@@ -737,20 +748,31 @@ const VARIANT_PLATES: Partial<Record<Room, readonly string[]>> = {
     '/plates/plate-01-office-03.jpg',
     '/plates/plate-01-office-04.jpg',
     '/plates/plate-08-bell-gym-landscape-01.jpg',
+    '/plates/plate-18-passage-landscape-01.jpg',
   ],
   clinic: [
     '/plates/plate-03-clinic-02.jpg',
     '/plates/plate-03-clinic-03.jpg',
     '/plates/plate-15-filmroom-landscape-01.jpg',
+    '/plates/plate-18-quietcorner-landscape-01.jpg',
   ],
   night: [
     '/plates/plate-06-night-02.jpg',
     '/plates/plate-06-night-03.jpg',
   ],
+  floor: [
+    '/plates/plate-16-floor-room-02.jpg',
+    '/plates/plate-17-bags-landscape-01.jpg',
+    '/plates/plate-17-matroom-landscape-01.jpg',
+    '/plates/plate-17-speedbag-landscape-01.jpg',
+    '/plates/plate-17-bell-landscape-01.jpg',
+    '/plates/plate-18-redwall-landscape-01.jpg',
+    '/plates/plate-18-gloverack-landscape-01.jpg',
+  ],
 };
 const SPLIT_ROOMS = new Set(Object.keys(VARIANT_PLATES) as Room[]);
 
-describe('three rooms carry a set of walls, the rest carry one', () => {
+describe('four rooms carry a set of walls, the rest carry one', () => {
   it('declares exactly the variant rules this release adds, and no others', () => {
     /*
      * ART ARRIVED. The block this replaces asserted `variantRules` was empty and
@@ -767,14 +789,23 @@ describe('three rooms carry a set of walls, the rest carry one', () => {
       .sort();
     expect(variantRules).toEqual([
       ':where([data-plate-variant~="2of3"]) .room--night',
-      ':where([data-plate-variant~="2of4"]) .room--clinic',
-      ':where([data-plate-variant~="2of5"]) .room--office',
+      ':where([data-plate-variant~="2of5"]) .room--clinic',
+      ':where([data-plate-variant~="2of6"]) .room--office',
+      ':where([data-plate-variant~="2of8"]) .room--floor',
       ':where([data-plate-variant~="3of3"]) .room--night',
-      ':where([data-plate-variant~="3of4"]) .room--clinic',
-      ':where([data-plate-variant~="3of5"]) .room--office',
-      ':where([data-plate-variant~="4of4"]) .room--clinic',
-      ':where([data-plate-variant~="4of5"]) .room--office',
-      ':where([data-plate-variant~="5of5"]) .room--office',
+      ':where([data-plate-variant~="3of5"]) .room--clinic',
+      ':where([data-plate-variant~="3of6"]) .room--office',
+      ':where([data-plate-variant~="3of8"]) .room--floor',
+      ':where([data-plate-variant~="4of5"]) .room--clinic',
+      ':where([data-plate-variant~="4of6"]) .room--office',
+      ':where([data-plate-variant~="4of8"]) .room--floor',
+      ':where([data-plate-variant~="5of5"]) .room--clinic',
+      ':where([data-plate-variant~="5of6"]) .room--office',
+      ':where([data-plate-variant~="5of8"]) .room--floor',
+      ':where([data-plate-variant~="6of6"]) .room--office',
+      ':where([data-plate-variant~="6of8"]) .room--floor',
+      ':where([data-plate-variant~="7of8"]) .room--floor',
+      ':where([data-plate-variant~="8of8"]) .room--floor',
     ]);
   });
 
@@ -845,24 +876,32 @@ describe('the ladder below the variant still holds', () => {
     }
   });
 
-  it('leaves the floor material on an upright tablet too, portrait rule or not', () => {
+  it('gives an upright viewport the portrait floor plate, over both landscape walls', () => {
     /*
-     * THE ORIENTATION RUNG'S ONLY LIVE CONSUMER WAS THIS ROOM, and it has
-     * converted. legacy/ppbf-leather-brass.css:3659 still declares the portrait
-     * floor plate inside its @media block, but the current theme's material
-     * ground is later in source order at the same specificity, so it wins in
-     * both orientations -- a gym tablet held upright gets the material floor,
-     * not a photograph, and the two do not fight.
+     * THE ORIENTATION RUNG HAS A LIVE CONSUMER AGAIN. It lost one when the
+     * floor went to `--plate: none`; the owner rescinded that on 2026-10-01
+     * (OD-2026-10-01-005) and the floor carries photographs once more.
      *
-     * The mechanism itself is NOT retired: it is still proven, on a synthetic
-     * sheet, by the :where() trap tests below. That is deliberate. The owner
-     * ruling keeps the variant/orientation machinery for the surfaces that may
-     * still want imagery, and a kept mechanism with no live consumer has to be
-     * held up by something or it rots unnoticed.
+     * This is the rung the :where() trap exists to protect, and it is now
+     * load-bearing rather than theoretical: the floor has a 2of2 variant AND a
+     * portrait override, which is exactly the collision that has shipped four
+     * defects in this repository. Both floor doors below must reach the
+     * portrait plate when the viewport is upright, whichever landscape wall
+     * their route would otherwise have taken.
      */
-    expect(resolvePlate(CSS, roomOn('floor', '/wall'), PORTRAIT)?.url).toBeNull();
-    expect(resolvePlate(CSS, roomOn('floor', '/wall'), PORTRAIT)?.value).toBe('none');
-    expect(CSS).toContain(FLOOR_PORTRAIT_PLATE);
+    const landscapeSide = doorsIn('floor').find((href) => plateVariantSlot(href, 8) === 2)!;
+    const defaultSide = doorsIn('floor').find((href) => plateVariantSlot(href, 8) === 1)!;
+    expect(landscapeSide).toBeDefined();
+    expect(defaultSide).toBeDefined();
+
+    // landscape: the two doors take different walls
+    expect(resolvePlate(CSS, roomOn('floor', defaultSide), SCREEN)?.url).toBe(FLOOR_LANDSCAPE_PLATE);
+    expect(resolvePlate(CSS, roomOn('floor', landscapeSide), SCREEN)?.url)
+      .toBe('/plates/plate-16-floor-room-02.jpg');
+
+    // upright: both take the portrait plate, because the override is later
+    expect(resolvePlate(CSS, roomOn('floor', defaultSide), PORTRAIT)?.url).toBe(FLOOR_PORTRAIT_PLATE);
+    expect(resolvePlate(CSS, roomOn('floor', landscapeSide), PORTRAIT)?.url).toBe(FLOOR_PORTRAIT_PLATE);
   });
 
   it('still takes every plate away under prefers-reduced-data', () => {
@@ -878,32 +917,19 @@ describe('the ladder below the variant still holds', () => {
    (d) THE TRAP, BOTH WAYS ROUND
    ========================================================================== */
 
-/**
- * The sheet as it stands for a room that still carries a photograph.
- *
- * The trap below is about cascade ARITHMETIC -- whether a variant rule written
- * without :where() outranks the orientation override. The gym floor is the only
- * room that has ever had a portrait variant to prove that on, and the current
- * theme has since converted the floor to a material ground (`--plate: none`).
- * So the proof runs with that one conversion lifted: everything else is the
- * real sheet, in real source order.
- *
- * This is not the conversion hiding from its own guard. The three tests above
- * assert the floor IS material, in both orientations. This one keeps the
- * mechanism the owner ruling deliberately kept -- the variant and orientation
- * machinery for whichever surface wants imagery next -- from rotting while it
- * has no live consumer to stand on.
- */
-function asPhotographicRoom(css: string): string {
-  const stripped = css.replace(/\.room--floor\s*\{[^}]*--plate:\s*none;[^}]*\}/g, '');
-  if (stripped === css) {
-    throw new Error(
-      'the floor material-ground rule was not found -- if it moved or was renamed, '
-      + 'this helper is lying about what it removes and the trap proof below is meaningless',
-    );
-  }
-  return stripped;
-}
+/* THE TRAP PROOF RUNS ON THE REAL SHEET NOW.
+
+   It used to run on a doctored copy: a helper stripped the floor's
+   `--plate: none` first, because with the floor material there was no live
+   consumer of the orientation rung and the proof had nothing real to stand on.
+   The owner rescinded that on 2026-10-01 and the floor carries photographs
+   again, so the helper is deleted rather than kept pointing at nothing.
+
+   This matters more than tidiness. The floor now has BOTH a 2of2 variant and a
+   portrait override -- the exact collision this repository has shipped four
+   defects from -- so the trap below is load-bearing against the shipped
+   cascade, not against a synthetic one. */
+
 
 describe('a variant rule does not take the portrait plate off the gym tablet', () => {
   const WITH_WHERE = ':where([data-plate-variant~="2of2"]) .room--floor {\n'
@@ -918,9 +944,14 @@ describe('a variant rule does not take the portrait plate off the gym tablet', (
   const WITHOUT_WHERE = '[data-plate-variant~="2of2"] .room--floor {\n'
     + '  --plate: url("/plates/plate-02a-floor-landscape-02.jpg");\n}';
 
-  /** A floor route that lands in the second half of an of2 split. */
+  /* A floor route in the second half of an of2 split, which the synthetic rule
+     below targets. And one in the FIRST half that is also slot 1 of the live
+     of8 -- without that second condition it would pick up one of the floor's
+     real variants and this proof would be comparing against the wrong wall. */
   const secondHalf = doorsIn('floor').find((href) => plateVariantSlot(href, 2) === 2)!;
-  const firstHalf = doorsIn('floor').find((href) => plateVariantSlot(href, 2) === 1)!;
+  const firstHalf = doorsIn('floor').find(
+    (href) => plateVariantSlot(href, 2) === 1 && plateVariantSlot(href, 8) === 1,
+  )!;
 
   it('has a real route on each side of the split to test with', () => {
     expect(secondHalf).toBeDefined();
@@ -928,7 +959,7 @@ describe('a variant rule does not take the portrait plate off the gym tablet', (
   });
 
   it('paints the second landscape plate on a landscape screen', () => {
-    const sheet = asPhotographicRoom(cssWithVariant(WITH_WHERE));
+    const sheet = (cssWithVariant(WITH_WHERE));
     expect(resolvePlate(sheet, roomOn('floor', secondHalf), SCREEN)?.url)
       .toBe('/plates/plate-02a-floor-landscape-02.jpg');
     expect(resolvePlate(sheet, roomOn('floor', firstHalf), SCREEN)?.url)
@@ -936,7 +967,7 @@ describe('a variant rule does not take the portrait plate off the gym tablet', (
   });
 
   it('yields to the orientation override when the tablet is upright', () => {
-    const sheet = asPhotographicRoom(cssWithVariant(WITH_WHERE));
+    const sheet = (cssWithVariant(WITH_WHERE));
     expect(resolvePlate(sheet, roomOn('floor', secondHalf), PORTRAIT)?.url).toBe(FLOOR_PORTRAIT_PLATE);
     expect(resolvePlate(sheet, roomOn('floor', firstHalf), PORTRAIT)?.url).toBe(FLOOR_PORTRAIT_PLATE);
   });
@@ -947,14 +978,14 @@ describe('a variant rule does not take the portrait plate off the gym tablet', (
     // build, and a landscape wall stretched onto an upright gym tablet. If this
     // expectation ever inverts, :where() has stopped doing its job and the
     // guard above has stopped meaning anything.
-    const sheet = asPhotographicRoom(cssWithVariant(WITHOUT_WHERE));
+    const sheet = (cssWithVariant(WITHOUT_WHERE));
     expect(specificityOf('[data-plate-variant~="2of2"] .room--floor')).toEqual({ a: 0, b: 2, c: 0 });
     expect(resolvePlate(sheet, roomOn('floor', secondHalf), PORTRAIT)?.url)
       .toBe('/plates/plate-02a-floor-landscape-02.jpg');
   });
 
   it('leaves the other five rooms exactly where they were', () => {
-    const sheet = asPhotographicRoom(cssWithVariant(WITH_WHERE));
+    const sheet = (cssWithVariant(WITH_WHERE));
     for (const room of Object.keys(DEFAULT_PLATE) as Room[]) {
       if (room === 'floor') continue;
       /* The real sheet is the reference. A split room answers with whatever its

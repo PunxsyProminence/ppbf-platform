@@ -3604,7 +3604,7 @@ body.ppbf.on-canvas {
 
 /* Plate Set v1 — locked inventory. */
 .room--office { --plate: url("/plates/plate-01-office-01.jpg"); }
-.room--floor  { --plate: url("/plates/plate-02a-floor-landscape-01.jpg"); }
+.room--floor  { --plate: url("/plates/plate-16-floor-room-01.jpg"); }
 .room--board  { --plate: url("/plates/plate-04-board-01.jpg"); }
 .room--file   { --plate: url("/plates/plate-05-file-01.jpg"); }
 .room--clinic { --plate: url("/plates/plate-03-clinic-01.jpg"); }
@@ -3620,7 +3620,7 @@ body.ppbf.on-canvas {
    being a box around any of them -- writes the current route's slot in every
    useful split onto a single attribute:
 
-       data-plate-variant="2of2 1of3 4of4 3of5 5of6"
+       data-plate-variant="2of2 1of3 4of4 3of5 5of6 2of7 6of8"
 
    Read `2of2` as "the second of two". The route is hashed once and reduced to
    each count in turn, so THIS SHEET states how many plates a room has and the
@@ -3628,10 +3628,10 @@ body.ppbf.on-canvas {
    plus one declaration in this block, with no TypeScript edit at all -- and it
    keeps the plate URLs where the one-source-of-truth rule says they live.
 
-   ADDING A PLATE TO A ROOM is that one declaration. Office carries five, so
-   it is on an `of5` and its second wall reads:
+   ADDING A PLATE TO A ROOM is that one declaration. Office carries six, so
+   it is on an `of6` and its second wall reads:
 
-       :where([data-plate-variant~="2of5"]) .room--office {
+       :where([data-plate-variant~="2of6"]) .room--office {
          --plate: url("/plates/plate-01-office-02.jpg");
        }
 
@@ -3659,8 +3659,9 @@ body.ppbf.on-canvas {
 
    NO LONGER EMPTY. This block was empty from the day the mechanism merged: it
    was wired and guarded before any art existed, so the attribute matched
-   nothing and changed nothing, and merging it was a no-op. It now carries nine
-   rules across three rooms -- office on an of5, clinic an of4, night an of3.
+   nothing and changed nothing, and merging it was a no-op. It now carries
+   eighteen rules across four rooms -- floor on an of8, office an of6, clinic
+   an of5, night an of3.
    Every room still carrying one plate needs no rule here, because the
    declaration in the list above is already the right answer for every one of
    its routes, so the rooms absent from this block are absent on purpose and
@@ -3676,8 +3677,9 @@ body.ppbf.on-canvas {
    WHY THE SPLITS DIFFER BY ROOM, AND WHY THEY ARE NOT ALL SIX. A split only
    produces as many walls as the room has DOORS to land on them, because the
    slot is a hash of the route and nothing else. Counted from buildingMap.ts,
-   129 doors: office has 52 and fills all five slots of an of5; clinic has 10
-   and fills four of an of4; night has 3 and fills all three of an of3.
+   129 doors: office has 52 and fills all six slots of an of6; clinic has 10
+   and fills all five of an of5; floor has 40 and fills all EIGHT of an of8;
+   night has 3 and fills all three of an of3.
 
    Night is the one that proves the rule rather than following it. On an of2
    all three of its doors hash to the SAME side, so a `2of2` rule for night
@@ -3685,35 +3687,67 @@ body.ppbf.on-canvas {
    is therefore chosen from the door list, not from how many plates happen to
    exist. Any room whose plates outrun its doors keeps the surplus unbound. */
 
-/* OFFICE -- 52 doors, five walls, all five slots occupied.
+/* OFFICE -- 52 doors, SIX walls, all six slots occupied.
    IT WAS SIX. plate-14-frontdesk-landscape-01.jpg was the sixth and is gone
    from here: opened at full size on 2026-10-01 it carries a wall banner of
    invented, illegible lettering and an invented crest on the ring apron. The
    reference lock allows the ring canvas's REAL sponsor marks and nothing else,
    and forbids drawing a gym logo outright. It was bound off a 300x180 contact
    sheet, which is too small to read a banner; the lesson is in the README. */
-:where([data-plate-variant~="2of5"]) .room--office {
+:where([data-plate-variant~="2of6"]) .room--office {
   --plate: url("/plates/plate-01-office-02.jpg");
 }
-:where([data-plate-variant~="3of5"]) .room--office {
+:where([data-plate-variant~="3of6"]) .room--office {
   --plate: url("/plates/plate-01-office-03.jpg");
 }
-:where([data-plate-variant~="4of5"]) .room--office {
+:where([data-plate-variant~="4of6"]) .room--office {
   --plate: url("/plates/plate-01-office-04.jpg");
 }
-:where([data-plate-variant~="5of5"]) .room--office {
+:where([data-plate-variant~="5of6"]) .room--office {
   --plate: url("/plates/plate-08-bell-gym-landscape-01.jpg");
 }
+:where([data-plate-variant~="6of6"]) .room--office {
+  --plate: url("/plates/plate-18-passage-landscape-01.jpg");
+}
 
-/* CLINIC -- 10 doors, four walls, all four slots occupied. */
-:where([data-plate-variant~="2of4"]) .room--clinic {
+/* CLINIC -- 10 doors, FIVE walls, all five slots occupied. */
+:where([data-plate-variant~="2of5"]) .room--clinic {
   --plate: url("/plates/plate-03-clinic-02.jpg");
 }
-:where([data-plate-variant~="3of4"]) .room--clinic {
+:where([data-plate-variant~="3of5"]) .room--clinic {
   --plate: url("/plates/plate-03-clinic-03.jpg");
 }
-:where([data-plate-variant~="4of4"]) .room--clinic {
+:where([data-plate-variant~="4of5"]) .room--clinic {
   --plate: url("/plates/plate-15-filmroom-landscape-01.jpg");
+}
+:where([data-plate-variant~="5of5"]) .room--clinic {
+  --plate: url("/plates/plate-18-quietcorner-landscape-01.jpg");
+}
+
+/* FLOOR -- 40 doors, EIGHT walls, all eight slots occupied. The room coaches and
+   athletes actually work in: 35 of its 40 doors are theirs, and it painted
+   nothing at all until today. It gets the largest set in the building because
+   it is the room the gym is actually in. */
+:where([data-plate-variant~="2of8"]) .room--floor {
+  --plate: url("/plates/plate-16-floor-room-02.jpg");
+}
+:where([data-plate-variant~="3of8"]) .room--floor {
+  --plate: url("/plates/plate-17-bags-landscape-01.jpg");
+}
+:where([data-plate-variant~="4of8"]) .room--floor {
+  --plate: url("/plates/plate-17-matroom-landscape-01.jpg");
+}
+:where([data-plate-variant~="5of8"]) .room--floor {
+  --plate: url("/plates/plate-17-speedbag-landscape-01.jpg");
+}
+:where([data-plate-variant~="6of8"]) .room--floor {
+  --plate: url("/plates/plate-17-bell-landscape-01.jpg");
+}
+:where([data-plate-variant~="7of8"]) .room--floor {
+  --plate: url("/plates/plate-18-redwall-landscape-01.jpg");
+}
+:where([data-plate-variant~="8of8"]) .room--floor {
+  --plate: url("/plates/plate-18-gloverack-landscape-01.jpg");
 }
 
 /* NIGHT -- 3 doors, three walls, one door each. An of2 here would be dead. */
@@ -3737,7 +3771,7 @@ body.ppbf.on-canvas {
    portrait viewport is a portrait viewport, and every phone held upright is
    one. */
 @media (orientation: portrait) {
-  .room--floor { --plate: url("/plates/plate-02b-floor-portrait-01.jpg"); }
+  .room--floor { --plate: url("/plates/plate-11-floor-portrait-01.jpg"); }
 }
 
 /* Plate 7. The family ground is .on-canvas, not a room -- Law 6's second

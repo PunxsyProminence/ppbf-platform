@@ -21,19 +21,31 @@ A room with more than one plate states a SPLIT, and which of its walls a given
 door shows is a hash of that door's route -- same door, same wall, every load.
 The split is chosen from the DOOR COUNT, not from how many plates exist: a rule
 on a slot none of that room's doors reach is dead CSS. Office has 52 doors and
-fills an of5; clinic has 10 and fills an of4; night has 3 and fills an of3.
+fills an of6; clinic has 10 and fills an of5; floor has 40 and fills an of8;
+night has 3 and fills an of3.
 
 | File | Applied to | Dimensions | Bytes |
 |---|---|---|---|
-| `plate-01-office-01.jpg` | `.room--office`, slot 1 of 5 | 1280×720 | 148,739 |
-| `plate-01-office-02.jpg` | `.room--office`, `2of5` | 1280×720 | 226,436 |
-| `plate-01-office-03.jpg` | `.room--office`, `3of5` | 1280×720 | 317,154 |
-| `plate-01-office-04.jpg` | `.room--office`, `4of5` -- chalkboard wall | 1280×720 | 207,549 |
-| `plate-08-bell-gym-landscape-01.jpg` | `.ge-bell.on-canvas::after` (The Bell, /login) AND `.room--office`, `5of5` | 1280×720 | 189,771 |
-| `plate-03-clinic-01.jpg` | `.room--clinic`, slot 1 of 4 | 1280×720 | 52,209 |
-| `plate-03-clinic-02.jpg` | `.room--clinic`, `2of4` | 1280×720 | 202,304 |
-| `plate-03-clinic-03.jpg` | `.room--clinic`, `3of4` | 1280×720 | 202,289 |
-| `plate-15-filmroom-landscape-01.jpg` | `.room--clinic`, `4of4` | 1280×720 | 157,678 |
+| `plate-01-office-01.jpg` | `.room--office`, slot 1 of 6 | 1280×720 | 148,739 |
+| `plate-01-office-02.jpg` | `.room--office`, `2of6` | 1280×720 | 226,436 |
+| `plate-01-office-03.jpg` | `.room--office`, `3of6` | 1280×720 | 317,154 |
+| `plate-01-office-04.jpg` | `.room--office`, `4of6` -- chalkboard wall | 1280×720 | 207,549 |
+| `plate-08-bell-gym-landscape-01.jpg` | `.ge-bell.on-canvas::after` (The Bell, /login) AND `.room--office`, `5of6` | 1280×720 | 189,771 |
+| `plate-18-passage-landscape-01.jpg` | `.room--office`, `6of6` — the timber passage | 1280×720 | 212,241 |
+| `plate-03-clinic-01.jpg` | `.room--clinic`, slot 1 of 5 | 1280×720 | 52,209 |
+| `plate-03-clinic-02.jpg` | `.room--clinic`, `2of5` | 1280×720 | 202,304 |
+| `plate-03-clinic-03.jpg` | `.room--clinic`, `3of5` | 1280×720 | 202,289 |
+| `plate-15-filmroom-landscape-01.jpg` | `.room--clinic`, `4of5` | 1280×720 | 157,678 |
+| `plate-18-quietcorner-landscape-01.jpg` | `.room--clinic`, `5of5` — bare corner and a bench | 1280×720 | 92,500 |
+| `plate-16-floor-room-01.jpg` | `.room--floor`, slot 1 of 8 | 1280×720 | 324,650 |
+| `plate-16-floor-room-02.jpg` | `.room--floor`, `2of8` — chalk wall and red shelving | 1280×720 | 207,741 |
+| `plate-17-bags-landscape-01.jpg` | `.room--floor`, `3of8` — bag row on the pipe rail | 1280×720 | 249,043 |
+| `plate-17-matroom-landscape-01.jpg` | `.room--floor`, `4of8` — the mat room, length of the floor | 1280×720 | 196,257 |
+| `plate-17-speedbag-landscape-01.jpg` | `.room--floor`, `5of8` — speed bag on its platform | 1280×720 | 237,902 |
+| `plate-17-bell-landscape-01.jpg` | `.room--floor`, `6of8` — the bell and a blank timer; the quietest plate in the building | 1280×720 | 134,424 |
+| `plate-18-redwall-landscape-01.jpg` | `.room--floor`, `7of8` — the red wall, one bag, hard side light | 1280×720 | 230,059 |
+| `plate-18-gloverack-landscape-01.jpg` | `.room--floor`, `8of8` — gloves and headgear on hooks | 1280×720 | 196,517 |
+| `plate-11-floor-portrait-01.jpg` | `.room--floor`, `@media (orientation: portrait)` | 810×1440 | 195,227 |
 | `plate-06-night-01.jpg` | `.room--night`, slot 1 of 3 | 1280×720 | 46,687 |
 | `plate-06-night-02.jpg` | `.room--night`, `2of3` | 1280×720 | 86,167 |
 | `plate-06-night-03.jpg` | `.room--night`, `3of3` | 1280×720 | 268,746 |
@@ -74,7 +86,7 @@ floor colour instead of the painted red / blue / grey / carpet zones. The script
 DNA block was rewritten from the photographs on 2026-09-26 and now carries that.
 
 Of this generated set, `plate-15-filmroom-landscape-01.jpg` is declared, as
-`.room--clinic` `4of4`. **The rest are undeclared**, which is why they sit in
+`.room--clinic` `4of5`. **The rest are undeclared**, which is why they sit in
 the "Landed but not declared" table below rather than the first one. Binding one
 is a single `--plate` declaration in the scope that wants it.
 
@@ -113,14 +125,24 @@ The byte gate cannot see lettering at all, and the reference lock asks for a
 human look precisely because of this. **A contact sheet is for choosing
 candidates. Nothing is bound until it has been opened at full size.**
 
-## The gym floor no longer takes a plate
+## The gym floor takes photographs again
 
-`current/ppbf-golden-era.css` converts `.room--floor` to a material ground —
-colour, two light pools, falloff and `--grain-fine` — and sets `--plate: none`.
-The painter is untouched: it simply has nothing to paint on that room. Owner
-direction, 2026-09-22, was that the app is not tied to real gym pictures, and
-the two plates below were the floor's. They stay committed and still pass the
-byte gate; nothing paints them.
+Owner direction, 2026-10-01 (OD-2026-10-01-005), rescinding the 2026-09-22
+ruling: *"remove my decision about the floor"*. `--plate: none` is gone from
+`current/ppbf-golden-era.css` and the floor carries **eight** landscape walls on
+an `of8`, all eight slots occupied by its 40 doors, plus a portrait plate. It has
+the largest set in the building on purpose: 35 of its 40 doors are coach or
+athlete, so it is the room the gym is actually in.
+
+**The material ground stays**, and is now the fallback rather than the finish:
+it is the element background, the plate paints over it, so a 404, an offline
+tablet or `prefers-reduced-data` lands on a designed black-and-grain floor
+instead of the generic gradient wall.
+
+**The two plates the floor used to declare are not the ones it got back.**
+Opened at full size on 2026-10-01, `plate-02a-floor-landscape-01` and
+`plate-02b-floor-portrait-01` are a generic dark red brick wall — not this
+building. They stay committed, pass the byte gate, and **must not be bound**.
 
 Board, File, Office, Clinic and Night keep their walls, the family ground
 (`.on-canvas`) keeps plate 07, and The Bell keeps plate 08. Board and File in
@@ -143,13 +165,12 @@ orientation block, per "Adding a variant" below.
 | File | Dimensions | Bytes | What it would replace or add |
 |---|---|---|---|
 | `plate-01-office-portrait-01.jpg` | 810×1440 | 186,248 | a portrait crop the office room does not have today |
-| `plate-02b-floor-portrait-02.jpg` | 810×1440 | 189,337 | a second portrait floor plate |
-| `plate-02b-floor-portrait-ring-01.jpg` | 810×1440 | 82,185 | a ring-side portrait floor alternative |
+| `plate-02b-floor-portrait-02.jpg` | 810×1440 | 189,337 | **Do not bind:** a chalk wall covered in invented words, judged 2026-10-01 |
+| `plate-02b-floor-portrait-ring-01.jpg` | 810×1440 | 82,185 | **Do not bind:** EVERLAST lettering on the turnbuckle, outside the ring-canvas exception, judged 2026-10-01 |
 | `plate-03-clinic-portrait-01.jpg` | 810×1440 | 119,124 | a portrait crop the clinic does not have today |
 | `plate-09-drillcase-landscape-01.jpg` | 1280×720 | 200,989 | the Drill Cabinet room: gear shelves, gloves on hooks, a card-index cabinet |
 | `plate-09-drillcase-portrait-01.jpg` | 810×1440 | 198,467 | the same cabinet upright. It was committed with its landscape pair and listed in neither table until 2026-10-01 |
-| `plate-10-floor-landscape-01.jpg` | 1280×720 | 181,156 | the gym floor: the ring on the red floor, bags on the timber frame, plank walls |
-| `plate-11-floor-portrait-01.jpg` | 810×1440 | 195,227 | the gym floor upright, for the tablet that stands on the counter |
+| `plate-10-floor-landscape-01.jpg` | 1280×720 | 181,156 | **Do not bind:** an invented crest with invented lettering in the ring-canvas roundel, judged 2026-10-01 |
 | `plate-12-locker-landscape-01.jpg` | 1280×720 | 200,442 | the athletes corner: grey lockers with a red bank, benches |
 | `plate-13-scripts-landscape-01.jpg` | 1280×720 | 201,153 | the coaches corner: desk, timing clock, empty boards |
 | `plate-14-frontdesk-landscape-01.jpg` | 1280×720 | 203,244 | the Front Desk room: counter, stool, key box, the floor beyond. **Do not bind:** invented banner lettering and an invented apron crest, judged 2026-10-01 |
@@ -227,6 +248,9 @@ not a delivery:
 | Batch | Conversion applied | Original kept |
 |---|---|---|
 | Grok, 2026-10-01 — `plate-01-office-02/03/04`, `plate-03-clinic-02/03`, `plate-06-night-03`, `plate-15-filmroom-landscape-01` | downscale `1792x1008` to `1280x720` (both exactly 16:9, no crop); chroma `4:2:0` to `4:4:4`; baseline `SOF0` to progressive `SOF2`; JFIF/EXIF/XMP/comment segments stripped, leaving `DQT` and `SOF`; sharp, mozjpeg, quality 92 | **NO — not retained.** These predate the rule and the originals were not kept. The conversion is stated from the JPEG markers of the committed files, and cannot be shown by comparison for this batch |
+| Grok, 2026-10-01 (floor pair) — `plate-16-floor-room-01`, `plate-16-floor-room-02` | same conversion: downscale `1792x1008` to `1280x720`, no crop; chroma `4:2:0` to `4:4:4`; baseline to progressive; metadata stripped; sharp, mozjpeg, quality 92. Read off the committed bytes, which are `SOF2` progressive and byte-identical to the batch files | **NO** — not retained. These predate condition 3 along with the rest of that day's earlier batch, so this conversion is stated from the markers and **cannot be shown by comparison** |
+| Grok, 2026-10-01 (boxing set) — `plate-17-bags/matroom/speedbag/bell-landscape-01` | downscale `1792x1008` to `1280x720` (both exactly 16:9, **no crop**); chroma `4:2:0` to `4:4:4`; baseline to progressive; metadata stripped; sharp, mozjpeg, quality 92 | **YES** — kept in the owner's reference folder, `PPBF-Gym-Reference/grok-boxing-2026-10-01/`. First batch under condition 3 |
+| Grok, 2026-10-01 (variation set) — `plate-18-redwall/gloverack/passage/quietcorner-landscape-01` | same conversion: downscale `1792x1008` to `1280x720`, no crop; `4:2:0` to `4:4:4`; baseline to progressive; metadata stripped; sharp, mozjpeg, quality 92 | **YES** — `PPBF-Gym-Reference/grok-boxing-2026-10-01/` |
 | Grok, 2026-10-02 onward | as recorded per batch | YES, required |
 
 The first row is the honest cost of having run the step silently: the record
