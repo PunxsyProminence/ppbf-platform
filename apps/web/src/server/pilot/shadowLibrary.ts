@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { assertActorCanAccessAthlete } from './access';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
+import { ConflictError } from './errors';
 import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 import { cosineSimilarity, embedText, getEmbeddingDeploymentName, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
@@ -1014,6 +1015,42 @@ export async function createShadowLibraryChunk(input: {
   return row;
 }
 
+/**
+ * A document entered through manual text intake (/research, Add Source Text)
+ * declares in metadata.chunk_count how many parts its text was split into, and
+ * its parts are written one request at a time. If a later part fails and the
+ * curator's page is gone, the document is left holding the first few parts of
+ * an excerpt -- and "at least one non-empty chunk" would let a reviewer index
+ * and approve it, after which SHADOW cites a truncated excerpt as the whole.
+ *
+ * So for those documents, and only those, indexing also requires that the
+ * stored parts are exactly the declared ones: the declared number of them,
+ * ordinals 0..n-1 (unique (document_id, ordinal) makes count + min + max
+ * sufficient). A manual-text document with a missing or malformed chunk_count
+ * fails closed. Every other document -- the imported corpus, the doctrine seed
+ * -- carries no intake_method and is untouched by this predicate.
+ *
+ * Written against alias d = pilot.shadow_library_documents.
+ *
+ * Exported for one reason: scripts/pilot-approve-library-baseline.mjs indexes
+ * documents with its own SQL and carries a copy of this text (a plain .mjs
+ * cannot import this module). shadowLibraryPipeline.pg.test.ts compares the two.
+ */
+export const MANUAL_TEXT_INTAKE_COMPLETE_SQL = `(
+  d.metadata->>'intake_method' is distinct from 'manual_text'
+  or case
+    when d.metadata->>'chunk_count' ~ '^[1-9][0-9]{0,5}$' then (
+      select count(*) = (d.metadata->>'chunk_count')::int
+         and min(c.ordinal) = 0
+         and max(c.ordinal) = (d.metadata->>'chunk_count')::int - 1
+      from pilot.shadow_library_chunks c
+      where c.document_id = d.document_id
+        and c.organization_id = d.organization_id
+    )
+    else false
+  end
+)`;
+
 export async function completeShadowLibraryDocumentIndexing(input: {
   organizationId: string;
   actorAccountId: string;
@@ -1035,10 +1072,32 @@ export async function completeShadowLibraryDocumentIndexing(input: {
            and c.organization_id = d.organization_id
            and length(trim(c.text_content)) > 0
        )
+       and ${MANUAL_TEXT_INTAKE_COMPLETE_SQL}
      returning d.*`,
     [input.documentId, input.organizationId],
   );
   if (!row) {
+    // The update says only that it matched nothing. Ask why, so a reviewer
+    // facing a half-saved excerpt is told that, and how many parts are there.
+    const partial = await queryOne<{ declared: string | null; stored: string }>(
+      `select d.metadata->>'chunk_count' as declared,
+              (select count(*) from pilot.shadow_library_chunks c
+                where c.document_id = d.document_id
+                  and c.organization_id = d.organization_id)::text as stored
+       from pilot.shadow_library_documents d
+       where d.document_id = $1
+         and d.organization_id = $2
+         and d.metadata->>'intake_method' = 'manual_text'
+         and not ${MANUAL_TEXT_INTAKE_COMPLETE_SQL}`,
+      [input.documentId, input.organizationId],
+    );
+    if (partial) {
+      throw new ConflictError(
+        `This excerpt is incomplete: ${partial.stored} of ${partial.declared ?? 'an unrecorded number of'} parts are stored. `
+        + 'It cannot be indexed or approved. Reject it, and have the text entered again from Research.',
+        'SHADOW_LIBRARY_DOCUMENT_INCOMPLETE',
+      );
+    }
     throw new Error('SHADOW document cannot be indexed without a non-empty organization-scoped chunk');
   }
   return row;

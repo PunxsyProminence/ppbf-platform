@@ -118,6 +118,7 @@ test('a viewer refused by the sources probe gets no Answer-a-Gap panel', async (
 
   await screen.findByText('Is RPE reliable at age 12?');
   expect(screen.queryByRole('button', { name: 'Answer this gap' })).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Add source text to the Library' })).toBeNull();
   // The rest of the inbox is untouched.
   expect(screen.getByRole('button', { name: 'Mark Resolved' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Save Requirement' })).toBeTruthy();
@@ -132,6 +133,7 @@ test('a curator files the link with provenance and is told review decides, not t
   });
 
   await screen.findByText('Is RPE reliable at age 12?');
+  expect(screen.getByRole('region', { name: 'Add source text to the Library' })).toBeTruthy();
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Answer this gap' }));
   });
@@ -294,7 +296,8 @@ describe('general research intake', () => {
       render(<ResearchIntakePage />);
     });
 
-    await screen.findByText('Nonprofit board best practices');
+    // selector: the title is also an option in the Add Source Text panel.
+    await screen.findByText('Nonprofit board best practices', { selector: 'p' });
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Correct classification for Nonprofit board best practices'), {
         target: { value: 'nonprofit_management_governance' },

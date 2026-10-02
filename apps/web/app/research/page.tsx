@@ -6,6 +6,7 @@ import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { apiBase } from '@/lib/apiBase';
+import LibraryTextIntakePanel from './LibraryTextIntakePanel';
 import {
   RESEARCH_CLASSIFICATION_DOMAINS,
   researchClassificationLabel,
@@ -451,14 +452,19 @@ export default function ResearchIntakePage() {
       room="file"
       showShellHeader={false}
     >
-      {/* ge-file: Golden Era Visual 010 scope. This wrapper class is the ONLY
-          change on this route -- the cabinet head, the japanned drawer banks,
+      {/* ge-file: Golden Era Visual 010 scope. When that visual pass landed,
+          this wrapper class was its ONLY change on this route -- the cabinet head, the japanned drawer banks,
           the bronze corner plates and label rails, the engraved index tabs, the
           sunk dossier wells and the riveted pull plates all live in scoped CSS
-          under .ge-file in design-system/current/ppbf-golden-era.css. Every
-          control, heading, badge, form field, projection state and refusal on
-          this page is untouched, and the room's own cork wall is left to its
-          committed plate.
+          under .ge-file in design-system/current/ppbf-golden-era.css. That pass
+          left every control, heading, badge, form field, projection state and
+          refusal on this page as it found them, and the room's own cork wall
+          to its committed plate.
+
+          That describes the visual pass, not the page since. Functional work
+          has landed inside this wrapper afterwards (the Add Source Text panel,
+          RINT-01, mounted at the foot of the curator block), so nothing here
+          claims the route is functionally unchanged.
 
           It rides a wrapper rather than the page's own <main> because this
           route has no <main> of its own: RoleStandaloneView owns it and
@@ -466,9 +472,7 @@ export default function ResearchIntakePage() {
           68 pages, so reaching into it would leave the scope on every one of
           them. Same seam .ge-floorboard and .ge-locker use. The children below
           are deliberately NOT re-indented: a 400-line whitespace diff would
-          bury the fact that nothing else here moved.
-
-          FUNCTIONAL_CHANGES: NONE. */}
+          have buried the fact that nothing else moved in that pass. */}
       <div className="ge-file">
       <header className="mat-leather--raised border-b border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
         <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-end justify-between gap-[var(--s4)]">
@@ -871,6 +875,7 @@ export default function ResearchIntakePage() {
             ) : null}
           </section>
         ) : null}
+        {curatorSources !== null ? <LibraryTextIntakePanel sources={curatorSources} /> : null}
       </div>
       </div>
     </RoleStandaloneView>
