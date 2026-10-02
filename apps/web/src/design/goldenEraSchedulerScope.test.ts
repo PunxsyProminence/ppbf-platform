@@ -40,8 +40,6 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  * suite red.
  */
 
-const BRASS_RUNGS = ['200', '300', '400', '500', '600', '700', '800', '900'] as const;
-
 const css = readDesignSystemCss(DESIGN_SYSTEM_ENTRY);
 
 /* THE MEDICAL-STOP NAMES: --locked, its --locked-* rungs, and every custom
@@ -83,51 +81,16 @@ const PAGE = readFileSync(
   'utf8',
 );
 
-/** The bare `.ge-scheduler { … }` token rule, not its descendant rules. */
-function scopeBody(source: string): string | null {
-  const match = source.match(/^\.ge-scheduler\s*\{([^}]*)\}/m);
-  return match ? match[1] : null;
-}
-
-function legacyRung(source: string, rung: string): string | null {
-  const withoutScope = source.replace(/^\.ge-scheduler\s*\{[^}]*\}/m, '');
-  const m = withoutScope.match(new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{3,8})`, 'i'));
-  return m ? m[1].toLowerCase() : null;
-}
+/* 2026-10-02 (OD-2026-10-02-004, OD-2026-10-02-007): nothing about the look
+   binds, so the cases here that pinned this screen's look were removed -- the
+   bronze ramp and its channel triples, the scope class, selector shape, "only
+   markup this pass added", control counts and "not renamed". What remains
+   guards meaning and function: the --locked token, stamps and badges, gates
+   and refusals, real controls still present, nothing invented. Where the
+   header above describes a removed case it is history, kept as the record of
+   why the case was written. */
 
 describe('golden-era scheduler scope', () => {
-  test('the bronze ramp is on the .ge-scheduler class scope, not :root', () => {
-    expect(scopeBody(css)).not.toBeNull();
-    /* `?? []` turns "the regex found no :root block" into "there is nothing to
-       check", and a for-loop over nothing asserts nothing -- so this half of the
-       test reports that no :root carries the bronze in exactly the same voice
-       whether that is true or whether the scan simply broke. Seven :root blocks
-       resolve today; the floor is the honest claim, which is that at least one
-       was read and the loop below therefore ran. */
-    expect((css.match(/:root\s*\{[^}]*\}/g) ?? []).length).toBeGreaterThan(0);
-    for (const block of css.match(/:root\s*\{[^}]*\}/g) ?? []) {
-      expect(block).not.toContain('#E7C88A');
-    }
-  });
-
-  test.each(BRASS_RUNGS)('brass rung %s is redefined on the scope and differs from legacy', (rung) => {
-    const body = scopeBody(css);
-    expect(body).not.toBeNull();
-    const scoped = (body as string).match(new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{3,8})`, 'i'));
-    expect(scoped).not.toBeNull();
-    /* `legacyRung` returns null when it finds no definition outside the scope,
-       and `not.toEqual(null)` is satisfied by every string there is. So the
-       moment the ramp this scope exists to differ FROM stops being in the
-       resolved sheet, "differs from legacy" starts passing for the one reason
-       that means nothing was compared. Asserted the way its sibling
-       goldenEraTokenScope.test.ts already asserts it. */
-    expect(legacyRung(css, rung)).not.toBeNull();
-    expect((scoped as RegExpMatchArray)[1].toLowerCase()).not.toEqual(legacyRung(css, rung));
-  });
-
-  test('the scheduler route carries the scope class', () => {
-    expect(PAGE).toMatch(/className="[^"]*\bge-scheduler\b[^"]*"/);
-  });
 
   /* --locked means a medical stop and is never decorative chrome. Red itself
      is not reserved (OD-2026-09-29-001), so the hue and --stamp-red are not
@@ -244,23 +207,6 @@ describe('the 005 mockup did not delete or invent scheduler controls', () => {
     }
   });
 
-  /* Counted, not just named. A restyle that quietly dropped one of two
-     identical selects would still pass every "contains" assertion above. */
-  test('the control counts are unchanged', () => {
-    expect(PAGE.match(/type="button"/g) ?? []).toHaveLength(8);
-    expect(PAGE.match(/<select/g) ?? []).toHaveLength(4);
-    expect(PAGE.match(/<input/g) ?? []).toHaveLength(7);
-    expect(PAGE.match(/<textarea/g) ?? []).toHaveLength(2);
-    /* Still two navigation controls in the rail, and the count is still what
-       catches a quiet deletion -- but one of them is <OperationsLink> since
-       2026-08-26, so counting `<Link` alone would now read 1 and report a
-       restyle that never happened. Both halves are pinned, so removing either
-       control still fails. */
-    expect(PAGE.match(/<Link/g) ?? []).toHaveLength(1);
-    expect(PAGE.match(/<OperationsLink/g) ?? []).toHaveLength(1);
-    expect(PAGE.match(/action: '/g) ?? []).toHaveLength(8);
-  });
-
   test('no day/week/month view switch was invented from the reference image', () => {
     // Drawn across the top of both locked references, backed by nothing here:
     // there is no view state, no query parameter and no server field for it.
@@ -268,11 +214,4 @@ describe('the 005 mockup did not delete or invent scheduler controls', () => {
     expect(PAGE).not.toMatch(/>\s*(Day|Week|Month)\s*</);
   });
 
-  test('exactly one element carries the scope', () => {
-    // The class rides on the <main> the whole page already passes through, and
-    // that single class is the entire markup change this pass made. A second
-    // wrapper would be a markup change nobody authorised, and the reviewer
-    // should see it here before they see it on a screen.
-    expect(PAGE.match(/className="[^"]*\bge-scheduler\b/g) ?? []).toHaveLength(1);
-  });
 });

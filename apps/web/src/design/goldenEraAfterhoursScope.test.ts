@@ -54,8 +54,6 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  * paint one declaration with var(--locked) — each turns this suite red.
  */
 
-const BRASS_RUNGS = ['200', '300', '400', '500', '600', '700', '800', '900'] as const;
-
 const css = readDesignSystemCss(DESIGN_SYSTEM_ENTRY);
 
 /* THE MEDICAL-STOP NAMES: --locked, its --locked-* rungs, and every custom
@@ -97,45 +95,14 @@ const PAGE = readFileSync(
   'utf8',
 );
 
-/** The bare `.ge-afterhours { … }` token rule, not its descendant rules. */
-function scopeBody(source: string): string | null {
-  const match = source.match(/^\.ge-afterhours\s*\{([^}]*)\}/m);
-  return match ? match[1] : null;
-}
-
-function legacyRung(source: string, rung: string): string | null {
-  const withoutScope = source.replace(/^\.ge-afterhours\s*\{[^}]*\}/m, '');
-  const m = withoutScope.match(new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{3,8})`, 'i'));
-  return m ? m[1].toLowerCase() : null;
-}
-
-describe('golden-era after-hours scope', () => {
-  test('the bronze ramp is on the .ge-afterhours class scope, not :root', () => {
-    expect(scopeBody(css)).not.toBeNull();
-    for (const block of css.match(/:root\s*\{[^}]*\}/g) ?? []) {
-      expect(block).not.toContain('#E7C88A');
-    }
-  });
-
-  test.each(BRASS_RUNGS)('brass rung %s is redefined on the scope and differs from legacy', (rung) => {
-    const body = scopeBody(css);
-    expect(body).not.toBeNull();
-    const scoped = (body as string).match(new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{3,8})`, 'i'));
-    expect(scoped).not.toBeNull();
-    expect((scoped as RegExpMatchArray)[1].toLowerCase()).not.toEqual(legacyRung(css, rung));
-  });
-
-  test('the SHADOW admin console carries the scope class', () => {
-    expect(PAGE).toMatch(/className="[^"]*\bge-afterhours\b[^"]*"/);
-  });
-
-  /* The packet's room. After Hours is `.room--night`, the shell states it from
-     this prop, and a visual pass that swapped the wall would be a room change
-     rather than a restyle. */
-  test('the console still stands in the night room', () => {
-    expect(PAGE).toContain('room="night"');
-  });
-});
+/* 2026-10-02 (OD-2026-10-02-004, OD-2026-10-02-007): nothing about the look
+   binds, so the cases here that pinned this screen's look were removed -- the
+   bronze ramp and its channel triples, the scope class, selector shape, "only
+   markup this pass added", control counts and "not renamed". What remains
+   guards meaning and function: the --locked token, stamps and badges, gates
+   and refusals, real controls still present, nothing invented. Where the
+   header above describes a removed case it is history, kept as the record of
+   why the case was written. */
 
 describe('the 006 scope never spends the --locked medical-stop token', () => {
   /** Every rule whose selector list names `.ge-afterhours`, comments removed. */
@@ -200,10 +167,6 @@ describe('the 006 mockup did not delete or invent SHADOW controls', () => {
 
   test.each(QUICK_ADD_LABELS)('the real Quick Add option %s still exists', (label) => {
     expect(quickAddBlock()).toContain(`label: '${label}'`);
-  });
-
-  test('the Quick Add count is unchanged', () => {
-    expect(quickAddBlock().match(/label: '/g) ?? []).toHaveLength(QUICK_ADD_LABELS.length);
   });
 
   test('the seven command hints are unchanged', () => {

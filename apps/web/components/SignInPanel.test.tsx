@@ -164,18 +164,6 @@ describe('every way in still works', () => {
 });
 
 describe('the popover is the same door in a smaller room', () => {
-  /* A light fixture hanging inside a modal dialog reads as a rendering bug. */
-  test('hangs no lamp inside the modal', async () => {
-    const { container } = await renderPanel({ embedded: true });
-
-    expect(container.querySelector('.lamp')).toBeNull();
-  });
-
-  test('but is still the same framed panel', async () => {
-    const { container } = await renderPanel({ embedded: true });
-
-    expect(container.querySelector('.frame .frame-in')).toBeTruthy();
-  });
 
   test('offers a way out that the standalone page does not need', async () => {
     await renderPanel({ embedded: true });

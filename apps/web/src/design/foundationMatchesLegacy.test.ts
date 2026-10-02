@@ -23,9 +23,9 @@ import path from 'node:path';
  * `--t-md` is the kiosk minimum (Law 5) and `--tap` is the touch floor; those
  * two drifting quietly is an accessibility regression waiting for a release.
  *
- * So this compares them token by token. It is not asserting any particular
- * value -- it does not care whether --s4 is 13px -- only that the two files
- * agree about it. When the archive is finally dropped, this test goes with it.
+ * So this checks those two against their minimums in both sheets (see the
+ * note above the cases). When the archive is finally dropped, the legacy half
+ * goes with it.
  */
 
 const REPO = path.resolve(__dirname, '../../../..');
@@ -46,31 +46,42 @@ function tokensIn(file: string): Map<string, string> {
 const foundation = tokensIn(FOUNDATION);
 const legacy = tokensIn(LEGACY);
 
-/* The mechanics the foundation claims. Derived from the foundation itself
-   rather than hardcoded, so a token added there is covered automatically --
-   the failure mode this guards against is a value changing, not the list
-   being wrong. */
-const COPIED = [...foundation.keys()].filter((token) => legacy.has(token));
+/* NARROWED 2026-10-02 (OD-2026-10-02-004, OD-2026-10-02-007). This suite used
+   to require EVERY token the two sheets share to be equal, which made every
+   proportion, spacing step, radius and motion duration unchangeable in one
+   sheet without the other -- a pin on the look. Nothing about the look binds
+   any more. What stays is the pair this file always named as load-bearing:
+   --t-md is the kiosk type minimum and --tap is the touch-target floor (Law 5).
 
-describe('the foundation has not drifted from the sheet it was copied out of', () => {
-  it('copied a non-trivial number of tokens, so this test is actually testing something', () => {
-    // A rename or a bad path would make COPIED empty, and an empty it.each
-    // passes silently -- the exact way a guard stops guarding without anyone
-    // noticing. 40 is comfortably below the ~47 copied and comfortably above
-    // any accident.
-    expect(COPIED.length).toBeGreaterThan(40);
-  });
+   The contract is the NUMBER, not agreement with the retired sheet. Equality
+   alone would let both sheets drop to 40px together and stay green. Both
+   sheets are checked because the theme still imports the legacy sheet after
+   the foundation, so legacy's copy is the live value today and the
+   foundation's becomes live the day that import is dropped. kioskTapFloor and
+   kioskTypeFloor prove the tokens reach kiosk controls and text; this proves
+   what the tokens are worth. */
+const FLOORS: Array<[token: string, minimumPx: number]> = [
+  ['--t-md', 19.1],
+  ['--tap', 55],
+];
 
-  it('carries the load-bearing accessibility figures', () => {
-    // Named individually because these two are not merely mechanics: --t-md is
-    // the kiosk type minimum (Law 5) and --tap is the touch-target floor. If a
-    // future edit narrows what the foundation owns, these must not be what
-    // quietly leaves.
-    expect(COPIED).toContain('--t-md');
-    expect(COPIED).toContain('--tap');
-  });
+const SHEETS: Array<[name: string, tokens: Map<string, string>]> = [
+  ['foundation', foundation],
+  ['legacy', legacy],
+];
 
-  it.each(COPIED)('%s has the same value in both sheets', (token) => {
-    expect(foundation.get(token)).toBe(legacy.get(token));
+function px(value: string | undefined): number {
+  const match = value?.match(/^(\d+(?:\.\d+)?)px$/);
+  // A floor stated in anything but px cannot be compared here; fail loudly
+  // rather than pass on a value this test cannot read.
+  return match ? Number(match[1]) : Number.NaN;
+}
+
+describe('the two accessibility floors hold their minimum in every sheet that declares them', () => {
+  describe.each(SHEETS)('%s', (_name, tokens) => {
+    it.each(FLOORS)('%s is at least %spx', (token, minimumPx) => {
+      expect(tokens.has(token)).toBe(true);
+      expect(px(tokens.get(token))).toBeGreaterThanOrEqual(minimumPx);
+    });
   });
 });

@@ -107,20 +107,20 @@ const ENTRIES: ManifestEntry[] = manifest.suites;
 
 /**
  * The nine the incident review named, eight since safeguardingRedReservation
- * was deleted (OD-2026-09-29-001). Pinned here so the register can never be
+ * was deleted (OD-2026-09-29-001), six since brassAlphaChannel and
+ * legacyVisualVocabulary were deleted as look pins (OD-2026-10-02-004,
+ * OD-2026-10-02-007). Pinned here so the register can never be
  * quietly shrunk below the agreed floor -- the failure mode this whole change
  * exists to prevent is coverage leaving without anything going red, and a
  * register nobody guards is exactly that.
  */
 const REQUIRED_BY_NAME = [
   'src/design/plateBinaries.test.ts',
-  'src/design/brassAlphaChannel.test.ts',
   'src/design/lightGroundVoices.test.ts',
   'src/design/readinessRungPolicy.test.ts',
   'src/design/safetySemanticsSurviveTheThemeSwap.test.ts',
   'src/design/kioskTapFloor.test.tsx',
   'src/design/typeLadder.test.ts',
-  'src/design/legacyVisualVocabulary.test.ts',
 ];
 
 /* ------------------------------------------------------------------------ */

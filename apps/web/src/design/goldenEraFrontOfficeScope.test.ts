@@ -48,8 +48,6 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  * mockup label, or widen the gate -- each turns this suite red.
  */
 
-const BRASS_RUNGS = ['200', '300', '400', '500', '600', '700', '800', '900'] as const;
-
 const css = readDesignSystemCss(DESIGN_SYSTEM_ENTRY);
 
 /* THE MEDICAL-STOP NAMES: --locked, its --locked-* rungs, and every custom
@@ -91,18 +89,6 @@ const PAGE = readFileSync(
   'utf8',
 );
 
-/** The bare `.ge-frontoffice { … }` token rule, not its descendant rules. */
-function scopeBody(source: string): string | null {
-  const match = source.match(/^\.ge-frontoffice\s*\{([^}]*)\}/m);
-  return match ? match[1] : null;
-}
-
-function legacyRung(source: string, rung: string): string | null {
-  const withoutScope = source.replace(/^\.ge-frontoffice\s*\{[^}]*\}/m, '');
-  const m = withoutScope.match(new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{3,8})`, 'i'));
-  return m ? m[1].toLowerCase() : null;
-}
-
 /** Every rule whose selector list mentions `.ge-frontoffice`, as [selectors, body]. */
 function scopedRules(): Array<[string, string]> {
   const rules: Array<[string, string]> = [];
@@ -113,42 +99,16 @@ function scopedRules(): Array<[string, string]> {
   return rules;
 }
 
+/* 2026-10-02 (OD-2026-10-02-004, OD-2026-10-02-007): nothing about the look
+   binds, so the cases here that pinned this screen's look were removed -- the
+   bronze ramp and its channel triples, the scope class, selector shape, "only
+   markup this pass added", control counts and "not renamed". What remains
+   guards meaning and function: the --locked token, stamps and badges, gates
+   and refusals, real controls still present, nothing invented. Where the
+   header above describes a removed case it is history, kept as the record of
+   why the case was written. */
+
 describe('golden-era front office scope', () => {
-  test('the bronze ramp is on the .ge-frontoffice class scope, not :root', () => {
-    expect(scopeBody(css)).not.toBeNull();
-    /* `?? []` turns "the regex found no :root block" into "there is nothing to
-       check", and a for-loop over nothing asserts nothing -- so this half of the
-       test reports that no :root carries the bronze in exactly the same voice
-       whether that is true or whether the scan simply broke. Seven :root blocks
-       resolve today; the floor is the honest claim, which is that at least one
-       was read and the loop below therefore ran. */
-    expect((css.match(/:root\s*\{[^}]*\}/g) ?? []).length).toBeGreaterThan(0);
-    for (const block of css.match(/:root\s*\{[^}]*\}/g) ?? []) {
-      expect(block).not.toContain('#E7C88A');
-    }
-  });
-
-  test.each(BRASS_RUNGS)('brass rung %s is redefined on the scope and differs from legacy', (rung) => {
-    const body = scopeBody(css);
-    expect(body).not.toBeNull();
-    const scoped = (body as string).match(new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{3,8})`, 'i'));
-    expect(scoped).not.toBeNull();
-    /* `legacyRung` returns null when it finds no definition outside the scope,
-       and `not.toEqual(null)` is satisfied by every string there is. So the
-       moment the ramp this scope exists to differ FROM stops being in the
-       resolved sheet, "differs from legacy" starts passing for the one reason
-       that means nothing was compared. Asserted the way its sibling
-       goldenEraTokenScope.test.ts already asserts it. */
-    expect(legacyRung(css, rung)).not.toBeNull();
-    expect((scoped as RegExpMatchArray)[1].toLowerCase()).not.toEqual(legacyRung(css, rung));
-  });
-
-  test('the people console carries the scope class, on the authorised console only', () => {
-    expect(PAGE).toMatch(/className="ge-frontoffice[^"]*"/);
-    // className attributes only -- the rule's own explanatory comment names the
-    // class too, and a comment is not a surface.
-    expect(PAGE.match(/className="[^"]*\bge-frontoffice\b/g) ?? []).toHaveLength(1);
-  });
 
   /* The office keeps its register in bronze ink, and --locked means a medical
      stop, which is not chrome. Red itself is not reserved (OD-2026-09-29-001),
@@ -186,18 +146,6 @@ describe('the 007 mockup did not rename or invent front-office controls', () => 
   test.each(REAL_TABS)('the real tab %s still exists, labelled %s', (key, label) => {
     expect(tabBlock()).toContain(`'${key}'`);
     expect(tabBlock()).toContain(label);
-  });
-
-  test('the tab count is unchanged', () => {
-    expect(tabBlock().match(/\['/g) ?? []).toHaveLength(REAL_TABS.length);
-  });
-
-  test('no tab was renamed to a reference-image label', () => {
-    // Drawn in the locked mockup as tabs of this rail, but each is its own
-    // route: /notices, /admin/volunteer-management, /admin/pin.
-    for (const label of ['Notices', 'Volunteers', 'PIN Management']) {
-      expect(tabBlock()).not.toContain(label);
-    }
   });
 
   test('no panel was invented from the reference image', () => {

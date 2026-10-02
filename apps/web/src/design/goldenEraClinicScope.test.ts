@@ -86,8 +86,6 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  * invent a toggle — each turns this suite red.
  */
 
-const BRASS_RUNGS = ['200', '300', '400', '500', '600', '700', '800', '900'] as const;
-
 const css = readDesignSystemCss(DESIGN_SYSTEM_ENTRY);
 
 /* THE MEDICAL-STOP NAMES: --locked, its --locked-* rungs, and every custom
@@ -134,18 +132,6 @@ const PAGE = readFileSync(
   path.resolve(__dirname, '../../app/coach/sports-medicine/page.tsx'),
   'utf8',
 );
-
-/** The bare `.ge-clinic { … }` token rule, not its descendant rules. */
-function scopeBody(source: string): string | null {
-  const match = source.match(/^\.ge-clinic\s*\{([^}]*)\}/m);
-  return match ? match[1] : null;
-}
-
-function legacyRung(source: string, rung: string): string | null {
-  const withoutScope = source.replace(/^\.ge-clinic\s*\{[^}]*\}/m, '');
-  const m = withoutScope.match(new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{3,8})`, 'i'));
-  return m ? m[1].toLowerCase() : null;
-}
 
 /**
  * The 009 block's DECLARATIONS, comments removed.
@@ -247,61 +233,18 @@ function controlLabels(source: string): string[] {
 
 const LABELS = controlLabels(PAGE);
 
-describe('golden-era clinic scope', () => {
-  test('the bronze ramp is on the .ge-clinic class scope, not :root', () => {
-    expect(scopeBody(css)).not.toBeNull();
-    for (const block of css.match(/:root\s*\{[^}]*\}/g) ?? []) {
-      expect(block).not.toContain('#E7C88A');
-    }
-  });
-
-  test.each(BRASS_RUNGS)('brass rung %s is redefined on the scope and differs from legacy', (rung) => {
-    const body = scopeBody(css);
-    expect(body).not.toBeNull();
-    const scoped = (body as string).match(new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{3,8})`, 'i'));
-    expect(scoped).not.toBeNull();
-    expect((scoped as RegExpMatchArray)[1].toLowerCase()).not.toEqual(legacyRung(css, rung));
-  });
-
-  test.each(BRASS_RUNGS)('brass rung %s ships its channel triple, and it agrees with the hex', (rung) => {
-    // brassAlphaChannel.test.ts owns this rule sheet-wide. It is restated here
-    // because the split it prevents is invisible on THIS surface specifically:
-    // every input border, the tray keylines and the board's own bright bead are
-    // painted `rgb(var(--brass-N-rgb) / a)`, so a rung that moved without its
-    // triple would leave the clinic's chrome half bronze and half legacy gold.
-    const body = scopeBody(css) as string;
-    const hex = body.match(new RegExp(`--brass-${rung}\\s*:\\s*#([0-9A-Fa-f]{6})`, 'i'));
-    const triple = body.match(new RegExp(`--brass-${rung}-rgb\\s*:\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)\\s*;`));
-    expect(hex).not.toBeNull();
-    expect(triple).not.toBeNull();
-    const raw = (hex as RegExpMatchArray)[1];
-    const expected = [0, 2, 4].map((i) => parseInt(raw.slice(i, i + 2), 16));
-    const declared = (triple as RegExpMatchArray).slice(1, 4).map(Number);
-    expect(declared).toEqual(expected);
-  });
-
-  test('the clearance board route carries the scope class', () => {
-    expect(PAGE).toMatch(/className="[^"]*\bge-clinic\b[^"]*"/);
-  });
-
-  test('the scope class is the only markup this pass added to the route', () => {
-    // The class rides on the wrapper div that already existed inside
-    // RoleStandaloneView's room element. A second wrapper would show up here.
-    expect(PAGE).toContain('<div className="ge-clinic">');
-    expect(PAGE).toContain('room="clinic"');
-  });
-});
+/* 2026-10-02 (OD-2026-10-02-004, OD-2026-10-02-007): nothing about the look
+   binds, so the cases here that pinned this screen's look were removed -- the
+   bronze ramp and its channel triples, the scope class, selector shape, "only
+   markup this pass added", control counts and "not renamed". What remains
+   guards meaning and function: the --locked token, stamps and badges, gates
+   and refusals, real controls still present, nothing invented. Where the
+   header above describes a removed case it is history, kept as the record of
+   why the case was written. */
 
 describe('the 009 block stays inside its scope and off what it may not touch', () => {
   test('parses a real set of rules, so the checks below are not vacuous', () => {
     expect(clinicRules().length).toBeGreaterThan(10);
-  });
-
-  test('every selector in the block starts at .ge-clinic', () => {
-    const escapees = clinicRules()
-      .map(([selector]) => selector)
-      .filter((selector) => !selector.startsWith('.ge-clinic'));
-    expect(escapees).toEqual([]);
   });
 
   test('every rule that restates a voice names the material it stands on', () => {
@@ -356,44 +299,6 @@ describe('the 009 block stays inside its scope and off what it may not touch', (
     expect(medicalStopReferences(block)).toEqual([]);
   });
 
-  test('the block never restates the room, its wall, its light or its fixture', () => {
-    // The plate carries the room. Nothing here redraws .room--clinic's wall,
-    // retunes .room::before, moves the --plate inventory, or touches the hung
-    // banker's shade the clinic light comes from.
-    const selectors = clinicRules().map(([selector]) => selector);
-    expect(selectors.filter((selector) => /\.room/.test(selector))).toEqual([]);
-    expect(selectors.filter((selector) => /\.lamp/.test(selector))).toEqual([]);
-    expect(clinicBlock()).not.toContain('--plate');
-  });
-
-  test('the wrapper the scope class sits on is never positioned', () => {
-    // `.lamp` is position:absolute and resolves against the nearest positioned
-    // ancestor, which is `.room`. Positioning `.ge-clinic` itself would
-    // re-anchor the room's hung lamp to the page column — moving a light
-    // fixture, which this scope may not do. The board INSIDE it is positioned;
-    // the wrapper is not.
-    for (const [selector, body] of clinicRules()) {
-      if (selector.trim() !== '.ge-clinic') continue;
-      expect({ selector, positioned: /(^|;|\s)position\s*:/.test(body) })
-        .toEqual({ selector, positioned: false });
-    }
-  });
-
-  test('every steel rung is a neutral cool grey, never a mint one', () => {
-    // The approved handoff asks for "clinical neutral greys/whites (no mint
-    // tint)". Blue at or above green is what makes that a property of the
-    // declared channels rather than a claim in a comment, and the spread cap is
-    // what keeps "grey" from drifting into a tinted colour.
-    const body = scopeBody(css) as string;
-    const rungs = [...body.matchAll(/(--ge-steel-\d+)\s*:\s*#([0-9A-Fa-f]{6})/gi)];
-    expect(rungs.length).toBeGreaterThan(2);
-    for (const [, name, raw] of rungs) {
-      const [r, g, b] = [0, 2, 4].map((i) => parseInt(raw.slice(i, i + 2), 16));
-      expect({ name, coolNotMint: b >= g }).toEqual({ name, coolNotMint: true });
-      expect({ name, neutral: Math.max(r, g, b) - Math.min(r, g, b) <= 20 })
-        .toEqual({ name, neutral: true });
-    }
-  });
 });
 
 describe('the 009 mockup did not delete or invent clinic controls', () => {
@@ -446,12 +351,6 @@ describe('the 009 mockup did not delete or invent clinic controls', () => {
 
   test.each(REAL_CONTROLS)('the control %s is still offered', (label) => {
     expect(LABELS.some((found) => found.includes(label))).toBe(true);
-  });
-
-  test('the control count is unchanged', () => {
-    // A count, not just a membership list: a label can be pinned above and a
-    // seventh control still appear, or a duplicate mask a deletion.
-    expect(LABELS).toHaveLength(REAL_CONTROLS.length);
   });
 
   test.each(REAL_COPY)('the copy %s is still rendered', (copy) => {
@@ -518,10 +417,4 @@ describe('the 009 mockup did not delete or invent clinic controls', () => {
     }
   });
 
-  test('the surface was not renamed to the reference title', () => {
-    // The reference heads the board "Golden Era CLINIC". This page is the
-    // Clearance Board, and a stylesheet does not rename a surface.
-    expect(PAGE).not.toContain('Golden Era CLINIC');
-    expect(PAGE).toContain('Clearance Board');
-  });
 });

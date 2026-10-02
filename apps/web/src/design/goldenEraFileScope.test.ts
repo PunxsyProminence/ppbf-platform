@@ -85,8 +85,6 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  * scope, delete a control or invent a search box — each turns this suite red.
  */
 
-const BRASS_RUNGS = ['200', '300', '400', '500', '600', '700', '800', '900'] as const;
-
 const css = readDesignSystemCss(DESIGN_SYSTEM_ENTRY);
 
 /* THE MEDICAL-STOP NAMES: --locked, its --locked-* rungs, and every custom
@@ -133,18 +131,6 @@ const PAGE = readFileSync(
   path.resolve(__dirname, '../../app/research/page.tsx'),
   'utf8',
 );
-
-/** The bare `.ge-file { … }` token rule, not its descendant rules. */
-function scopeBody(source: string): string | null {
-  const match = source.match(/^\.ge-file\s*\{([^}]*)\}/m);
-  return match ? match[1] : null;
-}
-
-function legacyRung(source: string, rung: string): string | null {
-  const withoutScope = source.replace(/^\.ge-file\s*\{[^}]*\}/m, '');
-  const m = withoutScope.match(new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{3,8})`, 'i'));
-  return m ? m[1].toLowerCase() : null;
-}
 
 /**
  * The 010 block's DECLARATIONS, comments removed.
@@ -248,64 +234,18 @@ function controlLabels(source: string): string[] {
 
 const LABELS = controlLabels(PAGE);
 
-describe('golden-era file scope', () => {
-  test('the bronze ramp is on the .ge-file class scope, not :root', () => {
-    expect(scopeBody(css)).not.toBeNull();
-    for (const block of css.match(/:root\s*\{[^}]*\}/g) ?? []) {
-      expect(block).not.toContain('#E7C88A');
-    }
-  });
-
-  test.each(BRASS_RUNGS)('brass rung %s is redefined on the scope and differs from legacy', (rung) => {
-    const body = scopeBody(css);
-    expect(body).not.toBeNull();
-    const scoped = (body as string).match(new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{3,8})`, 'i'));
-    expect(scoped).not.toBeNull();
-    expect((scoped as RegExpMatchArray)[1].toLowerCase()).not.toEqual(legacyRung(css, rung));
-  });
-
-  test.each(BRASS_RUNGS)('rung %s carries its own channel triple, and the two agree', (rung) => {
-    // brassAlphaChannel.test.ts owns this platform-wide; it is restated here
-    // because a rung that moves without its triple splits THIS scope down the
-    // middle — solid bronze beside inherited-gold hairlines — and the guard
-    // for that should go red in the suite that owns the surface too.
-    const body = scopeBody(css) as string;
-    const hex = body.match(new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{6})`, 'i'));
-    const triple = body.match(new RegExp(`--brass-${rung}-rgb\\s*:\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)\\s*;`));
-    expect(hex).not.toBeNull();
-    expect(triple).not.toBeNull();
-    const declared = [1, 2, 3].map((i) => Number((triple as RegExpMatchArray)[i]));
-    const expected = [1, 3, 5].map((i) => parseInt((hex as RegExpMatchArray)[1].slice(i, i + 2), 16));
-    expect(declared).toEqual(expected);
-  });
-
-  test('the research inbox route carries the scope class', () => {
-    expect(PAGE).toMatch(/className="[^"]*\bge-file\b[^"]*"/);
-  });
-
-  test('the scope class is the only markup this pass added to the route', () => {
-    // The class rides a wrapper because RoleStandaloneView owns this route's
-    // <main> and declares .room room--file there; the shell wraps 68 pages, so
-    // putting the scope on it would leak onto every one of them. Same seam
-    // .ge-floorboard and .ge-locker already use. Exactly one wrapper, and it
-    // carries nothing but the class.
-    expect(PAGE).toContain('<div className="ge-file">');
-    // Exactly one ELEMENT carries it. Counting raw occurrences would count the
-    // explanatory comment above the wrapper too, which is not markup.
-    expect(PAGE.match(/className="[^"]*\bge-file\b[^"]*"/g) ?? []).toHaveLength(1);
-    // The route still hands its room to the shell rather than restating it.
-    expect(PAGE).toContain('room="file"');
-    expect(PAGE).not.toContain('room--file"');
-  });
-});
+/* 2026-10-02 (OD-2026-10-02-004, OD-2026-10-02-007): nothing about the look
+   binds, so the cases here that pinned this screen's look were removed -- the
+   bronze ramp and its channel triples, the scope class, selector shape, "only
+   markup this pass added", control counts and "not renamed". What remains
+   guards meaning and function: the --locked token, stamps and badges, gates
+   and refusals, real controls still present, nothing invented. Where the
+   header above describes a removed case it is history, kept as the record of
+   why the case was written. */
 
 describe('the 010 block stays inside its scope and off what it may not touch', () => {
   test('parses a real set of rules, so the checks below are not vacuous', () => {
     expect(fileRules().length).toBeGreaterThan(10);
-  });
-
-  test('every selector in the block starts at .ge-file', () => {
-    expect(selectors().filter((selector) => !selector.startsWith('.ge-file'))).toEqual([]);
   });
 
   test('every rule that restates a voice is anchored at the masthead', () => {
@@ -343,13 +283,6 @@ describe('the 010 block stays inside its scope and off what it may not touch', (
     expect(selectors().filter((selector) => /\.stamp|\.badge/.test(selector))).toEqual([]);
   });
 
-  test('the block never restates the room, its wall or its light', () => {
-    // The plate carries the room. Nothing here redraws .room--file's cork,
-    // retunes .room::before, or moves the --plate inventory.
-    expect(selectors().filter((selector) => /\.room/.test(selector))).toEqual([]);
-    expect(fileBlock()).not.toContain('--plate');
-  });
-
   test('the block declares no token but the brass ramp', () => {
     const declared = new Set<string>();
     for (const [, body] of fileRules()) {
@@ -378,16 +311,6 @@ describe('the 010 block stays inside its scope and off what it may not touch', (
     expect(medicalStopReferences(block)).toEqual([]);
   });
 
-  test('the block spells no brass literal, so the scope can actually reach it', () => {
-    // brassAlphaChannel.test.ts owns this app-wide. Restated on the block
-    // because a literal is the one kind of gold a token scope cannot override,
-    // and this scope's whole leak-proof argument rests on it.
-    const block = fileBlock();
-    for (const legacy of ['#D4AF4A', '#E8CE7A', '#F2E2A8', '#B8912F', '#A98126', '#8C6B1F', '#6B4E12', '#4A340B']) {
-      expect(block).not.toMatch(new RegExp(legacy, 'i'));
-    }
-    expect(block).not.toMatch(/rgba?\(\s*212\s*,\s*175\s*,\s*74/);
-  });
 });
 
 describe('the 010 mockup did not delete or invent research controls', () => {
@@ -488,12 +411,6 @@ describe('the 010 mockup did not delete or invent research controls', () => {
     }
   });
 
-  test('the control count is unchanged', () => {
-    // A count, not just a membership list: a label can be pinned above and an
-    // eleventh control still appear, or a duplicate mask a deletion.
-    expect(LABELS).toHaveLength(10);
-  });
-
   test('no control was invented from the reference image', () => {
     // Drawn on the reference board, backed by nothing on this route. Matched
     // against control LABELS as well as the source so that ordinary words in
@@ -514,14 +431,6 @@ describe('the 010 mockup did not delete or invent research controls', () => {
     for (const invented of ['Athlete File Drawers', 'ATHLETE FILE DRAWERS', 'Dossier Cards', 'DOSSIER CARDS']) {
       expect(PAGE).not.toContain(invented);
     }
-  });
-
-  test('the surface was not renamed to the reference title', () => {
-    // The reference heads the board RESEARCH ARCHIVE. This page is the
-    // Research Inbox, and a stylesheet does not rename a surface.
-    expect(PAGE).not.toContain('Research Archive');
-    expect(PAGE).not.toContain('RESEARCH ARCHIVE');
-    expect(PAGE).toContain('Research Inbox');
   });
 
   test('the route still hands its own gate and roles to the shell unchanged', () => {

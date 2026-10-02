@@ -1,6 +1,5 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { readDesignSystemCss } from '../src/design/readDesignSystemCss';
 
 /**
  * A ROOM MODIFIER ON ITS OWN IS NOT A ROOM.
@@ -43,7 +42,6 @@ import { readDesignSystemCss } from '../src/design/readDesignSystemCss';
 
 const WEB_DIR = join(__dirname, '..');
 const REPO = join(WEB_DIR, '..', '..');
-const CSS = join(REPO, 'design-system', 'ppbf.css');
 const DESIGN_SYSTEM = join(REPO, 'design-system');
 
 const ROOMS = ['office', 'floor', 'board', 'file', 'clinic', 'night'] as const;
@@ -171,63 +169,5 @@ describe('every surface that declares a room also carries the base .room class',
     // entry in a list.
     const shell = withoutComments(readFileSync(join(__dirname, 'RoleStandaloneView.tsx'), 'utf8'));
     expect(shell).toContain('`room room--${room}');
-  });
-});
-
-describe('the light and the plate hang off the base class, which is why it is required', () => {
-  const stripped = readDesignSystemCss(CSS).replace(/\/\*[\s\S]*?\*\//g, '');
-
-  /** The body of the first rule whose selector list begins with `selector`. */
-  function ruleBody(selector: string): string {
-    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return stripped.match(new RegExp(`(?:^|,|\\})\\s*${escaped}[^{}]*\\{([^}]*)\\}`, 'm'))?.[1] ?? '';
-  }
-
-  it('draws the fixture light on .room::before and nowhere else', () => {
-    // The rooms each restyle this pseudo-element (.room--clinic::before is the
-    // green shade, .room--night::before the low lamp), but only the base gives
-    // it a box to paint in. Restyling a pseudo-element that was never created
-    // paints nothing at all.
-    const light = ruleBody('.room::before');
-    expect(light).toContain('content:');
-    expect(light).toContain('position: absolute');
-    expect(light).toContain('radial-gradient');
-  });
-
-  it('paints the plate on .room::after, reading the variable the modifiers set', () => {
-    // Every rule for this pseudo-element, not the first: the print block and
-    // the prefers-reduced-data block both switch the plate off by name, and
-    // either would satisfy a first-match check while proving nothing.
-    const bodies = [...stripped.matchAll(/(?:^|,|\})\s*\.room::after[^{}]*\{([^}]*)\}/gm)]
-      .map((m) => m[1]);
-    expect(bodies.length).toBeGreaterThan(0);
-    expect(bodies.some((body) => body.includes('var(--plate'))).toBe(true);
-  });
-
-  it('gives .room the positioning both layers need', () => {
-    // ::before is `position: absolute; inset: 0` and ::after sits at z-index -1.
-    // Without `position: relative` the light is measured against some ancestor;
-    // without `isolation: isolate` the -1 layer escapes upward and paints behind
-    // the page ground. Both live on the base, so a bare modifier gets neither.
-    expect(ruleBody('.room')).toContain('position: relative');
-    expect(stripped).toMatch(/\.room\s*\{\s*isolation:\s*isolate/);
-  });
-
-  it('leaves the modifiers declaring --plate without consuming it', () => {
-    // The reason for the class pair, stated as an assertion: every room names a
-    // plate and not one of them paints it. .room::after is the only consumer.
-    for (const room of ROOMS) {
-      expect(stripped).toMatch(new RegExp(`\\.room--${room}\\s*\\{\\s*--plate:\\s*url\\(`));
-    }
-    expect(stripped).not.toMatch(/\.room--[a-z]+::after\s*\{/);
-  });
-
-  it('states no padding on .room, so a surface keeps the edges it lays out', () => {
-    // A room is a wall, not a layout. This sheet is unlayered and Tailwind's
-    // utilities are not, so a padding here does not add to the p-/px-/py- a
-    // page states -- it REPLACES it, insets a full-bleed band away from the
-    // wall, and double-pads the surfaces whose inner container already states
-    // its own. Re-adding it silently re-lays-out seventy-odd screens.
-    expect(ruleBody('.room')).not.toMatch(/(^|;)\s*padding:/);
   });
 });

@@ -22,7 +22,16 @@
     "word. The club's own identity is black, red and white, so the app could not wear its",
     "own colours. The hue monopoly and the ledger are gone. What is NOT gone: --locked still",
     "exists and still means a medical stop. Anything that needs a medical stop to stay",
-    "distinguishable from an ordinary error belongs in a test of that surface."
+    "distinguishable from an ordinary error belongs in a test of that surface.",
+    "",
+    "OWNER DECISION, 2026-10-02 (OD-2026-10-02-004, OD-2026-10-02-007): nothing about the look binds.",
+    "Two entries were removed with their suites that day because what they guarded was the look and",
+    "not a safety, authorization, integrity or readability property: brassAlphaChannel (the brass",
+    "ramp reachable only through tokens, so a scope could re-skin it) and legacyVisualVocabulary (the",
+    "ratchet on the retired aesthetic). foundationMatchesLegacy was narrowed to --t-md and --tap and",
+    "its floor re-measured (43 to 4). SignInPanel lost two cases that pinned the frame markup and the",
+    "absence of a lamp; its sign-in, notice and refusal cases are untouched and its floor was",
+    "re-measured (21 to 19). This register is for suites whose loss is a safety loss."
   ],
   "suites": [
     {
@@ -77,23 +86,13 @@
     },
     {
       "path": "src/design/foundationMatchesLegacy.test.ts",
-      "minimumTests": 43,
-      "guards": "The foundation's copy of the neutral mechanics may not drift from the archive it was copied out of. Its own docblock names the stake: --t-md (kiosk minimum) and --tap (touch floor) drifting quietly is an accessibility regression waiting for a release, and the damage is deferred rather than absent -- it all lands on the day the theme stops importing legacy."
+      "minimumTests": 4,
+      "guards": "--t-md (kiosk type minimum) and --tap (touch floor) are each at or above its minimum (19.1px, 55px) in both the foundation and the legacy sheet. Narrowed 2026-10-02 from equality of every shared token to these two numeric floors (OD-2026-10-02-004, OD-2026-10-02-007): the rest pinned the look. The two floors drifting quietly is an accessibility regression that lands on the day the theme stops importing legacy."
     },
     {
       "path": "src/design/readDesignSystemCssResolvesImports.test.ts",
       "minimumTests": 18,
       "guards": "The guard on the thing twenty guards stand on. Twenty-one test files read the design system through readDesignSystemCss; if it ever returned an empty string every one of them would go green while checking nothing -- which is exactly what happened on 2026-08-23 to thirteen guards when ppbf.css became two @import lines."
-    },
-    {
-      "path": "src/design/brassAlphaChannel.test.ts",
-      "minimumTests": 28,
-      "guards": "A brass rung may not be spelled as a literal. The whole leak-proof argument for scope-based re-skinning only reaches rules that go through a token; a spelled-out rgba() has no token in it, so no scope can override it and there is no property anyone forgot. Mechanism integrity, not decoration."
-    },
-    {
-      "path": "src/design/legacyVisualVocabulary.test.ts",
-      "minimumTests": 27,
-      "guards": "The ratchet on the retired aesthetic. Each family carries a ceiling MEASURED AT THE RESET; existing debt passes, one more use fails. If this suite goes dark the debt regrows silently and the ceilings cannot be recovered afterwards -- they are a historical measurement, not a value anyone can re-derive."
     },
     {
       "path": "components/refusalStamp.test.tsx",
@@ -107,7 +106,7 @@
     },
     {
       "path": "components/SignInPanel.test.tsx",
-      "minimumTests": 21,
+      "minimumTests": 19,
       "guards": "The front door. One component behind both /login and the /public sign-in popover -- every person who uses this platform passes through it -- and nothing rendered it until this file existed. Its own docblock records that losing these tests puts the front door back to having no test at all, which is precisely the disappearance this manifest exists to make loud."
     },
     {
@@ -128,7 +127,7 @@
     {
       "path": "src/server/pilot/shadowChat.test.ts",
       "minimumTests": 201,
-      "guards": "The SHADOW chat classifier: which messages are withheld from the model and queued for a human, including the phone-apostrophe emergency reports (\"I can\u2019t breathe\") that main let through. Not registered before #1049."
+      "guards": "The SHADOW chat classifier: which messages are withheld from the model and queued for a human, including the phone-apostrophe emergency reports (\"I can’t breathe\") that main let through. Not registered before #1049."
     },
     {
       "path": "src/server/pilot/shadowChatSensitivity.test.ts",

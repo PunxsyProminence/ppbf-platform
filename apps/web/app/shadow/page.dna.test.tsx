@@ -237,14 +237,6 @@ it('advertises no doors: the unfiltered nine-link row is gone', async () => {
   expect(document.body.textContent).not.toMatch(/\(Planned\)/);
 });
 
-it('does not wear the File Room typeface', async () => {
-  await renderShadow('scoped', 'coach');
-
-  const main = document.querySelector('main');
-  expect(main?.className).toContain('room--night');
-  expect(main?.className).not.toContain('--font-type');
-});
-
 it('gives the rename field the design system input, not a 34px one-off', async () => {
   await renderShadow('scoped', 'coach');
 
