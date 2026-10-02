@@ -265,7 +265,13 @@ owner approval and independent review**.
 - **No INVENTED lettering.** Amended 2026-10-02 (OD-2026-10-02-001). This said
   "zero lettering" until the owner ruled that *"names on the equiptment is fin
   long as its real"*. So: real marks on real equipment are allowed — a maker's
-  name on a bag or a glove, a real poster, the sponsor marks on the ring canvas.
+  name on a bag or a glove, and the sponsor marks on the ring canvas. **There is
+  NO general poster permission.** The `GOLDEN GLOVES` poster in
+  `plate-20-coachdesk` is allowed because he named that plate (*"sub 6 the
+  poster is fine"*, sub 6 being the plate he had just been shown); a future
+  poster needs its own decision. An earlier draft of this line read "a real
+  poster", which turned one named permission into a category he was never asked
+  about.
   Invented brands, mangled approximations of real ones, invented crests and any
   logo for this club remain forbidden, and so do watermarks, UI chrome and
   stamps. The reason the old rule existed still holds for everything it still
