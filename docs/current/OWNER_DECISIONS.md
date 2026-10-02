@@ -164,15 +164,15 @@ and should not try to.
 
 ---
 
-## OD-2026-10-02-011 -- PPBF builds its own pose model from nothing; coaches hand-mark every point until it exists (replaces pick 8A); it runs inside the app on the gym's own devices. The agreement screen's opening sentence
+## OD-2026-10-02-011 -- PPBF builds its own pose model from nothing; coaches hand-mark every point until it exists (replaces pick 8A); it runs inside the app on the gym's own devices; all 24 points at three moments on every event (replaces the click range). The agreement screen's opening sentence
 
 **Provenance: PRIMARY.** Typed by Jason in the teach-data lane's thread and
 the agreement-report lane's thread on 2026-10-02, and read by overwatch in
 each transcript (`~/.claude/projects/C--Dev/346c32ec-ec56-4fad-817d-8da2643fb879.jsonl`
 and `~/.claude/projects/C--Dev/07cd0b14-cb11-403c-871d-01b351819222.jsonl`).
-This entry is new and edits no earlier one. **Section 2 replaces pick 8A of
-OD-2026-10-02-008 section 3**; that entry's text is not edited. Nothing in
-sections 1 to 3 is built, designed or costed.
+This entry is new and edits no earlier one. **Section 2 replaces pick 8A,
+and section 3a replaces the click range, of OD-2026-10-02-008**; that entry's
+text is not edited. Nothing in sections 1 to 3a is built, designed or costed.
 
 ### 1. Where the pose tool runs
 
