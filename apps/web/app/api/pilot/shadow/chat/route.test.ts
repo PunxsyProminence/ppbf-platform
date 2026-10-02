@@ -1471,23 +1471,91 @@ describe('every authorized high-risk request is owed one bounded human-review ro
       noRowNoSlot();
     });
 
-    // A PROBE THAT FAILS IS NOT A PROBE THAT REFUSED. The access check throws
-    // something that is not a refusal when the probe runs it, and passes when
-    // the handler does. The request is handled as usual, and its row is owed.
+    // A PROBE THAT DOES NOT PASS HAS NOT AUTHORIZED THE REQUEST, WHATEVER IT
+    // THREW. The row is undecided until the handler runs the same check for
+    // real: if that passes, the request is authorized, is handled as usual,
+    // and its row is written; if that fails too, authorization never
+    // succeeded and there is no row and no slot. What the probe threw is
+    // deliberately not sorted into "refused" and "could not tell": the real
+    // assertConversationAccess reports a dropped connection inside its
+    // subject check as "conversation not found".
+    const PROBE_FAILURES = [
+      ['a dropped connection', 'connection reset by peer'],
+      ['a refusal', 'Forbidden: athlete outside your assignment'],
+      ['"conversation not found", which the real check also throws for a dropped connection', 'SHADOW_CONVERSATION_NOT_FOUND'],
+    ] as const;
+    test.each(PROBE_FAILURES.flatMap(([failure, error]) => [
+      [failure + ': an allowed high-risk question', error, ALLOWED_HIGH_RISK, 200, REQUEST_RISK_SUMMARY] as const,
+      [failure + ': a withheld emergency report', error, WITHHELD, 400, WITHHELD_SUMMARY] as const,
+      [failure + ': a fixed-fallback question', error, STOCK_LINE, 200, REQUEST_RISK_SUMMARY] as const,
+    ]))('the probe does not pass, the real check does: the request is authorized and its row is written: %s', async (_name, error, message, expectedStatus, summary) => {
+      modelAnswers();
+      athleteCheck.mockRejectedValueOnce(new Error(error));
+
+      const { status } = await send({ message, athleteId: 'athlete-1' });
+
+      expect(athleteCheck).toHaveBeenCalledTimes(2);
+      expect(status).toBe(expectedStatus);
+      expect(summaries()).toEqual([summary]);
+      expect(mockConsumeReviewSlot).toHaveBeenCalledTimes(1);
+    });
+
+    // The same, where it is the conversation check that failed, on a path
+    // whose row is written at the exit: the row names the conversation the
+    // handler's check confirmed, and takes one slot.
+    test.each(PROBE_FAILURES)('the conversation probe does not pass (%s), the real check does: the exit row names the confirmed conversation', async (_failure, error) => {
+      modelAnswers();
+      conversationCheck.mockRejectedValueOnce(new Error(error));
+
+      const { status } = await send({ message: ALLOWED_HIGH_RISK, conversationId: CONVERSATION, sessionType: 'film_study' });
+
+      expect(conversationCheck).toHaveBeenCalledTimes(2);
+      expect(status).toBe(400);
+      expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
+      expect(mockQueueHumanReview.mock.calls[0]?.[0].conversationId).toBe(CONVERSATION);
+      expect(mockConsumeReviewSlot).toHaveBeenCalledTimes(1);
+    });
+
+    // Authorization never succeeded: the probe could not tell, and neither
+    // could the handler. The request fails with a server error -- which is
+    // not a 401, 403 or 404, so POST's second lock does not apply. Only the
+    // "not owed yet" state keeps a row, and a slot charge, from being made
+    // for a subject nobody confirmed this caller may access.
     test.each([
-      ['an allowed high-risk question', ALLOWED_HIGH_RISK, 200, REQUEST_RISK_SUMMARY],
-      ['a withheld emergency report', WITHHELD, 400, WITHHELD_SUMMARY],
-      ['a fixed-fallback question', STOCK_LINE, 200, REQUEST_RISK_SUMMARY],
-    ])('a probe that fails for a reason other than a refusal does not cancel the row: %s', async (_name, message, expectedStatus, summary) => {
+      ['an athlete check that keeps failing', () => { athleteCheck.mockRejectedValue(new Error('connection reset by peer')); }, { athleteId: 'athlete-unconfirmed' }],
+      ['a conversation check that keeps failing', () => { conversationCheck.mockRejectedValue(new Error('connection reset by peer')); }, { conversationId: CONVERSATION }],
+    ].flatMap(([name, arrange, extra]) => [
+      [(name as string) + ', allowed high-risk', arrange as () => void, extra as Record<string, unknown>, ALLOWED_HIGH_RISK] as const,
+      [(name as string) + ', withheld emergency report', arrange as () => void, extra as Record<string, unknown>, WITHHELD] as const,
+    ]))('the probe does not pass and neither does the real check (never authorized): %s: a 5xx, no row, no slot', async (_name, arrange, extra, message) => {
+      modelAnswers();
+      arrange();
+
+      const { status } = await send({ message, ...extra });
+
+      expect(status).toBeGreaterThanOrEqual(500);
+      noRowNoSlot();
+    });
+
+    // Turned away before the handler's own check is reached: authorization
+    // was never established, so nothing is owed.
+    // KNOWN COST: this includes an authorized caller whose probe hit a
+    // dropped connection. The row is lost with the request.
+    test.each([
+      ['the chat limit is spent', chatLimitSpent, 429],
+      ['the runtime is not ready', runtimeNotReady, 500],
+    ].flatMap(([gateName, gate, expectedStatus]) => [
+      [gateName + ': an allowed high-risk question', gate as () => void, expectedStatus as number, ALLOWED_HIGH_RISK] as const,
+      [gateName + ': a withheld emergency report', gate as () => void, expectedStatus as number, WITHHELD] as const,
+    ]))('the probe fails on a dropped connection, and %s before the real check runs: main\'s response, no row, no slot', async (_name, gate, expectedStatus, message) => {
       modelAnswers();
       athleteCheck.mockRejectedValueOnce(new Error('connection reset by peer'));
-      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      gate();
 
       const { status } = await send({ message, athleteId: 'athlete-1' });
 
       expect(status).toBe(expectedStatus);
-      expect(summaries()).toEqual([summary]);
-      expect(errorSpy).toHaveBeenCalledWith('SHADOW authorization probe failed for a reason other than a refusal; the review row stays owed');
+      noRowNoSlot();
     });
 
     // THE SECOND LOCK. The probe is passed and the row is owed; the refusal

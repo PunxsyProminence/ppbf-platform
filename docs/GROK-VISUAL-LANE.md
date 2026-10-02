@@ -152,8 +152,10 @@ approved, and only that direction.
 
 - For a **plate**: one unambiguous shipped file per ordered slot, the exact
   ordered filename, real JPEG, 4:4:4, complete SOI/EOI, >8 KB, ≤400 KB,
-  declared geometry, orientation matches filename, quiet centre, zero
-  lettering, one room material, set/family consistency. Grok verifies those
+  declared geometry, orientation matches filename, quiet centre, no INVENTED
+  lettering (OD-2026-10-02-001 — real equipment marks pass, garbled
+  approximations do not, and an order asks for none unless Jason supplies the
+  exact words), one room material, set/family consistency. Grok verifies those
   laws, then **uploads the real binary onto its own feature branch under
   `apps/web/public/plates/`** and opens the PR. Never chat/base64/data URI.
 - For **code**: a feature branch off current `main`, the approved design
@@ -260,9 +262,21 @@ owner approval and independent review**.
 - **Quiet centre.** Low detail where UI panels land; visual interest in the
   outer thirds and the top edge. A busy centre fights every panel edge placed
   on it.
-- **Zero lettering.** No text, numbers, watermarks, UI chrome or stamps. A
-  plate sits behind real text, cannot be translated, and is invisible to a
-  screen reader.
+- **No INVENTED lettering.** Amended 2026-10-02 (OD-2026-10-02-001). This said
+  "zero lettering" until the owner ruled that *"names on the equiptment is fin
+  long as its real"*. So: real marks on real equipment are allowed — a maker's
+  name on a bag or a glove, and the sponsor marks on the ring canvas. **There is
+  NO general poster permission.** The `GOLDEN GLOVES` poster in
+  `plate-20-coachdesk` is allowed because he named that plate (*"sub 6 the
+  poster is fine"*, sub 6 being the plate he had just been shown); a future
+  poster needs its own decision. An earlier draft of this line read "a real
+  poster", which turned one named permission into a category he was never asked
+  about.
+  Invented brands, mangled approximations of real ones, invented crests and any
+  logo for this club remain forbidden, and so do watermarks, UI chrome and
+  stamps. The reason the old rule existed still holds for everything it still
+  covers: a plate sits behind real text, cannot be translated, and is invisible
+  to a screen reader — so nothing a reader needs may live in the picture.
 - **One room's material only.** No mash-ups.
 - **A set, not six prompts.** Variants come from a shared root reference so
   six images look like one building on one day.
@@ -370,7 +384,7 @@ Grok reads current source: page, components, tests
 ```
 Jason approves plate/design (exact ordered filename + room + size/variant)
   → Grok generates the exact ordered asset
-  → Grok prepares/verifies the actual JPEG (4:4:4, SOI/EOI, size, geometry, quiet centre, zero lettering)
+  → Grok prepares/verifies the actual JPEG (4:4:4, SOI/EOI, size, geometry, quiet centre, no INVENTED lettering -- OD-2026-10-02-001; real equipment marks are allowed, garbled approximations are not)
   → Grok uploads the REAL JPEG directly to its own feature branch under apps/web/public/plates/
   → Grok makes only the required approved visual/CSS/test changes (e.g. one PLATES line if new variant)
   → Grok opens the PR

@@ -147,6 +147,34 @@ export function usesMicrosoft(subject: CredentialSubject): boolean {
 }
 
 /**
+ * Roles that may ALSO hold a password, beside the emailed link.
+ *
+ * Parents only (Jason, 2026-10-01: "yes they will need away to sign in with a
+ * password"; asked whether coaches, staff and volunteers get one too, "agree
+ * with recomendations" -> parents only). The emailed link stays a parent's
+ * credential and is the only way a password is set or replaced.
+ */
+export const PASSWORD_ROLES = ['parent'] as const satisfies readonly PilotRole[];
+
+/**
+ * Whether this person may set and use a password. Decided on the role alone.
+ *
+ * A BOARD SEAT DOES NOT BLOCK IT (OD-2026-10-01-007 section 1; Jason,
+ * 2026-10-01: "NO IT SHOULD NOT BLOCK STANDS A CHANCE THAT IN SMALLER GYMS
+ * THEY MAY BE PART OF GYM ON BOTH SIDES"). A login has one role, and board
+ * screens are gated on the role 'board', not on a seat, so a parent login
+ * that also has a seat row reaches nothing more by signing in with a
+ * password. Someone who is on both sides uses two logins, one per role.
+ *
+ * This is the password path only. What a seat means for Microsoft sign-in
+ * (requiredCredentialFor) and for the offline PIN exception
+ * (pinLoginPermitted) is unchanged.
+ */
+export function passwordLoginPermitted(subject: CredentialSubject): boolean {
+  return (PASSWORD_ROLES as readonly string[]).includes(subject.role);
+}
+
+/**
  * Roles the BASE-03 offline exception may admit, and no others.
  *
  * These are exactly the two base roles whose production credential depends on

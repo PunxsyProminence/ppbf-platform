@@ -41,7 +41,7 @@ found this independently, from different directions.
 "generate the real ones" job. They are not. `gymPhotos.ts` reserves those
 slots for photographs of the actual building and explicitly forbids
 fake-photorealistic imagery, and each file carries `PLACEHOLDER ILLUSTRATION`
-baked in against the zero-lettering law. Generating gym interiors would undo a
+baked in against the plate lettering law. Generating gym interiors would undo a
 deliberate decision and put invented pictures of a real nonprofit's building
 in front of families.
 
@@ -108,8 +108,19 @@ The deliverable here is a design to be redrawn as SVG markup, not a JPEG.
   where panels land. Worth correcting on any night re-shoot.
 - Every plate is **layer 0 only** — the photographed wall a room stands in.
   Real UI composites on top in code.
-- **Zero lettering, ever.** A plate sits behind real text, cannot be
-  translated, and is invisible to a screen reader.
+- **No INVENTED lettering.** Amended 2026-10-02 (OD-2026-10-02-001). This said
+  "zero lettering, ever" until the owner allowed real marks on real equipment —
+  *"names on the equiptment is fin long as its real"*. A made-up brand, a
+  garbled approximation of a real one, an invented crest and any logo for this
+  club stay forbidden. So does anything a reader NEEDS, for the original
+  reason: a plate sits behind real text, cannot be translated, and is invisible
+  to a screen reader.
+- **A GENERATOR IS HELD STRICTER THAN THE RULE.** Asked for a brand it renders
+  an approximation, and an approximation of a real mark is the forbidden case.
+  So an order asks for no lettering **unless the owner supplies the exact
+  words** — *"No no made up text, if I give text thats different"* (owner,
+  2026-10-02). Nobody supplies them on his behalf. Full rule:
+  `docs/REAL-GYM-REFERENCE-LOCK.md`.
 
 ## What Grok must NOT make
 

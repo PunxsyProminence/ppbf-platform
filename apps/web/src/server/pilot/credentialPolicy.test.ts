@@ -3,6 +3,8 @@ import {
   MAGIC_LINK_ROLES,
   MICROSOFT_ROLES,
   OFFLINE_LOCAL_PIN_ROLES,
+  PASSWORD_ROLES,
+  passwordLoginPermitted,
   pinLoginPermitted,
   requiredCredentialFor,
   usesMicrosoft,
@@ -218,5 +220,33 @@ describe('offline local PIN exception (BASE-03)', () => {
     for (const role of OFFLINE_LOCAL_PIN_ROLES) {
       expect(pinLoginPermitted({ role, boardSeats: ['president'] }, OFFLINE)).toBe(false);
     }
+  });
+});
+
+describe('who may hold a password', () => {
+  test('parents, and nobody else (Jason 2026-10-01: parents only)', () => {
+    expect([...PASSWORD_ROLES]).toEqual(['parent']);
+    for (const role of EVERY_ROLE) {
+      expect(passwordLoginPermitted({ role })).toBe(role === 'parent');
+    }
+  });
+
+  test('every password role still has the emailed link, which is how a password is set', () => {
+    for (const role of PASSWORD_ROLES) {
+      expect(requiredCredentialFor({ role })).toBe('magic_link');
+    }
+  });
+
+  // OD-2026-10-01-007 section 1: a seat does not block a parent's password.
+  test('a board seat does not refuse a parent, and gives nobody else a password', () => {
+    expect(passwordLoginPermitted({ role: 'parent', boardSeats: ['treasurer'] })).toBe(true);
+    for (const role of EVERY_ROLE) {
+      expect(passwordLoginPermitted({ role, boardSeats: ['treasurer'] })).toBe(role === 'parent');
+    }
+  });
+
+  // The password path only: a seat still means Microsoft everywhere else.
+  test('a seat still requires Microsoft for the seat holder\u2019s own credential', () => {
+    expect(requiredCredentialFor({ role: 'parent', boardSeats: ['treasurer'] })).toBe('microsoft');
   });
 });
