@@ -164,6 +164,170 @@ and should not try to.
 
 ---
 
+## OD-2026-10-02-006 -- Teaching the recognizer: TEACH-DATA-01 approved; the agreement report is next and is for coaches and organization admins; labelling is to cover the body parts of the movement. Research intake stores the source's own words
+
+**Provenance: PRIMARY.** Typed by Jason in two lane threads on 2026-10-02 and
+read by overwatch in each lane's transcript
+(`~/.claude/projects/C--Dev/346c32ec-ec56-4fad-817d-8da2643fb879.jsonl`, the
+teach-data lane; `~/.claude/projects/C--Dev/098e018b-1b76-4cdc-a641-17d2025a72c2.jsonl`,
+the research-intake lane). This entry is new and edits no earlier one.
+
+### 1. The teach-data lane's four questions
+
+The lane put four questions to him (18:30:42Z), each with a recommended A:
+
+"1. Approve TEACH-DATA-01 for build? Options: A approve (recommended); B hold."
+
+"2. Next item after that? Options: A agreement report on a screen
+(recommended); B gold nominate/promote screen; C governed export of labels; D
+none yet."
+
+"3. If 2A: who sees the agreement report, and does the minimum stay at 5
+compared clips? Options: A coaches and organization admins, keep 5
+(recommended); B organization admins only, keep 5; C other number."
+
+"4. IMP-14 punch-to-skill-family map (open since 2026-09-30): OK as written?
+Lead straight → Jab; rear straight → Rear-Hand; hooks → Hooks; uppercuts →
+Uppercuts; body target → Body Attack; defence → Defense-to-Counter. Options: A
+OK (recommended, with a body jab counting for both Jab and Body Attack); B
+edit."
+
+Jason, whole message (18:58:58Z): *"go with recomendations except 4) i think
+with the punch recognition we need to add more labeling while we teach the
+ml/AI, to in clude but not limited to ellbow shoulder hips knees toes heel,
+basicallly all the parts of the biomechanicsl of the movements in boxing"*.
+
+**1 is A.** TEACH-DATA-01 (point the labelling screen at the teaching playback
+route, with its tests and the stale comments) is approved for build.
+
+**2 is A.** The next item is the agreement (QA) report on a screen. It is a
+separate lane.
+
+**3 is A.** Coaches and organization admins see it; below 5 compared clips the
+screen shows counts and no percentages.
+
+**4 is not answered as asked.** The punch-to-skill-family map (IMP-14) stays
+open. In its place he gave a new direction: labelling for punch recognition is
+to cover the body parts of the movement, the elbow, shoulder, hips, knees,
+toes and heel named and the list not closed. That changes what is labelled and
+is not built or designed; it goes to the architect for a work order he
+approves.
+
+### 2. Research intake: the source's own words
+
+The research-intake lane put its question 6 to him (18:29:25Z):
+
+"A (recommended by ChatGPT and by me): verbatim, source-faithful excerpt split
+into deterministic ordered chunks. B: curator-written claim-style chunks."
+
+Jason, whole message (18:59:55Z): *"A"*.
+
+**A.** What the library stores from a source is the source's own words, split
+into ordered chunks, and not a curator's summary. This answers question 6
+only; the lane's other owner questions are open.
+
+---
+
+## OD-2026-10-02-005 -- The write log lists durable writes only; session scratch files are not listed
+
+**Provenance: PRIMARY.** Typed by Jason in the visual lane's thread on
+2026-10-02 and read by overwatch in that transcript
+(`~/.claude/projects/C--Dev/afc03b35-5731-4ad4-ab64-43db0e62ea6a.jsonl`).
+This entry is new and edits no earlier one. It narrows what the write log
+covers; OD-2026-10-01-008 section 6 is unchanged.
+
+ChatGPT's review of PR #1086 asked that two enlarged crops of a reference
+photograph and some patch scripts, all in a session scratch folder, either
+carry his authorizing words or be marked as write defects. The visual lane put
+this to him (18:53:31Z):
+
+"Official: should session scratch files be dropped from the WRITES table
+entirely, leaving it to cover durable writes only — repo, GitHub,
+OneDrive/SharePoint, database, production?
+
+Plain: should I stop logging the temporary junk files I make while working,
+and only log things that actually persist somewhere? I think yes. If you
+agree, this class of finding stops happening."
+
+Jason, whole message (19:00:23Z): *"yes"*.
+
+**From that answer forward** the WRITES list in a report, handoff or PR body
+covers durable writes: the repository, GitHub, SharePoint, OneDrive, Google
+Drive, a database, staging, production. Temporary files in a session's scratch
+folder are not listed. Everything else about the write log stands: each
+durable write carries what, where, its id or SHA and his exact authorizing
+words; a durable write without such words is a defect; "WRITES: NONE" is
+still stated when there are none.
+
+Not changed by this entry: his own rules file still words the rule as "each
+write made"; that file is his to edit. ChatGPT's project instruction carries
+the same wording and is his to edit or authorize.
+
+---
+
+## OD-2026-10-02-004 -- Nothing in the UI is tied down: the old look-and-flow standards stop binding, and their wording is changed, not labelled as history
+
+**Provenance: PRIMARY.** Typed by Jason in the UI lane's thread on 2026-10-02
+and read by overwatch in that transcript
+(`~/.claude/projects/C--Dev/a84862b0-abd8-495f-bf7a-ade6114cc50c.jsonl`).
+This entry is new and edits no earlier one.
+
+### 1. The ruling
+
+Jason, whole message (18:06:09Z): *"ok i want to you check in with chat gpt
+like the other lanes do, to be clear nothing in the UI is tied down we can
+change things to make itmore user friendly visually appealy functional ect, i
+dont want any laws, setting or verbage in docs hindering that, so before we
+start building anything i want to make sure we are set up in such a way that
+we dont start drift because of old standards"*.
+
+**Nothing in the UI's look or flow is fixed.** No law, setting or wording in a
+document is a ground to refuse a UI change that makes the app more usable,
+better looking or more functional, or to raise a review finding against one.
+
+What still binds a UI change, by his standing rules and not by this entry:
+people's safety and safeguarding, minors' privacy, authorization, data
+integrity, and not shipping something false. The readability guards (tap
+size, type size, contrast, focus ring) stay; the UI lane and ChatGPT both read
+them as function, and `foundationMatchesLegacy` stays because it protects the
+tap-size and type-size minimums.
+
+### 2. How the old standards are treated
+
+The UI lane put the setup to him (18:16:35Z):
+
+"A (recommended): 1. Overwatch records your ruling as an owner decision. 2. I
+open one small PR adding a dated line to the five places above: reference and
+history for look and flow, not a ground to refuse a change or raise a review
+finding. 3. Floor and readability guards stay. 4. A style-pin test that a UI
+change trips is updated or deleted in that same PR; `legacyVisualVocabulary`
+and `brassAlphaChannel` come off the safety-critical list so that list means
+safety.
+
+B: A plus a clean sweep now: rewrite or archive the old visual docs and delete
+all style-pin tests up front.
+
+C: Record the ruling only; leave docs and tests as they are."
+
+Jason, whole message (19:01:30Z): *"no i want the binding changed we mark
+them historical before and the kept leaking in"*.
+
+**None of A, B or C as written.** A line marking the old documents as history
+is rejected: that was done before and the old rules kept coming back. The
+binding wording itself is to be changed, so that nothing a builder or reviewer
+reads still states a rule against changing the UI's look or flow.
+
+Not decided here: which tests are style pins and what happens to each. The UI
+lane brings that list to him and to ChatGPT before changing any test.
+
+Who decides UI design and flow is unchanged from his same-day instruction to
+the visual lane, relayed to overwatch and read in that lane's transcript
+(`afc03b35-…`): *"ok update overwatch what we are doing, same rules apply for
+new thread where overwatch gets what the thread builds into the app not direct
+the  uI design and flow"*.
+
+---
+
 ## OD-2026-10-02-003 — The ring canvas reads IRON CITY BEER, the second sponsor is KO NATION, and the ring corners are steel I-beams
 
 **Provenance: PRIMARY.** Jason, in the visuals lane, 2026-10-02, answering three
