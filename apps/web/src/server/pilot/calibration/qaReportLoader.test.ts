@@ -300,6 +300,7 @@ describe('loadCalibrationQaReport', () => {
       expect(result?.report.comparisonCount).toBe(1);
       expect(eventReads().sort()).toEqual(['c1-set-a', 'c1-set-c']);
       expect(result?.report.clipProgress.clipsWithAdjudication).toBe(1);
+      expect(result?.report.adjudicationRate.count).toBe(1);
     });
 
     test('refuses a pair adjudicated before the third reading was submitted', async () => {
