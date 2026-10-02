@@ -328,6 +328,14 @@ describe('the review buckets: critical request reviews have their own allowance'
     }
   });
 
+  test('an admitted charge whose window cannot be read back is a limiter failure, not an admission and not "spent"', async () => {
+    mockQueryOne.mockResolvedValueOnce({ request_count: 1, retry_after_seconds: 10, window_started_epoch: 'not-a-number' } as never);
+
+    const unreadable = ask({ kind: 'request_risk', critical: true });
+    await expect(unreadable).rejects.toThrow('SHADOW_RATE_LIMIT_UNAVAILABLE');
+    await expect(unreadable).rejects.not.toBeInstanceOf(ShadowRateLimitExceeded);
+  });
+
   test('a limiter that fails is not a limiter that is spent, and nothing is put back', async () => {
     mockQueryOne.mockRejectedValueOnce(new Error('connection refused'));
 

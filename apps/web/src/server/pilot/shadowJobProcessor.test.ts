@@ -284,11 +284,14 @@ describe('the worker\'s response-safety review row is bounded and refunded', () 
     expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
     expect(mockQueueHumanReview.mock.calls[0][0]).toEqual(expect.objectContaining({
       category: 'async_response_safety',
+      // The worker's rows are always 'high'; only the route writes 'critical'.
+      severity: 'high',
       summary: 'A generated SHADOW background result was replaced by the post-generation safety boundary.',
     }));
     expect(mockRefundRateLimit).not.toHaveBeenCalled();
   });
 
+  // CONTROL: the row half passes on main too.
   test('a clean answer writes no row and takes no slot', async () => {
     llmReply(CLEAN);
 

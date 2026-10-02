@@ -568,10 +568,12 @@ describe('an allowed question that names KO\'d', () => {
 // empty-Library row. All three are bounded: critical request reviews by one
 // bucket, every other row by the second (OD-2026-10-01-006).
 //
-// Nothing here changes what anyone is told. Where a response body is
-// asserted, it is compared with the SAME request made while the review
-// machinery is in a different state, or (for the refusals) with a benign
-// request refused the same way, or with a literal.
+// What anyone is told changes in ONE way: a request that already has its
+// request-risk row is no longer failed (500) because a second row, about the
+// answer, could not be inserted. Everything else is as on main. Where a
+// response body is asserted, it is compared with the SAME request made while
+// the review machinery is in a different state, or (for the refusals) with a
+// benign request refused the same way, or with a literal.
 //
 // The limiter is mocked at its two calls (consumeShadowReviewSlot,
 // refundShadowRateLimit). WHICH bucket an event draws on is the real
@@ -767,8 +769,9 @@ describe('every authorized high-risk request is owed one bounded human-review ro
     // TWO KINDS OF EVENT. The request was high-risk: one row. The answer the
     // model generated was replaced by the response validation: another row,
     // because that is a fact about what the model wrote and a reviewer needs
-    // it whatever the request was. Neither is skipped for the other, and each
-    // draws on its own bucket.
+    // it whatever the request was. Neither is skipped for the other. This
+    // request is a critical one, so the two rows draw on different buckets;
+    // behind a non-critical request both would draw on the general one.
     test('a high-risk question whose GENERATED answer is replaced: two rows, one of each kind, from two buckets', async () => {
       const fetchSpy = modelAnswers(DIAGNOSING_ANSWER);
 
@@ -786,7 +789,21 @@ describe('every authorized high-risk request is owed one bounded human-review ro
       expect(requestEvent.metadata).not.toHaveProperty('safetyReasons');
       // The critical request review does not spend the allowance the
       // generated-answer review draws on, and the other way round.
+      expect(mockConsumeReviewSlot.mock.calls.map(([input]) => input.event.kind)).toEqual(['request_risk', 'response_safety']);
       expect(bucketsAsked()).toEqual(['safety_review_critical', 'safety_review']);
+    });
+
+    // Not replaced, and still a response-safety event: the validation let
+    // the answer through and asked for a human look.
+    test('a generated answer that is NOT replaced but asks for review writes the response-safety row', async () => {
+      modelAnswers('A licensed physician should evaluate readiness before the next bout. RESEARCH NEEDED.');
+
+      const { body } = await send({ message: BENIGN });
+
+      expect(body.state).toBe('ok');
+      expect(body.requiresHumanReview).toBe(true);
+      expect(summaries()).toEqual([RESPONSE_SAFETY_SUMMARY]);
+      expect(mockConsumeReviewSlot.mock.calls.map(([input]) => input.event.kind)).toEqual(['response_safety']);
     });
 
     test.each([
@@ -852,7 +869,7 @@ describe('every authorized high-risk request is owed one bounded human-review ro
   // holds nothing is not a safety event, and its row says what main's row
   // says. It is bounded like every other non-critical review row: it draws on
   // the general bucket (OD-2026-10-01-006). A high-risk request that meets it
-  // still has its own request-risk row, from its own bucket.
+  // still has its own request-risk row.
   describe('the empty-Library row is operational: main\'s content, the general bucket', () => {
     const emptyLibrary = () => {
       mockHasRetrievableEvidence.mockResolvedValue(false);
@@ -980,6 +997,8 @@ describe('every authorized high-risk request is owed one bounded human-review ro
       ['withheld', WITHHELD],
       ['fixed fallback line', STOCK_LINE],
     ])('a limiter that FAILS is not a limiter that is spent: the row is still written: %s', async (_name, message) => {
+      // (The withheld and fixed-fallback rows pass on main too, which has no
+      // limiter here; the answered row is the one that is new.)
       modelAnswers();
       mockConsumeReviewSlot.mockRejectedValueOnce(new Error('SHADOW_RATE_LIMIT_UNAVAILABLE'));
 
@@ -987,6 +1006,18 @@ describe('every authorized high-risk request is owed one bounded human-review ro
 
       expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
       // No slot was taken, so there is none to give back.
+      expect(mockRefundRateLimit).not.toHaveBeenCalled();
+    });
+
+    test('a limiter that fails AND an insert that fails: there was no slot, so nothing is given back', async () => {
+      modelAnswers();
+      mockConsumeReviewSlot.mockRejectedValue(new Error('SHADOW_RATE_LIMIT_UNAVAILABLE'));
+      mockQueueHumanReview.mockRejectedValue(new Error('insert failed'));
+
+      const { status } = await send({ message: ALLOWED_HIGH_RISK });
+
+      expect(status).toBe(200);
+      expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
       expect(mockRefundRateLimit).not.toHaveBeenCalled();
     });
 
@@ -1027,6 +1058,7 @@ describe('every authorized high-risk request is owed one bounded human-review ro
       expect(mockRefundRateLimit.mock.calls[0]?.[0]).toBe(receipt);
     });
 
+    // CONTROL for the retry itself (main retries this write too); the slot half is new.
     test('a retry that succeeds keeps its slot', async () => {
       modelAnswers();
       mockQueueHumanReview.mockRejectedValueOnce(new Error('transient')).mockResolvedValueOnce('review-2');
@@ -1162,6 +1194,9 @@ describe('every authorized high-risk request is owed one bounded human-review ro
     const runtimeNotReady = () => {
       jest.mocked(assertShadowRuntimeReadiness).mockRejectedValue(new Error('SHADOW runtime not ready'));
     };
+    const runtimeUnavailable = () => {
+      jest.mocked(assertShadowRuntimeReadiness).mockRejectedValue(new ShadowRuntimeUnavailableError({ missingTables: ['shadow_conversations'] }));
+    };
     const contextThrows = () => {
       mockRetrieveShadowContext.mockRejectedValue(new Error('connection reset by peer'));
     };
@@ -1174,6 +1209,7 @@ describe('every authorized high-risk request is owed one bounded human-review ro
       ['the per-minute chat limit is spent', {}, 429, limitSpent('chat')],
       ['the daily chat limit is spent', {}, 429, limitSpent('chat_daily')],
       ['the runtime is not ready', {}, 500, runtimeNotReady],
+      ['the runtime is unavailable (a migration is missing)', {}, 503, runtimeUnavailable],
       ['an unexpected error is thrown while the request is handled', {}, 500, contextThrows],
     ])('%s: the response is the one a benign request gets, and one row is written', async (_name, extra, expectedStatus, arrange) => {
       arrange();
@@ -1265,6 +1301,16 @@ describe('every authorized high-risk request is owed one bounded human-review ro
         expect(bucketsAsked()).toEqual(['safety_review_critical']);
       });
 
+      test('a background Heavy Bag row names the conversation the question was stored in', async () => {
+        queued('heavy_bag');
+        mockResolveConversation.mockResolvedValue('conversation-queued-9');
+
+        const { body } = await send({ message: ALLOWED_HIGH_RISK, sessionType: 'heavy_bag', preferAsync: true });
+
+        expect(body.conversationId).toBe('conversation-queued-9');
+        expect(mockQueueHumanReview.mock.calls[0]?.[0].conversationId).toBe('conversation-queued-9');
+      });
+
       // ORDER, NOT PRESENCE. A write that was started and not waited for
       // would also show up as "called once". Here the insert is held open:
       // the response must not arrive until it is let go.
@@ -1330,11 +1376,15 @@ describe('every authorized high-risk request is owed one bounded human-review ro
   //
   // Two locks. The handler probes the caller's access before it decides a row
   // is owed; and POST writes nothing behind a 401, 403 or 404, whatever the
-  // probe said. Each is exercised on its own below: a refusal the probe sees
-  // (the access check rejects every time), and a refusal the probe does NOT
-  // see (the check passes when the probe runs and rejects when the handler
-  // runs it for real, or the refusal comes from somewhere the probe does not
-  // look).
+  // probe said.
+  //
+  // WHICH TEST PROVES WHICH LOCK. When the caller sees the 403 or 404, either
+  // lock alone is enough, so those tests ("REFUSED ...") cannot fail for the
+  // probe and pass on main. The probe is proved only where the response is
+  // NOT a 401/403/404 -- an unauthorized request that a throttle or an
+  // unready runtime turns away first ("THE PROBE ALONE"). The second lock is
+  // proved where the probe is passed and the refusal comes afterwards ("THE
+  // SECOND LOCK").
   describe('authorization stays above the review write', () => {
     const noRowNoSlot = () => {
       expect(mockQueueHumanReview).not.toHaveBeenCalled();
@@ -1358,7 +1408,7 @@ describe('every authorized high-risk request is owed one bounded human-review ro
     test.each([
       ['withheld', WITHHELD],
       ['allowed high-risk', ALLOWED_HIGH_RISK],
-    ])('THE PROBE: an athlete the caller may not access: 403, no row, no slot: %s', async (_name, message) => {
+    ])('REFUSED (control, either lock): an athlete the caller may not access: 403, no row, no slot: %s', async (_name, message) => {
       modelAnswers();
       athleteCheck.mockRejectedValue(new Error('Forbidden: athlete outside your assignment'));
 
@@ -1372,7 +1422,7 @@ describe('every authorized high-risk request is owed one bounded human-review ro
       ['withheld', WITHHELD, 'Forbidden: conversation belongs to another account', 403],
       ['allowed high-risk', ALLOWED_HIGH_RISK, 'Forbidden: conversation belongs to another account', 403],
       ['withheld, and the conversation does not exist', WITHHELD, 'SHADOW_CONVERSATION_NOT_FOUND', 404],
-    ])('THE PROBE: a conversation the caller may not access: no row, no slot: %s', async (_name, message, error, expectedStatus) => {
+    ])('REFUSED (control, either lock): a conversation the caller may not access: no row, no slot: %s', async (_name, message, error, expectedStatus) => {
       modelAnswers();
       conversationCheck.mockRejectedValue(new Error(error));
 
@@ -1382,8 +1432,66 @@ describe('every authorized high-risk request is owed one bounded human-review ro
       noRowNoSlot();
     });
 
-    // The probe is passed and the row is owed; the refusal comes afterwards.
-    // Only POST's second lock stands between that and a row.
+    // THE PROBE ALONE. The caller may not access the athlete, the
+    // conversation or the board summary, and something above the handler's
+    // own authorization check answers first: main says "too many requests"
+    // or "unavailable", and so does this. The response is not a 401/403/404,
+    // so the second lock does not apply; only the probe keeps a row from
+    // being written against a subject the caller has no access to.
+    const chatLimitSpent = () => {
+      mockEnforceRateLimit.mockImplementation(async (input) => {
+        if ((input as { endpointKey: string }).endpointKey === 'chat') throw new ShadowRateLimitExceeded(60, 'chat');
+      });
+    };
+    const runtimeNotReady = () => {
+      jest.mocked(assertShadowRuntimeReadiness).mockRejectedValue(new Error('SHADOW runtime not ready'));
+    };
+    const noAthlete = () => { athleteCheck.mockRejectedValue(new Error('Forbidden: athlete outside your assignment')); };
+    const noConversation = () => { conversationCheck.mockRejectedValue(new Error('Forbidden: conversation belongs to another account')); };
+    const missingConversation = () => { conversationCheck.mockRejectedValue(new Error('SHADOW_CONVERSATION_NOT_FOUND')); };
+    const nothingRefused = () => undefined;
+
+    test.each([
+      ['an athlete the caller may not access', noAthlete, { athleteId: 'athlete-not-mine' }],
+      ['a conversation the caller may not access', noConversation, { conversationId: CONVERSATION }],
+      ['a conversation that does not exist', missingConversation, { conversationId: CONVERSATION }],
+      ['a board summary this role may not run', nothingRefused, { sessionType: 'board_summary' }],
+    ].flatMap(([name, refuse, extra]) => [
+      [(name as string) + ', and the chat limit is spent', refuse as () => void, extra as Record<string, unknown>, chatLimitSpent, 429] as const,
+      [(name as string) + ', and the runtime is not ready', refuse as () => void, extra as Record<string, unknown>, runtimeNotReady, 500] as const,
+    ]))('THE PROBE ALONE: %s: main\'s response, no row, no slot', async (_name, refuse, extra, gate, expectedStatus) => {
+      refuse();
+      gate();
+      modelAnswers();
+
+      const { status } = await send({ message: ALLOWED_HIGH_RISK, ...extra });
+
+      // The gate's own status, as on main: the probe does not answer the request.
+      expect(status).toBe(expectedStatus);
+      noRowNoSlot();
+    });
+
+    // A PROBE THAT FAILS IS NOT A PROBE THAT REFUSED. The access check throws
+    // something that is not a refusal when the probe runs it, and passes when
+    // the handler does. The request is handled as usual, and its row is owed.
+    test.each([
+      ['an allowed high-risk question', ALLOWED_HIGH_RISK, 200, REQUEST_RISK_SUMMARY],
+      ['a withheld emergency report', WITHHELD, 400, WITHHELD_SUMMARY],
+      ['a fixed-fallback question', STOCK_LINE, 200, REQUEST_RISK_SUMMARY],
+    ])('a probe that fails for a reason other than a refusal does not cancel the row: %s', async (_name, message, expectedStatus, summary) => {
+      modelAnswers();
+      athleteCheck.mockRejectedValueOnce(new Error('connection reset by peer'));
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { status } = await send({ message, athleteId: 'athlete-1' });
+
+      expect(status).toBe(expectedStatus);
+      expect(summaries()).toEqual([summary]);
+      expect(errorSpy).toHaveBeenCalledWith('SHADOW authorization probe failed for a reason other than a refusal; the review row stays owed');
+    });
+
+    // THE SECOND LOCK. The probe is passed and the row is owed; the refusal
+    // comes afterwards. Only POST's status check stands between that and a row.
     test.each([
       ['403: the athlete check passes for the probe and rejects for the handler', 403, () => {
         athleteCheck.mockResolvedValueOnce(undefined as never).mockRejectedValue(new Error('Forbidden: athlete outside your assignment'));
@@ -1393,6 +1501,9 @@ describe('every authorized high-risk request is owed one bounded human-review ro
       }, { conversationId: CONVERSATION }],
       ['403: the role may not read this context', 403, () => {
         mockRetrieveShadowContext.mockResolvedValue({ authorized: false, reason: 'Not authorized to access this context' } as never);
+      }, {}],
+      ['401: the session is found to be invalid after the row is owed', 401, () => {
+        mockRetrieveShadowContext.mockRejectedValue(new Error('Unauthorized'));
       }, {}],
     ])('THE SECOND LOCK, %s: no row, no slot, though the probe said the row was owed', async (_name, expectedStatus, arrange, extra) => {
       modelAnswers();
@@ -1404,6 +1515,7 @@ describe('every authorized high-risk request is owed one bounded human-review ro
       noRowNoSlot();
     });
 
+    // CONTROL (either lock; passes on main).
     test('a board summary this role may not run: the 403 is authorization, and writes no row', async () => {
       const { status, body } = await send({ message: ALLOWED_HIGH_RISK, sessionType: 'board_summary' });
 

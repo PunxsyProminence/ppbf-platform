@@ -261,7 +261,7 @@ afterAll(async () => {
   });
 });
 
-describe('the safety_review receipt and its refund, against real Postgres', () => {
+describe('the review buckets: the receipt, its refund and the two allowances, against real Postgres', () => {
   const withDatabase = async (name: string, body: (client: Client) => Promise<void>) => {
     const client = await freshDatabase(name);
     try {

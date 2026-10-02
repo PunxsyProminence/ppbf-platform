@@ -331,8 +331,12 @@ export function resolveShadowReviewBucket(event: ShadowReviewEvent): ShadowRateL
  *
  * consumeShadowRateLimit for the bucket resolveShadowReviewBucket names, with
  * one difference: A REFUSED ATTEMPT IS PUT BACK. The count for a review
- * bucket therefore never rests above its limit, and a slot refunded later is
- * a slot the next row can use. Without this, a refusal that lands between an
+ * bucket therefore does not rest above its limit, and a slot refunded later
+ * is a slot the next row can use. (Two exceptions, both failures: the
+ * put-back itself fails, or the refusal carries no receipt. And between a
+ * refused attempt's increment and its put-back the count is briefly one over,
+ * so an attempt that lands in that gap can be refused with a slot free.)
+ * Without this, a refusal that lands between an
  * admitted row's charge and its refund leaves the count one too high, and
  * the account is locked for the rest of the hour with a slot it was owed.
  *

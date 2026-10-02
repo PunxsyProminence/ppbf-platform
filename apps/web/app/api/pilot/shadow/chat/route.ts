@@ -132,10 +132,11 @@ const FALLBACK_RESPONSES: Record<string, string> = {
 };
 
 // The summary on a REQUEST-RISK review row for a request that was not
-// withheld: the classifier marked it high-risk. The row is written before the
-// request is handled, so the sentence says only what is known then. Shown
-// only on the admin human-review page; never to an athlete, a parent or a
-// coach. (A request that is WITHHELD keeps its own, older summary.)
+// withheld: the classifier marked it high-risk. The same sentence is used
+// however the request then went (answered, queued, turned away), so it says
+// only that. Shown only on the admin human-review page; never to an athlete,
+// a parent or a coach. (A request that is WITHHELD keeps its own, older
+// summary.)
 const HIGH_RISK_REQUEST_REVIEW_SUMMARY =
   'A high-risk SHADOW chat request was flagged for human review.';
 const WITHHELD_REQUEST_REVIEW_SUMMARY =
@@ -806,6 +807,13 @@ async function handleShadowChat(
     // whether a row is owed. POST adds a second lock: whatever the probe
     // said, a response of 401, 403 or 404 writes nothing.
     //
+    // ONLY A REFUSAL CANCELS THE ROW. A probe that fails for some other
+    // reason -- a dropped connection -- has not said the caller is
+    // unauthorized, and an emergency report must not lose its row to that.
+    // The row stays owed, and the second lock still covers the case where
+    // the handler's own check then refuses. What counts as a refusal is what
+    // the route itself would answer 401, 403 or 404 for.
+    //
     // (A WITHHELD request that also asks for a board summary is not refused
     // as a board summary: the safety boundary answers it first, as on main.
     // So that refusal cancels the row only for a request that is allowed.)
@@ -878,8 +886,14 @@ async function handleShadowChat(
               requireExactSubject: true,
             });
           }
-        } catch {
-          authorizedForThisRequest = false;
+        } catch (probeError) {
+          const refused = (probeError instanceof Error && probeError.message === 'SHADOW_CONVERSATION_NOT_FOUND')
+            || [401, 403, 404].includes(jsonError(probeError).status);
+          if (refused) {
+            authorizedForThisRequest = false;
+          } else {
+            console.error('SHADOW authorization probe failed for a reason other than a refusal; the review row stays owed');
+          }
         }
       }
       requestRiskState.owed = authorizedForThisRequest;
@@ -1281,6 +1295,9 @@ async function handleShadowChat(
         sessionType,
         firstMessage: message,
       });
+      // The request-risk row (written by POST at the exit) names the
+      // conversation the question was just stored in.
+      requestRiskState.conversationId = queuedConversationId;
       await appendUserMessage({
         actor: principal,
         conversationId: queuedConversationId,
@@ -1548,6 +1565,8 @@ async function handleShadowChat(
       // WHAT, IF ANYTHING, IS WRITTEN AFTER THE ANSWER. Main wrote one row here
       // whenever the state was 'filtered' or the response validation asked for
       // review, under one summary. Three different things were inside that:
+      // the fixed fallback line (nothing was generated), a generated answer
+      // the response validation flagged, and the empty-Library notice.
       const fixedFallbackAnswered = providerState === 'filtered';
       const generatedAnswerFlagged = !libraryEmpty
         && !fixedFallbackAnswered
