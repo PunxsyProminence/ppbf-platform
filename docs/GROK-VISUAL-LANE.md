@@ -152,8 +152,10 @@ approved, and only that direction.
 
 - For a **plate**: one unambiguous shipped file per ordered slot, the exact
   ordered filename, real JPEG, 4:4:4, complete SOI/EOI, >8 KB, ≤400 KB,
-  declared geometry, orientation matches filename, quiet centre, zero
-  lettering, one room material, set/family consistency. Grok verifies those
+  declared geometry, orientation matches filename, quiet centre, no INVENTED
+  lettering (OD-2026-10-02-001 — real equipment marks pass, garbled
+  approximations do not, and an order asks for none unless Jason supplies the
+  exact words), one room material, set/family consistency. Grok verifies those
   laws, then **uploads the real binary onto its own feature branch under
   `apps/web/public/plates/`** and opens the PR. Never chat/base64/data URI.
 - For **code**: a feature branch off current `main`, the approved design

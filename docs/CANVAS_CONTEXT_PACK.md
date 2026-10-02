@@ -10,6 +10,12 @@ ask for the specific screen you want.
 > **Companion file:** the exact colors, fonts, and component specs live in
 > [`docs/BRAND_DESIGN_BRIEF.md`](./BRAND_DESIGN_BRIEF.md). This pack gives the
 > *product & structure* context; the brief gives the *visual* rules. Give Canvas both.
+>
+> **Text rule (OD-2026-10-02-001), and it binds every piece:** set only the words
+> supplied in the request. Invent no club name, slogan, seal rim text, award,
+> date, statistic, sponsor or brand mark, and draw no logo for this club. Owner,
+> 2026-10-02: *"No no made up text, if I give text thats different"*. Stated in
+> full in §8 of the brief.
 
 ---
 

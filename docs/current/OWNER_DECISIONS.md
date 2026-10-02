@@ -214,8 +214,53 @@ on a canvas. The new line is drawn exactly where the real defect was.
 `plate-10-floor-landscape-01` (invented canvas crest) and the storage plate
 printed `HAYABUS` all stay **do not bind**.
 
-**Scope.** Plates only. It says nothing about lettering drawn by the app itself,
-and nothing about the no-people rule, which does not move.
+**THE GENERATOR MAY NEVER INVENT TEXT, AND OWNER-SUPPLIED TEXT IS A SEPARATE
+CASE.** Asked whether `scripts/make-plate.mjs` should widen along with this rule,
+Jason, 2026-10-02:
+
+> *"No no made up text, if I give text thats different"*
+
+So there are three cases, not two:
+
+1. **Text a model invents** — forbidden, always. This is what produced
+   `HAYABUS`, `3EL IN?RY GIYSE` and an invented canvas crest, and it is why the
+   generator keeps asking for no lettering even though a plate may now carry a
+   real mark. A generator cannot produce a real mark; asked for a brand it
+   renders an approximation, and an approximation of a real brand is an invented
+   one.
+2. **A real mark genuinely present** in the room being photographed — allowed,
+   which is what this entry widened.
+3. **Text the owner supplies** — allowed. If he gives the exact words, they are
+   not made up, and the generator may be asked for them. Nobody else supplies
+   them on his behalf.
+
+This replaces an inference. Before he was asked, the generator's strictness was
+recorded in the reference lock as `[INFERRED, not owner-stated]` reasoning. It is
+now his ruling, and the lock says so.
+
+**SCOPE, WIDENED THE SAME DAY.** This began as a plate rule. Asked where it
+should be written down, Jason, 2026-10-02:
+
+> *"Also update where it matters, chat got grok, canvas where ever"*
+
+So it governs **every image any generator makes for this club**, not only
+plates: Grok's order brief and lane gate, the plates README, the Canva brand
+brief and the Canvas context pack each state it. The external case is the
+sharper one. A background plate sits behind real interface text, but a poster,
+flyer or grant-packet cover carrying an invented club name, slogan, award,
+accreditation or statistic is a false claim about a real nonprofit, put in front
+of families, schools and grant reviewers. The Canva prompt in
+`docs/BRAND_DESIGN_BRIEF.md` §8 had been asking for a seal with "curved rim
+text" and supplying no words, which is an invitation to invent them; it now
+requires the words.
+
+ChatGPT's copy of this rule lives in its own project instructions, which only
+Jason can save — reported to him with paste-ready wording. It reads these
+repository documents through its GitHub connector in the meantime, so the rule
+reaches it either way.
+
+It still says nothing about lettering drawn by the app itself in code, and
+nothing about the no-people rule, which does not move.
 
 ## OD-2026-10-01-008 -- Recorded write defects accepted for merge, and from now a disclosed, recorded write defect does not block a merge; when the act-now line appears; who a SHADOW safety alert reaches; the act-now sentence; no humour in an acute answer
 

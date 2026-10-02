@@ -1,11 +1,13 @@
 # Background plates
 
 Layer 0 only: the photographed wall a room stands in. Real UI composites on
-top in code; no plate carries lettering or substitutes for a stamp, ticket, or
-passbook content. One exception: the IRON CITY lettering on the ring canvas stays
+top in code; no plate substitutes for a stamp, ticket or passbook content, and
+nothing a reader NEEDS lives in the picture. **Lettering: a real mark on real
+equipment is allowed, invented lettering is not** — a maker's name on a bag or
+glove, and the IRON CITY and ALT NATION sponsor lettering on the ring canvas
 when the ring is in frame (owner, 2026-09-28, "no i like that you can leave it";
-OD-2026-09-28-013; `docs/REAL-GYM-REFERENCE-LOCK.md` Mode A
-item 4). A plate is a `background-image` layer on `.room::after` /
+OD-2026-09-28-013; `docs/REAL-GYM-REFERENCE-LOCK.md` Mode A item 4). Stated in
+full below, under the 2026-10-02 rule change (OD-2026-10-02-001). A plate is a `background-image` layer on `.room::after` /
 `.on-canvas::after` — never an `<img>`. Missing files are safe by design: with
 this directory empty, the gradient wall in the design-system sheets
 (`design-system/legacy/ppbf-leather-brass.css`, loaded through
@@ -277,6 +279,15 @@ exists, the proof does not. Condition 3 is there so no later row reads like it.
 
 Grok and Canva make images when Jason asks; neither opens pull requests. Claude
 places the approved image here (OD-2026-09-28-001).
+
+**Neither may be asked for invented text, here or anywhere else.** Owner,
+2026-10-02: *"No no made up text, if I give text thats different"*
+(OD-2026-10-02-001). A real mark on real equipment may stay in a plate, but an
+order asks for no lettering unless Jason supplies the exact words — because a
+generator asked for a brand returns an approximation of it, which is the case
+the rule forbids. The same applies to anything Canva makes for the club outside
+this directory: no invented club name, slogan, seal rim text, award, date,
+statistic, sponsor or brand mark, and no logo for this club.
 
 ## Why the byte gate reads the way it does — the delivery record
 

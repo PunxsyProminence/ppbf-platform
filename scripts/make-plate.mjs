@@ -240,9 +240,12 @@ const T7_ROOMS = new Set(['family-room', 'window']);
    for a brand it renders an approximation, and an approximation of a real
    brand is precisely the garbled lettering the owner's rule still forbids.
    Asking is what produced HAYABUS on a pad and 3EL IN?RY GIYSE on a banner.
-   So the permission applies to marks that are genuinely there in a photograph;
-   it is not a licence to request them here. Widening these strings would
-   reintroduce the exact defect the rule was drawn around. */
+   So the permission applies to marks genuinely present in the room; it is not a
+   licence to request them here. Owner, 2026-10-02, asked exactly this:
+   "No no made up text, if I give text thats different". The ONE exception is
+   text HE supplies -- given exact words, they are not made up and may be asked
+   for; nobody supplies them on his behalf. Widening these strings otherwise
+   reintroduces the defect the rule was drawn around. */
 const COMPOSITION = 'Composition: the centre of the frame is QUIET and uncluttered because interface text is laid over it, and all visual interest sits in the outer thirds. No people.';
 const NO_TEXT = 'The only lettering allowed is the sponsor lettering printed on the boxing ring canvas itself, which reads IRON CITY BREWERY at the centre of the canvas and ALT NATION, and only when the ring canvas is in frame. ABSOLUTELY NO OTHER TEXT anywhere in the frame: no other writing, no other letters, no numbers, no words, no signage, no posters, no banners, no readable chalkboards or whiteboards, no labels, no other logos, no other brand marks.';
 
