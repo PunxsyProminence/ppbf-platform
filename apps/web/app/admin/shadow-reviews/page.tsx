@@ -9,21 +9,24 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  * The screen the SHADOW human-review queue never had.
  *
  * WHY THIS EXISTS. The platform writes a ticket to
- * pilot.shadow_human_review_queue for two kinds of event, and a ticket is not
- * always a refusal:
+ * pilot.shadow_human_review_queue for three classes of event, and a ticket is
+ * not always a refusal:
  *
- *   - REQUEST-LEVEL HIGH-RISK REVIEW. The classifier marked a member's
- *     message high-risk. One ticket, however the message was then handled:
- *     withheld, answered with a fixed line, answered by the model, or queued
- *     for the background worker. Written by the chat route.
- *   - POST-GENERATION RESPONSE-SAFETY REVIEW. An answer the model generated
- *     was replaced by the safety boundary, or asked for a human look,
- *     whatever the question was. Written by the chat route and by the async
- *     job processor.
+ *   - REQUEST-RISK. The classifier marked a member's message high-risk. One
+ *     ticket, however the request then went: withheld, answered with a fixed
+ *     line, answered by the model, queued for the background worker, or
+ *     turned away by a limit or an unavailable mode. Written by the chat
+ *     route.
+ *   - GENERATED-RESPONSE SAFETY. An answer the model generated was withheld
+ *     or replaced by the safety boundary, or asked for a human look, whatever
+ *     the question was. Written by the chat route and by the async job
+ *     processor.
+ *   - OPERATIONAL / FILTER ROWS that already existed, such as the notice
+ *     shown when the Library holds no evidence. Not a safety event.
  *
  * When the classifier reads chest_pain, fainting, loss_of_consciousness or
- * urgent_personal_symptom, the chat route writes its ticket at severity
- * 'critical'.
+ * urgent_personal_symptom, the chat route writes its tickets at severity
+ * 'critical'; the async job processor always writes at 'high'.
  *
  * The route to read and triage those tickets
  * (app/api/pilot/shadow/reviews, GET + PATCH) shipped with them and was
@@ -196,9 +199,7 @@ function ShadowReviewsConsole() {
       <header>
         <h1>SHADOW human review</h1>
         <p className="lede">
-          High-risk SHADOW chats and safety-filtered answers that need a human look.
-          A ticket means the safety process flagged the chat or its generated answer
-          for review — not that SHADOW failed.
+          {'SHADOW chats sent for a human look. A ticket can come from a high-risk request, a generated answer that was withheld or replaced, or another route condition that needs review — not necessarily because SHADOW failed.'}
         </p>
       </header>
 
@@ -231,7 +232,7 @@ function ShadowReviewsConsole() {
       {!loading && reviews.length === 0 && !error && (
         <p className="muted">
           {status === 'open'
-            ? 'Nothing waiting. Tickets appear when a high-risk chat or a generated answer needs human review.'
+            ? 'Nothing waiting. Tickets appear when SHADOW sends a chat or generated result for human review.'
             : `No ${status.replace('_', ' ')} tickets.`}
         </p>
       )}

@@ -16,12 +16,25 @@ export class ShadowRateLimitExceeded extends Error {
    * working; the single throw site always populates it.
    */
   readonly endpointKey?: string;
+  /**
+   * The bucket row the refused attempt incremented.
+   *
+   * The statement increments first and compares afterwards, so a refused
+   * attempt has still added one to the count. For most buckets that is
+   * harmless. For one whose slots can be given back it is not: the count then
+   * sits ABOVE the limit, and a later refund brings it back to the limit, not
+   * under it -- so the slot that was refunded cannot be used. A caller that
+   * refunds uses this to put the refused attempt's own increment back
+   * (see consumeShadowReviewSlot).
+   */
+  readonly receipt?: ShadowRateLimitReceipt;
 
-  constructor(retryAfterSeconds: number, endpointKey?: string) {
+  constructor(retryAfterSeconds: number, endpointKey?: string, receipt?: ShadowRateLimitReceipt) {
     super('SHADOW_RATE_LIMIT_EXCEEDED');
     this.name = 'ShadowRateLimitExceeded';
     this.retryAfterSeconds = retryAfterSeconds;
     this.endpointKey = endpointKey;
+    this.receipt = receipt;
   }
 }
 
@@ -95,12 +108,20 @@ const RATE_LIMIT_DEFAULTS = {
   // batch of session video is the one action here with an unbounded byte cost.
   shadow_upload: { limit: 40, windowSeconds: 3_600 },
   video_upload: { limit: 20, windowSeconds: 3_600 },
-  // The human-review queue write (OD-2026-09-30-005: "3 per hour"). It counts
-  // review ROWS, per account. Reaching it suppresses the row and nothing
-  // else: the person still gets their response. A slot whose row was never
-  // written is given back (refundShadowRateLimit), so the hour is spent on
-  // rows, not on attempts (OD-2026-09-30-006: "Refund on failure").
+  // The human-review queue writes (OD-2026-09-30-005: "3 per hour"). Each
+  // counts review ROWS, per account. Reaching one suppresses the row and
+  // nothing else: the person still gets their response. A slot whose row was
+  // never written is given back (refundShadowRateLimit), and a refused
+  // attempt's own increment is put back (consumeShadowReviewSlot), so the
+  // hour is spent on rows, not on attempts (OD-2026-09-30-006: "Refund on
+  // failure").
+  //
+  // TWO allowances, not one (OD-2026-10-01-006, the owner's "A"): critical
+  // REQUEST reviews have their own three an hour, so routine review rows
+  // cannot use up the hour an emergency report needs. Which event draws on
+  // which is decided in resolveShadowReviewBucket, and nowhere else.
   safety_review: { limit: 3, windowSeconds: 3_600 },
+  safety_review_critical: { limit: 3, windowSeconds: 3_600 },
 } as const;
 
 export type ShadowRateLimitKey = keyof typeof RATE_LIMIT_DEFAULTS;
@@ -147,19 +168,28 @@ export async function enforceShadowRateLimit(input: {
   limit: number;
   windowSeconds: number;
 }): Promise<void> {
-  await consumeShadowRateLimit(input);
+  // The receipt is not needed here, and its absence is not an error here:
+  // this call admits and refuses exactly as it did before receipts existed.
+  await chargeShadowRateLimit(input);
 }
 
 /**
  * enforceShadowRateLimit, returning what it charged.
  *
- * Same statement, same checks, same errors: it throws ShadowRateLimitExceeded
+ * The same statement and the same checks. It throws ShadowRateLimitExceeded
  * when the incremented count is over the limit, and SHADOW_RATE_LIMIT_UNAVAILABLE
  * when the database returns no row. On success it returns a receipt naming the
  * exact bucket row it incremented.
  *
- * A call that throws ShadowRateLimitExceeded HAS incremented the row. That is
- * deliberate and unchanged: an over-limit attempt holds no slot to give back.
+ * ONE ERROR enforceShadowRateLimit DOES NOT HAVE: if the database returns a
+ * row whose window cannot be read back as a whole number of seconds, there is
+ * no receipt to return, and this throws SHADOW_RATE_LIMIT_UNAVAILABLE. The
+ * row has been incremented by then and cannot be given back. (Not expected
+ * from Postgres; the window is an epoch cast to bigint.)
+ *
+ * A call that throws ShadowRateLimitExceeded HAS incremented the row, as it
+ * always has. The error carries the receipt for that increment, for the one
+ * kind of caller that needs to put it back (consumeShadowReviewSlot).
  */
 export async function consumeShadowRateLimit(input: {
   organizationId: string;
@@ -168,6 +198,20 @@ export async function consumeShadowRateLimit(input: {
   limit: number;
   windowSeconds: number;
 }): Promise<ShadowRateLimitReceipt> {
+  const receipt = await chargeShadowRateLimit(input);
+  if (!receipt) {
+    throw new Error('SHADOW_RATE_LIMIT_UNAVAILABLE');
+  }
+  return receipt;
+}
+
+async function chargeShadowRateLimit(input: {
+  organizationId: string;
+  accountId: string;
+  endpointKey: string;
+  limit: number;
+  windowSeconds: number;
+}): Promise<ShadowRateLimitReceipt | undefined> {
   if (!input.organizationId.trim() || !input.accountId.trim()) {
     throw new Error('Forbidden: SHADOW rate limiting requires an authenticated tenant owner');
   }
@@ -227,34 +271,110 @@ export async function consumeShadowRateLimit(input: {
   if (!row) {
     throw new Error('SHADOW_RATE_LIMIT_UNAVAILABLE');
   }
-  if (row.request_count > input.limit) {
-    throw new ShadowRateLimitExceeded(row.retry_after_seconds, input.endpointKey);
-  }
   const windowStartedAtEpochSeconds = Number(row.window_started_epoch);
-  if (!Number.isSafeInteger(windowStartedAtEpochSeconds)) {
-    throw new Error('SHADOW_RATE_LIMIT_UNAVAILABLE');
+  const receipt: ShadowRateLimitReceipt | undefined = Number.isSafeInteger(windowStartedAtEpochSeconds)
+    ? {
+        organizationId: input.organizationId,
+        accountId: input.accountId,
+        endpointKey: input.endpointKey,
+        windowSeconds: input.windowSeconds,
+        windowStartedAtEpochSeconds,
+      }
+    : undefined;
+  if (row.request_count > input.limit) {
+    throw new ShadowRateLimitExceeded(row.retry_after_seconds, input.endpointKey, receipt);
   }
-  return {
-    organizationId: input.organizationId,
-    accountId: input.accountId,
-    endpointKey: input.endpointKey,
-    windowSeconds: input.windowSeconds,
-    windowStartedAtEpochSeconds,
-  };
+  return receipt;
+}
+
+/**
+ * WHICH BUCKET A HUMAN-REVIEW WRITE DRAWS ON. One place, on purpose.
+ *
+ * The chat route and the job worker both ask here, so that how the review
+ * writes are bounded is decided once and changed in one line.
+ *
+ * THE OWNER'S RULING (OD-2026-10-01-006, "A"; each allowance is
+ * OD-2026-09-30-005's "3 per hour", per account):
+ *
+ *   safety_review_critical   CRITICAL REQUEST reviews only: the request-risk
+ *                            row of a request written at severity 'critical'.
+ *   safety_review            EVERY OTHER SHADOW human-review row: the
+ *                            request-risk row of any other high-risk request;
+ *                            every generated-answer (response-safety) row,
+ *                            from the route or from the worker, whatever the
+ *                            severity of the request that produced the
+ *                            answer; and the operational rows, such as the
+ *                            empty-Library notice's.
+ *
+ * So three routine rows in an hour cannot stop an emergency report's row
+ * being written, and the fourth critical request in an hour is still
+ * suppressed: bounded, not unlimited.
+ *
+ * The limit is on persisting the row, never on what the person is told.
+ *
+ * `null` means "not bounded by a review bucket". Nothing returns it today;
+ * consumeShadowReviewSlot handles it so that a later ruling is a change to
+ * this function alone.
+ */
+export type ShadowReviewEvent = {
+  kind: 'request_risk' | 'response_safety' | 'operational';
+  /** The row is being written at severity 'critical'. */
+  critical: boolean;
+};
+
+export function resolveShadowReviewBucket(event: ShadowReviewEvent): ShadowRateLimitKey | null {
+  return event.kind === 'request_risk' && event.critical ? 'safety_review_critical' : 'safety_review';
+}
+
+/**
+ * Take one slot for a human-review row.
+ *
+ * consumeShadowRateLimit for the bucket resolveShadowReviewBucket names, with
+ * one difference: A REFUSED ATTEMPT IS PUT BACK. The count for a review
+ * bucket therefore never rests above its limit, and a slot refunded later is
+ * a slot the next row can use. Without this, a refusal that lands between an
+ * admitted row's charge and its refund leaves the count one too high, and
+ * the account is locked for the rest of the hour with a slot it was owed.
+ *
+ * Returns the receipt for an admitted row; `null` when the event is not
+ * bounded. Throws ShadowRateLimitExceeded when the hour is spent, and any
+ * other error when the limiter itself failed -- which the caller must NOT
+ * treat as spent.
+ */
+export async function consumeShadowReviewSlot(input: {
+  organizationId: string;
+  accountId: string;
+  event: ShadowReviewEvent;
+}): Promise<ShadowRateLimitReceipt | null> {
+  const bucket = resolveShadowReviewBucket(input.event);
+  if (bucket === null) return null;
+  try {
+    return await consumeShadowRateLimit({
+      organizationId: input.organizationId,
+      accountId: input.accountId,
+      ...resolveShadowRateLimit(bucket),
+    });
+  } catch (error) {
+    if (error instanceof ShadowRateLimitExceeded && error.receipt) {
+      await refundShadowRateLimit(error.receipt);
+    }
+    throw error;
+  }
 }
 
 /**
  * Give back the one slot a receipt names.
  *
  * WHY IT EXISTS. For every other bucket the attempt is the cost, and counting
- * it is right. For `safety_review` it is not: the limiter increments, then
+ * it is right. For the review buckets it is not: the limiter increments, then
  * the human-review insert runs, and that insert can fail. Three failed
  * inserts would spend an account's whole hour while persisting nothing, and
  * the next real report that hour would be suppressed as "exhausted".
  *
  * WHAT IT TOUCHES: exactly the row the receipt names -- this organization,
  * this account, this endpoint, THIS window -- and only if its count is above
- * zero. It does not look at the clock. A refund that arrives after the hour
+ * zero. WHICH row is decided by the receipt alone, never by the clock (the
+ * clock is used only to stamp updated_at). A refund that arrives after the hour
  * has turned decrements the hour that was charged; if that row has been
  * purged it decrements nothing. It never creates a row, never goes below
  * zero, and never touches the current window unless that is the one charged.
@@ -262,6 +382,11 @@ export async function consumeShadowRateLimit(input: {
  * Returns whether a row was decremented. NEVER THROWS: it is called while a
  * failure is already being handled, and a second failure there has nowhere
  * useful to go.
+ *
+ * NOT IDEMPOTENT. Two calls with one receipt give back two slots. Each caller
+ * therefore holds one receipt and refunds it on at most one path:
+ * consumeShadowReviewSlot for a refused attempt, and the route's and the
+ * worker's review writers for an admitted row whose every insert failed.
  */
 export async function refundShadowRateLimit(receipt: ShadowRateLimitReceipt): Promise<boolean> {
   try {

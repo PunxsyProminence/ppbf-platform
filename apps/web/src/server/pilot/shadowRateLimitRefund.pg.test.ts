@@ -1,8 +1,10 @@
-// Real PostgreSQL-backed contract test for the safety_review receipt and its
-// refund: consumeShadowRateLimit and refundShadowRateLimit.
+// Real PostgreSQL-backed contract test for the review buckets: the receipt and
+// its refund (consumeShadowRateLimit, refundShadowRateLimit) and the two
+// allowances a review row draws on (consumeShadowReviewSlot).
 //
-// WHY THIS EXISTS. The human-review queue write is bounded by its own bucket,
-// `safety_review`. The limiter increments BEFORE the write it bounds, and that
+// WHY THIS EXISTS. The human-review queue writes are bounded by their own
+// buckets, `safety_review` and `safety_review_critical`
+// (OD-2026-10-01-006). The limiter increments BEFORE the write it bounds, and that
 // write can fail, so a slot whose row was never written is given back. Unless
 // it is, three failed inserts spend an account's whole hour while persisting
 // nothing, and the next real report that hour is suppressed as "exhausted"
@@ -16,16 +18,19 @@
 // organization, account, endpoint, window length, and the START OF THE WINDOW
 // AS THE DATABASE CHOSE IT, read back from the row. refundShadowRateLimit
 // decrements exactly that row. It does not ask the clock which window is
-// current. An earlier version of this refund did, and a refund that arrived
-// after the hour had turned decremented the NEW hour: a slot nobody had
-// charged, in a window the failed write had nothing to do with.
+// current. A refund that did would, when it arrived after the hour had
+// turned, decrement the NEW hour: a slot nobody had charged, in a window the
+// failed write had nothing to do with.
 //
 // What is proved here:
 //   1. The receipt names the row that was incremented, to the second.
 //   2. Charge then refund leaves the count where it started.
 //   3. The refund moves ONLY the row that matches on organization, account,
-//      endpoint, window start and window length. Each of the five is varied
-//      alone, with a row beside the target that differs in that one thing.
+//      endpoint, window start and window length. The first four are each
+//      varied alone, with a row beside the target that differs in that one
+//      thing. Window length is not part of the row's key, so no row can sit
+//      beside the target differing only in that; it has its own test, with a
+//      receipt that names the wrong length.
 //   4. THE HOUR BOUNDARY: a receipt for the previous hour decrements the
 //      previous hour's row and leaves the current hour's alone, and the other
 //      way round.
@@ -34,6 +39,11 @@
 //   6. THE DEFECT, END TO END: three charge-and-refund cycles leave a fourth
 //      request allowed; and the control, that without refunds the limit is
 //      still reached.
+//   7. THE REVIEW SLOT: three rows an hour are admitted; a fourth attempt is
+//      refused AND PUT BACK, so the stored count rests at three; a slot
+//      refunded after that is one the next row can use.
+//   8. TWO ALLOWANCES: critical request reviews and every other review row
+//      are counted in separate bucket rows, and neither spends the other.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -65,11 +75,13 @@ jest.mock('./db', () => ({
 
 import {
   consumeShadowRateLimit,
+  consumeShadowReviewSlot,
   enforceShadowRateLimit,
   refundShadowRateLimit,
   resolveShadowRateLimit,
   ShadowRateLimitExceeded,
   type ShadowRateLimitReceipt,
+  type ShadowReviewEvent,
 } from './shadowRateLimit';
 
 jest.setTimeout(180_000);
@@ -260,10 +272,22 @@ describe('the safety_review receipt and its refund, against real Postgres', () =
     }
   };
 
-  test('the receipt names the row that was incremented, to the second', async () => {
+  test('the receipt names the row that was incremented, to the second, as the DATABASE chose it', async () => {
     await withDatabase('ppbf_test_rl_receipt', async (client) => {
-      const first = await consume();
-      const second = await consume();
+      // This process's clock is set a year back for the two charges. A receipt
+      // worked out here, instead of read back from the row, would name a
+      // window a year ago.
+      const realNow = Date.now();
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(realNow - 365 * 86_400_000);
+      let first: ShadowRateLimitReceipt;
+      let second: ShadowRateLimitReceipt;
+      try {
+        first = await consume();
+        second = await consume();
+      } finally {
+        clock.mockRestore();
+      }
+      expect(Math.abs(first.windowStartedAtEpochSeconds * 1000 - realNow)).toBeLessThanOrEqual(2 * 3_600_000);
 
       const rows = await buckets(client);
       expect(rows).toHaveLength(1);
@@ -295,13 +319,13 @@ describe('the safety_review receipt and its refund, against real Postgres', () =
     });
   });
 
-  test('it moves only the row the receipt names: not the endpoint, account, ORGANIZATION, window or window length beside it', async () => {
+  test('it moves only the row the receipt names: not the endpoint, account, ORGANIZATION or window beside it', async () => {
     await withDatabase('ppbf_test_rl_refund_isolation', async (client) => {
       await consume(ACCOUNT, 'safety_review');
       const receipt = await consume(ACCOUNT, 'safety_review');
       const window = receipt.windowStartedAtEpochSeconds;
 
-      // Five neighbours, each differing from the charged row in ONE thing.
+      // Four neighbours, each differing from the charged row in ONE thing.
       await consume(ACCOUNT, 'chat');
       await consume(ACCOUNT, 'chat');                         // endpoint
       await consume(OTHER_ACCOUNT, 'safety_review');
@@ -344,7 +368,7 @@ describe('the safety_review receipt and its refund, against real Postgres', () =
     });
   });
 
-  test('THE HOUR BOUNDARY: a refund issued after the hour has turned decrements the hour that was charged, not the current one', async () => {
+  test('THE HOUR BOUNDARY: a receipt for the previous hour decrements that hour\'s row, not the current one (the previous hour\'s row is planted; the clock is not moved)', async () => {
     await withDatabase('ppbf_test_rl_refund_hour_boundary', async (client) => {
       // "Now": the limiter charges the current hour.
       const current = await consume();
@@ -386,14 +410,24 @@ describe('the safety_review receipt and its refund, against real Postgres', () =
     });
   });
 
-  test('it stops at zero instead of violating the check constraint, and says it moved nothing', async () => {
+  test('it stops at zero by its own predicate, not by running into the check constraint, and says it moved nothing', async () => {
     await withDatabase('ppbf_test_rl_refund_clamp', async (client) => {
       const receipt = await consume();
       await expect(refundShadowRateLimit(receipt)).resolves.toBe(true);
       expect((await buckets(client))[0].request_count).toBe(0);
 
-      // The same receipt presented again: nothing left to give back.
-      await expect(refundShadowRateLimit(receipt)).resolves.toBe(false);
+      // The same receipt presented again: nothing left to give back. Without
+      // the statement's own "request_count > 0" the table's check constraint
+      // would refuse the update, and that also comes back false with the
+      // count at zero -- but as a caught database error, which is logged. So
+      // the log is what tells the two apart.
+      const logged = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        await expect(refundShadowRateLimit(receipt)).resolves.toBe(false);
+        expect(logged).not.toHaveBeenCalled();
+      } finally {
+        logged.mockRestore();
+      }
       expect((await buckets(client))[0].request_count).toBe(0);
     });
   });
@@ -450,11 +484,108 @@ describe('the safety_review receipt and its refund, against real Postgres', () =
         await consume();
       }
       await expect(consume()).rejects.toBeInstanceOf(ShadowRateLimitExceeded);
-      // An over-limit attempt increments and holds no receipt: there is
-      // nothing for a caller to give back.
+      // consumeShadowRateLimit itself leaves an over-limit attempt's
+      // increment in place, as the limiter always has. Putting it back is
+      // consumeShadowReviewSlot's job, proved below.
       expect((await buckets(client))[0].request_count).toBe(POLICY.limit + 1);
       // enforceShadowRateLimit is the same statement with the receipt dropped.
       await expect(enforceShadowRateLimit({ organizationId: ORG, accountId: OTHER_ACCOUNT, ...POLICY })).resolves.toBeUndefined();
+    });
+  });
+
+  // ---- the review slot: consumeShadowReviewSlot ----
+  const CRITICAL_REQUEST: ShadowReviewEvent = { kind: 'request_risk', critical: true };
+  const OTHER_REQUEST: ShadowReviewEvent = { kind: 'request_risk', critical: false };
+  const GENERATED_ANSWER: ShadowReviewEvent = { kind: 'response_safety', critical: true };
+  const OPERATIONAL: ShadowReviewEvent = { kind: 'operational', critical: false };
+  const slot = (event: ShadowReviewEvent, account = ACCOUNT) => consumeShadowReviewSlot({
+    organizationId: ORG,
+    accountId: account,
+    event,
+  });
+
+  test('THE REVIEW SLOT: 1, 2 and 3 are admitted; the 4th is refused and put back; a failed admitted write refunds to 2; nothing else moves', async () => {
+    await withDatabase('ppbf_test_rl_review_slot', async (client) => {
+      // Neighbours that must not move: another account's row in the same
+      // bucket, and this account's row for the hour before.
+      await slot(OTHER_REQUEST, OTHER_ACCOUNT);
+      const first = await slot(OTHER_REQUEST);
+      const lastHour = first!.windowStartedAtEpochSeconds - POLICY.windowSeconds;
+      await plant(client, { organizationId: ORG, accountId: ACCOUNT, endpointKey: 'safety_review', windowEpoch: lastHour, windowSeconds: POLICY.windowSeconds, count: 3 });
+      const mine = { organization_id: ORG, account_id: ACCOUNT, endpoint_key: 'safety_review', window_epoch: first!.windowStartedAtEpochSeconds };
+      const neighboursUnmoved = async () => {
+        const rows = await buckets(client);
+        expect(rows).toHaveLength(3);
+        expect(countOf(rows, { account_id: OTHER_ACCOUNT })).toBe(1);
+        expect(countOf(rows, { account_id: ACCOUNT, window_epoch: lastHour })).toBe(3);
+      };
+
+      await slot(OTHER_REQUEST);
+      const third = await slot(OTHER_REQUEST);
+      expect(countOf(await buckets(client), mine)).toBe(3);
+
+      // The fourth: refused, and its own increment is not left behind.
+      await expect(slot(OTHER_REQUEST)).rejects.toBeInstanceOf(ShadowRateLimitExceeded);
+      expect(countOf(await buckets(client), mine)).toBe(3);
+      // And again: refusals do not accumulate.
+      await expect(slot(OTHER_REQUEST)).rejects.toBeInstanceOf(ShadowRateLimitExceeded);
+      expect(countOf(await buckets(client), mine)).toBe(3);
+      await neighboursUnmoved();
+
+      // The third row's insert failed: its slot comes back.
+      await expect(refundShadowRateLimit(third!)).resolves.toBe(true);
+      expect(countOf(await buckets(client), mine)).toBe(2);
+
+      // And is usable: the next row is admitted, and the one after is not.
+      await expect(slot(OTHER_REQUEST)).resolves.toEqual(third);
+      expect(countOf(await buckets(client), mine)).toBe(3);
+      await expect(slot(OTHER_REQUEST)).rejects.toBeInstanceOf(ShadowRateLimitExceeded);
+      expect(countOf(await buckets(client), mine)).toBe(3);
+      await neighboursUnmoved();
+    });
+  });
+
+  test('TWO ALLOWANCES: three critical request reviews do not spend the general allowance, and the fourth critical one is still refused', async () => {
+    await withDatabase('ppbf_test_rl_review_critical', async (client) => {
+      for (let i = 0; i < 3; i += 1) {
+        await expect(slot(CRITICAL_REQUEST)).resolves.toEqual(expect.objectContaining({ endpointKey: 'safety_review_critical' }));
+      }
+      // Bounded, not unlimited.
+      await expect(slot(CRITICAL_REQUEST)).rejects.toBeInstanceOf(ShadowRateLimitExceeded);
+
+      // Every other kind of row still has its own three.
+      await expect(slot(OTHER_REQUEST)).resolves.toEqual(expect.objectContaining({ endpointKey: 'safety_review' }));
+      await expect(slot(GENERATED_ANSWER)).resolves.toEqual(expect.objectContaining({ endpointKey: 'safety_review' }));
+      await expect(slot(OPERATIONAL)).resolves.toEqual(expect.objectContaining({ endpointKey: 'safety_review' }));
+
+      const rows = await buckets(client);
+      expect(rows).toHaveLength(2);
+      expect(countOf(rows, { endpoint_key: 'safety_review_critical' })).toBe(3);
+      expect(countOf(rows, { endpoint_key: 'safety_review' })).toBe(3);
+    });
+  });
+
+  test('TWO ALLOWANCES: three routine rows of any kind spend the general allowance and leave the critical one whole', async () => {
+    await withDatabase('ppbf_test_rl_review_general', async (client) => {
+      // One of each kind that shares the general bucket, the generated answer
+      // being one behind a CRITICAL request: it is still not a critical
+      // request review.
+      await slot(OTHER_REQUEST);
+      await slot(GENERATED_ANSWER);
+      await slot(OPERATIONAL);
+      for (const event of [OTHER_REQUEST, GENERATED_ANSWER, OPERATIONAL]) {
+        await expect(slot(event)).rejects.toBeInstanceOf(ShadowRateLimitExceeded);
+      }
+
+      // The emergency report that hour is still admitted, three times.
+      for (let i = 0; i < 3; i += 1) {
+        await expect(slot(CRITICAL_REQUEST)).resolves.toEqual(expect.objectContaining({ endpointKey: 'safety_review_critical' }));
+      }
+
+      const rows = await buckets(client);
+      expect(rows).toHaveLength(2);
+      expect(countOf(rows, { endpoint_key: 'safety_review' })).toBe(3);
+      expect(countOf(rows, { endpoint_key: 'safety_review_critical' })).toBe(3);
     });
   });
 });

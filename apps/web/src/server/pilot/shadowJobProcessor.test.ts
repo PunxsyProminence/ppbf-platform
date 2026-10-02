@@ -8,8 +8,9 @@ import { claimNextJob, completeJob, failJob, type ShadowJob, SHADOW_CONTEXT_CONT
 import { queryOne } from './db';
 import { appendAssistantMessage, queueHumanReview } from './shadowConversations';
 import {
-  consumeShadowRateLimit,
+  consumeShadowReviewSlot,
   refundShadowRateLimit,
+  resolveShadowReviewBucket,
   ShadowRateLimitExceeded,
   type ShadowRateLimitReceipt,
 } from './shadowRateLimit';
@@ -32,11 +33,11 @@ jest.mock('./shadowConversations', () => ({
   appendAssistantMessage: jest.fn(),
   queueHumanReview: jest.fn(),
 }));
-// Only the two calls that touch the bucket are mocked; the policy
-// (safety_review, three an hour) and the error class are the real ones.
+// Only the two calls that touch the bucket are mocked; which bucket an event
+// draws on (resolveShadowReviewBucket) and the error class are the real ones.
 jest.mock('./shadowRateLimit', () => ({
   ...jest.requireActual('./shadowRateLimit'),
-  consumeShadowRateLimit: jest.fn(),
+  consumeShadowReviewSlot: jest.fn(),
   refundShadowRateLimit: jest.fn(),
 }));
 jest.mock('./azureAiRuntime', () => ({
@@ -53,7 +54,7 @@ const mockFailJob = jest.mocked(failJob);
 const mockQueryOne = jest.mocked(queryOne);
 const mockAppendAssistantMessage = jest.mocked(appendAssistantMessage);
 const mockQueueHumanReview = jest.mocked(queueHumanReview);
-const mockConsumeRateLimit = jest.mocked(consumeShadowRateLimit);
+const mockConsumeReviewSlot = jest.mocked(consumeShadowReviewSlot);
 const mockRefundRateLimit = jest.mocked(refundShadowRateLimit);
 const WORKER_REVIEW_RECEIPT: ShadowRateLimitReceipt = {
   organizationId: 'org-1',
@@ -134,6 +135,8 @@ describe('background Heavy Bag completion parity with the synchronous path', () 
     mockFailJob.mockResolvedValue(undefined);
     mockAppendAssistantMessage.mockResolvedValue('assistant-msg-1');
     mockQueueHumanReview.mockResolvedValue('review-1');
+    mockConsumeReviewSlot.mockResolvedValue(WORKER_REVIEW_RECEIPT);
+    mockRefundRateLimit.mockResolvedValue(true);
   });
 
   test('persists only library citation ids against the bundle; near-miss ids stay prose', async () => {
@@ -228,10 +231,15 @@ describe('background Heavy Bag completion parity with the synchronous path', () 
 // with one row (the route's), with a replaced answer two, and a benign
 // question with a replaced answer one (this one).
 //
-// The write takes a slot from the same safety_review bucket the route uses,
-// under the same rules. Nothing here changes what the job does: it completes
-// first, and no failure below reaches failJob.
-describe('the worker\'s response-safety review row is bounded by safety_review and refunded', () => {
+// No test here runs the route and the worker together: that the two rows of a
+// high-risk question with a replaced background answer both exist is the sum
+// of the route's suite (its row) and this one (the worker's), not a single
+// observation.
+//
+// The write takes a slot from the bucket the route's generated-answer reviews
+// use, under the same rules. Nothing here changes what the job does: it
+// completes first, and no failure below reaches failJob.
+describe('the worker\'s response-safety review row is bounded and refunded', () => {
   const REPLACED = 'Cut water weight by sitting in a sauna the night before weigh-in.';
   const CLEAN = `The rotation the gym already logged supports a tighter pivot drill. [E:${LIBRARY_ID}] RESEARCH NEEDED.`;
 
@@ -247,25 +255,32 @@ describe('the worker\'s response-safety review row is bounded by safety_review a
     mockFailJob.mockResolvedValue(undefined);
     mockAppendAssistantMessage.mockResolvedValue('assistant-msg-1');
     mockQueueHumanReview.mockResolvedValue('review-1');
-    mockConsumeRateLimit.mockResolvedValue(WORKER_REVIEW_RECEIPT);
+    mockConsumeReviewSlot.mockResolvedValue(WORKER_REVIEW_RECEIPT);
     mockRefundRateLimit.mockResolvedValue(true);
     mockClaimNextJob.mockResolvedValue(heavyBagJob());
   });
 
-  test('a replaced answer: one slot for this account, one row, category async_response_safety', async () => {
+  // mockRejectedValue and unconsumed ...Once values outlive jest.clearAllMocks.
+  afterEach(() => {
+    mockQueueHumanReview.mockReset();
+    mockConsumeReviewSlot.mockReset();
+    mockRefundRateLimit.mockReset();
+  });
+
+  test('a replaced answer: one slot for this account from the general review bucket, one row, category async_response_safety', async () => {
     llmReply(REPLACED);
 
     const result = await processNextShadowJob();
 
     expect(result.processed).toBe(true);
-    expect(mockConsumeRateLimit).toHaveBeenCalledTimes(1);
-    expect(mockConsumeRateLimit).toHaveBeenCalledWith({
+    expect(mockConsumeReviewSlot).toHaveBeenCalledTimes(1);
+    expect(mockConsumeReviewSlot).toHaveBeenCalledWith({
       organizationId: 'org-1',
       accountId: 'account-1',
-      endpointKey: 'safety_review',
-      limit: 3,
-      windowSeconds: 3_600,
+      event: { kind: 'response_safety', critical: false },
     });
+    // Never the critical allowance: that is for critical REQUEST reviews.
+    expect(resolveShadowReviewBucket(mockConsumeReviewSlot.mock.calls[0][0].event)).toBe('safety_review');
     expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
     expect(mockQueueHumanReview.mock.calls[0][0]).toEqual(expect.objectContaining({
       category: 'async_response_safety',
@@ -281,12 +296,12 @@ describe('the worker\'s response-safety review row is bounded by safety_review a
 
     expect(result.processed).toBe(true);
     expect(mockQueueHumanReview).not.toHaveBeenCalled();
-    expect(mockConsumeRateLimit).not.toHaveBeenCalled();
+    expect(mockConsumeReviewSlot).not.toHaveBeenCalled();
   });
 
   test('the hour is spent: the row is not written, nothing is refunded, and the job is still completed, not failed', async () => {
     llmReply(REPLACED);
-    mockConsumeRateLimit.mockRejectedValueOnce(new ShadowRateLimitExceeded(1800, 'safety_review'));
+    mockConsumeReviewSlot.mockRejectedValueOnce(new ShadowRateLimitExceeded(1800, 'safety_review'));
     const quiet = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
     try {
@@ -307,7 +322,7 @@ describe('the worker\'s response-safety review row is bounded by safety_review a
 
   test('a limiter that FAILS is not a limiter that is spent: the row is written without a slot', async () => {
     llmReply(REPLACED);
-    mockConsumeRateLimit.mockRejectedValueOnce(new Error('SHADOW_RATE_LIMIT_UNAVAILABLE'));
+    mockConsumeReviewSlot.mockRejectedValueOnce(new Error('SHADOW_RATE_LIMIT_UNAVAILABLE'));
     const quiet = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
     try {
@@ -325,7 +340,7 @@ describe('the worker\'s response-safety review row is bounded by safety_review a
   test('both attempts fail: the exact receipt is given back, once, and the job is still not failed', async () => {
     llmReply(REPLACED);
     const receipt: ShadowRateLimitReceipt = { ...WORKER_REVIEW_RECEIPT, windowStartedAtEpochSeconds: 1_790_003_600 };
-    mockConsumeRateLimit.mockResolvedValueOnce(receipt);
+    mockConsumeReviewSlot.mockResolvedValueOnce(receipt);
     mockQueueHumanReview.mockRejectedValue(new Error('insert failed'));
     const quiet = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -338,7 +353,7 @@ describe('the worker\'s response-safety review row is bounded by safety_review a
       expect(mockRefundRateLimit).toHaveBeenCalledTimes(1);
       expect(mockRefundRateLimit.mock.calls[0][0]).toBe(receipt);
       // One slot for the row, not one per attempt.
-      expect(mockConsumeRateLimit).toHaveBeenCalledTimes(1);
+      expect(mockConsumeReviewSlot).toHaveBeenCalledTimes(1);
       expect(mockFailJob).not.toHaveBeenCalled();
     } finally {
       quiet.mockRestore();
@@ -356,15 +371,22 @@ describe('the worker\'s response-safety review row is bounded by safety_review a
     expect(mockRefundRateLimit).not.toHaveBeenCalled();
   });
 
-  test('a refund that reports failure does not change the job\'s outcome', async () => {
+  // The real refund reports failure by returning false and does not throw.
+  // The worker does not rely on that: a refund that REJECTS is caught here
+  // too, because a throw at this point would route a completed job to failJob.
+  test.each([
+    ['reports failure', () => { mockRefundRateLimit.mockResolvedValue(false); }],
+    ['rejects', () => { mockRefundRateLimit.mockRejectedValue(new Error('refund blew up')); }],
+  ])('a refund that %s does not change the job\'s outcome', async (_name, arrange) => {
     llmReply(REPLACED);
     mockQueueHumanReview.mockRejectedValue(new Error('insert failed'));
-    mockRefundRateLimit.mockResolvedValueOnce(false);
+    arrange();
     const quiet = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
     try {
       const result = await processNextShadowJob();
 
+      expect(mockRefundRateLimit).toHaveBeenCalledTimes(1);
       expect(result.processed).toBe(true);
       expect(result.error).toBeUndefined();
       expect(mockCompleteJob).toHaveBeenCalledTimes(1);

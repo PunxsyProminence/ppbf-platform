@@ -38,9 +38,8 @@ import { claimNextJob, completeJob, failJob, SHADOW_CONTEXT_CONTRACT_VERSION, ty
 import { composeShadowSystemPrompt, SHADOW_SYSTEM_PROMPT, validateShadowResponse } from './shadowChat';
 import { appendAssistantMessage, queueHumanReview } from './shadowConversations';
 import {
-  consumeShadowRateLimit,
+  consumeShadowReviewSlot,
   refundShadowRateLimit,
-  resolveShadowRateLimit,
   ShadowRateLimitExceeded,
   type ShadowRateLimitReceipt,
 } from './shadowRateLimit';
@@ -327,25 +326,28 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
       // question when it queued this job, and that row is about the
       // question. This one is about the answer, and is not skipped for it.
       //
-      // Bounded like the route's review writes, by the same `safety_review`
-      // bucket and with the same rules: the hour being spent suppresses this
-      // row and nothing else; a limiter that FAILS is not a limiter that is
-      // spent, and the row is attempted without a slot; a slot whose row was
-      // never written is given back to the exact bucket row that was charged.
+      // Bounded like the route's response-safety writes, by the bucket
+      // resolveShadowReviewBucket names for a generated-answer row, and with
+      // the same rules: the hour being spent suppresses this row and nothing
+      // else; a limiter that FAILS is not a limiter that is spent, and the
+      // row is attempted without a slot; a slot whose row was never written
+      // is given back to the exact bucket row that was charged.
       //
       // The job is already completed above, so a throw here would route to
       // failJob against a completed row -- retry once, then log loudly. (The
       // synchronous path can fail its request closed; this path cannot
       // without reordering completion, which would let a re-claim duplicate
       // the already-appended answer.) Nothing in this block may throw: the
-      // limiter's errors are caught, and the refund never throws.
+      // limiter's errors are caught, and so is the refund's -- it reports
+      // failure by returning false, and is guarded here all the same, because
+      // giving a slot back must never become the outcome of a completed job.
       let reviewReceipt: ShadowRateLimitReceipt | null = null;
       let reviewSuppressed = false;
       try {
-        reviewReceipt = await consumeShadowRateLimit({
+        reviewReceipt = await consumeShadowReviewSlot({
           organizationId: job.organizationId,
           accountId: job.accountId,
-          ...resolveShadowRateLimit('safety_review'),
+          event: { kind: 'response_safety', critical: false },
         });
       } catch (limiterError) {
         if (limiterError instanceof ShadowRateLimitExceeded) {
@@ -368,7 +370,16 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
           try {
             await queueHumanReview(reviewTicket);
           } catch {
-            if (reviewReceipt) await refundShadowRateLimit(reviewReceipt);
+            if (reviewReceipt) {
+              try {
+                await refundShadowRateLimit(reviewReceipt);
+              } catch {
+                console.error('SHADOW async human-review slot refund failed', {
+                  jobId: job.jobId,
+                  jobType: job.jobType,
+                });
+              }
+            }
             console.error('SHADOW async human-review queue write failed twice', {
               jobId: job.jobId,
               jobType: job.jobType,

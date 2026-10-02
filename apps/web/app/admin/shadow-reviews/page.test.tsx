@@ -113,18 +113,20 @@ test('the order on screen is the order the server sent, not one this page invent
   expect(within(rows[1]).getByText('CRITICAL')).toBeTruthy();
 });
 
-// The queue holds two kinds of ticket since the human-review foundation: a
-// high-risk chat (which may have been answered), and a generated answer the
-// safety boundary replaced. The page's own words must not say every ticket is
-// a refusal.
-test('the page says what the queue holds: high-risk chats and safety-filtered answers, not only refusals', async () => {
+// The queue holds three classes of ticket since the human-review foundation:
+// a high-risk request (which may have been answered), a generated answer the
+// safety boundary withheld or replaced, and the operational rows that already
+// existed, such as the empty-Library notice. The page's own words must not
+// say every ticket is a refusal.
+test('the page says what the queue holds: three classes of ticket, not only refusals', async () => {
   fetchMock.mockResolvedValueOnce(jsonResponse({ reviews: [] }));
 
   render(<ShadowReviewsPage />);
 
-  await screen.findByText('Nothing waiting. Tickets appear when a high-risk chat or a generated answer needs human review.');
+  await screen.findByText('Nothing waiting. Tickets appear when SHADOW sends a chat or generated result for human review.');
+  // "\u{2014}" is the em dash in the page's sentence.
   expect(screen.getByText(
-    'High-risk SHADOW chats and safety-filtered answers that need a human look. A ticket means the safety process flagged the chat or its generated answer for review — not that SHADOW failed.',
+    'SHADOW chats sent for a human look. A ticket can come from a high-risk request, a generated answer that was withheld or replaced, or another route condition that needs review \u{2014} not necessarily because SHADOW failed.',
   )).toBeTruthy();
   expect(screen.queryByText(/refused to answer/)).toBeNull();
   expect(screen.queryByText(/withholds an answer/)).toBeNull();
