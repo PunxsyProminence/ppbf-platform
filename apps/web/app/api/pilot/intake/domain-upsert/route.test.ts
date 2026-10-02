@@ -3,6 +3,10 @@ import { NextRequest } from 'next/server';
 import { POST } from './route';
 import { assertActiveParentAccount, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { withTransaction } from '@/src/server/pilot/db';
+import { assertShadowAuthority } from '@/src/server/pilot/shadowAuthority';
+import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
+import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { createCoachObservation, createReadiness, linkGuardianAthlete, upsertGuardian, upsertWaiver } from '@/src/server/pilot/intake';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -23,6 +27,18 @@ jest.mock('@/src/server/pilot/http', () => {
 jest.mock('@/src/server/pilot/access', () => {
   const actual = jest.requireActual('@/src/server/pilot/access');
   return { ...actual, assertActorCanAccessAthlete: jest.fn(), assertActiveParentAccount: jest.fn() };
+});
+
+// The route runs its writes inside withTransaction. No database exists in this
+// suite, so the transaction is stood in for by a function that hands the
+// callback a marker client -- which lets each test below assert that a writer
+// was given THE TRANSACTION'S client rather than left on the pool. Whether a
+// rollback really removes the rows is a question only a real database can
+// answer; intakeDomainUpsertAtomic.pg.test.ts asks it.
+const TX_CLIENT = { marker: 'transaction-client' };
+jest.mock('@/src/server/pilot/db', () => {
+  const actual = jest.requireActual('@/src/server/pilot/db');
+  return { ...actual, withTransaction: jest.fn() };
 });
 
 jest.mock('@/src/server/pilot/audit', () => ({ writePilotAuditEvent: jest.fn() }));
@@ -46,6 +62,14 @@ jest.mock('@/src/server/pilot/intake', () => {
 });
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockWithTransaction = withTransaction as jest.Mock;
+const mockShadowEvent = emitShadowEvent as jest.Mock;
+const mockTelemetry = writeShadowTelemetryEvent as jest.Mock;
+const mockAuthority = assertShadowAuthority as jest.Mock;
+
+beforeEach(() => {
+  mockWithTransaction.mockImplementation(async (fn: (client: unknown) => Promise<unknown>) => fn(TX_CLIENT));
+});
 const mockAccess = assertActorCanAccessAthlete as jest.Mock;
 const mockCreate = createCoachObservation as jest.Mock;
 const mockCreateReadiness = createReadiness as jest.Mock;
@@ -103,12 +127,12 @@ test('a coach observation files under the calling coach in their own organizatio
     coachAccountId: 'acct-coach-1',
     noteType: 'floor_observation',
     noteText: 'Working left hook off the jab.',
-  });
+  }, TX_CLIENT);
   expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
     entity_type: 'intake_coach_note',
     organization_id: 'org-1',
     actor_account_id: 'acct-coach-1',
-  }));
+  }), TX_CLIENT);
 });
 
 test('a parent cannot write an observation about a child -- the role gate runs before anything', async () => {
@@ -184,12 +208,12 @@ test('an organization_admin attaching a guardian must name a real parent account
     organizationId: 'org-1',
     parentId: 'parent-1',
     accountId: 'acct-parent-1',
-  }));
+  }), TX_CLIENT);
   expect(mockLinkGuardianAthlete).toHaveBeenCalledWith(expect.objectContaining({
     organizationId: 'org-1',
     parentId: 'parent-1',
     athleteId: 'ath-1',
-  }));
+  }), TX_CLIENT);
 });
 
 test('an organization_admin cannot attach an account that is not an active parent in this organization', async () => {
@@ -218,7 +242,7 @@ test('a guardian_link write with no account_id skips account validation but stil
 
   expect(response.status).toBe(200);
   expect(mockAssertActiveParent).not.toHaveBeenCalled();
-  expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({ accountId: undefined }));
+  expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({ accountId: undefined }), TX_CLIENT);
 });
 
 // Naming an existing guardian record with a different login is refused by
@@ -276,7 +300,7 @@ test('a readiness score is stored as the number given, not coerced or defaulted'
     measuredAt: '2026-08-17T12:00:00Z',
     method: 'staff_entered_intake',
     recordedByAccountId: 'acct-coach-1',
-  });
+  }, TX_CLIENT);
 });
 
 test('a missing readiness score is refused, never fabricated as 0', async () => {
@@ -315,7 +339,7 @@ test('a zero readiness score is a real, legitimate reading -- accepted, not mist
   const response = await POST(postRequest({ ...READINESS_BODY, payload: { ...READINESS_BODY.payload, score: 0 } }));
 
   expect(response.status).toBe(200);
-  expect(mockCreateReadiness).toHaveBeenCalledWith(expect.objectContaining({ score: 0 }));
+  expect(mockCreateReadiness).toHaveBeenCalledWith(expect.objectContaining({ score: 0 }), TX_CLIENT);
 });
 
 // ---------------------------------------------------------------------------
@@ -410,14 +434,14 @@ describe('a waiver status is held to the vocabulary before it is written', () =>
     const response = await POST(postRequest({ ...WAIVER_BODY, payload: { ...WAIVER_BODY.payload, status } }));
 
     expect(response.status).toBe(200);
-    expect(mockUpsertWaiver).toHaveBeenCalledWith(expect.objectContaining({ status }));
+    expect(mockUpsertWaiver).toHaveBeenCalledWith(expect.objectContaining({ status }), TX_CLIENT);
   });
 
   test('an omitted status still defaults to signed', async () => {
     const response = await POST(postRequest(WAIVER_BODY));
 
     expect(response.status).toBe(200);
-    expect(mockUpsertWaiver).toHaveBeenCalledWith(expect.objectContaining({ status: 'signed' }));
+    expect(mockUpsertWaiver).toHaveBeenCalledWith(expect.objectContaining({ status: 'signed' }), TX_CLIENT);
   });
 
   test.each([
@@ -435,5 +459,71 @@ describe('a waiver status is held to the vocabulary before it is written', () =>
     expect(String(payload.error)).toMatch(/^Unsupported payload\.status/);
     expect(mockUpsertWaiver).not.toHaveBeenCalled();
     expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe('the record and its three accounting rows are one transaction', () => {
+  test('all four writes are handed the transaction client, in one transaction', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockCreate.mockResolvedValue('note-1');
+
+    const response = await POST(postRequest(COACH_NOTE_BODY));
+
+    expect(response.status).toBe(200);
+    expect(mockWithTransaction).toHaveBeenCalledTimes(1);
+    for (const writer of [mockCreate, mockAudit, mockShadowEvent, mockTelemetry]) {
+      expect(writer).toHaveBeenCalledTimes(1);
+      expect(writer.mock.calls[0][1]).toBe(TX_CLIENT);
+    }
+  });
+
+  test.each([
+    ['the audit row', mockAudit],
+    ['the shadow event', mockShadowEvent],
+    ['the metric', mockTelemetry],
+  ])('a failure on %s is thrown INSIDE the transaction, so it is rolled back rather than swallowed', async (_name, writer) => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockCreate.mockResolvedValue('note-1');
+    (writer as jest.Mock).mockRejectedValueOnce(new Error('connection terminated unexpectedly'));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await POST(postRequest(COACH_NOTE_BODY));
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Internal server error' });
+    // The rejection reached withTransaction's callback, which is what makes
+    // it roll back: a writer awaited after the callback returned would not.
+    await expect(mockWithTransaction.mock.results[0].value).rejects.toThrow('connection terminated unexpectedly');
+    errorSpy.mockRestore();
+  });
+
+  test('a refused request opens no transaction, and its authority check has already been recorded', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockAccess.mockRejectedValueOnce(new Error('Forbidden: coach not assigned to athlete'));
+
+    const response = await POST(postRequest(COACH_NOTE_BODY));
+
+    expect(response.status).toBe(403);
+    expect(mockAuthority).toHaveBeenCalledTimes(1);
+    expect(mockWithTransaction).not.toHaveBeenCalled();
+  });
+
+  test('the guardian account read happens before the transaction opens, never while holding its connection', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'acct-admin-1' }));
+    const order: string[] = [];
+    mockAssertActiveParent.mockImplementationOnce(async () => { order.push('account-read'); });
+    mockWithTransaction.mockImplementationOnce(async (fn: (client: unknown) => Promise<unknown>) => {
+      order.push('transaction');
+      return fn(TX_CLIENT);
+    });
+
+    const response = await POST(postRequest({
+      entity_type: 'guardian_link',
+      athlete_id: 'ath-1',
+      payload: { parent_id: 'par-1', account_id: 'acct-parent-1', full_name: 'Pat Parent' },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(order).toEqual(['account-read', 'transaction']);
   });
 });

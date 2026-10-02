@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PoolClient, QueryResultRow } from 'pg';
+
 import {
   assertActorCanAccessAthlete,
   isOrganizationAdminRole,
@@ -553,6 +555,28 @@ export async function bindIntakeDocumentsToOwner(params: {
   }
 }
 
+/**
+ * Runs one write on the caller's transaction when a client is passed, and
+ * through the pooled query() when it is not.
+ *
+ * The pooled query() checks out a connection, runs one statement and commits
+ * it on its own (db.ts). A writer that only ever used it could not take part
+ * in a transaction at all, which is how intake/domain-upsert came to save a
+ * coach's note, fail on the audit row after it, and answer 500 for a write
+ * that had already happened. The client is optional and last so every caller
+ * that passes none runs the same statement through the same query() as before.
+ */
+async function writeRows<T extends QueryResultRow>(
+  client: PoolClient | undefined,
+  text: string,
+  values: unknown[],
+): Promise<T[]> {
+  if (!client) {
+    return query<T>(text, values);
+  }
+  return (await client.query<T>(text, values)).rows;
+}
+
 export async function upsertEmergencyContact(params: {
   organizationId: string;
   athleteId: string;
@@ -562,10 +586,11 @@ export async function upsertEmergencyContact(params: {
   email?: string;
   isPrimary?: boolean;
   notes?: string;
-}): Promise<string> {
+}, client?: PoolClient): Promise<string> {
   const contactId = randomUUID();
 
-  await query(
+  await writeRows(
+    client,
     `insert into pilot.emergency_contacts
      (organization_id, contact_id, athlete_id, full_name, relationship_to_athlete, phone, email, is_primary, notes)
      values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
@@ -595,10 +620,11 @@ export async function upsertMedicalIntake(params: {
   physicianPhone?: string;
   clearanceStatus?: string;
   notes?: string;
-}): Promise<string> {
+}, client?: PoolClient): Promise<string> {
   const medicalId = randomUUID();
 
-  await query(
+  await writeRows(
+    client,
     `insert into pilot.medical_intake
      (organization_id, medical_id, athlete_id, conditions, medications, allergies, physician_name, physician_phone, clearance_status, notes)
      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
@@ -681,9 +707,9 @@ export interface UpsertWaiverParams {
   recordedByAccountId: string;
 }
 
-export async function upsertWaiver(params: UpsertWaiverParams): Promise<string> {
+export async function upsertWaiver(params: UpsertWaiverParams, client?: PoolClient): Promise<string> {
   const waiverId = randomUUID();
-  await query(WAIVER_INSERT_SQL, waiverInsertValues(waiverId, params));
+  await writeRows(client, WAIVER_INSERT_SQL, waiverInsertValues(waiverId, params));
   return waiverId;
 }
 
@@ -716,10 +742,11 @@ export async function createAssessment(params: {
   assessorAccountId: string;
   assessmentType: string;
   result: Record<string, unknown>;
-}): Promise<string> {
+}, client?: PoolClient): Promise<string> {
   const assessmentId = randomUUID();
 
-  await query(
+  await writeRows(
+    client,
     `insert into pilot.assessments
      (organization_id, assessment_id, athlete_id, assessor_account_id, assessment_type, result)
      values ($1,$2,$3,$4,$5,$6::jsonb)`,
@@ -735,10 +762,11 @@ export async function createAttendance(params: {
   attendanceDate: string;
   status: string;
   notes?: string;
-}): Promise<string> {
+}, client?: PoolClient): Promise<string> {
   const attendanceId = randomUUID();
 
-  await query(
+  await writeRows(
+    client,
     `insert into pilot.attendance
      (organization_id, attendance_id, athlete_id, attendance_date, status, notes)
      values ($1,$2,$3,$4,$5,$6)`,
@@ -786,10 +814,11 @@ export async function createReadiness(params: {
   reliabilityStatus?: string;
   validityStatus?: string;
   evidenceClass?: string;
-}): Promise<string> {
+}, client?: PoolClient): Promise<string> {
   const readinessId = randomUUID();
 
-  await query(
+  await writeRows(
+    client,
     `insert into pilot.readiness
      (organization_id, readiness_id, athlete_id, score, category, measured_at,
       method, recorded_by_account_id, reliability_status, validity_status, evidence_class)
@@ -855,10 +884,11 @@ export async function createCoachObservation(params: {
   authorRole: PilotRole;
   noteType: string;
   noteText: string;
-}): Promise<string> {
+}, client?: PoolClient): Promise<string> {
   const noteId = randomUUID();
 
-  await query(
+  await writeRows(
+    client,
     `insert into pilot.coach_observations
      (organization_id, note_id, athlete_id, coach_account_id, author_role, note_type, note_text)
      values ($1,$2,$3,$4,$5,$6,$7)`,
@@ -1654,7 +1684,7 @@ export async function upsertGuardian(params: {
   fullName: string;
   phone?: string;
   email?: string;
-}): Promise<void> {
+}, client?: PoolClient): Promise<void> {
   // account_id, phone and email are optional in this signature -- both
   // callers omit them when the caller-supplied payload simply did not carry
   // one, not to mean "clear it". Overwriting unconditionally, as this used to
@@ -1671,7 +1701,8 @@ export async function upsertGuardian(params: {
   // so no row comes back and the write is refused below. It is in the same
   // statement as the write, so a concurrent change cannot slip between a
   // check and the update.
-  const written = await query<{ parent_id: string }>(
+  const written = await writeRows<{ parent_id: string }>(
+    client,
     `insert into pilot.parents
      (organization_id, parent_id, account_id, full_name, phone, email)
      values ($1,$2,$3,$4,$5,$6)
@@ -1700,8 +1731,9 @@ export async function linkGuardianAthlete(params: {
   parentId: string;
   athleteId: string;
   relationshipToAthlete: string;
-}): Promise<void> {
-  await query(
+}, client?: PoolClient): Promise<void> {
+  await writeRows(
+    client,
     `insert into pilot.guardian_links
      (organization_id, parent_id, athlete_id, relationship_to_athlete)
      values ($1,$2,$3,$4)
