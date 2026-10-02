@@ -23,7 +23,9 @@ import { hashPassword, hashToken } from './security';
  * parent-password migration, and every other door) is not proof.
  *
  * The window is the link's own lifetime (MAGIC_LINK_LIFETIME_MS), measured on
- * the database clock, from the session's created_at.
+ * the database clock, from the session's created_at, at the moment the write
+ * holds both of its locks -- not when the request arrived and not when its
+ * transaction began.
  */
 export const PASSWORD_SETUP_WINDOW_MINUTES = 15;
 
@@ -39,11 +41,23 @@ export function passwordSetupLinkRequired(): ForbiddenError {
   );
 }
 
-/** The session's proof, as SQL over session_tokens `st`. Read once, written once. */
-const LINK_SESSION_PROOF_SQL = `st.revoked_at is null
-  and st.expires_at > now()
+/**
+ * The session's proof, as SQL over session_tokens `st`, judged at `clock`.
+ *
+ * The clock is a parameter because the two readers need different ones.
+ * now() is the time the TRANSACTION began, and it does not move while that
+ * transaction waits for a lock: a proof judged against it can have expired,
+ * or aged past the window, during the wait and still pass. The decision that
+ * permits the write therefore uses clock_timestamp(), the actual time, in a
+ * statement run after both locks are held. The early read is its own
+ * statement outside any transaction, where now() is simply the present.
+ */
+function linkSessionProofSql(clock: 'now()' | 'clock_timestamp()'): string {
+  return `st.revoked_at is null
+  and st.expires_at > ${clock}
   and st.sign_in_method = 'magic_link'
-  and st.created_at > now() - interval '${PASSWORD_SETUP_WINDOW_MINUTES} minutes'`;
+  and st.created_at > ${clock} - interval '${PASSWORD_SETUP_WINDOW_MINUTES} minutes'`;
+}
 
 /**
  * "Holds a board seat", for the account under `a`: a seat on ANY board, not
@@ -73,7 +87,7 @@ export async function setOwnPasswordFromLinkSession(input: {
     `select a.role, a.login_email, a.active_flag,
             ${accountDeletedSql('a')} as account_deleted,
             ${HOLDS_ANY_BOARD_SEAT_SQL} as holds_board_seat,
-            (${LINK_SESSION_PROOF_SQL}) as link_session_proof
+            (${linkSessionProofSql('now()')}) as link_session_proof
        from pilot.session_tokens st
        join pilot.accounts a on a.account_id = st.account_id
       where st.token_hash = $1
@@ -134,23 +148,34 @@ export async function setOwnPasswordFromLinkSession(input: {
       [input.accountId],
     )).rows[0];
 
-    // 2. The proof session's row, FOR UPDATE. Every revocation is an UPDATE of
-    //    this row. One in flight makes this wait, and Postgres then re-checks
-    //    the proof against the committed row and returns none; one arriving
-    //    later waits for this transaction. A revoked proof cannot race the
-    //    credential change.
-    const proof = await client.query(
+    // 2. The proof session's row, FOR UPDATE, by its key alone. Every
+    //    revocation is an UPDATE of this row: one in flight makes this wait,
+    //    and one arriving later waits for this transaction. This statement
+    //    only LOCKS. It decides nothing about the proof, because it can itself
+    //    wait, and a condition judged before or during that wait is stale.
+    await client.query(
       `select 1
          from pilot.session_tokens st
         where st.token_hash = $1
           and st.account_id = $2
-          and ${LINK_SESSION_PROOF_SQL}
           for update`,
       [tokenHash, input.accountId],
     );
 
-    // 3. The account and the proof, as they are now.
-    if (!account || isDeletedAccount(account) || !account.active_flag || proof.rows.length !== 1) {
+    // 3. THE DECISION ON THE PROOF, with both locks held, at the actual time.
+    //    The row cannot change now (it is locked), so what remains is time:
+    //    unrevoked, unexpired, a magic-link session, created within the
+    //    window, all as of clock_timestamp() and not as of BEGIN. A proof that
+    //    expired or aged out while this transaction waited is refused here.
+    const proof = (await client.query<{ link_session_proof: boolean }>(
+      `select (${linkSessionProofSql('clock_timestamp()')}) as link_session_proof
+         from pilot.session_tokens st
+        where st.token_hash = $1
+          and st.account_id = $2`,
+      [tokenHash, input.accountId],
+    )).rows[0];
+
+    if (!account || isDeletedAccount(account) || !account.active_flag || proof?.link_session_proof !== true) {
       console.warn('pilot-auth set-password rejected', { reason: 'state_changed_before_write' });
       throw passwordSetupLinkRequired();
     }
@@ -185,9 +210,12 @@ export async function setOwnPasswordFromLinkSession(input: {
       [passwordHash, input.accountId],
     );
 
-    // Every OTHER session ends: if someone else was signed in to this account,
-    // the moment its owner sets a password is the moment that stops. This one
+    // Every other session of the account that no other transaction has
+    // locked is revoked: if someone else was signed in to this account, the
+    // moment its owner sets a password is the moment that stops. This one
     // stays, so the parent who just made a password is not thrown back out.
+    // A row another session-maintenance transaction already holds is left to
+    // that transaction, and stays live if that transaction rolls back.
     //
     // SKIP LOCKED, because this transaction already holds the proof session's
     // row. A bulk revocation that takes no account lock (an admin's "sign them

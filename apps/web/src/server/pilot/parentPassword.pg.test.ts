@@ -547,6 +547,17 @@ describe('the parent-password migration, through its runner', () => {
       'alter table pilot.board_seats add constraint board_seats_account_id_fkey foreign key (account_id) references pilot.accounts(account_id) on delete cascade'],
     ['is deferrable', `alter table pilot.board_seats alter constraint board_seats_account_id_fkey deferrable initially deferred`,
       'alter table pilot.board_seats alter constraint board_seats_account_id_fkey not deferrable'],
+    // Same source column, same target table, another unique column of it.
+    ['points at another unique column of pilot.accounts',
+      `alter table pilot.accounts add column alternate_key text unique;
+       update pilot.accounts set alternate_key = account_id;
+       alter table pilot.board_seats drop constraint board_seats_account_id_fkey;
+       alter table pilot.board_seats add constraint board_seats_account_id_fkey
+         foreign key (account_id) references pilot.accounts(alternate_key) on delete cascade`,
+      `alter table pilot.board_seats drop constraint board_seats_account_id_fkey;
+       alter table pilot.board_seats add constraint board_seats_account_id_fkey
+         foreign key (account_id) references pilot.accounts(account_id) on delete cascade;
+       alter table pilot.accounts drop column alternate_key`],
   ])('a database whose board-seat foreign key to the account %s is refused', async (_label, breakIt, restoreIt) => {
     await runnerDb.query(breakIt);
     try {
@@ -1233,5 +1244,101 @@ describe('set-password while another transaction holds one of the account\u2019s
       { token_hash: hashToken(free), revoked: true },
       { token_hash: hashToken(heldElsewhere), revoked: true },
     ]));
+  });
+});
+
+// THE PROOF IS JUDGED WHEN THE WRITE HOLDS ITS LOCKS, NOT WHEN ITS TRANSACTION
+// BEGAN. now() is the transaction's start time and stands still while the
+// transaction waits for a lock, so a proof judged against it can run out
+// during the wait and still pass. A second connection holds the account row;
+// set-password starts with a good proof and is seen waiting; the proof runs
+// out; the lock is released; nothing may be stored.
+describe('the proof runs out while set-password waits for a lock', () => {
+  let other: Client;
+  let watcher: Client;
+  let mainPid: number;
+
+  beforeAll(async () => {
+    other = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    watcher = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await other.connect();
+    await watcher.connect();
+    mainPid = (await client.query('select pg_backend_pid() as pid')).rows[0].pid;
+  });
+
+  afterEach(async () => {
+    await other.query('rollback').catch(() => undefined);
+  });
+
+  afterAll(async () => {
+    await other?.end();
+    await watcher?.end();
+  });
+
+  /** The main connection's open transaction start, once it is waiting on a lock. */
+  async function mainTransactionStartOnceWaiting(): Promise<Date> {
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+      const row = (await watcher.query(
+        'select wait_event_type, xact_start from pg_stat_activity where pid = $1',
+        [mainPid],
+      )).rows[0];
+      if (row?.wait_event_type === 'Lock' && row.xact_start) return row.xact_start as Date;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error('set-password never waited on a lock');
+  }
+
+  /**
+   * Holds the account row on the second connection, starts set-password,
+   * waits until it is blocked, applies `runOut` to the proof from the third
+   * connection, lets real time pass, then releases the account row.
+   */
+  async function whileWaiting(runOut: string): Promise<{ parent: string; outcome: string; beganBeforeRunOut: boolean }> {
+    const parent = await seedAccount('parent');
+    const token = await seedSession(parent);
+    await other.query('begin');
+    await other.query('select 1 from pilot.accounts where account_id = $1 for update', [parent]);
+
+    const pending = refusalOf({ accountId: parent, sessionToken: token });
+    let beganBeforeRunOut = false;
+    try {
+      const transactionStart = await mainTransactionStartOnceWaiting();
+      // The proof row is not locked yet (the write is still waiting for the
+      // account row), so the third connection can move it. Each statement
+      // sets the row to a value that is still good as of the waiting
+      // transaction's BEGIN and is no longer good a moment from now.
+      const moved = (await watcher.query(
+        `update pilot.session_tokens set ${runOut} where token_hash = $1
+         returning (expires_at > $2::timestamptz
+                    and created_at > $2::timestamptz - interval '15 minutes') as good_at_transaction_start`,
+        [hashToken(token), transactionStart],
+      )).rows[0];
+      beganBeforeRunOut = moved.good_at_transaction_start === true;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    } finally {
+      await other.query('rollback');
+    }
+    return { parent, outcome: await pending, beganBeforeRunOut };
+  }
+
+  test.each([
+    ['the session expires', 'expires_at = clock_timestamp() + interval \'100 milliseconds\''],
+    ['the session passes fifteen minutes old', 'created_at = clock_timestamp() - interval \'15 minutes\' + interval \'100 milliseconds\''],
+  ])('%s during the wait: refused, nothing stored', async (_label, runOut) => {
+    const { parent, outcome, beganBeforeRunOut } = await whileWaiting(runOut);
+
+    // The case is the one named: the proof was still good at the waiting
+    // transaction's start time, which is all now() would have seen.
+    expect(beganBeforeRunOut).toBe(true);
+    expect(outcome).toBe('PASSWORD_SETUP_LINK_REQUIRED');
+    expect(await storedPassword(parent)).toEqual({ password_hash: null, password_set_at: null });
+    expect(loggedReasons()).toEqual(['state_changed_before_write']);
+  });
+
+  test('the same wait with a proof that stays good: accepted', async () => {
+    const { parent, outcome } = await whileWaiting('revoked_at = null');
+
+    expect(outcome).toBe('ACCEPTED');
+    expect((await storedPassword(parent)).password_hash).not.toBeNull();
   });
 });
