@@ -1461,6 +1461,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     ['medical status: a restricted row beside effectiveStatus "cleared"', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, status: 'restricted' }, effectiveStatus: 'cleared' })],
     ['medical status: a cleared row beside effectiveStatus "restricted"', '/medical-status', () => jsonResponse({ status: B_STATUS, effectiveStatus: 'restricted' })],
     ['medical status: a pending row beside effectiveStatus "cleared_expired"', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, status: 'pending' }, effectiveStatus: 'cleared_expired' })],
+    ['medical status: a not_cleared row beside effectiveStatus "cleared_expired"', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, status: 'not_cleared' }, effectiveStatus: 'cleared_expired' })],
+    ['medical status: a restricted row beside effectiveStatus "cleared_expired"', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, status: 'restricted' }, effectiveStatus: 'cleared_expired' })],
     ['medical status: a cleared row beside an effectiveStatus that is no known word', '/medical-status', () => jsonResponse({ status: B_STATUS, effectiveStatus: 'CLEARED' })],
     ['medical status: a cleared row beside an effectiveStatus that is not a string', '/medical-status', () => jsonResponse({ status: B_STATUS, effectiveStatus: true })],
     ['recommendations: body will not parse', '/recommendations', unparseable],
@@ -1511,7 +1513,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   // OD-2026-10-01-007 section 4.
   describe('a lapsed clearance beside a current one', () => {
     const LAPSED_SENTENCE = 'This clearance passed its end date, so it no longer counts. The medical gate blocks recommendations until a new clearance is recorded.';
-    const LAPSED_ROW = { ...B_STATUS, expires_at: '2026-09-01T10:00:00.000Z' };
+    const LAPSED_ROW = { ...B_STATUS, expires_at: '2026-09-01 10:00:00+00' };
 
     async function openB(body: Record<string, unknown>) {
       installReadsForB({ '/medical-status': () => jsonResponse(body) });

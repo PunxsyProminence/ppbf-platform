@@ -1386,8 +1386,11 @@ describe('a lapsed clearance beside a current one', () => {
     status_id: 'status-2',
     athlete_id: 'ath-2',
     effective_at: '2026-06-01T16:00:00.000Z',
-    expires_at: '2026-09-01T16:00:00.000Z',
+    // As the route sends it: `expires_at::text`, Postgres text, not ISO.
+    expires_at: '2026-09-01 16:00:00+00',
   };
+  // A clearance still in force that HAS an end date, in the future.
+  const CURRENT_STATUS = { ...CLEARED_STATUS, expires_at: '2099-01-01 16:00:00+00' };
 
   function rowOf(name: string): HTMLElement {
     return screen.getByText(name).closest('li') as HTMLElement;
@@ -1396,6 +1399,8 @@ describe('a lapsed clearance beside a current one', () => {
   function installRoster(lapsedBody: unknown) {
     global.fetch = mockFetch({
       '/athletes/list': () => ({ ok: true, json: async () => ({ items: [CURRENT, LAPSED] }) }) as Response,
+      'medical-status?athleteId=ath-1': () =>
+        ({ ok: true, json: async () => ({ ok: true, status: CURRENT_STATUS, effectiveStatus: 'cleared' }) }) as Response,
       'medical-status?athleteId=ath-2': () => ({ ok: true, json: async () => lapsedBody }) as Response,
     });
   }
@@ -1429,6 +1434,48 @@ describe('a lapsed clearance beside a current one', () => {
     expect(lapsed.queryByText('unavailable')).toBeNull();
     // Still no clinical detail on the surface.
     expect(screen.queryByText(/physician-note-123/)).toBeNull();
+  });
+
+  test('the end date is read on a browser whose Date takes only ISO 8601, from the text form the database sends', async () => {
+    const RealDate = Date;
+    const ISO = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2}))?$/;
+    class IsoOnlyDate extends RealDate {
+      constructor(...args: unknown[]) {
+        const refused = args.length === 1 && typeof args[0] === 'string' && !ISO.test(args[0]);
+        super(...((refused ? [Number.NaN] : args) as [number]));
+      }
+    }
+    // The stand-in refuses what it should and reads what it should.
+    expect(Number.isNaN(new IsoOnlyDate(LAPSED_STATUS.expires_at).getTime())).toBe(true);
+    expect(Number.isNaN(new IsoOnlyDate('2026-09-01T16:00:00+00:00').getTime())).toBe(false);
+
+    global.Date = IsoOnlyDate as unknown as DateConstructor;
+    try {
+      installRoster({ ok: true, status: LAPSED_STATUS, effectiveStatus: 'cleared_expired' });
+
+      render(<SportsMedicinePage />);
+      await screen.findByText('Sam Roe');
+
+      expect(within(rowOf('Sam Roe')).getByText('expired 9/1/2026')).toBeTruthy();
+      expect(within(rowOf('Jordan Doe')).getByText('since 8/1/2026')).toBeTruthy();
+    } finally {
+      global.Date = RealDate;
+    }
+  });
+
+  test.each([
+    ['2026-09-01 16:00:00.123456+00', '9/1/2026'],
+    ['2026-09-02 03:30:00+00', '9/1/2026'],
+    ['2026-09-01 16:00:00-04', '9/1/2026'],
+    ['2026-09-01T16:00:00.000Z', '9/1/2026'],
+    ['2026-09-01T16:00:00+00:00', '9/1/2026'],
+  ])('an end date sent as %s prints as the gym\'s day, %s', async (expiresAt, day) => {
+    installRoster({ ok: true, status: { ...LAPSED_STATUS, expires_at: expiresAt }, effectiveStatus: 'cleared_expired' });
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Roe');
+
+    expect(within(rowOf('Sam Roe')).getByText(`expired ${day}`)).toBeTruthy();
   });
 
   test.each([
@@ -1497,6 +1544,8 @@ describe('a clearance nobody actually read never reads as cleared, or as "no rec
     ['a restricted row beside effectiveStatus "cleared"', { ok: true, status: { ...CLEARED_STATUS, status: 'restricted' }, effectiveStatus: 'cleared' }],
     ['a cleared row beside effectiveStatus "restricted"', { ok: true, status: CLEARED_STATUS, effectiveStatus: 'restricted' }],
     ['a pending row beside effectiveStatus "cleared_expired"', { ok: true, status: { ...CLEARED_STATUS, status: 'pending' }, effectiveStatus: 'cleared_expired' }],
+    ['a not_cleared row beside effectiveStatus "cleared_expired"', { ok: true, status: { ...CLEARED_STATUS, status: 'not_cleared' }, effectiveStatus: 'cleared_expired' }],
+    ['a restricted row beside effectiveStatus "cleared_expired"', { ok: true, status: { ...CLEARED_STATUS, status: 'restricted' }, effectiveStatus: 'cleared_expired' }],
     ['a cleared row beside an effectiveStatus that is no known word', { ok: true, status: CLEARED_STATUS, effectiveStatus: 'CLEARED' }],
     ['a cleared row beside an effectiveStatus that is not a string', { ok: true, status: CLEARED_STATUS, effectiveStatus: true }],
   ];

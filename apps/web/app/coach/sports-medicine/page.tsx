@@ -87,6 +87,12 @@ function isClearanceRow(
   );
 }
 
+/* The route sends `expires_at` as Postgres text ('2026-09-01 16:00:00+00'),
+   which not every browser's Date will read. ISO 8601 all of them do. */
+function isoInstant(value: string): string {
+  return value.trim().replace(' ', 'T').replace(/(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?[+-]\d{2})$/, '$1:00');
+}
+
 /* What this board needs from a hold before it will show one. An entry that
    is not this -- null, false, an empty object, a row with no sentence for the
    athlete -- is not a hold and is not "no hold" either: the read did not
@@ -322,7 +328,7 @@ export default function SportsMedicinePage() {
                     } else if (stored.status === 'cleared' && effective === 'cleared_expired') {
                       const expiresAt = (stored as { expires_at?: unknown }).expires_at;
                       base.clearance = 'cleared_expired';
-                      base.expired_at = typeof expiresAt === 'string' ? expiresAt : null;
+                      base.expired_at = typeof expiresAt === 'string' ? isoInstant(expiresAt) : null;
                     }
                   }
                 }
