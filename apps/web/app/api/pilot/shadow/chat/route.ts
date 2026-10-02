@@ -807,12 +807,21 @@ async function handleShadowChat(
     // whether a row is owed. POST adds a second lock: whatever the probe
     // said, a response of 401, 403 or 404 writes nothing.
     //
-    // ONLY A REFUSAL CANCELS THE ROW. A probe that fails for some other
-    // reason -- a dropped connection -- has not said the caller is
-    // unauthorized, and an emergency report must not lose its row to that.
-    // The row stays owed, and the second lock still covers the case where
-    // the handler's own check then refuses. What counts as a refusal is what
-    // the route itself would answer 401, 403 or 404 for.
+    // THREE VERDICTS, NOT TWO.
+    //   AUTHORIZED     both checks passed: the row is owed.
+    //   REFUSED        a check answered what the route itself would answer
+    //                  401, 403 or 404 for: no row.
+    //   INDETERMINATE  a check failed for some other reason -- a dropped
+    //                  connection. That is not a refusal, and it is not an
+    //                  authorization either. The row is NOT owed yet. It
+    //                  becomes owed only if the handler's own checks, further
+    //                  down at their place in main's order, then pass. If
+    //                  they fail too, or the request is turned away before
+    //                  reaching them, authorization never succeeded: no row,
+    //                  and no slot is charged. So an emergency report does
+    //                  not lose its row to one dropped connection, and a row
+    //                  is never written for a subject nobody confirmed the
+    //                  caller may access.
     //
     // (A WITHHELD request that also asks for a board summary is not refused
     // as a board summary: the safety boundary answers it first, as on main.
@@ -820,6 +829,8 @@ async function handleShadowChat(
     const requestRiskState: {
       owed: boolean;
       attempted: boolean;
+      /** The probe was INDETERMINATE: owed only once the handler's own access checks pass. */
+      awaitingAuthorization: boolean;
       withheld: boolean;
       outcome: HumanReviewOutcome | { result: 'not_attempted' };
       conversationId: string | undefined;
@@ -828,6 +839,7 @@ async function handleShadowChat(
     } = {
       owed: false,
       attempted: false,
+      awaitingAuthorization: false,
       withheld: false,
       outcome: { result: 'not_attempted' },
       conversationId: requestedConversationId,
@@ -872,8 +884,8 @@ async function handleShadowChat(
       const refusedAsBoardSummary = requestValidation.valid
         && (sessionType === 'board_summary' || requestedSessionType === 'board_summary')
         && !BOARD_SUMMARY_ROLES.has(userRole as PilotRole);
-      let authorizedForThisRequest = !refusedAsBoardSummary;
-      if (authorizedForThisRequest) {
+      let probeVerdict: 'authorized' | 'refused' | 'indeterminate' = refusedAsBoardSummary ? 'refused' : 'authorized';
+      if (probeVerdict === 'authorized') {
         try {
           if (athleteId) {
             await assertActorCanAccessAthlete(principal, athleteId);
@@ -889,14 +901,14 @@ async function handleShadowChat(
         } catch (probeError) {
           const refused = (probeError instanceof Error && probeError.message === 'SHADOW_CONVERSATION_NOT_FOUND')
             || [401, 403, 404].includes(jsonError(probeError).status);
-          if (refused) {
-            authorizedForThisRequest = false;
-          } else {
-            console.error('SHADOW authorization probe failed for a reason other than a refusal; the review row stays owed');
+          probeVerdict = refused ? 'refused' : 'indeterminate';
+          if (!refused) {
+            console.error('SHADOW authorization probe failed for a reason other than a refusal; the review row is owed only if the request is then authorized');
           }
         }
       }
-      requestRiskState.owed = authorizedForThisRequest;
+      requestRiskState.owed = probeVerdict === 'authorized';
+      requestRiskState.awaitingAuthorization = probeVerdict === 'indeterminate';
       atExit.writeRequestRiskReview = requestRisk.write;
     }
 
@@ -940,6 +952,12 @@ async function handleShadowChat(
         athleteId,
         requireExactSubject: true,
       });
+    }
+    // The request's own authorization has now SUCCEEDED. A row the probe left
+    // undecided (INDETERMINATE) is owed from here; not before.
+    if (requestRiskState.awaitingAuthorization) {
+      requestRiskState.awaitingAuthorization = false;
+      requestRiskState.owed = true;
     }
 
 

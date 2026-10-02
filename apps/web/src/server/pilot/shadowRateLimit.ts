@@ -120,17 +120,32 @@ const RATE_LIMIT_DEFAULTS = {
   // REQUEST reviews have their own three an hour, so routine review rows
   // cannot use up the hour an emergency report needs. Which event draws on
   // which is decided in resolveShadowReviewBucket, and nowhere else.
+  //
+  // NOT TUNABLE BY ENVIRONMENT, unlike every bucket above (see
+  // OWNER_FIXED_RATE_LIMITS): three an hour is the owner's number
+  // (OD-2026-10-01-006 section 2), and changing it is his decision, recorded
+  // and made here in code, not an operator's setting.
   safety_review: { limit: 3, windowSeconds: 3_600 },
   safety_review_critical: { limit: 3, windowSeconds: 3_600 },
 } as const;
 
 export type ShadowRateLimitKey = keyof typeof RATE_LIMIT_DEFAULTS;
 
+// Buckets whose limit is an owner decision. resolveShadowRateLimit ignores
+// PPBF_SHADOW_RATE_LIMIT_<KEY> for these and returns the number above.
+const OWNER_FIXED_RATE_LIMITS: ReadonlySet<ShadowRateLimitKey> = new Set<ShadowRateLimitKey>([
+  'safety_review',
+  'safety_review_critical',
+]);
+
 export function resolveShadowRateLimit(
   key: ShadowRateLimitKey,
   env: Record<string, string | undefined> = process.env,
 ): ShadowRateLimitPolicy {
   const fallback = RATE_LIMIT_DEFAULTS[key];
+  if (OWNER_FIXED_RATE_LIMITS.has(key)) {
+    return { endpointKey: key, limit: fallback.limit, windowSeconds: fallback.windowSeconds };
+  }
   const raw = env[`PPBF_SHADOW_RATE_LIMIT_${key.toUpperCase()}`];
   const parsed = raw === undefined || raw.trim() === '' ? Number.NaN : Number(raw);
   const limit = Number.isFinite(parsed) && parsed >= 1

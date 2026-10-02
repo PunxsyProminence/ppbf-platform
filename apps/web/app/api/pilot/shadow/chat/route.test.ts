@@ -1471,14 +1471,17 @@ describe('every authorized high-risk request is owed one bounded human-review ro
       noRowNoSlot();
     });
 
-    // A PROBE THAT FAILS IS NOT A PROBE THAT REFUSED. The access check throws
-    // something that is not a refusal when the probe runs it, and passes when
-    // the handler does. The request is handled as usual, and its row is owed.
+    // A PROBE THAT FAILS HAS NOT REFUSED, AND HAS NOT AUTHORIZED EITHER. The
+    // access check throws something that is not a refusal when the probe runs
+    // it. The row is undecided until the handler runs the same check for
+    // real: if that passes, the request is handled as usual and its row is
+    // written; if that fails too, authorization never succeeded and there is
+    // no row and no slot.
     test.each([
       ['an allowed high-risk question', ALLOWED_HIGH_RISK, 200, REQUEST_RISK_SUMMARY],
       ['a withheld emergency report', WITHHELD, 400, WITHHELD_SUMMARY],
       ['a fixed-fallback question', STOCK_LINE, 200, REQUEST_RISK_SUMMARY],
-    ])('a probe that fails for a reason other than a refusal does not cancel the row: %s', async (_name, message, expectedStatus, summary) => {
+    ])('INDETERMINATE, then authorized: a probe that fails for a reason other than a refusal, followed by a real check that passes, writes the row: %s', async (_name, message, expectedStatus, summary) => {
       modelAnswers();
       athleteCheck.mockRejectedValueOnce(new Error('connection reset by peer'));
       const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -1487,7 +1490,60 @@ describe('every authorized high-risk request is owed one bounded human-review ro
 
       expect(status).toBe(expectedStatus);
       expect(summaries()).toEqual([summary]);
-      expect(errorSpy).toHaveBeenCalledWith('SHADOW authorization probe failed for a reason other than a refusal; the review row stays owed');
+      expect(mockConsumeReviewSlot).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledWith('SHADOW authorization probe failed for a reason other than a refusal; the review row is owed only if the request is then authorized');
+    });
+
+    test.each([
+      ['the conversation check', () => { conversationCheck.mockRejectedValueOnce(new Error('connection reset by peer')); }, { conversationId: CONVERSATION }],
+    ])('INDETERMINATE, then authorized, when it is %s that failed: the row names the conversation the real check confirmed', async (_name, arrange, extra) => {
+      modelAnswers();
+      arrange();
+      jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { status } = await send({ message: ALLOWED_HIGH_RISK, ...extra });
+
+      expect(status).toBe(200);
+      expect(summaries()).toEqual([REQUEST_RISK_SUMMARY]);
+    });
+
+    // Authorization never succeeded: the probe could not tell, and neither
+    // could the handler. The request fails with a server error -- which is
+    // not a 401, 403 or 404, so POST's second lock does not apply. Only the
+    // "not owed yet" state keeps a row, and a slot charge, from being made
+    // for a subject nobody confirmed this caller may access.
+    test.each([
+      ['an athlete check that keeps failing', () => { athleteCheck.mockRejectedValue(new Error('connection reset by peer')); }, { athleteId: 'athlete-unconfirmed' }],
+      ['a conversation check that keeps failing', () => { conversationCheck.mockRejectedValue(new Error('connection reset by peer')); }, { conversationId: CONVERSATION }],
+    ].flatMap(([name, arrange, extra]) => [
+      [(name as string) + ', allowed high-risk', arrange as () => void, extra as Record<string, unknown>, ALLOWED_HIGH_RISK] as const,
+      [(name as string) + ', withheld emergency report', arrange as () => void, extra as Record<string, unknown>, WITHHELD] as const,
+    ]))('INDETERMINATE, and never authorized: %s: a 5xx, no row, no slot', async (_name, arrange, extra, message) => {
+      modelAnswers();
+      arrange();
+      jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { status } = await send({ message, ...extra });
+
+      expect(status).toBeGreaterThanOrEqual(500);
+      noRowNoSlot();
+    });
+
+    // Turned away before the handler's own check is reached: authorization
+    // was never established, so nothing is owed.
+    test.each([
+      ['the chat limit is spent', chatLimitSpent, 429],
+      ['the runtime is not ready', runtimeNotReady, 500],
+    ])('INDETERMINATE, and %s before the real check runs: main\'s response, no row, no slot', async (_name, gate, expectedStatus) => {
+      modelAnswers();
+      athleteCheck.mockRejectedValueOnce(new Error('connection reset by peer'));
+      gate();
+      jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { status } = await send({ message: ALLOWED_HIGH_RISK, athleteId: 'athlete-1' });
+
+      expect(status).toBe(expectedStatus);
+      noRowNoSlot();
     });
 
     // THE SECOND LOCK. The probe is passed and the row is owed; the refusal

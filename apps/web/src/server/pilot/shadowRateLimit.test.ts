@@ -172,17 +172,48 @@ describe('the receipt: which bucket row a call charged', () => {
   });
 
   // OD-2026-09-30-005: "3 per hour"; OD-2026-10-01-006: two allowances.
-  test.each(['safety_review', 'safety_review_critical'] as const)('%s is three an hour by default', (key) => {
+  test.each(['safety_review', 'safety_review_critical'] as const)('%s is three an hour', (key) => {
     expect(resolveShadowRateLimit(key, {})).toEqual({ endpointKey: key, limit: 3, windowSeconds: 3_600 });
   });
 
-  // Like every bucket, each can be raised by its own environment variable
-  // without a deploy. The default is the owner's number; an override is an
-  // operator's decision and changes one bucket only.
-  test('an override changes one review bucket and not the other', () => {
-    const env = { PPBF_SHADOW_RATE_LIMIT_SAFETY_REVIEW_CRITICAL: '6' };
-    expect(resolveShadowRateLimit('safety_review_critical', env).limit).toBe(6);
-    expect(resolveShadowRateLimit('safety_review', env).limit).toBe(3);
+  // UNLIKE every other bucket, these two cannot be moved by an environment
+  // variable. Three an hour is the owner's number (OD-2026-10-01-006 section
+  // 2); an operator's setting must not change it in either direction.
+  test.each([
+    ['raised', '6'],
+    ['raised to the ceiling', '10000'],
+    ['lowered', '1'],
+  ])('an environment override does not move either review bucket: %s', (_name, value) => {
+    const env = {
+      PPBF_SHADOW_RATE_LIMIT_SAFETY_REVIEW: value,
+      PPBF_SHADOW_RATE_LIMIT_SAFETY_REVIEW_CRITICAL: value,
+    };
+    expect(resolveShadowRateLimit('safety_review', env)).toEqual({ endpointKey: 'safety_review', limit: 3, windowSeconds: 3_600 });
+    expect(resolveShadowRateLimit('safety_review_critical', env)).toEqual({ endpointKey: 'safety_review_critical', limit: 3, windowSeconds: 3_600 });
+  });
+
+  // CONTROL: the same override does move a bucket that is an operator's to tune.
+  test('CONTROL: the same kind of override still moves an operator-tunable bucket', () => {
+    expect(resolveShadowRateLimit('chat', { PPBF_SHADOW_RATE_LIMIT_CHAT: '6' }).limit).toBe(6);
+  });
+
+  test('the review slot is charged against three even when the environment asks for more', async () => {
+    const before = process.env.PPBF_SHADOW_RATE_LIMIT_SAFETY_REVIEW_CRITICAL;
+    process.env.PPBF_SHADOW_RATE_LIMIT_SAFETY_REVIEW_CRITICAL = '50';
+    try {
+      // The fourth in the hour: refused, whatever the environment says.
+      mockQueryOne
+        .mockResolvedValueOnce({ request_count: 4, retry_after_seconds: 1200, window_started_epoch: '1790000400' })
+        .mockResolvedValueOnce({ request_count: 3 });
+      await expect(consumeShadowReviewSlot({
+        organizationId: 'org-1',
+        accountId: 'account-1',
+        event: { kind: 'request_risk', critical: true },
+      })).rejects.toBeInstanceOf(ShadowRateLimitExceeded);
+    } finally {
+      if (before === undefined) delete process.env.PPBF_SHADOW_RATE_LIMIT_SAFETY_REVIEW_CRITICAL;
+      else process.env.PPBF_SHADOW_RATE_LIMIT_SAFETY_REVIEW_CRITICAL = before;
+    }
   });
 
   test('a charge inside the limit returns the window the database chose, read back from the row', async () => {
