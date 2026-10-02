@@ -39,12 +39,20 @@ import {
  * NOT listed because access.ts's requireRole already treats it as an alias of
  * 'organization_admin' -- listing both would suggest they are two decisions.
  *
- * The rest of the role list is excluded by what the video read path already
- * does rather than by an opinion held here: assertActorCanAccessAthlete
- * refuses platform_owner and board by name and falls through to refuse
- * volunteer and staff, so an athlete- attributed clip would be unwatchable for
- * them anyway. A parent or athlete annotating a calibration study is not a
- * surface anyone has asked for and is not opened by guessing.
+ * THIS LIST IS THE WHOLE RULE, NOT A SUMMARY OF ONE ENFORCED ELSEWHERE. The
+ * teaching footage door (GET /api/pilot/teach-shadow/footage/[videoId]/stream)
+ * calls requireAnnotator and then assertVideoClippable; it does not call
+ * assertActorCanAccessAthlete, because teaching footage names nobody
+ * (OD-2026-09-28-006). So platform_owner, board, volunteer and staff are kept
+ * out of teaching footage by their absence from this list and by nothing
+ * else. Adding a role here opens the labelling routes AND the footage to it
+ * in the same edit.
+ *
+ * This comment used to say the opposite -- that those roles were excluded by
+ * the video read path's athlete-access check and would find clips unwatchable
+ * anyway. That was the Film Study route, which labelling no longer uses
+ * (TEACH-DATA-01). A parent or athlete annotating a calibration study is not
+ * a surface anyone has asked for and is not opened by guessing.
  */
 export const ANNOTATOR_ROLES = ['coach', 'organization_admin'] as const;
 
