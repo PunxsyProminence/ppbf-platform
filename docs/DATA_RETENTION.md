@@ -222,12 +222,12 @@ and the role (athlete, guardian, staff), not from how the login reads today:
   The one case this does not cover is an athlete record removed by the cleanup job BEFORE the
   unlinking existed, whose id has since been given to a new child: that old login would still
   carry the id. None existed when the unlinking shipped: the cleanup job had never run.
-  **OBSERVED** 2026-10-01 by the read-only `membership-orphans` check, which counts the audit
-  rows the cleanup job writes (`data_purged`, `retention_cleanup`): "retention purge history: 0
-  run(s), 0 account(s) ever purged" on staging (run 36936795333) and on production (run
-  36936798184). The deletion preflight's "Retention purge events" line counts every
+  **OBSERVED** by the read-only `membership-orphans` check, which counts the audit rows the
+  cleanup job writes (`data_purged`, `retention_cleanup`): "retention purge history: 0 run(s),
+  0 account(s) ever purged" on staging (run 36936795333, 2026-10-01T22:44Z) and on production
+  (run 36936798184, 2026-10-02T01:20Z). The deletion preflight's "Retention purge events" line counts every
   `data_purged` row, including the membership-orphan cleanup's, and so is not this number (it
-  read 1 in production, run 36922416115). The owner's statement the same day: "the app has
+  read 1 in production, run 36922416115). The owner's statement, 2026-10-01: "the app has
   never been live".
 
 The platform owner's cross-gym feedback list, which

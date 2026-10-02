@@ -113,15 +113,16 @@ export function accountNotDeletedSql(row: string, accountColumn = 'account_id'):
  *     and the queue's name join would put the new athlete's name on the old
  *     rows. That needs an athlete hard-purged BEFORE the purge unlinked
  *     logins. No retention purge had ever run when this was written. OBSERVED
- *     2026-10-01, read-only check `membership-orphans` (run-checks.yml), which
+ *     by the read-only check `membership-orphans` (run-checks.yml), which
  *     counts audit rows with event_type 'data_purged' and entity_type
  *     'retention_cleanup' -- the row both purge paths write: staging run
- *     36936795333 and production run 36936798184 each reported "retention
- *     purge history: 0 run(s), 0 account(s) ever purged". (The deletion
+ *     36936795333 (2026-10-01T22:44Z) and production run 36936798184
+ *     (2026-10-02T01:20Z) each reported "retention purge history: 0 run(s),
+ *     0 account(s) ever purged". (The deletion
  *     preflight's "Retention purge events" counts every 'data_purged' row,
  *     whoever wrote it, and read 1 in production, run 36922416115; that row
- *     is therefore not a retention purge.) The owner's own statement the same
- *     day: "the app has never been live".
+ *     is therefore not a retention purge.) The owner's own statement, Jason
+ *     2026-10-01: "the app has never been live".
  * A cleared account REFERENCE proves nothing here: the purge removes parent
  * logins only.
  *
