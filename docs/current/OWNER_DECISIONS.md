@@ -79,7 +79,7 @@ the source.
 - Module audit logs, for example `docs/capabilities/modules/008-coach-review-system.md`
   and `130-evidence-quality-engine.md` -- the one blanket manual-verification
   sign-off of 2026-08-28 (not 47 separate inspections).
-- `docs/HANDOFF_VISUALS.md`, "Job 3" (owner decision, 2026-08-17), restated in
+- `docs/archive/2026-10-02_HANDOFF_VISUALS.md` (moved from `docs/HANDOFF_VISUALS.md` on 2026-10-02), "Job 3" (owner decision, 2026-08-17), restated in
   `docs/AGENT_BRIEFING_PROMPT.md` -- the six Capability Console pages stay
   unstyled, because they show fabricated data.
 - `apps/web/app/api/pilot/progression/assignments/cancel/route.ts`, header
