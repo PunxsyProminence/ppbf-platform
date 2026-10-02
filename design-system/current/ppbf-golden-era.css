@@ -3648,7 +3648,12 @@
   box-shadow: inset 0 1px 0 rgb(var(--brass-200-rgb) / .16);
 }
 .ge-file .btn--ghost:hover {
+  /* `.ge-file .btn:hover` paints the brass plate and outranks the ghost, so on
+     hover the ghost's ground turned to brass under bone ink: 1.65:1, measured.
+     The ghost keeps its own dark face on hover as well as at rest. */
   background-color: #262019;
+  background-image: linear-gradient(180deg,
+    rgb(var(--brass-200-rgb) / .10) 0%, transparent 38%, rgba(0,0,0,.30) 100%);
   border-color: var(--brass-400);
 }
 /* The same hole on the ghost, whose single inset bead is what displaced the
@@ -4077,15 +4082,28 @@
    paper, plaster or canvas inside a leather panel keeps its dark ink, which is
    what the :not() is for.
 
+   KEPT AT LOW SPECIFICITY ON PURPOSE (0,2,0), with :where(). The Research
+   Inbox and the Board Hub restyle their own leather darker and state their own
+   inks for these voices (`.ge-file`, `.ge-board`), and those read: 7.0-8.6:1
+   measured on /research. A heavier rule here would have overridden them for no
+   gain, which the first cut of this block did.
+
+   Both forms are needed: a voice INSIDE a leather panel, and a voice class
+   written on the leather element itself (the board-seat register does that).
+
    Placed here, between the sign-in block and the clinic block, because the
    clinic's own guard reads everything from `.ge-clinic` to the end of the
    sheet as the clinic's. */
-:is(.room--file, .room--board) :is(.mat-leather, .mat-leather--raised, .mat-leather--worn)
-  .t-eyebrow:not(:is(.mat-paper, .on-plaster, .on-canvas) *) {
+:where(.room--file, .room--board) :is(.mat-leather, .mat-leather--raised, .mat-leather--worn)
+  .t-eyebrow:where(:not(:is(.mat-paper, .on-plaster, .on-canvas) *)),
+:where(.room--file, .room--board)
+  .t-eyebrow:is(.mat-leather, .mat-leather--raised, .mat-leather--worn) {
   color: var(--brass-200);
 }
-:is(.room--file, .room--board) :is(.mat-leather, .mat-leather--raised, .mat-leather--worn)
-  :is(.t-label, .t-muted):not(:is(.mat-paper, .on-plaster, .on-canvas) *) {
+:where(.room--file, .room--board) :is(.mat-leather, .mat-leather--raised, .mat-leather--worn)
+  :is(.t-label, .t-muted):where(:not(:is(.mat-paper, .on-plaster, .on-canvas) *)),
+:where(.room--file, .room--board)
+  :is(.t-label, .t-muted):is(.mat-leather, .mat-leather--raised, .mat-leather--worn) {
   color: var(--bone-200);
 }
 
