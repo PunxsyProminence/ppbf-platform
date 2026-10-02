@@ -353,7 +353,7 @@ async function routeLlmCall(ctx: LlmRouteContext): Promise<LlmRouteResult> {
   // tiers get a ~150-word budget (the base prompt has none, and every
   // deployment measured 14-17k characters per answer without one), and the
   // register follows the authenticated role -- athletes are assumed minors, so
-  // their register drops the dark humor and holds an ~8th-grade reading level.
+  // their register keeps the language clean and holds an ~8th-grade reading level.
   const trustBoundaryPrompt = `${composeShadowSystemPrompt({ role: userRole, sessionType })}
 
 ## EVIDENCE BOUNDARY

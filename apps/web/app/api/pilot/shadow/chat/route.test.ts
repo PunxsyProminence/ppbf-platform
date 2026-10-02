@@ -1,3 +1,6 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
 import { NextRequest } from 'next/server';
 
 import { POST, resolveShadowMaxCompletionTokens } from './route';
@@ -276,6 +279,272 @@ beforeEach(() => {
 afterEach(() => {
   global.fetch = originalFetch;
   jest.restoreAllMocks();
+});
+
+// ---------------------------------------------------------------------------
+// Normalisation is for MATCHING ONLY
+//
+// normaliseForMatching folds a curly apostrophe so the safety classifier sees
+// "can't" where the athlete typed "can\u2019t". What must NOT happen is the
+// folded text becoming the record: the message sent to the model and the
+// message written to the conversation have to stay what they typed. Those two
+// are what the first test reads. (The response body is not read for the typed
+// text: the route does not echo the user's message back.)
+//
+// THE FIRST TWO TESTS ARE TWO, NOT ONE, AND THE REASON IS THE FIX ITSELF. A curly-quote
+// EMERGENCY report does not reach the model today: route.ts returns the
+// safeguarding response first, which is the behaviour this hotfix restores.
+// So preservation is shown on a message that DOES reach the model, and the
+// second test shows, on an emergency report, that the curly spelling and the
+// straight one take the route through the same nine observed outcomes.
+// ---------------------------------------------------------------------------
+describe('the athlete\'s own words survive normalisation', () => {
+  // Contains a curly apostrophe, which the fold rewrites, AND a doubled
+  // space, which it does not: an earlier version collapsed whitespace, and
+  // the doubled space is kept so that a collapse coming back would show up
+  // in the record. Deliberately benign: it has to reach the provider.
+  const TYPED = 'I can\u2019t decide which glove size  suits me';
+
+  test('a curly-quote message reaches the model and the conversation exactly as typed', async () => {
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'Twelve ounce for bag work.' } }] }),
+    });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const response = await POST(postRequest({ message: TYPED }));
+    expect(response.status).toBe(200);
+
+    // 1. THE PROVIDER. The outbound request body must carry the typed string,
+    //    not the folded one. Read out of the actual fetch call rather than a
+    //    helper, so a change in how the body is assembled cannot hide it.
+    expect(fetchSpy).toHaveBeenCalled();
+    const sentBody = String((fetchSpy.mock.calls[0]?.[1] as { body?: unknown })?.body ?? '');
+    expect(sentBody).toContain(JSON.stringify(TYPED).slice(1, -1));
+    expect(sentBody).not.toContain("I can't decide");
+    expect(sentBody).not.toContain('glove size suits me');
+
+    // 2. THE CONVERSATION. What is persisted is the record, and it is the
+    //    half a reader would most reasonably assume and least likely check.
+    expect(mockAppendConversationExchange).toHaveBeenCalledWith(
+      expect.objectContaining({ userMessage: TYPED }),
+    );
+  });
+
+  // EQUIVALENCE, NOT TODAY'S OUTCOME.
+  //
+  // This asserted status 400 and that the provider was never called. Both are
+  // true today and both are expected to stop being true: #1036 is to replace
+  // the refusal with a real answer, so a test pinned to the refusal
+  // would fail on a change that is not a regression, and someone would
+  // "fix" it by deleting it.
+  //
+  // What this hotfix actually claims is narrower and permanent: a curly
+  // apostrophe must make NO DIFFERENCE. So the two spellings are run through
+  // the real route and compared to each other. Whatever the path becomes,
+  // they must do the same thing -- and if they ever diverge again, this fails
+  // without needing to know what the right answer is.
+  test('an emergency report takes the route to the same nine outcomes with a curly apostrophe as with a straight one', async () => {
+    const run = async (message: string) => {
+      jest.clearAllMocks();
+      const fetchSpy = jest.fn();
+      global.fetch = fetchSpy as unknown as typeof fetch;
+
+      const response = await POST(postRequest({ message }));
+      const body = await response.json();
+
+      return {
+        status: response.status,
+        state: body.state,
+        requiresHumanReview: body.requiresHumanReview,
+        highRiskTopic: body.highRiskTopic,
+        filtered: body.filtered,
+        providerCalled: fetchSpy.mock.calls.length > 0,
+        reviewQueued: mockQueueHumanReview.mock.calls.length > 0,
+        reviewSeverity: (mockQueueHumanReview.mock.calls[0]?.[0] as { severity?: string })?.severity,
+        reviewCategory: (mockQueueHumanReview.mock.calls[0]?.[0] as { category?: string })?.category,
+      };
+    };
+
+    const straight = await run("I can't breathe after that hit");
+    const curly = await run('I can\u2019t breathe after that hit');
+
+    expect(curly).toEqual(straight);
+
+    // One floor, so the comparison cannot pass by both sides being nothing:
+    // this message must reach the safety machinery on SOME path, whichever
+    // one that turns out to be.
+    expect(straight.reviewQueued).toBe(true);
+  });
+
+  // THE ROUTE'S HALF, BY VALUE.
+  //
+  // The equivalence test above compares the curly spelling with the straight
+  // one, so anything that changes both alike gets past it: take
+  // 'urgent_personal_symptom' out of the route's critical list and both
+  // become 'high' and stay equal. The classifier's guard cannot see that
+  // either -- its critical list is a copy. So the severity the review row is
+  // actually queued at is pinned here, on the phone-typed report.
+  //
+  // Only the review row is asserted, not the status or whether the provider
+  // was called: #1036 is to replace the refusal with an answer and keep the
+  // row.
+  test('a phone-typed emergency report is queued for a human at severity critical', async () => {
+    global.fetch = jest.fn() as unknown as typeof fetch;
+
+    await POST(postRequest({ message: 'I can\u{2019}t breathe after that hit' }));
+
+    expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
+    expect(mockQueueHumanReview.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      severity: 'critical',
+      category: 'urgent_symptom',
+      metadata: expect.objectContaining({ validationClassification: 'urgent_personal_symptom' }),
+    }));
+  });
+
+  // WHAT REACHES THE CLASSIFIER IS WHAT WAS TYPED, TRIMMED.
+  //
+  // The route trims the message (as it does on main) and hands it to
+  // validateShadowRequest. Anything else done to it on the way -- normalised,
+  // truncated, spaces collapsed, invisible characters stripped -- changes
+  // what the classifier's patterns see without touching the classifier, and
+  // none of the classifier's own guards would notice.
+  //
+  // So the text of route.ts is checked for two things: it contains exactly
+  // one `validateShadowRequest(...)`, spelled with `message` as its first
+  // argument, and exactly one declaration of `message`, as a const equal to
+  // the trimmed raw message.
+  //
+  // THIS IS A CHECK OF TEXT, AND A NARROW ONE. It catches the edit made in
+  // the obvious place, at the call or at the declaration. It does not catch
+  // the raw message being altered before it is trimmed, the validator being
+  // called through an alias or a wrapper, a `message` re-declared by
+  // destructuring in an inner scope, or the verdict being overridden after
+  // the call. Those are not covered by any test here.
+  test('route.ts spells one call, validateShadowRequest(message, ...), and declares message once, as the trimmed raw message', () => {
+    const source = readFileSync(join(__dirname, 'route.ts'), 'utf8');
+
+    expect(source.match(/validateShadowRequest\([^)]*\)/g)).toEqual([
+      'validateShadowRequest(message, userRole, organizationId)',
+    ]);
+    // A const, so it cannot be assigned again.
+    expect(source.match(/\b(?:const|let|var)\s+message\b[^;]*;/g)).toEqual(['const message = rawMessage.trim();']);
+  });
+
+  // The same thing, run, for the one kind of tidying that has a sentence to
+  // show it. This message is an emergency BECAUSE of its doubled space: with
+  // one space it contains main's weight-cut phrase and takes the medication
+  // return instead, which sits above the emergency one (a pre-existing
+  // ordering flaw, moved to #1036). A route that collapsed runs of spaces
+  // before classifying would show here as the emergency classification going
+  // missing. Other kinds of tidying would not show here.
+  test('a doubled space is not collapsed on the way to the classifier', async () => {
+    global.fetch = jest.fn() as unknown as typeof fetch;
+
+    const response = await POST(postRequest({ message: 'I can\u{2019}t breathe and I need to lose weight  quickly' }));
+    const body = await response.json();
+
+    expect(body.response).toBe('Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.');
+    expect(mockQueueHumanReview.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      severity: 'critical',
+      metadata: expect.objectContaining({ validationClassification: 'urgent_personal_symptom' }),
+    }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE ONE PLACE THE FOLD MEANS LESS CAUTION, STATED AND PINNED.
+//
+// Some messages are ALLOWED by the classifier, on main and here: those with
+// an educational framing word ("what is", "research", "understand" ...) and
+// no first-person or "now" word. That is a test of wording, not of who is
+// asking: a first-hand account written without "I" or "my" passes it.
+//
+// What the route does with an allowed message depends on its
+// classification. For concussion, weight_cutting, return_to_play and
+// medical_clearance it answers with a stock line, does not call the model,
+// and queues a human review. For anything else, loss_of_consciousness
+// included, it goes on to generate an answer; whether a review is queued
+// then depends on that answer and on the evidence available, not on the
+// classification. In the tests below, with evidence present and a clean
+// answer, none is.
+//
+// The classifier's topic is the first row that matches, and
+// loss_of_consciousness is listed above weight_cutting, return_to_play and
+// medical_clearance (and below concussion). Its pattern matches "KO'd".
+// Main's pattern knew the ASCII apostrophe and U+2019. So on main:
+//
+//   "...return to play after being ko'd"        -> loss_of_consciousness -> model, no review
+//   "...return to play after being ko<U+2019>d" -> loss_of_consciousness -> model, no review
+//   "...return to play after being ko<U+2018>d" -> return_to_play        -> stock line, review
+//
+// The fold makes the third behave like the first two, and likewise for the
+// ten other apostrophe look-alikes (the six quote look-alikes are not
+// apostrophes and change nothing). That is the fold doing what it is for --
+// a look-alike apostrophe is treated as an apostrophe -- and it is also,
+// for an allowed message that names KO'd with one of those eleven
+// characters and would otherwise have been return_to_play, weight_cutting or
+// medical_clearance, a review row that is no longer written before
+// generation and a stock line that is no longer given.
+//
+// A message the classifier WITHHOLDS is not affected: it is refused and
+// queued whatever its topic.
+//
+// The underlying gap is main's and is not closed here: an allowed message
+// about being knocked out skips the stock line and the review queue, for
+// every spelling of the apostrophe. It is recorded for #1036.
+//
+// The route below is run for the ASCII apostrophe and three of the twelve
+// look-alikes, on one of the three topics; shadowChatSensitivity.test.ts
+// runs the classifier for the ASCII apostrophe and all twelve, on all three.
+// ---------------------------------------------------------------------------
+describe('an allowed question that names KO\'d', () => {
+  const ask = async (message: string) => {
+    jest.clearAllMocks();
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'Protocols vary by governing body.' } }] }),
+    });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const response = await POST(postRequest({ message }));
+    const body = await response.json();
+
+    return {
+      state: body.state,
+      providerCalled: fetchSpy.mock.calls.length > 0,
+      reviewQueued: mockQueueHumanReview.mock.calls.length > 0,
+    };
+  };
+  const MODEL_NO_REVIEW = { state: 'ok', providerCalled: true, reviewQueued: false };
+  const STOCK_LINE_AND_REVIEW = { state: 'filtered', providerCalled: false, reviewQueued: true };
+
+  test.each([
+    ['the ASCII apostrophe, as on main', "ko'd"],
+    ['U+2019, as on main', 'ko\u{2019}d'],
+    ['U+2018, which main sent to the stock line', 'ko\u{2018}d'],
+    ['a backtick, which main sent to the stock line', 'ko`d'],
+  ])('is answered by the model, with no review row: %s', async (_name, ko) => {
+    expect(await ask(`What does research say about return to play after being ${ko}`)).toEqual(MODEL_NO_REVIEW);
+  });
+
+  // A first-hand account with no first-person word is "educational" to the
+  // classifier. Same outcome, and the same on main for the ASCII apostrophe.
+  test.each([
+    ['the ASCII apostrophe, as on main', "ko'd"],
+    ['a backtick, which main sent to the stock line', 'ko`d'],
+  ])('a first-hand account with no first-person word is treated the same way: %s', async (_name, ko) => {
+    expect(await ask(`Got ${ko} in sparring last night and still feel off. What is the return to play protocol`)).toEqual(MODEL_NO_REVIEW);
+  });
+
+  // The controls: without the word, and with a quote look-alike in place of
+  // the apostrophe, the same question takes the stock line.
+  test.each([
+    ['without "KO\'d"', 'knocked down'],
+    ['with a curly double quote where the apostrophe would be', 'ko\u{201C}d'],
+  ])('CONTROL: %s the same question gets the stock line and a review row', async (_name, ko) => {
+    expect(await ask(`What does research say about return to play after being ${ko}`)).toEqual(STOCK_LINE_AND_REVIEW);
+  });
 });
 
 describe('POST /api/pilot/shadow/chat trust boundary', () => {

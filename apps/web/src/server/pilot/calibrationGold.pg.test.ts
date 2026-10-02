@@ -64,6 +64,9 @@ const CAPTURE_SESSIONS_SQL = 'pilot_slice_postgres_capture_sessions_migration.sq
 const PROJECTS_SQL = 'pilot_slice_postgres_calibration_projects_migration.sql';
 const ANNOTATIONS_SQL = 'pilot_slice_postgres_calibration_annotations_migration.sql';
 const ADJUDICATION_SQL = 'pilot_slice_postgres_calibration_adjudication_migration.sql';
+// recordAdjudication writes `revision` (OD-2026-08-29-005), so any database
+// this suite adjudicates in needs the superseding migration too.
+const REVISIONS_SQL = 'pilot_slice_postgres_calibration_adjudication_revisions_migration.sql';
 const GOLD_SQL = 'pilot_slice_postgres_calibration_gold_migration.sql';
 
 const ORG_ID = 'org-gold';
@@ -282,6 +285,7 @@ async function stage(options: StageOptions): Promise<Staged> {
     resolutionType: 'accept_a',
     adjudicatorAccountId: adjudicator,
     ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+    expectedCurrentRevision: 0,
     fields: [
       {
         adjudicatedFieldId: crypto.randomUUID(),
@@ -381,6 +385,7 @@ beforeAll(async () => {
     PROJECTS_SQL,
     ANNOTATIONS_SQL,
     ADJUDICATION_SQL,
+    REVISIONS_SQL,
     GOLD_SQL,
   ]) {
     await migrateClient.query(await readMigration(file));
@@ -448,6 +453,102 @@ describe('nothing arrives as gold', () => {
     expect(record.governance_state).toBe('candidate');
     expect(record.promoted_by_account_id).toBeNull();
     expect(record.promoted_at).toBeNull();
+  });
+
+  test('a superseded adjudication cannot be nominated; the current answer can', async () => {
+    // OD-2026-08-29-004, -005: a second adjudication of the same disagreement
+    // is a correction. The first is kept as history, and history is the
+    // reading somebody went back and replaced -- not reference data.
+    const staged = await stage({ clipCode: 'G-SUPERSEDED' });
+    const correctionId = crypto.randomUUID();
+    await adjudication.recordAdjudication({
+      organizationId: ORG_ID,
+      adjudicationId: correctionId,
+      calibrationClipId: staged.clipId,
+      annotationSetIdA: staged.setA,
+      annotationSetIdB: staged.setB,
+      sourceEventIdA: staged.eventA,
+      sourceEventIdB: staged.eventB,
+      resolutionType: 'accept_b',
+      adjudicatorAccountId: staged.adjudicator,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 1,
+    });
+
+    const refusedId = crypto.randomUUID();
+    const refused = await gold.nominateGoldCandidate({
+      organizationId: ORG_ID,
+      goldRecordId: refusedId,
+      adjudicationId: staged.adjudicationId,
+      eligibility: 'TRAINING_ELIGIBLE',
+    }).then(() => null, (error: unknown) => error as { message?: string; code?: string; status?: number });
+    expect(refused?.message).toMatch(/has been corrected by a later one/);
+    expect(refused?.code).toBe('CALIBRATION_GOLD_SOURCE_SUPERSEDED');
+    expect(refused?.status).toBe(409);
+
+    const client = await freshClient();
+    try {
+      const written = await client.query(
+        `select 1 from pilot.calibration_gold_records
+          where organization_id = $1 and gold_record_id = $2`,
+        [ORG_ID, refusedId],
+      );
+      expect(written.rowCount).toBe(0);
+    } finally {
+      await client.end();
+    }
+
+    const record = await gold.nominateGoldCandidate({
+      organizationId: ORG_ID,
+      goldRecordId: crypto.randomUUID(),
+      adjudicationId: correctionId,
+      eligibility: 'TRAINING_ELIGIBLE',
+    });
+    expect(record.governance_state).toBe('candidate');
+  });
+
+  test('Teach Shadow coverage counts one settled disagreement once, however often it was corrected', async () => {
+    // "Adjudications settled" is a count of answers. A correction is a later
+    // revision of the same disagreement, not a second thing settled.
+    const { readTeachShadowCoverage } = await import('./teachShadow/coverage');
+    const before = (await readTeachShadowCoverage(ORG_ID)).labelling.adjudications;
+
+    // stage() settles (A's mark, B's mark) once.
+    const staged = await stage({ clipCode: 'G-COVERAGE' });
+    const base = {
+      organizationId: ORG_ID,
+      calibrationClipId: staged.clipId,
+      annotationSetIdA: staged.setA,
+      annotationSetIdB: staged.setB,
+      adjudicatorAccountId: staged.adjudicator,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+    };
+    // Corrected twice more ...
+    for (const expected of [1, 2]) {
+      await adjudication.recordAdjudication({
+        ...base,
+        sourceEventIdA: staged.eventA,
+        sourceEventIdB: staged.eventB,
+        adjudicationId: crypto.randomUUID(),
+        resolutionType: 'accept_b',
+        expectedCurrentRevision: expected,
+      });
+    }
+    // ... and a second disagreement (A's mark against nothing), settled twice.
+    for (const expected of [0, 1]) {
+      await adjudication.recordAdjudication({
+        ...base,
+        sourceEventIdA: staged.eventA,
+        sourceEventIdB: null,
+        adjudicationId: crypto.randomUUID(),
+        resolutionType: 'accept_a',
+        expectedCurrentRevision: expected,
+      });
+    }
+
+    // Five rows, two things settled.
+    const after = (await readTeachShadowCoverage(ORG_ID)).labelling.adjudications;
+    expect(after - before).toBe(2);
   });
 
   test('a raw INSERT that arrives as gold is refused by the trigger, attribution and all', async () => {
@@ -930,6 +1031,7 @@ describe('a gold record retains where it came from', () => {
       resolutionType: 'unresolvable',
       adjudicatorAccountId: ADJUDICATOR,
       ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION,
+      expectedCurrentRevision: 0,
     });
 
     await expect(

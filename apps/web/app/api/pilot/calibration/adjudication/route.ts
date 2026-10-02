@@ -5,7 +5,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import {
+  ADJUDICATION_PAIR_REVISION_CONSTRAINT,
   ADJUDICATION_RESOLUTION_TYPES,
+  ADJUDICATION_SUPERSEDED_CODE,
+  ADJUDICATION_SUPERSEDED_MESSAGE,
   MISSED_EVENT_VERDICTS,
   RESOLVED_FROM_SOURCES,
   listAdjudicatedFields,
@@ -27,11 +30,45 @@ import {
   resolveComparisonPair,
 } from '@/src/server/pilot/calibration/comparison';
 import type { CalibrationClipRow } from '@/src/server/pilot/calibration/projects';
+import { ConflictError, ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 import { blankToNull, loadPlayableClip, writeCalibrationAuditEvent } from '../annotatorGate';
 
 export const runtime = 'nodejs';
+
+/* THE ONE COLLISION OD-2026-08-29-005 CHOSE TO EXPLAIN.
+ *
+ * That decision assigns a revision per disagreement -- the pair of marks a
+ * decision names -- with NO row lock, so two administrators settling the same
+ * disagreement at the same moment both compute the same next revision and the
+ * unique index refuses the second. Two administrators settling DIFFERENT
+ * disagreements on one clip do not collide, and neither is told anything. Left
+ * untranslated the loser gets a duplicate-key dump naming a constraint, which
+ * is the outcome the decision was made to avoid.
+ *
+ * MATCHED ON BOTH SQLSTATE AND THE CONSTRAINT NAME, never on 23505 alone. This
+ * table has other unique constraints -- the primary key, and the provenance
+ * key the gold migration added -- and the adjudicated-fields table has its
+ * own. A bare 23505 branch would tell an administrator that somebody corrected
+ * their adjudication when what happened was a duplicate adjudication_id or a
+ * repeated field decision. Every other error, every other 23505 included, is
+ * rethrown untouched for jsonError to handle as it already does.
+ *
+ * `constraint` is the pg driver's own field, not a substring search of the
+ * message. calibrationAdjudication.pg.test.ts proves the real error carries
+ * both fields; the suite beside this file proves what is done with them.
+ */
+function asConcurrentCorrectionConflict(error: unknown): never {
+  const code = (error as { code?: unknown } | null)?.code;
+  const constraint = (error as { constraint?: unknown } | null)?.constraint;
+
+  if (code === '23505' && constraint === ADJUDICATION_PAIR_REVISION_CONSTRAINT) {
+    throw new ConflictError(ADJUDICATION_SUPERSEDED_MESSAGE, ADJUDICATION_SUPERSEDED_CODE);
+  }
+
+  throw error;
+}
 
 /**
  * HOW EACH DISAGREEMENT WAS SETTLED. The write half.
@@ -385,6 +422,10 @@ interface AdjudicationBody {
   source_event_id_b?: unknown;
   resolution_type?: unknown;
   missed_event_verdict?: unknown;
+  /* The revision of this disagreement the administrator had on screen when
+   * they decided, 0 for one nobody had settled. A claim about what was
+   * REVIEWED; never the revision to write. */
+  expected_current_revision?: unknown;
   notes?: unknown;
   fields?: unknown;
 }
@@ -439,15 +480,22 @@ function assertEventInReading(
 /**
  * Records one adjudication and its field-level decisions.
  *
+ * WHICH TWO READINGS: the caller may NAME them, and only that.
+ *
+ *   * On a clip with exactly two submitted readings there is one pair. It is
+ *     taken from what the blinding gate returned, and `annotation_set_id_a` /
+ *     `_b` in the body are ignored.
+ *   * On a clip with three or more (OD-2026-08-29-003) the caller names which
+ *     two submitted readings this decision is between. Both ids are checked
+ *     against the gate's own list of candidates -- an id that is not among
+ *     them is refused, never fetched -- and the pair is then filed in the
+ *     GATE'S order, not the order the caller gave: `resolveComparisonPair`
+ *     returns it as `listAnnotationSetsForClip` lists it, `created_at asc,
+ *     annotation_set_id asc`. So A and B mean the same thing here as on the
+ *     comparison screen, and the caller cannot swap them.
+ *
  * WHAT THE CALLER MAY NOT SUPPLY, and why each one is derived instead:
  *
- *   * `annotation_set_id_a` / `_b` -- taken from what the blinding gate
- *     returned. A body-supplied pair is a body-supplied claim about which two
- *     readings were weighed, and the gate is the only thing on this path that
- *     knows which pair is eligible. Deriving them also makes A and B mean the
- *     same thing here as on the comparison screen: both take the ordering
- *     from `listAnnotationSetsForClip`, which is `created_at asc,
- *     annotation_set_id asc` and therefore stable.
  *   * `adjudicator_account_id` -- the authenticated principal. Accepting it
  *     from the body would let an administrator file a decision under another
  *     person's name, in the one column that makes the row evidence.
@@ -466,13 +514,27 @@ function assertEventInReading(
  * non-member, so a wrong label is a 400 naming the field rather than a stored
  * row. Written once, here, rather than at each field.
  *
- * NOT ENFORCED, AND FLAGGED RATHER THAN INVENTED: nothing below refuses a
- * SECOND adjudication naming the same pair of source events. There is no
- * superseding column on this table and no update path in `adjudication.ts`,
- * so whether a later decision corrects an earlier one or sits beside it as a
- * second answer is an owner decision. The GET above returns everything
- * already recorded on the clip so the administrator can see the earlier
- * decision rather than be silently protected from it.
+ * A SECOND ADJUDICATION OF THE SAME PAIR OF MARKS IS A CORRECTION
+ * (OD-2026-08-29-004) and is stored as that disagreement's next revision
+ * (OD-2026-08-29-005); the highest revision is the current answer and every
+ * earlier one is kept. A decision about a different pair of marks on the same
+ * clip is its own disagreement and starts at 1. The revision is computed by
+ * `recordAdjudication` and is never read from the body. Two writers computing
+ * the same one collide on the unique index, and
+ * `asConcurrentCorrectionConflict` turns that into a 409 saying so.
+ *
+ * THE ORDER OF THE TWO READINGS IS NOT THE CALLER'S. `resolveComparisonPair`
+ * returns the pair in the gate's own order whichever way round a caller names
+ * them, so over this route the same two marks are always the same
+ * disagreement. The table itself keeps (A, B) and (B, A) distinct, which only
+ * a direct caller of `recordAdjudication` could reach.
+ *
+ * A DECISION MADE ON A STALE VIEW IS REFUSED. The page sends back the
+ * revision of this disagreement it actually displayed; `recordAdjudication`
+ * compares it with what stands now and refuses with the same sentence if
+ * somebody has answered since. A request that carries no such number is a
+ * malformed request, not a conflict: it gets a 400 telling the administrator
+ * to reload, never a story about a colleague who does not exist.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -519,6 +581,25 @@ export async function POST(request: NextRequest) {
     if (rawFields !== undefined && rawFields !== null && !Array.isArray(rawFields)) {
       throw new Error('Missing fields: the field decisions must be a list');
     }
+
+    /* WHAT THE ADMINISTRATOR ACTUALLY REVIEWED. Input, validated as input.
+     *
+     * 0 is legitimate -- it is what an unsettled disagreement reports. Whole
+     * numbers only: "1" or 1.5 is a caller defect, and coercing either would
+     * invent an expectation nobody held. The sentence is written for the
+     * person most likely to meet it: an administrator whose browser is still
+     * running a copy of this page from before it sent the number. */
+    const expectedCurrentRevision = body.expected_current_revision;
+    if (
+      typeof expectedCurrentRevision !== 'number'
+      || !Number.isInteger(expectedCurrentRevision)
+      || expectedCurrentRevision < 0
+    ) {
+      throw new ValidationError(
+        'Reload the page before recording a decision. This screen did not say which earlier answer you were looking at, so your decision was not recorded.',
+        'CALIBRATION_ADJUDICATION_EXPECTED_REVISION_INVALID',
+      );
+    }
     const fields = ((Array.isArray(rawFields) ? rawFields : []) as AdjudicatedFieldBody[]).map(
       (field) => ({
         adjudicatedFieldId: randomUUID(),
@@ -548,7 +629,8 @@ export async function POST(request: NextRequest) {
         ? body.notes.trim()
         : null,
       fields,
-    } as unknown as RecordAdjudicationInput);
+      expectedCurrentRevision,
+    } as unknown as RecordAdjudicationInput).catch(asConcurrentCorrectionConflict);
 
     /* AN AUDIT ROW, AND THE VOCABULARY WAS CHECKED RATHER THAN ASSUMED.
      *

@@ -53,7 +53,8 @@ describe('evaluateDecisionOutcome', () => {
 
   test('records the outcome and writes an audit entry once the decision is confirmed to exist', async () => {
     const clientQuery = jest.fn()
-      .mockResolvedValueOnce({ rows: [{ decision_id: 'dec-1' }] })
+      .mockResolvedValueOnce({ rows: [{ decision_id: 'dec-1', athlete_id: 'ath-1' }] })
+      .mockResolvedValueOnce({ rows: [{ matched: 2 }] })
       .mockResolvedValueOnce({ rows: [outcomeRow()] });
     mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
 
@@ -68,11 +69,32 @@ describe('evaluateDecisionOutcome', () => {
     });
 
     expect(result.match_state).toBe('match');
-    expect(clientQuery).toHaveBeenCalledTimes(2);
+    expect(clientQuery).toHaveBeenCalledTimes(3);
+    // The id check is scoped to the decision's own organization and athlete.
+    expect(clientQuery.mock.calls[1][1]).toEqual(['org-1', 'ath-1', ['obs-1', 'obs-2']]);
     expect(mockWriteAudit).toHaveBeenCalledTimes(1);
     const [, auditInput] = mockWriteAudit.mock.calls[0];
     expect(auditInput.entityType).toBe('outcome');
     expect(auditInput.afterState).toEqual({ decisionId: 'dec-1', matchState: 'match' });
+  });
+
+  test('refuses, before any insert or audit entry, when not every observation id is owned by the decision athlete', async () => {
+    const clientQuery = jest.fn()
+      .mockResolvedValueOnce({ rows: [{ decision_id: 'dec-1', athlete_id: 'ath-1' }] })
+      .mockResolvedValueOnce({ rows: [{ matched: 1 }] });
+    mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
+
+    await expect(evaluateDecisionOutcome({
+      organizationId: 'org-1',
+      decisionId: 'dec-1',
+      observationIds: ['obs-1', 'obs-foreign'],
+      matchState: 'match',
+      evaluatedByAccountId: 'coach-1',
+      evaluatedByRole: 'coach',
+    })).rejects.toMatchObject({ status: 400, message: 'Decision outcome observation ids are invalid.' });
+
+    expect(clientQuery).toHaveBeenCalledTimes(2);
+    expect(mockWriteAudit).not.toHaveBeenCalled();
   });
 });
 

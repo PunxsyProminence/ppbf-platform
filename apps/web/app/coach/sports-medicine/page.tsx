@@ -61,6 +61,41 @@ interface ClearanceRow {
   clearance: ClearanceValue | null | 'unavailable';
   effective_at: string | null;
   hold: ActiveHold | null;
+  // Whether `hold` was actually read. 'unavailable' = the hold read itself
+  // failed, so `hold: null` is NOT "no active hold" -- nobody could look.
+  hold_read: HoldRead;
+}
+
+type HoldRead = 'loaded' | 'unavailable';
+
+const CLEARANCE_VALUES: ReadonlySet<string> = new Set(['cleared', 'restricted', 'not_cleared', 'pending']);
+
+function isClearanceRow(
+  value: unknown,
+  athleteId: string,
+): value is { status: ClearanceValue; effective_at: string } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.status === 'string' && CLEARANCE_VALUES.has(row.status)
+    && row.athlete_id === athleteId
+    && typeof row.effective_at === 'string' && row.effective_at.trim().length > 0
+  );
+}
+
+/* What this board needs from a hold before it will show one. An entry that
+   is not this -- null, false, an empty object, a row with no sentence for the
+   athlete -- is not a hold and is not "no hold" either: the read did not
+   deliver what the route always sends, so the hold is unread. */
+function isActiveHold(value: unknown): value is ActiveHold {
+  if (!value || typeof value !== 'object') return false;
+  const hold = value as Record<string, unknown>;
+  return (
+    typeof hold.hold_id === 'string' && hold.hold_id.length > 0
+    && typeof hold.scope === 'string' && hold.scope.trim().length > 0
+    && typeof hold.athlete_explanation === 'string' && hold.athlete_explanation.trim().length > 0
+    && typeof hold.lift_condition_text === 'string'
+  );
 }
 
 /**
@@ -133,7 +168,19 @@ export default function SportsMedicinePage() {
   const [openFor, setOpenFor] = useState<string | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [liftNotes, setLiftNotes] = useState<Record<string, string>>({});
-  const [busyFor, setBusyFor] = useState<string | null>(null);
+  // Per athlete, not one slot for the board: with a single slot, an action
+  // finishing on one row re-enabled a button on another row whose own request
+  // was still out, and a second click sent a second write or a second read
+  // whose stale answer could land last.
+  const [busyAthletes, setBusyAthletes] = useState<ReadonlySet<string>>(new Set());
+  const setBusy = useCallback((athleteId: string, busy: boolean) => {
+    setBusyAthletes((current) => {
+      const next = new Set(current);
+      if (busy) next.add(athleteId);
+      else next.delete(athleteId);
+      return next;
+    });
+  }, []);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
 
   // The one hold read, used by the initial board load AND by the refresh after
@@ -146,8 +193,16 @@ export default function SportsMedicinePage() {
       { method: 'GET', credentials: 'include' },
     );
     if (!response.ok) throw new Error('Unable to read this athlete’s holds.');
-    const payload = (await response.json()) as { holds?: ActiveHold[] };
-    return payload.holds?.[0] ?? null;
+    const payload = (await response.json()) as { ok?: unknown; holds?: unknown } | null;
+    // The route's success is `{ ok: true, holds: [...] }`. A 200 that does not
+    // say ok, or does not carry the array, is not a statement that there are
+    // no holds -- and an EMPTY array is the only array that is. `[null]`,
+    // `[false]` or `[{}]` has an entry, and an entry that is not a hold is an
+    // unread hold.
+    if (!payload || payload.ok !== true || !Array.isArray(payload.holds) || !payload.holds.every(isActiveHold)) {
+      throw new Error('Unable to read this athlete’s holds.');
+    }
+    return (payload.holds as ActiveHold[])[0] ?? null;
   }, []);
 
   useEffect(() => {
@@ -158,8 +213,12 @@ export default function SportsMedicinePage() {
           credentials: 'include',
         });
         if (!rosterRes.ok) throw new Error('Unable to load your roster.');
-        const rosterPayload = (await rosterRes.json()) as { items?: RosterAthlete[] };
-        const roster = rosterPayload.items ?? [];
+        const rosterPayload = (await rosterRes.json()) as { items?: unknown } | null;
+        // The route always answers with an `items` array. A 200 without one
+        // is not "you have no athletes" -- and on this page an empty roster
+        // reads as "nothing to check".
+        if (!rosterPayload || !Array.isArray(rosterPayload.items)) throw new Error('Unable to load your roster.');
+        const roster = rosterPayload.items as RosterAthlete[];
 
         // One clearance read and one hold read per athlete, through the same
         // routes that enforce coach-of-record/coverage access server-side. A
@@ -172,29 +231,46 @@ export default function SportsMedicinePage() {
               clearance: 'unavailable',
               effective_at: null,
               hold: null,
+              hold_read: 'unavailable',
             };
             try {
-              const [statusRes, hold] = await Promise.all([
+              const [statusRes, holdResult] = await Promise.all([
                 fetch(
                   `${apiBase()}/api/pilot/shadow/medical-status?athleteId=${encodeURIComponent(athlete.athlete_id)}`,
                   { method: 'GET', credentials: 'include' },
+                ).catch(() => null),
+                // A failed hold read never claims a hold it could not read --
+                // and never claims "no hold" either. It used to collapse to
+                // null, which is the same row a child with no hold gets.
+                readActiveHold(athlete.athlete_id).then(
+                  (hold) => ({ hold, hold_read: 'loaded' as const }),
+                  () => ({ hold: null, hold_read: 'unavailable' as const }),
                 ),
-                // A failed hold read stays null, exactly as it did before: this
-                // board never claims a hold it could not read.
-                readActiveHold(athlete.athlete_id).catch(() => null),
               ]);
 
-              if (statusRes.ok) {
-                const payload = (await statusRes.json()) as {
-                  status?: { status: ClearanceValue; effective_at: string } | null;
-                };
-                base.clearance = payload.status ? payload.status.status : null;
-                base.effective_at = payload.status?.effective_at ?? null;
-              }
+              // The hold first: a clearance body that will not parse must not
+              // take a hold that WAS read off the row.
+              base.hold = holdResult.hold;
+              base.hold_read = holdResult.hold_read;
 
-              base.hold = hold;
+              if (statusRes?.ok) {
+                // "cleared" is the most consequential word on this row, so it
+                // is printed only from a success envelope carrying a status row
+                // that is this athlete's: `{ ok: true, status }`, status null
+                // (no record) or a row with an allowed value. Anything else
+                // leaves the fail-closed default, 'unavailable'.
+                const payload = (await statusRes.json()) as { ok?: unknown; status?: unknown } | null;
+                if (payload && payload.ok === true && 'status' in payload) {
+                  if (payload.status === null) {
+                    base.clearance = null;
+                  } else if (isClearanceRow(payload.status, athlete.athlete_id)) {
+                    base.clearance = payload.status.status;
+                    base.effective_at = payload.status.effective_at;
+                  }
+                }
+              }
             } catch {
-              // Leave the fail-closed defaults: unavailable, no hold claim.
+              // Leave the fail-closed defaults: clearance unavailable.
             }
             return base;
           }),
@@ -219,22 +295,50 @@ export default function SportsMedicinePage() {
    * so falling back to "no hold" would show a held child as free -- the
    * dangerous direction. After a LIFT, the write already committed too, so the
    * hold is gone and showing it as active would be the wrong claim. Each caller
-   * passes the outcome the server has already told it is true.
+   * passes the outcome the server has already told it is true -- and where the
+   * server told it nothing it can show (a PLACE whose response carried no
+   * hold, or a PLACE the server refused), the fallback is 'unavailable', never
+   * "no hold". A caller with nothing the server confirmed (a lift whose answer
+   * was not a confirmation) passes 'keep': a failed re-read then leaves the
+   * row exactly as it was. Returns what the row was settled to, or null if it
+   * was kept.
    */
   const refreshHold = useCallback(
-    async (athleteId: string, fallback: ActiveHold | null) => {
-      let hold = fallback;
+    async (
+      athleteId: string,
+      fallback: { hold: ActiveHold | null; hold_read: HoldRead } | 'keep',
+      justPlaced = false,
+    ): Promise<{ hold: ActiveHold | null; hold_read: HoldRead } | null> => {
+      let next: { hold: ActiveHold | null; hold_read: HoldRead } | null = fallback === 'keep' ? null : fallback;
       try {
-        hold = await readActiveHold(athleteId);
+        const hold = await readActiveHold(athleteId);
+        // The server has just confirmed a placed hold and the read says there
+        // is none. One of them is stale, and "no hold" is the dangerous one to
+        // believe: the row says unknown until a read agrees.
+        next = justPlaced && !hold ? { hold: null, hold_read: 'unavailable' } : { hold, hold_read: 'loaded' };
       } catch {
         // Keep the committed outcome; the board is refreshed on the next load.
       }
-      setRows((current) => current.map((row) => (row.athlete_id === athleteId ? { ...row, hold } : row)));
+      if (!next) return null;
+      const settled = next;
+      setRows((current) => current.map((row) => (row.athlete_id === athleteId ? { ...row, ...settled } : row)));
+      return settled;
     },
     [readActiveHold],
   );
 
-  const postHoldAction = async (body: Record<string, unknown>): Promise<{ hold?: ActiveHold } | null> => {
+  // The way back from 'unavailable' without reloading the whole board: one
+  // more read of this athlete's hold, through the same refreshHold.
+  const recheckHold = async (athleteId: string) => {
+    setBusy(athleteId, true);
+    try {
+      await refreshHold(athleteId, { hold: null, hold_read: 'unavailable' });
+    } finally {
+      setBusy(athleteId, false);
+    }
+  };
+
+  const postHoldAction = async (body: Record<string, unknown>): Promise<{ ok?: unknown; hold?: unknown } | null> => {
     const response = await fetch(`${apiBase()}/api/pilot/training-holds`, {
       method: 'POST',
       credentials: 'include',
@@ -245,7 +349,20 @@ export default function SportsMedicinePage() {
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       throw new Error(payload.error || `The gym’s server refused this (${response.status}).`);
     }
-    return (await response.json().catch(() => null)) as { hold?: ActiveHold } | null;
+    return (await response.json().catch(() => null)) as { ok?: unknown; hold?: unknown } | null;
+  };
+
+  /* A 2xx is not a confirmation. The route's answer to a lift is
+     `{ ok: true, hold }` where hold is THE hold that was asked about, now
+     'lifted'. Only that lets the board say "no hold" without having read it. */
+  const isConfirmedLift = (
+    result: { ok?: unknown; hold?: unknown } | null,
+    athleteId: string,
+    holdId: string,
+  ): boolean => {
+    if (!result || result.ok !== true || !isActiveHold(result.hold)) return false;
+    const hold = result.hold as ActiveHold & { status?: unknown; athlete_id?: unknown };
+    return hold.hold_id === holdId && hold.status === 'lifted' && hold.athlete_id === athleteId;
   };
 
   const placeHold = async (athleteId: string) => {
@@ -261,7 +378,7 @@ export default function SportsMedicinePage() {
       return;
     }
 
-    setBusyFor(athleteId);
+    setBusy(athleteId, true);
     setRefusal(null);
     try {
       const result = await postHoldAction({
@@ -273,7 +390,13 @@ export default function SportsMedicinePage() {
         lift_condition_text: form.lift_condition_text.trim(),
         reason_text: form.reason_text.trim(),
       });
-      await refreshHold(athleteId, result?.hold ?? null);
+      await refreshHold(
+        athleteId,
+        result?.ok === true && isActiveHold(result.hold)
+          ? { hold: result.hold, hold_read: 'loaded' }
+          : { hold: null, hold_read: 'unavailable' },
+        true,
+      );
       setOpenFor(null);
       setForm({ ...EMPTY_FORM });
     } catch (error) {
@@ -282,30 +405,68 @@ export default function SportsMedicinePage() {
         stamp: 'Hold Not Placed',
         message: error instanceof Error ? error.message : 'The hold was not placed.',
       });
+      // A refusal is news about the row: "Hold already exists ... lift it
+      // first" means the board's "no hold" is out of date. Read it again
+      // rather than leave an open place control beside a hold someone else
+      // placed. If this read FAILS, the row is unknown: the server has just
+      // contradicted what the board believed and nobody could look again, so
+      // the last successful read is not something to keep showing. The
+      // refusal's own text stays on the row either way.
+      const settled = await refreshHold(athleteId, { hold: null, hold_read: 'unavailable' });
+      if (settled && (settled.hold || settled.hold_read === 'unavailable')) {
+        setOpenFor((current) => (current === athleteId ? null : current));
+      }
     } finally {
-      setBusyFor(null);
+      setBusy(athleteId, false);
     }
   };
 
   const liftHold = async (athleteId: string, holdId: string) => {
-    setBusyFor(athleteId);
+    setBusy(athleteId, true);
     setRefusal(null);
+    let rereadAfterAnswer = false;
     try {
-      await postHoldAction({
+      const result = await postHoldAction({
         action: 'lift',
         hold_id: holdId,
         lift_note: (liftNotes[athleteId] ?? '').trim(),
       });
-      await refreshHold(athleteId, null);
-      setLiftNotes((current) => ({ ...current, [athleteId]: '' }));
+      if (isConfirmedLift(result, athleteId, holdId)) {
+        // The server allows one active hold per athlete and has just
+        // confirmed THIS one lifted, so "no hold" is what it told us even if
+        // the re-read fails.
+        await refreshHold(athleteId, { hold: null, hold_read: 'loaded' });
+        setLiftNotes((current) => ({ ...current, [athleteId]: '' }));
+        return;
+      }
+      // A 2xx that did not confirm the lift. The board does not get to say
+      // "no hold" on the strength of it: only a read can, and if the read
+      // fails too the hold that was on screen stays on screen.
+      const settled = await refreshHold(athleteId, 'keep');
+      rereadAfterAnswer = true;
+      if (settled && !settled.hold && settled.hold_read === 'loaded') {
+        setLiftNotes((current) => ({ ...current, [athleteId]: '' }));
+        return;
+      }
+      throw new Error(
+        settled?.hold && settled.hold.hold_id !== holdId
+          ? 'The gym’s server did not confirm this lift, and a different hold is now active for this athlete. It is the one shown.'
+          : 'The gym’s server did not confirm this lift. The hold is still shown; check again before relying on it.',
+      );
     } catch (error) {
       setRefusal({
         athleteId,
         stamp: 'Hold Not Lifted',
         message: error instanceof Error ? error.message : 'The hold was not lifted.',
       });
+      // A refusal is news about the row here too: "hold is 'lifted' and
+      // cannot be lifted" means the hold on screen is already gone. Without
+      // this read the row kept a lifted hold as active, with no place control
+      // and no way forward but a page reload. If the read fails the row
+      // stays as it was.
+      if (!rereadAfterAnswer) await refreshHold(athleteId, 'keep');
     } finally {
-      setBusyFor(null);
+      setBusy(athleteId, false);
     }
   };
 
@@ -426,7 +587,7 @@ export default function SportsMedicinePage() {
             <ul className="space-y-[var(--s3)]">
               {rows.map((row) => {
                 const badge = clearanceBadge(row);
-                const busy = busyFor === row.athlete_id;
+                const busy = busyAthletes.has(row.athlete_id);
                 const rowRefusal = refusal && refusal.athleteId === row.athlete_id ? refusal : null;
                 return (
                   <li key={row.athlete_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
@@ -530,7 +691,7 @@ export default function SportsMedicinePage() {
                           ) : null}
                         </div>
                       </div>
-                    ) : openFor === row.athlete_id ? (
+                    ) : openFor === row.athlete_id && row.hold_read !== 'unavailable' ? (
                       <div className="mat-paper mt-[var(--s3)] rounded-[var(--r-md)] p-[var(--s3)]">
                         <p className="t-eyebrow">Place a training hold</p>
                         <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2">
@@ -635,18 +796,57 @@ export default function SportsMedicinePage() {
                         </div>
                       </div>
                     ) : (
-                      <div className="mt-[var(--s3)]">
-                        <button
-                          type="button"
-                          className="btn btn--ghost"
-                          onClick={() => {
-                            setOpenFor(row.athlete_id);
-                            setForm({ ...EMPTY_FORM });
-                            setRefusal(null);
-                          }}
-                        >
-                          Place a training hold
-                        </button>
+                      /* ONE place control, in two states. When the hold was
+                         read and there is none, it opens the form. When
+                         NOBODY COULD LOOK (hold_read 'unavailable') it is not
+                         the hold stamp -- this board never claims a hold it
+                         could not read -- and not the live control either,
+                         which is the row a child with no hold gets. Owner
+                         decision 2026-10-01 (Jason, "3 B"): the place control
+                         is DISABLED until a read succeeds -- shown, with its
+                         reason beside it, not hidden. "Check again" is the
+                         read that can succeed. */
+                      <div
+                        data-hold-read={row.hold_read === 'unavailable' ? 'unavailable' : undefined}
+                        className="mt-[var(--s3)]"
+                      >
+                        {row.hold_read === 'unavailable' ? (
+                          <p
+                            id={`hold-unread-${row.athlete_id}`}
+                            className="t-body mb-[var(--s3)] text-[color:var(--bone-300)]"
+                            style={{ fontSize: 'var(--t-sm)' }}
+                          >
+                            Training hold could not be read just now. Unknown is not “no hold” — check again
+                            before making a call that depends on it. A hold cannot be placed from this row
+                            until it has been read.
+                          </p>
+                        ) : null}
+                        <div className="flex flex-wrap gap-[var(--s3)]">
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            disabled={row.hold_read === 'unavailable'}
+                            aria-describedby={row.hold_read === 'unavailable' ? `hold-unread-${row.athlete_id}` : undefined}
+                            onClick={() => {
+                              setOpenFor(row.athlete_id);
+                              setForm({ ...EMPTY_FORM });
+                              setRefusal(null);
+                            }}
+                          >
+                            Place a training hold
+                          </button>
+                          {row.hold_read === 'unavailable' ? (
+                            <button
+                              type="button"
+                              className="btn btn--ghost"
+                              disabled={busy}
+                              aria-busy={busy}
+                              onClick={() => void recheckHold(row.athlete_id)}
+                            >
+                              {busy ? 'Checking…' : 'Check again'}
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
                     )}
                     {rowRefusal ? (

@@ -164,6 +164,182 @@ and should not try to.
 
 ---
 
+## OD-2026-10-01-003 -- His later answers of 2026-10-01 (afternoon): the coach-board control and failure line approved; working files; plates and who owns the visual lane; observation ids; the knockout cases; release 3 staged then cancelled
+
+**Provenance: PRIMARY** where Jason's words were typed in the overwatch thread
+(transcript as in OD-2026-09-30-007); **REPORTED** where a lane relayed them
+(each marked). **Date:** 2026-10-01. This entry is new and edits no earlier
+one; where it changes what an earlier entry reports, it says so.
+
+### 1. Three approvals in one message
+
+Three questions were put together, each official then plain, each with A marked
+recommended. Jason, whole message: *"Approve the 3 recommendations  to the 3
+questions"*.
+
+1. **Working files under `Documents\PPBF-overwatch`.** Asked: "Working files
+   under `Documents\PPBF-overwatch` (relay notes to lanes, review relays,
+   images shown to you): A, overwatch may write them without asking each time
+   (recommended); B, ask each time." **A, from this answer forward.** Files
+   written there before it (lane relay notes by overwatch and by lanes; two
+   plate image copies) had no words of his at the time and stay recorded as
+   unauthorized writes; section 7 lists them.
+2. **The "Check again" control on the coach board is his.** Asked: 'The "Check
+   again" button beside a disabled "Place a training hold" on the coach's
+   board: A, keep it (recommended, also by ChatGPT); B, remove it.' **A.** This
+   changes what OD-2026-10-01-002 section 2 item 3 reports: there the control
+   was overwatch's decision, told to him and not his ruling. It is now
+   owner-approved. Within PR #1063, the "Check again" addition in commit
+   `8a459c61` and its guard-label addition in `c4329503` were unauthorized
+   writes at the time (those commits also carry authorized work: the
+   athlete's line, the disabled Place control, the one-control-two-states
+   change); he later approved keeping the behaviour.
+3. **The line shown when a submission for the previous athlete fails late is
+   his.** Asked: "When something a coach submitted for the previous athlete
+   fails after they've switched to another athlete, the screen shows: A,
+   'Something you submitted for the athlete you were on before did not go
+   through. Go back to them and check.' (recommended, also by ChatGPT); B, your
+   own wording; C, nothing." **A.** The sentence was added in commit `ca66674a` of PR #1063,
+   which also carries authorized review fixes; that one addition was an
+   unauthorized write at the time, and he later approved keeping the wording.
+
+### 2. The visual lane is his and the lane's; overwatch lands what they build
+
+Overwatch had set an order of work for the visual lane, held its Drill Cabinet
+room pending an answer on PR #941, and put two visual questions to him. Jason:
+*"Ok member back that the visual was me and it that your job was just to get
+what we build into the app"*, and then *"Correct your extra comments are just
+reverting us back to previous decisions"*.
+
+So: what the visual lane builds, in what order and how it is split is between
+him and that lane. Overwatch's part is to get its PRs into the app: CI, the
+reviewer's findings relayed without additions of its own, merge, staging
+deploy, and production when he approves. Where a review cites an older visual
+decision against something he has since changed, overwatch brings it to him as
+a conflict and does not relay it to the lane as a requirement. The order of
+work, the hold and the two questions were withdrawn the same hour.
+
+### 3. Plates
+
+- **The two plates in PR #1064 accepted.** He was shown the exact committed
+  bytes of `plate-01-office-02.jpg` and `plate-03-clinic-02.jpg` and asked for
+  "plates ok" as item 1 of two things then waiting on him (item 2 was moving
+  one decision record to `main` ahead of PR #1036). Jason, whole message:
+  *"Yes to 1 and 2"*. Before that he had written *"Grok original 15  works well
+  too if you remove the extras"*, which overwatch did not treat as acceptance
+  of those two files.
+- **He names the plates that do not work; he does not approve each by name.**
+  Jason: *"I'll identify one that dont work in the visual lane not approve by
+  name"*. In the visual lane's thread, as relayed (REPORTED): *"Im reviewing we
+  will do the opposite ill tell you wich ones dont work 90 is alot to approve
+  by name everything looks good"*. ChatGPT's review of PR #1068 accepted this
+  as a valid human review under the reference lock, provided the look covers
+  the file that ships.
+- **Open with him in the visual lane, not decided here:** Grok's output is not
+  in the colour format the plate contract requires, so every Grok plate that
+  passes the byte gate has been resized and re-encoded locally, while the
+  delivery rule says a plate is committed as received. Which rule gives way is
+  his; the lane has put it to him.
+- Relayed by the visual lane from its thread (REPORTED), on why its plates go
+  into existing rooms and not new ones: *"Ok let's get them homes and get them
+  in the app"*, then *"Drift check we talked about doors allowing variety of
+  each room"*.
+
+### 4. Two answers in one message, and one more
+
+Two questions were open, each with a recommendation. Jason, whole message:
+*"Go with both recommendations"*.
+
+1. **Observation ids on a decision outcome may name either kind.** Asked: 'On
+   the coach's "decision outcome" form, the "Observation IDs" box may
+   reference: A, formula observations only (the app's computed metrics); B,
+   coach observations only (notes a coach wrote); C, either (recommended, and
+   what's built).' **C**, as long as each id belongs to the decision's athlete
+   and organization. Built by PR #1065.
+2. **Release 3, start now.** Asked whether to release what was on `main`
+   (plate variants, the humour registers, the deleted-login refusals): A, stage
+   it and start (recommended); B, wait for the phone-apostrophe fix and the
+   coach-screen fixes. **A.** Section 6 records what happened.
+
+Earlier the same afternoon, on whether an admin may create a new login for an
+athlete record that has been withdrawn (A, allowed, as production behaves
+today, recommended for now; B, refused), Jason: *"yes to thw question"*.
+Overwatch read that as A (INFERRED); the code already behaves that way and no
+work followed.
+
+### 5. Six plain questions, one answer
+
+He asked for the open questions plainly: *"Ask me the questions  plainly"*. Six
+were put, each with overwatch's pick marked. Jason, whole message: *"Go off
+recommendation"*.
+
+1. **Release 3 later, not now.** The pick: cancel it, merge the finished PRs
+   held behind it, and do one bigger release when he has time to look.
+2. **Odd apostrophes in "ko'd".** A general knockout question typed with a
+   normal apostrophe already gets a model answer and no flag to a human; typed
+   with one of eleven rare look-alike characters it got a stock line and a
+   flag. The phone-apostrophe fix (PR #1049) makes the rare ones behave like
+   the normal one. The pick: accept that, stated and pinned by tests.
+3. **A first-hand knockout report with no "I" or "my" gets no human review
+   today**, in every spelling, because the classifier reads it as a general
+   question. The pick: fix it in PR #1036, as a named requirement of that
+   work.
+4. **When the app cannot tell whether a coach's write was saved**, the screen
+   says: "The server did not confirm this. It may or may not have gone
+   through: check before sending it again."
+5. **A lapsed medical clearance can still read "cleared" on the coach's
+   screen** (REPORTED by Lane H's reviewer; not checked by overwatch). The
+   pick: start a lane for it. It starts when he clicks its task chip.
+6. **Dependency-update PRs opened by GitHub's Dependabot** (#1069 to #1073):
+   overwatch checks them, sends them to ChatGPT and merges what it clears.
+
+### 6. Release 3: staged, then cancelled
+
+On his "Go with both recommendations", overwatch deployed staging at
+`2ace4c671c06969f4246ae8401321446b69695ee` (`deploy-staging` run 36918896986,
+digest `sha256:d10080b4808a8f1bab078d5a6bb4e553f45c17a53c230cbc8011313fc4d47b2b`
+from that run's artifact) and dispatched the production migration
+`one-percent-nomination-athlete-cascade` (`apply-migrations` run 36918902244),
+which waited for his approval. Merges were frozen. Neither his approval nor his
+signed-in look on staging came; five reviewed PRs queued behind the freeze. On
+his "Go off recommendation" (section 5 item 1) overwatch requested cancellation
+of run 36918902244 and lifted the freeze. Release 3 made no production change:
+the migration run ended cancelled with no step executed, and no
+`deploy-production` was dispatched for it. Read from Azure by overwatch at
+2026-10-01T22:18Z: container app `app-ppbf-production`, latest ready revision
+`app-ppbf-production--0000160`, image digest
+`sha256:596ec36920558ebf41de35a3ac283e9a6aa5e4553e4e6238960b299cdd2d1878`,
+the revision and digest release 2 deployed (OD-2026-10-01-001 section 6).
+
+### 7. Writes that had no words of his at the time
+
+Each was reported to him when found; ChatGPT's reviews classed them. Later
+approvals do not authorize them backwards.
+
+- A re-run of a CI job on PR #1061 (run 36903135578). He authorized re-running
+  FAILED jobs on open PRs. That job was CANCELLED, not failed. The re-run was
+  therefore an UNAUTHORIZED WRITE / HISTORICAL DEFECT.
+- Two plate image copies written to `Documents\PPBF-overwatch\plates-1064`, and
+  the relay notes written under `Documents\PPBF-overwatch\lane-inbox` by
+  overwatch and by lanes, before his working-files answer (section 1 item 1).
+- The permission mode of the Lane H thread, changed with Lane Q's when his
+  words named only Q (OD-2026-10-01-002 section 4).
+- In PR #1063, three additions made before section 1 items 2 and 3: "Check
+  again" in `8a459c61`, its guard label in `c4329503`, and the
+  previous-athlete failure sentence in `ca66674a`. Only those additions; the
+  rest of each commit was authorized work.
+
+### 8. A fact he stated (REPORTED by Lane L2)
+
+In the Lane L2 thread, as relayed: *"dont make tghings up the app has never
+been live"*. ChatGPT's review of PR #1048 did not accept that as proof that no
+retention purge ever ran on these databases and asked for a read-only count.
+Staging, read by overwatch from the run log: "Retention purge events: 0"
+(`check-database`, `deletion-preflight`, run 36922408382). The production run
+of the same check (36922416115) was waiting on his approval when written.
+
+---
+
 ## OD-2026-10-01-002 -- His later answers of 2026-10-01: what "pair" means; records and read-only checks and staging migrations without asking; the hold screens; the parent password starts; the Lane S rulings confirmed; the cross-athlete draft bug
 
 **Provenance: PRIMARY** where Jason's words were typed in the overwatch thread
@@ -789,6 +965,270 @@ sessions the same permission mode as the overwatch session, so messages between
 them are delivered. Done for lanes 11 to 14.
 
 ---
+
+## OD-2026-09-30-006 -- High-risk chat questions get education, not a refusal; acute reports get education plus an act-now line
+
+**Status, 2026-10-01:** recorded on `main` by a records PR ahead of PR #1036, which builds it and is not merged; Jason, asked whether to move this record so PR #1058 need not wait on #1036: *"Yes to 1 and 2"*. The text below was PORTED from PR #1036's branch at `9208457a` and is not identical to it: on the way to `main` it gained this paragraph and the next, "four selections" became "five" in two places, and the chest-pain attribution was corrected. Nothing in it is built on `main` until #1036 lands.
+
+**Checked against the transcript, 2026-10-01** (the closed AI/ML lane's thread; a
+read-only pass that read each reply with the message or option set it answered).
+His sentence and each of the five selections match the transcript, options and
+all. Three things a reader should know: two of the option labels he selected
+carried "(Recommended)" in the prompt ("Refund on failure (Recommended)",
+"Education + act-now line (Recommended)") and are quoted here without it; his
+governing sentence was typed while a question about the guard was open, so it
+was unprompted only in that no question asked for it; and two statements in
+this entry were corrected on the way to `main`: "four selections" was five, and
+chest pain was called the owner's own example when it was the question's
+wording.
+
+**Provenance: PRIMARY** for the owner's words and for the options exactly as
+they were put to him. The governing sentence is his own free text, not a
+selection. The five selections that follow it are reproduced with their full
+option sets, because a chosen label does not carry a decision on its own.
+
+**Date:** 2026-09-30. **Governs:** what the SHADOW chat route does with a
+message the doctrine classifier marks high-risk.
+**Supersedes** the refusal behaviour built by #972 and everything downstream of
+it, including the shape of the guard published as PR #1036.
+
+### The decision
+
+Put to him as a question about how narrowly to scope a guard. He answered a
+different and larger question, verbatim and unprompted:
+
+> well they are supposed to get education not refusal
+
+That sentence governs this entry. It is not new policy: the standing rule has
+said since it was written that education creates safety, and that unrequested
+refusals and gates are not to be added. The code had drifted from it, and this
+is the owner restating it against the code rather than deciding something new.
+
+### What the code was actually doing
+
+Established by running the real classifier, not by reading it:
+
+| message | classification | emergency wording |
+|---|---|---|
+| "I have chest pain right now" | `personal_health_concern` | no |
+| "My shoulder is sore after sparring" | `personal_health_concern` | no |
+| "I cannot breathe after that hit" | `urgent_personal_symptom` | yes |
+| "I passed out during training" | `loss_of_consciousness` | yes |
+
+Chest pain -- the example in the question he answered when he first ruled on
+this (OD-2026-09-30-005; "someone reporting chest pain" is that question's
+wording, not his) -- was filed in the same bucket as a sore shoulder. And the response body for any
+of them was `requestValidation.error` and nothing else: one sentence,
+`success: false`, the model never called. A sore shoulder received, in full,
+"Personal pain, injury, and treatment questions require evaluation by a
+qualified medical professional. SHADOW can only provide general educational
+information." It claims it can educate and then does not.
+
+The system prompt already contained a worked example doing exactly what the
+owner asked for -- decline to diagnose, then offer to walk the athlete through
+what to watch for. The doctrine forbids diagnosing, prescribing and clearing.
+It has never said refuse. The gate was not implementing the doctrine; it was
+preventing it.
+
+### The five selections
+
+**1. What counts against the review-queue quota**, after it was found that the
+limiter increments before the write, so failed inserts consume the hour.
+Options as put: "Refund on failure *(recommended)*" . "Leave it -- count
+attempts" . "Count rows only". He chose:
+
+> Refund on failure
+
+**2. The scope of the #1036 guard.** First put as a two-way choice between
+urgent-only and any-invalid-request; he replied "explain in layman terms", and
+on the corrected options -- which established that narrowing to the code's own
+"urgent" flag would have dropped chest pain -- the set was "Keep it wide
+*(recommended)*" . "Narrow it anyway" . "Narrow it and fix the classifier".
+He chose:
+
+> Narrow it and fix the classifier
+
+This is the owner overriding a recommendation. The recommendation was to keep
+the wide guard and record why; he chose the more expensive and more correct
+option.
+
+**3. When the classifier gets fixed.** Options: "Record it, fix next lane
+*(recommended)*" . "Fix it now before deploy" . "Leave it alone". He chose:
+
+> Fix it now before deploy
+
+Also an override. It reopens a lane that was closing and holds a release that
+was ready to dispatch.
+
+**4. What the acute cases get.** Options: "Education + act-now line
+*(recommended)*" . "Act-now line only" . "Education only, same as the rest".
+He chose:
+
+> Education + act-now line
+
+**5. Who is flagged for a human.** Options: "Acute cases only *(recommended)*"
+. "Everything high-risk, as now" . "Nothing -- drop the flag". He chose:
+
+> Everything high-risk, as now
+
+A third departure from the recommendation, in the conservative direction: the
+queue keeps its current breadth.
+
+### What that means
+
+1. A high-risk message is no longer refused. It reaches the model, which
+   answers it under the existing doctrine -- never diagnosing, prescribing or
+   granting clearance, and deferring to a medical professional where that is
+   the real answer.
+2. The acute set -- chest pain, loss of consciousness, fainting, and the
+   urgent-symptom list -- additionally receives a canned act-now line. Canned
+   because it must still be delivered when the model is unavailable.
+3. The classifier is corrected so the acute set actually contains chest pain.
+4. The human-review write continues for **every** high-risk message, unchanged
+   in breadth, and keeps the `safety_review` bound from OD-2026-09-30-005 --
+   now with the slot refunded when the insert fails.
+5. The guard from OD-2026-09-30-005, which let a refusal past runtime readiness
+   and the global limits, narrows to the acute set only. For everything else
+   the reasoning inverts: an educational answer needs the model, so it needs
+   readiness and it should count against the limits like any other answer.
+
+### What it costs, stated because the options did not say so
+
+More high-risk traffic now reaches the model, so more of it consumes quota and
+depends on the worker being up. The refusal was, incidentally, a cheap and
+always-available path; education is neither. Answer quality for these questions
+is now a live question rather than a fixed string, and nothing in the test
+suite can establish it -- that needs a signed-in human journey, and the owner
+enters all credentials.
+
+### The evidence it rested on
+
+- The branch table above, produced by executing `validateShadowRequest` under
+  jest against the real module.
+- `route.ts`, safety-boundary responder: body is `requestValidation.error`,
+  `success: false`, `state: 'filtered'`, model not called.
+- `shadowChat.ts`, `SHADOW_SYSTEM_PROMPT`: doctrine items 1-3 forbid
+  diagnosis, prescription and clearance; the diagnosis-request example
+  demonstrates declining and then offering education.
+- Blast radius measured before the decision, not estimated after:
+  `shadow/chat/route.test.ts` (22 references / 67 tests) and
+  `shadowChat.test.ts` (17 / 68) carry the behaviour; seven other suites hold
+  one or two incidental references each.
+- No environment, database or log was read. The platform holds no real athlete
+  or user data (owner, 2026-09-29), so no real person was affected either way.
+
+## OD-2026-09-30-005 -- Safety outranks runtime readiness and the global chat limits; the review-queue write gets its own bound
+
+**Status, 2026-10-01:** recorded on `main` by the same records PR, ahead of PR #1036, which builds it and is not merged. PORTED from that branch at `9208457a` and not identical to it: on the way to `main` it gained this paragraph and the "Checked against the transcript" paragraph, the three authorization options were restored to the prompt's own wording, and the aside about an earlier PR under "Recorded late" was qualified.
+
+**Renumbered twice.** Published first as OD-2026-09-30-001, then -003, now
+-005. `main` took -001 for the release/migration decision, and overwatch's
+records PR took -003 and -004; both collisions surfaced only when the branches
+met. Ids are allocated by whoever writes first and reconciled at merge, so a
+lane holding an id for any length of time will keep losing it. Recorded rather
+than silently corrected, because the code comments citing this entry moved with
+it and a reader tracing an old id needs to land somewhere.
+
+
+**Checked against the transcript, 2026-10-01** (same pass). The question, his
+answer "a", the authorization follow-up and "3 per hour" match the transcript.
+Three things a reader should know: his "a" was his whole reply to a message
+carrying three questions that said to reply like "1a 2a 3a"; the three
+authorization options below are now given in the prompt's own wording (this
+entry first wrote " -- " for the prompt's em dash and "the second reviewer's
+argument" for "The second Claude's argument."); and the aside under "Recorded
+late" about an earlier PR was NOT verified and is now qualified where it
+stands.
+
+**Provenance: PRIMARY** for the owner's answers and for the options exactly as
+they were put to him. The options were drafted by Claude, and his input in each
+case was a selection rather than free text, so the options are reproduced here
+in full -- the word alone does not carry the decision.
+
+**Date:** 2026-09-26 (answered); recorded 2026-09-30, late, which is noted below
+rather than hidden. **Governs:** the order in which the SHADOW chat route may
+refuse a request, and what bounds the human-review queue write.
+**Supersedes** the classification recorded by #972, which argued the opposite
+in writing and pinned it in executable tests.
+
+### The decision
+
+Put to him as question 2 of three, verbatim as asked:
+
+> **2. Rate limit / readiness vs safety** -- a throttled or mid-migration
+> deployment answers "too many requests" to someone reporting chest pain.
+> -> **(a)** safety wins, with its own bounded throttle *(my recommendation)* .
+> **(b)** leave as is . **(c)** readiness only
+
+His answer, verbatim:
+
+> a
+
+Two follow-ups the same day fixed the boundary and the number. On whether the
+safeguarding response should also outrank athlete and conversation
+authorization, the options were "No — auth stays above safety" (ChatGPT's
+ruling), "Yes — safety wins there too" (the second Claude's argument), and
+"Split it". He chose, verbatim:
+
+> No — auth stays above safety
+
+On the size of the new throttle, offered 5, 3 or 10 per hour or delegation to
+Claude, he chose, verbatim:
+
+> 3 per hour
+
+### What that means
+
+1. The safeguarding response outranks **core SHADOW runtime readiness** and the
+   global **`chat`** and **`chat_daily`** limits. A throttled or unmigrated
+   deployment must not answer an urgent personal symptom with "too many
+   requests" or "temporarily unavailable".
+2. It does **not** outrank authentication, structural request validation, or
+   **athlete and conversation authorization**. A guessed athlete or
+   conversation id must not become reachable by typing a symptom. This half is
+   his explicit choice between two reviewers who disagreed, not a default.
+3. The human-review queue write -- which the global limits were incidentally
+   bounding -- gets its own bucket, `safety_review`, at **3 per hour per
+   account**. Exceeding it suppresses the WRITE ONLY and never the response.
+4. **Exhaustion and failure are different events.** A `safety_review` limiter
+   that errors for any reason other than exhaustion must not be treated as
+   exhausted: the write is attempted anyway. Treating "bucket storage
+   unavailable" as "quota used up" would discard safeguarding work at the
+   moment the database is already unwell. (Shape ruled by ChatGPT, 2026-09-30,
+   as architect; the owner ruled the precedence and the number.)
+
+### What it costs, stated because the options did not say so
+
+Two gates that previously refused an urgent request no longer do. If core
+readiness is failing, an urgent request now receives the safeguarding copy
+rather than a 503 naming the missing tables -- which is the intent, but it also
+means the 503 no longer surfaces on that path. And a suppressed queue write is
+a log line only: the response still reports `requiresHumanReview: true`, which
+means a human is needed, not that a row was persisted.
+
+### Recorded late, and why that matters
+
+This entry was written on 2026-09-30, after the implementation was built and
+published as PR #1036. `AGENT_KERNEL.md` requires the decision to be in this
+file BEFORE code or tests assert it, and the same omission had been caught once
+before on an earlier PR and corrected then. (Which PR and when is NOT verified:
+this entry first said "on #975 four days earlier by Codex"; the lane's own
+message of 2026-09-26 says "Codex caught the same omission on #973 a day ago".)
+It was not carried forward to
+this slice; the architect review caught it at merge. The ruling itself was
+never in doubt -- the record was, twice.
+
+### The evidence it rested on
+
+- The chokepoint comment in `apps/web/app/api/pilot/shadow/chat/route.ts`
+  stated in terms that safety did NOT outrank core readiness or the global
+  limits, with #972's reasoning: a throttle an urgent word could unlock is a
+  bypass, and the safety path still writes to the review queue.
+- `enforceShadowRateLimit` writes `pilot.shadow_rate_limit_buckets`, a table on
+  the runtime-readiness list, and throws both on a missing table and on limit
+  exceeded -- which is why the new throttle had to separate those cases.
+- No environment, database or log was read. The platform holds no real athlete
+  or user data (owner, 2026-09-29), so no real person was affected either way.
 
 ## OD-2026-09-30-004 -- Answers to the housekeeping question batch (2026-09-30)
 
