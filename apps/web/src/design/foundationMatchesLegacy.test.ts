@@ -85,3 +85,33 @@ describe('the two accessibility floors hold their minimum in every sheet that de
     });
   });
 });
+
+/* THE FOCUS RING IS THE THIRD FLOOR. Every .btn and field draws its only focus
+   indicator from --focus and sets `outline: 0` beside it, so a --focus that
+   resolves to nothing leaves keyboard focus invisible app-wide (WCAG 2.4.7).
+   The old every-token equality covered this by accident; these cases cover it
+   on purpose. They assert that a ring exists and can paint, not what colour
+   it is: a spread of at least 2px, and -- because the ring's colour is read
+   through a channel-triple token -- that triple declared in a form rgb() can
+   actually parse. A malformed triple invalidates the whole box-shadow. */
+describe('keyboard focus stays visible in every sheet that declares --focus', () => {
+  describe.each(SHEETS)('%s', (_name, tokens) => {
+    it('--focus draws a ring at least 2px wide', () => {
+      const focus = tokens.get('--focus') ?? '';
+      const ring = focus.match(/^0 0 0 (\d+(?:\.\d+)?)px\s+\S/);
+      expect(ring).not.toBeNull();
+      expect(Number((ring as RegExpMatchArray)[1])).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  it('every channel triple --focus reads is declared as three space-separated integers', () => {
+    const focus = legacy.get('--focus') ?? '';
+    const triples = [...focus.matchAll(/var\((--[a-z0-9-]+-rgb)/g)].map((m) => m[1]);
+    for (const triple of triples) {
+      expect({ triple, value: legacy.get(triple) }).toEqual({
+        triple,
+        value: expect.stringMatching(/^\d{1,3} \d{1,3} \d{1,3}$/),
+      });
+    }
+  });
+});

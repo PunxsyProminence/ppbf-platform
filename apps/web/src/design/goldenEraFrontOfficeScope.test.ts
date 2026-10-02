@@ -148,6 +148,14 @@ describe('the 007 mockup did not rename or invent front-office controls', () => 
     expect(tabBlock()).toContain(label);
   });
 
+  test('no tab was renamed to a reference-image label', () => {
+    // Drawn in the locked mockup as tabs of this rail, but each is its own
+    // route: /notices, /admin/volunteer-management, /admin/pin.
+    for (const label of ['Notices', 'Volunteers', 'PIN Management']) {
+      expect(tabBlock()).not.toContain(label);
+    }
+  });
+
   test('no panel was invented from the reference image', () => {
     // Notices, PIN Management and Attendance KPIs are separate front-office
     // routes. A restyle may not grow this console a panel for any of them.
