@@ -3635,6 +3635,12 @@
     0 2px 5px rgba(0,0,0,.5);
 }
 .ge-file .btn--ghost {
+  /* `.ge-file .btn` above inks every button #241B12 for the brass plate, and
+     it outranks the base ghost's own bone ink -- so the ghosts printed dark
+     ink on this dark ground: 1.06:1, measured, on Q&A Research Chat, Evidence
+     Review and Publish Stage. The ghost states its ink again. */
+  color: var(--bone-200);
+  text-shadow: none;
   background-color: #1D1610;
   background-image: linear-gradient(180deg,
     rgb(var(--brass-200-rgb) / .08) 0%, transparent 38%, rgba(0,0,0,.30) 100%);
@@ -4047,6 +4053,40 @@
   .ge-bell .frame-in.mat-paper {
     padding: var(--s5) var(--s4) !important;
   }
+}
+
+/* ==========================================================================
+   READABILITY IN THE FILE ROOM AND THE BOARD ROOM (2026-10-02)
+   ==========================================================================
+   Measured on rendered pixels, signed in, on every file-room and board-room
+   page the synthetic admin can open. Three small voices do not read on lit
+   leather. The leather materials carry a warm highlight toward the top left,
+   and under it the ground is a mid brown, not the dark hide the voices were
+   tuned against:
+
+     .t-eyebrow   --brass-400, 11px    2.6 - 4.4 : 1
+     .t-label     --bone-400,  11px    3.2 - 4.1 : 1
+     .t-muted     --bone-400,  12.5px  3.0 - 3.7 : 1
+
+   against a 4.5:1 floor. Each moves up its own ramp to the first rung that
+   clears the floor on the brightest part of the material. Nothing about the
+   materials, the rooms or the plates changes; owner's choice 2026-10-02 was to
+   fix what is hard to read without new art (OD-2026-10-02-010).
+
+   Scoped to the two rooms, and to dark leather only: a voice that stands on
+   paper, plaster or canvas inside a leather panel keeps its dark ink, which is
+   what the :not() is for.
+
+   Placed here, between the sign-in block and the clinic block, because the
+   clinic's own guard reads everything from `.ge-clinic` to the end of the
+   sheet as the clinic's. */
+:is(.room--file, .room--board) :is(.mat-leather, .mat-leather--raised, .mat-leather--worn)
+  .t-eyebrow:not(:is(.mat-paper, .on-plaster, .on-canvas) *) {
+  color: var(--brass-200);
+}
+:is(.room--file, .room--board) :is(.mat-leather, .mat-leather--raised, .mat-leather--worn)
+  :is(.t-label, .t-muted):not(:is(.mat-paper, .on-plaster, .on-canvas) *) {
+  color: var(--bone-200);
 }
 
 /* ==========================================================================
