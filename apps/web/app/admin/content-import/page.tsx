@@ -58,6 +58,13 @@ type Result =
     readonly auditMirror: string;
   };
 
+type PromptState =
+  | { readonly kind: 'idle' }
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'ready'; readonly text: string; readonly copied: boolean }
+  | { readonly kind: 'refused'; readonly httpStatus: number; readonly message: string }
+  | { readonly kind: 'unreachable' };
+
 const DATASET_LABEL: Record<string, string> = {
   disciplines: 'Disciplines',
   'competence-levels': 'Competence levels',
@@ -168,6 +175,7 @@ function ContentImportScreen() {
   const [plan, setPlan] = useState<PlanView | null>(null);
   const [applied, setApplied] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+  const [prompt, setPrompt] = useState<PromptState>({ kind: 'idle' });
 
   async function choose(chosen: File[]) {
     // A new choice is a new package: the old plan describes files that are
@@ -247,6 +255,49 @@ function ContentImportScreen() {
     }
   }
 
+  /* The workout prompt is fetched when asked for, shown in full, and copied.
+     It is SHOWN as well as copied because a gym tablet may refuse the
+     clipboard (navigator.clipboard is undefined outside a secure context, and
+     writeText can reject); the text on screen can always be selected by hand,
+     and the screen says which of the two happened rather than "Copied" either
+     way (the rule activation-codes/page.tsx follows). */
+  async function copyText(text: string): Promise<boolean> {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function workoutPrompt() {
+    // Already fetched: copy straight away, inside the press. A tablet browser
+    // may refuse a clipboard write that comes after a network round trip, so
+    // the second press is the one that can succeed there -- and a failed
+    // refetch can never take away text that is already on screen.
+    if (prompt.kind === 'ready') {
+      const text = prompt.text;
+      setPrompt({ kind: 'ready', text, copied: await copyText(text) });
+      return;
+    }
+    setPrompt({ kind: 'loading' });
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/content-import`, { method: 'GET', credentials: 'include' });
+      if (!response.ok) {
+        setPrompt({ kind: 'refused', httpStatus: response.status, message: await errorText(response) });
+        return;
+      }
+      const payload = (await response.json()) as { prompt?: unknown };
+      if (typeof payload.prompt !== 'string' || payload.prompt.trim() === '') {
+        setPrompt({ kind: 'unreachable' });
+        return;
+      }
+      setPrompt({ kind: 'ready', text: payload.prompt, copied: await copyText(payload.prompt) });
+    } catch {
+      setPrompt({ kind: 'unreachable' });
+    }
+  }
+
   const blocking = plan?.blocking ?? [];
   const canApply = plan !== null && !applied && blocking.length === 0 && plan.changes > 0 && busy === null;
   const byOutcome = (outcome: PlanUnitView['outcome']) => (plan?.units ?? []).filter((unit) => unit.outcome === outcome);
@@ -270,6 +321,67 @@ function ContentImportScreen() {
             Research, video and photos are not loaded here.
           </p>
         </header>
+
+        <section className="mt-[var(--s6)] space-y-[var(--s3)]" aria-labelledby="workout-prompt-heading">
+          <h2 id="workout-prompt-heading" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
+            A workout written in your own words
+          </h2>
+          <ol className="t-body max-w-3xl list-decimal space-y-[var(--s1)] pl-[var(--s5)]">
+            <li>Copy the workout prompt and paste it into any AI assistant.</li>
+            <li>Paste your workout under it. It answers with two files, or asks you for what is missing.</li>
+            <li>Save the two files with the names it gives, then choose them below and check them.</li>
+          </ol>
+          <p className="t-muted max-w-3xl">
+            A workout that is already loaded is changed by its id, not by its name. Check the changed files: the
+            finding names the id (it starts wtp_). Tell the assistant that id and ask for the files again; the
+            change then loads as a new version and the old one is kept.
+          </p>
+          <button
+            type="button"
+            disabled={prompt.kind === 'loading'}
+            onClick={() => {
+              void workoutPrompt();
+            }}
+            className="btn btn--ghost btn--tap disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {prompt.kind === 'loading' ? 'Getting the prompt...' : 'Copy the workout prompt'}
+          </button>
+
+          {prompt.kind === 'ready' ? (
+            <div className="field">
+              <p className="t-body" role="status">
+                {prompt.copied
+                  ? 'Copied. Paste it into the AI assistant, then paste your workout under it.'
+                  : 'This device would not copy it. Press the button again, or tap the text below to select all of it and copy it yourself.'}
+              </p>
+              <label className="t-label" htmlFor="workout-prompt">Workout prompt</label>
+              <textarea
+                id="workout-prompt"
+                readOnly
+                rows={10}
+                className="textarea w-full"
+                value={prompt.text}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            </div>
+          ) : null}
+
+          {prompt.kind === 'refused' ? (
+            prompt.httpStatus === 401 ? (
+              <RefusalStamp kind="signed_out" detail="sign in again with Microsoft, then reload this page" />
+            ) : prompt.httpStatus < 500 ? (
+              <RefusalStamp kind="cannot_be_done" detail={trimTrailingPeriod(prompt.message)} />
+            ) : (
+              <p className="t-body" role="status">
+                The server answered with an error (HTTP {prompt.httpStatus}). The prompt was not fetched.
+              </p>
+            )
+          ) : null}
+
+          {prompt.kind === 'unreachable' ? (
+            <p className="t-body" role="status">The server could not be reached. The prompt was not fetched.</p>
+          ) : null}
+        </section>
 
         <section className="frame mt-[var(--s6)]">
           <span className="rivet rivet--tl" />

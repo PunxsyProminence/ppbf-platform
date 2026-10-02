@@ -3,9 +3,10 @@ import path from 'node:path';
 
 import { NextRequest } from 'next/server';
 
-import { POST } from './route';
+import { GET, POST } from './route';
 import { BUILDING } from '@/components/buildingMap';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
+import { workoutIntakePrompt } from '@/src/server/pilot/contentImport/aiPrompt';
 import { applyImport } from '@/src/server/pilot/contentImport/apply';
 import { emitContentImportAuditMirror } from '@/src/server/pilot/contentImport/auditRow';
 import { type ImportPlan, packageInputs, planImport } from '@/src/server/pilot/contentImport/plan';
@@ -457,6 +458,57 @@ describe('research is not loaded from this screen', () => {
       expect(isResearchFile(name)).toBe(true);
     }
     expect(CONTRACT_FILE_NAMES.filter((name) => isResearchFile(name))).toEqual([]);
+  });
+});
+
+describe('GET: the workout intake prompt, behind the same gate as the upload', () => {
+  function get() {
+    return GET(new NextRequest('http://localhost/api/pilot/admin/content-import', { method: 'GET' }));
+  }
+
+  test('an organization admin gets the prompt the core builds, and no transaction is opened for it', async () => {
+    const response = await get();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true, dataset: 'workout-templates', prompt: workoutIntakePrompt() });
+    expect(mockPrincipal).toHaveBeenCalledTimes(1);
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockPoolClient).not.toHaveBeenCalled();
+    // Nothing of the session is in it: not the gym, not the account.
+    expect(body.prompt).not.toContain('org-1');
+    expect(body.prompt).not.toContain('admin-1');
+  });
+
+  test.each([
+    ['a coach', principal({ role: 'coach', accountId: 'coach-1' })],
+    ['the platform owner', principal({ role: 'platform_owner', accountId: 'omega', organizationId: 'platform' })],
+    ['an athlete', principal({ role: 'athlete', accountId: 'athlete-1', athleteId: 'ath-1' })],
+    ['a session with no organization', principal({ organizationId: null as unknown as string })],
+  ])('%s is refused and gets no prompt', async (_who, refused) => {
+    mockPrincipal.mockResolvedValue(refused);
+
+    const response = await get();
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.prompt).toBeUndefined();
+  });
+
+  test('a session that is not a Microsoft sign-in is refused, by the same sign-in check as the upload', async () => {
+    mockPrincipal.mockRejectedValue(new Error('Forbidden: Microsoft-authenticated session required'));
+
+    const response = await get();
+
+    expect(response.status).toBe(403);
+    expect((await response.json()).prompt).toBeUndefined();
+  });
+
+  test('both verbs go through the one gate: the route names its role list once', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, 'route.ts'), 'utf8');
+    expect(source.match(/requireRole\(/g)).toHaveLength(1);
+    expect(source.match(/requireMicrosoftAuthenticatedPrincipal\(/g)).toHaveLength(1);
+    expect(source.match(/await admit\(request\)/g)).toHaveLength(2);
   });
 });
 

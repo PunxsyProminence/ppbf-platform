@@ -386,3 +386,144 @@ test('choosing other files clears the plan, so Apply can never run against files
   await waitFor(() => expect(screen.queryByRole('region', { name: 'Plan' })).toBeNull());
   expect(screen.queryByRole('button', { name: /^Apply/ })).toBeNull();
 });
+
+describe('the workout prompt', () => {
+  const PROMPT = 'You are turning a workout into two CSV files.\nTHE WORKOUT DOCUMENT:\n';
+  const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+  let writeText: jest.Mock;
+
+  function setClipboard(value: unknown) {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value });
+  }
+
+  beforeEach(() => {
+    writeText = jest.fn(async () => undefined);
+    setClipboard({ writeText });
+    reply = { status: 200, body: { ok: true, dataset: 'workout-templates', prompt: PROMPT } };
+  });
+
+  afterEach(() => {
+    if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
+    else delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+  });
+
+  async function pressCopy() {
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Copy the workout prompt' }));
+    });
+  }
+
+  test('nothing is fetched until asked; asking is a GET with the session and no body, and the prompt is copied and shown', async () => {
+    render(<ContentImportPage />);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Workout prompt')).toBeNull();
+
+    await pressCopy();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/pilot/admin/content-import');
+    expect(init).toEqual({ method: 'GET', credentials: 'include' });
+    expect(writeText).toHaveBeenCalledWith(PROMPT);
+    expect((screen.getByLabelText('Workout prompt') as HTMLTextAreaElement).value).toBe(PROMPT);
+    expect((screen.getByLabelText('Workout prompt') as HTMLTextAreaElement).readOnly).toBe(true);
+    expect(screen.getByText(/^Copied\./)).toBeTruthy();
+  });
+
+  test.each([
+    ['refuses the clipboard', () => setClipboard({ writeText: jest.fn(async () => { throw new Error('denied'); }) })],
+    ['has no clipboard at all', () => setClipboard(undefined)],
+  ])('a device that %s still shows the prompt, and says it was not copied', async (_what, arrange) => {
+    arrange();
+    render(<ContentImportPage />);
+
+    await pressCopy();
+
+    expect((screen.getByLabelText('Workout prompt') as HTMLTextAreaElement).value).toBe(PROMPT);
+    expect(screen.getByText(/would not copy it/)).toBeTruthy();
+    expect(screen.queryByText(/^Copied\./)).toBeNull();
+  });
+
+  test('a refusal shows the server\'s reason and no prompt, and copies nothing', async () => {
+    reply = { status: 403, body: { error: 'Forbidden: role not permitted' } };
+    render(<ContentImportPage />);
+
+    await pressCopy();
+
+    expect(screen.queryByLabelText('Workout prompt')).toBeNull();
+    expect(document.querySelector('[data-refusal-stamp="cannot_be_done"]')?.textContent).toContain('Forbidden: role not permitted');
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['the server cannot be reached', 'network-error' as Reply, /could not be reached\. The prompt was not fetched/],
+    ['the server errors', { status: 500, body: { error: 'boom' } } as Reply, /HTTP 500\)\. The prompt was not fetched/],
+    ['the answer carries no prompt', { status: 200, body: { ok: true } } as Reply, /could not be reached\. The prompt was not fetched/],
+  ])('when %s it says the prompt was not fetched and copies nothing', async (_what, next, message) => {
+    reply = next;
+    render(<ContentImportPage />);
+
+    await pressCopy();
+
+    expect(screen.getByText(message)).toBeTruthy();
+    expect(screen.queryByLabelText('Workout prompt')).toBeNull();
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  test('fetching the prompt leaves the chosen files and the Check button as they were', async () => {
+    render(<ContentImportPage />);
+    await chooseFiles([new File([DRILLS_CSV], 'seed_drill_library.csv', { type: 'text/csv' })]);
+
+    await pressCopy();
+
+    expect(screen.getByRole('list', { name: 'Chosen files' }).textContent).toContain('seed_drill_library.csv');
+    expect((screen.getByRole('button', { name: 'Check these files' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test('and leaves a plan on screen appliable: the prompt and the upload do not share state', async () => {
+    reply = { status: 200, body: planBody() };
+    render(<ContentImportPage />);
+    await chooseFiles([new File([DRILLS_CSV], 'seed_drill_library.csv', { type: 'text/csv' })]);
+    await checkFiles();
+    reply = { status: 200, body: { ok: true, dataset: 'workout-templates', prompt: PROMPT } };
+
+    await pressCopy();
+
+    expect(screen.getByRole('region', { name: 'Plan' })).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Apply 2 changes' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test('a second press copies the text already on screen without fetching again, so a tablet that refused the first copy can take the second', async () => {
+    const refuseOnce = jest.fn()
+      .mockRejectedValueOnce(new Error('not in a user gesture'))
+      .mockResolvedValue(undefined);
+    setClipboard({ writeText: refuseOnce });
+    render(<ContentImportPage />);
+    await pressCopy();
+    expect(screen.getByText(/would not copy it/)).toBeTruthy();
+
+    reply = 'network-error';
+    await pressCopy();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(refuseOnce).toHaveBeenLastCalledWith(PROMPT);
+    expect(screen.getByText(/^Copied\./)).toBeTruthy();
+    expect((screen.getByLabelText('Workout prompt') as HTMLTextAreaElement).value).toBe(PROMPT);
+  });
+
+  test('a signed-out session is told to sign in again, not shown a server message', async () => {
+    reply = { status: 401, body: { error: 'Unauthorized' } };
+    render(<ContentImportPage />);
+
+    await pressCopy();
+
+    expect(document.querySelector('[data-refusal-stamp="signed_out"]')).not.toBeNull();
+    expect(screen.queryByLabelText('Workout prompt')).toBeNull();
+  });
+
+  test('says how a loaded workout is changed: by the id the check names, never by sending the name again', () => {
+    render(<ContentImportPage />);
+
+    expect(screen.getByText(/already loaded is changed by its id, not by its name/).textContent).toContain('the finding names the id (it starts wtp_)');
+  });
+});
