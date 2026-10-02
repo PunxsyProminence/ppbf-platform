@@ -164,6 +164,43 @@ and should not try to.
 
 ---
 
+## OD-2026-10-02-007 -- Law 2's palette limit no longer binds; nothing about the look binds
+
+**Provenance: PRIMARY.** Typed by Jason in the UI lane's thread on 2026-10-02
+and read by overwatch in that transcript
+(`~/.claude/projects/C--Dev/a84862b0-abd8-495f-bf7a-ade6114cc50c.jsonl`).
+This entry is new. It changes OD-2026-09-28-009 as far as that entry kept
+Law 2's palette limit; that entry's text is not edited.
+
+The UI lane put this to him (19:12:30Z):
+
+"Official: Does the palette limit in Law 2 (OD-2026-09-28-009) still bind UI
+work? A (recommended): Keep only the safety half as binding: `--locked` is a
+medical stop, and nothing decorative may be mistaken for a cleared, monitor or
+restricted mark. The "green, blue and orange for nothing else" limit is
+dropped. B: Keep Law 2 whole, as it is today."
+
+"Plain: A lets a design use green, blue or orange for looks, as long as nobody
+could confuse it with a safety status. B keeps those three colours reserved
+for safety and status only, everywhere."
+
+Jason, whole message (19:31:51Z): *"Nothing binding  visually look will be
+less conflict than anything binding at this point"*.
+
+**The palette limit is dropped.** Green, blue and orange are no longer reserved
+for safety and status; a design may use them for looks. More generally, no
+rule about the look itself binds UI work, which is OD-2026-10-02-004 said
+again for Law 2.
+
+He did not pick A or B by letter. What stays is not a look rule and is not
+from this answer: a safety or medical state shown on a screen must not be
+mistakable for decoration, and decoration must not be mistakable for a
+cleared, monitor or restricted mark. Overwatch and the UI lane read that as
+his standing floor (people's safety, and not shipping something false) and
+not as something this answer loosened. **INFERRED**; his to correct.
+
+---
+
 ## OD-2026-10-02-006 -- Teaching the recognizer: TEACH-DATA-01 approved; the agreement report is next and is for coaches and organization admins; labelling is to cover the body parts of the movement. Research intake stores the source's own words
 
 **Provenance: PRIMARY.** Typed by Jason in two lane threads on 2026-10-02 and
