@@ -77,8 +77,12 @@ export async function setOwnPasswordFromLinkSession(input: {
    * minutes and survives its own success, so the caller bounds how often it
    * runs here. Throwing stops the request before any scrypt is spent and
    * before anything is written.
+   *
+   * REQUIRED, not optional: a caller that left it out would get an unbounded
+   * hash and nothing would say so. A caller with no bound to apply has to
+   * write that down by passing a function that does nothing.
    */
-  beforeHash?: () => Promise<void>;
+  beforeHash: () => Promise<void>;
 }): Promise<void> {
   const tokenHash = hashToken(input.sessionToken);
 
@@ -111,7 +115,7 @@ export async function setOwnPasswordFromLinkSession(input: {
   // After the proof, so only someone entitled to set a password learns what
   // the rules refuse; before the hash, so a refused password costs no scrypt.
   validatePasswordPolicy(input.password, { loginEmail: row.login_email });
-  await input.beforeHash?.();
+  await input.beforeHash();
   const passwordHash = await hashPassword(input.password);
 
   await withTransaction(async (client) => {

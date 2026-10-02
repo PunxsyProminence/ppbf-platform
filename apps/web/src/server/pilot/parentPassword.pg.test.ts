@@ -107,6 +107,9 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 ) => Promise<Record<string, unknown>>;
 
 const mockHashPassword = hashPassword as jest.MockedFunction<typeof hashPassword>;
+
+/** The hook is required. These tests are about the proof and the write, so they apply no bound. */
+const NO_HASH_LIMIT = async (): Promise<void> => undefined;
 const realHashPassword = (jest.requireActual('./security') as typeof import('./security')).hashPassword;
 
 let PG_PORT: number;
@@ -195,7 +198,7 @@ async function liveSessionCount(accountId: string): Promise<number> {
 /** The refusal's code, or what it resolved to. Never lets a pass look like a refusal. */
 async function refusalOf(input: { accountId: string; sessionToken: string; password?: string }): Promise<string> {
   try {
-    await setOwnPasswordFromLinkSession({ password: GOOD_PASSWORD, ...input });
+    await setOwnPasswordFromLinkSession({ password: GOOD_PASSWORD, beforeHash: NO_HASH_LIMIT, ...input });
     return 'ACCEPTED';
   } catch (error) {
     if (error instanceof ForbiddenError || error instanceof ValidationError) {
@@ -660,7 +663,7 @@ describe('setting a password', () => {
     const parent = await seedAccount('parent');
     const token = await seedSession(parent);
 
-    await setOwnPasswordFromLinkSession({ accountId: parent, sessionToken: token, password: GOOD_PASSWORD });
+    await setOwnPasswordFromLinkSession({ accountId: parent, sessionToken: token, password: GOOD_PASSWORD, beforeHash: NO_HASH_LIMIT });
 
     const stored = await storedPassword(parent);
     expect(stored.password_hash).toMatch(/^scrypt\$32768\$8\$1\$[0-9a-f]{32}\$[0-9a-f]{128}$/);
@@ -678,7 +681,7 @@ describe('setting a password', () => {
     const bystander = await seedAccount('parent');
     await seedSession(bystander);
 
-    await setOwnPasswordFromLinkSession({ accountId: parent, sessionToken: token, password: GOOD_PASSWORD });
+    await setOwnPasswordFromLinkSession({ accountId: parent, sessionToken: token, password: GOOD_PASSWORD, beforeHash: NO_HASH_LIMIT });
 
     const revoked = (await client.query(
       'select token_hash, revoked_at is not null as revoked from pilot.session_tokens where account_id = $1',
@@ -696,11 +699,11 @@ describe('setting a password', () => {
   test('a new emailed link replaces the password: the old one stops verifying', async () => {
     const parent = await seedAccount('parent');
     await setOwnPasswordFromLinkSession({
-      accountId: parent, sessionToken: await seedSession(parent), password: GOOD_PASSWORD,
+      accountId: parent, sessionToken: await seedSession(parent), password: GOOD_PASSWORD, beforeHash: NO_HASH_LIMIT,
     });
 
     await setOwnPasswordFromLinkSession({
-      accountId: parent, sessionToken: await seedSession(parent), password: 'a different harbor',
+      accountId: parent, sessionToken: await seedSession(parent), password: 'a different harbor', beforeHash: NO_HASH_LIMIT,
     });
 
     const stored = await storedPassword(parent);
@@ -714,7 +717,7 @@ describe('setting a password', () => {
     await client.query('update pilot.accounts set pin_hash = $2 where account_id = $1', [parent, pinHash]);
 
     await setOwnPasswordFromLinkSession({
-      accountId: parent, sessionToken: await seedSession(parent), password: GOOD_PASSWORD,
+      accountId: parent, sessionToken: await seedSession(parent), password: GOOD_PASSWORD, beforeHash: NO_HASH_LIMIT,
     });
 
     const row = (await client.query('select pin_hash, password_hash from pilot.accounts where account_id = $1', [parent])).rows[0];

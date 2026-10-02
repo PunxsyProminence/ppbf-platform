@@ -31,6 +31,9 @@ async function auditPasswordSet(event: Parameters<typeof writePilotAuditEvent>[0
   }
 }
 
+/** The hash allowance is spent for now. Not a refusal of the caller: a wait. */
+class PasswordHashAllowanceSpent extends Error {}
+
 /**
  * A parent sets, or replaces, their own password.
  *
@@ -59,9 +62,6 @@ async function auditPasswordSet(event: Parameters<typeof writePilotAuditEvent>[0
  * password from one gym address, and counting their successes together would
  * make the sixth one wait.
  */
-
-/** The hash allowance is spent for now. Not a refusal of the caller: a wait. */
-class PasswordHashAllowanceSpent extends Error {}
 export async function POST(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -107,6 +107,12 @@ export async function POST(request: NextRequest) {
         password,
         beforeHash: async () => {
           const durableHashCheck = await checkDurableRateLimit(hashKey);
+          // NOTHING MAY AWAIT BETWEEN THIS CHECK AND THE RECORD BELOW. The
+          // in-memory check and the in-memory record (the first thing
+          // recordDurableFailedAttempt does, before its own first await) run
+          // in one tick, so of any number of requests arriving together on
+          // this process exactly one passes and the rest wait. An await in
+          // between would let every one of them through to the hash.
           if (checkRateLimit(hashKey).isLimited || durableHashCheck.isLimited) {
             throw new PasswordHashAllowanceSpent();
           }

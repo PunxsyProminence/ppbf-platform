@@ -61,8 +61,10 @@ const HASH_KEY = 'password_set_hash_account:parent-1';
 const hashRan = jest.fn();
 
 /** What the real function does around the hash: the route's hook, then the hash. */
-async function hashingSetPassword(input: { beforeHash?: () => Promise<void> }): Promise<void> {
-  await input.beforeHash?.();
+async function hashingSetPassword(input: { beforeHash: () => Promise<void> }): Promise<void> {
+  await input.beforeHash();
+  // The real hash takes time; requests arriving together overlap inside it.
+  await new Promise((resolve) => setImmediate(resolve));
   hashRan();
 }
 
@@ -343,6 +345,45 @@ describe('POST /api/pilot/auth/password/set', () => {
       expect(hashRan).toHaveBeenCalledTimes(2);
       rateLimit.clearRateLimit('password_set_hash_account:parent-2');
       rateLimit.clearRateLimit('password_set_account:parent-2');
+    });
+
+    // A burst, not a sequence: the requests are all in flight before any of
+    // them has finished. One hash, and everyone else waits.
+    test('twenty requests arriving together run the hash once', async () => {
+      const responses = await Promise.all(
+        Array.from({ length: 20 }, () => post({ password: GOOD_PASSWORD })),
+      );
+
+      const statuses = responses.map((response) => response.status);
+      expect(statuses.filter((status) => status === 200)).toHaveLength(1);
+      expect(statuses.filter((status) => status === 429)).toHaveLength(19);
+      expect(hashRan).toHaveBeenCalledTimes(1);
+    });
+
+    // The hook ran (the allowance is spent) and the request was then refused
+    // inside the transaction. The refusal is counted as one; the hash
+    // allowance is not handed back.
+    test('a request refused after the hash keeps its hash counted', async () => {
+      mockSetPassword.mockImplementationOnce((async (input: { beforeHash: () => Promise<void> }) => {
+        await input.beforeHash();
+        hashRan();
+        throw linkRequired();
+      }) as never);
+
+      expect((await post({ password: GOOD_PASSWORD })).status).toBe(403);
+
+      expect(rateLimit.recordDurableFailedAttempt.mock.calls.map(([key]) => key)).toEqual([
+        HASH_KEY,
+        'password_set_account:parent-1',
+        'password_set_ip:203.0.113.9',
+      ]);
+      expect(rateLimit.clearDurableRateLimit).not.toHaveBeenCalled();
+      rateLimit.clearRateLimit('password_set_account:parent-1');
+      rateLimit.clearRateLimit('password_set_ip:203.0.113.9');
+      now += 500;
+      // Still inside the 1-second pause that hash earned.
+      expect((await post({ password: GOOD_PASSWORD })).status).toBe(429);
+      expect(hashRan).toHaveBeenCalledTimes(1);
     });
 
     test('a durable hash limit is honoured: 429 and no hash', async () => {
