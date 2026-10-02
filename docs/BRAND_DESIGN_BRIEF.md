@@ -230,7 +230,8 @@ scale. Nothing is sized by eye.
 > Where a headline is wanted, prefer the gym's own line: "BOXING IS THE
 > ENGAGEMENT PLATFORM. YOUTH DEVELOPMENT IS THE OBJECTIVE." on a slight −0.6°
 > rotation like hand-painted signage. One ceremonial mark permitted: a circular
-> rubber-stamp seal in dark ink `#2A2116`, rotated ~−7°, curved rim text, worn ink edge.
+> rubber-stamp seal in dark ink `#2A2116`, rotated ~−7°, worn ink edge, and
+> curved rim text **only if the words are supplied below** — never invented.
 > **Hard blur-free offset drop shadows** (`4px 4px 0` black) on square panels — no
 > soft shadows, no glossy gradients, no rounded SaaS cards, no blue or cyan.
 >
@@ -241,8 +242,21 @@ scale. Nothing is sized by eye.
 > Red is the one exception: it is also the club's colour (black, red and white) and
 > may be used freely. Everything else stays leather, patina, and bone.
 >
+> **TEXT — SET ONLY THE WORDS GIVEN IN THIS PROMPT.** Do not invent a club
+> name, slogan, strapline, seal rim text, award, accreditation, date, statistic,
+> price, sponsor or brand mark, and do not draw a logo for this club: it has a
+> real mark and that is not an image tool's to draw (§10). If a piece needs a
+> line and none is supplied, leave the space empty rather than filling it.
+>
 > Lay it out on a golden-section split (38.2% / 61.8%) with margins from the
 > Fibonacci scale (13/21/34/55px). Disciplined and safety-forward, not hype.
+
+**That bold paragraph is an owner rule, not a style preference** — Jason,
+2026-10-02: *"No no made up text, if I give text thats different"*
+(OD-2026-10-02-001). Text he supplies is fine; nobody supplies it on his behalf.
+It matters more here than on a background plate: these pieces go to families,
+schools and grant reviewers, and an invented award or statistic on a nonprofit's
+flyer is a false claim about a real organization, not a typo.
 
 ## 9. Photography — real frames, replaceable pictures
 
@@ -283,7 +297,8 @@ is in the picture. No migration, no storage account, no review queue.
 - **Real gym photographs** — all six photo slots and the staff cards are empty;
   see §9 for how they ship once taken.
 - **Real coach sayings** for motivational pieces — collect from the gym; do not
-  invent quotes.
+  invent quotes. This is one case of the general rule in §8: an image tool sets
+  the words it is given and invents none (OD-2026-10-02-001).
 
 ## References
 

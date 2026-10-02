@@ -164,6 +164,104 @@ and should not try to.
 
 ---
 
+## OD-2026-10-02-001 — Real marks on real equipment are allowed in a plate; invented or garbled lettering is not
+
+**Provenance: PRIMARY.** Jason, typed in the visuals lane, 2026-10-02, answering
+a report that three plates had been rejected for carrying lettering:
+
+> *"sub 6 the poster is fine, names on the equiptment is fin long as its real"*
+
+**What changes.** The plate rule was "NO LETTERING OF ANY KIND", with one
+exception for the ring canvas. It is now:
+
+- **Real marks on real EQUIPMENT are ALLOWED** — a maker's name on a bag, a
+  glove, a headguard or a turnbuckle pad, and the sponsor marks on the ring
+  canvas. The gym is full of these and photographs of it will contain them.
+- **The `GOLDEN GLOVES` poster in that one plate is allowed, because he named
+  it.** His words were *"sub 6 the poster is fine"* — sub 6 being the plate he
+  had just been shown. **That is NOT a general rule about posters**, and an
+  earlier draft of this entry wrote it as "a real poster on a real wall", which
+  generalised a specific permission into a category he was not asked about. He
+  was asked nothing about posters in general; the question he answered was why
+  three named plates had been rejected. Corrected in review. A future poster
+  needs its own decision.
+- **Invented or garbled lettering is still FORBIDDEN** — made-up brands,
+  mangled approximations of real ones, invented crests, and any logo for this
+  club. The club has a real mark and it is not a generator's to draw.
+
+**This is not a reversal, it is the same instinct generalised.** On 2026-09-28
+he already let the ring canvas keep its IRON CITY lettering — *"no i like that
+you can leave it"* (OD-2026-09-28-013). Today extends that from one surface to
+real equipment generally.
+
+**Why it is a better rule, stated plainly because the old one was mine to
+defend.** Enforcing zero lettering made the plates look *cleaner than the gym*,
+and it was never the branding that looked wrong — it was the garbled text. The
+failures that actually had to be thrown away all read as nonsense: a banner
+spelling `3EL IN?RY GIYSE`, pads printed `HAYABUS`, an invented circular crest
+on a canvas. The new line is drawn exactly where the real defect was.
+
+**What it recovers**, judged at full size:
+
+| Plate | Why it was rejected | Now |
+|---|---|---|
+| the coach's desk | a `GOLDEN GLOVES` poster | **allowed** — he named this one |
+| a headgear rack | `STING` on the gear | **allowed** — real brand |
+| `plate-02b-floor-portrait-ring-01` | `EVERLAST` on a turnbuckle | **allowed** — real brand |
+
+**What it does not recover**, and the distinction is the point of the rule:
+`plate-14-frontdesk-landscape-01` (invented banner and apron crest),
+`plate-10-floor-landscape-01` (invented canvas crest) and the storage plate
+printed `HAYABUS` all stay **do not bind**.
+
+**THE GENERATOR MAY NEVER INVENT TEXT, AND OWNER-SUPPLIED TEXT IS A SEPARATE
+CASE.** Asked whether `scripts/make-plate.mjs` should widen along with this rule,
+Jason, 2026-10-02:
+
+> *"No no made up text, if I give text thats different"*
+
+So there are three cases, not two:
+
+1. **Text a model invents** — forbidden, always. This is what produced
+   `HAYABUS`, `3EL IN?RY GIYSE` and an invented canvas crest, and it is why the
+   generator keeps asking for no lettering even though a plate may now carry a
+   real mark. A generator cannot produce a real mark; asked for a brand it
+   renders an approximation, and an approximation of a real brand is an invented
+   one.
+2. **A real mark genuinely present** in the room being photographed — allowed,
+   which is what this entry widened.
+3. **Text the owner supplies** — allowed. If he gives the exact words, they are
+   not made up, and the generator may be asked for them. Nobody else supplies
+   them on his behalf.
+
+This replaces an inference. Before he was asked, the generator's strictness was
+recorded in the reference lock as `[INFERRED, not owner-stated]` reasoning. It is
+now his ruling, and the lock says so.
+
+**SCOPE, WIDENED THE SAME DAY.** This began as a plate rule. Asked where it
+should be written down, Jason, 2026-10-02:
+
+> *"Also update where it matters, chat got grok, canvas where ever"*
+
+So it governs **every image any generator makes for this club**, not only
+plates: Grok's order brief and lane gate, the plates README, the Canva brand
+brief and the Canvas context pack each state it. The external case is the
+sharper one. A background plate sits behind real interface text, but a poster,
+flyer or grant-packet cover carrying an invented club name, slogan, award,
+accreditation or statistic is a false claim about a real nonprofit, put in front
+of families, schools and grant reviewers. The Canva prompt in
+`docs/BRAND_DESIGN_BRIEF.md` §8 had been asking for a seal with "curved rim
+text" and supplying no words, which is an invitation to invent them; it now
+requires the words.
+
+ChatGPT's copy of this rule lives in its own project instructions, which only
+Jason can save — reported to him with paste-ready wording. It reads these
+repository documents through its GitHub connector in the meantime, so the rule
+reaches it either way.
+
+It still says nothing about lettering drawn by the app itself in code, and
+nothing about the no-people rule, which does not move.
+
 ## OD-2026-10-01-008 -- Recorded write defects accepted for merge, and from now a disclosed, recorded write defect does not block a merge; when the act-now line appears; who a SHADOW safety alert reaches; the act-now sentence; no humour in an acute answer
 
 **Provenance: PRIMARY.** Typed by Jason in the overwatch thread (transcript as

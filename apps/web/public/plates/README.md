@@ -1,11 +1,13 @@
 # Background plates
 
 Layer 0 only: the photographed wall a room stands in. Real UI composites on
-top in code; no plate carries lettering or substitutes for a stamp, ticket, or
-passbook content. One exception: the IRON CITY lettering on the ring canvas stays
+top in code; no plate substitutes for a stamp, ticket or passbook content, and
+nothing a reader NEEDS lives in the picture. **Lettering: a real mark on real
+equipment is allowed, invented lettering is not** — a maker's name on a bag or
+glove, and the IRON CITY and ALT NATION sponsor lettering on the ring canvas
 when the ring is in frame (owner, 2026-09-28, "no i like that you can leave it";
-OD-2026-09-28-013; `docs/REAL-GYM-REFERENCE-LOCK.md` Mode A
-item 4). A plate is a `background-image` layer on `.room::after` /
+OD-2026-09-28-013; `docs/REAL-GYM-REFERENCE-LOCK.md` Mode A item 4). Stated in
+full below, under the 2026-10-02 rule change (OD-2026-10-02-001). A plate is a `background-image` layer on `.room::after` /
 `.on-canvas::after` — never an `<img>`. Missing files are safe by design: with
 this directory empty, the gradient wall in the design-system sheets
 (`design-system/legacy/ppbf-leather-brass.css`, loaded through
@@ -26,12 +28,13 @@ night has 3 and fills an of3.
 
 | File | Applied to | Dimensions | Bytes |
 |---|---|---|---|
-| `plate-01-office-01.jpg` | `.room--office`, slot 1 of 6 | 1280×720 | 148,739 |
-| `plate-01-office-02.jpg` | `.room--office`, `2of6` | 1280×720 | 226,436 |
-| `plate-01-office-03.jpg` | `.room--office`, `3of6` | 1280×720 | 317,154 |
-| `plate-01-office-04.jpg` | `.room--office`, `4of6` -- chalkboard wall | 1280×720 | 207,549 |
-| `plate-08-bell-gym-landscape-01.jpg` | `.ge-bell.on-canvas::after` (The Bell, /login) AND `.room--office`, `5of6` | 1280×720 | 189,771 |
-| `plate-18-passage-landscape-01.jpg` | `.room--office`, `6of6` — the timber passage | 1280×720 | 212,241 |
+| `plate-01-office-01.jpg` | `.room--office`, slot 1 of 7 | 1280×720 | 148,739 |
+| `plate-01-office-02.jpg` | `.room--office`, `2of7` | 1280×720 | 226,436 |
+| `plate-01-office-03.jpg` | `.room--office`, `3of7` | 1280×720 | 317,154 |
+| `plate-01-office-04.jpg` | `.room--office`, `4of7` -- chalkboard wall | 1280×720 | 207,549 |
+| `plate-08-bell-gym-landscape-01.jpg` | `.ge-bell.on-canvas::after` (The Bell, /login) AND `.room--office`, `5of7` | 1280×720 | 189,771 |
+| `plate-18-passage-landscape-01.jpg` | `.room--office`, `6of7` — the timber passage | 1280×720 | 212,241 |
+| `plate-20-coachdesk-landscape-01.jpg` | `.room--office`, `7of7` — the desk corner, lamp lit | 1280×720 | 149,255 |
 | `plate-03-clinic-01.jpg` | `.room--clinic`, slot 1 of 5 | 1280×720 | 52,209 |
 | `plate-03-clinic-02.jpg` | `.room--clinic`, `2of5` | 1280×720 | 202,304 |
 | `plate-03-clinic-03.jpg` | `.room--clinic`, `3of5` | 1280×720 | 202,289 |
@@ -45,6 +48,7 @@ night has 3 and fills an of3.
 | `plate-17-bell-landscape-01.jpg` | `.room--floor`, `6of8` — the bell and a blank timer; the quietest plate in the building | 1280×720 | 134,424 |
 | `plate-18-redwall-landscape-01.jpg` | `.room--floor`, `7of8` — the red wall, one bag, hard side light | 1280×720 | 230,059 |
 | `plate-18-gloverack-landscape-01.jpg` | `.room--floor`, `8of8` — gloves and headgear on hooks | 1280×720 | 196,517 |
+| `plate-02b-floor-portrait-ring-01.jpg` | `.room--floor`, `@media (orientation: portrait)` `2of2` — the building's FIRST portrait variant | 810×1440 | 82,185 |
 | `plate-11-floor-portrait-01.jpg` | `.room--floor`, `@media (orientation: portrait)` | 810×1440 | 195,227 |
 | `plate-06-night-01.jpg` | `.room--night`, slot 1 of 3 | 1280×720 | 46,687 |
 | `plate-06-night-02.jpg` | `.room--night`, `2of3` | 1280×720 | 86,167 |
@@ -96,17 +100,32 @@ invented apron crest, judged 2026-10-01. The judgment is below and the reason
 travels with its row in the inert table, so neither can be read without the
 other.
 
-**Known imperfection, recorded rather than hidden:** the no-lettering rule is
-stated three ways in the prompt and still leaks. It leaks exactly where a real
-gym carries branding, which is where the model expects it. The ring canvas is
-the one place lettering is allowed (IRON CITY; see the top of this file).
+**THE LETTERING RULE CHANGED ON 2026-10-02 (OD-2026-10-02-001).** It was "no
+lettering of any kind", with the ring canvas as the single exception. Owner:
+*"sub 6 the poster is fine, names on the equiptment is fin long as its real"*.
+
+- **Real marks on real EQUIPMENT are ALLOWED** — a maker's name on a bag, a
+  glove, a headguard or a turnbuckle pad, and the sponsor marks on the ring
+  canvas.
+- **The `GOLDEN GLOVES` poster in `plate-20-coachdesk` is allowed because he
+  named that plate.** It is NOT a general permission for posters; a future one
+  needs its own decision.
+- **Invented or garbled lettering is still FORBIDDEN** — made-up brands,
+  mangled approximations of real ones, invented crests, and any logo for this
+  club.
+
+The old rule leaked constantly, and it leaked exactly where a real gym carries
+branding, because that is where the model expects it. Enforcing it made the
+plates look cleaner than the gym. It was never the branding that looked wrong
+— it was the nonsense: `3EL IN?RY GIYSE`, `HAYABUS`, an invented crest. The
+line is now drawn where the real defect always was.
 
 **JUDGED 2026-10-01, at full size, and two of them FAIL.** This paragraph used
 to say the `plate-10` roundel "has not been judged". It has been now, by opening
 the files and enlarging the marks rather than glancing at a contact sheet:
 
-- `plate-09` — faint illegible marks on a clipboard. Outside the exception,
-  as recorded before. Not bound.
+- `plate-09` — faint illegible marks on a clipboard. Not a real mark and not
+  legible either, so the 2026-10-02 rule does not recover it. Not bound.
 - `plate-10` — **FAILS.** The canvas roundel is an invented crest carrying
   invented circular lettering. It does not read as IRON CITY or ALT NATION, so
   the exception does not cover it, and a crest is the one thing the reference
@@ -166,7 +185,6 @@ orientation block, per "Adding a variant" below.
 |---|---|---|---|
 | `plate-01-office-portrait-01.jpg` | 810×1440 | 186,248 | a portrait crop the office room does not have today |
 | `plate-02b-floor-portrait-02.jpg` | 810×1440 | 189,337 | **Do not bind:** a chalk wall covered in invented words, judged 2026-10-01 |
-| `plate-02b-floor-portrait-ring-01.jpg` | 810×1440 | 82,185 | **Do not bind:** EVERLAST lettering on the turnbuckle, outside the ring-canvas exception, judged 2026-10-01 |
 | `plate-03-clinic-portrait-01.jpg` | 810×1440 | 119,124 | a portrait crop the clinic does not have today |
 | `plate-09-drillcase-landscape-01.jpg` | 1280×720 | 200,989 | the Drill Cabinet room: gear shelves, gloves on hooks, a card-index cabinet |
 | `plate-09-drillcase-portrait-01.jpg` | 810×1440 | 198,467 | the same cabinet upright. It was committed with its landscape pair and listed in neither table until 2026-10-01 |
@@ -251,7 +269,8 @@ not a delivery:
 | Grok, 2026-10-01 (floor pair) — `plate-16-floor-room-01`, `plate-16-floor-room-02` | same conversion: downscale `1792x1008` to `1280x720`, no crop; chroma `4:2:0` to `4:4:4`; baseline to progressive; metadata stripped; sharp, mozjpeg, quality 92. Read off the committed bytes, which are `SOF2` progressive and byte-identical to the batch files | **NO** — not retained. These predate condition 3 along with the rest of that day's earlier batch, so this conversion is stated from the markers and **cannot be shown by comparison** |
 | Grok, 2026-10-01 (boxing set) — `plate-17-bags/matroom/speedbag/bell-landscape-01` | downscale `1792x1008` to `1280x720` (both exactly 16:9, **no crop**); chroma `4:2:0` to `4:4:4`; baseline to progressive; metadata stripped; sharp, mozjpeg, quality 92 | **YES** — kept in the owner's reference folder, `PPBF-Gym-Reference/grok-boxing-2026-10-01/`. First batch under condition 3 |
 | Grok, 2026-10-01 (variation set) — `plate-18-redwall/gloverack/passage/quietcorner-landscape-01` | same conversion: downscale `1792x1008` to `1280x720`, no crop; `4:2:0` to `4:4:4`; baseline to progressive; metadata stripped; sharp, mozjpeg, quality 92 | **YES** — `PPBF-Gym-Reference/grok-boxing-2026-10-01/` |
-| Grok, 2026-10-02 onward | as recorded per batch | YES, required |
+| Grok, 2026-10-02 — `plate-20-coachdesk-landscape-01` | downscale `1792x1008` to `1280x720` — both exactly 16:9, so a pure resize with **no crop**; chroma `4:2:0` to `4:4:4`; baseline to progressive; JFIF/EXIF/XMP/comment segments stripped, leaving `DQT` and `SOF`; sharp, mozjpeg, quality 92; 149,255 B | **YES** — `PPBF-Gym-Reference/grok-boxing-2026-10-01/ppbf-sub-06.jpg` |
+| Grok, later batches | as recorded per batch | YES, required |
 
 The first row is the honest cost of having run the step silently: the record
 exists, the proof does not. Condition 3 is there so no later row reads like it.
@@ -260,6 +279,15 @@ exists, the proof does not. Condition 3 is there so no later row reads like it.
 
 Grok and Canva make images when Jason asks; neither opens pull requests. Claude
 places the approved image here (OD-2026-09-28-001).
+
+**Neither may be asked for invented text, here or anywhere else.** Owner,
+2026-10-02: *"No no made up text, if I give text thats different"*
+(OD-2026-10-02-001). A real mark on real equipment may stay in a plate, but an
+order asks for no lettering unless Jason supplies the exact words — because a
+generator asked for a brand returns an approximation of it, which is the case
+the rule forbids. The same applies to anything Canva makes for the club outside
+this directory: no invented club name, slogan, seal rim text, award, date,
+statistic, sponsor or brand mark, and no logo for this club.
 
 ## Why the byte gate reads the way it does — the delivery record
 

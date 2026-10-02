@@ -171,4 +171,48 @@ describe('make-plate --room', () => {
   it('prints no T7 note for a room outside it', () => {
     expect(run(['--room', 'workshop']).stderr).not.toContain('T7');
   });
+
+  /* ======================================================================
+     THE BOUNDARY THE 2026-10-02 RULE DREW, PINNED HERE ON PURPOSE.
+
+     OD-2026-10-02-001 widened the PLATE rule: a plate may now carry a REAL
+     mark on real equipment -- a maker's name on a bag, a glove, a turnbuckle
+     pad -- while invented or garbled lettering stays forbidden.
+
+     THIS GENERATOR DID NOT WIDEN WITH IT, and that gap is the thing worth
+     guarding. A generator cannot produce a real mark: asked for a brand it
+     renders an approximation, and an approximation of a real brand IS the
+     garbled lettering the owner still forbids. Asking is what produced
+     HAYABUS on a pad and 3EL IN?RY GIYSE on a banner.
+
+     So the permission attaches to marks genuinely present in a photograph,
+     never to a request made here. If a later session reads the widened rule
+     and relaxes these strings to match, this test goes red and says why.
+     ====================================================================== */
+  it.each([...trainingRooms, ...otherRooms].map((slug) => [slug]))(
+    '%s still asks the generator for no invented lettering, which is stricter than the plate rule on purpose',
+    (slug) => {
+      const result = run(['--room', slug]);
+      expect(result.status).toBe(0);
+      const prompt = promptOf(result.output);
+
+      // the prompt must still refuse text outright
+      expect(prompt).toMatch(/ABSOLUTELY NO (OTHER )?TEXT anywhere in the frame/);
+
+      // and must never invite a brand, which is how garbled marks get drawn
+      expect(prompt).not.toMatch(/brand name|maker's name|real brand|logo on the|branded/i);
+    },
+  );
+
+  it('keeps the ring-canvas sponsors as the one lettering the generator may ask for', () => {
+    /* The canvas sponsors are the exception that predates the widening
+       (OD-2026-09-28-013) and they are named exactly, so the model is not left
+       to guess at a word and invent one. A training room may ask; a room with
+       no ring in frame may not, because there is then no canvas to carry it. */
+    const training = promptOf(run(['--room', 'floor'].slice()).output);
+    expect(training).toContain('IRON CITY BREWERY');
+    for (const slug of otherRooms) {
+      expect(promptOf(run(['--room', slug]).output)).not.toContain('IRON CITY');
+    }
+  });
 });

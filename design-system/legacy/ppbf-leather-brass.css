@@ -3628,10 +3628,10 @@ body.ppbf.on-canvas {
    plus one declaration in this block, with no TypeScript edit at all -- and it
    keeps the plate URLs where the one-source-of-truth rule says they live.
 
-   ADDING A PLATE TO A ROOM is that one declaration. Office carries six, so
-   it is on an `of6` and its second wall reads:
+   ADDING A PLATE TO A ROOM is that one declaration. Office carries seven, so
+   it is on an `of7` and its second wall reads:
 
-       :where([data-plate-variant~="2of6"]) .room--office {
+       :where([data-plate-variant~="2of7"]) .room--office {
          --plate: url("/plates/plate-01-office-02.jpg");
        }
 
@@ -3677,7 +3677,7 @@ body.ppbf.on-canvas {
    WHY THE SPLITS DIFFER BY ROOM, AND WHY THEY ARE NOT ALL SIX. A split only
    produces as many walls as the room has DOORS to land on them, because the
    slot is a hash of the route and nothing else. Counted from buildingMap.ts,
-   129 doors: office has 52 and fills all six slots of an of6; clinic has 10
+   129 doors: office has 52 and fills all seven slots of an of7; clinic has 10
    and fills all five of an of5; floor has 40 and fills all EIGHT of an of8;
    night has 3 and fills all three of an of3.
 
@@ -3687,27 +3687,32 @@ body.ppbf.on-canvas {
    is therefore chosen from the door list, not from how many plates happen to
    exist. Any room whose plates outrun its doors keeps the surplus unbound. */
 
-/* OFFICE -- 52 doors, SIX walls, all six slots occupied.
+/* OFFICE -- 52 doors, SEVEN walls, all seven slots occupied.
    IT WAS SIX. plate-14-frontdesk-landscape-01.jpg was the sixth and is gone
    from here: opened at full size on 2026-10-01 it carries a wall banner of
    invented, illegible lettering and an invented crest on the ring apron. The
-   reference lock allows the ring canvas's REAL sponsor marks and nothing else,
-   and forbids drawing a gym logo outright. It was bound off a 300x180 contact
+   reference lock allows REAL marks -- the canvas sponsors, and since
+   OD-2026-10-02-001 a real maker's name on real equipment -- but never an
+   INVENTED one, and it forbids drawing a gym logo outright. plate-14's banner
+   is invented, which is why the 2026-10-02 widening does not recover it. It was bound off a 300x180 contact
    sheet, which is too small to read a banner; the lesson is in the README. */
-:where([data-plate-variant~="2of6"]) .room--office {
+:where([data-plate-variant~="2of7"]) .room--office {
   --plate: url("/plates/plate-01-office-02.jpg");
 }
-:where([data-plate-variant~="3of6"]) .room--office {
+:where([data-plate-variant~="3of7"]) .room--office {
   --plate: url("/plates/plate-01-office-03.jpg");
 }
-:where([data-plate-variant~="4of6"]) .room--office {
+:where([data-plate-variant~="4of7"]) .room--office {
   --plate: url("/plates/plate-01-office-04.jpg");
 }
-:where([data-plate-variant~="5of6"]) .room--office {
+:where([data-plate-variant~="5of7"]) .room--office {
   --plate: url("/plates/plate-08-bell-gym-landscape-01.jpg");
 }
-:where([data-plate-variant~="6of6"]) .room--office {
+:where([data-plate-variant~="6of7"]) .room--office {
   --plate: url("/plates/plate-18-passage-landscape-01.jpg");
+}
+:where([data-plate-variant~="7of7"]) .room--office {
+  --plate: url("/plates/plate-20-coachdesk-landscape-01.jpg");
 }
 
 /* CLINIC -- 10 doors, FIVE walls, all five slots occupied. */
@@ -3772,6 +3777,19 @@ body.ppbf.on-canvas {
    one. */
 @media (orientation: portrait) {
   .room--floor { --plate: url("/plates/plate-11-floor-portrait-01.jpg"); }
+
+  /* THE FIRST PORTRAIT VARIANT IN THE BUILDING. A portrait variant belongs
+     INSIDE this block and AFTER the generic rule above: both are (0,1,0), so
+     source order decides, and the later one wins for the doors it matches.
+     Outside the block it would never apply; without :where() it would outrank
+     the generic rule for every door. That is the family of defect this sheet
+     has shipped four times.
+     plate-02b-floor-portrait-ring-01 was do-not-bind on 2026-10-01 for carrying
+     EVERLAST on a turnbuckle. OD-2026-10-02-001 allows real marks on real
+     equipment, so it is bound here. */
+  :where([data-plate-variant~="2of2"]) .room--floor {
+    --plate: url("/plates/plate-02b-floor-portrait-ring-01.jpg");
+  }
 }
 
 /* Plate 7. The family ground is .on-canvas, not a room -- Law 6's second

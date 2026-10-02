@@ -93,7 +93,8 @@ Three distinct answers, and the middle one is the one that is easy to get wrong.
 ### 1. The 8 room plates — Grok's lane, and the only one
 
 These are exactly what `docs/GROK-VISUAL-LANE.md` describes: real JPEG wall plates,
-layer 0, no lettering, a photographed material a room stands in. Every variant slot
+layer 0, no INVENTED lettering (real equipment marks are allowed since
+OD-2026-10-02-001), a photographed material a room stands in. Every variant slot
 `-02` and beyond is open and unused. If Jason orders an image, this is where it goes.
 
 ### 2. The 6 `public/gym/` files — images, but explicitly NOT Grok's
@@ -117,7 +118,8 @@ such person behind it.
 Two further blocks, either of which is sufficient on its own: these are hand-authored
 **vector** SVGs in the design system's palette, and Grok's lane is raster JPEG; and
 each one carries the words `PLACEHOLDER ILLUSTRATION` baked into the image, against a
-lane law of **zero lettering**.
+lane law, which since OD-2026-10-02-001 is **no INVENTED lettering** — a real
+mark on real equipment is allowed, a made-up or garbled one is not.
 
 **These six get replaced by a camera, not by a model.**
 

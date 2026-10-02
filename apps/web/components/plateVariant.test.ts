@@ -99,6 +99,12 @@ it('finds no plate rule at all for a room no screen paints', () => {
 
 const FLOOR_LANDSCAPE_PLATE = '/plates/plate-16-floor-room-01.jpg';
 const FLOOR_PORTRAIT_PLATE = '/plates/plate-11-floor-portrait-01.jpg';
+/* The floor's portrait set grew a second plate on 2026-10-02: the orientation
+   block now carries a `2of2` variant as well as its generic rule, so which
+   portrait a door gets depends on that door. */
+const FLOOR_PORTRAIT_2OF2 = '/plates/plate-02b-floor-portrait-ring-01.jpg';
+const portraitFor = (href: string) =>
+  (plateVariantSlot(href, 2) === 2 ? FLOOR_PORTRAIT_2OF2 : FLOOR_PORTRAIT_PLATE);
 
 /* ==========================================================================
    A CASCADE THE TESTS CAN INTERROGATE
@@ -677,8 +683,9 @@ describe('the resolver reads the sheet it is pointed at', () => {
     // Eight base rules -- six rooms, the portrait floor, the warm canvas ground
     // (the current theme's `--plate: none` is gone, OD-2026-10-01-005) -- then
     // five office (of6), four clinic (of5), two night (of3) and seven floor
-    // (of8). Twenty-six.
-    expect(declared).toHaveLength(26);
+    // (of8), six office (of7) and the floor's first PORTRAIT variant inside
+    // the orientation block. Twenty-eight.
+    expect(declared).toHaveLength(28);
   });
 
   it('still routes every plate through --plate, so resolving it means something', () => {
@@ -726,7 +733,7 @@ describe('the PLATES cascade is decided by source order, not by specificity', ()
   it('documents the recipe next to the rules it governs', () => {
     // The one declaration a person adds when art arrives. If the worked example
     // drifts from what the tests prove, the next person follows the comment.
-    expect(CSS).toContain(':where([data-plate-variant~="2of6"]) .room--office');
+    expect(CSS).toContain(':where([data-plate-variant~="2of7"]) .room--office');
     expect(CSS).toContain('data-plate-variant="2of2 1of3 4of4 3of5 5of6 2of7 6of8"');
   });
 });
@@ -749,6 +756,7 @@ const VARIANT_PLATES: Partial<Record<Room, readonly string[]>> = {
     '/plates/plate-01-office-04.jpg',
     '/plates/plate-08-bell-gym-landscape-01.jpg',
     '/plates/plate-18-passage-landscape-01.jpg',
+    '/plates/plate-20-coachdesk-landscape-01.jpg',
   ],
   clinic: [
     '/plates/plate-03-clinic-02.jpg',
@@ -788,22 +796,24 @@ describe('four rooms carry a set of walls, the rest carry one', () => {
       .map((entry) => entry.selector)
       .sort();
     expect(variantRules).toEqual([
+      ':where([data-plate-variant~="2of2"]) .room--floor',
       ':where([data-plate-variant~="2of3"]) .room--night',
       ':where([data-plate-variant~="2of5"]) .room--clinic',
-      ':where([data-plate-variant~="2of6"]) .room--office',
+      ':where([data-plate-variant~="2of7"]) .room--office',
       ':where([data-plate-variant~="2of8"]) .room--floor',
       ':where([data-plate-variant~="3of3"]) .room--night',
       ':where([data-plate-variant~="3of5"]) .room--clinic',
-      ':where([data-plate-variant~="3of6"]) .room--office',
+      ':where([data-plate-variant~="3of7"]) .room--office',
       ':where([data-plate-variant~="3of8"]) .room--floor',
       ':where([data-plate-variant~="4of5"]) .room--clinic',
-      ':where([data-plate-variant~="4of6"]) .room--office',
+      ':where([data-plate-variant~="4of7"]) .room--office',
       ':where([data-plate-variant~="4of8"]) .room--floor',
       ':where([data-plate-variant~="5of5"]) .room--clinic',
-      ':where([data-plate-variant~="5of6"]) .room--office',
+      ':where([data-plate-variant~="5of7"]) .room--office',
       ':where([data-plate-variant~="5of8"]) .room--floor',
-      ':where([data-plate-variant~="6of6"]) .room--office',
+      ':where([data-plate-variant~="6of7"]) .room--office',
       ':where([data-plate-variant~="6of8"]) .room--floor',
+      ':where([data-plate-variant~="7of7"]) .room--office',
       ':where([data-plate-variant~="7of8"]) .room--floor',
       ':where([data-plate-variant~="8of8"]) .room--floor',
     ]);
@@ -899,9 +909,20 @@ describe('the ladder below the variant still holds', () => {
     expect(resolvePlate(CSS, roomOn('floor', landscapeSide), SCREEN)?.url)
       .toBe('/plates/plate-16-floor-room-02.jpg');
 
-    // upright: both take the portrait plate, because the override is later
-    expect(resolvePlate(CSS, roomOn('floor', defaultSide), PORTRAIT)?.url).toBe(FLOOR_PORTRAIT_PLATE);
-    expect(resolvePlate(CSS, roomOn('floor', landscapeSide), PORTRAIT)?.url).toBe(FLOOR_PORTRAIT_PLATE);
+    /* Upright: BOTH leave their landscape wall behind, because the orientation
+       block is later in source order. Which portrait each one lands on is its
+       own `2of2` slot -- the floor grew a portrait variant on 2026-10-02 -- so
+       this asserts the rung still wins, without pretending there is only one
+       portrait plate. */
+    expect(resolvePlate(CSS, roomOn('floor', defaultSide), PORTRAIT)?.url)
+      .toBe(portraitFor(defaultSide));
+    expect(resolvePlate(CSS, roomOn('floor', landscapeSide), PORTRAIT)?.url)
+      .toBe(portraitFor(landscapeSide));
+
+    // and every floor door lands on one of the two, never on a landscape wall
+    const portraits = new Set(doorsIn('floor').map(
+      (href) => resolvePlate(CSS, roomOn('floor', href), PORTRAIT)?.url));
+    expect([...portraits].sort()).toEqual([FLOOR_PORTRAIT_2OF2, FLOOR_PORTRAIT_PLATE].sort());
   });
 
   it('still takes every plate away under prefers-reduced-data', () => {
@@ -968,8 +989,8 @@ describe('a variant rule does not take the portrait plate off the gym tablet', (
 
   it('yields to the orientation override when the tablet is upright', () => {
     const sheet = (cssWithVariant(WITH_WHERE));
-    expect(resolvePlate(sheet, roomOn('floor', secondHalf), PORTRAIT)?.url).toBe(FLOOR_PORTRAIT_PLATE);
-    expect(resolvePlate(sheet, roomOn('floor', firstHalf), PORTRAIT)?.url).toBe(FLOOR_PORTRAIT_PLATE);
+    expect(resolvePlate(sheet, roomOn('floor', secondHalf), PORTRAIT)?.url).toBe(portraitFor(secondHalf));
+    expect(resolvePlate(sheet, roomOn('floor', firstHalf), PORTRAIT)?.url).toBe(portraitFor(firstHalf));
   });
 
   it('would NOT yield if the same rule were written without :where()', () => {
