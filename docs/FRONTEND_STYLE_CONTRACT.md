@@ -14,10 +14,9 @@ Help a builder make a screen that works, reads well and fits the rest of the app
   between the showroom and the app.
 - `apps/web/app/globals.css` — imports the sheet above and aliases the app's
   legacy variable names onto it. The aliases exist to carry the pages that
-  predate the design system, and
-  `legacyVisualVocabulary.test.ts` caps 18 of them by name (`ALIAS_CEILINGS`,
-  `legacyVisualVocabulary.test.ts:64-83`, counting .tsx under `app/` and
-  `components/` only); the rest are uncapped. New work is usually easier to write
+  predate the design system. Until 2026-10-02 `legacyVisualVocabulary.test.ts`
+  capped 18 of them by name (`ALIAS_CEILINGS`); that test was removed
+  (OD-2026-10-02-004) and none of them is capped now. New work is usually easier to write
   **against the foundation's mechanics** (`--t-*`, `--s*`, `--r-*`, `--tap`)
   **and the current theme's own tokens** (`globals.css:28-33`).
 - `apps/web/components/uiStyles.ts` — pre-design-system helper, still consumed

@@ -163,15 +163,16 @@ committed to.
 ## The blocker, and the way through it
 
 **The door's `room` field is coupled to the retired CSS vocabulary.**
-`buildingMapRooms.test.ts` compares each door's room against the `room--*` class
-its page paints and flags disagreement as drift — correctly: fourteen routes had
-drifted silently when that guard was written.
+Until 2026-10-02 `buildingMapRooms.test.ts` compared each door's room against the
+`room--*` class its page paints and flagged disagreement as drift — correctly:
+fourteen routes had drifted silently when that guard was written. It was removed
+(OD-2026-10-02-004), so nothing compares them now.
 
-So re-filing a door from `office` to `frontdesk` turns the guard red unless the
-page is repainted, and repainting spreads a vocabulary that
-`legacyVisualVocabulary.test.ts` caps and that the owner has ruled should be
-deleted rather than carried ("delete what retirement was supposed to cancel if we
-have rewrite its ok", 2026-09-26).
+Re-filing a door from `office` to `frontdesk` used to turn the guard red unless
+the page was repainted, and repainting spreads a vocabulary that
+`legacyVisualVocabulary.test.ts` capped (also removed 2026-10-02) and that the
+owner has ruled should be deleted rather than carried ("delete what retirement
+was supposed to cancel if we have rewrite its ok", 2026-09-26).
 
 **The sweep cannot be one mechanical pass, and that was my first mistake here.**
 Board and File are LIGHT rooms: their `room--*` class switches the page to dark
@@ -187,17 +188,15 @@ each closed before the next opens, instead of 88 files red at once.
 
 **The way through is to finish the retirement, room by room.** Delete `room--*`
 from a room's pages as that room gains its scope;
-the drift guard then has nothing to disagree about, because there is no longer a
-second answer. `room` in `buildingMap.ts` becomes what the 2026-08-23 decision
+there is then no second answer to disagree with the door. `room` in `buildingMap.ts` becomes what the 2026-08-23 decision
 already said it was — structural metadata for the corridor and the catalog — and
 each room's LOOK comes from its `.ge-*` scope and its plate, which is the live
 visual system.
 
-Across all the rooms that is 143 `room--*` occurrences in 88 files (the ceiling in
-`legacyVisualVocabulary.test.ts`; still 143 in 88 at `bbf299fe`), removed room by
-room until the ceiling reaches zero and the drift half of `buildingMapRooms.test.ts`
-retires with the thing it compared. It is the change that makes a seventeen-room
-building possible at all.
+Across all the rooms that is 143 `room--*` occurrences in 88 files (the ceiling
+`legacyVisualVocabulary.test.ts` held until 2026-10-02; still 143 in 88 at
+`bbf299fe`), removed room by room until none are left. It is the change that
+makes a seventeen-room building possible at all.
 
 ## Build order
 

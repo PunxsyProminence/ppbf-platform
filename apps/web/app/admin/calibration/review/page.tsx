@@ -224,11 +224,10 @@ function CalibrationReviewTable() {
   return (
     <main className="min-h-screen bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">
       {/* This surface paints no room of its own. Rooms were retired as a VISUAL
-          concept by owner decision on 2026-08-23: buildingMapRooms.test.ts no
-          longer requires a page to paint one, and legacyVisualVocabulary.test.ts
-          caps the class family at its frozen count and fails on an increase --
-          measured as raw occurrences, so writing the class name in a comment
-          here would spend one of them. The door in buildingMap.ts still files
+          concept by owner decision on 2026-08-23: a page is no longer required
+          to paint one. Until 2026-10-02 a test (legacyVisualVocabulary.test.ts)
+          capped the class family by raw occurrences, comments included; that
+          cap is gone (OD-2026-10-02-004). The door in buildingMap.ts still files
           this surface under 'office' as structural metadata, which is the half
           of the taxonomy that decision kept. */}
       <div className="mx-auto w-full max-w-5xl">

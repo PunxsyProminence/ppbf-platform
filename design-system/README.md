@@ -106,10 +106,11 @@ Each of these was filed under law 6 or law 8 and was kept when those laws were
 retired, because the defect it catches is not a Leather & Brass rule.
 
 - **Rooms** (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4 and §6; `docs/ROOM-MAP.md`):
-  `components/roomBaseClass.test.ts` (a room is `.room` plus `.room--X`, or its wall is
-  unlit), `components/buildingMapRooms.test.ts` (a page paints the room its door files it
-  under), `components/designSystemClasses.test.ts` (every class the app references
-  exists in `ppbf.css`, the six rooms by name).
+  `components/designSystemClasses.test.ts` (every class the app references
+  exists in `ppbf.css`, the six rooms by name). The room-base-class and
+  door-matches-page checks (`roomBaseClass.test.ts`, `buildingMapRooms.test.ts`) were
+  removed 2026-10-02 (OD-2026-10-02-004); a room is `.room` plus `.room--X` by habit
+  now, and no test requires it.
 - **The family ground** (T7, Plate Set v1; `components/roleGround.ts`):
   `components/familyPlateGround.test.ts` (family routes declare no room).
 - **Legible on every ground** (contract §4: "treat contrast as first-class"):
@@ -155,7 +156,7 @@ help card cannot list an unbound key → `components/commandsOverlay.test.tsx`. 
   bytes. `apps/web/public/plates/README.md` has the record of the rounds that produced
   them and how to add a variant.
 - **Fonts are self-hosted woff2 only** (offline kiosk). No CDN links. The five Leather &
-  Brass faces were retired 2026-08-23 (`src/design/legacyVisualVocabulary.test.ts`);
+  Brass faces were retired 2026-08-23 (a test, `legacyVisualVocabulary.test.ts`, kept them out until it was removed 2026-10-02);
   `docs/GOLDEN-ERA-V1-CONTRACT.md` §8 records what renders today.
 - **No audio files.** Sound is synthesized in `ppbf-sound.js`, a classic script (ES
   modules break under `file://`, which is how previews are browsed).

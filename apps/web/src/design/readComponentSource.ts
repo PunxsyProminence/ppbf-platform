@@ -8,7 +8,7 @@ import path from 'node:path';
  * styles itself with Tailwind arbitrary values written into `className`
  * strings -- `border-[color:rgb(var(--brass-400-rgb)_/_.22)]` -- so a rule
  * that decides what a border paints is just as likely to live in a `.tsx`
- * file as in a `.css` file. `src/design/brassAlphaChannel.test.ts` guarded
+ * file as in a `.css` file. `src/design/brassAlphaChannel.test.ts` (removed 2026-10-02) guarded
  * the sheets from its first day and could not see the component layer at all;
  * 299 brass literals sat there behind a green suite.
  *

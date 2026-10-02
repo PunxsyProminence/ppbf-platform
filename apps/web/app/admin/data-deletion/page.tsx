@@ -248,9 +248,9 @@ function DataDeletionScreen() {
   return (
     /* data-surface="kiosk" -- Law 5: the 55px tap floor and the 19.1px type
        floor for every control and voice on the page. No room class: rooms
-       were retired as a visual concept (2026-08-23) and may not spread
-       (legacyVisualVocabulary.test.ts caps them); the door's `room` is
-       structural metadata only. */
+       were retired as a visual concept (2026-08-23); a test capped them
+       until 2026-10-02 and no longer does (OD-2026-10-02-004); the door's
+       `room` is structural metadata only. */
     <main data-surface="kiosk" className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto w-full max-w-4xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
         <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">

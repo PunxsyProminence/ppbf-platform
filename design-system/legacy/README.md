@@ -23,8 +23,8 @@ and that sheet imports this one for continuity and applies its overrides on top
 (its header, "IMPLEMENTATION NOTE"). So this file is still the live base of
 most tokens, materials and components on every screen, it still loads
 `legacy-fonts.css`, and where it and `foundation/` both define a scale token its
-copy lands second and wins (`foundationMatchesLegacy.test.ts` pins the two
-together).
+copy lands second and wins (`foundationMatchesLegacy.test.ts` now checks only
+the `--tap`, `--t-md` and `--focus` floors in both sheets, not general equality).
 
 Room plates and their variants are still declared in its PLATES block
 (`:3560-3680`); `current/ppbf-golden-era.css` overrides some of them (the gym
@@ -46,5 +46,5 @@ Anything that is genuinely a look — a colour, a material, a texture, a
 typeface personality, a page ground — is the old look. Read it to understand what
 a screen used to do, and to check a regression against. Nothing in the UI is tied
 down (OD-2026-10-02-004), so a design may borrow from it where Jason and the lane
-want that; `legacyVisualVocabulary.test.ts` currently fails on newly introduced
-use of its named classes, and is a look pin that yields to such a decision.
+want that; `legacyVisualVocabulary.test.ts` used to fail on newly introduced
+use of its named classes, and was removed 2026-10-02.
