@@ -589,3 +589,14 @@ describe('isRefusalSurface', () => {
     for (const door of marked) expect(door.roles).not.toBe(OPEN);
   });
 });
+
+// The human-review queue holds more than refusals since the human-review
+// foundation: a ticket can be a high-risk request that was answered, a
+// generated answer that was replaced, or an operational row. The door's hint
+// must not say every ticket is a chat the boundary refused.
+describe('the SHADOW Human Review door', () => {
+  it('describes the queue without calling every ticket a refusal', () => {
+    const door = BUILDING.find((d) => d.href === '/admin/shadow-reviews');
+    expect(door?.hint).toBe('SHADOW chats sent for human review. Critical tickets first.');
+  });
+});
