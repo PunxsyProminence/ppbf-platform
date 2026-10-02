@@ -108,7 +108,7 @@
     {
       "path": "components/designSystemClasses.test.ts",
       "minimumTests": 5,
-      "guards": "Every design-system class the app references must have a real rule behind it. Written because a merge deleted 1,562 lines of ppbf.css and nothing noticed: a browser silently ignores a class with no rule, so the app kept rendering against an empty stylesheet with every check green. Eight tests holding the whole sheet."
+      "guards": "Every design-system class the app references must have a real rule behind it. Written because a merge deleted 1,562 lines of ppbf.css and nothing noticed: a browser silently ignores a class with no rule, so the app kept rendering against an empty stylesheet with every check green. Five tests holding the whole sheet."
     },
     {
       "path": "components/SignInPanel.test.tsx",
