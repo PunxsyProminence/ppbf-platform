@@ -44,7 +44,7 @@ import manifest from './safetyCriticalSuites.json';
  *
  * When this was written `src/design/` held 22 test files and `components/` 59,
  * nineteen of those 81 were registered, and the heading counts the rest. Today
- * twenty suites from those two folders are registered (fourteen and six); two
+ * eighteen suites from those two folders are registered (twelve and six); two
  * from `src/server/pilot/`, the SHADOW chat classifier's suite and its
  * differential guard, the first entries from server code, which enter under
  * (a): they are what says a child's emergency report is treated as one; one
@@ -52,7 +52,7 @@ import manifest from './safetyCriticalSuites.json';
  * an authorized high-risk request reaches the human-review queue and that an
  * authorization failure leaves no row there; plus
  * this file, registered against itself -- a guard on guards that could vanish
- * silently would leave the register unvalidated. Twenty-four entries. A suite
+ * silently would leave the register unvalidated. Twenty-two entries. A suite
  * is registered when its disappearance would remove the ONLY
  * automated proof of a rule that, when broken:
  *
@@ -65,8 +65,11 @@ import manifest from './safetyCriticalSuites.json';
  *       light-ground voices, dark-panel ink, the tap floor, the type ladder;
  *   (d) is the load-bearing mechanism a whole family of other guards stands
  *       on -- the CSS import resolver, the design-system class check;
- *   (e) is a ratchet whose baseline cannot be recovered once lost -- the
- *       frozen ceilings on the retired vocabulary, measured at the reset;
+ *   (e) RETIRED 2026-10-02 as a reason on its own. It read "a ratchet whose
+ *       baseline cannot be recovered once lost" and was how the ceilings on
+ *       the retired look were registered. Nothing about the look binds
+ *       (OD-2026-10-02-004, OD-2026-10-02-007), so a ratchet qualifies only
+ *       when what it holds still binds under one of the other reasons here;
  *   (f) is a role or session boundary -- the front door, the board gate, the
  *       role session every page guard runs;
  *   (g) is an honesty declaration whose absence makes fabricated figures read

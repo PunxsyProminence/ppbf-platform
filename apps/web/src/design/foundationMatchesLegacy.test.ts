@@ -2,30 +2,30 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 /**
- * THE FOUNDATION'S MECHANICS ARE A VERBATIM COPY, AND MUST STAY ONE.
+ * THREE ACCESSIBILITY FLOORS, CHECKED IN BOTH SHEETS THAT DECLARE THEM.
  *
- * The visual reset copied the neutral mechanics -- the φ proportions, the type
- * ladder, the spacing and radius scales, the split ratios, the tap floor, the
- * motion durations and easings -- out of the Leather & Brass sheet and into
- * design-system/foundation/ppbf-foundation.css, so they survive the aesthetic
- * being replaced.
+ * The file keeps its old name. Until 2026-10-02 it required the foundation's
+ * mechanics to be a verbatim copy of the Leather & Brass sheet, token for
+ * token. That is no longer the contract: nothing about the look binds
+ * (OD-2026-10-02-004, OD-2026-10-02-007), so proportions, spacing, radii and
+ * motion may differ between the sheets or change in both. There is no general
+ * equality here any more.
  *
- * WHILE BOTH SHEETS LOAD, THAT COPY CAN DRIFT SILENTLY. Phase 1 imports the
- * foundation and then the theme, and the theme still re-exports the legacy
- * archive -- so legacy's copy of each token lands second and WINS. Change a
- * value in the foundation today and nothing happens; change it in the archive
- * and the app changes. Both are wrong, and neither shows up as a failure
- * anywhere else.
+ * What is checked:
+ *   --tap    the touch-target floor, at least 55px (Law 5);
+ *   --t-md   the kiosk type minimum, at least 19.1px (Law 5);
+ *   --focus  a keyboard focus ring that actually paints.
  *
- * The damage is deferred rather than absent. The day the theme stops importing
- * the archive, the foundation's values become the live ones -- and every drift
- * accumulated until then lands at once, in a change nobody associates with it.
- * `--t-md` is the kiosk minimum (Law 5) and `--tap` is the touch floor; those
- * two drifting quietly is an accessibility regression waiting for a release.
+ * WHY BOTH SHEETS. design-system/ppbf.css imports the foundation and then the
+ * theme, and the theme still imports the legacy sheet, so legacy's copy of
+ * each token lands second and is the live value today. The day that import is
+ * dropped the foundation's copy becomes live. Either sheet falling below a
+ * floor is therefore a regression now or a regression waiting for that day.
+ * When the legacy sheet is finally dropped, its half of these cases goes with
+ * it.
  *
- * So this checks those two against their minimums in both sheets (see the
- * note above the cases). When the archive is finally dropped, the legacy half
- * goes with it.
+ * kioskTapFloor and kioskTypeFloor prove the tokens reach kiosk controls and
+ * text. This file proves what the tokens are worth.
  */
 
 const REPO = path.resolve(__dirname, '../../../..');
@@ -46,20 +46,8 @@ function tokensIn(file: string): Map<string, string> {
 const foundation = tokensIn(FOUNDATION);
 const legacy = tokensIn(LEGACY);
 
-/* NARROWED 2026-10-02 (OD-2026-10-02-004, OD-2026-10-02-007). This suite used
-   to require EVERY token the two sheets share to be equal, which made every
-   proportion, spacing step, radius and motion duration unchangeable in one
-   sheet without the other -- a pin on the look. Nothing about the look binds
-   any more. What stays is the pair this file always named as load-bearing:
-   --t-md is the kiosk type minimum and --tap is the touch-target floor (Law 5).
-
-   The contract is the NUMBER, not agreement with the retired sheet. Equality
-   alone would let both sheets drop to 40px together and stay green. Both
-   sheets are checked because the theme still imports the legacy sheet after
-   the foundation, so legacy's copy is the live value today and the
-   foundation's becomes live the day that import is dropped. kioskTapFloor and
-   kioskTypeFloor prove the tokens reach kiosk controls and text; this proves
-   what the tokens are worth. */
+/* The contract is the NUMBER, not agreement with the retired sheet: equality
+   alone would let both sheets drop to 40px together and stay green. */
 const FLOORS: Array<[token: string, minimumPx: number]> = [
   ['--t-md', 19.1],
   ['--tap', 55],
@@ -77,7 +65,7 @@ function px(value: string | undefined): number {
   return match ? Number(match[1]) : Number.NaN;
 }
 
-describe('the two accessibility floors hold their minimum in every sheet that declares them', () => {
+describe('the two size floors hold their minimum in every sheet that declares them', () => {
   describe.each(SHEETS)('%s', (_name, tokens) => {
     it.each(FLOORS)('%s is at least %spx', (token, minimumPx) => {
       expect(tokens.has(token)).toBe(true);
@@ -88,30 +76,73 @@ describe('the two accessibility floors hold their minimum in every sheet that de
 
 /* THE FOCUS RING IS THE THIRD FLOOR. Every .btn and field draws its only focus
    indicator from --focus and sets `outline: 0` beside it, so a --focus that
-   resolves to nothing leaves keyboard focus invisible app-wide (WCAG 2.4.7).
-   The old every-token equality covered this by accident; these cases cover it
-   on purpose. They assert that a ring exists and can paint, not what colour
-   it is: a spread of at least 2px, and -- because the ring's colour is read
-   through a channel-triple token -- that triple declared in a form rgb() can
-   actually parse. A malformed triple invalidates the whole box-shadow. */
+   paints nothing leaves keyboard focus invisible app-wide (WCAG 2.4.7). The
+   old every-token equality covered this by accident; this covers it on
+   purpose.
+
+   It asserts that a ring PAINTS, never what colour it is: a box-shadow spread
+   of at least 2px in a colour that is not `transparent` and does not carry an
+   alpha of zero. Where the colour is read through a channel-triple token, the
+   triple must be in a form rgb() can parse, because a malformed triple
+   invalidates the whole box-shadow. */
+function paintsARing(focus: string | undefined, tokens: Map<string, string>): boolean {
+  const ring = (focus ?? '').match(/^0 0 0 (\d+(?:\.\d+)?)px\s+(.+)$/);
+  if (!ring) return false;
+  if (Number(ring[1]) < 2) return false;
+
+  const colour = ring[2].trim();
+  if (/^transparent$/i.test(colour)) return false;
+  if (/^#(?:[0-9a-f]{3}0|[0-9a-f]{6}00)$/i.test(colour)) return false;
+
+  // Alpha, in either spelling: `rgb(R G B / A)` or `rgba(R, G, B, A)`.
+  const alpha = colour.match(/\/\s*([\d.]+%?)\s*\)\s*$/) ?? colour.match(/^(?:rgba|hsla)\([^)]*,\s*([\d.]+%?)\s*\)$/i);
+  if (alpha && parseFloat(alpha[1]) === 0) return false;
+
+  // Every channel triple the colour reads must be three space-separated
+  // integers, both where it is declared and in the var() fallback.
+  for (const [, name, fallback] of colour.matchAll(/var\((--[a-z0-9-]+-rgb)(?:\s*,\s*([^)]+))?\)/g)) {
+    const triple = /^\d{1,3}\s+\d{1,3}\s+\d{1,3}$/;
+    const declared = tokens.get(name);
+    if (declared !== undefined && !triple.test(declared)) return false;
+    if (declared === undefined && !(fallback && triple.test(fallback.trim()))) return false;
+  }
+  return true;
+}
+
 describe('keyboard focus stays visible in every sheet that declares --focus', () => {
-  describe.each(SHEETS)('%s', (_name, tokens) => {
-    it('--focus draws a ring at least 2px wide', () => {
-      const focus = tokens.get('--focus') ?? '';
-      const ring = focus.match(/^0 0 0 (\d+(?:\.\d+)?)px\s+\S/);
-      expect(ring).not.toBeNull();
-      expect(Number((ring as RegExpMatchArray)[1])).toBeGreaterThanOrEqual(2);
-    });
+  it.each(SHEETS)('%s: --focus paints a ring', (_name, tokens) => {
+    expect(paintsARing(tokens.get('--focus'), tokens)).toBe(true);
   });
 
-  it('every channel triple --focus reads is declared as three space-separated integers', () => {
-    const focus = legacy.get('--focus') ?? '';
-    const triples = [...focus.matchAll(/var\((--[a-z0-9-]+-rgb)/g)].map((m) => m[1]);
-    for (const triple of triples) {
-      expect({ triple, value: legacy.get(triple) }).toEqual({
-        triple,
-        value: expect.stringMatching(/^\d{1,3} \d{1,3} \d{1,3}$/),
-      });
-    }
+  /* NEGATIVE CONTROLS. Each of these is a --focus that paints nothing, or too
+     little, and each must be refused -- otherwise the case above is satisfied
+     by any string that happens to start with a spread. */
+  const good = new Map([['--brass-400-rgb', '212 175 74']]);
+  it.each([
+    ['none', 'none'],
+    ['an empty value', ''],
+    ['a 1px spread', '0 0 0 1px rgb(212 175 74 / .55)'],
+    ['transparent', '0 0 0 3px transparent'],
+    ['an explicit alpha of 0', '0 0 0 3px rgb(212 175 74 / 0)'],
+    ['a legacy rgba alpha of 0', '0 0 0 3px rgba(212, 175, 74, 0)'],
+    ['a zero-alpha hex', '0 0 0 3px #d4af4a00'],
+    ['a token alpha of 0', '0 0 0 3px rgb(var(--brass-400-rgb, 212 175 74) / 0)'],
+  ])('refuses %s', (_label, value) => {
+    expect(paintsARing(value, good)).toBe(false);
+  });
+
+  it('refuses a ring whose colour triple rgb() cannot parse', () => {
+    const malformed = new Map([['--brass-400-rgb', '212, 175, 74']]);
+    expect(paintsARing('0 0 0 3px rgb(var(--brass-400-rgb, 212 175 74) / .55)', malformed)).toBe(false);
+  });
+
+  it('refuses a ring whose triple is undeclared and whose fallback cannot be parsed', () => {
+    expect(paintsARing('0 0 0 3px rgb(var(--brass-400-rgb, 212,175,74) / .55)', new Map())).toBe(false);
+  });
+
+  it('accepts rings of any colour, so this never pins the look', () => {
+    expect(paintsARing('0 0 0 2px #00f', new Map())).toBe(true);
+    expect(paintsARing('0 0 0 4px rgb(10 200 90 / .4)', new Map())).toBe(true);
+    expect(paintsARing('0 0 0 3px rgb(var(--brass-400-rgb, 212 175 74) / .55)', good)).toBe(true);
   });
 });

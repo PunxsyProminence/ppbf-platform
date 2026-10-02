@@ -25,18 +25,19 @@
     "distinguishable from an ordinary error belongs in a test of that surface.",
     "",
     "OWNER DECISION, 2026-10-02 (OD-2026-10-02-004, OD-2026-10-02-007): nothing about the look binds.",
-    "Two entries were removed with their suites that day because what they guarded was the look and",
-    "not a safety, authorization, integrity or readability property: brassAlphaChannel (the brass",
-    "ramp reachable only through tokens, so a scope could re-skin it) and legacyVisualVocabulary (the",
-    "ratchet on the retired aesthetic). The one non-look thing brassAlphaChannel caught, a malformed",
-    "colour triple under the focus ring, moved into foundationMatchesLegacy. That suite was narrowed",
-    "from equality of every shared token to numeric floors for --t-md and --tap plus a visible",
-    "--focus ring, and its floor re-measured (43 to 7). SignInPanel lost two cases that pinned the",
-    "frame markup and the absence of a lamp; its sign-in, notice and refusal cases are untouched and",
-    "its floor was re-measured (21 to 19). designSystemClasses lost three cases that pinned the six",
-    "room walls, the motion scale and named navigation and card classes; its check that every class",
-    "the app names exists is untouched and its floor was re-measured (8 to 5). This register is for",
-    "suites whose loss is a safety loss."
+    "Two entries were removed with their suites that day because what they guarded was the look:",
+    "brassAlphaChannel (the brass ramp reachable only through tokens, so a scope could re-skin it)",
+    "and legacyVisualVocabulary (the ratchet on the retired aesthetic). The one non-look thing",
+    "brassAlphaChannel caught, a malformed colour triple under the focus ring, moved into",
+    "foundationMatchesLegacy. That suite was rewritten from equality of every shared token to floors",
+    "for --t-md, --tap and a --focus ring that paints, and its floor re-measured (43 to 17).",
+    "SignInPanel lost two cases that pinned the frame markup and the absence of a lamp; its sign-in,",
+    "notice and refusal cases are untouched and its floor was re-measured (21 to 19).",
+    "designSystemClasses lost three cases that pinned the six room walls, the motion scale and named",
+    "navigation and card classes; its check that every class the app names exists is untouched and",
+    "its floor was re-measured (8 to 5). This register is for suites whose silent loss would remove",
+    "the only automated proof of a safety, authorization or session, readability or accessibility,",
+    "governed-asset or honesty rule, or of the mechanism such guards stand on. A look is not one."
   ],
   "suites": [
     {
@@ -91,8 +92,8 @@
     },
     {
       "path": "src/design/foundationMatchesLegacy.test.ts",
-      "minimumTests": 7,
-      "guards": "--t-md (kiosk type minimum) and --tap (touch floor) are each at or above their minimum (19.1px, 55px) in both the foundation and the legacy sheet, and --focus draws a visible ring (a spread of at least 2px, read through a colour triple rgb() can parse). Narrowed 2026-10-02 from equality of every shared token to these floors (OD-2026-10-02-004, OD-2026-10-02-007): the rest pinned the look. The focus ring was covered by the old equality by accident and is now checked on purpose."
+      "minimumTests": 17,
+      "guards": "--t-md (kiosk type minimum) and --tap (touch floor) are each at or above their minimum (19.1px, 55px) in both the foundation and the legacy sheet, and --focus paints a ring in both (a spread of at least 2px, a colour that is not transparent or zero-alpha, read through a triple rgb() can parse), with negative controls for each way a ring can paint nothing. Rewritten 2026-10-02 from equality of every shared token (OD-2026-10-02-004, OD-2026-10-02-007): the rest pinned the look. No colour is pinned."
     },
     {
       "path": "src/design/readDesignSystemCssResolvesImports.test.ts",
