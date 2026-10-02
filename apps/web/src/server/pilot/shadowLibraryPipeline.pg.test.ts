@@ -509,6 +509,18 @@ describe('manual text intake: an incomplete excerpt cannot be indexed, approved 
     expect((await ingestState(documentId)).ingest_state).not.toBe('indexed');
   });
 
+  test('first and last part present with the middle one missing is still incomplete', async () => {
+    // min and max ordinals look right here; only the count gives it away.
+    const documentId = await manualDocument('Holed excerpt', { intake_method: 'manual_text', locator: 'p. 2', chunk_count: 3 });
+    await part(documentId, 0, 'Bilby first passage.');
+    await part(documentId, 2, 'Bilby last passage.');
+
+    const indexing = await review(documentId, { action: 'complete_indexing' });
+    expect(indexing.status).toBe(409);
+    expect((await indexing.json()).error).toContain('2 of 3 parts');
+    expect((await ingestState(documentId)).ingest_state).not.toBe('indexed');
+  });
+
   test.each([
     ['missing', { intake_method: 'manual_text', locator: 'p. 3' }],
     ['zero', { intake_method: 'manual_text', locator: 'p. 3', chunk_count: 0 }],
