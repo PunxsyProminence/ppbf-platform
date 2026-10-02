@@ -171,22 +171,20 @@ built on it.
 
 **UI / UX and flow (visual work).** Claude Code builds visual work like any
 other; Grok and Canva make images only when Jason asks, and Claude places the
-approved ones (OD-2026-09-28-001). The visual build order is
-`docs/ROOM-MAP.md` (OD-2026-09-28-009); older visual work lists, including the
-jobs in `docs/HANDOFF_VISUALS.md`, are history. The active look is **Golden Era V1**:
-`docs/GOLDEN-ERA-V1-CONTRACT.md` is its authority (named in
-`design-system/current/ppbf-theme.css`, 2026-08-24). "Leather & Brass" is
-retired as visual authority and kept in `design-system/legacy/` for reference
-only, though the Golden Era sheet still imports it underneath. Zero external
-assets: no font CDN, no
-raw hex, no Tailwind `slate-*`/`zinc-*`/`gray-*`; off-system colour utilities
-stand at 0 across the route files -- keep it there. Draft PRs only, and **do
-not mark them ready for review** -- the owner checks visual work page by page.
-One job in `docs/HANDOFF_VISUALS.md` records a
-"do not do this" owner decision (2026-08-17, Job 3): the six unstyled
-Capability Console pages stay unstyled, because they show fabricated data and
+approved ones (OD-2026-09-28-001). **Nothing in the UI is tied down**
+(OD-2026-10-02-004): look, layout, copy, markup and flow may change to make a
+screen easier to use, better looking or more functional, and what a screen
+looks like is decided by Jason with the lane doing the work. What binds is the
+short list in `AGENT_KERNEL.md` "UI and visual work" (the safety floor, and
+readable and usable). The look today is **Golden Era V1**, described in
+`docs/GOLDEN-ERA-V1-CONTRACT.md`; the planned rooms are in `docs/ROOM-MAP.md`;
+"Leather & Brass" is retired and kept in `design-system/legacy/`, though the
+Golden Era sheet still imports it underneath. Older visual work lists are in
+`docs/archive/` and are not instructions. Fonts are self-hosted (the kiosk runs
+offline), so no font CDN. One floor item from the old lists still stands
+(owner, 2026-08-17): the six Capability Console pages show fabricated data, and
 styling them would make invented figures look more authoritative without
-making them true.
+making them true, so they are fixed or removed, not dressed up.
 
 **Wiring (product build).** Application code, routes, server domain
 modules under `apps/web/src/server/pilot/`, migrations. Current build work is

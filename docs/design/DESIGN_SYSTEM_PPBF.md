@@ -1,11 +1,10 @@
 # DesignSystem_PPBF — the app-layer binding
 
-> **Look (2026-09-28):** Golden Era, `docs/GOLDEN-ERA-V1-CONTRACT.md`. Of the eight laws, 2, 3, 5 and 7 still bind; 1, 4, 6 and 8 are retired (OD-2026-09-28-009).
+> **Look today:** Golden Era, described in `docs/GOLDEN-ERA-V1-CONTRACT.md`. Nothing in the UI is tied down (OD-2026-10-02-004); what binds UI work is the short list in `AGENT_KERNEL.md` "UI and visual work".
 
 **This is not the design system.** The look is Golden Era
-(`docs/GOLDEN-ERA-V1-CONTRACT.md`). `design-system/README.md` holds the laws
-that still bind (2, 3, 5 and 7; 1, 4, 6 and 8 are retired, OD-2026-09-28-009)
-and points to the CSS, which is the implementation authority. Nothing about
+(`docs/GOLDEN-ERA-V1-CONTRACT.md`). `design-system/README.md` lists the checks
+that still bind and points to the CSS, which is the implementation authority. Nothing about
 *what the language is* belongs in this file.
 
 This file covers the one thing that document does not: **how `apps/web`
@@ -77,19 +76,19 @@ know about this file. Its own header (lines 21–26) says so:
 | Button hierarchy | `globals.css:965`–`1205` | `ppbf.css` defines `.btn`; the app adds the tier system (ghost / danger / middle / canvas restatement / press / disabled) on top. |
 | Retro components, Wall of Names, chalkboard, gym wall, printed paper | `globals.css:534`, `1207`, `1408`, `1545`, `1676` | App-specific compositions built *from* system materials rather than new materials. |
 
-**Adding new work:** write against the foundation's mechanics (`--t-*`, `--s*`,
-`--r-*`, `--tap`) and the current theme's own tokens (`globals.css:28-33`). The
-aliases exist to carry legacy pages, not to be extended.
+**Adding new work:** it is usually easiest written against the foundation's
+mechanics (`--t-*`, `--s*`, `--r-*`, `--tap`) and the current theme's own tokens
+(`globals.css:28-33`). The aliases exist to carry legacy pages.
 `legacyVisualVocabulary.test.ts` caps 18 of them by name (`ALIAS_CEILINGS`,
 `legacyVisualVocabulary.test.ts:64-83`, counting .tsx under `app/` and
-`components/` only); the rest are uncapped, so do not extend them.
+`components/` only); the rest are uncapped.
 
-### One theme, deliberately
+### One theme today
 
 `globals.css:49-52` — there is no second palette and no `[data-theme]` override.
 The ink ground (from Law 6, now retired) is available per-surface via `.mat-leather` / `.on-canvas`,
-but that is a material choice per screen, not a user toggle. Do not add a theme
-switcher without revisiting that decision.
+but that is a material choice per screen, not a user toggle. A theme switcher
+would be a design choice for Jason and the lane (OD-2026-10-02-004).
 
 ---
 

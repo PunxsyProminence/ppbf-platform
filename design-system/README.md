@@ -1,12 +1,15 @@
 # PPBF Design System
 
-**The look is Golden Era: `docs/GOLDEN-ERA-V1-CONTRACT.md`**, the active visual
-authority since 2026-08-24. "Leather & Brass" is retired and kept in `legacy/`. Of
-the eight laws below, 2, 3, 5 and 7 still bind; 1, 4, 6 and 8 are retired
-(OD-2026-09-28-009). The visual build order is `docs/ROOM-MAP.md`.
+**Nothing in the UI is tied down (OD-2026-10-02-004).** The look today is Golden Era,
+described in `docs/GOLDEN-ERA-V1-CONTRACT.md`; "Leather & Brass" is retired and kept
+in `legacy/`. Neither limits what a screen may become. What binds UI work is the short
+list in `AGENT_KERNEL.md` "UI and visual work": the safety floor, and readable and
+usable. Of the eight laws below, 3, 5 and 7 and the `--locked` half of 2 are that
+list; 1, 4, 6 and 8 are retired (OD-2026-09-28-009). The planned rooms are in
+`docs/ROOM-MAP.md`.
 
-This folder holds the CSS the app loads, the previews, and the laws with the checks
-that enforce them.
+This folder holds the CSS the app loads, the previews, and the checks that enforce
+what binds.
 
 ## Source of truth
 
@@ -22,7 +25,7 @@ and every preview in this folder consumes it. It is two imports, in this order:
    legacy sheet.
 
 None of it is in a cascade layer. **The current CSS is the implementation authority**;
-this README states the laws and points to the checks — it does not restate what the
+this README states what binds and points to the checks — it does not restate what the
 sheets already say.
 
 | What | Where |
@@ -51,7 +54,7 @@ override of `--cleared`, `--monitor` and `--restricted` as their values. The man
 is generated and must not be hand-edited: change the generator, then re-run
 `npm run design:manifest`.
 
-## The eight laws — four bind, four are retired
+## The eight laws — what still binds, and what is history
 
 Laws 1, 4, 6 and 8 are **retired** (OD-2026-09-28-009): they described the Leather &
 Brass look. Their text is kept below, marked, as history. The checks once filed
@@ -63,8 +66,11 @@ to `apps/web/`.
 1. **RETIRED.** *Brass is the chassis, never the message.* Frames, rivets, bezels,
    button faces. Brass never reports a status. *(Review + contrast sweep; no dedicated
    test.)*
-2. **Saturated colour means safety or status — nothing else, red excepted.**
-   Green/blue/orange belong to the safety ladder and queue outcomes only. Red is not
+2. **A safety state is never mistaken for decoration.** (This is the part of the old
+   law that binds; "saturated colour means safety or status and nothing else" as a
+   palette limit does not, OD-2026-10-02-004.) Green/blue/orange are what the safety
+   ladder and queue outcomes are painted in today, so another use of them must not
+   read as one of those states. Red is not
    reserved (OD-2026-09-29-001, 2026-09-29): it is the club's colour (black, red and
    white) and may be used anywhere. `--safety-locked` aliases `--locked`, which still
    means a medical stop; it never paints chrome. → `src/design/cornerColor.test.ts`
@@ -124,11 +130,12 @@ retired, because the defect it catches is not a Leather & Brass rule.
 
 ## Consuming from apps/web
 
-Read **`docs/FRONTEND_STYLE_CONTRACT.md`** — the binding contract for app code (done
-criteria, drift guardrails, Tailwind `text-[length:var(--x)]` gotcha). Short version:
-write new work against the ppbf tokens directly; use the components the sheets ship
-before inventing anything; fix gaps in the design-system sheets (`current/` for the
-look, `foundation/` for mechanics), not in the page. `RoleStandaloneView`
+**`docs/FRONTEND_STYLE_CONTRACT.md`** is the guide to how app code uses these sheets
+(done criteria, habits that have caused trouble, the Tailwind
+`text-[length:var(--x)]` gotcha). It is a guide, not a limit. Short version: new work
+is usually easiest written against the ppbf tokens and the components the sheets
+already ship, and a gap fixed in the design-system sheets (`current/` for the look,
+`foundation/` for mechanics) stays fixed for every page. `RoleStandaloneView`
 takes a `room` prop (ignored on the family branch by design); pages with their own
 `<main>` carry `room room--*` directly. Because `ppbf.css` is unlayered it beats
 Tailwind's layered utilities on any shared property — `scripts/css-layer-collisions.mjs`

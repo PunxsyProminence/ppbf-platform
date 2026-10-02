@@ -1,13 +1,21 @@
 /* ===========================================================================
    PPBF GOLDEN ERA V1 — CURRENT VISUAL THEME
    ---------------------------------------------------------------------------
-   Status: ACTIVE rendered visual authority for the usable-app release.
+   Status: the look the app renders today. Not a limit on what it may become:
+     nothing in the UI is tied down (OD-2026-10-02-004). What binds UI work is
+     the short list in AGENT_KERNEL.md "UI and visual work".
    Date: 2026-08-24 · Author: Grok · Owner: Jason Neale
 
-   Authority order: docs/GOLDEN-ERA-V1-CONTRACT.md (owner decisions govern;
+   Described in: docs/GOLDEN-ERA-V1-CONTRACT.md (owner decisions govern;
      docs/current/OWNER_DECISIONS.md).
 
-   IDENTITY: When Jason opens the app it must be unmistakably
+   THE BLOCK COMMENTS BELOW ARE A BUILD RECORD. Each one says what a pass did
+     and why at the time it was written ("only one class was added",
+     "FUNCTIONAL_CHANGES: NONE", "reference approved"). They describe that
+     pass. None of them is an instruction to keep a screen's markup, layout,
+     colours or controls as they are.
+
+   IDENTITY: the aim when Jason opens the app is that it is unmistakably
      - Punxsy Prominence (the real nonprofit)
      - The real Punxsy Prominence gym (training-room DNA: docs/REAL-GYM-REFERENCE-LOCK.md §2)
      - Golden Era interface (paper / brass / leather / iron-city feel)
@@ -46,11 +54,11 @@
    IMPLEMENTATION NOTE:
      The full visual implementation (tokens, materials, rooms, stamps, badges,
      kiosk controls, plates block, etc.) currently lives in the retired
-     Leather & Brass sheet. That sheet already embodies the golden-era grit,
-     paper hierarchy, and room model this contract requires. For the usable-
-     app release TODAY we import it for continuity (every converted page and
-     the 5,884 call sites keep working), then declare this file the authority
-     and apply the few contract-critical overrides below.
+     Leather & Brass sheet. That sheet already carries the golden-era grit,
+     paper hierarchy, and room model the look started from. For the usable-
+     app release we import it for continuity (every converted page and
+     the 5,884 call sites keep working) and apply this file's overrides on
+     top.
 
      Future work may extract a pure Golden Era sheet that no longer depends
      on the legacy file; that is polish, not a blocker for gym use.
@@ -3668,16 +3676,17 @@
 /* ==========================================================================
    GOLDEN ERA VISUAL 001 — THE BELL (sign-in)
    ==========================================================================
-   Visual authority: Documents/PPBF-AI-Lanes__ARCHIVED_2026-09-28/Visual-Handoffs/
+   Where this look started: Documents/PPBF-AI-Lanes__ARCHIVED_2026-09-28/Visual-Handoffs/
    01_READY_FOR_GROK/ (folder renamed 2026-09-28, OD-2026-09-28-003)
    001_SIGN_IN/ (REFERENCE_APPROVED.jpg desktop, REFERENCE_MOBILE_APPROVED.jpg
-   phone), STATUS APPROVED_BY_JASON 2026-08-24.
+   phone), approved by Jason 2026-08-24 as the starting look. It does not limit
+   later changes to this screen (OD-2026-10-02-004).
 
    Everything here is scoped to `.ge-bell` (the /login <main>), so it restyles
    THE BELL alone -- the shared .frame / .rivet / .t-painted / .btn / .input
    rules are untouched, and the /public sign-in popover (no .ge-bell) is
-   unchanged. No selector below leaves the scope. Functional markup is not
-   touched; this sheet is the whole implementation besides one class name.
+   unchanged. No selector below leaves the scope. The first pass changed one
+   class name and no other markup; that was how that pass was done, not a rule.
 
    Locked red untouched: nothing here uses --locked / --stamp-red / #A81E22.
    ========================================================================== */
@@ -3898,7 +3907,8 @@
    required here (and in the mobile override below) because SignInPanel sets the
    padding as an INLINE style on this element (style={{ padding: 'var(--s6)' }});
    an inline style outranks any selector, so only !important widens it from the
-   sheet without editing the component's markup, which the handoff forbids. */
+   sheet. The first pass left the component's markup alone; moving the padding
+   into the component is the cleaner fix when someone is next in there. */
 .ge-bell .frame-in.mat-paper {
   padding: clamp(var(--s6), 4.5vw, var(--s8)) !important;
 }

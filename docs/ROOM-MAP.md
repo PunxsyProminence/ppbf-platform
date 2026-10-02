@@ -1,10 +1,13 @@
 # THE ROOM MAP
 
-**This is the single visual build order** (OD-2026-09-28-009): other visual work
-lists are history. The look is `docs/GOLDEN-ERA-V1-CONTRACT.md`; what a
-training-room plate must show is `docs/REAL-GYM-REFERENCE-LOCK.md`.
+**This is the one list of planned rooms** (OD-2026-09-28-009): other visual work
+lists are history. It is a plan, not a limit: what is built, in what order and how
+it looks is decided by Jason with the lane doing the work (OD-2026-10-01-003
+section 2, OD-2026-10-02-004). The look today is described in
+`docs/GOLDEN-ERA-V1-CONTRACT.md`; what a training-room plate must show is
+`docs/REAL-GYM-REFERENCE-LOCK.md`.
 
-**Status:** APPROVED IN SHAPE · Owner: Jason Neale · Drafted by Claude 2026-09-26
+**Status:** shape agreed 2026-09-26, open to change · Owner: Jason Neale · Drafted by Claude 2026-09-26
 **Not yet built.** `apps/web/components/buildingMap.ts` is still the live
 structure; this is the shape it is being moved to, one room at a time.
 

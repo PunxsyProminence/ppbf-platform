@@ -1,8 +1,7 @@
 # Handoff: research and evidence
 
 A standing brief for whichever agent Jason asks to work the questions in this
-platform that no amount of coding can close. Sibling of `docs/EXTERNAL_AUDIT_PROMPTS.md` and
-`docs/HANDOFF_VISUALS.md`.
+platform that no amount of coding can close. Sibling of `docs/EXTERNAL_AUDIT_PROMPTS.md`.
 
 Read `AGENT_KERNEL.md` first, then `docs/current/ACTIVE_WORK.md` (blocked and
 parked work, including items waiting on research rather than on code; for what

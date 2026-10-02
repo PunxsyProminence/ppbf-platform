@@ -1,25 +1,24 @@
-# GOLDEN ERA V1 — Real-Gym Visual Contract
+# GOLDEN ERA V1 — the look as built (a description, not a limit)
 **Version:** 1.1 · **Date:** 2026-08-24 · **Author:** Grok · **Owner:** Jason Neale  
-**Status:** Active authority for the usable-app visual release.  
+**Status (OD-2026-10-02-004):** describes the look the app has today and why. It does not limit what the UI may become: nothing in the UI is tied down, and what binds UI work is the short list in `AGENT_KERNEL.md` "UI and visual work". Sections 7, 10 and 11 below restate items on that list; section 9 is the plate rule.  
 **Amended 2026-09-28** (OD-2026-09-28-001, OD-2026-09-28-009): owner-first authority order (§2); §3 points to the lock; §8 records the fonts as built; §9 points to the plates README; §13 shows the seam as built; Claude places plate binaries. Later the same day, by owner decision: §4 adds dark glass as a panel material (OD-2026-09-28-014); §9 lets the ring canvas keep its IRON CITY lettering (OD-2026-09-28-013). **Amended 2026-09-29** (OD-2026-09-29-001): §6 and §7, red is not reserved; `--locked` still means a medical stop.  
-**Related:** this file (look & feel) · `docs/REAL-GYM-REFERENCE-LOCK.md` (environmental DNA) · `docs/ROOM-MAP.md` (the visual build order) · `design-system/README.md` (the laws that still bind) · `apps/web/public/plates/README.md` (plates)
+**Related:** this file (look & feel) · `docs/REAL-GYM-REFERENCE-LOCK.md` (environmental DNA) · `docs/ROOM-MAP.md` (the planned rooms) · `design-system/README.md` (the checks that still bind) · `apps/web/public/plates/README.md` (plates)
 
-> This document is the durable visual authority.  
-> A future session must be able to reproduce the approved direction from this file alone.  
-> Conversation history is not required and must not be the source of truth.
+> This document records the Golden Era direction so a future session can see what was built and why without the conversation history.  
+> It is a starting point. A screen may depart from it whenever that makes the screen easier to use, better looking or more functional (OD-2026-10-02-004).
 
 ---
 
 ## 1. Identity statement
 
-When Jason opens the app it must be unmistakably:
+When Jason opens the app the aim is that it is unmistakably:
 
 1. **Punxsy Prominence** (the real nonprofit)
 2. **The real Punxsy Prominence gym** (220 N Jefferson St reference material already supplied)
-3. **Golden Era interface** (the approved paper / brass / leather / iron-city feel)
+3. **Golden Era interface** (the paper / brass / leather / iron-city feel, as it stands today)
 4. **Real current PPBF functions** (no invented buttons, roles, or data)
 
-It must **not** look like:
+It should not look like:
 - generic SaaS
 - the retired Leather & Brass sheet as the dominant rendered authority
 - an AI mockup or design-board gallery
@@ -28,13 +27,13 @@ It must **not** look like:
 
 ---
 
-## 2. Authority order
+## 2. Order of sources
 
 | Rank | Authority | Source |
 |------|-----------|--------|
 | 1 | Owner | Jason’s decisions (`docs/current/OWNER_DECISIONS.md`) and explicit choices; they override this contract and earlier mockups |
 | 2 | Functional | Current `main` source + real APIs |
-| 3 | Visual | This contract + Jason-approved Golden Era |
+| 3 | Visual | What Jason and the lane doing the work decide for the screen in hand; this document is the description of where the look started |
 | 4 | Environmental | **`docs/REAL-GYM-REFERENCE-LOCK.md`** + owner photos |
 
 If a design board shows something with no real backend: **omit it**, adapt the composition around the real function, or report it as a future functional requirement. Never fake it.
@@ -56,7 +55,7 @@ The interface does not need to literally recreate every physical wall; it must f
 
 ## 4. Golden Era material & surface hierarchy
 
-Golden Era is the **rendered visual authority**. The old Leather & Brass sheet is retired as the look. The theme seam (`design-system/current/ppbf-theme.css`) is the single place the look is swapped; foundation stays intact.
+Golden Era is the look the app renders today. The old Leather & Brass sheet is retired as the look. The theme seam (`design-system/current/ppbf-theme.css`) is the single place the look is swapped; foundation stays intact.
 
 ### Core materials (in priority order of presence)
 1. **Paper** — primary working surface (forms, cards, lists, notices). Warm bone / cream, slight grain, torn-note edges allowed only as deliberate chrome.
@@ -70,15 +69,15 @@ Golden Era is the **rendered visual authority**. The old Leather & Brass sheet i
 ### Dark glass (owner-approved 2026-09-28, OD-2026-09-28-014)
 **Dark glass** — the dark translucent dashboard panels over the real gym in Jason's Grok board. Jason's words: *"its can use all types where appropriate"* (OD-2026-09-28-014): a panel may be aged paper, dark glass, or both, each where it fits. The core list above is otherwise unchanged; the answer did not rank the materials. Not built yet: no glass material exists in the `design-system/` sheets or `apps/web/app/globals.css` at `10da14c9`.
 
-### Surface rules
-- Cards and panels sit *on* the room (aged paper, leather or dark glass on the wall plate), never fight the plate.
-- Quiet centre of every plate; UI panels land in the quiet zone.
+### How surfaces are built today
+- Cards and panels sit *on* the room (aged paper, leather or dark glass on the wall plate).
+- Plates keep a quiet centre and UI panels usually land there.
 - Text over photographs or textured grounds must remain readable (overlay or material treatment required). Jason has already caught unreadable text that tests missed — treat contrast as first-class.
-- No skeuomorphic “room-*” classes beyond the six declared rooms. No new invented materials without owner approval (dark glass has it, above).
+- Six rooms are declared in the CSS today, and the materials above are the ones built. A new room or material is a design choice for Jason and the lane, like any other UI change (OD-2026-10-02-004).
 
 ---
 
-## 5. Page DNA (locked 2026-08-24)
+## 5. Page DNA (the idea, from 2026-08-24)
 
 **Every page has its own feel.**  
 It still **flows** from the previous page (same building, same day, same Golden Era chassis, same Iron City DNA).  
@@ -87,16 +86,18 @@ But it is **distinct** — different framing of the wall, different light temper
 Same room ≠ same atmosphere.  
 A coach floor-group page and a session-script delivery page both sit in `.room--floor`, yet one can feel like the open gym floor under bags while the other feels like the corner desk with a chalkboard edge and tighter light.
 
-**Rule of thumb when designing any screen:**  
+**Questions worth asking when designing a screen:**  
 1. Which room does it belong to?  
 2. What makes *this specific page* feel different from its siblings in that room?  
 3. How does it still belong to the continuous building story?
 
 ---
 
-## 6. Room Purpose DNA (summary of today's six rooms — full law in `docs/shadow-ui/ROOM-PURPOSE-DNA.md`; the target rooms are `docs/ROOM-MAP.md`)
+## 6. Room Purpose DNA (summary of today's six rooms — the fuller description is `docs/shadow-ui/ROOM-PURPOSE-DNA.md`; the target rooms are `docs/ROOM-MAP.md`)
 
-| Room | Purpose feel | Allowed chrome | Forbidden |
+The last two columns are how each room was first drawn, not a limit (OD-2026-10-02-004). Two entries are floor items and do bind: the board room shows aggregates and no athlete detail, and `--locked` means a medical stop.
+
+| Room | Purpose feel | Chrome it was drawn with | Kept out when first drawn |
 |------|--------------|----------------|-----------|
 | **Office** | Quieter wood / mirror / certificates corner, desk-lamp | Notices, chalk, roster badges | Clinic green, night telemetry, floor drama |
 | **Floor** | Open bags + ring edge + fluorescent, high energy | Chalk, WordsOnTheWall, CLEARED badges | Board tables, file cork, clinic red theater |
@@ -105,7 +106,7 @@ A coach floor-group page and a session-script delivery page both sit in `.room--
 | **Clinic** | Cleaner corner, cooler light, less bag drama | Brass Training Hold, `--locked` only for critical medical/safety | Wall sayings, “tough it out” eggs |
 | **Night** | Darker, low lamp, bags as silhouettes | Mode labels only (Scout / Architect / Omega) | Board chrome on deny, Master Mode toggle |
 
-Easter eggs: primary home is Floor. Never on Board, File, Clinic, Night (deny).
+Easter eggs: primary home is Floor. As drawn, none on Board, File, Clinic or Night (deny); a joke never sits beside a medical hold or a refusal.
 
 ---
 
@@ -131,7 +132,7 @@ If you encounter `--stamp-restricted: var(--locked)`, treat it as existing seman
 - **Body:** Roboto Condensed, and **data / numeric / ledger:** Geist Mono — both self-hosted through `next/font` in `apps/web/app/layout.tsx` and read by `--font-body` and `--font-data` in `apps/web/app/globals.css`. Inter is not shipped by this repository.
 - **Still rendering where existing CSS asks for them:** the retired faces. `design-system/current/ppbf-golden-era.css` imports the legacy sheet, which loads `legacy-fonts.css`, and `globals.css` still names Alfa Slab One, Oswald and Caveat in `--font-stencil`, `--font-ui` and `--font-hand`. Oswald is also loaded once through `next/font` as `--font-tactical-display` — the one live binding the owner kept on 2026-08-23 until the new system supplies its display typography and the replacement can be verified (pinned by the same test).
 
-Do not add a family without owner approval.  
+A typeface change is a design choice for Jason and the lane (OD-2026-10-02-004).  
 Unknown / missing values must look **unknown**, never zero or “normal complete”.
 
 ---
@@ -181,7 +182,7 @@ Today is: **real app + real gym + Golden Era + usable core workflows**.
 
 ```
 design-system/
-  foundation/     ← do not casually rewrite (spacing, focus, tap, reduced-motion, form geometry, print, SR helpers)
+  foundation/     ← carries the tap, type and focus minimums; change with care (spacing, focus, tap, reduced-motion, form geometry, print, SR helpers)
   current/
     ppbf-theme.css        ← THE SEAM. Imports ppbf-golden-era.css.
     ppbf-golden-era.css   ← the Golden Era sheet. Imports the legacy sheet for
@@ -238,11 +239,11 @@ If YES → ship the staging candidate for Jason’s live review.
 
 ---
 
-## 17. Change control
+## 17. Keeping this description true
 
-- This contract is amended by owner decision, or by Claude in a visual PR that updates it as part of a visual release (OD-2026-09-26-001 as narrowed by OD-2026-09-28-001).
-- Nobody rewrites an approved visual decision out of preference (OD-2026-09-26-001). Anyone may propose a change, and the owner decides.
-- ChatGPT, as reviewer once its instructions are set up (OD-2026-09-28-001 #2), checks claims against this contract and the actual PR diff.
+- The UI changes first; this document follows. A PR that changes the look updates the passage here that describes it, or deletes the passage (OD-2026-10-02-004).
+- What a screen looks like and how it flows is decided by Jason with the lane doing the work. An earlier approval recorded here is where the look started, not a reason to refuse or flag a change.
+- ChatGPT, as reviewer (OD-2026-09-28-001 #2), reviews UI PRs against the list in `AGENT_KERNEL.md` "UI and visual work" and the actual PR diff, not against this description.
 
 Tagline remains: **OBSERVE. DECIDE. EXECUTE. REPEAT.**
 

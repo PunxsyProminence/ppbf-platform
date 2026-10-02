@@ -1,6 +1,6 @@
 # PPBF Brand & Visual Design Brief
 
-> **Look (2026-09-28):** Golden Era, `docs/GOLDEN-ERA-V1-CONTRACT.md`; this brief still transcribes the retired Leather & Brass sheet. Of the eight laws, 2, 3, 5 and 7 still bind; 1, 4, 6 and 8 are retired (OD-2026-09-28-009).
+> **Look (2026-09-28):** Golden Era, `docs/GOLDEN-ERA-V1-CONTRACT.md`; this brief still transcribes the retired Leather & Brass sheet, for posters and other outside material. It says nothing about what the app's UI may become: nothing in the UI is tied down (OD-2026-10-02-004).
 
 A copy-paste-ready reference for generating **on-brand external visuals** — posters,
 social cards, flyers, grant-packet covers — in Canva or any design/image tool that

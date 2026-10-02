@@ -1,41 +1,43 @@
-# Frontend Style Contract (PPBF)
+# Frontend style guide (PPBF)
 
-> **Look (2026-09-28):** Golden Era, `docs/GOLDEN-ERA-V1-CONTRACT.md`. Of the eight laws cited below, 2, 3, 5 and 7 still bind; 1, 4, 6 and 8 are retired (OD-2026-09-28-009).
+> **What this is (OD-2026-10-02-004):** how the frontend is put together today and what tends to work. Nothing in the UI is tied down; what binds UI work is the short list in `AGENT_KERNEL.md` "UI and visual work". Where this guide says "use" or "prefer", it is describing the easy path, not forbidding another one.
 
 ## Purpose
-Lock visual consistency for all current and upcoming frontend work.
+Help a builder make a screen that works, reads well and fits the rest of the app, without having to rediscover how the sheets are wired.
 
 ## Source of Truth
 - **`design-system/ppbf.css`** — the entry point for tokens, materials, and
   components; it imports `foundation/` and the `current/` theme, which is where
   the rules live (`design-system/README.md`, "Source of truth"). Read
-  `design-system/README.md` for the laws and the reasoning; the previews under
+  `design-system/README.md` for the checks that bind and the reasoning; the previews under
   `design-system/` render against this exact file, so a value cannot drift
   between the showroom and the app.
 - `apps/web/app/globals.css` — imports the sheet above and aliases the app's
   legacy variable names onto it. The aliases exist to carry the pages that
-  predate the design system; they are a closed vocabulary, and
+  predate the design system, and
   `legacyVisualVocabulary.test.ts` caps 18 of them by name (`ALIAS_CEILINGS`,
   `legacyVisualVocabulary.test.ts:64-83`, counting .tsx under `app/` and
-  `components/` only); the rest are uncapped, so do not extend them. **Write new work
-  against the foundation's mechanics** (`--t-*`, `--s*`, `--r-*`, `--tap`)
+  `components/` only); the rest are uncapped. New work is usually easier to write
+  **against the foundation's mechanics** (`--t-*`, `--s*`, `--r-*`, `--tap`)
   **and the current theme's own tokens** (`globals.css:28-33`).
 - `apps/web/components/uiStyles.ts` — pre-design-system helper, still consumed
-  by unconverted pages. Not a second vocabulary; do not extend it.
+  by unconverted pages. Not a second vocabulary.
 
 ## Visual Language
 
-Skeuomorphic, not flat. The look is Golden Era: its materials sit on the real
-gym (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4). Of the Eight Laws in the
-design-system README, 2, 3, 5 and 7 are the contract; 1, 4, 6 and 8 are
-retired (OD-2026-09-28-009). The four this file used to single out, retired
-ones marked:
+Today the look is Golden Era: skeuomorphic materials sitting on the real gym
+(`docs/GOLDEN-ERA-V1-CONTRACT.md` §4). That is a description of the current
+look, not a limit on the next one (OD-2026-10-02-004). Of the items this file
+used to single out, two carry a floor item and still bind (the `--locked`
+meaning in 2, and 3); the rest are history:
 
 1. **Brass is the chassis, never the message** (Law 1, retired OD-2026-09-28-009). Frames, rivets, rope,
    button faces, the "on" state of a control. Brass never reports a status.
-2. **Saturated colour means safety or status, and nothing else** (Law 2),
-   red excepted. Green, blue and orange belong to a participant's safety state
-   or a queue outcome. Red is not reserved (OD-2026-09-29-001, 2026-09-29): it
+2. **A safety state must never be mistaken for decoration, or decoration for a
+   safety state** (the part of Law 2 that binds). Green, blue and orange are
+   what a participant's safety state and a queue outcome are painted in today,
+   so a new use of them must not read as one of those states. Red is not
+   reserved (OD-2026-09-29-001, 2026-09-29): it
    is the club's colour and may be used anywhere. The token is not free:
    `--safety-locked` aliases to `--locked`, which still means a medical stop,
    so it must not paint tabs, panel borders, links, or emphasis. (Chrome
@@ -56,20 +58,20 @@ ones marked:
 
 `.on-canvas` paints a ground of its own, so put it on the full-bleed wrapper,
 not as a scoping hook on children. It restates every component that was tuned
-against leather; if you find one it has missed, **add the restatement to the
-design-system sheets** (`current/` for the look) rather than patching the colour in the page.
+against leather; if you find one it has missed, the fix that lasts is a restatement in the
+design-system sheets (`current/` for the look), because a colour patched in one page leaves the next page broken.
 
 ## Components and Patterns
 
-Use what the sheet already ships before inventing anything:
+What the sheet already ships (a new component is fine when none of these does the job):
 
 - Surfaces — `.mat-leather`, `.mat-paper`, `.mat-slate`, `.mat-cork`, plus
   `.frame` + `.rivet` for a riveted brass frame around a panel.
 - Controls — `.btn`, `.btn--ghost`, `.btn--danger`, `.btn--kiosk`,
   `.field` + `.t-label` + `.input`.
 - Status — `.badge` with its four rungs; `.stamp` for a governance refusal
-  (Law 7 — refusal is a stamp, never a dismissible toast); `.redacted` for
-  k-anonymity withholding.
+  (Law 7, which binds: a refusal stays on screen and cannot be dismissed; how
+  the mark looks may change); `.redacted` for k-anonymity withholding.
 - Type — four voices (Law 4, retired OD-2026-09-28-009; the classes still ship): `.t-command` orders, `.t-body` informs, `.chalk`
   schedules, `.t-data` records anything auditable.
 
@@ -85,26 +87,29 @@ silently emits neither. Use `text-[length:var(--x)]` / `text-[color:var(--x)]`.
   sits on.
 - Every screen must survive a 412px viewport with no horizontal overflow.
 
-## Drift Guardrails
+## Things that have caused trouble
 
-1. No new hardcoded hex values in `apps/web/app` or `apps/web/components`.
+None of these is a ban (OD-2026-10-02-004); each is a habit that has cost time.
+
+1. Hardcoded hex values in `apps/web/app` or `apps/web/components` do not
+   follow a theme change, so a token is usually the better choice.
    As of the SHADOW-console pass: **281 hex values and 783 legacy cream tokens
-   across 58 page files**. Those numbers go down, never up. Measure before
+   across 58 page files**. Measure before
    claiming progress — an earlier version of this file quoted a count taken
    only across the files being worked on, which read as far more finished than
    the app was.
-2. No slate/emerald/cyan fragments, and no second palette — there is one look,
-   and no `[data-theme]` toggle. Ground is a per-surface material choice.
-3. (Law 8, retired OD-2026-09-28-009.) Radii come off the Fibonacci scale; arbitrary values like `rounded-[28px]`
-   are drift.
-4. Before styling a new route, open the nearest `design-system/screens/*.html`
-   preview and build from that, rather than copying a neighbouring page that
-   may itself be unconverted.
+2. There is one look today and no `[data-theme]` toggle; ground is a per-surface
+   material choice. Stray slate/emerald/cyan fragments are leftovers from before
+   the design system, not a second palette.
+3. (Law 8, retired OD-2026-09-28-009.) Radii mostly come off the Fibonacci scale.
+4. The `design-system/screens/*.html` previews show how the sheets are meant to
+   be used; a neighbouring page may itself be unconverted, so check before
+   copying one.
 
 ## Scope Notes
 
-1. Legacy files under `apps/web/src` are out-of-band and must not drive visual
-   decisions.
+1. Legacy files under `apps/web/src` are out-of-band and say nothing about the
+   current look.
 2. Active surfaces live under `apps/web/app` and `apps/web/components`.
 3. **The migration is not complete.** `FeatureSurface` — the old cream
    scaffold shell — is deleted, and most of the app speaks the design system,
@@ -113,17 +118,15 @@ silently emits neither. Use `text-[length:var(--x)]` / `text-[color:var(--x)]`.
    `ppbf.css` materials and tokens: `shadow`, `coach/operations`,
    `board/dashboard`, `admin/macro-analytics`, `admin/curriculum`,
    `admin/communications`, and `admin/retro-lab` (whose mounted
-   `PunxsyEcosystemCore.tsx` repeats the same pattern). Do not copy these
-   pages as a starting point for new work — see Drift Guardrails below for
-   the broader legacy-token count. New work starts from the contract, not
-   from git archaeology.
+   `PunxsyEcosystemCore.tsx` repeats the same pattern). These pages are a
+   poor starting point for new work — see the legacy-token count above.
 4. **`--red-primary` chrome misuse is purged.** The token is now named
    `--safety-locked` (`apps/web/app/globals.css`); it aliases to
    `--locked` — the safety gate's red — and it no longer paints tabs, borders,
    eyebrows, banners, or "planned" markers anywhere. Planned/not-implemented
    markers are `.stamp--brass`. Any new use of `--safety-locked` / `--locked`
    must be the safety gate speaking; red itself is not reserved
-   (OD-2026-09-29-001). Regressions here are the highest-priority drift.
+   (OD-2026-09-29-001). This one is a floor item and binds.
 
 ## Checking your work
 
@@ -140,27 +143,23 @@ given change, so sweep the same routes against a baseline ref and diff before
 acting — otherwise you will spend an afternoon fixing something you did not
 break. It never fails a build; it reports, and a person decides.
 
-This matters beyond legibility. Law 2 spends saturated colour on a
-participant's safety state and Law 3 requires a glyph and a label so the
-ladder survives greyscale, which makes a contrast regression a governance
-regression rather than a cosmetic one.
+This matters beyond legibility. A participant's safety state is shown in
+colour, with a glyph and a label so it survives greyscale (Law 3), which makes
+a contrast regression on one of those marks a safety regression rather than a
+cosmetic one.
 
-## Done Criteria for New UI Work
+## Done criteria for UI work
 
-1. Every surface is one of Golden Era's materials
-   (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4: seven core materials plus dark glass,
-   owner-approved 2026-09-28, OD-2026-09-28-014), which replaced the old
-   five-material rule (OD-2026-09-28-009).
-2. Saturated colour appears only for safety state or queue outcome (Law 2),
-   except red, which is not reserved (OD-2026-09-29-001); `--locked` still
-   appears only for a medical stop.
-   (The "chrome accents are brass" half was Law 1, retired OD-2026-09-28-009.)
-3. Every state carries a glyph and an uppercase label, not colour alone (Law 3).
-4. RETIRED with Law 8 (OD-2026-09-28-009): sizes from the √φ type ladder and
-   the Fibonacci space/radius scales. No longer a done criterion.
-5. Gym-floor targets clear `--tap` and `--t-md` (Law 5).
-6. Keyboard focus states are visible and consistent.
-7. No horizontal overflow at 412px.
-8. `npm run sweep` shows no new low-contrast nodes against the base branch.
-9. A design-system gap is fixed in the design-system sheets (`current/` for the look,
-   `foundation/` for mechanics), not worked around in the page.
+These are the list in `AGENT_KERNEL.md` "UI and visual work" applied to a
+screen. Nothing about which materials, colours, sizes or layout a screen uses
+is a done criterion (OD-2026-10-02-004).
+
+1. `--locked` appears only for a medical stop, and nothing decorative can be
+   mistaken for a safety state.
+2. Every state carries a glyph and a label, not colour alone (Law 3).
+3. Gym-floor targets clear `--tap` and `--t-md` (Law 5).
+4. Keyboard focus states are visible.
+5. No horizontal overflow at 412px.
+6. `npm run sweep` shows no new low-contrast nodes against the base branch.
+7. Every control does something real, and any action the change moved, merged,
+   renamed or removed is named in the PR.

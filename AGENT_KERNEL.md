@@ -24,7 +24,7 @@ Read additional documents only when the task actually touches their domain:
 - SHADOW safety/model behavior -> relevant SHADOW contract/spec plus the applicable sections of `docs/AI_CONTRIBUTOR_GUARDRAILS.md`
 - authentication/roles -> `AUTH_CONTRACT.md` and `ORGANIZATION_ROLE_MODEL.md`
 - database/schema/migrations -> database rules in `docs/AI_CONTRIBUTOR_GUARDRAILS.md` and the existing migration/runner pattern
-- visual design -> `docs/GOLDEN-ERA-V1-CONTRACT.md` (the active visual authority since 2026-08-24, named in `design-system/current/ppbf-theme.css`), `design-system/ppbf.css` and `design-system/README.md`; the visual build order is `docs/ROOM-MAP.md` (OD-2026-09-28-009), and plates are judged against `docs/REAL-GYM-REFERENCE-LOCK.md`
+- UI and visual design -> "UI and visual work" below is the rule (OD-2026-10-02-004): nothing in the UI is tied down. `design-system/README.md` lists the checks that still bind; `docs/GOLDEN-ERA-V1-CONTRACT.md` and `docs/ROOM-MAP.md` describe the look and the rooms as built and planned and do not limit a change; `design-system/ppbf.css` is the CSS. Plates are judged against `docs/REAL-GYM-REFERENCE-LOCK.md`
 - audit/provenance/history -> `docs/current/WORK_QUEUE.md` and `docs/archive/`
 - writing an evidence claim in a PR body, status report or handoff -> `docs/current/EVIDENCE_APPLICABILITY.md`
 
@@ -63,23 +63,47 @@ No other AI holds a standing role, and there is no release role: merging and
 releasing are Claude's, under "Merging and releasing" below. Several Claude
 Code sessions may run at once; a session is not a role.
 
-**Visual work** (OD-2026-09-26-001, narrowed by OD-2026-09-28-001). Anyone may
-design or generate an image; implementing it in this repository is Claude's.
-The work is judged, not its author.
+**UI and visual work** (OD-2026-10-02-004; OD-2026-09-26-001 as narrowed by
+OD-2026-09-28-001). Anyone may design or generate an image; implementing it in
+this repository is Claude's. The work is judged, not its author.
 
-**What "a good one" means is the whole of the standard, and it did not
-change.** The work passes its guards; it alters no function, role gate,
-organization boundary or safety rule; it invents nothing the data does not
-support; it removes no existing action; its tests stay meaningful. For a
-plate: it passes `apps/web/src/design/plateBinaries.test.ts` on its bytes AND
-somebody has opened the image and looked at it against
+**Nothing in the UI is tied down.** Jason, 2026-10-02: *"nothing in the UI is
+tied down we can change things to make itmore user friendly visually appealy
+functional ect, i dont want any laws, setting or verbage in docs hindering
+that"*. Look, layout, type, colour, materials, copy, markup and screen flow may
+all change, up to a rebuild of a screen, when the change makes it easier to
+use, better looking or more functional. An earlier approval, a document, a
+code comment or a test that pins a particular look is not a reason to refuse,
+hold or raise a review finding against such a change. What a screen looks like
+and how it flows is decided by Jason with the lane doing the work.
+
+**What does bind UI work is this list, and only this list:**
+
+1. *The floor.* Safety and safeguarding marks keep their meaning (`--locked`
+   means a medical stop and nothing else; a safety or governance refusal stays
+   on screen, attributable and not dismissible; colour is never the only
+   channel for a state). Minors' privacy, role gates and organization
+   boundaries are untouched. Nothing false ships: no control that does
+   nothing, no invented data, roles or notices, and an unknown value never
+   looks complete or zero.
+2. *Readable and usable.* Text reads against what is actually behind it;
+   gym-floor targets and type keep their minimums (`--tap`, `--t-md`); keyboard
+   focus is visible; reduced motion is respected. The checks that enforce these
+   are listed in `design-system/README.md`.
+3. *A changed or removed action is named.* A UI change may move, merge, rename
+   or remove a control; the PR says which, so Jason sees it. A safety, consent
+   or sign-in step is never dropped as a side effect of a redesign.
+
+A test that only pins a look (an exact colour, a class name, a control count, a
+"nothing else changed" claim) is updated or deleted in the PR that changes the
+look. A test that carries an item on the list above stays until the same
+protection is proved elsewhere in the same PR.
+
+**Plates.** A plate passes `apps/web/src/design/plateBinaries.test.ts` on its
+bytes AND somebody has opened the image and looked at it against
 `docs/REAL-GYM-REFERENCE-LOCK.md`. The byte gate cannot tell whether the room
 is this gym -- on 2026-09-26 two plates were bound to a room by filename
 without being opened, and both were the generic brick wall that lock forbids.
-
-**Reviewing someone else's visual work is still reviewing.** Rewriting an
-approved design because you prefer yours is not the same as being permitted to
-design, and remains out of order.
 
 ### Work domains (OD-2026-09-25-002)
 
