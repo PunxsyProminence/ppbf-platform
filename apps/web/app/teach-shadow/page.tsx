@@ -647,6 +647,21 @@ export default function TeachShadowHomePage() {
             </Link>
           </section>
 
+          {/* STAGE FIVE: MEASURE. The step the loop named and had no screen
+              for: once two coaches have labelled the same clips, where they
+              differed is the finding. */}
+          <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
+            <p className="t-eyebrow">Stage five</p>
+            <h2 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>Measure</h2>
+            <p className="t-body mt-[var(--s2)]">
+              See where two coaches labelled the same clip differently. It measures the labelling,
+              not a coach and not an athlete.
+            </p>
+            <Link href="/teach-shadow/agreement" className="btn mt-[var(--s4)] inline-block">
+              Label Agreement
+            </Link>
+          </section>
+
           {/* 4. CORPUS COVERAGE */}
           <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Corpus coverage</h2>
