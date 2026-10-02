@@ -4,7 +4,7 @@
 described in `docs/GOLDEN-ERA-V1-CONTRACT.md`; "Leather & Brass" is retired and kept
 in `legacy/`. Neither limits what a screen may become. What binds UI work is the short
 list in `AGENT_KERNEL.md` "UI and visual work": the safety floor, and readable and
-usable. Of the eight laws below, 2, 3, 5 and 7 still bind and are part of that
+usable. Of the eight laws below, 3, 5 and 7 and the safety half of 2 are that
 list; 1, 4, 6 and 8 are retired (OD-2026-09-28-009). The planned rooms are in
 `docs/ROOM-MAP.md`.
 
@@ -66,8 +66,12 @@ to `apps/web/`.
 1. **RETIRED.** *Brass is the chassis, never the message.* Frames, rivets, bezels,
    button faces. Brass never reports a status. *(Review + contrast sweep; no dedicated
    test.)*
-2. **Saturated colour means safety or status — nothing else, red excepted.**
-   Green/blue/orange belong to the safety ladder and queue outcomes only. Red is not
+2. **A safety state is never mistaken for decoration.** This is the half of the old
+   law that binds. Its palette limit ("saturated colour means safety or status and
+   nothing else") does not: Jason, 2026-10-02, *"Nothing binding  visually look will
+   be less conflict than anything binding at this point"*. Green/blue/orange are what
+   the safety ladder and queue outcomes are painted in today, so another use of them
+   must not read as one of those states. Red is not
    reserved (OD-2026-09-29-001, 2026-09-29): it is the club's colour (black, red and
    white) and may be used anywhere. `--safety-locked` aliases `--locked`, which still
    means a medical stop; it never paints chrome. → `src/design/cornerColor.test.ts`

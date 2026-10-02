@@ -87,8 +87,10 @@ by anything in this section.
 1. *The floor.* Safety and safeguarding marks keep their meaning (`--locked`
    means a medical stop and nothing else; a safety or governance refusal stays
    on screen, attributable and not dismissible; colour is never the only
-   channel for a state; saturated green, blue and orange are spent on safety
-   and status only, Law 2 as kept by OD-2026-09-28-009). Minors' privacy, role gates and organization
+   channel for a state; nothing decorative can be mistaken for a safety state).
+   These are about what a mark means, not about how the app looks: nothing
+   about the look itself binds (Jason, 2026-10-02: *"Nothing binding  visually
+   look will be less conflict than anything binding at this point"*). Minors' privacy, role gates and organization
    boundaries are untouched. Nothing false ships: no control that does
    nothing, no invented data, roles or notices, and an unknown value never
    looks complete or zero.

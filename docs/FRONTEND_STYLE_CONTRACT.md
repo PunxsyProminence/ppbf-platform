@@ -28,14 +28,18 @@ Help a builder make a screen that works, reads well and fits the rest of the app
 Today the look is Golden Era: skeuomorphic materials sitting on the real gym
 (`docs/GOLDEN-ERA-V1-CONTRACT.md` §4). That is a description of the current
 look, not a limit on the next one (OD-2026-10-02-004). Of the items this file
-used to single out, Laws 2 and 3 still bind (OD-2026-09-28-009); the rest are
-history:
+used to single out, two carry a floor item and still bind (the safety half of
+2, and 3); the rest are history:
 
 1. **Brass is the chassis, never the message** (Law 1, retired OD-2026-09-28-009). Frames, rivets, rope,
    button faces, the "on" state of a control. Brass never reports a status.
-2. **Saturated colour means safety or status, and nothing else** (Law 2),
-   red excepted. Green, blue and orange belong to a participant's safety state
-   or a queue outcome. Red is not reserved (OD-2026-09-29-001, 2026-09-29): it
+2. **A safety state must never be mistaken for decoration, or decoration for a
+   safety state** (the half of Law 2 that binds; its palette limit does not,
+   Jason 2026-10-02: *"Nothing binding  visually look will be less conflict than
+   anything binding at this point"*). Green, blue and orange are what a
+   participant's safety state and a queue outcome are painted in today, so a
+   new use of them must not read as one of those states. Red is not reserved
+   (OD-2026-09-29-001, 2026-09-29): it
    is the club's colour and may be used anywhere. The token is not free:
    `--safety-locked` aliases to `--locked`, which still means a medical stop,
    so it must not paint tabs, panel borders, links, or emphasis. (Chrome
@@ -141,20 +145,19 @@ given change, so sweep the same routes against a baseline ref and diff before
 acting — otherwise you will spend an afternoon fixing something you did not
 break. It never fails a build; it reports, and a person decides.
 
-This matters beyond legibility. Law 2 spends saturated colour on a
-participant's safety state and Law 3 requires a glyph and a label so the
-ladder survives greyscale, which makes a contrast regression a governance
-regression rather than a cosmetic one.
+This matters beyond legibility. A participant's safety state is shown in
+colour, with a glyph and a label so it survives greyscale (Law 3), which makes
+a contrast regression on one of those marks a safety regression rather than a
+cosmetic one.
 
 ## Done criteria for UI work
 
 These are the list in `AGENT_KERNEL.md` "UI and visual work" applied to a
-screen. Nothing about which materials, sizes or layout a screen uses is a done
-criterion (OD-2026-10-02-004).
+screen. Nothing about which materials, colours, sizes or layout a screen uses is a
+done criterion (OD-2026-10-02-004).
 
-1. Saturated colour appears only for safety state or queue outcome (Law 2),
-   except red, which is not reserved (OD-2026-09-29-001); `--locked` still
-   appears only for a medical stop.
+1. `--locked` appears only for a medical stop, and nothing decorative can be
+   mistaken for a safety state.
 2. Every state carries a glyph and a label, not colour alone (Law 3).
 3. Gym-floor targets clear `--tap` and `--t-md` (Law 5).
 4. Keyboard focus states are visible.
