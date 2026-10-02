@@ -41,6 +41,8 @@ const PROJECT = 'project-qa';
 const ONTOLOGY = 'boxing-ontology-0.1';
 const ACCOUNTS = { a: 'acct-annotator-alice', b: 'acct-annotator-bob', c: 'acct-annotator-cy' };
 const ADJUDICATOR = 'acct-adjudicator-dee';
+const ATHLETE = 'ath-under-study';
+const VIDEO = 'vid-under-study';
 
 type Suffix = keyof typeof ACCOUNTS;
 
@@ -52,7 +54,7 @@ function makeSet(
   return {
     organization_id: ORG,
     annotation_set_id: `${clipId}-set-${suffix}`,
-    calibration_clip_id: clipId,
+    calibration_clip_id: `clip-${clipId}`,
     annotator_account_id: ACCOUNTS[suffix],
     ontology_version: ONTOLOGY,
     status: 'submitted',
@@ -75,7 +77,7 @@ function makeEvent(
     organization_id: ORG,
     event_id: `${clipId}-evt-${suffix}`,
     annotation_set_id: `${clipId}-set-${suffix}`,
-    calibration_clip_id: clipId,
+    calibration_clip_id: `clip-${clipId}`,
     clip_start_ms: 0,
     clip_end_ms: 20_000,
     event_class: 'punch',
@@ -113,12 +115,12 @@ function makeAdjudication(
   return {
     organization_id: ORG,
     adjudication_id: `${clipId}-adj-${pair.join('')}`,
-    calibration_clip_id: clipId,
+    calibration_clip_id: `clip-${clipId}`,
     annotation_set_id_a: `${clipId}-set-${pair[0]}`,
     annotation_set_id_b: `${clipId}-set-${pair[1]}`,
     source_event_id_a: `${clipId}-evt-${pair[0]}`,
     source_event_id_b: `${clipId}-evt-${pair[1]}`,
-    resolution_type: 'resolved',
+    resolution_type: 'select_a',
     missed_event_verdict: null,
     revision: 1,
     adjudicator_account_id: ADJUDICATOR,
@@ -149,13 +151,17 @@ function stage(clips: Record<string, StagedClip>) {
   });
   mockClips.mockResolvedValue(
     Object.keys(clips).map((clipId) => ({
-      calibration_clip_id: clipId,
+      calibration_clip_id: `clip-${clipId}`,
+      athlete_id: ATHLETE,
+      video_session_id: VIDEO,
+      clip_code: `CODE-${clipId}`,
       primary_sampling_reason: 'routine',
     })),
   );
-  mockSets.mockImplementation(async (_org: string, clipId: string) => clips[clipId].sets);
+  const staged = (clipId: string) => clips[clipId.replace(/^clip-/, '')];
+  mockSets.mockImplementation(async (_org: string, clipId: string) => staged(clipId).sets);
   mockAdjudications.mockImplementation(
-    async (_org: string, clipId: string) => clips[clipId].adjudications ?? [],
+    async (_org: string, clipId: string) => staged(clipId).adjudications ?? [],
   );
   mockEvents.mockImplementation(async (_org: string, setId: string) => {
     const [clipId, suffix] = setId.split('-set-') as [string, Suffix];
@@ -209,7 +215,23 @@ describe('loadCalibrationQaReport', () => {
 
     expect(result?.report.comparisonCount).toBe(5);
     expect(result?.report.status).toBe('available');
-    expect(result?.summary).toContain('5 clip(s) compared');
+  });
+
+  test('asks every reader for this organization and this study only', async () => {
+    stage({
+      c1: {
+        sets: [makeSet('c1', 'a'), makeSet('c1', 'b')],
+        adjudications: [makeAdjudication('c1', ['a', 'b'], '2026-08-29T00:00:00.000Z')],
+      },
+    });
+
+    await loadCalibrationQaReport(ORG, PROJECT);
+
+    expect(mockProject.mock.calls).toEqual([[ORG, PROJECT]]);
+    expect(mockClips.mock.calls).toEqual([[ORG, PROJECT]]);
+    expect(mockSets.mock.calls).toEqual([[ORG, 'clip-c1']]);
+    expect(mockAdjudications.mock.calls).toEqual([[ORG, 'clip-c1']]);
+    expect(mockEvents.mock.calls.map((call) => call[0])).toEqual([ORG, ORG]);
   });
 
   test('never reads the events of an unfinished set, or of its finished partner', async () => {
@@ -296,6 +318,60 @@ describe('loadCalibrationQaReport', () => {
       expect(eventReads()).toEqual([]);
     });
 
+    test('refuses a pair adjudicated at the same instant as the last submission', async () => {
+      stage({
+        c1: {
+          sets: three('c1'),
+          adjudications: [makeAdjudication('c1', ['a', 'b'], '2026-08-28T01:00:00.000Z')],
+        },
+      });
+
+      const result = await loadCalibrationQaReport(ORG, PROJECT);
+
+      expect(result?.excludedClips.pairNotEstablished).toBe(1);
+    });
+
+    test('takes the latest adjudication of the pair as the evidence of choice', async () => {
+      stage({
+        c1: {
+          sets: three('c1'),
+          adjudications: [
+            makeAdjudication('c1', ['a', 'b'], '2026-08-27T12:00:00.000Z'),
+            // A second disagreement on the same pair, settled after c arrived
+            // and recorded with the readings the other way round.
+            makeAdjudication('c1', ['b', 'a'], '2026-08-29T00:00:00.000Z', {
+              adjudication_id: 'c1-adj-later',
+              source_event_id_a: null,
+            }),
+          ],
+        },
+      });
+
+      const result = await loadCalibrationQaReport(ORG, PROJECT);
+
+      expect(result?.report.comparisonCount).toBe(1);
+      expect(eventReads().sort()).toEqual(['c1-set-a', 'c1-set-b']);
+    });
+
+    test('refuses an adjudication naming a reading that is not on the clip', async () => {
+      stage({
+        c1: {
+          sets: three('c1'),
+          adjudications: [
+            makeAdjudication('c1', ['a', 'b'], '2026-08-29T00:00:00.000Z', {
+              annotation_set_id_b: 'elsewhere-set-b',
+            }),
+          ],
+        },
+      });
+
+      const result = await loadCalibrationQaReport(ORG, PROJECT);
+
+      expect(result?.report.comparisonCount).toBe(0);
+      expect(result?.excludedClips.pairNotEstablished).toBe(1);
+      expect(eventReads()).toEqual([]);
+    });
+
     test('refuses when adjudications name more than one pair', async () => {
       stage({
         c1: {
@@ -310,6 +386,17 @@ describe('loadCalibrationQaReport', () => {
       const result = await loadCalibrationQaReport(ORG, PROJECT);
 
       expect(result?.report.comparisonCount).toBe(0);
+      expect(result?.excludedClips.pairNotEstablished).toBe(1);
+    });
+
+    test('excludes rather than admits a clip whose submission time is unreadable', async () => {
+      const sets = three('c1').map((set) => ({ ...set, submitted_at: null }));
+      stage({
+        c1: { sets, adjudications: [makeAdjudication('c1', ['a', 'b'], '2026-08-29T00:00:00.000Z')] },
+      });
+
+      const result = await loadCalibrationQaReport(ORG, PROJECT);
+
       expect(result?.excludedClips.pairNotEstablished).toBe(1);
     });
 
@@ -333,10 +420,15 @@ describe('loadCalibrationQaReport', () => {
     });
   });
 
-  test('counts a pair comparison.ts refuses instead of failing the whole report', async () => {
+  test('leaves out a pair read under another ontology version, without reading its events', async () => {
     stage({
       mixed: {
         sets: [makeSet('mixed', 'a'), makeSet('mixed', 'b', { ontology_version: 'boxing-ontology-0.2' })],
+      },
+      // Both readings agree with each other and not with the study.
+      newer: {
+        sets: (['a', 'b'] as const).map((suffix) =>
+          makeSet('newer', suffix, { ontology_version: 'boxing-ontology-0.2' })),
       },
       fine: twoSubmitted('fine'),
     });
@@ -344,10 +436,39 @@ describe('loadCalibrationQaReport', () => {
     const result = await loadCalibrationQaReport(ORG, PROJECT);
 
     expect(result?.report.comparisonCount).toBe(1);
-    expect(result?.excludedClips.notComparable).toBe(1);
-    // The refused pair's events were read to attempt the comparison and must
-    // not then be counted.
-    expect(result?.report.hedgedCertaintyRate.denominator).toBe(2);
+    expect(result?.excludedClips.notComparable).toBe(2);
+    expect(eventReads().sort()).toEqual(['fine-set-a', 'fine-set-b']);
+  });
+
+  test('keeps progress and exclusions adding up, and counts every adjudicated clip', async () => {
+    stage({
+      compared: twoSubmitted('compared'),
+      // Settled at two readings; a third coach has since started.
+      reopened: {
+        sets: [makeSet('reopened', 'a'), makeSet('reopened', 'b'), inProgress('reopened', 'c')],
+        adjudications: [makeAdjudication('reopened', ['a', 'b'], '2026-08-29T00:00:00.000Z')],
+      },
+      unpaired: { sets: [makeSet('unpaired', 'a'), makeSet('unpaired', 'b'), makeSet('unpaired', 'c')] },
+      waiting: { sets: [makeSet('waiting', 'a')] },
+    });
+
+    const result = await loadCalibrationQaReport(ORG, PROJECT);
+    const excluded = Object.values(result?.excludedClips ?? {}).reduce((sum, n) => sum + n, 0);
+
+    expect(excluded).toBe(2);
+    expect(result?.report.clipProgress.clipsReadyToCompare).toBe(
+      (result?.report.comparisonCount ?? 0) + excluded,
+    );
+    expect(result?.report.clipProgress.clipsWithAdjudication).toBe(1);
+    // ...and that adjudication is in no rate, because its clip is not compared.
+    expect(result?.report.adjudicationRate.count).toBe(0);
+  });
+
+  test('lets a failed read fail the report rather than return part of one', async () => {
+    stage({ c1: twoSubmitted('c1') });
+    mockEvents.mockRejectedValue(new Error('connection lost'));
+
+    await expect(loadCalibrationQaReport(ORG, PROJECT)).rejects.toThrow('connection lost');
   });
 
   test('counts unknown and hedged values from compared pairs only', async () => {
@@ -382,7 +503,9 @@ describe('loadCalibrationQaReport', () => {
 
     const serialized = JSON.stringify(await loadCalibrationQaReport(ORG, PROJECT));
 
-    for (const forbidden of [...Object.values(ACCOUNTS), ADJUDICATOR, '-set-', '-evt-', '-adj-']) {
+    for (const forbidden of [
+      ...Object.values(ACCOUNTS), ADJUDICATOR, ATHLETE, VIDEO, 'clip-c', 'CODE-', '-set-', '-evt-', '-adj-',
+    ]) {
       expect(serialized).not.toContain(forbidden);
     }
     expect(serialized.toLowerCase()).not.toContain('account');
