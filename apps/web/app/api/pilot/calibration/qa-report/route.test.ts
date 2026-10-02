@@ -221,17 +221,19 @@ describe('GET /api/pilot/calibration/qa-report', () => {
     });
   });
 
-  test('gives a coach the figures and withholds the clip progress', async () => {
+  test('gives a coach the figures and the clip progress, and nothing else', async () => {
     mockPrincipal.mockResolvedValue(COACH);
     stageStudy(5);
 
     const body = await (await GET(request())).json();
 
     expect(body.report.disagreementRates.PUNCH_TYPE.rate).toBe(1);
-    expect(body.clip_progress).toBeNull();
-    expect(body.excluded_clips).toBeNull();
-    // Not smuggled out under another key: the body is exactly these, and the
-    // figures are exactly the six the screen shows.
+    expect(body.clip_progress).toMatchObject({ totalClips: 6, clipsAwaitingSecondAnnotator: 1 });
+    expect(body.excluded_clips).toEqual({
+      readingInProgress: 0, noRecordedPair: 0, pairNotEstablished: 0, notComparable: 0,
+    });
+    // The body is exactly these, and the figures are exactly the six the
+    // screen shows.
     expect(Object.keys(body).sort()).toEqual([
       'clip_progress', 'comparison_count', 'excluded_clips', 'minimum_comparisons',
       'ok', 'project_name', 'report', 'status',
@@ -240,7 +242,6 @@ describe('GET /api/pilot/calibration/qa-report', () => {
       'adjudicationRate', 'boundaryDeltas', 'disagreementCounts', 'disagreementRates',
       'hedgedCertaintyRate', 'unknownRate',
     ]);
-    expect(JSON.stringify(body)).not.toMatch(/clips[A-Z]|totalClips/);
   });
 
   test('never sends a signed timing gap, which with one clip is one labeller\'s mark', async () => {

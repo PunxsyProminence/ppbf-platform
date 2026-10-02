@@ -9,25 +9,24 @@ import { requireAnnotator } from '../annotatorGate';
 export const runtime = 'nodejs';
 
 /**
- * WHAT A COACH SEES, WHERE THE OWNER HAS NOT YET SAID.
+ * WHAT A COACH SEES. Two owner answers (2026-10-02), each kept as one constant
+ * so a later change of mind is a one-line change rather than a redesign.
  *
  * Coaches and organization administrators both read this report
- * (OD-2026-10-02-006). Two details of the coach's view are open questions with
- * the owner, and each is one constant so his answer is a one-line change
- * rather than a redesign.
+ * (OD-2026-10-02-006).
  *
  * CLIP PROGRESS -- how many clips are waiting on a second labeller -- tells a
- * coach, in total, whether somebody else has started. blinding.ts withholds
- * exactly that clip by clip. Off until he answers. It is not airtight and
- * cannot be: the number of clips compared is the report, and a coach who
- * knows how many they have submitted can subtract.
+ * coach, in total, whether somebody else has started; blinding.ts withholds
+ * exactly that clip by clip. He was told so and chose to show it: it is what
+ * tells a coach which work is left, and it carries no label.
  *
- * COUNTS BELOW THE MINIMUM. He approved "counts but no percentages" below five
- * compared clips, so this is on. The case against, which he is being asked
- * about: with very few clips a count is close to a per-clip statement, and a
- * coach who has not labelled that clip yet would see it first.
+ * COUNTS BELOW THE MINIMUM. "Counts but no percentages" below five compared
+ * clips. The case against was put to him: with very few clips a count is close
+ * to a per-clip statement, and a third coach who has not labelled that clip
+ * yet would see it first. He kept the counts; with two labellers there is no
+ * third coach. If a third labeller is added, this is the switch to revisit.
  */
-const COACH_SEES_CLIP_PROGRESS = false;
+const COACH_SEES_CLIP_PROGRESS = true;
 const COACH_SEES_COUNTS_BELOW_MINIMUM = true;
 
 /**
