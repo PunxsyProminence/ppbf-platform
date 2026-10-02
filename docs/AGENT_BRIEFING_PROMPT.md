@@ -184,7 +184,8 @@ Golden Era sheet still imports it underneath. Older visual work lists are in
 offline), so no font CDN. One floor item from the old lists still stands
 (owner, 2026-08-17): the six Capability Console pages show fabricated data, and
 styling them would make invented figures look more authoritative without
-making them true, so they are fixed or removed, not dressed up.
+making them true, so they stay unstyled (Job 3, now in
+`docs/archive/2026-10-02_HANDOFF_VISUALS.md`).
 
 **Wiring (product build).** Application code, routes, server domain
 modules under `apps/web/src/server/pilot/`, migrations. Current build work is
