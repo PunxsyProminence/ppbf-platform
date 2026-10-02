@@ -47,9 +47,12 @@ import manifest from './safetyCriticalSuites.json';
  * twenty suites from those two folders are registered (fourteen and six); two
  * from `src/server/pilot/`, the SHADOW chat classifier's suite and its
  * differential guard, the first entries from server code, which enter under
- * (a): they are what says a child's emergency report is treated as one; plus
+ * (a): they are what says a child's emergency report is treated as one; one
+ * from `app/`, the SHADOW chat route's suite, also under (a): it is what says
+ * an authorized high-risk request reaches the human-review queue and that an
+ * authorization failure leaves no row there; plus
  * this file, registered against itself -- a guard on guards that could vanish
- * silently would leave the register unvalidated. Twenty-three entries. A suite
+ * silently would leave the register unvalidated. Twenty-four entries. A suite
  * is registered when its disappearance would remove the ONLY
  * automated proof of a rule that, when broken:
  *
