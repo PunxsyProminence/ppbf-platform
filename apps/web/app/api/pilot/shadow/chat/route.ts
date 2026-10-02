@@ -50,10 +50,13 @@ import {
   resolveConversation,
 } from '@/src/server/pilot/shadowConversations';
 import {
+  consumeShadowRateLimit,
   enforceShadowRateLimit,
+  refundShadowRateLimit,
   resolveShadowRateLimit,
   shadowRateLimitMessage,
   ShadowRateLimitExceeded,
+  type ShadowRateLimitReceipt,
 } from '@/src/server/pilot/shadowRateLimit';
 import { getShadowChatCapabilities } from '@/src/server/pilot/shadowChatCapabilities';
 import {
@@ -126,6 +129,16 @@ const FALLBACK_RESPONSES: Record<string, string> = {
   return_to_play: 'Return-to-play decisions require medical professional evaluation. SHADOW can help you understand RTP protocols and evidence-based recovery frameworks.',
   medical_clearance: 'Medical clearance decisions are made by qualified medical professionals. SHADOW can help you understand what clearance evaluations typically include.',
 };
+
+// The summary on a REQUEST-RISK review row: the classifier marked the request
+// high-risk. One sentence that is true however the request was then handled
+// -- answered, given the fixed fallback line, queued for the worker, refused
+// for a capability reason -- with the outcome in the row's metadata
+// (responseState). Shown only on the admin human-review page; never to an
+// athlete, a parent or a coach. (A request that was WITHHELD keeps its own,
+// older summary, which is true of it.)
+const HIGH_RISK_REQUEST_REVIEW_SUMMARY =
+  'A high-risk SHADOW chat request was flagged for human review.';
 
 // Handoff banner text lives in shadowHandoff.ts so the background job
 // processor resolves the identical banner this route resolves.
@@ -677,6 +690,140 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // thing. The refusal below therefore defers to it.
     const requestValidation = validateShadowRequest(message, userRole, organizationId);
 
+    // -----------------------------------------------------------------
+    // THE HUMAN-REVIEW WRITES: TWO KINDS OF EVENT, EACH BOUNDED AND REFUNDED.
+    //
+    // REQUEST-RISK. The classifier marked the REQUEST high-risk. Every such
+    // request leaves one row, whether it was withheld, given the fixed
+    // fallback line, answered, queued for the worker, or refused for a
+    // capability reason (OD-2026-09-30-006, selection 5: "Everything
+    // high-risk, as now"). Before this, an allowed high-risk question that
+    // was answered cleanly left nothing: nobody was told.
+    //
+    // RESPONSE-SAFETY. A GENERATED answer tripped the response validation and
+    // was replaced, or asked for review. That is a fact about what the model
+    // wrote, whatever the request was -- a benign question can draw it -- and
+    // it is its own row. It is NOT skipped because the request was already
+    // flagged: a high-risk request whose generated answer is then replaced
+    // leaves two rows, one of each kind, and a reviewer needs both.
+    //
+    // Every review write in this route goes through this one function, so that:
+    //
+    //   * a request writes AT MOST ONE ROW OF EACH KIND. A second call for
+    //     the same kind is a no-op.
+    //   * each write is bounded by the `safety_review` bucket, three an hour
+    //     per account (OD-2026-09-30-005: "3 per hour"), one slot per row.
+    //     REACHING IT SUPPRESSES THAT ROW AND NOTHING ELSE. What the person
+    //     is told does not change.
+    //   * EXHAUSTION AND FAILURE ARE DIFFERENT EVENTS. Only
+    //     ShadowRateLimitExceeded means the hour is spent. Any other limiter
+    //     error -- the bucket table unreachable, a timeout -- is not
+    //     exhaustion, and the row is attempted anyway, without a slot:
+    //     discarding safeguarding work because the database is already unwell
+    //     is the wrong way round.
+    //   * a slot whose row was never written is given back, to the exact
+    //     bucket row that was charged (OD-2026-09-30-006, selection 1:
+    //     "Refund on failure"). The receipt names that row; nothing here
+    //     looks at the clock again.
+    //
+    // What happens when the insert itself fails is the caller's, and both
+    // behaviours are main's: 'swallow' logs and carries on;
+    // 'retry-then-fail-closed' tries once more and then fails the request,
+    // which is what main does wherever the response body tells the person a
+    // human will review.
+    //
+    // Authentication and athlete/conversation authorization are ABOVE this
+    // line and stay there: a request that fails either never reaches a
+    // review write (OD-2026-09-30-005: "No — auth stays above safety").
+    // -----------------------------------------------------------------
+    type HumanReviewTicket = Parameters<typeof queueHumanReview>[0];
+    type HumanReviewEventKind = 'request_risk' | 'response_safety';
+    const humanReviewKindsAttempted = new Set<HumanReviewEventKind>();
+    const writeHumanReviewOnce = async (
+      kind: HumanReviewEventKind,
+      ticket: HumanReviewTicket,
+      onInsertFailure: 'swallow' | 'retry-then-fail-closed',
+    ): Promise<void> => {
+      if (humanReviewKindsAttempted.has(kind)) return;
+      humanReviewKindsAttempted.add(kind);
+
+      let receipt: ShadowRateLimitReceipt | null = null;
+      try {
+        receipt = await consumeShadowRateLimit({
+          organizationId,
+          accountId: userId,
+          ...resolveShadowRateLimit('safety_review'),
+        });
+      } catch (limiterError) {
+        if (limiterError instanceof ShadowRateLimitExceeded) {
+          console.error('SHADOW human-review quota reached for this account; the review row was not written');
+          return;
+        }
+        console.error('SHADOW human-review limiter unavailable; writing the review row without a slot');
+      }
+
+      try {
+        await queueHumanReview(ticket);
+        return;
+      } catch {
+        if (onInsertFailure === 'retry-then-fail-closed') {
+          try {
+            await queueHumanReview(ticket);
+            return;
+          } catch (retryError) {
+            if (receipt) await refundShadowRateLimit(receipt);
+            console.error('SHADOW human-review queue write failed twice; failing the request closed');
+            throw retryError;
+          }
+        }
+        if (receipt) await refundShadowRateLimit(receipt);
+        console.error('SHADOW human-review queue write failed');
+      }
+    };
+
+    const reviewSeverity = ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom']
+      .includes(requestValidation.classification ?? '')
+      ? ('critical' as const)
+      : ('high' as const);
+
+    // The request-risk row for a request the classifier marked high-risk and
+    // did not withhold. `responseState` says what became of it, so the one
+    // summary sentence stays true of every outcome.
+    const requestRiskReviewTicket = (
+      forConversationId: string | undefined,
+      responseState: ShadowResponseState,
+    ): HumanReviewTicket => ({
+      organizationId,
+      accountId: userId,
+      conversationId: forConversationId,
+      category: requestValidation.topic ?? 'safety_boundary',
+      severity: reviewSeverity,
+      summary: HIGH_RISK_REQUEST_REVIEW_SUMMARY,
+      metadata: {
+        sessionType,
+        athleteScoped: Boolean(athleteId),
+        validationClassification: requestValidation.classification ?? null,
+        responseState,
+      },
+    });
+
+    // A CAPABILITY OR COST REFUSAL BELOW THE CHOKEPOINT STILL LEAVES THE ROW.
+    //
+    // An allowed high-risk request can be turned away for a reason that has
+    // nothing to do with safety: the session type is not available from
+    // chat, the worker for it is not configured, the Heavy Bag allowance is
+    // spent. The person was not answered, and a high-risk question was still
+    // asked, so the row is written before the refusal goes back.
+    //
+    // NOT the two 403s below the chokepoint (a board summary this role may
+    // not run; a context this role may not read). Those are authorization,
+    // and authorization writes no row.
+    const recordAllowedHighRiskBeforeRefusing = async (responseState: ShadowResponseState): Promise<void> => {
+      if (requestValidation.valid && requestValidation.highRisk === true) {
+        await writeHumanReviewOnce('request_risk', requestRiskReviewTicket(requestedConversationId, responseState), 'swallow');
+      }
+    };
+
     // A board summary the executor would refuse is refused HERE, before the
     // worker-readiness probe, the context build, the enqueue and any provider
     // call. executeBoardSummaryJob has always rejected anyone outside
@@ -710,24 +857,19 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // thing that decayed three times.
     const respondWithSafetyBoundary = async (): Promise<NextResponse<ShadowChatResponse>> => {
       const messageId = `msg_${Date.now()}`;
-      await queueHumanReview({
+      await writeHumanReviewOnce('request_risk', {
         organizationId,
         accountId: userId,
         conversationId: requestedConversationId,
         category: requestValidation.topic ?? 'safety_boundary',
-        severity: ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom']
-          .includes(requestValidation.classification ?? '')
-          ? 'critical'
-          : 'high',
+        severity: reviewSeverity,
         summary: 'A SHADOW chat request was withheld by the pre-generation safety boundary.',
         metadata: {
           sessionType,
           athleteScoped: Boolean(athleteId),
           validationClassification: requestValidation.classification ?? null,
         },
-      }).catch(() => {
-        console.error('SHADOW human-review queue write failed');
-      });
+      }, 'swallow');
       return NextResponse.json(
         {
           success: false,
@@ -821,14 +963,23 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
     // demonstrating SHADOW across a squad is the case the cap would break, and
     // they are also the accounts that carry the organization's cost anyway.
     if (sessionType === 'heavy_bag' && !HEAVY_BAG_UNCAPPED_ROLES.has(userRole as PilotRole)) {
-      await enforceShadowRateLimit({
-        organizationId,
-        accountId: userId,
-        ...resolveShadowRateLimit('heavy_bag'),
-      });
+      try {
+        await enforceShadowRateLimit({
+          organizationId,
+          accountId: userId,
+          ...resolveShadowRateLimit('heavy_bag'),
+        });
+      } catch (heavyBagCapError) {
+        // The cap's own refusal is unchanged: it is rethrown as it came.
+        if (heavyBagCapError instanceof ShadowRateLimitExceeded) {
+          await recordAllowedHighRiskBeforeRefusing('filtered');
+        }
+        throw heavyBagCapError;
+      }
     }
 
     if (sessionType === 'film_study' || sessionType === 'recovery_round') {
+      await recordAllowedHighRiskBeforeRefusing('filtered');
       return NextResponse.json(
         {
           success: false,
@@ -856,6 +1007,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       // absence must fail this request the readable way.
       await assertShadowRuntimeReadiness({ requiredTables: ['shadow_jobs'] });
     } else if (sessionType === 'scout_report' || sessionType === 'board_summary') {
+      await recordAllowedHighRiskBeforeRefusing('degraded');
       return NextResponse.json(
         {
           success: false,
@@ -1119,6 +1271,23 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
       } catch {
         console.error('SHADOW audit logging failed');
       }
+      // This branch returns before the synchronous answer, so an allowed
+      // high-risk request queued here would otherwise leave no row: the
+      // question is in the conversation, the answer arrives later from the
+      // worker, and nobody is told in between. The request-risk row is
+      // written now, before "queued" goes back.
+      //
+      // If the answer the worker generates is then replaced by the safety
+      // boundary, the worker writes a response-safety row of its own
+      // (shadowJobProcessor). That is the second kind of event, and it is
+      // not skipped because this one was written.
+      if (requestValidation.highRisk === true) {
+        await writeHumanReviewOnce(
+          'request_risk',
+          requestRiskReviewTicket(queuedConversationId, 'queued'),
+          'swallow',
+        );
+      }
       return NextResponse.json({
         success: true,
         state: 'queued',
@@ -1307,16 +1476,19 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
             }
           : undefined,
       });
-      if (state === 'filtered' || responseValidation.requiresHumanReview) {
+      // RESPONSE-SAFETY: the answer that was generated (or the empty-library
+      // notice that replaced it) was withheld or asked for review. NOT the
+      // fixed fallback line: routeLlmCall returns that with state 'filtered'
+      // before any model is called, so nothing was generated and nothing was
+      // "replaced" -- it is a request-risk event, written below.
+      const fixedFallbackAnswered = providerState === 'filtered';
+      if (!fixedFallbackAnswered && (state === 'filtered' || responseValidation.requiresHumanReview)) {
         const reviewTicket = {
           organizationId,
           accountId: userId,
           conversationId,
           category: effectiveTopic,
-          severity: ['chest_pain', 'fainting', 'loss_of_consciousness', 'urgent_personal_symptom']
-            .includes(requestValidation.classification ?? '')
-            ? ('critical' as const)
-            : ('high' as const),
+          severity: reviewSeverity,
           summary: 'A generated SHADOW response was replaced by the post-generation safety boundary.',
           metadata: {
             assistantMessageId: messageId,
@@ -1332,17 +1504,31 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
         // the request instead of making a claim nothing recorded. The
         // persisted message keeps its banner, which is guidance to seek a
         // human, not a claim that one was queued.
-        try {
-          await queueHumanReview(reviewTicket);
-        } catch {
-          try {
-            await queueHumanReview(reviewTicket);
-          } catch (retryError) {
-            console.error('SHADOW human-review queue write failed twice; failing the request closed');
-            throw retryError;
-          }
-        }
+        await writeHumanReviewOnce('response_safety', reviewTicket, 'retry-then-fail-closed');
       }
+    }
+
+    // REQUEST-RISK, FOR A REQUEST THAT WAS NOT WITHHELD.
+    //
+    // The classifier marked the request high-risk and let it through -- an
+    // educational question about a knockout, chest pain, a concussion. One
+    // row, whatever became of it: answered by the model, given the fixed
+    // fallback line, queued for the worker, or degraded. Until this existed
+    // an answered one left nothing, and nobody was told.
+    //
+    // The response this request returns is not touched: `requiresHumanReview`
+    // in the body stays what main computed.
+    //
+    // ON A FAILED INSERT. Where the body tells the person a human will review
+    // (state 'filtered': the fixed fallback line), main retried once and then
+    // failed the request rather than say so falsely, and that is kept.
+    // Otherwise the body makes no such claim, and the failure is swallowed.
+    if (requestValidation.highRisk === true) {
+      await writeHumanReviewOnce(
+        'request_risk',
+        requestRiskReviewTicket(conversationId ?? requestedConversationId, state),
+        state === 'filtered' ? 'retry-then-fail-closed' : 'swallow',
+      );
     }
 
     // Step 8: Durably update the personal profile before the request lifecycle ends.

@@ -240,7 +240,7 @@ export const BUILDING: readonly Door[] = [
     hint: 'Quarantined footage the automated scanner deferred to a human.' },
   { href: '/admin/shadow-reviews', label: 'SHADOW Human Review', room: 'office', roles: ADMIN_GATE,
     keywords: 'shadow chat safety boundary escalation critical chest pain fainting review queue safeguarding',
-    hint: 'Chats the safety boundary refused to answer. Critical tickets first.' },
+    hint: 'High-risk SHADOW chats and safety-filtered answers sent for human review. Critical tickets first.' },
   /* roles is ['admin'] and NOT ADMIN_GATE, deliberately. ADMIN_GATE carries
      platform_owner, and the route behind this door refuses platform_owner by
      name -- blinding.ts's position is that a platform-wide role is not a party

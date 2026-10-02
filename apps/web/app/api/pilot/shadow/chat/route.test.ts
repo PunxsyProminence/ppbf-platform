@@ -18,7 +18,13 @@ import {
   queueHumanReview,
   resolveConversation,
 } from '@/src/server/pilot/shadowConversations';
-import { enforceShadowRateLimit, ShadowRateLimitExceeded } from '@/src/server/pilot/shadowRateLimit';
+import {
+  consumeShadowRateLimit,
+  enforceShadowRateLimit,
+  refundShadowRateLimit,
+  ShadowRateLimitExceeded,
+  type ShadowRateLimitReceipt,
+} from '@/src/server/pilot/shadowRateLimit';
 import { classifyRequest } from '@/src/server/pilot/shadowClassifier';
 import { executeHeavyBagAsync, executeHeavyBagSync } from '@/src/server/pilot/shadowHeavyBag';
 import { isShadowWorkerEnabled } from '@/src/server/pilot/shadowJobWorker';
@@ -145,7 +151,12 @@ jest.mock('@/src/server/pilot/shadowConversations', () => ({
 // actually applies -- a hand-written stub here would let the two drift apart.
 jest.mock('@/src/server/pilot/shadowRateLimit', () => {
   const actual = jest.requireActual('@/src/server/pilot/shadowRateLimit');
-  return { ...actual, enforceShadowRateLimit: jest.fn() };
+  return {
+    ...actual,
+    enforceShadowRateLimit: jest.fn(),
+    consumeShadowRateLimit: jest.fn(),
+    refundShadowRateLimit: jest.fn(),
+  };
 });
 
 // The rollup's two leaf data sources. omegaPlatformContext itself is left REAL
@@ -209,6 +220,16 @@ const mockAppendUserMessage = jest.mocked(appendUserMessage);
 const mockLoadConversationMessages = jest.mocked(loadConversationMessages);
 const mockQueueHumanReview = jest.mocked(queueHumanReview);
 const mockEnforceRateLimit = jest.mocked(enforceShadowRateLimit);
+const mockConsumeRateLimit = jest.mocked(consumeShadowRateLimit);
+const mockRefundRateLimit = jest.mocked(refundShadowRateLimit);
+// The receipt the limiter hands back for the safety_review slot in these tests.
+const SAFETY_REVIEW_RECEIPT: ShadowRateLimitReceipt = {
+  organizationId: 'org-session',
+  accountId: 'account-1',
+  endpointKey: 'safety_review',
+  windowSeconds: 3_600,
+  windowStartedAtEpochSeconds: 1_790_000_400,
+};
 const mockClassifyRequest = jest.mocked(classifyRequest);
 const mockExecuteHeavyBagSync = jest.mocked(executeHeavyBagSync);
 const mockExecuteHeavyBagAsync = jest.mocked(executeHeavyBagAsync);
@@ -255,6 +276,8 @@ beforeEach(() => {
   mockLoadConversationMessages.mockResolvedValue([]);
   mockQueueHumanReview.mockResolvedValue('review-1');
   mockEnforceRateLimit.mockResolvedValue(undefined);
+  mockConsumeRateLimit.mockResolvedValue(SAFETY_REVIEW_RECEIPT);
+  mockRefundRateLimit.mockResolvedValue(true);
   mockHasRetrievableEvidence.mockResolvedValue(true);
   mockRetrieveEvidence.mockResolvedValue({
     bundleId: '00000000-0000-4000-8000-000000000200',
@@ -453,50 +476,38 @@ describe('the athlete\'s own words survive normalisation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// THE ONE PLACE THE FOLD MEANS LESS CAUTION, STATED AND PINNED.
+// AN ALLOWED QUESTION THAT NAMES KO'D: ANSWERED, AND A HUMAN IS TOLD.
 //
-// Some messages are ALLOWED by the classifier, on main and here: those with
-// an educational framing word ("what is", "research", "understand" ...) and
-// no first-person or "now" word. That is a test of wording, not of who is
-// asking: a first-hand account written without "I" or "my" passes it.
+// Some messages are ALLOWED by the classifier: those with an educational
+// framing word ("what is", "research", "understand" ...) and no first-person
+// or "now" word. That is a test of wording, not of who is asking: a
+// first-hand account written without "I" or "my" passes it.
 //
 // What the route does with an allowed message depends on its
 // classification. For concussion, weight_cutting, return_to_play and
-// medical_clearance it answers with a stock line, does not call the model,
-// and queues a human review. For anything else, loss_of_consciousness
-// included, it goes on to generate an answer; whether a review is queued
-// then depends on that answer and on the evidence available, not on the
-// classification. In the tests below, with evidence present and a clean
-// answer, none is.
+// medical_clearance it answers with a stock line and does not call the
+// model. For anything else, loss_of_consciousness included, it goes on to
+// generate an answer.
 //
 // The classifier's topic is the first row that matches, and
 // loss_of_consciousness is listed above weight_cutting, return_to_play and
-// medical_clearance (and below concussion). Its pattern matches "KO'd".
-// Main's pattern knew the ASCII apostrophe and U+2019. So on main:
+// medical_clearance (and below concussion). Its pattern matches "KO'd", for
+// the ASCII apostrophe and, since #1049, for twelve look-alikes. So a
+// question about return to play after being KO'd is a loss_of_consciousness
+// question and is answered by the model.
 //
-//   "...return to play after being ko'd"        -> loss_of_consciousness -> model, no review
-//   "...return to play after being ko<U+2019>d" -> loss_of_consciousness -> model, no review
-//   "...return to play after being ko<U+2018>d" -> return_to_play        -> stock line, review
+// WHAT USED TO BE TRUE, AND IS NOT NOW. Until the human-review foundation
+// (the first replacement for #1036), that answered question left no review
+// row: the stock-line topics queued one and this did not, so for a knockout
+// question nobody was told. #1049 pinned that as it stood, and recorded it as
+// main's gap. Every high-risk message now leaves one row, answered or not
+// (OD-2026-09-30-006, selection 5: "Everything high-risk, as now"), so these
+// tests now say: the model answers, and a review row is written.
 //
-// The fold makes the third behave like the first two, and likewise for the
-// ten other apostrophe look-alikes (the six quote look-alikes are not
-// apostrophes and change nothing). That is the fold doing what it is for --
-// a look-alike apostrophe is treated as an apostrophe -- and it is also,
-// for an allowed message that names KO'd with one of those eleven
-// characters and would otherwise have been return_to_play, weight_cutting or
-// medical_clearance, a review row that is no longer written before
-// generation and a stock line that is no longer given.
-//
-// A message the classifier WITHHOLDS is not affected: it is refused and
-// queued whatever its topic.
-//
-// The underlying gap is main's and is not closed here: an allowed message
-// about being knocked out skips the stock line and the review queue, for
-// every spelling of the apostrophe. It is recorded for #1036.
-//
-// The route below is run for the ASCII apostrophe and three of the twelve
-// look-alikes, on one of the three topics; shadowChatSensitivity.test.ts
-// runs the classifier for the ASCII apostrophe and all twelve, on all three.
+// Still open, and the classifier piece's to close: a first-hand account
+// written without "I" or "my" is still classed educational, so it is still
+// answered like a question rather than handled as a report. It does now reach
+// a human.
 // ---------------------------------------------------------------------------
 describe('an allowed question that names KO\'d', () => {
   const ask = async (message: string) => {
@@ -516,25 +527,25 @@ describe('an allowed question that names KO\'d', () => {
       reviewQueued: mockQueueHumanReview.mock.calls.length > 0,
     };
   };
-  const MODEL_NO_REVIEW = { state: 'ok', providerCalled: true, reviewQueued: false };
+  const MODEL_AND_REVIEW = { state: 'ok', providerCalled: true, reviewQueued: true };
   const STOCK_LINE_AND_REVIEW = { state: 'filtered', providerCalled: false, reviewQueued: true };
 
   test.each([
-    ['the ASCII apostrophe, as on main', "ko'd"],
-    ['U+2019, as on main', 'ko\u{2019}d'],
-    ['U+2018, which main sent to the stock line', 'ko\u{2018}d'],
-    ['a backtick, which main sent to the stock line', 'ko`d'],
-  ])('is answered by the model, with no review row: %s', async (_name, ko) => {
-    expect(await ask(`What does research say about return to play after being ${ko}`)).toEqual(MODEL_NO_REVIEW);
+    ['the ASCII apostrophe', "ko'd"],
+    ['U+2019', 'ko\u{2019}d'],
+    ['U+2018', 'ko\u{2018}d'],
+    ['a backtick', 'ko`d'],
+  ])('is answered by the model, and a review row is written: %s', async (_name, ko) => {
+    expect(await ask(`What does research say about return to play after being ${ko}`)).toEqual(MODEL_AND_REVIEW);
   });
 
-  // A first-hand account with no first-person word is "educational" to the
-  // classifier. Same outcome, and the same on main for the ASCII apostrophe.
+  // A first-hand account with no first-person word is still "educational" to
+  // the classifier, so it is still answered by the model. It now leaves a row.
   test.each([
-    ['the ASCII apostrophe, as on main', "ko'd"],
-    ['a backtick, which main sent to the stock line', 'ko`d'],
-  ])('a first-hand account with no first-person word is treated the same way: %s', async (_name, ko) => {
-    expect(await ask(`Got ${ko} in sparring last night and still feel off. What is the return to play protocol`)).toEqual(MODEL_NO_REVIEW);
+    ['the ASCII apostrophe', "ko'd"],
+    ['a backtick', 'ko`d'],
+  ])('a first-hand account with no first-person word is answered the same way, and a review row is written: %s', async (_name, ko) => {
+    expect(await ask(`Got ${ko} in sparring last night and still feel off. What is the return to play protocol`)).toEqual(MODEL_AND_REVIEW);
   });
 
   // The controls: without the word, and with a quote look-alike in place of
@@ -544,6 +555,521 @@ describe('an allowed question that names KO\'d', () => {
     ['with a curly double quote where the apostrophe would be', 'ko\u{201C}d'],
   ])('CONTROL: %s the same question gets the stock line and a review row', async (_name, ko) => {
     expect(await ask(`What does research say about return to play after being ${ko}`)).toEqual(STOCK_LINE_AND_REVIEW);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EVERY HIGH-RISK MESSAGE LEAVES ONE BOUNDED HUMAN-REVIEW ROW.
+//
+// The first replacement for #1036. Nothing here changes what anyone is told:
+// every assertion about a response body compares it with the same request
+// made while the review machinery is in a different state, or with the
+// literal main returns.
+//
+// The limiter is mocked at its two calls (consumeShadowRateLimit,
+// refundShadowRateLimit); what those do to a real bucket row is
+// shadowRateLimitRefund.pg.test.ts's subject, against a real database.
+// ---------------------------------------------------------------------------
+describe('every high-risk message leaves one bounded human-review row', () => {
+  const ALLOWED_HIGH_RISK = "What does research say about return to play after being ko'd";
+  const WITHHELD = 'I cannot breathe after that hit';
+  const STOCK_LINE = 'What is a concussion?';
+  const BENIGN = 'What is a good warm-up for footwork drills?';
+  const REQUEST_RISK_SUMMARY = 'A high-risk SHADOW chat request was flagged for human review.';
+  const RESPONSE_SAFETY_SUMMARY = 'A generated SHADOW response was replaced by the post-generation safety boundary.';
+  const WITHHELD_SUMMARY = 'A SHADOW chat request was withheld by the pre-generation safety boundary.';
+  const summaries = () => mockQueueHumanReview.mock.calls.map(([ticket]) => ticket.summary);
+
+  const modelAnswers = (content = 'Protocols vary by governing body.') => {
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content } }] }),
+    });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+    return fetchSpy;
+  };
+  const send = async (body: Record<string, unknown>) => {
+    const response = await POST(postRequest(body));
+    return { status: response.status, body: await response.json() as Record<string, unknown> };
+  };
+  /** The parts of a response body that are what the person is told; ids and timestamps are per-request. */
+  const told = (body: Record<string, unknown>) => {
+    const { messageId: _messageId, createdAt: _createdAt, ...rest } = body;
+    void _messageId; void _createdAt;
+    return rest;
+  };
+  const safetyReviewSlotsTaken = () => mockConsumeRateLimit.mock.calls
+    .filter(([input]) => (input as { endpointKey: string }).endpointKey === 'safety_review').length;
+
+  test('an allowed high-risk question: the model answers, and exactly one row is written, at the classifier\'s severity', async () => {
+    const fetchSpy = modelAnswers();
+
+    const { status, body } = await send({ message: ALLOWED_HIGH_RISK });
+
+    expect(status).toBe(200);
+    expect(body.state).toBe('ok');
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
+    expect(mockQueueHumanReview.mock.calls[0]?.[0]).toEqual({
+      organizationId: 'org-session',
+      accountId: 'account-1',
+      conversationId: 'conversation-1',
+      category: 'loss_of_consciousness',
+      severity: 'critical',
+      summary: REQUEST_RISK_SUMMARY,
+      metadata: {
+        sessionType: body.sessionType,
+        athleteScoped: false,
+        validationClassification: 'loss_of_consciousness',
+        responseState: 'ok',
+      },
+    });
+    // One slot taken from the safety_review bucket, for this account.
+    expect(safetyReviewSlotsTaken()).toBe(1);
+    expect(mockConsumeRateLimit.mock.calls[0]?.[0]).toEqual({
+      organizationId: 'org-session',
+      accountId: 'account-1',
+      endpointKey: 'safety_review',
+      limit: 3,
+      windowSeconds: 3_600,
+    });
+    expect(mockRefundRateLimit).not.toHaveBeenCalled();
+  });
+
+  test('what the person is told is the same whether or not the row is written', async () => {
+    // Four states of the review machinery, one request. The body must not move.
+    modelAnswers();
+    const written = await send({ message: ALLOWED_HIGH_RISK });
+
+    jest.clearAllMocks();
+    modelAnswers();
+    mockConsumeRateLimit.mockRejectedValueOnce(new ShadowRateLimitExceeded(1800, 'safety_review'));
+    const suppressed = await send({ message: ALLOWED_HIGH_RISK });
+    expect(mockQueueHumanReview).not.toHaveBeenCalled();
+
+    jest.clearAllMocks();
+    modelAnswers();
+    mockQueueHumanReview.mockRejectedValueOnce(new Error('insert failed'));
+    const insertFailed = await send({ message: ALLOWED_HIGH_RISK });
+    expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
+
+    jest.clearAllMocks();
+    modelAnswers();
+    mockConsumeRateLimit.mockRejectedValueOnce(new Error('bucket storage unavailable'));
+    const limiterDown = await send({ message: ALLOWED_HIGH_RISK });
+    expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
+
+    for (const other of [suppressed, insertFailed, limiterDown]) {
+      expect(other.status).toBe(written.status);
+      expect(told(other.body)).toEqual(told(written.body));
+    }
+    // And it is what main told them: an ordinary answer, not flagged in the body.
+    expect(told(written.body)).toEqual(expect.objectContaining({
+      success: true,
+      state: 'ok',
+      response: 'Protocols vary by governing body.',
+      filtered: false,
+      requiresHumanReview: false,
+      highRiskTopic: 'loss_of_consciousness',
+    }));
+  });
+
+  test('a withheld request writes one row, not two, and its refusal is main\'s', async () => {
+    const fetchSpy = modelAnswers();
+
+    const { status, body } = await send({ message: WITHHELD });
+
+    expect(status).toBe(400);
+    expect(body.response).toBe('Potential emergency: stop participation and contact local emergency services or an onsite licensed medical professional now.');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
+    expect(mockQueueHumanReview.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      severity: 'critical',
+      summary: WITHHELD_SUMMARY,
+    }));
+    expect(safetyReviewSlotsTaken()).toBe(1);
+  });
+
+  // THE FIXED FALLBACK LINE. For concussion, weight_cutting, return_to_play and
+  // medical_clearance the route answers with a fixed line and never calls the
+  // model. Main filed that under "a generated response was replaced by the
+  // post-generation safety boundary", which nothing generated and nothing
+  // replaced. It is a request-risk event, and exactly one row.
+  test('a question answered with the fixed fallback line writes one request-risk row, not a "generated response was replaced" row', async () => {
+    const fetchSpy = modelAnswers();
+
+    const { body } = await send({ message: STOCK_LINE });
+
+    expect(body.state).toBe('filtered');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(summaries()).toEqual([REQUEST_RISK_SUMMARY]);
+    expect(mockQueueHumanReview.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      category: 'concussion',
+      severity: 'high',
+      metadata: expect.objectContaining({ validationClassification: 'concussion', responseState: 'filtered' }),
+    }));
+    expect(safetyReviewSlotsTaken()).toBe(1);
+  });
+
+  // TWO KINDS OF EVENT. The request was high-risk: one row. The answer the
+  // model generated was replaced by the response validation: another row,
+  // because that is a fact about what the model wrote and a reviewer needs it
+  // whatever the request was. Neither is skipped for the other.
+  const DIAGNOSING_ANSWER = 'You have a concussion and should take 400mg of ibuprofen.';
+
+  test('a high-risk question whose GENERATED answer is replaced writes two rows, one of each kind, and they differ', async () => {
+    const fetchSpy = modelAnswers(DIAGNOSING_ANSWER);
+
+    const { body } = await send({ message: ALLOWED_HIGH_RISK });
+
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(body.state).toBe('filtered');
+    expect(summaries()).toEqual([RESPONSE_SAFETY_SUMMARY, REQUEST_RISK_SUMMARY]);
+    const [responseEvent, requestEvent] = mockQueueHumanReview.mock.calls.map(([ticket]) => ticket);
+    // The response event says which answer and why; the request event says what was asked about.
+    expect(responseEvent.metadata).toEqual(expect.objectContaining({ assistantMessageId: 'assistant-message-1' }));
+    expect(Array.isArray((responseEvent.metadata as Record<string, unknown>).safetyReasons)).toBe(true);
+    expect(requestEvent.metadata).toEqual(expect.objectContaining({ validationClassification: 'loss_of_consciousness', responseState: 'filtered' }));
+    expect(requestEvent.metadata).not.toHaveProperty('safetyReasons');
+    // One slot each.
+    expect(safetyReviewSlotsTaken()).toBe(2);
+  });
+
+  test('a BENIGN question whose generated answer is replaced writes the response-safety row only', async () => {
+    modelAnswers(DIAGNOSING_ANSWER);
+
+    const { body } = await send({ message: BENIGN });
+
+    expect(body.state).toBe('filtered');
+    expect(summaries()).toEqual([RESPONSE_SAFETY_SUMMARY]);
+    expect(safetyReviewSlotsTaken()).toBe(1);
+  });
+
+  test('a withheld request is a request-risk event with its own summary, and no response event', async () => {
+    modelAnswers(DIAGNOSING_ANSWER);
+    await send({ message: WITHHELD });
+    expect(summaries()).toEqual([WITHHELD_SUMMARY]);
+  });
+
+  test('when the hour is spent on the first of two rows, only that row is lost: each write asks for its own slot', async () => {
+    modelAnswers(DIAGNOSING_ANSWER);
+    // The response-safety write is refused; the request-risk write that follows gets a slot.
+    mockConsumeRateLimit.mockRejectedValueOnce(new ShadowRateLimitExceeded(1800, 'safety_review'));
+
+    const { status, body } = await send({ message: ALLOWED_HIGH_RISK });
+
+    expect(status).toBe(200);
+    expect(body.state).toBe('filtered');
+    expect(summaries()).toEqual([REQUEST_RISK_SUMMARY]);
+    expect(safetyReviewSlotsTaken()).toBe(2);
+  });
+
+  test('a benign question writes no row and takes no slot', async () => {
+    modelAnswers('Start with ladder work.');
+
+    const { body } = await send({ message: BENIGN });
+
+    expect(body.state).toBe('ok');
+    expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    expect(safetyReviewSlotsTaken()).toBe(0);
+    expect(mockRefundRateLimit).not.toHaveBeenCalled();
+  });
+
+  describe('the safety_review bucket', () => {
+    test.each([
+      ['allowed and answered', ALLOWED_HIGH_RISK, 200],
+      ['withheld', WITHHELD, 400],
+      ['stock line', STOCK_LINE, 200],
+    ])('when the hour is spent the row is not written and the response is unchanged: %s', async (_name, message, expectedStatus) => {
+      modelAnswers();
+      const before = await send({ message });
+
+      jest.clearAllMocks();
+      modelAnswers();
+      mockConsumeRateLimit.mockRejectedValueOnce(new ShadowRateLimitExceeded(1800, 'safety_review'));
+      const after = await send({ message });
+
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+      // Nothing to give back: an over-limit attempt holds no slot.
+      expect(mockRefundRateLimit).not.toHaveBeenCalled();
+      expect(after.status).toBe(expectedStatus);
+      expect(after.status).toBe(before.status);
+      expect(told(after.body)).toEqual(told(before.body));
+    });
+
+    test.each([
+      ['allowed and answered', ALLOWED_HIGH_RISK],
+      ['withheld', WITHHELD],
+      ['stock line', STOCK_LINE],
+    ])('a limiter that FAILS is not a limiter that is spent: the row is still written: %s', async (_name, message) => {
+      modelAnswers();
+      mockConsumeRateLimit.mockRejectedValueOnce(new Error('SHADOW_RATE_LIMIT_UNAVAILABLE'));
+
+      await send({ message });
+
+      expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
+      // No slot was taken, so there is none to give back.
+      expect(mockRefundRateLimit).not.toHaveBeenCalled();
+    });
+
+    test.each([
+      ['allowed and answered', ALLOWED_HIGH_RISK, 1],
+      ['withheld', WITHHELD, 1],
+    ])('a failed insert gives back the exact slot that was taken, once: %s', async (_name, message, attempts) => {
+      modelAnswers();
+      const receipt: ShadowRateLimitReceipt = { ...SAFETY_REVIEW_RECEIPT, windowStartedAtEpochSeconds: 1_790_003_600 };
+      mockConsumeRateLimit.mockResolvedValueOnce(receipt);
+      mockQueueHumanReview.mockRejectedValue(new Error('insert failed'));
+
+      const { status } = await send({ message });
+
+      expect(mockQueueHumanReview).toHaveBeenCalledTimes(attempts);
+      expect(mockRefundRateLimit).toHaveBeenCalledTimes(1);
+      // The receipt the limiter returned, passed back untouched.
+      expect(mockRefundRateLimit.mock.calls[0]?.[0]).toBe(receipt);
+      // The person still gets their response.
+      expect(status).not.toBe(500);
+    });
+
+    test('where the body tells the person a human will review (the fixed fallback line), the write still retries once and then fails the request closed, and gives the slot back first', async () => {
+      modelAnswers();
+      const receipt: ShadowRateLimitReceipt = { ...SAFETY_REVIEW_RECEIPT, windowStartedAtEpochSeconds: 1_790_007_200 };
+      mockConsumeRateLimit.mockResolvedValueOnce(receipt);
+      mockQueueHumanReview.mockRejectedValue(new Error('insert failed'));
+
+      const { status } = await send({ message: STOCK_LINE });
+
+      // Main's behaviour for this write: two attempts, then the request fails.
+      expect(mockQueueHumanReview).toHaveBeenCalledTimes(2);
+      expect(status).toBe(500);
+      expect(mockRefundRateLimit).toHaveBeenCalledTimes(1);
+      expect(mockRefundRateLimit.mock.calls[0]?.[0]).toBe(receipt);
+      // One slot for the request, not one per attempt.
+      expect(safetyReviewSlotsTaken()).toBe(1);
+    });
+
+    test('a retry that succeeds keeps its slot', async () => {
+      modelAnswers();
+      mockQueueHumanReview.mockRejectedValueOnce(new Error('transient')).mockResolvedValueOnce('review-2');
+
+      const { status } = await send({ message: STOCK_LINE });
+
+      expect(status).toBe(200);
+      expect(mockQueueHumanReview).toHaveBeenCalledTimes(2);
+      expect(mockRefundRateLimit).not.toHaveBeenCalled();
+    });
+
+    test('a successful write gives nothing back', async () => {
+      modelAnswers();
+      await send({ message: ALLOWED_HIGH_RISK });
+      await send({ message: WITHHELD });
+      expect(mockQueueHumanReview).toHaveBeenCalledTimes(2);
+      expect(mockRefundRateLimit).not.toHaveBeenCalled();
+    });
+  });
+
+  // THE BACKGROUND PATHS. An allowed high-risk request can leave the route
+  // without an answer: queued for the worker. It still leaves its row, written
+  // when it is queued, and the row says so.
+  describe('a request queued for the worker', () => {
+    // mockReturnValue survives jest.clearAllMocks, and the suites after this
+    // one expect the worker off unless they turn it on.
+    afterEach(() => {
+      mockIsShadowWorkerEnabled.mockReset();
+      mockExecuteHeavyBagAsync.mockReset();
+      mockAppendUserMessage.mockReset();
+    });
+
+    test.each([
+      ['Heavy Bag with preferAsync', { sessionType: 'heavy_bag', preferAsync: true }, 'heavy_bag'],
+      ['a Scout report', { sessionType: 'scout_report' }, 'scout_report'],
+    ])('an allowed high-risk request writes one row at enqueue, marked queued: %s', async (_name, extra, sessionType) => {
+      mockIsShadowWorkerEnabled.mockReturnValue(true);
+      mockAppendUserMessage.mockResolvedValue('user-msg-1');
+      mockExecuteHeavyBagAsync.mockResolvedValue({
+        mode: 'async',
+        jobId: 'job-1',
+        routing: {} as never,
+        sessionType: sessionType as never,
+      });
+      const fetchSpy = modelAnswers();
+
+      const { body } = await send({ message: ALLOWED_HIGH_RISK, ...extra });
+
+      expect(body.state).toBe('queued');
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
+      expect(mockQueueHumanReview.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+        category: 'loss_of_consciousness',
+        severity: 'critical',
+        summary: REQUEST_RISK_SUMMARY,
+        metadata: expect.objectContaining({ sessionType, responseState: 'queued' }),
+      }));
+      expect(safetyReviewSlotsTaken()).toBe(1);
+    });
+
+    test('a benign request queued for the worker writes no row', async () => {
+      mockIsShadowWorkerEnabled.mockReturnValue(true);
+      mockAppendUserMessage.mockResolvedValue('user-msg-1');
+      mockExecuteHeavyBagAsync.mockResolvedValue({
+        mode: 'async',
+        jobId: 'job-2',
+        routing: {} as never,
+        sessionType: 'heavy_bag',
+      });
+
+      const { body } = await send({ message: 'Build a six-week plan from what you know.', sessionType: 'heavy_bag', preferAsync: true });
+
+      expect(body.state).toBe('queued');
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+      expect(safetyReviewSlotsTaken()).toBe(0);
+    });
+
+    test('what a queued requester is told does not depend on the row', async () => {
+      const queue = async () => {
+        mockIsShadowWorkerEnabled.mockReturnValue(true);
+        mockAppendUserMessage.mockResolvedValue('user-msg-1');
+        mockExecuteHeavyBagAsync.mockResolvedValue({ mode: 'async', jobId: 'job-3', routing: {} as never, sessionType: 'heavy_bag' });
+        return send({ message: ALLOWED_HIGH_RISK, sessionType: 'heavy_bag', preferAsync: true });
+      };
+      const written = await queue();
+
+      jest.clearAllMocks();
+      mockConsumeRateLimit.mockRejectedValueOnce(new ShadowRateLimitExceeded(1800, 'safety_review'));
+      const suppressed = await queue();
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+
+      jest.clearAllMocks();
+      mockQueueHumanReview.mockRejectedValueOnce(new Error('insert failed'));
+      const insertFailed = await queue();
+      expect(mockRefundRateLimit).toHaveBeenCalledTimes(1);
+
+      expect(told(suppressed.body)).toEqual(told(written.body));
+      expect(told(insertFailed.body)).toEqual(told(written.body));
+      expect(written.body.requiresHumanReview).toBe(false);
+    });
+  });
+
+  // REFUSED FOR A REASON THAT IS NOT SAFETY. An allowed high-risk request can
+  // be turned away because the mode is not available from chat, the worker is
+  // not configured, or the Heavy Bag allowance is spent. The refusal is
+  // main's; the row is written first.
+  describe('a capability or cost refusal still leaves the row; an authorization refusal does not', () => {
+    const heavyBagCapSpent = () => {
+      mockEnforceRateLimit.mockImplementation(async (input) => {
+        if ((input as { endpointKey: string }).endpointKey === 'heavy_bag') throw new ShadowRateLimitExceeded(1200, 'heavy_bag');
+      });
+    };
+    afterEach(() => {
+      mockEnforceRateLimit.mockReset();
+      mockRetrieveShadowContext.mockReset();
+      mockIsShadowWorkerEnabled.mockReset();
+    });
+
+    test.each([
+      ['Film Study is not available from chat', { sessionType: 'film_study' }, 400, 'filtered', () => undefined],
+      ['the Scout worker is not configured', { sessionType: 'scout_report' }, 503, 'degraded', () => { mockIsShadowWorkerEnabled.mockReturnValue(false); }],
+      ['the Heavy Bag allowance is spent', { sessionType: 'heavy_bag' }, 429, 'filtered', heavyBagCapSpent],
+    ])('%s: the refusal is unchanged and one row is written', async (_name, extra, expectedStatus, responseState, arrange) => {
+      // What main says to a benign message refused the same way.
+      arrange();
+      const benign = await send({ message: BENIGN, ...extra });
+      expect(benign.status).toBe(expectedStatus);
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+
+      jest.clearAllMocks();
+      arrange();
+      const fetchSpy = modelAnswers();
+      const highRisk = await send({ message: ALLOWED_HIGH_RISK, ...extra });
+
+      expect(highRisk.status).toBe(expectedStatus);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      // The same refusal, word for word.
+      expect(highRisk.body.response).toBe(benign.body.response);
+      expect(highRisk.body.error).toBe(benign.body.error);
+      expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
+      expect(mockQueueHumanReview.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+        category: 'loss_of_consciousness',
+        severity: 'critical',
+        summary: REQUEST_RISK_SUMMARY,
+        metadata: expect.objectContaining({ responseState }),
+      }));
+    });
+
+    test('a board summary this role may not run: the 403 is authorization, and writes no row', async () => {
+      const { status, body } = await send({ message: ALLOWED_HIGH_RISK, sessionType: 'board_summary' });
+
+      expect(status).toBe(403);
+      expect(body.error).toBe('Not authorized to generate a board summary.');
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+      expect(safetyReviewSlotsTaken()).toBe(0);
+    });
+
+    test('a context this role may not read: the 403 is authorization, and writes no row', async () => {
+      mockRetrieveShadowContext.mockResolvedValue({ authorized: false, reason: 'Not authorized to access this context' } as never);
+
+      const { status } = await send({ message: ALLOWED_HIGH_RISK });
+
+      expect(status).toBe(403);
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+      expect(safetyReviewSlotsTaken()).toBe(0);
+    });
+  });
+
+  describe('authorization stays above the review write', () => {
+    test('an unauthenticated request writes no row and takes no slot', async () => {
+      modelAnswers();
+      mockRequirePrincipal.mockRejectedValueOnce(new Error('Unauthorized'));
+
+      const { status } = await send({ message: WITHHELD });
+
+      expect(status).toBe(401);
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+      expect(safetyReviewSlotsTaken()).toBe(0);
+    });
+
+    test.each([
+      ['withheld', WITHHELD],
+      ['allowed high-risk', ALLOWED_HIGH_RISK],
+    ])('an athlete the caller may not access: no row, no slot, whatever the message says: %s', async (_name, message) => {
+      modelAnswers();
+      jest.mocked(assertActorCanAccessAthlete).mockRejectedValueOnce(new Error('Forbidden: athlete outside your assignment'));
+
+      const { status } = await send({ message, athleteId: 'athlete-not-mine' });
+
+      expect(status).toBe(403);
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+      expect(safetyReviewSlotsTaken()).toBe(0);
+    });
+
+    test.each([
+      ['withheld', WITHHELD],
+      ['allowed high-risk', ALLOWED_HIGH_RISK],
+    ])('a conversation the caller may not access: no row, no slot, whatever the message says: %s', async (_name, message) => {
+      modelAnswers();
+      jest.mocked(assertConversationAccess).mockRejectedValueOnce(new Error('Forbidden: conversation belongs to another account'));
+
+      const { status } = await send({ message, conversationId: '00000000-0000-4000-8000-000000000301' });
+
+      expect(status).toBe(403);
+      expect(mockQueueHumanReview).not.toHaveBeenCalled();
+      expect(safetyReviewSlotsTaken()).toBe(0);
+    });
+
+    test.each([
+      ['not athlete-scoped', undefined, false],
+      ['athlete-scoped', 'athlete-1', true],
+    ])('an authorized request writes its row either way: %s', async (_name, athleteId, athleteScoped) => {
+      modelAnswers();
+
+      await send(athleteId ? { message: ALLOWED_HIGH_RISK, athleteId } : { message: ALLOWED_HIGH_RISK });
+      await send(athleteId ? { message: WITHHELD, athleteId } : { message: WITHHELD });
+
+      expect(mockQueueHumanReview).toHaveBeenCalledTimes(2);
+      for (const [ticket] of mockQueueHumanReview.mock.calls) {
+        expect((ticket.metadata as Record<string, unknown>).athleteScoped).toBe(athleteScoped);
+      }
+    });
   });
 });
 

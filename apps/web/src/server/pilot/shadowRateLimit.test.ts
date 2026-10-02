@@ -4,10 +4,13 @@ jest.mock('./db', () => ({
 
 import { queryOne } from './db';
 import {
+  consumeShadowRateLimit,
   enforceShadowRateLimit,
+  refundShadowRateLimit,
   resolveShadowRateLimit,
   shadowRateLimitMessage,
   ShadowRateLimitExceeded,
+  type ShadowRateLimitReceipt,
 } from './shadowRateLimit';
 
 const mockQueryOne = queryOne as jest.MockedFunction<typeof queryOne>;
@@ -18,7 +21,7 @@ describe('SHADOW durable rate limiting', () => {
   });
 
   test('allows a request inside the authenticated account bucket', async () => {
-    mockQueryOne.mockResolvedValueOnce({ request_count: 3, retry_after_seconds: 42 });
+    mockQueryOne.mockResolvedValueOnce({ request_count: 3, retry_after_seconds: 42, window_started_epoch: '1790000400' });
 
     await expect(enforceShadowRateLimit({
       organizationId: 'org-1',
@@ -37,7 +40,7 @@ describe('SHADOW durable rate limiting', () => {
   });
 
   test('fails with a bounded retry time when the bucket is over limit', async () => {
-    mockQueryOne.mockResolvedValueOnce({ request_count: 21, retry_after_seconds: 18 });
+    mockQueryOne.mockResolvedValueOnce({ request_count: 21, retry_after_seconds: 18, window_started_epoch: '1790000400' });
 
     await expect(enforceShadowRateLimit({
       organizationId: 'org-1',
@@ -147,5 +150,128 @@ describe('a refusal says when the caller can continue', () => {
 
   test('names the subject so an upload refusal is not read as a chat refusal', () => {
     expect(shadowRateLimitMessage(30, 'video upload')).toContain('video upload');
+  });
+});
+
+// The receipt and the refund. What the refund's SQL does to real rows -- the
+// right row, the right hour, never below zero -- is
+// shadowRateLimitRefund.pg.test.ts's subject. These pin the shape of the two
+// calls and the two behaviours a database cannot show: what is returned when
+// storage answers oddly, and that the refund never throws.
+describe('the receipt: which bucket row a call charged', () => {
+  const INPUT = { organizationId: 'org-1', accountId: 'account-1', endpointKey: 'safety_review', limit: 3, windowSeconds: 3_600 };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('safety_review is three an hour', () => {
+    expect(resolveShadowRateLimit('safety_review', {})).toEqual({ endpointKey: 'safety_review', limit: 3, windowSeconds: 3_600 });
+  });
+
+  test('a charge inside the limit returns the window the database chose, read back from the row', async () => {
+    // pg hands a bigint back as a string.
+    mockQueryOne.mockResolvedValueOnce({ request_count: 3, retry_after_seconds: 900, window_started_epoch: '1790000400' });
+
+    await expect(consumeShadowRateLimit(INPUT)).resolves.toEqual({
+      organizationId: 'org-1',
+      accountId: 'account-1',
+      endpointKey: 'safety_review',
+      windowSeconds: 3_600,
+      windowStartedAtEpochSeconds: 1_790_000_400,
+    });
+    expect(mockQueryOne.mock.calls[0][0]).toContain('extract(epoch from window_started_at)::bigint as window_started_epoch');
+    expect(mockQueryOne.mock.calls[0][0]).toContain('returning request_count, window_started_at');
+  });
+
+  test('the fourth is refused, with no receipt', async () => {
+    mockQueryOne.mockResolvedValueOnce({ request_count: 4, retry_after_seconds: 1200, window_started_epoch: '1790000400' });
+
+    await expect(consumeShadowRateLimit(INPUT)).rejects.toEqual(expect.objectContaining({
+      name: 'ShadowRateLimitExceeded',
+      retryAfterSeconds: 1200,
+      endpointKey: 'safety_review',
+    }));
+  });
+
+  test('storage that answers with no row, or with no usable window, is UNAVAILABLE and not "exceeded"', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    await expect(consumeShadowRateLimit(INPUT)).rejects.toThrow('SHADOW_RATE_LIMIT_UNAVAILABLE');
+
+    mockQueryOne.mockResolvedValueOnce({ request_count: 1, retry_after_seconds: 10, window_started_epoch: 'not-a-number' } as never);
+    const noWindow = consumeShadowRateLimit(INPUT);
+    await expect(noWindow).rejects.toThrow('SHADOW_RATE_LIMIT_UNAVAILABLE');
+    await expect(noWindow).rejects.not.toBeInstanceOf(ShadowRateLimitExceeded);
+
+    mockQueryOne.mockRejectedValueOnce(new Error('connection refused'));
+    const down = consumeShadowRateLimit(INPUT);
+    await expect(down).rejects.toThrow('connection refused');
+    await expect(down).rejects.not.toBeInstanceOf(ShadowRateLimitExceeded);
+  });
+
+  test('enforceShadowRateLimit is the same call with the receipt dropped', async () => {
+    mockQueryOne.mockResolvedValueOnce({ request_count: 1, retry_after_seconds: 10, window_started_epoch: '1790000400' });
+    await expect(enforceShadowRateLimit(INPUT)).resolves.toBeUndefined();
+    expect(mockQueryOne).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the refund: give back the one slot a receipt names', () => {
+  const RECEIPT: ShadowRateLimitReceipt = {
+    organizationId: 'org-1',
+    accountId: 'account-1',
+    endpointKey: 'safety_review',
+    windowSeconds: 3_600,
+    windowStartedAtEpochSeconds: 1_790_000_400,
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test("it names the receipt's own window and never asks the clock", async () => {
+    mockQueryOne.mockResolvedValueOnce({ request_count: 2 });
+
+    await expect(refundShadowRateLimit(RECEIPT)).resolves.toBe(true);
+
+    const [sql, params] = mockQueryOne.mock.calls[0];
+    expect(params).toEqual(['org-1', 'account-1', 'safety_review', 1_790_000_400, 3_600]);
+    expect(sql).toContain('window_started_at = to_timestamp($4::bigint)');
+    expect(sql).toContain('window_seconds = $5');
+    expect(sql).toContain('request_count > 0');
+    // The earlier refund worked out "the current window" here. This one must not.
+    expect(sql).not.toContain('clock_timestamp');
+    expect(sql).not.toMatch(/insert/i);
+  });
+
+  test('no matching row: false', async () => {
+    mockQueryOne.mockResolvedValueOnce(null);
+    await expect(refundShadowRateLimit(RECEIPT)).resolves.toBe(false);
+  });
+
+  test('a malformed receipt is refused before storage is touched', async () => {
+    for (const bad of [
+      { ...RECEIPT, organizationId: '  ' },
+      { ...RECEIPT, accountId: '' },
+      { ...RECEIPT, endpointKey: 'chat;drop' },
+      { ...RECEIPT, windowSeconds: 0 },
+      { ...RECEIPT, windowSeconds: 86_401 },
+      { ...RECEIPT, windowStartedAtEpochSeconds: 1.5 },
+      { ...RECEIPT, windowStartedAtEpochSeconds: -1 },
+    ]) {
+      await expect(refundShadowRateLimit(bad)).resolves.toBe(false);
+    }
+    expect(mockQueryOne).not.toHaveBeenCalled();
+  });
+
+  test('it never throws: a failing database comes back false, and the log carries no detail', async () => {
+    const quiet = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      mockQueryOne.mockRejectedValueOnce(new Error('relation "pilot.shadow_rate_limit_buckets" does not exist'));
+      await expect(refundShadowRateLimit(RECEIPT)).resolves.toBe(false);
+      expect(quiet).toHaveBeenCalledWith('SHADOW rate-limit refund failed');
+    } finally {
+      quiet.mockRestore();
+    }
   });
 });

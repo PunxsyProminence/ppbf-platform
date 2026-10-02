@@ -28,6 +28,25 @@ export class ShadowRateLimitExceeded extends Error {
 interface RateLimitRow {
   request_count: number;
   retry_after_seconds: number;
+  window_started_epoch: string | number;
+}
+
+/**
+ * Which bucket row one call incremented.
+ *
+ * Returned by consumeShadowRateLimit so that a caller who has to give the
+ * slot back can name the row it took it from. The window is the one the
+ * database chose when it incremented -- read back from the row, never worked
+ * out again from the clock -- so a refund issued after the hour has turned
+ * still lands on the hour that was charged, or on nothing.
+ */
+export interface ShadowRateLimitReceipt {
+  organizationId: string;
+  accountId: string;
+  endpointKey: string;
+  windowSeconds: number;
+  /** Start of the charged window, in whole seconds since the epoch. */
+  windowStartedAtEpochSeconds: number;
 }
 
 export interface ShadowRateLimitPolicy {
@@ -76,6 +95,12 @@ const RATE_LIMIT_DEFAULTS = {
   // batch of session video is the one action here with an unbounded byte cost.
   shadow_upload: { limit: 40, windowSeconds: 3_600 },
   video_upload: { limit: 20, windowSeconds: 3_600 },
+  // The human-review queue write (OD-2026-09-30-005: "3 per hour"). It counts
+  // review ROWS, per account. Reaching it suppresses the row and nothing
+  // else: the person still gets their response. A slot whose row was never
+  // written is given back (refundShadowRateLimit), so the hour is spent on
+  // rows, not on attempts (OD-2026-09-30-006: "Refund on failure").
+  safety_review: { limit: 3, windowSeconds: 3_600 },
 } as const;
 
 export type ShadowRateLimitKey = keyof typeof RATE_LIMIT_DEFAULTS;
@@ -122,6 +147,27 @@ export async function enforceShadowRateLimit(input: {
   limit: number;
   windowSeconds: number;
 }): Promise<void> {
+  await consumeShadowRateLimit(input);
+}
+
+/**
+ * enforceShadowRateLimit, returning what it charged.
+ *
+ * Same statement, same checks, same errors: it throws ShadowRateLimitExceeded
+ * when the incremented count is over the limit, and SHADOW_RATE_LIMIT_UNAVAILABLE
+ * when the database returns no row. On success it returns a receipt naming the
+ * exact bucket row it incremented.
+ *
+ * A call that throws ShadowRateLimitExceeded HAS incremented the row. That is
+ * deliberate and unchanged: an over-limit attempt holds no slot to give back.
+ */
+export async function consumeShadowRateLimit(input: {
+  organizationId: string;
+  accountId: string;
+  endpointKey: string;
+  limit: number;
+  windowSeconds: number;
+}): Promise<ShadowRateLimitReceipt> {
   if (!input.organizationId.trim() || !input.accountId.trim()) {
     throw new Error('Forbidden: SHADOW rate limiting requires an authenticated tenant owner');
   }
@@ -167,7 +213,8 @@ export async function enforceShadowRateLimit(input: {
        greatest(
          1,
          ceil(extract(epoch from (window_started_at + ($4 * interval '1 second') - clock_timestamp())))
-       )::integer as retry_after_seconds
+       )::integer as retry_after_seconds,
+       extract(epoch from window_started_at)::bigint as window_started_epoch
      from updated`,
     [
       input.organizationId,
@@ -182,5 +229,69 @@ export async function enforceShadowRateLimit(input: {
   }
   if (row.request_count > input.limit) {
     throw new ShadowRateLimitExceeded(row.retry_after_seconds, input.endpointKey);
+  }
+  const windowStartedAtEpochSeconds = Number(row.window_started_epoch);
+  if (!Number.isSafeInteger(windowStartedAtEpochSeconds)) {
+    throw new Error('SHADOW_RATE_LIMIT_UNAVAILABLE');
+  }
+  return {
+    organizationId: input.organizationId,
+    accountId: input.accountId,
+    endpointKey: input.endpointKey,
+    windowSeconds: input.windowSeconds,
+    windowStartedAtEpochSeconds,
+  };
+}
+
+/**
+ * Give back the one slot a receipt names.
+ *
+ * WHY IT EXISTS. For every other bucket the attempt is the cost, and counting
+ * it is right. For `safety_review` it is not: the limiter increments, then
+ * the human-review insert runs, and that insert can fail. Three failed
+ * inserts would spend an account's whole hour while persisting nothing, and
+ * the next real report that hour would be suppressed as "exhausted".
+ *
+ * WHAT IT TOUCHES: exactly the row the receipt names -- this organization,
+ * this account, this endpoint, THIS window -- and only if its count is above
+ * zero. It does not look at the clock. A refund that arrives after the hour
+ * has turned decrements the hour that was charged; if that row has been
+ * purged it decrements nothing. It never creates a row, never goes below
+ * zero, and never touches the current window unless that is the one charged.
+ *
+ * Returns whether a row was decremented. NEVER THROWS: it is called while a
+ * failure is already being handled, and a second failure there has nowhere
+ * useful to go.
+ */
+export async function refundShadowRateLimit(receipt: ShadowRateLimitReceipt): Promise<boolean> {
+  try {
+    if (!receipt.organizationId.trim() || !receipt.accountId.trim()) return false;
+    if (!/^[a-z0-9:_-]{1,80}$/.test(receipt.endpointKey)) return false;
+    if (!Number.isSafeInteger(receipt.windowSeconds) || receipt.windowSeconds < 1 || receipt.windowSeconds > 86_400) return false;
+    if (!Number.isSafeInteger(receipt.windowStartedAtEpochSeconds) || receipt.windowStartedAtEpochSeconds < 0) return false;
+
+    const row = await queryOne<{ request_count: number }>(
+      `update pilot.shadow_rate_limit_buckets
+          set request_count = request_count - 1,
+              updated_at = now()
+        where organization_id = $1
+          and account_id = $2
+          and endpoint_key = $3
+          and window_started_at = to_timestamp($4::bigint)
+          and window_seconds = $5
+          and request_count > 0
+        returning request_count`,
+      [
+        receipt.organizationId,
+        receipt.accountId,
+        receipt.endpointKey,
+        receipt.windowStartedAtEpochSeconds,
+        receipt.windowSeconds,
+      ],
+    );
+    return Boolean(row);
+  } catch {
+    console.error('SHADOW rate-limit refund failed');
+    return false;
   }
 }
