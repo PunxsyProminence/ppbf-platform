@@ -517,6 +517,43 @@ This is the architect's sequencing, recorded so later lanes can find it; it is
 not an owner decision.
 
 ---
+## OD-2026-10-01-005 -- The floor takes photographs again, and the two it used to carry were the wrong building
+
+**Provenance: PRIMARY.** Jason, typed in the visuals lane, 2026-10-01:
+
+> *"my decision if im was clear is to edit change rewrite what ever we need to
+> do to get these plate varieties remove my decision about the floor"*
+
+That rescinds OD-2026-09-22's ruling, recorded in `ppbf-golden-era.css` as *"im
+not tied down to actual gym pictures"*, under which `.room--floor` carried
+`--plate: none`. The floor is 40 of 129 doors and **35 of those are coach or
+athlete** -- the room the gym actually works in, and the only one painting
+nothing.
+
+**The material ground stays and is now worth more.** It is the element
+background and the plate paints over it, so it is what a coach sees on a 404,
+offline, or under `prefers-reduced-data`: a designed black-and-grain floor
+rather than the generic gradient wall. The zero-asset guarantee improved.
+
+**The two plates it used to declare are NOT restored.** Opened at full size on
+2026-10-01, `plate-02a-floor-landscape-01` and `plate-02b-floor-portrait-01` are
+a generic dark red brick wall -- not this building, which is honey plank, pale
+block and matte black chalkboard. They are replaced. Two further floor
+candidates were rejected the same day: `plate-02b-floor-portrait-02` (a chalk
+wall covered in invented words) and `plate-02b-floor-portrait-ring-01`
+(`EVERLAST` on a turnbuckle). Of eight floor candidates, five failed.
+
+**What he also asked for, applied here and continuing:**
+
+> *"it can feel like a boxing gym in it so rings bags speed bags timer bell, you
+> can be more creative with the plates withoput losing the gym identity"*
+
+and, when this lane began writing a long brief instead of producing plates:
+
+> *"i feel like you starting to over complicate these plates, i just need a
+> variety of plates with the gym feel made and given a home"*
+
+So: generate, check, bind. Not document.
 
 ## OD-2026-10-01-004 -- The visuals lane: plate variety comes from doors, not new rooms; a declared format conversion is allowed and the original must be kept; board and file get light plates behind a new contrast guard
 
