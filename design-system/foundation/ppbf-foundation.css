@@ -19,8 +19,8 @@
    legacy sheet, values and comments intact, because 5,884 call sites across
    apps/web already use these exact names (4,089 spacing, 977 type, 759
    radius, 59 tap). Renaming any of them is not a refactor, it is a rewrite of
-   the application. foundationMatchesLegacy.test.ts asserts the copy has not
-   drifted.
+   the application. foundationMatchesLegacy.test.ts now checks only the --tap,
+   --t-md and --focus floors in both sheets, not general equality.
 
    WHAT MAY BE ADDED HERE. Only things that are true of any visual system:
    box sizing, focus visibility, minimum control size, spacing/type/radius

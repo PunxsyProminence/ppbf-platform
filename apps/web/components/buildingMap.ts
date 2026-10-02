@@ -47,10 +47,11 @@ import type { ClubRole } from './roleRoutes';
  *
  * `room` IS NOT AN OPINION HELD HERE. It is a copy of what the page paints --
  * its own `.room--*` class, or the `room=` it hands RoleStandaloneView -- and
- * the two are compared route by route in buildingMapRooms.test.ts. Fourteen
- * doors had drifted from their page before that test existed, and every one of
- * them was invisible: the catalog said Front Office, the wall came up clinic
- * green, and the suite was green too.
+ * until 2026-10-02 the two were compared route by route in
+ * buildingMapRooms.test.ts; that test was removed (OD-2026-10-02-004), so
+ * nothing compares them now. Fourteen doors had drifted from their page before
+ * that test existed, and every one of them was invisible: the catalog said
+ * Front Office, the wall came up clinic green, and the suite was green too.
  *
  * So a room is not changed here alone. Decide what the SURFACE is for
  * (docs/shadow-ui/ROOM-PURPOSE-DNA.md), then move whichever of the two is
@@ -86,7 +87,7 @@ export interface Door {
   href: string;
   label: string;
   /** Which room the surface stands in — matches the .room--* ground it renders
-      on, and buildingMapRooms.test.ts fails if it stops matching. */
+      on (buildingMapRooms.test.ts checked that until 2026-10-02; no test does now). */
   room: Room;
   /** Advisory visibility only. See the header note. */
   roles: readonly ClubRole[] | typeof OPEN;
@@ -573,8 +574,8 @@ export const BUILDING: readonly Door[] = [
      -> simulator -> audit, and every one of those is the file room. The page
      reads no gym record and touches no athlete: it is a front-end sandbox for
      what-ifs, which is archive work, not floor work. The page still paints
-     .room--office and needs the matching edit -- see buildingMapRooms.test.ts,
-     PAGE_IS_WRONG. */
+     .room--office and needs the matching edit (buildingMapRooms.test.ts flagged this
+     as PAGE_IS_WRONG until it was removed 2026-10-02). */
   /* OPERATIONS V1 (owner decision, 2026-08-21): the lab doors leave ordinary
      navigation. /simulator, /knowledge-graph, /source-control and
      /publication-workflow are development-lab surfaces, not anybody's

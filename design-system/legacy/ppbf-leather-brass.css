@@ -70,9 +70,9 @@
      CSS cannot unpack a hex into channels, so these are stated rather than
      derived, and each MUST track the hex above it. Any scope redefining a
      --brass-N must redefine --brass-N-rgb alongside it.
-     src/design/brassAlphaChannel.test.ts checks each triple against its own
-     hex, requires the pair to move together in every scope, and fails any
-     re-appearance of a brass literal. */
+     src/design/brassAlphaChannel.test.ts used to check each triple against
+     its own hex and require the pair to move together in every scope; it was
+     removed 2026-10-02 (OD-2026-10-02-004), so keep the pair together by hand. */
   --brass-900-rgb:  74  52  11;
   --brass-800-rgb: 107  78  18;
   --brass-700-rgb: 140 107  31;

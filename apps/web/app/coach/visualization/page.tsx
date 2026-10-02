@@ -192,8 +192,8 @@ export default function CoachVisualizationPage() {
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
       {/* The ground is painted with tokens, not with a retired room class:
-          src/design/legacyVisualVocabulary.test.ts froze that vocabulary at the
-          count it measured, and a screen written from here on adds none.
+          src/design/legacyVisualVocabulary.test.ts froze that vocabulary until
+          2026-10-02 and no longer does (OD-2026-10-02-004); this screen adds none.
           data-surface="kiosk" because a coach reads this at arm's length on the
           floor (Law 5). */}
       <main

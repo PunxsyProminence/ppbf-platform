@@ -240,17 +240,15 @@ export default function AthleteIntelligencePage() {
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
       {/* THIS SCREEN PAINTS NO ROOM CLASS, DELIBERATELY -- and this note avoids
-          spelling the class prefix, because legacyVisualVocabulary.test.ts
-          counts raw occurrences and does not skip comments, so explaining the
-          rule in the token's own letters breaks it.
+          spelling the class prefix. Until 2026-10-02 legacyVisualVocabulary.test.ts
+          counted raw occurrences, comments included, which is why; that test
+          was removed (OD-2026-10-02-004) and the spelling can be relaxed when
+          someone is next in this note.
 
           Rooms were retired as a visual concept by owner decision on
-          2026-08-23. That guard freezes the family at its reset count and says
-          it in as many words: "a screen written from here on does not paint
-          one", and the ceiling "may not go up". The peer coach surfaces beside
-          this one all paint theirs; that is frozen debt, not a pattern to copy.
-          buildingMapRooms.test.ts no longer requires the paint to match the
-          door, and the door in buildingMap.ts still files this page under
+          2026-08-23. The peer coach surfaces beside this one all paint theirs;
+          that is older work, not a pattern to copy. No test requires the paint
+          to match the door any more, and the door in buildingMap.ts still files this page under
           `room: 'floor'` -- kept by that same decision as STRUCTURAL METADATA,
           which is routing, not appearance. */}
       <main className="min-h-screen bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">

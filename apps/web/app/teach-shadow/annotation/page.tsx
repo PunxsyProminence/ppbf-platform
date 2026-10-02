@@ -684,10 +684,10 @@ export default function CoachCalibrationPage() {
   return (
     /* The gym-floor shell, not a hand-rolled <main>. It supplies the room --
        ground, lamp and plate layer -- from the `room` prop, which is also what
-       buildingMapRooms.test.ts reads to check this page against its door. A
-       page that painted the room classes itself would be a second answer to
-       "what room is this", and would add another use of the retired visual
-       vocabulary that legacyVisualVocabulary.test.ts is ratcheting down. */
+       buildingMapRooms.test.ts used to read to check this page against its door
+       (removed 2026-10-02, OD-2026-10-02-004). A page that painted the room
+       classes itself would be a second answer to "what room is this", and
+       would add another use of the retired visual vocabulary. */
     <RoleStandaloneView
       roleLabel="Coach Workspace"
       routeLabel="/teach-shadow/annotation"

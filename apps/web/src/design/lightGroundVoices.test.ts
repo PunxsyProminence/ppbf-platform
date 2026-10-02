@@ -69,7 +69,7 @@ function voicesRestatedFor(ground: string): Set<string> {
 /**
  * Not every canvas restatement is owed by paper, and the difference is not
  * contrast -- it is which room the thing belongs to. A value here is the reason
- * a voice is exempt, in the same shape as UNPAINTED in buildingMapRooms.test.ts:
+ * a voice is exempt, in the same shape as UNPAINTED in the buildingMapRooms.test.ts removed 2026-10-02:
  * the list records decisions, and anything not on it is owed an answer.
  *
  * OPEN, deliberately not resolved here: the five controls below are a design

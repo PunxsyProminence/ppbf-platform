@@ -213,8 +213,9 @@ export default function RoleStandaloneView({
            the base ground -- and a pseudo-element selector that never matches
            produces no warning anywhere. Three surfaces in the whole app wrote
            the pair by hand (/chalkboard, /wall, /names) and they were the only
-           three that looked like lit rooms. Hence roomBaseClass.test.ts, which
-           fails if this string loses the base again.
+           three that looked like lit rooms. A test (roomBaseClass.test.ts) used to
+           fail if this string lost the base; it was removed 2026-10-02, so
+           nothing checks the pair now.
 
            The ink branch also drops `bg-[var(--hide-950)]` once a room is
            present. It was already dead there -- .room--X states both a

@@ -45,7 +45,7 @@ import path from 'node:path';
  * 2. UNEVIDENCED `DONE` IS CAPPED, NOT BANNED. Existing debt passes: the
  *    ceiling is measured below, at today's count. One MORE unevidenced DONE
  *    fails the run and names the module. Same shape as
- *    legacyVisualVocabulary.test.ts -- tolerate what is there, refuse growth --
+ *    the legacyVisualVocabulary.test.ts that was removed 2026-10-02 -- tolerate what is there, refuse growth --
  *    because retro-evidencing 54 modules is a body of work, not a line edit,
  *    and blocking the suite until it is done would just get the guard deleted.
  *

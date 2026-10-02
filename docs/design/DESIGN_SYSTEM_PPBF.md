@@ -79,9 +79,9 @@ know about this file. Its own header (lines 21–26) says so:
 **Adding new work:** it is usually easiest written against the foundation's
 mechanics (`--t-*`, `--s*`, `--r-*`, `--tap`) and the current theme's own tokens
 (`globals.css:28-33`). The aliases exist to carry legacy pages.
-`legacyVisualVocabulary.test.ts` caps 18 of them by name (`ALIAS_CEILINGS`,
-`legacyVisualVocabulary.test.ts:64-83`, counting .tsx under `app/` and
-`components/` only); the rest are uncapped.
+Until 2026-10-02 `legacyVisualVocabulary.test.ts` capped 18 of them by name
+(`ALIAS_CEILINGS`); that test was removed (OD-2026-10-02-004) and none of them
+is capped now.
 
 ### One theme today
 

@@ -71,7 +71,7 @@ const PAGE_SOURCE = readFileSync(path.join(__dirname, 'page.tsx'), 'utf8');
  * names the things it forbids while doing it -- "/api/pilot/*" appears in the
  * page's comment saying it never calls one. Stripping comments first is what
  * keeps the checks below failing on a real call rather than on an accurate
- * sentence. Same move, and the same reason, as roomBaseClass.test.ts.
+ * sentence. Same move, and the same reason, as the roomBaseClass.test.ts that was removed 2026-10-02.
  */
 function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/g, '$1');

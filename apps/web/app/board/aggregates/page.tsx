@@ -333,12 +333,11 @@ export default function BoardAggregatesPage() {
     <RoleSessionGate allowedRoles={['board']}>
       {/* No room modifier class here, on purpose, unlike the two sibling
           board pages. Rooms were retired as a VISUAL concept by owner decision
-          2026-08-23: buildingMapRooms.test.ts no longer requires a page to
-          paint the room its door files it under, and
-          legacyVisualVocabulary.test.ts freezes the retired room-modifier
-          vocabulary at the occurrence count measured that day (143) -- a
-          ceiling the tree sits exactly on, so a new screen wearing one would
-          spread a vocabulary that guard exists to shrink. The door in
+          2026-08-23: a page is no longer required to paint the room its door
+          files it under. Until 2026-10-02 a test (legacyVisualVocabulary.test.ts)
+          froze the retired room-modifier vocabulary at the count measured that
+          day (143); it was removed (OD-2026-10-02-004), and this page simply
+          does not add to that vocabulary. The door in
           buildingMap.ts still files this surface under the board room; that is
           structural metadata, which the same decision kept deliberately. The
           ground below is the board room's own ink, the same pair the siblings

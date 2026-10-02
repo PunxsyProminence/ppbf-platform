@@ -736,8 +736,8 @@
    beside it keeps painting the inherited legacy gold -- a bronze frame wearing
    a gold hairline, with no forgotten property to find. That is the exact leak
    this seam exists to prevent, so the pair moves together;
-   src/design/brassAlphaChannel.test.ts fails any scope that moves only one of
-   them, and checks each triple against its own hex. */
+   nothing checks this any more (src/design/brassAlphaChannel.test.ts was
+   removed 2026-10-02, OD-2026-10-02-004); keep the pair together by hand. */
 .ge-board {
   --brass-200: #E7C88A;
   --brass-200-rgb: 231 200 138;
@@ -1121,8 +1121,8 @@
      hex here without the triple would leave every one of those rules
      painting the INHERITED gold over bronze fills, on the most shared
      furniture in the scope: the exact leak this override exists to close.
-     They move together, and src/design/brassAlphaChannel.test.ts fails any
-     scope that separates them. */
+     They move together; nothing checks this any more (src/design/brassAlphaChannel.test.ts
+     was removed 2026-10-02, OD-2026-10-02-004), so keep the pair together by hand. */
   --brass-200: #E7C88A;
   --brass-200-rgb: 231 200 138;
   --brass-300: #D6B063;
@@ -1487,11 +1487,11 @@
    WHY THE LAMP IS DRAWN HERE AND NOT WITH .room--lit-center. The sheet already
    owns the exact fixture this reference draws: `.room--lit-center`, "one lamp
    overhead instead of two in the corners". It is not reached for, because it is
-   a `room--` class and legacyVisualVocabulary.test.ts freezes `room--` at 143
-   occurrences across app/ and components/ -- spending the retired vocabulary's
-   frozen ceiling to buy a light is the exact debt that guard exists to stop.
-   The single-lamp read is drawn on the scope instead. It costs no ceiling, and
-   it hangs off the board rather than the wall, which is what a fixture over a
+   a `room--` class, and until 2026-10-02 legacyVisualVocabulary.test.ts froze
+   `room--` at 143 occurrences across app/ and components/; that cap is gone
+   (OD-2026-10-02-004), so the choice below is no longer forced by it.
+   The single-lamp read is drawn on the scope instead. It
+   hangs off the board rather than the wall, which is what a fixture over a
    board actually does.
 
    WHAT IS DELIBERATELY NOT DONE HERE.
@@ -1537,8 +1537,8 @@
      hex here without the triple would leave every one of those rules
      painting the INHERITED gold over bronze fills, on the most shared
      furniture in the scope: the exact leak this override exists to close.
-     They move together, and src/design/brassAlphaChannel.test.ts fails any
-     scope that separates them. */
+     They move together; nothing checks this any more (src/design/brassAlphaChannel.test.ts
+     was removed 2026-10-02, OD-2026-10-02-004), so keep the pair together by hand. */
   --brass-200: #E7C88A;
   --brass-200-rgb: 231 200 138;
   --brass-300: #D6B063;
@@ -1805,8 +1805,8 @@
      hex here without the triple would leave every one of those rules
      painting the INHERITED gold over bronze fills, on the most shared
      furniture in the scope: the exact leak this override exists to close.
-     They move together, and src/design/brassAlphaChannel.test.ts fails any
-     scope that separates them. */
+     They move together; nothing checks this any more (src/design/brassAlphaChannel.test.ts
+     was removed 2026-10-02, OD-2026-10-02-004), so keep the pair together by hand. */
   --brass-200: #E7C88A;
   --brass-200-rgb: 231 200 138;
   --brass-300: #D6B063;
@@ -2242,8 +2242,8 @@
      hex here without the triple would leave every one of those rules
      painting the INHERITED gold over bronze fills, on the most shared
      furniture in the scope: the exact leak this override exists to close.
-     They move together, and src/design/brassAlphaChannel.test.ts fails any
-     scope that separates them. */
+     They move together; nothing checks this any more (src/design/brassAlphaChannel.test.ts
+     was removed 2026-10-02, OD-2026-10-02-004), so keep the pair together by hand. */
   --brass-200: #E7C88A;
   --brass-200-rgb: 231 200 138;
   --brass-300: #D6B063;
@@ -2470,8 +2470,8 @@
    alpha rule beside it keeps painting the inherited legacy gold -- a bronze
    frame wearing a gold hairline, with no forgotten property to find. That is
    the exact leak this seam exists to prevent, so the pair moves together;
-   src/design/brassAlphaChannel.test.ts fails any scope that moves only one
-   of them, and checks each triple against its own hex. */
+   nothing checks this any more (src/design/brassAlphaChannel.test.ts was
+   removed 2026-10-02, OD-2026-10-02-004); keep the pair together by hand. */
 .ge-drillcase {
   --brass-200: #E7C88A;
   --brass-200-rgb: 231 200 138;
@@ -2779,8 +2779,8 @@
    alpha rule beside it keeps painting the inherited legacy gold -- a bronze
    frame wearing a gold hairline, with no forgotten property to find. That is
    the exact leak this seam exists to prevent, so the pair moves together;
-   src/design/brassAlphaChannel.test.ts fails any scope that moves only one
-   of them, and checks each triple against its own hex. */
+   nothing checks this any more (src/design/brassAlphaChannel.test.ts was
+   removed 2026-10-02, OD-2026-10-02-004); keep the pair together by hand. */
 .ge-locker {
   --brass-200: #E7C88A;
   --brass-200-rgb: 231 200 138;
@@ -2890,8 +2890,8 @@
    alpha rule beside it keeps painting the inherited legacy gold -- a bronze
    frame wearing a gold hairline, with no forgotten property to find. That is
    the exact leak this seam exists to prevent, so the pair moves together;
-   src/design/brassAlphaChannel.test.ts fails any scope that moves only one
-   of them, and checks each triple against its own hex. */
+   nothing checks this any more (src/design/brassAlphaChannel.test.ts was
+   removed 2026-10-02, OD-2026-10-02-004); keep the pair together by hand. */
 .ge-floorboard {
   --brass-200: #E7C88A;
   --brass-200-rgb: 231 200 138;
@@ -3339,8 +3339,8 @@
    beside it keeps painting the inherited legacy gold -- a bronze cabinet
    wearing a gold hairline, with no forgotten property to find. That is the
    exact leak this seam exists to prevent, so the pair moves together;
-   src/design/brassAlphaChannel.test.ts fails any scope that moves only one of
-   them, and checks each triple against its own hex. */
+   nothing checks this any more (src/design/brassAlphaChannel.test.ts was
+   removed 2026-10-02, OD-2026-10-02-004); keep the pair together by hand. */
 .ge-file {
   --brass-200: #E7C88A;
   --brass-200-rgb: 231 200 138;
@@ -3708,9 +3708,10 @@
    is the whole contract that keeps the frame, rivets, buttons and keylines off
    legacy gold.
 
-   TWO GUARDS HOLD THIS. src/design/goldenEraTokenScope.test.ts is the STATIC
-   contract check (the scope declares every rung, each differs from legacy, the
-   page carries the class). The RESOLVED-STYLE proof -- that a component inside
+   src/design/goldenEraTokenScope.test.ts was the STATIC contract check (the
+   scope declares every rung, each differs from legacy, the page carries the
+   class); that static guard was removed 2026-10-02 (OD-2026-10-02-004). The
+   RESOLVED-STYLE proof -- that a component inside
    .ge-bell actually computes to bronze on the real /login page, and that
    removing a rung makes it fall back to legacy -- lives in
    e2e/public-homepage.spec.ts, read from a browser's own getComputedStyle,
@@ -3727,8 +3728,8 @@
    alpha rule beside it keeps painting the inherited legacy gold -- a bronze
    frame wearing a gold hairline, with no forgotten property to find. That is
    the exact leak this seam exists to prevent, so the pair moves together;
-   src/design/brassAlphaChannel.test.ts fails any scope that moves only one
-   of them, and checks each triple against its own hex. */
+   nothing checks this any more (src/design/brassAlphaChannel.test.ts was
+   removed 2026-10-02, OD-2026-10-02-004); keep the pair together by hand. */
 .ge-bell {
   --brass-200: #E7C88A;
   --brass-200-rgb: 231 200 138;
@@ -4210,9 +4211,9 @@
    this scope has on them. Redefine a rung and leave its triple behind and the
    scope splits down the middle: everything solid turns bronze while every
    alpha rule beside it keeps painting the inherited legacy gold, with no
-   forgotten property to find. src/design/brassAlphaChannel.test.ts fails any
-   scope that moves only one of them, and checks each triple against its own
-   hex. */
+   forgotten property to find. Nothing checks this any more (the test that did,
+   src/design/brassAlphaChannel.test.ts, was removed 2026-10-02,
+   OD-2026-10-02-004); keep the pair together by hand. */
 .ge-clinic {
   --brass-900: #392910;  --brass-900-rgb:  57  41  16;
   --brass-800: #533D18;  --brass-800-rgb:  83  61  24;
