@@ -164,6 +164,97 @@ and should not try to.
 
 ---
 
+## OD-2026-10-02-011 -- PPBF builds its own pose model from nothing; coaches hand-mark every point until it exists (replaces pick 8A); it runs inside the app on the gym's own devices. The agreement screen's opening sentence
+
+**Provenance: PRIMARY.** Typed by Jason in the teach-data lane's thread and
+the agreement-report lane's thread on 2026-10-02, and read by overwatch in
+each transcript (`~/.claude/projects/C--Dev/346c32ec-ec56-4fad-817d-8da2643fb879.jsonl`
+and `~/.claude/projects/C--Dev/07cd0b14-cb11-403c-871d-01b351819222.jsonl`).
+This entry is new and edits no earlier one. **Section 2 replaces pick 8A of
+OD-2026-10-02-008 section 3**; that entry's text is not edited. Nothing in
+sections 1 to 3 is built, designed or costed.
+
+### 1. Where the pose tool runs
+
+To the architect's question of tablet or server he said: *"It needs to be part
+of the app"* (21:33:17Z); then *"Tablet is not the only hardware available"*
+(21:40:58Z); asked which hardware, *"The pc this tablet galaxy s10  phones and
+android if possible"* (21:45:22Z); asked whether "galaxy s10" was the tablet or
+the phones, *"Tablet"* (21:51:12Z).
+
+**The pose tool is part of the app and runs on the gym's own devices:** this
+Windows PC, a Samsung Galaxy Tab S10, phones, and Android generally if
+possible. No server was chosen. Phone models and the exact tablet variant are
+not stated.
+
+### 2. Build our own, from nothing
+
+He asked for the remaining decisions one at a time: *"Ask each individual pros
+cons and options"* (22:05:58Z). To the first (run a read-and-test proof of an
+existing pose tool) he replied: *"1 Can we build our own"* (22:14:42Z). The
+lane answered (22:14:56Z) with two options:
+
+"Option D: build a pose tool from nothing. Training from scratch: teaching a
+blank model to find body points using only your own labelled footage." Its
+stated cons: "it needs a very large amount of labelled footage before it works
+at all ... You have close to none yet. It also needs paid graphics-card
+computing time and machine-learning work that is currently parked. Until it
+works, coaches hand-mark every point with no help." and "Whether it produces a
+usable tool from the footage you'll have is NOT SURE".
+
+"Option E (recommended): start from an existing tool, and turn it into yours.
+Fine-tuning: taking a tool that already finds bodies and continuing its
+training on your footage."
+
+Jason, whole message (22:15:39Z): *"D"*.
+
+**D.** PPBF builds its own pose model from nothing, trained only on its own
+labelled footage. No third-party pose model is its base.
+
+The lane then asked what coaches use until that model exists (22:16:01Z): "A:
+fully manual landmark annotation. B: an existing pose tool as a temporary
+pre-fill aid only, replaced by the PPBF model when it passes its acceptance
+test." (B was its recommendation.) Jason, whole message (22:24:53Z): *"The
+coach's are the one helping build the tool they won't use anything until we
+develop  it"*.
+
+**A.** Coaches hand-mark every point. No borrowed pose tool is used, not as a
+temporary helper either, until PPBF's own is developed. This replaces pick 8A
+of OD-2026-10-02-008 (a pose tool pre-fills points for coaches now).
+
+### 3. What section 2 does not decide
+
+- **Training is chosen as the direction and nothing more.** How the model is
+  trained, how labelled footage is exported, what computing it needs and
+  costs, and the test for accepting a trained model are not designed and not
+  approved. The lane told him the computing cost comes back to him for a yes
+  before anything is spent. No spending is approved by this entry.
+- The architect's decisions about machine proposals (provenance of a
+  proposed point, derived points, what "corrected" means) have nothing to
+  apply to while there are no proposals. **INFERRED** by the lane; the
+  architect's to confirm.
+- The required core of the click range, and whether chin is required.
+- Scoring an athlete from video stays parked (OD-2026-09-28-006).
+
+### 4. The agreement screen's opening sentence
+
+ChatGPT's review of PR #1096 found that "Top disagreements" ranked kinds of
+disagreement that are not on one scale. Asked for a replacement, he first
+wrote *"Remember we are teaching the AI  we need room for it to learn"*
+(22:13:35Z), which chose no option and which he has not said means anything
+wider; then *"Explain in layman"* (22:19:32Z). The lane put it plainly: "New
+version (what I recommend): "6 clips compared. The two coaches differed on:
+which punch it was, the timing, the stance." It lists everything they saw
+differently and doesn't claim which is worst. The exact counts are one tap
+away under "Show detail"." Jason, whole message (22:22:20Z): *"Yes new
+version"*.
+
+**The opening sentence names every kind of disagreement found, with no counts
+and no ranking.** This replaces the example sentence of OD-2026-10-02-010
+section 2 item 1; the rest of that item stands.
+
+---
+
 ## OD-2026-10-02-010 -- Two "Yes" answers: the look-pin tests are covered by "remove anything that will hinder this"; the Label Agreement screen, what coaches see on it, and the tablet hand-over
 
 **Provenance: PRIMARY.** Typed by Jason in the UI lane's thread and in the
