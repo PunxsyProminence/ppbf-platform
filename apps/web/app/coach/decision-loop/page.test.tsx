@@ -77,6 +77,7 @@ function acknowledge(url: string, init?: RequestInit): Response {
         effective_at: '2026-10-01T12:00:00.000Z',
         created_at: '2026-10-01T12:00:00.000Z',
       },
+      effectiveStatus: sent.status,
     });
   }
   if (url.includes('/recommendations/decide')) {
@@ -118,7 +119,7 @@ function installFetch(overrides: Record<string, unknown> = {}) {
       // whole load fail -- which is the only state in which the four panels
       // below are unreadable rather than empty.
       const handler = overrides.medicalStatus as ((init?: RequestInit) => Response) | undefined;
-      return handler ? handler(init) : jsonResponse({ status: null });
+      return handler ? handler(init) : jsonResponse({ status: null, effectiveStatus: 'no_record' });
     }
     if (key.includes('/api/pilot/shadow/recommendations')) {
       return jsonResponse({ recommendations: [] });
@@ -531,14 +532,14 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       }
       if (key.includes('athleteId=ath-b')) {
         if (options.readB) return options.readB();
-        if (key.includes('/medical-status')) return jsonResponse({ status: null });
+        if (key.includes('/medical-status')) return jsonResponse({ status: null, effectiveStatus: 'no_record' });
         if (key.includes('/recommendations')) return jsonResponse({ recommendations: [] });
         if (key.includes('/decisions')) return jsonResponse({ decisions: [] });
         return jsonResponse({ nearMisses: [] });
       }
       if (key.includes('athleteId=ath-a')) {
         if (options.readA) await options.readA();
-        if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS });
+        if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS, effectiveStatus: 'cleared' });
         if (key.includes('/recommendations')) return jsonResponse({ recommendations: [A_RECOMMENDATION] });
         if (key.includes('/decisions')) return jsonResponse({ decisions: [A_DECISION] });
         return jsonResponse({ nearMisses: [A_NEAR_MISS] });
@@ -968,12 +969,12 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       if (key.includes('/decision-outcomes')) return held.promise;
       if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
       if (key.includes('athleteId=ath-b')) {
-        if (key.includes('/medical-status')) return jsonResponse({ status: null });
+        if (key.includes('/medical-status')) return jsonResponse({ status: null, effectiveStatus: 'no_record' });
         if (key.includes('/recommendations')) return jsonResponse({ recommendations: [] });
         if (key.includes('/decisions')) return jsonResponse({ decisions: [] });
         return jsonResponse({ nearMisses: [] });
       }
-      if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS });
+      if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS, effectiveStatus: 'cleared' });
       if (key.includes('/recommendations')) return jsonResponse({ recommendations: [A_RECOMMENDATION] });
       if (key.includes('/decisions')) return jsonResponse({ decisions: [A_DECISION] });
       return jsonResponse({ nearMisses: [A_NEAR_MISS] });
@@ -1417,7 +1418,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       for (const [fragment, responder] of Object.entries(overrides)) {
         if (key.includes(fragment)) return responder();
       }
-      if (key.includes('/medical-status')) return jsonResponse({ status: null });
+      if (key.includes('/medical-status')) return jsonResponse({ status: null, effectiveStatus: 'no_record' });
       if (key.includes('/recommendations')) return jsonResponse({ recommendations: [] });
       if (key.includes('/decisions?')) return jsonResponse({ decisions: [] });
       if (key.includes('/near-misses')) return jsonResponse({ nearMisses: [] });
@@ -1431,24 +1432,37 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   const MALFORMED_READS: Array<[string, string, () => Response]> = [
     ['medical status: body will not parse', '/medical-status', unparseable],
     ['medical status: no `status` key', '/medical-status', () => jsonResponse({ ok: true })],
-    ['medical status: `status` is a string', '/medical-status', () => jsonResponse({ status: 'cleared' })],
-    ['medical status: a row with an unknown status value', '/medical-status', () => jsonResponse({ status: { status: 'fine' } })],
-    ['medical status: a WHOLE row whose status is not one of the four', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, status: 'fine' } })],
-    ['medical status: ok is 0', '/medical-status', () => jsonResponse({ ok: 0, status: null })],
-    ['medical status: ok is the string "false"', '/medical-status', () => jsonResponse({ ok: 'false', status: null })],
-    ['medical status: ok is null beside an error', '/medical-status', () => jsonResponse({ ok: null, error: 'upstream timeout', status: null })],
-    ['medical status: ok is "error" beside a whole row', '/medical-status', () => jsonResponse({ ok: 'error', status: B_STATUS })],
+    ['medical status: `status` is a string', '/medical-status', () => jsonResponse({ status: 'cleared', effectiveStatus: 'cleared' })],
+    ['medical status: a row with an unknown status value', '/medical-status', () => jsonResponse({ status: { status: 'fine' }, effectiveStatus: 'fine' })],
+    ['medical status: a WHOLE row whose status is not one of the four', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, status: 'fine' }, effectiveStatus: 'fine' })],
+    ['medical status: ok is 0', '/medical-status', () => jsonResponse({ ok: 0, status: null, effectiveStatus: 'no_record' })],
+    ['medical status: ok is the string "false"', '/medical-status', () => jsonResponse({ ok: 'false', status: null, effectiveStatus: 'no_record' })],
+    ['medical status: ok is null beside an error', '/medical-status', () => jsonResponse({ ok: null, error: 'upstream timeout', status: null, effectiveStatus: 'no_record' })],
+    ['medical status: ok is "error" beside a whole row', '/medical-status', () => jsonResponse({ ok: 'error', status: B_STATUS, effectiveStatus: 'cleared' })],
     ['recommendations: ok is missing-as-false', '/recommendations', () => jsonResponse({ ok: 0, recommendations: [] })],
     ['medical status: body is an array', '/medical-status', () => jsonResponse([])],
     // "cleared" and nothing else used to render "Current status: cleared --
     // Set by undefined (undefined) at undefined".
-    ['medical status: a row with only a status', '/medical-status', () => jsonResponse({ ok: true, status: { status: 'cleared' } })],
-    ['medical status: a row for a DIFFERENT athlete', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, athlete_id: 'ath-a' } })],
-    ['medical status: no status_id', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, status_id: undefined } })],
-    ['medical status: blank set_by_account_id', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, set_by_account_id: ' ' } })],
-    ['medical status: no set_by_role', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, set_by_role: undefined } })],
-    ['medical status: no effective_at', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, effective_at: null } })],
-    ['medical status: source_reference is a number', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, source_reference: 7 } })],
+    ['medical status: a row with only a status', '/medical-status', () => jsonResponse({ ok: true, status: { status: 'cleared' }, effectiveStatus: 'cleared' })],
+    ['medical status: a row for a DIFFERENT athlete', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, athlete_id: 'ath-a' }, effectiveStatus: 'cleared' })],
+    ['medical status: no status_id', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, status_id: undefined }, effectiveStatus: 'cleared' })],
+    ['medical status: blank set_by_account_id', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, set_by_account_id: ' ' }, effectiveStatus: 'cleared' })],
+    ['medical status: no set_by_role', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, set_by_role: undefined }, effectiveStatus: 'cleared' })],
+    ['medical status: no effective_at', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, effective_at: null }, effectiveStatus: 'cleared' })],
+    ['medical status: source_reference is a number', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, source_reference: 7 }, effectiveStatus: 'cleared' })],
+    // The status printed is the route's effectiveStatus, and only when it
+    // agrees with the row it came with. Each of these is a whole, valid row
+    // (or a valid "no row") beside an effectiveStatus that is absent or
+    // contradicts it.
+    ['medical status: a cleared row with NO effectiveStatus', '/medical-status', () => jsonResponse({ status: B_STATUS })],
+    ['medical status: no row with NO effectiveStatus', '/medical-status', () => jsonResponse({ status: null })],
+    ['medical status: no row beside effectiveStatus "cleared"', '/medical-status', () => jsonResponse({ status: null, effectiveStatus: 'cleared' })],
+    ['medical status: a cleared row beside effectiveStatus "no_record"', '/medical-status', () => jsonResponse({ status: B_STATUS, effectiveStatus: 'no_record' })],
+    ['medical status: a restricted row beside effectiveStatus "cleared"', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, status: 'restricted' }, effectiveStatus: 'cleared' })],
+    ['medical status: a cleared row beside effectiveStatus "restricted"', '/medical-status', () => jsonResponse({ status: B_STATUS, effectiveStatus: 'restricted' })],
+    ['medical status: a pending row beside effectiveStatus "cleared_expired"', '/medical-status', () => jsonResponse({ status: { ...B_STATUS, status: 'pending' }, effectiveStatus: 'cleared_expired' })],
+    ['medical status: a cleared row beside an effectiveStatus that is no known word', '/medical-status', () => jsonResponse({ status: B_STATUS, effectiveStatus: 'CLEARED' })],
+    ['medical status: a cleared row beside an effectiveStatus that is not a string', '/medical-status', () => jsonResponse({ status: B_STATUS, effectiveStatus: true })],
     ['recommendations: body will not parse', '/recommendations', unparseable],
     ['recommendations: no list', '/recommendations', () => jsonResponse({ ok: true })],
     ['recommendations: list is null', '/recommendations', () => jsonResponse({ recommendations: null })],
@@ -1481,7 +1495,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   });
 
   test('a complete status row for the athlete asked about is shown, null reference and all', async () => {
-    installReadsForB({ '/medical-status': () => jsonResponse({ ok: true, status: B_STATUS }) });
+    installReadsForB({ '/medical-status': () => jsonResponse({ ok: true, status: B_STATUS, effectiveStatus: 'cleared' }) });
     render(<DecisionLoopReviewPage />);
     fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
 
@@ -1489,12 +1503,67 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     expect(screen.queryByText(/could not be read/i)).toBeNull();
   });
 
+  // A lapsed clearance is still STORED as 'cleared' -- the record of who
+  // cleared this athlete must not vanish -- and the route says so beside it:
+  // effectiveStatus 'cleared_expired', which is what the gates act on. This
+  // panel printed the stored word, so a coach read "cleared" on the screen
+  // they check before contact work while the gate refused. Words and rung:
+  // OD-2026-10-01-007 section 4.
+  describe('a lapsed clearance beside a current one', () => {
+    const LAPSED_SENTENCE = 'This clearance passed its end date, so it no longer counts. The medical gate blocks recommendations until a new clearance is recorded.';
+    const LAPSED_ROW = { ...B_STATUS, expires_at: '2026-09-01T10:00:00.000Z' };
+
+    async function openB(body: Record<string, unknown>) {
+      installReadsForB({ '/medical-status': () => jsonResponse(body) });
+      render(<DecisionLoopReviewPage />);
+      fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+      await screen.findByText(/Set by organization_admin \(acct-1\)/);
+      return within(medicalSection());
+    }
+
+    test('current: the badge reads "cleared" on the cleared rung, with no lapsed sentence', async () => {
+      const panel = await openB({ status: B_STATUS, effectiveStatus: 'cleared' });
+
+      const badge = panel.getByText('cleared');
+      expect(badge.className).toContain('badge--cleared');
+      expect(panel.queryByText('clearance expired')).toBeNull();
+      expect(panel.queryByText(LAPSED_SENTENCE)).toBeNull();
+    });
+
+    test('lapsed: the badge reads "clearance expired" on the amber rung, the sentence is shown, and nothing reads "cleared"', async () => {
+      const panel = await openB({ status: LAPSED_ROW, effectiveStatus: 'cleared_expired' });
+
+      const badge = panel.getByText('clearance expired');
+      expect(badge.className).toContain('badge--restricted');
+      expect(badge.className).not.toContain('badge--cleared');
+      expect(badge.className).not.toContain('badge--locked');
+      expect(panel.getByText(LAPSED_SENTENCE)).toBeTruthy();
+      // The stored word and the raw enum are both kept off the panel. The
+      // only "cleared" left in the section is the form's own <option>.
+      expect(panel.queryByText('cleared')).toBeNull();
+      expect(panel.queryByText('cleared_expired')).toBeNull();
+      expect(medicalSection().querySelector('.badge--cleared')).toBeNull();
+      // Who cleared this athlete, and when, is still on the record.
+      expect(panel.getByText(/Set by organization_admin \(acct-1\) at 2026-08-01T10:00:00.000Z/)).toBeTruthy();
+      expect(screen.queryByText(/could not be read/i)).toBeNull();
+    });
+
+    test.each(['restricted', 'not_cleared', 'pending'])('a stored "%s" is printed when effectiveStatus agrees with it', async (stored) => {
+      const panel = await openB({ status: { ...B_STATUS, status: stored }, effectiveStatus: stored });
+
+      expect(panel.getByText(stored)).toBeTruthy();
+      expect(panel.queryByText('clearance expired')).toBeNull();
+      expect(panel.queryByText(LAPSED_SENTENCE)).toBeNull();
+      expect(medicalSection().querySelector('.badge--cleared')).toBeNull();
+    });
+  });
+
   test('outcomes that will not parse are an error, not "No outcomes evaluated yet."', async () => {
     const fetchMock = jest.fn(async (url: string) => {
       const key = String(url);
       if (key.includes('/decision-outcomes')) return unparseable();
       if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
-      if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS });
+      if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS, effectiveStatus: 'cleared' });
       if (key.includes('/recommendations')) return jsonResponse({ recommendations: [A_RECOMMENDATION] });
       if (key.includes('/decisions')) return jsonResponse({ decisions: [A_DECISION] });
       return jsonResponse({ nearMisses: [A_NEAR_MISS] });
@@ -1682,12 +1751,12 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
         if (init?.method === 'POST') return acknowledge(key, init);
         if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
         if (key.includes('athleteId=ath-a')) {
-          if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS });
+          if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS, effectiveStatus: 'cleared' });
           if (key.includes('/recommendations')) return jsonResponse({ recommendations: [A_RECOMMENDATION] });
           if (key.includes('/decisions')) return jsonResponse({ decisions: [A_DECISION] });
           return jsonResponse({ nearMisses: [A_NEAR_MISS] });
         }
-        if (key.includes('/medical-status')) return jsonResponse({ status: null });
+        if (key.includes('/medical-status')) return jsonResponse({ status: null, effectiveStatus: 'no_record' });
         if (key.includes('/recommendations')) return jsonResponse({ recommendations: [] });
         if (key.includes('/decisions')) return jsonResponse({ decisions: [] });
         return jsonResponse({ nearMisses: [] });
@@ -1735,7 +1804,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
         return acknowledge(key, init);
       }
       if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
-      if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS });
+      if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS, effectiveStatus: 'cleared' });
       if (key.includes('/recommendations')) {
         return jsonResponse({ recommendations: [{ ...A_RECOMMENDATION, status: rejected ? 'rejected' : 'provisional' }] });
       }
@@ -1905,7 +1974,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
         return unreadable200();
       }
       if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
-      if (key.includes('/medical-status')) return jsonResponse({ status: { ...A_STATUS, status: written ? 'restricted' : 'cleared' } });
+      if (key.includes('/medical-status')) return jsonResponse({ status: { ...A_STATUS, status: written ? 'restricted' : 'cleared' }, effectiveStatus: written ? 'restricted' : 'cleared' });
       if (key.includes('/recommendations')) return jsonResponse({ recommendations: [] });
       if (key.includes('/decisions')) return jsonResponse({ decisions: [] });
       return jsonResponse({ nearMisses: [] });
@@ -1937,7 +2006,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       }
       if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
       if (written) return failedRead();
-      if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS });
+      if (key.includes('/medical-status')) return jsonResponse({ status: A_STATUS, effectiveStatus: 'cleared' });
       if (key.includes('/recommendations')) return jsonResponse({ recommendations: [A_RECOMMENDATION] });
       if (key.includes('/decisions')) return jsonResponse({ decisions: [A_DECISION] });
       return jsonResponse({ nearMisses: [A_NEAR_MISS] });
@@ -2106,7 +2175,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
         return jsonResponse({ ok: true, entity_type: 'coach_note', entity_id: 'obs-1', athlete_id: 'ath-z' });
       }
       if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
-      if (key.includes('/medical-status')) return jsonResponse({ status: null });
+      if (key.includes('/medical-status')) return jsonResponse({ status: null, effectiveStatus: 'no_record' });
       if (key.includes('/recommendations')) return jsonResponse({ recommendations: [] });
       if (key.includes('/decisions')) return jsonResponse({ decisions: [] });
       return jsonResponse({ nearMisses: [] });
