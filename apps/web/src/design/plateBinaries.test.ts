@@ -134,10 +134,22 @@ describe('every committed plate is encoded for dark material', () => {
    * 4:2:0, and banding on a wall behind a panel reads as a rendering fault in
    * the app rather than as a compression artefact in an image.
    *
-   * This sandbox has no cjpeg, no ImageMagick and no Pillow, so a subsampled
-   * plate cannot be silently re-encoded on the way in even if that were
-   * desirable. It is refused and sent back instead, which keeps the fix with
-   * whoever produced the file.
+   * This test refuses a subsampled plate and sends it back, which keeps the fix
+   * with whoever produced the file rather than hiding a broken pipeline.
+   *
+   * THE TOOLING CLAIM THAT USED TO SIT HERE IS NO LONGER TRUE, and it mattered.
+   * It said the sandbox had no cjpeg, no ImageMagick and no Pillow, so a plate
+   * "cannot be silently re-encoded on the way in even if that were desirable".
+   * The builder machine has sharp, and the 2026-10-01 Grok batch WAS converted
+   * on the way in. A guard resting on a tool being absent stops guarding the
+   * moment the tool arrives, and nobody is told.
+   *
+   * What guards it now is this test plus a declared process, not an absence:
+   * a format-only conversion is permitted, recorded in the conversion table in
+   * `apps/web/public/plates/README.md`, with the original kept for comparison
+   * (OD-2026-10-01-004, AGENT_KERNEL.md "Binary assets (plates)"). This test is
+   * unchanged by that decision and is not to be weakened: whatever happens
+   * upstream, a plate that is not 4:4:4 still fails here.
    */
   it.each(files)('%s carries no chroma subsampling', (name) => {
     const sof = readSof(readFileSync(path.join(PLATES_DIR, name)));

@@ -404,7 +404,7 @@
     "test:migrations:shadow-rate-limit-refund": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowRateLimitRefund.pg.test.ts --testTimeout=180000"
   },
   "dependencies": {
-    "@azure/storage-blob": "^12.28.0",
+    "@azure/storage-blob": "^12.34.0",
     "googleapis": "^176.0.0",
     "jose": "^6.2.12",
     "next": "16.3.2",

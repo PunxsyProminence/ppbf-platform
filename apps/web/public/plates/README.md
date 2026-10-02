@@ -17,22 +17,47 @@ Every row below is a plate the sheet actually points at. `plateBinaries.test.ts`
 requires each of these to exist on disk; it does **not** require the reverse, so
 the second table is legal and simply unpainted.
 
+A room with more than one plate states a SPLIT, and which of its walls a given
+door shows is a hash of that door's route -- same door, same wall, every load.
+The split is chosen from the DOOR COUNT, not from how many plates exist: a rule
+on a slot none of that room's doors reach is dead CSS. Office has 52 doors and
+fills an of5; clinic has 10 and fills an of4; night has 3 and fills an of3.
+
 | File | Applied to | Dimensions | Bytes |
 |---|---|---|---|
-| `plate-01-office-01.jpg` | `.room--office` | 1280×720 | 148,739 |
-| `plate-03-clinic-01.jpg` | `.room--clinic` | 1280×720 | 52,209 |
-| `plate-04-board-01.jpg` | `.room--board` | 1280×720 | 72,943 |
-| `plate-05-file-01.jpg` | `.room--file` | 1280×720 | 78,933 |
-| `plate-06-night-01.jpg` | `.room--night` | 1280×720 | 46,687 |
-| `plate-07-warm-ground-01.jpg` | `.on-canvas` (family surfaces only — T7) | 1280×720 | 39,150 |
-| `plate-08-bell-gym-landscape-01.jpg` | `.ge-bell.on-canvas::after` (The Bell, /login) | 1280×720 | 189,771 |
+| `plate-01-office-01.jpg` | `.room--office`, slot 1 of 5 | 1280×720 | 148,739 |
+| `plate-01-office-02.jpg` | `.room--office`, `2of5` | 1280×720 | 226,436 |
+| `plate-01-office-03.jpg` | `.room--office`, `3of5` | 1280×720 | 317,154 |
+| `plate-01-office-04.jpg` | `.room--office`, `4of5` -- chalkboard wall | 1280×720 | 207,549 |
+| `plate-08-bell-gym-landscape-01.jpg` | `.ge-bell.on-canvas::after` (The Bell, /login) AND `.room--office`, `5of5` | 1280×720 | 189,771 |
+| `plate-03-clinic-01.jpg` | `.room--clinic`, slot 1 of 4 | 1280×720 | 52,209 |
+| `plate-03-clinic-02.jpg` | `.room--clinic`, `2of4` | 1280×720 | 202,304 |
+| `plate-03-clinic-03.jpg` | `.room--clinic`, `3of4` | 1280×720 | 202,289 |
+| `plate-15-filmroom-landscape-01.jpg` | `.room--clinic`, `4of4` | 1280×720 | 157,678 |
+| `plate-06-night-01.jpg` | `.room--night`, slot 1 of 3 | 1280×720 | 46,687 |
+| `plate-06-night-02.jpg` | `.room--night`, `2of3` | 1280×720 | 86,167 |
+| `plate-06-night-03.jpg` | `.room--night`, `3of3` | 1280×720 | 268,746 |
+| `plate-04-board-01.jpg` | `.room--board` -- one plate, see the contrast note below | 1280×720 | 72,943 |
+| `plate-05-file-01.jpg` | `.room--file` -- one plate, see the contrast note below | 1280×720 | 78,933 |
+| `plate-07-warm-ground-01.jpg` | `.on-canvas` (family surfaces only -- T7) | 1280×720 | 39,150 |
 | `plate-08-bell-gym-portrait-01.jpg` | `.ge-bell.on-canvas::after`, `@media (orientation: portrait)` | 810×1440 | 99,891 |
+
+**Board and file deliberately stay on one plate.** Both set
+`color: var(--hide-900)` -- dark ink on a light wall -- so a dark plate behind
+either is the one failure mode this directory can ship invisibly. No test
+measures text against a room ground today. Until one exists, those two rooms
+take light plates or none.
 
 ## The generated set — plates 09 and up
 
-`plate-09` onward were made with `scripts/make-plate.mjs` rather than supplied by
-Grok. Owner instruction, 2026-09-26: "work with the connectors to make
-one", then "let's shift to making and filling the plate library".
+`plate-09` through `plate-14` were made with `scripts/make-plate.mjs` rather
+than supplied by Grok. Owner instruction, 2026-09-26: "work with the connectors
+to make one", then "let's shift to making and filling the plate library".
+
+**`plate-15-filmroom-landscape-01.jpg` is the exception and came from Grok**,
+in the batch generated 2026-10-01. The sentence above read "plate-09 onward"
+until that plate landed; it is scoped to 09-14 now rather than left to go
+quietly false.
 
 They run on Azure Foundry — FLUX.1-Kontext-pro, deployed as `flux-kontext-plates`
 on the `shadow-ai` account (ppbf-shadow-rg, eastus), GlobalStandard consumption.
@@ -48,17 +73,45 @@ plank, ceiling chains instead of the timber-and-pipe frames somebody built, one
 floor colour instead of the painted red / blue / grey / carpet zones. The script's
 DNA block was rewritten from the photographs on 2026-09-26 and now carries that.
 
-**None of these is declared by the stylesheet on this branch**, which is why they
-sit in the "Landed but not declared" table below rather than the first one. Binding one is a single
-`--plate` declaration in the scope that wants it.
+Of this generated set, `plate-15-filmroom-landscape-01.jpg` is declared, as
+`.room--clinic` `4of4`. **The rest are undeclared**, which is why they sit in
+the "Landed but not declared" table below rather than the first one. Binding one
+is a single `--plate` declaration in the scope that wants it.
+
+`plate-14-frontdesk-landscape-01.jpg` was briefly declared as `.room--office`
+`5of6` and is **unbound again, do-not-bind** — invented banner lettering and an
+invented apron crest, judged 2026-10-01. The judgment is below and the reason
+travels with its row in the inert table, so neither can be read without the
+other.
 
 **Known imperfection, recorded rather than hidden:** the no-lettering rule is
-stated three ways in the prompt and still leaks. `plate-09` has faint illegible
-marks on a clipboard; `plate-10` has them inside the canvas roundel. It leaks
-exactly where a real gym carries branding, which is where the model expects it.
-The ring canvas is now the one place lettering is allowed (IRON CITY; see the
-top of this file). Whether the `plate-10` roundel marks read as that lettering
-has not been judged; the `plate-09` clipboard marks are outside the exception.
+stated three ways in the prompt and still leaks. It leaks exactly where a real
+gym carries branding, which is where the model expects it. The ring canvas is
+the one place lettering is allowed (IRON CITY; see the top of this file).
+
+**JUDGED 2026-10-01, at full size, and two of them FAIL.** This paragraph used
+to say the `plate-10` roundel "has not been judged". It has been now, by opening
+the files and enlarging the marks rather than glancing at a contact sheet:
+
+- `plate-09` — faint illegible marks on a clipboard. Outside the exception,
+  as recorded before. Not bound.
+- `plate-10` — **FAILS.** The canvas roundel is an invented crest carrying
+  invented circular lettering. It does not read as IRON CITY or ALT NATION, so
+  the exception does not cover it, and a crest is the one thing the reference
+  lock names outright: a gym logo is not ours to draw. Not bound.
+- `plate-14` — **FAILS, and this one had been bound.** A large wall banner
+  of invented illegible lettering, plus an invented crest on the ring apron.
+  It was bound as an office variant earlier in this same PR and is unbound
+  again here.
+- `plate-08-bell-gym-landscape-01` and `plate-06-night-02` were checked the
+  same way at the same time and are CLEAN. They stay bound.
+
+**THE LESSON, which is the useful part.** `plate-14` was bound off a 34-image
+contact sheet at 300×180 per tile. A banner of invented lettering is simply
+not legible at that size — the thumbnail showed a dark rectangle on a wall.
+The byte gate cannot see lettering at all, and the reference lock asks for a
+human look precisely because of this. **A contact sheet is for choosing
+candidates. Nothing is bound until it has been opened at full size.**
 
 ## The gym floor no longer takes a plate
 
@@ -94,14 +147,14 @@ orientation block, per "Adding a variant" below.
 | `plate-02b-floor-portrait-ring-01.jpg` | 810×1440 | 82,185 | a ring-side portrait floor alternative |
 | `plate-03-clinic-portrait-01.jpg` | 810×1440 | 119,124 | a portrait crop the clinic does not have today |
 | `plate-09-drillcase-landscape-01.jpg` | 1280×720 | 200,989 | the Drill Cabinet room: gear shelves, gloves on hooks, a card-index cabinet |
+| `plate-09-drillcase-portrait-01.jpg` | 810×1440 | 198,467 | the same cabinet upright. It was committed with its landscape pair and listed in neither table until 2026-10-01 |
 | `plate-10-floor-landscape-01.jpg` | 1280×720 | 181,156 | the gym floor: the ring on the red floor, bags on the timber frame, plank walls |
 | `plate-11-floor-portrait-01.jpg` | 810×1440 | 195,227 | the gym floor upright, for the tablet that stands on the counter |
 | `plate-12-locker-landscape-01.jpg` | 1280×720 | 200,442 | the athletes corner: grey lockers with a red bank, benches |
 | `plate-13-scripts-landscape-01.jpg` | 1280×720 | 201,153 | the coaches corner: desk, timing clock, empty boards |
-| `plate-14-frontdesk-landscape-01.jpg` | 1280×720 | 203,244 | the Front Desk room: counter, stool, key box, the floor beyond |
+| `plate-14-frontdesk-landscape-01.jpg` | 1280×720 | 203,244 | the Front Desk room: counter, stool, key box, the floor beyond. **Do not bind:** invented banner lettering and an invented apron crest, judged 2026-10-01 |
 | `plate-04-board-portrait-01.jpg` | 810×1440 | 104,274 | a portrait crop the board room does not have today |
 | `plate-05-file-portrait-01.jpg` | 810×1440 | 222,851 | a portrait crop the file room does not have today |
-| `plate-06-night-02.jpg` | 1280×720 | 86,167 | a **second landscape** night plate — wiring it changes a merged, reviewed room |
 | `plate-06-night-portrait-01.jpg` | 810×1440 | 80,048 | a portrait crop the night room does not have today |
 
 ## Requirements — enforced by `apps/web/src/design/plateBinaries.test.ts`
@@ -135,9 +188,49 @@ human has opened the image and checked it against
 `docs/REAL-GYM-REFERENCE-LOCK.md` — the gate cannot tell whether the room is
 this gym.
 
-A delivered image is committed as received — never re-encoded, never
-reconstructed; the reasons are in `AGENT_KERNEL.md` "Binary assets (plates)",
+A delivered image is committed as received — never reconstructed, never
+quietly improved. The reasons are in `AGENT_KERNEL.md` "Binary assets (plates)",
 and what Claude can fetch from a drive is in its capability table.
+
+### The one exception: a declared format conversion
+
+**Owner decision, 2026-10-01 (OD-2026-10-01-004).** The rule above and the byte
+contract could not both hold for the 2026-10-01 Grok batch: it arrived `4:2:0`
+and `plate-contract.json` requires `4:4:4`, so committed as received it fails the
+gate, and the files that passed the gate had been re-encoded locally without that
+being declared anywhere. Jason chose to keep `4:4:4` and make the step declared,
+rather than drop Grok as a source.
+
+**This applies to the 2026-10-01 batch and to nothing before it**, which is
+narrower than an earlier draft of this section claimed. Measured on the committed
+bytes: every plate predating that batch is baseline (`SOF0`) and already `4:4:4`;
+all seven of the batch are progressive (`SOF2`) with metadata stripped, the
+fingerprint of the local step. The sets separate cleanly. The earlier plates came
+in under the arrangement in `docs/GROK-VISUAL-LANE.md`, where Grok re-encodes to
+`4:4:4` in its own pipeline before shipping.
+
+Three conditions come with it. A conversion that skips any of them is a defect,
+not a delivery:
+
+1. **Format only, never content.** Downscale to a contract geometry at the SAME
+   aspect ratio, so nothing is cropped out; chroma; encoding; metadata. No
+   reframing, no retouching, no colour grading, no regeneration. If the source
+   aspect ratio does not match a contract geometry, the plate goes back to the
+   generator — it is not cropped to fit.
+2. **The parameters are recorded**, in the table below.
+3. **The original is kept**, so the two can be compared. It lives beside the
+   converted file in the owner's reference folder, OUTSIDE this repository: a
+   `4:2:0` original cannot pass the byte gate and has no business in `public/`.
+
+### Conversion record
+
+| Batch | Conversion applied | Original kept |
+|---|---|---|
+| Grok, 2026-10-01 — `plate-01-office-02/03/04`, `plate-03-clinic-02/03`, `plate-06-night-03`, `plate-15-filmroom-landscape-01` | downscale `1792x1008` to `1280x720` (both exactly 16:9, no crop); chroma `4:2:0` to `4:4:4`; baseline `SOF0` to progressive `SOF2`; JFIF/EXIF/XMP/comment segments stripped, leaving `DQT` and `SOF`; sharp, mozjpeg, quality 92 | **NO — not retained.** These predate the rule and the originals were not kept. The conversion is stated from the JPEG markers of the committed files, and cannot be shown by comparison for this batch |
+| Grok, 2026-10-02 onward | as recorded per batch | YES, required |
+
+The first row is the honest cost of having run the step silently: the record
+exists, the proof does not. Condition 3 is there so no later row reads like it.
 
 ### Images from Grok or Canva, when Jason asks
 

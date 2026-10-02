@@ -164,6 +164,251 @@ and should not try to.
 
 ---
 
+## OD-2026-10-01-006 -- SHADOW: educate, do not restrict; coach notification is part of the intended safety handling; emergency reviews get a separate hourly allowance; the #1036 replacement re-cut
+
+**Provenance: PRIMARY.** Section 1's three messages were typed by Jason in the
+Lane A thread and read by overwatch in that thread's transcript
+(`C--Dev/621541d7-de10-407e-8fb4-67468f9758b5.jsonl`), times UTC. Section 2's
+answer was typed in the overwatch thread (transcript as in OD-2026-09-30-007).
+**Date:** 2026-10-01 (his evening; the UTC times in section 1 run past
+midnight). This entry is new. The same PR adds one dated status update
+to OD-2026-09-30-006's Status paragraph and changes nothing else in any
+earlier entry. OD-2026-10-01-004 is on `main` via PR #1068; OD-2026-10-01-005
+is reserved by the visual lane's open PR #1077.
+
+### 1. Educate, not restrict; notifying a coach is part of it
+
+Lane A had put two questions to him in its thread, each with A recommended:
+whether a message that states an acute event happened to a specific person,
+with no "I", "my" or "now", is a report; and whether wording that could be read
+either way is treated as a report, at the measured cost that 4 of 40 general
+questions in its test set would then be refused, two of them with the emergency
+text. His three messages, in order:
+
+- 2026-10-01T23:46:40Z: *"Recommendation "*
+- 2026-10-02T00:08:22Z: *"explain"*. Lane A then explained the two questions in
+  plain terms and restated that cost.
+- 2026-10-02T00:27:39Z: *"that is where my educate not restrict comes into play, part of that education would be to notify the coach,  thats what we have been fighting over with the saftey piece all through the app"*
+
+"Recommendation" is NOT recorded as an A/B selection: he asked for an
+explanation next and then answered in his own terms. The third message
+governs. ChatGPT, as architect, read it the same way.
+
+**Decided:**
+
+1. Uncertain safety wording is not a reason to replace an answer with a
+   refusal.
+2. SHADOW educates rather than restricts.
+3. Telling a coach is part of the intended handling of a safety case.
+
+**Still open, and not to be inferred from those words:**
+
+1. When the emergency act-now line appears for an asserted or unclear event
+   (put to him as A/B/C; not answered when written).
+2. Which coach or coaches "notify the coach" means, and what happens when no
+   athlete is in scope (put to him as A/B/C; not answered when written).
+3. No email, text or push is authorized by these words.
+
+What the app does today (REPORTED by Lane A at main `c5d5c260`, and traced
+independently by ChatGPT): a SHADOW review row is read only by admins on one
+admin page; it carries no athlete id; no coach reads it; nothing is pushed. So
+the existing review queue does not notify a coach. Not his words, and not
+recorded as his: "nobody is refused", "ambiguous means notify", "the review
+queue notifies the coach", "coach of record plus covering coach".
+
+### 2. Emergency reviews get their own hourly allowance
+
+OD-2026-09-30-005 gave the human-review write a limit of 3 per hour per
+account. OD-2026-09-30-006 selection 5 gave every high-risk message a human
+review. Built together (Lane A, unpushed), three ordinary review records could
+use the hour, so a later emergency report kept its emergency reply but left no
+review row. `main` had no review-queue quota on that path, so quota exhaustion
+could not suppress the critical write; in Lane A's measured `main` sequence the
+row was written (REPORTED). ChatGPT ruled the choice his. Asked:
+
+"Official: you chose 3 SHADOW human-review records per hour per account. With
+every high-risk question now adding a record, three ordinary ones can use up
+the hour, so a later "I can't breathe" gets its emergency reply but no review
+record. A (recommended, ChatGPT's pick too): one 3-per-hour allowance for
+emergency reports only, and a separate 3-per-hour allowance for everything
+else. B: keep one shared allowance and accept that gap. C: emergency reports
+always write a record, with no limit."
+
+Jason, whole message: *"A"*.
+
+**A.** Two buckets, each 3 per hour per account:
+
+1. **Critical (emergency) request review writes** only.
+2. **All other SHADOW human-review writes.** That is "everything else", as the
+   option he chose says, and includes as applicable: non-critical high-risk
+   request reviews; generated-answer safety reviews written by the chat route;
+   generated-answer safety reviews written by the background worker; and the
+   existing operational or filter review rows, such as the row written when
+   the Library is empty.
+
+A fourth critical review write in the hour is suppressed; the emergency
+response is not. The limit is on persisting the review row, never on the reply
+(OD-2026-09-30-005: exhaustion suppresses the write only). This narrows what
+OD-2026-09-30-005's single `safety_review` bucket covers; it does not change
+the number he chose.
+
+Other questions were open with him at the time (a hold sentence, the act-now
+threshold, the coach recipient and others). Overwatch reads "A" as the answer
+to the one new question in the message it replied to, and to no other; those
+stay open.
+
+### 3. The #1036 replacement is re-cut so no step adds refusals
+
+On section 1, ChatGPT replaced the earlier five-piece order. The classifier
+correction no longer lands first, because alone it would have turned about 30
+of Lane A's 36 test reports into refusals until later pieces landed. New order,
+one lane and one PR each: (1) every high-risk message leaves a bounded
+human-review record; (2) a coach-facing in-app escalation, only if he confirms
+the recipient; (3) education instead of refusal for non-acute high-risk; (4)
+acute gets the act-now line plus education; (5) the acute-report classifier
+correction; (6) contractions without apostrophes. Pieces 3, 4 and 5 go to
+production together. PR #1036 closes as superseded when piece 1's PR opens.
+This is the architect's sequencing, recorded so later lanes can find it; it is
+not an owner decision.
+
+---
+
+## OD-2026-10-01-004 -- The visuals lane: plate variety comes from doors, not new rooms; a declared format conversion is allowed and the original must be kept; board and file get light plates behind a new contrast guard
+
+**Provenance: PRIMARY.** Jason typed in the visuals/UI lane and selected from
+options put to him there. **Date:** 2026-10-01. Each question was put in
+official form, then in plain English, with the trade-offs on both sides at his
+instruction: *"Ask me the question s with the pros and cons"*. This entry is new
+and edits no earlier one.
+
+### 1. Plate variety comes from doors, and the room work was drift
+
+His correction, mid-build, in full:
+
+> *"Drift check we talked about doors allowing variety of each room"*
+
+He was right and it cancelled the work in progress. `plateVariant.ts` selects a
+plate by hashing the route, so one existing room class already carries up to six
+different walls across its doors -- same door, same wall, every load. Measured
+from `buildingMap.ts` (129 doors): **34 distinct walls are reachable with zero
+new room classes**, and only ten were bound. Variety is a stylesheet question,
+not a room question.
+
+What a new room class buys, and the only thing it buys: pinning a NAMED image to
+a NAMED screen. The slot is a hash, so the drill-cabinet wall cannot be aimed at
+`/coach/drills`.
+
+Asked whether he wants named rooms anyway: "A, not now, doors are enough
+(recommended); B, yes, one room at a time; C, revive #941 first; D, close #941."
+**A.** So no lane opens room classes for art, `buildingMap.ts` is not touched for
+this purpose, and **PR #941 stays exactly as he left it on "Hold it, decide
+later"** -- A is not an instruction to close it.
+
+Delivered under this ruling: PR #1068, office to **five** walls, clinic to
+four, night to three. It was six until `plate-14-frontdesk-landscape-01.jpg` was
+opened at full size, found to carry a banner of invented lettering and an
+invented crest, and unbound within the same PR.
+
+### 2. A declared format conversion is allowed; the original must be kept
+
+Raised by ChatGPT reviewing #1068. Two rules could not both hold:
+`apps/web/public/plates/README.md` said a delivered image is *"committed as
+received -- never re-encoded"*, and `design-system/plate-contract.json` requires
+chroma `4:4:4`, while the 2026-10-01 Grok batch arrived `4:2:0`. So those images
+committed as received would fail the byte gate, and the ones that passed it were
+re-encoded locally by this lane without that being declared anywhere — the two
+in #1064 then staged for production among them.
+
+**An earlier draft of this entry said "every Grok-sourced plate in the
+repository" had gone through that step. That was false and is corrected here
+before it could be relied on.** ChatGPT raised it in review; the committed bytes
+settle it. Measured 2026-10-01: every plate predating the 2026-10-01 batch is
+baseline (`SOF0`) and already `4:4:4`, while all seven of that batch are
+progressive (`SOF2`) with metadata stripped, which is the fingerprint of the
+local sharp step. The two sets separate cleanly with no overlap. So the earlier
+plates were prepared under the older arrangement recorded in
+`docs/GROK-VISUAL-LANE.md` — Grok re-encoding to `4:4:4` in its own pipeline
+before shipping — and the local conversion applies to the 2026-10-01 batch and
+to nothing before it.
+
+Asked: "A, amend the rule, record the conversion, and keep the originals
+(recommended); B, amend the rule only; C, keep 'as received' and drop Grok as a
+plate source; D, hold until staging." **A.**
+
+**Checked against the visual-lane transcript, 2026-10-01** (run read-only by
+overwatch at this entry's request, because the entry turns on what he knew when
+he chose).
+
+What the transcript shows, and no more than this. At 21:10Z, **before** he
+answered, this lane's message to him said *"The originals are gone. For these
+five plates the pre-conversion Grok files no longer exist on disk"*. At 22:19Z
+he selected "Amend rule, keep originals (Recommended)" -- an option whose own
+text read that a later comparison *"is exactly what nobody can do for the five
+in this PR"*. So the selection was made with the gap disclosed twice, once in
+the message and once in the option itself.
+
+The two halves are not the same kind of claim, and are labelled accordingly:
+
+- **PRIMARY** -- the prospective requirement. From his selection: originals are
+  kept from now on, which is condition 3 above.
+- **INFERRED** -- that the five already-converted plates stay, as the disclosed
+  pre-rule exception. This follows from an informed selection; it is not
+  something he said. **He was never asked, in so many words, whether that batch
+  is grandfathered, and he never used the word.** If he says otherwise, the
+  inference is what gives way, not the record of it.
+
+No further owner decision was sought for the five, and the conversion table
+records them as unprovable rather than as approved.
+
+This closes the item **OD-2026-10-01-003 section 3 records as still open**
+("Open with him in the visual lane, not decided here"). That entry was written
+before he answered; it is correct as of when it was written and is not edited
+here. He answered in the visual lane, which is where it says the answer would
+come from.
+
+So, binding on every lane that places a plate:
+
+1. A conversion may change **format only, never content** -- geometry at the
+   same aspect ratio so nothing is cropped out, chroma, encoding, metadata. No
+   reframing, retouching, grading or regeneration. A source whose aspect ratio
+   does not match a contract geometry goes back to the generator; it is not
+   cropped to fit.
+2. The parameters are **recorded** with the plate.
+3. The **original is kept** for comparison, beside the converted file in the
+   owner's reference folder and outside the repository, because a `4:2:0`
+   original cannot pass the byte gate.
+
+Recorded honestly in that README: for the 2026-10-01 Grok batch the originals
+were **not** retained, so the conversion is stated from the JPEG markers of the
+committed files and cannot be shown by comparison. Condition 3 exists so that no
+later batch reads the same way.
+
+### 3. Board and file take light plates, behind a contrast guard that does not exist yet
+
+`.room--board` and `.room--file` set `color: var(--hide-900)` -- dark ink on a
+light wall -- and no test in the suite measures text against a room ground. They
+hold 8 of the 34 reachable slots and were deliberately left untouched in #1068.
+
+Asked: "A, light plates and build the guard (recommended); B, re-ink the two
+rooms dark so they can take the dark plates we already have; C, leave them on
+one plate." **A.** The paper look of those two rooms stays; the art comes to
+them, and the guard lands with it.
+
+### 4. NOT decided: how the gym tablet physically sits
+
+Asked where the next Grok batch should go, given that the orientation block
+carries a portrait plate for `.room--floor` only and every other room's
+landscape plate is cover-cropped into portrait. Options were: confirm the tablet
+first; portraits 5-6 per room; one portrait per room; more landscape. **He chose
+"confirm the tablet first", and the confirmation has not yet been given.**
+
+The claim that the tablet stands upright appears only as an assertion in a code
+comment (`ppbf-leather-brass.css`, the orientation block). **No evidence for it
+exists anywhere else in the repository** -- searched; the e2e suite tests a
+narrow phone viewport and nothing about an upright tablet. Until he answers, no
+lane should spend a generation batch on portrait plates, and no lane should add
+a generic portrait override to a room that carries landscape variants: doing so
+collapses every one of that room's walls back to one on an upright screen.
 ## OD-2026-10-01-003 -- His later answers of 2026-10-01 (afternoon): the coach-board control and failure line approved; working files; plates and who owns the visual lane; observation ids; the knockout cases; release 3 staged then cancelled
 
 **Provenance: PRIMARY** where Jason's words were typed in the overwatch thread
@@ -968,7 +1213,7 @@ them are delivered. Done for lanes 11 to 14.
 
 ## OD-2026-09-30-006 -- High-risk chat questions get education, not a refusal; acute reports get education plus an act-now line
 
-**Status, 2026-10-01:** recorded on `main` by a records PR ahead of PR #1036, which builds it and is not merged; Jason, asked whether to move this record so PR #1058 need not wait on #1036: *"Yes to 1 and 2"*. The text below was PORTED from PR #1036's branch at `9208457a` and is not identical to it: on the way to `main` it gained this paragraph and the next, "four selections" became "five" in two places, and the chest-pain attribution was corrected. Nothing in it is built on `main` until #1036 lands.
+**Status, 2026-10-01:** recorded on `main` by a records PR ahead of PR #1036, which builds it and is not merged; Jason, asked whether to move this record so PR #1058 need not wait on #1036: *"Yes to 1 and 2"*. The text below was PORTED from PR #1036's branch at `9208457a` and is not identical to it: on the way to `main` it gained this paragraph and the next, "four selections" became "five" in two places, and the chest-pain attribution was corrected. Nothing in it is built on `main` until #1036 lands. **Status update, 2026-10-02:** #1036 is being superseded by the replacement sequence in OD-2026-10-01-006 section 3. PR #1058 has already landed the teach-first prompt portion; the remaining route and classifier behaviour is being built through that replacement sequence.
 
 **Checked against the transcript, 2026-10-01** (the closed AI/ML lane's thread; a
 read-only pass that read each reply with the message or option set it answered).

@@ -330,6 +330,24 @@ against this and are genuinely 4:4:4.
 If a 4:2:0 file is ever the only thing available, converting it is Jason's
 call and happens outside this repo, on a machine with the tools.
 
+**That call was made on 2026-10-01 (OD-2026-10-01-004), and two things in the
+section above are now out of date.** The Grok batch of that date arrived 4:2:0,
+and the builder machine — unlike the sandbox this section was written in —
+has sharp, so the conversion happened there rather than being impossible.
+Jason chose to permit it as a DECLARED format-only step rather than drop Grok
+as a source: parameters recorded in the conversion table in
+`apps/web/public/plates/README.md`, original kept outside the repository, no
+change to content. "Claude verifies and refuses" still holds for everything
+else, and the byte gate is unchanged.
+
+**What did NOT happen, because the earlier record is right and worth keeping.**
+Grok's own pipeline did ship 4:4:4 for the earlier plates. Measured on the
+committed bytes 2026-10-01: every plate predating that batch is baseline
+(`SOF0`) and already 4:4:4, while all seven of the converted batch are
+progressive (`SOF2`) with metadata stripped — the fingerprint of the local
+step. The two sets separate cleanly, so the conversion applies to the
+2026-10-01 batch and to nothing before it.
+
 ## The delivery paths
 
 **Visual implementation (the 2026-08-22 model, unchanged):**
