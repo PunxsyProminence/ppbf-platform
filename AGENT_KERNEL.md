@@ -84,17 +84,19 @@ assets (plates)", `docs/REAL-GYM-REFERENCE-LOCK.md` and the image-text ruling
 (OD-2026-10-02-001) are separate rules that bind in full and are not loosened
 by anything in this section.
 
-1. *The floor.* Safety and safeguarding marks keep their meaning (`--locked`
-   means a medical stop and nothing else; a safety or governance refusal stays
-   on screen, attributable and not dismissible; colour is never the only
-   channel for a state; nothing decorative can be mistaken for a safety state).
-   These are about what a mark means, not about how the app looks: nothing
-   about the look itself binds (Jason, 2026-10-02: *"Nothing binding  visually
-   look will be less conflict than anything binding at this point"*,
-   OD-2026-10-02-007). Minors' privacy, role gates and organization
-   boundaries are untouched. Nothing false ships: no control that does
-   nothing, no invented data, roles or notices, and an unknown value never
-   looks complete or zero.
+1. *The floor.* Safety and safeguarding marks keep their meaning: `--locked`
+   means a medical stop and nothing else (OD-2026-09-29-001); a safety or
+   governance refusal stays on screen, attributable and not dismissible, and
+   colour is never the only channel for a state (Laws 7 and 3, kept by
+   OD-2026-09-28-009). These are about what a mark means, not about how the
+   app looks: nothing about the look itself binds (Jason, 2026-10-02:
+   *"Nothing binding  visually look will be less conflict than anything
+   binding at this point"*, OD-2026-10-02-007). Minors' privacy, role gates
+   and organization boundaries are untouched. Nothing false ships: no control
+   that does nothing, no invented data, roles or notices, and an unknown
+   value never looks complete or zero.
+   INFERRED, not ratified by Jason: a decorative use of colour should not be
+   mistakable for a safety state.
 2. *Readable and usable.* Text reads against what is actually behind it;
    gym-floor targets and type keep their minimums (`--tap`, `--t-md`); keyboard
    focus is visible; reduced motion is respected. The checks that enforce these
