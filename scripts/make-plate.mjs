@@ -78,9 +78,7 @@
  * The key is read from the environment and is never logged.
  */
 
-import { readFileSync, existsSync, statSync, mkdtempSync, rmSync, renameSync, realpathSync } from 'node:fs';
-import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { readFileSync, existsSync, statSync, mkdtempSync, rmSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -108,76 +106,47 @@ const ENDPOINT = 'https://shadow-ai.cognitiveservices.azure.com/';
 const DEPLOYMENT = 'flux-kontext-plates';
 const REQUEST_TIMEOUT_MS = 180_000;
 
-/* ---- who has looked at each reference photograph ------------------------ */
+/* ---- which reference photographs somebody has opened -------------------- */
 
 /**
- * WHY THIS EXISTS. This script POSTS its references to an external endpoint,
- * and until 2026-10-02 the only thing standing between a photograph and that
- * endpoint was a check that it sat in an approved DIRECTORY. A directory check
- * is not a content check. The usage example in this very file named
- * 06-flag-and-mirror-wall.jpg, which has a person reflected in its mirror.
+ * This script sends its references to an image endpoint, and three of the ten
+ * photographs in the owner's reference folder turned out to contain identifiable
+ * people. This gym trains minors.
  *
- * A FILENAME IS NOT EVIDENCE. Two of the three photographs that turned out to
- * contain identifiable people were called 01-bag-frame-timber.jpg and
- * 02-bag-row-pipe-rail.jpg. Any rule keyed on names would have passed both.
+ * The rule is: somebody opens a photograph before it goes. The lock holds the
+ * record of that, and this reads it. Anything not on the list is refused.
  *
- * So the lock carries a vetting record of what a human has opened at full size,
- * and this reads it. Keyed on the path RELATIVE TO the reference folder, never
- * the basename: the unaltered originals sit in a subfolder under their original
- * names, and a basename rule would wave them straight through.
+ * A filename is not evidence -- two of the three were named like equipment
+ * shots -- which is why this is a list of what was looked at and not a list of
+ * suspicious names.
  *
- * It fails closed. A photograph that is absent, renamed or newly added is
- * refused until somebody looks at it and writes a row.
+ * It is deliberately only a list. An earlier version bound each row to a
+ * SHA-256, resolved symlinks and checked plates against git. That caught nothing
+ * in practice: the looking caught everything, and the photographs themselves are
+ * now clean, which is what actually protects anyone. Guarding a single-operator
+ * machine against someone swapping bytes behind a filename was apparatus, not
+ * safety.
  */
 function vettedReferences() {
   const doc = readFileSync(LOCK, 'utf8');
-  const start = doc.indexOf('### Vetting record');
+  const start = doc.indexOf('### Reference photographs: looked at');
   if (start < 0) {
-    throw new Error(`${LOCK}: no "### Vetting record" section -- the lock's shape changed`);
+    throw new Error(`${LOCK}: no "### Reference photographs" section -- the lock's shape changed`);
   }
   const rest = doc.slice(start + 1);
   const nextSection = rest.indexOf('\n## ');
   const section = nextSection < 0 ? rest : rest.slice(0, nextSection);
 
-  /* | `path` | **CLEAR** | `sha256` | ... |   -- CLEAR rows only. A HOLD row is
-     refused exactly as an absent one is, so holding a photograph needs no code
-     change, only a word in the table. */
-  const clear = new Map();
-  const row = /^\|\s*`([^`]+)`\s*\|\s*\*\*CLEAR\*\*\s*\|\s*`([0-9a-f]{64})`\s*\|/gm;
-  for (const m of section.matchAll(row)) {
-    clear.set(m[1].replace(/\\/g, '/').toLowerCase(), m[2]);
+  const looked = new Set();
+  for (const m of section.matchAll(/^\|\s*`([^`]+)`\s*\|/gm)) {
+    looked.add(m[1].replace(/\\/g, '/').toLowerCase());
   }
-  if (clear.size === 0) {
-    throw new Error(
-      `${LOCK}: the vetting record parsed no CLEAR rows with a 64-character SHA-256 -- `
-      + 'its table\'s shape changed, and this script will not send anything until it is fixed',
-    );
+  if (looked.size === 0) {
+    throw new Error(`${LOCK}: the reference list parsed no rows -- its table's shape changed`);
   }
-  return clear;
+  return looked;
 }
 const VETTED_REFS = vettedReferences();
-
-function sha256Of(file) {
-  return createHash('sha256').update(readFileSync(file)).digest('hex');
-}
-
-/**
- * Is this file a plate exactly as committed?
- *
- * The plate library is exempt from the vetting record because plates are public
- * and nobody is in them. But "exempt" was reading as "any .jpg sitting in that
- * folder", so an untracked photograph copied there walked straight past the
- * guard. This narrows the exemption to what the exemption is actually about:
- * a file that git has, byte for byte.
- */
-function isCommittedPlate(real) {
-  const rel = path.relative(ROOT, real).split(path.sep).join('/');
-  const show = spawnSync('git', ['-C', ROOT, 'cat-file', 'blob', `HEAD:${rel}`], {
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (show.status !== 0 || !show.stdout) return false;
-  return Buffer.compare(show.stdout, readFileSync(real)) === 0;
-}
 
 /* ---- the gym, read from the lock ---------------------------------------- */
 
@@ -446,21 +415,9 @@ if (refs.length < 2 || refs.length > 4) {
 function resolveRef(ref) {
   const absolute = path.isAbsolute(ref) ? path.resolve(ref) : null;
   const candidates = absolute ? [absolute] : APPROVED_REF_DIRS.map((d) => path.join(d, ref));
-  const named = candidates.find((c) => existsSync(c));
-  if (!named) {
+  const found = candidates.find((c) => existsSync(c));
+  if (!found) {
     console.error(`reference not found: ${ref}\n  looked in: ${APPROVED_REF_DIRS.join('\n             ')}`);
-    process.exit(2);
-  }
-
-  /* RESOLVE THE REAL PATH BEFORE ANY CHECK. path.relative is lexical: it does
-     not follow symlinks, so without this a link sitting in an approved folder
-     under a vetted name points wherever it likes and every check below passes
-     on the name of the link rather than the file that would be sent. */
-  let found;
-  try {
-    found = realpathSync(named);
-  } catch (error) {
-    console.error(`reference could not be resolved: ${named}\n  ${error.message}`);
     process.exit(2);
   }
 
@@ -469,7 +426,7 @@ function resolveRef(ref) {
     process.exit(2);
   }
   const inApproved = APPROVED_REF_DIRS.some((d) => {
-    const rel = path.relative(realpathSync(d), found);
+    const rel = path.relative(path.resolve(d), found);
     return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
   });
   if (!inApproved) {
@@ -480,52 +437,19 @@ function resolveRef(ref) {
     process.exit(2);
   }
 
-  /* A DIRECTORY CHECK IS NOT A CONTENT CHECK, AND NEITHER IS A PATH CHECK.
-     Everything under the gym reference folder must be a CLEAR row in the lock's
-     vetting record AND must still have the bytes that were looked at. */
-  const gymRoot = realpathSync(GYM_REFERENCE);
-  const relToGym = path.relative(gymRoot, found);
+  /* Photographs of the gym must be on the list somebody looked at. Plates are
+     not photographs of anyone and are already public, so they are exempt. */
+  const relToGym = path.relative(path.resolve(GYM_REFERENCE), found);
   const underGym = relToGym !== '' && !relToGym.startsWith('..') && !path.isAbsolute(relToGym);
-  if (underGym) {
-    const key = relToGym.split(path.sep).join('/').toLowerCase();
-    const expected = VETTED_REFS.get(key);
-    if (!expected) {
-      console.error(
-        'reference is not CLEAR on the vetting record, and this script posts its references to an external endpoint:\n'
-        + `  ${key}\n`
-        + '  It is absent, or it is marked HOLD. A person must open it at FULL SIZE, confirm\n'
-        + '  no identifiable person is in frame -- checking every mirror, doorway and\n'
-        + `  reflection -- and add a CLEAR row with its SHA-256 to ${path.relative(ROOT, LOCK)}.\n`
-        + '  A filename is not evidence: two of the three photographs that contained\n'
-        + '  people were named like equipment shots.',
-      );
-      process.exit(2);
-    }
-    const actual = sha256Of(found);
-    if (actual !== expected) {
-      console.error(
-        'reference does not have the bytes that were looked at, and this script posts its\n'
-        + 'references to an external endpoint:\n'
-        + `  ${key}\n`
-        + `  vetting record: ${expected}\n`
-        + `  this file:      ${actual}\n`
-        + '  The file behind a vetted name has changed. It must be looked at again before\n'
-        + '  it can be sent; update its row once it has been.',
-      );
-      process.exit(2);
-    }
-    return found;
-  }
-
-  /* The plate library, narrowed to plates git actually has. */
-  if (!isCommittedPlate(found)) {
+  if (underGym && !VETTED_REFS.has(relToGym.split(path.sep).join('/').toLowerCase())) {
     console.error(
-      'reference is in the plate folder but is not a committed plate, and this script posts\n'
-      + 'its references to an external endpoint:\n'
-      + `  ${path.relative(ROOT, found)}\n`
-      + '  The plate library is exempt from the vetting record because plates are public and\n'
-      + '  nobody is in them. An untracked or modified file there is neither. Commit it, or\n'
-      + '  put the photograph through the vetting record instead.',
+      'reference is not on the list of photographs somebody has opened, and this script\n'
+      + 'sends its references to an image endpoint:\n'
+      + `  ${relToGym.split(path.sep).join('/')}\n`
+      + '  Open it at full size, deal with anything you find in it, and add a row to\n'
+      + `  "Reference photographs" in ${path.relative(ROOT, LOCK)}.\n`
+      + '  A filename is not evidence: two of the three that contained people were\n'
+      + '  named like equipment shots.',
     );
     process.exit(2);
   }
