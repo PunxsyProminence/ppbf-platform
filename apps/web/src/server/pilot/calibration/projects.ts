@@ -328,8 +328,11 @@ export async function assertVideoClippable(
    *
    * What DOES take footage back out of teaching use is archiving it
    * (OD-2026-09-30-002): the status check above refuses an archived video on
-   * every read, so its clips stop being playable, labellable and countable
-   * the moment it is withdrawn.
+   * every read, so from then on its clips cannot be opened for labelling and
+   * no new stream link is issued for it. A link minted before the archive is
+   * a bearer credential and stays good until it expires (60 minutes on the
+   * teaching stream route). Archiving is not deletion: the media stays in
+   * storage.
    */
 
   /*

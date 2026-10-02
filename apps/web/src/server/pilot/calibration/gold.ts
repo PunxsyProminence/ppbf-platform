@@ -289,8 +289,10 @@ export async function nominateGoldCandidate(
      *
      * A comment in this position used to say a guardian's withdrawal was
      * checked here, over no code at all. Corrected 2026-10-02 (TEACH-DATA-01).
-     * The two refusals above -- not teaching footage, and archived -- are the
-     * whole of what the source must satisfy.
+     * What this function does refuse is all visible in it: a superseded
+     * adjudication, a source that is not teaching footage, archived footage,
+     * and (below) an adjudication that settled nothing. Consent is not among
+     * them.
      */
 
     if (source.resolution_type === 'unresolvable' || source.missed_event_verdict === 'unresolvable') {

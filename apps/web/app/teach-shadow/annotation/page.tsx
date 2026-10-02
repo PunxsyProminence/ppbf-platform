@@ -59,8 +59,8 @@ import {
  * WHERE THE STREAM COMES FROM, AND WHY IT IS NOT THE FILM STUDY ROUTE. The
  * stream comes from /api/pilot/teach-shadow/footage/[videoId]/stream,
  * teaching's own door, gated by requireAnnotator and assertVideoClippable --
- * the same question the cut asks, so footage that stops being clippable stops
- * being watchable here in the same instant.
+ * the same question the cut asks, so footage that stops being clippable gets
+ * no new stream link here. (A link already minted lasts until it expires.)
  *
  * This page used to fetch the Film Study video route, the one the coach video
  * console uses. That route refuses take-backed footage (2026-09-25) and only

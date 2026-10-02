@@ -129,7 +129,16 @@ function mockFetch(options: Options = {}) {
       return json(outcome.body, outcome.ok);
     }
     if (url.includes('/api/pilot/teach-shadow/footage/')) {
-      return json({ stream_url: 'https://blob.example/clip.mp4?sig=abc', title: 'Sparring' });
+      // The teaching door's own response shape, not the Film Study route's:
+      // it carries no `title`, and a mock that offered one would let a later
+      // change read a field the live route never sends.
+      return json({
+        ok: true,
+        video_session_id: 'vid-1',
+        file_name: 'take-1.mp4',
+        stream_url: 'https://blob.example/clip.mp4?sig=abc',
+        expires_in_minutes: 60,
+      });
     }
     // NO BRANCH FOR THE FILM STUDY VIDEO ROUTE, deliberately. That route
     // refuses take-backed footage, which is the only footage a clip can come
@@ -187,7 +196,9 @@ test('the stream comes from the teaching footage door, never the Film Study rout
 
   // And the player actually received it: a page that asked the right door and
   // dropped the answer would pass every assertion above.
-  expect(document.querySelector('video')?.getAttribute('src')).toBe('https://blob.example/clip.mp4?sig=abc');
+  await waitFor(() => {
+    expect(document.querySelector('video')?.getAttribute('src')).toBe('https://blob.example/clip.mp4?sig=abc');
+  });
 });
 
 test('seeking past the end of the clip lands on the end, not past it', async () => {

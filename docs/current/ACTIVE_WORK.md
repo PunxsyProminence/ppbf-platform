@@ -150,8 +150,9 @@ its flat refusal.
 2026-10-02, TEACH-DATA-01). #1018 did not change the labelling page: it went
 on fetching the Film Study route, its own page suite required exactly that,
 and `src/server/pilot/teachingFootagePlayableContract.test.ts` checked only the
-cutter. So for two more days every clip a coach could open for labelling had a
-player with nothing in it. TEACH-DATA-01 points the labelling page at the
+cutter. So on `main` from 2026-09-30 to 2026-10-02 the labelling page still
+asked a route that refuses every clip it may show (read from the code; nobody
+recorded seeing the empty player on a device). TEACH-DATA-01 points the labelling page at the
 teaching door and makes the contract test hold BOTH pages to it. Shown by
 tests and code reading only: whether a clip plays on the labelling screen is
 proven by a signed-in walk as a coach or organization admin, not by a suite.
