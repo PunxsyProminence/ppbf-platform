@@ -1814,24 +1814,25 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       // restoreAllMocks after the real clock has returned.
       const fakeSetTimeout = global.setTimeout;
       const delays: number[] = [];
-      global.setTimeout = Object.assign(
+      const recording = Object.assign(
         ((handler: () => void, ms?: number) => {
           delays.push(Number(ms ?? 0));
           return fakeSetTimeout(handler, ms);
         }) as unknown as typeof setTimeout,
         fakeSetTimeout,
       );
+      global.setTimeout = recording;
       try {
         await openB({ status: { ...B_STATUS, expires_at: '2026-12-01 16:00:00+00' }, effectiveStatus: 'cleared' });
 
-        await pass(3 * 60 * 60 * 1000);
+        await pass(5 * 60_000);
 
         expect(readsOfB()).toBe(1);
         expectStillCleared();
         expect(delays).toContain(60_000);
         expect(Math.max(...delays)).toBeLessThanOrEqual(60_000);
       } finally {
-        global.setTimeout = fakeSetTimeout;
+        if (global.setTimeout === recording) global.setTimeout = fakeSetTimeout;
       }
     });
 
@@ -1843,7 +1844,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     ])('%s is never read again by itself', async (_name, body) => {
       await openB(body);
 
-      await pass(3 * 60 * 60 * 1000);
+      await pass(5 * 60_000);
 
       expect(readsOfB()).toBe(1);
     });

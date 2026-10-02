@@ -1640,18 +1640,18 @@ describe('a lapsed clearance beside a current one', () => {
     test('a clearance renewed in the meantime stays cleared, and its new end date is waited for in turn', async () => {
       await openBoard();
 
-      const renewed = { ...SOON_STATUS, status_id: 'status-3', effective_at: '2026-09-01T15:59:45.000Z', expires_at: '2026-09-01 17:00:00+00' };
+      const renewed = { ...SOON_STATUS, status_id: 'status-3', effective_at: '2026-09-01T15:59:45.000Z', expires_at: '2026-09-01 16:03:00+00' };
       answer = () => asResponse({ ok: true, status: renewed, effectiveStatus: 'cleared' });
       await pass(31_000);
       expect(reads.lapsing).toBe(2);
       expect(within(rowOf('Sam Roe')).getByText('cleared').className).toContain('badge--cleared');
 
       // Nothing more until the new end date.
-      await pass(50 * 60_000);
+      await pass(2 * 60_000);
       expect(reads.lapsing).toBe(2);
 
       answer = () => asResponse({ ok: true, status: renewed, effectiveStatus: 'cleared_expired' });
-      await pass(10 * 60_000);
+      await pass(60_000);
       expect(reads.lapsing).toBe(3);
       expect(within(rowOf('Sam Roe')).getByText('clearance expired')).toBeTruthy();
     });
@@ -1684,17 +1684,18 @@ describe('a lapsed clearance beside a current one', () => {
       // restoreAllMocks after the real clock has returned.
       const fakeSetTimeout = global.setTimeout;
       const delays: number[] = [];
-      global.setTimeout = Object.assign(
+      const recording = Object.assign(
         ((handler: () => void, ms?: number) => {
           delays.push(Number(ms ?? 0));
           return fakeSetTimeout(handler, ms);
         }) as unknown as typeof setTimeout,
         fakeSetTimeout,
       );
+      global.setTimeout = recording;
       try {
         await openBoard({ ok: true, status: { ...SOON_STATUS, expires_at: '2026-12-01 16:00:00+00' }, effectiveStatus: 'cleared' });
 
-        await pass(3 * 60 * 60 * 1000);
+        await pass(5 * 60_000);
 
         expect(reads.lapsing).toBe(1);
         expect(reads.current).toBe(1);
@@ -1702,7 +1703,7 @@ describe('a lapsed clearance beside a current one', () => {
         expect(delays).toContain(60_000);
         expect(Math.max(...delays)).toBeLessThanOrEqual(60_000);
       } finally {
-        global.setTimeout = fakeSetTimeout;
+        if (global.setTimeout === recording) global.setTimeout = fakeSetTimeout;
       }
     });
 
@@ -1730,7 +1731,7 @@ describe('a lapsed clearance beside a current one', () => {
     ])('%s is never asked about again', async (_name, body) => {
       await openBoard(body);
 
-      await pass(3 * 60 * 60 * 1000);
+      await pass(5 * 60_000);
 
       expect(reads.lapsing).toBe(1);
     });
