@@ -153,7 +153,7 @@ export async function setOwnPasswordFromLinkSession(input: {
     //    and one arriving later waits for this transaction. This statement
     //    only LOCKS. It decides nothing about the proof, because it can itself
     //    wait, and a condition judged before or during that wait is stale.
-    await client.query(
+    const locked = await client.query(
       `select 1
          from pilot.session_tokens st
         where st.token_hash = $1
@@ -175,7 +175,16 @@ export async function setOwnPasswordFromLinkSession(input: {
       [tokenHash, input.accountId],
     )).rows[0];
 
-    if (!account || isDeletedAccount(account) || !account.active_flag || proof?.link_session_proof !== true) {
+    // locked.rows.length: the decision below is only as good as the lock under
+    // it. A proof row that was not there to lock is no proof, whatever a
+    // later read finds.
+    if (
+      !account
+      || isDeletedAccount(account)
+      || !account.active_flag
+      || locked.rows.length !== 1
+      || proof?.link_session_proof !== true
+    ) {
       console.warn('pilot-auth set-password rejected', { reason: 'state_changed_before_write' });
       throw passwordSetupLinkRequired();
     }

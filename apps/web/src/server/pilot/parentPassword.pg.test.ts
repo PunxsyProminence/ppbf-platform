@@ -1031,6 +1031,14 @@ describe('a change between the check and the write is refused by the write', () 
     expect(await refusalOf({ accountId: parent, sessionToken: token, password: 'harborlight2026' })).toBe('ACCEPTED');
   });
 
+  // A session row can be deleted outright (the cleanup job, an account
+  // delete's cascade). No row to lock, no row to decide on.
+  test('the session row is deleted', async () => {
+    await refusedAfter(async (_accountId, token) => {
+      await client.query('delete from pilot.session_tokens where token_hash = $1', [hashToken(token)]);
+    });
+  });
+
   test('the session stops being a link session', async () => {
     await refusedAfter(async (_accountId, token) => {
       await client.query('update pilot.session_tokens set sign_in_method = null where token_hash = $1', [hashToken(token)]);
@@ -1332,6 +1340,40 @@ describe('the proof runs out while set-password waits for a lock', () => {
     expect(beganBeforeRunOut).toBe(true);
     expect(outcome).toBe('PASSWORD_SETUP_LINK_REQUIRED');
     expect(await storedPassword(parent)).toEqual({ password_hash: null, password_set_at: null });
+    expect(loggedReasons()).toEqual(['state_changed_before_write']);
+  });
+
+  // The other wait: on the PROOF row itself. Its holder changes nothing that
+  // commits (it rolls back), so Postgres has no reason to look at the row
+  // again when the lock is granted -- a condition written into the locking
+  // statement would have been judged before the wait. Here time itself runs
+  // the proof out: the session is created three seconds short of fifteen
+  // minutes old and the row is held for longer than that.
+  test('the session passes fifteen minutes old while set-password waits for the PROOF row: refused, nothing stored', async () => {
+    const parent = await seedAccount('parent');
+    const token = await seedSession(parent);
+    await client.query(
+      `update pilot.session_tokens
+          set created_at = clock_timestamp() - interval '15 minutes' + interval '3 seconds'
+        where token_hash = $1`,
+      [hashToken(token)],
+    );
+    await other.query('begin');
+    await other.query('update pilot.session_tokens set revoked_at = now() where token_hash = $1', [hashToken(token)]);
+
+    const pending = refusalOf({ accountId: parent, sessionToken: token });
+    try {
+      await mainTransactionStartOnceWaiting();
+      await new Promise((resolve) => setTimeout(resolve, 3_300));
+    } finally {
+      // Rolled back: the row is exactly as it was, unrevoked. Only time moved.
+      await other.query('rollback');
+    }
+
+    expect(await pending).toBe('PASSWORD_SETUP_LINK_REQUIRED');
+    expect(await storedPassword(parent)).toEqual({ password_hash: null, password_set_at: null });
+    // Refused by the decision inside the transaction, not by the early read:
+    // the proof was still good when the request arrived.
     expect(loggedReasons()).toEqual(['state_changed_before_write']);
   });
 
