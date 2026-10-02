@@ -85,14 +85,16 @@ describe('every way in still works', () => {
     await renderPanel();
 
     expect(screen.getByRole('button', { name: /continue with microsoft/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /send sign-in link/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^email me a link instead$/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^sign in$/i })).toBeTruthy();
   });
 
   test('a way to enter a PIN is on the page from the start', async () => {
     const { container } = await renderPanel();
 
-    expect(container.querySelector('input[type="password"], input[inputmode="numeric"]')).toBeTruthy();
+    // By its id: the parent password box is an input[type="password"] too,
+    // and would satisfy a looser selector with the PIN field gone.
+    expect(container.querySelector('#login-pin')).toBeTruthy();
   });
 
   test('a way to enter an email is on the page from the start', async () => {
@@ -160,6 +162,300 @@ describe('every way in still works', () => {
     expect(container.textContent).toMatch(/successful sign-ins are recorded/i);
     expect(container.textContent).not.toMatch(/access logged/i);
     expect(container.textContent).not.toMatch(/every attempt/i);
+  });
+});
+
+/**
+ * THE PARENT PASSWORD (OD-2026-10-01-002 section 3 item 4): a password box
+ * under the email box, and two buttons, "Sign In" and "Email Me A Link
+ * Instead". The emailed link is still there for everyone it was there for.
+ */
+describe('email, with a password or with a link', () => {
+  type Reply = { status: number; body?: unknown };
+
+  /** Answers by path; anything unlisted is the mount-time session check finding nobody. */
+  function answer(replies: Record<string, Reply>) {
+    const calls: Array<{ path: string; body: unknown }> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input), 'http://localhost').pathname;
+      calls.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      const reply = replies[path] ?? { status: 401, body: {} };
+      return {
+        ok: reply.status >= 200 && reply.status < 300,
+        status: reply.status,
+        json: async () => reply.body ?? {},
+      };
+    }) as unknown as typeof fetch;
+    return calls;
+  }
+
+  const LOGIN = '/api/pilot/auth/password/login';
+  const LINK = '/api/pilot/auth/magic-link/request';
+
+  function type(container: HTMLElement, selector: string, value: string) {
+    fireEvent.change(container.querySelector(selector)!, { target: { value } });
+  }
+
+  const passwordButton = () => screen.getByRole('button', { name: /sign in with password/i }) as HTMLButtonElement;
+  const linkButton = () => screen.getByRole('button', { name: /email me a link instead/i }) as HTMLButtonElement;
+
+  test('the password box sits under the email box, and both buttons carry the owner’s words', async () => {
+    const { container } = await renderPanel();
+
+    const email = container.querySelector('#magic-link-email')!;
+    const password = container.querySelector('#magic-link-password')!;
+    expect(password.getAttribute('type')).toBe('password');
+    expect(email.compareDocumentPosition(password) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(passwordButton().textContent).toBe('Sign In');
+    expect(linkButton().textContent).toBe('Email Me A Link Instead');
+  });
+
+  test('no longer says there is no password to remember', async () => {
+    const { container } = await renderPanel();
+
+    expect(container.textContent).not.toMatch(/no password to remember/i);
+  });
+
+  test('Sign In waits for both an email and a password; the link button does not', async () => {
+    const { container } = await renderPanel();
+
+    expect(passwordButton().disabled).toBe(true);
+    expect(linkButton().disabled).toBe(false);
+
+    await act(async () => { type(container, '#magic-link-email', 'parent@example.com'); });
+    expect(passwordButton().disabled).toBe(true);
+
+    await act(async () => { type(container, '#magic-link-password', 'three small boats'); });
+    expect(passwordButton().disabled).toBe(false);
+  });
+
+  test('Sign In posts the email and the password exactly as typed, and no link is asked for', async () => {
+    const { container } = await renderPanel();
+    const calls = answer({ [LOGIN]: { status: 200, body: { ok: true, role: 'parent' } } });
+
+    await act(async () => {
+      type(container, '#magic-link-email', '  parent@example.com ');
+      type(container, '#magic-link-password', '  three small boats ');
+    });
+    await act(async () => { fireEvent.click(passwordButton()); });
+
+    // The email is trimmed. The password is not: a space is part of it.
+    expect(calls.find((call) => call.path === LOGIN)?.body)
+      .toEqual({ email: 'parent@example.com', password: '  three small boats ' });
+    expect(calls.some((call) => call.path === LINK)).toBe(false);
+    // And the server is asked who that is, rather than the reply being trusted.
+    expect(calls[calls.length - 1].path).toBe('/api/pilot/auth/session');
+  });
+
+  test('a refusal says one thing whatever the reason, in brass, and points at the link', async () => {
+    const { container } = await renderPanel();
+    answer({ [LOGIN]: { status: 401, body: { error: 'Invalid credentials' } } });
+
+    await act(async () => {
+      type(container, '#magic-link-email', 'parent@example.com');
+      type(container, '#magic-link-password', 'not the password');
+    });
+    await act(async () => { fireEvent.click(passwordButton()); });
+
+    expect(container.querySelector('[data-refusal-stamp]')?.getAttribute('data-refusal-stamp')).toBe('cannot_be_done');
+    expect(container.textContent).toContain('Email or password not recognised. Try again, or use Email Me A Link Instead');
+    expect(container.innerHTML).not.toMatch(/--locked/);
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  test('being made to wait is a wait, not a refusal', async () => {
+    const { container } = await renderPanel();
+    answer({ [LOGIN]: { status: 429, body: { error: 'Too many sign-in attempts. Please wait a few minutes.' } } });
+
+    await act(async () => {
+      type(container, '#magic-link-email', 'parent@example.com');
+      type(container, '#magic-link-password', 'three small boats');
+    });
+    await act(async () => { fireEvent.click(passwordButton()); });
+
+    expect(container.querySelector('[data-refusal-stamp]')?.getAttribute('data-refusal-stamp')).toBe('wait');
+  });
+
+  test('both buttons are off while a sign-in is in flight, so it cannot be sent twice', async () => {
+    const { container } = await renderPanel();
+    let finish!: (value: unknown) => void;
+    const calls: string[] = [];
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      calls.push(new URL(String(input), 'http://localhost').pathname);
+      return new Promise((resolve) => { finish = resolve; });
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      type(container, '#magic-link-email', 'parent@example.com');
+      type(container, '#magic-link-password', 'three small boats');
+    });
+    // Held by reference: while a request is out, each button's name changes.
+    const signIn = passwordButton();
+    const link = linkButton();
+    await act(async () => { fireEvent.click(signIn); });
+
+    expect(signIn.disabled).toBe(true);
+    expect(link.disabled).toBe(true);
+    // And a screen reader is told so: the label does not hide the busy text.
+    expect(screen.getByRole('button', { name: 'Signing In…' })).toBe(signIn);
+    await act(async () => { fireEvent.click(signIn); });
+    await act(async () => {
+      fireEvent.keyDown(container.querySelector('#magic-link-password')!, { key: 'Enter' });
+    });
+    expect(calls).toEqual([LOGIN]);
+
+    await act(async () => { finish({ ok: false, status: 401, json: async () => ({}) }); });
+    expect(signIn.disabled).toBe(false);
+  });
+
+  test('Email Me A Link Instead still asks for the link, and sends no password', async () => {
+    const { container } = await renderPanel();
+    const calls = answer({ [LINK]: { status: 202, body: { ok: true } } });
+
+    await act(async () => {
+      type(container, '#magic-link-email', 'coach@example.com');
+      type(container, '#magic-link-password', 'typed and then thought better of');
+    });
+    await act(async () => { fireEvent.click(linkButton()); });
+
+    expect(calls.find((call) => call.path === LINK)?.body).toEqual({ email: 'coach@example.com' });
+    expect(calls.some((call) => call.path === LOGIN)).toBe(false);
+    expect(container.textContent).toMatch(/a sign-in link is on its way/i);
+  });
+
+  test('a correct sign-in lands on the dashboard the server names for that session', async () => {
+    const { container } = await renderPanel();
+    answer({
+      [LOGIN]: { status: 200, body: { ok: true, role: 'parent' } },
+      '/api/pilot/auth/session': {
+        status: 200,
+        body: { authenticated: true, account_id: 'parent@example.com', role: 'parent', organization_id: 'org-1', auth_provider: 'microsoft' },
+      },
+    });
+
+    await act(async () => {
+      type(container, '#magic-link-email', 'parent@example.com');
+      type(container, '#magic-link-password', 'three small boats');
+    });
+    await act(async () => { fireEvent.click(passwordButton()); });
+
+    expect(router.replace).toHaveBeenCalledTimes(1);
+    expect(router.replace).toHaveBeenCalledWith('/parent/dashboard');
+    expect(container.querySelector('[data-refusal-stamp]')).toBeNull();
+  });
+
+  test.each([500, 503])('a %i is the gym not answering, not a password that was not recognised', async (status) => {
+    const { container } = await renderPanel();
+    answer({ [LOGIN]: { status, body: { error: 'Internal server error' } } });
+
+    await act(async () => {
+      type(container, '#magic-link-email', 'parent@example.com');
+      type(container, '#magic-link-password', 'three small boats');
+    });
+    await act(async () => { fireEvent.click(passwordButton()); });
+
+    expect(container.textContent).toContain('Could not reach the gym right now');
+    expect(container.textContent).not.toMatch(/not recognised/i);
+  });
+
+  test('a password attempt takes down the "link is on its way" notice from before it', async () => {
+    const { container } = await renderPanel();
+    answer({ [LINK]: { status: 202, body: { ok: true } }, [LOGIN]: { status: 401, body: {} } });
+
+    await act(async () => { type(container, '#magic-link-email', 'parent@example.com'); });
+    await act(async () => { fireEvent.click(linkButton()); });
+    expect(container.textContent).toMatch(/a sign-in link is on its way/i);
+
+    await act(async () => { type(container, '#magic-link-password', 'not the password'); });
+    await act(async () => { fireEvent.click(passwordButton()); });
+
+    expect(container.textContent).not.toMatch(/a sign-in link is on its way/i);
+  });
+
+  test('while a link is being sent, Sign In is off and Enter in the password box does nothing', async () => {
+    const { container } = await renderPanel();
+    let finish!: (value: unknown) => void;
+    const calls: string[] = [];
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      calls.push(new URL(String(input), 'http://localhost').pathname);
+      return new Promise((resolve) => { finish = resolve; });
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      type(container, '#magic-link-email', 'parent@example.com');
+      type(container, '#magic-link-password', 'three small boats');
+    });
+    const signIn = passwordButton();
+    const link = linkButton();
+    await act(async () => { fireEvent.click(link); });
+
+    expect(signIn.disabled).toBe(true);
+    expect(link.disabled).toBe(true);
+    await act(async () => {
+      fireEvent.keyDown(container.querySelector('#magic-link-password')!, { key: 'Enter' });
+    });
+    await act(async () => { fireEvent.submit(container.querySelector('#magic-link-password')!.closest('form')!); });
+    expect(calls).toEqual([LINK]);
+
+    await act(async () => { finish({ ok: true, status: 202, json: async () => ({}) }); });
+  });
+
+  /* A shared tablet's browser can fill a saved password into the box. A coach
+     who types their email and presses Enter there asked for a link. */
+  test('Enter in the EMAIL box asks for the link even with something in the password box', async () => {
+    const { container } = await renderPanel();
+    const calls = answer({ [LINK]: { status: 202, body: { ok: true } } });
+
+    await act(async () => {
+      type(container, '#magic-link-password', 'filled in by the browser');
+      type(container, '#magic-link-email', 'coach@example.com');
+    });
+    await act(async () => {
+      fireEvent.keyDown(container.querySelector('#magic-link-email')!, { key: 'Enter' });
+    });
+
+    expect(calls.map((call) => call.path)).toEqual([LINK]);
+  });
+
+  test('a submit that arrives without the key goes by whether a password is there', async () => {
+    const { container } = await renderPanel();
+    const calls = answer({ [LINK]: { status: 202, body: { ok: true } }, [LOGIN]: { status: 401, body: {} } });
+    const form = container.querySelector('#magic-link-email')!.closest('form')!;
+
+    await act(async () => { type(container, '#magic-link-email', 'parent@example.com'); });
+    await act(async () => { fireEvent.submit(form); });
+    expect(calls.map((call) => call.path)).toEqual([LINK]);
+
+    await act(async () => { type(container, '#magic-link-password', 'three small boats'); });
+    await act(async () => { fireEvent.submit(form); });
+    expect(calls.map((call) => call.path)).toEqual([LINK, LOGIN]);
+  });
+
+  test('Enter with no password asks for the link, as it did before the password box existed', async () => {
+    const { container } = await renderPanel();
+    const calls = answer({ [LINK]: { status: 202, body: { ok: true } } });
+
+    await act(async () => { type(container, '#magic-link-email', 'coach@example.com'); });
+    await act(async () => {
+      fireEvent.keyDown(container.querySelector('#magic-link-email')!, { key: 'Enter' });
+    });
+
+    expect(calls.map((call) => call.path)).toEqual([LINK]);
+  });
+
+  test('Enter with a password typed signs in', async () => {
+    const { container } = await renderPanel();
+    const calls = answer({ [LOGIN]: { status: 401, body: {} } });
+
+    await act(async () => {
+      type(container, '#magic-link-email', 'parent@example.com');
+      type(container, '#magic-link-password', 'three small boats');
+    });
+    await act(async () => {
+      fireEvent.keyDown(container.querySelector('#magic-link-password')!, { key: 'Enter' });
+    });
+
+    expect(calls.map((call) => call.path)).toEqual([LOGIN]);
   });
 });
 
