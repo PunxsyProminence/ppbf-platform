@@ -18,8 +18,9 @@
 export const INTAKE_CHUNK_TARGET_LENGTH = 1_200;
 
 // One submission is a sequence of chunk writes, each of which embeds
-// server-side. This bounds a single paste to 40 of them; a longer source goes
-// in as several labelled excerpts.
+// server-side. This bounds a single paste to about 40 of them for ordinary
+// prose (more when the text has few places to break); a longer source goes in
+// as several labelled excerpts.
 export const INTAKE_MAX_TEXT_LENGTH = 48_000;
 
 export const INTAKE_METHOD = 'manual_text';
@@ -123,6 +124,8 @@ export function rejoinIntakeChunks(chunks: readonly Pick<IntakeChunk, 'text' | '
   return chunks.map((chunk) => `${chunk.joinBefore}${chunk.text}`).join('');
 }
 
+const UNPAIRED_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
 /** Null when the input may be submitted; otherwise the sentence to show. */
 export function validateIntakeInput(input: IntakeInput): string | null {
   if (!input.sourceId.trim()) return 'Choose the registered source this text comes from.';
@@ -130,6 +133,13 @@ export function validateIntakeInput(input: IntakeInput): string | null {
   if (!input.locator.trim()) return 'Say where in the source this text is: a page, section or timestamp.';
   const text = normalizeIntakeText(input.text);
   if (!text) return 'Paste or type the source text.';
+  // Refused rather than repaired: stripping them would change the source text,
+  // and storing them cannot work. Postgres text has no NUL, and an unpaired
+  // surrogate is stored as U+FFFD, so the saved text would not be what was
+  // submitted. Both are copy-paste damage the curator can see and fix.
+  if (text.includes('\u0000') || UNPAIRED_SURROGATE.test(text)) {
+    return 'This text contains a damaged character (often left by copying from a PDF). Remove it and try again.';
+  }
   if (text.length > INTAKE_MAX_TEXT_LENGTH) {
     return `This text is ${text.length.toLocaleString('en-US')} characters. One entry holds up to ${INTAKE_MAX_TEXT_LENGTH.toLocaleString('en-US')}; split it into separate labelled excerpts.`;
   }
@@ -144,6 +154,9 @@ function refusalMessage(status: number, what: string): string {
   return `The Library refused the ${what} (${status}).`;
 }
 
+// Generous: a chunk write embeds its text before it answers.
+const REQUEST_TIMEOUT_MS = 60_000;
+
 async function postJson(
   fetchImpl: typeof fetch,
   url: string,
@@ -155,6 +168,8 @@ async function postJson(
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      // A request that never answers must not leave the form on "Saving…".
+      signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(REQUEST_TIMEOUT_MS) : undefined,
     });
     return { status: response.status, payload: await response.json().catch(() => null) };
   } catch {
@@ -221,13 +236,16 @@ export async function submitLibraryTextIntake(
     });
     const createdId = created.status === 201 ? documentIdFrom(created.payload) : null;
     if (!createdId) {
+      // Only a 4xx is a refusal, and only a refusal proves nothing was stored.
+      // No answer, a 5xx, or a 201 without an id can each follow a row that
+      // WAS written (the route inserts before it logs), so those say "check"
+      // instead of inviting a retry that would file the same text twice.
+      const refused = created.status >= 400 && created.status < 500;
       return {
         ok: false,
-        message: created.status === 0
-          ? 'The Library could not be reached. Nothing was saved. Check your connection and try again.'
-          : created.status === 201
-            ? 'The Library answered without a document id. Check Evidence Review before trying again.'
-            : `${refusalMessage(created.status, 'source')} Nothing was saved.`,
+        message: refused
+          ? `${refusalMessage(created.status, 'source')} Nothing was saved.`
+          : 'The Library did not confirm the save. An empty entry with this label may exist: check Evidence Review before trying again, and reject it there if it does.',
         resume: null,
         writtenChunks: 0,
         totalChunks: chunks.length,

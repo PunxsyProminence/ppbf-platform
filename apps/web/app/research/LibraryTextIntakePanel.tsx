@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { apiBase } from '@/lib/apiBase';
 import {
@@ -44,8 +44,13 @@ export default function LibraryTextIntakePanel({ sources }: { readonly sources: 
   // the text that document was created for.
   const [resume, setResume] = useState<IntakeResume | null>(null);
 
-  const textLength = normalizeIntakeText(draft.text).length;
-  const partCount = textLength > 0 && textLength <= INTAKE_MAX_TEXT_LENGTH ? splitIntakeText(draft.text).length : 0;
+  const { textLength, partCount } = useMemo(() => {
+    const length = normalizeIntakeText(draft.text).length;
+    return {
+      textLength: length,
+      partCount: length > 0 && length <= INTAKE_MAX_TEXT_LENGTH ? splitIntakeText(draft.text).length : 0,
+    };
+  }, [draft.text]);
   const locked = busy || resume !== null;
 
   async function handleSubmit() {

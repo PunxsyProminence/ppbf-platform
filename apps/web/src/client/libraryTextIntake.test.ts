@@ -79,6 +79,27 @@ describe('splitIntakeText', () => {
     }
   });
 
+  // The chunk route trims what it stores, so a chunk edge that lands on any
+  // whitespace JS trims -- not only space and newline -- would lose text. Each
+  // case puts one such run on, just before, or just after the cut.
+  it.each([
+    ['space', ' '], ['tab', '\t'], ['newline', '\n'], ['blank line', '\n\n'], ['no-break space', ' '],
+    ['line separator', ' '], ['ideographic space', '　'], ['mixed run', ' \t \n '],
+  ])('never leaves a %s on a chunk edge at the window boundary', (_name, gap) => {
+    for (const lead of [INTAKE_CHUNK_TARGET_LENGTH - 1, INTAKE_CHUNK_TARGET_LENGTH, INTAKE_CHUNK_TARGET_LENGTH + 1]) {
+      for (const head of ['x'.repeat(lead), `${'word '.repeat(40)}${'x'.repeat(lead - 200)}`]) {
+        const text = `${head}${gap}${'y'.repeat(INTAKE_CHUNK_TARGET_LENGTH + 5)}${gap}tail`;
+        const chunks = splitIntakeText(text);
+        expect(rejoinIntakeChunks(chunks)).toBe(normalizeIntakeText(text));
+        for (const chunk of chunks) {
+          expect(chunk.text).toBe(chunk.text.trim());
+          expect(chunk.text.length).toBeGreaterThan(0);
+          expect(chunk.text.length).toBeLessThanOrEqual(INTAKE_CHUNK_TARGET_LENGTH);
+        }
+      }
+    }
+  });
+
   it('is deterministic', () => {
     expect(splitIntakeText(INPUT.text)).toEqual(splitIntakeText(INPUT.text));
   });
@@ -102,6 +123,13 @@ describe('validateIntakeInput', () => {
     expect(validateIntakeInput({ ...INPUT, locator: '' })).toMatch(/page, section/);
     expect(validateIntakeInput({ ...INPUT, text: ' \n ' })).toMatch(/source text/);
     expect(validateIntakeInput(INPUT)).toBeNull();
+  });
+
+  it('refuses a NUL or an unpaired surrogate instead of storing altered text', () => {
+    expect(validateIntakeInput({ ...INPUT, text: 'a\u0000b' })).toMatch(/damaged character/);
+    expect(validateIntakeInput({ ...INPUT, text: 'a\ud83eb' })).toMatch(/damaged character/);
+    expect(validateIntakeInput({ ...INPUT, text: 'a\udd4ab' })).toMatch(/damaged character/);
+    expect(validateIntakeInput({ ...INPUT, text: 'a \u{1F94A} b' })).toBeNull();
   });
 
   it('refuses text over the per-entry bound', () => {
@@ -159,6 +187,15 @@ describe('submitLibraryTextIntake', () => {
     const result = await submitLibraryTextIntake('', INPUT, { fetchImpl: impl });
     expect(result).toMatchObject({ ok: false, resume: null, writtenChunks: 0 });
     expect(result.ok === false && result.message).toMatch(/cannot add text.*Nothing was saved/);
+    expect(calls).toHaveLength(1);
+  });
+
+  it.each([[500], [0], [201]])('does not claim nothing was saved when the document answer is %s without an id', async (status) => {
+    const { calls, impl } = recordingFetch(() => (status === 0 ? 'throw' : { status }));
+    const result = await submitLibraryTextIntake('', INPUT, { fetchImpl: impl });
+    expect(result).toMatchObject({ ok: false, resume: null });
+    expect(result.ok === false && result.message).toMatch(/did not confirm.*check Evidence Review/);
+    expect(result.ok === false && result.message).not.toMatch(/Nothing was saved/);
     expect(calls).toHaveLength(1);
   });
 
