@@ -663,14 +663,25 @@
    shared painter at legacy:3580-3594 is what The Bell's image rides on, so it
    is not touched here.
 
-   `--plate: none` rather than deleting the declaration: the painter stays
-   exactly as it is and simply has nothing to paint, which keeps the stacking
-   contract, the reduced-data behaviour and The Bell all intact.
+   `--plate: none` IS GONE, 2026-10-01. Jason rescinded the ruling above:
+   "my decision if im was clear is to edit change rewrite what ever we need to
+   do to get these plate varieties remove my decision about the floor"
+   (OD-2026-10-01-005). The floor takes photographs again.
+
+   THE MATERIAL BELOW STAYS, and is now worth more than it was. It is the
+   element background; the plate paints over it from `.room::after`. So the
+   material is what a coach sees when the plate 404s, when the tablet is
+   offline, or under prefers-reduced-data -- a designed black-and-grain floor
+   instead of the generic gradient wall. The zero-asset guarantee got better
+   rather than being traded away.
+
+   WHY THE PHOTOGRAPHS CHANGED TOO. The two plates this room used to declare
+   were a generic dark red brick wall, which is not this building -- judged by
+   opening them, 2026-10-01. They are replaced, not restored.
 
    Grain is --grain-fine at its own 120px tile, soft-light. The token is not
    redefined -- 31 other rules read it.                                       */
 .room--floor {
-  --plate: none;
   background-color: #171411;
   background-image: var(--grain-fine);
   background-size: 120px 120px;

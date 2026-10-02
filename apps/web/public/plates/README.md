@@ -34,6 +34,9 @@ fills an of5; clinic has 10 and fills an of4; night has 3 and fills an of3.
 | `plate-03-clinic-02.jpg` | `.room--clinic`, `2of4` | 1280×720 | 202,304 |
 | `plate-03-clinic-03.jpg` | `.room--clinic`, `3of4` | 1280×720 | 202,289 |
 | `plate-15-filmroom-landscape-01.jpg` | `.room--clinic`, `4of4` | 1280×720 | 157,678 |
+| `plate-16-floor-room-01.jpg` | `.room--floor`, slot 1 of 2 | 1280×720 | 324,650 |
+| `plate-16-floor-room-02.jpg` | `.room--floor`, `2of2` -- chalk wall and red shelving | 1280×720 | 207,741 |
+| `plate-11-floor-portrait-01.jpg` | `.room--floor`, `@media (orientation: portrait)` | 810×1440 | 195,227 |
 | `plate-06-night-01.jpg` | `.room--night`, slot 1 of 3 | 1280×720 | 46,687 |
 | `plate-06-night-02.jpg` | `.room--night`, `2of3` | 1280×720 | 86,167 |
 | `plate-06-night-03.jpg` | `.room--night`, `3of3` | 1280×720 | 268,746 |
@@ -108,14 +111,22 @@ The byte gate cannot see lettering at all, and the reference lock asks for a
 human look precisely because of this. **A contact sheet is for choosing
 candidates. Nothing is bound until it has been opened at full size.**
 
-## The gym floor no longer takes a plate
+## The gym floor takes photographs again
 
-`current/ppbf-golden-era.css` converts `.room--floor` to a material ground —
-colour, two light pools, falloff and `--grain-fine` — and sets `--plate: none`.
-The painter is untouched: it simply has nothing to paint on that room. Owner
-direction, 2026-09-22, was that the app is not tied to real gym pictures, and
-the two plates below were the floor's. They stay committed and still pass the
-byte gate; nothing paints them.
+Owner direction, 2026-10-01 (OD-2026-10-01-005), rescinding the 2026-09-22
+ruling: *"remove my decision about the floor"*. `--plate: none` is gone from
+`current/ppbf-golden-era.css` and the floor carries two landscape walls on an
+`of2` (21 doors / 19 doors) plus a portrait plate.
+
+**The material ground stays**, and is now the fallback rather than the finish:
+it is the element background, the plate paints over it, so a 404, an offline
+tablet or `prefers-reduced-data` lands on a designed black-and-grain floor
+instead of the generic gradient wall.
+
+**The two plates the floor used to declare are not the ones it got back.**
+Opened at full size on 2026-10-01, `plate-02a-floor-landscape-01` and
+`plate-02b-floor-portrait-01` are a generic dark red brick wall — not this
+building. They stay committed, pass the byte gate, and **must not be bound**.
 
 Board, File, Office, Clinic and Night keep their walls, the family ground
 (`.on-canvas`) keeps plate 07, and The Bell keeps plate 08. Board and File in
@@ -138,13 +149,12 @@ orientation block, per "Adding a variant" below.
 | File | Dimensions | Bytes | What it would replace or add |
 |---|---|---|---|
 | `plate-01-office-portrait-01.jpg` | 810×1440 | 186,248 | a portrait crop the office room does not have today |
-| `plate-02b-floor-portrait-02.jpg` | 810×1440 | 189,337 | a second portrait floor plate |
-| `plate-02b-floor-portrait-ring-01.jpg` | 810×1440 | 82,185 | a ring-side portrait floor alternative |
+| `plate-02b-floor-portrait-02.jpg` | 810×1440 | 189,337 | **Do not bind:** a chalk wall covered in invented words, judged 2026-10-01 |
+| `plate-02b-floor-portrait-ring-01.jpg` | 810×1440 | 82,185 | **Do not bind:** EVERLAST lettering on the turnbuckle, outside the ring-canvas exception, judged 2026-10-01 |
 | `plate-03-clinic-portrait-01.jpg` | 810×1440 | 119,124 | a portrait crop the clinic does not have today |
 | `plate-09-drillcase-landscape-01.jpg` | 1280×720 | 200,989 | the Drill Cabinet room: gear shelves, gloves on hooks, a card-index cabinet |
 | `plate-09-drillcase-portrait-01.jpg` | 810×1440 | 198,467 | the same cabinet upright. It was committed with its landscape pair and listed in neither table until 2026-10-01 |
-| `plate-10-floor-landscape-01.jpg` | 1280×720 | 181,156 | the gym floor: the ring on the red floor, bags on the timber frame, plank walls |
-| `plate-11-floor-portrait-01.jpg` | 810×1440 | 195,227 | the gym floor upright, for the tablet that stands on the counter |
+| `plate-10-floor-landscape-01.jpg` | 1280×720 | 181,156 | **Do not bind:** an invented crest with invented lettering in the ring-canvas roundel, judged 2026-10-01 |
 | `plate-12-locker-landscape-01.jpg` | 1280×720 | 200,442 | the athletes corner: grey lockers with a red bank, benches |
 | `plate-13-scripts-landscape-01.jpg` | 1280×720 | 201,153 | the coaches corner: desk, timing clock, empty boards |
 | `plate-14-frontdesk-landscape-01.jpg` | 1280×720 | 203,244 | the Front Desk room: counter, stool, key box, the floor beyond. **Do not bind:** invented banner lettering and an invented apron crest, judged 2026-10-01 |
