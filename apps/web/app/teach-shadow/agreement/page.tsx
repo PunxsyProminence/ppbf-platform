@@ -68,8 +68,8 @@ interface AgreementPayload {
  * comparison.ts's DISAGREEMENT_CATEGORIES; an unlisted one falls back to its
  * own name rather than vanishing. */
 const PLAIN: Record<string, string> = {
-  EVENT_MISSED: 'one coach marked an action the other did not',
-  BOUNDARY: 'the timing of the action',
+  EVENT_MISSED: 'whether an action happened at all',
+  BOUNDARY: 'the timing',
   PUNCH_TYPE: 'which punch it was',
   PHYSICAL_HAND: 'left or right hand',
   HAND_ROLE: 'lead or rear hand',
@@ -126,18 +126,20 @@ function headline(payload: AgreementPayload): string {
   const compared = `${clips(payload.comparison_count)} compared.`;
   if (!payload.report) return compared;
 
-  const top = Object.entries(payload.report.disagreementCounts)
+  // EVERY KIND, NAMED, IN THE VOCABULARY'S OWN ORDER, AND NOT RANKED. The
+  // counts are not on one scale -- an action can differ on its timing in four
+  // places and on its punch type once -- so sorting them, or calling any of
+  // them "top", would be a comparison the numbers cannot support. The counts
+  // are in the detail, each beside what it was counted across.
+  const kinds = Object.entries(payload.report.disagreementCounts)
     .filter(([, count]) => count > 0)
-    .sort(([, left], [, right]) => right - left)
-    .slice(0, 2)
-    .map(([category, count]) => `${plain(category)} (${times(count)})`);
+    .map(([category]) => plain(category));
 
-  // "Top", not "the most": two of three tied types would not be the most, and
-  // the counts are not on one scale. And never "they agreed": no recorded
-  // disagreement is also what two empty sets of labels produce.
-  return top.length === 0
+  // Never "they agreed": no recorded disagreement is also what two empty sets
+  // of labels produce.
+  return kinds.length === 0
     ? `${compared} No disagreements were recorded on them.`
-    : `${compared} Top disagreements: ${top.join(' and ')}.`;
+    : `${compared} The two coaches differed on: ${kinds.join(', ')}.`;
 }
 
 export default function LabelAgreementPage() {

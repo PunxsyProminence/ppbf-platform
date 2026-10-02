@@ -102,7 +102,7 @@ test('one study opens straight onto its sentence, with no picker', async () => {
 
   const headline = await screen.findByTestId('headline');
   expect(headline).toHaveTextContent(
-    '6 clips compared. Top disagreements: which punch it was (4 times) and the timing of the action (3 times).',
+    '6 clips compared. The two coaches differed on: which punch it was, the timing, the stance.',
   );
   expect(screen.queryByLabelText('Study')).not.toBeInTheDocument();
   expect(screen.queryByTestId('below-minimum')).not.toBeInTheDocument();
@@ -145,7 +145,7 @@ test('below the minimum it shows counts, says so, and prints no percentage anywh
   expect(await screen.findByTestId('below-minimum')).toHaveTextContent(
     'Not enough clips yet for percentages: 2 of the 5 needed.',
   );
-  expect(screen.getByTestId('headline')).toHaveTextContent('which punch it was (4 times)');
+  expect(screen.getByTestId('headline')).toHaveTextContent('differed on: which punch it was, the timing, the stance.');
 
   fireEvent.click(screen.getByRole('button', { name: 'Show detail' }));
   expect(screen.getByTestId('detail')).toHaveTextContent('4 of 16 matched pairs');
@@ -204,6 +204,20 @@ test('timing differences are counted, never given as a share that could pass 100
   expect(detail).toHaveTextContent('8 differences across 4 matched pairs');
   expect(detail).not.toHaveTextContent('200%');
   expect(detail).toHaveTextContent('under 1%');
+});
+
+test('the sentence names every kind in the order it was sent, with no ranking and no count', async () => {
+  const mixed = report();
+  // Smallest first: a sentence that sorted by count would reverse these.
+  mixed.report.disagreementCounts = { STANCE: 1, PUNCH_TYPE: 2, BOUNDARY: 9, TARGET: 0, HAND_ROLE: 3 } as never;
+  mockFetch([STUDY], { 'proj-1': { body: mixed } });
+  render(<LabelAgreementPage />);
+
+  const headline = await screen.findByTestId('headline');
+  expect(headline).toHaveTextContent(
+    /^6 clips compared\. The two coaches differed on: the stance, which punch it was, the timing, lead or rear hand\.$/,
+  );
+  expect(headline).not.toHaveTextContent(/top|most|\d times|once/i);
 });
 
 test('no recorded disagreement is reported as that, not as agreement', async () => {
