@@ -164,6 +164,102 @@ and should not try to.
 
 ---
 
+## OD-2026-10-01-006 -- SHADOW: educate, do not restrict, and a coach is told; emergency reviews get their own hourly allowance; the #1036 replacement re-cut
+
+**Provenance: PRIMARY.** Section 1's three messages were typed by Jason in the
+Lane A thread and read by overwatch in that thread's transcript
+(`C--Dev/621541d7-de10-407e-8fb4-67468f9758b5.jsonl`), times UTC. Section 2's
+answer was typed in the overwatch thread (transcript as in OD-2026-09-30-007).
+**Date:** 2026-10-01 (his evening; the UTC times in section 1 run past
+midnight). This entry is new and edits no earlier one. Ids -004 and -005 are
+taken by the visual lane's open PRs #1068 and #1077.
+
+### 1. Educate, not restrict; notifying a coach is part of it
+
+Lane A had put two questions to him in its thread, each with A recommended:
+whether a message that states an acute event happened to a specific person,
+with no "I", "my" or "now", is a report; and whether wording that could be read
+either way is treated as a report, at the measured cost that 4 of 40 general
+questions in its test set would then be refused, two of them with the emergency
+text. His three messages, in order:
+
+- 2026-10-01T23:46:40Z: *"Recommendation "*
+- 2026-10-02T00:08:22Z: *"explain"*. Lane A then explained the two questions in
+  plain terms and restated that cost.
+- 2026-10-02T00:27:39Z: *"that is where my educate not restrict comes into play, part of that education would be to notify the coach,  thats what we have been fighting over with the saftey piece all through the app"*
+
+"Recommendation" is NOT recorded as an A/B selection: he asked for an
+explanation next and then answered in his own terms. The third message
+governs. ChatGPT, as architect, read it the same way.
+
+**Decided:**
+
+1. Uncertain safety wording is not a reason to replace an answer with a
+   refusal.
+2. SHADOW educates rather than restricts.
+3. Telling a coach is part of the intended handling of a safety case.
+
+**Still open, and not to be inferred from those words:**
+
+1. When the emergency act-now line appears for an asserted or unclear event
+   (put to him as A/B/C; not answered when written).
+2. Which coach or coaches "notify the coach" means, and what happens when no
+   athlete is in scope (put to him as A/B/C; not answered when written).
+3. No email, text or push is authorized by these words.
+
+What the app does today (REPORTED by Lane A at main `c5d5c260`, and traced
+independently by ChatGPT): a SHADOW review row is read only by admins on one
+admin page; it carries no athlete id; no coach reads it; nothing is pushed. So
+the existing review queue does not notify a coach. Not his words, and not
+recorded as his: "nobody is refused", "ambiguous means notify", "the review
+queue notifies the coach", "coach of record plus covering coach".
+
+### 2. Emergency reviews get their own hourly allowance
+
+OD-2026-09-30-005 gave the human-review write a limit of 3 per hour per
+account. OD-2026-09-30-006 selection 5 gave every high-risk message a human
+review. Built together (Lane A, unpushed), three ordinary review records could
+use the hour, so a later emergency report kept its emergency reply but left no
+review row; `main` always wrote that row. ChatGPT ruled the choice his. Asked:
+
+"Official: you chose 3 SHADOW human-review records per hour per account. With
+every high-risk question now adding a record, three ordinary ones can use up
+the hour, so a later "I can't breathe" gets its emergency reply but no review
+record. A (recommended, ChatGPT's pick too): one 3-per-hour allowance for
+emergency reports only, and a separate 3-per-hour allowance for everything
+else. B: keep one shared allowance and accept that gap. C: emergency reports
+always write a record, with no limit."
+
+Jason, whole message: *"A"*.
+
+**A.** In ChatGPT's terms: one bucket of 3 per hour per account for critical
+request reviews only; a separate bucket of 3 per hour per account for the other
+high-risk request reviews and the generated-answer safety reviews. A fourth
+critical request in the hour is still suppressed: the emergency path is
+bounded, not unlimited. This narrows what OD-2026-09-30-005's single
+`safety_review` bucket covers; it does not change the number he chose.
+
+Other questions were open with him at the time (a hold sentence, the act-now
+threshold, the coach recipient and others). Overwatch reads "A" as the answer
+to the one new question in the message it replied to, and to no other; those
+stay open.
+
+### 3. The #1036 replacement is re-cut so no step adds refusals
+
+On section 1, ChatGPT replaced the earlier five-piece order. The classifier
+correction no longer lands first, because alone it would have turned about 30
+of Lane A's 36 test reports into refusals until later pieces landed. New order,
+one lane and one PR each: (1) every high-risk message leaves a bounded
+human-review record; (2) a coach-facing in-app escalation, only if he confirms
+the recipient; (3) education instead of refusal for non-acute high-risk; (4)
+acute gets the act-now line plus education; (5) the acute-report classifier
+correction; (6) contractions without apostrophes. Pieces 3, 4 and 5 go to
+production together. PR #1036 closes as superseded when piece 1's PR opens.
+This is the architect's sequencing, recorded so later lanes can find it; it is
+not an owner decision.
+
+---
+
 ## OD-2026-10-01-003 -- His later answers of 2026-10-01 (afternoon): the coach-board control and failure line approved; working files; plates and who owns the visual lane; observation ids; the knockout cases; release 3 staged then cancelled
 
 **Provenance: PRIMARY** where Jason's words were typed in the overwatch thread
