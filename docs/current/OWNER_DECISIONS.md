@@ -247,7 +247,13 @@ and is not part of the report; it goes to the architect as its own work
 order. The two-labeller study needs 2 labellers and 5 clips, not 5 accounts.
 
 Not covered by that "Yes": the wording of the door to the screen on the Teach
-Shadow page. The lane is asking him separately.
+Shadow page. The lane asked him separately (21:41:12Z): "Official: approve the
+door wording on the Teach Shadow home page: section "Stage five: Measure",
+text "See where two coaches labelled the same clip differently. It measures
+the labelling, not a coach and not an athlete.", button "Label Agreement".
+Options: A approve as written (recommended); B your wording." and, in plain
+words, "Say "yes" or give me the words you want." Jason, whole message
+(21:43:18Z): *"Yes"*. **The door wording is approved as written.**
 
 ---
 
