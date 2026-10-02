@@ -145,16 +145,117 @@ async function attemptPurge(client, athletes, accountIds) {
      (OD-2026-08-29-007, one_percent_nomination_athlete_cascade_migration.sql).
      The savepoint stays for the next foreign key that ships without a delete
      action. */
+  /* THE LOGIN STOPS NAMING THE ATHLETE IN THE SAME SAVEPOINT. An athlete's
+     login is not purged with them (only parent logins are, below), and
+     pilot.accounts.athlete_id has no foreign key, so until this statement
+     existed the deleted login went on carrying the athlete_id of a row that
+     was gone. The roster can then give that athlete_id to a different child
+     -- the purge is the one moment it comes free, the deleted row holding the
+     primary key until then -- and everything that reads "the athlete this
+     login names" would have read the NEW child: the feedback queue showed the
+     purged child's closed submissions again, under the new child's name.
+     Clearing the link here records, with no clock involved, that this login's
+     athlete was purged (deletedAthletes.ts submissionWriterNotDeletedSql reads
+     it). Scoped to the one athlete just deleted, and only when a row really
+     was deleted; if the delete is refused, the savepoint rollback leaves the
+     login exactly as it was.
+
+     AN ATHLETE LOGIN STILL LIVE AT THIS POINT IS MARKED DELETED TOO. Deleting
+     an athlete deletes their login in the same transaction (dataDeletion.ts),
+     so a live one here is a leftover from before that rule. Left live and
+     naming nobody, it would be an athlete login intake could bind to a
+     DIFFERENT child (createOrUpdateAthleteAccount accepts athlete_id null on
+     a login that is not deleted), who would inherit everything the purged
+     child did through it. A login already deleted keeps its own date. A login
+     that has since become a coach's or a guardian's is unlinked and otherwise
+     left alone: it is that adult's login now.
+
+     WHICH LOGIN IS DECIDED BEFORE THE DELETE, NEVER AFTER. The athlete row is
+     locked, then the login that names it is read and locked, then the athlete
+     is deleted, and only that captured account_id is written. Asking "which
+     account has (organization_id, athlete_id)" AFTER the delete would be
+     asking about a moment that is over: upsertOrganizationMembership
+     (auth.ts) moves a login into another gym with its athlete_id untouched, so
+     a different, present child's login from a gym that issued the same
+     athlete_id could arrive in between and be unlinked and retired in the
+     purged child's place. A login that arrives after the capture is not
+     touched. Athlete first, then account: the order deleteAthleteRecord takes
+     them in, so the two cannot deadlock each other.
+
+     A LOGIN THE PURGE RETIRES IS SIGNED OUT, as deleteAthleteRecord does it
+     and for its reason: a session token already issued resolves without
+     re-reading active_flag, and an activation code already handed out would
+     set a PIN and turn the login active again. Both are closed here, in the
+     savepoint, for every athlete login the purge unlinks. */
   let athletesDeleted = 0;
+  let loginsUnlinked = 0;
+  let loginsRetired = 0;
   for (const athlete of athletes) {
     await client.query('savepoint purge_athlete');
     try {
-      await client.query(
-        'delete from pilot.athletes where organization_id = $1 and athlete_id = $2',
-        [athlete.organization_id, athlete.athlete_id],
+      const key = [athlete.organization_id, athlete.athlete_id];
+      // The lock repeats the test the athlete was listed by. The list was read
+      // without locks: by now the row may be gone, or -- the id reissued by
+      // the roster -- be a different, live child's. Either way it is not this
+      // run's to delete, and nothing below runs for it.
+      const held = await client.query(
+        `select 1 from pilot.athletes
+          where organization_id = $1 and athlete_id = $2
+            and deleted_at is not null and deleted_at < (now() - ${ATHLETE_RETENTION})
+            for update`,
+        key,
       );
+      if (held.rows.length === 0) {
+        await client.query('release savepoint purge_athlete');
+        continue;
+      }
+      const linked = await client.query(
+        `select account_id, role, deleted_at is null as live
+           from pilot.accounts
+          where organization_id = $1 and athlete_id = $2
+            for update`,
+        key,
+      );
+      const removed = await client.query(
+        'delete from pilot.athletes where organization_id = $1 and athlete_id = $2 returning athlete_id',
+        key,
+      );
+      // Counted from what the delete removed, not from having tried, and only
+      // once the savepoint is released: the audit row is the only record of a
+      // purge and must not claim a deletion, or an unlinking, that was rolled
+      // back or never happened.
+      let unlinkedHere = 0;
+      let retiredHere = 0;
+      if (removed.rows.length > 0) {
+        for (const login of linked.rows) {
+          await client.query(
+            `update pilot.accounts
+                set athlete_id = null,
+                    deleted_at = case when role = 'athlete' then coalesce(deleted_at, now()) else deleted_at end,
+                    active_flag = case when role = 'athlete' then false else active_flag end,
+                    updated_at = now()
+              where account_id = $1`,
+            [login.account_id],
+          );
+          unlinkedHere += 1;
+          if (login.role === 'athlete') {
+            await client.query(
+              'update pilot.session_tokens set revoked_at = now() where account_id = $1 and revoked_at is null',
+              [login.account_id],
+            );
+            await client.query(
+              `update pilot.account_activation_tokens set superseded_at = now()
+                where account_id = $1 and consumed_at is null and superseded_at is null`,
+              [login.account_id],
+            );
+            if (login.live) retiredHere += 1;
+          }
+        }
+      }
       await client.query('release savepoint purge_athlete');
-      athletesDeleted += 1;
+      if (removed.rows.length > 0) athletesDeleted += 1;
+      loginsUnlinked += unlinkedHere;
+      loginsRetired += retiredHere;
     } catch (error) {
       await client.query('rollback to savepoint purge_athlete');
       record(error);
@@ -211,15 +312,25 @@ async function attemptPurge(client, athletes, accountIds) {
     }
   }
 
-  return { athletesDeleted, accountsDeleted, blocked };
+  return { athletesDeleted, accountsDeleted, loginsUnlinked, loginsRetired, blocked };
 }
 
 async function main() {
   const client = await pool.connect();
 
   try {
-    // Count first, always -- in the same transaction that will do the deleting,
-    // so the rows counted are the rows removed.
+    // TWO COUNTS, AND THEY ARE NOT THE SAME NUMBER. The first, taken here in
+    // the transaction that will do the deleting, is the CANDIDATES: what the
+    // retention windows say is due. It is what the blast-radius guard measures
+    // and what a dry run reports as `athletes` / `accounts`. It is read without
+    // locks, so it is not a promise about what will be removed.
+    //
+    // The second is what attemptPurge ACTUALLY deleted: counted from each
+    // guarded DELETE's own result, after its savepoint is released. A
+    // candidate can be refused by the database, or be gone (or no longer
+    // expired) by the time its row is locked, and then it is not counted. Only
+    // this second count goes into `would_delete_*`, the applied run's output
+    // and the audit row.
     await client.query('begin');
 
     const expiredAccounts = await client.query(
@@ -251,7 +362,7 @@ async function main() {
 
     const accountIds = expiredAccounts.rows.map((row) => row.account_id);
     const outcome = total === 0
-      ? { athletesDeleted: 0, accountsDeleted: 0, blocked: {} }
+      ? { athletesDeleted: 0, accountsDeleted: 0, loginsUnlinked: 0, loginsRetired: 0, blocked: {} }
       : await attemptPurge(client, expiredAthletes.rows, accountIds);
     const blockedCount = Object.values(outcome.blocked).reduce((sum, n) => sum + n, 0);
 
@@ -264,6 +375,8 @@ async function main() {
         total,
         would_delete_athletes: outcome.athletesDeleted,
         would_delete_accounts: outcome.accountsDeleted,
+        would_unlink_athlete_logins: outcome.loginsUnlinked,
+        would_retire_live_athlete_logins: outcome.loginsRetired,
         blocked: blockedCount,
         blocked_by: outcome.blocked,
         note: 'set PPBF_RETENTION_APPLY=true to delete',
@@ -289,6 +402,8 @@ async function main() {
         JSON.stringify({
           athletes_deleted: outcome.athletesDeleted,
           accounts_deleted: outcome.accountsDeleted,
+          athlete_logins_unlinked: outcome.loginsUnlinked,
+          live_athlete_logins_retired: outcome.loginsRetired,
           total_rows_deleted: outcome.athletesDeleted + outcome.accountsDeleted,
           blocked: blockedCount,
           blocked_by: outcome.blocked,
@@ -302,6 +417,8 @@ async function main() {
       event: blockedCount > 0 ? 'retention.cleanup.incomplete' : 'retention.cleanup.completed',
       athletes: outcome.athletesDeleted,
       accounts: outcome.accountsDeleted,
+      athlete_logins_unlinked: outcome.loginsUnlinked,
+      live_athlete_logins_retired: outcome.loginsRetired,
       total: outcome.athletesDeleted + outcome.accountsDeleted,
       blocked: blockedCount,
       blocked_by: outcome.blocked,

@@ -74,18 +74,52 @@ interface DecisionOutcomeRow {
   evaluated_at: string;
 }
 
-async function readJsonOrThrow<T>(response: Response, fallbackMessage: string): Promise<T> {
-  const payload = (await response.json().catch(() => ({}))) as (T & { ok?: boolean; error?: string }) | { error?: string };
-  if (!response.ok || (payload as { ok?: boolean }).ok === false) {
-    throw new Error((payload as { error?: string }).error || fallbackMessage);
+const WRITE_NOT_CONFIRMED =
+  'The server did not confirm this. It may or may not have gone through: check before sending it again.';
+
+/* A WRITE IS CONFIRMED BY ITS ROUTE'S OWN ACKNOWLEDGEMENT, not by a 2xx. This
+   used to read any 2xx as success and a body that would not parse as `{}`, so
+   an incident report answered by a proxy's HTML page printed "Incident filed
+   -- it is now in the escalation queue." Three outcomes, and only one of them
+   is a success:
+     - not ok, or a 200 that says `ok: false`: the server said no, or broke;
+       shown with the server's own reason;
+     - `{ ok: true, ... }` carrying what that route promises (`acknowledged`):
+       confirmed;
+     - anything else under a 200: NOT CONFIRMED. Not "failed" either -- the
+       write may have landed -- so the coach is told exactly that, and what
+       they typed stays in the box. */
+async function confirmWriteOrThrow(
+  response: Response,
+  fallbackMessage: string,
+  acknowledged: (envelope: Record<string, unknown>) => boolean,
+): Promise<void> {
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
   }
-  return payload as T;
+  const envelope = payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>)
+    : null;
+  if (!response.ok || envelope?.ok === false) {
+    throw new Error(typeof envelope?.error === 'string' && envelope.error ? envelope.error : fallbackMessage);
+  }
+  if (!envelope || envelope.ok !== true || !acknowledged(envelope)) {
+    throw new Error(WRITE_NOT_CONFIRMED);
+  }
 }
 
-/* A READ is stricter than a write's acknowledgement. readJsonOrThrow turns a
-   body that will not parse into `{}`, which is harmless after a POST and
-   wrong after a GET: `{}` has no `status` and no lists, and "no status, no
-   lists" is exactly what a clean record looks like. A 200 that does not
+/** The row a write route returns under `key`, if it is one. */
+function returnedRow(envelope: Record<string, unknown>, key: string): Record<string, unknown> | null {
+  const row = envelope[key];
+  return row && typeof row === 'object' && !Array.isArray(row) ? (row as Record<string, unknown>) : null;
+}
+
+/* A READ. A body that will not parse used to become `{}`, and `{}` has no
+   `status` and no lists -- and "no status, no lists" is exactly what a clean
+   record looks like. A 200 that does not
    carry the envelope the route always sends has answered some other
    question -- a proxy page, a truncated body -- and is not a statement that
    there is nothing on record. */
@@ -225,6 +259,50 @@ function StatusBadge({ status }: { readonly status: string }) {
   );
 }
 
+/* Everything a coach can type or choose on this page before pressing a button.
+   One object per athlete: a draft belongs to the athlete it was written for. */
+interface Drafts {
+  medicalStatusDraft: MedicalStatusValue;
+  medicalSourceRef: string;
+  decisionText: string;
+  decisionExpectedOutcome: string;
+  decisionRecommendationId: string;
+  nearMissDescription: string;
+  nearMissSeverity: NearMissSeverity;
+  nearMissDecisionId: string;
+  incidentDescription: string;
+  incidentSeverity: IncidentSeverity;
+  incidentOccurredAt: string;
+  behaviorNoteText: string;
+  messageHomeText: string;
+  outcomeDecisionId: string;
+  outcomeObservationIds: string;
+  outcomeMatchState: MatchState;
+  outcomeNotes: string;
+}
+
+const EMPTY_DRAFTS: Drafts = {
+  medicalStatusDraft: 'pending',
+  medicalSourceRef: '',
+  decisionText: '',
+  decisionExpectedOutcome: '',
+  decisionRecommendationId: '',
+  nearMissDescription: '',
+  nearMissSeverity: 'low',
+  nearMissDecisionId: '',
+  incidentDescription: '',
+  incidentSeverity: 'high',
+  incidentOccurredAt: '',
+  behaviorNoteText: '',
+  messageHomeText: '',
+  outcomeDecisionId: '',
+  outcomeObservationIds: '',
+  outcomeMatchState: 'match',
+  outcomeNotes: '',
+};
+
+type SubmitKind = 'incident' | 'behaviorNote' | 'messageHome';
+
 const PREVIOUS_ATHLETE_WRITE_FAILED =
   'Something you submitted for the athlete you were on before did not go through. Go back to them and check.';
 
@@ -259,36 +337,139 @@ export default function DecisionLoopReviewPage() {
   const selectedAthleteRef = useRef('');
   const readSeqRef = useRef(0);
   const [errorMessage, setErrorMessage] = useState('');
+  /* "Something you submitted for the athlete you were on before did not go
+     through." Its own slot, not the error line: every read blanks or
+     overwrites the error line, so the next thing that happened under the new
+     athlete used to erase this before the coach had seen it -- and for an
+     incident report that is the only trace that it failed. It stays until
+     the coach changes the selection. */
+  const [previousAthleteNotice, setPreviousAthleteNotice] = useState('');
+  /* THE NOT-CONFIRMED LINE OUTLIVES READS. "The server did not confirm this
+     ... check before sending it again" is the one thing standing between a
+     coach and a second send, and every read used to blank the error line: a
+     different write confirming a moment later (its re-read) erased it within
+     milliseconds. A read no longer touches that line. It goes when the coach
+     changes the selection, when another message replaces it, or when a write
+     that was STARTED AFTER it appeared is confirmed -- which is what
+     `beginWrite` hands each handler the means to say. */
+  const unconfirmedSeqRef = useRef(0);
+  function beginWrite(): () => void {
+    const startedAt = unconfirmedSeqRef.current;
+    return () => {
+      if (startedAt === unconfirmedSeqRef.current) {
+        setErrorMessage((shown) => (shown === WRITE_NOT_CONFIRMED ? '' : shown));
+      }
+    };
+  }
 
-  const [medicalStatusDraft, setMedicalStatusDraft] = useState<MedicalStatusValue>('pending');
-  const [medicalSourceRef, setMedicalSourceRef] = useState('');
+  /* DRAFTS BELONG TO AN ATHLETE. Every box and selector below used to be its
+     own piece of page state, and the page sends whatever is in them with the
+     athlete selected AT THE MOMENT THE BUTTON IS PRESSED. So a Message Home
+     written about athlete A, then a switch to B, then one click, went to B's
+     family; "Cleared" plus A's physician reference could be set on B; A's
+     incident could be filed against B.
 
-  const [decisionText, setDecisionText] = useState('');
-  const [decisionExpectedOutcome, setDecisionExpectedOutcome] = useState('');
-  const [decisionRecommendationId, setDecisionRecommendationId] = useState('');
+     The drafts are now kept PER ATHLETE, keyed by the athlete they were
+     written for. A draft is shown, and can be submitted, only while its
+     athlete is the one on screen: for anyone else the forms hold that
+     athlete's own draft or their empty defaults, in the same render as the
+     switch -- there is no moment where A's text sits under B, and no request
+     for B can be built from it. (The athlete-ID box changes the selection on
+     every keystroke, so "switch" cannot mean a deliberate act: the draft is
+     looked up by the selected id on every render instead.)
 
-  const [nearMissDescription, setNearMissDescription] = useState('');
-  const [nearMissSeverity, setNearMissSeverity] = useState<NearMissSeverity>('low');
-  const [nearMissDecisionId, setNearMissDecisionId] = useState('');
+     Per athlete rather than one slot with an owner, because one slot is
+     emptied by the first keystroke under the next athlete: an incident report
+     for A that fails after the coach has started typing for B must still be
+     there when the page says "go back to them and check".
 
-  const [incidentDescription, setIncidentDescription] = useState('');
-  const [incidentSeverity, setIncidentSeverity] = useState<IncidentSeverity>('high');
-  const [incidentOccurredAt, setIncidentOccurredAt] = useState('');
+     Page memory only. Nothing here is written to storage or sent anywhere
+     until a button is pressed; a reload or a sign-out drops every draft. */
+  // A Map, not a plain object: the ID box takes any text, and "constructor"
+  // or "toString" looked up on an object finds something that is not a draft.
+  const [draftsByAthlete, setDraftsByAthlete] = useState<ReadonlyMap<string, Drafts>>(new Map());
+  const drafts = draftsByAthlete.get(athleteId) ?? EMPTY_DRAFTS;
+  const {
+    medicalStatusDraft,
+    medicalSourceRef,
+    decisionText,
+    decisionExpectedOutcome,
+    nearMissDescription,
+    nearMissSeverity,
+    incidentDescription,
+    incidentSeverity,
+    incidentOccurredAt,
+    behaviorNoteText,
+    messageHomeText,
+    outcomeObservationIds,
+    outcomeMatchState,
+    outcomeNotes,
+  } = drafts;
+
+  /* The three selections that point INTO the athlete's loaded records are
+     only real while the record they point at is on screen. A kept id whose
+     option is not in the list (the lists are cleared on every switch and on a
+     failed read) shows as "None" in its selector -- so it must be none in the
+     request too, not a link the coach cannot see. */
+  const decisionRecommendationId = recommendations.some(
+    (rec) => rec.recommendation_id === drafts.decisionRecommendationId && (rec.status === 'provisional' || rec.status === 'accepted'),
+  )
+    ? drafts.decisionRecommendationId
+    : '';
+  const nearMissDecisionId = decisions.some((decision) => decision.decision_id === drafts.nearMissDecisionId)
+    ? drafts.nearMissDecisionId
+    : '';
+  const outcomeDecisionId = decisions.some((decision) => decision.decision_id === drafts.outcomeDecisionId)
+    ? drafts.outcomeDecisionId
+    : '';
+
+  function editDraft<K extends keyof Drafts>(key: K, value: Drafts[K]) {
+    setDraftsByAthlete((current) =>
+      new Map(current).set(athleteId, { ...(current.get(athleteId) ?? EMPTY_DRAFTS), [key]: value }),
+    );
+  }
+
+  /* After a write lands: empty the fields it sent -- in the draft of the
+     athlete it was sent for, whoever is on screen now, and only where the box
+     still holds what was sent. A late answer for athlete A must not wipe what
+     the coach has typed for B, or typed again for A; and it must not leave the
+     sent text in A's box to be sent a second time.
+
+     `links` are the record selections that went with the send. They are
+     emptied whatever they hold: the value sent is the DERIVED one (none, if
+     its record was off screen), so comparing would leave a kept id behind to
+     reappear over empty boxes on the next good read. */
+  function clearSentDrafts(forAthleteId: string, sent: Partial<Drafts>, links: ReadonlyArray<keyof Drafts> = []) {
+    setDraftsByAthlete((current) => {
+      const mine = current.get(forAthleteId);
+      if (!mine) return current;
+      const next: Drafts = { ...mine };
+      for (const key of Object.keys(sent) as Array<keyof Drafts>) {
+        if (next[key] === sent[key]) Object.assign(next, { [key]: EMPTY_DRAFTS[key] });
+      }
+      for (const key of links) Object.assign(next, { [key]: EMPTY_DRAFTS[key] });
+      return new Map(current).set(forAthleteId, next);
+    });
+  }
+
   const [incidentFiledMessage, setIncidentFiledMessage] = useState('');
-  const [incidentSubmitting, setIncidentSubmitting] = useState(false);
-
-  const [behaviorNoteText, setBehaviorNoteText] = useState('');
   const [behaviorNoteMessage, setBehaviorNoteMessage] = useState('');
-  const [behaviorNoteSubmitting, setBehaviorNoteSubmitting] = useState(false);
-
-  const [messageHomeText, setMessageHomeText] = useState('');
   const [messageHomeMessage, setMessageHomeMessage] = useState('');
-  const [messageHomeSubmitting, setMessageHomeSubmitting] = useState(false);
 
-  const [outcomeDecisionId, setOutcomeDecisionId] = useState('');
-  const [outcomeObservationIds, setOutcomeObservationIds] = useState('');
-  const [outcomeMatchState, setOutcomeMatchState] = useState<MatchState>('match');
-  const [outcomeNotes, setOutcomeNotes] = useState('');
+  /* In flight, per athlete. One flag for the page left athlete B's button
+     reading "Filing…" and locked while a report for A was still out. */
+  const [submitting, setSubmitting] = useState<ReadonlySet<string>>(new Set());
+  function markSubmitting(kind: SubmitKind, forAthleteId: string, on: boolean) {
+    setSubmitting((current) => {
+      const next = new Set(current);
+      if (on) next.add(`${kind}:${forAthleteId}`);
+      else next.delete(`${kind}:${forAthleteId}`);
+      return next;
+    });
+  }
+  const incidentSubmitting = submitting.has(`incident:${athleteId}`);
+  const behaviorNoteSubmitting = submitting.has(`behaviorNote:${athleteId}`);
+  const messageHomeSubmitting = submitting.has(`messageHome:${athleteId}`);
 
   useEffect(() => {
     void (async () => {
@@ -303,7 +484,7 @@ export default function DecisionLoopReviewPage() {
     })();
   }, []);
 
-  const refreshAll = useCallback(async (targetAthleteId: string) => {
+  const refreshAll = useCallback(async (targetAthleteId: string, keepErrorLine = false) => {
     // A write for athlete A that finishes after the coach moved to B asks to
     // re-read A. B is on screen; A's records do not belong there.
     if (targetAthleteId !== selectedAthleteRef.current) {
@@ -321,7 +502,7 @@ export default function DecisionLoopReviewPage() {
       return;
     }
     setLoading(true);
-    setErrorMessage('');
+    if (!keepErrorLine) setErrorMessage((shown) => (shown === WRITE_NOT_CONFIRMED ? shown : ''));
     try {
       const [statusRes, recsRes, decisionsRes, nearMissesRes] = await Promise.all([
         fetch(`${apiBase()}/api/pilot/shadow/medical-status?athleteId=${encodeURIComponent(targetAthleteId)}`, { credentials: 'include' }),
@@ -374,7 +555,13 @@ export default function DecisionLoopReviewPage() {
          write, the old medical status would otherwise still read "Current
          status" under an error line. */
       setReadFor({ athleteId: targetAthleteId, state: 'unavailable', records: NO_RECORDS });
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load decision loop data.');
+      // A line that was deliberately kept up for this read ("the server did
+      // not confirm this ... check before sending it again") is not replaced
+      // by the news that the check itself failed. The four panels already say
+      // they could not be read; the line the coach must not lose is the one
+      // about the write.
+      const readFailure = error instanceof Error ? error.message : 'Failed to load decision loop data.';
+      setErrorMessage((shown) => (keepErrorLine || shown === WRITE_NOT_CONFIRMED ? shown : readFailure));
     } finally {
       if (seq === readSeqRef.current) setLoading(false);
     }
@@ -391,7 +578,7 @@ export default function DecisionLoopReviewPage() {
      Everything that belonged to the previous athlete goes in the same event
      that selects the next one, so React renders the new selection and the
      emptied page together: there is no render with B selected and A's error
-     line, confirmation or selected record ids still up. (The records
+     line or confirmation still up. (The records
      themselves need no clearing here: they carry their athlete's id and are
      not looked at for anyone else. See readFor.)
 
@@ -402,14 +589,30 @@ export default function DecisionLoopReviewPage() {
     selectedAthleteRef.current = nextAthleteId;
     readSeqRef.current += 1;
     setAthleteId(nextAthleteId);
-    setDecisionRecommendationId('');
-    setNearMissDecisionId('');
-    setOutcomeDecisionId('');
+    /* The one draft that is NOT kept for its athlete: the medical status
+       selection and its source reference. A "Cleared" left selected from an
+       earlier visit is one click from being set; every arrival at an athlete
+       starts that form at its default, Pending with no reference. (The
+       selections that carry recommendation and decision ids are drafts too,
+       kept per athlete and honoured only while the record they point at is
+       loaded: see draftsByAthlete.) */
+    setDraftsByAthlete((kept) => {
+      const next = new Map<string, Drafts>();
+      for (const [id, draft] of kept) {
+        next.set(id, {
+          ...draft,
+          medicalStatusDraft: EMPTY_DRAFTS.medicalStatusDraft,
+          medicalSourceRef: EMPTY_DRAFTS.medicalSourceRef,
+        });
+      }
+      return next;
+    });
     setIncidentFiledMessage('');
     setBehaviorNoteMessage('');
     setMessageHomeMessage('');
     setLoading(false);
     setErrorMessage('');
+    setPreviousAthleteNotice('');
   }
 
 
@@ -420,23 +623,34 @@ export default function DecisionLoopReviewPage() {
      is 'restricted'"), or "Incident filed" / "Sent to the family" for a child
      nobody is looking at.
 
-     On a late SUCCESS the submitted draft is still cleared (it was sent; left
-     in the box under B it reads as unsent and one click posts it to B), and
-     the confirmation and the re-read are dropped. On a late FAILURE the
+     On a late SUCCESS the submitted draft is still cleared, in the draft of
+     the athlete it was sent for (it was sent; left in their box it reads as
+     unsent and one click sends it again), and the confirmation and the
+     re-read are dropped. On a late FAILURE the
      server's text is withheld -- it describes A -- but the coach is still
      told that something they did has not gone through: an incident report
      that silently failed is worse than a vague line. */
   function reportWriteError(forAthleteId: string, error: unknown, fallback: string) {
     if (forAthleteId !== selectedAthleteRef.current) {
-      setErrorMessage(PREVIOUS_ATHLETE_WRITE_FAILED);
+      setPreviousAthleteNotice(PREVIOUS_ATHLETE_WRITE_FAILED);
       return;
     }
-    setErrorMessage(error instanceof Error ? error.message : fallback);
+    const message = error instanceof Error ? error.message : fallback;
+    setErrorMessage(message);
+    // "Check before sending it again" has to be checkable. A write that was
+    // not confirmed may have landed: read the athlete again, keeping this
+    // line up, so the status, decisions and near-misses on screen are what
+    // the server holds now.
+    if (message === WRITE_NOT_CONFIRMED) {
+      unconfirmedSeqRef.current += 1;
+      void refreshAll(forAthleteId, true);
+    }
   }
 
   async function handleSetMedicalStatus(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!athleteId) return;
+    const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/medical-status`, {
         method: 'POST',
@@ -448,9 +662,16 @@ export default function DecisionLoopReviewPage() {
           sourceReference: medicalSourceRef || undefined,
         }),
       });
-      await readJsonOrThrow(response, 'Failed to set medical status.');
-      setMedicalSourceRef('');
+      // shadow/medical-status answers { ok: true, status: <the new row> }.
+      await confirmWriteOrThrow(response, 'Failed to set medical status.', (envelope) => {
+        const row = returnedRow(envelope, 'status');
+        return !!row && isFilled(row.status_id) && row.athlete_id === athleteId && row.status === medicalStatusDraft;
+      });
+      // The selection goes back to Pending too: a status left selected after
+      // it was set is one click from being set again.
+      clearSentDrafts(athleteId, { medicalSourceRef, medicalStatusDraft });
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       await refreshAll(athleteId);
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to set medical status.');
@@ -458,6 +679,7 @@ export default function DecisionLoopReviewPage() {
   }
 
   async function handleDecideRecommendation(recommendationId: string, decision: 'accepted' | 'rejected') {
+    const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/recommendations/decide`, {
         method: 'POST',
@@ -465,8 +687,18 @@ export default function DecisionLoopReviewPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ athleteId, recommendationId, decision }),
       });
-      await readJsonOrThrow(response, 'Failed to record decision on recommendation.');
+      // shadow/recommendations/decide answers { ok: true, recommendation: <row> }.
+      await confirmWriteOrThrow(response, 'Failed to record decision on recommendation.', (envelope) => {
+        const row = returnedRow(envelope, 'recommendation');
+        return (
+          !!row
+          && row.recommendation_id === recommendationId
+          && row.athlete_id === athleteId
+          && row.status === decision
+        );
+      });
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       await refreshAll(athleteId);
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to record decision on recommendation.');
@@ -476,6 +708,7 @@ export default function DecisionLoopReviewPage() {
   async function handleRecordDecision(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!athleteId || !decisionText.trim() || !decisionExpectedOutcome.trim()) return;
+    const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/decisions`, {
         method: 'POST',
@@ -495,11 +728,14 @@ export default function DecisionLoopReviewPage() {
           expectedOutcome: decisionExpectedOutcome,
         }),
       });
-      await readJsonOrThrow(response, 'Failed to record decision.');
-      setDecisionText('');
-      setDecisionExpectedOutcome('');
-      setDecisionRecommendationId('');
+      // shadow/decisions answers { ok: true, decision: <row> }.
+      await confirmWriteOrThrow(response, 'Failed to record decision.', (envelope) => {
+        const row = returnedRow(envelope, 'decision');
+        return !!row && isFilled(row.decision_id) && row.athlete_id === athleteId;
+      });
+      clearSentDrafts(athleteId, { decisionText, decisionExpectedOutcome }, ['decisionRecommendationId']);
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       await refreshAll(athleteId);
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to record decision.');
@@ -509,6 +745,7 @@ export default function DecisionLoopReviewPage() {
   async function handleFlagNearMiss(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!athleteId || !nearMissDescription.trim()) return;
+    const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/near-misses`, {
         method: 'POST',
@@ -521,11 +758,14 @@ export default function DecisionLoopReviewPage() {
           severity: nearMissSeverity,
         }),
       });
-      await readJsonOrThrow(response, 'Failed to flag near-miss.');
-      setNearMissDescription('');
-      setNearMissDecisionId('');
-      setNearMissSeverity('low');
+      // shadow/near-misses answers { ok: true, nearMiss: <row> }.
+      await confirmWriteOrThrow(response, 'Failed to flag near-miss.', (envelope) => {
+        const row = returnedRow(envelope, 'nearMiss');
+        return !!row && isFilled(row.near_miss_id) && row.athlete_id === athleteId;
+      });
+      clearSentDrafts(athleteId, { nearMissDescription, nearMissSeverity }, ['nearMissDecisionId']);
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       await refreshAll(athleteId);
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to flag near-miss.');
@@ -541,7 +781,8 @@ export default function DecisionLoopReviewPage() {
     event.preventDefault();
     if (!athleteId || !incidentDescription.trim() || incidentSubmitting) return;
     setIncidentFiledMessage('');
-    setIncidentSubmitting(true);
+    markSubmitting('incident', athleteId, true);
+    const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/incidents`, {
         method: 'POST',
@@ -554,16 +795,19 @@ export default function DecisionLoopReviewPage() {
           occurredAt: incidentOccurredAt || undefined,
         }),
       });
-      await readJsonOrThrow(response, 'Failed to file incident report.');
-      setIncidentDescription('');
-      setIncidentSeverity('high');
-      setIncidentOccurredAt('');
+      // incidents answers { ok: true, escalation: <the escalation row> }.
+      await confirmWriteOrThrow(response, 'Failed to file incident report.', (envelope) => {
+        const row = returnedRow(envelope, 'escalation');
+        return !!row && isFilled(row.escalation_id) && row.athlete_id === athleteId;
+      });
+      clearSentDrafts(athleteId, { incidentDescription, incidentSeverity, incidentOccurredAt });
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       setIncidentFiledMessage('Incident filed -- it is now in the escalation queue.');
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to file incident report.');
     } finally {
-      setIncidentSubmitting(false);
+      markSubmitting('incident', athleteId, false);
     }
   }
 
@@ -580,7 +824,8 @@ export default function DecisionLoopReviewPage() {
     event.preventDefault();
     if (!athleteId || !behaviorNoteText.trim() || behaviorNoteSubmitting) return;
     setBehaviorNoteMessage('');
-    setBehaviorNoteSubmitting(true);
+    markSubmitting('behaviorNote', athleteId, true);
+    const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/intake/domain-upsert`, {
         method: 'POST',
@@ -592,14 +837,19 @@ export default function DecisionLoopReviewPage() {
           payload: { note_type: 'behavior_standard', note_text: behaviorNoteText },
         }),
       });
-      await readJsonOrThrow(response, 'Failed to log the note.');
-      setBehaviorNoteText('');
+      // intake/domain-upsert answers { ok: true, entity_type, entity_id,
+      // athlete_id }, with the athlete id TRIMMED (the route trims it).
+      await confirmWriteOrThrow(response, 'Failed to log the note.', (envelope) =>
+        envelope.entity_type === 'coach_note' && isFilled(envelope.entity_id) && envelope.athlete_id === athleteId.trim(),
+      );
+      clearSentDrafts(athleteId, { behaviorNoteText });
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       setBehaviorNoteMessage('Note logged.');
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to log the note.');
     } finally {
-      setBehaviorNoteSubmitting(false);
+      markSubmitting('behaviorNote', athleteId, false);
     }
   }
 
@@ -615,7 +865,8 @@ export default function DecisionLoopReviewPage() {
     event.preventDefault();
     if (!athleteId || !messageHomeText.trim() || messageHomeSubmitting) return;
     setMessageHomeMessage('');
-    setMessageHomeSubmitting(true);
+    markSubmitting('messageHome', athleteId, true);
+    const writeConfirmed = beginWrite();
     try {
       const response = await fetch(`${apiBase()}/api/pilot/intake/domain-upsert`, {
         method: 'POST',
@@ -627,14 +878,19 @@ export default function DecisionLoopReviewPage() {
           payload: { note_type: 'parent_message', note_text: messageHomeText },
         }),
       });
-      await readJsonOrThrow(response, 'Failed to send the message.');
-      setMessageHomeText('');
+      // intake/domain-upsert answers { ok: true, entity_type, entity_id,
+      // athlete_id }, with the athlete id TRIMMED (the route trims it).
+      await confirmWriteOrThrow(response, 'Failed to send the message.', (envelope) =>
+        envelope.entity_type === 'coach_note' && isFilled(envelope.entity_id) && envelope.athlete_id === athleteId.trim(),
+      );
+      clearSentDrafts(athleteId, { messageHomeText });
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       setMessageHomeMessage('Sent to the family.');
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to send the message.');
     } finally {
-      setMessageHomeSubmitting(false);
+      markSubmitting('messageHome', athleteId, false);
     }
   }
 
@@ -664,6 +920,7 @@ export default function DecisionLoopReviewPage() {
   async function handleEvaluateOutcome(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!outcomeDecisionId) return;
+    const writeConfirmed = beginWrite();
     try {
       const observationIds = outcomeObservationIds
         .split(',')
@@ -681,10 +938,14 @@ export default function DecisionLoopReviewPage() {
           notes: outcomeNotes || undefined,
         }),
       });
-      await readJsonOrThrow(response, 'Failed to evaluate decision outcome.');
-      setOutcomeObservationIds('');
-      setOutcomeNotes('');
+      // shadow/decision-outcomes answers { ok: true, outcome: <row> }.
+      await confirmWriteOrThrow(response, 'Failed to evaluate decision outcome.', (envelope) => {
+        const row = returnedRow(envelope, 'outcome');
+        return !!row && isFilled(row.outcome_id) && row.decision_id === outcomeDecisionId;
+      });
+      clearSentDrafts(athleteId, { outcomeObservationIds, outcomeNotes });
       if (athleteId !== selectedAthleteRef.current) return;
+      writeConfirmed();
       await handleLoadOutcomes(outcomeDecisionId);
     } catch (error) {
       reportWriteError(athleteId, error, 'Failed to evaluate decision outcome.');
@@ -745,6 +1006,7 @@ export default function DecisionLoopReviewPage() {
                 already made this correction and states the reason -- red is
                 left to mean a child is in danger. */}
             {errorMessage && <p className="mt-[var(--s3)] text-[length:var(--t-sm)] font-bold text-[var(--restricted-ink)]">{errorMessage}</p>}
+            {previousAthleteNotice && <p className="mt-[var(--s3)] text-[length:var(--t-sm)] font-bold text-[var(--restricted-ink)]">{previousAthleteNotice}</p>}
           </section>
 
           {!athleteId ? (
@@ -786,7 +1048,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">New status</span>
                     <select
                       value={medicalStatusDraft}
-                      onChange={(event) => setMedicalStatusDraft(event.target.value as MedicalStatusValue)}
+                      onChange={(event) => editDraft('medicalStatusDraft', event.target.value as MedicalStatusValue)}
                       className="select"
                     >
                       <option value="pending">Pending</option>
@@ -799,7 +1061,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Source reference (optional)</span>
                     <input
                       value={medicalSourceRef}
-                      onChange={(event) => setMedicalSourceRef(event.target.value)}
+                      onChange={(event) => editDraft('medicalSourceRef', event.target.value)}
                       placeholder="e.g. physician note, incident id"
                       className="input"
                     />
@@ -901,7 +1163,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Link to recommendation (optional)</span>
                     <select
                       value={decisionRecommendationId}
-                      onChange={(event) => setDecisionRecommendationId(event.target.value)}
+                      onChange={(event) => editDraft('decisionRecommendationId', event.target.value)}
                       className="select"
                     >
                       <option value="">None — log directly</option>
@@ -916,7 +1178,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Decision text</span>
                     <textarea
                       value={decisionText}
-                      onChange={(event) => setDecisionText(event.target.value)}
+                      onChange={(event) => editDraft('decisionText', event.target.value)}
                       className="textarea min-h-[72px]"
                     />
                   </label>
@@ -924,7 +1186,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Expected outcome</span>
                     <textarea
                       value={decisionExpectedOutcome}
-                      onChange={(event) => setDecisionExpectedOutcome(event.target.value)}
+                      onChange={(event) => editDraft('decisionExpectedOutcome', event.target.value)}
                       className="textarea min-h-[56px]"
                     />
                   </label>
@@ -970,7 +1232,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Description</span>
                     <textarea
                       value={nearMissDescription}
-                      onChange={(event) => setNearMissDescription(event.target.value)}
+                      onChange={(event) => editDraft('nearMissDescription', event.target.value)}
                       className="textarea min-h-[56px]"
                     />
                   </label>
@@ -978,7 +1240,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Severity</span>
                     <select
                       value={nearMissSeverity}
-                      onChange={(event) => setNearMissSeverity(event.target.value as NearMissSeverity)}
+                      onChange={(event) => editDraft('nearMissSeverity', event.target.value as NearMissSeverity)}
                       className="select"
                     >
                       <option value="low">Low</option>
@@ -991,7 +1253,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Related decision (optional)</span>
                     <select
                       value={nearMissDecisionId}
-                      onChange={(event) => setNearMissDecisionId(event.target.value)}
+                      onChange={(event) => editDraft('nearMissDecisionId', event.target.value)}
                       className="select"
                     >
                       <option value="">None</option>
@@ -1025,7 +1287,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">What happened</span>
                     <textarea
                       value={incidentDescription}
-                      onChange={(event) => setIncidentDescription(event.target.value)}
+                      onChange={(event) => editDraft('incidentDescription', event.target.value)}
                       className="textarea min-h-[56px]"
                     />
                   </label>
@@ -1033,7 +1295,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Severity</span>
                     <select
                       value={incidentSeverity}
-                      onChange={(event) => setIncidentSeverity(event.target.value as IncidentSeverity)}
+                      onChange={(event) => editDraft('incidentSeverity', event.target.value as IncidentSeverity)}
                       className="select"
                     >
                       <option value="high">High</option>
@@ -1045,7 +1307,7 @@ export default function DecisionLoopReviewPage() {
                     <input
                       type="text"
                       value={incidentOccurredAt}
-                      onChange={(event) => setIncidentOccurredAt(event.target.value)}
+                      onChange={(event) => editDraft('incidentOccurredAt', event.target.value)}
                       placeholder="e.g. 2026-08-05"
                       className="input"
                     />
@@ -1073,7 +1335,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Note</span>
                     <textarea
                       value={behaviorNoteText}
-                      onChange={(event) => setBehaviorNoteText(event.target.value)}
+                      onChange={(event) => editDraft('behaviorNoteText', event.target.value)}
                       className="textarea min-h-[56px]"
                     />
                   </label>
@@ -1100,7 +1362,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Message</span>
                     <textarea
                       value={messageHomeText}
-                      onChange={(event) => setMessageHomeText(event.target.value)}
+                      onChange={(event) => editDraft('messageHomeText', event.target.value)}
                       className="textarea min-h-[56px]"
                     />
                   </label>
@@ -1121,7 +1383,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Decision</span>
                     <select
                       value={outcomeDecisionId}
-                      onChange={(event) => setOutcomeDecisionId(event.target.value)}
+                      onChange={(event) => editDraft('outcomeDecisionId', event.target.value)}
                       className="select"
                     >
                       <option value="">Select a decision…</option>
@@ -1136,7 +1398,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Match state</span>
                     <select
                       value={outcomeMatchState}
-                      onChange={(event) => setOutcomeMatchState(event.target.value as MatchState)}
+                      onChange={(event) => editDraft('outcomeMatchState', event.target.value as MatchState)}
                       className="select"
                     >
                       <option value="match">Match</option>
@@ -1149,7 +1411,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Observation IDs (comma-separated)</span>
                     <input
                       value={outcomeObservationIds}
-                      onChange={(event) => setOutcomeObservationIds(event.target.value)}
+                      onChange={(event) => editDraft('outcomeObservationIds', event.target.value)}
                       placeholder="obs-1, obs-2"
                       className="input"
                     />
@@ -1158,7 +1420,7 @@ export default function DecisionLoopReviewPage() {
                     <span className="t-label">Notes</span>
                     <textarea
                       value={outcomeNotes}
-                      onChange={(event) => setOutcomeNotes(event.target.value)}
+                      onChange={(event) => editDraft('outcomeNotes', event.target.value)}
                       className="textarea min-h-[56px]"
                     />
                   </label>

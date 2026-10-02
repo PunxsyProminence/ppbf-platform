@@ -46,8 +46,11 @@ const CLEARED_STATUS = {
   source_reference: 'physician-note-123',
 };
 
+// A staff read returns whole rows: this athlete's, active.
 const HOLD = {
   hold_id: 'hold-7',
+  athlete_id: 'ath-1',
+  status: 'active',
   scope: 'sparring',
   athlete_explanation: 'Taking a week off contact while your headache settles.',
   lift_condition_text: 'A symptom-free week and a coach check-in.',
@@ -58,6 +61,8 @@ const HOLD = {
 // hypothetical one.
 const HOLD_NO_LIFT = {
   hold_id: 'hold-11',
+  athlete_id: 'ath-1',
+  status: 'active',
   scope: 'all_training',
   athlete_explanation: 'Sitting out this week while your ankle settles.',
   lift_condition_text: '',
@@ -263,8 +268,11 @@ test("the masthead stands on the room's own furniture", async () => {
    The write surface: placing and lifting a hold.
    ------------------------------------------------------------------------- */
 
+// The route answers a place with the whole row: this athlete's, active.
 const PLACED = {
   hold_id: 'hold-9',
+  athlete_id: 'ath-1',
+  status: 'active',
   scope: 'contact_only',
   athlete_explanation: 'No contact for now while your wrist settles.',
   lift_condition_text: 'A pain-free grip and a coach check-in.',
@@ -663,6 +671,13 @@ describe('a hold nobody could read never reads as "no hold"', () => {
       { ...HOLD, athlete_explanation: '   ' },
       { ...HOLD, athlete_explanation: 7 },
       { ...HOLD, lift_condition_text: null },
+      // A whole, well-formed hold that is not the answer to "this athlete's
+      // active hold": someone else's, lifted, or not saying.
+      { ...HOLD, athlete_id: 'ath-b', athlete_explanation: 'A SENTENCE WRITTEN FOR ANOTHER CHILD.' },
+      { ...HOLD, athlete_id: undefined },
+      { ...HOLD, status: 'lifted' },
+      { ...HOLD, status: 'expired' },
+      { ...HOLD, status: undefined },
     ];
     for (const entry of entries) {
       global.fetch = mockFetch({
@@ -674,6 +689,7 @@ describe('a hold nobody could read never reads as "no hold"', () => {
 
       expect(within(holdRow()).getByText(UNREAD)).toBeTruthy();
       expect(screen.queryByText(/Active Training Hold/)).toBeNull();
+      expect(screen.queryByText(/A SENTENCE WRITTEN FOR ANOTHER CHILD/)).toBeNull();
       expectPlaceDisabledWithReason();
       unmount();
     }
@@ -1182,7 +1198,7 @@ describe('a lift the server did not actually confirm never becomes "no hold" wit
     ['ok:true with a hold that has no status', () => ({ ok: true, json: async () => ({ ok: true, hold: HOLD }) }) as Response],
     ['ok:true with a DIFFERENT hold lifted', () => ({ ok: true, json: async () => ({ ok: true, hold: { ...LIFTED, hold_id: 'hold-other' } }) }) as Response],
     ['ok:true with another athlete’s hold lifted', () => ({ ok: true, json: async () => ({ ok: true, hold: { ...LIFTED, athlete_id: 'ath-other' } }) }) as Response],
-    ['ok:true with a lifted hold that names no athlete', () => ({ ok: true, json: async () => ({ ok: true, hold: { ...HOLD, status: 'lifted' } }) }) as Response],
+    ['ok:true with a lifted hold that names no athlete', () => ({ ok: true, json: async () => ({ ok: true, hold: { ...HOLD, athlete_id: undefined, status: 'lifted' } }) }) as Response],
     ['ok:true with a malformed hold', () => ({ ok: true, json: async () => ({ ok: true, hold: { status: 'lifted' } }) }) as Response],
   ];
 
@@ -1399,5 +1415,460 @@ describe('a clearance nobody actually read never reads as cleared, or as "no rec
       expect(screen.queryByText('No athletes on your roster')).toBeNull();
       unmount();
     }
+  });
+});
+
+/*
+ * A place form belongs to the athlete it was opened for.
+ */
+describe('a place that comes back late does not touch another athlete’s open form', () => {
+  const SECOND = { athlete_id: 'ath-2', full_name: 'Riley Poe' };
+
+  function rowOf(name: string): HTMLElement {
+    return screen.getByText(name).closest('li') as HTMLElement;
+  }
+
+  function twoRowFetch(firstPlace: Promise<Response>) {
+    const posted: Array<Record<string, unknown>> = [];
+    let firstPlaced = false;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        posted.push(body);
+        if (body.athlete_id === 'ath-1') {
+          const response = await firstPlace;
+          firstPlaced = response.ok;
+          return response;
+        }
+        return { ok: true, json: async () => ({ ok: true, hold: { ...PLACED, hold_id: 'hold-for-2' } }) } as Response;
+      }
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, SECOND] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('athlete_id=ath-1')) {
+        return { ok: true, json: async () => ({ ok: true, holds: firstPlaced ? [PLACED] : [] }) } as Response;
+      }
+      if (url.includes('/training-holds')) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+    return posted;
+  }
+
+  async function placeForFirstThenOpenSecond() {
+    render(<SportsMedicinePage />);
+    await screen.findByText('Riley Poe');
+    fireEvent.click(within(rowOf('Jordan Doe')).getByRole('button', { name: 'Place a training hold' }));
+    fireEvent.change(await screen.findByLabelText(/What this athlete reads/), { target: { value: 'Sentence for Jordan.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+    await within(rowOf('Jordan Doe')).findByRole('button', { name: 'Placing…' });
+
+    // Jordan's place is still out. The coach moves on to Riley.
+    fireEvent.click(within(rowOf('Riley Poe')).getByRole('button', { name: 'Place a training hold' }));
+    const riley = within(rowOf('Riley Poe'));
+    // A fresh form, not Jordan's sentence.
+    expect((riley.getByLabelText(/What this athlete reads/) as HTMLTextAreaElement).value).toBe('');
+    fireEvent.change(riley.getByLabelText(/What this athlete reads/), { target: { value: 'Sentence for Riley, half written' } });
+  }
+
+  test('a late SUCCESS for the first athlete shows their hold and leaves the second athlete’s form open with its text', async () => {
+    let release: ((response: Response) => void) | undefined;
+    const posted = twoRowFetch(new Promise<Response>((resolve) => { release = resolve; }));
+    await placeForFirstThenOpenSecond();
+
+    release?.({ ok: true, json: async () => ({ ok: true, hold: PLACED }) } as Response);
+    await within(rowOf('Jordan Doe')).findByText(/Active Training Hold — contact only/);
+
+    const riley = within(rowOf('Riley Poe'));
+    expect((riley.getByLabelText(/What this athlete reads/) as HTMLTextAreaElement).value).toBe('Sentence for Riley, half written');
+
+    // And Riley's hold goes to Riley, with Riley's sentence.
+    fireEvent.click(riley.getByRole('button', { name: 'Place hold' }));
+    await waitFor(() => expect(posted).toHaveLength(2));
+    expect(posted[0]).toMatchObject({ athlete_id: 'ath-1', athlete_explanation: 'Sentence for Jordan.' });
+    expect(posted[1]).toMatchObject({ athlete_id: 'ath-2', athlete_explanation: 'Sentence for Riley, half written' });
+  });
+
+  test('a late REFUSAL for the first athlete lands on their row and leaves the second athlete’s form open with its text', async () => {
+    let release: ((response: Response) => void) | undefined;
+    twoRowFetch(new Promise<Response>((resolve) => { release = resolve; }));
+    await placeForFirstThenOpenSecond();
+
+    release?.({ ok: false, status: 409, json: async () => ({ error: 'Hold already exists -- lift it first' }) } as Response);
+    await within(rowOf('Jordan Doe')).findByText('Hold Not Placed');
+
+    const riley = within(rowOf('Riley Poe'));
+    expect((riley.getByLabelText(/What this athlete reads/) as HTMLTextAreaElement).value).toBe('Sentence for Riley, half written');
+    expect(riley.queryByText('Hold Not Placed')).toBeNull();
+  });
+});
+
+describe('one row’s refusal is not erased by another row', () => {
+  const SECOND = { athlete_id: 'ath-2', full_name: 'Riley Poe' };
+
+  function rowOf(name: string): HTMLElement {
+    return screen.getByText(name).closest('li') as HTMLElement;
+  }
+
+  test('"Hold Not Placed" stays on its row while the coach opens, places and is refused on another', async () => {
+    // Jordan is NOT held. The stamp saying so used to vanish the moment the
+    // coach touched Riley's row.
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as { athlete_id: string };
+        return {
+          ok: false,
+          status: 400,
+          json: async () => ({ error: `Refused for ${body.athlete_id}.` }),
+        } as Response;
+      }
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, SECOND] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Riley Poe');
+    fireEvent.click(within(rowOf('Jordan Doe')).getByRole('button', { name: 'Place a training hold' }));
+    fireEvent.change(await screen.findByLabelText(/What this athlete reads/), { target: { value: 'Sentence for Jordan.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+    await within(rowOf('Jordan Doe')).findByText('Refused for ath-1.');
+
+    fireEvent.click(within(rowOf('Riley Poe')).getByRole('button', { name: 'Place a training hold' }));
+    expect(within(rowOf('Jordan Doe')).getByText('Hold Not Placed')).toBeTruthy();
+
+    const riley = within(rowOf('Riley Poe'));
+    fireEvent.change(riley.getByLabelText(/What this athlete reads/), { target: { value: 'Sentence for Riley.' } });
+    fireEvent.click(riley.getByRole('button', { name: 'Place hold' }));
+    await riley.findByText('Refused for ath-2.');
+
+    expect(within(rowOf('Jordan Doe')).getByText('Refused for ath-1.')).toBeTruthy();
+    expect(within(rowOf('Jordan Doe')).queryByText('Refused for ath-2.')).toBeNull();
+  });
+
+  test('a form closed because a hold turned up does not come back by itself when that hold is lifted', async () => {
+    let lifted = false;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as { action: string };
+        if (body.action === 'lift') {
+          lifted = true;
+          return { ok: true, json: async () => ({ ok: true, hold: { ...HOLD, athlete_id: 'ath-1', status: 'lifted' } }) } as Response;
+        }
+        return { ok: false, status: 409, json: async () => ({ error: 'Hold already exists -- lift it first' }) } as Response;
+      }
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        // First read: none. After the refusal someone else's hold is there.
+        const calls = (global.fetch as jest.Mock).mock.calls.filter((c) => String(c[0]).includes('/training-holds') && !(c[1] as RequestInit | undefined)?.body).length;
+        const holds = calls === 1 || lifted ? [] : [HOLD];
+        return { ok: true, json: async () => ({ ok: true, holds }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<SportsMedicinePage />);
+    await openPlaceForm();
+    fireEvent.change(screen.getByLabelText(/What this athlete reads/), { target: { value: 'An old sentence.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+    await screen.findByText(/Active Training Hold — sparring/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lift this hold' }));
+    await waitFor(() => expect(screen.queryByText(/Active Training Hold/)).toBeNull());
+
+    expect(screen.queryByLabelText(/What this athlete reads/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Place a training hold' })).toBeTruthy();
+  });
+});
+
+describe('whose refusal is whose, and when it goes', () => {
+  const SECOND = { athlete_id: 'ath-2', full_name: 'Riley Poe' };
+
+  function rowOf(name: string): HTMLElement {
+    return screen.getByText(name).closest('li') as HTMLElement;
+  }
+
+  /** Jordan has no hold and every place is refused; Riley has a hold. */
+  function boardWithRefusals(options: { failRereadFor?: string } = {}) {
+    const reads: Record<string, number> = {};
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as { action: string; athlete_id?: string };
+        if (body.action === 'lift') {
+          return { ok: false, status: 400, json: async () => ({ error: 'Lift refused for Riley.' }) } as Response;
+        }
+        return { ok: false, status: 400, json: async () => ({ error: `Refused for ${body.athlete_id}.` }) } as Response;
+      }
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, SECOND] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        const id = url.includes('athlete_id=ath-2') ? 'ath-2' : 'ath-1';
+        reads[id] = (reads[id] ?? 0) + 1;
+        if (options.failRereadFor === id && reads[id] > 1) {
+          return { ok: false, status: 503, json: async () => ({}) } as Response;
+        }
+        return { ok: true, json: async () => ({ ok: true, holds: id === 'ath-2' ? [{ ...HOLD, athlete_id: 'ath-2' }] : [] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  async function refuseJordan() {
+    render(<SportsMedicinePage />);
+    await screen.findByText('Riley Poe');
+    fireEvent.click(within(rowOf('Jordan Doe')).getByRole('button', { name: 'Place a training hold' }));
+    fireEvent.change(await screen.findByLabelText(/What this athlete reads/), { target: { value: 'Sentence for Jordan.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+    await within(rowOf('Jordan Doe')).findByText('Refused for ath-1.');
+  }
+
+  test('lifting (and being refused) on another row leaves this row’s refusal in place', async () => {
+    boardWithRefusals();
+    await refuseJordan();
+
+    fireEvent.click(within(rowOf('Riley Poe')).getByRole('button', { name: 'Lift this hold' }));
+    await within(rowOf('Riley Poe')).findByText('Lift refused for Riley.');
+
+    expect(within(rowOf('Jordan Doe')).getByText('Refused for ath-1.')).toBeTruthy();
+    expect(within(rowOf('Riley Poe')).queryByText('Refused for ath-1.')).toBeNull();
+  });
+
+  test('a row’s own next action clears its own refusal: placing again, and cancelling', async () => {
+    boardWithRefusals();
+    await refuseJordan();
+    const jordan = within(rowOf('Jordan Doe'));
+
+    // Placing again: the old stamp goes while the new attempt is out, then
+    // the new answer lands.
+    fireEvent.change(jordan.getByLabelText(/What this athlete reads/), { target: { value: 'A second sentence.' } });
+    fireEvent.click(jordan.getByRole('button', { name: 'Place hold' }));
+    await jordan.findByText('Refused for ath-1.');
+
+    fireEvent.click(jordan.getByRole('button', { name: 'Cancel' }));
+    expect(jordan.queryByText('Hold Not Placed')).toBeNull();
+    expect(within(rowOf('Riley Poe')).queryByText('Hold Not Placed')).toBeNull();
+  });
+
+  test('a row’s own refused lift is cleared when it lifts again', async () => {
+    boardWithRefusals();
+    render(<SportsMedicinePage />);
+    await screen.findByText('Riley Poe');
+    const riley = within(rowOf('Riley Poe'));
+    fireEvent.click(riley.getByRole('button', { name: 'Lift this hold' }));
+    await riley.findByText('Hold Not Lifted');
+
+    let sawItGone = false;
+    const observer = new MutationObserver(() => {
+      if (!within(rowOf('Riley Poe')).queryByText('Hold Not Lifted')) sawItGone = true;
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    fireEvent.click(riley.getByRole('button', { name: 'Lift this hold' }));
+    await riley.findByText('Hold Not Lifted');
+    observer.disconnect();
+
+    expect(sawItGone).toBe(true);
+  });
+
+  test('"write the sentence" is about the open form and goes when another row’s form replaces it', async () => {
+    const THIRD = { athlete_id: 'ath-3', full_name: 'Sam Lee' };
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, THIRD] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Lee');
+    fireEvent.click(within(rowOf('Jordan Doe')).getByRole('button', { name: 'Place a training hold' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Place hold' }));
+    await within(rowOf('Jordan Doe')).findByText(/Write the sentence this athlete reads/);
+
+    fireEvent.click(within(rowOf('Sam Lee')).getByRole('button', { name: 'Place a training hold' }));
+
+    // Jordan's form is gone, and so is the prompt about it.
+    expect(screen.queryByText(/Write the sentence this athlete reads/)).toBeNull();
+    expect(within(rowOf('Jordan Doe')).queryByText('Hold Not Placed')).toBeNull();
+  });
+
+  test('a late refusal for one row whose re-read FAILS does not close another row’s open form', async () => {
+    let release: ((response: Response) => void) | undefined;
+    const held = new Promise<Response>((resolve) => { release = resolve; });
+    const THIRD = { athlete_id: 'ath-3', full_name: 'Sam Lee' };
+    let jordanReads = 0;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') return held;
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, THIRD] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('athlete_id=ath-1')) {
+        jordanReads += 1;
+        if (jordanReads > 1) return { ok: false, status: 503, json: async () => ({}) } as Response;
+      }
+      if (url.includes('/training-holds')) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Lee');
+    fireEvent.click(within(rowOf('Jordan Doe')).getByRole('button', { name: 'Place a training hold' }));
+    fireEvent.change(await screen.findByLabelText(/What this athlete reads/), { target: { value: 'Sentence for Jordan.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+    await within(rowOf('Jordan Doe')).findByRole('button', { name: 'Placing…' });
+
+    fireEvent.click(within(rowOf('Sam Lee')).getByRole('button', { name: 'Place a training hold' }));
+    // Jordan's own open control is locked while Jordan's place is still out.
+    expect((within(rowOf('Jordan Doe')).getByRole('button', { name: 'Place a training hold' }) as HTMLButtonElement).disabled).toBe(true);
+    const sam = within(rowOf('Sam Lee'));
+    fireEvent.change(sam.getByLabelText(/What this athlete reads/), { target: { value: 'Sentence for Sam, half written' } });
+
+    release?.({ ok: false, status: 409, json: async () => ({ error: 'Hold already exists -- lift it first' }) } as Response);
+    await within(rowOf('Jordan Doe')).findByText(/Training hold could not be read/);
+
+    expect((sam.getByLabelText(/What this athlete reads/) as HTMLTextAreaElement).value).toBe('Sentence for Sam, half written');
+    expect(within(rowOf('Jordan Doe')).getByText('Hold Not Placed')).toBeTruthy();
+  });
+});
+
+/*
+ * A placement's answer is painted on the row without a read only when it IS
+ * this placement's answer: ok, an active hold, for this athlete.
+ */
+describe('a place response that is not this athlete’s active hold is never painted on this athlete', () => {
+  const UNREAD = /Training hold could not be read/;
+  const OTHERS = {
+    hold_id: 'hold-of-b',
+    athlete_id: 'ath-b',
+    status: 'active',
+    scope: 'all_training',
+    athlete_explanation: 'A SENTENCE WRITTEN FOR ANOTHER CHILD.',
+    lift_condition_text: 'Their path back.',
+  };
+
+  function placeBoard(placeAnswer: unknown) {
+    let holdReads = 0;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') return { ok: true, json: async () => placeAnswer } as Response;
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        holdReads += 1;
+        if (holdReads === 1) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+        return { ok: false, status: 503, json: async () => ({}) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  async function place() {
+    render(<SportsMedicinePage />);
+    await openPlaceForm();
+    fireEvent.change(screen.getByLabelText(/What this athlete reads/), { target: { value: 'Resting your wrist.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+  }
+
+  test.each([
+    ['a full active hold for ANOTHER athlete', { ok: true, hold: OTHERS }],
+    ['this athlete’s hold, but lifted', { ok: true, hold: { ...PLACED, status: 'lifted' } }],
+    ['this athlete’s hold with no status', { ok: true, hold: { ...PLACED, status: undefined } }],
+    ['a hold that names no athlete', { ok: true, hold: { ...PLACED, athlete_id: undefined } }],
+  ])('%s, then a re-read that fails: unknown, with nothing of that hold on screen', async (_name, answer) => {
+    placeBoard(answer);
+    await place();
+
+    expect(await screen.findByText(UNREAD)).toBeTruthy();
+    expect(screen.queryByText(/Active Training Hold/)).toBeNull();
+    expect(screen.queryByText(/A SENTENCE WRITTEN FOR ANOTHER CHILD/)).toBeNull();
+    expect(screen.queryByText(/Their path back/)).toBeNull();
+    expect((screen.getByRole('button', { name: 'Place a training hold' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('a full active hold for ANOTHER athlete, echoed by the re-read too: still nothing of it under this athlete', async () => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') return { ok: true, json: async () => ({ ok: true, hold: OTHERS }) } as Response;
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        const reads = (global.fetch as jest.Mock).mock.calls.filter(
+          (c) => String(c[0]).includes('/training-holds') && (c[1] as RequestInit | undefined)?.method !== 'POST',
+        ).length;
+        return { ok: true, json: async () => ({ ok: true, holds: reads === 1 ? [] : [OTHERS] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+    await place();
+
+    expect(await screen.findByText(UNREAD)).toBeTruthy();
+    expect(screen.queryByText(/Active Training Hold/)).toBeNull();
+    expect(screen.queryByText(/A SENTENCE WRITTEN FOR ANOTHER CHILD/)).toBeNull();
+  });
+
+  test('a placement nobody confirmed, and no hold found by the read: the row says so instead of going quietly unknown', async () => {
+    let holdReads = 0;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') return { ok: true, json: async () => ({ ok: true }) } as Response;
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/shadow/medical-status')) {
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      }
+      if (url.includes('/training-holds')) {
+        holdReads += 1;
+        return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    }) as unknown as typeof fetch;
+    await place();
+
+    expect(await screen.findByText(/did not confirm this hold/)).toBeTruthy();
+    expect(screen.getByText('Hold Not Placed')).toBeTruthy();
+    expect(screen.getByText(UNREAD)).toBeTruthy();
+
+    // And the way out works: a read that finds no hold gives the control back.
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+    await waitFor(() => expect(screen.queryByText(UNREAD)).toBeNull());
+    expect((screen.getByRole('button', { name: 'Place a training hold' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(holdReads).toBe(3);
+  });
+
+  test('a CONFIRMED placement says nothing of the kind', async () => {
+    placeBoard({ ok: true, hold: PLACED });
+    await place();
+
+    await screen.findByText(/Active Training Hold — contact only/);
+    expect(screen.queryByText(/did not confirm this hold/)).toBeNull();
+    expect(screen.queryByText('Hold Not Placed')).toBeNull();
+  });
+
+  test('this athlete’s own active hold, then a re-read that fails: that hold is shown', async () => {
+    placeBoard({ ok: true, hold: PLACED });
+    await place();
+
+    await screen.findByText(/Active Training Hold — contact only/);
+    expect(screen.getByText(PLACED.athlete_explanation)).toBeTruthy();
+    expect(screen.queryByText(UNREAD)).toBeNull();
   });
 });

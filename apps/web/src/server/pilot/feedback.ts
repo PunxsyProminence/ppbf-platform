@@ -2,6 +2,7 @@ import { FEEDBACK_ACKNOWLEDGEMENT } from '@/lib/feedbackWording';
 
 import type { PilotRole } from './contracts';
 import { query } from './db';
+import { submissionWriterNotDeletedSql } from './deletedAthletes';
 import { scanForSafetyLanguage } from './feedbackSafetyScan';
 
 /**
@@ -109,6 +110,19 @@ export interface FeedbackQueueFilter {
 // Both statements order safeguarding first regardless of age, then newest. An
 // ordering that buried a child's disclosure under a week of feature requests
 // would be a response-time problem, not a cosmetic one.
+//
+// A DELETED WRITER'S SUBMISSION LEAVES THE GYM'S QUEUE ONCE IT IS CLOSED --
+// 'done' or 'declined' -- and stays until then (Jason, 2026-09-30,
+// OD-2026-09-30-004 "B"). A safeguarding disclosure from a child who has since
+// been deleted is still somebody's to deal with; 'triaged' only means somebody
+// looked. "Deleted writer" is decided from the submission's own frozen role
+// and gym, and means the PERSON, not the login; where the account no longer
+// proves who wrote the row, the row stays (submissionWriterNotDeletedSql,
+// which also covers a reference the retention purge has cleared). The NAME
+// comes from the athlete the login names today; the purge clears that link
+// when it removes the athlete, so a purged child's rows carry no athlete name
+// and a new child given the same athlete_id is never put on them. The owner's
+// de-identified statement below is unchanged.
 const ORGANIZATION_FEEDBACK_SQL = `
   select s.submission_id,
          s.organization_id,
@@ -132,6 +146,8 @@ const ORGANIZATION_FEEDBACK_SQL = `
   where s.organization_id = $1
     and ($2::text is null or s.route = $2)
     and ($3::text is null or s.triage_status = $3)
+    and (s.triage_status not in ('done', 'declined')
+         or ${submissionWriterNotDeletedSql('s', 'submitted_by_account_id', 'submitted_by_role')})
   order by case when s.route = 'safeguarding' then 0 else 1 end, s.created_at desc
   limit $4`;
 
