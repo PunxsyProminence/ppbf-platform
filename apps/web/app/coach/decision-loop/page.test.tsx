@@ -1560,6 +1560,195 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     });
   });
 
+  // The panel is read when the athlete is selected and after a write. A
+  // clearance in force then, and run out since, went on reading "cleared"
+  // until the coach did something: the same mismatch with the gate, arrived
+  // at by waiting. The athlete on screen is now read again when a clearance
+  // in force reaches its end date, and the panel shows what the route answers.
+  describe('a clearance that runs out while the screen is open', () => {
+    const LAPSED_SENTENCE = 'This clearance passed its end date, so it no longer counts. The medical gate blocks recommendations until a new clearance is recorded.';
+    const NOW = Date.parse('2026-09-01T15:59:30.000Z');
+    // Thirty seconds after NOW, as the route sends it.
+    const SOON_ROW = { ...B_STATUS, expires_at: '2026-09-01 16:00:00+00' };
+    const STILL_CLEARED = { status: SOON_ROW, effectiveStatus: 'cleared' };
+    const NOW_LAPSED = { status: SOON_ROW, effectiveStatus: 'cleared_expired' };
+
+    let answer: () => Response;
+
+    function readsOfB(): number {
+      return (global.fetch as unknown as jest.Mock).mock.calls
+        .filter(([url]) => String(url).includes('/medical-status?athleteId=ath-b')).length;
+    }
+
+    async function pass(ms: number) {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(ms);
+      });
+    }
+
+    async function openB(first: Record<string, unknown> = STILL_CLEARED) {
+      answer = () => jsonResponse(first);
+      installReadsForB({ '/medical-status': () => answer() });
+      const view = render(<DecisionLoopReviewPage />);
+      fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+      await screen.findByText(/Set by organization_admin \(acct-1\)/);
+      return view;
+    }
+
+    function expectStillCleared() {
+      const panel = within(medicalSection());
+      expect(panel.getByText('cleared').className).toContain('badge--cleared');
+      expect(panel.queryByText('clearance expired')).toBeNull();
+      expect(panel.queryByText(LAPSED_SENTENCE)).toBeNull();
+    }
+
+    function expectLapsed() {
+      const panel = within(medicalSection());
+      expect(panel.getByText('clearance expired').className).toContain('badge--restricted');
+      expect(panel.getByText(LAPSED_SENTENCE)).toBeTruthy();
+      expect(panel.queryByText('cleared')).toBeNull();
+      expect(medicalSection().querySelector('.badge--cleared')).toBeNull();
+    }
+
+    beforeEach(() => {
+      jest.useFakeTimers({ now: NOW });
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    test('with nothing pressed: green "cleared" until the end date, then "clearance expired" and the sentence', async () => {
+      await openB();
+      expectStillCleared();
+      expect(readsOfB()).toBe(1);
+
+      // Not before the end date: nothing is asked and nothing changes.
+      await pass(25_000);
+      expect(readsOfB()).toBe(1);
+      expectStillCleared();
+
+      answer = () => jsonResponse(NOW_LAPSED);
+      await pass(6_000);
+
+      expect(readsOfB()).toBe(2);
+      expectLapsed();
+      expect(screen.queryByText(/could not be read/i)).toBeNull();
+
+      // Once the route has said it lapsed, it is not asked again.
+      await pass(120_000);
+      expect(readsOfB()).toBe(2);
+    });
+
+    test('the page does not decide it from the date: while the route still answers "cleared", the panel stays cleared and asks again', async () => {
+      await openB();
+
+      // This device's clock is ahead of the server's.
+      await pass(31_000);
+      expect(readsOfB()).toBe(2);
+      expectStillCleared();
+
+      answer = () => jsonResponse(NOW_LAPSED);
+      await pass(30_000);
+      expect(readsOfB()).toBe(3);
+      expectLapsed();
+    });
+
+    test.each<[string, () => Response]>([
+      ['is refused', () => jsonResponse({ error: 'Service unavailable' }, false)],
+      ['will not parse', () => unparseable()],
+      ['comes back with no effectiveStatus', () => jsonResponse({ status: SOON_ROW })],
+    ])('a re-read that %s says the status could not be read, not "cleared"', async (_name, failing) => {
+      await openB();
+
+      answer = failing;
+      await pass(31_000);
+
+      expect(screen.getByText(/medical administrative status could not be read/i)).toBeTruthy();
+      expect(within(medicalSection()).queryByText('cleared')).toBeNull();
+      expect(medicalSection().querySelector('.badge--cleared')).toBeNull();
+      expect(screen.queryByText(/Set by/)).toBeNull();
+    });
+
+    test('an athlete the coach has left is not read again, and nothing of theirs comes back', async () => {
+      await openB();
+
+      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: '' } });
+      answer = () => jsonResponse(NOW_LAPSED);
+      await pass(120_000);
+
+      expect(readsOfB()).toBe(1);
+      expect(screen.getByText('Select or enter an athlete to review their decision loop.')).toBeTruthy();
+      expect(screen.queryByText('clearance expired')).toBeNull();
+      expect(screen.queryByText(/Set by/)).toBeNull();
+    });
+
+    test('a re-read still out when the coach changes athlete does not paint under the new selection', async () => {
+      await openB();
+
+      let release: (response: Response) => void = () => {};
+      answer = () => new Promise<Response>((resolve) => { release = resolve; }) as unknown as Response;
+      await pass(31_000);
+      expect(readsOfB()).toBe(2);
+
+      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: '' } });
+      await act(async () => {
+        release(jsonResponse(NOW_LAPSED));
+      });
+      await pass(1_000);
+
+      expect(screen.getByText('Select or enter an athlete to review their decision loop.')).toBeTruthy();
+      expect(screen.queryByText('clearance expired')).toBeNull();
+      expect(screen.queryByText(/Set by/)).toBeNull();
+    });
+
+    test('a far end date is waited for a day at a time, never with a delay setTimeout cannot hold, and asks nothing early', async () => {
+      // Every delay the page asks the (fake) clock for. A wrapper, not a
+      // spy: a spy on the fake setTimeout is put back by the file's own
+      // restoreAllMocks after the real clock has returned.
+      const fakeSetTimeout = global.setTimeout;
+      const delays: number[] = [];
+      global.setTimeout = Object.assign(
+        ((handler: () => void, ms?: number) => {
+          delays.push(Number(ms ?? 0));
+          return fakeSetTimeout(handler, ms);
+        }) as unknown as typeof setTimeout,
+        fakeSetTimeout,
+      );
+      await openB({ status: { ...B_STATUS, expires_at: '2026-12-01 16:00:00+00' }, effectiveStatus: 'cleared' });
+
+      await pass(3 * 24 * 60 * 60 * 1000);
+
+      expect(readsOfB()).toBe(1);
+      expectStillCleared();
+      global.setTimeout = fakeSetTimeout;
+      expect(delays).toContain(24 * 60 * 60 * 1000);
+      expect(Math.max(...delays)).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
+    });
+
+    test.each<[string, Record<string, unknown>]>([
+      ['a clearance with no end date', { status: { ...B_STATUS, expires_at: null }, effectiveStatus: 'cleared' }],
+      ['a clearance whose end date is not a date', { status: { ...B_STATUS, expires_at: 'not-a-date' }, effectiveStatus: 'cleared' }],
+      ['a restricted row with an end date', { status: { ...SOON_ROW, status: 'restricted' }, effectiveStatus: 'restricted' }],
+      ['a clearance already lapsed', NOW_LAPSED],
+    ])('%s is never read again by itself', async (_name, body) => {
+      await openB(body);
+
+      await pass(2 * 24 * 60 * 60 * 1000);
+
+      expect(readsOfB()).toBe(1);
+    });
+
+    test('a screen that has been closed asks nothing', async () => {
+      const view = await openB();
+
+      view.unmount();
+      await pass(120_000);
+
+      expect(readsOfB()).toBe(1);
+    });
+  });
+
   test('outcomes that will not parse are an error, not "No outcomes evaluated yet."', async () => {
     const fetchMock = jest.fn(async (url: string) => {
       const key = String(url);

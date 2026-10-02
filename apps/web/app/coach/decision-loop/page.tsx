@@ -29,6 +29,8 @@ interface MedicalStatusRow {
   set_by_account_id: string;
   set_by_role: string;
   effective_at: string;
+  /* When a 'cleared' row stops counting, as Postgres text; null for none. */
+  expires_at?: string | null;
   created_at: string;
   /* Not a column: the route's `effectiveStatus`, kept with the row it reads. */
   effective_status: EffectiveMedicalStatus;
@@ -193,6 +195,37 @@ function readMedicalStatus(
     throw new Error(fallbackMessage);
   }
   return { ...(status as MedicalStatusRow), effective_status: effective as EffectiveMedicalStatus };
+}
+
+/* The route sends `expires_at` as Postgres text ('2026-09-01 16:00:00+00'),
+   which not every browser's Date will read. ISO 8601 all of them do. */
+function isoInstant(value: string): string {
+  return value.trim().replace(' ', 'T').replace(/(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?[+-]\d{2})$/, '$1:00');
+}
+
+/* setTimeout overflows a little under 25 days out and fires at once, so a far
+   end date is waited for a day at a time. */
+const LONGEST_WAIT_MS = 24 * 60 * 60 * 1000;
+const RECHECK_MS = 30_000;
+
+/* Calls `onDue` once `instant` has passed, and again every RECHECK_MS until it
+   is cancelled. It decides nothing: `onDue` asks the route again, and the
+   caller cancels when the route stops answering 'cleared'. The repeat is for a
+   device whose clock runs ahead of the server's, which gets 'cleared' back the
+   first time it asks. */
+function whenPassed(instant: string, onDue: () => void): () => void {
+  const due = new Date(isoInstant(instant)).getTime();
+  if (Number.isNaN(due)) return () => {};
+  let timer: ReturnType<typeof setTimeout>;
+  const arm = () => {
+    const wait = due - Date.now();
+    timer = setTimeout(() => {
+      if (Date.now() >= due) onDue();
+      arm();
+    }, wait > 0 ? Math.min(wait, LONGEST_WAIT_MS) : RECHECK_MS);
+  };
+  arm();
+  return () => clearTimeout(timer);
 }
 
 /* `textFields` are the fields the page prints or slices for each row. A row
@@ -593,6 +626,22 @@ export default function DecisionLoopReviewPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshAll(athleteId);
   }, [athleteId, refreshAll]);
+
+  /* A CLEARANCE CAN RUN OUT WHILE THIS SCREEN IS OPEN. The badge is what the
+     route said at the last read; left alone it would go on saying "cleared"
+     past the end date while the gate refuses. So the athlete on screen is
+     read again when a clearance in force reaches its end date -- through the
+     same refreshAll, so a read for an athlete the coach has left is dropped
+     and a read that fails says "could not be read". The page does not work
+     out the verdict from the date itself. */
+  const clearanceEndsAt =
+    medicalStatus?.effective_status === 'cleared' && typeof medicalStatus.expires_at === 'string'
+      ? medicalStatus.expires_at
+      : null;
+  useEffect(() => {
+    if (!athleteId || !clearanceEndsAt) return undefined;
+    return whenPassed(clearanceEndsAt, () => void refreshAll(athleteId, true));
+  }, [athleteId, clearanceEndsAt, refreshAll]);
 
   /* THE ONE PLACE THE SELECTION CHANGES, for the dropdown and for the ID box.
      Everything that belonged to the previous athlete goes in the same event
