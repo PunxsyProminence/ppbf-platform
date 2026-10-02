@@ -73,11 +73,16 @@ plank, ceiling chains instead of the timber-and-pipe frames somebody built, one
 floor colour instead of the painted red / blue / grey / carpet zones. The script's
 DNA block was rewritten from the photographs on 2026-09-26 and now carries that.
 
-Of this generated set, `plate-14-frontdesk-landscape-01.jpg` is now declared — it
-is `.room--office` slot `5of6` — and so is `plate-15-filmroom-landscape-01.jpg`,
-as `.room--clinic` `4of4`. **The rest are still undeclared**, which is why they
-sit in the "Landed but not declared" table below rather than the first one.
-Binding one is a single `--plate` declaration in the scope that wants it.
+Of this generated set, `plate-15-filmroom-landscape-01.jpg` is declared, as
+`.room--clinic` `4of4`. **The rest are undeclared**, which is why they sit in
+the "Landed but not declared" table below rather than the first one. Binding one
+is a single `--plate` declaration in the scope that wants it.
+
+`plate-14-frontdesk-landscape-01.jpg` was briefly declared as `.room--office`
+`5of6` and is **unbound again, do-not-bind** — invented banner lettering and an
+invented apron crest, judged 2026-10-01. The judgment is below and the reason
+travels with its row in the inert table, so neither can be read without the
+other.
 
 **Known imperfection, recorded rather than hidden:** the no-lettering rule is
 stated three ways in the prompt and still leaks. It leaks exactly where a real

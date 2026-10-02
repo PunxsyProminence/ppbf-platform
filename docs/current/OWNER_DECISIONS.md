@@ -195,8 +195,10 @@ Asked whether he wants named rooms anyway: "A, not now, doors are enough
 this purpose, and **PR #941 stays exactly as he left it on "Hold it, decide
 later"** -- A is not an instruction to close it.
 
-Delivered under this ruling: PR #1068, office to six walls, clinic to four,
-night to three.
+Delivered under this ruling: PR #1068, office to **five** walls, clinic to
+four, night to three. It was six until `plate-14-frontdesk-landscape-01.jpg` was
+opened at full size, found to carry a banner of invented lettering and an
+invented crest, and unbound within the same PR.
 
 ### 2. A declared format conversion is allowed; the original must be kept
 
