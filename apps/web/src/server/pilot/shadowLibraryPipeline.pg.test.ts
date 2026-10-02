@@ -486,7 +486,7 @@ describe('manual text intake: an incomplete excerpt cannot be indexed, approved 
 
     // Approval needs an indexed document, so the refusal above closes it too.
     const approval = await review(documentId, { action: 'review', approvalState: 'approved' });
-    expect(approval.status).not.toBe(200);
+    expect(approval.status).toBe(404);
     expect((await ingestState(documentId)).approval_state).toBe('pending_review');
 
     expect(await search('zebrafinch alpha passage')).toHaveLength(0);
@@ -526,6 +526,8 @@ describe('manual text intake: an incomplete excerpt cannot be indexed, approved 
     ['zero', { intake_method: 'manual_text', locator: 'p. 3', chunk_count: 0 }],
     ['not a number', { intake_method: 'manual_text', locator: 'p. 3', chunk_count: 'two' }],
     ['a fraction', { intake_method: 'manual_text', locator: 'p. 3', chunk_count: 1.5 }],
+    // Past what ::int holds: must be the same clean refusal, not a cast error.
+    ['too large to be real', { intake_method: 'manual_text', locator: 'p. 3', chunk_count: 9999999999 }],
   ])('a manual-text document whose declared count is %s fails closed', async (label, metadata) => {
     const documentId = await manualDocument(`Undeclared excerpt (${label})`, metadata);
     await part(documentId, 0, `Numbat passage for the ${label} case.`);
@@ -534,6 +536,30 @@ describe('manual text intake: an incomplete excerpt cannot be indexed, approved 
     expect(indexing.status).toBe(409);
     expect((await indexing.json()).code).toBe('SHADOW_LIBRARY_DOCUMENT_INCOMPLETE');
     expect((await ingestState(documentId)).ingest_state).not.toBe('indexed');
+  });
+
+  test('a manual-text document with no parts at all is refused as incomplete', async () => {
+    const documentId = await manualDocument('Empty excerpt', { intake_method: 'manual_text', locator: 'p. 4', chunk_count: 3 });
+
+    const indexing = await review(documentId, { action: 'complete_indexing' });
+    expect(indexing.status).toBe(409);
+    expect((await indexing.json()).error).toContain('0 of 3 parts');
+  });
+
+  test('a complete, approved excerpt that gains a part is withdrawn and cannot be indexed again', async () => {
+    const documentId = await manualDocument('Grown excerpt', { intake_method: 'manual_text', locator: 'p. 5', chunk_count: 1 });
+    await part(documentId, 0, 'Dunnart only passage.');
+    expect((await review(documentId, { action: 'complete_indexing' })).status).toBe(200);
+    expect((await review(documentId, { action: 'review', approvalState: 'approved' })).status).toBe(200);
+    // Keyword search also matches the other excerpts' shared words, so count
+    // this document's chunks only.
+    const served = async () =>
+      (await search('dunnart only passage')).filter((result) => result.document_id === documentId);
+    expect(await served()).toHaveLength(1);
+
+    await part(documentId, 1, 'Dunnart passage nobody declared.');
+    expect(await served()).toHaveLength(0);
+    expect((await review(documentId, { action: 'complete_indexing' })).status).toBe(409);
   });
 
   test('a document that is not manual text intake is not held to a declared count', async () => {
