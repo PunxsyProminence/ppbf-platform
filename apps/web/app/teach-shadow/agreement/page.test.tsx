@@ -64,13 +64,7 @@ function report(overrides: Record<string, unknown> = {}) {
       hedgedCertaintyRate: rate(5, 32, 0.156, 'annotated events'),
       adjudicationRate: rate(1, 7, 0.143, 'pairings that raised a disagreement'),
     },
-    clip_progress: {
-      totalClips: 10,
-      clipsNotStarted: 1,
-      clipsAwaitingSecondAnnotator: 2,
-      clipsAwaitingSecondSubmission: 0,
-    },
-    excluded_clips: { readingInProgress: 1, noRecordedPair: 0, pairNotEstablished: 0, notComparable: 0 },
+    clip_progress: { total_clips: 10, still_to_do_count: 3, left_out_count: 1 },
     ...overrides,
   };
 }
@@ -169,7 +163,7 @@ test('says what is left to do and what was not counted, when it is told', async 
 });
 
 test('a coach who is sent no progress sees no progress line', async () => {
-  mockFetch([STUDY], { 'proj-1': { body: report({ clip_progress: null, excluded_clips: null }) } });
+  mockFetch([STUDY], { 'proj-1': { body: report({ clip_progress: null }) } });
   render(<LabelAgreementPage />);
 
   await screen.findByTestId('headline');

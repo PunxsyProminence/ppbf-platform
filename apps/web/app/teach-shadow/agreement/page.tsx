@@ -57,12 +57,10 @@ interface AgreementPayload {
     adjudicationRate: Rate;
   } | null;
   clip_progress: {
-    totalClips: number;
-    clipsNotStarted: number;
-    clipsAwaitingSecondAnnotator: number;
-    clipsAwaitingSecondSubmission: number;
+    total_clips: number;
+    still_to_do_count: number;
+    left_out_count: number;
   } | null;
-  excluded_clips: Record<string, number> | null;
   error?: string;
 }
 
@@ -206,10 +204,8 @@ export default function LabelAgreementPage() {
 
   const belowMinimum = payload?.status === 'insufficient_data' && payload.comparison_count > 0;
   const progress = payload?.clip_progress;
-  const waiting = progress
-    ? progress.clipsNotStarted + progress.clipsAwaitingSecondAnnotator + progress.clipsAwaitingSecondSubmission
-    : 0;
-  const leftOut = Object.values(payload?.excluded_clips ?? {}).reduce((sum, count) => sum + count, 0);
+  const waiting = progress?.still_to_do_count ?? 0;
+  const leftOut = progress?.left_out_count ?? 0;
   const rows = payload?.report
     ? Object.entries(payload.report.disagreementRates).filter(([, rate]) => rate.count > 0)
     : [];
@@ -275,7 +271,7 @@ export default function LabelAgreementPage() {
 
             {progress && waiting > 0 ? (
               <p className="t-body mt-[var(--s3)]" data-testid="whats-left">
-                Still to do: {waiting} of {clips(progress.totalClips)} not yet labelled by two coaches.
+                Still to do: {waiting} of {clips(progress.total_clips)} not yet labelled by two coaches.
               </p>
             ) : null}
 

@@ -215,10 +215,7 @@ describe('GET /api/pilot/calibration/qa-report', () => {
     expect(body.report.disagreementCounts.PUNCH_TYPE).toBe(5);
     expect(body.report.disagreementRates.PUNCH_TYPE.rate).toBe(1);
     expect(body.report.boundaryDeltas.start_ms).toEqual({ count: 5, medianAbsoluteMs: 40 });
-    expect(body.clip_progress).toMatchObject({ totalClips: 6, clipsAwaitingSecondAnnotator: 1 });
-    expect(body.excluded_clips).toEqual({
-      readingInProgress: 0, noRecordedPair: 0, pairNotEstablished: 0, notComparable: 0,
-    });
+    expect(body.clip_progress).toEqual({ total_clips: 6, still_to_do_count: 1, left_out_count: 0 });
   });
 
   test('gives a coach the figures and the clip progress, and nothing else', async () => {
@@ -228,20 +225,54 @@ describe('GET /api/pilot/calibration/qa-report', () => {
     const body = await (await GET(request())).json();
 
     expect(body.report.disagreementRates.PUNCH_TYPE.rate).toBe(1);
-    expect(body.clip_progress).toMatchObject({ totalClips: 6, clipsAwaitingSecondAnnotator: 1 });
-    expect(body.excluded_clips).toEqual({
-      readingInProgress: 0, noRecordedPair: 0, pairNotEstablished: 0, notComparable: 0,
-    });
+    expect(body.clip_progress).toEqual({ total_clips: 6, still_to_do_count: 1, left_out_count: 0 });
     // The body is exactly these, and the figures are exactly the six the
     // screen shows.
     expect(Object.keys(body).sort()).toEqual([
-      'clip_progress', 'comparison_count', 'excluded_clips', 'minimum_comparisons',
+      'clip_progress', 'comparison_count', 'minimum_comparisons',
       'ok', 'project_name', 'report', 'status',
     ]);
     expect(Object.keys(body.report).sort()).toEqual([
       'adjudicationRate', 'boundaryDeltas', 'disagreementCounts', 'disagreementRates',
       'hedgedCertaintyRate', 'unknownRate',
     ]);
+  });
+
+  test.each([[ADMIN], [COACH]])('sends %o three progress sums and never the breakdown behind them', async (who) => {
+    mockPrincipal.mockResolvedValue(who);
+    stageStudy(2);
+    // One clip nobody has started, one with a third coach part-way through and
+    // one with three finished readings and no pair chosen, beside the staged
+    // clip that waits on a second labeller.
+    mockClips.mockResolvedValue(
+      ['clip-1', 'clip-2', 'clip-waiting', 'clip-empty', 'clip-third', 'clip-unpaired'].map((clip) => ({
+        calibration_clip_id: clip,
+        primary_sampling_reason: 'routine',
+      })),
+    );
+    mockSets.mockImplementation(async (_org: string, clip: string) => {
+      if (clip === 'clip-empty') return [];
+      if (clip === 'clip-waiting') return [set(clip, 'a')];
+      if (clip === 'clip-third') {
+        return [set(clip, 'a'), set(clip, 'b'), { ...set(clip, 'a', 'in_progress'), annotation_set_id: `${clip}-set-c` }];
+      }
+      if (clip === 'clip-unpaired') {
+        return [set(clip, 'a'), set(clip, 'b'), { ...set(clip, 'a'), annotation_set_id: `${clip}-set-c` }];
+      }
+      return [set(clip, 'a'), set(clip, 'b')];
+    });
+
+    const body = await (await GET(request())).json();
+
+    expect(body.clip_progress).toEqual({ total_clips: 6, still_to_do_count: 2, left_out_count: 2 });
+    const serialized = JSON.stringify(body);
+    for (const forbidden of [
+      'excluded_clips', 'totalClips', 'clipsNotStarted', 'clipsAwaitingSecondAnnotator',
+      'clipsAwaitingSecondSubmission', 'clipsReadyToCompare', 'clipsWithAdjudication',
+      'readingInProgress', 'noRecordedPair', 'pairNotEstablished', 'notComparable',
+    ]) {
+      expect(serialized).not.toContain(forbidden);
+    }
   });
 
   test('never sends a signed timing gap, which with one clip is one labeller\'s mark', async () => {

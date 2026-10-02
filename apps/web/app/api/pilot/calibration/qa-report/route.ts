@@ -89,6 +89,21 @@ export async function GET(request: NextRequest) {
       adjudicationRate: report.adjudicationRate,
     };
 
+    // THREE NUMBERS, ADDED UP HERE. The loader knows how many clips nobody has
+    // started, how many wait on a second labeller, how many on a second
+    // submission, and why each left-out clip was left out. The screen says
+    // "still to do" and "not counted yet", so only those sums leave: a
+    // breakdown in the response is disclosed whether or not a page prints it.
+    const { clipProgress } = report;
+    const progress = {
+      total_clips: clipProgress.totalClips,
+      still_to_do_count:
+        clipProgress.clipsNotStarted
+        + clipProgress.clipsAwaitingSecondAnnotator
+        + clipProgress.clipsAwaitingSecondSubmission,
+      left_out_count: Object.values(result.excludedClips).reduce((sum, count) => sum + count, 0),
+    };
+
     return NextResponse.json({
       ok: true,
       project_name: result.projectName,
@@ -96,8 +111,7 @@ export async function GET(request: NextRequest) {
       comparison_count: report.comparisonCount,
       minimum_comparisons: report.minimumComparisons,
       report: showFigures ? figures : null,
-      clip_progress: showProgress ? report.clipProgress : null,
-      excluded_clips: showProgress ? result.excludedClips : null,
+      clip_progress: showProgress ? progress : null,
     }, {
       headers: { 'Cache-Control': 'private, no-store, max-age=0' },
     });
