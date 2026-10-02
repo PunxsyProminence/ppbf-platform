@@ -50,12 +50,17 @@ export const PLATE_VARIANT_ATTRIBUTE = 'data-plate-variant';
  * The splits emitted for every route.
  *
  * These are variant COUNTS a room could plausibly have, not variant indexes.
- * Two through six covers every set anyone has proposed; a seventh plate for one
- * room would add `7` here and cost one line. Nothing breaks while a number goes
- * unused -- a token no rule matches is inert -- so the list is allowed to run
- * ahead of the art rather than chase it.
+ * Nothing breaks while a number goes unused -- a token no rule matches is inert
+ * -- so the list is allowed to run ahead of the art rather than chase it.
+ *
+ * SEVEN AND EIGHT WERE ADDED 2026-10-01, and this is the line the old comment
+ * promised: it said "a seventh plate for one room would add `7` here and cost
+ * one line". It cost two numbers. The floor had filled all six slots and there
+ * was finished art with nowhere to go; the owner had already ruled out adding
+ * rooms for art, so the ceiling was the thing in the way. Measured on the real
+ * door list: office and floor each reach all 8 of an of8.
  */
-export const PLATE_SPLITS = [2, 3, 4, 5, 6] as const;
+export const PLATE_SPLITS = [2, 3, 4, 5, 6, 7, 8] as const;
 
 /**
  * FNV-1a (32-bit) with a murmur3 fmix32 finalizer.

@@ -506,12 +506,12 @@ describe('the same route resolves to the same variant, every time', () => {
      * of tidying the mixing function.
      */
     const PINNED: ReadonlyArray<readonly [string, string]> = [
-      ['/dashboard', '1of2 3of3 1of4 5of5 3of6'],
-      ['/coach/review-queue', '2of2 3of3 2of4 1of5 6of6'],
-      ['/wall', '2of2 1of3 4of4 1of5 4of6'],
-      ['/names', '1of2 3of3 3of4 1of5 3of6'],
-      ['/admin/attendance', '1of2 1of3 1of4 2of5 1of6'],
-      ['/board', '2of2 2of3 4of4 4of5 2of6'],
+      ['/dashboard', '1of2 3of3 1of4 5of5 3of6 5of7 1of8'],
+      ['/coach/review-queue', '2of2 3of3 2of4 1of5 6of6 5of7 6of8'],
+      ['/wall', '2of2 1of3 4of4 1of5 4of6 3of7 4of8'],
+      ['/names', '1of2 3of3 3of4 1of5 3of6 5of7 3of8'],
+      ['/admin/attendance', '1of2 1of3 1of4 2of5 1of6 5of7 1of8'],
+      ['/board', '2of2 2of3 4of4 4of5 2of6 7of7 4of8'],
     ];
     for (const [route, tokens] of PINNED) {
       expect(`${route} -> ${plateVariantTokens(route)}`).toBe(`${route} -> ${tokens}`);
@@ -636,15 +636,19 @@ describe('routes in a big room spread across the variants instead of piling up',
   }
 
   it('does not hand every route in the building the same tokens', () => {
-    // The token list is one hash reduced five ways, so it can take at most
-    // lcm(2,3,4,5,6) = 60 distinct values however many doors there are. 108
-    // doors thrown at 60 buckets fill about 50 of them, which is what a sound
-    // hash looks like -- and both bounds are asserted, because a mutation that
-    // collapsed the hash would undershoot and one that smuggled in per-call
-    // state would overshoot the ceiling that the arithmetic makes impossible.
+    // The token list is one hash reduced SEVEN ways now, so the arithmetic
+    // ceiling is lcm(2,3,4,5,6,7,8) = 840 distinct values. That is far above the
+    // door count, so the real ceiling became the door count itself -- one token
+    // string per door at most. It was 60 while the splits stopped at six, which
+    // is why this bound is written from BUILDING.length rather than a constant:
+    // it stops being a number somebody has to remember to change.
+    //
+    // Both bounds still matter, for the reasons they always did: a mutation that
+    // collapsed the hash undershoots, and one smuggling in per-call state
+    // overshoots a ceiling the arithmetic makes impossible.
     const distinct = new Set(BUILDING.map((door) => plateVariantTokens(door.href)));
-    expect(distinct.size).toBeGreaterThan(35);
-    expect(distinct.size).toBeLessThanOrEqual(60);
+    expect(distinct.size).toBeGreaterThan(Math.floor(BUILDING.length * 0.6));
+    expect(distinct.size).toBeLessThanOrEqual(BUILDING.length);
   });
 });
 
@@ -670,9 +674,11 @@ describe('the resolver reads the sheet it is pointed at', () => {
     // base + portrait override. The current theme's `--plate: none` is gone
     // (OD-2026-10-01-005); the 2of2 variant has a different selector.
     expect(declared.filter((selector) => selector === '.room--floor')).toHaveLength(2);
-    // nine base + four office (of5) + three clinic (of4) + two night (of3)
-    // + five floor (of6) = twenty-two.
-    expect(declared).toHaveLength(22);
+    // Eight base rules -- six rooms, the portrait floor, the warm canvas ground
+    // (the current theme's `--plate: none` is gone, OD-2026-10-01-005) -- then
+    // five office (of6), four clinic (of5), two night (of3) and seven floor
+    // (of8). Twenty-six.
+    expect(declared).toHaveLength(26);
   });
 
   it('still routes every plate through --plate, so resolving it means something', () => {
@@ -720,8 +726,8 @@ describe('the PLATES cascade is decided by source order, not by specificity', ()
   it('documents the recipe next to the rules it governs', () => {
     // The one declaration a person adds when art arrives. If the worked example
     // drifts from what the tests prove, the next person follows the comment.
-    expect(CSS).toContain(':where([data-plate-variant~="2of5"]) .room--office');
-    expect(CSS).toContain('data-plate-variant="2of2 1of3 4of4 3of5 5of6"');
+    expect(CSS).toContain(':where([data-plate-variant~="2of6"]) .room--office');
+    expect(CSS).toContain('data-plate-variant="2of2 1of3 4of4 3of5 5of6 2of7 6of8"');
   });
 });
 
@@ -741,11 +747,13 @@ const VARIANT_PLATES: Partial<Record<Room, readonly string[]>> = {
     '/plates/plate-01-office-03.jpg',
     '/plates/plate-01-office-04.jpg',
     '/plates/plate-08-bell-gym-landscape-01.jpg',
+    '/plates/plate-18-passage-landscape-01.jpg',
   ],
   clinic: [
     '/plates/plate-03-clinic-02.jpg',
     '/plates/plate-03-clinic-03.jpg',
     '/plates/plate-15-filmroom-landscape-01.jpg',
+    '/plates/plate-18-quietcorner-landscape-01.jpg',
   ],
   night: [
     '/plates/plate-06-night-02.jpg',
@@ -757,6 +765,8 @@ const VARIANT_PLATES: Partial<Record<Room, readonly string[]>> = {
     '/plates/plate-17-matroom-landscape-01.jpg',
     '/plates/plate-17-speedbag-landscape-01.jpg',
     '/plates/plate-17-bell-landscape-01.jpg',
+    '/plates/plate-18-redwall-landscape-01.jpg',
+    '/plates/plate-18-gloverack-landscape-01.jpg',
   ],
 };
 const SPLIT_ROOMS = new Set(Object.keys(VARIANT_PLATES) as Room[]);
@@ -778,19 +788,23 @@ describe('three rooms carry a set of walls, the rest carry one', () => {
       .sort();
     expect(variantRules).toEqual([
       ':where([data-plate-variant~="2of3"]) .room--night',
-      ':where([data-plate-variant~="2of4"]) .room--clinic',
-      ':where([data-plate-variant~="2of5"]) .room--office',
-      ':where([data-plate-variant~="2of6"]) .room--floor',
+      ':where([data-plate-variant~="2of5"]) .room--clinic',
+      ':where([data-plate-variant~="2of6"]) .room--office',
+      ':where([data-plate-variant~="2of8"]) .room--floor',
       ':where([data-plate-variant~="3of3"]) .room--night',
-      ':where([data-plate-variant~="3of4"]) .room--clinic',
-      ':where([data-plate-variant~="3of5"]) .room--office',
-      ':where([data-plate-variant~="3of6"]) .room--floor',
-      ':where([data-plate-variant~="4of4"]) .room--clinic',
-      ':where([data-plate-variant~="4of5"]) .room--office',
-      ':where([data-plate-variant~="4of6"]) .room--floor',
-      ':where([data-plate-variant~="5of5"]) .room--office',
-      ':where([data-plate-variant~="5of6"]) .room--floor',
-      ':where([data-plate-variant~="6of6"]) .room--floor',
+      ':where([data-plate-variant~="3of5"]) .room--clinic',
+      ':where([data-plate-variant~="3of6"]) .room--office',
+      ':where([data-plate-variant~="3of8"]) .room--floor',
+      ':where([data-plate-variant~="4of5"]) .room--clinic',
+      ':where([data-plate-variant~="4of6"]) .room--office',
+      ':where([data-plate-variant~="4of8"]) .room--floor',
+      ':where([data-plate-variant~="5of5"]) .room--clinic',
+      ':where([data-plate-variant~="5of6"]) .room--office',
+      ':where([data-plate-variant~="5of8"]) .room--floor',
+      ':where([data-plate-variant~="6of6"]) .room--office',
+      ':where([data-plate-variant~="6of8"]) .room--floor',
+      ':where([data-plate-variant~="7of8"]) .room--floor',
+      ':where([data-plate-variant~="8of8"]) .room--floor',
     ]);
   });
 
@@ -874,8 +888,8 @@ describe('the ladder below the variant still holds', () => {
      * portrait plate when the viewport is upright, whichever landscape wall
      * their route would otherwise have taken.
      */
-    const landscapeSide = doorsIn('floor').find((href) => plateVariantSlot(href, 6) === 2)!;
-    const defaultSide = doorsIn('floor').find((href) => plateVariantSlot(href, 6) === 1)!;
+    const landscapeSide = doorsIn('floor').find((href) => plateVariantSlot(href, 8) === 2)!;
+    const defaultSide = doorsIn('floor').find((href) => plateVariantSlot(href, 8) === 1)!;
     expect(landscapeSide).toBeDefined();
     expect(defaultSide).toBeDefined();
 
@@ -935,7 +949,7 @@ describe('a variant rule does not take the portrait plate off the gym tablet', (
      real variants and this proof would be comparing against the wrong wall. */
   const secondHalf = doorsIn('floor').find((href) => plateVariantSlot(href, 2) === 2)!;
   const firstHalf = doorsIn('floor').find(
-    (href) => plateVariantSlot(href, 2) === 1 && plateVariantSlot(href, 6) === 1,
+    (href) => plateVariantSlot(href, 2) === 1 && plateVariantSlot(href, 8) === 1,
   )!;
 
   it('has a real route on each side of the split to test with', () => {
