@@ -78,12 +78,13 @@ import manifest from './safetyCriticalSuites.json';
  * AND the suite must be silent-failure prone: nothing else in the repository
  * goes red when it goes dark.
  *
- * THE EIGHT `goldenEra*Scope` SUITES ARE DELIBERATELY EXCLUDED, on evidence
- * rather than convenience. #654 -- "every golden-era scope is proven in a
- * browser, not by a text scan" -- added `e2e/golden-era-scope-proofs.spec.ts`,
- * which resolves computed styles for all eight scopes (bell, frontoffice,
- * locker, drillcase, afterhours, scheduler, scripts, floorboard). They have a
- * second, independent proof, so they fail the silent-failure test above.
+ * THE EIGHT `goldenEra*Scope` SUITES ARE NOT REGISTERED. They were excluded
+ * when #654 gave them a second, browser proof
+ * (`e2e/golden-era-scope-proofs.spec.ts`); that proof and their look-pin
+ * cases were removed on 2026-10-02 (OD-2026-10-02-004). What they still
+ * hold -- the `--locked` token, stamps, gates, nothing invented -- is safety
+ * meaning, and whether any of them should now be registered is an open
+ * question, not settled here.
  *
  * `wallSurface.test.tsx` is excluded too: its stated consequence is panel
  * burn-in and four controls on a pointerless screen -- real, and not a safety

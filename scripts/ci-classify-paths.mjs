@@ -196,8 +196,9 @@ const isSignedInJourneyPath = (file) =>
        ran none of the suites that assert it. */
     'apps/web/components/CardCatalog',
     /* THE SHARED STYLESHEETS, and this one is a policy change worth stating.
-       `design-system/**` already set homepage_e2e and golden_era_e2e -- the
-       Bell's resolved-style proof and the eight scope proofs. Neither of those
+       `design-system/**` already set homepage_e2e -- the homepage and
+       sign-in suite. (It also set golden_era_e2e until 2026-10-02, when the
+       bronze scope proofs were removed as look pins: OD-2026-10-02-004.) Neither of those
        suites looks at the chrome a signed-in person actually operates, so a
        stylesheet edit could break the catalog, the session bar or the
        standalone band on every gated route in the building and CI would have
@@ -214,60 +215,17 @@ const isSignedInJourneyPath = (file) =>
     'design-system/',
   ]) || file === 'apps/web/playwright.config.ts';
 
-/* THE GOLDEN-ERA RESOLVED-STYLE PROOFS (e2e/golden-era-scope-proofs.spec.ts).
-   ------------------------------------------------------------------------
-
-   One suite, eight scope classes, eight routes, and one deliberate rule about
-   when it runs: A CHANGE TO THE GOLDEN-ERA SHEET MUST RUN EVERY SCOPE PROOF,
-   not just the homepage one.
-
-   That is why this predicate exists at all. `design-system/**` already sets
-   homepage_e2e, and public-homepage.spec.ts is where the `.ge-bell` proof
-   lives -- so before this, editing ppbf-golden-era.css ran the Bell's resolved
-   -style check and nothing else, while the same file declares the ramp for
-   `.ge-scripts`, `.ge-afterhours`, `.ge-scheduler`, `.ge-frontoffice`,
-   `.ge-drillcase`, `.ge-locker` and `.ge-floorboard`. A regression on any of
-   the other seven went out with its proof unexecuted.
-
-   The surfaces below are the ones a scope proof actually reads:
-
-     * the sheets that declare the ramps, and app/globals.css, whose `:root`
-       token ALIASES (--accent, --accent-strong) are the source of a leak this
-       suite records;
-     * the routes that carry a scope class, plus the two workspace components
-       mounted inside two of them;
-     * the suite's own spec -- every other journey predicate matches the spec
-       it runs, and the two that did not could not run themselves;
-     * the signed-in plumbing, via isSignedInJourneyPath: seven of the eight
-       scopes are behind a role gate, so the gate, the session cache, the role
-       routing table, the shared sign-in helper and the Playwright config are
-       all surfaces this suite stands on. */
-const isGoldenEraE2ePath = (file) => {
-  const component = directComponentName(file);
-  return (
-    isSignedInJourneyPath(file) ||
-    startsWithAny(file, [
-      'design-system/',
-      'apps/web/app/globals.css',
-      'apps/web/app/admin/people/',
-      'apps/web/app/admin/shadow/',
-      'apps/web/app/athlete/dashboard/',
-      'apps/web/app/coach/drills/',
-      'apps/web/app/coach/environment/',
-      'apps/web/app/coach/session-scripts/',
-      'apps/web/app/schedule/',
-      'apps/web/e2e/golden-era-scope-proofs',
-    ]) ||
-    ['CoachWorkspace', 'AthleteWorkspace'].some((token) => component.includes(token))
-  );
-};
-
 const isCoachE2ePath = (file) => {
   const component = directComponentName(file);
   return (
     isSignedInJourneyPath(file) ||
     startsWithAny(file, [
       'apps/web/app/coach/',
+      /* The schedule page. coach-journey.spec.ts visits /schedule through the
+         role gate; until 2026-10-02 a change here ran the golden-era scope
+         proofs instead, and when those were removed (OD-2026-10-02-004) the
+         route would otherwise have run no browser suite at all. */
+      'apps/web/app/schedule/',
       'apps/web/app/api/pilot/coach/',
       'apps/web/app/api/pilot/coach-reviews/',
       'apps/web/app/api/pilot/shadow/',
@@ -380,7 +338,6 @@ export function classifyPaths(paths) {
   const coachE2e = files.some(isCoachE2ePath);
   const athleteE2e = files.some(isAthleteE2ePath);
   const guardianE2e = files.some(isGuardianE2ePath);
-  const goldenEraE2e = files.some(isGoldenEraE2ePath);
   const activationE2e = files.some(isActivationE2ePath);
   const unknownCode =
     !docsOnly &&
@@ -391,7 +348,6 @@ export function classifyPaths(paths) {
     !coachE2e &&
     !athleteE2e &&
     !guardianE2e &&
-    !goldenEraE2e &&
     !activationE2e;
 
   /* WHICH files were unrecognised, not merely whether any were. The boolean
@@ -419,7 +375,6 @@ export function classifyPaths(paths) {
     coachE2e,
     athleteE2e,
     guardianE2e,
-    goldenEraE2e,
     activationE2e,
     unknownCode,
     unclassifiedPaths,
@@ -435,7 +390,6 @@ function outputLines(result) {
     `coach_e2e=${result.coachE2e}`,
     `athlete_e2e=${result.athleteE2e}`,
     `guardian_e2e=${result.guardianE2e}`,
-    `golden_era_e2e=${result.goldenEraE2e}`,
     `activation_e2e=${result.activationE2e}`,
     `unknown_code=${result.unknownCode}`,
   ].join('\n');
@@ -484,7 +438,6 @@ if (
         `- coach journey E2E: ${result.coachE2e}`,
         `- athlete journey E2E: ${result.athleteE2e}`,
         `- guardian journey E2E: ${result.guardianE2e}`,
-        `- golden-era scope proofs E2E: ${result.goldenEraE2e}`,
         `- unknown/general code: ${result.unknownCode}`,
         '',
       ].join('\n'),
