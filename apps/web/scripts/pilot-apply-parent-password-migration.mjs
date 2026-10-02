@@ -20,13 +20,13 @@ const READINESS_QUERY = `
       select count(*) = 2
         from information_schema.columns
        where table_schema = 'pilot' and table_name = 'accounts'
-         and column_name in ('password_hash', 'password_set_at')
          and is_nullable = 'YES'
+         and (column_name, data_type) in (('password_hash', 'text'), ('password_set_at', 'timestamp with time zone'))
     ) as account_columns_ready,
     exists (
       select 1 from information_schema.columns
        where table_schema = 'pilot' and table_name = 'session_tokens'
-         and column_name = 'sign_in_method' and is_nullable = 'YES'
+         and column_name = 'sign_in_method' and is_nullable = 'YES' and data_type = 'text'
     ) as session_column_ready,
     exists (
       select 1 from pg_constraint c
@@ -42,7 +42,24 @@ const READINESS_QUERY = `
          and c.conrelid = to_regclass('pilot.session_tokens')
          and c.contype = 'c' and c.convalidated
          and pg_get_constraintdef(c.oid) ilike '%magic_link%'
-    ) as sign_in_method_check_ready
+    ) as sign_in_method_check_ready,
+    -- Not something this migration creates. The set-password write is
+    -- serialized with a board-seat grant ONLY because inserting a seat takes a
+    -- key-share lock on the account row through this foreign key
+    -- (parentPassword.ts). The board-seats runner does not assert the key, so
+    -- a database that lacked it would lose that rule with nothing saying so.
+    exists (
+      select 1 from pg_constraint c
+       where c.conrelid = to_regclass('pilot.board_seats')
+         and c.confrelid = to_regclass('pilot.accounts')
+         and c.contype = 'f'
+         and c.convalidated
+         and not c.condeferrable
+         and c.conkey = array(
+               select a.attnum from pg_attribute a
+                where a.attrelid = to_regclass('pilot.board_seats') and a.attname = 'account_id'
+             )::int2[]
+    ) as board_seat_account_fk_ready
 `;
 
 // What each check DOES, not what its text contains. The migration adds a check
@@ -51,6 +68,12 @@ const READINESS_QUERY = `
 // by any definition that happens to mention the right words. So each check's
 // own expression is evaluated against the cases it must accept and the cases
 // it must refuse. A check passes a row when its expression is true or null.
+//
+// WHAT THIS ESTABLISHES, AND NO MORE. It samples. The four doors and null are
+// all tried; "anything else" is three wrong values, and both-or-neither is
+// tried with two hash values. A hand-made rule that happens to agree on every
+// sample would pass. It also asks only about the two NAMED checks: a second
+// check under another name, or a trigger, is not looked at.
 const READINESS_PROBE = `
 do $parent_password_probe$
 declare
@@ -58,6 +81,7 @@ declare
   pair_expr text;
   admitted boolean;
   candidate text;
+  hash_value text;
 begin
   select pg_get_expr(c.conbin, c.conrelid) into method_expr from pg_constraint c
    where c.conname = 'pilot_session_tokens_sign_in_method_check'
@@ -85,17 +109,21 @@ begin
   end loop;
 
   -- Both or neither: the four cases of (hash set?, timestamp set?), each with
-  -- the answer the check must give.
+  -- the answer the check must give, and each with two different hash values
+  -- so a rule about what the hash SAYS does not pass as a rule about whether
+  -- it is there.
   foreach candidate in array array['00:admit', '11:admit', '10:refuse', '01:refuse']::text[] loop
-    execute format(
-      'select coalesce((%s), true)
-         from (select case when $1 then ''h'' end::text as password_hash,
-                      case when $2 then now() end::timestamptz as password_set_at) probe',
-      pair_expr
-    ) into admitted using substr(candidate, 1, 1) = '1', substr(candidate, 2, 1) = '1';
-    if admitted <> (split_part(candidate, ':', 2) = 'admit') then
-      raise exception 'PARENT_PASSWORD_MIGRATION_NOT_READY:password pair check is not both-or-neither (case %)', candidate;
-    end if;
+    foreach hash_value in array array['h', 'scrypt$32768$8$1$00ff$00ff']::text[] loop
+      execute format(
+        'select coalesce((%s), true)
+           from (select case when $1 then $3 end::text as password_hash,
+                        case when $2 then now() end::timestamptz as password_set_at) probe',
+        pair_expr
+      ) into admitted using substr(candidate, 1, 1) = '1', substr(candidate, 2, 1) = '1', hash_value;
+      if admitted <> (split_part(candidate, ':', 2) = 'admit') then
+        raise exception 'PARENT_PASSWORD_MIGRATION_NOT_READY:password pair check is not both-or-neither (case %)', candidate;
+      end if;
+    end loop;
   end loop;
 end
 $parent_password_probe$;
@@ -117,7 +145,19 @@ export async function applyMigrationTransaction(client, sql) {
     if (!row || Object.values(row).some((value) => value !== true)) {
       throw new Error(`PARENT_PASSWORD_MIGRATION_NOT_READY:${JSON.stringify(row)}`);
     }
-    await client.query(READINESS_PROBE);
+    try {
+      await client.query(READINESS_PROBE);
+    } catch (error) {
+      // A check that cannot even be evaluated against the probe (it names a
+      // column the probe does not supply) is the wrong check. Say so under
+      // the same token as every other not-ready outcome.
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        message.startsWith('PARENT_PASSWORD_MIGRATION_NOT_READY')
+          ? message
+          : `PARENT_PASSWORD_MIGRATION_NOT_READY:a check could not be evaluated: ${message}`,
+      );
+    }
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});

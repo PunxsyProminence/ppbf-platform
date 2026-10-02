@@ -330,6 +330,8 @@ describe('the parent-password migration, through its runner', () => {
     runnerDb = new Client({ connectionString: connectionStringFor(RUNNER_DB_NAME) });
     await runnerDb.connect();
     await runnerDb.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
+    // pilot.board_seats and its foreign key to pilot.accounts, which readiness asks for.
+    await runnerDb.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_board_seats_migration.sql'), 'utf8'));
 
     // The base schema declares the new columns for a NEW environment. An
     // existing one never had them, so this database is put back to that shape
@@ -424,6 +426,78 @@ describe('the parent-password migration, through its runner', () => {
       );
     });
 
+    test.each(['magic_link', 'password', 'pin', 'microsoft'])(
+      'a method check that leaves out %s: refused',
+      async (missing) => {
+        const kept = ['magic_link', 'password', 'pin', 'microsoft'].filter((value) => value !== missing);
+        await withPreExisting(
+          // 'magic_link' stays in a comment-free literal elsewhere so the name-level text match passes.
+          `alter table pilot.session_tokens add column sign_in_method text null;
+           alter table pilot.session_tokens add constraint pilot_session_tokens_sign_in_method_check
+             check (sign_in_method is null or sign_in_method in (${kept.map((value) => `'${value}'`).join(', ')})
+                    or sign_in_method = 'not_magic_link');`,
+          `alter table pilot.session_tokens drop constraint pilot_session_tokens_sign_in_method_check;
+           alter table pilot.session_tokens drop column sign_in_method;`,
+          new RegExp(`PARENT_PASSWORD_MIGRATION_NOT_READY:sign_in_method check refuses ${missing}`),
+        );
+      },
+    );
+
+    test.each([
+      ['compares without regard to case', `lower(sign_in_method) in ('magic_link', 'password', 'pin', 'microsoft')`, 'MAGIC_LINK'],
+      ['admits the empty string', `sign_in_method in ('magic_link', 'password', 'pin', 'microsoft', '')`, ''],
+    ])('a method check that %s: refused', async (_label, rule, admittedValue) => {
+      await withPreExisting(
+        `alter table pilot.session_tokens add column sign_in_method text null;
+         alter table pilot.session_tokens add constraint pilot_session_tokens_sign_in_method_check
+           check (sign_in_method is null or ${rule});`,
+        `alter table pilot.session_tokens drop constraint pilot_session_tokens_sign_in_method_check;
+         alter table pilot.session_tokens drop column sign_in_method;`,
+        new RegExp(`PARENT_PASSWORD_MIGRATION_NOT_READY:sign_in_method check admits "${admittedValue}"`),
+      );
+    });
+
+    test('a pair check that is both-or-neither only for one particular hash: refused', async () => {
+      await withPreExisting(
+        `alter table pilot.accounts add column password_hash text null, add column password_set_at timestamptz null;
+         alter table pilot.accounts add constraint pilot_accounts_password_pair_check
+           check (((password_hash is null) = (password_set_at is null)) and (password_hash is null or password_hash = 'h'));`,
+        `alter table pilot.accounts drop constraint pilot_accounts_password_pair_check;
+         alter table pilot.accounts drop column password_hash, drop column password_set_at;`,
+        /PARENT_PASSWORD_MIGRATION_NOT_READY:password pair check is not both-or-neither \(case 11:admit\)/,
+      );
+    });
+
+    test('a pair check that names another column cannot be evaluated: refused under the same token', async () => {
+      await withPreExisting(
+        `alter table pilot.accounts add column password_hash text null, add column password_set_at timestamptz null;
+         alter table pilot.accounts add constraint pilot_accounts_password_pair_check
+           check (((password_hash is null) = (password_set_at is null)) and role is not null);`,
+        `alter table pilot.accounts drop constraint pilot_accounts_password_pair_check;
+         alter table pilot.accounts drop column password_hash, drop column password_set_at;`,
+        /PARENT_PASSWORD_MIGRATION_NOT_READY:a check could not be evaluated/,
+      );
+    });
+
+    test('a column of the wrong type is refused', async () => {
+      await withPreExisting(
+        `alter table pilot.session_tokens add column sign_in_method varchar(5) null;`,
+        `alter table pilot.session_tokens drop column sign_in_method;`,
+        /PARENT_PASSWORD_MIGRATION_NOT_READY.*"session_column_ready":false/,
+      );
+    });
+
+    test('a correct check left NOT VALID is refused', async () => {
+      await withPreExisting(
+        `alter table pilot.session_tokens add column sign_in_method text null;
+         alter table pilot.session_tokens add constraint pilot_session_tokens_sign_in_method_check
+           check (sign_in_method is null or sign_in_method in ('magic_link', 'password', 'pin', 'microsoft')) not valid;`,
+        `alter table pilot.session_tokens drop constraint pilot_session_tokens_sign_in_method_check;
+         alter table pilot.session_tokens drop column sign_in_method;`,
+        /PARENT_PASSWORD_MIGRATION_NOT_READY.*"sign_in_method_check_ready":false/,
+      );
+    });
+
     test('a method check that admits anything: refused', async () => {
       await withPreExisting(
         `alter table pilot.session_tokens add column sign_in_method text null;
@@ -467,6 +541,23 @@ describe('the parent-password migration, through its runner', () => {
     });
   });
 
+  // The seat rule in parentPassword.ts is a lock taken through this key.
+  test.each([
+    ['is missing', 'alter table pilot.board_seats drop constraint board_seats_account_id_fkey',
+      'alter table pilot.board_seats add constraint board_seats_account_id_fkey foreign key (account_id) references pilot.accounts(account_id) on delete cascade'],
+    ['is deferrable', `alter table pilot.board_seats alter constraint board_seats_account_id_fkey deferrable initially deferred`,
+      'alter table pilot.board_seats alter constraint board_seats_account_id_fkey not deferrable'],
+  ])('a database whose board-seat foreign key to the account %s is refused', async (_label, breakIt, restoreIt) => {
+    await runnerDb.query(breakIt);
+    try {
+      await expect(applyMigrationTransaction(runnerDb, migrationSql))
+        .rejects.toThrow(/PARENT_PASSWORD_MIGRATION_NOT_READY.*"board_seat_account_fk_ready":false/);
+    } finally {
+      await runnerDb.query(restoreIt);
+    }
+    expect(await shape()).toEqual({ columns: [], constraints: [] });
+  });
+
   test('it adds the three columns and both checks, and applying it again changes nothing', async () => {
     await applyMigrationTransaction(runnerDb, migrationSql);
     const first = await shape();
@@ -477,6 +568,13 @@ describe('the parent-password migration, through its runner', () => {
 
     await applyMigrationTransaction(runnerDb, migrationSql);
     expect(await shape()).toEqual(first);
+  });
+
+  // The main database of this suite was built the way a NEW environment is:
+  // the base schema, which declares these columns and checks inline. The
+  // runner on it must find nothing to do and report ready.
+  test('on a database whose base schema already declares everything, the runner is a no-op and ready', async () => {
+    await applyMigrationTransaction(client, migrationSql);
   });
 
   test('existing rows are untouched: no password, no recorded method', async () => {
@@ -890,6 +988,38 @@ describe('a change between the check and the write is refused by the write', () 
     });
   });
 
+  // The email is part of the password rules and is mutable. The rules ran
+  // before the hash against the old address; the write must run them again
+  // against the one the locked row holds.
+  test('the sign-in email changes so that the password is now the email name: refused by the rules, nothing stored', async () => {
+    const parent = await seedAccount('parent');
+    const token = await seedSession(parent);
+    await seedSession(parent, { method: null });
+    mockHashPassword.mockImplementationOnce(async (password) => {
+      await client.query(`update pilot.accounts set login_email = 'harborlight@example.com' where account_id = $1`, [parent]);
+      return realHashPassword(password);
+    });
+
+    // Fine against the address the account had when the request arrived.
+    expect(await refusalOf({ accountId: parent, sessionToken: token, password: 'harborlight2026' }))
+      .toBe('PASSWORD_TOO_GUESSABLE');
+
+    expect(mockHashPassword).toHaveBeenCalledTimes(1);
+    expect(await storedPassword(parent)).toEqual({ password_hash: null, password_set_at: null });
+    expect(await liveSessionCount(parent)).toBe(2);
+  });
+
+  test('the sign-in email changes to something unrelated: the password is still set', async () => {
+    const parent = await seedAccount('parent');
+    const token = await seedSession(parent);
+    mockHashPassword.mockImplementationOnce(async (password) => {
+      await client.query(`update pilot.accounts set login_email = 'someone.new@example.com' where account_id = $1`, [parent]);
+      return realHashPassword(password);
+    });
+
+    expect(await refusalOf({ accountId: parent, sessionToken: token, password: 'harborlight2026' })).toBe('ACCEPTED');
+  });
+
   test('the session stops being a link session', async () => {
     await refusedAfter(async (_accountId, token) => {
       await client.query('update pilot.session_tokens set sign_in_method = null where token_hash = $1', [hashToken(token)]);
@@ -989,12 +1119,15 @@ describe('set-password against a concurrent writer on another connection', () =>
       await write(other, parent, token);
 
       const pending = refusalOf({ accountId: parent, sessionToken: token });
-      await untilMainWaitsOnALock();
-      // Still undecided while the other transaction is open. Read from the
-      // third connection: the one under test is the one that is waiting.
-      expect((await watcher.query('select password_hash from pilot.accounts where account_id = $1', [parent])).rows)
-        .toEqual([{ password_hash: null }]);
-      await other.query('commit');
+      try {
+        await untilMainWaitsOnALock();
+        // Still undecided while the other transaction is open. Read from the
+        // third connection: the one under test is the one that is waiting.
+        expect((await watcher.query('select password_hash from pilot.accounts where account_id = $1', [parent])).rows)
+          .toEqual([{ password_hash: null }]);
+      } finally {
+        await other.query('commit');
+      }
 
       expect(await pending).toBe('PASSWORD_SETUP_LINK_REQUIRED');
       expect(await storedPassword(parent)).toEqual({ password_hash: null, password_set_at: null });
@@ -1008,8 +1141,11 @@ describe('set-password against a concurrent writer on another connection', () =>
       await write(other, parent, token);
 
       const pending = refusalOf({ accountId: parent, sessionToken: token });
-      await untilMainWaitsOnALock();
-      await other.query('rollback');
+      try {
+        await untilMainWaitsOnALock();
+      } finally {
+        await other.query('rollback');
+      }
 
       expect(await pending).toBe('ACCEPTED');
       expect((await storedPassword(parent)).password_hash).not.toBeNull();
@@ -1025,16 +1161,20 @@ describe('set-password against a concurrent writer on another connection', () =>
       mockHoldBeforeCommit = async () => { reached(); await released; };
 
       const pending = refusalOf({ accountId: parent, sessionToken: token });
-      await reachedTheGate;
-      // The password write holds its locks, uncommitted. The other writer
-      // waits on them; with a lock timeout it gives up instead of overlapping.
-      await other.query(`set lock_timeout = '400ms'`);
-      await expect(write(other, parent, token)).rejects.toMatchObject({ code: '55P03' });
-      // And nothing is visible to it yet.
-      expect((await other.query('select password_hash from pilot.accounts where account_id = $1', [parent])).rows)
-        .toEqual([{ password_hash: null }]);
-
-      release();
+      try {
+        await reachedTheGate;
+        // The password write holds its locks, uncommitted. The other writer
+        // waits on them; with a lock timeout it gives up instead of overlapping.
+        await other.query(`set lock_timeout = '400ms'`);
+        await expect(write(other, parent, token)).rejects.toMatchObject({ code: '55P03' });
+        // And nothing is visible to it yet.
+        expect((await other.query('select password_hash from pilot.accounts where account_id = $1', [parent])).rows)
+          .toEqual([{ password_hash: null }]);
+      } finally {
+        // Always let the held transaction finish, or a failed expectation
+        // above leaves the suite's one connection stuck inside it.
+        release();
+      }
       expect(await pending).toBe('ACCEPTED');
 
       // After the commit the other writer goes through, in that order: the
@@ -1043,5 +1183,55 @@ describe('set-password against a concurrent writer on another connection', () =>
       await write(other, parent, token);
       expect((await storedPassword(parent)).password_hash).not.toBeNull();
     });
+  });
+});
+
+// A bulk revocation that takes no account lock holds one of the account's
+// OTHER session rows. The password write already holds the proof row, so
+// waiting for that other row is one half of a deadlock (the bulk revocation
+// wants the proof row next). The write skips it instead.
+describe('set-password while another transaction holds one of the account\u2019s other sessions', () => {
+  let other: Client;
+
+  beforeAll(async () => {
+    other = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await other.connect();
+  });
+
+  afterEach(async () => {
+    await other.query('rollback').catch(() => undefined);
+  });
+
+  afterAll(async () => {
+    await other?.end();
+  });
+
+  test('it does not wait on that row: it completes while the other transaction is still open', async () => {
+    const parent = await seedAccount('parent');
+    const token = await seedSession(parent);
+    const heldElsewhere = await seedSession(parent, { method: null });
+    const free = await seedSession(parent, { method: null });
+    await other.query('begin');
+    await other.query('update pilot.session_tokens set revoked_at = now() where token_hash = $1', [hashToken(heldElsewhere)]);
+
+    const outcome = await Promise.race([
+      refusalOf({ accountId: parent, sessionToken: token }),
+      new Promise<string>((resolve) => { setTimeout(() => resolve('STILL WAITING'), 5_000); }),
+    ]);
+    // Whatever happened, let the other transaction go so nothing stays stuck.
+    await other.query('commit');
+
+    expect(outcome).toBe('ACCEPTED');
+    const rows = (await client.query(
+      'select token_hash, revoked_at is not null as revoked from pilot.session_tokens where account_id = $1',
+      [parent],
+    )).rows;
+    expect(rows).toEqual(expect.arrayContaining([
+      { token_hash: hashToken(token), revoked: false },
+      // The free one was ended by the password write; the held one by the
+      // transaction that held it.
+      { token_hash: hashToken(free), revoked: true },
+      { token_hash: hashToken(heldElsewhere), revoked: true },
+    ]));
   });
 });

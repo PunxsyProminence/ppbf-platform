@@ -112,6 +112,8 @@ export async function setOwnPasswordFromLinkSession(input: {
     //
     // Lock order is account, then session -- the order deletion, deactivation
     // and re-provisioning already write in, so this cannot deadlock with them.
+    // Revokers that take only session rows are the reason the last statement
+    // below skips locked rows.
 
     // 1. The account row, FOR UPDATE. Deletion, deactivation and every role
     //    change UPDATE this row, so they wait for this or this waits for them.
@@ -120,8 +122,12 @@ export async function setOwnPasswordFromLinkSession(input: {
     //    is a foreign key to this row, so inserting a seat takes FOR KEY SHARE
     //    on it, and FOR UPDATE conflicts with that. FOR NO KEY UPDATE would
     //    not -- it must stay FOR UPDATE.
-    const account = (await client.query<AccountDeletionFlag & { role: PilotRole; active_flag: boolean }>(
-      `select a.role, a.active_flag, ${accountDeletedSql('a')} as account_deleted
+    const account = (await client.query<AccountDeletionFlag & {
+      role: PilotRole;
+      active_flag: boolean;
+      login_email: string | null;
+    }>(
+      `select a.role, a.active_flag, a.login_email, ${accountDeletedSql('a')} as account_deleted
          from pilot.accounts a
         where a.account_id = $1
           for update`,
@@ -143,7 +149,19 @@ export async function setOwnPasswordFromLinkSession(input: {
       [tokenHash, input.accountId],
     );
 
-    // 3. The seat, read after the account lock: a seat insert that committed
+    // 3. The account and the proof, as they are now.
+    if (!account || isDeletedAccount(account) || !account.active_flag || proof.rows.length !== 1) {
+      console.warn('pilot-auth set-password rejected', { reason: 'state_changed_before_write' });
+      throw passwordSetupLinkRequired();
+    }
+
+    // 4. The password rules again, on the email the LOCKED row holds. The
+    //    sign-in email is part of the rules ("not your email name") and it is
+    //    mutable: the check before the hash read it unlocked, and it can have
+    //    changed during the scrypt. Throwing here rolls the transaction back.
+    validatePasswordPolicy(input.password, { loginEmail: account.login_email });
+
+    // 5. The seat, read after the account lock: a seat insert that committed
     //    before the lock is visible here, and none can commit while it is held.
     const seat = (await client.query<{ holds_board_seat: boolean }>(
       `select ${HOLDS_ANY_BOARD_SEAT_SQL} as holds_board_seat
@@ -153,11 +171,7 @@ export async function setOwnPasswordFromLinkSession(input: {
     )).rows[0];
 
     if (
-      !account
-      || isDeletedAccount(account)
-      || !account.active_flag
-      || proof.rows.length !== 1
-      || seat?.holds_board_seat !== false
+      seat?.holds_board_seat !== false
       || !passwordLoginPermitted({ role: account.role }, { holdsBoardSeat: seat.holds_board_seat })
     ) {
       console.warn('pilot-auth set-password rejected', { reason: 'state_changed_before_write' });
@@ -174,10 +188,25 @@ export async function setOwnPasswordFromLinkSession(input: {
     // Every OTHER session ends: if someone else was signed in to this account,
     // the moment its owner sets a password is the moment that stops. This one
     // stays, so the parent who just made a password is not thrown back out.
+    //
+    // SKIP LOCKED, because this transaction already holds the proof session's
+    // row. A bulk revocation that takes no account lock (an admin's "sign them
+    // out everywhere", an organization suspension) can hold one of the other
+    // rows while it waits for the proof row; waiting for its row here would be
+    // a deadlock, and Postgres would abort one of the two. A session row
+    // another transaction has locked is being revoked or deleted by it -- every
+    // writer of an existing session row is one of those -- so it is left to
+    // that transaction. If that transaction rolls back, that one session stays
+    // live; it is not a session this write decided anything on.
     await client.query(
       `update pilot.session_tokens
           set revoked_at = now()
-        where account_id = $1 and token_hash <> $2 and revoked_at is null`,
+        where token_hash in (
+          select st.token_hash
+            from pilot.session_tokens st
+           where st.account_id = $1 and st.token_hash <> $2 and st.revoked_at is null
+             for update skip locked
+        )`,
       [input.accountId, tokenHash],
     );
   });
