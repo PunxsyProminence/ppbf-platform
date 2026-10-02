@@ -164,6 +164,85 @@ and should not try to.
 
 ---
 
+## OD-2026-10-01-007 -- Parent passwords: a board seat does not block one; a person on both sides uses two emails; a stored password is cleared when its holder becomes ineligible. Release 3 started
+
+**Provenance: PRIMARY.** Section 1's two messages were typed by Jason in the
+Lane P thread and read by overwatch in that thread's transcript
+(`C--Dev-ppbf-platform--claude-worktrees-quizzical-jennings-7f224a/16d05dfd-59be-4b72-978f-c24b105b90d7.jsonl`),
+times UTC. The other quotes were typed in the overwatch thread (transcript as
+in OD-2026-09-30-007). **Date:** 2026-10-01 (his evening; the UTC times run
+past midnight). This entry is new and edits no earlier one.
+
+### 1. Parent passwords and board seats
+
+PR #1074 (parent passwords, part 1) was built refusing a password to any
+parent account that holds a board seat in any organization. That rule was
+overwatch's call and then the lane's design, never his words; ChatGPT's review
+made it an owner decision. Lane P's last message to him before he answered
+ended with two numbered questions (2026-10-02T01:31:24Z):
+
+"1. Does a board seat in any gym block a parent password, or only a seat in the
+gym they signed into? 2. When a parent later becomes ineligible, is the stored
+password cleared or left dormant?"
+
+Jason, two messages:
+
+- 2026-10-02T02:19:50Z: *"1 NO IT SHOULD NOT BLOCK STANDS A CHANCE THAT IN SMALLER GYMS THEY MAY BE PART OF GYM ON BOTH SIDES"*
+- 2026-10-02T02:20:06Z: *"2 CLEARED"*
+
+His first answer was neither option offered. Overwatch put the two readings to
+him (a seat never blocks; or only a seat at another gym is ignored) and
+reported what Lane P had read in the code: one login has exactly one role, so
+a person who is both a parent and a board member on one email is a `board`
+account, sees no parent screens, and is refused a parent password by the
+parents-only rule whatever the seat rule says. Jason, in the overwatch thread,
+whole message: *"simple is that the person would need two emails per user account"*.
+
+**Decided:**
+
+1. **A board seat does not block a parent password.** The seat check comes out
+   of parent-password setup. His words answer the question as asked ("NO IT
+   SHOULD NOT BLOCK"); that this means a seat never blocks, in any
+   organization, is overwatch's reading (INFERRED) and was told to him.
+2. **A person on both sides uses two emails, one account each.** One login
+   keeps one role. Nothing is to be built to let one login hold both a parent
+   and a board role.
+3. **A stored password is cleared when its holder becomes ineligible**, not
+   left dormant. If they become eligible again they set a new one through a
+   fresh emailed link (his rule 6 in OD-2026-10-01-002 section 3). This is
+   work for the later parts of the parent-password build, not part 1; part 1
+   makes no claim that a stored password is cleared.
+
+What stays as it was: passwords are for parent-role accounts only
+(OD-2026-10-01-002 section 3 item 2). With decision 1, holding a board seat is
+no longer something that makes a parent ineligible; ineligible means deleted,
+deactivated or no longer a parent.
+
+REPORTED by Lane P from reading the code at its head `4765ec78` (not re-read
+by overwatch): board screens and APIs are gated on the role `board`, not on
+holding a seat and not on the sign-in method, so a parent's password session
+reaches no board material; a parent-role account holds a seat only as a
+leftover (re-roled after being seated, or a `board` membership in another
+organization).
+
+### 2. Release 3 started
+
+Jason, whole message: *"Stage release 3"*. Overwatch had recommended staging
+once PR #1077 (the floor and the new plates) merged, so that it is in the
+release; staging waits for that merge. On his word overwatch dispatched the
+two production migrations the release needs. Both completed with a production
+approval overwatch did not click (GitHub attributes it to the shared account;
+he was at his terminal): `apply-migrations` run 36953729159,
+`one-percent-nomination-athlete-cascade`, success; run 36953731757,
+`calibration-adjudication-revisions`, success. Before that he had approved two
+read-only production checks: `check-database` run 36936700286
+(`calibration-adjudication-ties`: 0 adjudications, 0 ties) and `run-checks`
+run 36936798184 (`membership-orphans`: "retention purge history: 0 run(s), 0
+account(s) ever purged"). No production deploy had been dispatched when
+written.
+
+---
+
 ## OD-2026-10-01-006 -- SHADOW: educate, do not restrict; coach notification is part of the intended safety handling; emergency reviews get a separate hourly allowance; the #1036 replacement re-cut
 
 **Provenance: PRIMARY.** Section 1's three messages were typed by Jason in the
