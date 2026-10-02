@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
     try {
       // The role gate, by name, on credentialPolicy's own list. A role outside
       // it gets the answer every other refusal here gets, not a different one.
-      // The board seat and the session proof are decided in parentPassword.ts.
+      // The session proof is decided in parentPassword.ts.
       try {
         requireRole(principal, [...PASSWORD_ROLES]);
       } catch {

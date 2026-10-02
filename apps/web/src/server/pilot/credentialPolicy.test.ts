@@ -224,12 +224,10 @@ describe('offline local PIN exception (BASE-03)', () => {
 });
 
 describe('who may hold a password', () => {
-  const NO_SEAT = { holdsBoardSeat: false };
-
   test('parents, and nobody else (Jason 2026-10-01: parents only)', () => {
     expect([...PASSWORD_ROLES]).toEqual(['parent']);
     for (const role of EVERY_ROLE) {
-      expect(passwordLoginPermitted({ role }, NO_SEAT)).toBe(role === 'parent');
+      expect(passwordLoginPermitted({ role })).toBe(role === 'parent');
     }
   });
 
@@ -239,9 +237,16 @@ describe('who may hold a password', () => {
     }
   });
 
-  // A seat means Microsoft. Asked both ways, as pinLoginPermitted asks it.
-  test('a parent who holds a board seat may not, by either report of the seat', () => {
-    expect(passwordLoginPermitted({ role: 'parent' }, { holdsBoardSeat: true })).toBe(false);
-    expect(passwordLoginPermitted({ role: 'parent', boardSeats: ['treasurer'] }, NO_SEAT)).toBe(false);
+  // OD-2026-10-01-007 section 1: a seat does not block a parent's password.
+  test('a board seat does not refuse a parent, and gives nobody else a password', () => {
+    expect(passwordLoginPermitted({ role: 'parent', boardSeats: ['treasurer'] })).toBe(true);
+    for (const role of EVERY_ROLE) {
+      expect(passwordLoginPermitted({ role, boardSeats: ['treasurer'] })).toBe(role === 'parent');
+    }
+  });
+
+  // The password path only: a seat still means Microsoft everywhere else.
+  test('a seat still requires Microsoft for the seat holder\u2019s own credential', () => {
+    expect(requiredCredentialFor({ role: 'parent', boardSeats: ['treasurer'] })).toBe('microsoft');
   });
 });

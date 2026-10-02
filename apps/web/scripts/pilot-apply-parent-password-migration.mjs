@@ -42,32 +42,7 @@ const READINESS_QUERY = `
          and c.conrelid = to_regclass('pilot.session_tokens')
          and c.contype = 'c' and c.convalidated
          and pg_get_constraintdef(c.oid) ilike '%magic_link%'
-    ) as sign_in_method_check_ready,
-    -- Not something this migration creates. The set-password write is
-    -- serialized with a board-seat grant ONLY because inserting a seat takes a
-    -- key-share lock on the account row through this foreign key
-    -- (parentPassword.ts). The board-seats runner does not assert the key, so
-    -- a database that lacked it would lose that rule with nothing saying so.
-    exists (
-      select 1 from pg_constraint c
-       where c.conrelid = to_regclass('pilot.board_seats')
-         and c.confrelid = to_regclass('pilot.accounts')
-         and c.contype = 'f'
-         and c.convalidated
-         and not c.condeferrable
-         and c.conkey = array(
-               select a.attnum from pg_attribute a
-                where a.attrelid = to_regclass('pilot.board_seats') and a.attname = 'account_id'
-             )::int2[]
-         -- The row the write locks is found by account_id. A key onto another
-         -- unique column of pilot.accounts still locks the same row, but it is
-         -- not the key the board-seats migration declares; refuse what is not
-         -- exactly that.
-         and c.confkey = array(
-               select a.attnum from pg_attribute a
-                where a.attrelid = to_regclass('pilot.accounts') and a.attname = 'account_id'
-             )::int2[]
-    ) as board_seat_account_fk_ready
+    ) as sign_in_method_check_ready
 `;
 
 // What each check DOES, not what its text contains. The migration adds a check

@@ -87,7 +87,7 @@ const TEST_DB_NAME = 'ppbf_test_parent_password';
 const RUNNER_DB_NAME = 'ppbf_test_parent_password_runner';
 const MIGRATIONS = [
   'pilot_slice_postgres.sql',
-  // pilot.board_seats: redemption and set-password ask it about the account.
+  // pilot.board_seats: for the tests that give a parent a seat and show it changes nothing.
   'pilot_slice_postgres_board_seats_migration.sql',
   'pilot_slice_postgres_magic_link_migration.sql',
   // pilot.accounts.deleted_at.
@@ -330,8 +330,6 @@ describe('the parent-password migration, through its runner', () => {
     runnerDb = new Client({ connectionString: connectionStringFor(RUNNER_DB_NAME) });
     await runnerDb.connect();
     await runnerDb.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8'));
-    // pilot.board_seats and its foreign key to pilot.accounts, which readiness asks for.
-    await runnerDb.query(await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_board_seats_migration.sql'), 'utf8'));
 
     // The base schema declares the new columns for a NEW environment. An
     // existing one never had them, so this database is put back to that shape
@@ -541,34 +539,6 @@ describe('the parent-password migration, through its runner', () => {
     });
   });
 
-  // The seat rule in parentPassword.ts is a lock taken through this key.
-  test.each([
-    ['is missing', 'alter table pilot.board_seats drop constraint board_seats_account_id_fkey',
-      'alter table pilot.board_seats add constraint board_seats_account_id_fkey foreign key (account_id) references pilot.accounts(account_id) on delete cascade'],
-    ['is deferrable', `alter table pilot.board_seats alter constraint board_seats_account_id_fkey deferrable initially deferred`,
-      'alter table pilot.board_seats alter constraint board_seats_account_id_fkey not deferrable'],
-    // Same source column, same target table, another unique column of it.
-    ['points at another unique column of pilot.accounts',
-      `alter table pilot.accounts add column alternate_key text unique;
-       update pilot.accounts set alternate_key = account_id;
-       alter table pilot.board_seats drop constraint board_seats_account_id_fkey;
-       alter table pilot.board_seats add constraint board_seats_account_id_fkey
-         foreign key (account_id) references pilot.accounts(alternate_key) on delete cascade`,
-      `alter table pilot.board_seats drop constraint board_seats_account_id_fkey;
-       alter table pilot.board_seats add constraint board_seats_account_id_fkey
-         foreign key (account_id) references pilot.accounts(account_id) on delete cascade;
-       alter table pilot.accounts drop column alternate_key`],
-  ])('a database whose board-seat foreign key to the account %s is refused', async (_label, breakIt, restoreIt) => {
-    await runnerDb.query(breakIt);
-    try {
-      await expect(applyMigrationTransaction(runnerDb, migrationSql))
-        .rejects.toThrow(/PARENT_PASSWORD_MIGRATION_NOT_READY.*"board_seat_account_fk_ready":false/);
-    } finally {
-      await runnerDb.query(restoreIt);
-    }
-    expect(await shape()).toEqual({ columns: [], constraints: [] });
-  });
-
   test('it adds the three columns and both checks, and applying it again changes nothing', async () => {
     await applyMigrationTransaction(runnerDb, migrationSql);
     const first = await shape();
@@ -657,7 +627,8 @@ describe('redeeming an emailed link', () => {
     expect(result.passwordSetup).toBe('none');
   });
 
-  test('a parent who holds a board seat is offered no password', async () => {
+  // OD-2026-10-01-007 section 1: a board seat does not block a parent's password.
+  test('a parent who holds a board seat is offered a password like any other parent', async () => {
     const parent = await seedAccount('parent');
     await client.query(
       `insert into pilot.board_seats (organization_id, seat, account_id) values ($1, 'treasurer', $2)`,
@@ -667,12 +638,10 @@ describe('redeeming an emailed link', () => {
     const result = await redeemMagicLink(await seedLink(parent));
 
     expect(result.ok).toBe(true);
-    expect(result.passwordSetup).toBe('none');
+    expect(result.passwordSetup).toBe('offer');
   });
 
-  // The password is the account's, not one organization's: a seat on another
-  // gym's board is still a seat.
-  test('a parent who holds a seat on the board of ANOTHER organization is offered no password', async () => {
+  test('so is a parent who holds a seat on the board of ANOTHER organization', async () => {
     const parent = await seedAccount('parent');
     await client.query(
       `insert into pilot.board_seats (organization_id, seat, account_id) values ($1, 'treasurer', $2)`,
@@ -682,7 +651,7 @@ describe('redeeming an emailed link', () => {
     const result = await redeemMagicLink(await seedLink(parent));
 
     expect(result.ok).toBe(true);
-    expect(result.passwordSetup).toBe('none');
+    expect(result.passwordSetup).toBe('offer');
   });
 });
 
@@ -850,30 +819,31 @@ describe('set-password refuses everything but a fresh emailed-link session on a 
     },
   );
 
-  test('a parent who holds a board seat cannot; with the seat given up, they can', async () => {
+  // OD-2026-10-01-007 section 1.
+  test.each([
+    ['their own organization', () => ORG_ID],
+    ['another organization', () => OTHER_ORG_ID],
+  ])('a parent who holds a seat on the board of %s sets a password like any other parent', async (_label, organization) => {
     const parent = await seedAccount('parent');
     const token = await seedSession(parent);
     await client.query(
       `insert into pilot.board_seats (organization_id, seat, account_id) values ($1, 'secretary', $2)`,
-      [ORG_ID, parent],
+      [organization(), parent],
     );
 
-    await expectRefused(parent, token, 'role_not_password_eligible');
-
-    await client.query('delete from pilot.board_seats where account_id = $1', [parent]);
-    warn.mockClear();
     expect(await refusalOf({ accountId: parent, sessionToken: token })).toBe('ACCEPTED');
+    expect((await storedPassword(parent)).password_hash).not.toBeNull();
   });
 
-  test('a seat on the board of ANOTHER organization refuses it just the same', async () => {
-    const parent = await seedAccount('parent');
-    const token = await seedSession(parent);
+  // And a seat gives no other role a password.
+  test('a coach who holds a seat row still cannot', async () => {
+    const coach = await seedAccount('coach');
     await client.query(
       `insert into pilot.board_seats (organization_id, seat, account_id) values ($1, 'secretary', $2)`,
-      [OTHER_ORG_ID, parent],
+      [ORG_ID, coach],
     );
 
-    await expectRefused(parent, token, 'role_not_password_eligible');
+    await expectRefused(coach, await seedSession(coach), 'role_not_password_eligible');
   });
 
   test('a refusal logs a reason and never who it was', async () => {
@@ -967,26 +937,6 @@ describe('a change between the check and the write is refused by the write', () 
       await client.query(
         `update pilot.session_tokens set created_at = now() - interval '16 minutes' where token_hash = $1`,
         [hashToken(token)],
-      );
-    });
-  });
-
-  // A seat grant revokes no session (boardSeats.ts), so the session proof
-  // alone would let this one through.
-  test('the account is given a board seat', async () => {
-    await refusedAfter(async (accountId) => {
-      await client.query(
-        `insert into pilot.board_seats (organization_id, seat, account_id) values ($1, 'chair', $2)`,
-        [ORG_ID, accountId],
-      );
-    });
-  });
-
-  test('the account is given a seat on the board of another organization', async () => {
-    await refusedAfter(async (accountId) => {
-      await client.query(
-        `insert into pilot.board_seats (organization_id, seat, account_id) values ($1, 'chair', $2)`,
-        [OTHER_ORG_ID, accountId],
       );
     });
   });
@@ -1098,22 +1048,6 @@ describe('set-password against a concurrent writer on another connection', () =>
       ),
     },
     {
-      // By SQL, not through assignBoardSeat: the lock comes from the foreign
-      // key on pilot.board_seats.account_id, which any insert takes.
-      label: 'a board-seat grant',
-      reason: 'the account lock, through the seat\'s foreign key',
-      write: (db, accountId) => db.query(
-        `insert into pilot.board_seats (organization_id, seat, account_id) values ($1, 'at-large', $2)`, [ORG_ID, accountId],
-      ),
-    },
-    {
-      label: 'a board-seat grant in another organization',
-      reason: 'the account lock, through the seat\'s foreign key',
-      write: (db, accountId) => db.query(
-        `insert into pilot.board_seats (organization_id, seat, account_id) values ($1, 'at-large', $2)`, [OTHER_ORG_ID, accountId],
-      ),
-    },
-    {
       label: 'a deletion',
       reason: 'the account lock',
       write: (db, accountId) => db.query('update pilot.accounts set deleted_at = now() where account_id = $1', [accountId]),
@@ -1202,6 +1136,60 @@ describe('set-password against a concurrent writer on another connection', () =>
       await write(other, parent, token);
       expect((await storedPassword(parent)).password_hash).not.toBeNull();
     });
+  });
+});
+
+// WHY THE ACCOUNT LOCK IS FOR UPDATE. A new session for the account is an
+// INSERT, and its foreign key takes a key-share lock on the account row. FOR
+// UPDATE conflicts with that; FOR NO KEY UPDATE does not. While the password
+// write is open no session can be minted for the account, so its revocation
+// of the account's other sessions cannot miss one that appeared mid-write.
+describe('a session minted for the account while set-password is open', () => {
+  let other: Client;
+
+  beforeAll(async () => {
+    other = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await other.connect();
+  });
+
+  afterEach(async () => {
+    mockHoldBeforeCommit = null;
+    await other.query('reset lock_timeout');
+  });
+
+  afterAll(async () => {
+    await other?.end();
+  });
+
+  test('it waits for the write: it cannot be created while the write holds the account row', async () => {
+    const parent = await seedAccount('parent');
+    const token = await seedSession(parent);
+    const mint = () => other.query(
+      `insert into pilot.session_tokens (token_hash, account_id, organization_id, expires_at)
+       values ($1, $2, $3, now() + interval '1 day')`,
+      [hashToken(`minted-mid-write-for-${parent}`), parent, ORG_ID],
+    );
+    let reached!: () => void;
+    let release!: () => void;
+    const reachedTheGate = new Promise<void>((resolve) => { reached = resolve; });
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    mockHoldBeforeCommit = async () => { reached(); await released; };
+
+    const pending = refusalOf({ accountId: parent, sessionToken: token });
+    try {
+      await reachedTheGate;
+      await other.query(`set lock_timeout = '400ms'`);
+      await expect(mint()).rejects.toMatchObject({ code: '55P03' });
+    } finally {
+      release();
+    }
+    expect(await pending).toBe('ACCEPTED');
+
+    // After the commit the session can be minted; it is a session from after
+    // the password was set, so it is not one the write should have ended.
+    await other.query('reset lock_timeout');
+    await mint();
+    expect(await liveSessionCount(parent)).toBe(2);
   });
 });
 

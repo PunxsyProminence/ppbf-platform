@@ -115,18 +115,11 @@ export async function redeemMagicLink(token: string): Promise<RedemptionResult> 
   const tokenHash = hashToken(token);
 
   return withTransaction(async (client) => {
-    const found = await client.query<RedeemableTokenRow & { holds_board_seat: boolean }>(
+    const found = await client.query<RedeemableTokenRow>(
       `select t.account_id, t.organization_id, t.sent_to_email, t.expires_at,
               t.consumed_at, t.invalidated_at,
               a.role, a.active_flag, a.login_email,
-              ${accountDeletedSql('a')} as account_deleted,
-              -- A scalar subselect, as in auth.ts: a join would multiply the row.
-              -- A seat on ANY board: a password belongs to the account, not
-              -- to one organization (parentPassword.ts asks the same way).
-              exists (
-                select 1 from pilot.board_seats bs
-                 where bs.account_id = a.account_id
-              ) as holds_board_seat
+              ${accountDeletedSql('a')} as account_deleted
          from pilot.magic_link_tokens t
          join pilot.accounts a on a.account_id = t.account_id
         where t.token_hash = $1
@@ -164,9 +157,7 @@ export async function redeemMagicLink(token: string): Promise<RedemptionResult> 
         organizationId: row.organization_id,
         role: row.role,
       },
-      passwordSetup: passwordLoginPermitted({ role: row.role }, { holdsBoardSeat: row.holds_board_seat })
-        ? 'offer'
-        : 'none',
+      passwordSetup: passwordLoginPermitted({ role: row.role }) ? 'offer' : 'none',
     };
   });
 }

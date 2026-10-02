@@ -157,21 +157,20 @@ export function usesMicrosoft(subject: CredentialSubject): boolean {
 export const PASSWORD_ROLES = ['parent'] as const satisfies readonly PilotRole[];
 
 /**
- * Whether this person may set and use a password.
+ * Whether this person may set and use a password. Decided on the role alone.
  *
- * A board-seat holder may not, whatever their role: a seat means Microsoft
- * (seatRequiresMicrosoft), and a password must not become a second, weaker
- * door to a governance identity. holdsBoardSeat is required for the reason it
- * is on RuntimeCredentialEnvironment: an optional flag defaults to "no seat".
+ * A BOARD SEAT DOES NOT BLOCK IT (OD-2026-10-01-007 section 1; Jason,
+ * 2026-10-01: "NO IT SHOULD NOT BLOCK STANDS A CHANCE THAT IN SMALLER GYMS
+ * THEY MAY BE PART OF GYM ON BOTH SIDES"). A login has one role, and board
+ * screens are gated on the role 'board', not on a seat, so a parent login
+ * that also has a seat row reaches nothing more by signing in with a
+ * password. Someone who is on both sides uses two logins, one per role.
+ *
+ * This is the password path only. What a seat means for Microsoft sign-in
+ * (requiredCredentialFor) and for the offline PIN exception
+ * (pinLoginPermitted) is unchanged.
  */
-export function passwordLoginPermitted(
-  subject: CredentialSubject,
-  environment: { holdsBoardSeat: boolean },
-): boolean {
-  if (seatRequiresMicrosoft(subject.boardSeats) || environment.holdsBoardSeat) {
-    return false;
-  }
-
+export function passwordLoginPermitted(subject: CredentialSubject): boolean {
   return (PASSWORD_ROLES as readonly string[]).includes(subject.role);
 }
 

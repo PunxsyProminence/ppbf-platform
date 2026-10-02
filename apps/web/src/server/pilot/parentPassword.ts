@@ -59,20 +59,10 @@ function linkSessionProofSql(clock: 'now()' | 'clock_timestamp()'): string {
   and st.created_at > ${clock} - interval '${PASSWORD_SETUP_WINDOW_MINUTES} minutes'`;
 }
 
-/**
- * "Holds a board seat", for the account under `a`: a seat on ANY board, not
- * only the session organization's. The password lives on the account, which
- * is not per-organization, so a seat anywhere is a seat for this purpose.
- */
-const HOLDS_ANY_BOARD_SEAT_SQL = `exists (
-  select 1 from pilot.board_seats bs where bs.account_id = a.account_id
-)`;
-
 interface SetupRow extends AccountDeletionFlag {
   role: PilotRole;
   login_email: string | null;
   active_flag: boolean;
-  holds_board_seat: boolean;
   link_session_proof: boolean;
 }
 
@@ -86,7 +76,6 @@ export async function setOwnPasswordFromLinkSession(input: {
   const row = await queryOne<SetupRow>(
     `select a.role, a.login_email, a.active_flag,
             ${accountDeletedSql('a')} as account_deleted,
-            ${HOLDS_ANY_BOARD_SEAT_SQL} as holds_board_seat,
             (${linkSessionProofSql('now()')}) as link_session_proof
        from pilot.session_tokens st
        join pilot.accounts a on a.account_id = st.account_id
@@ -101,7 +90,7 @@ export async function setOwnPasswordFromLinkSession(input: {
     console.warn('pilot-auth set-password rejected', { reason: 'unknown_deleted_or_inactive_account' });
     throw passwordSetupLinkRequired();
   }
-  if (!passwordLoginPermitted({ role: row.role }, { holdsBoardSeat: row.holds_board_seat })) {
+  if (!passwordLoginPermitted({ role: row.role })) {
     console.warn('pilot-auth set-password rejected', { reason: 'role_not_password_eligible' });
     throw passwordSetupLinkRequired();
   }
@@ -131,11 +120,12 @@ export async function setOwnPasswordFromLinkSession(input: {
 
     // 1. The account row, FOR UPDATE. Deletion, deactivation and every role
     //    change UPDATE this row, so they wait for this or this waits for them.
-    //    It is also what serializes a BOARD-SEAT GRANT, which revokes no
-    //    session and touches no account column: pilot.board_seats.account_id
-    //    is a foreign key to this row, so inserting a seat takes FOR KEY SHARE
-    //    on it, and FOR UPDATE conflicts with that. FOR NO KEY UPDATE would
-    //    not -- it must stay FOR UPDATE.
+    //    It is FOR UPDATE and not FOR NO KEY UPDATE for one more reason: a NEW
+    //    session for this account is an INSERT whose foreign key takes FOR
+    //    KEY SHARE on this row, and only FOR UPDATE conflicts with that. So
+    //    no session can be minted for the account while this transaction is
+    //    open, and the revocation of its other sessions below cannot miss one
+    //    that appeared mid-write.
     const account = (await client.query<AccountDeletionFlag & {
       role: PilotRole;
       active_flag: boolean;
@@ -195,19 +185,9 @@ export async function setOwnPasswordFromLinkSession(input: {
     //    changed during the scrypt. Throwing here rolls the transaction back.
     validatePasswordPolicy(input.password, { loginEmail: account.login_email });
 
-    // 5. The seat, read after the account lock: a seat insert that committed
-    //    before the lock is visible here, and none can commit while it is held.
-    const seat = (await client.query<{ holds_board_seat: boolean }>(
-      `select ${HOLDS_ANY_BOARD_SEAT_SQL} as holds_board_seat
-         from pilot.accounts a
-        where a.account_id = $1`,
-      [input.accountId],
-    )).rows[0];
-
-    if (
-      seat?.holds_board_seat !== false
-      || !passwordLoginPermitted({ role: account.role }, { holdsBoardSeat: seat.holds_board_seat })
-    ) {
+    // 5. The role, from the locked row. A board seat is not asked about:
+    //    it does not block a parent's password (credentialPolicy.ts).
+    if (!passwordLoginPermitted({ role: account.role })) {
       console.warn('pilot-auth set-password rejected', { reason: 'state_changed_before_write' });
       throw passwordSetupLinkRequired();
     }
