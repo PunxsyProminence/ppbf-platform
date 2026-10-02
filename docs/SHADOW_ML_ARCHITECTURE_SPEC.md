@@ -735,7 +735,9 @@ interface AuditEntry {
 > being able to *choose* Heavy Bag and being able to run it *without limit* are separate
 > permissions and get separate lists.
 >
-> Every limit is overridable per deployment through `PPBF_SHADOW_RATE_LIMIT_<KEY>`. The
+> Every limit is overridable per deployment through `PPBF_SHADOW_RATE_LIMIT_<KEY>`, except
+> the two human-review buckets, `safety_review` and `safety_review_critical`, which are
+> fixed at 3 per hour per account by owner decision (OD-2026-10-01-006 section 2). The
 > window is not — `chat_daily` means a day, so an override that changed it would make the
 > key a lie.
 

@@ -136,6 +136,11 @@
       "guards": "The differential guard on that classifier: a frozen copy of main's seven withholding returns, and the argument, with its premises tested, that folding apostrophe and quote look-alikes releases nothing main withheld and downgrades no emergency. If it stops loading, a later edit to the fold or its call sites ships unguarded."
     },
     {
+      "path": "app/api/pilot/shadow/chat/route.test.ts",
+      "minimumTests": 190,
+      "guards": "The SHADOW chat route's request-review and authorization boundary: an authenticated, authorized high-risk request is owed one human-review row however it then goes (answered, withheld, queued, refused, throttled or failed), asked for from the allowance the owner named (OD-2026-10-01-006) and written unless that hour is spent; and no row or slot charge is made behind a 401, 403 or 404 or for a request whose authorization never succeeded. Since #1081 this is the only suite that runs the route for either half (the allowances' arithmetic is the limiter suites'); if it stops loading, an emergency report can stop reaching a human, or a review row can leak a subject the caller may not access, with the run still green."
+    },
+    {
       "path": "src/testing/suiteAttendance.test.ts",
       "minimumTests": 35,
       "guards": "The register and the attendance reporter themselves. Listed here on purpose: a guard on guards that could vanish silently would leave the register unvalidated and every entry below unproven, which is the exact failure this file exists to make loud."

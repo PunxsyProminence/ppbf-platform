@@ -531,9 +531,10 @@ type ShadowChatExit = {
 // THE REQUEST-RISK REVIEW ROW IS WRITTEN HERE, AT THE EXIT, for every path
 // that did not already write it: withheld, queued, a capability refusal, "too
 // many requests", an unready runtime, a degraded answer, an unexpected error.
-// The handler decides early whether the row is owed (authenticated,
-// structurally valid, authorized, high-risk) and hands the write over; this
-// runs it before the response is returned, so no later refusal can cancel it.
+// The handler decides whether the row is owed (authenticated, structurally
+// valid, high-risk, and AUTHORIZED: by its early probe, or failing that by
+// its own access checks once they pass) and hands the write over; this runs
+// it before the response is returned.
 //
 // NOT ON A 401, 403 OR 404. The handler owes no row to a request that failed
 // authorization. This is a second lock on the same door: whatever the handler
@@ -700,7 +701,9 @@ async function handleShadowChat(
     //
     //   REQUEST-RISK     the classifier marked the REQUEST high-risk. One row
     //                    per request. Whether it is OWED is decided just
-    //                    below, before anything can refuse the request, and
+    //                    below, before anything can refuse the request (or,
+    //                    if that early check could not confirm the caller's
+    //                    access, when the handler's own check does), and
     //                    it is written once, when the request is finished --
     //                    whether the request was withheld, answered, given a fixed
     //                    fallback line, queued for the worker, refused for a
@@ -807,12 +810,25 @@ async function handleShadowChat(
     // whether a row is owed. POST adds a second lock: whatever the probe
     // said, a response of 401, 403 or 404 writes nothing.
     //
-    // ONLY A REFUSAL CANCELS THE ROW. A probe that fails for some other
-    // reason -- a dropped connection -- has not said the caller is
-    // unauthorized, and an emergency report must not lose its row to that.
-    // The row stays owed, and the second lock still covers the case where
-    // the handler's own check then refuses. What counts as a refusal is what
-    // the route itself would answer 401, 403 or 404 for.
+    // A ROW NEEDS A SUCCESSFUL AUTHORIZATION. Two things count as one, and
+    // nothing else does:
+    //   1. THE PROBE PASSED. The row is owed from here, so a request that is
+    //      then turned away before the handler's own checks (too many
+    //      requests, an unready runtime) still leaves it.
+    //   2. THE PROBE DID NOT PASS -- it refused, or it failed for some other
+    //      reason, such as a dropped connection -- AND THE HANDLER'S OWN
+    //      CHECKS THEN PASS, further down at their place in main's order.
+    //      The row is owed from that point.
+    // The probe's failure is deliberately not sorted into "refused" and
+    // "could not tell". The access checks cannot be trusted to say which:
+    // assertConversationAccess reports every failure of its subject check,
+    // a dropped connection included, as "conversation not found". Either
+    // way the probe has not authorized the request, so nothing is owed yet;
+    // and either way, if the real check passes, the request IS authorized.
+    // If the real check fails too, or is never reached, authorization never
+    // succeeded: no row, and no slot is charged. (The board-summary refusal
+    // is different: it is this route's own rule, decided here from the role,
+    // and nothing later reverses it.)
     //
     // (A WITHHELD request that also asks for a board summary is not refused
     // as a board summary: the safety boundary answers it first, as on main.
@@ -820,6 +836,8 @@ async function handleShadowChat(
     const requestRiskState: {
       owed: boolean;
       attempted: boolean;
+      /** The probe did not pass: owed only once the handler's own access checks pass. */
+      awaitingAuthorization: boolean;
       withheld: boolean;
       outcome: HumanReviewOutcome | { result: 'not_attempted' };
       conversationId: string | undefined;
@@ -828,6 +846,7 @@ async function handleShadowChat(
     } = {
       owed: false,
       attempted: false,
+      awaitingAuthorization: false,
       withheld: false,
       outcome: { result: 'not_attempted' },
       conversationId: requestedConversationId,
@@ -872,8 +891,8 @@ async function handleShadowChat(
       const refusedAsBoardSummary = requestValidation.valid
         && (sessionType === 'board_summary' || requestedSessionType === 'board_summary')
         && !BOARD_SUMMARY_ROLES.has(userRole as PilotRole);
-      let authorizedForThisRequest = !refusedAsBoardSummary;
-      if (authorizedForThisRequest) {
+      let probePassed = !refusedAsBoardSummary;
+      if (probePassed) {
         try {
           if (athleteId) {
             await assertActorCanAccessAthlete(principal, athleteId);
@@ -886,17 +905,12 @@ async function handleShadowChat(
               requireExactSubject: true,
             });
           }
-        } catch (probeError) {
-          const refused = (probeError instanceof Error && probeError.message === 'SHADOW_CONVERSATION_NOT_FOUND')
-            || [401, 403, 404].includes(jsonError(probeError).status);
-          if (refused) {
-            authorizedForThisRequest = false;
-          } else {
-            console.error('SHADOW authorization probe failed for a reason other than a refusal; the review row stays owed');
-          }
+        } catch {
+          probePassed = false;
         }
       }
-      requestRiskState.owed = authorizedForThisRequest;
+      requestRiskState.owed = probePassed;
+      requestRiskState.awaitingAuthorization = !probePassed && !refusedAsBoardSummary;
       atExit.writeRequestRiskReview = requestRisk.write;
     }
 
@@ -940,6 +954,11 @@ async function handleShadowChat(
         athleteId,
         requireExactSubject: true,
       });
+    }
+    // The request's own authorization has now SUCCEEDED. A row the probe could
+    // not owe is owed from here; not before.
+    if (requestRiskState.awaitingAuthorization) {
+      requestRiskState.owed = true;
     }
 
 
