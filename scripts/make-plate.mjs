@@ -230,8 +230,14 @@ const T7_ROOMS = new Set(['family-room', 'window']);
    UI text drawn over it. One exception, owner 2026-09-28 ("no i like that you
    can leave it", OD-2026-09-28-013, lock Mode A item 4): the IRON CITY
    lettering on the ring canvas stays when the ring is in frame. The real canvas
-   reads IRON CITY BREWERY (lock section 1), so the prompt spells that out
-   rather than invite the model to drop a word. Everything else stays forbidden.
+   reads IRON CITY BEER (lock section 1), so the prompt spells that out rather
+   than invite the model to drop a word. CORRECTED 2026-10-02: this said BREWERY
+   for weeks, so the generator was asking the model to paint a word that is not
+   in the gym -- made-up text originating from our own prompt, the exact thing
+   OD-2026-10-02-001 forbids. Read off the owner photograph and confirmed by
+   him; the second sponsor is KO NATION, not ALT NATION.
+
+   Everything else stays forbidden.
 
    THIS GENERATOR IS DELIBERATELY STRICTER THAN THE PLATE RULE, and the gap is
    on purpose. Since 2026-10-02 (OD-2026-10-02-001) a plate MAY carry a real
@@ -247,7 +253,7 @@ const T7_ROOMS = new Set(['family-room', 'window']);
    for; nobody supplies them on his behalf. Widening these strings otherwise
    reintroduces the defect the rule was drawn around. */
 const COMPOSITION = 'Composition: the centre of the frame is QUIET and uncluttered because interface text is laid over it, and all visual interest sits in the outer thirds. No people.';
-const NO_TEXT = 'The only lettering allowed is the sponsor lettering printed on the boxing ring canvas itself, which reads IRON CITY BREWERY at the centre of the canvas and ALT NATION, and only when the ring canvas is in frame. ABSOLUTELY NO OTHER TEXT anywhere in the frame: no other writing, no other letters, no numbers, no words, no signage, no posters, no banners, no readable chalkboards or whiteboards, no labels, no other logos, no other brand marks.';
+const NO_TEXT = 'The only lettering allowed is the sponsor lettering printed on the boxing ring canvas itself, which reads IRON CITY BEER at the centre of the canvas and KO NATION, and only when the ring canvas is in frame. ABSOLUTELY NO OTHER TEXT anywhere in the frame: no other writing, no other letters, no numbers, no words, no signage, no posters, no banners, no readable chalkboards or whiteboards, no labels, no other logos, no other brand marks.';
 
 /* THE LOCK ASKS FOR WRITING AND THE LETTERING RULE FORBIDS IT. Both are
    right, and for a training room the prompt used to carry the two of them

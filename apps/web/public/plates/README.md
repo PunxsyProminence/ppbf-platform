@@ -4,9 +4,12 @@ Layer 0 only: the photographed wall a room stands in. Real UI composites on
 top in code; no plate substitutes for a stamp, ticket or passbook content, and
 nothing a reader NEEDS lives in the picture. **Lettering: a real mark on real
 equipment is allowed, invented lettering is not** — a maker's name on a bag or
-glove, and the IRON CITY and ALT NATION sponsor lettering on the ring canvas
-when the ring is in frame (owner, 2026-09-28, "no i like that you can leave it";
-OD-2026-09-28-013; `docs/REAL-GYM-REFERENCE-LOCK.md` Mode A item 4). Stated in
+glove, and the IRON CITY BEER and KO NATION sponsor lettering on the ring canvas
+when the ring is in frame. Two separate decisions, kept separate: that canvas
+lettering may remain **at all** is owner, 2026-09-28, "no i like that you can
+leave it" (OD-2026-09-28-013); the two **names** are **OD-2026-10-02-003**
+(owner, 2026-10-02), which corrected them from IRON CITY BREWERY and ALT NATION.
+See `docs/REAL-GYM-REFERENCE-LOCK.md` Mode A item 4. Stated in
 full below, under the 2026-10-02 rule change (OD-2026-10-02-001). A plate is a `background-image` layer on `.room::after` /
 `.on-canvas::after` — never an `<img>`. Missing files are safe by design: with
 this directory empty, the gradient wall in the design-system sheets
@@ -127,7 +130,7 @@ the files and enlarging the marks rather than glancing at a contact sheet:
 - `plate-09` — faint illegible marks on a clipboard. Not a real mark and not
   legible either, so the 2026-10-02 rule does not recover it. Not bound.
 - `plate-10` — **FAILS.** The canvas roundel is an invented crest carrying
-  invented circular lettering. It does not read as IRON CITY or ALT NATION, so
+  invented circular lettering. It does not read as IRON CITY BEER or KO NATION, so
   the exception does not cover it, and a crest is the one thing the reference
   lock names outright: a gym logo is not ours to draw. Not bound.
 - `plate-14` — **FAILS, and this one had been bound.** A large wall banner

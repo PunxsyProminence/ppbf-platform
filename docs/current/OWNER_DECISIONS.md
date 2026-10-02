@@ -164,6 +164,93 @@ and should not try to.
 
 ---
 
+## OD-2026-10-02-003 — The ring canvas reads IRON CITY BEER, the second sponsor is KO NATION, and the ring corners are steel I-beams
+
+**Provenance: PRIMARY.** Jason, in the visuals lane, 2026-10-02, answering three
+questions put to him after his own reference photograph `07-the-ring-red-floor.jpg`
+was enlarged and read.
+
+> *"1 but it need sto stay associated with the canvas that it sponsored"*
+>
+> *"Its KO Nation it needs to stay tied to the canvas tho"*
+>
+> *"the navy bule is semantics  the corners of the ring are vetical steel I-beams
+> red and blue opposite each other with whit  for the neutral colorsthe timber
+> post is part of the building structure that the gym is in"*
+
+**THE QUESTION THOSE ANSWERS WERE GIVEN TO, VERBATIM.** His first answer is the
+single character "1", which means nothing on its own, so the question and its
+options belong in the record beside it. Put to him through the structured
+question tool, 2026-10-02:
+
+> **Q.** *"Your ring canvas photographs as IRON CITY BEER.
+> `docs/REAL-GYM-REFERENCE-LOCK.md` §2 records it as IRON CITY BREWERY, marked
+> [CONFIRMED 2026-09-26] by you, and `scripts/make-plate.mjs` line 250 hardcodes
+> that string into every ring prompt. How should I resolve it?"*
+>
+> 1. *"Correct both to IRON CITY BEER (Recommended)"*
+> 2. *"Drop the brand from the prompt entirely"*
+> 3. *"Keep BREWERY — I know something the photo doesn't show"*
+
+**So "1" is him approving the exact words IRON CITY BEER**, not merely agreeing
+that something was wrong. That distinction is load-bearing:
+**OD-2026-10-02-001** permits a generator to be asked for specific words only
+where the owner supplied or approved them, and `scripts/make-plate.mjs` now asks
+for these words by name. He approved them by choosing the option that spelled
+them out.
+
+His other two answers were typed in his own words rather than chosen from the
+options, and are quoted above exactly as he typed them.
+
+**Why it was asked.** The lock said the canvas roundel reads **IRON CITY
+BREWERY**, marked `[CONFIRMED 2026-09-26]`. The photograph, enlarged, reads
+**IRON CITY BEER**. That is a conflict between the owner's stated state and
+direct observation, so the work stopped and he was asked rather than the row
+being edited.
+
+**It was not a cosmetic error.** `scripts/make-plate.mjs` hard-coded the string
+into the prompt of every training-room plate: *"the sponsor lettering printed on
+the boxing ring canvas itself, which reads IRON CITY BREWERY at the centre"*. So
+the generator had been instructing the image model to paint a word **that is not
+in this gym** — made-up text originating from our own prompt rather than from the
+model's invention. That is exactly what OD-2026-10-02-001 forbids, written the
+same morning. The rule caught a defect in the tooling that wrote the rule.
+
+**What is now recorded.**
+
+- The roundel reads **IRON CITY BEER**. It sits at the centre of the canvas.
+- The second sponsor is **KO NATION**, not ALT NATION.
+- **Both marks stay tied to the canvas they sponsored.** They are permitted
+  lettering *on that canvas*, and nowhere else.
+- The ring corners are **vertical steel I-beams**, **red and blue opposite each
+  other**, with **white for the two neutral corners**. "Navy versus blue" is, in
+  his word, semantics.
+- The **bare timber upright beside the ring is part of the building**, not part
+  of the ring. A generated ring that grows a corner out of it, or leaves a post
+  standing free of the ropes, has drawn the building instead of the ring — one of
+  the faults that got a generated ring corner rejected on 2026-10-01.
+
+**HIS EARLIER WORDS ARE LEFT EXACTLY AS HE SAID THEM.** On 2026-09-30 he said
+*"alt nation was another sponsor for the same figh on the canvas"*, and that
+quote stays in the lock unaltered. This is **him correcting himself**, not a
+transcription being tidied, and the two are not the same thing. The lock now
+carries both, with the later one governing.
+
+**Corroboration, found inside the lock itself.** Its reference inventory already
+recorded *"KO NATION mat"* from a different photograph of the same ring. The
+correction runs the right way round, and the lock had been contradicting itself
+in two places for days without anyone noticing.
+
+**One sentence stops being an inference.** The lock's Mode A item 4 carried
+`[INFERRED, not owner-stated]` on the reasoning that the canvas exception cannot
+apply where the ring is out of frame, because there is then no canvas to carry
+the mark. His *"it need sto stay associated with the canvas that it sponsored"*
+says it directly, so that sentence is now marked `[OWNER 2026-10-02]`.
+
+**Scope.** Facts about the building, and the generator strings that restate them.
+It does not change the lettering rule itself (OD-2026-10-02-001), the no-people
+rule, or anything about which plate is bound where.
+
 ## OD-2026-10-02-001 — Real marks on real equipment are allowed in a plate; invented or garbled lettering is not
 
 **Provenance: PRIMARY.** Jason, typed in the visuals lane, 2026-10-02, answering
