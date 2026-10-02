@@ -1802,6 +1802,20 @@ describe('a clearance nobody actually read never reads as cleared, or as "no rec
     expect(screen.queryByText(/No clearance record on file/)).toBeNull();
   });
 
+  test('a refused read is unavailable whatever its body says, even a whole cleared row with a matching effectiveStatus', async () => {
+    global.fetch = mockFetch({
+      '/shadow/medical-status': () =>
+        ({ ok: false, status: 500, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) }) as unknown as Response,
+    });
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Jordan Doe');
+
+    expect(within(clearanceRow()).getByText('unavailable')).toBeTruthy();
+    expect(within(clearanceRow()).queryByText('cleared')).toBeNull();
+    expect(clearanceRow().querySelector('.badge--cleared')).toBeNull();
+  });
+
   test('a roster answered 200 without a list is a board that could not be read, not an empty roster', async () => {
     for (const body of [{}, { ok: false, error: 'upstream' }, { items: null }, { items: {} }]) {
       global.fetch = mockFetch({ '/athletes/list': () => ({ ok: true, json: async () => body }) as Response });
