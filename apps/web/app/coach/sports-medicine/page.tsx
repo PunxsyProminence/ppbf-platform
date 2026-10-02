@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
@@ -64,6 +64,8 @@ interface ClearanceRow {
   effective_at: string | null;
   // The end date of a lapsed clearance, shown in place of "since".
   expired_at: string | null;
+  // The end date of a clearance still in force: when to ask the route again.
+  ends_at: string | null;
   hold: ActiveHold | null;
   // Whether `hold` was actually read. 'unavailable' = the hold read itself
   // failed, so `hold: null` is NOT "no active hold" -- nobody could look.
@@ -91,6 +93,88 @@ function isClearanceRow(
    which not every browser's Date will read. ISO 8601 all of them do. */
 function isoInstant(value: string): string {
   return value.trim().replace(' ', 'T').replace(/(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?[+-]\d{2})$/, '$1:00');
+}
+
+/* The clock is looked at again at least this often while waiting. One long
+   timer would not do: a timer does not run while a tablet sleeps, so a
+   clearance ending during the night would be noticed hours into the morning;
+   and setTimeout overflows a little under 25 days out and fires at once. */
+const LONGEST_WAIT_MS = 60_000;
+const RECHECK_MS = 30_000;
+
+/* Calls `onDue` once `instant` has passed, and again every RECHECK_MS until it
+   is cancelled. It decides nothing: `onDue` asks the route again, and the
+   caller cancels when the route stops answering 'cleared'. The repeat is for a
+   device whose clock runs ahead of the server's, which gets 'cleared' back the
+   first time it asks. */
+function whenPassed(instant: string, onDue: () => void): () => void {
+  const due = new Date(isoInstant(instant)).getTime();
+  if (Number.isNaN(due)) return () => {};
+  let cancelled = false;
+  let timer: ReturnType<typeof setTimeout>;
+  const arm = () => {
+    if (cancelled) return;
+    const wait = due - Date.now();
+    timer = setTimeout(() => {
+      if (Date.now() >= due) onDue();
+      arm();
+    }, wait > 0 ? Math.min(wait, LONGEST_WAIT_MS) : RECHECK_MS);
+  };
+  arm();
+  return () => {
+    cancelled = true;
+    clearTimeout(timer);
+  };
+}
+
+type ClearanceReading = Pick<ClearanceRow, 'clearance' | 'effective_at' | 'expired_at' | 'ends_at'>;
+
+const CLEARANCE_UNREAD: ClearanceReading = { clearance: 'unavailable', effective_at: null, expired_at: null, ends_at: null };
+
+/* One athlete's clearance, as the route reports it. Never throws: whatever
+   goes wrong is the fail-closed reading, 'unavailable'.
+
+   "cleared" is the most consequential word on a row, so it is printed only
+   from a success envelope carrying a status row that is this athlete's:
+   `{ ok: true, status }`, status null (no record) or a row with an allowed
+   value.
+
+   And the word printed is `effectiveStatus`, taken only when it agrees with
+   the row it came with: 'no_record' for no row, the stored value, or
+   'cleared_expired' for a stored 'cleared'. A body without it, or one that
+   contradicts its own row, is 'unavailable' too. */
+async function readClearance(athleteId: string): Promise<ClearanceReading> {
+  try {
+    const statusRes = await fetch(
+      `${apiBase()}/api/pilot/shadow/medical-status?athleteId=${encodeURIComponent(athleteId)}`,
+      { method: 'GET', credentials: 'include' },
+    );
+    if (!statusRes.ok) return CLEARANCE_UNREAD;
+    const payload = (await statusRes.json()) as { ok?: unknown; status?: unknown; effectiveStatus?: unknown } | null;
+    if (!payload || payload.ok !== true || !('status' in payload)) return CLEARANCE_UNREAD;
+    const effective = payload.effectiveStatus;
+    if (payload.status === null) {
+      return effective === 'no_record' ? { ...CLEARANCE_UNREAD, clearance: null } : CLEARANCE_UNREAD;
+    }
+    if (!isClearanceRow(payload.status, athleteId)) return CLEARANCE_UNREAD;
+    const stored = payload.status;
+    const expiresAt = (stored as { expires_at?: unknown }).expires_at;
+    const endDate = typeof expiresAt === 'string' ? isoInstant(expiresAt) : null;
+    if (effective === stored.status) {
+      return {
+        clearance: stored.status,
+        effective_at: stored.effective_at,
+        expired_at: null,
+        ends_at: stored.status === 'cleared' ? endDate : null,
+      };
+    }
+    if (stored.status === 'cleared' && effective === 'cleared_expired') {
+      return { clearance: 'cleared_expired', effective_at: null, expired_at: endDate, ends_at: null };
+    }
+    return CLEARANCE_UNREAD;
+  } catch {
+    return CLEARANCE_UNREAD;
+  }
 }
 
 /* What this board needs from a hold before it will show one. An entry that
@@ -280,15 +364,13 @@ export default function SportsMedicinePage() {
               clearance: 'unavailable',
               effective_at: null,
               expired_at: null,
+              ends_at: null,
               hold: null,
               hold_read: 'unavailable',
             };
             try {
-              const [statusRes, holdResult] = await Promise.all([
-                fetch(
-                  `${apiBase()}/api/pilot/shadow/medical-status?athleteId=${encodeURIComponent(athlete.athlete_id)}`,
-                  { method: 'GET', credentials: 'include' },
-                ).catch(() => null),
+              const [clearance, holdResult] = await Promise.all([
+                readClearance(athlete.athlete_id),
                 // A failed hold read never claims a hold it could not read --
                 // and never claims "no hold" either. It used to collapse to
                 // null, which is the same row a child with no hold gets.
@@ -302,37 +384,7 @@ export default function SportsMedicinePage() {
               // take a hold that WAS read off the row.
               base.hold = holdResult.hold;
               base.hold_read = holdResult.hold_read;
-
-              if (statusRes?.ok) {
-                // "cleared" is the most consequential word on this row, so it
-                // is printed only from a success envelope carrying a status row
-                // that is this athlete's: `{ ok: true, status }`, status null
-                // (no record) or a row with an allowed value. Anything else
-                // leaves the fail-closed default, 'unavailable'.
-                //
-                // And the word printed is `effectiveStatus`, taken only when
-                // it agrees with the row it came with: 'no_record' for no
-                // row, the stored value, or 'cleared_expired' for a stored
-                // 'cleared'. A body without it, or one that contradicts its
-                // own row, also leaves 'unavailable'.
-                const payload = (await statusRes.json()) as { ok?: unknown; status?: unknown; effectiveStatus?: unknown } | null;
-                if (payload && payload.ok === true && 'status' in payload) {
-                  const effective = payload.effectiveStatus;
-                  if (payload.status === null) {
-                    if (effective === 'no_record') base.clearance = null;
-                  } else if (isClearanceRow(payload.status, athlete.athlete_id)) {
-                    const stored = payload.status;
-                    if (effective === stored.status) {
-                      base.clearance = stored.status;
-                      base.effective_at = stored.effective_at;
-                    } else if (stored.status === 'cleared' && effective === 'cleared_expired') {
-                      const expiresAt = (stored as { expires_at?: unknown }).expires_at;
-                      base.clearance = 'cleared_expired';
-                      base.expired_at = typeof expiresAt === 'string' ? isoInstant(expiresAt) : null;
-                    }
-                  }
-                }
-              }
+              Object.assign(base, clearance);
             } catch {
               // Leave the fail-closed defaults: clearance unavailable.
             }
@@ -350,6 +402,38 @@ export default function SportsMedicinePage() {
       }
     })();
   }, [readActiveHold]);
+
+  /* A CLEARANCE CAN RUN OUT WHILE THIS BOARD IS OPEN. Each row is what the
+     route said when the board loaded; left alone, a row would go on saying
+     "cleared" past its end date while the gate refuses. So a row whose
+     clearance is in force and has an end date is read again when that date
+     arrives, and the row shows what the route answers -- the board does not
+     work out the verdict from the date itself. Only that athlete's row is
+     written, and only by the newest read for them.
+
+     A re-read that fails leaves the row 'unavailable' and keeps its end date,
+     so the row goes on being asked about until the route answers: a tablet
+     that wakes before its network does gets its rows back by itself. */
+  const clearanceReadSeq = useRef(new Map<string, number>());
+  const clearanceEndings = JSON.stringify(
+    rows
+      .filter((row) => row.ends_at && (row.clearance === 'cleared' || row.clearance === 'unavailable'))
+      .map((row) => [row.athlete_id, row.ends_at]),
+  );
+  useEffect(() => {
+    const cancels = (JSON.parse(clearanceEndings) as Array<[string, string]>).map(([athleteId, endsAt]) =>
+      whenPassed(endsAt, () => {
+        const seq = (clearanceReadSeq.current.get(athleteId) ?? 0) + 1;
+        clearanceReadSeq.current.set(athleteId, seq);
+        void readClearance(athleteId).then((reading) => {
+          if (clearanceReadSeq.current.get(athleteId) !== seq) return;
+          const kept = reading.clearance === 'unavailable' ? { ...reading, ends_at: endsAt } : reading;
+          setRows((current) => current.map((row) => (row.athlete_id === athleteId ? { ...row, ...kept } : row)));
+        });
+      }),
+    );
+    return () => cancels.forEach((cancel) => cancel());
+  }, [clearanceEndings]);
 
   /**
    * Re-read one athlete's hold after a write.

@@ -16,7 +16,7 @@
 // board still learns the hold's state from the same GET it always used, not
 // from the write's own response.
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import SportsMedicinePage from './page';
@@ -1508,6 +1508,262 @@ describe('a lapsed clearance beside a current one', () => {
     expect(row.queryByText('unavailable')).toBeNull();
     expect(rowOf('Sam Roe').querySelector('.badge--cleared')).toBeNull();
   });
+
+  // The board is read once, when it opens. A clearance that was in force then
+  // and runs out an hour later went on reading "cleared" until somebody
+  // reloaded: the same mismatch with the gate, arrived at by waiting. A row
+  // whose clearance has an end date is now read again when that date arrives,
+  // and shows what the route answers.
+  describe('a clearance that runs out while the board is open', () => {
+    const NOW = Date.parse('2026-09-01T15:59:30.000Z');
+    // Thirty seconds after NOW, as the route sends it.
+    const SOON_STATUS = { ...LAPSED_STATUS, expires_at: '2026-09-01 16:00:00+00' };
+    const STILL_CLEARED = { ok: true, status: SOON_STATUS, effectiveStatus: 'cleared' };
+    const NOW_LAPSED = { ok: true, status: SOON_STATUS, effectiveStatus: 'cleared_expired' };
+    const asResponse = (body: unknown) => ({ ok: true, json: async () => body }) as Response;
+
+    let answer: () => Response | Promise<Response>;
+    let reads: { current: number; lapsing: number };
+
+    function installOpenBoard(first: unknown) {
+      reads = { current: 0, lapsing: 0 };
+      answer = () => asResponse(first);
+      global.fetch = mockFetch({
+        '/athletes/list': () => asResponse({ items: [CURRENT, LAPSED] }),
+        // In force until 2099: a timer that must wait, a minute at a time.
+        'medical-status?athleteId=ath-1': () => {
+          reads.current += 1;
+          return asResponse({ ok: true, status: CURRENT_STATUS, effectiveStatus: 'cleared' });
+        },
+        'medical-status?athleteId=ath-2': () => {
+          reads.lapsing += 1;
+          return answer();
+        },
+      });
+    }
+
+    async function pass(ms: number) {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(ms);
+      });
+    }
+
+    async function openBoard(first: unknown = STILL_CLEARED) {
+      installOpenBoard(first);
+      const view = render(<SportsMedicinePage />);
+      await screen.findByText('Sam Roe');
+      return view;
+    }
+
+    function expectStillCleared() {
+      const row = within(rowOf('Sam Roe'));
+      expect(row.getByText('cleared').className).toContain('badge--cleared');
+      expect(row.getByText('since 6/1/2026')).toBeTruthy();
+      expect(row.queryByText('clearance expired')).toBeNull();
+    }
+
+    function expectLapsed() {
+      const row = within(rowOf('Sam Roe'));
+      expect(row.getByText('clearance expired').className).toContain('badge--restricted');
+      expect(row.getByText(LAPSED_SENTENCE)).toBeTruthy();
+      expect(row.getByText('expired 9/1/2026')).toBeTruthy();
+      expect(row.queryByText('cleared')).toBeNull();
+      expect(row.queryByText(/since/)).toBeNull();
+      expect(rowOf('Sam Roe').querySelector('.badge--cleared')).toBeNull();
+    }
+
+    beforeEach(() => {
+      jest.useFakeTimers({ now: NOW });
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    test('with nothing pressed: green "cleared" until the end date, then "clearance expired", the sentence and "expired <date>"', async () => {
+      await openBoard();
+      expectStillCleared();
+      expect(reads.lapsing).toBe(1);
+
+      // Not before the end date: nothing is asked and nothing changes.
+      await pass(25_000);
+      expect(reads.lapsing).toBe(1);
+      expectStillCleared();
+
+      answer = () => asResponse(NOW_LAPSED);
+      await pass(6_000);
+
+      expect(reads.lapsing).toBe(2);
+      expectLapsed();
+      // The other athlete's row is not touched, and is not asked about.
+      expect(within(rowOf('Jordan Doe')).getByText('cleared').className).toContain('badge--cleared');
+      expect(within(rowOf('Jordan Doe')).getByText('since 8/1/2026')).toBeTruthy();
+      expect(reads.current).toBe(1);
+
+      // Once the route has said it lapsed, the row is not asked about again.
+      await pass(120_000);
+      expect(reads.lapsing).toBe(2);
+    });
+
+    test('the board does not decide it from the date: while the route still answers "cleared", the row stays cleared and is asked again', async () => {
+      await openBoard();
+
+      // This device's clock is ahead of the server's.
+      await pass(31_000);
+      expect(reads.lapsing).toBe(2);
+      expectStillCleared();
+
+      answer = () => asResponse(NOW_LAPSED);
+      await pass(30_000);
+      expect(reads.lapsing).toBe(3);
+      expectLapsed();
+    });
+
+    test.each<[string, () => Response | Promise<Response>]>([
+      ['is refused', () => ({ ok: false, json: async () => ({}) }) as Response],
+      ['throws', () => Promise.reject(new Error('Network request failed'))],
+      ['comes back with no effectiveStatus', () => asResponse({ ok: true, status: SOON_STATUS })],
+    ])('a re-read that %s leaves the row unavailable, not cleared', async (_name, failing) => {
+      await openBoard();
+
+      answer = failing;
+      await pass(31_000);
+
+      const row = within(rowOf('Sam Roe'));
+      expect(row.getByText('unavailable')).toBeTruthy();
+      expect(row.getByText(/Unknown is not cleared/)).toBeTruthy();
+      expect(row.queryByText('cleared')).toBeNull();
+      expect(row.queryByText(/since/)).toBeNull();
+      expect(rowOf('Sam Roe').querySelector('.badge--cleared')).toBeNull();
+      // The other athlete's row is as it was.
+      expect(within(rowOf('Jordan Doe')).getByText('cleared').className).toContain('badge--cleared');
+
+      // And it is asked about again: when the route answers, the row has its
+      // status back with nothing pressed.
+      const before = reads.lapsing;
+      answer = () => asResponse(NOW_LAPSED);
+      await pass(30_000);
+      expect(reads.lapsing).toBe(before + 1);
+      expectLapsed();
+      expect(within(rowOf('Sam Roe')).queryByText('unavailable')).toBeNull();
+    });
+
+    test('a row that could not be read when the board opened is not asked about on a timer', async () => {
+      await openBoard({ ok: true, status: SOON_STATUS });
+
+      expect(within(rowOf('Sam Roe')).getByText('unavailable')).toBeTruthy();
+      await pass(5 * 60_000);
+      expect(reads.lapsing).toBe(1);
+    });
+
+    test('a clearance renewed in the meantime stays cleared, and its new end date is waited for in turn', async () => {
+      await openBoard();
+
+      const renewed = { ...SOON_STATUS, status_id: 'status-3', effective_at: '2026-09-01T15:59:45.000Z', expires_at: '2026-09-01 16:03:00+00' };
+      answer = () => asResponse({ ok: true, status: renewed, effectiveStatus: 'cleared' });
+      await pass(31_000);
+      expect(reads.lapsing).toBe(2);
+      expect(within(rowOf('Sam Roe')).getByText('cleared').className).toContain('badge--cleared');
+
+      // Nothing more until the new end date.
+      await pass(2 * 60_000);
+      expect(reads.lapsing).toBe(2);
+
+      answer = () => asResponse({ ok: true, status: renewed, effectiveStatus: 'cleared_expired' });
+      await pass(60_000);
+      expect(reads.lapsing).toBe(3);
+      expect(within(rowOf('Sam Roe')).getByText('clearance expired')).toBeTruthy();
+    });
+
+    test('an answer that arrives after a newer one does not paint over it', async () => {
+      await openBoard();
+
+      let releaseStale: (response: Response) => void = () => {};
+      answer = () => new Promise<Response>((resolve) => { releaseStale = resolve; });
+      await pass(31_000);
+      expect(reads.lapsing).toBe(2);
+      expectStillCleared();
+
+      answer = () => asResponse(NOW_LAPSED);
+      await pass(30_000);
+      expect(reads.lapsing).toBe(3);
+      expectLapsed();
+
+      // The first re-read finally answers, with what was true when it was sent.
+      await act(async () => {
+        releaseStale(asResponse(STILL_CLEARED));
+      });
+      await pass(1_000);
+      expectLapsed();
+    });
+
+    test('a far end date is waited for a minute at a time, never with one long delay, and asks nothing early', async () => {
+      // Every delay the page asks the (fake) clock for. A wrapper, not a
+      // spy: a spy on the fake setTimeout is put back by the file's own
+      // restoreAllMocks after the real clock has returned.
+      const fakeSetTimeout = global.setTimeout;
+      const delays: number[] = [];
+      const recording = Object.assign(
+        ((handler: () => void, ms?: number) => {
+          delays.push(Number(ms ?? 0));
+          return fakeSetTimeout(handler, ms);
+        }) as unknown as typeof setTimeout,
+        fakeSetTimeout,
+      );
+      global.setTimeout = recording;
+      try {
+        await openBoard({ ok: true, status: { ...SOON_STATUS, expires_at: '2026-12-01 16:00:00+00' }, effectiveStatus: 'cleared' });
+
+        await pass(5 * 60_000);
+
+        expect(reads.lapsing).toBe(1);
+        expect(reads.current).toBe(1);
+        expectStillCleared();
+        expect(delays).toContain(60_000);
+        expect(Math.max(...delays)).toBeLessThanOrEqual(60_000);
+      } finally {
+        if (global.setTimeout === recording) global.setTimeout = fakeSetTimeout;
+      }
+    });
+
+    test('a tablet that slept through the end date asks within a minute of waking, not when its long timer would have run out', async () => {
+      // Ends in two hours.
+      await openBoard({ ok: true, status: { ...SOON_STATUS, expires_at: '2026-09-01 18:00:00+00' }, effectiveStatus: 'cleared' });
+      await pass(10_000);
+      expect(reads.lapsing).toBe(1);
+
+      // Asleep for three hours: the wall clock moves, no timer runs.
+      jest.setSystemTime(Date.now() + 3 * 60 * 60 * 1000);
+      answer = () => asResponse({ ok: true, status: { ...SOON_STATUS, expires_at: '2026-09-01 18:00:00+00' }, effectiveStatus: 'cleared_expired' });
+      await pass(60_000);
+
+      expect(reads.lapsing).toBe(2);
+      expect(within(rowOf('Sam Roe')).getByText('clearance expired')).toBeTruthy();
+      expect(rowOf('Sam Roe').querySelector('.badge--cleared')).toBeNull();
+    });
+
+    test.each([
+      ['a clearance with no end date', { ok: true, status: { ...SOON_STATUS, expires_at: null }, effectiveStatus: 'cleared' }],
+      ['a clearance whose end date is not a date', { ok: true, status: { ...SOON_STATUS, expires_at: 'not-a-date' }, effectiveStatus: 'cleared' }],
+      ['a restricted row with an end date', { ok: true, status: { ...SOON_STATUS, status: 'restricted' }, effectiveStatus: 'restricted' }],
+      ['a clearance already lapsed', NOW_LAPSED],
+    ])('%s is never asked about again', async (_name, body) => {
+      await openBoard(body);
+
+      await pass(5 * 60_000);
+
+      expect(reads.lapsing).toBe(1);
+    });
+
+    test('a board that has been closed asks nothing', async () => {
+      const view = await openBoard();
+
+      view.unmount();
+      await pass(120_000);
+
+      expect(reads.lapsing).toBe(1);
+    });
+  });
 });
 
 /*
@@ -1563,6 +1819,20 @@ describe('a clearance nobody actually read never reads as cleared, or as "no rec
     expect(within(clearanceRow()).queryByText('clearance expired')).toBeNull();
     expect(clearanceRow().querySelector('.badge--cleared')).toBeNull();
     expect(screen.queryByText(/No clearance record on file/)).toBeNull();
+  });
+
+  test('a refused read is unavailable whatever its body says, even a whole cleared row with a matching effectiveStatus', async () => {
+    global.fetch = mockFetch({
+      '/shadow/medical-status': () =>
+        ({ ok: false, status: 500, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) }) as unknown as Response,
+    });
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Jordan Doe');
+
+    expect(within(clearanceRow()).getByText('unavailable')).toBeTruthy();
+    expect(within(clearanceRow()).queryByText('cleared')).toBeNull();
+    expect(clearanceRow().querySelector('.badge--cleared')).toBeNull();
   });
 
   test('a roster answered 200 without a list is a board that could not be read, not an empty roster', async () => {

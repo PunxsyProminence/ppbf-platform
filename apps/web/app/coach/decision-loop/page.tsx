@@ -29,6 +29,8 @@ interface MedicalStatusRow {
   set_by_account_id: string;
   set_by_role: string;
   effective_at: string;
+  /* When a 'cleared' row stops counting, as Postgres text; null for none. */
+  expires_at?: string | null;
   created_at: string;
   /* Not a column: the route's `effectiveStatus`, kept with the row it reads. */
   effective_status: EffectiveMedicalStatus;
@@ -195,6 +197,44 @@ function readMedicalStatus(
   return { ...(status as MedicalStatusRow), effective_status: effective as EffectiveMedicalStatus };
 }
 
+/* The route sends `expires_at` as Postgres text ('2026-09-01 16:00:00+00'),
+   which not every browser's Date will read. ISO 8601 all of them do. */
+function isoInstant(value: string): string {
+  return value.trim().replace(' ', 'T').replace(/(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?[+-]\d{2})$/, '$1:00');
+}
+
+/* The clock is looked at again at least this often while waiting. One long
+   timer would not do: a timer does not run while a tablet sleeps, so a
+   clearance ending during the night would be noticed hours into the morning;
+   and setTimeout overflows a little under 25 days out and fires at once. */
+const LONGEST_WAIT_MS = 60_000;
+const RECHECK_MS = 30_000;
+
+/* Calls `onDue` once `instant` has passed, and again every RECHECK_MS until it
+   is cancelled. It decides nothing: `onDue` asks the route again, and the
+   caller cancels when the route stops answering 'cleared'. The repeat is for a
+   device whose clock runs ahead of the server's, which gets 'cleared' back the
+   first time it asks. */
+function whenPassed(instant: string, onDue: () => void): () => void {
+  const due = new Date(isoInstant(instant)).getTime();
+  if (Number.isNaN(due)) return () => {};
+  let cancelled = false;
+  let timer: ReturnType<typeof setTimeout>;
+  const arm = () => {
+    if (cancelled) return;
+    const wait = due - Date.now();
+    timer = setTimeout(() => {
+      if (Date.now() >= due) onDue();
+      arm();
+    }, wait > 0 ? Math.min(wait, LONGEST_WAIT_MS) : RECHECK_MS);
+  };
+  arm();
+  return () => {
+    cancelled = true;
+    clearTimeout(timer);
+  };
+}
+
 /* `textFields` are the fields the page prints or slices for each row. A row
    without one of them would throw in the middle of rendering and take the
    whole page down, which is a worse answer than "could not be read". */
@@ -356,6 +396,9 @@ export default function DecisionLoopReviewPage() {
      selection itself. */
   const selectedAthleteRef = useRef('');
   const readSeqRef = useRef(0);
+  /* The athlete whose medical status a timed re-read failed to get: for them
+     the status is unknown until a read succeeds. See rereadMedicalStatus. */
+  const [statusUnreadFor, setStatusUnreadFor] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   /* "Something you submitted for the athlete you were on before did not go
      through." Its own slot, not the error line: every read blanks or
@@ -560,6 +603,7 @@ export default function DecisionLoopReviewPage() {
 
       if (seq !== readSeqRef.current) return;
       setReadFor({ athleteId: targetAthleteId, state: 'loaded', records });
+      setStatusUnreadFor(null);
     } catch (error) {
       if (seq !== readSeqRef.current) return;
       /* ALL FOUR SECTIONS BELOW ARE NOW UNREADABLE, NOT EMPTY. This one load
@@ -594,6 +638,62 @@ export default function DecisionLoopReviewPage() {
     void refreshAll(athleteId);
   }, [athleteId, refreshAll]);
 
+  /* A CLEARANCE CAN RUN OUT WHILE THIS SCREEN IS OPEN. The badge is what the
+     route said at the last read; left alone it would go on saying "cleared"
+     past the end date while the gate refuses. So the medical status of the
+     athlete on screen is read again when a clearance in force reaches its end
+     date, and the panel shows what the route answers. The page does not work
+     out the verdict from the date itself.
+
+     Only the status is read, and only the status is replaced: nobody pressed
+     anything, so the coach's confirmation lines, the opened outcomes and the
+     other three panels stay as they are. It is dropped if the selection has
+     changed or a full read has started since it was sent (that read brings its
+     own status), and it paints only onto the records of the athlete it was
+     read for.
+
+     If it fails, the status is unknown: the panel says "could not be read"
+     for that athlete instead of the badge it had, the other panels are left
+     alone, and the timer keeps asking until the route answers. A tablet that
+     wakes before its network does gets its status back by itself. */
+  const statusRereadSeqRef = useRef(0);
+  const rereadMedicalStatus = useCallback(async (targetAthleteId: string) => {
+    if (targetAthleteId !== selectedAthleteRef.current) return;
+    const readSeq = readSeqRef.current;
+    const seq = ++statusRereadSeqRef.current;
+    const stale = () => readSeq !== readSeqRef.current || seq !== statusRereadSeqRef.current;
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/shadow/medical-status?athleteId=${encodeURIComponent(targetAthleteId)}`,
+        { credentials: 'include' },
+      );
+      const reread = readMedicalStatus(
+        await readEnvelopeOrThrow(response, 'Failed to load medical status.'),
+        targetAthleteId,
+        'Failed to load medical status.',
+      );
+      if (stale()) return;
+      setReadFor((shown) =>
+        shown && shown.athleteId === targetAthleteId && shown.state === 'loaded'
+          ? { ...shown, records: { ...shown.records, medicalStatus: reread } }
+          : shown,
+      );
+      setStatusUnreadFor(null);
+    } catch {
+      if (stale()) return;
+      setStatusUnreadFor(targetAthleteId);
+    }
+  }, []);
+  const statusUnread = !!athleteId && statusUnreadFor === athleteId;
+  const clearanceEndsAt =
+    medicalStatus?.effective_status === 'cleared' && typeof medicalStatus.expires_at === 'string'
+      ? medicalStatus.expires_at
+      : null;
+  useEffect(() => {
+    if (!athleteId || !clearanceEndsAt) return undefined;
+    return whenPassed(clearanceEndsAt, () => void rereadMedicalStatus(athleteId));
+  }, [athleteId, clearanceEndsAt, rereadMedicalStatus]);
+
   /* THE ONE PLACE THE SELECTION CHANGES, for the dropdown and for the ID box.
      Everything that belonged to the previous athlete goes in the same event
      that selects the next one, so React renders the new selection and the
@@ -609,6 +709,7 @@ export default function DecisionLoopReviewPage() {
     selectedAthleteRef.current = nextAthleteId;
     readSeqRef.current += 1;
     setAthleteId(nextAthleteId);
+    setStatusUnreadFor(null);
     /* The one draft that is NOT kept for its athlete: the medical status
        selection and its source reference. A "Cleared" left selected from an
        earlier visit is one click from being set; every arrival at an athlete
@@ -1040,7 +1141,7 @@ export default function DecisionLoopReviewPage() {
                   Read-only gate for medically sensitive recommendations/decisions. Setting a new status never clears an
                   existing restriction automatically — each change is its own explicit, human-attributed record.
                 </p>
-                {medicalStatus ? (
+                {medicalStatus && !statusUnread ? (
                   <div className="mt-[var(--s3)] space-y-[var(--s2)] text-[length:var(--t-sm)]">
                     <p className="flex flex-wrap items-center gap-[var(--s3)]">
                       Current status: <StatusBadge status={medicalStatus.effective_status} />
@@ -1058,7 +1159,7 @@ export default function DecisionLoopReviewPage() {
                       <p className="t-data text-[color:var(--bone-400)]">Reference: {medicalStatus.source_reference}</p>
                     )}
                   </div>
-                ) : loadFailed ? (
+                ) : loadFailed || statusUnread ? (
                   <p className="t-body mt-[var(--s3)] text-[var(--restricted-ink)]">
                     This athlete&apos;s medical administrative status could not be read. UNKNOWN —
                     not &quot;no restriction on record&quot;.
