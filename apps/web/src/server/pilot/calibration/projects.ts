@@ -313,24 +313,26 @@ export async function assertVideoClippable(
   }
 
   /*
-   * TS-ANON-01: AND THE GUARDIAN MUST STILL AGREE.
+   * NO CONSENT CHECK HERE, AND THAT IS THE OWNER'S RULING, NOT AN OMISSION.
    *
-   * A take proves the footage was filmed to teach Shadow. It does not prove
-   * anyone still permits it to be used that way. Consent is separately
-   * withdrawable, and the promise made to a guardian who withdraws is that
-   * existing footage stops being eligible for annotation, corpus use,
-   * training and evaluation -- not merely that no more is collected.
+   * OD-2026-09-28-006 ruling 2: "Filming for teaching the ml should never be
+   * restricted." Teaching footage carries no consent step and names nobody,
+   * so there is no guardian row to read and nothing below this line reads
+   * one.
    *
-   * THIS IS WHERE THAT PROMISE IS KEPT, and it works because of the property
-   * the rest of this function already has: the gate runs on every READ, not
-   * only when a clip is cut. A clip cut while consent was live keeps being
-   * refused the moment it is withdrawn, rather than going on producing corpus
-   * labels from a pointer that remembers a permission nobody holds any more.
+   * A comment in this position used to say the opposite -- that a guardian's
+   * withdrawal was enforced here on every read -- over no code at all. It
+   * described a design that was removed before it shipped, and it read as a
+   * promise the platform was keeping. It was not. Corrected 2026-10-02
+   * (TEACH-DATA-01).
    *
-   * Eligibility is derived from the current waiver rows every time. A stored
-   * `eligible` flag would need sweeping on withdrawal, and anything the sweep
-   * missed would keep teaching from footage whose guardian had said stop --
-   * a failure that would look exactly like success.
+   * What DOES take footage back out of teaching use is archiving it
+   * (OD-2026-09-30-002): the status check above refuses an archived video on
+   * every read, so from then on its clips cannot be opened for labelling and
+   * no new stream link is issued for it. A link minted before the archive is
+   * a bearer credential and stays good until it expires (60 minutes on the
+   * teaching stream route). Archiving is not deletion: the media stays in
+   * storage.
    */
 
   /*

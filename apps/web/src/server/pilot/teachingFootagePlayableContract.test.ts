@@ -50,6 +50,7 @@ const TEACHING_STREAM_ROUTE = path.join(
 const FILM_STUDY_ROUTE = path.join(WEB_ROOT, 'app/api/pilot/video/[videoId]/route.ts');
 const CLIP_GATE = path.join(WEB_ROOT, 'src/server/pilot/calibration/projects.ts');
 const CUTTER_PAGE = path.join(WEB_ROOT, 'app/teach-shadow/cut/page.tsx');
+const ANNOTATION_PAGE = path.join(WEB_ROOT, 'app/teach-shadow/annotation/page.tsx');
 
 function read(file: string): string {
   return fs.readFileSync(file, 'utf8');
@@ -112,6 +113,25 @@ describe('teaching footage has a playback path', () => {
     // /api/pilot/video/[videoId] would be broken on arrival, exactly as the
     // annotation page was.
     const page = read(CUTTER_PAGE);
+    expect(page).toContain('/api/pilot/teach-shadow/footage/');
+    expect(page).not.toContain('/api/pilot/video/');
+  });
+
+  test('and so does the annotation page -- the surface the contradiction was found on', () => {
+    /*
+     * THE HALF THIS SUITE MISSED. #1018 built the teaching door, wired the
+     * cutter to it and wrote the test above -- and left the annotation page
+     * fetching the Film Study route, with its own page suite requiring exactly
+     * that. The header of this file described the annotation page's failure
+     * and then checked only the cutter, so the original defect stayed in
+     * place under a suite written to prevent it (found 2026-10-02,
+     * TEACH-DATA-01).
+     *
+     * Same two assertions as the cutter, for the same reason: the page must
+     * ask the teaching door, and must not mention the Film Study video route
+     * or the review link under it at all.
+     */
+    const page = read(ANNOTATION_PAGE);
     expect(page).toContain('/api/pilot/teach-shadow/footage/');
     expect(page).not.toContain('/api/pilot/video/');
   });

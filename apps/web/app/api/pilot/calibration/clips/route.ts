@@ -48,13 +48,21 @@ function isClipCodeTaken(error: unknown): boolean {
  * blocked or archived reads as unavailable instead of taking the annotator
  * into a workspace that will refuse them.
  *
- * It authorizes nothing. Playback still goes through
- * GET /api/pilot/video/[videoId], which re-checks status, runs
- * assertActorCanAccessAthlete and applies the guardian video-consent scope
- * check -- none of which is consulted here. A true `playable` therefore means
- * "the study's own gate is satisfied", never "you may watch this": a coach not
- * assigned to the athlete sees `playable: true` and is still refused the
- * stream, which is the safe direction for a hint to be wrong in.
+ * It authorizes nothing. Playback goes through teaching's own door,
+ * GET /api/pilot/teach-shadow/footage/[videoId]/stream, which asks for itself:
+ * requireAnnotator (coach or organization admin), then assertVideoClippable
+ * again at the moment of the request, in the caller's organization. A true
+ * `playable` therefore means "the study's gate was satisfied when this list
+ * was built", never "here is a stream": footage archived or blocked a second
+ * later reads `playable: true` here and is refused at the door, which is the
+ * safe direction for a hint to be wrong in.
+ *
+ * There is no athlete-access check and no guardian-consent check on that
+ * path, and none belongs there: teaching footage names nobody and has no
+ * consent step (OD-2026-09-28-006). This comment used to describe the Film
+ * Study video route and its per-athlete checks; the labelling page stopped
+ * using that route in TEACH-DATA-01, and it had refused every teaching clip
+ * since 2026-09-25 in any case.
  *
  * The clip's own status is NOT disclosed -- a boolean, never
  * VideoNotClippableError's `videoStatus`. Whether a particular video is
