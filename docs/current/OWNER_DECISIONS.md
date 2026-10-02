@@ -164,6 +164,131 @@ and should not try to.
 
 ---
 
+## OD-2026-10-02-009 -- Tests that pin a look are removed now, not as each is tripped
+
+**Provenance: PRIMARY.** Typed by Jason in the UI lane's thread on 2026-10-02
+and read by overwatch in that transcript
+(`~/.claude/projects/C--Dev/a84862b0-abd8-495f-bf7a-ade6114cc50c.jsonl`).
+This entry is new and edits no earlier one. It settles the item
+OD-2026-10-02-004 section 2 left open.
+
+By the UI lane's account (REPORTED), it had just told him its wording PR was
+with the reviewer and that the tests which pin a look would be a second PR.
+Jason, whole message (19:42:53Z):
+*"Ok remove anything that will hinder this"*.
+
+**The tests that fail a change only because a screen's look, markup, class
+names or control layout changed are removed now**, without waiting for each
+to be tripped by a UI change. "This" is read as the ruling of
+OD-2026-10-02-004 and -007, that nothing about the look binds. **INFERRED**
+(the UI lane's reading and overwatch's): it does not reach the tests that hold
+his standing floor or the readability floors (tap size, type size, contrast,
+focus ring), which stay.
+
+Which test is which is not decided by this entry. The case-by-case list is
+the UI lane's, checked by two adversarial reviewers and by ChatGPT, and lives
+in that lane's pull request.
+
+---
+
+## OD-2026-10-02-008 -- Teaching the recognizer body points: positions clicked at set moments; a 24-point list with glove and chin; a click range; a pose tool that pre-fills; the agreement report is built now
+
+**Provenance: PRIMARY.** Typed by Jason in the teach-data lane's thread on
+2026-10-02 and read by overwatch in that transcript
+(`~/.claude/projects/C--Dev/346c32ec-ec56-4fad-817d-8da2643fb879.jsonl`).
+This entry is new and edits no earlier one. It carries forward the direction
+recorded in OD-2026-10-02-006 section 1 item 4. Nothing in it is built.
+
+The lane put ChatGPT's six design decisions to him. He had it ask ChatGPT and
+Grok first: *"Ask chat gpt and also ask grok (navigate out of image)"*
+(19:23:21Z). Grok's answer is advice he asked for on this one question; Grok
+holds no standing role beyond images (OD-2026-09-28-001) and ChatGPT remains
+the architect.
+
+### 1. His shaping words, in order
+
+- *"Before picking anything can we have a range of clicks, not every video as
+  this evolves will provide the same number of clicks,"* (19:38:26Z). The lane
+  answered with a small required core of points plus optional further points
+  and moments, a skipped point stored as not marked. He replied: *"Good, as
+  far as points go, find real sources that name the bio mechanic point that
+  can be read, eventually the AI should be able to recognize punches of more
+  than one bi mechanic point"* (19:42:26Z).
+- After the lane's report of the standard landmark lists: *"Thats fine we are
+  building from scratch,  the more points the better"* (20:03:34Z).
+- *"Hands should be just be gloves, add chin show list"* (20:11:26Z).
+- *"We want a pose tool in the model,  multi size people and genders would
+  look different"* (20:21:33Z).
+- Told that no pose tool finds a glove or a chin: *"Then we put that node in"*
+  (20:25:52Z). Asked which of two readings he meant, "1. Add glove and chin as
+  new points the pose tool learns to find. Coaches mark them by hand at first;
+  those marks become the training data that teaches the tool the two extra
+  points." or "2. Put the pose tool in as a step of the system", he answered,
+  whole message: *"1"* (20:26:28Z).
+
+### 2. The list
+
+He asked the lane to *"Expand"* (20:28:17Z). Its write-up ended with the list
+and the sentence "Saying "yes" makes this the list ChatGPT designs to. Two
+placement rules come with it so coaches click the same spot: glove is the
+centre of the padded knuckle area; chin is the tip of the chin." Jason, whole
+message (20:32:39Z): *"Yes"*.
+
+**The ratified list, 24 points:** head (nose, chin); trunk (neck, mid-hip);
+each arm (shoulder, elbow, wrist, glove); each leg (hip, knee, ankle); each
+foot (heel, big toe, small toe). Glove is the centre of the padded knuckle
+area; chin is the tip of the chin. Hand points (index, pinky, thumb) are not
+in it. Glove and chin have no equivalent in the standard pose lists the lane
+read. The list can grow; adding a point is a new version of the label set.
+
+### 3. The remaining picks
+
+The lane asked whether that "Yes" also took its recommended option on the
+other eight, and listed them: "1A: click positions; 2A: standard list plus
+your additions; 3A: start, contact, end; 4A: old studies finish on old labels;
+5B: build the disagreement screen now; 6B: leave the skill-family map open;
+8A: pose tool pre-fills for coaches now; 9A: mark only the person throwing or
+defending". Jason, whole message (20:48:13Z): *"Yes it does"*.
+
+As each option was put to him in the expanded write-up:
+
+- **1A.** A label is a position: the coach clicks where each body point is on
+  the picture.
+- **2A.** The list starts from the standard lists, with his boxing points
+  added, and he signs it off (section 2).
+- **3A.** Points are marked at set moments: start, contact, end. "Peak" is
+  left out until it has a written rule.
+- **4A.** Studies already under way finish on today's labels; new studies get
+  body points; never mixed.
+- **5B.** The agreement report is built now for today's labels, with a line on
+  screen saying body points are not included yet.
+- **6B.** The punch-to-skill-family map (IMP-14) stays open.
+- **8A.** A pose tool places the standard points on the labelling screen and
+  coaches correct them; the same tool feeds the recognizer later. Each point
+  records accepted, corrected or not visible.
+- **9A.** Only the person throwing the punch or making the defence is marked;
+  the other person only when the event is contact against them.
+- **Wrist** stays in the list (it is in the list he ratified); the lane's
+  recommendation was that it be an optional point beside the glove.
+
+### 4. What this does not decide
+
+- **Which pose tool, its licence, and where it runs** (on the tablet, or on a
+  server, which means minors' footage going to it and possibly a bill). The
+  lane told him these come back to him before anything is built or spent.
+- **The contents of the required core** of the click range. The lane's example
+  was illustrative and is not ratified.
+- **Training.** Teaching a pose tool the glove and chin points is model
+  training, which is parked. His "1" states the intent; it does not un-park
+  training or approve spending. The lane told him so. **INFERRED** that he
+  accepted that limit: he did not object.
+- Scoring an athlete from video stays parked (OD-2026-09-28-006).
+
+8A replaces the "no pose model" line of the architect's first design; the
+design is the architect's to redo, for his approval.
+
+---
+
 ## OD-2026-10-02-007 -- Law 2's palette limit no longer binds; nothing about the look binds
 
 **Provenance: PRIMARY.** Typed by Jason in the UI lane's thread on 2026-10-02
