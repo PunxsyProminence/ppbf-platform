@@ -825,6 +825,10 @@ describe('the bulk approval script leaves an incomplete manual-text excerpt alon
           PPBF_EXPECTED_POSTGRES_DATABASE: TEST_DB_NAME,
           PPBF_LIBRARY_APPROVAL_ORG: BULK_ORG_ID,
           PPBF_LIBRARY_APPROVAL_APPLY: apply ? 'true' : 'false',
+          // Pinned, so a value left in the shell cannot change what this run does.
+          PPBF_LIBRARY_APPROVAL_ACCOUNT: OWNER_ID,
+          PPBF_LIBRARY_APPROVAL_MAX: '1500',
+          PPBF_LIBRARY_APPROVAL_SAMPLE: '25',
         },
       }, (error, stdout, stderr) => {
         const exit = error ? (error as { code?: unknown }).code : 0;
