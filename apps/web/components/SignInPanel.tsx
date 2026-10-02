@@ -152,6 +152,10 @@ export default function SignInPanel({
   // on) is a genuine refusal, not a WAIT state -- see loginRateLimited below,
   // the same distinction applies here.
   const [magicLinkRateLimited, setMagicLinkRateLimited] = useState(false);
+  // A parent's password, typed under the same email box. Never trimmed: a
+  // space at either end is part of the password (the server does not trim).
+  const [emailPassword, setEmailPassword] = useState('');
+  const [passwordBusy, setPasswordBusy] = useState(false);
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState('');
   // A 429 is a WAIT state, not a refusal: the refusal-stamp family's locked
@@ -258,6 +262,83 @@ export default function SignInPanel({
       setMagicLinkError('Could not reach the gym right now. Try again in a moment.');
     } finally {
       setMagicLinkBusy(false);
+    }
+  }
+
+  async function loginWithPassword() {
+    const email = magicLinkEmail.trim();
+    setMagicLinkError('');
+    setMagicLinkRateLimited(false);
+    setMagicLinkSent(false);
+
+    if (!email || !emailPassword) {
+      setMagicLinkError('Enter your email address and your password.');
+      return;
+    }
+
+    setPasswordBusy(true);
+    // The PIN door's ten seconds. While this request is out, the link button
+    // is off too, so a request that never answers must not hold it shut.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/auth/password/login`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: emailPassword }),
+        signal: controller.signal,
+      });
+
+      if (response.status === 429) {
+        setMagicLinkRateLimited(true);
+        setMagicLinkError('Too many attempts. Wait a few minutes and try again.');
+        return;
+      }
+
+      // One sentence for every refusal. The server answers the same 401 for a
+      // wrong password, an address with no account, an account with no
+      // password and an account that may not use one; saying more here would
+      // put back the distinction it refuses to make.
+      if (response.status === 401) {
+        setMagicLinkError('Email or password not recognised. Try again, or use Email Me A Link Instead.');
+        return;
+      }
+
+      // Anything else that is not a yes is the server failing, not the
+      // password: telling a parent who typed it correctly that it was not
+      // recognised sends them to retry into the attempt limit.
+      if (!response.ok) {
+        setMagicLinkError('Could not reach the gym right now. Try again in a moment.');
+        return;
+      }
+
+      // The same ten seconds cover this request too: it carries the signal,
+      // so a session check that never answers ends in the catch below and
+      // the buttons come back.
+      const resolution = await loadAuthoritativeRoleSession(
+        `${apiBase()}/api/pilot/auth/session`,
+        { signal: controller.signal },
+      );
+      if (!resolution.ok) {
+        if (resolution.reason === 'pin_change_required') {
+          router.replace('/change-pin');
+          return;
+        }
+        if (resolution.reason !== 'server_error') {
+          clearRoleSession();
+        }
+        setMagicLinkError('The server session could not be verified. Please sign in again.');
+        return;
+      }
+
+      persistAuthoritativeRoleSession(resolution.session);
+      router.replace(resolution.destination);
+    } catch {
+      setMagicLinkError('Could not reach the gym right now. Try again in a moment.');
+    } finally {
+      clearTimeout(timeout);
+      setPasswordBusy(false);
     }
   }
 
@@ -454,9 +535,24 @@ export default function SignInPanel({
 
         <form
           aria-labelledby="signin-magic-link-heading"
+          // Two buttons and neither is the form's default, so Enter is
+          // answered by the box it was pressed in: in the email box it asks
+          // for the link, exactly as it did before the password box existed
+          // (whatever a browser may have filled into the other box); in the
+          // password box it signs in.
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter' || !(e.target instanceof HTMLInputElement)) return;
+            e.preventDefault();
+            if (passwordBusy || magicLinkBusy) return;
+            void (e.target.id === 'magic-link-password' ? loginWithPassword() : requestMagicLink());
+          }}
+          // A submit that arrives without that key (a password manager, an
+          // on-screen keyboard that names its Go key something else) has no
+          // box to go by, so it goes by whether a password is there.
           onSubmit={(e) => {
             e.preventDefault();
-            void requestMagicLink();
+            if (passwordBusy || magicLinkBusy) return;
+            void (emailPassword ? loginWithPassword() : requestMagicLink());
           }}
           className="grid gap-[var(--s5)]"
         >
@@ -466,7 +562,8 @@ export default function SignInPanel({
             </h2>
             <p className="t-body mt-[var(--s3)]">
               For coaches, staff, volunteers and parents. Enter your email and we
-              will send a link that signs you in. No password to remember.
+              will send a link that signs you in. Parents who have made a
+              password can type it instead.
             </p>
           </div>
           <div className="field">
@@ -480,6 +577,19 @@ export default function SignInPanel({
               onChange={(event) => setMagicLinkEmail(event.target.value)}
               placeholder="you@example.com"
               autoComplete="email"
+              className="input input--kiosk"
+            />
+          </div>
+          <div className="field">
+            <label className="t-label" htmlFor="magic-link-password">
+              Password (Parents)
+            </label>
+            <input
+              id="magic-link-password"
+              type="password"
+              value={emailPassword}
+              onChange={(event) => setEmailPassword(event.target.value)}
+              autoComplete="current-password"
               className="input input--kiosk"
             />
           </div>
@@ -508,8 +618,25 @@ export default function SignInPanel({
               detail={magicLinkRateLimited ? 'a few minutes' : trimTrailingPeriod(magicLinkError)}
             />
           )}
-          <button type="submit" disabled={magicLinkBusy} className="btn btn--kiosk">
-            {magicLinkBusy ? 'Sending…' : 'Send Sign-In Link'}
+          {/* The visible words are the owner's (OD-2026-10-01-002 section 3
+              item 4). The accessible name of the first says which Sign In it
+              is: the PIN form below has a button with the same two words. */}
+          <button
+            type="button"
+            onClick={() => void loginWithPassword()}
+            disabled={passwordBusy || magicLinkBusy || !magicLinkEmail.trim() || !emailPassword}
+            aria-label={passwordBusy ? 'Signing In…' : 'Sign In With Password'}
+            className="btn btn--kiosk disabled:cursor-not-allowed disabled:opacity-60 disabled:grayscale"
+          >
+            {passwordBusy ? 'Signing In…' : 'Sign In'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void requestMagicLink()}
+            disabled={magicLinkBusy || passwordBusy}
+            className="btn btn--kiosk"
+          >
+            {magicLinkBusy ? 'Sending…' : 'Email Me A Link Instead'}
           </button>
         </form>
 
