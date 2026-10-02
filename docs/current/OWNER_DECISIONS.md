@@ -267,10 +267,13 @@ words that is already disclosed and recorded as a defect (in the PR's WRITES
 table or in this file) does not block that PR's merge. It is reported to him
 and stays in the log as a defect; recording or accepting it never authorizes
 it backwards. A write defect that is new, undisclosed or unrecorded still
-blocks until it is disclosed and recorded. This changes the reviewer's
-handling of the write-log rule ("a write without matching words is a
-blocker"); it does not change the rule that every write is logged with his
-exact words or marked as a defect, and it does not widen any authorization.
+blocks until it is disclosed and recorded. This is his decision on how the
+write-log rule ("a write without matching words is a blocker") is to be
+handled in review. The reviewer works from its own project instruction, which
+still states the old rule when this is written; that instruction has to be
+updated separately before the reviewer can apply this. The decision does not
+change the rule that every write is logged with his exact words or marked as
+a defect, and it does not widen any authorization.
 
 ---
 
