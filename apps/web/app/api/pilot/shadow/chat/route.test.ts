@@ -1471,40 +1471,49 @@ describe('every authorized high-risk request is owed one bounded human-review ro
       noRowNoSlot();
     });
 
-    // A PROBE THAT FAILS HAS NOT REFUSED, AND HAS NOT AUTHORIZED EITHER. The
-    // access check throws something that is not a refusal when the probe runs
-    // it. The row is undecided until the handler runs the same check for
-    // real: if that passes, the request is handled as usual and its row is
-    // written; if that fails too, authorization never succeeded and there is
-    // no row and no slot.
-    test.each([
-      ['an allowed high-risk question', ALLOWED_HIGH_RISK, 200, REQUEST_RISK_SUMMARY],
-      ['a withheld emergency report', WITHHELD, 400, WITHHELD_SUMMARY],
-      ['a fixed-fallback question', STOCK_LINE, 200, REQUEST_RISK_SUMMARY],
-    ])('INDETERMINATE, then authorized: a probe that fails for a reason other than a refusal, followed by a real check that passes, writes the row: %s', async (_name, message, expectedStatus, summary) => {
+    // A PROBE THAT DOES NOT PASS HAS NOT AUTHORIZED THE REQUEST, WHATEVER IT
+    // THREW. The row is undecided until the handler runs the same check for
+    // real: if that passes, the request is authorized, is handled as usual,
+    // and its row is written; if that fails too, authorization never
+    // succeeded and there is no row and no slot. What the probe threw is
+    // deliberately not sorted into "refused" and "could not tell": the real
+    // assertConversationAccess reports a dropped connection inside its
+    // subject check as "conversation not found".
+    const PROBE_FAILURES = [
+      ['a dropped connection', 'connection reset by peer'],
+      ['a refusal', 'Forbidden: athlete outside your assignment'],
+      ['"conversation not found", which the real check also throws for a dropped connection', 'SHADOW_CONVERSATION_NOT_FOUND'],
+    ] as const;
+    test.each(PROBE_FAILURES.flatMap(([failure, error]) => [
+      [failure + ': an allowed high-risk question', error, ALLOWED_HIGH_RISK, 200, REQUEST_RISK_SUMMARY] as const,
+      [failure + ': a withheld emergency report', error, WITHHELD, 400, WITHHELD_SUMMARY] as const,
+      [failure + ': a fixed-fallback question', error, STOCK_LINE, 200, REQUEST_RISK_SUMMARY] as const,
+    ]))('the probe does not pass, the real check does: the request is authorized and its row is written: %s', async (_name, error, message, expectedStatus, summary) => {
       modelAnswers();
-      athleteCheck.mockRejectedValueOnce(new Error('connection reset by peer'));
-      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      athleteCheck.mockRejectedValueOnce(new Error(error));
 
       const { status } = await send({ message, athleteId: 'athlete-1' });
 
+      expect(athleteCheck).toHaveBeenCalledTimes(2);
       expect(status).toBe(expectedStatus);
       expect(summaries()).toEqual([summary]);
       expect(mockConsumeReviewSlot).toHaveBeenCalledTimes(1);
-      expect(errorSpy).toHaveBeenCalledWith('SHADOW authorization probe failed for a reason other than a refusal; the review row is owed only if the request is then authorized');
     });
 
-    test.each([
-      ['the conversation check', () => { conversationCheck.mockRejectedValueOnce(new Error('connection reset by peer')); }, { conversationId: CONVERSATION }],
-    ])('INDETERMINATE, then authorized, when it is %s that failed: the row names the conversation the real check confirmed', async (_name, arrange, extra) => {
+    // The same, where it is the conversation check that failed, on a path
+    // whose row is written at the exit: the row names the conversation the
+    // handler's check confirmed, and takes one slot.
+    test.each(PROBE_FAILURES)('the conversation probe does not pass (%s), the real check does: the exit row names the confirmed conversation', async (_failure, error) => {
       modelAnswers();
-      arrange();
-      jest.spyOn(console, 'error').mockImplementation(() => {});
+      conversationCheck.mockRejectedValueOnce(new Error(error));
 
-      const { status } = await send({ message: ALLOWED_HIGH_RISK, ...extra });
+      const { status } = await send({ message: ALLOWED_HIGH_RISK, conversationId: CONVERSATION, sessionType: 'film_study' });
 
-      expect(status).toBe(200);
-      expect(summaries()).toEqual([REQUEST_RISK_SUMMARY]);
+      expect(conversationCheck).toHaveBeenCalledTimes(2);
+      expect(status).toBe(400);
+      expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
+      expect(mockQueueHumanReview.mock.calls[0]?.[0].conversationId).toBe(CONVERSATION);
+      expect(mockConsumeReviewSlot).toHaveBeenCalledTimes(1);
     });
 
     // Authorization never succeeded: the probe could not tell, and neither
@@ -1518,10 +1527,9 @@ describe('every authorized high-risk request is owed one bounded human-review ro
     ].flatMap(([name, arrange, extra]) => [
       [(name as string) + ', allowed high-risk', arrange as () => void, extra as Record<string, unknown>, ALLOWED_HIGH_RISK] as const,
       [(name as string) + ', withheld emergency report', arrange as () => void, extra as Record<string, unknown>, WITHHELD] as const,
-    ]))('INDETERMINATE, and never authorized: %s: a 5xx, no row, no slot', async (_name, arrange, extra, message) => {
+    ]))('the probe does not pass and neither does the real check (never authorized): %s: a 5xx, no row, no slot', async (_name, arrange, extra, message) => {
       modelAnswers();
       arrange();
-      jest.spyOn(console, 'error').mockImplementation(() => {});
 
       const { status } = await send({ message, ...extra });
 
@@ -1531,16 +1539,20 @@ describe('every authorized high-risk request is owed one bounded human-review ro
 
     // Turned away before the handler's own check is reached: authorization
     // was never established, so nothing is owed.
+    // KNOWN COST: this includes an authorized caller whose probe hit a
+    // dropped connection. The row is lost with the request.
     test.each([
       ['the chat limit is spent', chatLimitSpent, 429],
       ['the runtime is not ready', runtimeNotReady, 500],
-    ])('INDETERMINATE, and %s before the real check runs: main\'s response, no row, no slot', async (_name, gate, expectedStatus) => {
+    ].flatMap(([gateName, gate, expectedStatus]) => [
+      [gateName + ': an allowed high-risk question', gate as () => void, expectedStatus as number, ALLOWED_HIGH_RISK] as const,
+      [gateName + ': a withheld emergency report', gate as () => void, expectedStatus as number, WITHHELD] as const,
+    ]))('the probe fails on a dropped connection, and %s before the real check runs: main\'s response, no row, no slot', async (_name, gate, expectedStatus, message) => {
       modelAnswers();
       athleteCheck.mockRejectedValueOnce(new Error('connection reset by peer'));
       gate();
-      jest.spyOn(console, 'error').mockImplementation(() => {});
 
-      const { status } = await send({ message: ALLOWED_HIGH_RISK, athleteId: 'athlete-1' });
+      const { status } = await send({ message, athleteId: 'athlete-1' });
 
       expect(status).toBe(expectedStatus);
       noRowNoSlot();

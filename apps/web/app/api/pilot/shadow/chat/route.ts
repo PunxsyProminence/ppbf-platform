@@ -531,9 +531,10 @@ type ShadowChatExit = {
 // THE REQUEST-RISK REVIEW ROW IS WRITTEN HERE, AT THE EXIT, for every path
 // that did not already write it: withheld, queued, a capability refusal, "too
 // many requests", an unready runtime, a degraded answer, an unexpected error.
-// The handler decides early whether the row is owed (authenticated,
-// structurally valid, authorized, high-risk) and hands the write over; this
-// runs it before the response is returned, so no later refusal can cancel it.
+// The handler decides whether the row is owed (authenticated, structurally
+// valid, high-risk, and AUTHORIZED: by its early probe, or failing that by
+// its own access checks once they pass) and hands the write over; this runs
+// it before the response is returned.
 //
 // NOT ON A 401, 403 OR 404. The handler owes no row to a request that failed
 // authorization. This is a second lock on the same door: whatever the handler
@@ -700,7 +701,9 @@ async function handleShadowChat(
     //
     //   REQUEST-RISK     the classifier marked the REQUEST high-risk. One row
     //                    per request. Whether it is OWED is decided just
-    //                    below, before anything can refuse the request, and
+    //                    below, before anything can refuse the request (or,
+    //                    if that early check could not confirm the caller's
+    //                    access, when the handler's own check does), and
     //                    it is written once, when the request is finished --
     //                    whether the request was withheld, answered, given a fixed
     //                    fallback line, queued for the worker, refused for a
@@ -807,21 +810,25 @@ async function handleShadowChat(
     // whether a row is owed. POST adds a second lock: whatever the probe
     // said, a response of 401, 403 or 404 writes nothing.
     //
-    // THREE VERDICTS, NOT TWO.
-    //   AUTHORIZED     both checks passed: the row is owed.
-    //   REFUSED        a check answered what the route itself would answer
-    //                  401, 403 or 404 for: no row.
-    //   INDETERMINATE  a check failed for some other reason -- a dropped
-    //                  connection. That is not a refusal, and it is not an
-    //                  authorization either. The row is NOT owed yet. It
-    //                  becomes owed only if the handler's own checks, further
-    //                  down at their place in main's order, then pass. If
-    //                  they fail too, or the request is turned away before
-    //                  reaching them, authorization never succeeded: no row,
-    //                  and no slot is charged. So an emergency report does
-    //                  not lose its row to one dropped connection, and a row
-    //                  is never written for a subject nobody confirmed the
-    //                  caller may access.
+    // A ROW NEEDS A SUCCESSFUL AUTHORIZATION. Two things count as one, and
+    // nothing else does:
+    //   1. THE PROBE PASSED. The row is owed from here, so a request that is
+    //      then turned away before the handler's own checks (too many
+    //      requests, an unready runtime) still leaves it.
+    //   2. THE PROBE DID NOT PASS -- it refused, or it failed for some other
+    //      reason, such as a dropped connection -- AND THE HANDLER'S OWN
+    //      CHECKS THEN PASS, further down at their place in main's order.
+    //      The row is owed from that point.
+    // The probe's failure is deliberately not sorted into "refused" and
+    // "could not tell". The access checks cannot be trusted to say which:
+    // assertConversationAccess reports every failure of its subject check,
+    // a dropped connection included, as "conversation not found". Either
+    // way the probe has not authorized the request, so nothing is owed yet;
+    // and either way, if the real check passes, the request IS authorized.
+    // If the real check fails too, or is never reached, authorization never
+    // succeeded: no row, and no slot is charged. (The board-summary refusal
+    // is different: it is this route's own rule, decided here from the role,
+    // and nothing later reverses it.)
     //
     // (A WITHHELD request that also asks for a board summary is not refused
     // as a board summary: the safety boundary answers it first, as on main.
@@ -829,7 +836,7 @@ async function handleShadowChat(
     const requestRiskState: {
       owed: boolean;
       attempted: boolean;
-      /** The probe was INDETERMINATE: owed only once the handler's own access checks pass. */
+      /** The probe did not pass: owed only once the handler's own access checks pass. */
       awaitingAuthorization: boolean;
       withheld: boolean;
       outcome: HumanReviewOutcome | { result: 'not_attempted' };
@@ -884,8 +891,8 @@ async function handleShadowChat(
       const refusedAsBoardSummary = requestValidation.valid
         && (sessionType === 'board_summary' || requestedSessionType === 'board_summary')
         && !BOARD_SUMMARY_ROLES.has(userRole as PilotRole);
-      let probeVerdict: 'authorized' | 'refused' | 'indeterminate' = refusedAsBoardSummary ? 'refused' : 'authorized';
-      if (probeVerdict === 'authorized') {
+      let probePassed = !refusedAsBoardSummary;
+      if (probePassed) {
         try {
           if (athleteId) {
             await assertActorCanAccessAthlete(principal, athleteId);
@@ -898,17 +905,12 @@ async function handleShadowChat(
               requireExactSubject: true,
             });
           }
-        } catch (probeError) {
-          const refused = (probeError instanceof Error && probeError.message === 'SHADOW_CONVERSATION_NOT_FOUND')
-            || [401, 403, 404].includes(jsonError(probeError).status);
-          probeVerdict = refused ? 'refused' : 'indeterminate';
-          if (!refused) {
-            console.error('SHADOW authorization probe failed for a reason other than a refusal; the review row is owed only if the request is then authorized');
-          }
+        } catch {
+          probePassed = false;
         }
       }
-      requestRiskState.owed = probeVerdict === 'authorized';
-      requestRiskState.awaitingAuthorization = probeVerdict === 'indeterminate';
+      requestRiskState.owed = probePassed;
+      requestRiskState.awaitingAuthorization = !probePassed && !refusedAsBoardSummary;
       atExit.writeRequestRiskReview = requestRisk.write;
     }
 
@@ -953,10 +955,9 @@ async function handleShadowChat(
         requireExactSubject: true,
       });
     }
-    // The request's own authorization has now SUCCEEDED. A row the probe left
-    // undecided (INDETERMINATE) is owed from here; not before.
+    // The request's own authorization has now SUCCEEDED. A row the probe could
+    // not owe is owed from here; not before.
     if (requestRiskState.awaitingAuthorization) {
-      requestRiskState.awaitingAuthorization = false;
       requestRiskState.owed = true;
     }
 
