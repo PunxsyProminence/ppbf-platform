@@ -174,10 +174,17 @@ a report that three plates had been rejected for carrying lettering:
 **What changes.** The plate rule was "NO LETTERING OF ANY KIND", with one
 exception for the ring canvas. It is now:
 
-- **Real marks on real equipment are ALLOWED** — a maker's name on a bag, a
-  glove, a headguard or a turnbuckle pad, a real poster on a real wall, the
-  sponsor marks on the ring canvas. The gym is full of these and photographs of
-  it will contain them.
+- **Real marks on real EQUIPMENT are ALLOWED** — a maker's name on a bag, a
+  glove, a headguard or a turnbuckle pad, and the sponsor marks on the ring
+  canvas. The gym is full of these and photographs of it will contain them.
+- **The `GOLDEN GLOVES` poster in that one plate is allowed, because he named
+  it.** His words were *"sub 6 the poster is fine"* — sub 6 being the plate he
+  had just been shown. **That is NOT a general rule about posters**, and an
+  earlier draft of this entry wrote it as "a real poster on a real wall", which
+  generalised a specific permission into a category he was not asked about. He
+  was asked nothing about posters in general; the question he answered was why
+  three named plates had been rejected. Corrected in review. A future poster
+  needs its own decision.
 - **Invented or garbled lettering is still FORBIDDEN** — made-up brands,
   mangled approximations of real ones, invented crests, and any logo for this
   club. The club has a real mark and it is not a generator's to draw.

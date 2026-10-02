@@ -102,9 +102,12 @@ other.
 lettering of any kind", with the ring canvas as the single exception. Owner:
 *"sub 6 the poster is fine, names on the equiptment is fin long as its real"*.
 
-- **Real marks on real equipment are ALLOWED** — a maker's name on a bag, a
-  glove, a headguard or a turnbuckle pad, a real poster, the sponsor marks on
-  the ring canvas.
+- **Real marks on real EQUIPMENT are ALLOWED** — a maker's name on a bag, a
+  glove, a headguard or a turnbuckle pad, and the sponsor marks on the ring
+  canvas.
+- **The `GOLDEN GLOVES` poster in `plate-20-coachdesk` is allowed because he
+  named that plate.** It is NOT a general permission for posters; a future one
+  needs its own decision.
 - **Invented or garbled lettering is still FORBIDDEN** — made-up brands,
   mangled approximations of real ones, invented crests, and any logo for this
   club.
@@ -264,7 +267,8 @@ not a delivery:
 | Grok, 2026-10-01 (floor pair) — `plate-16-floor-room-01`, `plate-16-floor-room-02` | same conversion: downscale `1792x1008` to `1280x720`, no crop; chroma `4:2:0` to `4:4:4`; baseline to progressive; metadata stripped; sharp, mozjpeg, quality 92. Read off the committed bytes, which are `SOF2` progressive and byte-identical to the batch files | **NO** — not retained. These predate condition 3 along with the rest of that day's earlier batch, so this conversion is stated from the markers and **cannot be shown by comparison** |
 | Grok, 2026-10-01 (boxing set) — `plate-17-bags/matroom/speedbag/bell-landscape-01` | downscale `1792x1008` to `1280x720` (both exactly 16:9, **no crop**); chroma `4:2:0` to `4:4:4`; baseline to progressive; metadata stripped; sharp, mozjpeg, quality 92 | **YES** — kept in the owner's reference folder, `PPBF-Gym-Reference/grok-boxing-2026-10-01/`. First batch under condition 3 |
 | Grok, 2026-10-01 (variation set) — `plate-18-redwall/gloverack/passage/quietcorner-landscape-01` | same conversion: downscale `1792x1008` to `1280x720`, no crop; `4:2:0` to `4:4:4`; baseline to progressive; metadata stripped; sharp, mozjpeg, quality 92 | **YES** — `PPBF-Gym-Reference/grok-boxing-2026-10-01/` |
-| Grok, 2026-10-02 onward | as recorded per batch | YES, required |
+| Grok, 2026-10-02 — `plate-20-coachdesk-landscape-01` | downscale `1792x1008` to `1280x720` — both exactly 16:9, so a pure resize with **no crop**; chroma `4:2:0` to `4:4:4`; baseline to progressive; JFIF/EXIF/XMP/comment segments stripped, leaving `DQT` and `SOF`; sharp, mozjpeg, quality 92; 149,255 B | **YES** — `PPBF-Gym-Reference/grok-boxing-2026-10-01/ppbf-sub-06.jpg` |
+| Grok, later batches | as recorded per batch | YES, required |
 
 The first row is the honest cost of having run the step silently: the record
 exists, the proof does not. Condition 3 is there so no later row reads like it.

@@ -118,7 +118,8 @@ such person behind it.
 Two further blocks, either of which is sufficient on its own: these are hand-authored
 **vector** SVGs in the design system's palette, and Grok's lane is raster JPEG; and
 each one carries the words `PLACEHOLDER ILLUSTRATION` baked into the image, against a
-lane law of **zero lettering**.
+lane law, which since OD-2026-10-02-001 is **no INVENTED lettering** — a real
+mark on real equipment is allowed, a made-up or garbled one is not.
 
 **These six get replaced by a camera, not by a model.**
 

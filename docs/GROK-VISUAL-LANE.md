@@ -376,7 +376,7 @@ Grok reads current source: page, components, tests
 ```
 Jason approves plate/design (exact ordered filename + room + size/variant)
   → Grok generates the exact ordered asset
-  → Grok prepares/verifies the actual JPEG (4:4:4, SOI/EOI, size, geometry, quiet centre, zero lettering)
+  → Grok prepares/verifies the actual JPEG (4:4:4, SOI/EOI, size, geometry, quiet centre, no INVENTED lettering -- OD-2026-10-02-001; real equipment marks are allowed, garbled approximations are not)
   → Grok uploads the REAL JPEG directly to its own feature branch under apps/web/public/plates/
   → Grok makes only the required approved visual/CSS/test changes (e.g. one PLATES line if new variant)
   → Grok opens the PR

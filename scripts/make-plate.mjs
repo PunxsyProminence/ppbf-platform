@@ -231,7 +231,18 @@ const T7_ROOMS = new Set(['family-room', 'window']);
    can leave it", OD-2026-09-28-013, lock Mode A item 4): the IRON CITY
    lettering on the ring canvas stays when the ring is in frame. The real canvas
    reads IRON CITY BREWERY (lock section 1), so the prompt spells that out
-   rather than invite the model to drop a word. Everything else stays forbidden. */
+   rather than invite the model to drop a word. Everything else stays forbidden.
+
+   THIS GENERATOR IS DELIBERATELY STRICTER THAN THE PLATE RULE, and the gap is
+   on purpose. Since 2026-10-02 (OD-2026-10-02-001) a plate MAY carry a real
+   mark on real equipment -- a maker's name on a bag or a glove. This prompt
+   still asks for none, because a generator cannot produce a REAL mark: asked
+   for a brand it renders an approximation, and an approximation of a real
+   brand is precisely the garbled lettering the owner's rule still forbids.
+   Asking is what produced HAYABUS on a pad and 3EL IN?RY GIYSE on a banner.
+   So the permission applies to marks that are genuinely there in a photograph;
+   it is not a licence to request them here. Widening these strings would
+   reintroduce the exact defect the rule was drawn around. */
 const COMPOSITION = 'Composition: the centre of the frame is QUIET and uncluttered because interface text is laid over it, and all visual interest sits in the outer thirds. No people.';
 const NO_TEXT = 'The only lettering allowed is the sponsor lettering printed on the boxing ring canvas itself, which reads IRON CITY BREWERY at the centre of the canvas and ALT NATION, and only when the ring canvas is in frame. ABSOLUTELY NO OTHER TEXT anywhere in the frame: no other writing, no other letters, no numbers, no words, no signage, no posters, no banners, no readable chalkboards or whiteboards, no labels, no other logos, no other brand marks.';
 
@@ -275,8 +286,10 @@ function stripLettered(text) {
 const SURFACES_BLANK = 'Every surface in this gym that could carry writing is blank: the chalkboard walls are freshly wiped and completely bare, and nothing in the frame carries a readable mark.';
 
 /* A non-training room has no ring in frame, so the IRON CITY exception cannot
-   apply there and the lettering rule is the lock's plain one: zero lettering.
-   The room sentence is the room map's own wording for the Workshop. */
+   apply there and this prompt asks for zero lettering. Unchanged by
+   OD-2026-10-02-001: see the note above on why the GENERATOR stays stricter
+   than the plate rule it serves. The room sentence is the room map's own
+   wording for the Workshop. */
 const NOT_THE_FLOOR = 'This room is not the training floor: no boxing ring, no punching bags, no training mats.';
 const NO_TEXT_AT_ALL = 'ABSOLUTELY NO TEXT anywhere in the frame: no writing, no letters, no numbers, no words, no signage, no posters, no banners, no readable chalkboards or whiteboards, no labels, no logos, no brand marks.';
 

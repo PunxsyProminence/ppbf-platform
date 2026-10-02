@@ -3691,8 +3691,10 @@ body.ppbf.on-canvas {
    IT WAS SIX. plate-14-frontdesk-landscape-01.jpg was the sixth and is gone
    from here: opened at full size on 2026-10-01 it carries a wall banner of
    invented, illegible lettering and an invented crest on the ring apron. The
-   reference lock allows the ring canvas's REAL sponsor marks and nothing else,
-   and forbids drawing a gym logo outright. It was bound off a 300x180 contact
+   reference lock allows REAL marks -- the canvas sponsors, and since
+   OD-2026-10-02-001 a real maker's name on real equipment -- but never an
+   INVENTED one, and it forbids drawing a gym logo outright. plate-14's banner
+   is invented, which is why the 2026-10-02 widening does not recover it. It was bound off a 300x180 contact
    sheet, which is too small to read a banner; the lesson is in the README. */
 :where([data-plate-variant~="2of7"]) .room--office {
   --plate: url("/plates/plate-01-office-02.jpg");
