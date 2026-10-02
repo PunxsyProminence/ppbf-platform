@@ -62,6 +62,13 @@
  *     --subject "the front desk, seen from the door" \
  *     [--portrait] [--force] [--dry-run]
  *
+ * EVERY --ref UNDER THE GYM REFERENCE FOLDER MUST BE ON THE LOCK'S VETTING
+ * RECORD (section 4). References are POSTED to an external endpoint, and a
+ * filename is not evidence that a photograph is free of people: two of the
+ * three that turned out to contain people were named like equipment shots.
+ * References taken from the committed plate library are not vetted here — they
+ * are already public.
+ *
  * --room is a room from docs/ROOM-MAP.md, as a slug: lower case, a leading
  * "The" dropped, apostrophes dropped, spaces as hyphens (THE FLOOR -> floor,
  * COACH'S OFFICE -> coachs-office). An unknown or missing room prints the list.
@@ -98,6 +105,48 @@ const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png']);
 const ENDPOINT = 'https://shadow-ai.cognitiveservices.azure.com/';
 const DEPLOYMENT = 'flux-kontext-plates';
 const REQUEST_TIMEOUT_MS = 180_000;
+
+/* ---- who has looked at each reference photograph ------------------------ */
+
+/**
+ * WHY THIS EXISTS. This script POSTS its references to an external endpoint,
+ * and until 2026-10-02 the only thing standing between a photograph and that
+ * endpoint was a check that it sat in an approved DIRECTORY. A directory check
+ * is not a content check. The usage example in this very file named
+ * 06-flag-and-mirror-wall.jpg, which has a person reflected in its mirror.
+ *
+ * A FILENAME IS NOT EVIDENCE. Two of the three photographs that turned out to
+ * contain identifiable people were called 01-bag-frame-timber.jpg and
+ * 02-bag-row-pipe-rail.jpg. Any rule keyed on names would have passed both.
+ *
+ * So the lock carries a vetting record of what a human has opened at full size,
+ * and this reads it. Keyed on the path RELATIVE TO the reference folder, never
+ * the basename: the unaltered originals sit in a subfolder under their original
+ * names, and a basename rule would wave them straight through.
+ *
+ * It fails closed. A photograph that is absent, renamed or newly added is
+ * refused until somebody looks at it and writes a row.
+ */
+function vettedReferences() {
+  const doc = readFileSync(LOCK, 'utf8');
+  const start = doc.indexOf('### Vetting record');
+  if (start < 0) {
+    throw new Error(`${LOCK}: no "### Vetting record" section -- the lock's shape changed`);
+  }
+  const rest = doc.slice(start + 1);
+  const nextSection = rest.indexOf('\n## ');
+  const section = nextSection < 0 ? rest : rest.slice(0, nextSection);
+
+  const clear = new Set();
+  for (const row of section.matchAll(/^\|\s*`([^`]+)`\s*\|\s*CLEAR\s*\|/gm)) {
+    clear.add(row[1].replace(/\\/g, '/').toLowerCase());
+  }
+  if (clear.size === 0) {
+    throw new Error(`${LOCK}: the vetting record parsed no CLEAR rows -- its table's shape changed`);
+  }
+  return clear;
+}
+const VETTED_REFS = vettedReferences();
 
 /* ---- the gym, read from the lock ---------------------------------------- */
 
@@ -386,6 +435,28 @@ function resolveRef(ref) {
     );
     process.exit(2);
   }
+
+  /* A DIRECTORY CHECK IS NOT A CONTENT CHECK. Everything under the gym
+     reference folder must be on the lock's vetting record, keyed on its path
+     relative to that folder. Plates are exempt: they are committed and public. */
+  const relToGym = path.relative(path.resolve(GYM_REFERENCE), found);
+  const underGym = relToGym !== '' && !relToGym.startsWith('..') && !path.isAbsolute(relToGym);
+  if (underGym) {
+    const key = relToGym.split(path.sep).join('/').toLowerCase();
+    if (!VETTED_REFS.has(key)) {
+      console.error(
+        'reference is not on the vetting record, and this script posts its references to an external endpoint:\n'
+        + `  ${key}\n`
+        + '  A human must open it at FULL SIZE, confirm no identifiable person is in frame --\n'
+        + '  checking every mirror, doorway and reflection -- and add a row to the\n'
+        + `  "Vetting record" table in ${path.relative(ROOT, LOCK)}.\n`
+        + '  A filename is not evidence: two of the three photographs that contained\n'
+        + '  people were named like equipment shots.',
+      );
+      process.exit(2);
+    }
+  }
+
   return found;
 }
 const refPaths = refs.map(resolveRef);

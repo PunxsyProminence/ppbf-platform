@@ -145,6 +145,53 @@ Photos live with the owner and in Grok conversation assets (UUIDs below are the 
 
 When Jason re-uploads or adds photos, append to this table; do not delete the lock set.
 
+---
+
+### Vetting record — who has LOOKED at each reference photograph
+
+`scripts/make-plate.mjs` **posts its references to an external image endpoint.**
+Until 2026-10-02 the only guard on what it sent was a *directory* check, and the
+script's own usage example named a photograph with a person reflected in a
+mirror.
+
+**A FILENAME IS NOT EVIDENCE.** Of the three photographs found to contain
+identifiable people, two were called `01-bag-frame-timber.jpg` and
+`02-bag-row-pipe-rail.jpg` — names that read as pure equipment shots.
+
+So the generator refuses any reference under the gym reference folder that is
+not listed **CLEAR** below. The key is the path **relative to that folder**, not
+the basename, because the same basenames exist in the originals subfolder.
+Anything absent, renamed or newly added is refused: the list **fails closed**.
+
+| Path, relative to the gym reference folder | People | Vetted | Note |
+|---|---|---|---|
+| `01-bag-frame-timber.jpg` | CLEAR | 2026-10-02 | **Altered.** Three people reflected in the right-hand mirror; cropped to 1900×1932, mirror removed. Original in `_originals-PEOPLE-DO-NOT-SEND/` |
+| `02-bag-row-pipe-rail.jpg` | CLEAR | 2026-10-02 | **Altered.** A person in the left foreground, face in profile; cropped to 2156×1932. Original kept as above |
+| `03-glove-shelves.jpg` | CLEAR | 2026-10-02 | Carries a handwritten `KEKACK GLOVES` shelf label |
+| `04-cardio-and-certificates.jpg` | CLEAR | 2026-10-02 | Framed coach certificates carry a name |
+| `05-locker-room.jpg` | CLEAR | 2026-10-02 | Locker tags carry names |
+| `06-flag-and-mirror-wall.jpg` | CLEAR | 2026-10-02 | **Altered.** A person reflected in the wall mirror; the mirror interior is masked flat. The mirror is the subject of the photograph, so it could not be cropped away. Original kept as above |
+| `07-the-ring-red-floor.jpg` | CLEAR | 2026-10-02 | The ring reference. Chalked combinations on the wall band |
+| `08-blue-mat-room.jpg` | CLEAR | 2026-10-02 | |
+| `09-whiteboards-grey-floor.jpg` | CLEAR | 2026-10-02 | Whiteboards carry handwritten session content |
+| `10-cardio-3rd-infantry.jpg` | CLEAR | 2026-10-02 | Certificates carry a name |
+
+**NOT VETTED, and therefore refused** by being absent rather than by being
+listed: everything in `_originals-PEOPLE-DO-NOT-SEND/` (the three unaltered
+originals, which DO contain people), `from-thread-2026-10-01/`,
+`grok-boxing-2026-10-01/`, `grok-rooms-2026-10-01/`, `walk-2026-09-30/` and
+`project-instructions/`.
+
+**CLEAR means no identifiable person is in the frame.** It does **not** mean no
+personal data: names appear on lockers, on coach certificates and on a
+glove-shelf label, as noted per row. Whether those matter is the owner's call
+and is not what this list decides.
+
+**To add a photograph: open it at FULL SIZE**, look at every mirror, doorway and
+reflection, then add a row. A contact sheet is how `01` and `02` were caught,
+but full size is how they were confirmed — and the people in `01` are three
+faces in a mirror, which a thumbnail will not settle.
+
 **Optional archive (never a shipping dependency):**  
 A drive folder owned by Jason for full-resolution masters. A master parked in a drive is an archive copy of a delivery; the delivery is the commit on the branch.
 
