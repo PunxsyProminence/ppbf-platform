@@ -239,6 +239,9 @@ test('the sections run in the order of the teaching loop, not in tool-directory 
     // a coach could film and could label and nothing joined the two.
     'Cut study clips',
     'Label & verify',
+    // MEASURE follows labelling: there is nothing to compare until two coaches
+    // have labelled the same clip.
+    'Measure',
     'Corpus coverage',
     'Current vocabulary',
     'Model performance',
@@ -259,6 +262,15 @@ test('the two doors point at capture and annotation', async () => {
   expect(screen.getByRole('link', { name: 'Clip Annotation' })).toHaveAttribute(
     'href',
     '/teach-shadow/annotation',
+  );
+});
+
+test('the measure door points at the agreement screen', async () => {
+  await renderLoaded();
+
+  expect(screen.getByRole('link', { name: 'Label Agreement' })).toHaveAttribute(
+    'href',
+    '/teach-shadow/agreement',
   );
 });
 

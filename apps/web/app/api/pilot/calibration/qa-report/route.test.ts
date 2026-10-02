@@ -132,8 +132,11 @@ function stageStudy(compared: number) {
   );
   mockSets.mockImplementation(async (_org: string, clip: string) =>
     clip === 'clip-waiting' ? [set(clip, 'a')] : [set(clip, 'a'), set(clip, 'b')]);
+  // The two readings differ on punch type and, by 40 ms, on where it starts.
   mockEvents.mockImplementation(async (_org: string, setId: string) => [
-    event(setId, setId.endsWith('-a') ? 'lead_straight' : 'lead_hook'),
+    setId.endsWith('-a')
+      ? event(setId, 'lead_straight')
+      : { ...event(setId, 'lead_hook'), start_ms: 1_040 },
   ]);
   mockAdjudications.mockResolvedValue([]);
 }
@@ -211,6 +214,7 @@ describe('GET /api/pilot/calibration/qa-report', () => {
     expect(body.project_name).toBe('Jab study');
     expect(body.report.disagreementCounts.PUNCH_TYPE).toBe(5);
     expect(body.report.disagreementRates.PUNCH_TYPE.rate).toBe(1);
+    expect(body.report.boundaryDeltas.start_ms).toEqual({ count: 5, medianAbsoluteMs: 40 });
     expect(body.clip_progress).toMatchObject({ totalClips: 6, clipsAwaitingSecondAnnotator: 1 });
     expect(body.excluded_clips).toEqual({
       readingInProgress: 0, noRecordedPair: 0, pairNotEstablished: 0, notComparable: 0,
@@ -226,8 +230,38 @@ describe('GET /api/pilot/calibration/qa-report', () => {
     expect(body.report.disagreementRates.PUNCH_TYPE.rate).toBe(1);
     expect(body.clip_progress).toBeNull();
     expect(body.excluded_clips).toBeNull();
-    // Not smuggled out inside the figures either.
-    expect(JSON.stringify(body)).not.toContain('clipsAwaiting');
+    // Not smuggled out under another key: the body is exactly these, and the
+    // figures are exactly the six the screen shows.
+    expect(Object.keys(body).sort()).toEqual([
+      'clip_progress', 'comparison_count', 'excluded_clips', 'minimum_comparisons',
+      'ok', 'project_name', 'report', 'status',
+    ]);
+    expect(Object.keys(body.report).sort()).toEqual([
+      'adjudicationRate', 'boundaryDeltas', 'disagreementCounts', 'disagreementRates',
+      'hedgedCertaintyRate', 'unknownRate',
+    ]);
+    expect(JSON.stringify(body)).not.toMatch(/clips[A-Z]|totalClips/);
+  });
+
+  test('never sends a signed timing gap, which with one clip is one labeller\'s mark', async () => {
+    mockPrincipal.mockResolvedValue(ADMIN);
+    stageStudy(5);
+
+    const body = await (await GET(request())).json();
+
+    expect(Object.keys(body.report.boundaryDeltas.start_ms).sort()).toEqual(['count', 'medianAbsoluteMs']);
+    expect(JSON.stringify(body)).not.toMatch(/minMs|maxMs|medianMs|strata|bySamplingReason/);
+  });
+
+  test.each([[COACH], [ADMIN]])('below the minimum, %o gets no typical timing gap', async (who) => {
+    mockPrincipal.mockResolvedValue(who);
+    stageStudy(4);
+
+    const body = await (await GET(request())).json();
+
+    expect(body.status).toBe('insufficient_data');
+    expect(body.report.boundaryDeltas.start_ms).toEqual({ count: 4, medianAbsoluteMs: null });
+    expect(body.report.disagreementCounts.PUNCH_TYPE).toBe(4);
   });
 
   test('below the minimum, a coach sees counts and no rate', async () => {
@@ -244,14 +278,16 @@ describe('GET /api/pilot/calibration/qa-report', () => {
     }
   });
 
-  test('puts no labeller, reading, clip or athlete in the body, and keeps it out of caches', async () => {
-    mockPrincipal.mockResolvedValue(ADMIN);
+  test.each([[ADMIN], [COACH]])('puts no labeller, reading, clip or athlete in the body for %o, and keeps it out of caches', async (who) => {
+    mockPrincipal.mockResolvedValue(who);
     stageStudy(5);
 
     const response = await GET(request());
     const serialized = JSON.stringify(await response.json());
 
-    for (const forbidden of ['acct-', '-set-', '-evt', 'clip-', 'ath-', 'vid-', 'account', 'athlete']) {
+    for (const forbidden of [
+      'acct-', '-set-', '-evt', 'clip-', 'ath-', 'vid-', 'org-', 'proj-', 'account', 'athlete',
+    ]) {
       expect(serialized.toLowerCase()).not.toContain(forbidden);
     }
     expect(response.headers.get('Cache-Control')).toBe('private, no-store, max-age=0');

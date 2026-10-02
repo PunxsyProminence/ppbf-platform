@@ -50,6 +50,7 @@ const CLOSED_ROUTES = [
 	'/teach-shadow/capture/preview',
 	'/coach/video-analysis/capture/preview',
 	'/teach-shadow/annotation',
+	'/teach-shadow/agreement',
 	'/coach/video-analysis',
 	'/coach/calibration',
 	'/admin/athlete-consent',

@@ -18,7 +18,9 @@ export const runtime = 'nodejs';
  *
  * CLIP PROGRESS -- how many clips are waiting on a second labeller -- tells a
  * coach, in total, whether somebody else has started. blinding.ts withholds
- * exactly that clip by clip. Off until he answers.
+ * exactly that clip by clip. Off until he answers. It is not airtight and
+ * cannot be: the number of clips compared is the report, and a coach who
+ * knows how many they have submitted can subtract.
  *
  * COUNTS BELOW THE MINIMUM. He approved "counts but no percentages" below five
  * compared clips, so this is on. The case against, which he is being asked
@@ -34,6 +36,14 @@ const COACH_SEES_COUNTS_BELOW_MINIMUM = true;
  * Totals only. No reading, no set, no labeller and no athlete is in the
  * answer; qaReportLoader.ts holds that line and says why it may read what
  * blinding.ts would refuse.
+ *
+ * AND ONLY THE TOTALS THE SCREEN SHOWS. The report also holds signed
+ * smallest and largest timing gaps and per-condition breakdowns. With one
+ * compared clip a signed gap is one labeller's mark minus the other's, so
+ * they are not sent to be left unused in a response body; `figures` below is
+ * a list of what leaves, not a filter on what does not. The typical timing gap
+ * is a figure computed from the sample, like a rate, and is withheld below the
+ * minimum the same way.
  *
  * requireAnnotator, not the adjudication gate: this is not the surface that
  * settles a disagreement, so an administrator who labelled a clip is not
@@ -62,19 +72,32 @@ export async function GET(request: NextRequest) {
     }
 
     const isAdmin = isOrganizationAdminRole(principal.role);
-    const { clipProgress, ...figures } = result.report;
+    const { report } = result;
+    const available = report.status === 'available';
     const showProgress = isAdmin || COACH_SEES_CLIP_PROGRESS;
-    const showFigures =
-      isAdmin || COACH_SEES_COUNTS_BELOW_MINIMUM || result.report.status === 'available';
+    const showFigures = isAdmin || COACH_SEES_COUNTS_BELOW_MINIMUM || available;
+
+    const gap = (field: keyof typeof report.boundaryDeltas) => ({
+      count: report.boundaryDeltas[field].count,
+      medianAbsoluteMs: available ? report.boundaryDeltas[field].medianAbsoluteMs : null,
+    });
+    const figures = {
+      disagreementCounts: report.disagreementCounts,
+      disagreementRates: report.disagreementRates,
+      boundaryDeltas: { start_ms: gap('start_ms'), contact_ms: gap('contact_ms'), end_ms: gap('end_ms') },
+      unknownRate: report.unknownRate,
+      hedgedCertaintyRate: report.hedgedCertaintyRate,
+      adjudicationRate: report.adjudicationRate,
+    };
 
     return NextResponse.json({
       ok: true,
       project_name: result.projectName,
-      status: result.report.status,
-      comparison_count: result.report.comparisonCount,
-      minimum_comparisons: result.report.minimumComparisons,
+      status: report.status,
+      comparison_count: report.comparisonCount,
+      minimum_comparisons: report.minimumComparisons,
       report: showFigures ? figures : null,
-      clip_progress: showProgress ? clipProgress : null,
+      clip_progress: showProgress ? report.clipProgress : null,
       excluded_clips: showProgress ? result.excludedClips : null,
     }, {
       headers: { 'Cache-Control': 'private, no-store, max-age=0' },
