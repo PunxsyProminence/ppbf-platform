@@ -1530,7 +1530,7 @@ describe('a lapsed clearance beside a current one', () => {
       answer = () => asResponse(first);
       global.fetch = mockFetch({
         '/athletes/list': () => asResponse({ items: [CURRENT, LAPSED] }),
-        // In force until 2099: a timer that must wait, a day at a time.
+        // In force until 2099: a timer that must wait, a minute at a time.
         'medical-status?athleteId=ath-1': () => {
           reads.current += 1;
           return asResponse({ ok: true, status: CURRENT_STATUS, effectiveStatus: 'cleared' });
@@ -1678,7 +1678,7 @@ describe('a lapsed clearance beside a current one', () => {
       expectLapsed();
     });
 
-    test('a far end date is waited for a day at a time, never with a delay setTimeout cannot hold, and asks nothing early', async () => {
+    test('a far end date is waited for a minute at a time, never with one long delay, and asks nothing early', async () => {
       // Every delay the page asks the (fake) clock for. A wrapper, not a
       // spy: a spy on the fake setTimeout is put back by the file's own
       // restoreAllMocks after the real clock has returned.
@@ -1691,16 +1691,35 @@ describe('a lapsed clearance beside a current one', () => {
         }) as unknown as typeof setTimeout,
         fakeSetTimeout,
       );
-      await openBoard({ ok: true, status: { ...SOON_STATUS, expires_at: '2026-12-01 16:00:00+00' }, effectiveStatus: 'cleared' });
+      try {
+        await openBoard({ ok: true, status: { ...SOON_STATUS, expires_at: '2026-12-01 16:00:00+00' }, effectiveStatus: 'cleared' });
 
-      await pass(3 * 24 * 60 * 60 * 1000);
+        await pass(3 * 60 * 60 * 1000);
 
+        expect(reads.lapsing).toBe(1);
+        expect(reads.current).toBe(1);
+        expectStillCleared();
+        expect(delays).toContain(60_000);
+        expect(Math.max(...delays)).toBeLessThanOrEqual(60_000);
+      } finally {
+        global.setTimeout = fakeSetTimeout;
+      }
+    });
+
+    test('a tablet that slept through the end date asks within a minute of waking, not when its long timer would have run out', async () => {
+      // Ends in two hours.
+      await openBoard({ ok: true, status: { ...SOON_STATUS, expires_at: '2026-09-01 18:00:00+00' }, effectiveStatus: 'cleared' });
+      await pass(10_000);
       expect(reads.lapsing).toBe(1);
-      expect(reads.current).toBe(1);
-      expectStillCleared();
-      global.setTimeout = fakeSetTimeout;
-      expect(delays).toContain(24 * 60 * 60 * 1000);
-      expect(Math.max(...delays)).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
+
+      // Asleep for three hours: the wall clock moves, no timer runs.
+      jest.setSystemTime(Date.now() + 3 * 60 * 60 * 1000);
+      answer = () => asResponse({ ok: true, status: { ...SOON_STATUS, expires_at: '2026-09-01 18:00:00+00' }, effectiveStatus: 'cleared_expired' });
+      await pass(60_000);
+
+      expect(reads.lapsing).toBe(2);
+      expect(within(rowOf('Sam Roe')).getByText('clearance expired')).toBeTruthy();
+      expect(rowOf('Sam Roe').querySelector('.badge--cleared')).toBeNull();
     });
 
     test.each([
@@ -1711,7 +1730,7 @@ describe('a lapsed clearance beside a current one', () => {
     ])('%s is never asked about again', async (_name, body) => {
       await openBoard(body);
 
-      await pass(2 * 24 * 60 * 60 * 1000);
+      await pass(3 * 60 * 60 * 1000);
 
       expect(reads.lapsing).toBe(1);
     });

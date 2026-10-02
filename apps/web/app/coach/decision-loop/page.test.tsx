@@ -1670,39 +1670,145 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       expect(screen.queryByText(/Set by/)).toBeNull();
     });
 
-    test('an athlete the coach has left is not read again, and nothing of theirs comes back', async () => {
-      await openB();
+    // A second athlete, so "the coach has moved on" lands on a panel that is
+    // really on screen. C's row is told apart by who set it.
+    const C_ROW = { ...B_STATUS, status_id: 'st-c', athlete_id: 'ath-c', set_by_role: 'coach' };
+    let answerC: () => Response;
 
-      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: '' } });
+    function readsOf(fragment: string): number {
+      return (global.fetch as unknown as jest.Mock).mock.calls.filter(([url]) => String(url).includes(fragment)).length;
+    }
+
+    async function openBThenC(rowC: Record<string, unknown>) {
+      answer = () => jsonResponse(STILL_CLEARED);
+      answerC = () => jsonResponse({ status: rowC, effectiveStatus: 'cleared' });
+      installReadsForB({
+        '/medical-status?athleteId=ath-b': () => answer(),
+        '/medical-status?athleteId=ath-c': () => answerC(),
+      });
+      render(<DecisionLoopReviewPage />);
+      fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+      await screen.findByText(/Set by organization_admin \(acct-1\)/);
+    }
+
+    async function switchToC() {
+      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: 'ath-c' } });
+      await screen.findByText(/Set by coach \(acct-1\)/);
+    }
+
+    test('an athlete the coach has left is not read again; the one now on screen is, at their own end date, even when it is the same instant', async () => {
+      // C's clearance ends at the very instant B's does.
+      await openBThenC({ ...C_ROW, expires_at: SOON_ROW.expires_at });
+      await switchToC();
+      expectStillCleared();
+
       answer = () => jsonResponse(NOW_LAPSED);
-      await pass(120_000);
+      answerC = () => jsonResponse({ status: { ...C_ROW, expires_at: SOON_ROW.expires_at }, effectiveStatus: 'cleared_expired' });
+      await pass(31_000);
 
-      expect(readsOfB()).toBe(1);
-      expect(screen.getByText('Select or enter an athlete to review their decision loop.')).toBeTruthy();
-      expect(screen.queryByText('clearance expired')).toBeNull();
-      expect(screen.queryByText(/Set by/)).toBeNull();
+      expect(readsOf('/medical-status?athleteId=ath-b')).toBe(1);
+      expect(readsOf('/medical-status?athleteId=ath-c')).toBe(2);
+      expectLapsed();
+      expect(within(medicalSection()).getByText(/Set by coach \(acct-1\)/)).toBeTruthy();
     });
 
-    test('a re-read still out when the coach changes athlete does not paint under the new selection', async () => {
-      await openB();
+    test('a re-read for B still out when the coach changes to C does not paint under C', async () => {
+      await openBThenC({ ...C_ROW, expires_at: '2026-12-01 16:00:00+00' });
 
       let release: (response: Response) => void = () => {};
       answer = () => new Promise<Response>((resolve) => { release = resolve; }) as unknown as Response;
       await pass(31_000);
-      expect(readsOfB()).toBe(2);
+      expect(readsOf('/medical-status?athleteId=ath-b')).toBe(2);
 
-      fireEvent.change(screen.getByPlaceholderText('athlete-id'), { target: { value: '' } });
+      await switchToC();
       await act(async () => {
         release(jsonResponse(NOW_LAPSED));
       });
       await pass(1_000);
 
-      expect(screen.getByText('Select or enter an athlete to review their decision loop.')).toBeTruthy();
-      expect(screen.queryByText('clearance expired')).toBeNull();
-      expect(screen.queryByText(/Set by/)).toBeNull();
+      // C is in force; B's late answer says lapsed. C's panel still says cleared.
+      expectStillCleared();
+      expect(within(medicalSection()).getByText(/Set by coach \(acct-1\)/)).toBeTruthy();
+      expect(screen.queryByText(/could not be read/i)).toBeNull();
     });
 
-    test('a far end date is waited for a day at a time, never with a delay setTimeout cannot hold, and asks nothing early', async () => {
+    test('a re-read for B that FAILS after the coach changes to C does not blank C', async () => {
+      await openBThenC({ ...C_ROW, expires_at: '2026-12-01 16:00:00+00' });
+
+      let release: (response: Response) => void = () => {};
+      answer = () => new Promise<Response>((resolve) => { release = resolve; }) as unknown as Response;
+      await pass(31_000);
+
+      await switchToC();
+      await act(async () => {
+        release(jsonResponse({ error: 'Service unavailable' }, false));
+      });
+      await pass(1_000);
+
+      expectStillCleared();
+      expect(screen.queryByText(/could not be read/i)).toBeNull();
+    });
+
+    test('an answer that arrives after a newer one does not paint over it', async () => {
+      await openB();
+
+      let releaseStale: (response: Response) => void = () => {};
+      answer = () => new Promise<Response>((resolve) => { releaseStale = resolve; }) as unknown as Response;
+      await pass(31_000);
+      expect(readsOfB()).toBe(2);
+      expectStillCleared();
+
+      answer = () => jsonResponse(NOW_LAPSED);
+      await pass(30_000);
+      expect(readsOfB()).toBe(3);
+      expectLapsed();
+
+      await act(async () => {
+        releaseStale(jsonResponse(STILL_CLEARED));
+      });
+      await pass(1_000);
+      expectLapsed();
+    });
+
+    test('nobody pressed anything, so only the status is read again and the rest of the screen is left alone', async () => {
+      answer = () => jsonResponse(STILL_CLEARED);
+      installReadsForB({
+        '/medical-status': () => answer(),
+        '/recommendations': () => jsonResponse({ recommendations: [A_RECOMMENDATION] }),
+      });
+      render(<DecisionLoopReviewPage />);
+      fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+      await screen.findAllByText(A_RECOMMENDATION.recommendation_text, { exact: false });
+
+      answer = () => jsonResponse(NOW_LAPSED);
+      await pass(31_000);
+
+      expectLapsed();
+      expect(readsOfB()).toBe(2);
+      expect(readsOf('/recommendations?athleteId=ath-b')).toBe(1);
+      expect(readsOf('/decisions?athleteId=ath-b')).toBe(1);
+      expect(readsOf('/near-misses?athleteId=ath-b')).toBe(1);
+      // The other panels still show what they showed.
+      expect(screen.getAllByText(A_RECOMMENDATION.recommendation_text, { exact: false }).length).toBeGreaterThan(0);
+      expect(screen.queryByText(/Recommendations could not be read/i)).toBeNull();
+    });
+
+    test('a tablet that slept through the end date asks within a minute of waking, not when its long timer would have run out', async () => {
+      const laterRow = { ...B_STATUS, expires_at: '2026-09-01 18:00:00+00' };
+      await openB({ status: laterRow, effectiveStatus: 'cleared' });
+      await pass(10_000);
+      expect(readsOfB()).toBe(1);
+
+      // Asleep for three hours: the wall clock moves, no timer runs.
+      jest.setSystemTime(Date.now() + 3 * 60 * 60 * 1000);
+      answer = () => jsonResponse({ status: laterRow, effectiveStatus: 'cleared_expired' });
+      await pass(60_000);
+
+      expect(readsOfB()).toBe(2);
+      expectLapsed();
+    });
+
+    test('a far end date is waited for a minute at a time, never with one long delay, and asks nothing early', async () => {
       // Every delay the page asks the (fake) clock for. A wrapper, not a
       // spy: a spy on the fake setTimeout is put back by the file's own
       // restoreAllMocks after the real clock has returned.
@@ -1715,15 +1821,18 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
         }) as unknown as typeof setTimeout,
         fakeSetTimeout,
       );
-      await openB({ status: { ...B_STATUS, expires_at: '2026-12-01 16:00:00+00' }, effectiveStatus: 'cleared' });
+      try {
+        await openB({ status: { ...B_STATUS, expires_at: '2026-12-01 16:00:00+00' }, effectiveStatus: 'cleared' });
 
-      await pass(3 * 24 * 60 * 60 * 1000);
+        await pass(3 * 60 * 60 * 1000);
 
-      expect(readsOfB()).toBe(1);
-      expectStillCleared();
-      global.setTimeout = fakeSetTimeout;
-      expect(delays).toContain(24 * 60 * 60 * 1000);
-      expect(Math.max(...delays)).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
+        expect(readsOfB()).toBe(1);
+        expectStillCleared();
+        expect(delays).toContain(60_000);
+        expect(Math.max(...delays)).toBeLessThanOrEqual(60_000);
+      } finally {
+        global.setTimeout = fakeSetTimeout;
+      }
     });
 
     test.each<[string, Record<string, unknown>]>([
@@ -1734,7 +1843,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     ])('%s is never read again by itself', async (_name, body) => {
       await openB(body);
 
-      await pass(2 * 24 * 60 * 60 * 1000);
+      await pass(3 * 60 * 60 * 1000);
 
       expect(readsOfB()).toBe(1);
     });

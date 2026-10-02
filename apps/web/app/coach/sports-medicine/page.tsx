@@ -95,9 +95,11 @@ function isoInstant(value: string): string {
   return value.trim().replace(' ', 'T').replace(/(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?[+-]\d{2})$/, '$1:00');
 }
 
-/* setTimeout overflows a little under 25 days out and fires at once, so a far
-   end date is waited for a day at a time. */
-const LONGEST_WAIT_MS = 24 * 60 * 60 * 1000;
+/* The clock is looked at again at least this often while waiting. One long
+   timer would not do: a timer does not run while a tablet sleeps, so a
+   clearance ending during the night would be noticed hours into the morning;
+   and setTimeout overflows a little under 25 days out and fires at once. */
+const LONGEST_WAIT_MS = 60_000;
 const RECHECK_MS = 30_000;
 
 /* Calls `onDue` once `instant` has passed, and again every RECHECK_MS until it
@@ -108,8 +110,10 @@ const RECHECK_MS = 30_000;
 function whenPassed(instant: string, onDue: () => void): () => void {
   const due = new Date(isoInstant(instant)).getTime();
   if (Number.isNaN(due)) return () => {};
+  let cancelled = false;
   let timer: ReturnType<typeof setTimeout>;
   const arm = () => {
+    if (cancelled) return;
     const wait = due - Date.now();
     timer = setTimeout(() => {
       if (Date.now() >= due) onDue();
@@ -117,7 +121,10 @@ function whenPassed(instant: string, onDue: () => void): () => void {
     }, wait > 0 ? Math.min(wait, LONGEST_WAIT_MS) : RECHECK_MS);
   };
   arm();
-  return () => clearTimeout(timer);
+  return () => {
+    cancelled = true;
+    clearTimeout(timer);
+  };
 }
 
 type ClearanceReading = Pick<ClearanceRow, 'clearance' | 'effective_at' | 'expired_at' | 'ends_at'>;

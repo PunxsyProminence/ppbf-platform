@@ -203,9 +203,11 @@ function isoInstant(value: string): string {
   return value.trim().replace(' ', 'T').replace(/(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?[+-]\d{2})$/, '$1:00');
 }
 
-/* setTimeout overflows a little under 25 days out and fires at once, so a far
-   end date is waited for a day at a time. */
-const LONGEST_WAIT_MS = 24 * 60 * 60 * 1000;
+/* The clock is looked at again at least this often while waiting. One long
+   timer would not do: a timer does not run while a tablet sleeps, so a
+   clearance ending during the night would be noticed hours into the morning;
+   and setTimeout overflows a little under 25 days out and fires at once. */
+const LONGEST_WAIT_MS = 60_000;
 const RECHECK_MS = 30_000;
 
 /* Calls `onDue` once `instant` has passed, and again every RECHECK_MS until it
@@ -216,8 +218,10 @@ const RECHECK_MS = 30_000;
 function whenPassed(instant: string, onDue: () => void): () => void {
   const due = new Date(isoInstant(instant)).getTime();
   if (Number.isNaN(due)) return () => {};
+  let cancelled = false;
   let timer: ReturnType<typeof setTimeout>;
   const arm = () => {
+    if (cancelled) return;
     const wait = due - Date.now();
     timer = setTimeout(() => {
       if (Date.now() >= due) onDue();
@@ -225,7 +229,10 @@ function whenPassed(instant: string, onDue: () => void): () => void {
     }, wait > 0 ? Math.min(wait, LONGEST_WAIT_MS) : RECHECK_MS);
   };
   arm();
-  return () => clearTimeout(timer);
+  return () => {
+    cancelled = true;
+    clearTimeout(timer);
+  };
 }
 
 /* `textFields` are the fields the page prints or slices for each row. A row
@@ -629,19 +636,57 @@ export default function DecisionLoopReviewPage() {
 
   /* A CLEARANCE CAN RUN OUT WHILE THIS SCREEN IS OPEN. The badge is what the
      route said at the last read; left alone it would go on saying "cleared"
-     past the end date while the gate refuses. So the athlete on screen is
-     read again when a clearance in force reaches its end date -- through the
-     same refreshAll, so a read for an athlete the coach has left is dropped
-     and a read that fails says "could not be read". The page does not work
-     out the verdict from the date itself. */
+     past the end date while the gate refuses. So the medical status of the
+     athlete on screen is read again when a clearance in force reaches its end
+     date, and the panel shows what the route answers. The page does not work
+     out the verdict from the date itself.
+
+     Only the status is read, and only the status is replaced: nobody pressed
+     anything, so the coach's confirmation lines, the opened outcomes and the
+     other three panels stay as they are. It is dropped if the selection has
+     changed or a full read has started since it was sent (that read brings its
+     own status), and it paints only onto the records of the athlete it was
+     read for. If it fails, the status is unknown, and the page says what it
+     says after any failed read: could not be read. */
+  const statusRereadSeqRef = useRef(0);
+  const rereadMedicalStatus = useCallback(async (targetAthleteId: string) => {
+    if (targetAthleteId !== selectedAthleteRef.current) return;
+    const readSeq = readSeqRef.current;
+    const seq = ++statusRereadSeqRef.current;
+    const stale = () => readSeq !== readSeqRef.current || seq !== statusRereadSeqRef.current;
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/shadow/medical-status?athleteId=${encodeURIComponent(targetAthleteId)}`,
+        { credentials: 'include' },
+      );
+      const reread = readMedicalStatus(
+        await readEnvelopeOrThrow(response, 'Failed to load medical status.'),
+        targetAthleteId,
+        'Failed to load medical status.',
+      );
+      if (stale()) return;
+      setReadFor((shown) =>
+        shown && shown.athleteId === targetAthleteId && shown.state === 'loaded'
+          ? { ...shown, records: { ...shown.records, medicalStatus: reread } }
+          : shown,
+      );
+    } catch {
+      if (stale()) return;
+      setReadFor((shown) =>
+        shown && shown.athleteId === targetAthleteId
+          ? { athleteId: targetAthleteId, state: 'unavailable', records: NO_RECORDS }
+          : shown,
+      );
+    }
+  }, []);
   const clearanceEndsAt =
     medicalStatus?.effective_status === 'cleared' && typeof medicalStatus.expires_at === 'string'
       ? medicalStatus.expires_at
       : null;
   useEffect(() => {
     if (!athleteId || !clearanceEndsAt) return undefined;
-    return whenPassed(clearanceEndsAt, () => void refreshAll(athleteId, true));
-  }, [athleteId, clearanceEndsAt, refreshAll]);
+    return whenPassed(clearanceEndsAt, () => void rereadMedicalStatus(athleteId));
+  }, [athleteId, clearanceEndsAt, rereadMedicalStatus]);
 
   /* THE ONE PLACE THE SELECTION CHANGES, for the dropdown and for the ID box.
      Everything that belonged to the previous athlete goes in the same event
