@@ -90,8 +90,6 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  * suite red.
  */
 
-const BRASS_RUNGS = ['200', '300', '400', '500', '600', '700', '800', '900'] as const;
-
 const css = readDesignSystemCss(DESIGN_SYSTEM_ENTRY);
 
 /* THE MEDICAL-STOP NAMES: --locked, its --locked-* rungs, and every custom
@@ -143,18 +141,6 @@ const DETAIL = readFileSync(
   'utf8',
 );
 
-/** The bare `.ge-drillcase { … }` token rule, not its descendant rules. */
-function scopeBody(source: string): string | null {
-  const match = source.match(/^\.ge-drillcase\s*\{([^}]*)\}/m);
-  return match ? match[1] : null;
-}
-
-function legacyRung(source: string, rung: string): string | null {
-  const withoutScope = source.replace(/^\.ge-drillcase\s*\{[^}]*\}/m, '');
-  const m = withoutScope.match(new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{3,8})`, 'i'));
-  return m ? m[1].toLowerCase() : null;
-}
-
 /**
  * The text of `source` from the first `start` through the next `end` after it.
  * Throws instead of returning '' when either is missing: every caller goes on
@@ -181,39 +167,16 @@ function quoted(source: string): string[] {
   return [...source.matchAll(/'([^']*)'/g)].map((m) => m[1]);
 }
 
+/* 2026-10-02 (OD-2026-10-02-004, OD-2026-10-02-007): nothing about the look
+   binds, so the cases here that pinned this screen's look were removed -- the
+   bronze ramp and its channel triples, the scope class, selector shape, "only
+   markup this pass added", control counts and "not renamed". What remains
+   guards meaning and function: the --locked token, stamps and badges, gates
+   and refusals, real controls still present, nothing invented. Where the
+   header above describes a removed case it is history, kept as the record of
+   why the case was written. */
+
 describe('golden-era drillcase scope', () => {
-  test('the bronze ramp is on the .ge-drillcase class scope, not :root', () => {
-    expect(scopeBody(css)).not.toBeNull();
-    /* `?? []` turns "the regex found no :root block" into "there is nothing to
-       check", and a for-loop over nothing asserts nothing -- so this half of the
-       test reports that no :root carries the bronze in exactly the same voice
-       whether that is true or whether the scan simply broke. Seven :root blocks
-       resolve today; the floor is the honest claim, which is that at least one
-       was read and the loop below therefore ran. */
-    expect((css.match(/:root\s*\{[^}]*\}/g) ?? []).length).toBeGreaterThan(0);
-    for (const block of css.match(/:root\s*\{[^}]*\}/g) ?? []) {
-      expect(block).not.toContain('#E7C88A');
-    }
-  });
-
-  test.each(BRASS_RUNGS)('brass rung %s is redefined on the scope and differs from legacy', (rung) => {
-    const body = scopeBody(css);
-    expect(body).not.toBeNull();
-    const scoped = (body as string).match(new RegExp(`--brass-${rung}\\s*:\\s*(#[0-9A-Fa-f]{3,8})`, 'i'));
-    expect(scoped).not.toBeNull();
-    /* `legacyRung` returns null when it finds no definition outside the scope,
-       and `not.toEqual(null)` is satisfied by every string there is. So the
-       moment the ramp this scope exists to differ FROM stops being in the
-       resolved sheet, "differs from legacy" starts passing for the one reason
-       that means nothing was compared. Asserted the way its sibling
-       goldenEraTokenScope.test.ts already asserts it. */
-    expect(legacyRung(css, rung)).not.toBeNull();
-    expect((scoped as RegExpMatchArray)[1].toLowerCase()).not.toEqual(legacyRung(css, rung));
-  });
-
-  test('the drill library route carries the scope class', () => {
-    expect(PAGE).toMatch(/className="[^"]*\bge-drillcase\b[^"]*"/);
-  });
 
   test('the scope never spends the --locked medical-stop token on cabinet chrome', () => {
     // The ramp is bronze, and --locked means a medical stop. Red itself is
@@ -442,39 +405,4 @@ describe('the 004B mockup did not delete or invent drill-library controls', () =
     expect(DETAIL).not.toMatch(/fetch\(/);
   });
 
-  test('the control count is unchanged', () => {
-    // At 004B, nothing added and nothing removed: two text inputs, two
-    // textareas, one select, one button, one link. Each owner-approved change
-    // since has moved these numbers only by the controls it names.
-    //
-    // Two buttons rather than one since OD-2026-09-16-001: Add drill, and the
-    // Promote control on each reference card. The name assertion in "the three
-    // real actions still exist" is what makes the second one specifically
-    // Promote; this case only holds the line against a THIRD appearing.
-    //
-    // Five since W-D4A: Add drill; View drill on each reference card; Back to
-    // the reference library and Promote on the opened detail; View
-    // instructions on each operational drill promoted from a reference. Named
-    // in "the real actions still exist"; this case holds the line against a
-    // SIXTH.
-    //
-    // W-D4C, counted in the source:
-    //   - three inputs: the two form fields, and the one name search;
-    //   - two selects: difficulty, and ONE element mapped over the FILTERS
-    //     specs (six on screen, one in the source -- which is why the FILTERS
-    //     array itself is pinned, key by key and field by field, above);
-    //   - seven buttons: the five above, plus Retire / Restore (one element
-    //     whose caption follows the derived lifecycle) on the opened detail,
-    //     and Clear filters on the discovery rail. Named in "the real actions
-    //     still exist".
-    //
-    // Eight since #1032 (Jason, 2026-09-30, "go with your recomendations"): the
-    // Restore on a newer version's card when the gym retired its drill. Named in
-    // "the real actions still exist"; this case holds the line against a NINTH.
-    expect(PAGE.match(/<input\b/g) ?? []).toHaveLength(3);
-    expect(PAGE.match(/<textarea\b/g) ?? []).toHaveLength(2);
-    expect(PAGE.match(/<select\b/g) ?? []).toHaveLength(2);
-    expect(PAGE.match(/<button\b/g) ?? []).toHaveLength(8);
-    expect(PAGE.match(/<Link\b/g) ?? []).toHaveLength(1);
-  });
 });

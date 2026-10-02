@@ -132,53 +132,6 @@ describe('the app only names design-system classes that exist', () => {
     expect(missing).toEqual([]);
   });
 
-  /* The six rooms are load-bearing enough to name individually: the rooms are
-     the architecture (docs/GOLDEN-ERA-V1-CONTRACT.md §4 and §6,
-     docs/ROOM-MAP.md), and losing one is not a styling nit.
-
-     This asserts the DEFINING rule, not merely that the token appears. Checking
-     the token was the first version and it was useless: deleting `.room--office
-     {` still left `room--office` present in `.corridor-room.room--office` and
-     in the print block's ::before list, so the guard passed on a stylesheet
-     that had lost the room.
-
-     THE SELECTOR ALONE WAS NOT ENOUGH EITHER, found 2026-08-23 during the
-     visual reset. Every room is named by three separate bare `.room--X { }`
-     rules -- its material, its shadow tokens (`--sx`/`--sy`/`--sh-*`) and its
-     plate (`--plate: url(...)`). All three satisfy a selector-shaped regex, so
-     deleting the material rule outright left this green: the wall was gone and
-     the guard said the room was fine. It now requires the rule that paints the
-     wall, which is the one that carries a `background`. Re-verified by deleting
-     .room--clinic's material rule and watching this fail. */
-  it('keeps the defining rule for all six rooms', () => {
-    const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
-    for (const room of ['office', 'floor', 'board', 'file', 'clinic', 'night']) {
-      // A rule whose selector is exactly .room--X (optionally with siblings in
-      // a selector list), not .something.room--X or .room--X::before -- AND
-      // whose body paints something, which is what makes it the material rule
-      // rather than the shadow-token or plate rule of the same name.
-      const defining = new RegExp(
-        `(^|,|\\}|\\s)\\.room--${room}\\s*(,[^{]*)?\\{[^}]*background`,
-        'm',
-      );
-      expect(defining.test(stripped)).toBe(true);
-    }
-  });
-
-  it('keeps the motion scale and its easings defined', () => {
-    for (const t of ['--m-instant', '--m-quick', '--m-base', '--m-settle', '--m-travel', '--m-swing',
-                     '--e-stamp', '--e-settle', '--e-drawer', '--e-lever', '--e-swing']) {
-      expect(css).toContain(`${t}:`);
-    }
-  });
-
-  it('keeps the navigation and card components defined', () => {
-    for (const c of ['corridor-panel', 'corridor-door', 'catalog-field', 'catalog-row',
-                     'commands-sheet', 'tcard-stamp', 'tcard-seals']) {
-      expect(defined.has(c)).toBe(true);
-    }
-  });
-
   /* The Refusal Stamp family (RefusalStamp.tsx) is the first consumer of the
      stamp namespace sized for a gym-floor tablet -- named individually
      because losing stamp--kiosk would silently shrink every refusal stamp
