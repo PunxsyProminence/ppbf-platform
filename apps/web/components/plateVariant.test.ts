@@ -735,8 +735,9 @@ describe('the PLATES cascade is decided by source order, not by specificity', ()
    (c) THE NO-CHANGE GUARANTEE, AND THE LADDER UNDER IT
    ========================================================================== */
 
-/* THE SPLIT ROOMS, AND EVERY WALL EACH ONE CARRIES. Office is on an of5,
-   clinic an of4, night an of3; board and file carry one plate each. Written
+/* THE SPLIT ROOMS, AND EVERY WALL EACH ONE CARRIES. Floor is on an of8,
+   office an of6, clinic an of5, night an of3; board and file carry one plate
+   each. Written
    out here rather than derived from the sheet on purpose: the sheet is the
    thing under test, and a guard that reads its answer out of the file it is
    checking proves nothing.
@@ -771,7 +772,7 @@ const VARIANT_PLATES: Partial<Record<Room, readonly string[]>> = {
 };
 const SPLIT_ROOMS = new Set(Object.keys(VARIANT_PLATES) as Room[]);
 
-describe('three rooms carry a set of walls, the rest carry one', () => {
+describe('four rooms carry a set of walls, the rest carry one', () => {
   it('declares exactly the variant rules this release adds, and no others', () => {
     /*
      * ART ARRIVED. The block this replaces asserted `variantRules` was empty and
@@ -945,7 +946,7 @@ describe('a variant rule does not take the portrait plate off the gym tablet', (
 
   /* A floor route in the second half of an of2 split, which the synthetic rule
      below targets. And one in the FIRST half that is also slot 1 of the live
-     of6 -- without that second condition it would pick up one of the floor's
+     of8 -- without that second condition it would pick up one of the floor's
      real variants and this proof would be comparing against the wrong wall. */
   const secondHalf = doorsIn('floor').find((href) => plateVariantSlot(href, 2) === 2)!;
   const firstHalf = doorsIn('floor').find(

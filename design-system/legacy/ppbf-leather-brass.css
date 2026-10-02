@@ -3687,7 +3687,7 @@ body.ppbf.on-canvas {
    is therefore chosen from the door list, not from how many plates happen to
    exist. Any room whose plates outrun its doors keeps the surplus unbound. */
 
-/* OFFICE -- 52 doors, five walls, all five slots occupied.
+/* OFFICE -- 52 doors, SIX walls, all six slots occupied.
    IT WAS SIX. plate-14-frontdesk-landscape-01.jpg was the sixth and is gone
    from here: opened at full size on 2026-10-01 it carries a wall banner of
    invented, illegible lettering and an invented crest on the ring apron. The
@@ -3710,7 +3710,7 @@ body.ppbf.on-canvas {
   --plate: url("/plates/plate-18-passage-landscape-01.jpg");
 }
 
-/* CLINIC -- 10 doors, four walls, all four slots occupied. */
+/* CLINIC -- 10 doors, FIVE walls, all five slots occupied. */
 :where([data-plate-variant~="2of5"]) .room--clinic {
   --plate: url("/plates/plate-03-clinic-02.jpg");
 }

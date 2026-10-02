@@ -129,7 +129,7 @@ candidates. Nothing is bound until it has been opened at full size.**
 
 Owner direction, 2026-10-01 (OD-2026-10-01-005), rescinding the 2026-09-22
 ruling: *"remove my decision about the floor"*. `--plate: none` is gone from
-`current/ppbf-golden-era.css` and the floor carries **six** landscape walls on
+`current/ppbf-golden-era.css` and the floor carries **eight** landscape walls on
 an `of8`, all eight slots occupied by its 40 doors, plus a portrait plate. It has
 the largest set in the building on purpose: 35 of its 40 doors are coach or
 athlete, so it is the room the gym is actually in.
@@ -248,6 +248,7 @@ not a delivery:
 | Batch | Conversion applied | Original kept |
 |---|---|---|
 | Grok, 2026-10-01 — `plate-01-office-02/03/04`, `plate-03-clinic-02/03`, `plate-06-night-03`, `plate-15-filmroom-landscape-01` | downscale `1792x1008` to `1280x720` (both exactly 16:9, no crop); chroma `4:2:0` to `4:4:4`; baseline `SOF0` to progressive `SOF2`; JFIF/EXIF/XMP/comment segments stripped, leaving `DQT` and `SOF`; sharp, mozjpeg, quality 92 | **NO — not retained.** These predate the rule and the originals were not kept. The conversion is stated from the JPEG markers of the committed files, and cannot be shown by comparison for this batch |
+| Grok, 2026-10-01 (floor pair) — `plate-16-floor-room-01`, `plate-16-floor-room-02` | same conversion: downscale `1792x1008` to `1280x720`, no crop; chroma `4:2:0` to `4:4:4`; baseline to progressive; metadata stripped; sharp, mozjpeg, quality 92. Read off the committed bytes, which are `SOF2` progressive and byte-identical to the batch files | **NO** — not retained. These predate condition 3 along with the rest of that day's earlier batch, so this conversion is stated from the markers and **cannot be shown by comparison** |
 | Grok, 2026-10-01 (boxing set) — `plate-17-bags/matroom/speedbag/bell-landscape-01` | downscale `1792x1008` to `1280x720` (both exactly 16:9, **no crop**); chroma `4:2:0` to `4:4:4`; baseline to progressive; metadata stripped; sharp, mozjpeg, quality 92 | **YES** — kept in the owner's reference folder, `PPBF-Gym-Reference/grok-boxing-2026-10-01/`. First batch under condition 3 |
 | Grok, 2026-10-01 (variation set) — `plate-18-redwall/gloverack/passage/quietcorner-landscape-01` | same conversion: downscale `1792x1008` to `1280x720`, no crop; `4:2:0` to `4:4:4`; baseline to progressive; metadata stripped; sharp, mozjpeg, quality 92 | **YES** — `PPBF-Gym-Reference/grok-boxing-2026-10-01/` |
 | Grok, 2026-10-02 onward | as recorded per batch | YES, required |
