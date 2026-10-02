@@ -164,6 +164,114 @@ and should not try to.
 
 ---
 
+## OD-2026-10-01-006 -- SHADOW: educate, do not restrict; coach notification is part of the intended safety handling; emergency reviews get a separate hourly allowance; the #1036 replacement re-cut
+
+**Provenance: PRIMARY.** Section 1's three messages were typed by Jason in the
+Lane A thread and read by overwatch in that thread's transcript
+(`C--Dev/621541d7-de10-407e-8fb4-67468f9758b5.jsonl`), times UTC. Section 2's
+answer was typed in the overwatch thread (transcript as in OD-2026-09-30-007).
+**Date:** 2026-10-01 (his evening; the UTC times in section 1 run past
+midnight). This entry is new. The same PR adds one dated status update
+to OD-2026-09-30-006's Status paragraph and changes nothing else in any
+earlier entry. OD-2026-10-01-004 is on `main` via PR #1068; OD-2026-10-01-005
+is reserved by the visual lane's open PR #1077.
+
+### 1. Educate, not restrict; notifying a coach is part of it
+
+Lane A had put two questions to him in its thread, each with A recommended:
+whether a message that states an acute event happened to a specific person,
+with no "I", "my" or "now", is a report; and whether wording that could be read
+either way is treated as a report, at the measured cost that 4 of 40 general
+questions in its test set would then be refused, two of them with the emergency
+text. His three messages, in order:
+
+- 2026-10-01T23:46:40Z: *"Recommendation "*
+- 2026-10-02T00:08:22Z: *"explain"*. Lane A then explained the two questions in
+  plain terms and restated that cost.
+- 2026-10-02T00:27:39Z: *"that is where my educate not restrict comes into play, part of that education would be to notify the coach,  thats what we have been fighting over with the saftey piece all through the app"*
+
+"Recommendation" is NOT recorded as an A/B selection: he asked for an
+explanation next and then answered in his own terms. The third message
+governs. ChatGPT, as architect, read it the same way.
+
+**Decided:**
+
+1. Uncertain safety wording is not a reason to replace an answer with a
+   refusal.
+2. SHADOW educates rather than restricts.
+3. Telling a coach is part of the intended handling of a safety case.
+
+**Still open, and not to be inferred from those words:**
+
+1. When the emergency act-now line appears for an asserted or unclear event
+   (put to him as A/B/C; not answered when written).
+2. Which coach or coaches "notify the coach" means, and what happens when no
+   athlete is in scope (put to him as A/B/C; not answered when written).
+3. No email, text or push is authorized by these words.
+
+What the app does today (REPORTED by Lane A at main `c5d5c260`, and traced
+independently by ChatGPT): a SHADOW review row is read only by admins on one
+admin page; it carries no athlete id; no coach reads it; nothing is pushed. So
+the existing review queue does not notify a coach. Not his words, and not
+recorded as his: "nobody is refused", "ambiguous means notify", "the review
+queue notifies the coach", "coach of record plus covering coach".
+
+### 2. Emergency reviews get their own hourly allowance
+
+OD-2026-09-30-005 gave the human-review write a limit of 3 per hour per
+account. OD-2026-09-30-006 selection 5 gave every high-risk message a human
+review. Built together (Lane A, unpushed), three ordinary review records could
+use the hour, so a later emergency report kept its emergency reply but left no
+review row. `main` had no review-queue quota on that path, so quota exhaustion
+could not suppress the critical write; in Lane A's measured `main` sequence the
+row was written (REPORTED). ChatGPT ruled the choice his. Asked:
+
+"Official: you chose 3 SHADOW human-review records per hour per account. With
+every high-risk question now adding a record, three ordinary ones can use up
+the hour, so a later "I can't breathe" gets its emergency reply but no review
+record. A (recommended, ChatGPT's pick too): one 3-per-hour allowance for
+emergency reports only, and a separate 3-per-hour allowance for everything
+else. B: keep one shared allowance and accept that gap. C: emergency reports
+always write a record, with no limit."
+
+Jason, whole message: *"A"*.
+
+**A.** Two buckets, each 3 per hour per account:
+
+1. **Critical (emergency) request review writes** only.
+2. **All other SHADOW human-review writes.** That is "everything else", as the
+   option he chose says, and includes as applicable: non-critical high-risk
+   request reviews; generated-answer safety reviews written by the chat route;
+   generated-answer safety reviews written by the background worker; and the
+   existing operational or filter review rows, such as the row written when
+   the Library is empty.
+
+A fourth critical review write in the hour is suppressed; the emergency
+response is not. The limit is on persisting the review row, never on the reply
+(OD-2026-09-30-005: exhaustion suppresses the write only). This narrows what
+OD-2026-09-30-005's single `safety_review` bucket covers; it does not change
+the number he chose.
+
+Other questions were open with him at the time (a hold sentence, the act-now
+threshold, the coach recipient and others). Overwatch reads "A" as the answer
+to the one new question in the message it replied to, and to no other; those
+stay open.
+
+### 3. The #1036 replacement is re-cut so no step adds refusals
+
+On section 1, ChatGPT replaced the earlier five-piece order. The classifier
+correction no longer lands first, because alone it would have turned about 30
+of Lane A's 36 test reports into refusals until later pieces landed. New order,
+one lane and one PR each: (1) every high-risk message leaves a bounded
+human-review record; (2) a coach-facing in-app escalation, only if he confirms
+the recipient; (3) education instead of refusal for non-acute high-risk; (4)
+acute gets the act-now line plus education; (5) the acute-report classifier
+correction; (6) contractions without apostrophes. Pieces 3, 4 and 5 go to
+production together. PR #1036 closes as superseded when piece 1's PR opens.
+This is the architect's sequencing, recorded so later lanes can find it; it is
+not an owner decision.
+
+---
 ## OD-2026-10-01-005 -- The floor takes photographs again, and the two it used to carry were the wrong building
 
 **Provenance: PRIMARY.** Jason, typed in the visuals lane, 2026-10-01:
@@ -233,8 +341,10 @@ Asked whether he wants named rooms anyway: "A, not now, doors are enough
 this purpose, and **PR #941 stays exactly as he left it on "Hold it, decide
 later"** -- A is not an instruction to close it.
 
-Delivered under this ruling: PR #1068, office to six walls, clinic to four,
-night to three.
+Delivered under this ruling: PR #1068, office to **five** walls, clinic to
+four, night to three. It was six until `plate-14-frontdesk-landscape-01.jpg` was
+opened at full size, found to carry a banner of invented lettering and an
+invented crest, and unbound within the same PR.
 
 ### 2. A declared format conversion is allowed; the original must be kept
 
@@ -1140,7 +1250,7 @@ them are delivered. Done for lanes 11 to 14.
 
 ## OD-2026-09-30-006 -- High-risk chat questions get education, not a refusal; acute reports get education plus an act-now line
 
-**Status, 2026-10-01:** recorded on `main` by a records PR ahead of PR #1036, which builds it and is not merged; Jason, asked whether to move this record so PR #1058 need not wait on #1036: *"Yes to 1 and 2"*. The text below was PORTED from PR #1036's branch at `9208457a` and is not identical to it: on the way to `main` it gained this paragraph and the next, "four selections" became "five" in two places, and the chest-pain attribution was corrected. Nothing in it is built on `main` until #1036 lands.
+**Status, 2026-10-01:** recorded on `main` by a records PR ahead of PR #1036, which builds it and is not merged; Jason, asked whether to move this record so PR #1058 need not wait on #1036: *"Yes to 1 and 2"*. The text below was PORTED from PR #1036's branch at `9208457a` and is not identical to it: on the way to `main` it gained this paragraph and the next, "four selections" became "five" in two places, and the chest-pain attribution was corrected. Nothing in it is built on `main` until #1036 lands. **Status update, 2026-10-02:** #1036 is being superseded by the replacement sequence in OD-2026-10-01-006 section 3. PR #1058 has already landed the teach-first prompt portion; the remaining route and classifier behaviour is being built through that replacement sequence.
 
 **Checked against the transcript, 2026-10-01** (the closed AI/ML lane's thread; a
 read-only pass that read each reply with the message or option set it answered).

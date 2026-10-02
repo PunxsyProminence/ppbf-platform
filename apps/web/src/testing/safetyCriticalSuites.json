@@ -126,6 +126,16 @@
       "guards": "The fabricated-data declaration on the Revenue & Funding Center. Three of its tabs describe records the organisation genuinely has, one click from a live register, so an admin has no way to tell the invented grant from the real one -- and for a 501(c)(3) a fabricated figure copied into a board packet or a funder's report is a false statement made by the organisation. Six tests."
     },
     {
+      "path": "src/server/pilot/shadowChat.test.ts",
+      "minimumTests": 201,
+      "guards": "The SHADOW chat classifier: which messages are withheld from the model and queued for a human, including the phone-apostrophe emergency reports (\"I can\u2019t breathe\") that main let through. Not registered before #1049."
+    },
+    {
+      "path": "src/server/pilot/shadowChatSensitivity.test.ts",
+      "minimumTests": 57,
+      "guards": "The differential guard on that classifier: a frozen copy of main's seven withholding returns, and the argument, with its premises tested, that folding apostrophe and quote look-alikes releases nothing main withheld and downgrades no emergency. If it stops loading, a later edit to the fold or its call sites ships unguarded."
+    },
+    {
       "path": "src/testing/suiteAttendance.test.ts",
       "minimumTests": 35,
       "guards": "The register and the attendance reporter themselves. Listed here on purpose: a guard on guards that could vanish silently would leave the register unvalidated and every entry below unproven, which is the exact failure this file exists to make loud."

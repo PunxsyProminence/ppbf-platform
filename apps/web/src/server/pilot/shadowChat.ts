@@ -135,9 +135,80 @@ export interface ShadowResponseValidation {
 export const SHADOW_SAFE_FILTERED_RESPONSE =
   'I can’t safely provide that generated answer. SHADOW filtered it before display. Consult a qualified coach or medical professional for the next decision. RESEARCH NEEDED — the answer did not pass safety validation.';
 
+/**
+ * Substitute the apostrophe and quote look-alikes a phone keyboard produces,
+ * ONE CHARACTER FOR ONE CHARACTER, and nothing else.
+ *
+ * THE DEFECT THIS CLOSES IS LIVE IN PRODUCTION. Measured against main before
+ * the change:
+ *
+ *   "I can't breathe after that hit"        straight  -> withheld, human queued
+ *   "I can\u2019t breathe after that hit"        CURLY     -> allowed to the model
+ *
+ * U+2019 is what iOS and Android type by default, so for an athlete on a phone
+ * that is the common case. The file already knew: the loss_of_consciousness
+ * pattern carries ['\u2019] for KO'd, fixed by hand, while every can't and
+ * cannot pattern stayed straight-only.
+ *
+ * WHY THIS IS THE WHOLE FUNCTION, AND WHY IT USED TO DO MORE.
+ *
+ * Earlier versions also deleted zero-width characters and the soft hyphen,
+ * folded dashes, folded the NBSP class to a space, collapsed whitespace,
+ * trimmed, ran NFKC, and turned U+FEFF into a space. None of those was needed
+ * for the defect, and each of the ones below changed what a pattern matched
+ * for a message main already handled:
+ *
+ *   NFKC EXPANDS. U+2026 became three periods, overflowing the
+ *   character-counted windows -- `vision.{0,12}blurr`, `bleeding.{0,20}`.
+ *   NFKC CREATES WORD CHARACTERS. U+2122 became "TM", so "\u2122my shoulder
+ *   hurts" read as "TMmy shoulder hurts" and `\b(i|me|my|...)\b` went false.
+ *   DELETION MERGES WORDS. "my\u200Bshoulder hurts" became "myshoulder hurts",
+ *   so `\bmy\b` failed and the personal-health refusal was lost. Same for
+ *   U+00AD, and for U+FEFF, which main's `\s` already matches.
+ *   WHITESPACE COLLAPSING removed line breaks, which are the only bound on
+ *   the unbounded `.` gaps, so ordinary two-line messages were withheld.
+ *   U+FEFF TO A SPACE made the literal-space phrases match where main's did
+ *   not -- "lose weight<FEFF>quickly" -- and that return sits ABOVE the
+ *   emergency one, so "I can't breathe and I need to lose weight<FEFF>quickly"
+ *   lost its emergency response. U+FEFF is now left exactly as typed.
+ *
+ * One root cause: the patterns in this file count characters, assert word
+ * boundaries, test whitespace, match literal spaces, and let `.` stop at a
+ * line terminator. So the fold is restricted to substitutions that cannot
+ * move any of those: an apostrophe-like or quote-like punctuation character
+ * becoming the ASCII one, in place.
+ *
+ * shadowChatSensitivity.test.ts holds this function to that. The eighteen
+ * code units below are written out there a second time as an exact map and
+ * checked against every UTF-16 code unit; the SHAPE of this function and of
+ * its two call sites is checked from this file's source; and the argument
+ * from "eighteen punctuation characters become two" to "nothing main
+ * withheld is released, and nothing main treated as an emergency stops being
+ * one" is written out there with its premises tested. KEEP EVERY LINE BELOW
+ * A GLOBAL REPLACE OF A SINGLE-UNIT CHARACTER CLASS BY A FIXED ONE-UNIT
+ * STRING. A line of any other shape, here or at the call sites, fails that
+ * suite by design.
+ *
+ * ANYTHING NOT FOLDED HERE BEHAVES EXACTLY AS IT DOES ON MAIN, which is the
+ * standard this hotfix is measured against. Widening it is #1036 work.
+ *
+ * MATCHING ONLY. The result is never persisted, never sent to the model and
+ * never shown back: the athlete's own words are the record.
+ */
+export function normaliseForMatching(text: string): string {
+  return text
+    // Apostrophe look-alikes -> ASCII apostrophe. The fix. Every member is a
+    // single UTF-16 unit that is neither a word character nor whitespace, as
+    // is the replacement.
+    .replace(/[\u2018\u2019\u201A\u201B\u2032\u02B9\u02BB\u02BC\u00B4\uFF07\uFF40`]/g, "'")
+    // Quote look-alikes -> ASCII quote. Same reasoning.
+    .replace(/[\u201C\u201D\u201E\u201F\u2033\uFF02]/g, '"');
+}
+
 // Classify high-risk topics and determine routing
 export function classifyHighRiskTopic(userMessage: string): HighRiskClassification {
-  const msg = userMessage.toLowerCase();
+  // Normalised, not merely lowercased -- see normaliseForMatching.
+  const msg = normaliseForMatching(userMessage).toLowerCase();
 
   const topics: Array<[HighRiskTopic, RegExp]> = [
     ['concussion', /concuss/i],
@@ -264,24 +335,30 @@ export function validateShadowRequest(
   _organizationId: string,
 ): ShadowValidationResult {
   const classification = classifyHighRiskTopic(message);
-  const normalizedMessage = message.toLowerCase();
+  // EVERY PATTERN BELOW READS `text`, NOT `message`. See normaliseForMatching:
+  // a curly apostrophe made "I can\u2019t breathe after that hit" an ordinary
+  // question. `message` is not matched against again anywhere in this
+  // function, which is what keeps the guarantee from depending on each
+  // pattern author remembering it.
+  const text = normaliseForMatching(message);
+  const normalizedMessage = text.toLowerCase();
 
-  const hasPrescriptionLanguage = /\b(prescribe|prescribed|prescribing|prescription|rx)\b/i.test(message)
-    || /should\s+i\s+take/i.test(message)
-    || /should\s+you\s+take/i.test(message)
-    || /take\s+(?:this\s+)?(?:medication|medicine|drug|pill)/i.test(message);
+  const hasPrescriptionLanguage = /\b(prescribe|prescribed|prescribing|prescription|rx)\b/i.test(text)
+    || /should\s+i\s+take/i.test(text)
+    || /should\s+you\s+take/i.test(text)
+    || /take\s+(?:this\s+)?(?:medication|medicine|drug|pill)/i.test(text);
 
-  const hasRapidWeightCutLanguage = /how\s+do\s+i\s+cut\s+weight/i.test(message)
+  const hasRapidWeightCutLanguage = /how\s+do\s+i\s+cut\s+weight/i.test(text)
     || normalizedMessage.includes('lose weight quickly')
     || normalizedMessage.includes('cut weight for my weight class')
-    || /\b(?:i\s+(?:need|have)\s+to|help\s+me|how\s+(?:can|do)\s+i)\b.{0,35}\bmake\s+weight\b/i.test(message)
-    || /\b(?:i\s+(?:need|want|have)\s+to\s+)?lose\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week\b/i.test(message);
+    || /\b(?:i\s+(?:need|have)\s+to|help\s+me|how\s+(?:can|do)\s+i)\b.{0,35}\bmake\s+weight\b/i.test(text)
+    || /\b(?:i\s+(?:need|want|have)\s+to\s+)?lose\s+\d+(?:\.\d+)?\s*(?:pounds?|lbs?|kilograms?|kgs?)\s+(?:this|in\s+(?:a|one))\s+week\b/i.test(text);
 
-  const hasPersonalContext = /\b(i|me|my|mine|we|our)\b/i.test(message)
-    || /\b(now|currently|today|just happened|during training|after sparring|after (?:a|that|the) hit)\b/i.test(message);
-  const hasUrgentSymptom = /(can(?:not|'t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'t)\s+move|sudden\s+weakness)/i.test(message);
-  const hasAcuteImpactConcern = /(?:after|from).{0,30}(?:hit|blow|punch|fall).{0,60}(?:pain|numb|weak|tingl|blur|bleed|dizz|confus|vomit|can(?:not|'t))/i.test(message);
-  const hasPersonalHealthConcern = /\b(hurt|hurts|hurting|pain|painful|sore|soreness|swollen|swelling|injured|injury|sprain(?:ed|ing)?|strain(?:ed|ing)?|bruised|bruising|numb|numbness|tingling|stiff|stiffness)\b/i.test(message);
+  const hasPersonalContext = /\b(i|me|my|mine|we|our)\b/i.test(text)
+    || /\b(now|currently|today|just happened|during training|after sparring|after (?:a|that|the) hit)\b/i.test(text);
+  const hasUrgentSymptom = /(can(?:not|'t)\s+breathe|shortness\s+of\s+breath|trouble\s+breathing|blurr(?:y|ed)?\s+vision|vision.{0,12}blurr(?:y|ed)?|double\s+vision|can(?:not|'t)\s+see|seeing\s+stars|seizure|convulsion|headache|nausea|nauseous|neck.{0,20}(numb|weak|tingl)|severe\s+bleeding|bleeding.{0,20}(won't|will\s+not)\s+stop|abdominal\s+pain|stomach\s+pain|vomit(?:ing)?\s+blood|slurred\s+speech|unequal\s+pupils?|can(?:not|'t)\s+move|sudden\s+weakness)/i.test(text);
+  const hasAcuteImpactConcern = /(?:after|from).{0,30}(?:hit|blow|punch|fall).{0,60}(?:pain|numb|weak|tingl|blur|bleed|dizz|confus|vomit|can(?:not|'t))/i.test(text);
+  const hasPersonalHealthConcern = /\b(hurt|hurts|hurting|pain|painful|sore|soreness|swollen|swelling|injured|injury|sprain(?:ed|ing)?|strain(?:ed|ing)?|bruised|bruising|numb|numbness|tingling|stiff|stiffness)\b/i.test(text);
 
   // Direct prescription or weight-cutting directives are blocked even when phrased as questions.
   if (hasPrescriptionLanguage || hasRapidWeightCutLanguage) {
@@ -324,7 +401,7 @@ export function validateShadowRequest(
   }
 
   // Check for diagnosis claims
-  if (/(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i.test(message)) {
+  if (/(do|does|did|am|is|have)\s+(i|you)\s+(have|have a|get|got|experience).*(concussion|fracture|injury|condition|disease|syndrome|disorder)/i.test(text)) {
     return {
       valid: false,
       error: 'Diagnosis and personal health assessment require professional medical evaluation.',
@@ -335,9 +412,9 @@ export function validateShadowRequest(
 
   // Check for clearance claims
   if (
-    /\bmedical\s+clear(?:ed|ance)?\b/i.test(message)
-    || /\bclear(?:ed|ance)?\b.{0,40}\b(play|train|training|compete|competition|return|contact|spar|sparring)\b/i.test(message)
-    || /\b(play|train|training|compete|competition|return|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)?\b/i.test(message)
+    /\bmedical\s+clear(?:ed|ance)?\b/i.test(text)
+    || /\bclear(?:ed|ance)?\b.{0,40}\b(play|train|training|compete|competition|return|contact|spar|sparring)\b/i.test(text)
+    || /\b(play|train|training|compete|competition|return|contact|spar|sparring)\b.{0,40}\bclear(?:ed|ance)?\b/i.test(text)
   ) {
     return {
       valid: false,
@@ -348,7 +425,7 @@ export function validateShadowRequest(
   }
 
   // Check for prescription claims
-  if (/(should|do|can|need)\s+(i|you)\s+(take|use|try|get).*(medicine|medication|drug|pill|injection)/i.test(message)) {
+  if (/(should|do|can|need)\s+(i|you)\s+(take|use|try|get).*(medicine|medication|drug|pill|injection)/i.test(text)) {
     return {
       valid: false,
       error: 'Medication and prescription recommendations require professional medical oversight.',
@@ -1005,6 +1082,13 @@ DOCTRINE — NON-NEGOTIABLE:
 5. Flag unknowns as research requirements — not guesses.
 6. Defer all final decisions to coaches, athletes, or medical professionals.
 
+TEACH FIRST — PAIN, INJURY, HEAD KNOCKS AND RECOVERY QUESTIONS:
+Education creates safety. Answer these in this order:
+1. Teach the thing. What it is, how it happens in boxing, what normal looks like, and what the warning signs look like. This is most of the answer.
+2. Say what to tell the coach, and when. The coach decides training.
+3. Last, in one sentence, say what you cannot do (diagnose, treat, clear) and who does.
+Never open with what you cannot do. Never answer with only "see a professional". Do not reach for "stop and see a doctor" for every ache: teach the difference between worked-muscle soreness and the warning signs, then say plainly that warning signs mean stop and get it looked at. Do not prescribe exercises, stretches, ice, heat or medication as treatment.
+
 PHRASING — A RESPONSE FILTER ENFORCES THIS:
 Every answer you write passes through a safety filter before display. Unless the exact claim carries a verified evidence citation supplied in your authorized context, the filter WITHHOLDS your entire answer if it:
 - phrases any claim as research/studies/data/evidence "shows", "suggests", "indicates", "demonstrates", "proves", or "supports"
@@ -1027,10 +1111,15 @@ EXAMPLE — incomplete readiness data:
 Unknowns: sleep, soreness, nutrition, stress, session duration, and post-session RPE are incomplete or unverified. RESEARCH NEEDED.
 Discuss the observation with the athlete and coach. If symptoms or a medical concern are present, defer to an appropriately qualified medical professional. Do not prescribe a training change from this observation alone."
 
-EXAMPLE — diagnosis request:
-"Can't tell you if you have a concussion — that's not my lane, and anyone who gives you that answer over a chat is doing you a disservice.
-Get evaluated by a medical professional. Full stop.
-What I can do: walk you through what to watch for after a head impact, in plain terms. Want that?"
+EXAMPLE — diagnosis request ("I got hit and my head hurts, do I have a concussion?"):
+"A concussion is a brain injury: a hit or a jolt makes the brain move fast inside the skull, and for a while it does not work right. You do not have to be knocked out. A headache after a head shot is one of the signs. So are feeling dizzy or foggy, trouble remembering the round, feeling sick, or light and noise bothering you. Signs can show up hours later.
+Fighters sit out for a reason: a brain that is still healing gets hurt worse by the next hit.
+Tell your coach today exactly what happened and how you feel, and stay out of sparring until you have been checked. I can't tell you whether you have one. A doctor does that."
+
+EXAMPLE — soreness after training ("my shoulder is sore after sparring"):
+"Shoulders do a lot in sparring: every punch, and every second you hold your guard. Worked-muscle soreness is dull and achy, often on both sides, and it eases as you warm up over a day or two.
+These are different: sharp pain, pain in one exact spot, pain when you lift your arm, a pop you felt, weakness, numbness or tingling, or it getting worse instead of better. Those mean stop and get it looked at.
+Tell your coach before your next session which one it sounds like and when it started. They decide what you do in training. I can't tell you what is wrong with it; a doctor or athletic trainer does that."
 
 EXAMPLE — athlete phoned it in on bag work:
 "You ghosted through that round and we both know it. Bag work isn't a breather between the rounds that count — it is one of the rounds that counts.
