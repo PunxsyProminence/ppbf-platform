@@ -69,7 +69,7 @@ to `apps/web/`.
 2. **A safety state is never mistaken for decoration.** This is the half of the old
    law that binds. Its palette limit ("saturated colour means safety or status and
    nothing else") does not: Jason, 2026-10-02, *"Nothing binding  visually look will
-   be less conflict than anything binding at this point"*. Green/blue/orange are what
+   be less conflict than anything binding at this point"* (OD-2026-10-02-007). Green/blue/orange are what
    the safety ladder and queue outcomes are painted in today, so another use of them
    must not read as one of those states. Red is not
    reserved (OD-2026-09-29-001, 2026-09-29): it is the club's colour (black, red and

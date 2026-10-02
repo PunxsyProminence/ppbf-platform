@@ -36,7 +36,7 @@ used to single out, two carry a floor item and still bind (the safety half of
 2. **A safety state must never be mistaken for decoration, or decoration for a
    safety state** (the half of Law 2 that binds; its palette limit does not,
    Jason 2026-10-02: *"Nothing binding  visually look will be less conflict than
-   anything binding at this point"*). Green, blue and orange are what a
+   anything binding at this point"*, OD-2026-10-02-007). Green, blue and orange are what a
    participant's safety state and a queue outcome are painted in today, so a
    new use of them must not read as one of those states. Red is not reserved
    (OD-2026-09-29-001, 2026-09-29): it

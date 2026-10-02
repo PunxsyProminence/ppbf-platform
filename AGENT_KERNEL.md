@@ -90,7 +90,8 @@ by anything in this section.
    channel for a state; nothing decorative can be mistaken for a safety state).
    These are about what a mark means, not about how the app looks: nothing
    about the look itself binds (Jason, 2026-10-02: *"Nothing binding  visually
-   look will be less conflict than anything binding at this point"*). Minors' privacy, role gates and organization
+   look will be less conflict than anything binding at this point"*,
+   OD-2026-10-02-007). Minors' privacy, role gates and organization
    boundaries are untouched. Nothing false ships: no control that does
    nothing, no invented data, roles or notices, and an unknown value never
    looks complete or zero.
