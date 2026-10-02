@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { applyImport } from '@/src/server/pilot/contentImport/apply';
+import { WORKOUT_PROMPT_DATASET, workoutIntakePrompt } from '@/src/server/pilot/contentImport/aiPrompt';
 import { emitContentImportAuditMirror } from '@/src/server/pilot/contentImport/auditRow';
 import { planImport } from '@/src/server/pilot/contentImport/plan';
 import { ContentImportRefusal } from '@/src/server/pilot/contentImport/refusal';
@@ -59,12 +60,7 @@ export const runtime = 'nodejs';
  */
 export async function POST(request: NextRequest) {
   try {
-    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
-    requireRole(principal, ['organization_admin', 'admin']);
-    const organizationId = principal.organizationId;
-    if (!organizationId) {
-      throw new Error('Forbidden: no organization on this session');
-    }
+    const { principal, organizationId } = await admit(request);
 
     const upload = checkUploadRequest(await readUploadBody(request));
 
@@ -106,6 +102,40 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     return jsonError(asHttpError(error));
+  }
+}
+
+/**
+ * The one gate of this route, for both verbs: Microsoft sign-in, an
+ * organization admin, and a gym on the session.
+ */
+async function admit(request: NextRequest) {
+  const principal = await requireMicrosoftAuthenticatedPrincipal(request);
+  requireRole(principal, ['organization_admin', 'admin']);
+  const organizationId = principal.organizationId;
+  if (!organizationId) {
+    throw new Error('Forbidden: no organization on this session');
+  }
+  return { principal, organizationId };
+}
+
+/**
+ * The workout intake prompt (contentImport/aiPrompt.ts): the text an admin
+ * pastes into another AI assistant with a workout written in their own words,
+ * to get back the two workout-template files this route's POST loads.
+ *
+ * SAME DOOR AS THE UPLOAD: admit() above is the one gate, so whoever may not
+ * load gym content may not fetch the prompt for it either. The text itself is
+ * the same for every gym and reads nothing of the session, the database or the
+ * environment (aiPrompt.ts); the gate is here because the prompt belongs to
+ * this screen, not because it holds a secret.
+ */
+export async function GET(request: NextRequest) {
+  try {
+    await admit(request);
+    return NextResponse.json({ ok: true, dataset: WORKOUT_PROMPT_DATASET, prompt: workoutIntakePrompt() });
+  } catch (error) {
+    return jsonError(error);
   }
 }
 
