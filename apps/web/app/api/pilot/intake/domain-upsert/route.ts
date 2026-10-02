@@ -144,14 +144,18 @@ export async function POST(request: NextRequest) { // NOSONAR
     // metric after it then answered 500 for a write that had already happened.
     // The coach's page kept the draft and showed a failure, the coach pressed
     // send again, and the family read the same message twice -- with the first
-    // copy possibly having no audit row at all. Now either every row is
-    // committed and the answer is ok, or none is and the 500 is true.
+    // copy possibly having no audit row at all. Now, for a record or
+    // accounting statement that fails before commit, the transaction rolls
+    // every one of these writes back.
     //
     // The authority check and the access check stay above this on purpose: a
     // refused request must still leave its shadow_authority_checks row.
     //
-    // NOT CLOSED HERE: a write that commits but whose answer never reaches the
-    // browser. That needs a request key from the page and is a separate change.
+    // NOT CLOSED HERE, and both can still end in a duplicate on resend: a
+    // COMMIT whose acknowledgement is lost or indeterminate (the data may
+    // exist although this route answers 500), and a successful write whose
+    // HTTP response never reaches the browser. Both need a request key from
+    // the page, which is a separate change.
     const entityId = await withTransaction(async (client) => {
       let entityId = '';
 
