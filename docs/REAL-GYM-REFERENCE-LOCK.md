@@ -161,57 +161,67 @@ identifiable people, two were called `01-bag-frame-timber.jpg` and
 **AND A PATH IS NOT EVIDENCE EITHER.** The first version of this record keyed on
 the path alone. A reviewer pointed out that the bytes behind a path can be
 replaced, symlinked to the unaltered originals, or reached under a different
-spelling. So each row now carries the **SHA-256 of the exact bytes a person
-looked at**, the generator resolves the real path before any check, and a
-reference is sent only when **both the path and the hash match**. Change a
-photograph by one byte and it must be looked at again.
+spelling. So each row carries the **SHA-256 of the exact bytes somebody looked
+at**, the generator resolves the real path before any check, and a reference is
+sent only when **both the path and the hash match**. Change a photograph by one
+byte and it must be looked at again.
 
 **STATUS: `CLEAR` may be sent. `HOLD` may not** — the generator refuses it,
-exactly as if it were absent. Anything not listed at all is refused too: the
-record **fails closed**.
+exactly as if it were absent, so holding a photograph needs a word in this table
+and no code change. Anything not listed at all is refused too: the record
+**fails closed**.
 
 | Path, relative to the gym reference folder | Status | SHA-256 of the exact bytes | Looked at by | Note |
 |---|---|---|---|---|
-| `01-bag-frame-timber.jpg` | **CLEAR** | `f3012d405ed054f05fb0db9cf71b24dffe84bfaaf43d91d8cef9bf9b809a2e4f` | lane, 2026-10-02 | **Altered.** Three people reflected in the right-hand mirror; cropped, mirror removed. Original in `_originals-PEOPLE-DO-NOT-SEND/` |
-| `02-bag-row-pipe-rail.jpg` | **CLEAR** | `fb507cf3b9ba66cc9006e10e94003547c85f44946d84e6c7a9b1a3f7f34f8a91` | lane, 2026-10-02 | **Altered.** A person in the left foreground; cropped. Original kept as above |
-| `03-glove-shelves.jpg` | **HOLD** | `ef81b2016a016294ed90f62eb80e28cbcc494227e929d1cf012bcc078c19f2c6` | lane, 2026-10-02 | No person in frame, but a handwritten `KEKACK GLOVES` shelf label. Held pending the owner's ruling below |
-| `04-cardio-and-certificates.jpg` | **HOLD** | `d2e9bec48932c735c9100421b6c99e8386848aa0c3d020f82188d0f9e131f0bf` | lane, 2026-10-02 | No person in frame, but framed coach certificates carry a name. **Byte-identical to `10`.** Held |
-| `05-locker-room.jpg` | **HOLD** | `81854b79c8f53aec0fd8a93de7ca543d31b90c263dd6e7f0223c0f556126e50e` | lane, 2026-10-02 | No person in frame, but locker tags carry names, and lockers in a youth gym may carry children's names. Held |
-| `06-flag-and-mirror-wall.jpg` | **CLEAR** | `eb682271827da5490e9aafa2b38aecff4d58e110fbfbbc564877dc3a7a6cba69` | lane, 2026-10-02 | **Altered.** A person reflected in the wall mirror; the mirror interior masked flat. The mirror is the subject, so it could not be cropped. Original kept as above |
-| `07-the-ring-red-floor.jpg` | **CLEAR** | `4c4eb64d76d580cc219e91774cdd885651d1cd462981e9cc4b3a3e5db416dc92` | lane, 2026-10-02 | The ring reference. Chalked combination numbers on the wall band — training content, not a person's name |
-| `08-blue-mat-room.jpg` | **CLEAR** | `62c6ec400b2e1f663d15927c1e0a4056bea9d31c5a0eb12457bbb62ce8750c07` | lane, 2026-10-02 | Nothing noted |
-| `09-whiteboards-grey-floor.jpg` | **HOLD** | `f2c85a0e14dc4bca18cafd8de99eb0384ef5ca982cdeb9a11b1fa5348d53c960` | lane, 2026-10-02 | No person in frame, but whiteboards carry handwritten session content. Held |
-| `10-cardio-3rd-infantry.jpg` | **HOLD** | `d2e9bec48932c735c9100421b6c99e8386848aa0c3d020f82188d0f9e131f0bf` | lane, 2026-10-02 | No person in frame, but certificates carry a name. **Byte-identical to `04`.** Held |
+| `01-bag-frame-timber.jpg` | **CLEAR** | `f3012d405ed054f05fb0db9cf71b24dffe84bfaaf43d91d8cef9bf9b809a2e4f` | lane, 2026-10-02 | **People removed.** Three people reflected in the right-hand mirror; cropped, mirror gone. Original in `_originals-PEOPLE-DO-NOT-SEND/` |
+| `02-bag-row-pipe-rail.jpg` | **CLEAR** | `fb507cf3b9ba66cc9006e10e94003547c85f44946d84e6c7a9b1a3f7f34f8a91` | lane, 2026-10-02 | **People removed.** A person in the left foreground; cropped. Original kept as above |
+| `03-glove-shelves.jpg` | **CLEAR** | `94fe07631f321b936d748cdfa90ac2210d7963537ce62667f0df178ca0ad2b3a` | lane, 2026-10-02 | **Name masked.** The shelf label carried a surname; blurred. Original in `_originals-UNMASKED-NAMES/` |
+| `04-cardio-and-certificates.jpg` | **CLEAR** | `b7d6c82fe320947a55eb7e37842798ce33aac4a418360ee7e05ff9530b856003` | lane, 2026-10-02 | **Names masked.** Framed coach certificates, both walls; blurred. **Byte-identical to `10`.** Original kept as above |
+| `05-locker-room.jpg` | **CLEAR** | `3722973e0d026c31604fc6d6ec6c1a67a7b9e8c43eb1cc8ebfcdd1bf509e08c1` | lane, 2026-10-02 | **Names masked.** Locker name tags on both banks and the far-wall certificates; blurred. Original kept as above |
+| `06-flag-and-mirror-wall.jpg` | **CLEAR** | `eb682271827da5490e9aafa2b38aecff4d58e110fbfbbc564877dc3a7a6cba69` | lane, 2026-10-02 | **People removed.** A person reflected in the wall mirror; the mirror interior masked flat. The mirror is the subject, so it could not be cropped. Original in `_originals-PEOPLE-DO-NOT-SEND/` |
+| `07-the-ring-red-floor.jpg` | **CLEAR** | `4c4eb64d76d580cc219e91774cdd885651d1cd462981e9cc4b3a3e5db416dc92` | lane, 2026-10-02 | The ring reference. Unaltered. Chalked combination numbers on the wall band are training content, not a name |
+| `08-blue-mat-room.jpg` | **CLEAR** | `62c6ec400b2e1f663d15927c1e0a4056bea9d31c5a0eb12457bbb62ce8750c07` | lane, 2026-10-02 | Unaltered. Nothing noted |
+| `09-whiteboards-grey-floor.jpg` | **CLEAR** | `e30d0fdfd6ff60645355a8cfe1909d14b7ccc565617b78205134ef7cb94aa6b1` | lane, 2026-10-02 | **Masked.** Whiteboards of handwritten session content and the framed documents on the left wall; blurred. Original in `_originals-UNMASKED-NAMES/` |
+| `10-cardio-3rd-infantry.jpg` | **CLEAR** | `b7d6c82fe320947a55eb7e37842798ce33aac4a418360ee7e05ff9530b856003` | lane, 2026-10-02 | **Names masked**, same regions as `04`. **Byte-identical to `04`.** Original kept as above |
 
 **WHO "LOOKED AT BY" MEANS, STATED PLAINLY BECAUSE IT MATTERS.** `lane` means
 this Claude session opened each photograph at full size. **It does not mean a
-person has.** An earlier draft of this record said "a human" and that was
-false — a reviewer caught it. Until Jason or another actual person opens these
-exact bytes and confirms the rows, every status here is **REPORTED by the lane,** 
-**not human-verified**, and should be read that way by anyone deciding whether
-a photograph may leave this machine.
+person has.** An earlier draft said "a human" and that was false; a reviewer
+caught it. Owner ruling, 2026-10-02, asked whether he or a coach should check
+instead: **"Lane verification is enough — leave it labelled."** So it stays
+labelled, and every status here is **REPORTED by the lane, not human-verified**.
+Anyone deciding whether a photograph may leave this machine should read it that
+way.
 
-**WHY FIVE ROWS ARE HELD, AND THE OWNER DECISION THAT RELEASES THEM.** `CLEAR`
-answers one question: is there an identifiable person in the frame. It does not
-answer a second one: may an image carrying **personal names** go to a
-third-party endpoint. Names appear on lockers, on framed coach certificates and
-on a glove-shelf label. The lockers are the sharp case: this is a youth gym.
-Until the owner rules, those five are **HOLD** and cannot be sent. That is the
-fail-closed reading and it costs five references rather than risking one.
+**WHY EVERY ROW IS NOW CLEAR, AND WHAT WAS MASKED TO GET THERE.** `CLEAR`
+answers one question: is there an identifiable person in the frame. It did not
+answer a second one this table raised in its own notes — may an image carrying
+**personal names** go to a third-party endpoint. Five rows were held on that,
+the lockers being the sharp case because this is a youth gym. Put to the owner,
+2026-10-02, who chose **"Mask the names, then release all ten"**. So the name
+regions are blurred rather than the rows refused: a blurred certificate still
+reads as a framed certificate on a wall, which is what a materials reference
+needs, while a flat fill reads as a black rectangle and a generator draws one.
 
-**`04` and `10` ARE THE SAME PHOTOGRAPH** under two names — byte-identical,
-1,249,044 bytes, the same SHA-256. Found by hashing, not by looking. A hash
-therefore does not identify a row on its own, which is why the guard matches
-the pair.
+**THE FIRST CERTIFICATE MASK WAS PARTIAL** and left the signature block sharp,
+which is the failure mode this whole record exists to catch. Found by enlarging
+the masked file and looking at it, not by trusting the coordinates. Widened and
+checked again.
+
+**`04` and `10` ARE THE SAME PHOTOGRAPH** under two names — byte-identical
+before masking and after it. Found by hashing, not by looking. A hash therefore
+does not identify a row on its own, which is why the guard matches the pair.
 
 **NOT LISTED, and refused by absence:** everything in
-`_originals-PEOPLE-DO-NOT-SEND/` (the three unaltered originals, which DO
-contain people), `from-thread-2026-10-01/`, `grok-boxing-2026-10-01/`,
+`_originals-PEOPLE-DO-NOT-SEND/` (three unaltered originals, which DO contain
+people), `_originals-UNMASKED-NAMES/` (five unaltered originals, which carry
+names), `from-thread-2026-10-01/`, `grok-boxing-2026-10-01/`,
 `grok-rooms-2026-10-01/`, `walk-2026-09-30/` and `project-instructions/`.
 
 **To add a photograph: open it at FULL SIZE**, look at every mirror, doorway and
-reflection, record its SHA-256, then add a row. A contact sheet is how `01` and
-`02` were caught, but full size is how they were confirmed.
+reflection, mask any personal name, record the SHA-256 of the final bytes, then
+add a row. A contact sheet is how `01` and `02` were caught, but full size is
+how they were confirmed.
 
 ---
 ## 5. Room mapping (how DNA is framed, not invented)

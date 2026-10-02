@@ -94,11 +94,19 @@ describe('the vetting record itself', () => {
     for (const r of CLEAR) expect(r.sha).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  test('holds the rows that carry personal names, pending the owner', () => {
-    /* CLEAR answers "is there a person in frame". It does not answer "may an
-       image carrying personal names leave this machine". Until the owner rules,
-       those rows are HOLD and the script refuses them. */
-    expect(HELD.length).toBeGreaterThan(0);
+  test('every row is CLEAR or HOLD, and nothing else counts as vetted', () => {
+    /* Five rows were HOLD while an owner decision was open: CLEAR answers "is
+       there a person in frame", not "may an image carrying personal names leave
+       this machine". He ruled on 2026-10-02 -- "Mask the names, then release all
+       ten" -- so the names are blurred and every row is CLEAR again.
+
+       HOLD is not dead and is not tested by a fixture. The parser builds its map
+       from CLEAR rows only, so a HOLD row and an absent row take the SAME code
+       path, and that path is proven by the "nobody has looked at" test below.
+       Holding a photograph needs a word in the table and no code change. */
+    expect(ROWS.length).toBeGreaterThanOrEqual(10);
+    expect(ROWS.length).toBe(CLEAR.length + HELD.length);
+    for (const r of ROWS) expect(r.sha).toMatch(/^[0-9a-f]{64}$/);
   });
 });
 
@@ -108,13 +116,6 @@ describe('what the generator refuses', () => {
     expect(status).toBe(2);
     expect(output).toContain('not CLEAR on the vetting record');
     expect(output).toContain('FULL SIZE');
-  });
-
-  test('a HOLD row, exactly as if it were absent', () => {
-    const { status, output } = run([HELD[0].file, CLEAR[0].file]);
-    expect(status).toBe(2);
-    expect(output).toContain('not CLEAR on the vetting record');
-    expect(output).toContain(HELD[0].file);
   });
 
   test('a VETTED BASENAME sitting in an unvetted subfolder', () => {
