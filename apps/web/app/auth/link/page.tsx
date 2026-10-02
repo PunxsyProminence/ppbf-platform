@@ -57,10 +57,6 @@ function PasswordPrompt({ onDone }: { onDone: () => void }) {
   const [problem, setProblem] = useState('');
   const [linkTooOld, setLinkTooOld] = useState(false);
   const [saved, setSaved] = useState(false);
-  // A second request that overlaps a successful one meets the route's
-  // one-second pause and answers 429. The password WAS saved, so once a 200
-  // has been seen no later answer may put an error on the screen.
-  const savedOnce = useRef(false);
   // The form, and the button that had focus, are gone once the prompt has an
   // answer. Focus moves to what replaced them rather than back to the top.
   const answerPanel = useRef<HTMLElement>(null);
@@ -95,7 +91,6 @@ function PasswordPrompt({ onDone }: { onDone: () => void }) {
       const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: unknown; code?: unknown };
 
       if (response.ok && payload.ok) {
-        savedOnce.current = true;
         setSaved(true);
         return;
       }
@@ -115,7 +110,6 @@ function PasswordPrompt({ onDone }: { onDone: () => void }) {
       setBusy(false);
     }
 
-    if (savedOnce.current) return;
     if (tooOld) {
       setLinkTooOld(true);
       return;
@@ -123,6 +117,11 @@ function PasswordPrompt({ onDone }: { onDone: () => void }) {
     setProblem(outcome);
   }
 
+  // Saved is checked FIRST, ahead of the too-old view and the form with its
+  // error line. A second request that overlaps a successful one meets the
+  // route's one-second pause and answers 429 (or finds the link too old): the
+  // password WAS saved, so once a 200 has been seen nothing a later answer
+  // sets can take this view off the screen.
   if (saved) {
     return (
       <section ref={answerPanel} tabIndex={-1} className="grid gap-[var(--s5)]">

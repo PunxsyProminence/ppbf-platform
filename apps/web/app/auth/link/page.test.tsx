@@ -28,7 +28,7 @@ const PASSWORD = '  three small quiet words  ';
 type Answer = { status: number; body: unknown };
 const answer = (status: number, body: unknown): Answer => ({ status, body });
 
-let setCalls: Array<{ body: string; init: RequestInit }>;
+let setCalls: Array<{ url: string; body: string; init: RequestInit }>;
 let sessionCalls: number;
 let consoleSpies: jest.SpyInstance[];
 const originalFetch = global.fetch;
@@ -63,7 +63,7 @@ function serve(
       return reply(answer(200, { authenticated: true, role: 'parent', auth_provider: 'microsoft' }));
     }
     if (url.endsWith(SET)) {
-      setCalls.push({ body: String(init?.body), init: init ?? {} });
+      setCalls.push({ url, body: String(init?.body), init: init ?? {} });
       const next = queue.shift();
       if (!next) throw new Error('unexpected set-password request');
       return reply(typeof next === 'function' ? await next() : next);
@@ -77,6 +77,8 @@ beforeEach(() => {
   setCalls = [];
   sessionCalls = 0;
   clearRoleSession();
+  window.localStorage.clear();
+  window.sessionStorage.clear();
   consoleSpies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((level) =>
     jest.spyOn(console, level).mockImplementation(() => undefined));
 });
@@ -99,14 +101,25 @@ function type(first: string, second: string = first) {
 
 const saveButton = () => screen.getByRole('button', { name: 'Save Password' });
 
-/** The password must not be readable in the page's markup or in any console line. */
-function expectPasswordNowhere() {
-  expect(document.body.textContent).not.toContain(PASSWORD.trim());
+/** Everything a console call was given, as text. An Error is its message and stack, not "{}". */
+function consoleText(): string {
+  return consoleSpies
+    .flatMap((spy) => spy.mock.calls.flat())
+    .map((arg) => (arg instanceof Error ? `${arg.message} ${arg.stack}` : typeof arg === 'string' ? arg : JSON.stringify(arg)))
+    .join(' ');
+}
+
+/** The password must not be readable in the page's markup, in browser storage, in a URL or in any console line. */
+function expectPasswordNowhere(secret: string = PASSWORD) {
+  const needle = secret.trim();
+  expect(document.body.textContent).not.toContain(needle);
   // Markup too: no value attribute, aria text or anything else carries it.
-  expect(document.body.innerHTML).not.toContain(PASSWORD.trim());
-  for (const spy of consoleSpies) {
-    expect(JSON.stringify(spy.mock.calls)).not.toContain(PASSWORD.trim());
-  }
+  expect(document.body.innerHTML).not.toContain(needle);
+  expect(JSON.stringify({ ...window.localStorage })).not.toContain(needle);
+  expect(JSON.stringify({ ...window.sessionStorage })).not.toContain(needle);
+  expect(consoleText()).not.toContain(needle);
+  const urls = (global.fetch as jest.Mock).mock.calls.map((call) => String(call[0])).join(' ');
+  expect(decodeURIComponent(urls)).not.toContain(needle);
 }
 
 describe('whether the prompt is shown', () => {
@@ -120,23 +133,41 @@ describe('whether the prompt is shown', () => {
     render(<MagicLinkPage />);
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/parent/dashboard'));
     expect(replace).toHaveBeenCalledTimes(1);
+    expect(readRoleSession()?.role).toBe('parent');
     expect(screen.queryByRole('heading', { name: 'Make A Password' })).toBeNull();
     expect(setCalls).toHaveLength(0);
+  });
+
+  test('password_setup offer, but the session could not be confirmed: the old refusal, no prompt', async () => {
+    serve('offer', [], { session: answer(401, { authenticated: false }) });
+    render(<MagicLinkPage />);
+    expect((await screen.findByRole('alert')).textContent)
+      .toContain('Signed in, but the session could not be confirmed. Try the sign-in page.');
+    expect(screen.queryByRole('heading', { name: 'Make A Password' })).toBeNull();
+    expect(replace).not.toHaveBeenCalled();
+    expect(readRoleSession()).toBeNull();
   });
 
   test('password_setup offer: the prompt is shown, the parent is already signed in, and nothing has redirected', async () => {
     await reachPrompt();
     expect(replace).not.toHaveBeenCalled();
     expect(readRoleSession()?.role).toBe('parent');
-    expect(screen.getByText(PASSWORD_RULE_SUMMARY)).toBeTruthy();
-    expect(screen.getByLabelText('Password').getAttribute('type')).toBe('password');
-    expect(screen.getByLabelText('Type it again').getAttribute('type')).toBe('password');
+    expect(screen.getByRole('form', { name: 'Make A Password' })).toBeTruthy();
+    for (const label of ['Password', 'Type it again']) {
+      expect(screen.getByLabelText(label).getAttribute('type')).toBe('password');
+      // What tells a password manager to offer to save it.
+      expect(screen.getByLabelText(label).getAttribute('autocomplete')).toBe('new-password');
+    }
+    // The server's own sentence, and it is tied to the box it describes.
+    expect(screen.getByLabelText('Password').getAttribute('aria-describedby')).toBe(screen.getByText(PASSWORD_RULE_SUMMARY).id);
     expect(setCalls).toHaveLength(0);
   });
 });
 
 test('Not Now skips: no password request, and the parent lands where the link lands', async () => {
   await reachPrompt();
+  // Even with a password typed: skipping sends nothing.
+  type(PASSWORD);
   fireEvent.click(screen.getByRole('button', { name: 'Not Now' }));
   expect(replace).toHaveBeenCalledTimes(1);
   expect(replace).toHaveBeenCalledWith('/parent/dashboard');
@@ -149,9 +180,13 @@ describe('saving', () => {
     type(PASSWORD);
     fireEvent.click(saveButton());
 
-    expect(await screen.findByText('Password saved. Next time, sign in with your email and this password in any browser.')).toBeTruthy();
+    await screen.findByRole('status');
+    expect(screen.getByRole('status').textContent)
+      .toBe('Password saved. Next time, sign in with your email and this password in any browser.');
     expect(setCalls).toHaveLength(1);
+    expect(setCalls[0].url).toBe('/api/pilot/auth/password/set');
     expect(setCalls[0].body).toBe(JSON.stringify({ password: PASSWORD }));
+    expect((setCalls[0].init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
     expect(setCalls[0].init.method).toBe('POST');
     expect(setCalls[0].init.credentials).toBe('include');
     // The form, and the typed value with it, is gone.
@@ -163,6 +198,7 @@ describe('saving', () => {
     expect(document.activeElement).toBe(screen.getByRole('status').parentElement);
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(replace).toHaveBeenCalledTimes(1);
     expect(replace).toHaveBeenCalledWith('/parent/dashboard');
     expectPasswordNowhere();
   });
@@ -209,6 +245,26 @@ describe('saving', () => {
     expect(screen.queryByText(/Too many tries/)).toBeNull();
     expect(screen.getByText(/^Password saved\./)).toBeTruthy();
   });
+
+  test('a link-too-old answer that follows a 200 is still saved', async () => {
+    await reachPrompt([
+      answer(200, { ok: true }),
+      answer(403, { error: 'Forbidden: open a new sign-in link from your email to set a password', code: 'PASSWORD_SETUP_LINK_REQUIRED' }),
+    ]);
+    type(PASSWORD);
+    const form = saveButton().closest('form') as HTMLFormElement;
+    act(() => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    await waitFor(() => expect(setCalls).toHaveLength(2));
+    expect(await screen.findByText(/^Password saved\./)).toBeTruthy();
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByText(/too old/)).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Back To Sign In' })).toBeNull();
+  });
 });
 
 describe('refusals', () => {
@@ -217,6 +273,35 @@ describe('refusals', () => {
     fireEvent.click(saveButton());
     expect((await screen.findByRole('alert')).textContent).toBe('Type a password first.');
     expect(setCalls).toHaveLength(0);
+  });
+
+  test('an empty first box is empty whatever the second holds', async () => {
+    await reachPrompt();
+    type('', 'x');
+    fireEvent.click(saveButton());
+    expect((await screen.findByRole('alert')).textContent).toBe('Type a password first.');
+    expect(setCalls).toHaveLength(0);
+  });
+
+  test('spaces are a password as far as this page is concerned: sent as typed, and the server decides', async () => {
+    await reachPrompt([answer(400, { error: 'Password must be at least 10 characters', code: 'PASSWORD_TOO_SHORT' })]);
+    type('   ');
+    fireEvent.click(saveButton());
+    expect((await screen.findByRole('alert')).textContent).toBe('Password must be at least 10 characters');
+    expect(setCalls).toHaveLength(1);
+    expect(setCalls[0].body).toBe(JSON.stringify({ password: '   ' }));
+  });
+
+  test.each([
+    ['a leading space', ' three small quiet words', 'three small quiet words'],
+    ['a capital letter', 'Three small quiet words', 'three small quiet words'],
+  ])('two boxes that differ by %s are caught here and nothing is sent', async (_label, first, second) => {
+    await reachPrompt();
+    type(first, second);
+    fireEvent.click(saveButton());
+    expect((await screen.findByRole('alert')).textContent).toBe('Those two don’t match. Type them again.');
+    expect(setCalls).toHaveLength(0);
+    expectPasswordNowhere(second);
   });
 
   test('two boxes that differ, even by one trailing space, are caught here and nothing is sent', async () => {
@@ -236,10 +321,48 @@ describe('refusals', () => {
     fireEvent.click(saveButton());
     expect((await screen.findByRole('alert')).textContent).toBe('That password is too easy to guess. Choose something longer or less obvious.');
     expect(screen.getByLabelText('Password')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Not Now' }) as HTMLButtonElement).disabled).toBe(false);
+    expectPasswordNowhere();
 
+    // With an error already showing, the two boxes are still compared.
+    type(PASSWORD, `${PASSWORD}x`);
+    fireEvent.click(saveButton());
+    expect((await screen.findByText('Those two don’t match. Type them again.'))).toBeTruthy();
+    expect(setCalls).toHaveLength(1);
+
+    type(PASSWORD);
     fireEvent.click(saveButton());
     expect(await screen.findByText(/^Password saved\./)).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
+    expect(setCalls).toHaveLength(2);
+  });
+
+  test('the last error is taken down while the next save is out', async () => {
+    let release: (a: Answer) => void = () => undefined;
+    await reachPrompt([
+      answer(429, { error: 'Too many attempts. Please try again later.' }),
+      () => new Promise<Answer>((resolve) => { release = resolve; }),
+    ]);
+    type(PASSWORD);
+    fireEvent.click(saveButton());
+    await screen.findByRole('alert');
+    fireEvent.click(saveButton());
+    await waitFor(() => expect((saveButton() as HTMLButtonElement).disabled).toBe(true));
+    expect(screen.queryByRole('alert')).toBeNull();
+    await act(async () => { release(answer(200, { ok: true })); });
+    expect(await screen.findByText(/^Password saved\./)).toBeTruthy();
+  });
+
+  test('a set-route answer that is not JSON: the plain could-not-save line', async () => {
+    await reachPrompt();
+    (global.fetch as jest.Mock).mockImplementationOnce(async (url: string, init?: RequestInit) => {
+      setCalls.push({ url, body: String(init?.body), init: init ?? {} });
+      return { ok: false, status: 502, json: async () => { throw new SyntaxError('Unexpected token <'); } } as unknown as Response;
+    });
+    type(PASSWORD);
+    fireEvent.click(saveButton());
+    expect((await screen.findByRole('alert')).textContent)
+      .toBe('Could not save the password right now. You can skip this and try from a new link later.');
   });
 
   test.each([
@@ -249,6 +372,11 @@ describe('refusals', () => {
     ['403 without the link-required code', answer(403, { error: 'Forbidden: something else' })],
     ['500', answer(500, { error: 'Internal server error' })],
     ['200 without ok', answer(200, {})],
+    ['500 that says ok', answer(500, { ok: true })],
+    ['403 with a near miss of the link-required code', answer(403, { error: 'server text', code: 'PASSWORD_SETUP_LINK_REQUIRED_X' })],
+    ['500 with a password code', answer(500, { error: 'server text', code: 'PASSWORD_TOO_SHORT' })],
+    ['400 with a code that only contains the word', answer(400, { error: 'server text', code: 'MISSING_PASSWORD' })],
+    ['400 with a password code and an error that is not text', answer(400, { error: { a: 1 }, code: 'PASSWORD_TOO_SHORT' })],
   ])('%s: the plain could-not-save line, never the server text, and the form stays', async (_label, response) => {
     await reachPrompt([response]);
     type(PASSWORD);
@@ -269,6 +397,16 @@ describe('refusals', () => {
     expectPasswordNowhere();
     fireEvent.click(screen.getByRole('button', { name: 'Not Now' }));
     expect(replace).toHaveBeenCalledWith('/parent/dashboard');
+    expect(setCalls).toHaveLength(1);
+  });
+
+  test('the link-required code on any status but 403 is not the too-old view', async () => {
+    await reachPrompt([answer(400, { error: 'server text', code: 'PASSWORD_SETUP_LINK_REQUIRED' })]);
+    type(PASSWORD);
+    fireEvent.click(saveButton());
+    await screen.findByRole('alert');
+    expect(screen.queryByText(/too old/)).toBeNull();
+    expect(screen.getByLabelText('Password')).toBeTruthy();
   });
 
   test('429 with no save before it: wait and try again, not saved, the form stays', async () => {
@@ -278,6 +416,8 @@ describe('refusals', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('Too many tries. Wait a minute and try again.');
     expect(screen.queryByText(/^Password saved\./)).toBeNull();
     expect(screen.getByLabelText('Password')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Not Now' }) as HTMLButtonElement).disabled).toBe(false);
+    expectPasswordNowhere();
   });
 
   test('403 PASSWORD_SETUP_LINK_REQUIRED: says the link is too old, takes the form away, offers the sign-in page and Continue', async () => {
@@ -299,6 +439,7 @@ describe('refusals', () => {
     expect(document.activeElement).toBe(screen.getByRole('alert').parentElement);
     expect(replace).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(replace).toHaveBeenCalledTimes(1);
     expect(replace).toHaveBeenCalledWith('/parent/dashboard');
     expectPasswordNowhere();
   });
@@ -407,5 +548,6 @@ describe('a link that has already been used', () => {
     expect((await screen.findByRole('alert')).textContent).toContain(words);
     expect(sessionCalls).toBe(0);
     expect(replace).not.toHaveBeenCalled();
+    expect(screen.queryByRole('heading', { name: 'Make A Password' })).toBeNull();
   });
 });
