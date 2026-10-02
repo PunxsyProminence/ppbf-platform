@@ -164,15 +164,17 @@ and should not try to.
 
 ---
 
-## OD-2026-10-01-006 -- SHADOW: educate, do not restrict, and a coach is told; emergency reviews get their own hourly allowance; the #1036 replacement re-cut
+## OD-2026-10-01-006 -- SHADOW: educate, do not restrict; coach notification is part of the intended safety handling; emergency reviews get a separate hourly allowance; the #1036 replacement re-cut
 
 **Provenance: PRIMARY.** Section 1's three messages were typed by Jason in the
 Lane A thread and read by overwatch in that thread's transcript
 (`C--Dev/621541d7-de10-407e-8fb4-67468f9758b5.jsonl`), times UTC. Section 2's
 answer was typed in the overwatch thread (transcript as in OD-2026-09-30-007).
 **Date:** 2026-10-01 (his evening; the UTC times in section 1 run past
-midnight). This entry is new and edits no earlier one. Ids -004 and -005 are
-taken by the visual lane's open PRs #1068 and #1077.
+midnight). This entry is new. The same PR adds one dated status update
+to OD-2026-09-30-006's Status paragraph and changes nothing else in any
+earlier entry. Ids -004 and -005 are taken by the visual lane's open PRs #1068
+and #1077.
 
 ### 1. Educate, not restrict; notifying a coach is part of it
 
@@ -220,7 +222,9 @@ OD-2026-09-30-005 gave the human-review write a limit of 3 per hour per
 account. OD-2026-09-30-006 selection 5 gave every high-risk message a human
 review. Built together (Lane A, unpushed), three ordinary review records could
 use the hour, so a later emergency report kept its emergency reply but left no
-review row; `main` always wrote that row. ChatGPT ruled the choice his. Asked:
+review row. `main` had no review-queue quota on that path, so quota exhaustion
+could not suppress the critical write; in Lane A's measured `main` sequence the
+row was written (REPORTED). ChatGPT ruled the choice his. Asked:
 
 "Official: you chose 3 SHADOW human-review records per hour per account. With
 every high-risk question now adding a record, three ordinary ones can use up
@@ -232,12 +236,21 @@ always write a record, with no limit."
 
 Jason, whole message: *"A"*.
 
-**A.** In ChatGPT's terms: one bucket of 3 per hour per account for critical
-request reviews only; a separate bucket of 3 per hour per account for the other
-high-risk request reviews and the generated-answer safety reviews. A fourth
-critical request in the hour is still suppressed: the emergency path is
-bounded, not unlimited. This narrows what OD-2026-09-30-005's single
-`safety_review` bucket covers; it does not change the number he chose.
+**A.** Two buckets, each 3 per hour per account:
+
+1. **Critical (emergency) request review writes** only.
+2. **All other SHADOW human-review writes.** That is "everything else", as the
+   option he chose says, and includes as applicable: non-critical high-risk
+   request reviews; generated-answer safety reviews written by the chat route;
+   generated-answer safety reviews written by the background worker; and the
+   existing operational or filter review rows, such as the row written when
+   the Library is empty.
+
+A fourth critical review write in the hour is suppressed; the emergency
+response is not. The limit is on persisting the review row, never on the reply
+(OD-2026-09-30-005: exhaustion suppresses the write only). This narrows what
+OD-2026-09-30-005's single `safety_review` bucket covers; it does not change
+the number he chose.
 
 Other questions were open with him at the time (a hold sentence, the act-now
 threshold, the coach recipient and others). Overwatch reads "A" as the answer
@@ -1064,7 +1077,7 @@ them are delivered. Done for lanes 11 to 14.
 
 ## OD-2026-09-30-006 -- High-risk chat questions get education, not a refusal; acute reports get education plus an act-now line
 
-**Status, 2026-10-01:** recorded on `main` by a records PR ahead of PR #1036, which builds it and is not merged; Jason, asked whether to move this record so PR #1058 need not wait on #1036: *"Yes to 1 and 2"*. The text below was PORTED from PR #1036's branch at `9208457a` and is not identical to it: on the way to `main` it gained this paragraph and the next, "four selections" became "five" in two places, and the chest-pain attribution was corrected. Nothing in it is built on `main` until #1036 lands.
+**Status, 2026-10-01:** recorded on `main` by a records PR ahead of PR #1036, which builds it and is not merged; Jason, asked whether to move this record so PR #1058 need not wait on #1036: *"Yes to 1 and 2"*. The text below was PORTED from PR #1036's branch at `9208457a` and is not identical to it: on the way to `main` it gained this paragraph and the next, "four selections" became "five" in two places, and the chest-pain attribution was corrected. Nothing in it is built on `main` until #1036 lands. **Status update, 2026-10-02:** #1036 is being superseded by the replacement sequence in OD-2026-10-01-006 section 3. PR #1058 has already landed the teach-first prompt portion; the remaining route and classifier behaviour is being built through that replacement sequence.
 
 **Checked against the transcript, 2026-10-01** (the closed AI/ML lane's thread; a
 read-only pass that read each reply with the message or option set it answered).
