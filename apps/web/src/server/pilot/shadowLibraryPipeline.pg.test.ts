@@ -404,6 +404,136 @@ describe('SHADOW Library write path (real database)', () => {
   });
 });
 
+// RINT-01. Manual text intake writes a document that declares how many parts
+// its text has, then writes the parts one request at a time. A run that stops
+// part-way leaves a document holding the first few parts. Before this gate,
+// "at least one non-empty chunk" let a reviewer index and approve it, and
+// search then served a truncated excerpt as the whole. Everything below goes
+// through the real routes against the real schema.
+describe('manual text intake: an incomplete excerpt cannot be indexed, approved or served (real database)', () => {
+  const PARTS = [
+    'Zebrafinch alpha passage one of the pasted excerpt.',
+    'Zebrafinch beta passage two of the pasted excerpt.',
+    'Zebrafinch gamma passage three of the pasted excerpt.',
+  ];
+  let sourceId: string;
+
+  async function manualDocument(name: string, metadata: Record<string, unknown>): Promise<string> {
+    const response = await routes.postDocument(jsonRequest('/api/pilot/shadow/library/documents', 'POST', {
+      source_id: sourceId,
+      document_name: name,
+      metadata,
+    }));
+    expect(response.status).toBe(201);
+    return (await response.json()).document.document_id as string;
+  }
+
+  async function part(documentId: string, ordinal: number, text: string) {
+    const response = await routes.postChunk(jsonRequest('/api/pilot/shadow/library/chunks', 'POST', {
+      document_id: documentId,
+      ordinal,
+      text_content: text,
+      metadata: { intake_method: 'manual_text', locator: 'p. 1', join_before: ordinal === 0 ? '' : '\n\n' },
+    }));
+    expect(response.status).toBe(201);
+  }
+
+  function review(documentId: string, body: Record<string, unknown>) {
+    return routes.patchReview(jsonRequest('/api/pilot/shadow/evidence/review', 'PATCH', {
+      entityType: 'document',
+      entityId: documentId,
+      ...body,
+    }));
+  }
+
+  async function ingestState(documentId: string) {
+    const rows = await rawQuery<{ ingest_state: string; index_completed_at: string | null; approval_state: string }>(
+      'select ingest_state, index_completed_at, approval_state from pilot.shadow_library_documents where document_id = $1',
+      [documentId],
+    );
+    return rows[0];
+  }
+
+  test('setup: an approved source for the excerpts', async () => {
+    const response = await routes.postSource(jsonRequest('/api/pilot/shadow/library/sources', 'POST', {
+      title: 'Zebrafinch Monograph',
+      source_type: 'peer_reviewed',
+      authority_tier: 2,
+      status: 'active',
+    }));
+    expect(response.status).toBe(201);
+    sourceId = (await response.json()).source.source_id;
+    const approved = await routes.patchReview(jsonRequest('/api/pilot/shadow/evidence/review', 'PATCH', {
+      entityType: 'source', entityId: sourceId, action: 'review', approvalState: 'approved',
+    }));
+    expect(approved.status).toBe(200);
+  });
+
+  test('two of three declared parts stored: indexing is refused with the count, approval is refused, nothing is served', async () => {
+    const documentId = await manualDocument('Partial excerpt', { intake_method: 'manual_text', locator: 'p. 1', chunk_count: 3 });
+    await part(documentId, 0, PARTS[0]);
+    await part(documentId, 1, PARTS[1]);
+
+    const indexing = await review(documentId, { action: 'complete_indexing' });
+    expect(indexing.status).toBe(409);
+    const body = await indexing.json();
+    expect(body.code).toBe('SHADOW_LIBRARY_DOCUMENT_INCOMPLETE');
+    expect(body.error).toContain('2 of 3 parts');
+
+    const state = await ingestState(documentId);
+    expect(state.ingest_state).not.toBe('indexed');
+    expect(state.index_completed_at).toBeNull();
+
+    // Approval needs an indexed document, so the refusal above closes it too.
+    const approval = await review(documentId, { action: 'review', approvalState: 'approved' });
+    expect(approval.status).not.toBe(200);
+    expect((await ingestState(documentId)).approval_state).toBe('pending_review');
+
+    expect(await search('zebrafinch alpha passage')).toHaveLength(0);
+
+    // The same document, once the missing part arrives, goes through.
+    await part(documentId, 2, PARTS[2]);
+    expect((await review(documentId, { action: 'complete_indexing' })).status).toBe(200);
+    expect((await review(documentId, { action: 'review', approvalState: 'approved' })).status).toBe(200);
+    const served = await search('zebrafinch passage excerpt');
+    expect(served.map((result) => result.text_content).sort()).toEqual([...PARTS].sort());
+  });
+
+  test('the right number of parts at the wrong ordinals is still incomplete', async () => {
+    const documentId = await manualDocument('Gapped excerpt', { intake_method: 'manual_text', locator: 'p. 2', chunk_count: 2 });
+    await part(documentId, 0, 'Quokka first passage.');
+    await part(documentId, 5, 'Quokka stray passage.');
+
+    const indexing = await review(documentId, { action: 'complete_indexing' });
+    expect(indexing.status).toBe(409);
+    expect((await ingestState(documentId)).ingest_state).not.toBe('indexed');
+  });
+
+  test.each([
+    ['missing', { intake_method: 'manual_text', locator: 'p. 3' }],
+    ['zero', { intake_method: 'manual_text', locator: 'p. 3', chunk_count: 0 }],
+    ['not a number', { intake_method: 'manual_text', locator: 'p. 3', chunk_count: 'two' }],
+    ['a fraction', { intake_method: 'manual_text', locator: 'p. 3', chunk_count: 1.5 }],
+  ])('a manual-text document whose declared count is %s fails closed', async (label, metadata) => {
+    const documentId = await manualDocument(`Undeclared excerpt (${label})`, metadata);
+    await part(documentId, 0, `Numbat passage for the ${label} case.`);
+
+    const indexing = await review(documentId, { action: 'complete_indexing' });
+    expect(indexing.status).toBe(409);
+    expect((await indexing.json()).code).toBe('SHADOW_LIBRARY_DOCUMENT_INCOMPLETE');
+    expect((await ingestState(documentId)).ingest_state).not.toBe('indexed');
+  });
+
+  test('a document that is not manual text intake is not held to a declared count', async () => {
+    // The imported corpus and the doctrine seed declare nothing. A stray
+    // chunk_count on such a document must not start gating it.
+    const documentId = await manualDocument('Seeded document', { canonical: true, chunk_count: 9 });
+    await part(documentId, 0, 'Wombat seeded passage.');
+    expect((await review(documentId, { action: 'complete_indexing' })).status).toBe(200);
+    expect((await ingestState(documentId)).ingest_state).toBe('indexed');
+  });
+});
+
 describe('capability coverage (real database)', () => {
   test('a rule with no matching source grades as uncovered', async () => {
     const response = await routes.postCoverage(

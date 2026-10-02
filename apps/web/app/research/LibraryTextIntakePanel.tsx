@@ -147,7 +147,7 @@ export default function LibraryTextIntakePanel({ sources }: { readonly sources: 
                   setResume(null);
                   setOutcome({
                     kind: 'refused',
-                    message: 'Left incomplete. The partial entry is still listed in Evidence Review, where it can be rejected.',
+                    message: 'Left incomplete. The partial entry is still listed in Evidence Review. It cannot be indexed or approved there; reject it, then enter the text again.',
                   });
                 }}>
                 Leave it incomplete
