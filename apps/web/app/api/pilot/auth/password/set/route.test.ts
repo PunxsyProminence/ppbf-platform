@@ -322,7 +322,10 @@ describe('POST /api/pilot/auth/password/set', () => {
 
       expect(hashRan.mock.calls.length).toBeGreaterThanOrEqual(5);
       expect(hashRan.mock.calls.length).toBeLessThanOrEqual(25);
-    });
+      // 9,000 requests. Its own timeout: on a CI runner this sat at jest's
+      // 5-second default, and a timed-out loop keeps posting under the tests
+      // after it.
+    }, 30_000);
 
     test('success does not clear the hash allowance; it clears only the refusal buckets', async () => {
       await post({ password: GOOD_PASSWORD });
