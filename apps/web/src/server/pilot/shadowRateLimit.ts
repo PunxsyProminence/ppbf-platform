@@ -69,7 +69,8 @@ export interface ShadowRateLimitPolicy {
 }
 
 /**
- * Every SHADOW rate limit, in one place and tunable from the environment.
+ * Every SHADOW rate limit, in one place; all but the two review buckets are
+ * tunable from the environment.
  *
  * These were literals at each call site, so a cap that turned away a real user
  * could only be raised by editing code and shipping a release. Early pilot usage
@@ -77,7 +78,9 @@ export interface ShadowRateLimitPolicy {
  * and someone who hits a wall then reads the product as broken and does not come
  * back. The defaults below are therefore sized for enthusiastic ordinary use
  * rather than for worst-case abuse, and each one can be raised or lowered
- * through PPBF_SHADOW_RATE_LIMIT_<KEY> without a deploy.
+ * through PPBF_SHADOW_RATE_LIMIT_<KEY> without a deploy -- except
+ * `safety_review` and `safety_review_critical`, whose number is the owner's
+ * and is fixed in code (see OWNER_FIXED_RATE_LIMITS).
  *
  * Only the limit is overridable. The window is semantic -- 'chat_daily' means a
  * day -- so an override that changed it would make the key a lie.

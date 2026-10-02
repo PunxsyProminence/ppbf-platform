@@ -197,22 +197,25 @@ describe('the receipt: which bucket row a call charged', () => {
     expect(resolveShadowRateLimit('chat', { PPBF_SHADOW_RATE_LIMIT_CHAT: '6' }).limit).toBe(6);
   });
 
-  test('the review slot is charged against three even when the environment asks for more', async () => {
-    const before = process.env.PPBF_SHADOW_RATE_LIMIT_SAFETY_REVIEW_CRITICAL;
-    process.env.PPBF_SHADOW_RATE_LIMIT_SAFETY_REVIEW_CRITICAL = '50';
+  test.each([
+    ['the critical bucket', 'PPBF_SHADOW_RATE_LIMIT_SAFETY_REVIEW_CRITICAL', { kind: 'request_risk', critical: true }],
+    ['the general bucket', 'PPBF_SHADOW_RATE_LIMIT_SAFETY_REVIEW', { kind: 'response_safety', critical: false }],
+  ] as const)('the review slot is charged against three even when the environment asks for more: %s', async (_name, variable, event) => {
+    const before = process.env[variable];
+    process.env[variable] = '50';
     try {
       // The fourth in the hour: refused, whatever the environment says.
       mockQueryOne
         .mockResolvedValueOnce({ request_count: 4, retry_after_seconds: 1200, window_started_epoch: '1790000400' })
         .mockResolvedValueOnce({ request_count: 3 });
-      await expect(consumeShadowReviewSlot({
-        organizationId: 'org-1',
-        accountId: 'account-1',
-        event: { kind: 'request_risk', critical: true },
-      })).rejects.toBeInstanceOf(ShadowRateLimitExceeded);
+      await expect(consumeShadowReviewSlot({ organizationId: 'org-1', accountId: 'account-1', event }))
+        .rejects.toBeInstanceOf(ShadowRateLimitExceeded);
     } finally {
-      if (before === undefined) delete process.env.PPBF_SHADOW_RATE_LIMIT_SAFETY_REVIEW_CRITICAL;
-      else process.env.PPBF_SHADOW_RATE_LIMIT_SAFETY_REVIEW_CRITICAL = before;
+      if (before === undefined) delete process.env[variable];
+      else process.env[variable] = before;
+      // A ...Once value left unconsumed by a failing run would be served to
+      // the next test; clearAllMocks does not drop it.
+      mockQueryOne.mockReset();
     }
   });
 
