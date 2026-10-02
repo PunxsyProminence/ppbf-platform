@@ -145,11 +145,50 @@ Photos live with the owner and in Grok conversation assets (UUIDs below are the 
 
 When Jason re-uploads or adds photos, append to this table; do not delete the lock set.
 
-**Optional archive (never a shipping dependency):**  
-A drive folder owned by Jason for full-resolution masters. A master parked in a drive is an archive copy of a delivery; the delivery is the commit on the branch.
-
 ---
 
+### Reference photographs: looked at 2026-10-02
+
+`scripts/make-plate.mjs` sends its references to an image endpoint. **Somebody has to open a photograph before it goes.** That is the rule, and the list below
+is the record of it. Anything under the gym reference folder that is not on this
+list is refused.
+
+**A filename is not evidence.** Two of the three photographs that turned out to
+contain people were called `01-bag-frame-timber.jpg` and
+`02-bag-row-pipe-rail.jpg`, which read as pure equipment shots. That is why this
+is a list of what was looked at rather than a list of suspicious names.
+
+| File | What was found, and what was done |
+|---|---|
+| `01-bag-frame-timber.jpg` | **Three people** reflected in the right-hand mirror. Cropped out. Original in `_originals-PEOPLE-DO-NOT-SEND/` |
+| `02-bag-row-pipe-rail.jpg` | **A person** in the left foreground. Cropped out. Original kept as above |
+| `03-glove-shelves.jpg` | A shelf label carrying a surname. Blurred. Original in `_originals-UNMASKED-NAMES/` |
+| `04-cardio-and-certificates.jpg` | Coach certificates carrying names. Blurred. Byte-identical to `10` |
+| `05-locker-room.jpg` | Locker name tags and far-wall certificates. Blurred |
+| `06-flag-and-mirror-wall.jpg` | **A person** reflected in the wall mirror. The mirror is the subject, so it could not be cropped; its interior is filled flat. Original in `_originals-PEOPLE-DO-NOT-SEND/` |
+| `07-the-ring-red-floor.jpg` | Clean. The ring reference. Chalked combinations are training content, not a name |
+| `08-blue-mat-room.jpg` | Clean |
+| `09-whiteboards-grey-floor.jpg` | Whiteboards of handwritten session content, and framed documents. Blurred |
+| `10-cardio-3rd-infantry.jpg` | Same certificates as `04`. Blurred. Byte-identical to `04` |
+
+**All ten are now clean** — no people, no names — so they are safe to send by any
+route, not only through the script. **That, rather than the check in the script,
+is what actually protects anyone.** Owner ruling, 2026-10-02: *"Mask the names,
+then release all ten"*.
+
+**`lane` did the looking, not a person.** Asked whether he or a coach should
+confirm, Jason, 2026-10-02: *"Lane verification is enough — leave it
+labelled"*. So it is labelled: this list is **reported by a Claude session**, not
+human-verified.
+
+**Not on the list, and therefore refused:** `_originals-PEOPLE-DO-NOT-SEND/` and
+`_originals-UNMASKED-NAMES/` (the unaltered originals), and the
+`from-thread-2026-10-01/`, `grok-boxing-2026-10-01/`, `grok-rooms-2026-10-01/`,
+`walk-2026-09-30/` and `project-instructions/` subfolders.
+
+**To add one: open it at full size, deal with anything you find, add a row.**
+
+---
 ## 5. Room mapping (how DNA is framed, not invented)
 
 | Room | Framing of the *same* gym |

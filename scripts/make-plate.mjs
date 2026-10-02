@@ -62,6 +62,13 @@
  *     --subject "the front desk, seen from the door" \
  *     [--portrait] [--force] [--dry-run]
  *
+ * EVERY --ref UNDER THE GYM REFERENCE FOLDER MUST BE ON THE LOCK'S VETTING
+ * RECORD (section 4). References are POSTED to an external endpoint, and a
+ * filename is not evidence that a photograph is free of people: two of the
+ * three that turned out to contain people were named like equipment shots.
+ * References taken from the committed plate library are not vetted here — they
+ * are already public.
+ *
  * --room is a room from docs/ROOM-MAP.md, as a slug: lower case, a leading
  * "The" dropped, apostrophes dropped, spaces as hyphens (THE FLOOR -> floor,
  * COACH'S OFFICE -> coachs-office). An unknown or missing room prints the list.
@@ -98,6 +105,48 @@ const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png']);
 const ENDPOINT = 'https://shadow-ai.cognitiveservices.azure.com/';
 const DEPLOYMENT = 'flux-kontext-plates';
 const REQUEST_TIMEOUT_MS = 180_000;
+
+/* ---- which reference photographs somebody has opened -------------------- */
+
+/**
+ * This script sends its references to an image endpoint, and three of the ten
+ * photographs in the owner's reference folder turned out to contain identifiable
+ * people. This gym trains minors.
+ *
+ * The rule is: somebody opens a photograph before it goes. The lock holds the
+ * record of that, and this reads it. Anything not on the list is refused.
+ *
+ * A filename is not evidence -- two of the three were named like equipment
+ * shots -- which is why this is a list of what was looked at and not a list of
+ * suspicious names.
+ *
+ * It is deliberately only a list. An earlier version bound each row to a
+ * SHA-256, resolved symlinks and checked plates against git. That caught nothing
+ * in practice: the looking caught everything, and the photographs themselves are
+ * now clean, which is what actually protects anyone. Guarding a single-operator
+ * machine against someone swapping bytes behind a filename was apparatus, not
+ * safety.
+ */
+function vettedReferences() {
+  const doc = readFileSync(LOCK, 'utf8');
+  const start = doc.indexOf('### Reference photographs: looked at');
+  if (start < 0) {
+    throw new Error(`${LOCK}: no "### Reference photographs" section -- the lock's shape changed`);
+  }
+  const rest = doc.slice(start + 1);
+  const nextSection = rest.indexOf('\n## ');
+  const section = nextSection < 0 ? rest : rest.slice(0, nextSection);
+
+  const looked = new Set();
+  for (const m of section.matchAll(/^\|\s*`([^`]+)`\s*\|/gm)) {
+    looked.add(m[1].replace(/\\/g, '/').toLowerCase());
+  }
+  if (looked.size === 0) {
+    throw new Error(`${LOCK}: the reference list parsed no rows -- its table's shape changed`);
+  }
+  return looked;
+}
+const VETTED_REFS = vettedReferences();
 
 /* ---- the gym, read from the lock ---------------------------------------- */
 
@@ -371,6 +420,7 @@ function resolveRef(ref) {
     console.error(`reference not found: ${ref}\n  looked in: ${APPROVED_REF_DIRS.join('\n             ')}`);
     process.exit(2);
   }
+
   if (!IMAGE_EXT.has(path.extname(found).toLowerCase())) {
     console.error(`reference is not an image: ${found}`);
     process.exit(2);
@@ -386,6 +436,24 @@ function resolveRef(ref) {
     );
     process.exit(2);
   }
+
+  /* Photographs of the gym must be on the list somebody looked at. Plates are
+     not photographs of anyone and are already public, so they are exempt. */
+  const relToGym = path.relative(path.resolve(GYM_REFERENCE), found);
+  const underGym = relToGym !== '' && !relToGym.startsWith('..') && !path.isAbsolute(relToGym);
+  if (underGym && !VETTED_REFS.has(relToGym.split(path.sep).join('/').toLowerCase())) {
+    console.error(
+      'reference is not on the list of photographs somebody has opened, and this script\n'
+      + 'sends its references to an image endpoint:\n'
+      + `  ${relToGym.split(path.sep).join('/')}\n`
+      + '  Open it at full size, deal with anything you find in it, and add a row to\n'
+      + `  "Reference photographs" in ${path.relative(ROOT, LOCK)}.\n`
+      + '  A filename is not evidence: two of the three that contained people were\n'
+      + '  named like equipment shots.',
+    );
+    process.exit(2);
+  }
+
   return found;
 }
 const refPaths = refs.map(resolveRef);
