@@ -71,7 +71,9 @@ The Bags row above records that.
 **Forbidden (causes drift):**
 - Generic grey-brown brick + caged industrial lamps as the default wall
 - Stock polished commercial boxing gym
-- Fictional logos, trophies, or athletes
+- Fictional logos, trophies, or athletes. Real marks on real equipment are
+  allowed (OD-2026-10-02-001); what is forbidden is anything INVENTED — made-up
+  brands, garbled approximations of real ones, and any logo for this club
 - Clean empty white studio walls
 - Pure leather-and-brass set with no Iron City DNA
 

@@ -26,12 +26,13 @@ night has 3 and fills an of3.
 
 | File | Applied to | Dimensions | Bytes |
 |---|---|---|---|
-| `plate-01-office-01.jpg` | `.room--office`, slot 1 of 6 | 1280×720 | 148,739 |
-| `plate-01-office-02.jpg` | `.room--office`, `2of6` | 1280×720 | 226,436 |
-| `plate-01-office-03.jpg` | `.room--office`, `3of6` | 1280×720 | 317,154 |
-| `plate-01-office-04.jpg` | `.room--office`, `4of6` -- chalkboard wall | 1280×720 | 207,549 |
-| `plate-08-bell-gym-landscape-01.jpg` | `.ge-bell.on-canvas::after` (The Bell, /login) AND `.room--office`, `5of6` | 1280×720 | 189,771 |
-| `plate-18-passage-landscape-01.jpg` | `.room--office`, `6of6` — the timber passage | 1280×720 | 212,241 |
+| `plate-01-office-01.jpg` | `.room--office`, slot 1 of 7 | 1280×720 | 148,739 |
+| `plate-01-office-02.jpg` | `.room--office`, `2of7` | 1280×720 | 226,436 |
+| `plate-01-office-03.jpg` | `.room--office`, `3of7` | 1280×720 | 317,154 |
+| `plate-01-office-04.jpg` | `.room--office`, `4of7` -- chalkboard wall | 1280×720 | 207,549 |
+| `plate-08-bell-gym-landscape-01.jpg` | `.ge-bell.on-canvas::after` (The Bell, /login) AND `.room--office`, `5of7` | 1280×720 | 189,771 |
+| `plate-18-passage-landscape-01.jpg` | `.room--office`, `6of7` — the timber passage | 1280×720 | 212,241 |
+| `plate-20-coachdesk-landscape-01.jpg` | `.room--office`, `7of7` — the desk corner, lamp lit | 1280×720 | 149,255 |
 | `plate-03-clinic-01.jpg` | `.room--clinic`, slot 1 of 5 | 1280×720 | 52,209 |
 | `plate-03-clinic-02.jpg` | `.room--clinic`, `2of5` | 1280×720 | 202,304 |
 | `plate-03-clinic-03.jpg` | `.room--clinic`, `3of5` | 1280×720 | 202,289 |
@@ -45,6 +46,7 @@ night has 3 and fills an of3.
 | `plate-17-bell-landscape-01.jpg` | `.room--floor`, `6of8` — the bell and a blank timer; the quietest plate in the building | 1280×720 | 134,424 |
 | `plate-18-redwall-landscape-01.jpg` | `.room--floor`, `7of8` — the red wall, one bag, hard side light | 1280×720 | 230,059 |
 | `plate-18-gloverack-landscape-01.jpg` | `.room--floor`, `8of8` — gloves and headgear on hooks | 1280×720 | 196,517 |
+| `plate-02b-floor-portrait-ring-01.jpg` | `.room--floor`, `@media (orientation: portrait)` `2of2` — the building's FIRST portrait variant | 810×1440 | 82,185 |
 | `plate-11-floor-portrait-01.jpg` | `.room--floor`, `@media (orientation: portrait)` | 810×1440 | 195,227 |
 | `plate-06-night-01.jpg` | `.room--night`, slot 1 of 3 | 1280×720 | 46,687 |
 | `plate-06-night-02.jpg` | `.room--night`, `2of3` | 1280×720 | 86,167 |
@@ -96,17 +98,29 @@ invented apron crest, judged 2026-10-01. The judgment is below and the reason
 travels with its row in the inert table, so neither can be read without the
 other.
 
-**Known imperfection, recorded rather than hidden:** the no-lettering rule is
-stated three ways in the prompt and still leaks. It leaks exactly where a real
-gym carries branding, which is where the model expects it. The ring canvas is
-the one place lettering is allowed (IRON CITY; see the top of this file).
+**THE LETTERING RULE CHANGED ON 2026-10-02 (OD-2026-10-02-001).** It was "no
+lettering of any kind", with the ring canvas as the single exception. Owner:
+*"sub 6 the poster is fine, names on the equiptment is fin long as its real"*.
+
+- **Real marks on real equipment are ALLOWED** — a maker's name on a bag, a
+  glove, a headguard or a turnbuckle pad, a real poster, the sponsor marks on
+  the ring canvas.
+- **Invented or garbled lettering is still FORBIDDEN** — made-up brands,
+  mangled approximations of real ones, invented crests, and any logo for this
+  club.
+
+The old rule leaked constantly, and it leaked exactly where a real gym carries
+branding, because that is where the model expects it. Enforcing it made the
+plates look cleaner than the gym. It was never the branding that looked wrong
+— it was the nonsense: `3EL IN?RY GIYSE`, `HAYABUS`, an invented crest. The
+line is now drawn where the real defect always was.
 
 **JUDGED 2026-10-01, at full size, and two of them FAIL.** This paragraph used
 to say the `plate-10` roundel "has not been judged". It has been now, by opening
 the files and enlarging the marks rather than glancing at a contact sheet:
 
-- `plate-09` — faint illegible marks on a clipboard. Outside the exception,
-  as recorded before. Not bound.
+- `plate-09` — faint illegible marks on a clipboard. Not a real mark and not
+  legible either, so the 2026-10-02 rule does not recover it. Not bound.
 - `plate-10` — **FAILS.** The canvas roundel is an invented crest carrying
   invented circular lettering. It does not read as IRON CITY or ALT NATION, so
   the exception does not cover it, and a crest is the one thing the reference
@@ -166,7 +180,6 @@ orientation block, per "Adding a variant" below.
 |---|---|---|---|
 | `plate-01-office-portrait-01.jpg` | 810×1440 | 186,248 | a portrait crop the office room does not have today |
 | `plate-02b-floor-portrait-02.jpg` | 810×1440 | 189,337 | **Do not bind:** a chalk wall covered in invented words, judged 2026-10-01 |
-| `plate-02b-floor-portrait-ring-01.jpg` | 810×1440 | 82,185 | **Do not bind:** EVERLAST lettering on the turnbuckle, outside the ring-canvas exception, judged 2026-10-01 |
 | `plate-03-clinic-portrait-01.jpg` | 810×1440 | 119,124 | a portrait crop the clinic does not have today |
 | `plate-09-drillcase-landscape-01.jpg` | 1280×720 | 200,989 | the Drill Cabinet room: gear shelves, gloves on hooks, a card-index cabinet |
 | `plate-09-drillcase-portrait-01.jpg` | 810×1440 | 198,467 | the same cabinet upright. It was committed with its landscape pair and listed in neither table until 2026-10-01 |

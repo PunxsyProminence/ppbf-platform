@@ -164,6 +164,52 @@ and should not try to.
 
 ---
 
+## OD-2026-10-02-001 — Real marks on real equipment are allowed in a plate; invented or garbled lettering is not
+
+**Provenance: PRIMARY.** Jason, typed in the visuals lane, 2026-10-02, answering
+a report that three plates had been rejected for carrying lettering:
+
+> *"sub 6 the poster is fine, names on the equiptment is fin long as its real"*
+
+**What changes.** The plate rule was "NO LETTERING OF ANY KIND", with one
+exception for the ring canvas. It is now:
+
+- **Real marks on real equipment are ALLOWED** — a maker's name on a bag, a
+  glove, a headguard or a turnbuckle pad, a real poster on a real wall, the
+  sponsor marks on the ring canvas. The gym is full of these and photographs of
+  it will contain them.
+- **Invented or garbled lettering is still FORBIDDEN** — made-up brands,
+  mangled approximations of real ones, invented crests, and any logo for this
+  club. The club has a real mark and it is not a generator's to draw.
+
+**This is not a reversal, it is the same instinct generalised.** On 2026-09-28
+he already let the ring canvas keep its IRON CITY lettering — *"no i like that
+you can leave it"* (OD-2026-09-28-013). Today extends that from one surface to
+real equipment generally.
+
+**Why it is a better rule, stated plainly because the old one was mine to
+defend.** Enforcing zero lettering made the plates look *cleaner than the gym*,
+and it was never the branding that looked wrong — it was the garbled text. The
+failures that actually had to be thrown away all read as nonsense: a banner
+spelling `3EL IN?RY GIYSE`, pads printed `HAYABUS`, an invented circular crest
+on a canvas. The new line is drawn exactly where the real defect was.
+
+**What it recovers**, judged at full size:
+
+| Plate | Why it was rejected | Now |
+|---|---|---|
+| the coach's desk | a `GOLDEN GLOVES` poster | **allowed** — he named this one |
+| a headgear rack | `STING` on the gear | **allowed** — real brand |
+| `plate-02b-floor-portrait-ring-01` | `EVERLAST` on a turnbuckle | **allowed** — real brand |
+
+**What it does not recover**, and the distinction is the point of the rule:
+`plate-14-frontdesk-landscape-01` (invented banner and apron crest),
+`plate-10-floor-landscape-01` (invented canvas crest) and the storage plate
+printed `HAYABUS` all stay **do not bind**.
+
+**Scope.** Plates only. It says nothing about lettering drawn by the app itself,
+and nothing about the no-people rule, which does not move.
+
 ## OD-2026-10-01-008 -- Recorded write defects accepted for merge, and from now a disclosed, recorded write defect does not block a merge; when the act-now line appears; who a SHADOW safety alert reaches; the act-now sentence; no humour in an acute answer
 
 **Provenance: PRIMARY.** Typed by Jason in the overwatch thread (transcript as

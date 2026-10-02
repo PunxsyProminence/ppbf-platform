@@ -260,9 +260,15 @@ owner approval and independent review**.
 - **Quiet centre.** Low detail where UI panels land; visual interest in the
   outer thirds and the top edge. A busy centre fights every panel edge placed
   on it.
-- **Zero lettering.** No text, numbers, watermarks, UI chrome or stamps. A
-  plate sits behind real text, cannot be translated, and is invisible to a
-  screen reader.
+- **No INVENTED lettering.** Amended 2026-10-02 (OD-2026-10-02-001). This said
+  "zero lettering" until the owner ruled that *"names on the equiptment is fin
+  long as its real"*. So: real marks on real equipment are allowed — a maker's
+  name on a bag or a glove, a real poster, the sponsor marks on the ring canvas.
+  Invented brands, mangled approximations of real ones, invented crests and any
+  logo for this club remain forbidden, and so do watermarks, UI chrome and
+  stamps. The reason the old rule existed still holds for everything it still
+  covers: a plate sits behind real text, cannot be translated, and is invisible
+  to a screen reader — so nothing a reader needs may live in the picture.
 - **One room's material only.** No mash-ups.
 - **A set, not six prompts.** Variants come from a shared root reference so
   six images look like one building on one day.
