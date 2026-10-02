@@ -344,6 +344,53 @@ describe('email, with a password or with a link', () => {
     expect(container.querySelector('[data-refusal-stamp]')).toBeNull();
   });
 
+  /* The password was accepted and the session check after it never answers.
+     Each request hangs until its own signal aborts it, as a real fetch does;
+     one given no signal hangs for good. */
+  test.each([
+    ['the sign-in request', LOGIN],
+    ['the session check after a correct sign-in', '/api/pilot/auth/session'],
+  ])('%s never answering gives the buttons back after ten seconds', async (_label, hangingPath) => {
+    const { container } = await renderPanel();
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input), 'http://localhost').pathname;
+      if (path !== hangingPath) {
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, role: 'parent' }) });
+      }
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }));
+        });
+      });
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      type(container, '#magic-link-email', 'parent@example.com');
+      type(container, '#magic-link-password', 'three small boats');
+    });
+    const signIn = passwordButton();
+    const link = linkButton();
+
+    jest.useFakeTimers();
+    try {
+      await act(async () => { fireEvent.click(signIn); });
+      expect(signIn.disabled).toBe(true);
+      expect(link.disabled).toBe(true);
+
+      await act(async () => { jest.advanceTimersByTime(9_000); });
+      expect(signIn.disabled).toBe(true);
+
+      await act(async () => { jest.advanceTimersByTime(1_500); });
+    } finally {
+      jest.useRealTimers();
+    }
+
+    expect(signIn.disabled).toBe(false);
+    expect(link.disabled).toBe(false);
+    expect(container.textContent).toContain('Could not reach the gym right now');
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
   test.each([500, 503])('a %i is the gym not answering, not a password that was not recognised', async (status) => {
     const { container } = await renderPanel();
     answer({ [LOGIN]: { status, body: { error: 'Internal server error' } } });

@@ -313,7 +313,13 @@ export default function SignInPanel({
         return;
       }
 
-      const resolution = await loadAuthoritativeRoleSession(`${apiBase()}/api/pilot/auth/session`);
+      // The same ten seconds cover this request too: it carries the signal,
+      // so a session check that never answers ends in the catch below and
+      // the buttons come back.
+      const resolution = await loadAuthoritativeRoleSession(
+        `${apiBase()}/api/pilot/auth/session`,
+        { signal: controller.signal },
+      );
       if (!resolution.ok) {
         if (resolution.reason === 'pin_change_required') {
           router.replace('/change-pin');
