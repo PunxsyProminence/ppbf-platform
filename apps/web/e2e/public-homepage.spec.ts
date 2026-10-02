@@ -173,22 +173,55 @@ test.describe('Public homepage', () => {
 
      This does not pin how the page looks. It asks two things of every piece of
      text inside <main>, at a desktop, an upright tablet and a phone:
-       1. it stands on SOMETHING the page painted for it -- a panel, a card, a
-          button -- and not directly on the page ground, where the photograph
-          is the only thing behind it;
-       2. where that something is a flat colour, the ink reads against it.
-     A gradient or textured ground cannot be named by a computed style, so it
-     is left to the page-wide sweep rather than guessed at here. */
+       1. it stands on something OPAQUE the page painted for it -- a panel, a
+          card, a button -- and not on the page ground, where the photograph
+          is what is behind it. A tint or a see-through scrim does not count:
+          the photograph still shows through it;
+       2. where that ground is a flat colour (with any tints over it
+          composited in), the ink reads against it.
+     WHAT THIS DOES NOT MEASURE. An opaque gradient or textured ground -- the
+     parchment card, the brass buttons -- cannot be named by a computed style,
+     so text on those gets check 1 and not check 2; `npm run sweep` reads
+     those off pixels. Error, sent-link, hover and focus states are not
+     exercised. Text that overflows its panel, or a panel drawn on a
+     pseudo-element, is beyond a computed-style walk. */
   test('sign-in page puts no text straight onto the wall, at any screen shape', async ({ page }) => {
     const shapes = [
       { name: 'desktop', width: 1280, height: 720 },
       { name: 'upright tablet', width: 810, height: 1080 },
       { name: 'phone', width: 390, height: 844 },
     ];
+    /* A LIVE NOTICE IS PART OF THE PAGE. The notice column is empty unless the
+       gym has posted one, and an empty column passes anything. The first cut
+       of the panel fix shipped a notice nobody could read (1.07:1) precisely
+       because no test ever saw one. So one is put on the page, through the
+       same public feed the page reads. */
+    const notice = 'Gym closed Saturday for the regional show.';
+    await page.route('**/api/pilot/announcements/public**', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        announcements: [{
+          announcement_id: 'e2e-notice',
+          message: notice,
+          author_name: 'Coach Sample',
+          author_role: 'coach',
+          created_at: new Date().toISOString(),
+          placement: 'gym_notices',
+          kind: 'notice',
+          active: true,
+          starts_at: null,
+          ends_at: null,
+        }],
+      }),
+    }));
+
     for (const shape of shapes) {
       await page.setViewportSize({ width: shape.width, height: shape.height });
       await page.goto('/login');
       await expect(page.getByRole('heading', { name: 'The Bell' })).toBeVisible();
+      await expect(page.getByText(notice)).toBeVisible();
 
       const audit = await page.evaluate(() => {
         const main = document.querySelector('main');
@@ -209,27 +242,55 @@ test.describe('Public homepage', () => {
           checked += 1;
           const label = `<${el.tagName.toLowerCase()}> ${(el.textContent || '').trim().slice(0, 30)}`;
 
-          // The nearest thing painted behind this text, short of the page itself.
+          // Walk up to the first OPAQUE thing painted behind this text, short
+          // of the page itself. Only an opaque ground ends the walk: a tint, a
+          // scrim or a see-through gradient lets the photograph show, so it is
+          // composited and the walk carries on. Reaching <main> without an
+          // opaque ground means the text is on the wall, however many
+          // translucent layers sit in between.
           let ground: { flat: string | null } | null = null;
-          let opacity = 1;
+          let inkOpacity = 1;
+          let unnameable = false;
+          const tints: Array<[number, number, number, number]> = [];
           for (let node: Element | null = el; node && node !== main; node = node.parentElement) {
             const style = getComputedStyle(node);
-            const parts = style.backgroundColor.match(/[\d.]+/g);
-            const alpha = parts && parts.length > 3 ? Number(parts[3]) : 1;
+            const nodeOpacity = Number(style.opacity);
+            const parts = (style.backgroundColor.match(/[\d.]+/g) ?? []).map(Number);
+            const alpha = (parts.length > 3 ? parts[3] : 1) * nodeOpacity;
             const painted = style.backgroundColor !== 'rgba(0, 0, 0, 0)' && alpha > 0;
-            if (style.backgroundImage !== 'none') { ground = { flat: null }; break; }
-            if (painted) { ground = { flat: alpha === 1 ? style.backgroundColor : null }; break; }
-            // Opacity on something BETWEEN the text and its ground lets the
-            // ground show through the ink. Opacity on the ground itself fades
-            // both together and changes nothing between them.
-            opacity *= Number(style.opacity);
+            const image = style.backgroundImage;
+            if (image !== 'none') {
+              // A photograph, or a gradient with no see-through stop, is a
+              // ground this check cannot name. A see-through gradient is not a
+              // ground at all.
+              const seeThrough = !image.includes('url(') && /rgba\(|transparent/.test(image);
+              if (!seeThrough && nodeOpacity === 1) { ground = { flat: null }; break; }
+              unnameable = true;
+            }
+            if (painted && alpha === 1) {
+              let [r, g, bl] = parts;
+              for (const [tr, tg, tb, ta] of tints.reverse()) {
+                r = tr * ta + r * (1 - ta);
+                g = tg * ta + g * (1 - ta);
+                bl = tb * ta + bl * (1 - ta);
+              }
+              ground = { flat: unnameable ? null : `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(bl)})` };
+              break;
+            }
+            if (painted) tints.push([parts[0], parts[1], parts[2], alpha]);
+            // Opacity below the ground fades the ink into it.
+            inkOpacity *= nodeOpacity;
           }
+          const opacity = inkOpacity;
 
           if (!ground) { onTheWall.push(label); continue; }
           if (ground.flat) {
             const size = parseFloat(cs.fontSize);
             const large = size >= 24 || (size >= 18.66 && Number(cs.fontWeight) >= 700);
-            onFlat.push(JSON.stringify({ label, fg: cs.color, bg: ground.flat, opacity, floor: large ? 3 : 4.5 }));
+            // -webkit-text-fill-color paints the glyphs when it is set; it
+            // defaults to `color`.
+            const ink = cs.webkitTextFillColor || cs.color;
+            onFlat.push(JSON.stringify({ label, fg: ink, bg: ground.flat, opacity, floor: large ? 3 : 4.5 }));
           }
         }
         return { onTheWall, onFlat, checked };
@@ -238,6 +299,8 @@ test.describe('Public homepage', () => {
       // A page with no text would pass both checks below by saying nothing.
       expect(audit.checked, `${shape.name}: text found to check`).toBeGreaterThan(10);
       expect(audit.onTheWall, `${shape.name}: text painted straight onto the page ground`).toEqual([]);
+      // And the contrast half below must have something to measure.
+      expect(audit.onFlat.length, `${shape.name}: text on a nameable flat ground`).toBeGreaterThan(5);
 
       const failures = audit.onFlat
         .map((row) => JSON.parse(row) as { label: string; fg: string; bg: string; opacity: number; floor: number })

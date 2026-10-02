@@ -4041,6 +4041,12 @@
 .ge-bell .frame ~ section,
 .ge-bell .frame ~ footer {
   background-color: var(--hide-900);
+  /* The ink is stated on the panel itself, not only on the .t-* voices above.
+     A live gym notice is plain <p> text with no voice class: it inherited the
+     page's dark canvas ink and read 1.07:1 on this ground -- a notice nobody
+     could read, found in review with a notice routed into the page. Anything
+     placed in these panels now starts from ink that reads here. */
+  color: var(--bone-100);
   border: 1px solid color-mix(in srgb, var(--brass-500) 55%, var(--hide-900));
   border-radius: var(--r-md);
   padding: var(--s5);
@@ -4053,6 +4059,29 @@
    on this ground. */
 .ge-bell .frame ~ footer [aria-hidden="true"] {
   color: var(--brass-300);
+}
+/* A notice card draws its edge at rgba(0,0,0,.12), which is nothing on a dark
+   panel; give the cards inside this panel an edge that shows. */
+.ge-bell .frame ~ section :is(article, section) {
+  border-color: color-mix(in srgb, var(--brass-500) 45%, transparent);
+}
+/* THE RING ON THE ATHLETE DOOR. `.on-canvas .btn--ghost` sets a box-shadow at
+   the same specificity as `.btn:focus-visible` and later in the sheet, so it
+   wins the tie and takes the focus indicator with it while `outline: 0` stays
+   in force: Tab landed on "Open Simple Athlete PIN Sign-In" and nothing on
+   screen moved (measured in review, before and after screenshots identical).
+   Same fault and same repair as the kiosk buttons above. WCAG 2.4.7. */
+.ge-bell .frame ~ section .btn--ghost:focus-visible {
+  box-shadow: var(--focus);
+}
+/* The help block splits 61.8% / 38.2% with a gap between, which adds up to more
+   than its own width; on the bare wall the overhang was invisible, inside a
+   bordered panel the notice column ran into the panel's edge. Same proportion,
+   stated as shares of what is left after the gap. */
+@media (min-width: 768px) {
+  .ge-bell .frame ~ section {
+    grid-template-columns: minmax(0, 1.618fr) minmax(0, 1fr);
+  }
 }
 
 /* Phone (REFERENCE_MOBILE_APPROVED.jpg): card near full-width with safe side
