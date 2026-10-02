@@ -6,6 +6,7 @@ import DevelopmentPipelineBanner from '@/components/DevelopmentPipelineBanner';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import ShadowChatButton from '@/components/ShadowChatButton';
 import { apiBase } from '@/lib/apiBase';
+import LibraryTextIntakePanel from './LibraryTextIntakePanel';
 import {
   RESEARCH_CLASSIFICATION_DOMAINS,
   researchClassificationLabel,
@@ -871,6 +872,7 @@ export default function ResearchIntakePage() {
             ) : null}
           </section>
         ) : null}
+        {curatorSources !== null ? <LibraryTextIntakePanel sources={curatorSources} /> : null}
       </div>
       </div>
     </RoleStandaloneView>
