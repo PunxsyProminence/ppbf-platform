@@ -1658,8 +1658,15 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       ['is refused', () => jsonResponse({ error: 'Service unavailable' }, false)],
       ['will not parse', () => unparseable()],
       ['comes back with no effectiveStatus', () => jsonResponse({ status: SOON_ROW })],
-    ])('a re-read that %s says the status could not be read, not "cleared"', async (_name, failing) => {
-      await openB();
+    ])('a re-read that %s says the status could not be read, not "cleared"; the other panels are left alone; and it asks again', async (_name, failing) => {
+      answer = () => jsonResponse(STILL_CLEARED);
+      installReadsForB({
+        '/medical-status': () => answer(),
+        '/recommendations': () => jsonResponse({ recommendations: [A_RECOMMENDATION] }),
+      });
+      render(<DecisionLoopReviewPage />);
+      fireEvent.change(await screen.findByPlaceholderText('athlete-id'), { target: { value: 'ath-b' } });
+      await screen.findAllByText(A_RECOMMENDATION.recommendation_text, { exact: false });
 
       answer = failing;
       await pass(31_000);
@@ -1668,6 +1675,32 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       expect(within(medicalSection()).queryByText('cleared')).toBeNull();
       expect(medicalSection().querySelector('.badge--cleared')).toBeNull();
       expect(screen.queryByText(/Set by/)).toBeNull();
+      // Only the status is unknown. What the other panels read is still there.
+      expect(screen.getAllByText(A_RECOMMENDATION.recommendation_text, { exact: false }).length).toBeGreaterThan(0);
+      expect(screen.queryByText(/Recommendations could not be read/i)).toBeNull();
+      expect(screen.queryByText(/Decisions could not be read/i)).toBeNull();
+
+      // And it asks again: when the route answers, the panel has its status
+      // back with nothing pressed.
+      const before = readsOfB();
+      answer = () => jsonResponse(NOW_LAPSED);
+      await pass(30_000);
+      expect(readsOfB()).toBe(before + 1);
+      expectLapsed();
+      expect(screen.queryByText(/could not be read/i)).toBeNull();
+    });
+
+    test('a status that could not be re-read for B says nothing about C', async () => {
+      await openBThenC({ ...C_ROW, expires_at: '2026-12-01 16:00:00+00' });
+
+      answer = () => jsonResponse({ error: 'Service unavailable' }, false);
+      await pass(31_000);
+      expect(screen.getByText(/medical administrative status could not be read/i)).toBeTruthy();
+
+      await switchToC();
+
+      expectStillCleared();
+      expect(screen.queryByText(/could not be read/i)).toBeNull();
     });
 
     // A second athlete, so "the coach has moved on" lands on a panel that is

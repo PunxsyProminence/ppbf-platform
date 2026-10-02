@@ -409,10 +409,16 @@ export default function SportsMedicinePage() {
      clearance is in force and has an end date is read again when that date
      arrives, and the row shows what the route answers -- the board does not
      work out the verdict from the date itself. Only that athlete's row is
-     written, and only by the newest read for them. */
+     written, and only by the newest read for them.
+
+     A re-read that fails leaves the row 'unavailable' and keeps its end date,
+     so the row goes on being asked about until the route answers: a tablet
+     that wakes before its network does gets its rows back by itself. */
   const clearanceReadSeq = useRef(new Map<string, number>());
   const clearanceEndings = JSON.stringify(
-    rows.filter((row) => row.clearance === 'cleared' && row.ends_at).map((row) => [row.athlete_id, row.ends_at]),
+    rows
+      .filter((row) => row.ends_at && (row.clearance === 'cleared' || row.clearance === 'unavailable'))
+      .map((row) => [row.athlete_id, row.ends_at]),
   );
   useEffect(() => {
     const cancels = (JSON.parse(clearanceEndings) as Array<[string, string]>).map(([athleteId, endsAt]) =>
@@ -421,7 +427,8 @@ export default function SportsMedicinePage() {
         clearanceReadSeq.current.set(athleteId, seq);
         void readClearance(athleteId).then((reading) => {
           if (clearanceReadSeq.current.get(athleteId) !== seq) return;
-          setRows((current) => current.map((row) => (row.athlete_id === athleteId ? { ...row, ...reading } : row)));
+          const kept = reading.clearance === 'unavailable' ? { ...reading, ends_at: endsAt } : reading;
+          setRows((current) => current.map((row) => (row.athlete_id === athleteId ? { ...row, ...kept } : row)));
         });
       }),
     );

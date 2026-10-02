@@ -396,6 +396,9 @@ export default function DecisionLoopReviewPage() {
      selection itself. */
   const selectedAthleteRef = useRef('');
   const readSeqRef = useRef(0);
+  /* The athlete whose medical status a timed re-read failed to get: for them
+     the status is unknown until a read succeeds. See rereadMedicalStatus. */
+  const [statusUnreadFor, setStatusUnreadFor] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   /* "Something you submitted for the athlete you were on before did not go
      through." Its own slot, not the error line: every read blanks or
@@ -600,6 +603,7 @@ export default function DecisionLoopReviewPage() {
 
       if (seq !== readSeqRef.current) return;
       setReadFor({ athleteId: targetAthleteId, state: 'loaded', records });
+      setStatusUnreadFor(null);
     } catch (error) {
       if (seq !== readSeqRef.current) return;
       /* ALL FOUR SECTIONS BELOW ARE NOW UNREADABLE, NOT EMPTY. This one load
@@ -646,8 +650,12 @@ export default function DecisionLoopReviewPage() {
      other three panels stay as they are. It is dropped if the selection has
      changed or a full read has started since it was sent (that read brings its
      own status), and it paints only onto the records of the athlete it was
-     read for. If it fails, the status is unknown, and the page says what it
-     says after any failed read: could not be read. */
+     read for.
+
+     If it fails, the status is unknown: the panel says "could not be read"
+     for that athlete instead of the badge it had, the other panels are left
+     alone, and the timer keeps asking until the route answers. A tablet that
+     wakes before its network does gets its status back by itself. */
   const statusRereadSeqRef = useRef(0);
   const rereadMedicalStatus = useCallback(async (targetAthleteId: string) => {
     if (targetAthleteId !== selectedAthleteRef.current) return;
@@ -670,15 +678,13 @@ export default function DecisionLoopReviewPage() {
           ? { ...shown, records: { ...shown.records, medicalStatus: reread } }
           : shown,
       );
+      setStatusUnreadFor(null);
     } catch {
       if (stale()) return;
-      setReadFor((shown) =>
-        shown && shown.athleteId === targetAthleteId
-          ? { athleteId: targetAthleteId, state: 'unavailable', records: NO_RECORDS }
-          : shown,
-      );
+      setStatusUnreadFor(targetAthleteId);
     }
   }, []);
+  const statusUnread = !!athleteId && statusUnreadFor === athleteId;
   const clearanceEndsAt =
     medicalStatus?.effective_status === 'cleared' && typeof medicalStatus.expires_at === 'string'
       ? medicalStatus.expires_at
@@ -703,6 +709,7 @@ export default function DecisionLoopReviewPage() {
     selectedAthleteRef.current = nextAthleteId;
     readSeqRef.current += 1;
     setAthleteId(nextAthleteId);
+    setStatusUnreadFor(null);
     /* The one draft that is NOT kept for its athlete: the medical status
        selection and its source reference. A "Cleared" left selected from an
        earlier visit is one click from being set; every arrival at an athlete
@@ -1134,7 +1141,7 @@ export default function DecisionLoopReviewPage() {
                   Read-only gate for medically sensitive recommendations/decisions. Setting a new status never clears an
                   existing restriction automatically — each change is its own explicit, human-attributed record.
                 </p>
-                {medicalStatus ? (
+                {medicalStatus && !statusUnread ? (
                   <div className="mt-[var(--s3)] space-y-[var(--s2)] text-[length:var(--t-sm)]">
                     <p className="flex flex-wrap items-center gap-[var(--s3)]">
                       Current status: <StatusBadge status={medicalStatus.effective_status} />
@@ -1152,7 +1159,7 @@ export default function DecisionLoopReviewPage() {
                       <p className="t-data text-[color:var(--bone-400)]">Reference: {medicalStatus.source_reference}</p>
                     )}
                   </div>
-                ) : loadFailed ? (
+                ) : loadFailed || statusUnread ? (
                   <p className="t-body mt-[var(--s3)] text-[var(--restricted-ink)]">
                     This athlete&apos;s medical administrative status could not be read. UNKNOWN —
                     not &quot;no restriction on record&quot;.

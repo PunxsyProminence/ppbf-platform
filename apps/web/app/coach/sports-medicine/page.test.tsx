@@ -1635,6 +1635,25 @@ describe('a lapsed clearance beside a current one', () => {
       expect(row.queryByText('cleared')).toBeNull();
       expect(row.queryByText(/since/)).toBeNull();
       expect(rowOf('Sam Roe').querySelector('.badge--cleared')).toBeNull();
+      // The other athlete's row is as it was.
+      expect(within(rowOf('Jordan Doe')).getByText('cleared').className).toContain('badge--cleared');
+
+      // And it is asked about again: when the route answers, the row has its
+      // status back with nothing pressed.
+      const before = reads.lapsing;
+      answer = () => asResponse(NOW_LAPSED);
+      await pass(30_000);
+      expect(reads.lapsing).toBe(before + 1);
+      expectLapsed();
+      expect(within(rowOf('Sam Roe')).queryByText('unavailable')).toBeNull();
+    });
+
+    test('a row that could not be read when the board opened is not asked about on a timer', async () => {
+      await openBoard({ ok: true, status: SOON_STATUS });
+
+      expect(within(rowOf('Sam Roe')).getByText('unavailable')).toBeTruthy();
+      await pass(5 * 60_000);
+      expect(reads.lapsing).toBe(1);
     });
 
     test('a clearance renewed in the meantime stays cleared, and its new end date is waited for in turn', async () => {
