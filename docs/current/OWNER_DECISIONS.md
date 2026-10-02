@@ -233,8 +233,43 @@ of OD-2026-10-02-008 (a pose tool pre-fills points for coaches now).
   proposed point, derived points, what "corrected" means) have nothing to
   apply to while there are no proposals. **INFERRED** by the lane; the
   architect's to confirm.
-- The required core of the click range, and whether chin is required.
+- (Answered in section 3a: all 24 points are required, chin included.)
 - Scoring an athlete from video stays parked (OD-2026-09-28-006).
+
+### 3a. Every point at three moments: the click range is replaced
+
+The lane asked which points a coach must mark every time (22:26:29Z): "A:
+13 required (ChatGPT's 12 plus chin), up to 39 clicks per punch. B
+(recommended): 9 required (chin, shoulders, elbows, gloves, hips), up to 27
+clicks per punch, the rest optional. C: all 24 required, up to 72 clicks per
+punch." Jason, whole message (22:28:22Z): *"C"*.
+
+It then asked how many moments are required (22:28:39Z), A contact required
+with start and end optional (recommended), B all three required, C start and
+end required with contact when there is one. Jason (22:32:42Z): *"B/c which
+one gives the most data  ....and smaller number of videos with more clicks
+will be faster in the end if done with patience in my opinion"*. The lane
+answered that B gives the most and put (22:32:55Z): "B, with a rule for
+misses: every punch is marked at three moments, start, contact, end, and
+when there's no contact, the middle moment is full extension (the glove at
+its furthest point from the body). ... 72 taps each, no lighter option. ...
+"Glove at its furthest point" is my suggested wording; change it if you'd put
+it differently. ... Is it B with full extension for misses? A "yes" settles
+it." Jason, whole message (22:42:11Z): *"B yes"*.
+
+**All 24 points are required, at three moments on every punch and every
+defence: start, contact, end.** Each point is placed or marked not visible;
+there are no optional points and no lighter option. When there is no contact
+the middle moment is **full extension**, worded by the lane as "the glove at
+its furthest point from the body" and accepted by his "B yes" without
+rewording. His reason, in his words above: depth per clip over number of
+clips. **This replaces, for the first build, the click range of
+OD-2026-10-02-008** (his 19:38:26Z words and the required-core-plus-optional
+shape); "not visible" is now the only variation. It also brings a third,
+written middle moment back where -008 left "peak" out.
+
+Not decided: the middle-moment rule for a defence with no contact (a slip, a
+block, a parry): full extension is written for punches. The architect's.
 
 ### 4. The agreement screen's opening sentence
 
