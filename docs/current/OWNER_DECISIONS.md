@@ -164,6 +164,41 @@ and should not try to.
 
 ---
 
+## OD-2026-10-02-012 -- Workout intake: the AI prompt is to link steps to the gym's own drills (a second item, after #1103)
+
+**Provenance: PRIMARY.** Typed by Jason in the workout-upload lane's thread on
+2026-10-02 and read by overwatch in that transcript
+(`~/.claude/projects/C--Dev/08ba83a5-20e8-4531-ad03-384557eec256.jsonl`). This
+entry is new and edits no earlier one. Nothing in it is built.
+
+His definition of the work: *"this should be done in a way that when i drop a
+prompt into  another Ai it can structure the document in way that seasy
+intake"* (19:02:44Z); to the lane's option A for the first item (a
+workout-only prompt with a "Copy AI prompt" control on the content import
+screen, the files uploaded on the existing screen): *"Q1 will this hinder
+anything content wise, the content should be able to change as needed if so
+yes"* (21:48:10Z). Asked then whether the lane should build from its own
+draft or wait for the architect: *"Check in with overwatch"* (22:18:19Z), on
+which overwatch ruled build now (item 1, PR #1103, words only).
+
+Then *"Can it do both, drills will eventually expand with links connecting
+skills in it"* (23:00:18Z). The lane put (23:00:37Z): "Approve item 2,
+"drill-linked workout prompt", as a new lane after #1103 merges? ... A
+(recommended): The prompt carries the gym's drill list. Steps link to a drill
+when it clearly matches, use words otherwise, and the AI asks when unsure.
+Your drill names go to the AI you use. No athlete data. B: Same as A, but only
+drills you have approved for use. C: Stay with words only for now." Jason,
+whole message (23:08:52Z): *"A"*.
+
+**Item 2 is approved as a new lane after #1103:** the prompt carries the
+gym's drill list; a step links to a drill on a clear match, is written in
+words otherwise, and the AI asks when unsure. The gym's drill names go to
+whatever AI the admin pastes the prompt into; no athlete data does. Not
+limited to approved drills (he chose A over B). Which drill states count as
+the gym's list is not settled.
+
+---
+
 ## OD-2026-10-02-011 -- PPBF builds its own pose model from nothing; coaches hand-mark every point until it exists (replaces pick 8A); it runs inside the app on the gym's own devices; all 24 points at three moments on every event (replaces the click range). The agreement screen's opening sentence
 
 **Provenance: PRIMARY.** Typed by Jason in the teach-data lane's thread and
@@ -270,6 +305,51 @@ written middle moment back where -008 left "peak" out.
 
 Not decided: the middle-moment rule for a defence with no contact (a slip, a
 block, a parry): full extension is written for punches. The architect's.
+
+### 3b. Left and right, a neutral stance, and guard labels
+
+After the lane summarised his body-point decisions (22:42:25Z) he wrote
+*"Correct and we need left right or lead rear netral"* (22:52:03Z). Asked to
+choose (A: points named left/right, the stance recorded at each marked moment
+with neutral added, lead/rear worked out from the stance; B: points named
+lead/rear directly), Jason, whole message (22:56:15Z): *"Left and right"*.
+Asked whether "neutral" meant "a square stance, feet level with neither side
+leading" (22:56:24Z): *"No the stance was correct but you did bring up a good
+point on guard"* (23:03:46Z).
+
+**Points are marked left or right; lead and rear are worked out from the
+stance, never clicked.** The stance is recorded at each marked moment, and
+the stance list gains **neutral: a square stance, feet level, neither side
+leading.** Points on the midline (nose, chin, neck, mid-hip) carry no side.
+
+Guard was then put to him (23:04:15Z): "A: a guard-type label at each marked
+moment, from a fixed vocabulary you ratify, with "other" and "unknown", and no
+quality judgement. B: no guard label ... C: guard as its own event class,
+labelled between punches." Jason, whole message (23:07:44Z): *"A"*.
+
+The lane read four coaching manuals and first reported that two bodies'
+guard names described the same position. Jason (23:14:10Z): *"No there are
+differences  for each of those guards, each of those bodies are different
+sanction bodies so different reason for each of the named guards"*. The
+lane withdrew that reading and put (23:14:29Z): "A: each sanctioning body's
+named guards kept as separate labels, each tagged with its body and carrying
+that manual's definition and stated purpose. B: one body's guard list only.
+C: PPBF's own plain descriptive labels." Jason (23:16:47Z): *"A"*. Asked which
+bodies go in (a table of USA Boxing, AIBA, Boxing Australia and USIBA and the
+guards each names, with the lane's note that some AIBA entries are stance
+positions as much as guards and "would come in only where they describe the
+arms"), Jason, whole message (23:26:44Z): *"Well put all in"*.
+
+**A guard label is recorded at each of the three moments.** The vocabulary is
+each sanctioning body's named guards kept as **separate labels**, each tagged
+with its body and carrying that manual's definition, stated purpose and page,
+plus other and unknown; never good or bad (the closed vocabulary rule of
+ontology 0.1 stands). **All four bodies, every named guard or position:** USA
+Boxing, AIBA (now IBA), Boxing Australia and USIBA, as read in
+`Documents\PPBF-overwatch\lane-inbox\TEACH-BIOMECH-guard-sources-2026-10-02.md`.
+That AIBA's stance-like entries are included too is **INFERRED** from "all";
+some overlap the separate stance field, for the architect. Whether USA Boxing
+is PPBF's own sanctioning body was not checked.
 
 ### 4. The agreement screen's opening sentence
 
