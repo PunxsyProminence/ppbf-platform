@@ -78,7 +78,7 @@ function mockFetch(overrides: Record<string, () => Response | Promise<Response>>
       return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
     }
     if (url.includes('/shadow/medical-status')) {
-      return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
     }
     if (url.includes('/training-holds')) {
       return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
@@ -117,7 +117,7 @@ test('a cleared athlete shows the badge and date, and no clinical detail leaks',
 
 test('no clearance record reads as an action state, not as quiet', async () => {
   global.fetch = mockFetch({
-    '/shadow/medical-status': () => ({ ok: true, json: async () => ({ ok: true, status: null }) }) as Response,
+    '/shadow/medical-status': () => ({ ok: true, json: async () => ({ ok: true, status: null, effectiveStatus: 'no_record' }) }) as Response,
   });
 
   render(<SportsMedicinePage />);
@@ -190,7 +190,7 @@ test('a real lift condition is printed as written, never replaced by the fallbac
 
 test('no clearance record on file does not wear the medical red', async () => {
   global.fetch = mockFetch({
-    '/shadow/medical-status': () => ({ ok: true, json: async () => ({ ok: true, status: null }) }) as Response,
+    '/shadow/medical-status': () => ({ ok: true, json: async () => ({ ok: true, status: null, effectiveStatus: 'no_record' }) }) as Response,
   });
 
   render(<SportsMedicinePage />);
@@ -207,7 +207,7 @@ test('a clinician saying no keeps the medical red', async () => {
     '/shadow/medical-status': () =>
       ({
         ok: true,
-        json: async () => ({ ok: true, status: { status: 'not_cleared', athlete_id: 'ath-1', effective_at: '2026-08-01T10:00:00.000Z' } }),
+        json: async () => ({ ok: true, status: { status: 'not_cleared', athlete_id: 'ath-1', effective_at: '2026-08-01T10:00:00.000Z' }, effectiveStatus: 'not_cleared' }),
       }) as Response,
   });
 
@@ -308,7 +308,7 @@ function mockWriteFetch(options: {
       return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
     }
     if (url.includes('/shadow/medical-status')) {
-      return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+      return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
     }
     if (url.includes('/training-holds')) {
       holdReads += 1;
@@ -728,7 +728,7 @@ describe('a hold nobody could read never reads as "no hold"', () => {
       }
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) {
         holdReads += 1;
@@ -761,7 +761,7 @@ describe('a hold nobody could read never reads as "no hold"', () => {
       }
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) {
         holdReads += 1;
@@ -848,7 +848,7 @@ describe('what the board says when the re-read after a write does not agree', ()
       if (init?.method === 'POST') return { ok: true, json: async () => ({ ok: true, hold: PLACED }) } as Response;
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) {
         holdReads += 1;
@@ -878,7 +878,7 @@ describe('what the board says when the re-read after a write does not agree', ()
       }
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) {
         holdReads += 1;
@@ -927,7 +927,7 @@ describe('one row finishing does not release another row that is still out', () 
       }
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, SECOND] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('athlete_id=ath-2')) {
         secondReads += 1;
@@ -975,7 +975,7 @@ describe('one row finishing does not release another row that is still out', () 
       const url = String(input);
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) {
         reads += 1;
@@ -1035,7 +1035,7 @@ describe('a refused placement is news about the row', () => {
       }
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) {
         holdReads += 1;
@@ -1079,7 +1079,7 @@ describe('a refused placement is news about the row', () => {
       }
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) {
         holdReads += 1;
@@ -1114,7 +1114,7 @@ describe('a refused placement is news about the row', () => {
       if (init?.method === 'POST') return { ok: true, json: async () => ({ ok: true, hold: {} }) } as Response;
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) {
         holdReads += 1;
@@ -1176,7 +1176,7 @@ describe('a lift the server did not actually confirm never becomes "no hold" wit
       }
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) {
         holdReads += 1;
@@ -1349,7 +1349,7 @@ describe('a lift the server did not actually confirm never becomes "no hold" wit
       if (init?.method === 'POST') return { ok: true, json: async () => ({ ok: 1, hold: PLACED }) } as Response;
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) {
         holdReads += 1;
@@ -1370,6 +1370,147 @@ describe('a lift the server did not actually confirm never becomes "no hold" wit
 });
 
 /*
+ * A lapsed clearance is still STORED as 'cleared' -- the record of who cleared
+ * this athlete must not vanish -- and the route says so beside it:
+ * effectiveStatus 'cleared_expired', which is what the gates act on. This board
+ * printed the stored word, so a coach scanning the roster before contact work
+ * read a green "cleared" for a child the gate would refuse. Words, rung and
+ * date: OD-2026-10-01-007 section 4.
+ */
+describe('a lapsed clearance beside a current one', () => {
+  const LAPSED_SENTENCE = 'This clearance passed its end date, so it no longer counts. The medical gate blocks recommendations until a new clearance is recorded.';
+  const CURRENT = { athlete_id: 'ath-1', full_name: 'Jordan Doe' };
+  const LAPSED = { athlete_id: 'ath-2', full_name: 'Sam Roe' };
+  const LAPSED_STATUS = {
+    ...CLEARED_STATUS,
+    status_id: 'status-2',
+    athlete_id: 'ath-2',
+    effective_at: '2026-06-01T16:00:00.000Z',
+    // As the route sends it: `expires_at::text`, Postgres text, not ISO.
+    expires_at: '2026-09-01 16:00:00+00',
+  };
+  // A clearance still in force that HAS an end date, in the future.
+  const CURRENT_STATUS = { ...CLEARED_STATUS, expires_at: '2099-01-01 16:00:00+00' };
+
+  function rowOf(name: string): HTMLElement {
+    return screen.getByText(name).closest('li') as HTMLElement;
+  }
+
+  function installRoster(lapsedBody: unknown) {
+    global.fetch = mockFetch({
+      '/athletes/list': () => ({ ok: true, json: async () => ({ items: [CURRENT, LAPSED] }) }) as Response,
+      'medical-status?athleteId=ath-1': () =>
+        ({ ok: true, json: async () => ({ ok: true, status: CURRENT_STATUS, effectiveStatus: 'cleared' }) }) as Response,
+      'medical-status?athleteId=ath-2': () => ({ ok: true, json: async () => lapsedBody }) as Response,
+    });
+  }
+
+  test('the current one reads "cleared since"; the lapsed one reads "clearance expired", amber, with its end date and the sentence', async () => {
+    installRoster({ ok: true, status: LAPSED_STATUS, effectiveStatus: 'cleared_expired' });
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Roe');
+
+    const current = within(rowOf('Jordan Doe'));
+    expect(current.getByText('cleared').className).toContain('badge--cleared');
+    expect(current.getByText('since 8/1/2026')).toBeTruthy();
+    expect(current.queryByText('clearance expired')).toBeNull();
+    expect(current.queryByText(LAPSED_SENTENCE)).toBeNull();
+    expect(current.queryByText(/expired/)).toBeNull();
+
+    const lapsed = within(rowOf('Sam Roe'));
+    const badge = lapsed.getByText('clearance expired');
+    expect(badge.className).toContain('badge--restricted');
+    expect(badge.className).not.toContain('badge--cleared');
+    expect(badge.className).not.toContain('badge--locked');
+    expect(lapsed.getByText(LAPSED_SENTENCE)).toBeTruthy();
+    expect(lapsed.getByText('expired 9/1/2026')).toBeTruthy();
+    // Neither the stored word, nor the raw enum, nor the date it was cleared
+    // "since" is on the lapsed row.
+    expect(lapsed.queryByText('cleared')).toBeNull();
+    expect(lapsed.queryByText('cleared_expired')).toBeNull();
+    expect(lapsed.queryByText(/since/)).toBeNull();
+    expect(rowOf('Sam Roe').querySelector('.badge--cleared')).toBeNull();
+    expect(lapsed.queryByText('unavailable')).toBeNull();
+    // Still no clinical detail on the surface.
+    expect(screen.queryByText(/physician-note-123/)).toBeNull();
+  });
+
+  test('the end date is read on a browser whose Date takes only ISO 8601, from the text form the database sends', async () => {
+    const RealDate = Date;
+    const ISO = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2}))?$/;
+    class IsoOnlyDate extends RealDate {
+      constructor(...args: unknown[]) {
+        const refused = args.length === 1 && typeof args[0] === 'string' && !ISO.test(args[0]);
+        super(...((refused ? [Number.NaN] : args) as [number]));
+      }
+    }
+    // The stand-in refuses what it should and reads what it should.
+    expect(Number.isNaN(new IsoOnlyDate(LAPSED_STATUS.expires_at).getTime())).toBe(true);
+    expect(Number.isNaN(new IsoOnlyDate('2026-09-01T16:00:00+00:00').getTime())).toBe(false);
+
+    global.Date = IsoOnlyDate as unknown as DateConstructor;
+    try {
+      installRoster({ ok: true, status: LAPSED_STATUS, effectiveStatus: 'cleared_expired' });
+
+      render(<SportsMedicinePage />);
+      await screen.findByText('Sam Roe');
+
+      expect(within(rowOf('Sam Roe')).getByText('expired 9/1/2026')).toBeTruthy();
+      expect(within(rowOf('Jordan Doe')).getByText('since 8/1/2026')).toBeTruthy();
+    } finally {
+      global.Date = RealDate;
+    }
+  });
+
+  test.each([
+    ['2026-09-01 16:00:00.123456+00', '9/1/2026'],
+    ['2026-09-02 03:30:00+00', '9/1/2026'],
+    ['2026-09-01 16:00:00-04', '9/1/2026'],
+    ['2026-09-01T16:00:00.000Z', '9/1/2026'],
+    ['2026-09-01T16:00:00+00:00', '9/1/2026'],
+  ])('an end date sent as %s prints as the gym\'s day, %s', async (expiresAt, day) => {
+    installRoster({ ok: true, status: { ...LAPSED_STATUS, expires_at: expiresAt }, effectiveStatus: 'cleared_expired' });
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Roe');
+
+    expect(within(rowOf('Sam Roe')).getByText(`expired ${day}`)).toBeTruthy();
+  });
+
+  test.each([
+    ['no end date in the row', undefined],
+    ['an end date that is not a date', 'not-a-date'],
+    ['an end date that is not a string', 20260901],
+  ])('lapsed with %s: still "clearance expired", with no date printed and never "since"', async (_name, expiresAt) => {
+    installRoster({ ok: true, status: { ...LAPSED_STATUS, expires_at: expiresAt }, effectiveStatus: 'cleared_expired' });
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Roe');
+
+    const lapsed = within(rowOf('Sam Roe'));
+    expect(lapsed.getByText('clearance expired')).toBeTruthy();
+    expect(lapsed.getByText(LAPSED_SENTENCE)).toBeTruthy();
+    expect(lapsed.queryByText(/^expired/)).toBeNull();
+    expect(lapsed.queryByText(/since/)).toBeNull();
+    expect(lapsed.queryByText('cleared')).toBeNull();
+  });
+
+  test.each(['restricted', 'not_cleared', 'pending'])('a stored "%s" is printed when effectiveStatus agrees with it', async (stored) => {
+    installRoster({ ok: true, status: { ...LAPSED_STATUS, status: stored }, effectiveStatus: stored });
+
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Roe');
+
+    const row = within(rowOf('Sam Roe'));
+    expect(row.getByText(stored.replace('_', ' '))).toBeTruthy();
+    expect(row.queryByText('clearance expired')).toBeNull();
+    expect(row.queryByText('unavailable')).toBeNull();
+    expect(rowOf('Sam Roe').querySelector('.badge--cleared')).toBeNull();
+  });
+});
+
+/*
  * "cleared" is printed only from a success envelope carrying this athlete's
  * status row. The hold half of the row was tightened first; the clearance
  * half had the same hole.
@@ -1380,16 +1521,33 @@ describe('a clearance nobody actually read never reads as cleared, or as "no rec
   }
 
   const NOT_A_CLEARANCE: Array<[string, unknown]> = [
-    ['ok:false with a cleared row', { ok: false, status: CLEARED_STATUS }],
-    ['no ok at all with a cleared row', { status: CLEARED_STATUS }],
-    ['a cleared row for another athlete', { ok: true, status: { ...CLEARED_STATUS, athlete_id: 'SOMEONE-ELSE' } }],
-    ['a row that names no athlete', { ok: true, status: { status: 'cleared', effective_at: '2026-08-01T10:00:00.000Z' } }],
-    ['a row with a status that is not one of the four', { ok: true, status: { ...CLEARED_STATUS, status: 'fine' } }],
-    ['a row with no date', { ok: true, status: { ...CLEARED_STATUS, effective_at: undefined } }],
+    // Each keeps an effectiveStatus that agrees with its row, so it is refused
+    // for the reason its name gives and not for a missing field.
+    ['ok:false with a cleared row', { ok: false, status: CLEARED_STATUS, effectiveStatus: 'cleared' }],
+    ['no ok at all with a cleared row', { status: CLEARED_STATUS, effectiveStatus: 'cleared' }],
+    ['a cleared row for another athlete', { ok: true, status: { ...CLEARED_STATUS, athlete_id: 'SOMEONE-ELSE' }, effectiveStatus: 'cleared' }],
+    ['a row that names no athlete', { ok: true, status: { status: 'cleared', effective_at: '2026-08-01T10:00:00.000Z' }, effectiveStatus: 'cleared' }],
+    ['a row with a status that is not one of the four', { ok: true, status: { ...CLEARED_STATUS, status: 'fine' }, effectiveStatus: 'fine' }],
+    ['a row with no date', { ok: true, status: { ...CLEARED_STATUS, effective_at: undefined }, effectiveStatus: 'cleared' }],
     ['an empty object', {}],
-    ['ok:false with an error and a null status', { ok: false, error: 'upstream', status: null }],
-    ['ok:true with no status key', { ok: true }],
-    ['a status that is a bare string', { ok: true, status: 'cleared' }],
+    ['ok:false with an error and a null status', { ok: false, error: 'upstream', status: null, effectiveStatus: 'no_record' }],
+    ['ok:true with no status key', { ok: true, effectiveStatus: 'no_record' }],
+    ['a status that is a bare string', { ok: true, status: 'cleared', effectiveStatus: 'cleared' }],
+    // The word printed is the route's effectiveStatus, and only when it agrees
+    // with the row it came with. Each of these is a whole, valid row (or a
+    // valid "no row") beside an effectiveStatus that is absent or contradicts
+    // it.
+    ['a cleared row with NO effectiveStatus', { ok: true, status: CLEARED_STATUS }],
+    ['no row with NO effectiveStatus', { ok: true, status: null }],
+    ['no row beside effectiveStatus "cleared"', { ok: true, status: null, effectiveStatus: 'cleared' }],
+    ['a cleared row beside effectiveStatus "no_record"', { ok: true, status: CLEARED_STATUS, effectiveStatus: 'no_record' }],
+    ['a restricted row beside effectiveStatus "cleared"', { ok: true, status: { ...CLEARED_STATUS, status: 'restricted' }, effectiveStatus: 'cleared' }],
+    ['a cleared row beside effectiveStatus "restricted"', { ok: true, status: CLEARED_STATUS, effectiveStatus: 'restricted' }],
+    ['a pending row beside effectiveStatus "cleared_expired"', { ok: true, status: { ...CLEARED_STATUS, status: 'pending' }, effectiveStatus: 'cleared_expired' }],
+    ['a not_cleared row beside effectiveStatus "cleared_expired"', { ok: true, status: { ...CLEARED_STATUS, status: 'not_cleared' }, effectiveStatus: 'cleared_expired' }],
+    ['a restricted row beside effectiveStatus "cleared_expired"', { ok: true, status: { ...CLEARED_STATUS, status: 'restricted' }, effectiveStatus: 'cleared_expired' }],
+    ['a cleared row beside an effectiveStatus that is no known word', { ok: true, status: CLEARED_STATUS, effectiveStatus: 'CLEARED' }],
+    ['a cleared row beside an effectiveStatus that is not a string', { ok: true, status: CLEARED_STATUS, effectiveStatus: true }],
   ];
 
   test.each(NOT_A_CLEARANCE)('%s: the row says unavailable', async (_name, body) => {
@@ -1402,6 +1560,8 @@ describe('a clearance nobody actually read never reads as cleared, or as "no rec
     expect(within(clearanceRow()).getByText(/Unknown is not cleared/)).toBeTruthy();
     expect(within(clearanceRow()).queryByText('cleared')).toBeNull();
     expect(within(clearanceRow()).queryByText('no record')).toBeNull();
+    expect(within(clearanceRow()).queryByText('clearance expired')).toBeNull();
+    expect(clearanceRow().querySelector('.badge--cleared')).toBeNull();
     expect(screen.queryByText(/No clearance record on file/)).toBeNull();
   });
 
@@ -1445,7 +1605,7 @@ describe('a place that comes back late does not touch another athlete’s open f
       }
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, SECOND] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('athlete_id=ath-1')) {
         return { ok: true, json: async () => ({ ok: true, holds: firstPlaced ? [PLACED] : [] }) } as Response;
@@ -1526,7 +1686,7 @@ describe('one row’s refusal is not erased by another row', () => {
       }
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, SECOND] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
       return { ok: true, json: async () => ({ items: [] }) } as Response;
@@ -1565,7 +1725,7 @@ describe('one row’s refusal is not erased by another row', () => {
       }
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) {
         // First read: none. After the refusal someone else's hold is there.
@@ -1611,7 +1771,7 @@ describe('whose refusal is whose, and when it goes', () => {
       }
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, SECOND] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) {
         const id = url.includes('athlete_id=ath-2') ? 'ath-2' : 'ath-1';
@@ -1687,7 +1847,7 @@ describe('whose refusal is whose, and when it goes', () => {
       const url = String(input);
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, THIRD] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
       return { ok: true, json: async () => ({ items: [] }) } as Response;
@@ -1716,7 +1876,7 @@ describe('whose refusal is whose, and when it goes', () => {
       if (init?.method === 'POST') return held;
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE, THIRD] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('athlete_id=ath-1')) {
         jordanReads += 1;
@@ -1769,7 +1929,7 @@ describe('a place response that is not this athlete’s active hold is never pai
       if (init?.method === 'POST') return { ok: true, json: async () => placeAnswer } as Response;
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) {
         holdReads += 1;
@@ -1809,7 +1969,7 @@ describe('a place response that is not this athlete’s active hold is never pai
       if (init?.method === 'POST') return { ok: true, json: async () => ({ ok: true, hold: OTHERS }) } as Response;
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) {
         const reads = (global.fetch as jest.Mock).mock.calls.filter(
@@ -1833,7 +1993,7 @@ describe('a place response that is not this athlete’s active hold is never pai
       if (init?.method === 'POST') return { ok: true, json: async () => ({ ok: true }) } as Response;
       if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
       if (url.includes('/shadow/medical-status')) {
-        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS }) } as Response;
+        return { ok: true, json: async () => ({ ok: true, status: CLEARED_STATUS, effectiveStatus: 'cleared' }) } as Response;
       }
       if (url.includes('/training-holds')) {
         holdReads += 1;

@@ -58,8 +58,12 @@ interface ClearanceRow {
   athlete_id: string;
   full_name: string;
   // null = no clearance record on file; 'unavailable' = the read itself failed.
-  clearance: ClearanceValue | null | 'unavailable';
+  // This is the route's `effectiveStatus`, the reading the gates act on, never
+  // the stored word: a lapsed clearance is still stored as 'cleared'.
+  clearance: ClearanceValue | 'cleared_expired' | null | 'unavailable';
   effective_at: string | null;
+  // The end date of a lapsed clearance, shown in place of "since".
+  expired_at: string | null;
   hold: ActiveHold | null;
   // Whether `hold` was actually read. 'unavailable' = the hold read itself
   // failed, so `hold: null` is NOT "no active hold" -- nobody could look.
@@ -81,6 +85,12 @@ function isClearanceRow(
     && row.athlete_id === athleteId
     && typeof row.effective_at === 'string' && row.effective_at.trim().length > 0
   );
+}
+
+/* The route sends `expires_at` as Postgres text ('2026-09-01 16:00:00+00'),
+   which not every browser's Date will read. ISO 8601 all of them do. */
+function isoInstant(value: string): string {
+  return value.trim().replace(' ', 'T').replace(/(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?[+-]\d{2})$/, '$1:00');
 }
 
 /* What this board needs from a hold before it will show one. An entry that
@@ -151,6 +161,9 @@ const CLEARANCE_BADGE: Record<string, { className: string; glyph: string; label:
   restricted: { className: 'badge badge--restricted', glyph: '▲', label: 'restricted' },
   not_cleared: { className: 'badge badge--locked', glyph: '✕', label: 'not cleared' },
   pending: { className: 'badge badge--restricted', glyph: '▲', label: 'pending' },
+  // Amber, not red: the clearance ran out; no clinician said no
+  // (OD-2026-10-01-007 section 4).
+  cleared_expired: { className: 'badge badge--restricted', glyph: '▲', label: 'clearance expired' },
   none: { className: 'badge badge--restricted', glyph: '▲', label: 'no record' },
   unavailable: { className: 'badge badge--restricted', glyph: '▲', label: 'unavailable' },
 };
@@ -266,6 +279,7 @@ export default function SportsMedicinePage() {
               full_name: athlete.full_name || 'Unknown',
               clearance: 'unavailable',
               effective_at: null,
+              expired_at: null,
               hold: null,
               hold_read: 'unavailable',
             };
@@ -295,13 +309,27 @@ export default function SportsMedicinePage() {
                 // that is this athlete's: `{ ok: true, status }`, status null
                 // (no record) or a row with an allowed value. Anything else
                 // leaves the fail-closed default, 'unavailable'.
-                const payload = (await statusRes.json()) as { ok?: unknown; status?: unknown } | null;
+                //
+                // And the word printed is `effectiveStatus`, taken only when
+                // it agrees with the row it came with: 'no_record' for no
+                // row, the stored value, or 'cleared_expired' for a stored
+                // 'cleared'. A body without it, or one that contradicts its
+                // own row, also leaves 'unavailable'.
+                const payload = (await statusRes.json()) as { ok?: unknown; status?: unknown; effectiveStatus?: unknown } | null;
                 if (payload && payload.ok === true && 'status' in payload) {
+                  const effective = payload.effectiveStatus;
                   if (payload.status === null) {
-                    base.clearance = null;
+                    if (effective === 'no_record') base.clearance = null;
                   } else if (isClearanceRow(payload.status, athlete.athlete_id)) {
-                    base.clearance = payload.status.status;
-                    base.effective_at = payload.status.effective_at;
+                    const stored = payload.status;
+                    if (effective === stored.status) {
+                      base.clearance = stored.status;
+                      base.effective_at = stored.effective_at;
+                    } else if (stored.status === 'cleared' && effective === 'cleared_expired') {
+                      const expiresAt = (stored as { expires_at?: unknown }).expires_at;
+                      base.clearance = 'cleared_expired';
+                      base.expired_at = typeof expiresAt === 'string' ? isoInstant(expiresAt) : null;
+                    }
                   }
                 }
               }
@@ -663,11 +691,22 @@ export default function SportsMedicinePage() {
                           since {formatGymDateNumeric(row.effective_at)}
                         </span>
                       ) : null}
+                      {row.expired_at && formatGymDateNumeric(row.expired_at) ? (
+                        <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
+                          expired {formatGymDateNumeric(row.expired_at)}
+                        </span>
+                      ) : null}
                     </div>
                     {row.clearance === null ? (
                       <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>
                         No clearance record on file. The office sets one during onboarding; until then the
                         medical gate blocks recommendations for this athlete.
+                      </p>
+                    ) : null}
+                    {row.clearance === 'cleared_expired' ? (
+                      <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>
+                        This clearance passed its end date, so it no longer counts. The medical gate blocks
+                        recommendations until a new clearance is recorded.
                       </p>
                     ) : null}
                     {row.clearance === 'unavailable' ? (

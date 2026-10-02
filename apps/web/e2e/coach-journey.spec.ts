@@ -140,7 +140,7 @@ test.describe('Coach journey', () => {
       session: { role: 'coach' },
       routes: {
         '/api/pilot/athletes/list': { ok: true, items: [ROSA] },
-        '/api/pilot/shadow/medical-status': { ok: true, status: null },
+        '/api/pilot/shadow/medical-status': { ok: true, status: null, effectiveStatus: 'no_record' },
         '/api/pilot/shadow/recommendations': { ok: true, recommendations: [PROVISIONAL_RECOMMENDATION] },
         '/api/pilot/shadow/decisions': { ok: true, decisions: [] },
         '/api/pilot/shadow/near-misses': { ok: true, nearMisses: [] },

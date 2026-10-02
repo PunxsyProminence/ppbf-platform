@@ -7,6 +7,9 @@ import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
 
 type MedicalStatusValue = 'cleared' | 'restricted' | 'not_cleared' | 'pending';
+/* What the gates act on, as the route reports it beside the stored row: the
+   stored value, or 'cleared_expired' for a 'cleared' row past its end date. */
+type EffectiveMedicalStatus = MedicalStatusValue | 'cleared_expired';
 type RecommendationStatus = 'provisional' | 'accepted' | 'rejected' | 'expired' | 'superseded';
 type NearMissSeverity = 'low' | 'moderate' | 'high' | 'critical';
 type IncidentSeverity = 'high' | 'critical';
@@ -27,6 +30,8 @@ interface MedicalStatusRow {
   set_by_role: string;
   effective_at: string;
   created_at: string;
+  /* Not a column: the route's `effectiveStatus`, kept with the row it reads. */
+  effective_status: EffectiveMedicalStatus;
 }
 
 interface RecommendationRow {
@@ -152,7 +157,13 @@ function isFilled(value: unknown): value is string {
    that says "cleared" and nothing else is not a readable record: it would
    render "Current status: cleared -- Set by undefined (undefined) at
    undefined". And a row that belongs to a different athlete than the one
-   asked about is not this athlete's status at all. */
+   asked about is not this athlete's status at all.
+
+   The badge prints `effectiveStatus`, the reading the gates act on, never the
+   stored word: a lapsed clearance is still stored as 'cleared'. It is taken
+   only when it agrees with the row it came with -- 'no_record' for no row,
+   the stored value, or 'cleared_expired' for a stored 'cleared'. A body
+   without it, or one that contradicts its own row, is not a status. */
 function readMedicalStatus(
   envelope: Record<string, unknown>,
   forAthleteId: string,
@@ -160,7 +171,11 @@ function readMedicalStatus(
 ): MedicalStatusRow | null {
   if (!('status' in envelope)) throw new Error(fallbackMessage);
   const status = envelope.status;
-  if (status === null) return null;
+  const effective = envelope.effectiveStatus;
+  if (status === null) {
+    if (effective !== 'no_record') throw new Error(fallbackMessage);
+    return null;
+  }
   if (!status || typeof status !== 'object' || Array.isArray(status)) throw new Error(fallbackMessage);
   const row = status as Record<string, unknown>;
   if (
@@ -173,10 +188,11 @@ function readMedicalStatus(
     || !isFilled(row.set_by_role)
     || !isFilled(row.effective_at)
     || !(row.source_reference === null || typeof row.source_reference === 'string')
+    || !(effective === row.status || (row.status === 'cleared' && effective === 'cleared_expired'))
   ) {
     throw new Error(fallbackMessage);
   }
-  return status as MedicalStatusRow;
+  return { ...(status as MedicalStatusRow), effective_status: effective as EffectiveMedicalStatus };
 }
 
 /* `textFields` are the fields the page prints or slices for each row. A row
@@ -236,10 +252,14 @@ const BADGE_GLYPH: Record<Exclude<BadgeTone, 'neutral'>, string> = {
 
 function statusBadgeTone(status: string): BadgeTone {
   if (status === 'accepted' || status === 'cleared' || status === 'active' || status === 'match') return 'cleared';
-  if (status === 'provisional' || status === 'pending' || status === 'partial') return 'restricted';
+  if (status === 'provisional' || status === 'pending' || status === 'partial' || status === 'cleared_expired') return 'restricted';
   if (status === 'rejected' || status === 'not_cleared' || status === 'miss') return 'locked';
   return 'neutral';
 }
+
+/* The one status whose stored word is not the word a coach reads
+   (OD-2026-10-01-007 section 4). */
+const STATUS_LABEL: Record<string, string> = { cleared_expired: 'clearance expired' };
 
 function StatusBadge({ status }: { readonly status: string }) {
   const tone = statusBadgeTone(status);
@@ -254,7 +274,7 @@ function StatusBadge({ status }: { readonly status: string }) {
   return (
     <span className={`badge badge--${tone}`}>
       <i>{BADGE_GLYPH[tone]}</i>
-      {status}
+      {STATUS_LABEL[status] ?? status}
     </span>
   );
 }
@@ -1023,8 +1043,14 @@ export default function DecisionLoopReviewPage() {
                 {medicalStatus ? (
                   <div className="mt-[var(--s3)] space-y-[var(--s2)] text-[length:var(--t-sm)]">
                     <p className="flex flex-wrap items-center gap-[var(--s3)]">
-                      Current status: <StatusBadge status={medicalStatus.status} />
+                      Current status: <StatusBadge status={medicalStatus.effective_status} />
                     </p>
+                    {medicalStatus.effective_status === 'cleared_expired' && (
+                      <p className="t-body text-[color:var(--bone-300)]">
+                        This clearance passed its end date, so it no longer counts. The medical gate blocks
+                        recommendations until a new clearance is recorded.
+                      </p>
+                    )}
                     <p className="t-data text-[color:var(--bone-400)]">
                       Set by {medicalStatus.set_by_role} ({medicalStatus.set_by_account_id}) at {medicalStatus.effective_at}
                     </p>
