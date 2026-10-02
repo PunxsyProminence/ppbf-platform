@@ -56,15 +56,24 @@ import {
  *      so no control on this page is labelled with a frame number -- see
  *      src/lib/clipTime.ts for the long version.
  *
- * WHY IT EXTENDS THE EXISTING VIDEO PATH RATHER THAN ADDING A SECOND ONE. The
- * stream comes from GET /api/pilot/video/[videoId], the same route the coach
- * video console uses: it refuses anything not 'ready', runs
- * assertActorCanAccessAthlete, and applies the guardian video-consent scope
- * check. The safeguarding review link (POST /api/pilot/video/review-link) is
- * NOT used and must never be: it exists to let a designated reviewer look at
- * QUARANTINED footage in order to decide about it, and borrowing it for
- * annotation would turn a narrow safeguarding exception into a general way to
- * watch unscanned video of children.
+ * WHERE THE STREAM COMES FROM, AND WHY IT IS NOT THE FILM STUDY ROUTE. The
+ * stream comes from /api/pilot/teach-shadow/footage/[videoId]/stream,
+ * teaching's own door, gated by requireAnnotator and assertVideoClippable --
+ * the same question the cut asks, so footage that stops being clippable stops
+ * being watchable here in the same instant.
+ *
+ * This page used to fetch the Film Study video route, the one the coach video
+ * console uses. That route refuses take-backed footage (2026-09-25) and only
+ * take-backed footage may be cut into a clip (2026-09-24), so every clip this
+ * page was allowed to show had a source it could not play. #1018 built the
+ * teaching door and wired the cutter to it; this page was left on the old
+ * route until TEACH-DATA-01. teachingFootagePlayableContract.test.ts now holds
+ * both pages to the teaching door.
+ *
+ * The safeguarding review link is NOT used and must never be: it exists to
+ * let a designated reviewer look at QUARANTINED footage in order to decide
+ * about it, and borrowing it for annotation would turn a narrow safeguarding
+ * exception into a general way to watch unscanned video of children.
  */
 
 /* ------------------------------------------------------------------ *
@@ -346,7 +355,8 @@ export default function CoachCalibrationPage() {
   }, []);
 
   /**
-   * The stream, from the ordinary protected video route.
+   * The stream, from teaching's own playback door -- never the Film Study
+   * video route, which refuses every clip this page can legally show.
    *
    * Called on clip open and again whenever the annotator asks for a fresh
    * link. Nothing else calls it: there is no timer that re-mints, because
@@ -357,12 +367,13 @@ export default function CoachCalibrationPage() {
     setStreamNotice('');
     setStreamUrl('');
     const response = await fetch(
-      `${apiBase()}/api/pilot/video/${encodeURIComponent(videoSessionId)}`,
+      `${apiBase()}/api/pilot/teach-shadow/footage/${encodeURIComponent(videoSessionId)}/stream`,
       { credentials: 'include', cache: 'no-store' },
     );
     if (!response.ok) {
-      // The video route answers 404 for "not there" and "there but not yours"
-      // alike, on purpose. Reported as-is rather than guessed at.
+      // The teaching door answers 404 for "not there", "not yours" and "no
+      // longer clippable" alike, on purpose. Reported as-is rather than
+      // guessed at.
       setStreamNotice(await readError(response));
       return;
     }

@@ -45,9 +45,11 @@
 //   consent row for a named athlete; there is no name here.
 //
 // This is not a loosening: it is the consequence of the owner's ruling that
-// teaching footage names nobody. Consent for teaching use is recorded as its
-// own waiver_type and is a question about the CORPUS, not about a playback
-// click. See the capture-participants migration for the long version.
+// teaching footage names nobody, and that filming to teach the recognizer is
+// never restricted (OD-2026-09-28-006 ruling 2): there is no consent step for
+// teaching use anywhere, so there is none to apply to a playback click. This
+// comment used to say teaching consent was recorded as its own waiver_type;
+// nothing writes or reads one (corrected 2026-10-02, TEACH-DATA-01).
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
