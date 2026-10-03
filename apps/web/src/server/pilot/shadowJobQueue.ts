@@ -35,8 +35,10 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 2;
-//                                              ^ BUMPED for the near-miss
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 3;
+// 3: the first bump made by the fingerprint below -- #1133, #1132 and
+// others changed watched files after v2 was recorded.
+// 2 was BUMPED for the near-miss
 // audience gate. It should have been bumped BY that change and was not: #975
 // altered what goes into `authorizedContext` for athlete and parent -- exactly
 // the trigger named above -- and touched only shadowChat.ts, its test and two
@@ -89,6 +91,7 @@ export const SHADOW_CONTEXT_CONTRACT_SOURCES: readonly string[] = [
  */
 export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; sha256: string }[] = [
   { version: 2, sha256: '7ae5ffd399407dbd80638f016239074db05387891d96c74c45d5084590f37389' },
+  { version: 3, sha256: 'f5b4fe633606652fcec80021320b447abc2b804892de8eadafa18353263bfbba' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

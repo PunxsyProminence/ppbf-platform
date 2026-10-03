@@ -59,10 +59,13 @@ describe('SHADOW context contract fingerprint', () => {
     const actual = fingerprintSources(SHADOW_CONTEXT_CONTRACT_SOURCES);
     const recorded = SHADOW_CONTEXT_CONTRACT_FINGERPRINTS[SHADOW_CONTEXT_CONTRACT_FINGERPRINTS.length - 1];
     if (recorded?.sha256 !== actual) {
+      // Counted from the last RECORDED entry, so the hint is right whether or
+      // not the constant has already been bumped.
+      const next = (recorded?.version ?? 1) + 1;
       throw new Error(
-        'The code that builds SHADOW job context changed. In shadowJobQueue.ts: bump '
-        + `SHADOW_CONTEXT_CONTRACT_VERSION to ${SHADOW_CONTEXT_CONTRACT_VERSION + 1} and append `
-        + `{ version: ${SHADOW_CONTEXT_CONTRACT_VERSION + 1}, sha256: '${actual}' } to `
+        'The code that builds SHADOW job context changed. In shadowJobQueue.ts: set '
+        + `SHADOW_CONTEXT_CONTRACT_VERSION to ${next} and append `
+        + `{ version: ${next}, sha256: '${actual}' } to `
         + 'SHADOW_CONTEXT_CONTRACT_FINGERPRINTS. Do not edit the existing entry.',
       );
     }
