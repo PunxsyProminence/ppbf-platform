@@ -540,6 +540,52 @@ describe('session revocation regressions (real database, real application code)'
     }
   }
 
+  /**
+   * An athlete login holding a PIN an admin set, written straight to the
+   * table: active, must_change_pin, an active membership. It is the state the
+   * retired activateAccountPin left, which these cases were written against.
+   */
+  async function seedAthletePin(accountId: string, pin: string, organizationId: string): Promise<void> {
+    const { hashPin } = await import('./security');
+    await rawQuery(
+      `update pilot.accounts set pin_hash = $1, active_flag = true, must_change_pin = true, updated_at = now()
+       where account_id = $2 and organization_id = $3 and role = 'athlete'`,
+      [await hashPin(pin), accountId, organizationId],
+    );
+    await rawQuery(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'athlete', true)
+       on conflict (account_id, organization_id) do update set role = 'athlete', active_flag = true`,
+      [accountId, organizationId],
+    );
+  }
+
+  /**
+   * A local-PIN (ppbf_local) login for a non-athlete role, with an active
+   * membership: rows the retired createCoachAccount and
+   * createOrRotateAdminAccount wrote, which still exist in deployed databases
+   * and can never sign in.
+   */
+  async function seedLegacyPinAccount(
+    accountId: string,
+    role: 'coach' | 'organization_admin' | 'platform_owner',
+    pin: string,
+    organizationId: string,
+  ): Promise<void> {
+    const { hashPin } = await import('./security');
+    await rawQuery(
+      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
+       values ($1, $2, $3, null, $4, true, $5)`,
+      [accountId, role, organizationId, await hashPin(pin), role === 'platform_owner'],
+    );
+    await rawQuery(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, $3, true)
+       on conflict (account_id, organization_id) do update set role = excluded.role, active_flag = true`,
+      [accountId, organizationId, role],
+    );
+  }
+
   test('a Microsoft-authenticated organization admin can authenticate, and resolvePrincipal resolves the session end-to-end', async () => {
     await seedOrganization('org-new-admin');
     await rawQuery(
@@ -637,7 +683,7 @@ describe('session revocation regressions (real database, real application code)'
     await seedOrganization('org-B-inherit');
 
     await auth.createOrUpdateAthleteAccount('athlete-cross-org-1', 'athlete-cross-org-1', 'org-A-inherit');
-    await auth.activateAccountPin('athlete-cross-org-1', '482913', 'org-A-inherit');
+    await seedAthletePin('athlete-cross-org-1', '482913', 'org-A-inherit');
     const loginA = await auth.loginWithAccountIdAndPin('athlete-cross-org-1', '482913');
     expect(loginA).not.toBeNull();
 
@@ -660,7 +706,7 @@ describe('session revocation regressions (real database, real application code)'
     await seedOrganization('org-secondary-B');
 
     await auth.createOrUpdateAthleteAccount('athlete-secondary-1', 'athlete-secondary-1', 'org-primary-A');
-    await auth.activateAccountPin('athlete-secondary-1', '482913', 'org-primary-A');
+    await seedAthletePin('athlete-secondary-1', '482913', 'org-primary-A');
     const loginInPrimary = await auth.loginWithAccountIdAndPin('athlete-secondary-1', '482913');
     expect(loginInPrimary).not.toBeNull();
 
@@ -702,7 +748,7 @@ describe('session revocation regressions (real database, real application code)'
   test('organization-admin revocation is denied when the membership in that organization is inactive', async () => {
     await seedOrganization('org-inactive-member-primary');
     await seedOrganization('org-inactive-member-target');
-    await auth.createCoachAccount('coach-inactive-member-1', '123456', 'org-inactive-member-primary');
+    await seedLegacyPinAccount('coach-inactive-member-1', 'coach', '123456', 'org-inactive-member-primary');
 
     await rawQuery(
       `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
@@ -719,7 +765,7 @@ describe('session revocation regressions (real database, real application code)'
   test('organization-admin revocation is denied when there is no membership at all in that organization', async () => {
     await seedOrganization('org-no-member-primary');
     await seedOrganization('org-no-member-target');
-    await auth.createCoachAccount('coach-no-member-1', '123456', 'org-no-member-primary');
+    await seedLegacyPinAccount('coach-no-member-1', 'coach', '123456', 'org-no-member-primary');
 
     await expect(
       auth.revokeAllSessionsForAccountInOrganization('coach-no-member-1', 'org-no-member-target'),
@@ -729,7 +775,7 @@ describe('session revocation regressions (real database, real application code)'
   test('cross-tenant, missing-membership, inactive-membership, and platform-owner denials are all indistinguishable to the caller', async () => {
     await seedOrganization('org-cross-tenant-actor');
     await seedOrganization('org-cross-tenant-target');
-    await auth.createCoachAccount('coach-other-tenant-1', '123456', 'org-cross-tenant-target');
+    await seedLegacyPinAccount('coach-other-tenant-1', 'coach', '123456', 'org-cross-tenant-target');
 
     const errors: string[] = [];
 
@@ -739,7 +785,7 @@ describe('session revocation regressions (real database, real application code)'
       errors.push(error instanceof Error ? error.message : String(error));
     }
 
-    await auth.createOrRotateAdminAccount('owner-cross-tenant-1', '123456', 'org-cross-tenant-actor', 'platform_owner');
+    await seedLegacyPinAccount('owner-cross-tenant-1', 'platform_owner', '123456', 'org-cross-tenant-actor');
     try {
       await auth.revokeAllSessionsForAccountInOrganization('owner-cross-tenant-1', 'org-cross-tenant-actor');
     } catch (error) {
@@ -754,7 +800,7 @@ describe('session revocation regressions (real database, real application code)'
   test('cookie lifetime and the database session expire at the same time (24 hours)', async () => {
     await seedOrganization('org-cookie-align');
     await auth.createOrUpdateAthleteAccount('athlete-cookie-1', 'athlete-cookie-1', 'org-cookie-align');
-    await auth.activateAccountPin('athlete-cookie-1', '482913', 'org-cookie-align');
+    await seedAthletePin('athlete-cookie-1', '482913', 'org-cookie-align');
     const before = Date.now();
     const login = await auth.loginWithAccountIdAndPin('athlete-cookie-1', '482913');
     const after = Date.now();
@@ -774,8 +820,8 @@ describe('session revocation regressions (real database, real application code)'
   test('coach/admin local PIN login is rejected and writes no session row', async () => {
     await seedOrganization('org-local-pin-deny');
 
-    await auth.createCoachAccount('coach-local-pin-deny-1', '123456', 'org-local-pin-deny');
-    await auth.createOrRotateAdminAccount('admin-local-pin-deny-1', '123456', 'org-local-pin-deny', 'organization_admin');
+    await seedLegacyPinAccount('coach-local-pin-deny-1', 'coach', '123456', 'org-local-pin-deny');
+    await seedLegacyPinAccount('admin-local-pin-deny-1', 'organization_admin', '123456', 'org-local-pin-deny');
 
     const coachLogin = await auth.loginWithAccountIdAndPin('coach-local-pin-deny-1', '123456');
     const adminLogin = await auth.loginWithAccountIdAndPin('admin-local-pin-deny-1', '123456');

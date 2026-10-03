@@ -166,7 +166,7 @@ describe('createAthleteAccount binding guards', () => {
 
   test('refuses to bind a second account to an athlete who already holds one', async () => {
     athleteIsOnRoster();
-    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'the_childs_own_account' }] });
+    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'the_childs_own_account', account_deleted: false }] });
 
     await expect(createAthleteAccount('acct_new', 'athlete_1', 'org_1')).rejects.toThrow(
       'Athlete is already linked to another account',
@@ -177,7 +177,7 @@ describe('createAthleteAccount binding guards', () => {
 
   test('allows the rerun that re-binds the athlete to the same account id', async () => {
     athleteIsOnRoster();
-    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'acct_same' }] }); // same id, not a second account
+    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'acct_same', account_deleted: false }] }); // same id, not a second account
     currentClient.query.mockResolvedValueOnce({ rows: [] }); // account row itself not present yet
 
     await expect(createAthleteAccount('acct_same', 'athlete_1', 'org_1')).resolves.toBeUndefined();

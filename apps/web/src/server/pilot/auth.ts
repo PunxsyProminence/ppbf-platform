@@ -541,45 +541,6 @@ export async function cleanupExpiredSessions(retentionDays: number = 7): Promise
   return { deletedCount: rows.length };
 }
 
-export async function resetAccountPin(accountId: string, pin: string, organizationId: string): Promise<void> {
-  validatePinPolicy(pin);
-  const pinHash = await hashPin(pin);
-
-  await withTransaction(async (client) => {
-    // Verify ownership, change the PIN, and revoke every existing session
-    // for this account in one transaction: if any step fails, nothing
-    // commits, so a caller is never told a reset succeeded while the old
-    // PIN or an old session is still valid.
-    //
-    // must_change_pin is set because a reset PIN is always known to somebody
-    // other than the athlete -- the admin who typed it, and in the case of the
-    // "back to the starting PIN" button in /admin/people, anyone at all, since
-    // that PIN is published. The admin UI already tells the athlete they will
-    // have to choose a new one on next sign-in; without this line that promise
-    // was simply untrue, and the reset handed out full access on 123456.
-    const result = await client.query<{ account_id: string }>(
-      `update pilot.accounts
-       set pin_hash = $1, must_change_pin = true, updated_at = now()
-       where account_id = $2
-         and organization_id = $3
-         and role = 'athlete'
-         and is_platform_owner = false
-       returning account_id`,
-      [pinHash, accountId, organizationId],
-    );
-
-    // Leads with "Not found:" because jsonError maps by message prefix: any
-    // other wording is masked as a 500 "Internal server error", which tells the
-    // admin their reset broke the server rather than that they picked an
-    // account this reset cannot apply to.
-    if (result.rows.length === 0) {
-      throw new Error('Not found: no such account, or it cannot be reset');
-    }
-
-    await revokeAllSessionsForAccountTx(client, accountId);
-  });
-}
-
 /**
  * Repair one account stranded by the pre-#46 guardian provisioning defect:
  * a non-athlete row on auth_provider 'ppbf_local' has NO working login path
@@ -599,84 +560,37 @@ export async function repairStrandedGuardianAuthProvider(
   accountId: string,
   organizationId: string,
 ): Promise<{ account_id: string; role: PilotRole; login_email: string }> {
-  const repaired = await queryOne<{ account_id: string; role: PilotRole; login_email: string }>(
-    `update pilot.accounts
-     set auth_provider = 'microsoft',
-         pin_hash = null,
-         must_change_pin = false,
-         updated_at = now()
-     where account_id = $1
-       and organization_id = $2
-       and auth_provider = 'ppbf_local'
-       and role <> 'athlete'
-       and is_platform_owner = false
-       and active_flag = true
-       and login_email is not null
-       and login_email <> ''
-     returning account_id, role, login_email`,
-    [accountId, organizationId],
-  );
-  if (!repaired) {
-    throw new Error(
-      'Not found: no active, stranded (ppbf_local) non-athlete account with a login email '
-      + 'matches that account_id in this organization',
-    );
-  }
-  return repaired;
-}
-
-export async function activateAccountPin(accountId: string, pin: string, organizationId: string): Promise<void> {
-  validatePinPolicy(pin);
-  const pinHash = await hashPin(pin);
-
-  await withTransaction(async (client) => {
-    // must_change_pin is set for the same reason resetAccountPin sets it, and
-    // it was the only one of the three PIN paths that did not. An activation
-    // PIN is typed by an administrator, so it is a PIN somebody other than the
-    // athlete knows -- and until this line, an athlete promoted from intake
-    // signed in on it and was never once asked to replace it. The whole
-    // enforcement chain hangs on this boolean: requirePrincipal refuses every
-    // route while it is set (http.ts), and roleSession.ts and /athlete/sign-in
-    // both send that state to /change-pin. At false, none of it fires.
-    //
-    // Measured before changing it, against real Postgres: createAthleteAccount
-    // left it true, resetAccountPin left it true, and activateAccountPin left
-    // it false because pilot.accounts.must_change_pin defaults to false and
-    // this UPDATE never named it.
-    //
-    // The cost is one extra prompt when an admin activates with the athlete
-    // standing next to them having chosen the PIN themselves. That is the
-    // right trade in a system holding youth records: the alternative is an
-    // admin-known credential that grants full athlete access indefinitely.
-    const result = await client.query<{ account_id: string }>(
-      `update pilot.accounts
-       set pin_hash = $1,
-           active_flag = true,
-           must_change_pin = true,
+  // A deleted login is not repaired (OD-2026-09-30-004 e2): the repair made it
+  // matchable by Microsoft sign-in again while sign-in refused it, and said
+  // nothing. The condition is in the write; the lookup after it only names
+  // the reason, scoped to the caller's organization.
+  return withTransaction(async (client) => {
+    const result = await client.query<{ account_id: string; role: PilotRole; login_email: string }>(
+      `update pilot.accounts a
+       set auth_provider = 'microsoft',
+           pin_hash = null,
+           must_change_pin = false,
            updated_at = now()
-       where account_id = $2
-         and organization_id = $3
-         and role = 'athlete'
+       where account_id = $1
+         and organization_id = $2
+         and auth_provider = 'ppbf_local'
+         and role <> 'athlete'
          and is_platform_owner = false
-       returning account_id`,
-      [pinHash, accountId, organizationId],
-    );
-
-    if (result.rows.length === 0) {
-      throw new Error('Not found: no such account, or it cannot be activated');
-    }
-
-    await client.query(
-      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
-       values ($1, $2, 'athlete', true)
-       on conflict (account_id, organization_id) do update
-         set role = 'athlete',
-             active_flag = true,
-             updated_at = now()`,
+         and active_flag = true
+         and login_email is not null
+         and login_email <> ''
+         and not ${accountDeletedSql('a')}
+       returning account_id, role, login_email`,
       [accountId, organizationId],
     );
-
-    await revokeAllSessionsForAccountTx(client, accountId);
+    if (result.rows.length === 0) {
+      await refuseIfLoginDeleted(client, accountId, organizationId);
+      throw new Error(
+        'Not found: no active, stranded (ppbf_local) non-athlete account with a login email '
+        + 'matches that account_id in this organization',
+      );
+    }
+    return result.rows[0];
   });
 }
 
@@ -700,15 +614,30 @@ export async function createAthleteAccount(
       throw new Error('Athlete not found in organization');
     }
 
-    const existingAthleteBinding = await client.query<{ account_id: string }>(
-      `select account_id
-       from pilot.accounts
-       where athlete_id = $1 and organization_id = $2
+    // A deleted login is refused with its reason (OD-2026-09-30-004 e2), the
+    // same two refusals as provisionAthleteActivation's mode 'create'
+    // (activation.ts). This function only inserts, so it never wrote to a
+    // deleted login; it answered "already linked" or "already exists" and
+    // nothing said why. The caller is the platform owner, cross-organization
+    // by role, so the account lookup is not scoped.
+    const existingAthleteBinding = await client.query<{ account_id: string } & AccountDeletionFlag>(
+      `select a.account_id, ${accountDeletedSql('a')} as account_deleted
+       from pilot.accounts a
+       where a.athlete_id = $1 and a.organization_id = $2
        limit 1`,
       [athleteId, organizationId],
     );
 
     if (existingAthleteBinding.rows.length > 0 && existingAthleteBinding.rows[0].account_id !== accountId) {
+      // The deleted login's id is not named, as in intake's refusal.
+      if (isDeletedAccount(existingAthleteBinding.rows[0])) {
+        throw new ConflictError(
+          `Conflict: athlete record "${athleteId}" is still held by a login that was deleted. A deleted `
+          + 'login is not restored, and an athlete record takes one login, so a new one cannot be created for '
+          + "this record; the old login's hold on it needs a database fix.",
+          'ATHLETE_RECORD_HELD_BY_DELETED_LOGIN',
+        );
+      }
       throw new Error('Athlete is already linked to another account');
     }
 
@@ -721,6 +650,7 @@ export async function createAthleteAccount(
     );
 
     if (existingAccount.rows.length > 0) {
+      await refuseIfLoginDeleted(client, accountId, null);
       if (existingAccount.rows[0].organization_id !== organizationId) {
         throw new Error('Account already exists in another organization');
       }
@@ -999,138 +929,6 @@ export async function createAthleteAccountPendingActivation(
   });
 }
 
-// The three constructors below write local PIN accounts for privileged roles.
-// Every account they produce is unusable: loginWithAccountIdAndPin admits only
-// 'athlete', and resolvePrincipal revokes on sight any live session belonging
-// to a ppbf_local account whose role is not 'athlete'. So a coach, parent or
-// admin created here can never sign in.
-//
-// They are retained only because the session-revocation suites use them as
-// fixtures for rows that still exist in deployed databases. Do NOT wire them to
-// new callers -- createOrUpdateMicrosoftStaffAccount in staffProvisioning.ts is
-// the supported path for every non-athlete role. Intake promotion used
-// createParentAccount until it was moved to that path; nothing calls these in
-// production now.
-/** @deprecated Produces an account that cannot authenticate. See the note above. */
-export async function createCoachAccount(accountId: string, pin: string, organizationId: string): Promise<void> {
-  const pinHash = await hashPin(pin);
-
-  // Check if account exists and verify ownership
-  const existingAccount = await query<{ organization_id: string }>(
-    'select organization_id from pilot.accounts where account_id = $1',
-    [accountId]
-  );
-
-  if (existingAccount.length > 0) {
-    const existingOrgId = existingAccount[0].organization_id;
-    if (existingOrgId !== organizationId) {
-      throw new Error('Account already exists in another organization');
-    }
-
-    await withTransaction(async (client) => {
-      // Same organization—update is allowed. The PIN is changing, so revoke
-      // every existing session for this account in the same transaction.
-      await client.query(
-        `update pilot.accounts set
-           role = $1,
-           pin_hash = $2,
-           active_flag = $3,
-           updated_at = now()
-         where account_id = $4 and organization_id = $5`,
-        ['coach', pinHash, true, accountId, organizationId],
-      );
-      await assignOrganizationMembershipTx(client, accountId, organizationId, 'coach');
-      await revokeAllSessionsForAccountTx(client, accountId);
-    });
-  } else {
-    await withTransaction(async (client) => {
-      // New account—create it
-      await client.query(
-        `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
-         values ($1, $2, $3, $4, $5, $6, $7)`,
-        [accountId, 'coach', organizationId, null, pinHash, true, false],
-      );
-      await assignOrganizationMembershipTx(client, accountId, organizationId, 'coach');
-    });
-  }
-}
-
-/** @deprecated Produces an account that cannot authenticate. See the note above createCoachAccount. */
-export async function createParentAccount(accountId: string, pin: string, organizationId: string): Promise<void> {
-  const pinHash = await hashPin(pin);
-
-  // Check if account exists and verify ownership
-  const existingAccount = await query<{ organization_id: string }>(
-    'select organization_id from pilot.accounts where account_id = $1',
-    [accountId]
-  );
-
-  if (existingAccount.length > 0) {
-    const existingOrgId = existingAccount[0].organization_id;
-    if (existingOrgId !== organizationId) {
-      throw new Error('Account already exists in another organization');
-    }
-
-    await withTransaction(async (client) => {
-      // Same organization—update is allowed. The PIN is changing, so revoke
-      // every existing session for this account in the same transaction.
-      await client.query(
-        `update pilot.accounts set
-           role = $1,
-           pin_hash = $2,
-           active_flag = $3,
-           updated_at = now()
-         where account_id = $4 and organization_id = $5`,
-        ['parent', pinHash, true, accountId, organizationId],
-      );
-      await assignOrganizationMembershipTx(client, accountId, organizationId, 'parent');
-      await revokeAllSessionsForAccountTx(client, accountId);
-    });
-  } else {
-    await withTransaction(async (client) => {
-      // New account—create it
-      await client.query(
-        `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
-         values ($1, $2, $3, $4, $5, $6, $7)`,
-        [accountId, 'parent', organizationId, null, pinHash, true, false],
-      );
-      await assignOrganizationMembershipTx(client, accountId, organizationId, 'parent');
-    });
-  }
-}
-
-/** @deprecated Produces an account that cannot authenticate. See the note above createCoachAccount. */
-export async function createOrRotateAdminAccount(
-  accountId: string,
-  pin: string,
-  organizationId: string,
-  role: 'organization_admin' | 'platform_owner' | 'board' = 'organization_admin',
-): Promise<void> {
-  const pinHash = await hashPin(pin);
-  const isPlatformOwner = role === 'platform_owner';
-
-  await withTransaction(async (client) => {
-    await client.query(
-      `insert into pilot.accounts (account_id, role, organization_id, athlete_id, pin_hash, active_flag, is_platform_owner)
-       values ($1, $2, $3, $4, $5, $6, $7)
-       on conflict (account_id) do update set
-         role = excluded.role,
-         organization_id = excluded.organization_id,
-         athlete_id = excluded.athlete_id,
-         pin_hash = excluded.pin_hash,
-         active_flag = excluded.active_flag,
-         is_platform_owner = excluded.is_platform_owner`,
-      [accountId, role, organizationId, null, pinHash, true, isPlatformOwner],
-    );
-
-    // Without this, a newly created or rotated admin has no matching active
-    // organization_memberships row, and resolvePrincipal's active-membership
-    // join would then reject every session they try to establish.
-    await assignOrganizationMembershipTx(client, accountId, organizationId, role);
-    await revokeAllSessionsForAccountTx(client, accountId);
-  });
-}
-
 export async function createOrganization(organizationId: string, organizationName: string, createdBy: string): Promise<void> {
   // The reserved organization owning the platform evidence baseline is not a
   // gym, and this is an upsert: a platform_owner POSTing that id would rename
@@ -1196,8 +994,13 @@ export async function createOrUpdateMicrosoftPlatformOwnerAccount(params: {
   const existingByAccountId = await queryOne<{ account_id: string }>('select account_id from pilot.accounts where account_id = $1', [accountId]);
 
   await withTransaction(async (client) => {
-    await client.query(
-      `insert into pilot.accounts (
+    // A deleted login is not re-made the platform owner (OD-2026-09-30-004
+    // e2): the upsert set active_flag back to true on a row sign-in refuses,
+    // and the bootstrap reported success. The condition is on the upsert's own
+    // update, so a row deleted between the reads above and this write is
+    // still refused. Platform-level route: the lookup is not scoped.
+    const written = await client.query<{ account_id: string }>(
+      `insert into pilot.accounts as a (
          account_id,
          login_email,
          auth_provider,
@@ -1218,9 +1021,16 @@ export async function createOrUpdateMicrosoftPlatformOwnerAccount(params: {
          athlete_id = null,
          pin_hash = null,
          active_flag = true,
-         updated_at = now()`,
+         updated_at = now()
+       where not ${accountDeletedSql('a')}
+       returning account_id`,
       [accountId, normalizedEmail, params.organizationId],
     );
+
+    if (written.rows.length === 0) {
+      await refuseIfLoginDeleted(client, accountId, null);
+      throw new Error('Platform owner account was not written');
+    }
 
     await assignOrganizationMembershipTx(client, accountId, params.organizationId, 'platform_owner');
 
