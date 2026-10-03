@@ -50,6 +50,10 @@ function activeGoalsTile(): string {
   return screen.getByText('Active Goals').parentElement?.textContent ?? '';
 }
 
+// The first render of this workspace pays the module's cold start, which on a
+// loaded machine runs past jest's 5 s default; the assertions are not timing.
+jest.setTimeout(20000);
+
 afterEach(() => {
   jest.restoreAllMocks();
 });

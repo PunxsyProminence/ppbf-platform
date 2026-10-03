@@ -57,6 +57,10 @@ function openTab(label: string): void {
   fireEvent.click(screen.getByRole('button', { name: (name) => name.startsWith(label) }));
 }
 
+// The first render of this workspace pays the module's cold start, which on a
+// loaded machine runs past jest's 5 s default; the assertions are not timing.
+jest.setTimeout(20000);
+
 afterEach(() => {
   jest.restoreAllMocks();
 });
