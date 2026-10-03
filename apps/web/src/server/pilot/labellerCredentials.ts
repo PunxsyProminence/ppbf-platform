@@ -22,8 +22,11 @@ import { hashPin, verifyPin } from './security';
  * possibilities; what stands between a guesser and a match is the attempt
  * limiter, not the hash.
  *
- * Who holds one: a live member of the organization whose account role is a
- * labelling role. That is ANNOTATOR_ROLES (annotatorGate.ts) plus 'admin',
+ * Who holds one: a live member of the organization whose account role AND
+ * whose membership role in that organization are labelling roles. The
+ * membership role matters because a multi-gym account carries one account
+ * role (what resolvePrincipal reports) but can be, say, a parent at this gym.
+ * The labelling roles are ANNOTATOR_ROLES (annotatorGate.ts) plus 'admin',
  * which access.ts treats as an alias of 'organization_admin'; a test pins the
  * two lists together so they cannot drift.
  */
@@ -74,15 +77,20 @@ export function normalizeLabellerDisplayName(value: unknown): string {
  * every use, never remembered: a coach removed from the gym, deactivated,
  * deleted or moved out of a labelling role stops verifying at once.
  */
+function roleList(roles: readonly string[]): string {
+  return roles.map((role) => `'${role}'`).join(', ');
+}
+
 function eligibleLabellerSql(organizationParam: string): string {
   return `a.active_flag = true
     and not ${accountDeletedSql('a')}
-    and a.role in (${LABELLER_ACCOUNT_ROLES.map((role) => `'${role}'`).join(', ')})
+    and a.role in (${roleList(LABELLER_ACCOUNT_ROLES)})
     and exists (
       select 1 from pilot.organization_memberships om
        where om.account_id = a.account_id
          and om.organization_id = ${organizationParam}
          and om.active_flag = true
+         and om.role in (${roleList(LABELLER_ACCOUNT_ROLES)})
     )
     and exists (
       select 1 from pilot.organizations o
@@ -173,18 +181,46 @@ export async function setOwnLabellerCredential(input: {
   }
 }
 
+/** Who may clear another member's labelling PIN: an admin of that gym. */
+export const LABELLER_CLEAR_ROLES = ['organization_admin', 'admin'] as const;
+
 /**
  * An organization admin clears a member's labelling PIN, which removes it;
  * the member sets a new one themselves. The admin never sees or chooses one.
- * Scoped to the admin's own organization by the caller passing it.
- * Returns whether there was a PIN to clear.
+ *
+ * The actor must be a live admin OF THIS ORGANIZATION by membership, not only
+ * by account role: an account that is an admin at its home gym and a parent or
+ * staff member here reaches this with an admin principal (resolvePrincipal
+ * reports the account role) and is refused. Returns whether there was a PIN
+ * to clear.
  */
-export async function clearLabellerCredential(organizationId: string, accountId: string): Promise<boolean> {
+export async function clearLabellerCredential(input: {
+  organizationId: string;
+  actorAccountId: string;
+  accountId: string;
+}): Promise<boolean> {
+  const actor = await queryOne<{ ok: boolean }>(
+    `select true as ok
+       from pilot.accounts a
+       join pilot.organization_memberships om
+         on om.account_id = a.account_id
+        and om.organization_id = $1
+        and om.active_flag = true
+        and om.role in (${roleList(LABELLER_CLEAR_ROLES)})
+      where a.account_id = $2
+        and a.active_flag = true
+        and not ${accountDeletedSql('a')}
+        and a.role in (${roleList(LABELLER_CLEAR_ROLES)})`,
+    [input.organizationId, input.actorAccountId],
+  );
+  if (!actor) {
+    throw new ForbiddenError('Only an organization admin of this gym can clear a labelling PIN', 'LABELLER_CLEAR_NOT_ALLOWED');
+  }
   const rows = await query<{ account_id: string }>(
     `delete from pilot.labeller_credentials
       where organization_id = $1 and account_id = $2
       returning account_id`,
-    [organizationId, accountId],
+    [input.organizationId, input.accountId],
   );
   return rows.length === 1;
 }

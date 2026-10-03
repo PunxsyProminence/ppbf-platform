@@ -102,7 +102,11 @@ export async function DELETE(request: NextRequest) {
       throw new Error('Missing account_id');
     }
 
-    const cleared = await clearLabellerCredential(principal.organizationId, accountId);
+    const cleared = await clearLabellerCredential({
+      organizationId: principal.organizationId,
+      actorAccountId: principal.accountId,
+      accountId,
+    });
 
     if (cleared) {
       await auditLabellerPin({

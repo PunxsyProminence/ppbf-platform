@@ -173,7 +173,7 @@ describe('DELETE: an organization admin clears a member\'s PIN', () => {
     const response = await DELETE(request('DELETE', { account_id: 'coach-b', organization_id: 'org-other' }));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, cleared: true });
-    expect(mockClear).toHaveBeenCalledWith('org-pp', 'coach-b');
+    expect(mockClear).toHaveBeenCalledWith({ organizationId: 'org-pp', actorAccountId: 'admin-a', accountId: 'coach-b' });
     expect(mockAudit.mock.calls[0][0]).toMatchObject({
       actor_account_id: 'admin-a',
       entity_id: 'coach-b',

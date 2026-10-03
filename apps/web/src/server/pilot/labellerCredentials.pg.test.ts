@@ -102,8 +102,8 @@ async function findFreePort(): Promise<number> {
 
 type Role = 'coach' | 'organization_admin' | 'admin' | 'athlete' | 'parent' | 'staff' | 'volunteer' | 'platform_owner';
 
-/** A live account and its membership in `org`. */
-async function seedAccount(role: Role, org = ORG_ID): Promise<string> {
+/** A live account and its membership in `org` (membership role defaults to the account role). */
+async function seedAccount(role: Role, org = ORG_ID, membershipRole: Role = role): Promise<string> {
   sequence += 1;
   const accountId = `acct-${role}-${sequence}`;
   await client.query(
@@ -114,7 +114,7 @@ async function seedAccount(role: Role, org = ORG_ID): Promise<string> {
   await client.query(
     `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
      values ($1, $2, $3, true)`,
-    [accountId, org, role],
+    [accountId, org, membershipRole],
   );
   return accountId;
 }
@@ -302,6 +302,25 @@ describe('setting your own labelling PIN', () => {
     expect(await getOwnLabellerCredential(ORG_ID, accountId)).toBeNull();
   });
 
+  it('a coach whose membership here is not a labelling role cannot set one, list or verify here', async () => {
+    // A coach at home who is a parent at this gym: the account role says coach,
+    // the membership here says parent.
+    const accountId = await seedAccount('coach', OTHER_ORG_ID);
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'parent', true)`,
+      [accountId, ORG_ID],
+    );
+    expect(await codeOf(setOwnLabellerCredential({ organizationId: ORG_ID, accountId, displayName: `Parent here ${accountId}`, pin: '2580' })))
+      .toBe('LABELLER_NOT_ELIGIBLE');
+
+    // A row that predates a membership change: written while coach here, then the membership becomes parent.
+    const changed = await seedAccount('coach');
+    await setOwnLabellerCredential({ organizationId: ORG_ID, accountId: changed, displayName: `Changed ${changed}`, pin: '2580' });
+    await client.query(`update pilot.organization_memberships set role = 'parent' where account_id = $1 and organization_id = $2`, [changed, ORG_ID]);
+    expect((await listLabellerPicker(ORG_ID)).map((entry) => entry.account_id)).not.toContain(changed);
+    expect(await verify(changed, '2580')).toBe('LABELLER_PIN_REFUSED');
+  });
+
   it('a coach of another gym cannot set one here', async () => {
     const accountId = await seedAccount('coach', OTHER_ORG_ID);
     expect(await codeOf(setOwnLabellerCredential({ organizationId: ORG_ID, accountId, displayName: 'X', pin: '2580' })))
@@ -384,11 +403,34 @@ describe('clearing a labelling PIN', () => {
   it('removes it inside the named organization, and only there', async () => {
     const accountId = await seedAccount('coach');
     await setOwnLabellerCredential({ organizationId: ORG_ID, accountId, displayName: `Clear ${accountId}`, pin: '2580' });
-    expect(await clearLabellerCredential(OTHER_ORG_ID, accountId)).toBe(false);
+    const admin = await seedAccount('organization_admin');
+    const otherAdmin = await seedAccount('organization_admin', OTHER_ORG_ID);
+    expect(await clearLabellerCredential({ organizationId: OTHER_ORG_ID, actorAccountId: otherAdmin, accountId })).toBe(false);
     expect(await getOwnLabellerCredential(ORG_ID, accountId)).not.toBeNull();
-    expect(await clearLabellerCredential(ORG_ID, accountId)).toBe(true);
+    expect(await clearLabellerCredential({ organizationId: ORG_ID, actorAccountId: admin, accountId })).toBe(true);
     expect(await getOwnLabellerCredential(ORG_ID, accountId)).toBeNull();
     expect(await verify(accountId, '2580')).toBe('LABELLER_PIN_REFUSED');
+  });
+
+  it('only a live admin of THIS gym, by membership, may clear', async () => {
+    const accountId = await seedAccount('coach');
+    await setOwnLabellerCredential({ organizationId: ORG_ID, accountId, displayName: `Guarded ${accountId}`, pin: '2580' });
+    const adminElsewhereParentHere = await seedAccount('organization_admin', OTHER_ORG_ID);
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'parent', true)`,
+      [adminElsewhereParentHere, ORG_ID],
+    );
+    const adminOfOtherGymOnly = await seedAccount('organization_admin', OTHER_ORG_ID);
+    const coach = await seedAccount('coach');
+    const switchedOffAdmin = await seedAccount('organization_admin');
+    await client.query('update pilot.organization_memberships set active_flag = false where account_id = $1', [switchedOffAdmin]);
+    for (const actor of [adminElsewhereParentHere, adminOfOtherGymOnly, coach, switchedOffAdmin]) {
+      expect({ actor, code: await codeOf(clearLabellerCredential({ organizationId: ORG_ID, actorAccountId: actor, accountId })) })
+        .toEqual({ actor, code: 'LABELLER_CLEAR_NOT_ALLOWED' });
+    }
+    expect(await getOwnLabellerCredential(ORG_ID, accountId)).not.toBeNull();
+    const legacyAdmin = await seedAccount('admin');
+    expect(await clearLabellerCredential({ organizationId: ORG_ID, actorAccountId: legacyAdmin, accountId })).toBe(true);
   });
 
   it('goes with the membership', async () => {
