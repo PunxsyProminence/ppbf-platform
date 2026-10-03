@@ -333,12 +333,15 @@ describe('read -> plan, over real rows', () => {
 
 describe('RETIRE_ACCOUNTS_SQL', () => {
   test('handed EVERY account id, it retires only residue: each lock holds without the planner', async () => {
-    const everyId = (await client.query<{ account_id: string }>('select account_id from pilot.accounts')).rows
-      .map((row) => row.account_id);
+    const everyAccount = (await client.query<{ account_id: string; athlete_id: string | null }>(
+      'select account_id, athlete_id from pilot.accounts',
+    )).rows;
+    const everyId = everyAccount.map((row) => row.account_id);
+    const everyAthleteId = everyAccount.map((row) => row.athlete_id);
 
     await client.query('begin');
     try {
-      const retired = (await client.query<{ account_id: string }>(RETIRE_ACCOUNTS_SQL, [everyId])).rows
+      const retired = (await client.query<{ account_id: string }>(RETIRE_ACCOUNTS_SQL, [everyId, everyAthleteId])).rows
         .map((row) => row.account_id)
         .sort();
 
@@ -374,7 +377,7 @@ describe('RETIRE_ACCOUNTS_SQL', () => {
 
       const retired = (await client.query<{ account_id: string }>(
         RETIRE_ACCOUNTS_SQL,
-        [['acs-kid-never-activated']],
+        [['acs-kid-never-activated'], ['ATH-LIVE-1']],
       )).rows.map((row) => row.account_id);
       expect(retired).toEqual(['acs-kid-never-activated']);
     } finally {
@@ -386,7 +389,10 @@ describe('RETIRE_ACCOUNTS_SQL', () => {
     const plan = planAccountCleanup(await readRows());
     const retired = (await client.query<{ account_id: string }>(
       RETIRE_ACCOUNTS_SQL,
-      [plan.retire.map((decision) => decision.account_id)],
+      [
+        plan.retire.map((decision) => decision.account_id),
+        plan.retire.map((decision) => (decision as Decision & { athlete_id?: string | null }).athlete_id ?? null),
+      ],
     )).rows.map((row) => row.account_id).sort();
 
     expect(retired).toEqual([...RESIDUE_IDS].sort());

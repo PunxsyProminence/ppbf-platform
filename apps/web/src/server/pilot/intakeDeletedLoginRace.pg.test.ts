@@ -15,9 +15,14 @@
 //   3. CLEANUP FIRST. The cleanup has retired the login, uncommitted. A
 //      promotion started now waits; once the cleanup commits, it is refused.
 //
-// Each of the three fails if its guard is removed: the unconditional check
-// (1), intake's lock or the runner's lock (2), intake's lock or the lock SQL
-// (3). Without the locks the two sides each check before the other writes.
+//   4. A LOGIN LINKED MID-RETIRE. A login with no athlete_id gets no lock key.
+//      The retire statement waits on that row while intake commits a new
+//      athlete and links the login to it; the retire then leaves it alone.
+//
+// Each fails if its guard is removed: the unconditional check (1), intake's
+// lock or the runner's lock (2), intake's lock or the lock SQL (3), the
+// retire statement's planned-athlete_id clause (4). Without the locks the two
+// sides each check before the other writes.
 //
 // WHY REAL POSTGRES. The guarantee is about two connections and advisory
 // locks; no stub has either. ./db is replaced by a real pg Pool on the
@@ -194,13 +199,17 @@ async function liveRecordsHeldByDeletedLogins(): Promise<string[]> {
   return rows.rows.map((row) => row.athlete_id);
 }
 
-// Resolves true once some session waits on an advisory lock, false after
-// `ms` -- a removed lock shows up as false here and as a wrong end state below.
-async function waitForAdvisoryWaiter(ms: number): Promise<boolean> {
+// Resolves true once some session waits on a lock of the given kind
+// (advisory, or a row lock for 'transactionid'), false after `ms` -- a removed
+// lock shows up as false here and as a wrong end state below. Each caller
+// races this against the other side finishing, so the cap only bounds a
+// broken run.
+async function waitForLockWaiter(locktype: 'advisory' | 'transactionid', ms = 180_000): Promise<boolean> {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
     const row = await client.query<{ waiting: number }>(
-      `select count(*)::int as waiting from pg_locks where locktype = 'advisory' and not granted`,
+      `select count(*)::int as waiting from pg_locks where locktype = $1 and not granted`,
+      [locktype],
     );
     if (row.rows[0].waiting > 0) return true;
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -347,7 +356,7 @@ test('intake first: the real cleanup runner waits for the promotion, then leaves
   // With both locks in place the runner blocks on the promotion's lock. Without
   // either, it retires the login now, while the athlete row is uncommitted.
   const runnerWaited = await Promise.race([
-    waitForAdvisoryWaiter(20_000),
+    waitForLockWaiter('advisory'),
     runner.then(() => false),
   ]);
 
@@ -373,7 +382,7 @@ test('cleanup first: a promotion waits for the cleanup to commit, then is refuse
   try {
     await cleanup.query('begin');
     await cleanup.query(ATHLETE_LOGIN_LOCK_SQL, [['idlr-kid-b']]);
-    const retired = await cleanup.query(RETIRE_ACCOUNTS_SQL, [['idlr-kid-b']]);
+    const retired = await cleanup.query(RETIRE_ACCOUNTS_SQL, [['idlr-kid-b'], ['ATH-B']]);
     expect(retired.rows).toEqual([{ account_id: 'idlr-kid-b' }]);
 
     promotion = writePromotedAthleteRecord({ organizationId: ORG, athlete: athlete('ATH-B') });
@@ -381,7 +390,7 @@ test('cleanup first: a promotion waits for the cleanup to commit, then is refuse
     // unhandled rejection while the cleanup is still open.
     const outcome = promotion.then(() => 'written', (error: { code?: string }) => error.code ?? 'error');
     const promotionWaited = await Promise.race([
-      waitForAdvisoryWaiter(20_000),
+      waitForLockWaiter('advisory'),
       outcome.then(() => false),
     ]);
 
@@ -397,5 +406,48 @@ test('cleanup first: a promotion waits for the cleanup to commit, then is refuse
 
   expect(await loginDeleted('idlr-kid-b')).toBe(true);
   expect(await athleteRow('ATH-B')).toBeNull();
+  expect(await liveRecordsHeldByDeletedLogins()).toEqual([]);
+});
+
+test('a login linked to a new athlete while the retire waits on it is left alone', async () => {
+  // Never linked: the lock step takes no key for it.
+  await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, auth_provider, active_flag)
+     values ('idlr-kid-c', 'athlete', $1, 'ppbf_local', false)`,
+    [ORG],
+  );
+
+  // Stands in for createOrUpdateAthleteAccount, which links the login after
+  // the promotion commits. It holds the row first so the retire waits on it.
+  const linker = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+  const cleanup = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+  await linker.connect();
+  await cleanup.connect();
+  try {
+    await linker.query('begin');
+    await linker.query(`update pilot.accounts set updated_at = now() where account_id = 'idlr-kid-c'`);
+
+    await cleanup.query('begin');
+    await cleanup.query(ATHLETE_LOGIN_LOCK_SQL, [['idlr-kid-c']]);
+    const retire = cleanup.query<{ account_id: string }>(RETIRE_ACCOUNTS_SQL, [['idlr-kid-c'], [null]]);
+    const settled = retire.then(() => false, () => false);
+    expect(await Promise.race([waitForLockWaiter('transactionid'), settled])).toBe(true);
+
+    // After the retire's snapshot: the record commits, then the login is linked.
+    await writePromotedAthleteRecord({ organizationId: ORG, athlete: athlete('ATH-C') });
+    await linker.query(`update pilot.accounts set athlete_id = 'ATH-C' where account_id = 'idlr-kid-c'`);
+    await linker.query('commit');
+
+    expect((await retire).rows).toEqual([]);
+    await cleanup.query('commit');
+  } finally {
+    await linker.query('rollback').catch(() => {});
+    await cleanup.query('rollback').catch(() => {});
+    await linker.end();
+    await cleanup.end();
+  }
+
+  expect(await loginDeleted('idlr-kid-c')).toBe(false);
+  expect(await athleteRow('ATH-C')).toEqual({ deleted: false });
   expect(await liveRecordsHeldByDeletedLogins()).toEqual([]);
 });

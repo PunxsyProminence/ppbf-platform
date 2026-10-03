@@ -266,7 +266,7 @@ async function main() {
     // lib/account-cleanup-plan.mjs, where a real-database test runs it.
     const retired = await client.query(
       RETIRE_ACCOUNTS_SQL,
-      [ids],
+      [ids, plan.retire.map((decision) => decision.athlete_id ?? null)],
     );
 
     // Only the rows the statement above actually retired go on to lose their
