@@ -27,6 +27,22 @@ import { writeShadowTelemetryEvent } from './shadowTelemetry';
 // Exported so pilotOpsReadiness.ts can report the real value.
 export const SEMANTIC_SCORE_FLOOR = 0.15;
 
+// RELEVANCE BAR (Jason 2026-10-03: "display confidence level and submit
+// research request to fill gap"). Passages at or above the bar are evidence.
+// Passages below it are only the "closest" ones: still shown, labelled low
+// confidence, and the question is filed as a research requirement. The
+// authority-tier bonus the keyword path used to add never counts toward either
+// number, so a high-tier source with no real match cannot clear the bar.
+//   semantic: cosine similarity. 0.30 / 0.50 are UNCALIBRATED starting values
+//             (no labelled queries exist to fit them); tune from real use.
+//   keyword:  share of the question's meaningful words found as WHOLE words.
+export const SEMANTIC_RELEVANCE_BAR = 0.3;
+export const SEMANTIC_HIGH_CONFIDENCE = 0.5;
+export const KEYWORD_RELEVANCE_BAR = 0.6;
+export const KEYWORD_HIGH_CONFIDENCE = 0.8;
+
+export type ShadowLibraryConfidenceLevel = 'high' | 'medium' | 'low' | 'none';
+
 export type ShadowLibrarySourceType =
   | 'peer_reviewed'
   | 'clinical_guideline'
@@ -190,6 +206,12 @@ export interface ShadowLibraryClaimResult {
   // but `status` is the honest signal; a caller wanting the reasoning behind
   // it should read `evidenceCount` / `distinctSourceCount`, not this number.
   confidence: number;
+  // Plain level for display, from the best passage's relevance score on the
+  // path that ran (see the RELEVANCE BAR constants): high / medium / low, or
+  // 'none' when nothing matched at all. Below-bar "closest passages" are 'low'.
+  confidenceLevel: ShadowLibraryConfidenceLevel;
+  // Passages at or above the bar. `evidence` may also hold below-bar closest
+  // passages when confidenceLevel is 'low'; they are not counted here.
   evidenceCount: number;
   distinctSourceCount: number;
   evidence: ShadowLibrarySearchResult[];
@@ -364,16 +386,32 @@ export function normalizeSearchScope(input: {
   } as const;
 }
 
+// Words that carry no topic. Without this list "what is the best way to ..."
+// matched every chunk containing "the" or "way".
+const QUERY_STOPWORDS = new Set([
+  'the', 'and', 'for', 'are', 'was', 'were', 'but', 'not', 'you', 'your', 'can', 'could', 'should',
+  'would', 'will', 'shall', 'may', 'might', 'must', 'has', 'have', 'had', 'does', 'did', 'doing',
+  'what', 'which', 'who', 'whom', 'whose', 'when', 'where', 'why', 'how', 'that', 'this', 'these',
+  'those', 'with', 'from', 'into', 'onto', 'about', 'than', 'then', 'them', 'they', 'their', 'there',
+  'here', 'any', 'all', 'some', 'out', 'off', 'over', 'under', 'also', 'just', 'very', 'too', 'its',
+  'our', 'his', 'her', 'him', 'she', 'been', 'being', 'get', 'got', 'one', 'use', 'used', 'using',
+  'say', 'says', 'tell', 'give', 'show', 'need', 'want', 'make', 'know',
+  'way', 'ways', 'does', 'much', 'many', 'more', 'most', 'other', 'such', 'only', 'same', 'while',
+]);
+
 function tokenizeQuery(queryText: string): string[] {
-  return queryText
+  const terms = queryText
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .map((value) => value.trim())
-    .filter((value) => value.length >= 3)
-    .slice(0, 8);
+    .filter((value) => value.length >= 3 && !QUERY_STOPWORDS.has(value));
+  // Plain plural folding ("drills" finds "drill" and "drills") so whole-word
+  // matching does not lose the recall the old substring match had for free.
+  const stems = terms.map((term) => (term.length >= 4 && term.endsWith('s') && !term.endsWith('ss') ? term.slice(0, -1) : term));
+  return [...new Set(stems)].slice(0, 8);
 }
 
-function buildClaimNarrative(results: ShadowLibrarySearchResult[]): string {
+function buildClaimNarrative(results: ShadowLibrarySearchResult[], closestOnly = false): string {
   const topEvidence = results.slice(0, 3);
   const sourceSummary = topEvidence
     .map((item) => `${item.source_title} (tier ${item.authority_tier})`)
@@ -383,7 +421,8 @@ function buildClaimNarrative(results: ShadowLibrarySearchResult[]): string {
     .join(' ')
     .slice(0, 500);
 
-  return `Library-backed answer from current SHADOW evidence: ${snippetSummary}${snippetSummary.endsWith('.') ? '' : '.'} Primary sources: ${sourceSummary}.`;
+  const lead = closestOnly ? 'Closest Library passages' : 'Library-backed answer from current SHADOW evidence';
+  return `${lead}: ${snippetSummary}${snippetSummary.endsWith('.') ? '' : '.'} Primary sources: ${sourceSummary}.`;
 }
 
 interface ShadowClaimResearchRequirement {
@@ -1133,7 +1172,7 @@ export async function reviewShadowLibraryDocument(input: {
  * organization-only on purpose -- it is an export, and including the baseline
  * would ship it out as though the gym had produced it.
  */
-export async function searchShadowLibrary(input: {
+export interface ShadowLibrarySearchInput {
   organizationId: string;
   actorAccountId: string;
   actorRole: PilotRole;
@@ -1142,7 +1181,38 @@ export async function searchShadowLibrary(input: {
   subjectId?: string | null;
   queryText: string;
   limit?: number;
-}): Promise<ShadowLibrarySearchResult[]> {
+}
+
+/**
+ * Optional second argument to searchShadowLibrary. Pass an object and the
+ * search fills it in; the return value is unchanged.
+ */
+export interface ShadowLibrarySearchDetail {
+  // Matched something but below the relevance bar: the closest passages,
+  // never evidence. The return value holds only passages at or above the bar.
+  nearest: ShadowLibrarySearchResult[];
+  // Which path ranked them, which decides how a score maps to a confidence level.
+  mode: 'semantic' | 'keyword';
+}
+
+/** Plain confidence level for one passage's score (0-1) on the given path. */
+export function confidenceLevelForScore(mode: 'semantic' | 'keyword', score: number): ShadowLibraryConfidenceLevel {
+  const [bar, high] = mode === 'semantic'
+    ? [SEMANTIC_RELEVANCE_BAR, SEMANTIC_HIGH_CONFIDENCE]
+    : [KEYWORD_RELEVANCE_BAR, KEYWORD_HIGH_CONFIDENCE];
+  if (score >= high) return 'high';
+  if (score >= bar) return 'medium';
+  return 'low';
+}
+
+// Returns evidence only: passages at or above the relevance bar. The search
+// keeps one body (and so one retrieval-organization predicate) on purpose:
+// platformLibraryWriteScope.convention.test.ts reads this function to prove it
+// still admits the platform baseline.
+export async function searchShadowLibrary(
+  input: ShadowLibrarySearchInput,
+  detail?: ShadowLibrarySearchDetail,
+): Promise<ShadowLibrarySearchResult[]> {
   const normalized = normalizeSearchScope({
     scope: input.scope,
     subjectId: input.subjectId,
@@ -1159,8 +1229,6 @@ export async function searchShadowLibrary(input: {
     throw new Error('Invalid SHADOW library result limit');
   }
   const limit = Math.min(20, requestedLimit);
-  const wholeQuery = normalizedQuery.toLowerCase().slice(0, 1_000);
-  const termPatterns = terms.map((term) => `%${term}%`);
 
   if (normalized.scope === 'subject' && normalized.effectiveSubjectId) {
     await assertActorCanAccessAthlete({
@@ -1237,8 +1305,9 @@ export async function searchShadowLibrary(input: {
             ? cosineSimilarity(queryEmbedding, candidate.embedding)
             : 0,
         }))
-        // Below the floor, "closest" is noise, not relevance: fall back to
-        // keywords rather than cite a chunk that merely lost least badly.
+        // Below the floor, "closest" is noise, not relevance. It is dropped,
+        // and it does NOT fall back to loose keywords: that fallback is how a
+        // nonsense question used to get an unrelated passage.
         .filter((candidate) => candidate.score >= SEMANTIC_SCORE_FLOOR)
         .sort((a, b) => b.score - a.score || a.authority_tier - b.authority_tier || a.ordinal - b.ordinal)
         .slice(0, limit)
@@ -1248,7 +1317,12 @@ export async function searchShadowLibrary(input: {
           return result;
         });
 
-      if (ranked.length > 0) {
+      // Candidates exist (embedded chunks are in the library), so this answer
+      // is final even when empty. Only "no embedded chunks yet" or an embedding
+      // outage degrades to the keyword path below.
+      if (candidates.length > 0) {
+        const relevant = ranked.filter((item) => item.score >= SEMANTIC_RELEVANCE_BAR);
+        const nearest = ranked.filter((item) => item.score < SEMANTIC_RELEVANCE_BAR);
         await writeShadowTelemetryEvent({
           organizationId: input.organizationId,
           metricName: 'shadow.library.search',
@@ -1256,88 +1330,82 @@ export async function searchShadowLibrary(input: {
           actorRole: input.actorRole,
           dimensions: {
             scope: normalized.scope,
-            result_count: ranked.length,
+            result_count: relevant.length,
+            nearest_count: nearest.length,
             term_count: terms.length,
             search_mode: 'semantic',
           },
         });
-        return ranked;
+        if (detail) {
+          detail.nearest = nearest;
+          detail.mode = 'semantic';
+        }
+        return relevant;
       }
     }
   }
 
-  const rows = await query<ShadowLibrarySearchResult>(
-    `select
-       c.chunk_id,
-       c.document_id,
-       c.source_id,
-       c.subject_id,
-      c.ordinal,
-       d.document_name,
-       s.title as source_title,
-       s.publisher as source_publisher,
-       s.source_type,
-       s.authority_tier,
-       s.status as source_status,
-       s.publication_date::text as publication_date,
-       c.text_content,
-       c.metadata->>'evidence_class' as evidence_class,
-       c.metadata->>'boxing_specificity' as boxing_specificity,
-       (
-          case when lower(c.text_content) like '%' || $4 || '%' then 40 else 0 end
-          + case when lower(d.document_name) like '%' || $4 || '%' then 20 else 0 end
-          + case when lower(s.title) like '%' || $4 || '%' then 25 else 0 end
-          + case when cardinality($5::text[]) > 0 then (
-              select count(*)::int * 8
-              from unnest($5::text[]) as term
-             where lower(c.text_content) like term
-                or lower(d.document_name) like term
-                or lower(s.title) like term
-           ) else 0 end
-         + (6 - s.authority_tier) * 3
-       )::float as score
-     from pilot.shadow_library_chunks c
-     join pilot.shadow_library_documents d on d.document_id = c.document_id and d.organization_id = c.organization_id
-     join pilot.shadow_library_sources s on s.source_id = c.source_id and s.organization_id = c.organization_id
-      where c.organization_id = any($1::text[])
-        and s.status = 'active'
-        and s.approval_state = 'approved'
-        and s.verification_state = 'verified'
-        and not coalesce(s.retrieval_suppressed, false)
-        and d.ingest_state = 'indexed'
-        and d.index_completed_at is not null
-        and d.approval_state = 'approved'
-        and d.verification_state = 'verified'
-        -- Every branch constrains subject_id. There is no scope value that
-        -- selects athlete-scoped chunks without naming the subject, so an
-        -- unrecognized scope matches nothing rather than matching everything.
+  // Keyword path. Whole words only (so "art" no longer matches "party"), stop
+  // words already dropped, and the score is the share of the question's words
+  // found -- the authority tier is a tie-break, never a score. No meaningful
+  // word left means there is nothing to match on.
+  const rows = terms.length === 0 ? [] : await query<ShadowLibrarySearchResult>(
+    `select * from (
+       select
+         c.chunk_id,
+         c.document_id,
+         c.source_id,
+         c.subject_id,
+         c.ordinal,
+         d.document_name,
+         s.title as source_title,
+         s.publisher as source_publisher,
+         s.source_type,
+         s.authority_tier,
+         s.status as source_status,
+         s.publication_date::text as publication_date,
+         c.text_content,
+         c.metadata->>'evidence_class' as evidence_class,
+         c.metadata->>'boxing_specificity' as boxing_specificity,
+         (
+           select count(*)::float / cardinality($4::text[])
+             from unnest($4::text[]) as term
+            where lower(coalesce(c.text_content, '') || ' ' || coalesce(d.document_name, '') || ' ' || coalesce(s.title, '')) ~ ('\\m' || term || '(s|es)?\\M')
+         ) as score
+       from pilot.shadow_library_chunks c
+       join pilot.shadow_library_documents d on d.document_id = c.document_id and d.organization_id = c.organization_id
+       join pilot.shadow_library_sources s on s.source_id = c.source_id and s.organization_id = c.organization_id
+       where c.organization_id = any($1::text[])
+         and s.status = 'active'
+         and s.approval_state = 'approved'
+         and s.verification_state = 'verified'
+         and not coalesce(s.retrieval_suppressed, false)
+         and d.ingest_state = 'indexed'
+         and d.index_completed_at is not null
+         and d.approval_state = 'approved'
+         and d.verification_state = 'verified'
+         -- Every branch constrains subject_id. There is no scope value that
+         -- selects athlete-scoped chunks without naming the subject, so an
+         -- unrecognized scope matches nothing rather than matching everything.
          and (
-          ($2::text = 'scoped' and c.subject_id is null)
-          or ($2::text = 'subject' and (c.subject_id is null or c.subject_id = $3))
-        )
-        and (
-          lower(c.text_content) like '%' || $4 || '%'
-          or lower(d.document_name) like '%' || $4 || '%'
-          or lower(s.title) like '%' || $4 || '%'
-          or exists (
-            select 1
-            from unnest($5::text[]) as term
-           where lower(c.text_content) like term
-              or lower(d.document_name) like term
-              or lower(s.title) like term
+           ($2::text = 'scoped' and c.subject_id is null)
+           or ($2::text = 'subject' and (c.subject_id is null or c.subject_id = $3))
          )
-       )
-     order by score desc, s.authority_tier asc, c.ordinal asc, c.created_at asc
-      limit $6`,
+     ) ranked
+     where score > 0
+     order by score desc, authority_tier asc, ordinal asc, chunk_id asc
+     limit $5`,
     [
       libraryRetrievalOrganizationIds(input.organizationId),
       normalized.scope,
       normalized.effectiveSubjectId,
-      wholeQuery,
-      termPatterns,
+      terms,
       limit,
     ],
   );
+
+  const relevant = rows.filter((row) => row.score >= KEYWORD_RELEVANCE_BAR);
+  const nearest = rows.filter((row) => row.score < KEYWORD_RELEVANCE_BAR);
 
   await writeShadowTelemetryEvent({
     organizationId: input.organizationId,
@@ -1346,12 +1414,17 @@ export async function searchShadowLibrary(input: {
     actorRole: input.actorRole,
     dimensions: {
       scope: normalized.scope,
-      result_count: rows.length,
+      result_count: relevant.length,
+      nearest_count: nearest.length,
       subject_scoped: Boolean(normalized.effectiveSubjectId),
     },
   });
 
-  return rows;
+  if (detail) {
+    detail.nearest = nearest;
+    detail.mode = 'keyword';
+  }
+  return relevant;
 }
 
 export async function createShadowLibraryClaim(input: {
@@ -1371,7 +1444,8 @@ export async function createShadowLibraryClaim(input: {
     athleteId: input.athleteId,
   });
 
-  const evidence = await searchShadowLibrary({
+  const detail: ShadowLibrarySearchDetail = { nearest: [], mode: 'keyword' };
+  const relevantEvidence = await searchShadowLibrary({
     organizationId: input.organizationId,
     actorAccountId: input.actorAccountId,
     actorRole: input.actorRole,
@@ -1380,24 +1454,43 @@ export async function createShadowLibraryClaim(input: {
     subjectId: normalized.effectiveSubjectId,
     queryText: input.question,
     limit: input.limit ?? 5,
-  });
+  }, detail);
+  const ranked = { relevant: relevantEvidence, nearest: detail.nearest, mode: detail.mode };
 
-  const distinctSourceCount = new Set(evidence.map((item) => item.source_id)).size;
+  // Above the relevance bar = evidence. Below it, the closest passages are
+  // still shown (low confidence) but never count as evidence and never make
+  // the claim 'supported'; the gap is filed as a research requirement.
+  const belowBarOnly = ranked.relevant.length === 0 && ranked.nearest.length > 0;
+  const evidence = belowBarOnly ? ranked.nearest : ranked.relevant;
+  const counted = ranked.relevant;
+
+  const distinctSourceCount = new Set(counted.map((item) => item.source_id)).size;
   let status: ShadowLibraryClaimStatus;
   let confidence: number;
+  let confidenceLevel: ShadowLibraryConfidenceLevel;
 
   // The canonical-doctrine shortcut that used to sit here required scope
   // 'master', which no caller could produce, so it never fired. It was removed
   // with that scope; dropping it is behavior-preserving.
-  if (distinctSourceCount >= 2 && evidence.length >= 2) {
+  const bestScore = counted.reduce((max, item) => Math.max(max, item.score), 0);
+  const bestLevel = confidenceLevelForScore(ranked.mode, bestScore);
+  if (distinctSourceCount >= 2 && counted.length >= 2) {
     status = 'supported';
     confidence = 0.78;
-  } else if (evidence.length >= 1) {
+    confidenceLevel = bestLevel;
+  } else if (counted.length >= 1) {
     status = 'weak';
     confidence = 0.46;
+    // One source cannot carry a claim past medium.
+    confidenceLevel = bestLevel === 'high' ? 'medium' : bestLevel;
+  } else if (belowBarOnly) {
+    status = 'weak';
+    confidence = 0.25;
+    confidenceLevel = 'low';
   } else {
     status = 'unsupported';
     confidence = 0.12;
+    confidenceLevel = 'none';
   }
 
   const claimResearchRequirement = await ensureClaimResearchRequirement({
@@ -1408,14 +1501,16 @@ export async function createShadowLibraryClaim(input: {
     subjectId: normalized.effectiveSubjectId,
     question: input.question.trim(),
     status,
-    evidenceCount: evidence.length,
+    evidenceCount: counted.length,
     distinctSourceCount,
   });
 
   const answer =
     status === 'unsupported'
       ? 'SHADOW Library does not currently have qualifying evidence for this question. A research requirement has been opened or matched so the gap becomes organizational learning work.'
-      : buildClaimNarrative(evidence);
+      : belowBarOnly
+        ? `Confidence: low. The Library has no passage that clearly answers this question; these are the closest passages and may not be relevant. A research requirement has been opened or matched to fill the gap. ${buildClaimNarrative(evidence, true)}`
+        : buildClaimNarrative(evidence);
 
   await emitShadowEvent({
     organizationId: input.organizationId,
@@ -1428,7 +1523,8 @@ export async function createShadowLibraryClaim(input: {
       scope: normalized.scope,
       subject_id: normalized.effectiveSubjectId,
       status,
-      evidence_count: evidence.length,
+      evidence_count: counted.length,
+      confidence_level: confidenceLevel,
       distinct_source_count: distinctSourceCount,
       research_requirement_id: claimResearchRequirement?.id ?? null,
       // Research Intake Cards (getShadowResearchProjection) reads these two
@@ -1448,7 +1544,8 @@ export async function createShadowLibraryClaim(input: {
     dimensions: {
       scope: normalized.scope,
       status,
-      evidence_count: evidence.length,
+      confidence_level: confidenceLevel,
+      evidence_count: counted.length,
       distinct_source_count: distinctSourceCount,
     },
   });
@@ -1457,7 +1554,8 @@ export async function createShadowLibraryClaim(input: {
     answer,
     status,
     confidence,
-    evidenceCount: evidence.length,
+    confidenceLevel,
+    evidenceCount: counted.length,
     distinctSourceCount,
     evidence,
     researchRequirementId: claimResearchRequirement?.id ?? null,
