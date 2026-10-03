@@ -102,8 +102,8 @@ export default function ResearchQAChatPage() {
     setIsSearching(true);
     try {
       const result = await askLibrary(apiBase(), question);
-      addMessage('research', result.answer, claimStatusLabel(result.status), result.evidence);
-      if (result.status === 'unsupported' && result.researchRequirementId !== null) {
+      addMessage('research', result.answer, claimStatusLabel(result.status, result.confidenceLevel), result.evidence);
+      if (result.researchRequirementId !== null) {
         addMessage(
           'system',
           `This gap is now research requirement #${result.researchRequirementId} -- it will show up in the research queue for staff to source.`,

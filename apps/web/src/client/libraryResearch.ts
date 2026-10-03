@@ -20,8 +20,14 @@ export interface LibraryEvidenceItem {
   snippet: string;
 }
 
+export type LibraryConfidenceLevel = 'high' | 'medium' | 'low' | 'none';
+
 export interface LibraryClaimAnswer {
   status: LibraryClaimStatus;
+  // Plain level the server derived from how well the best passage matched.
+  // 'low' means the passages shown are only the closest, not a real answer.
+  // Absent when the server predates the field.
+  confidenceLevel?: LibraryConfidenceLevel;
   answer: string;
   evidence: LibraryEvidenceItem[];
   // Present when the Library found nothing and logged the gap -- the server
@@ -42,7 +48,13 @@ export class LibraryResearchError extends Error {
 // One-line meaning per grade, shown beside the answer. 'unsupported' states
 // the two true facts: nothing approved matched, and the gap is now logged --
 // createShadowLibraryClaim opens a research requirement for exactly this case.
-export function claimStatusLabel(status: LibraryClaimStatus): string {
+export function claimStatusLabel(status: LibraryClaimStatus, level?: LibraryConfidenceLevel): string {
+  if (status === 'weak' && level === 'low') {
+    return 'Low confidence — closest passages only, logged as a research need';
+  }
+  if (status !== 'unsupported' && (level === 'high' || level === 'medium')) {
+    return `${claimStatusLabel(status)} (${level} confidence)`;
+  }
   switch (status) {
     case 'supported':
       return 'Backed by approved Library evidence';
@@ -59,6 +71,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isClaimStatus(value: unknown): value is LibraryClaimStatus {
   return value === 'supported' || value === 'weak' || value === 'unsupported';
+}
+
+function isConfidenceLevel(value: unknown): value is LibraryConfidenceLevel {
+  return value === 'high' || value === 'medium' || value === 'low' || value === 'none';
 }
 
 function parseEvidence(value: unknown): LibraryEvidenceItem[] {
@@ -141,6 +157,9 @@ export async function askLibrary(
 
   return {
     status: claim.status,
+    // An older server omits the field: leave it unset rather than show a level
+    // nothing computed.
+    confidenceLevel: isConfidenceLevel(claim.confidenceLevel) ? claim.confidenceLevel : undefined,
     answer: claim.answer,
     evidence: parseEvidence(claim.evidence),
     researchRequirementId,

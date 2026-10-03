@@ -959,3 +959,80 @@ describe('the bulk approval script leaves an incomplete manual-text excerpt alon
     ]);
   });
 });
+
+// JASON'S RULING 2026-10-03 ("display confidence level and submit research
+// request to fill gap"). Library chat used to answer a nonsense question with
+// an unrelated passage: substring matching, a tier bonus that ranked chunks
+// with no real match, and no minimum relevance. Real SQL, real review gate.
+describe('Library relevance: whole words, a relevance bar, confidence and research (real database)', () => {
+  let claim: typeof import('./shadowLibrary').createShadowLibraryClaim;
+
+  async function approvedChunk(text: string, title: string): Promise<void> {
+    const source = await routes.postSource(jsonRequest('/api/pilot/shadow/library/sources', 'POST', {
+      title, source_type: 'peer_reviewed', authority_tier: 1, status: 'active',
+    }));
+    expect(source.status).toBe(201);
+    const sourceId = (await source.json()).source.source_id as string;
+    expect((await routes.patchReview(jsonRequest('/api/pilot/shadow/evidence/review', 'PATCH', {
+      entityType: 'source', entityId: sourceId, action: 'review', approvalState: 'approved',
+    }))).status).toBe(200);
+    const document = await routes.postDocument(jsonRequest('/api/pilot/shadow/library/documents', 'POST', {
+      source_id: sourceId, document_name: title,
+    }));
+    const documentId = (await document.json()).document.document_id as string;
+    expect((await routes.postChunk(jsonRequest('/api/pilot/shadow/library/chunks', 'POST', {
+      document_id: documentId, ordinal: 0, text_content: text,
+    }))).status).toBe(201);
+    for (const body of [{ action: 'complete_indexing' }, { action: 'review', approvalState: 'approved' }]) {
+      expect((await routes.patchReview(jsonRequest('/api/pilot/shadow/evidence/review', 'PATCH', {
+        entityType: 'document', entityId: documentId, ...body,
+      }))).status).toBe(200);
+    }
+  }
+
+  function ask(question: string) {
+    return claim({
+      organizationId: ORG_ID,
+      actorAccountId: ACCOUNT_ID,
+      actorRole: 'organization_admin',
+      athleteId: null,
+      scope: 'scoped',
+      question,
+    });
+  }
+
+  test('setup: two approved passages, one on footwork and one that only contains the letters "art" inside "party"', async () => {
+    claim = (await import('./shadowLibrary')).createShadowLibraryClaim;
+    await approvedChunk('Quokkaboxing footwork builds pivot balance before the jab lands.', 'Quokka Footwork Guide');
+    await approvedChunk('The party started late and everyone stayed for dessert.', 'Party Notes');
+  });
+
+  test('a real question finds its passage with a higher confidence level', async () => {
+    const result = await ask('Why does quokkaboxing footwork build pivot balance?');
+    expect(result.evidence.map((e) => e.source_title)).toEqual(['Quokka Footwork Guide']);
+    expect(result.evidenceCount).toBe(1);
+    expect(result.confidenceLevel).toBe('medium'); // all words matched, but one source caps at medium
+  });
+
+  test('a word that is only a SUBSTRING of another word no longer matches', async () => {
+    const hits = await search('art');
+    expect(hits).toEqual([]);
+  });
+
+  test('a nonsense question is unsupported and opens a research requirement', async () => {
+    const result = await ask('purple elephants negotiate zxqvlorp tariffs');
+    expect(result.status).toBe('unsupported');
+    expect(result.confidenceLevel).toBe('none');
+    expect(result.evidence).toEqual([]);
+    expect(result.researchRequirementId).not.toBeNull();
+  });
+
+  test('a question that shares only one word of four shows the closest passage as LOW confidence and files research', async () => {
+    const result = await ask('quokkaboxing uppercut hook elephants');
+    expect(result.status).toBe('weak');
+    expect(result.confidenceLevel).toBe('low');
+    expect(result.evidence.map((e) => e.source_title)).toEqual(['Quokka Footwork Guide']);
+    expect(result.evidenceCount).toBe(0);
+    expect(result.researchRequirementId).not.toBeNull();
+  });
+});
