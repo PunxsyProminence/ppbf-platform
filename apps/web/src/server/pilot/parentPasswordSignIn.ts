@@ -4,7 +4,6 @@ import type { PilotRole } from './contracts';
 import { passwordLoginPermitted } from './credentialPolicy';
 import { queryOne, withTransaction } from './db';
 import { accountDeletedSql, isDeletedAccount, type AccountDeletionFlag } from './deletedAccountSignIn';
-import { getPilotDefaultOrganizationId } from './env';
 import { MAX_PASSWORD_LENGTH } from './passwordPolicy';
 import { createOpaqueToken, hashPassword, hashToken, verifyPassword } from './security';
 import { computeSessionExpiry } from './sessionPolicy';
@@ -145,13 +144,18 @@ export async function loginWithEmailAndPassword(
   if (!data || reason) {
     return rejected(reason ?? 'unknown_or_inactive_account');
   }
+  // No organization means no session, as on every sign-in path (auth.ts). It
+  // used to fall back to the deployment's default organization.
+  const organizationId = data.organization_id;
+  if (!organizationId) {
+    return rejected('no_organization');
+  }
   if (!passwordIsValid) {
     return rejected('wrong_password');
   }
 
   const token = createOpaqueToken();
   const expiresAt = computeSessionExpiry();
-  const organizationId = data.organization_id || getPilotDefaultOrganizationId();
 
   // THE MINT. The read above is unlocked and a scrypt sits between it and
   // here, so nothing it saw is relied on. The account row is taken FOR UPDATE
