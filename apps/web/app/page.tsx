@@ -4,20 +4,64 @@ import Link from "next/link";
 import PhotoSlot from "@/components/PhotoSlot";
 import { gymPhotoSlotsFor } from "@/src/shared/gymPhotos";
 
+/* The registry facts, stated once. The visible page and the JSON-LD both read
+   from here so they cannot drift, and page.test.tsx checks each one against
+   the rendered text. Sources (PR description has the citations):
+   legal name and EIN -- PA Articles of Incorporation (file 0013779917,
+   3/22/2024), IRS CP 575 E and Letter 947 (04/11/2024); addresses -- Jason,
+   2026-10-03 ("220 N Jefferson is the physical address", "the PO box is the
+   office mailing address"). The office at 204 Pennsylvania Ave is
+   deliberately not published. */
+const org = {
+  brand: "Punxsy Prominence Boxing & Fitness",
+  legalName: "Punxsy Prominence Boxing and Fitness",
+  ein: "99-2073622",
+  url: "https://punxsyprominence.org",
+  domain: "punxsyprominence.org",
+  email: "admin@punxsyprominence.org",
+  donationsEmail: "treasurer@punxsyprominence.org",
+  grantsEmail: "grants@punxsyprominence.org",
+  established: "2024",
+  physical: {
+    street: "220 N Jefferson St",
+    city: "Punxsutawney",
+    region: "PA",
+    postalCode: "15767",
+  },
+  mailing: "PO Box 54, Big Run, PA 15715",
+} as const;
+
+const physicalAddress = `${org.physical.street}, ${org.physical.city}, ${org.physical.region} ${org.physical.postalCode}`;
+const domainStatement = `${org.domain} is the official website and application of ${org.legalName}.`;
+
 export const metadata: Metadata = {
   title: "Punxsy Prominence Boxing & Fitness",
   description:
-    "Punxsy Prominence Boxing & Fitness is an IRS-recognized 501(c)(3) nonprofit using structured boxing and athlete-development programming to serve youth in Punxsutawney and surrounding rural western Pennsylvania communities. Children participate at no charge.",
+    "Punxsy Prominence Boxing and Fitness is an IRS-recognized 501(c)(3) nonprofit using structured boxing and athlete-development programming to serve youth in Punxsutawney and surrounding rural western Pennsylvania communities. Youth participate at no charge.",
+  alternates: { canonical: `${org.url}/` },
 };
 
 const structuredData = {
   "@context": "https://schema.org",
   "@type": "NGO",
-  name: "Punxsy Prominence Boxing & Fitness",
+  name: org.brand,
+  legalName: org.legalName,
   alternateName: "PPBF",
+  url: `${org.url}/`,
   description:
     "IRS-recognized 501(c)(3) nonprofit using structured boxing and athlete-development programming to help young people build discipline, confidence, accountability, and practical life skills.",
-  email: "admin@punxsyprominence.org",
+  email: org.email,
+  taxID: org.ein,
+  nonprofitStatus: "https://schema.org/Nonprofit501c3",
+  foundingDate: org.established,
+  address: {
+    "@type": "PostalAddress",
+    streetAddress: org.physical.street,
+    addressLocality: org.physical.city,
+    addressRegion: org.physical.region,
+    postalCode: org.physical.postalCode,
+    addressCountry: "US",
+  },
   areaServed: {
     "@type": "Place",
     name: "Punxsutawney and surrounding rural Pennsylvania communities",
@@ -199,16 +243,19 @@ export default function HomePage() {
             Proven Track Record
           </h2>
           <p className="t-body mt-[var(--s5)] max-w-[72ch]" style={{ fontSize: 'var(--t-md)' }}>
-            Punxsy Prominence has been serving the Punxsutawney community since 2020, providing structured athletic and mentorship programming to hundreds of young people at no cost.
+            Punxsy Prominence was established in {org.established} and serves the Punxsutawney community with
+            structured athletic and mentorship programming. Youth train free.
           </p>
+          {/* Every number here is one Jason gave on 2026-10-03. The 200+ is
+              everyone who has come through the door, not a youth count. */}
           <div className="mt-[var(--s6)] grid gap-[var(--s4)] md:grid-cols-3">
             <div className="rounded-[var(--r-md)] border-2 border-[color:rgb(var(--brass-400-rgb)_/_0.5)] p-[var(--s5)] mat-paper bg-gradient-to-br from-[rgb(var(--brass-400-rgb)_/_0.06)] to-transparent">
-              <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>500+</p>
-              <p className="t-body text-[color:var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>Youth trained since 2020</p>
+              <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>200+</p>
+              <p className="t-body text-[color:var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>People have come through our doors since {org.established}</p>
             </div>
             <div className="rounded-[var(--r-md)] border-2 border-[color:rgb(var(--brass-400-rgb)_/_0.5)] p-[var(--s5)] mat-paper bg-gradient-to-br from-[rgb(var(--brass-400-rgb)_/_0.06)] to-transparent">
-              <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>100%</p>
-              <p className="t-body text-[color:var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>Free to participate</p>
+              <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>Free</p>
+              <p className="t-body text-[color:var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>For youth. Adults $20 a month.</p>
             </div>
             <div className="rounded-[var(--r-md)] border-2 border-[color:rgb(var(--brass-400-rgb)_/_0.5)] p-[var(--s5)] mat-paper bg-gradient-to-br from-[rgb(var(--brass-400-rgb)_/_0.06)] to-transparent">
               <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>501(c)(3)</p>
@@ -330,13 +377,37 @@ export default function HomePage() {
                 <dt className="t-label">
                   Legal Name
                 </dt>
-                <dd className="t-data mt-[var(--s2)]">Punxsy Prominence Boxing &amp; Fitness</dd>
+                <dd className="t-data mt-[var(--s2)]">{org.legalName}</dd>
               </div>
               <div>
                 <dt className="t-label">
                   Organization Type
                 </dt>
                 <dd className="t-data mt-[var(--s2)]">IRS-recognized 501(c)(3) nonprofit</dd>
+              </div>
+              <div>
+                <dt className="t-label">
+                  EIN
+                </dt>
+                <dd className="t-data mt-[var(--s2)]">EIN {org.ein}</dd>
+              </div>
+              <div>
+                <dt className="t-label">
+                  Established
+                </dt>
+                <dd className="t-data mt-[var(--s2)]">{org.established}</dd>
+              </div>
+              <div>
+                <dt className="t-label">
+                  Physical Address
+                </dt>
+                <dd className="t-data mt-[var(--s2)]">{physicalAddress}</dd>
+              </div>
+              <div>
+                <dt className="t-label">
+                  Mailing Address
+                </dt>
+                <dd className="t-data mt-[var(--s2)]">{org.mailing}</dd>
               </div>
               <div>
                 <dt className="t-label">
@@ -357,9 +428,46 @@ export default function HomePage() {
                   Official Contact
                 </dt>
                 <dd className="t-data mt-[var(--s2)]">
-                  <a href="mailto:admin@punxsyprominence.org">admin@punxsyprominence.org</a>
+                  <a href={`mailto:${org.email}`}>{org.email}</a>
                 </dd>
               </div>
+              <div className="md:col-span-2">
+                <dt className="t-label">
+                  Official Website
+                </dt>
+                <dd className="t-data mt-[var(--s2)]">{domainStatement}</dd>
+              </div>
+          </dl>
+        </section>
+
+        {/* Support. Two monitored addresses and no payment button: there is no
+            donation channel to point one at yet, and a button that goes nowhere
+            is the one thing this page must not ship. */}
+        <div className="flex justify-center">
+          <div className="rope w-[var(--s8)]" />
+        </div>
+
+        <section
+          id="support"
+          aria-labelledby="support-heading"
+          className="mx-auto w-full max-w-[1000px] px-[var(--s5)] py-[var(--s7)] lg:px-[var(--s6)]"
+        >
+          <h2 id="support-heading" className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
+            Support PPBF
+          </h2>
+          <dl className="mt-[var(--s5)] grid gap-[var(--s5)] md:grid-cols-2">
+            <div>
+              <dt className="t-label">Donations</dt>
+              <dd className="t-data mt-[var(--s2)]">
+                <a href={`mailto:${org.donationsEmail}`}>{org.donationsEmail}</a>
+              </dd>
+            </div>
+            <div>
+              <dt className="t-label">Grants and Funders</dt>
+              <dd className="t-data mt-[var(--s2)]">
+                <a href={`mailto:${org.grantsEmail}`}>{org.grantsEmail}</a>
+              </dd>
+            </div>
           </dl>
         </section>
 
@@ -371,17 +479,19 @@ export default function HomePage() {
         <footer className="px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <div className="mx-auto flex w-full max-w-[1000px] flex-col items-center gap-[var(--s3)] text-center">
             <p className="t-command" style={{ fontSize: 'var(--t-md)' }}>
-              Punxsy Prominence Boxing &amp; Fitness
+              {org.legalName}
             </p>
-            <p className="t-body">501(c)(3) nonprofit</p>
+            <p className="t-body">501(c)(3) nonprofit &middot; EIN {org.ein}</p>
+            <p className="t-body">{physicalAddress}</p>
+            <p className="t-body">{domainStatement}</p>
             <p className="t-data">
-              <a href="mailto:admin@punxsyprominence.org">admin@punxsyprominence.org</a>
+              <a href={`mailto:${org.email}`}>{org.email}</a>
             </p>
             <Link href="/login" className="btn btn--ghost mt-[var(--s2)]">
               Log In
             </Link>
             <p className="t-muted mt-[var(--s3)]">
-              &copy; {new Date().getFullYear()} Punxsy Prominence Boxing &amp; Fitness. All rights reserved.
+              &copy; {new Date().getFullYear()} {org.legalName}. All rights reserved.
             </p>
           </div>
         </footer>
