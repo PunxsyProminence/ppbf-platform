@@ -360,7 +360,7 @@ function GearCatalogueConsole() {
 
         <section className="mt-6">
           <h2 className="font-display text-xl font-black tracking-tight">
-            The catalogue{isLoaded ? ` (${items.length}, ${listedCount} on sale)` : ''}
+            The catalogue{isLoaded && !loadError ? ` (${items.length}, ${listedCount} on sale)` : ''}
           </h2>
 
           {loadError ? (

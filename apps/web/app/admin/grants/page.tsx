@@ -60,6 +60,9 @@ function isOverdue(row: ObligationRow): boolean {
 export default function GrantObligationsPage() {
   const [items, setItems] = useState<ObligationRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // True once a read of the list has come back. Until then an empty list is
+  // not a record of none, so the empty sentence stays hidden.
+  const [listRead, setListRead] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -81,6 +84,7 @@ export default function GrantObligationsPage() {
     if (!response.ok) throw new Error('Unable to load grant obligations.');
     const payload = (await response.json()) as { items?: ObligationRow[] };
     setItems(payload.items ?? []);
+    setListRead(true);
   }, []);
 
   useEffect(() => {
@@ -219,6 +223,13 @@ export default function GrantObligationsPage() {
           {loading ? (
             <div className="flex justify-center py-[var(--s7)]">
               <span className="working">Loading obligations...</span>
+            </div>
+          ) : !listRead ? (
+            <div className="mat-leather rounded-[var(--r-lg)]">
+              <div className="empty">
+                <div className="empty-title">Obligations could not be read</div>
+                <p className="empty-msg mx-auto">This is not a record of none. Reload the page to try again.</p>
+              </div>
             </div>
           ) : items.length === 0 ? (
             <div className="mat-leather rounded-[var(--r-lg)]">

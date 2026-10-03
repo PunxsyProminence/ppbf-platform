@@ -291,7 +291,9 @@ function NoticesAuthoringPage() {
             {liveByPlacement.map((group) => (
               <article key={group.placement} className="mat-paper rounded-[var(--r-md)] border border-[color:rgba(51,41,27,.26)] p-[var(--s4)]">
                 <p className="t-eyebrow">{PLACEMENT_LABELS[group.placement]}</p>
-                {group.items.length === 0 ? (
+                {group.items.length === 0 && loadError ? (
+                  <p className="t-body mt-[var(--s2)]">Could not be read. Whether this surface shows a banner is unknown.</p>
+                ) : group.items.length === 0 ? (
                   <p className="t-body mt-[var(--s2)]">Nothing live. This surface shows no banner.</p>
                 ) : (
                   <ul className="mt-[var(--s2)] space-y-[var(--s2)]">

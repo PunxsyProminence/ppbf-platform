@@ -258,3 +258,33 @@ test('a duplicate active enrollment surfaces the server message', async () => {
 
   expect(await screen.findByText(/already has an active membership/)).toBeTruthy();
 });
+
+test('a failed memberships read says so, never "No memberships on record"', async () => {
+  global.fetch = jest.fn(async (input: RequestInfo | URL) =>
+    String(input).includes('/admin/memberships')
+      ? ({ ok: false, status: 500, json: async () => ({}) } as Response)
+      : ({ ok: true, json: async () => ({ items: [] }) } as Response),
+  ) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+
+  expect(await screen.findByText('Memberships could not be read')).toBeTruthy();
+  expect(screen.queryByText('No memberships on record')).toBeNull();
+});
+
+test('a failed programs read says so, never "No programs on record. Create the first..."', async () => {
+  global.fetch = jest.fn(async (input: RequestInfo | URL) =>
+    String(input).includes('/admin/programs')
+      ? ({ ok: false, status: 500, json: async () => ({}) } as Response)
+      : ({ ok: true, json: async () => ({ items: [MEMBERSHIP] }) } as Response),
+  ) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<MembershipsPage />);
+  });
+
+  expect(await screen.findByText('Programs could not be read')).toBeTruthy();
+  expect(screen.queryByText('No programs on record')).toBeNull();
+});

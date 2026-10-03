@@ -228,6 +228,15 @@ test('a failed load is not presented as an empty notice board', async () => {
   expect(screen.queryByText('Nothing has been posted for this gym yet.')).toBeNull();
 });
 
+test('a read that never came back does not tell the author every surface shows no banner', async () => {
+  await renderPage(jest.fn(async () => {
+    throw new TypeError('Failed to fetch');
+  }));
+
+  expect(screen.queryByText('Nothing live. This surface shows no banner.')).toBeNull();
+  expect(screen.getAllByText('Could not be read. Whether this surface shows a banner is unknown.').length).toBeGreaterThan(0);
+});
+
 /* ============================================================== the room ==
 
    /notices was roomless while being named in the Front Office's own Purpose
