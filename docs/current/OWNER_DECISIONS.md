@@ -164,6 +164,89 @@ and should not try to.
 
 ---
 
+## OD-2026-10-03-001 -- Tablet hand-over for labelling (TEACH-LABELLER-HANDOFF-01): H1-H4 A; full app access needs the coach's own sign-in; H6 A plus an email reset; 60 minutes; no durable failed-PIN record
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
+in the relay lane's thread ("Get tablet hand-over decisions ready for Jason")
+and read by the records lane in that transcript
+(`~/.claude/projects/C--Dev/2643cede-813a-4815-8178-c4d1f7cf92b6.jsonl`, a
+user message of human origin). The questions are the owner decisions of
+ChatGPT's draft work order TEACH-LABELLER-HANDOFF-01 (assistant reply
+2026-10-02T21:51:59Z in the ChatGPT project "PPBF — App Build Review"; copy at
+`Documents/PPBF-overwatch/lane-inbox/TEACH-LABELLER-HANDOFF-01-chatgpt-draft-2026-10-03.md`),
+a draft that is not approved as a whole and is not app source. This entry
+records only his answers to H1-H8. It follows OD-2026-10-02-010 section 2
+item 4, which settled the shape (pick your name, then a short PIN; the screen
+clears between labellers), and is new and edits no earlier one. Nothing in it
+is built.
+
+The relay lane put the eight questions (10:38:48Z), each with the line
+"Each recommendation is ChatGPT's; none are mine.", and ended: "Reply on one
+line, for example `H1 A H2 A H3 A H4 A H5 A H6 A H7 60 H8 A`, or just "all
+recommended"." Jason, whole message (10:56:37Z): *"1 A 2 A 3 A 4A 5 It should
+be in the app so they would already be there if it is a differenent coach that
+is using pinn they would have to sign in to there account seperate to get thier
+app acess 6 A and a reset option to there email on file 60 min 8 b"*.
+
+**H1.** As put: "**H1. Who may appear in the labeller picker?** - **A
+(recommended):** the existing annotator roles, coach and organization admin.
+- **B:** coaches only." His answer: *"1 A"*. **Ruling: A. The picker shows
+coaches and organization admins (the existing annotator roles).**
+
+**H2.** As put: "**H2. What name does the picker show?** - **A
+(recommended):** each labeller types a display name when they set their PIN.
+... - **B:** their login email. - **C:** build a staff-name profile first."
+His answer: *"2 A"*. **Ruling: A. Each labeller types the display name the
+picker shows when they set their PIN.**
+
+**H3.** As put: "**H3. Who sets the 4-digit labelling PIN?** - **A
+(recommended):** each coach sets their own while signed in normally. An org
+admin can clear it but can never see or choose it. ... - **B:** the org admin
+assigns and resets PINs." His answer: *"3 A"*. **Ruling: A. Each coach sets
+their own PIN while signed in normally; an org admin can clear it and can
+never see or choose it.**
+
+**H4.** As put: "**H4. What can the PIN open?** - **A (recommended):** only
+the locked-down labelling mode on the tablet. - **B:** the person's full PPBF
+sign-in." His answer: *"4A"*. **Ruling: A. The PIN opens only the locked-down
+labelling mode.**
+
+**H5.** As put: "**H5. How does the tablet get back to the full app?** - **A
+(recommended):** a normal sign-in. - **B:** the 4-digit PIN of the person who
+opened it. ChatGPT's warning: anyone with the tablet and those four digits
+would get that coach's whole account." His answer, free text: *"5 It should be
+in the app so they would already be there if it is a differenent coach that is
+using pinn they would have to sign in to there account seperate to get thier
+app acess"*. **Recorder's reading, not his words: a coach on the PIN gets
+labelling only; full app access needs that coach's own separate sign-in
+(closest to A).** He gave no letter; B (the PIN unlocking the full app) is not
+what he said.
+
+**H6.** As put: "**H6. What happens after wrong PINs?** - **A
+(recommended):** reuse the existing slowdown. Each wrong try waits longer,
+counted per labeller and per device, with no permanent lockout. - You also
+choose whether the existing timings are enough, or whether this PIN gets a
+stronger temporary lock." His answer: *"6 A and a reset option to there email
+on file"*. **Ruling: A (the existing slowdown, per labeller and per device, no
+permanent lockout), plus his addition: "a reset option to there email on
+file".** He did not ask for a stronger temporary lock. What the reset resets
+and how it works are not in his words; the architect specifies them.
+
+**H7.** As put: "**H7. How long does labelling mode last?** - ChatGPT
+proposes 60 minutes, counted from when labelling mode starts. Switching
+labellers doesn't reset the clock, and it never renews by itself. - Give the
+number of minutes you want." His answer: *"60 min"* (unnumbered; it is the
+only number of minutes in his message and falls between his 6 and 8). **Ruling:
+60 minutes, counted from when labelling mode starts.**
+
+**H8.** As put: "**H8. Are failed PIN attempts recorded?** - **A
+(recommended):** keep a permanent record of each failed attempt ... The PIN
+itself is never recorded. ... - **B:** keep only short-term logs." His answer:
+*"8 b"*. **Ruling: B. No durable record of failed PIN attempts; only
+short-term logs.** This is his choice over ChatGPT's recommendation.
+
+---
+
 ## OD-2026-10-02-019 -- The Label Agreement screen: the "Still to do" line is left as is; its readability is to be fixed before production (release 5 then shipped without the fix, on his later word)
 
 **Provenance: PRIMARY.** Typed by Jason on 2026-10-02 (US Eastern; the times
