@@ -571,9 +571,9 @@ test.describe('Athlete journey', () => {
    With no database present the sign-in cannot mint a session, /athlete/
    dashboard answers 307 -> /login, and each test below SKIPS with that reason
    attached to the run rather than passing on an empty page. The proofs are
-   written in full and run unchanged wherever a database is -- the same shape
-   golden-era-scope-proofs.spec.ts uses for `.ge-locker`, which is the same
-   route and the same limit. */
+   written in full and run unchanged wherever a database is. (The golden-era
+   scope proofs, removed 2026-10-02 as look pins, used the same shape for this
+   route.) */
 
 /** The offline runtime's synthetic athlete persona, documented in
     docs/OFFLINE_RUNTIME.md. Not a credential: it exists only inside a local

@@ -288,7 +288,6 @@ jobs:
             'test:e2e:athlete',
             'test:e2e:guardian',
             'test:e2e:activation',
-            'test:e2e:golden-era',
           ];
 
           const { scripts } = JSON.parse(
