@@ -224,6 +224,7 @@
     "test:migrations:attendance-precedence": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/attendancePrecedence.pg.test.ts --testTimeout=180000",
     "test:migrations:one-percent-club": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/onePercentClub.pg.test.ts --testTimeout=180000",
     "test:migrations:guardian-upsert": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/guardianUpsert.pg.test.ts --testTimeout=180000",
+    "test:migrations:guardian-login-move": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/guardianLoginMove.pg.test.ts --testTimeout=180000",
     "test:migrations:guardian-contact": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/guardianContactProjection.pg.test.ts --testTimeout=180000",
     "test:migrations:guardian-fixture": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/guardianContactFixture.pg.test.ts --testTimeout=180000",
     "test:migrations:medical-clearance-expiry": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/medicalClearanceExpiry.pg.test.ts --testTimeout=180000",

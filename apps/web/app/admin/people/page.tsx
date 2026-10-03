@@ -247,6 +247,9 @@ function PeopleConsoleContent() {
   // Which guardian link the admin has asked to remove, held so the removal
   // needs a second, explicit confirmation on the row itself.
   const [pendingUnlink, setPendingUnlink] = useState<{ accountId: string; athleteId: string } | null>(null);
+  // The guardian record being moved to a new email, and the email typed.
+  const [pendingMove, setPendingMove] = useState<{ accountId: string; parentId: string } | null>(null);
+  const [moveEmail, setMoveEmail] = useState('');
   /* THE LIGHT ONE.
      POST /api/pilot/admin/accounts/revoke has existed since sessions did and
      nothing on any screen called it. Its sibling in the same directory,
@@ -678,6 +681,49 @@ function PeopleConsoleContent() {
       await load();
     } catch (unlinkError) {
       setError(unlinkError instanceof Error ? unlinkError.message : 'Could not remove that guardian link');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Moves one guardian record, with every child on it, to the parent's new
+   * email (OD-2026-09-29-004 R4). The server makes that login if it does not
+   * exist, switches the old one off when it has no family left, and refuses
+   * anything else with its own wording, shown verbatim.
+   */
+  async function moveGuardianToEmail(accountId: string, parentId: string) {
+    setBusy(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/admin/guardian-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ parent_id: parentId, from_account_id: accountId, to_email: moveEmail.trim() }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        to_account_id?: string;
+        old_login_switched_off?: boolean;
+      };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Could not move that guardian');
+      }
+
+      setPendingMove(null);
+      setMoveEmail('');
+      setNotice(
+        `Moved to ${payload.to_account_id}. Nothing was sent to them: tell the family to ask for a sign-in link at that address.`
+        + (payload.old_login_switched_off ? ` ${accountId} is switched off.` : ''),
+      );
+      await load();
+    } catch (moveError) {
+      setError(moveError instanceof Error ? moveError.message : 'Could not move that guardian');
     } finally {
       setBusy(false);
     }
@@ -1223,6 +1269,56 @@ function PeopleConsoleContent() {
                               })}
                             </ul>
                           )}
+
+                          {/* One mover per guardian record: a parent who changed
+                              their email keeps the same record, children and
+                              consents, on a new login. */}
+                          {isGuardian && guardianLinksAvailable
+                            && [...new Set(memberLinks.map((link) => link.parent_id))].map((parentId) => (
+                              <div key={parentId} className="mt-[var(--s2)] flex flex-wrap items-center gap-[var(--s2)]">
+                                {pendingMove?.accountId === member.account_id && pendingMove.parentId === parentId ? (
+                                  <>
+                                    <label className="flex flex-col">
+                                      <span className="text-[length:var(--t-xs)]">New email</span>
+                                      <input
+                                        type="email"
+                                        value={moveEmail}
+                                        onChange={(event) => setMoveEmail(event.target.value)}
+                                        className="input"
+                                      />
+                                    </label>
+                                    <button
+                                      type="button"
+                                      disabled={busy || !moveEmail.trim()}
+                                      onClick={() => void moveGuardianToEmail(member.account_id, parentId)}
+                                      className="btn btn--danger px-[var(--s4)] text-[length:var(--t-xs)] disabled:opacity-50"
+                                    >
+                                      Confirm Move
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={() => { setPendingMove(null); setMoveEmail(''); }}
+                                      className="btn--lever disabled:opacity-50"
+                                    >
+                                      Keep
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => { setPendingMove({ accountId: member.account_id, parentId }); setMoveEmail(''); }}
+                                    className="btn--lever disabled:opacity-50"
+                                  >
+                                    Move {memberLinks
+                                      .filter((link) => link.parent_id === parentId)
+                                      .map((link) => link.athlete_full_name)
+                                      .join(', ')} To New Email
+                                  </button>
+                                )}
+                              </div>
+                            ))}
 
                           {isGuardian && guardianLinksAvailable && memberLinks.length === 0 && (
                             /* The state itself is on the Sign-in badge
