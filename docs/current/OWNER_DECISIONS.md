@@ -170,9 +170,9 @@ and should not try to.
 in the overwatch thread
 (`~/.claude/projects/C--Dev/c2e29ade-d3b8-4a8a-bf98-07b855ff2047.jsonl`, user
 messages of human origin) and read by the records lane in that transcript.
-Both words are single-word replies to overwatch's own messages; this entry
-records what each was an answer to and what the repository and GitHub show
-happened. It is new and edits no earlier entry.
+Both are single-word messages in the overwatch thread; "Reply production"
+answers overwatch's ask, "Green" answers nothing. This entry records what
+each was and what the repository and GitHub show happened. It is new and edits no earlier entry.
 
 ### 1. "Reply production" -- start release 6
 
@@ -312,7 +312,7 @@ attached to), in which case it stays on. B: it always stays on. C: the admin
 picks each time. **Q4. What is the parent told?** A (recommended): nothing
 automatic. The admin tells the family, and the move is recorded in the audit
 log. B: the app emails the new address saying the gym moved the children to
-it." and "You can answer like "all recommended" or "Q1 A, Q2 B..."."
+it." (the lane's plain-English lines under each question are left out) and "You can answer like "all recommended" or "Q1 A, Q2 B..."."
 
 Jason, whole message (11:05:27.875Z): *"go"*. The lane asked (11:05:33Z):
 "Does "go" mean "all recommended" for Q1-Q4? **A (recommended):** yes, all
@@ -367,7 +367,7 @@ carries out OD-2026-10-03-002 section 5 ("one transaction around intake's
 writes") and is new; it edits no earlier entry.
 
 His request to the lane (18:21:22.247Z), whole message: *"Look at the repo  and make recommendation"*. The lane's question (18:22:23Z): "How should the
-remainder of OD-2026-10-03-002 section 5 be delivered? **A. (Recommended)**
+remainder of OD-2026-10-03-002 §5 be delivered? **A. (Recommended)**
 Merge #1143; correct `ACTIVE_WORK.md:213` so the row stays open; open a new
 high-risk lane to put the athlete login write, guardian provisioning and the
 remaining intake writes in the same transaction, with `auth.ts` and
