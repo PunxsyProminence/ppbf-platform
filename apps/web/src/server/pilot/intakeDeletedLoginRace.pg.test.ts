@@ -331,6 +331,15 @@ afterEach(() => {
   mockGate = null;
 });
 
+// Each case starts from the organization and its coach alone, so a guard
+// removed for one case cannot fail the cases after it.
+beforeEach(async () => {
+  await client.query('delete from pilot.athletes');
+  await client.query('delete from pilot.session_tokens');
+  await client.query('delete from pilot.organization_memberships');
+  await client.query('delete from pilot.accounts where account_id <> $1', [COACH]);
+});
+
 test('sequential: a promotion naming no account_id is refused when a deleted login holds the athlete id', async () => {
   await seedNeverActivatedLogin('idlr-kid-seq', 'ATH-SEQ', true);
 
