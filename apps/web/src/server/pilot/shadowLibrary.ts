@@ -1183,17 +1183,16 @@ export interface ShadowLibrarySearchInput {
   limit?: number;
 }
 
-export interface ShadowLibraryRankedSearch {
-  // At or above the relevance bar: evidence.
-  relevant: ShadowLibrarySearchResult[];
-  // Matched something but below the bar: the closest passages, never evidence.
+/**
+ * Optional second argument to searchShadowLibrary. Pass an object and the
+ * search fills it in; the return value is unchanged.
+ */
+export interface ShadowLibrarySearchDetail {
+  // Matched something but below the relevance bar: the closest passages,
+  // never evidence. The return value holds only passages at or above the bar.
   nearest: ShadowLibrarySearchResult[];
+  // Which path ranked them, which decides how a score maps to a confidence level.
   mode: 'semantic' | 'keyword';
-}
-
-/** Evidence only: passages at or above the relevance bar. */
-export async function searchShadowLibrary(input: ShadowLibrarySearchInput): Promise<ShadowLibrarySearchResult[]> {
-  return (await searchShadowLibraryRanked(input)).relevant;
 }
 
 /** Plain confidence level for one passage's score (0-1) on the given path. */
@@ -1206,7 +1205,14 @@ export function confidenceLevelForScore(mode: 'semantic' | 'keyword', score: num
   return 'low';
 }
 
-export async function searchShadowLibraryRanked(input: ShadowLibrarySearchInput): Promise<ShadowLibraryRankedSearch> {
+// Returns evidence only: passages at or above the relevance bar. The search
+// keeps one body (and so one retrieval-organization predicate) on purpose:
+// platformLibraryWriteScope.convention.test.ts reads this function to prove it
+// still admits the platform baseline.
+export async function searchShadowLibrary(
+  input: ShadowLibrarySearchInput,
+  detail?: ShadowLibrarySearchDetail,
+): Promise<ShadowLibrarySearchResult[]> {
   const normalized = normalizeSearchScope({
     scope: input.scope,
     subjectId: input.subjectId,
@@ -1330,7 +1336,11 @@ export async function searchShadowLibraryRanked(input: ShadowLibrarySearchInput)
             search_mode: 'semantic',
           },
         });
-        return { relevant, nearest, mode: 'semantic' };
+        if (detail) {
+          detail.nearest = nearest;
+          detail.mode = 'semantic';
+        }
+        return relevant;
       }
     }
   }
@@ -1410,7 +1420,11 @@ export async function searchShadowLibraryRanked(input: ShadowLibrarySearchInput)
     },
   });
 
-  return { relevant, nearest, mode: 'keyword' };
+  if (detail) {
+    detail.nearest = nearest;
+    detail.mode = 'keyword';
+  }
+  return relevant;
 }
 
 export async function createShadowLibraryClaim(input: {
@@ -1430,7 +1444,8 @@ export async function createShadowLibraryClaim(input: {
     athleteId: input.athleteId,
   });
 
-  const ranked = await searchShadowLibraryRanked({
+  const detail: ShadowLibrarySearchDetail = { nearest: [], mode: 'keyword' };
+  const relevantEvidence = await searchShadowLibrary({
     organizationId: input.organizationId,
     actorAccountId: input.actorAccountId,
     actorRole: input.actorRole,
@@ -1439,7 +1454,8 @@ export async function createShadowLibraryClaim(input: {
     subjectId: normalized.effectiveSubjectId,
     queryText: input.question,
     limit: input.limit ?? 5,
-  });
+  }, detail);
+  const ranked = { relevant: relevantEvidence, nearest: detail.nearest, mode: detail.mode };
 
   // Above the relevance bar = evidence. Below it, the closest passages are
   // still shown (low confidence) but never count as evidence and never make

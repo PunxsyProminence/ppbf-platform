@@ -44,8 +44,14 @@ import {
   recomputeShadowCapabilityCoverage,
   confidenceLevelForScore,
   searchShadowLibrary,
-  searchShadowLibraryRanked,
+  type ShadowLibrarySearchDetail,
 } from './shadowLibrary';
+
+async function searchShadowLibraryRanked(input: Parameters<typeof searchShadowLibrary>[0]) {
+  const detail: ShadowLibrarySearchDetail = { nearest: [], mode: 'keyword' };
+  const relevant = await searchShadowLibrary(input, detail);
+  return { relevant, nearest: detail.nearest, mode: detail.mode };
+}
 
 const mockQuery = query as jest.MockedFunction<typeof query>;
 const mockQueryOne = queryOne as jest.MockedFunction<typeof queryOne>;
