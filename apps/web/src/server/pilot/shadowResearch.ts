@@ -392,7 +392,9 @@ export async function syncCapabilityGapRequirement(input: {
              t.research_requirement is distinct from excluded.research_requirement
              or t.knowledge_gap is distinct from excluded.knowledge_gap
              or t.source_status is distinct from excluded.source_status
-             or not (t.metadata @> excluded.metadata)
+             -- A merge that changes anything. Not @>: array containment is a
+             -- subset test, so a shrunk required_source_types would read as unchanged.
+             or (t.metadata || excluded.metadata) is distinct from t.metadata
            )
          )
          or (

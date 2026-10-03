@@ -1161,6 +1161,68 @@ describe('the coverage check closes, and reopens, its own gap tickets', () => {
     }
   });
 
+  // The open, refresh, reopen and stamp paths obey the same rule as the close:
+  // a row that names an athlete -- by the column or only in metadata -- is not
+  // the coverage check's, and its gap is not recorded again either.
+  test.each([
+    ['the subject_id column', 'cap-athlete-col', `'{}'::jsonb`, `'athlete-coverage-subject'`],
+    ['metadata.athlete_id only', 'cap-athlete-meta', `'{"athlete_id": "athlete-coverage-subject"}'::jsonb`, 'null'],
+  ])('a row that names an athlete by %s is never refreshed, stamped or reopened by coverage', async (_label, key, metadataSql, subjectSql) => {
+    const client = await freshDatabase(`coverage_sync_skips_${key.replace(/-/g, '_')}`);
+    activeClient = client;
+    try {
+      await seedRule(client, key, { minimumSourceCount: 1 });
+      await client.query(
+        `insert into pilot.shadow_research_requirements
+           (organization_id, source_event_name, source_entity_type, source_entity_id,
+            research_requirement, knowledge_gap, source_status, source_confidence_tier,
+            source_verification_state, created_by_account_id, created_by_role, metadata, subject_id)
+         values ($1, 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED', 'shadow_library_capability_map', $3,
+            'requirement', 'gap', 'missing', 'INSUFFICIENT', 'unknown', $2, 'organization_admin', ${metadataSql},
+            ${subjectSql})`,
+        [ORG_ID, ADMIN_ID, key],
+      );
+      const snapshot = async () => (await client.query(
+        `select status, knowledge_gap, source_status, metadata, resolved_at
+         from pilot.shadow_research_requirements where organization_id = $1 and source_entity_id = $2`,
+        [ORG_ID, key],
+      )).rows;
+
+      // Uncovered, open: not refreshed to the coverage check's text.
+      const before = await snapshot();
+      await recompute();
+      expect(await snapshot()).toEqual(before);
+      expect(await gapEventCount(client, key)).toBe(0);
+
+      // Resolved by hand, then covered: not stamped.
+      await client.query(
+        `update pilot.shadow_research_requirements set status = 'resolved', resolved_at = now()
+         where organization_id = $1 and source_entity_id = $2`,
+        [ORG_ID, key],
+      );
+      await seedSource(client, `src-${key}`);
+      await recompute();
+      const resolved = await snapshot();
+      expect(resolved[0].status).toBe('resolved');
+      expect(resolved[0].metadata).not.toHaveProperty('covered_after_resolution_at');
+
+      // Even marked as the check's own closure, the gap coming back does not
+      // reopen it.
+      await client.query(
+        `update pilot.shadow_research_requirements
+           set metadata = metadata || '{"resolution": "capability_covered"}'::jsonb
+         where organization_id = $1 and source_entity_id = $2`,
+        [ORG_ID, key],
+      );
+      await retract(client, `src-${key}`);
+      await recompute();
+      expect((await snapshot())[0].status).toBe('resolved');
+      expect(await gapEventCount(client, key)).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+
   // A coverage gap names no athlete. A row under the same key that does name
   // one is not the coverage check's to close.
   test('a row that names an athlete is never closed by coverage', async () => {
