@@ -2445,6 +2445,14 @@ export default function CoachWorkspace() {
      the roster below and puts focus on it. It opens nothing and reads nothing:
      the row is where a coach deliberately chooses to open a child's
      self-report, and that stays the coach's own tap. */
+  /* ONE PLACE PER ACTION (Jason 2026-10-03, option A). On the Dashboard the
+     floor board carries every report action -- it pages through every open
+     escalation, pain report and barrier report -- so the full lists below it
+     stay complete but read-only there, and the old panels that repeated the
+     board (summary, mode toggle, session-scripts shortcuts) leave this tab.
+     On every other tab the board is absent and the lists keep their buttons. */
+  const boardShown = activeTab === 'dashboard';
+
   const showAthleteOnRoster = (athleteId: string) => {
     const row = Array.from(document.querySelectorAll<HTMLElement>('[data-roster-athlete-id]'))
       .find((candidate) => candidate.dataset.rosterAthleteId === athleteId);
@@ -2620,12 +2628,18 @@ export default function CoachWorkspace() {
               ))}
 
               <div className="flex flex-wrap items-center gap-3">
-                <Link
-                  href="/coach/decision-loop"
-                  className="btn"
-                >
-                  Record What You Did
-                </Link>
+                {boardShown ? (
+                  <p className="t-data text-[color:var(--bone-300)]">
+                    Record what you did from Needs You Now on the floor board above.
+                  </p>
+                ) : (
+                  <Link
+                    href="/coach/decision-loop"
+                    className="btn"
+                  >
+                    Record What You Did
+                  </Link>
+                )}
                 <p className="text-[11px] text-[color:var(--bone-400)]">
                   There is no clear button: a report stays here until it ages out of the window, and the
                   permanent record is the athlete&apos;s near-miss history, which nothing on this screen
@@ -2702,7 +2716,11 @@ export default function CoachWorkspace() {
 
                     <p className="t-body text-[color:var(--bone-200)]">{escalation.reason}</p>
 
-                    {escalation.status === 'open' ? (
+                    {escalation.status === 'open' && boardShown ? (
+                      <p className="t-data text-[color:var(--bone-300)]">
+                        Open. Acknowledge it from Needs You Now on the floor board above.
+                      </p>
+                    ) : escalation.status === 'open' ? (
                       <button
                         type="button"
                         onClick={() => void acknowledgeCoachEscalation(escalation.escalation_id)}
@@ -2800,9 +2818,11 @@ export default function CoachWorkspace() {
                 </article>
               ))}
 
-              <Link href="/coach/decision-loop" className="btn btn--ghost">
-                Open Decision Loop to Message Home
-              </Link>
+              {!boardShown && (
+                <Link href="/coach/decision-loop" className="btn btn--ghost">
+                  Open Decision Loop to Message Home
+                </Link>
+              )}
             </div>
           )}
         </section>
@@ -2829,7 +2849,9 @@ export default function CoachWorkspace() {
           <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">Lead with discipline, protect the culture, and model the grind. The room rises when the coach stays locked in.</p>
         </div>
 
-        {/* ROLE SUMMARY PANEL */}
+        {/* ROLE SUMMARY PANEL -- not on the Dashboard, where the floor
+            board's gauges and the tiles below already give each count. */}
+        {!boardShown && (
         <CoachSummaryPanel
           sessionStatus={sessionStatus}
           /* THE ROSTER SIZE. This was the attendance-derived count, which
@@ -2850,8 +2872,10 @@ export default function CoachWorkspace() {
           reviewsNeeded={shadowQueueUnavailable ? null : reviewsNeeded}
           assignmentsDue={shadowQueueUnavailable ? null : assignmentsDue}
         />
+        )}
 
-        {/* MODE TOGGLE */}
+        {/* MODE TOGGLE -- on the Dashboard it lives in the board's Run the Room. */}
+        {!boardShown && (
         <div className="mat-leather flex w-fit gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s3)]">
           {(['Group', 'One-on-One'] as const).map(mode => (
             <button
@@ -2875,6 +2899,7 @@ export default function CoachWorkspace() {
             </button>
           ))}
         </div>
+        )}
 
         {/* TAB NAVIGATION */}
         <div className={ui.tabContainer}>
@@ -2916,7 +2941,11 @@ export default function CoachWorkspace() {
                     Quick Actions operational: the SHADOW Intel tab below is
                     the coach's own intelligence surface and stays, and
                     /rabbit-holes keeps its corridor door -- neither surface
-                    lost any access, only this shortcut row. */}
+                    lost any access, only this shortcut row.
+                    Session Scripts, Open Live Floor, Process Tasks and Open
+                    SHADOW Intel left too (2026-10-03): the floor board's Run
+                    the Room opens Session Scripts and the tab row opens the
+                    other three, so each was a second door to the same room. */}
                 <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
                   <Link
                     href="/schedule"
@@ -2924,33 +2953,6 @@ export default function CoachWorkspace() {
                   >
                     Open Scheduler
                   </Link>
-                  <Link
-                    href="/coach/session-scripts"
-                    className="btn"
-                  >
-                    Session Scripts: Run Tonight&apos;s Plan
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('floor')}
-                    className="btn"
-                  >
-                    Open Live Floor
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('tasks')}
-                    className="btn btn--ghost"
-                  >
-                    Process Tasks
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('shadow')}
-                    className="btn btn--ghost"
-                  >
-                    Open SHADOW Intel
-                  </button>
                   <Link
                     href="/coach/floor-groups"
                     className="btn btn--ghost"
@@ -3137,9 +3139,8 @@ export default function CoachWorkspace() {
                           )}
                         </p>
                       </div>
-                      <Link href="/coach/session-scripts" className="btn">
-                        Return to live delivery
-                      </Link>
+                      {/* Return to live delivery is the floor board's Run the
+                          Room button on this tab; it is not repeated here. */}
                     </div>
                   )}
 
