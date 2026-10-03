@@ -110,8 +110,21 @@ export default function CoachVideoPublicationsPage() {
      claim it could not be read. */
   const [publicationsUnreadable, setPublicationsUnreadable] = useState(false);
 
+  /* Whether the video list READ failed. Without it a failed read leaves the
+     picker empty under "No videos linked to an athlete yet". */
+  const [videosUnreadable, setVideosUnreadable] = useState(false);
+
   const loadPublications = async () => {
-    const res = await fetch(`${apiBase()}/api/pilot/publications/create`, { credentials: 'include' });
+    let res: Response;
+    try {
+      res = await fetch(`${apiBase()}/api/pilot/publications/create`, { credentials: 'include' });
+    } catch {
+      // A reload that never came back is unreadable too, not a thrown error
+      // for the caller: after a create, that throw used to report the
+      // create itself as failed.
+      setPublicationsUnreadable(true);
+      return;
+    }
     if (!res.ok) {
       // A non-ok response used to fall through this `if` silently, leaving the
       // list empty and saying nothing. On this page that reads as "you have
@@ -145,6 +158,9 @@ export default function CoachVideoPublicationsPage() {
         if (vidRes.ok) {
           const vidData = (await vidRes.json()) as { items?: VideoSession[] };
           setVideos(vidData.items ?? []);
+          setVideosUnreadable(false);
+        } else {
+          setVideosUnreadable(true);
         }
 
         /* Left unconditional deliberately. The read-failure signal now lives
@@ -155,6 +171,7 @@ export default function CoachVideoPublicationsPage() {
         setErrorMessage('');
       } catch (error) {
         setPublicationsUnreadable(true);
+        setVideosUnreadable(true);
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load data.');
       }
     })();
@@ -312,7 +329,12 @@ export default function CoachVideoPublicationsPage() {
                     </option>
                   ))}
                 </select>
-                {publishableVideos.length === 0 ? (
+                {videosUnreadable ? (
+                  <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]" data-testid="videos-unreadable">
+                    The video list could not be read, so this cannot say whether any footage is ready to publish.
+                    Reload to try again.
+                  </p>
+                ) : publishableVideos.length === 0 ? (
                   <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">
                     No videos linked to an athlete yet. Upload footage with an athlete on it from Video Analysis.
                   </p>
