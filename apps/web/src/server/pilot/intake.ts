@@ -1675,6 +1675,34 @@ export async function lockAthleteLoginForIntake(
 }
 
 /**
+ * Locks the intake case row on the caller's transaction (`for update`, held
+ * until it ends) and refuses (409) unless the case is still approved. The
+ * route reads the status before its transaction opens; this is the same rule
+ * held under the lock, so a second promotion of the same case that started
+ * before the first committed is refused instead of writing a second athlete.
+ */
+export async function assertIntakeCaseStillApproved(
+  client: PoolClient,
+  organizationId: string,
+  intakeCaseId: string,
+): Promise<void> {
+  const row = await client.query<{ status: string }>(
+    `select status from pilot.intake_cases
+      where organization_id = $1 and intake_case_id = $2
+      for update`,
+    [organizationId, intakeCaseId],
+  );
+  const status = row.rows[0]?.status;
+  if (status !== 'approved') {
+    throw new ConflictError(
+      `Conflict: intake case "${intakeCaseId}" is no longer approved (now ${status ?? 'missing'}). `
+      + 'It was promoted, or changed, while this promotion was waiting. Reload the case before acting on it.',
+      'INTAKE_CASE_NOT_APPROVED',
+    );
+  }
+}
+
+/**
  * Promotion's athlete record: the checks that refuse it, and the write, in one
  * transaction under the athlete-login lock.
  *
@@ -1692,16 +1720,28 @@ export async function lockAthleteLoginForIntake(
  * and the link (OD-2026-10-03-002 section 5). This must be the first thing
  * the caller's transaction does, so the lock comes before any row lock.
  * Without it, it is a transaction of its own, as before.
+ *
+ * Given `intakeCaseId`, the case row is locked right after the athlete-login
+ * lock and the promotion is refused unless the case is still approved. Two
+ * promotions of one case each passed the route's earlier status read, and
+ * with different athlete_ids they take different athlete-login locks, so both
+ * used to write. The row lock makes the second wait for the first to commit;
+ * it then sees the case promoted and is refused (assertIntakeCaseStillApproved).
  */
 export async function writePromotedAthleteRecord(params: {
   organizationId: string;
   athlete: PilotAthlete;
   accountId?: string;
+  intakeCaseId?: string;
 }, callerClient?: PoolClient): Promise<void> {
   const { organizationId, athlete } = params;
   const athleteId = athlete.athlete_id;
   const write = async (client: PoolClient): Promise<void> => {
     await lockAthleteLoginForIntake(client, organizationId, athleteId);
+
+    if (params.intakeCaseId) {
+      await assertIntakeCaseStillApproved(client, organizationId, params.intakeCaseId);
+    }
 
     // A withdrawn athlete record: upsertAthlete would rewrite it while it
     // stayed withdrawn. A returning athlete is re-enrolled under a new

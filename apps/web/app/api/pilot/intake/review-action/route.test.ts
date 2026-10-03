@@ -108,6 +108,8 @@ const mockAthleteAccount = createOrUpdateAthleteAccountWithClient as jest.Mocked
 // The client of the promotion's one transaction (OD-2026-10-03-002 section 5).
 // Every promotion write is asserted to run on it.
 let txClient: { query: (sql: string, params: unknown[]) => Promise<{ rows: unknown[] }> };
+// What the intake case row reads as under the transaction's row lock.
+let caseStatusInTx: string;
 const mockGetIntakeCase = getIntakeCaseById as jest.MockedFunction<typeof getIntakeCaseById>;
 const mockAuthority = assertActorCanAccessIntakeCase as jest.MockedFunction<typeof assertActorCanAccessIntakeCase>;
 const mockUpdateStatus = updateIntakeCaseStatus as jest.MockedFunction<typeof updateIntakeCaseStatus>;
@@ -221,8 +223,10 @@ beforeEach(() => {
   mockQueryOne.mockReset();
   // The athlete-record checks run on writePromotedAthleteRecord's transaction
   // client; it answers from the same stubbed lookups as queryOne.
+  caseStatusInTx = 'approved';
   txClient = {
     query: async (sql: string, params: unknown[]) => {
+      if (sql.includes('from pilot.intake_cases')) return { rows: [{ status: caseStatusInTx }] };
       const row = await mockQueryOne(sql, params);
       return { rows: row ? [row] : [] };
     },
@@ -906,10 +910,6 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
   });
 });
 
-// promotion.readiness.score is typed `number` in IntakePromotionPayload, but
-// that type is only an `as` cast on the parsed JSON body -- nothing checked
-// the actual value before it reached pilot.readiness, a NOT NULL column a
-// coach-facing triage board (readinessBoard.ts) reads as ground truth.
 // OD-2026-10-03-002 section 5: the promotion's writes are one transaction.
 // Each write is handed that transaction's client, so none of them can commit
 // on its own; the shadow event, research requirement and metric are written
@@ -985,6 +985,54 @@ describe('every promotion write runs on the one transaction', () => {
     expect(mockCreateResearchRequirement.mock.calls[0]).toHaveLength(1);
   });
 
+  test('a case promoted while this promotion waited on its row is refused 409, before the athlete write', async () => {
+    caseStatusInTx = 'promoted';
+
+    const response = await POST(promoteRequest(undefined, { account_id: 'athlete-1' }));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: 'INTAKE_CASE_NOT_APPROVED' });
+    expectNothingWritten();
+  });
+
+  test('the case row is locked right after the athlete-login lock, before any athlete check', async () => {
+    const seen: string[] = [];
+    const inner = txClient.query;
+    txClient.query = async (sql: string, params: unknown[]) => {
+      seen.push(sql);
+      return inner(sql, params);
+    };
+
+    await POST(promoteRequest(undefined));
+
+    expect(seen[0]).toContain('pg_advisory_xact_lock');
+    expect(seen[1]).toContain('from pilot.intake_cases');
+    expect(seen[1]).toContain('for update');
+  });
+
+  test.each([
+    ['shadow event', () => (emitShadowEvent as jest.Mock)],
+    ['research requirement', () => mockCreateResearchRequirement as jest.Mock],
+    ['metric', () => (writeShadowTelemetryEvent as jest.Mock)],
+  ])('a %s failing after the commit is logged, and the committed promotion still answers 200', async (_name, writer) => {
+    writer().mockRejectedValueOnce(Object.assign(new Error('secret row value'), { code: '23505' }));
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await POST(promoteRequest(undefined));
+
+    expect(response.status).toBe(200);
+    expect(logged).toHaveBeenCalledWith(
+      'intake-promotion-after-commit-write-failed',
+      expect.objectContaining({ errorClass: 'Error', code: '23505' }),
+    );
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('secret row value');
+    // The other two still run.
+    expect(emitShadowEvent).toHaveBeenCalled();
+    expect(mockCreateResearchRequirement).toHaveBeenCalled();
+    expect(writeShadowTelemetryEvent).toHaveBeenCalled();
+    logged.mockRestore();
+  });
+
   test('a write that fails inside the transaction fails the promotion, and nothing after it runs', async () => {
     mockLinkGuardianAthlete.mockRejectedValueOnce(new Error('injected failure'));
 
@@ -1003,6 +1051,10 @@ describe('every promotion write runs on the one transaction', () => {
   });
 });
 
+// promotion.readiness.score is typed `number` in IntakePromotionPayload, but
+// that type is only an `as` cast on the parsed JSON body -- nothing checked
+// the actual value before it reached pilot.readiness, a NOT NULL column a
+// coach-facing triage board (readinessBoard.ts) reads as ground truth.
 describe('promotion readiness is validated before it reaches pilot.readiness', () => {
   function readinessPromoteRequest(readiness: Record<string, unknown>) {
     return new NextRequest('http://localhost/api/pilot/intake/review-action', {

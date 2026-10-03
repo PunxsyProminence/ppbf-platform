@@ -15,6 +15,9 @@
 //      login, no guardian login, no membership, no guardian record or link,
 //      and no other promotion row is left, the case stays approved, and an
 //      existing guardian login's sessions are not revoked.
+//   3. ONE CASE, ONE PROMOTION. Two promotions of the same approved case,
+//      for different athletes, run at once: one commits, the other waits on
+//      the case row and is refused 409, and only one athlete is written.
 //
 // Each fails if the client is not passed to that write: the write commits on
 // its own pooled connection and survives the rollback.
@@ -213,7 +216,13 @@ async function guardianSessionRevoked(): Promise<boolean> {
   return row.rows[0].revoked;
 }
 
-function promoteRequest(caseId: string, guardianEmail: string, guardianAccountId: string): NextRequest {
+function promoteRequest(
+  caseId: string,
+  guardianEmail: string,
+  guardianAccountId: string,
+  athleteId = 'IOT-ATH',
+  athleteAccountId = 'iot-athlete-login',
+): NextRequest {
   return new NextRequest('http://localhost/api/pilot/intake/review-action', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -223,8 +232,8 @@ function promoteRequest(caseId: string, guardianEmail: string, guardianAccountId
       notes: 'iot',
       promotion: {
         athlete: {
-          athlete_id: 'IOT-ATH',
-          account_id: 'iot-athlete-login',
+          athlete_id: athleteId,
+          account_id: athleteAccountId,
           full_name: 'Iot Athlete',
           dob: '2012-01-01',
           weight_class: 'open',
@@ -439,10 +448,14 @@ test.each(['guardian_links', 'audit_events'])(
       `select role, active_flag, updated_at from pilot.accounts where account_id = 'iot-guardian'`,
     );
     await failAt(table);
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     const response = await POST(promoteRequest(caseId, 'guardian@iot.example', 'iot-guardian'));
 
     expect(response.status).toBe(500);
+    // The 500 is the injected fault (raise exception = P0001), not another error.
+    expect(logged).toHaveBeenCalledWith('unhandled-route-error', { errorClass: 'DatabaseError', code: 'P0001' });
+    logged.mockRestore();
     expect(await rowCounts()).toEqual(Object.fromEntries(PROMOTION_TABLES.map((name) => [name, 0])));
     // No athlete login and no new account or membership; the existing
     // guardian login is as it was, its session still live.
@@ -463,5 +476,58 @@ test.each(['guardian_links', 'audit_events'])(
     expect(retry.status).toBe(200);
     expect((await rowCounts()).athletes).toBe(1);
     expect((await caseState(caseId)).status).toBe('promoted');
+    // Provisioning an existing login revokes its sessions when it commits, so
+    // the unrevoked session above was the rollback, not a provisioning that
+    // never revokes.
+    expect(await guardianSessionRevoked()).toBe(true);
   },
 );
+
+test('two promotions of one case at once: one commits, the other is refused 409', async () => {
+  const caseId = await seedCase();
+
+  // Hold the case row so both promotions reach it before either commits.
+  const holder = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+  await holder.connect();
+  let results: Response[];
+  try {
+    await holder.query('begin');
+    await holder.query(
+      'select 1 from pilot.intake_cases where organization_id = $1 and intake_case_id = $2 for update',
+      [ORG, caseId],
+    );
+
+    const first = POST(promoteRequest(caseId, 'g1@iot.example', 'iot-g1', 'IOT-A1', 'iot-a1-login'));
+    const second = POST(promoteRequest(caseId, 'g2@iot.example', 'iot-g2', 'IOT-A2', 'iot-a2-login'));
+
+    // Both are waiting on a lock (the case row) before the holder lets go.
+    const deadline = Date.now() + 120_000;
+    let waiting = 0;
+    while (Date.now() < deadline) {
+      const row = await client.query<{ n: number }>(
+        `select count(*)::int as n from pg_stat_activity where datname = $1 and wait_event_type = 'Lock'`,
+        [TEST_DB_NAME],
+      );
+      waiting = row.rows[0].n;
+      if (waiting >= 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(waiting).toBe(2);
+
+    await holder.query('commit');
+    results = await Promise.all([first, second]);
+  } finally {
+    await holder.query('rollback').catch(() => {});
+    await holder.end();
+  }
+
+  const statuses = results.map((response) => response.status).sort();
+  expect(statuses).toEqual([200, 409]);
+  const refused = results.find((response) => response.status === 409) as Response;
+  expect(await refused.json()).toMatchObject({ code: 'INTAKE_CASE_NOT_APPROVED' });
+  expect((await rowCounts()).athletes).toBe(1);
+  expect((await rowCounts()).parents).toBe(1);
+  // One athlete login and one guardian login, the winner's.
+  expect((await accountIds()).filter((id) => id !== ADMIN)).toHaveLength(2);
+  expect((await caseState(caseId)).status).toBe('promoted');
+});

@@ -168,6 +168,7 @@ describe('createOrUpdateAthleteAccount', () => {
 
     // The existence read only: nothing written.
     expect(currentClient.query).toHaveBeenCalledTimes(1);
+    expect(currentClient.query.mock.calls[0][0]).toContain('select organization_id from pilot.accounts');
   });
 });
 

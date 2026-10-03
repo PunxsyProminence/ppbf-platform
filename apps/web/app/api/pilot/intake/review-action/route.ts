@@ -71,6 +71,24 @@ function requireFiniteNumber(value: unknown, field: string): number {
   return value;
 }
 
+// Runs one write that follows a committed promotion. A failure is logged by
+// step, error class and code only -- never the message, which can carry row
+// values -- and swallowed, so the caller still reports the promotion it made.
+async function afterCommit(step: string, write: () => Promise<unknown>): Promise<void> {
+  try {
+    await write();
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error && typeof (error as { code: unknown }).code === 'string'
+      ? (error as { code: string }).code
+      : undefined;
+    console.error('intake-promotion-after-commit-write-failed', {
+      step,
+      errorClass: error instanceof Error ? error.constructor.name : typeof error,
+      ...(code ? { code } : {}),
+    });
+  }
+}
+
 export async function POST(request: NextRequest) { // NOSONAR
   try {
     const principal = await requirePrincipal(request);
@@ -549,6 +567,9 @@ export async function POST(request: NextRequest) { // NOSONAR
       await writePromotedAthleteRecord({
         organizationId: principal.organizationId,
         accountId: promotion.athlete.account_id,
+        // Locked and re-checked under the transaction: a second promotion of
+        // this case waits for this one and is then refused (409).
+        intakeCaseId,
         athlete: {
           athlete_id: promotion.athlete.athlete_id,
           full_name: promotion.athlete.full_name,
@@ -748,7 +769,11 @@ export async function POST(request: NextRequest) { // NOSONAR
 
     const researchFields = buildReviewResearchFields({ action: 'promote', intakeCaseId });
 
-    await emitShadowEvent({
+    // The promotion has committed. These three are its shadow record, not
+    // part of it, and stay outside the transaction; a failure in one is
+    // logged and the promotion still answers 200, since answering 500 for a
+    // promotion that happened would invite a retry against a promoted case.
+    await afterCommit('shadow_event', () => emitShadowEvent({
       organizationId: principal.organizationId,
       eventName: 'SHADOW_INTAKE_CASE_PROMOTED',
       entityType: 'intake_case',
@@ -763,9 +788,9 @@ export async function POST(request: NextRequest) { // NOSONAR
         source_status: researchFields.sourceStatus,
         source_verification_state: researchFields.sourceVerificationState,
       },
-    });
+    }));
 
-    await createShadowResearchRequirement({
+    await afterCommit('research_requirement', () => createShadowResearchRequirement({
       organizationId: principal.organizationId,
       sourceEventName: 'SHADOW_INTAKE_CASE_PROMOTED',
       sourceEntityType: 'intake_case',
@@ -784,9 +809,9 @@ export async function POST(request: NextRequest) { // NOSONAR
         notes: body.notes ?? '',
         athlete_id: promotion.athlete.athlete_id,
       },
-    });
+    }));
 
-    await writeShadowTelemetryEvent({
+    await afterCommit('telemetry', () => writeShadowTelemetryEvent({
       organizationId: principal.organizationId,
       metricName: 'shadow.intake.review.promote',
       actorAccountId: principal.accountId,
@@ -796,7 +821,7 @@ export async function POST(request: NextRequest) { // NOSONAR
         has_guardian: Boolean(promotion.guardian),
         athlete_id: promotion.athlete.athlete_id,
       },
-    });
+    }));
 
     return NextResponse.json({
       ok: true,
