@@ -1664,8 +1664,10 @@ describe('the workspace nav groups its surfaces instead of listing them flat', (
 
   test('after check-out Today says checked out, with the time', async () => {
     // A session from today that check-out completed; its updated_at is the
-    // check-out stamp. Built off now so the row is always today's.
-    const checkedOut = new Date(OPEN_SESSION_CREATED_AT);
+    // check-out stamp, 61 minutes after the check-in so a label read off
+    // created_at would show the wrong time. The gym day is taken from
+    // created_at, so the row stays today's whatever the clock says.
+    const checkedOut = new Date(Date.parse(OPEN_SESSION_CREATED_AT) + 61 * 60 * 1000);
     storedSessions = [openSessionRow({ completed_flag: true, updated_at: checkedOut.toISOString() })];
     await renderWorkspace();
 
@@ -1673,6 +1675,16 @@ describe('the workspace nav groups its surfaces instead of listing them flat', (
 
     expect(await screen.findByText(`Checked out ${formatGymStamp(checkedOut.toISOString())}`)).toBeTruthy();
     expect(screen.queryByText('Not checked in yet')).toBeNull();
+  });
+
+  test('a check-out from a previous gym day is not counted as today', async () => {
+    storedSessions = [openSessionRow({ completed_flag: true, created_at: STALE_CREATED_AT, updated_at: STALE_CREATED_AT })];
+    await renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+
+    expect(await screen.findByText('Not checked in yet')).toBeTruthy();
+    expect(screen.queryByText(/^Checked out /)).toBeNull();
   });
 
   test('a checked-out session with no stamp still reads as checked out today', async () => {
