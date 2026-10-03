@@ -500,7 +500,7 @@ function FootRule({
           // No board read (still coming up, or too old to be true): the slot
           // stays, empty. "Nothing posted today" is a claim only a board that
           // was read can make (#991 class, Lane 14 batch 8 B4; Jason Q2 A).
-          <p className="wall-notice wall-notice--empty text-4xl" aria-hidden="true" />
+          <p className="wall-notice wall-notice--empty text-4xl" aria-hidden="true">&nbsp;</p>
         )}
       </div>
 

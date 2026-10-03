@@ -304,7 +304,7 @@ export default function Chalkboard({ placement, className = '' }: ChalkboardProp
             </div>
           ) : (
             <button type="button" className="btn btn--ghost chalkboard-open" onClick={() => setComposing(true)}>
-              {line || unreadable ? 'Rub it out and write' : 'Write on the board'}
+              {line || waiting ? 'Rub it out and write' : 'Write on the board'}
             </button>
           )}
         </div>

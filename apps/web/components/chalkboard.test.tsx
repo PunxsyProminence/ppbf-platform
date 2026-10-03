@@ -6,7 +6,7 @@ import { act, render, screen } from '@testing-library/react';
 
 import Chalkboard, { CHALK_MAX_LENGTH, chalkDateLabel, pickChalkLine } from './Chalkboard';
 import type { AnnouncementItem } from './AnnouncementBanner';
-import { pickSaying } from './gymSayings';
+import { GYM_SAYINGS, pickSaying } from './gymSayings';
 
 // The vocabulary import in AnnouncementBanner's own test pulls the server
 // module; nothing here needs it, but usePilotSession and the component both
@@ -148,6 +148,7 @@ describe('the board on a dashboard', () => {
     expect(screen.getByText("Can't read the board right now.")).toBeTruthy();
     const saying = pickSaying('anywhere', 'chalkboard-athlete_workspace');
     expect(saying).not.toBeNull();
+    expect(GYM_SAYINGS).toContain(saying);
     expect(screen.getByText(saying!.line)).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
   });
@@ -172,6 +173,22 @@ describe('the board on a dashboard', () => {
     await act(async () => { release(); await held; });
     expect(screen.getByText('Nothing on the board.')).toBeTruthy();
     expect(screen.queryByText('Loading...')).toBeNull();
+  });
+
+  it('warns a writer while the read is still open, too', async () => {
+    const base = stubFetch({ announcements: [], role: 'coach', authProvider: 'microsoft' });
+    global.fetch = jest.fn(async (url: unknown) => {
+      if (String(url).includes('/api/pilot/announcements/get')) return new Promise<Response>(() => {});
+      return base(url);
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<Chalkboard placement="athlete_workspace" />);
+    });
+
+    expect(screen.getByText('Loading...')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Write on the board' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Rub it out and write' })).toBeTruthy();
   });
 
   it('warns a writer that an unreadable board may hold a line', async () => {

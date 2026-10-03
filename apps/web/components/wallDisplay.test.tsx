@@ -366,6 +366,21 @@ describe('empty states', () => {
     expect(saying.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('stops saying "Nothing posted today" once the board is too old to be true', async () => {
+    render(<WallDisplay />);
+    await settle();
+    expect(screen.getByText(/Nothing posted today/i)).toBeTruthy();
+
+    fetchMock.mockRejectedValue(new Error('network'));
+    await act(async () => {
+      jest.advanceTimersByTime(WALL_ABANDON_MS + 1_000);
+    });
+    await settle();
+
+    await waitFor(() => expect(screen.queryByText(/Nothing posted today/i)).toBeNull());
+    expect(screen.getByText(/reconnecting/i)).toBeTruthy();
+  });
+
   it('drops the saying once the board is up', async () => {
     await renderBoard({});
     expect(screen.queryByTestId('wall-standing-saying')).toBeNull();
