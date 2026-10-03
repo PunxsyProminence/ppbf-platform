@@ -26,7 +26,8 @@ export async function POST(request: NextRequest) {
       throw new ForbiddenError('Forbidden: only an organization admin can move a guardian to another login');
     }
 
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const parsed: unknown = await request.json().catch(() => null);
+    const body = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
     const text = (value: unknown) => (typeof value === 'string' ? value : '');
 
     const moved = await moveGuardianToLogin({

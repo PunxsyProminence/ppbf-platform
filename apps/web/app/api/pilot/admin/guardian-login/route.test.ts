@@ -100,3 +100,14 @@ test('non-string fields arrive as empty, so the move refuses them as missing', a
 
   expect(mockMove).toHaveBeenCalledWith(expect.objectContaining({ parentId: '', fromAccountId: '', toAccountId: '' }));
 });
+
+test('a body of null arrives as empty fields, not a server error', async () => {
+  const response = await POST(new NextRequest('https://ppbf.example/api/pilot/admin/guardian-login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: 'null',
+  } as never));
+
+  expect(response.status).toBe(200);
+  expect(mockMove).toHaveBeenCalledWith(expect.objectContaining({ parentId: '', fromAccountId: '', toAccountId: '' }));
+});

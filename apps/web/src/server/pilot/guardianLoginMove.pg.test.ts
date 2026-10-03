@@ -337,6 +337,23 @@ describe('moveGuardianToLogin', () => {
       );
       await client.query('update pilot.accounts set deleted_at = now() where account_id = $1', [OLD_LOGIN]);
     }, {}, 409, 'GUARDIAN_LOGIN_DELETED'],
+    ['a target that already guards one of the same children', async () => {
+      await client.query(
+        `insert into pilot.parents (organization_id, parent_id, account_id, full_name) values ($1, 'par-dup', $2, 'Dup')`,
+        [ORG, NEW_LOGIN],
+      );
+      await client.query(
+        `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+         values ($1, 'par-dup', $2, 'parent')`,
+        [ORG, KID_B],
+      );
+    }, {}, 409, 'GUARDIAN_MOVE_TARGET_ALREADY_GUARDIAN'],
+    ['a PIN parent login', async () => {
+      await client.query(`update pilot.accounts set auth_provider = 'ppbf_local' where account_id = $1`, [NEW_LOGIN]);
+    }, {}, 409, 'GUARDIAN_MOVE_TARGET_PIN_LOGIN'],
+    ['a record whose login is outside this organization', async () => {
+      await client.query('update pilot.parents set account_id = $1 where parent_id = $2', [ELSEWHERE_PARENT, PARENT_ID]);
+    }, { fromAccountId: ELSEWHERE_PARENT }, 409, 'GUARDIAN_LOGIN_OUTSIDE_ORGANIZATION'],
   ];
 
   test.each(refusals)('refuses %s and writes nothing', async (_name, arrange, overrides, status, code) => {
@@ -347,6 +364,23 @@ describe('moveGuardianToLogin', () => {
 
     expect(await parentLogin()).toBe(before);
     expect(await moveAudits()).toEqual([]);
+  });
+
+  test('a target that guards other children only still receives the record', async () => {
+    await addAthlete('ath-glm-c');
+    await client.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name) values ($1, 'par-other', $2, 'Other')`,
+      [ORG, NEW_LOGIN],
+    );
+    await client.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, 'par-other', 'ath-glm-c', 'parent')`,
+      [ORG],
+    );
+
+    await move.moveGuardianToLogin(request());
+
+    expect((await access.guardianAthleteIds(ORG, NEW_LOGIN)).sort()).toEqual([KID_A, KID_B, 'ath-glm-c']);
   });
 
   test('another organization cannot move this organization\'s record', async () => {

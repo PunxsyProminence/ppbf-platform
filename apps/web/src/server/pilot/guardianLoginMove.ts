@@ -39,6 +39,7 @@ interface LoginRow {
   account_id: string;
   organization_id: string;
   role: PilotRole;
+  auth_provider: string;
   is_platform_owner: boolean;
   active_flag: boolean;
   account_deleted: boolean;
@@ -64,7 +65,7 @@ async function lockLogins(
   accountIds: string[],
 ): Promise<Map<string, LoginRow>> {
   const rows = await client.query<LoginRow>(
-    `select a.account_id, a.organization_id, a.role, a.is_platform_owner, a.active_flag,
+    `select a.account_id, a.organization_id, a.role, a.auth_provider, a.is_platform_owner, a.active_flag,
             ${accountDeletedSql('a')} as account_deleted,
             om.role as membership_role, om.active_flag as membership_active
      from pilot.accounts a
@@ -121,7 +122,15 @@ export async function moveGuardianToLogin(params: GuardianLoginMove): Promise<Gu
     const logins = await lockLogins(client, organizationId, [fromAccountId, toAccountId]);
 
     const from = logins.get(fromAccountId);
-    if (from && isDeletedAccount(from)) {
+    if (!from) {
+      // The record's login is not one of this organization's. Nothing here can
+      // say whether it was deleted, so the move fails closed.
+      throw new ConflictError(
+        `Conflict: guardian record "${parentId}" is on a login outside your organization, so it is not moved here.`,
+        'GUARDIAN_LOGIN_OUTSIDE_ORGANIZATION',
+      );
+    }
+    if (isDeletedAccount(from)) {
       // A deleted guardian's record is waiting for the retention purge
       // (dataDeletion.ts). Moving it would pull it out of that, and a deletion
       // is not undone from the app.
@@ -151,6 +160,40 @@ export async function moveGuardianToLogin(params: GuardianLoginMove): Promise<Gu
       throw new ConflictError(
         `Conflict: login "${toAccountId}" is switched off. Move the record only to a login that can sign in.`,
         'GUARDIAN_MOVE_TARGET_INACTIVE',
+      );
+    }
+
+    if (to.auth_provider === 'ppbf_local') {
+      // A PIN parent login has no sign-in path (authProviders.ts); the family
+      // would move to a login nobody can use.
+      throw new ConflictError(
+        `Conflict: login "${toAccountId}" signs in with a PIN, which a parent cannot use. Move the record to an email login.`,
+        'GUARDIAN_MOVE_TARGET_PIN_LOGIN',
+      );
+    }
+
+    // One login, one guardian slot per child. A target that already guards any
+    // of these children would answer consent as both guardians, and the
+    // parent consent screen could write only one of its two records
+    // (guardianConsent.ts, resolveActingParent).
+    const overlap = await client.query<{ athlete_id: string }>(
+      `select distinct gl.athlete_id
+       from pilot.guardian_links gl
+       join pilot.parents p
+         on p.organization_id = gl.organization_id and p.parent_id = gl.parent_id
+       where gl.organization_id = $1 and p.account_id = $2 and p.parent_id <> $3
+         and gl.athlete_id in (
+           select athlete_id from pilot.guardian_links where organization_id = $1 and parent_id = $3
+         )
+       order by gl.athlete_id`,
+      [organizationId, toAccountId, parentId],
+    );
+    if ((overlap.rowCount ?? 0) > 0) {
+      throw new ConflictError(
+        `Conflict: login "${toAccountId}" is already a guardian of ${overlap.rows.map((row) => row.athlete_id).join(', ')} `
+        + 'through another guardian record. Moving this record there would give one login two guardian places for '
+        + 'the same child.',
+        'GUARDIAN_MOVE_TARGET_ALREADY_GUARDIAN',
       );
     }
 
