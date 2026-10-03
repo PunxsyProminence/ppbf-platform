@@ -8,6 +8,7 @@ import {
   type AnnouncementItem,
   type AnnouncementPlacement,
 } from './AnnouncementBanner';
+import { pickSaying } from './gymSayings';
 import { usePilotSession, type PilotSessionRole } from './usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymMonthDay, formatGymWeekday } from '@/src/lib/gymTime';
@@ -123,6 +124,7 @@ export default function Chalkboard({ placement, className = '' }: ChalkboardProp
   const session = usePilotSession();
   const [line, setLine] = useState<AnnouncementItem | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [unreadable, setUnreadable] = useState(false);
   const [draft, setDraft] = useState('');
   const [authorName, setAuthorName] = useState('');
   const [composing, setComposing] = useState(false);
@@ -152,12 +154,15 @@ export default function Chalkboard({ placement, className = '' }: ChalkboardProp
     void (async () => {
       try {
         setLine(await load(controller.signal));
+        setUnreadable(false);
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
-        // A board that could not be read is a blank board. It does not report
-        // its own plumbing on top of the page's real work -- same stance
-        // AnnouncementBanner takes.
+        // Still no plumbing on the board (no codes, no banner), but no longer
+        // "Nothing on the board." either: a staff member who believed that
+        // could rub out a line that is really there (#991 class, Lane 14
+        // batch 8 P5; Jason Q1, 2026-10-03).
         setLine(null);
+        setUnreadable(true);
       } finally {
         setLoaded(true);
       }
@@ -206,23 +211,35 @@ export default function Chalkboard({ placement, className = '' }: ChalkboardProp
   const byline = line
     ? [line.author_name, chalkDateLabel(line.created_at)].filter(Boolean).join(' · ')
     : '';
+  // While loading or after a failed read there is nothing true to show, so the
+  // board shows one of the gym's own sayings with what it is doing under it
+  // (Jason 2026-10-03). Owner-approved GYM_SAYINGS only; fixed seed per board.
+  const waiting = !loaded || unreadable;
+  const saying = waiting ? pickSaying('anywhere', `chalkboard-${placement}`) : null;
 
   return (
     <section
       className={`chalkboard mat-slate ${className}`.trim()}
       aria-label="The chalkboard"
-      data-state={line ? 'written' : 'blank'}
+      data-state={line ? 'written' : waiting ? (loaded ? 'unreadable' : 'loading') : 'blank'}
     >
       <div className="chalkboard-face">
         {line ? (
           <p className="chalkboard-line chalk">{line.message.trim()}</p>
+        ) : waiting ? (
+          <>
+            {saying ? <p className="chalkboard-line chalk">{saying.line}</p> : null}
+            <p className="chalkboard-line chalkboard-line--blank chalk-dim">
+              {loaded ? "Can't read the board right now." : 'Loading...'}
+            </p>
+          </>
         ) : (
           /* A blank board is a real object and the state most gyms are in most
              weeks. No "no announcements" apology, no empty-state illustration,
              no skeleton: an unwritten board, with the chalk sitting on the
              rail. */
           <p className="chalkboard-line chalkboard-line--blank chalk-dim">
-            {loaded ? 'Nothing on the board.' : ' '}
+            Nothing on the board.
           </p>
         )}
 
@@ -287,7 +304,7 @@ export default function Chalkboard({ placement, className = '' }: ChalkboardProp
             </div>
           ) : (
             <button type="button" className="btn btn--ghost chalkboard-open" onClick={() => setComposing(true)}>
-              {line ? 'Rub it out and write' : 'Write on the board'}
+              {line || unreadable ? 'Rub it out and write' : 'Write on the board'}
             </button>
           )}
         </div>
