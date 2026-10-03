@@ -672,6 +672,7 @@ export default function AthleteWorkspace() {
   const [goalsLoading, setGoalsLoading] = useState(true);
   const [goalsError, setGoalsError] = useState<string | null>(null);
   const [trainingSessions, setTrainingSessions] = useState<TrainingSession[]>([]);
+  const [trainingCardUnavailable, setTrainingCardUnavailable] = useState(false);
 
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [isCreatingGoal, setIsCreatingGoal] = useState(false);
@@ -1226,6 +1227,8 @@ export default function AthleteWorkspace() {
    * so the card cannot show progress the ledger does not have. Failure is silent
    * on purpose -- an athlete's card is an encouragement, not an operational
    * surface, and an error banner over it would be louder than the thing itself.
+   * Quiet is not the same as false, though: a failed read flags the card, which
+   * says in one line that it could not load instead of "No sessions yet".
    */
   const loadTrainingCard = useCallback(async () => {
     if (!backendAthleteId) return;
@@ -1234,7 +1237,7 @@ export default function AthleteWorkspace() {
         `${apiBase()}/api/pilot/sessions/list?athlete_id=${encodeURIComponent(backendAthleteId)}`,
         { method: 'GET', credentials: 'include' },
       );
-      if (!response.ok) { setTrainingSessions([]); return; }
+      if (!response.ok) { setTrainingSessions([]); setTrainingCardUnavailable(true); return; }
       const data = (await response.json()) as { items?: TrainingSession[] };
       setTrainingSessions(
         (data.items ?? []).map((s) => ({
@@ -1250,8 +1253,10 @@ export default function AthleteWorkspace() {
           completed_flag: Boolean(s.completed_flag),
         })),
       );
+      setTrainingCardUnavailable(false);
     } catch {
       setTrainingSessions([]);
+      setTrainingCardUnavailable(true);
     }
   }, [backendAthleteId]);
 
@@ -3473,7 +3478,7 @@ export default function AthleteWorkspace() {
         <AthleteSummaryPanel
           wellnessToday={wellnessTodayRead}
           openCoachWork={openCoachWorkRead}
-          goalsActive={goalsActive}
+          goalsActive={goalsRead}
           upcomingSession="Nothing posted yet."
         />
 
@@ -3485,7 +3490,11 @@ export default function AthleteWorkspace() {
             already been pressed. This is a shared gym tablet: without it, the
             first athlete to open their card on one would silence the next
             athlete's first milestone. */}
-        <TrainingCard sessions={trainingSessions} athleteId={backendAthleteId ?? undefined} />
+        <TrainingCard
+          sessions={trainingSessions}
+          athleteId={backendAthleteId ?? undefined}
+          unavailable={trainingCardUnavailable}
+        />
 
         {/* Everything the card cannot count. The card measures attendance, and
             attendance is one of four programmes this gym runs -- a fitness-only

@@ -896,6 +896,10 @@ export default function CoachWorkspace() {
   const [shadowObservations, setShadowObservations] = useState<ShadowObservationItem[]>([]);
   const [shadowReadError, setShadowReadError] = useState('');
   const [shadowQueueUnavailable, setShadowQueueUnavailable] = useState(false);
+  // Its own flag for the same reason the queue has one: the combined
+  // shadowReadError cannot tell the observation panel that IT is the one
+  // that failed, and without this the panel printed "No ... items returned".
+  const [shadowObservationsUnavailable, setShadowObservationsUnavailable] = useState(false);
   const [shadowQueueTotal, setShadowQueueTotal] = useState<number | null>(null);
   // Per-item, not a single shared flag: a coach can be resolving one case
   // while a different one's error is still on screen.
@@ -1779,6 +1783,7 @@ export default function CoachWorkspace() {
         // failure must not flag the board, and a queue failure must, wherever
         // that board is rendered.
         setShadowQueueUnavailable(Boolean(queueError));
+        setShadowObservationsUnavailable(Boolean(observationError));
 
         if (queueError || observationError) {
           const failed = [queueError, observationError].filter(Boolean).join(' and ');
@@ -1788,6 +1793,7 @@ export default function CoachWorkspace() {
         }
       } catch (error) {
         setShadowQueueUnavailable(true);
+        setShadowObservationsUnavailable(true);
         setShadowReadError(error instanceof Error ? error.message : 'Unable to load SHADOW read models.');
       }
   }, []);
@@ -2825,8 +2831,9 @@ export default function CoachWorkspace() {
              the panel's empty-floor branch fired for every coach, always. A
              feed exists now -- but the roster is still the right source for
              "is anybody assigned to you", because an empty floor and a floor
-             nobody has marked in yet are different questions. */
-          activeAthletes={athletes.length}
+             nobody has marked in yet are different questions. null when the
+             roster read FAILED: the emptied list is not an empty floor. */
+          activeAthletes={athletesError ? null : athletes.length}
           /* null where no feed answered, which the panel renders as a
              disclosure instead of a number. injuryFlag is null for every
              athlete (no feed), and the two queue counts are derived from
@@ -2997,6 +3004,11 @@ export default function CoachWorkspace() {
                               + READINESS_UNVALIDATED_CAVEAT}
                         </p>
                       )}
+                    </>
+                  ) : readinessFeedState === 'error' ? (
+                    <>
+                      <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-400)]">Unavailable</p>
+                      <p className="t-muted">Readiness could not be read -- do not read this as &quot;zero flags&quot;</p>
                     </>
                   ) : (
                     <>
@@ -3699,9 +3711,11 @@ export default function CoachWorkspace() {
                         <p className="t-muted">{task.when}</p>
                       </div>
                     ))}
-                    {coachTasks.length === 0 && (
+                    {coachTasks.length === 0 && (shadowQueueUnavailable ? (
+                      <p className="t-muted">The review queue could not be read, so open tasks may be missing here.</p>
+                    ) : (
                       <p className="t-muted">No open tasks. Items appear here from the SHADOW review queue.</p>
-                    )}
+                    ))}
                   </div>
                 </div>
               </div>
@@ -4181,7 +4195,9 @@ export default function CoachWorkspace() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                   <h3 className="t-eyebrow">SHADOW Review Projection</h3>
-                  {shadowQueue.length === 0 ? (
+                  {shadowQueueUnavailable ? (
+                    <p className="t-muted mt-[var(--s3)]">The review queue could not be read.</p>
+                  ) : shadowQueue.length === 0 ? (
                     <p className="t-muted mt-[var(--s3)]">No SHADOW queue items returned.</p>
                   ) : (
                     <div className="mt-[var(--s3)] space-y-[var(--s3)]">
@@ -4236,7 +4252,9 @@ export default function CoachWorkspace() {
 
                 <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                   <h3 className="t-eyebrow">SHADOW Observation Projection</h3>
-                  {shadowObservations.length === 0 ? (
+                  {shadowObservationsUnavailable ? (
+                    <p className="t-muted mt-[var(--s3)]">Observations could not be read.</p>
+                  ) : shadowObservations.length === 0 ? (
                     <p className="t-muted mt-[var(--s3)]">No SHADOW observation items returned.</p>
                   ) : (
                     <div className="mt-[var(--s3)] space-y-[var(--s3)]">
