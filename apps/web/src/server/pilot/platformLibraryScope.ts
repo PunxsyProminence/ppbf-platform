@@ -27,8 +27,9 @@ export const PLATFORM_LIBRARY_ORGANIZATION_ID = '__platform__';
  * from one tenant paired with a document from another is precisely the failure
  * the composite joins exist to prevent.
  *
- * Callers pass the actor's organization_id. When that IS the reserved
- * organization -- only reachable by an operator running the importer, since no
+ * Callers pass the organization id the request works on. When that IS the
+ * reserved organization -- reached by the platform owner naming
+ * shelf='platform' (libraryShelf.ts) or by an operator running the importer; no
  * account may exist there -- the array collapses to one entry rather than
  * listing it twice.
  */
