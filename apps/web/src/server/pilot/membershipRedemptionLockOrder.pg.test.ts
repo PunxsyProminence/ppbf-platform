@@ -46,6 +46,7 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 ) => Promise<Record<string, unknown>>;
 
 const ORG_ID = 'org-lock-order';
+const OTHER_ORG_ID = 'org-lock-order-other';
 const ADMIN_ID = 'acct-lock-order-admin';
 const ATHLETE_ID = 'ath-lock-order';
 const ACCOUNT_ID = 'acct-lock-order-athlete';
@@ -160,8 +161,8 @@ beforeAll(async () => {
 
   await client.query(
     `insert into pilot.organizations (organization_id, organization_name, status)
-     values ($1, $1, 'active') on conflict do nothing`,
-    [ORG_ID],
+     values ($1, $1, 'active'), ($2, $2, 'active') on conflict do nothing`,
+    [ORG_ID, OTHER_ORG_ID],
   );
   await client.query(
     `insert into pilot.accounts (account_id, role, organization_id, auth_provider, login_email, active_flag)
@@ -197,6 +198,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  await client.query('delete from pilot.session_tokens where account_id = $1', [ACCOUNT_ID]);
   await client.query('delete from pilot.account_activation_tokens where account_id = $1', [ACCOUNT_ID]);
   await client.query('delete from pilot.organization_memberships where account_id = $1', [ACCOUNT_ID]);
   await client.query('delete from pilot.accounts where account_id = $1', [ACCOUNT_ID]);
@@ -288,6 +290,46 @@ describe('a membership change and a redemption on the same login', () => {
       await holder.query('commit');
       await upserting.done;
       expect(upserting.state.error).toBeUndefined();
+    } finally {
+      await holder.query('rollback').catch(() => undefined);
+      await holder.end();
+    }
+  });
+
+  test('moving the login to another gym does not upgrade its lock under a transaction that references the account', async () => {
+    // organization_id is in the unique index uq_pilot_accounts_org_account,
+    // so the update that moves a login to another gym needs FOR UPDATE, which
+    // waits on the key-share lock any insert referencing the account holds.
+    // The membership change takes FOR UPDATE up front, before it holds
+    // anything. Taken as FOR NO KEY UPDATE, it would hold that, wait here for
+    // the upgrade, and the holder's own update of the account below would
+    // wait on it: 40P01.
+    const holder = await connect();
+    try {
+      await holder.query('begin');
+      await holder.query(
+        `insert into pilot.session_tokens (token_hash, account_id, organization_id)
+         values ('lock-order-session', $1, $2)`,
+        [ACCOUNT_ID, ORG_ID],
+      );
+
+      const upserting = watch(auth.upsertOrganizationMembership(ACCOUNT_ID, OTHER_ORG_ID, 'athlete', true));
+      await waitUntilWaiting(1, 'pilot.accounts');
+      expect(upserting.state.settled).toBe(false);
+
+      await expect(
+        holder.query('update pilot.accounts set updated_at = now() where account_id = $1', [ACCOUNT_ID]),
+      ).resolves.toMatchObject({ rowCount: 1 });
+
+      await holder.query('commit');
+      await upserting.done;
+      expect(upserting.state.error).toBeUndefined();
+
+      const account = await client.query<{ organization_id: string }>(
+        'select organization_id from pilot.accounts where account_id = $1',
+        [ACCOUNT_ID],
+      );
+      expect(account.rows[0].organization_id).toBe(OTHER_ORG_ID);
     } finally {
       await holder.query('rollback').catch(() => undefined);
       await holder.end();
