@@ -112,6 +112,10 @@ export default function ParentProgressionVisibilityPage() {
   const [completions, setCompletions] = useState<AssignmentCompletion[]>([]);
   const [progressionLoading, setProgressionLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Which read failed, kept apart from the message: an empty list from a failed
+  // read must not render "No linked athletes" or "No progression gaps".
+  const [childrenFailed, setChildrenFailed] = useState(false);
+  const [progressionFailed, setProgressionFailed] = useState(false);
 
   // One card per child, from the route that runs the guardian visibility
   // gate: /api/pilot/athletes/list returns only the athletes this guardian
@@ -138,6 +142,7 @@ export default function ParentProgressionVisibilityPage() {
         // failure still names itself in the header's alert.
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
         setChildren([]);
+        setChildrenFailed(true);
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load your linked athletes.');
       } finally {
         if (!controller.signal.aborted) setChildrenLoading(false);
@@ -185,6 +190,7 @@ export default function ParentProgressionVisibilityPage() {
     void (async () => {
       try {
         setProgressionLoading(true);
+        setProgressionFailed(false);
         setErrorMessage(null);
 
         const gapsRes = await fetch(
@@ -233,6 +239,7 @@ export default function ParentProgressionVisibilityPage() {
         setGaps([]);
         setAssignments([]);
         setCompletions([]);
+        setProgressionFailed(true);
         setErrorMessage(error instanceof Error ? error.message : 'Failed to load progression data.');
       } finally {
         if (!signal.aborted) setProgressionLoading(false);
@@ -293,6 +300,13 @@ export default function ParentProgressionVisibilityPage() {
             <div className="mat-paper flex justify-center rounded-[var(--r-lg)] py-[var(--s7)]">
               <span className="working">Loading progression data...</span>
             </div>
+          ) : childrenFailed ? (
+            <div className="mat-paper rounded-[var(--r-lg)]">
+              <div className="empty">
+                <div className="empty-title">Could not load your linked athletes</div>
+                <p className="empty-msg mx-auto">This is a loading problem, not your account. Reload to try again.</p>
+              </div>
+            </div>
           ) : children.length === 0 ? (
             <div className="mat-paper rounded-[var(--r-lg)]">
               <div className="empty">
@@ -300,6 +314,13 @@ export default function ParentProgressionVisibilityPage() {
                 <p className="empty-msg mx-auto">
                   Your account is not linked to an athlete yet. Ask the front desk to connect your family.
                 </p>
+              </div>
+            </div>
+          ) : progressionFailed ? (
+            <div className="mat-paper rounded-[var(--r-lg)]">
+              <div className="empty">
+                <div className="empty-title">Could not load progression</div>
+                <p className="empty-msg mx-auto">The record could not be read just now. Reload to try again.</p>
               </div>
             </div>
           ) : gaps.length === 0 && assignments.length === 0 ? (

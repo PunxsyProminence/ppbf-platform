@@ -348,3 +348,55 @@ describe('a publications read that failed says so', () => {
     expect(screen.getByText('Publications (0)')).toBeTruthy();
   });
 });
+
+describe('a video list read that failed says so', () => {
+  test('a refused video read is reported in the picker, never as "No videos linked to an athlete yet"', async () => {
+    const base = mockFetch([]);
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/api/pilot/video/list')) {
+        return { ok: false, status: 500, json: async () => ({}) } as Response;
+      }
+      return base(input);
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoPublicationsPage />);
+    await screen.findByText('No publications yet.');
+    fireEvent.click(screen.getByRole('button', { name: '+ New Publication' }));
+
+    expect(await screen.findByTestId('videos-unreadable')).toBeTruthy();
+    expect(screen.queryByText(/No videos linked to an athlete yet/)).toBeNull();
+  });
+
+  test('a reload that never comes back after a create is reported as unreadable, not as a failed create', async () => {
+    let created = false;
+    const base = mockFetch([]);
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/video/list')) {
+        return {
+          ok: true,
+          json: async () => ({ items: [{ video_session_id: 'vid-1', title: 'Pads', athlete_id: 'ath-1', status: 'ready' }] }),
+        } as Response;
+      }
+      if (url.includes('/publications/create') && init?.method === 'POST') {
+        created = true;
+        return { ok: true, json: async () => ({ ok: true }) } as Response;
+      }
+      if (url.includes('/publications/create') && created) {
+        throw new TypeError('Failed to fetch');
+      }
+      return base(input);
+    }) as unknown as typeof fetch;
+
+    render(<CoachVideoPublicationsPage />);
+    await screen.findByText('No publications yet.');
+    fireEvent.click(screen.getByRole('button', { name: '+ New Publication' }));
+    fireEvent.change(await screen.findByDisplayValue('-- Choose Video --'), { target: { value: 'vid-1' } });
+    fireEvent.change(screen.getByPlaceholderText('Publication title...'), { target: { value: 'Pads' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Publication' }));
+
+    await screen.findByText(/Your publications could not be read/);
+    expect(screen.queryByText('No publications yet.')).toBeNull();
+    expect(screen.queryByText(/Failed to create publication/)).toBeNull();
+  });
+});

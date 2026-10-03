@@ -233,3 +233,47 @@ describe('libraryShelf.ts is the only in-app resolver of the platform shelf', ()
     expect(source).toContain("principal.role !== 'platform_owner'");
   });
 });
+
+// OD-2026-10-02-015 D3: the platform owner no longer writes a gym's shelf. The
+// refusal lives in ONE place, resolveLibraryShelf(..., 'write'), so it holds
+// only on routes that go through it. #1115 wired sources, documents, chunks
+// and evidence review; capability coverage, research submissions and review
+// flags kept taking principal.organizationId straight from the session, and
+// through those three the platform owner could still write a gym's Library
+// records (the 2026-10-03 intake audit, finding S8). A route on this list
+// that stops calling the resolver, or a new Library write route that never
+// did, fails here before review has to notice it.
+describe('every Library write route resolves its shelf through libraryShelf.ts', () => {
+  const LIBRARY_WRITE_ROUTES = [
+    'pilot/shadow/library/sources/route.ts',
+    'pilot/shadow/library/documents/route.ts',
+    'pilot/shadow/library/chunks/route.ts',
+    'pilot/shadow/evidence/review/route.ts',
+    'pilot/shadow/library/capability-coverage/route.ts',
+    'pilot/shadow/library/review-flags/route.ts',
+    'pilot/shadow/research-submissions/route.ts',
+  ];
+
+  function routeCode(file: string): string {
+    return fs
+      .readFileSync(path.join(API_ROOT, file), 'utf8')
+      .split('\n')
+      .filter((line) => !/^\s*(\/\/|\/\*|\*)/.test(line))
+      .join('\n');
+  }
+
+  test.each(LIBRARY_WRITE_ROUTES)('%s picks its organization through resolveLibraryShelf', (file) => {
+    const code = routeCode(file);
+    expect({ file, resolves: code.includes('resolveLibraryShelf(') }).toEqual({ file, resolves: true });
+  });
+
+  // The bypass in its other form: a handler that calls the resolver for one
+  // method and still hands principal.organizationId to a write in another.
+  test.each(LIBRARY_WRITE_ROUTES)('%s never hands the session organization to a query directly', (file) => {
+    const code = routeCode(file);
+    expect({ file, readsPrincipalOrg: code.includes('principal.organizationId') }).toEqual({
+      file,
+      readsPrincipalOrg: false,
+    });
+  });
+});

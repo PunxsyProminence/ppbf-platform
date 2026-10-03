@@ -189,6 +189,77 @@ describe('POST org isolation', () => {
   });
 });
 
+// OD-2026-10-02-013 answer 1B and OD-2026-10-02-015 D3, through
+// libraryShelf.ts: filing a source against a requirement and reviewing that
+// link are Library writes, so the platform owner does them on the platform
+// shelf and no longer on a gym's. Reads (GET) are unchanged.
+describe('the shelf (OD-2026-10-02-015 D3)', () => {
+  const owner = () => principal({ role: 'platform_owner' });
+
+  test('platform_owner is refused a gym-shelf submission before any existence check', async () => {
+    for (const body of [
+      { research_requirement_id: 7, source_id: 'src-1' },
+      { research_requirement_id: 7, source_id: 'src-1', shelf: 'gym' },
+    ]) {
+      mockRequirePrincipal.mockResolvedValueOnce(owner());
+      expect((await POST(postRequest(body))).status).toBe(403);
+    }
+    expect(mockRequirementStatus).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test('platform_owner is refused a gym-shelf review', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(owner());
+
+    const response = await PATCH(patchRequest({ submission_id: 's-1', applicability_state: 'responsive' }));
+
+    expect(response.status).toBe(403);
+    expect(mockReview).not.toHaveBeenCalled();
+  });
+
+  test('platform_owner files and reviews on the platform shelf, and every existence check reads that shelf', async () => {
+    mockRequirePrincipal.mockResolvedValue(owner());
+    mockRequirementStatus.mockResolvedValue('open');
+    mockSourceExists.mockResolvedValue(true);
+    mockDocumentExists.mockResolvedValue(true);
+    mockCreate.mockResolvedValue({ submission_id: 's-p' });
+    mockReview.mockResolvedValue({ submission_id: 's-p', applicability_state: 'responsive' });
+
+    const post = await POST(postRequest({
+      research_requirement_id: 7, source_id: 'src-p', document_id: 'doc-p', shelf: 'platform', organization_id: 'org-attacker',
+    }));
+    expect(post.status).toBe(200);
+    expect(mockRequirementStatus).toHaveBeenCalledWith('__platform__', 7);
+    expect(mockSourceExists).toHaveBeenCalledWith('__platform__', 'src-p');
+    expect(mockDocumentExists).toHaveBeenCalledWith('__platform__', 'doc-p');
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ organizationId: '__platform__' }));
+
+    const patch = await PATCH(patchRequest({ submission_id: 's-p', applicability_state: 'responsive', shelf: 'platform' }));
+    expect(patch.status).toBe(200);
+    expect(mockReview).toHaveBeenCalledWith(expect.objectContaining({ organizationId: '__platform__' }));
+  });
+
+  test.each(['organization_admin', 'admin'] as const)('%s gets 403 for shelf: platform on both writes', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+    expect((await POST(postRequest({ research_requirement_id: 7, source_id: 'src-1', shelf: 'platform' }))).status).toBe(403);
+    expect((await PATCH(patchRequest({ submission_id: 's-1', applicability_state: 'responsive', shelf: 'platform' }))).status).toBe(403);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockReview).not.toHaveBeenCalled();
+  });
+
+  test('a gym admin naming no shelf still files under its own organization', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({}));
+    mockRequirementStatus.mockResolvedValue('open');
+    mockSourceExists.mockResolvedValue(true);
+    mockCreate.mockResolvedValue({ submission_id: 's-1' });
+
+    await POST(postRequest({ research_requirement_id: 7, source_id: 'src-1' }));
+
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-1' }));
+  });
+});
+
 describe('PATCH review', () => {
   beforeEach(() => {
     mockRequirePrincipal.mockResolvedValue(principal({}));

@@ -46,6 +46,7 @@ let awards: Array<{ milestone_key: string; awarded_by_role: string; note: string
 let recognitions: Array<Record<string, unknown>> = [];
 let mentorships: Array<Record<string, unknown>> = [];
 let milestonesFail = false;
+let recognitionFail = false;
 
 beforeEach(() => {
   played.length = 0;
@@ -57,6 +58,7 @@ beforeEach(() => {
   recognitions = [];
   mentorships = [];
   milestonesFail = false;
+  recognitionFail = false;
 
   global.fetch = jest.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -70,6 +72,7 @@ beforeEach(() => {
       });
     }
     if (url.includes('/achievements/recognition')) {
+      if (recognitionFail) return jsonResponse({ error: 'no' }, false);
       return jsonResponse({ ok: true, items: recognitions });
     }
     if (url.includes('/achievements/mentorships')) {
@@ -214,6 +217,15 @@ describe('what a coach said lands here, reading like a person said it', () => {
     // No tally beside the heading -- a number of compliments is the one figure
     // on this panel that two kids would immediately compare.
     expect(container.textContent).not.toMatch(/\d+\s+recognitions?/i);
+  });
+
+  it('says the notes could not be loaded, not that there are none, when that read fails', async () => {
+    recognitionFail = true;
+    const { container } = await renderPanel();
+    expect(container.textContent).toContain('could not be loaded just now');
+    expect(container.textContent).not.toContain('Nothing here yet');
+    // One quiet line, not a banner over the wall.
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
 

@@ -11,7 +11,6 @@ import { createIntakeCase, createIntakeDocument, type IntakeDocumentType } from 
 import { assertShadowAuthority, type ShadowAutomationMode } from '@/src/server/pilot/shadowAuthority';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
-import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import { buildUploadResearchFields, classifyShadowDocument, routeShadowClassification } from '@/src/server/pilot/shadow';
 import {
@@ -216,51 +215,20 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const researchRequirementId = await createShadowResearchRequirement({
-      organizationId: principal.organizationId,
-      sourceEventName: 'SHADOW_UPLOAD_CLASSIFIED_AND_ROUTED',
-      sourceEntityType: 'shadow_intake',
-      sourceEntityId: intakeId,
-      researchRequirement: researchFields.researchRequirement,
-      knowledgeGap: researchFields.knowledgeGap,
-      evidenceLabel: classification,
-      sourceStatus: researchFields.sourceStatus,
-      sourceConfidenceTier: 'SUFFICIENT_FOR_REVIEW',
-      sourceVerificationState: researchFields.sourceVerificationState,
-      createdByAccountId: principal.accountId,
-      createdByRole: principal.role,
-      metadata: {
-        file_name: uploadDescriptor.safeOriginalName,
-        intake_case_id: intakeCaseId,
-        intake_document_id: intakeDocumentId,
-        document_type: documentType,
-        routed_queue: routedQueue,
-      },
-    });
-
-    await writePilotAuditEvent({
-      event_type: 'shadow_research_upload_requirement',
-      actor_account_id: principal.accountId,
-      actor_role: principal.role,
-      organization_id: principal.organizationId,
-      entity_type: 'shadow_research_requirement',
-      entity_id: String(researchRequirementId),
-      details: {
-        source_event_name: 'SHADOW_UPLOAD_CLASSIFIED_AND_ROUTED',
-        source_entity_type: 'shadow_intake',
-        source_entity_id: intakeId,
-        intake_case_id: intakeCaseId,
-        intake_document_id: intakeDocumentId,
-        document_type: documentType,
-        classification,
-        routed_queue: routedQueue,
-        research_requirement: researchFields.researchRequirement,
-        knowledge_gap: researchFields.knowledgeGap,
-        source_status: researchFields.sourceStatus,
-        source_verification_state: researchFields.sourceVerificationState,
-      },
-      shadow_mirror: false,
-    });
+    // NO RESEARCH REQUIREMENT IS OPENED FOR AN INTAKE UPLOAD (OD-2026-10-02-015
+    // D4: "Athlete intake files stay out of research"). Every document type
+    // this route accepts is athlete intake. Until 2026-10-03 each upload also
+    // wrote a pilot.shadow_research_requirements row whose text was "Review
+    // <type> (<file name>) and validate routing to ...". That table is listed
+    // on /research to every organization role, and the row named no subject
+    // for the subject gate to narrow on, so the file name -- often the child's
+    // name, as the admin saved the form -- was readable by athletes, parents
+    // and volunteers. The intake record above keeps the file name, where
+    // only intake readers see it. The SHADOW event above still carries it,
+    // and the read model strips it for every role that is not staff
+    // (shadowReadModels.ts, sanitizeEventPayload). Rows written before this
+    // change are not touched here: what to do with them is Jason's (question
+    // Q1 of the 2026-10-03 intake audit, PR #1121).
 
     await writeShadowTelemetryEvent({
       organizationId: principal.organizationId,

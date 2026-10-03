@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import type { ActorIdentity } from './access';
 import { queryOne, withTransaction } from './db';
+import { SERVABLE_LIBRARY_SOURCE_SQL } from './libraryServability';
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 import { searchShadowLibrary, type ShadowLibrarySearchResult } from './shadowLibrary';
 
@@ -235,9 +236,9 @@ async function persistEvidenceBundle(input: {
            and c.source_id = $5
            and c.document_id = $6
            and c.chunk_id = $7
-           and s.status = 'active'
-           and s.approval_state = 'approved'
-           and s.verification_state = 'verified'
+           -- Search's own source bar, retraction suppression included: a
+           -- source suppressed between search and this insert is refused here.
+           and ${SERVABLE_LIBRARY_SOURCE_SQL}
            and d.ingest_state = 'indexed'
            and d.index_completed_at is not null
            and d.approval_state = 'approved'
