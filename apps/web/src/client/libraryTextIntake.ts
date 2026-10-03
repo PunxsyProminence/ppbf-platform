@@ -36,6 +36,16 @@ export const TEXT_ORIGIN_PDF_PAGE = 'pdf_page';
 // file cannot import it: it pulls in the parser). The route test pins them equal.
 export const PDF_READ_MAX_BYTES = 10 * 1024 * 1024;
 
+// Which Library shelf an entry goes to (RINT-05b). The server resolves it
+// (libraryShelf.ts); only the platform owner may name 'platform', and it may
+// not write the gym shelf (OD-2026-10-02-015 D3). 'gym' is the default and is
+// never sent, so every gym curator's requests stay exactly as they were.
+export type IntakeShelf = 'gym' | 'platform';
+
+function shelfField(shelf: IntakeShelf | undefined): { shelf?: 'platform' } {
+  return shelf === 'platform' ? { shelf: 'platform' } : {};
+}
+
 export interface IntakeChunk {
   ordinal: number;
   text: string;
@@ -56,6 +66,7 @@ export interface IntakeInput {
   // and the document is stamped with text_origin. notOnPageMessage is the
   // sentence shown when it is not; the panel owns the wording.
   pdfPage?: { num: number; text: string; notOnPageMessage: string };
+  shelf?: IntakeShelf;
 }
 
 // Everything needed to finish a submission whose document exists but whose
@@ -66,6 +77,8 @@ export interface IntakeResume {
   nextOrdinal: number;
   locator: string;
   chunks: IntakeChunk[];
+  // The shelf the document was created on: its chunks must go to the same one.
+  shelf?: IntakeShelf;
 }
 
 export type IntakeResult =
@@ -259,10 +272,14 @@ export function validateIntakeInput(input: IntakeInput): string | null {
   return null;
 }
 
-function refusalMessage(status: number, what: string): string {
+function refusalMessage(status: number, what: string, shelf: IntakeShelf | undefined): string {
   if (status === 401) return 'Sign in again, then retry.';
   if (status === 403) return 'Your role cannot add text to the Library.';
-  if (status === 404) return `The ${what} was not found in this gym's Library.`;
+  if (status === 404) {
+    return shelf === 'platform'
+      ? `The ${what} was not found on the platform shelf.`
+      : `The ${what} was not found in this gym's Library.`;
+  }
   if (status === 429) return 'The Library is rate limited right now. Wait a moment and retry.';
   return `The Library refused the ${what} (${status}).`;
 }
@@ -322,12 +339,14 @@ export async function submitLibraryTextIntake(
   let chunks: IntakeChunk[];
   let locator: string;
   let startAt: number;
+  let shelf: IntakeShelf | undefined;
 
   if (resume) {
     documentId = resume.documentId;
     chunks = resume.chunks;
     locator = resume.locator;
     startAt = resume.nextOrdinal;
+    shelf = resume.shelf;
   } else {
     const invalid = validateIntakeInput(input);
     if (invalid) {
@@ -336,6 +355,7 @@ export async function submitLibraryTextIntake(
     chunks = splitIntakeText(input.text);
     locator = input.locator.trim();
     startAt = 0;
+    shelf = input.shelf;
 
     const created = await postJson(fetchImpl, `${apiBaseUrl}/api/pilot/shadow/library/documents`, {
       source_id: input.sourceId,
@@ -347,6 +367,7 @@ export async function submitLibraryTextIntake(
         chunk_count: chunks.length,
         text_length: rejoinIntakeChunks(chunks).length,
       },
+      ...shelfField(shelf),
     });
     const createdId = created.status === 201 ? documentIdFrom(created.payload) : null;
     if (!createdId) {
@@ -358,7 +379,7 @@ export async function submitLibraryTextIntake(
       return {
         ok: false,
         message: refused
-          ? `${refusalMessage(created.status, 'source')} Nothing was saved.`
+          ? `${refusalMessage(created.status, 'source', shelf)} Nothing was saved.`
           : 'The Library did not confirm the save. An empty entry with this label may exist: check Evidence Review before trying again, and reject it there if it does.',
         resume: null,
         writtenChunks: 0,
@@ -375,15 +396,16 @@ export async function submitLibraryTextIntake(
       ordinal: chunk.ordinal,
       text_content: chunk.text,
       metadata: { intake_method: INTAKE_METHOD, locator, join_before: chunk.joinBefore },
+      ...shelfField(shelf),
     });
     const alreadyStored = resume !== null && written.status === 409;
     if (written.status !== 201 && !alreadyStored) {
       return {
         ok: false,
         message: `Saved ${index} of ${chunks.length} parts, then stopped: ${
-          written.status === 0 ? 'the Library could not be reached.' : refusalMessage(written.status, 'document')
+          written.status === 0 ? 'the Library could not be reached.' : refusalMessage(written.status, 'document', shelf)
         } The entry is incomplete. Use Finish saving to write the rest.`,
-        resume: { documentId, nextOrdinal: index, locator, chunks },
+        resume: { documentId, nextOrdinal: index, locator, chunks, ...(shelf === 'platform' ? { shelf } : {}) },
         writtenChunks: index,
         totalChunks: chunks.length,
       };
