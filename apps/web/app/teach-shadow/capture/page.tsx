@@ -295,12 +295,17 @@ export default function TeachShadowCapturePage() {
             </p>
           </div>
 
+          {/* ON A MATERIAL, not the bare wall: .alert--warning is only a
+              tint with light type, so standing alone on the page ground it
+              was unreadable (same fault #1108 fixed on Label Agreement). */}
           {errorMessage ? (
-            <div role="alert" className="alert alert--warning mt-[var(--s5)]">
-              <span className="alert-icon" aria-hidden="true">▲</span>
-              <div className="alert-body">
-                <p className="alert-title">Attention</p>
-                <p className="alert-msg">{errorMessage}</p>
+            <div className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)]">
+              <div role="alert" className="alert alert--warning">
+                <span className="alert-icon" aria-hidden="true">▲</span>
+                <div className="alert-body">
+                  <p className="alert-title">Attention</p>
+                  <p className="alert-msg">{errorMessage}</p>
+                </div>
               </div>
             </div>
           ) : null}

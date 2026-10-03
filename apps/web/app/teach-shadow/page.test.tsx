@@ -617,6 +617,9 @@ test('a failed read shows an alert and does not render zeros as if the gym had f
 
   const alert = await screen.findByRole('alert');
   expect(alert).toHaveTextContent('The coverage figures could not be read.');
+  // On a material, not the bare wall: .alert--warning is only a tint with
+  // light type (the fault #1108 fixed on Label Agreement).
+  expect(alert.closest('.mat-leather, .mat-wood')).toHaveClass('mat-leather');
 
   const text = pageText();
   expect(screen.queryByText('Athletes filmed')).not.toBeInTheDocument();
