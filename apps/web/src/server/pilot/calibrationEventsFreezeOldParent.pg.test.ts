@@ -10,8 +10,7 @@
 //   * without the new trigger the same move goes through (the hole)
 //   * moves between in-progress sets and in-place edits are unchanged
 //   * deleting the footage, clip, set or organization still removes a
-//     submitted set's events, including the ON DELETE SET NULL update a
-//     defence against a deleted punch receives
+//     submitted set's events, including a defence and the punch it points at
 //   * a submission of the set being left waits for the uncommitted move
 //   * re-running the annotations migration does not reopen the hole
 //
@@ -234,8 +233,8 @@ async function insertEvent(set: SetRef, fields: Record<string, unknown> = {}): P
   return row.event_id as string;
 }
 
-/** A defence against `punchId`, so deleting the punch fires the
- * ON DELETE SET NULL update on this row. */
+/** A defence against `punchId`: the two are tied by the ON DELETE SET NULL
+ * relationship a deletion has to get past. */
 async function insertDefenseAgainst(set: SetRef, punchId: string): Promise<string> {
   return insertEvent(set, {
     event_class: 'defense',
@@ -473,8 +472,8 @@ describe('an event cannot leave a submitted set', () => {
 });
 
 describe('deletion still reaches a submitted set\'s events', () => {
-  // Each fixture holds a punch and a defence against it, so the cascade fires
-  // the ON DELETE SET NULL update this trigger sees.
+  // Each fixture holds a punch and a defence against it, so the deletion also
+  // reaches the ON DELETE SET NULL relationship between them.
   async function submittedPair(options: Parameters<typeof clipWithSets>[1] = {}): Promise<SetRef> {
     const [set] = await clipWithSets([ANNOTATOR], options);
     await insertDefenseAgainst(set, await insertEvent(set));

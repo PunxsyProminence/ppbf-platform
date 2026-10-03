@@ -10,10 +10,10 @@
 -- clip passed: the event left a submitted set, which the freeze exists to
 -- prevent. Reported by the TEACH-BIOMECH-01-b and 01-c reviewers.
 --
--- WHAT IS HERE: a second BEFORE UPDATE trigger that, when an update moves an
--- event to another set (or organization), reads the set it is LEAVING and
--- refuses with the freeze's own error if that set is submitted. The existing
--- freeze still checks the set it is entering.
+-- WHAT IS HERE: a second BEFORE UPDATE trigger that reads the set an event
+-- is in BEFORE the update (OLD's) and refuses with the freeze's own error if
+-- that set is submitted. The existing freeze still checks NEW's set. For an
+-- in-place edit the two are the same set, so nothing new is refused there.
 --
 -- WHY A NEW FUNCTION RATHER THAN EDITING THE FREEZE. A re-run of the
 -- calibration-annotations migration on its own would `create or replace` the
@@ -21,17 +21,19 @@
 -- function cannot be reverted that way. The same reason 01-b left the freeze
 -- unedited.
 --
--- DELETION IS UNTOUCHED. This trigger is UPDATE-only, and it returns at once
--- unless the update changes the event's set or organization. The updates a
--- deletion causes (ON DELETE SET NULL on counter_against_event_id and
--- defends_against_event_id) change neither, so a submitted set never blocks
--- a data-deletion request made on behalf of a minor.
--- calibrationEventsFreezeOldParent.pg.test.ts asserts this for the footage,
--- clip, set and organization.
+-- DELETION IS UNTOUCHED. This trigger is UPDATE-only. The only updates a
+-- deletion causes are the ON DELETE SET NULL actions on
+-- counter_against_event_id and defends_against_event_id. Those keys include
+-- organization_id and annotation_set_id, so SET NULL nulls them too, which
+-- the NOT NULL on both columns already refuses whatever this trigger says;
+-- inside a footage, clip, set or organization deletion the cascade has
+-- removed the rows before that action runs, so it updates nothing.
+-- calibrationEventsFreezeOldParent.pg.test.ts asserts each of those four
+-- deletions still removes a submitted set's events.
 --
--- LOCK: the leaving set is read FOR SHARE, so a submission of it waits for
--- this move to commit and then sees the set without the event, rather than
--- both passing their checks unseen to each other.
+-- LOCK: OLD's set is read FOR SHARE, so a submission of the set an event is
+-- leaving waits for the move to commit and then sees the set without the
+-- event, rather than both passing their checks unseen to each other.
 --
 -- Additive and idempotent. No `begin;`/`commit;` here on purpose: the runner
 -- (apps/web/scripts/pilot-apply-calibration-events-freeze-old-parent-migration.mjs)
@@ -44,12 +46,6 @@ as $pilot_calibration_events_freeze_old_parent$
 declare
   old_parent_status text;
 begin
-  if new.organization_id is not distinct from old.organization_id
-     and new.annotation_set_id is not distinct from old.annotation_set_id
-  then
-    return new;
-  end if;
-
   select status into old_parent_status
     from pilot.calibration_annotation_sets
    where organization_id = old.organization_id
