@@ -3009,9 +3009,9 @@ export default function CoachWorkspace() {
                         </p>
                       )}
                     </>
-                  ) : readinessFeedState === 'loading' && !athletesError ? (
+                  ) : readinessFeedState === 'loading' ? (
                     <p className="mt-[var(--s3)] t-muted">Checking...</p>
-                  ) : readinessFeedState === 'error' || athletesError ? (
+                  ) : readinessFeedState === 'error' ? (
                     <>
                       <p className="mt-[var(--s3)] text-[length:var(--t-xl)] font-black text-[color:var(--bone-400)]">Unavailable</p>
                       <p className="t-muted">Readiness could not be read -- do not read this as &quot;zero flags&quot;</p>
