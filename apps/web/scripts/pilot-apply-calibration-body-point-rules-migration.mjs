@@ -4,67 +4,25 @@ import { fileURLToPath } from 'node:url';
 
 import { Client } from 'pg';
 
-// Applies the calibration-body-point-rules migration inside one transaction, with
-// the same target-verification discipline as every other pilot:apply-* script: the
-// operator must state which host and database they believe they are
-// pointing at, and a mismatch refuses before any DDL runs.
+import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mjs';
 
-function required(name) {
-  const value = process.env[name];
-  if (!value?.trim()) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value.trim();
-}
+// Applies the calibration-body-point-rules migration inside one transaction.
+// The operator names the host and database they believe they are pointing at
+// (PPBF_EXPECTED_POSTGRES_HOSTNAME / _DATABASE); a mismatch refuses before
+// connecting.
 
-export function parseConnectionTarget(connectionString) {
-  let parsed;
-  try {
-    parsed = new URL(connectionString);
-  } catch {
-    throw new Error('INVALID_POSTGRES_CONNECTION_STRING');
-  }
-
-  if (!['postgres:', 'postgresql:'].includes(parsed.protocol)) {
-    throw new Error('INVALID_POSTGRES_PROTOCOL');
-  }
-
-  const hostname = parsed.hostname.toLowerCase();
-  const database = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
-  if (!hostname || !database) {
-    throw new Error('INCOMPLETE_POSTGRES_TARGET');
-  }
-
-  return { hostname, database };
-}
-
-function assertExpectedTarget(target, expectedHostname, expectedDatabase) {
-  if (
-    target.hostname !== expectedHostname.toLowerCase()
-    || target.database !== expectedDatabase
-  ) {
-    throw new Error('POSTGRES_TARGET_MISMATCH');
-  }
-}
-
-function resolveSslConfig() {
-  if (process.env.NODE_ENV === 'test' && process.env.PPBF_POSTGRES_DISABLE_SSL === 'true') {
-    return false;
-  }
+function sslConfig() {
+  if (process.env.NODE_ENV === 'test' && process.env.PPBF_POSTGRES_DISABLE_SSL === 'true') return false;
   return { rejectUnauthorized: true };
 }
 
 // Every object below is absent from a database where this migration has not
 // run, so readiness can go false there (migrationReadinessGates.pg.test.ts).
-//
-// Asserted BY NAME out of pg_constraint, pg_trigger and pg_indexes, never by
-// pg_get_constraintdef text: Postgres deparses a CHECK rather than echoing
-// its source (issue #488).
-//
-// THE THREE TRIGGERS ARE ASSERTED because they hold what the constraints
-// cannot: the freeze and 0.2-only gate on stance labels, the 0.2 rules on the
-// event row, and the completeness check at submission. A trigger present but
-// disabled counts as missing.
+// Asserted BY NAME, never by pg_get_constraintdef text: Postgres deparses a
+// CHECK rather than echoing its source (issue #488). The three triggers hold
+// what the constraints cannot (the stance labels' freeze and 0.2 gate, the
+// 0.2 event rules, completeness at submission); a disabled one counts as
+// missing.
 const CONSTRAINTS = [
   ['pilot.calibration_event_stance_labels', 'pilot_calibration_event_stance_labels_pkey'],
   ['pilot.calibration_event_stance_labels', 'pilot_calibration_event_stance_labels_stance_type_vocab'],
@@ -89,18 +47,15 @@ const READINESS_QUERY = `select ${[
       where schemaname = 'pilot' and indexname = ${quote(name)})`),
 ].map((clause, index) => `${clause} as ready_${index}`).join(', ')}`;
 
-function assertReadiness(row) {
-  if (!row || Object.values(row).some((value) => value !== true)) {
-    throw new Error('CALIBRATION_BODY_POINT_RULES_NOT_READY');
-  }
-}
-
 export async function applyMigrationTransaction(client, sql) {
   await client.query('BEGIN');
   try {
     await client.query(sql);
     const readiness = await client.query(READINESS_QUERY);
-    assertReadiness(readiness.rows[0]);
+    const row = readiness.rows[0];
+    if (!row || Object.values(row).some((value) => value !== true)) {
+      throw new Error('CALIBRATION_BODY_POINT_RULES_NOT_READY');
+    }
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
@@ -109,27 +64,16 @@ export async function applyMigrationTransaction(client, sql) {
 }
 
 export async function run() {
-  const connectionString = required('AZURE_POSTGRES_CONNECTION_STRING');
-  const expectedHostname = required('PPBF_EXPECTED_POSTGRES_HOSTNAME');
-  const expectedDatabase = required('PPBF_EXPECTED_POSTGRES_DATABASE');
+  const connectionString = process.env.AZURE_POSTGRES_CONNECTION_STRING?.trim();
+  if (!connectionString) throw new Error('MISSING_AZURE_POSTGRES_CONNECTION_STRING');
+  const target = assertDeclaredWriteTargetFromEnv(connectionString);
 
-  const target = parseConnectionTarget(connectionString);
-  assertExpectedTarget(target, expectedHostname, expectedDatabase);
-
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
   const migrationPath = path.resolve(
-    __dirname,
+    path.dirname(fileURLToPath(import.meta.url)),
     '../../../infra/azure/pilot_slice_postgres_calibration_body_point_rules_migration.sql',
   );
-
   const sql = await fs.readFile(migrationPath, 'utf8');
-
-  const client = new Client({
-    connectionString,
-    ssl: resolveSslConfig(),
-  });
-
+  const client = new Client({ connectionString, ssl: sslConfig() });
   await client.connect();
   try {
     await applyMigrationTransaction(client, sql);
@@ -139,17 +83,15 @@ export async function run() {
 
   console.log(`target_hostname: ${target.hostname}`);
   console.log(`target_database: ${target.database}`);
-  console.log(`Applied calibration body point rules migration: ${migrationPath}`);
   console.log('PILOT CALIBRATION BODY POINT RULES MIGRATION PASS');
 }
 
-const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
-if (isMainModule) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     await run();
   } catch (error) {
     console.error('PILOT CALIBRATION BODY POINT RULES MIGRATION FAIL');
-    console.error(String(error));
+    console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 }
