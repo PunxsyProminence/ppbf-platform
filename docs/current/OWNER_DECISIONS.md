@@ -164,6 +164,197 @@ and should not try to.
 
 ---
 
+## OD-2026-10-03-002 -- The intake audit's owner questions: old research-requirement rows deleted; licensed excerpts loaded by the screen and by a workflow from a private location; four rights values; a coach issues a template in one action; a coach sets the competence level; one transaction around intake's writes; the AI prompt's drill list stays as built; the duplicate drill copy not in use is deleted; document-ingest and the laptop seeder retired; callerless routes parked, not deleted
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
+in the Claude Code session that wrote the intake audit
+(`https://claude.ai/code/session_01PkrS65eqZon2LYsVt8tJAd`), answering
+question prompts the session put to him, and read directly by that same
+session, which also records them here. The answers arrived between the
+session's 12:33Z check-in and 14:02Z; the prompts did not stamp each one. The
+questions are Q1-Q12 of `docs/current/INTAKE_RESEARCH_WORKOUT_PROGRAM_AUDIT_2026-10-03.md`
+(PR #1121; findings measured at `03f5c649`), each put with options and a
+recommendation marked "(Recommended)". Q8, the universal stop-rule wording,
+was not put: it is text for him to write, not a choice. **Q12 was answered
+twice**; the later answer stands (section 12). Nothing in this entry is
+built; the sections say what each answer waits on.
+
+This entry is new and edits no earlier one. It settles the open point of
+OD-2026-10-02-012 (section 7) and adds to OD-2026-10-02-013 answer 1B
+(section 2). Where the audit's recommendation differs from his answer, his
+answer governs and the difference is named.
+
+Asked whether these were his decisions as owner, to be recorded here --
+"**Yes, I am Jason; record them**" or "**No, treat them as proposals for
+Jason**" -- Jason, whole message: *"1 and delete anything that conflicts
+with it"*. **Ruling: these are his decisions.** "Delete anything that
+conflicts" is carried out as this file's rules allow: an earlier decision is
+superseded by this entry, never edited or removed; the audit's overruled
+recommendations are rewritten to his answers; a document or row that now
+contradicts an answer is corrected in its own PR.
+
+### 1. Q1 -- the research-requirement rows past intake uploads wrote
+
+As put: "Past intake uploads each wrote a research-requirement row with the
+uploaded file's name in it (visible on /research to every role). B1 stops
+new ones. What should happen to the rows already written?" Options: "Count
+first, then decide (Recommended)"; "Delete them all"; "Leave them". Jason:
+*"Delete them all"*. **Ruling: delete every such row.** Over the audit's
+recommendation. A production data change: a read-only count first, then his
+word for the run (OD-2026-09-28-010 item 8; "Merging and releasing" in
+`AGENT_KERNEL.md`). PR #1122 (B1) stops new rows and touches none.
+
+### 2. Q2 -- who loads licensed excerpts, and from where
+
+As put: "New licensed research excerpts are stored privately in the
+database (your ruling 2A) and the platform owner adds them in the app (1B).
+Who may load them, and from where?" Options: "In-app platform-shelf screen
+only (Recommended)"; "Screen, plus an operator workflow reading a private
+location"; "Operator workflow only". Jason: *"Screen, plus an operator
+workflow reading a private location"*. **Ruling: both the in-app platform
+shelf screen and an operator workflow that reads a private location.** Over
+the audit's recommendation. Adds to OD-2026-10-02-013 answer 1B, which
+stands. Not built: the private location and its secret do not exist
+(OD-2026-10-02-015 D5 names the same gap for the archive); the migration of
+section 3 comes first.
+
+### 3. Q3 -- the rights values a source carries
+
+As put: "To check 'full text only for PPBF-owned or open-licence material',
+a source needs a rights marker. Which values should a source carry?"
+Options: "ppbf_owned / open_licence / licensed_excerpt_only / unknown
+(Recommended)"; "Just owned vs. not owned"; "Free-text licence note, no
+fixed values". Jason: *"ppbf_owned / open_licence / licensed_excerpt_only /
+unknown (Recommended)"*. **Ruling: those four values; `unknown` refuses full
+text.** Needs a migration and a classification of the existing sources
+(1,001 rows in the 2026-08-07 seed, measured at `03f5c649`).
+
+### 4. Q4 -- a workout template becoming athlete work
+
+As put: "Today a workout template or session script is only a read-only
+catalog and a live-run script. Nothing turns one into athlete assignments.
+Should it?" Options: "No, stays a catalog for now (Recommended)"; "Yes, a
+coach issues a template to an athlete or program in one action"; "Yes,
+automatically on a schedule". Jason: *"Yes, a coach issues a template to an
+athlete or program in one action"*. **Ruling: a coach issues a template to
+an athlete or a program in one action; the coach stays the decision-maker.**
+Over the audit's recommendation. Not built. Open for him, not decided here:
+what happens to a step whose drill the gym has not adopted (template steps
+reference the reference library, assignments need an active adopted drill,
+OD-2026-09-18-001); the audit recommends refusing and naming the drill.
+
+### 5. Q5 -- the race between intake promotion and the account cleanup
+
+As put: "Intake promotion can still race the account cleanup (the cleanup
+retires a login while a promotion is mid-write). B2 closed the sequential
+case; how should the concurrent case be closed?" Options: "One transaction
+around intake's writes (Recommended)"; "Shared advisory lock (cleanup
+exclusive, intake shared)"; "Leave it as is". Jason: *"One transaction
+around intake's writes (Recommended)"*. **Ruling: one transaction around
+intake promotion's writes; no advisory lock.** Settles part (ii) of the Build
+List row "Intake can leave a live athlete whose login is marked deleted"
+(part (i) is PR #1123). The reason intake writes in separate steps
+(`apps/web/src/server/pilot/intake.ts:1653-1657` at `03f5c649`) is to be
+read before the change.
+
+### 6. Q6 -- how an athlete's competence level is recorded
+
+As put: "Competence levels and cohorts are imported, but nothing records an
+athlete's level, so no cohort can place anyone. How should a level be
+recorded?" Options: "A coach sets it by hand (Recommended)"; "Derived from
+completions, coach confirms"; "Both: coach sets it, system suggests". Jason:
+*"A coach sets it by hand (Recommended)"*. **Ruling: a coach sets it by
+hand.** Consistent with OD-2026-09-21-001 (minors' limits are coach-set
+data). Not built: `pilot.athlete_competence` has no writer outside tests
+(measured at `03f5c649`), and the screen does not exist.
+
+### 7. Q7 -- which drills the AI workout prompt carries
+
+As put: "The AI workout-intake prompt sends your drill list to whatever AI
+you paste it into. Which drills should be in that list?" Options: "All
+current reference drills (as built) (Recommended)"; "Only drills this gym has
+adopted"; "Both, marked which is which". Jason, first: *"Explain,"*. The
+session explained the two drill tables (reference `pilot.drill_library`,
+which template steps link to; operational `pilot.drills`, which assignments
+use) and what each option would cost. Jason, whole message: *"Match but
+those drills need audited  alot are too simplistic and dont really do
+anything"*. **Recorder's reading, not his words: "Match" is option A, the
+list as built -- the current reference heads (`active and superseded_at is
+null`, `drillLibraryV3.ts:304-306`).** This settles the point
+OD-2026-10-02-012 left open ("which drill states count as the gym's list is
+not settled"). His addition is a new item, not a ruling on content: the
+reference drills are to be audited; he finds many too simplistic. Asked
+whether that can wait until the Fable items are done, Jason: *"Can it be
+done later after fable finish its work"*. **Parked**, with a re-open
+condition, in `docs/current/ACTIVE_WORK.md` (its own PR). Measured for that
+row at `93bc76d` from `apps/web/seed-data/drill-library/*.csv`: 119 drills;
+`execution` median 21 words, 105 of 119 under 30; `purpose` median 5;
+`standard_setup` median 2; `common_errors` empty on 114; 34 drills with no
+cue; every drill has exactly 3 scale levels (not checked for substance).
+Whether a drill "does anything" is coaching judgement and was not measured.
+Drill content is his or a coach's to write, never invented.
+
+### 8. Q9 -- the 119 reference drills held twice in production
+
+As put: "The 119 reference drills exist twice in production, once under
+ppbf-default-org and once under punxsy_prominence (census 2026-09-30). Which
+is the gym's set?" Options: "punxsy_prominence is the gym's; leave the other
+alone for now (Recommended)"; "Keep punxsy_prominence, delete the
+ppbf-default-org copy"; "Leave both as they are". Jason, whole message:
+*"Confirm witch one is in use delete the other"*. **Ruling: establish which
+copy is in use, then delete the other.** Over the audit's recommendation.
+Two production acts, each on his word for the run: a read-only check of
+what reads each copy (adopted drills, assignments, the policy-shelf move),
+then the delete. Which copy is in use is **not** assumed here.
+
+### 9. Q10 -- `/api/document-ingest`
+
+As put: "/api/document-ingest parses a PDF and files it in Dataverse,
+SharePoint and Google Drive. No page calls it, it never reaches the Library,
+and it likely fails on every PDF in production until #1109's bundling fix
+lands. Once #1109 (the PDF reader on /research) is live, keep it?" Options:
+"Retire it (Recommended)"; "Keep it, but give it a page"; "Keep it as is,
+unreachable". Jason: *"Retire it (Recommended)"*. **Ruling: retire the
+route once #1109 is live.** Consistent with OD-2026-10-02-015 D4. The
+repository is searched for callers first; flows outside it cannot be seen
+from a session.
+
+### 10. Q11 -- `scripts/seed-data.ts` and `SEED_GUIDE.md`
+
+As put: "scripts/seed-data.ts seeds athletes, parents, goals and sessions
+straight from a laptop with upserts that overwrite, no actor check, and
+SEED_GUIDE.md documents only that path. Keep it?" Options: "Retire it and
+the guide (Recommended)"; "Keep it, restricted to non-production databases";
+"Keep it as is". Jason: *"Retire it and the guide (Recommended)"*. **Ruling:
+retire the script, its `seed:data` entries and the guide.** This is the
+athlete/session seeder, not the content-import seed path of
+OD-2026-09-29-005 R1, which stands.
+
+### 11. Q12 (first answer) -- routes and a table with no caller
+
+As put: "Several routes and one table have no caller anywhere in the app
+(research search, capability-coverage reads, retraction checks, drill
+proposals and lineage, floor-plans, gap-justification,
+drill_version_outcomes). What should happen to them?" Options: "Park each
+with a re-open condition (Recommended)"; "Delete the ones with no tests or
+owner now"; "Decide route by route". Jason: *"Delete the ones with no tests
+or owner now"*. Superseded by section 12.
+
+### 12. Q12 (second answer) -- the UI is not finished
+
+Jason, whole message, after the first answer: *"Ok not all of the ui is done
+yet"*. The session put back that "no page calls it" cannot be read as
+"unused" while screens are still being built, and proposed that Q12 become
+"park each with a re-open condition, delete only what is clearly obsolete".
+Jason, whole message: *"Confirm"*. **Ruling: park each callerless route and
+table with a re-open condition; delete only what is clearly obsolete, never
+a route that may be waiting for its screen.** The list is measured first
+(tests, callers, scripts) and each item marked parked, planned UI, or
+obsolete, before anything is deleted. The audit's "no UI" findings are
+reworded "no page yet" (PR #1121).
+
+---
+
 ## OD-2026-10-03-001 -- Tablet hand-over for labelling (TEACH-LABELLER-HANDOFF-01): H1-H4 A; full app access needs the coach's own sign-in; H6 A plus an email reset; 60 minutes; no durable failed-PIN record
 
 **Provenance: PRIMARY.** Typed by Jason on 2026-10-03 (US Eastern; times UTC)
@@ -611,6 +802,9 @@ words otherwise, and the AI asks when unsure. The gym's drill names go to
 whatever AI the admin pastes the prompt into; no athlete data does. Not
 limited to approved drills (he chose A over B). Which drill states count as
 the gym's list is not settled.
+
+Status (2026-10-03): which drill states count is settled by OD-2026-10-03-002
+section 7: the current reference heads, as built.
 
 ---
 
