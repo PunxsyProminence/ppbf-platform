@@ -164,6 +164,68 @@ and should not try to.
 
 ---
 
+## OD-2026-10-02-013 -- Research intake: the platform owner writes the platform shelf in the app; licensed excerpts stay private; platform material on the platform shelf, gym material on the gym shelf; curator-chosen excerpts only; approval as today
+
+**Provenance: PRIMARY.** Typed by Jason in the overwatch thread on 2026-10-02
+(his evening; 2026-10-03 UTC) and read in that transcript
+(`~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`). This
+entry is new and edits no earlier one. It answers the research-intake lane's
+open owner questions 1 to 5 (`ACTIVE_WORK.md` rows on platform library writes,
+licensed excerpts and research placement); question 6 was answered in
+OD-2026-10-02-006 section 2. Nothing in it is built.
+
+From overwatch's list of what is left to build, Jason, whole message
+(00:50:37Z): *"Let do 8"*, item 8 being the research-intake follow-ons (PDF
+text extraction, linking admin uploads to the Library, platform-library
+writes), which wait on five questions. Overwatch put them (A recommended in
+each):
+
+"1. Who may write to the platform-wide library (shared research every gym
+reads)? A: only the operator-run import workflow, for now. B: the platform
+owner, through an in-app screen. C: gym admins propose and the platform owner
+promotes."
+
+"2. Licensed excerpts (copyrighted text): where are they stored? A: private,
+in the database only, never in the public code repository. B: in the public
+repository, like the existing 1,193."
+
+"3. Which shelf does research go on? A: published papers go to the platform
+shelf and PPBF's own documents to the gym shelf. Until question 1 allows
+platform writes, papers sit on the gym shelf, marked for later promotion. B:
+everything on the gym shelf."
+
+"4. Uploaded PDFs: how much text does the app keep? A: only excerpts a curator
+picks, with citation and page; whole PDFs stay in your SharePoint Research
+Archive; full text only for PPBF-owned or open-licence material. B: the full
+text of anything uploaded."
+
+"5. Who approves a source before SHADOW may cite it? A: as today, an org
+admin, admin or platform owner, and the same person who entered it may approve
+it, for the pilot. B: the approver must be a different person from whoever
+entered it. C: coaches can approve too."
+
+Jason, whole message (00:55:32Z): *"1 b 2a 3  platform for platform gym for
+gym 4 A 5  a"*.
+
+1. **B.** The platform owner writes platform-library (`__platform__`) rows
+   through an in-app screen. Not built; who is the platform owner is
+   OD-2026-08-29-001 (Admin@).
+2. **A.** New licensed excerpts are stored privately, in the database only,
+   never committed to the public repository.
+3. **Platform material on the platform shelf, gym material on the gym shelf**
+   (his words). Read with 1B, the interim of option A (papers waiting on the
+   gym shelf until platform writes exist) does not apply once the in-app
+   platform screen is built; until it is, papers have no in-app route to the
+   platform shelf. **INFERRED.**
+4. **A.** The app keeps only excerpts a curator chooses, with citation and
+   page; whole PDFs stay in the SharePoint Research Archive; full text only
+   for PPBF-owned or open-licence material.
+5. **A.** Approval stays as today for the pilot: an organization admin, admin
+   or platform owner approves on `/evidence`, and the person who entered a
+   source may approve it.
+
+---
+
 ## OD-2026-10-02-012 -- Workout intake: the AI prompt is to link steps to the gym's own drills (a second item, after #1103)
 
 **Provenance: PRIMARY.** Typed by Jason in the workout-upload lane's thread on
