@@ -42,7 +42,9 @@ import {
   listShadowCapabilityCoverage,
   normalizeSearchScope,
   recomputeShadowCapabilityCoverage,
+  confidenceLevelForScore,
   searchShadowLibrary,
+  searchShadowLibraryRanked,
 } from './shadowLibrary';
 
 const mockQuery = query as jest.MockedFunction<typeof query>;
@@ -328,16 +330,28 @@ describe('SHADOW library semantic search', () => {
     expect(params).toContain('test-embedding');
   });
 
-  it('falls back to keyword search when every candidate is below the relevance floor', async () => {
+  // A floor miss used to fall through to the loose substring keyword path,
+  // which is how a nonsense question got an unrelated passage.
+  it('does NOT fall back to keywords when every candidate is below the relevance floor', async () => {
     mockEmbedText.mockResolvedValue([1, 0]);
-    mockQuery
-      .mockResolvedValueOnce([candidate('chunk_noise', [0.01, 0.999])] as never)
-      .mockResolvedValueOnce([] as never);
+    mockQuery.mockResolvedValueOnce([candidate('chunk_noise', [0.01, 0.999])] as never);
 
-    const results = await searchShadowLibrary(searchInput);
-    expect(results).toEqual([]);
-    expect(mockQuery).toHaveBeenCalledTimes(2);
-    expect(String(mockQuery.mock.calls[1][0])).toContain("like '%' || $4 || '%'");
+    const ranked = await searchShadowLibraryRanked(searchInput);
+    expect(ranked.relevant).toEqual([]);
+    expect(ranked.nearest).toEqual([]);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a candidate between the floor and the relevance bar as nearest, not as evidence', async () => {
+    mockEmbedText.mockResolvedValue([1, 0]);
+    // cosine([1,0],[0.2,0.98]) is about 0.20: above the 0.15 floor, below the 0.30 bar.
+    mockQuery.mockResolvedValueOnce([candidate('chunk_close', [0.2, 0.98])] as never);
+    const ranked = await searchShadowLibraryRanked(searchInput);
+    expect(ranked.relevant).toEqual([]);
+    expect(ranked.nearest.map((r) => r.chunk_id)).toEqual(['chunk_close']);
+
+    mockQuery.mockResolvedValueOnce([candidate('chunk_close', [0.2, 0.98])] as never);
+    expect(await searchShadowLibrary(searchInput)).toEqual([]);
   });
 
   it('falls back to keyword search when the embedding call degrades to null', async () => {
@@ -346,7 +360,7 @@ describe('SHADOW library semantic search', () => {
 
     await searchShadowLibrary(searchInput);
     expect(mockQuery).toHaveBeenCalledTimes(1);
-    expect(String(mockQuery.mock.calls[0][0])).toContain("like '%' || $4 || '%'");
+    expect(String(mockQuery.mock.calls[0][0])).toContain("~ ('\\m' || term || '\\M')");
   });
 
   it('stays fully on the keyword path when the feature is disabled', async () => {
@@ -356,12 +370,89 @@ describe('SHADOW library semantic search', () => {
     await searchShadowLibrary(searchInput);
     expect(mockEmbedText).not.toHaveBeenCalled();
     expect(mockQuery).toHaveBeenCalledTimes(1);
-    expect(String(mockQuery.mock.calls[0][0])).toContain("like '%' || $4 || '%'");
+    expect(String(mockQuery.mock.calls[0][0])).toContain("~ ('\\m' || term || '\\M')");
   });
 });
 
+describe('SHADOW library keyword relevance', () => {
+  const input = {
+    organizationId: 'org-1',
+    actorAccountId: 'acct-1',
+    actorRole: 'organization_admin' as const,
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAssertActorCanAccessAthlete.mockResolvedValue(undefined);
+    mockIsSemanticEnabled.mockReturnValue(false);
+    mockQuery.mockResolvedValue([] as never);
+  });
+
+  it('matches whole words, with the term list as a parameter and no authority bonus in the score', async () => {
+    await searchShadowLibrary({ ...input, queryText: 'jab footwork' });
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(String(sql)).toContain("~ ('\\m' || term || '\\M')");
+    expect(String(sql)).not.toMatch(/like\s+'%'/);
+    expect(String(sql)).not.toContain('authority_tier) * 3');
+    expect(params?.[3]).toEqual(['jab', 'footwork']);
+  });
+
+  it('drops stop words, repeats and short words from the terms', async () => {
+    await searchShadowLibrary({ ...input, queryText: 'What is the jab? JAB, and how to use it' });
+    expect(mockQuery.mock.calls[0][1]?.[3]).toEqual(['jab']);
+  });
+
+  it('runs no query at all when the question has no meaningful word left', async () => {
+    const ranked = await searchShadowLibraryRanked({ ...input, queryText: 'what is the way to do it' });
+    expect(ranked.relevant).toEqual([]);
+    expect(ranked.nearest).toEqual([]);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  it('splits rows at the keyword relevance bar', async () => {
+    mockQuery.mockResolvedValueOnce([
+      { ...kwRow('a'), score: 1 },
+      { ...kwRow('b'), score: 0.5 },
+      { ...kwRow('c'), score: 0.25 },
+    ] as never);
+    const ranked = await searchShadowLibraryRanked({ ...input, queryText: 'alpha beta gamma delta' });
+    expect(ranked.relevant.map((r) => r.chunk_id)).toEqual(['chunk-a', 'chunk-b']);
+    expect(ranked.nearest.map((r) => r.chunk_id)).toEqual(['chunk-c']);
+    expect(ranked.mode).toBe('keyword');
+  });
+
+  it('maps score to a plain confidence level on each path', () => {
+    expect(confidenceLevelForScore('keyword', 1)).toBe('high');
+    expect(confidenceLevelForScore('keyword', 0.8)).toBe('high');
+    expect(confidenceLevelForScore('keyword', 0.5)).toBe('medium');
+    expect(confidenceLevelForScore('keyword', 0.49)).toBe('low');
+    expect(confidenceLevelForScore('semantic', 0.5)).toBe('high');
+    expect(confidenceLevelForScore('semantic', 0.3)).toBe('medium');
+    expect(confidenceLevelForScore('semantic', 0.29)).toBe('low');
+  });
+});
+
+function kwRow(id: string) {
+  return {
+    chunk_id: `chunk-${id}`,
+    document_id: 'doc-1',
+    source_id: `src-${id}`,
+    subject_id: null,
+    ordinal: 0,
+    document_name: 'Coaching Manual',
+    source_title: 'Manual',
+    source_publisher: null,
+    source_type: 'textbook',
+    authority_tier: 3,
+    source_status: 'active',
+    publication_date: null,
+    text_content: 'chunk text',
+    score: 1,
+  };
+}
+
 describe('SHADOW library claim honesty', () => {
-  function evidenceRow(sourceId: string) {
+  function evidenceRow(sourceId: string, score = 1) {
     return {
       chunk_id: `chunk-${sourceId}`,
       document_id: 'doc-1',
@@ -376,7 +467,7 @@ describe('SHADOW library claim honesty', () => {
       source_status: 'active',
       publication_date: null,
       text_content: 'chunk text',
-      score: 0,
+      score,
     };
   }
 
@@ -405,7 +496,72 @@ describe('SHADOW library claim honesty', () => {
     expect(result.status).toBe('supported');
     expect(result.evidenceCount).toBe(2);
     expect(result.distinctSourceCount).toBe(2);
-    expect(result.confidence).toBe(0.78);
+    expect(result.confidence).toBe(0.78);    expect(result.confidenceLevel).toBe('high');
+    expect(result.answer).toMatch(/^Confidence: high\./);
+  });
+
+  // JASON'S RULING 2026-10-03: below the relevance bar the closest passages are
+  // still shown, labelled low confidence, and the gap is filed as research.
+  it('a below-bar match is shown as low confidence and opens a research requirement', async () => {
+    mockQuery.mockResolvedValueOnce([evidenceRow('src-a', 0.25)] as never);
+
+    const result = await createShadowLibraryClaim({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-1',
+      actorRole: 'organization_admin',
+      question: 'alpha beta gamma delta nonsense',
+    });
+
+    expect(result.status).toBe('weak');
+    expect(result.confidenceLevel).toBe('low');
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidenceCount).toBe(0);
+    expect(result.answer).toMatch(/^Confidence: low\./);
+    expect(result.researchRequirementId).toBe(101);
+    expect(createShadowResearchRequirement).toHaveBeenCalledTimes(1);
+  });
+
+  it('a question made only of stop words is unsupported and still opens a research requirement', async () => {
+    const result = await createShadowLibraryClaim({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-1',
+      actorRole: 'organization_admin',
+      question: 'what is the way to do it',
+    });
+
+    expect(mockQuery).not.toHaveBeenCalled();
+    expect(result.status).toBe('unsupported');
+    expect(result.confidenceLevel).toBe('none');
+    expect(createShadowResearchRequirement).toHaveBeenCalledTimes(1);
+  });
+
+  it('one relevant source is capped at medium confidence', async () => {
+    mockQuery.mockResolvedValueOnce([evidenceRow('src-a', 1)] as never);
+
+    const result = await createShadowLibraryClaim({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-1',
+      actorRole: 'organization_admin',
+      question: 'jab',
+    });
+
+    expect(result.status).toBe('weak');
+    expect(result.confidenceLevel).toBe('medium');
+  });
+
+  it('a real match with two sources is supported and opens no research requirement', async () => {
+    mockQuery.mockResolvedValueOnce([evidenceRow('src-a', 0.6), evidenceRow('src-b', 0.55)] as never);
+
+    const result = await createShadowLibraryClaim({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-1',
+      actorRole: 'organization_admin',
+      question: 'alpha beta',
+    });
+
+    expect(result.status).toBe('supported');
+    expect(result.confidenceLevel).toBe('medium');
+    expect(createShadowResearchRequirement).not.toHaveBeenCalled();
   });
 
   it('reports zero counts and the unsupported band when nothing was found', async () => {

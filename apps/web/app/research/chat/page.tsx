@@ -102,7 +102,7 @@ export default function ResearchQAChatPage() {
     setIsSearching(true);
     try {
       const result = await askLibrary(apiBase(), question);
-      addMessage('research', result.answer, claimStatusLabel(result.status), result.evidence);
+      addMessage('research', result.answer, claimStatusLabel(result.status, result.confidenceLevel), result.evidence);
       if (result.status === 'unsupported' && result.researchRequirementId !== null) {
         addMessage(
           'system',

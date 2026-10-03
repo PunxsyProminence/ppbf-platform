@@ -103,6 +103,30 @@ describe('claimStatusLabel', () => {
   });
 });
 
+describe('confidence level', () => {
+  test('a low-confidence weak claim is labelled as closest passages and a research need', () => {
+    expect(claimStatusLabel('weak', 'low')).toMatch(/Low confidence/);
+    expect(claimStatusLabel('weak', 'low')).toMatch(/research need/);
+  });
+
+  test('medium and high name the level beside the status', () => {
+    expect(claimStatusLabel('supported', 'high')).toMatch(/high confidence/);
+    expect(claimStatusLabel('weak', 'medium')).toMatch(/medium confidence/);
+  });
+
+  test('the level from the server is carried through', async () => {
+    const fetchImpl = jest.fn(async () => jsonResponse(200, { ok: true, claim: { ...claim, confidenceLevel: 'low' } }));
+    const result = await askLibrary('', 'q', fetchImpl as unknown as typeof fetch);
+    expect(result.confidenceLevel).toBe('low');
+  });
+
+  test('a server that omits the level reads as low, never as a level nothing computed', async () => {
+    const fetchImpl = jest.fn(async () => jsonResponse(200, { ok: true, claim }));
+    const result = await askLibrary('', 'q', fetchImpl as unknown as typeof fetch);
+    expect(result.confidenceLevel).toBe('low');
+  });
+});
+
 describe('research requirement id wire format', () => {
   test('a bigint id arriving as a string is parsed, not dropped', async () => {
     // node-postgres serializes Postgres bigint as a string, so the real wire
