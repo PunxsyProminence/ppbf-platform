@@ -1717,6 +1717,8 @@ function PeopleConsoleContent() {
                   <p className="t-muted mb-[var(--s2)]">
                     {coachOptions.length > 0
                       ? 'A coach only sees the athletes assigned to them. Every athlete record has to name one, so pick whoever will be working with them.'
+                      : loading
+                      ? 'Loading the staff list...'
                       : !membersAvailable
                       ? 'The staff list could not be loaded, so no coach can be offered here. Reload the page to try again.'
                       : 'No coaches in your gym yet, and an athlete record has to name one — add a coach on the “Add Coach, Staff Or Guardian” tab, then come back here.'}

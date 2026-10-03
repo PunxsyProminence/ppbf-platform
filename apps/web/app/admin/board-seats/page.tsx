@@ -135,18 +135,24 @@ function BoardSeatsConsole() {
       // what turns an account id back into someone an admin recognises, and it
       // is readable only by an admin -- so the President gets a typed account
       // id instead, and can still seat anyone.
-      const directoryResponse = await fetch(`${apiBase()}/api/pilot/admin/staff`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-      const directoryPayload = (await directoryResponse.json().catch(() => ({}))) as {
-        ok?: boolean;
-        members?: unknown;
-      };
-      if (directoryResponse.ok && directoryPayload.ok !== false) {
-        setMembers(normalizeMembers(directoryPayload.members));
-        setDirectoryAvailable(true);
-      } else {
+      // Its own catch: a directory that never answers must not mark the roster,
+      // which did answer, as unread.
+      try {
+        const directoryResponse = await fetch(`${apiBase()}/api/pilot/admin/staff`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        const directoryPayload = (await directoryResponse.json().catch(() => ({}))) as {
+          ok?: boolean;
+          members?: unknown;
+        };
+        if (directoryResponse.ok && directoryPayload.ok !== false) {
+          setMembers(normalizeMembers(directoryPayload.members));
+          setDirectoryAvailable(true);
+        } else {
+          setDirectoryAvailable(false);
+        }
+      } catch {
         setDirectoryAvailable(false);
       }
     } catch (loadError) {

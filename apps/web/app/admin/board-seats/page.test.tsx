@@ -266,3 +266,15 @@ describe.each([
     expect(screen.queryByRole('option', { name: /unfilled/ })).toBeNull();
   });
 });
+
+it('keeps a roster that loaded when only the directory read is rejected', async () => {
+  const fetchMock = seatsFetch((url) => {
+    if (url.includes('/api/pilot/admin/staff')) throw new Error('network down');
+    return undefined;
+  });
+
+  await renderPage(fetchMock);
+
+  expect(await screen.findAllByText('Unfilled')).toHaveLength(6);
+  expect(screen.queryByText(/board roster could not be loaded/i)).toBeNull();
+});

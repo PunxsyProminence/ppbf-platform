@@ -835,7 +835,18 @@ describe.each([
     render(<PeopleConsolePage />);
     fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
 
-    expect(screen.getByText(/staff list could not be loaded/i)).toBeTruthy();
+    expect(await screen.findByText(/staff list could not be loaded/i)).toBeTruthy();
     expect(screen.queryByText(/No coaches in your gym yet/i)).toBeNull();
   });
+});
+
+test('before the staff read answers, the coach hint claims neither a failure nor an empty gym', async () => {
+  global.fetch = jest.fn(() => new Promise<Response>(() => {})) as never;
+
+  render(<PeopleConsolePage />);
+  fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
+
+  expect(screen.getByText(/Loading the staff list/i)).toBeTruthy();
+  expect(screen.queryByText(/staff list could not be loaded/i)).toBeNull();
+  expect(screen.queryByText(/No coaches in your gym yet/i)).toBeNull();
 });
