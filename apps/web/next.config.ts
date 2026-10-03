@@ -116,6 +116,13 @@ const nextConfig: NextConfig = {
 	// process (or reuse its build artifacts). Production keeps Next's default.
 	...(process.env.PPBF_OFFLINE_RUNTIME === "true" ? { distDir: ".next-offline" } : {}),
 	poweredByHeader: false,
+	// pdf-parse starts pdfjs-dist's worker with a dynamic import of a sibling
+	// file (pdf.worker.mjs). Bundled by Turbopack, that file does not exist next
+	// to the chunk and every parse fails at runtime ("Cannot find module
+	// .../chunks/pdf.worker.mjs"); kept external, the standalone output traces
+	// both packages into node_modules and the worker resolves. Proven by running
+	// the standalone server (RINT-02); /api/document-ingest uses the same parser.
+	serverExternalPackages: ["pdf-parse", "pdfjs-dist"],
 	turbopack: {
 		root: repoRoot,
 	},
