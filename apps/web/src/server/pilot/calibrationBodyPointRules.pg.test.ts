@@ -761,7 +761,7 @@ describe('a set holding an event cannot change vocabulary', () => {
   });
 });
 
-describe('a 0.2 set cannot be submitted incomplete', () => {
+describe('a 0.2 or 0.3 set cannot be submitted incomplete', () => {
   test('a complete set submits: a landed punch and a defence', async () => {
     const set = await newSet();
     await completeEvent(set, await insertEvent(set));

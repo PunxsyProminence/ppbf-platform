@@ -450,6 +450,16 @@ describe('the runner', () => {
         'CALIBRATION_BODY_POINTS_NOT_READY',
       );
       await runner.applyMigrationTransaction(client, sql);
+
+      // And the point-code CHECK alone left at 0.2's 24.
+      await client.query(`alter table pilot.calibration_body_points
+        drop constraint pilot_calibration_body_points_code_vocab,
+        add constraint pilot_calibration_body_points_code_vocab
+        ${ontology.vocabularyCheckSql('point_code', ontology.BODY_POINTS_0_2)}`);
+      await expect(runner.applyMigrationTransaction(client, 'select 1')).rejects.toThrow(
+        'CALIBRATION_BODY_POINTS_NOT_READY',
+      );
+      await runner.applyMigrationTransaction(client, sql);
     } finally {
       await client.end();
     }
