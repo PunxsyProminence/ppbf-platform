@@ -258,10 +258,12 @@ create trigger pilot_calibration_events_body_point_rules
 -- submission while anything is missing.
 --
 -- LOCKS AT SUBMISSION. Writers of events, stance labels, moments and points
--- read the set FOR SHARE, so the submission waits for them. Deleters of
--- moments and points do not; so the set's child rows are read FOR SHARE here
--- first, which waits for any uncommitted delete, and the count that follows
--- sees it.
+-- read the set FOR SHARE, so the submission waits for them. Deleters do not;
+-- so the set's stance labels and points are read FOR SHARE here first, which
+-- waits for any uncommitted delete, and the count that follows sees it.
+-- Deleting an event or a moment of a complete event removes its label or
+-- points by cascade, so those two locks cover it (mutants M21/M23 showed
+-- locking events and moments as well changes no outcome).
 create or replace function pilot.calibration_annotation_sets_body_point_rules()
 returns trigger
 language plpgsql
@@ -287,13 +289,7 @@ begin
     return new;
   end if;
 
-  perform 1 from pilot.calibration_annotation_events
-    where organization_id = new.organization_id and annotation_set_id = new.annotation_set_id
-    for share;
   perform 1 from pilot.calibration_event_stance_labels
-    where organization_id = new.organization_id and annotation_set_id = new.annotation_set_id
-    for share;
-  perform 1 from pilot.calibration_body_moments
     where organization_id = new.organization_id and annotation_set_id = new.annotation_set_id
     for share;
   perform 1 from pilot.calibration_body_points
