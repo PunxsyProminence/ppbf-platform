@@ -144,6 +144,11 @@ function ScoutReportView() {
       if (jobsRes.status === 'fulfilled' && jobsRes.value.ok) {
         const data = (await jobsRes.value.json()) as OrgJobsResponse;
         setJobs(data.jobs ?? []);
+      } else {
+        // No silent else: a refused or dropped jobs read used to leave the
+        // list empty and the page saying "No Scout Reports yet" (#991 class,
+        // Lane 14 batch 8 C8).
+        setError('Scout Reports could not be loaded.');
       }
 
       if (scoreRes?.status === 'fulfilled' && scoreRes.value.ok) {
@@ -430,7 +435,7 @@ function ScoutReportView() {
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <div className="flex items-center justify-between gap-[var(--s3)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
-              Scout Reports ({scoutJobs.length})
+              Scout Reports ({loadingJobs || error ? '--' : scoutJobs.length})
             </h2>
           </div>
 
@@ -481,6 +486,8 @@ function ScoutReportView() {
 
           {loadingJobs ? (
             <p className="t-muted mt-[var(--s4)]">Loading...</p>
+          ) : error ? (
+            <p className="t-muted mt-[var(--s4)]">Not available -- the reports could not be read.</p>
           ) : scoutJobs.length === 0 ? (
             <p className="t-muted mt-[var(--s4)]">No Scout Reports yet. Generate one above — it is processed by the background worker and listed here when complete.</p>
           ) : (

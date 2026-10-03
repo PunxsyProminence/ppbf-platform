@@ -112,14 +112,25 @@ export default function ResearchSubmissionReviewPage() {
               `${apiBase()}/api/pilot/shadow/research-submissions?research_requirement_id=${requirement.research_requirement_id}`,
               { credentials: 'include', signal: controller.signal },
             );
-            if (!response.ok) return [requirement.research_requirement_id, []] as const;
+            // A refused read is null, not []: it used to become "no submissions",
+            // and with the error then cleared the page said "No sources have
+            // been submitted" over reads that never answered (#991 class,
+            // Lane 14 batch 8 R2).
+            if (!response.ok) return [requirement.research_requirement_id, null] as const;
             const payload = (await response.json()) as { items?: SubmissionRow[] };
             return [requirement.research_requirement_id, payload.items ?? []] as const;
           }),
         );
         if (controller.signal.aborted) return;
-        setSubmissionsByRequirement(Object.fromEntries(submissionEntries));
-        setErrorMessage('');
+        const unread = submissionEntries.filter(([, rows]) => rows === null).length;
+        setSubmissionsByRequirement(
+          Object.fromEntries(submissionEntries.filter(([, rows]) => rows !== null)) as Record<number, SubmissionRow[]>,
+        );
+        setErrorMessage(
+          unread > 0
+            ? `Submissions for ${unread} open requirement${unread === 1 ? '' : 's'} could not be read. Anything listed below is not the full set.`
+            : '',
+        );
       } catch (error) {
         if (controller.signal.aborted) return;
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load submitted sources.');
@@ -210,6 +221,7 @@ export default function ResearchSubmissionReviewPage() {
         .filter((submission) => submission.applicability_state === 'unreviewed').length,
     0,
   );
+  const countsKnown = !loading && !errorMessage;
 
   return (
     <RoleStandaloneView
@@ -231,8 +243,10 @@ export default function ResearchSubmissionReviewPage() {
             responsive, or a duplicate link.
           </p>
           <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
-            <span className="plaque">SUBMISSIONS: {String(totalSubmissions)}</span>
-            <span className="plaque">UNREVIEWED: {String(unreviewedCount)}</span>
+            {/* Withheld as '--' unless every read answered: a partial or
+                failed load would print an undercount that looks measured. */}
+            <span className="plaque">SUBMISSIONS: {countsKnown ? String(totalSubmissions) : '--'}</span>
+            <span className="plaque">UNREVIEWED: {countsKnown ? String(unreviewedCount) : '--'}</span>
           </div>
         </header>
 

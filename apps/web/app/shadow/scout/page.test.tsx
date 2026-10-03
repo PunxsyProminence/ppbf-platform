@@ -142,3 +142,44 @@ it('keeps the medical red off a failed load', async () => {
   expect(alert.querySelector('.badge--restricted')).toBeTruthy();
   expect(alert.querySelector('.badge--locked')).toBeNull();
 });
+
+// #991 class (Lane 14 batch 8, C8). The jobs read had no else: a refused or
+// rejected read left the list empty and the page said "Scout Reports (0)" and
+// "No Scout Reports yet" over a read that never answered.
+describe('a failed Scout Reports read', () => {
+  function failJobs(jobs: () => Promise<Response>) {
+    global.fetch = jest.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes('/auth/session')) {
+        return jsonResponse({ authenticated: true, role: 'admin', auth_provider: 'microsoft' });
+      }
+      if (target.includes('/shadow/jobs')) return jobs();
+      return jsonResponse({ ok: true, metrics: null });
+    }) as unknown as typeof fetch;
+    mockUsePilotSession.mockReturnValue(session('admin'));
+  }
+
+  it.each([
+    ['refused', async () => jsonResponse({ error: 'nope' }, false, 500)],
+    ['rejected', async (): Promise<Response> => { throw new TypeError('Failed to fetch'); }],
+  ])('when %s, says so and claims neither "none" nor a zero', async (_name, jobs) => {
+    failJobs(jobs);
+
+    render(<ScoutReportPage />);
+
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', expect.stringContaining('Scout Reports could not be loaded.'));
+    expect(screen.queryByText(/No Scout Reports yet/)).toBeNull();
+    expect(screen.getByRole('heading', { level: 2, name: 'Scout Reports (--)' })).toBeTruthy();
+    expect(screen.getByText('Not available -- the reports could not be read.')).toBeTruthy();
+  });
+
+  it('a read that answered empty still says there are none yet', async () => {
+    failJobs(async () => jsonResponse({ ok: true, jobs: [] }));
+
+    render(<ScoutReportPage />);
+
+    expect(await screen.findByText(/No Scout Reports yet/)).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: 'Scout Reports (0)' })).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});

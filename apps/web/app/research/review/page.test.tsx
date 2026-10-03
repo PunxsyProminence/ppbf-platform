@@ -212,3 +212,69 @@ test('a failed review shows the error under that submission, not a false success
   await screen.findByText('Forbidden');
   expect(screen.queryByText('Marked Duplicate.')).toBeNull();
 });
+
+// #991 class (Lane 14 batch 8, R2). A refused per-requirement submissions read
+// became [], the error was then cleared, and the page said "No sources have
+// been submitted against an open requirement yet." with SUBMISSIONS: 0 over a
+// read that never answered.
+function installWithRefusedSubmissions(refusedIds: number[], requirements = [OPEN_REQUIREMENT]) {
+  const base = mockFetch({ requirements });
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/research-submissions?research_requirement_id=')) {
+      const id = Number(new URL(url, 'http://localhost').searchParams.get('research_requirement_id'));
+      if (refusedIds.includes(id)) return { ok: false, status: 500, json: async () => ({}) } as Response;
+    }
+    return base(input, init);
+  }) as unknown as typeof fetch;
+}
+
+test('a refused submissions read shows the failure, never the "nothing submitted" claim or a zero', async () => {
+  installWithRefusedSubmissions([7]);
+
+  await act(async () => {
+    render(<ResearchSubmissionReviewPage />);
+  });
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Submissions for 1 open requirement could not be read.');
+  expect(screen.queryByText(/No sources have been submitted/i)).toBeNull();
+  expect(screen.getByText('SUBMISSIONS: --')).toBeInTheDocument();
+  expect(screen.getByText('UNREVIEWED: --')).toBeInTheDocument();
+});
+
+test('a partly refused load still lists what did answer, and withholds the counts', async () => {
+  const second = { ...OPEN_REQUIREMENT, research_requirement_id: 9, research_requirement: 'Second open question?' };
+  installWithRefusedSubmissions([9], [OPEN_REQUIREMENT, second]);
+
+  await act(async () => {
+    render(<ResearchSubmissionReviewPage />);
+  });
+
+  await screen.findByText('Is RPE reliable at age 12?');
+  expect(screen.getByRole('alert')).toHaveTextContent('Anything listed below is not the full set.');
+  expect(screen.getByText('SUBMISSIONS: --')).toBeInTheDocument();
+});
+
+test('a refused requirements read prints no zero counts either', async () => {
+  global.fetch = jest.fn(async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<ResearchSubmissionReviewPage />);
+  });
+
+  await screen.findByRole('alert');
+  expect(screen.getByText('SUBMISSIONS: --')).toBeInTheDocument();
+  expect(screen.queryByText(/No sources have been submitted/i)).toBeNull();
+});
+
+test('a load that fully answered prints real counts', async () => {
+  installFetch({});
+
+  await act(async () => {
+    render(<ResearchSubmissionReviewPage />);
+  });
+
+  await screen.findByText('Is RPE reliable at age 12?');
+  expect(screen.getByText('SUBMISSIONS: 1')).toBeInTheDocument();
+  expect(screen.getByText('UNREVIEWED: 1')).toBeInTheDocument();
+});

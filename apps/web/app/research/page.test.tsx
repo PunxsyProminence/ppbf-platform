@@ -16,7 +16,7 @@
 // a stubbed shell cannot prove a gate.
 
 import type { ReactNode } from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import ResearchIntakePage from './page';
 import { RESEARCH_CLASSIFICATION_DOMAINS } from '@/src/shared/researchClassification';
@@ -345,6 +345,52 @@ test('a still-loading projection shows a pending state, not the empty state, unt
   expect(screen.queryByText('Loading research projection...')).toBeNull();
 });
 
+// #991 class (Lane 14 batch 8, R1). The sentence was guarded; the counts were
+// not. A failed projection read printed ITEMS: 0, PENDING REVIEW: 0 and four 0
+// tiles beside the failure alert, a measured-looking zero the read never gave.
+function failProjection(projection: () => Promise<Response>) {
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes('/research-projection')) return projection();
+    return { ok: true, json: async () => ({ items: [] }) } as Response;
+  }) as unknown as typeof fetch;
+}
+
+function summaryTileValues(): string[] {
+  const heading = screen.getByRole('heading', { name: 'Review State Summary' });
+  const section = heading.closest('section');
+  if (!section) throw new Error('Review State Summary section is missing');
+  return Array.from(section.querySelectorAll('article p.t-data')).map((element) => element.textContent ?? '');
+}
+
+test.each([
+  ['a refused read', async () => ({ ok: false, json: async () => ({}) }) as Response],
+  ['a network failure', async (): Promise<Response> => { throw new TypeError('Failed to fetch'); }],
+])('%s prints no projection count, only the alert', async (_name, projection) => {
+  failProjection(projection);
+
+  await act(async () => {
+    render(<ResearchIntakePage />);
+  });
+
+  // The plaques read '--' while loading too, so wait for the read to settle.
+  await waitFor(() => expect(screen.queryByText('Loading research projection...')).toBeNull());
+  expect(screen.getByText('ITEMS: --')).toBeTruthy();
+  expect(screen.getByText('PENDING REVIEW: --')).toBeTruthy();
+  expect(summaryTileValues()).toEqual(['--', '--', '--', '--']);
+  expect(screen.queryByText('Empty State')).toBeNull();
+});
+
+test('a projection that answered empty prints real zeros', async () => {
+  failProjection(async () => ({ ok: true, json: async () => ({ items: [] }) }) as Response);
+
+  await act(async () => {
+    render(<ResearchIntakePage />);
+  });
+
+  await screen.findByText('Empty State');
+  expect(screen.getByText('ITEMS: 0')).toBeTruthy();
+  expect(summaryTileValues()).toEqual(['0', '0', '0', '0']);
+});
 
 // The guard. /research shipped with no gate at all: an unauthenticated visitor
 // got 200 and the full workspace shell -- pipeline banner, review-state
