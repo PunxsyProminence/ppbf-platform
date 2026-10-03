@@ -106,6 +106,12 @@ export interface TrainingCardProps {
    * identity resolves — it just files the record under an unknown athlete.
    */
   athleteId?: string;
+  /**
+   * The session read failed. The card stays quiet -- one line, no banner --
+   * but it must not say "No sessions on the card yet" about a record nobody
+   * could read.
+   */
+  unavailable?: boolean;
 }
 
 export default function TrainingCard({
@@ -113,6 +119,7 @@ export default function TrainingCard({
   athleteName,
   maxStamps = 60,
   athleteId,
+  unavailable = false,
 }: TrainingCardProps) {
   const { completed, ordered, shown, truncated, hardSession } = useMemo(() => {
     const completedCount = sessions.filter((s) => s.completed_flag).length;
@@ -183,6 +190,16 @@ export default function TrainingCard({
       setAnniversary(mark.line);
     }
   }, [firstSessionDate]);
+
+  if (ordered.length === 0 && unavailable) {
+    return (
+      <div className="pap pap--card age-1 lift-1 tcard">
+        <div className="empty" style={{ padding: 'var(--s7) var(--s5)' }}>
+          <div className="empty-msg">Your card could not be loaded right now.</div>
+        </div>
+      </div>
+    );
+  }
 
   if (ordered.length === 0) {
     return (
