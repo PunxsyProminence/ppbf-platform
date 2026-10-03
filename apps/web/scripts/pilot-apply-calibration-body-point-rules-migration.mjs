@@ -16,14 +16,17 @@ function sslConfig() {
   return { rejectUnauthorized: true };
 }
 
-// Every object below is absent from a database where this migration has not
-// run, so readiness can go false there (migrationReadinessGates.pg.test.ts).
+// Every object below is created by this migration and absent from a database
+// it has not reached, so readiness goes false there
+// (calibrationBodyPointRules.pg.test.ts, "refuses a database the migration has
+// not reached").
 // Asserted BY NAME, never by pg_get_constraintdef text: Postgres deparses a
 // CHECK rather than echoing its source (issue #488). The three triggers hold
 // what the constraints cannot (the stance labels' freeze and 0.2 gate, the
 // 0.2 event rules, completeness at submission); a disabled one counts as
 // missing.
 const CONSTRAINTS = [
+  ['pilot.calibration_event_stance_labels', 'pilot_calibration_event_stance_labels_org_fk'],
   ['pilot.calibration_event_stance_labels', 'pilot_calibration_event_stance_labels_pkey'],
   ['pilot.calibration_event_stance_labels', 'pilot_calibration_event_stance_labels_stance_type_vocab'],
   ['pilot.calibration_event_stance_labels', 'pilot_calibration_event_stance_labels_event_fk'],

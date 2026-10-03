@@ -10,7 +10,7 @@
 --     punch or defence (OD-2026-10-02-014), on the person whose action the
 --     event is. One per event; no subject column: the other boxer is marked
 --     on their own event (Jason 2026-10-03, "It should be on the individuals
---     action", then "1 and 3"). Only a 0.2 set may hold one; a submitted
+--     action", then "1 and 3"; #1150 body; OD being recorded 2026-10-03). Only a 0.2 set may hold one; a submitted
 --     set's are frozen; deleting the event, set, clip, footage or
 --     organization still removes them.
 --   * On a 0.2 event row: no 0.1 `stance` (lead side at each moment replaces
@@ -37,8 +37,7 @@
 -- The named stance type of one event.
 -- ---------------------------------------------------------------------------
 create table if not exists pilot.calibration_event_stance_labels (
-  organization_id text not null
-    references pilot.organizations(organization_id) on delete cascade,
+  organization_id text not null,
   annotation_set_id text not null,
   event_id text not null,
 
@@ -46,6 +45,10 @@ create table if not exists pilot.calibration_event_stance_labels (
 
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+
+  constraint pilot_calibration_event_stance_labels_org_fk
+    foreign key (organization_id)
+    references pilot.organizations(organization_id) on delete cascade,
 
   -- One per event.
   constraint pilot_calibration_event_stance_labels_pkey
@@ -221,6 +224,28 @@ begin
   return new;
 end;
 $pilot_calibration_events_body_point_rules$;
+
+-- Rows written before this migration are judged once, here: a 0.2 event that
+-- already breaks the rules refuses the migration instead of being frozen in.
+do $$
+begin
+  if exists (
+    select 1
+      from pilot.calibration_annotation_events e
+      join pilot.calibration_annotation_sets s
+        on s.organization_id = e.organization_id
+       and s.annotation_set_id = e.annotation_set_id
+     where s.ontology_version in ('boxing-ontology-0.2')
+       and (e.stance is not null
+         or e.peak_ms is not null
+         or (e.event_class = 'punch'
+           and (e.contact_result in ('clean_target_contact', 'glancing_target_contact', 'guard_contact', 'non_target_contact'))
+               is distinct from (e.contact_ms is not null)))
+  ) then
+    raise exception 'CALIBRATION_EVENTS_BREAK_0_2_RULES';
+  end if;
+end
+$$;
 
 drop trigger if exists pilot_calibration_events_body_point_rules
   on pilot.calibration_annotation_events;

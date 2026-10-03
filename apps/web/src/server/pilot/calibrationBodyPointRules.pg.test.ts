@@ -438,6 +438,32 @@ describe('the runner', () => {
     expect(await stanceLabelCount(set)).toBe(1);
   });
 
+  test.each([
+    ['a 0.1 stance', { stance: 'orthodox' }],
+    ['a peak', { peak_ms: EV_CONTACT }],
+    ['a contact time on a miss', { contact_result: 'no_contact' }],
+  ])('refuses a database already holding a 0.2 event with %s', async (_label, fields) => {
+    const set = await newSet();
+    await db.query('alter table pilot.calibration_annotation_events disable trigger pilot_calibration_events_body_point_rules');
+    let broken: string;
+    try {
+      broken = await insertEvent(set, fields);
+    } finally {
+      await db.query('alter table pilot.calibration_annotation_events enable trigger pilot_calibration_events_body_point_rules');
+    }
+    try {
+      const runner = await loadRunner();
+      await expect(runner.applyMigrationTransaction(db, await readMigration(RULES_SQL))).rejects.toThrow(
+        'CALIBRATION_EVENTS_BREAK_0_2_RULES',
+      );
+    } finally {
+      await db.query('delete from pilot.calibration_annotation_events where organization_id = $1 and event_id = $2', [ORG_ID, broken]);
+    }
+    // A 0.1 set holding the same shape does not stop it.
+    await insertEvent(await newSet(V01), fields);
+    await (await loadRunner()).applyMigrationTransaction(db, await readMigration(RULES_SQL));
+  });
+
   test('refuses a target other than the one the operator named, before connecting', async () => {
     const saved = { ...process.env };
     try {
@@ -484,6 +510,15 @@ describe('the database agrees with ontology.ts', () => {
       .match(/new\.contact_result in \(([^)]*)\)/);
     expect(rule).not.toBeNull();
     expect(quotedValues((rule as RegExpMatchArray)[1])).toEqual([...ontology.CONTACT_RESULTS_WITH_CONTACT]);
+
+    // The migration-time check of existing rows says the same, and so does
+    // its version list.
+    const source = await readMigration(RULES_SQL);
+    const existing = [...source.matchAll(/e\.contact_result in \(([^)]*)\)/g)];
+    expect(existing).toHaveLength(1);
+    expect(quotedValues(existing[0][1])).toEqual([...ontology.CONTACT_RESULTS_WITH_CONTACT]);
+    const versions = source.match(/s\.ontology_version in \(([^)]*)\)/);
+    expect(quotedValues((versions as RegExpMatchArray)[1])).toEqual([...ontology.BODY_POINT_ONTOLOGY_VERSIONS]);
   });
 
   test('completeness asks for exactly MOMENT_SLOTS and BODY_POINTS.length points', async () => {
@@ -607,11 +642,12 @@ describe('the 0.2 rules on the event row', () => {
   );
 
   test.each(['no_contact', 'uncertain_contact'])(
-    'a 0.2 punch with %s and a contact time is refused (it is marked at full extension)',
+    'a 0.2 punch with %s and a contact time is refused (it is marked at full extension); 0.1 is unchanged',
     async (contactResult) => {
       await expect(
         insertEvent(await newSet(), { contact_result: contactResult, contact_ms: EV_CONTACT }),
       ).rejects.toThrow('CALIBRATION_EVENT_CONTACT_TIME_NOT_THIS_RESULT');
+      await insertEvent(await newSet(V01), { contact_result: contactResult, contact_ms: EV_CONTACT });
     },
   );
 
