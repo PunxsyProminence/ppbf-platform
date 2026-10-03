@@ -575,6 +575,41 @@ describe('drillLibraryV3.ts against real Postgres', () => {
       await client.end();
     }
   });
+
+  // The workout intake prompt (content-import GET) sends this unfiltered list
+  // to a third-party AI, so the organization term is pinned on its own here,
+  // with another gym's drills in the same database -- including one with the
+  // very same drill_id, the key being composite.
+  test('listDrillLibrary with no filter returns only the asked organization\'s drills', async () => {
+    const client = await freshDatabase('ppbf_test_drilllib_list_org_isolation');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      await applySecondarySkillsMigration(client, secondarySkillsSql);
+      await client.query(
+        `insert into pilot.organizations (organization_id, organization_name, status)
+         values ($1, $1, 'active') on conflict do nothing`,
+        [ORG_B],
+      );
+      await insertDrill(client, { drillId: 'drill-a-only', name: 'Org A Drill' });
+      await insertDrill(client, { drillId: 'drill-shared-id', name: 'Org A Shared' });
+      await insertDrill(client, { organizationId: ORG_B, drillId: 'drill-b-only', name: 'Org B Drill' });
+      await insertDrill(client, { organizationId: ORG_B, drillId: 'drill-shared-id', name: 'Org B Shared' });
+
+      const a = await listDrillLibrary(ORG_A);
+      expect(a.map((row) => [row.organization_id, row.drill_id, row.name]).sort()).toEqual([
+        [ORG_A, 'drill-a-only', 'Org A Drill'],
+        [ORG_A, 'drill-shared-id', 'Org A Shared'],
+      ]);
+      const b = await listDrillLibrary(ORG_B);
+      expect(b.map((row) => [row.organization_id, row.drill_id, row.name]).sort()).toEqual([
+        [ORG_B, 'drill-b-only', 'Org B Drill'],
+        [ORG_B, 'drill-shared-id', 'Org B Shared'],
+      ]);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

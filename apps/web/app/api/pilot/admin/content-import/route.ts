@@ -1,12 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { applyImport } from '@/src/server/pilot/contentImport/apply';
-import { WORKOUT_PROMPT_DATASET, workoutIntakePrompt } from '@/src/server/pilot/contentImport/aiPrompt';
+import { promptDrills, WORKOUT_PROMPT_DATASET, workoutIntakePrompt } from '@/src/server/pilot/contentImport/aiPrompt';
 import { emitContentImportAuditMirror } from '@/src/server/pilot/contentImport/auditRow';
 import { planImport } from '@/src/server/pilot/contentImport/plan';
 import { ContentImportRefusal } from '@/src/server/pilot/contentImport/refusal';
 import { checkUploadRequest, planView, readUploadBody } from '@/src/server/pilot/contentImport/upload';
 import { withPoolClient, withTransaction } from '@/src/server/pilot/db';
+import { listDrillLibrary } from '@/src/server/pilot/drillLibraryV3';
 import { ConflictError, ForbiddenError } from '@/src/server/pilot/errors';
 import { jsonError, requireMicrosoftAuthenticatedPrincipal, requireRole } from '@/src/server/pilot/http';
 
@@ -125,15 +126,26 @@ async function admit(request: NextRequest) {
  * to get back the two workout-template files this route's POST loads.
  *
  * SAME DOOR AS THE UPLOAD: admit() above is the one gate, so whoever may not
- * load gym content may not fetch the prompt for it either. The text itself is
- * the same for every gym and reads nothing of the session, the database or the
- * environment (aiPrompt.ts); the gate is here because the prompt belongs to
- * this screen, not because it holds a secret.
+ * load gym content may not fetch the prompt for it either.
+ *
+ * IT CARRIES THIS GYM'S DRILLS, AND ONLY THEIRS (OD-2026-10-02-012). The list
+ * is listDrillLibrary for the session's organization -- principal.organizationId
+ * through admit(), never anything the request names -- so it is the coach
+ * browse list: current versions only (active, not superseded). promptDrills()
+ * keeps three fields of each row (lineage key, name, primary skill code); the
+ * rest of the row, and anything of the session, does not reach the text.
+ * Which drill states count as "the gym's list" is the owner's open question;
+ * the current library versions are the proposed default.
  */
 export async function GET(request: NextRequest) {
   try {
-    await admit(request);
-    return NextResponse.json({ ok: true, dataset: WORKOUT_PROMPT_DATASET, prompt: workoutIntakePrompt() });
+    const { organizationId } = await admit(request);
+    const drills = promptDrills(await listDrillLibrary(organizationId));
+    return NextResponse.json(
+      { ok: true, dataset: WORKOUT_PROMPT_DATASET, prompt: workoutIntakePrompt(drills) },
+      // One gym's drill list: never stored by a cache between this server and the admin.
+      { headers: { 'Cache-Control': 'private, no-store' } },
+    );
   } catch (error) {
     return jsonError(error);
   }

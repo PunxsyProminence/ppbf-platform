@@ -12,21 +12,54 @@ import { BOUNDS, VOCABULARIES } from './vocabularies';
 // prompt cannot ask for something the upload then refuses. aiPrompt.test.ts
 // pins that: a package written to this prompt validates with nothing blocking.
 //
-// WHAT IS NOT IN IT, on purpose: nothing read from a database, a session or
-// the environment. No organization, no account, no drill or template id of
-// this gym, no athlete. It is the same text for every gym, built from code
-// constants alone, because it is handed to a third party.
+// THE GYM'S DRILLS ARE THE ONE THING OF A GYM IN IT (OD-2026-10-02-012, Jason
+// "A"): "The prompt carries the gym's drill list. Steps link to a drill when it
+// clearly matches, use words otherwise, and the AI asks when unsure. Your drill
+// names go to the AI you use. No athlete data." The list is handed in by the
+// caller, and only through promptDrills(): per drill its lineage key (what an
+// item's drill_id names, specs/templates.ts), its name and its primary skill
+// code. Nothing else of the library row -- no organization, no account, no
+// version id, no coaching text -- can reach the text, because PromptDrill has
+// no field for it. Everything else here is still code constants alone: nothing
+// read from a session or the environment, no organization, account, template
+// id or athlete.
 //
-// DRILLS ARE WORDS. An item may name a drill of the gym's library by id, but
-// the prompt carries no drill list, so it tells the assistant to describe each
-// drill in free_text_drill and leave drill_id blank -- which the item file's
-// own row rule already allows. Linking items to library drills is a later,
-// separate decision of the owner's.
+// WITH NO DRILLS the prompt is the words-only prompt of item 1 (#1103): every
+// drill described in free_text_drill, drill_id left blank.
 
 /** Columns the tool or the session decides. Left out of the prompt's files; a missing one is not a finding. */
 const TOOL_DECIDED: readonly ColumnSpec['role'][] = ['system', 'placeholder', 'lineage', 'child_id'];
 
 export const WORKOUT_PROMPT_DATASET = 'workout-templates';
+
+/** One drill as the prompt shows it. These three fields are all of a drill that leaves the app. */
+export interface PromptDrill {
+  /** The drill's lineage key: the value an item's drill_id names, and the upload checks against the gym's current heads. */
+  readonly id: string;
+  readonly name: string;
+  /** The primary skill code (drill_library.skill_id), or null when the drill has none. */
+  readonly skillCode: string | null;
+}
+
+/** One line, no separator: a drill's own text can add no line or column to the prompt. \s misses NEL (U+0085). */
+function oneLine(text: string): string {
+  return text.replace(/[\s\u0085]+/g, ' ').replace(/\|/g, '/').trim();
+}
+
+/**
+ * The ONLY way a library row becomes prompt text: lineage key, name and primary
+ * skill code are picked by name, so a wider row (listDrillLibrary returns every
+ * column of drill_library) carries nothing more into the prompt.
+ */
+export function promptDrills(
+  rows: readonly { lineage_id: string; name: string; skill_id: string | null }[],
+): PromptDrill[] {
+  return rows.map((row) => ({
+    id: oneLine(row.lineage_id),
+    name: oneLine(row.name),
+    skillCode: row.skill_id ? oneLine(row.skill_id) : null,
+  }));
+}
 
 /** The columns the assistant is asked to write, in file order. */
 export function promptColumns(spec: FileSpec): ColumnSpec[] {
@@ -43,13 +76,17 @@ function boundText(column: ColumnSpec): string {
   return '';
 }
 
-function allowedText(column: ColumnSpec): string {
+function allowedText(column: ColumnSpec, linking: boolean): string {
   if (column.role === 'key') {
     return 'new:<short-name> for a new workout (lowercase letters, digits and hyphens, e.g. new:beginner-footwork); '
       + 'the existing id, exactly as given, when I say I am changing a workout that is already loaded';
   }
   if (column.role === 'parent') return `the same ${column.name} as the workout this row belongs to`;
-  if (column.references === 'drill') return 'leave blank';
+  if (column.references === 'drill') {
+    return linking
+      ? "the id of one of THE GYM'S DRILLS below, exactly as listed, when the step clearly is that drill; otherwise leave blank"
+      : 'leave blank';
+  }
   if (column.vocabulary) return `one of: ${VOCABULARIES[column.vocabulary].values.join(', ')}`;
   if (column.type === 'boolean') return 'true or false';
   if (column.type === 'integer') return `a whole number${boundText(column)}`;
@@ -57,15 +94,15 @@ function allowedText(column: ColumnSpec): string {
   return 'text';
 }
 
-function columnLine(column: ColumnSpec): string {
-  const head = `- ${column.name} (${column.required ? 'required' : 'optional'}): ${allowedText(column)}.`;
-  // The spec's description of drill_id says what MAY go there; the prompt says to leave it blank, and nothing else.
+function columnLine(column: ColumnSpec, linking: boolean): string {
+  const head = `- ${column.name} (${column.required ? 'required' : 'optional'}): ${allowedText(column, linking)}.`;
+  // The spec's description of drill_id says what MAY go there (a new:<short-name> drill too); the prompt says only what it allows.
   if (column.references === 'drill') return head;
   const blank = column.blankDefault ?? column.blankMeans;
   return `${head} ${column.description}` + (blank ? ` Blank means ${blank}.` : '');
 }
 
-function fileSection(spec: FileSpec, number: number): string[] {
+function fileSection(spec: FileSpec, number: number, linking: boolean): string[] {
   const columns = promptColumns(spec);
   const rules = [
     ...(spec.unique ?? []).map((rule) => rule.description),
@@ -78,13 +115,41 @@ function fileSection(spec: FileSpec, number: number): string[] {
     'Header row, exactly:',
     columns.map((column) => column.name).join(','),
     'Columns:',
-    ...columns.map(columnLine),
+    ...columns.map((column) => columnLine(column, linking)),
     ...(rules.length > 0 ? ['Rules:', ...rules.map((rule) => `- ${rule}`)] : []),
     '',
   ];
 }
 
-export function workoutIntakePrompt(): string {
+function drillRules(linking: boolean): string[] {
+  if (!linking) return ['- Describe every drill in words in free_text_drill and leave drill_id blank.'];
+  return [
+    "- A step that clearly is one of THE GYM'S DRILLS (listed at the end): put that drill's id in drill_id, exactly",
+    '  as listed, and leave free_text_drill blank. Clearly means the document names that drill, or describes it so',
+    '  that no other drill on the list could be meant. A shared word alone is not a match. Anything more the',
+    '  document says about that step goes in coach_note.',
+    '- Any other step: describe it in words in free_text_drill and leave drill_id blank.',
+    "- If you are not sure whether a step is one of the gym's drills, or which one, stop and ask me. Do not guess.",
+    '  Never write an id that is not on the list.',
+  ];
+}
+
+function drillList(drills: readonly PromptDrill[]): string[] {
+  if (drills.length === 0) return [];
+  return [
+    "THE GYM'S DRILLS",
+    'One line per drill: id | name | main skill code.',
+    ...drills.map((drill) => `- ${drill.id} | ${drill.name} | ${drill.skillCode ?? 'none'}`),
+    '',
+  ];
+}
+
+/**
+ * The prompt. `drills` is the gym's list, already narrowed by promptDrills();
+ * none (the default) gives the words-only prompt.
+ */
+export function workoutIntakePrompt(drills: readonly PromptDrill[] = []): string {
+  const linking = drills.length > 0;
   const dataset = datasetSpec(WORKOUT_PROMPT_DATASET);
   const fileNames = dataset.files.map((file) => file.file);
   const lines = [
@@ -107,11 +172,12 @@ export function workoutIntakePrompt(): string {
     '  inside a quoted cell as two double quotes.',
     '- Every row has exactly as many cells as the header. A blank cell is two commas with nothing between them.',
     '- No other columns. No text containing {{ anywhere.',
-    '- Describe every drill in words in free_text_drill and leave drill_id blank.',
+    ...drillRules(linking),
     '- A step with contact above light_technical has no duration_minutes and no rep_count: write its rounds or',
     '  time, as the document gives them, in coach_note.',
     '',
-    ...dataset.files.flatMap((file, index) => fileSection(file, index + 1)),
+    ...dataset.files.flatMap((file, index) => fileSection(file, index + 1, linking)),
+    ...drillList(drills),
     'THE WORKOUT DOCUMENT:',
   ];
   return `${lines.join('\n')}\n`;
