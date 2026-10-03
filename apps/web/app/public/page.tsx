@@ -276,7 +276,7 @@ const faqItems = [
   },
   {
     question: 'Who is actually coaching my kid?',
-    answer: "Jason Neale is head coach. PPBF is a veteran-owned 501(c)(3) nonprofit with a board and real records behind it, not a side project run out of somebody's garage. Ask to meet whoever would be working with your kid before you commit to anything.",
+    answer: "Jason Neale is head coach. PPBF is a veteran-led 501(c)(3) nonprofit with a board and real records behind it, not a side project run out of somebody's garage. Ask to meet whoever would be working with your kid before you commit to anything.",
   },
   {
     question: 'I want to help. What is useful?',
