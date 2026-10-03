@@ -120,8 +120,8 @@ export default function HomePage() {
             {/* Eyebrow hidden on small screens to save vertical space */}
             <p className="t-eyebrow hidden sm:block">Punxsy Prominence Boxing &amp; Fitness</p>
             {/* Hand-painted signage, not the lit registered stencil of
-                .t-command: this is the board over the door of a gym that has
-                been run on donations for forty years. */}
+                .t-command: this is the hand-lettered board over the door of a
+                community gym. */}
             <h1 className="t-painted mt-[var(--s3)] sm:mt-[var(--s4)]" style={{ fontSize: 'clamp(1.5rem, 5vw, var(--t-2xl))' }}>
               Boxing is the engagement platform.
               <br />
