@@ -41,7 +41,7 @@ import {
   removeGuardianLink,
   requireGuardianLinkForParentInvite,
 } from './staffProvisioning';
-import { query, queryOne } from './db';
+import { query, queryOne, withTransaction } from './db';
 import { ConflictError } from './errors';
 
 const mockQuery = query as jest.Mock;
@@ -330,6 +330,39 @@ describe('takeover and escalation guards', () => {
         accountIdHint: 'taken',
       }),
     ).rejects.toThrow('Forbidden: account_id is already in use');
+  });
+});
+
+// OD-2026-10-03-002 section 5: intake promotion passes its own transaction's
+// client, and every statement -- the reads included -- runs on it. None goes
+// through the pool, and no transaction of its own is opened.
+describe('on the caller\'s transaction', () => {
+  test('every read and write runs on the client it is given', async () => {
+    (withTransaction as jest.Mock).mockClear();
+    const callerClient = fakeClient((sql) => {
+      if (sql.includes('from pilot.organizations')) return { rows: [{ organization_id: 'org-1' }], rowCount: 1 };
+      return undefined;
+    });
+
+    const result = await createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'guardian@example.com',
+      organizationId: 'org-1',
+      role: 'parent',
+      accountIdHint: 'guardian-1',
+      refuseRoleChange: true,
+      refuseDeactivatedLogin: true,
+    }, callerClient as never);
+
+    expect(result).toMatchObject({ accountId: 'guardian-1', created: true });
+    const statements = callerClient.query.mock.calls.map(([sql]) => String(sql));
+    expect(statements.some((sql) => sql.includes('from pilot.organizations'))).toBe(true);
+    expect(statements.some((sql) => sql.includes('lower(login_email) = $1'))).toBe(true);
+    expect(statements.some((sql) => sql.includes('insert into pilot.accounts'))).toBe(true);
+    expect(statements.some((sql) => sql.includes('insert into pilot.organization_memberships'))).toBe(true);
+    expect(mockQueryOne).not.toHaveBeenCalled();
+    expect(mockQuery).not.toHaveBeenCalled();
+    expect(withTransaction).not.toHaveBeenCalled();
+    expect(currentClient.query).not.toHaveBeenCalled();
   });
 });
 

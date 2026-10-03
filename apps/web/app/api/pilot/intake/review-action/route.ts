@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
-import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
+import { createOrUpdateAthleteAccountWithClient } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { withTransaction } from '@/src/server/pilot/db';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import {
   assertShadowAuthority,
@@ -391,8 +392,9 @@ export async function POST(request: NextRequest) { // NOSONAR
     }
 
     // Validated here, before any promotion write begins, not down at the
-    // createReadiness call where it used to live. This route has no
-    // transaction wrapping its promotion writes -- by the time readiness was
+    // createReadiness call where it used to live. This route had no
+    // transaction wrapping its promotion writes then (it has one now, below,
+    // and a refusal there rolls them all back) -- by the time readiness was
     // reached, the athlete, account, guardian, emergency contact, medical,
     // waiver, assessment and attendance writes had already committed. A
     // refusal down there therefore returned a clean 400 that looked like
@@ -523,212 +525,225 @@ export async function POST(request: NextRequest) { // NOSONAR
 
     const athleteCreatedAt = new Date().toISOString();
 
-    // The athlete-record checks -- withdrawn; held by a deleted login, on
-    // every promotion, account_id or not (OD-2026-09-29-002 item 4, path i);
-    // the account_id's refusals -- and the athlete write, in one transaction
-    // under the lock the account cleanup also takes, so the cleanup cannot
-    // retire this athlete's login in between (path ii). The first write of
-    // the promotion; the guardian checks above are reads only.
-    await writePromotedAthleteRecord({
-      organizationId: principal.organizationId,
-      accountId: promotion.athlete.account_id,
-      athlete: {
-        athlete_id: promotion.athlete.athlete_id,
-        full_name: promotion.athlete.full_name,
-        dob: promotion.athlete.dob,
-        weight_class: promotion.athlete.weight_class,
-        gym_status: promotion.athlete.gym_status,
-        emergency_contact: promotion.athlete.emergency_contact,
-        active_flag: true,
-        coach_id: promotion.athlete.coach_id,
-        created_at: athleteCreatedAt,
-        updated_at: athleteCreatedAt,
-      },
-    });
-
-    // No credential is set here: athlete.pin was refused before the first
-    // write, above.
-    if (promotion.athlete.account_id) {
-      await createOrUpdateAthleteAccount(
-        promotion.athlete.account_id,
-        promotion.athlete.athlete_id,
-        principal.organizationId,
-      );
-    }
-
     // The login the guardian record ends up linked to, if any. Undefined
     // leaves the record's current link alone.
     let guardianAccountId: string | undefined;
 
-    if (guardian) {
-      // guardian.pin, and an account_id without an email, were refused before
-      // the first write, above. `&& email` only narrows the type.
-      if (guardian.account_id && guardian.email) {
-        // The guardian record is linked to the account provisioning wrote --
-        // the one that holds guardian.email and is now an active parent in
-        // this organization -- never to the payload's account_id read back.
-        // The check before the first write makes the two the same; this keeps
-        // them the same if the email's account changes in between.
-        //
-        // refuseRoleChange and refuseDeactivatedLogin: the same refusals as
-        // that check, repeated on provisioning's own read and held in its
-        // account write, so an account that became a non-parent or was
-        // deactivated in between is still refused rather than re-roled or
-        // reactivated. A deleted login is refused there for every caller.
-        const provisioned = await createOrUpdateMicrosoftStaffAccount({
-          loginEmail: guardian.email,
-          organizationId: principal.organizationId,
-          role: 'parent',
-          accountIdHint: guardian.account_id,
-          refuseRoleChange: true,
-          refuseDeactivatedLogin: true,
-        });
-        guardianAccountId = provisioned.accountId;
+    // One transaction for every write that makes the promotion, under the
+    // athlete-login lock writePromotedAthleteRecord takes first: the athlete
+    // record, the athlete's login, the guardian's login, record and link, the
+    // emergency contact, medical, waiver, assessment, attendance, readiness
+    // and coach note rows, the documents, the case status and the audit row.
+    // A failure anywhere in it leaves none of them (OD-2026-10-03-002 section
+    // 5). Every write in it takes the transaction's client: a pooled write
+    // could wait on a row this transaction holds, and Postgres would not see
+    // that as a deadlock. The shadow event, research requirement and metric
+    // below are written after it commits, as before.
+    await withTransaction(async (client) => {
+      // The athlete-record checks -- withdrawn; held by a deleted login, on
+      // every promotion, account_id or not (OD-2026-09-29-002 item 4, path i);
+      // the account_id's refusals -- and the athlete write, in one transaction
+      // under the lock the account cleanup also takes, so the cleanup cannot
+      // retire this athlete's login in between (path ii). The first write of
+      // the promotion; the guardian checks above are reads only.
+      await writePromotedAthleteRecord({
+        organizationId: principal.organizationId,
+        accountId: promotion.athlete.account_id,
+        athlete: {
+          athlete_id: promotion.athlete.athlete_id,
+          full_name: promotion.athlete.full_name,
+          dob: promotion.athlete.dob,
+          weight_class: promotion.athlete.weight_class,
+          gym_status: promotion.athlete.gym_status,
+          emergency_contact: promotion.athlete.emergency_contact,
+          active_flag: true,
+          coach_id: promotion.athlete.coach_id,
+          created_at: athleteCreatedAt,
+          updated_at: athleteCreatedAt,
+        },
+      }, client);
+
+      // No credential is set here: athlete.pin was refused before the first
+      // write, above.
+      if (promotion.athlete.account_id) {
+        await createOrUpdateAthleteAccountWithClient(
+          client,
+          promotion.athlete.account_id,
+          promotion.athlete.athlete_id,
+          principal.organizationId,
+        );
       }
 
-      await upsertGuardian({
+      if (guardian) {
+        // guardian.pin, and an account_id without an email, were refused before
+        // the first write, above. `&& email` only narrows the type.
+        if (guardian.account_id && guardian.email) {
+          // The guardian record is linked to the account provisioning wrote --
+          // the one that holds guardian.email and is now an active parent in
+          // this organization -- never to the payload's account_id read back.
+          // The check before the first write makes the two the same; this keeps
+          // them the same if the email's account changes in between.
+          //
+          // refuseRoleChange and refuseDeactivatedLogin: the same refusals as
+          // that check, repeated on provisioning's own read and held in its
+          // account write, so an account that became a non-parent or was
+          // deactivated in between is still refused rather than re-roled or
+          // reactivated. A deleted login is refused there for every caller.
+          const provisioned = await createOrUpdateMicrosoftStaffAccount({
+            loginEmail: guardian.email,
+            organizationId: principal.organizationId,
+            role: 'parent',
+            accountIdHint: guardian.account_id,
+            refuseRoleChange: true,
+            refuseDeactivatedLogin: true,
+          }, client);
+          guardianAccountId = provisioned.accountId;
+        }
+
+        await upsertGuardian({
+          organizationId: principal.organizationId,
+          parentId: guardian.parent_id,
+          accountId: guardianAccountId,
+          fullName: guardian.full_name,
+          phone: guardian.phone,
+          email: guardian.email,
+        }, client);
+
+        await linkGuardianAthlete({
+          organizationId: principal.organizationId,
+          parentId: guardian.parent_id,
+          athleteId: promotion.athlete.athlete_id,
+          relationshipToAthlete: guardian.relationship_to_athlete ?? 'guardian',
+        }, client);
+      }
+
+      if (promotion.emergency_contact) {
+        await upsertEmergencyContact({
+          organizationId: principal.organizationId,
+          athleteId: promotion.athlete.athlete_id,
+          fullName: promotion.emergency_contact.full_name,
+          relationshipToAthlete: promotion.emergency_contact.relationship_to_athlete,
+          phone: promotion.emergency_contact.phone,
+          email: promotion.emergency_contact.email,
+          isPrimary: promotion.emergency_contact.is_primary,
+          notes: promotion.emergency_contact.notes,
+        }, client);
+      }
+
+      if (promotion.medical) {
+        await upsertMedicalIntake({
+          organizationId: principal.organizationId,
+          athleteId: promotion.athlete.athlete_id,
+          conditions: promotion.medical.conditions,
+          medications: promotion.medical.medications,
+          allergies: promotion.medical.allergies,
+          physicianName: promotion.medical.physician_name,
+          physicianPhone: promotion.medical.physician_phone,
+          clearanceStatus: promotion.medical.clearance_status,
+          notes: promotion.medical.notes,
+        }, client);
+      }
+
+      if (promotion.waiver) {
+        await upsertWaiver({
+          organizationId: principal.organizationId,
+          athleteId: promotion.athlete.athlete_id,
+          waiverType: promotion.waiver.waiver_type,
+          signedByName: promotion.waiver.signed_by_name,
+          signedByRole: promotion.waiver.signed_by_role,
+          signedAt: promotion.waiver.signed_at,
+          consentVersion: promotion.waiver.consent_version,
+          // Checked above, before the first promotion write.
+          status: validatedWaiverStatus as WaiverStatus,
+          notes: promotion.waiver.notes,
+          // The reviewer promoting the case, not the guardian who signed the
+          // paper it came from.
+          recordedByAccountId: principal.accountId,
+        }, client);
+      }
+
+      if (promotion.assessment) {
+        await createAssessment({
+          organizationId: principal.organizationId,
+          athleteId: promotion.athlete.athlete_id,
+          assessorAccountId: principal.accountId,
+          assessmentType: promotion.assessment.assessment_type,
+          result: promotion.assessment.result,
+        }, client);
+      }
+
+      if (promotion.attendance) {
+        await createAttendance({
+          organizationId: principal.organizationId,
+          athleteId: promotion.athlete.athlete_id,
+          attendanceDate: promotion.attendance.attendance_date,
+          status: promotion.attendance.status,
+          notes: promotion.attendance.notes,
+        }, client);
+      }
+
+      if (promotion.readiness) {
+        // Same provenance as the domain-upsert path, and for the same reason:
+        // this score comes from a promotion payload an administrator hand-typed,
+        // not from any formula. The row says so.
+        //
+        // score is validatedReadinessScore, not a fresh requireFiniteNumber call
+        // against promotion.readiness.score -- the value was already checked
+        // above, before the first write in this function ran. Re-validating
+        // the same field here would be harmless, but keeping the checked value
+        // makes it visible that this call cannot be the one that fails.
+        await createReadiness({
+          organizationId: principal.organizationId,
+          athleteId: promotion.athlete.athlete_id,
+          score: validatedReadinessScore as number,
+          category: promotion.readiness.category,
+          measuredAt: promotion.readiness.measured_at,
+          method: 'staff_entered_intake',
+          recordedByAccountId: principal.accountId,
+        }, client);
+      }
+
+      if (promotion.coach_note) {
+        await createCoachObservation({
+          organizationId: principal.organizationId,
+          athleteId: promotion.athlete.athlete_id,
+          coachAccountId: principal.accountId,
+          authorRole: principal.role,
+          noteType: promotion.coach_note.note_type ?? 'intake_observation',
+          noteText: promotion.coach_note.note_text,
+        }, client);
+      }
+
+      await bindIntakeDocumentsToOwner({
         organizationId: principal.organizationId,
-        parentId: guardian.parent_id,
-        accountId: guardianAccountId,
-        fullName: guardian.full_name,
-        phone: guardian.phone,
-        email: guardian.email,
-      });
+        intakeCaseId,
+        ownerEntityType: 'athlete',
+        ownerEntityId: promotion.athlete.athlete_id,
+      }, client);
 
-      await linkGuardianAthlete({
+      await updateIntakeCaseStatus({
         organizationId: principal.organizationId,
-        parentId: guardian.parent_id,
-        athleteId: promotion.athlete.athlete_id,
-        relationshipToAthlete: guardian.relationship_to_athlete ?? 'guardian',
-      });
-    }
+        intakeCaseId,
+        status: 'promoted',
+        reviewedByAccountId: principal.accountId,
+        reviewNotes: body.notes,
+      }, client);
 
-    if (promotion.emergency_contact) {
-      await upsertEmergencyContact({
-        organizationId: principal.organizationId,
-        athleteId: promotion.athlete.athlete_id,
-        fullName: promotion.emergency_contact.full_name,
-        relationshipToAthlete: promotion.emergency_contact.relationship_to_athlete,
-        phone: promotion.emergency_contact.phone,
-        email: promotion.emergency_contact.email,
-        isPrimary: promotion.emergency_contact.is_primary,
-        notes: promotion.emergency_contact.notes,
-      });
-    }
-
-    if (promotion.medical) {
-      await upsertMedicalIntake({
-        organizationId: principal.organizationId,
-        athleteId: promotion.athlete.athlete_id,
-        conditions: promotion.medical.conditions,
-        medications: promotion.medical.medications,
-        allergies: promotion.medical.allergies,
-        physicianName: promotion.medical.physician_name,
-        physicianPhone: promotion.medical.physician_phone,
-        clearanceStatus: promotion.medical.clearance_status,
-        notes: promotion.medical.notes,
-      });
-    }
-
-    if (promotion.waiver) {
-      await upsertWaiver({
-        organizationId: principal.organizationId,
-        athleteId: promotion.athlete.athlete_id,
-        waiverType: promotion.waiver.waiver_type,
-        signedByName: promotion.waiver.signed_by_name,
-        signedByRole: promotion.waiver.signed_by_role,
-        signedAt: promotion.waiver.signed_at,
-        consentVersion: promotion.waiver.consent_version,
-        // Checked above, before the first promotion write.
-        status: validatedWaiverStatus as WaiverStatus,
-        notes: promotion.waiver.notes,
-        // The reviewer promoting the case, not the guardian who signed the
-        // paper it came from.
-        recordedByAccountId: principal.accountId,
-      });
-    }
-
-    if (promotion.assessment) {
-      await createAssessment({
-        organizationId: principal.organizationId,
-        athleteId: promotion.athlete.athlete_id,
-        assessorAccountId: principal.accountId,
-        assessmentType: promotion.assessment.assessment_type,
-        result: promotion.assessment.result,
-      });
-    }
-
-    if (promotion.attendance) {
-      await createAttendance({
-        organizationId: principal.organizationId,
-        athleteId: promotion.athlete.athlete_id,
-        attendanceDate: promotion.attendance.attendance_date,
-        status: promotion.attendance.status,
-        notes: promotion.attendance.notes,
-      });
-    }
-
-    if (promotion.readiness) {
-      // Same provenance as the domain-upsert path, and for the same reason:
-      // this score comes from a promotion payload an administrator hand-typed,
-      // not from any formula. The row says so.
-      //
-      // score is validatedReadinessScore, not a fresh requireFiniteNumber call
-      // against promotion.readiness.score -- the value was already checked
-      // above, before the first write in this function ran. Re-validating
-      // the same field here would be harmless, but keeping the checked value
-      // makes it visible that this call cannot be the one that fails.
-      await createReadiness({
-        organizationId: principal.organizationId,
-        athleteId: promotion.athlete.athlete_id,
-        score: validatedReadinessScore as number,
-        category: promotion.readiness.category,
-        measuredAt: promotion.readiness.measured_at,
-        method: 'staff_entered_intake',
-        recordedByAccountId: principal.accountId,
-      });
-    }
-
-    if (promotion.coach_note) {
-      await createCoachObservation({
-        organizationId: principal.organizationId,
-        athleteId: promotion.athlete.athlete_id,
-        coachAccountId: principal.accountId,
-        authorRole: principal.role,
-        noteType: promotion.coach_note.note_type ?? 'intake_observation',
-        noteText: promotion.coach_note.note_text,
-      });
-    }
-
-    await bindIntakeDocumentsToOwner({
-      organizationId: principal.organizationId,
-      intakeCaseId,
-      ownerEntityType: 'athlete',
-      ownerEntityId: promotion.athlete.athlete_id,
-    });
-
-    await updateIntakeCaseStatus({
-      organizationId: principal.organizationId,
-      intakeCaseId,
-      status: 'promoted',
-      reviewedByAccountId: principal.accountId,
-      reviewNotes: body.notes,
-    });
-
-    await writePilotAuditEvent({
-      event_type: 'create',
-      actor_account_id: principal.accountId,
-      actor_role: principal.role,
-      organization_id: principal.organizationId,
-      entity_type: 'intake_case_promotion',
-      entity_id: intakeCaseId,
-      details: {
-        athlete_id: promotion.athlete.athlete_id,
-        athlete_account_id: promotion.athlete.account_id ?? null,
-        guardian_parent_id: guardian?.parent_id ?? null,
-        guardian_account_id: guardianAccountId ?? null,
-      },
-      shadow_mirror: false,
+      await writePilotAuditEvent({
+        event_type: 'create',
+        actor_account_id: principal.accountId,
+        actor_role: principal.role,
+        organization_id: principal.organizationId,
+        entity_type: 'intake_case_promotion',
+        entity_id: intakeCaseId,
+        details: {
+          athlete_id: promotion.athlete.athlete_id,
+          athlete_account_id: promotion.athlete.account_id ?? null,
+          guardian_parent_id: guardian?.parent_id ?? null,
+          guardian_account_id: guardianAccountId ?? null,
+        },
+        shadow_mirror: false,
+      }, client);
     });
 
     const researchFields = buildReviewResearchFields({ action: 'promote', intakeCaseId });

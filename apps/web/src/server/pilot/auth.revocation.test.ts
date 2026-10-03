@@ -50,15 +50,16 @@ afterEach(() => {
 
 describe('session revocation after credential changes', () => {
   test('createOrUpdateAthleteAccount revokes sessions when updating an existing account', async () => {
-    mockQuery.mockResolvedValueOnce([{ organization_id: 'org-1' }]); // existing account lookup
-    currentClient.query.mockResolvedValueOnce({ rows: [{ account_id: 'acct-1' }] }); // the update wrote it
+    currentClient.query
+      .mockResolvedValueOnce({ rows: [{ organization_id: 'org-1' }] }) // existing account lookup
+      .mockResolvedValueOnce({ rows: [{ account_id: 'acct-1' }] }); // the update wrote it
     await createOrUpdateAthleteAccount('acct-1', 'ath-1', 'org-1');
     expect(revokeCalls()).toHaveLength(1);
     expect(revokeCalls()[0][1]).toEqual(['acct-1']);
   });
 
   test('createOrUpdateAthleteAccount does not revoke anything for a brand-new account', async () => {
-    mockQuery.mockResolvedValueOnce([]); // no existing account
+    // No existing account: the fake client answers no rows by default.
     await createOrUpdateAthleteAccount('acct-new', 'ath-1', 'org-1');
     expect(revokeCalls()).toHaveLength(0);
   });

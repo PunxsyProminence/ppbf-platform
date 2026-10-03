@@ -4,18 +4,27 @@ import { POST } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { createOrUpdateMicrosoftStaffAccount } from '@/src/server/pilot/staffProvisioning';
-import { createOrUpdateAthleteAccount } from '@/src/server/pilot/auth';
+import { createOrUpdateAthleteAccountWithClient } from '@/src/server/pilot/auth';
 import { upsertAthlete } from '@/src/server/pilot/entities';
 import {
   assertActorCanAccessIntakeCase,
   assertGuardianAccountUnchanged,
+  bindIntakeDocumentsToOwner,
+  createAssessment,
+  createAttendance,
+  createCoachObservation,
   createReadiness,
   getIntakeCaseById,
   linkGuardianAthlete,
   updateIntakeCaseStatus,
+  upsertEmergencyContact,
   upsertGuardian,
+  upsertMedicalIntake,
   upsertWaiver,
 } from '@/src/server/pilot/intake';
+import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
+import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import { ConflictError } from '@/src/server/pilot/errors';
 import { queryOne, withTransaction } from '@/src/server/pilot/db';
 import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
@@ -39,7 +48,7 @@ jest.mock('@/src/server/pilot/staffProvisioning', () => ({
   createOrUpdateMicrosoftStaffAccount: jest.fn(),
 }));
 jest.mock('@/src/server/pilot/auth', () => ({
-  createOrUpdateAthleteAccount: jest.fn(),
+  createOrUpdateAthleteAccountWithClient: jest.fn(),
 }));
 jest.mock('@/src/server/pilot/access', () => ({
   ...jest.requireActual('@/src/server/pilot/access'),
@@ -93,7 +102,12 @@ const mockRequirePrincipal = requirePrincipal as jest.MockedFunction<typeof requ
 const mockStaffProvision = createOrUpdateMicrosoftStaffAccount as jest.MockedFunction<
   typeof createOrUpdateMicrosoftStaffAccount
 >;
-const mockAthleteAccount = createOrUpdateAthleteAccount as jest.MockedFunction<typeof createOrUpdateAthleteAccount>;
+const mockAthleteAccount = createOrUpdateAthleteAccountWithClient as jest.MockedFunction<
+  typeof createOrUpdateAthleteAccountWithClient
+>;
+// The client of the promotion's one transaction (OD-2026-10-03-002 section 5).
+// Every promotion write is asserted to run on it.
+let txClient: { query: (sql: string, params: unknown[]) => Promise<{ rows: unknown[] }> };
 const mockGetIntakeCase = getIntakeCaseById as jest.MockedFunction<typeof getIntakeCaseById>;
 const mockAuthority = assertActorCanAccessIntakeCase as jest.MockedFunction<typeof assertActorCanAccessIntakeCase>;
 const mockUpdateStatus = updateIntakeCaseStatus as jest.MockedFunction<typeof updateIntakeCaseStatus>;
@@ -207,12 +221,13 @@ beforeEach(() => {
   mockQueryOne.mockReset();
   // The athlete-record checks run on writePromotedAthleteRecord's transaction
   // client; it answers from the same stubbed lookups as queryOne.
-  mockWithTransaction.mockImplementation(async (fn: (client: unknown) => Promise<unknown>) => fn({
+  txClient = {
     query: async (sql: string, params: unknown[]) => {
       const row = await mockQueryOne(sql, params);
       return { rows: row ? [row] : [] };
     },
-  }));
+  };
+  mockWithTransaction.mockImplementation(async (fn: (client: unknown) => Promise<unknown>) => fn(txClient));
   process.env.PPBF_INTAKE_PROMOTION_ENABLED = 'true';
   mockRequirePrincipal.mockResolvedValue(principal());
   mockGetIntakeCase.mockResolvedValue({ intake_case_id: 'case-1', status: 'approved' } as never);
@@ -250,7 +265,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
       refuseRoleChange: true,
       // d1: and to turn a deactivated one back on.
       refuseDeactivatedLogin: true,
-    });
+    }, txClient);
   });
 
   test('takes the organization from the session, not the payload', async () => {
@@ -258,6 +273,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
 
     expect(mockStaffProvision).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: 'org-real' }),
+      txClient,
     );
   });
 
@@ -347,8 +363,9 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     expect(mockAssertGuardianUnchanged).toHaveBeenCalledWith(expect.objectContaining({ parentId: 'parent-1' }));
     expect(mockUpsertGuardian).toHaveBeenCalledWith(
       expect.objectContaining({ parentId: 'parent-1', fullName: 'Gate Guardian' }),
+      txClient,
     );
-    expect(mockLinkGuardianAthlete).toHaveBeenCalledWith(expect.objectContaining({ parentId: 'parent-1' }));
+    expect(mockLinkGuardianAthlete).toHaveBeenCalledWith(expect.objectContaining({ parentId: 'parent-1' }), txClient);
   });
 
   // Provisioning's upsert reactivates whatever login it is pointed at, and
@@ -587,7 +604,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
       const response = await POST(promoteRequest(guardianBase));
 
       expect(response.status).toBe(200);
-      expect(mockStaffProvision).toHaveBeenCalledWith(expect.objectContaining({ refuseRoleChange: true }));
+      expect(mockStaffProvision).toHaveBeenCalledWith(expect.objectContaining({ refuseRoleChange: true }), txClient);
     });
 
     test('an email with no account_id provisions nothing, so no account is looked up or changed', async () => {
@@ -616,6 +633,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     expect(response.status).toBe(200);
     expect(mockUpsertGuardian).toHaveBeenCalledWith(
       expect.objectContaining({ parentId: 'parent-1', accountId: 'acct-provisioned' }),
+      txClient,
     );
   });
 
@@ -625,7 +643,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
 
     await POST(promoteRequest(recordOnly));
 
-    expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({ accountId: undefined }));
+    expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({ accountId: undefined }), txClient);
     expect(guardianLoginLookups()).toEqual([]);
   });
 
@@ -718,7 +736,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     const response = await POST(athletePromoteRequest({ account_id: 'athlete-1' }));
 
     expect(response.status).toBe(200);
-    expect(mockAthleteAccount).toHaveBeenCalledWith('athlete-1', 'ath-1', 'org-real');
+    expect(mockAthleteAccount).toHaveBeenCalledWith(txClient, 'athlete-1', 'ath-1', 'org-real');
   });
 
   test('re-promoting the athlete whose login it already is still re-provisions it', async () => {
@@ -727,7 +745,7 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     const response = await POST(athletePromoteRequest({ account_id: 'athlete-1' }));
 
     expect(response.status).toBe(200);
-    expect(mockAthleteAccount).toHaveBeenCalledWith('athlete-1', 'ath-1', 'org-real');
+    expect(mockAthleteAccount).toHaveBeenCalledWith(txClient, 'athlete-1', 'ath-1', 'org-real');
   });
 
   // createOrUpdateAthleteAccount's update branch re-binds the login to the
@@ -871,9 +889,8 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
     const response = await POST(athletePromoteRequest({ account_id: 'athlete-1' }));
 
     expect(response.status).toBe(200);
-    // Three-argument form: the org rides in the legacy slot, and no
-    // credential is involved at promotion time.
-    expect(mockAthleteAccount).toHaveBeenCalledWith('athlete-1', 'ath-1', 'org-real');
+    // No credential is involved at promotion time.
+    expect(mockAthleteAccount).toHaveBeenCalledWith(txClient, 'athlete-1', 'ath-1', 'org-real');
   });
 
   // Guards the write half of the subject_id column: the promoted athlete's id
@@ -893,6 +910,99 @@ describe('intake promotion provisions guardians who can actually sign in', () =>
 // that type is only an `as` cast on the parsed JSON body -- nothing checked
 // the actual value before it reached pilot.readiness, a NOT NULL column a
 // coach-facing triage board (readinessBoard.ts) reads as ground truth.
+// OD-2026-10-03-002 section 5: the promotion's writes are one transaction.
+// Each write is handed that transaction's client, so none of them can commit
+// on its own; the shadow event, research requirement and metric are written
+// after it commits.
+describe('every promotion write runs on the one transaction', () => {
+  test('a full promotion opens one transaction and passes its client to every write', async () => {
+    const response = await POST(new NextRequest('http://localhost/api/pilot/intake/review-action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        intake_case_id: 'case-1',
+        action: 'promote',
+        promotion: {
+          athlete: {
+            athlete_id: 'ath-1',
+            account_id: 'athlete-1',
+            full_name: 'Gate Athlete',
+            dob: '2011-02-10',
+            weight_class: '119',
+            gym_status: 'active',
+            emergency_contact: 'Guardian 555-0102',
+            coach_id: 'acct-admin',
+          },
+          guardian: {
+            parent_id: 'parent-1',
+            account_id: 'guardian-1',
+            full_name: 'Gate Guardian',
+            email: 'guardian@example.org',
+          },
+          emergency_contact: { full_name: 'Gate Guardian', relationship_to_athlete: 'parent', phone: '555-0102' },
+          medical: { conditions: 'none' },
+          waiver: {
+            waiver_type: 'general',
+            signed_by_name: 'Gate Guardian',
+            signed_by_role: 'guardian',
+            signed_at: '2026-09-29T12:00:00.000Z',
+            consent_version: 'v1',
+            status: 'signed',
+          },
+          assessment: { assessment_type: 'intake', result: {} },
+          attendance: { attendance_date: '2026-10-03', status: 'present' },
+          readiness: { score: 7, category: 'general', measured_at: '2026-10-03T12:00:00Z' },
+          coach_note: { note_text: 'first session' },
+        },
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockWithTransaction).toHaveBeenCalledTimes(1);
+    expect(mockUpsertAthlete).toHaveBeenCalledWith('org-real', expect.objectContaining({ athlete_id: 'ath-1' }), txClient);
+    expect(mockAthleteAccount).toHaveBeenCalledWith(txClient, 'athlete-1', 'ath-1', 'org-real');
+    for (const write of [
+      mockStaffProvision,
+      mockUpsertGuardian,
+      mockLinkGuardianAthlete,
+      upsertEmergencyContact,
+      upsertMedicalIntake,
+      mockUpsertWaiver,
+      createAssessment,
+      createAttendance,
+      mockCreateReadiness,
+      createCoachObservation,
+      bindIntakeDocumentsToOwner,
+      mockUpdateStatus,
+      writePilotAuditEvent,
+    ] as jest.Mock[]) {
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(write.mock.calls[0]).toEqual([expect.anything(), txClient]);
+    }
+    // After the commit, on their own connections, as before.
+    expect((emitShadowEvent as jest.Mock).mock.calls[0]).toHaveLength(1);
+    expect((writeShadowTelemetryEvent as jest.Mock).mock.calls[0]).toHaveLength(1);
+    expect(mockCreateResearchRequirement.mock.calls[0]).toHaveLength(1);
+  });
+
+  test('a write that fails inside the transaction fails the promotion, and nothing after it runs', async () => {
+    mockLinkGuardianAthlete.mockRejectedValueOnce(new Error('injected failure'));
+
+    const response = await POST(promoteRequest({
+      parent_id: 'parent-1',
+      account_id: 'guardian-1',
+      full_name: 'Gate Guardian',
+      email: 'guardian@example.org',
+    }, { account_id: 'athlete-1' }));
+
+    expect(response.status).toBe(500);
+    expect(mockUpdateStatus).not.toHaveBeenCalled();
+    expect(writePilotAuditEvent).not.toHaveBeenCalled();
+    expect(emitShadowEvent).not.toHaveBeenCalled();
+    expect(mockCreateResearchRequirement).not.toHaveBeenCalled();
+  });
+});
+
 describe('promotion readiness is validated before it reaches pilot.readiness', () => {
   function readinessPromoteRequest(readiness: Record<string, unknown>) {
     return new NextRequest('http://localhost/api/pilot/intake/review-action', {
@@ -931,7 +1041,7 @@ describe('promotion readiness is validated before it reaches pilot.readiness', (
       measuredAt: '2026-08-17T12:00:00Z',
       method: 'staff_entered_intake',
       recordedByAccountId: 'acct-admin',
-    });
+    }, txClient);
   });
 
   test('a non-numeric readiness score is refused before it ever reaches pilot.readiness', async () => {
@@ -1021,7 +1131,7 @@ describe('promotion waiver status is validated before any promotion write', () =
       athleteId: 'ath-1',
       status,
       recordedByAccountId: 'acct-admin',
-    }));
+    }), txClient);
   });
 
   test.each([
