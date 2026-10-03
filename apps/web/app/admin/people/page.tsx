@@ -219,6 +219,8 @@ function WrongRoleNotice() {
 function PeopleConsoleContent() {
   const [tab, setTab] = useState<Tab>('people');
   const [members, setMembers] = useState<Member[]>([]);
+  // False until the staff read answers: an unread list is not an empty gym.
+  const [membersAvailable, setMembersAvailable] = useState(false);
   const [guardianLinks, setGuardianLinks] = useState<GuardianLink[]>([]);
   // Distinct from an empty list: the roster read can succeed while the
   // guardian links are absent, and "no links returned" must never be shown as
@@ -337,6 +339,7 @@ function PeopleConsoleContent() {
       }
 
       setMembers(membersPayload.members || []);
+      setMembersAvailable(true);
       setOrganizationId(membersPayload.organization_id || '');
 
       // Only an actual array counts as an answer. Anything else leaves every
@@ -355,6 +358,7 @@ function PeopleConsoleContent() {
       if (!rosterRefreshed) {
         setRosterAvailable(false);
       }
+      setMembersAvailable(false);
       setError(loadError instanceof Error ? loadError.message : 'Unable to load your gym roster');
     } finally {
       setLoading(false);
@@ -1080,6 +1084,10 @@ function PeopleConsoleContent() {
               <div className="frame-in mat-paper pap">
               {loading ? (
                 <p className="t-body p-[var(--s5)]">Loading your gym roster...</p>
+              ) : members.length === 0 && !membersAvailable ? (
+                <p className="t-body p-[var(--s5)]">
+                  The gym roster could not be loaded, so this is not a list of who is in your gym.
+                </p>
               ) : members.length === 0 ? (
                 /* "Nobody here yet" is the empty state ROOM-PURPOSE-DNA names
                    for this room by name, and it was hand-rolled in raw
@@ -1709,6 +1717,10 @@ function PeopleConsoleContent() {
                   <p className="t-muted mb-[var(--s2)]">
                     {coachOptions.length > 0
                       ? 'A coach only sees the athletes assigned to them. Every athlete record has to name one, so pick whoever will be working with them.'
+                      : loading
+                      ? 'Loading the staff list...'
+                      : !membersAvailable
+                      ? 'The staff list could not be loaded, so no coach can be offered here. Reload the page to try again.'
                       : 'No coaches in your gym yet, and an athlete record has to name one — add a coach on the “Add Coach, Staff Or Guardian” tab, then come back here.'}
                   </p>
                   <select

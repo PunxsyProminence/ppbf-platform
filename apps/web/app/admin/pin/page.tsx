@@ -37,6 +37,7 @@ function PinManagementPageContent() {
   const [items, setItems] = useState<AthletePinItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [loadFailed, setLoadFailed] = useState(false);
   const [selectedAthleteId, setSelectedAthleteId] = useState('');
   const [issued, setIssued] = useState<IssuedCode | null>(null);
   const [saving, setSaving] = useState(false);
@@ -70,9 +71,11 @@ function PinManagementPageContent() {
 
       const nextItems = payload.items;
       setItems(nextItems);
+      setLoadFailed(false);
       setSelectedAthleteId((previous) => previous || nextItems[0]?.athlete_id || '');
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load athlete list');
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -264,7 +267,14 @@ function PinManagementPageContent() {
                     </li>
                   );
                 })}
-                {items.length === 0 && <li className="t-body">No athletes found in this organization.</li>}
+                {/* A failed read is not an empty organization: say it could not be read. */}
+                {items.length === 0 && (
+                  <li className="t-body">
+                    {loadFailed
+                      ? 'The athlete list could not be loaded, so this is not a list of who is in this organization.'
+                      : 'No athletes found in this organization.'}
+                  </li>
+                )}
               </ul>
             )}
             </div>

@@ -55,6 +55,7 @@ const ROLE_LABEL: Record<string, string> = {
 function StaffCredentialsBoard() {
   const [staff, setStaff] = useState<StaffRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -74,6 +75,7 @@ function StaffCredentialsBoard() {
       } catch (error) {
         if (controller.signal.aborted) return;
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load staff credentials.');
+        setLoadFailed(true);
         setLoading(false);
       }
     })();
@@ -107,6 +109,9 @@ function StaffCredentialsBoard() {
           <div className="flex justify-center py-[var(--s6)]">
             <span className="working">Loading staff credentials...</span>
           </div>
+        ) : loadFailed ? (
+          /* A failed read is not an empty register: say it could not be read. */
+          <p className="empty-msg">Staff credentials could not be loaded, so this is not a list of who is cleared.</p>
         ) : staff.length === 0 ? (
           <p className="empty-msg">No staff credential records yet.</p>
         ) : (

@@ -232,3 +232,19 @@ describe('ActivationCodesManagementPage', () => {
     });
   });
 });
+
+// The #991 class: a read that failed must never be rendered as "no codes".
+describe.each([
+  ['refused', () => jest.fn(async () => jsonResponse({ error: 'Failed to load codes' }, false, 500))],
+  ['rejected', () => jest.fn(async () => { throw new Error('network down'); })],
+])('a %s outstanding-codes read', (_label, makeFetch) => {
+  it('says the codes could not be loaded, not that none are outstanding', async () => {
+    mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
+    global.fetch = makeFetch() as unknown as typeof fetch;
+
+    render(<ActivationCodesManagementPage />);
+
+    expect(await screen.findByText(/outstanding activation codes could not be loaded/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no outstanding activation codes for this organization/i)).toBeNull();
+  });
+});
