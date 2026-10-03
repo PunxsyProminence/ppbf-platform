@@ -319,3 +319,53 @@ test('a take that cannot be re-read after an upload says so, never "Nothing reco
   expect(screen.queryByText(/Nothing recorded against this take yet/)).toBeNull();
   expect(screen.queryByText(/could not be added to this take/)).toBeNull();
 });
+
+// NO TEXT ON THE WALL, the check #1108 put on Label Agreement. The error alert
+// used to stand on the bare page ground; .alert--warning is only a tint with
+// light type, so it was unreadable there. jsdom cannot measure contrast, so
+// this pins the structural cause: every element that carries its own text
+// sits inside a material. Buttons and button-styled links are exempt because
+// they carry their own face.
+const MATERIAL = '.mat-leather, .mat-wood';
+
+function textOnTheWall(container: HTMLElement): string[] {
+  const bare: string[] = [];
+  for (const element of Array.from(container.querySelectorAll('*'))) {
+    const ownText = Array.from(element.childNodes)
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent ?? '')
+      .join('')
+      .trim();
+    if (!ownText) continue;
+    if (element.closest(MATERIAL)) continue;
+    if (element.closest('.btn')) continue;
+    bare.push(`<${element.tagName.toLowerCase()}> ${ownText}`);
+  }
+  return bare;
+}
+
+test('no text sits on the wall before a session, or inside one', async () => {
+  const { container } = render(<TeachShadowCapturePage />);
+  expect(textOnTheWall(container)).toEqual([]);
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Start recording session' }));
+  });
+  await screen.findByText('H7K2QP');
+  expect(textOnTheWall(container)).toEqual([]);
+});
+
+test('a refused session start puts its alert on a material, not the wall', async () => {
+  global.fetch = jest.fn(async () => (
+    { ok: false, status: 403, json: async () => ({ error: 'Forbidden: role not allowed' }) } as Response
+  )) as unknown as typeof fetch;
+  const { container } = render(<TeachShadowCapturePage />);
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Start recording session' }));
+  });
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('Forbidden: role not allowed');
+  expect(alert.closest(MATERIAL)).toHaveClass('mat-leather');
+  expect(textOnTheWall(container)).toEqual([]);
+});

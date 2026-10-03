@@ -23,8 +23,8 @@ jest.mock('@/components/RoleSessionGate', () => ({
 
 jest.mock('next/link', () => ({
   __esModule: true,
-  default: ({ children, href }: { readonly children: ReactNode; readonly href: string }) => (
-    <a href={href}>{children}</a>
+  default: ({ children, href, className }: { readonly children: ReactNode; readonly href: string; readonly className?: string }) => (
+    <a href={href} className={className}>{children}</a>
   ),
 }));
 
@@ -271,4 +271,71 @@ test('no athlete name reaches the footage picker', async () => {
   const row = (await screen.findByText('take-2-front.webm')).closest('li');
   expect(row).not.toBeNull();
   expect(row!.textContent?.toLowerCase()).not.toContain('athlete');
+});
+
+// NO TEXT ON THE WALL, the check #1108 put on Label Agreement. This page's
+// title, introduction, error and notice used to stand on the bare page ground
+// in type made for the dark materials. jsdom cannot measure contrast, so this
+// pins the structural cause: every element that carries its own text sits
+// inside a material. Buttons and button-styled links are exempt because they
+// carry their own face.
+const MATERIAL = '.mat-leather, .mat-wood';
+
+function textOnTheWall(container: HTMLElement): string[] {
+  const bare: string[] = [];
+  for (const element of Array.from(container.querySelectorAll('*'))) {
+    const ownText = Array.from(element.childNodes)
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent ?? '')
+      .join('')
+      .trim();
+    if (!ownText) continue;
+    if (element.closest(MATERIAL)) continue;
+    if (element.closest('.btn')) continue;
+    bare.push(`<${element.tagName.toLowerCase()}> ${ownText}`);
+  }
+  return bare;
+}
+
+test('the title and introduction are on the wood header, not the wall', async () => {
+  mockFetch();
+  const { container } = render(<CutStudyClipPage />);
+
+  await screen.findByText('take-2-front.webm');
+  const header = screen.getByRole('heading', { level: 1, name: 'Cut a study clip' }).closest('header');
+  expect(header).toHaveClass('mat-wood');
+  expect(header).toHaveTextContent('Teach Shadow');
+  expect(header).toHaveTextContent(/Nothing here scores an athlete\./);
+  expect(textOnTheWall(container)).toEqual([]);
+});
+
+test('no text sits on the wall when a read fails', async () => {
+  mockFetch({ released: () => jsonResponse({ error: 'Released footage could not be read.' }, false) });
+  const { container } = render(<CutStudyClipPage />);
+
+  const alert = await screen.findByRole('alert');
+  expect(alert.closest(MATERIAL)).toHaveClass('mat-leather');
+  expect(textOnTheWall(container)).toEqual([]);
+});
+
+test('no text sits on the wall after a cut, or when a cut is refused', async () => {
+  const fetchMock = mockFetch();
+  const view = render(<CutStudyClipPage />);
+
+  await screen.findByText('take-2-front.webm');
+  await prepareCut(fetchMock);
+  fireEvent.click(screen.getByRole('button', { name: 'Cut this clip' }));
+  expect((await screen.findByRole('status')).closest(MATERIAL)).toHaveClass('mat-leather');
+  expect(textOnTheWall(view.container)).toEqual([]);
+  view.unmount();
+
+  const refused = mockFetch({
+    clips: () => jsonResponse({ error: 'This study already has a clip called "C-01". Pick another code.' }, false),
+  });
+  const again = render(<CutStudyClipPage />);
+  await screen.findByText('take-2-front.webm');
+  await prepareCut(refused);
+  fireEvent.click(screen.getByRole('button', { name: 'Cut this clip' }));
+  expect((await screen.findByRole('alert')).closest(MATERIAL)).toHaveClass('mat-leather');
+  expect(textOnTheWall(again.container)).toEqual([]);
 });

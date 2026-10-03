@@ -248,29 +248,41 @@ export default function CutStudyClipPage() {
   return (
     <RoleSessionGate allowedRoles={['coach', 'admin']}>
       <main className="mx-auto w-full max-w-5xl px-[var(--s4)] py-[var(--s5)]">
-        <p className="t-eyebrow">Teach Shadow</p>
-        <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-2xl)' }}>Cut a study clip</h1>
-        <p className="t-body mt-[var(--s3)] max-w-3xl">
-          A study clip is a few seconds of footage that two coaches will label separately, so their
-          disagreement can be measured. Pick the take, find the moment, mark where it starts and ends,
-          and give it a code you can say out loud. Nothing here scores an athlete.
-        </p>
+        {/* NO TEXT ON THE WALL. The title, the introduction and both
+            messages used to stand on the bare page ground in type made for
+            the dark materials, the same fault #1108 fixed on Label
+            Agreement. Every word now sits on a material: the wood header, as
+            on /teach-shadow, and a leather panel for the error and the
+            notice (.alert is only a tint, not a ground of its own). */}
+        <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
+          <p className="t-eyebrow text-[color:var(--brass-200)]">Teach Shadow</p>
+          <h1 className="t-gothic mt-[var(--s2)] text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-2xl)' }}>Cut a study clip</h1>
+          <p className="t-body mt-[var(--s3)] max-w-3xl">
+            A study clip is a few seconds of footage that two coaches will label separately, so their
+            disagreement can be measured. Pick the take, find the moment, mark where it starts and ends,
+            and give it a code you can say out loud. Nothing here scores an athlete.
+          </p>
+        </header>
 
-        {error ? (
-          <div role="alert" className="alert alert--warning mt-[var(--s4)]">
-            <span className="alert-icon" aria-hidden="true">&#9650;</span>
-            <div className="alert-body">
-              <p className="alert-title">Attention</p>
-              <p className="alert-msg">{error}</p>
-            </div>
-          </div>
-        ) : null}
+        {error || notice ? (
+          <div className="mat-leather mt-[var(--s4)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s4)] space-y-[var(--s3)]">
+            {error ? (
+              <div role="alert" className="alert alert--warning">
+                <span className="alert-icon" aria-hidden="true">&#9650;</span>
+                <div className="alert-body">
+                  <p className="alert-title">Attention</p>
+                  <p className="alert-msg">{error}</p>
+                </div>
+              </div>
+            ) : null}
 
-        {notice ? (
-          <div role="status" className="alert mt-[var(--s4)]">
-            <div className="alert-body">
-              <p className="alert-msg">{notice}</p>
-            </div>
+            {notice ? (
+              <div role="status" className="alert">
+                <div className="alert-body">
+                  <p className="alert-msg">{notice}</p>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
