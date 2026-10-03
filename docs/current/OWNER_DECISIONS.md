@@ -164,6 +164,195 @@ and should not try to.
 
 ---
 
+## OD-2026-10-02-019 -- The Label Agreement screen: the "Still to do" line is left as is; its readability is to be fixed before production (release 5 then shipped without the fix, on his later word)
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-02 (US Eastern; the times
+below are UTC) in two threads, and read by the records lane in those
+transcripts: the agreement-report lane
+(`~/.claude/projects/C--Dev/07cd0b14-cb11-403c-871d-01b351819222.jsonl`) and
+overwatch (`~/.claude/projects/C--Dev/5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`).
+This entry is new and edits no earlier one.
+
+### 1. "Leave it": the "Still to do" wording stays
+
+The agreement-report lane put (22:47:28Z), after Grok's stand-in review of
+#1096: "Official: change the "Still to do" line from "not yet labelled by two
+coaches" to "not yet finished by two coaches"? Options: A keep as is
+(recommended); B change. Plain: same meaning either way. B is slightly more
+precise, but it adds one more change that ChatGPT would need to re-review."
+Jason, whole message (23:01:59Z): *"Leave it"*.
+
+**A: the line stays "not yet labelled by two coaches".** #1096 was not changed
+for it.
+
+### 2. "Agree": fix the screen's readability before production
+
+Overwatch put (23:51:39Z), after checking the screen on staging (its heading
+measured 1.12 to 1 and its empty-state sentence 1.03 to 1 on the cream wall):
+"*Official:* Fix the Label Agreement readability before production? A
+(recommended): yes, a small fix lane to put the page on the same readable
+ground as the other teach pages, then a quick re-check on staging. B: ship as
+is and fix after." Jason, whole message (23:58:41Z): *"Agree do we have stuff
+to deploy"*.
+
+**A: the readability is to be fixed in a small lane.** Overwatch created the
+chip "Make the Label Agreement screen readable" and said: "If you'd rather
+ship tonight without the Label Agreement fix, say so". His next message was
+*"Yes migrate anddeploy"* (OD-2026-10-02-002, release 5), and release 5 went
+to production without the fix; overwatch stated before his approval click
+that the screen ships as it is. The fix merged afterwards as #1108 and is on
+staging, not in production, as of this entry (REPORTED by the overwatch
+handoff of 2026-10-03; not re-checked here).
+
+---
+
+## OD-2026-10-02-018 -- The floor screens' layout: away from columns; the words he gave the UI lane on the look
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-02 (US Eastern; times UTC)
+in the UI lane's thread and read by the records lane in that transcript
+(`~/.claude/projects/C--Dev/a84862b0-abd8-495f-bf7a-ade6114cc50c.jsonl`).
+Messages marked "sent mid-turn" were typed while the lane was working and are
+recorded in the transcript with the time they were delivered. This entry is
+new and edits no earlier one.
+
+**What this entry is.** A record of his words on the look of the coach floor
+screen and athlete My Corner, so the UI lane and any later builder can read
+them. Under OD-2026-10-02-004 and -007 nothing about the UI's look binds;
+these words direct the UI lane's work and are not a rule against changing the
+look later. Mid-turn: *"Nothing binding  visually look will be less conflict
+than anything binding at this point"* (19:31:51Z) and *"Remember nothing should
+restrict"* (02:06:58Z).
+
+**His words, in order.**
+
+- On the mock-ups, whole message (23:28:20Z): *"We want to get away from
+  columns"*. Mid-turn (23:28:48Z): *"If we need to we can go screen by screen
+  at the laptop"*. The lane redrew the coach screen as A (full-width strips)
+  and B (one thing at a time).
+- (23:55:56Z): *"B, do a trial mock up for me"*. The lane took this as coach
+  layout B, one thing at a time, and built a clickable trial on its mock-up
+  canvas.
+- (00:47:04Z): *"Try a mock up inspired by grok and canva the early mock
+  ups"*; then (00:51:46Z): *"Those are still columns and blocks, what's
+  directing you to do that"*; to the lane's composition question that
+  followed (A the room is the screen, B one line at a time, C free-placed),
+  (00:56:33Z): *"Those are the wrong ones then look at just can va"*.
+- After the lane built from his Canva folder "PPBF LOOKS AND FEELS"
+  (01:48:54Z): *"Those good go a head and execute those style you can ask
+  canva to help bases off the early blood oxididization time frame see if you
+  can find the descripts"*.
+- Mid-turn (02:11:42Z): *"Look like we are shifting back to columns"*.
+- The lane put (02:18:21Z): "Which layout should the coach screen use? - **A
+  (recommended):** the Grok 002 chalkboard layout. Today's Floor roster on
+  the left, "needs you now" in the middle, brass action plates on the right
+  ... finished in the Canva oxidised-blood look. - **B:** the Canva Command
+  Center or Ring Operations Hub panel layout, with gauges along the top and
+  three columns below. - **C:** keep the single centred column I built and
+  borrow only the materials from these pictures." Jason, whole message
+  (02:20:13Z): *"B"*.
+- Mid-turn: *"We are back on coloumns"* (02:28:57Z); *"Look into canva again
+  for one that has cotton old brown leather cartoonist gages and buttons"*
+  (02:30:05Z); *"Check in canva projects"* (02:32:50Z); *"Ppf landing
+  platform has stuff in it"* (02:46:58Z).
+
+**What was picked.** For the coach floor screen, B of the 02:18Z question: the
+Canva Command Center / Ring Operations Hub panel layout with gauges along the
+top. Its look words: Canva's early "blood oxidization" look, and old brown
+leather with cartoon gauges and buttons. "We want to get away from columns"
+and "We are back on coloumns", read together with the B he picked, is not
+reconciled here; what layout he wants next is his to say to the UI lane.
+
+---
+
+## OD-2026-10-02-017 -- A stand-in architect while ChatGPT is out of usage: a Claude design session drafts the teach-AI plans; the two waiting jobs start
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-02 (US Eastern; times UTC)
+in the teach-AI lane's thread and read by the records lane in that transcript
+(`~/.claude/projects/C--Dev/346c32ec-ec56-4fad-817d-8da2643fb879.jsonl`). This
+entry is new and edits no earlier one.
+
+Jason, whole message (01:45:52Z): *"Check with overwatch and ask for
+substitue"*. The lane put overwatch's options to him (01:46:19Z), official
+then plain; option A read: "**Option A (overwatch's recommendation and mine):
+a Claude design session drafts it tonight.** - Pros: moves now. ChatGPT's
+earlier design is the starting point, so little is lost. Grok checks it
+tonight and ChatGPT reviews it after the reset. Nothing is built or spent
+until you approve each plan." B was wait for ChatGPT's reset, C Grok writes
+it, D add ChatGPT credits now. It ended "Which one: A, B, C or D?". Jason,
+whole message (01:49:30Z): *"Yes"*.
+
+**A, read by the lane as the recommended option and relayed so:** a Claude
+design session drafts the label-set plan and the pose-tool feasibility plan;
+Grok gives a second opinion; ChatGPT reviews after its reset. Plans only; no
+app change and no spend until he approves each plan. The architect role
+(OD-2026-09-28-001) is not changed: this is a stand-in for one piece of work.
+
+The lane then asked (01:57:04Z) whether overwatch should also start the two
+other waiting jobs, the Label Agreement fix and Research intake part 2:
+"Start them now, or leave them? "Both", "one" (say which), or "leave them"."
+Jason, whole message (02:06:00Z): *"Start"*. **Read as both and relayed so;
+both started from overwatch's session.**
+
+---
+
+## OD-2026-10-02-016 -- Teach-AI: the seven open items go with the recommendations (D2 A, D3 A, T4 A, T5 A, T6 A, T7 A, T8 B); stop raising safety and legal items already covered
+
+**Provenance: PRIMARY.** Typed by Jason on 2026-10-02 (US Eastern; times UTC)
+in the teach-AI lane's thread and read by the records lane in that transcript
+(`~/.claude/projects/C--Dev/346c32ec-ec56-4fad-817d-8da2643fb879.jsonl`). This
+entry is new and edits no earlier one. Nothing in it is built.
+
+### 1. The stop
+
+When the lane listed items it called new, Jason, whole message (02:21:21Z):
+*"Those have already been decided, and you keep bringing them back up"*.
+Overwatch then cut the list to seven, and the lane put them (02:24:14Z). Before
+any answer to them, Jason, whole message (02:25:26Z): *"We have covered it in
+another lane, stop you are drifting into safety and legal not function"*.
+
+**Do not raise unrequested safety, legal or privacy questions, and do not
+re-ask decided items.** Overwatch confirmed to the lane (relayed 02:25:48Z)
+that nothing more from those drafts comes to him: the design questions are
+the architect's calls with the recommended defaults, and the privacy and legal
+items are marked as covered elsewhere.
+
+### 2. The seven items
+
+As put (02:24:14Z), each with its recommendation:
+
+- "**D2. A punch where the coach can't tell if it landed.** A (recommended):
+  frozen at full extension. B: frozen at the coach's best guess of contact."
+- "**D3. A "can't tell" option for lead side.** A (recommended): yes, for
+  when the feet are out of frame. B: no, the coach must pick one."
+- "**T4. Where the trained tool is kept.** A (recommended): behind sign-in
+  only, never public. B: public."
+- "**T5. Footage withdrawn after training.** A (recommended): the next
+  version is retrained without it and the old version is retired. B: the
+  trained tool stands as it is."
+- "**T6. Pass mark.** A (recommended): each point passes when the tool is
+  about as accurate as two of your coaches are with each other. B: a fixed
+  figure you set."
+- "**T7. Camera angle.** A (recommended): coaches pick the camera angle from
+  a fixed list (front, side, 45°, overhead and so on). B: keep free text."
+- "**T8. Body size or gender on teaching footage.** A: record it, coarse and
+  coach-entered. B (recommended): not until a trained tool exists and its test
+  shows a need."
+
+It ended: "Reply like **D2 A D3 A T4 A T5 A T6 A T7 A T8 B**, or just
+"recommendations"." After the stop above and overwatch's reply, Jason, whole
+message (02:26:49Z): *"Go with recommendation"*.
+
+**All seven go with the recommendation, as the lane read and relayed it:**
+D2 A (a punch whose landing can't be told is frozen at full extension); D3 A
+(lead side has a "can't tell" option); T4 A (the trained tool is kept behind
+sign-in, never public); T5 A (withdrawn footage means the next version is
+retrained without it and the old version retired); T6 A (a point passes when
+the tool agrees about as well as two coaches agree with each other); T7 A
+(camera angle from a fixed list); T8 B (no body size or gender recorded on
+teaching footage until a trained tool exists and its test shows a need).
+
+---
+
 ## OD-2026-10-02-015 -- Research intake part 2: the platform shelf is worked from the existing pages; Admin@ stops writing the gym shelf; admin uploads are not linked to the Library; archive wiring later; a submission still never resolves a requirement
 
 **Provenance: PRIMARY.** Typed by Jason in the overwatch thread on 2026-10-02
@@ -1037,6 +1226,120 @@ says it directly, so that sentence is now marked `[OWNER 2026-10-02]`.
 **Scope.** Facts about the building, and the generator strings that restate them.
 It does not change the lettering rule itself (OD-2026-10-02-001), the no-people
 rule, or anything about which plate is bound where.
+
+## OD-2026-10-02-002 -- Releases 3, 4 and 5 to production; lane close-outs, and overwatch does not archive the visual lane; overwatch lands UI work but does not direct its design; a stand-in reviewer is fine; ChatGPT does not hold anything up
+
+**Provenance: PRIMARY.** This id was reserved on 2026-10-02 and is written
+on 2026-10-03 by the records lane. Typed by Jason between the evening of
+2026-10-01 and the evening of 2026-10-02 (US Eastern; times below are UTC),
+and read by the records lane in these transcripts under
+`~/.claude/projects/C--Dev/`: overwatch
+(`5b2fe0c3-80bd-4765-873d-9a0be7fc987d.jsonl`), Lane A
+(`621541d7-de10-407e-8fb4-67468f9758b5.jsonl`), the set-a-password lane
+(`6dba14c8-9b80-48a2-8354-e2d79efc946e.jsonl`) and the visual lane
+(`afc03b35-5731-4ad4-ab64-43db0e62ea6a.jsonl`). Messages marked "sent
+mid-turn" were typed while the thread was working and are recorded with the
+time they were delivered. Run outcomes and SHAs were OBSERVED with `gh run
+view` on 2026-10-03. This entry is new and edits no earlier one.
+
+### 1. Release 3
+
+Staging was started on *"Stage release 3"* (OD-2026-10-01-007, section 2). In
+Lane A's thread, whole messages: *"approve give link"* (03:36:28Z) and *"now
+deploy to production"* (03:44:15Z). In overwatch's thread, whole message
+(03:45:39Z): *"aprove"*; mid-turn (03:47:37Z): *"give link"*. Overwatch
+dispatched `deploy-production` run 36961995001 for main `e35cb406`, with the
+image staging ran, and Jason approved it in GitHub; in Lane A's thread,
+mid-turn (04:06:32Z): *"i deployed check lanes"*. Run 36961995001: success
+(OBSERVED). Overwatch reported production revision 0000161 on that image.
+
+### 2. Release 4
+
+Overwatch asked for "apply the parent-password migration to production"
+("It must be applied before the code goes live. It adds columns only;
+existing rows are untouched; it applied cleanly on staging."). Jason replied
+to that quote (17:03:08Z): *"yes"*. `apply-migrations` run 37038098145
+(`parent-password`) at `1b00360e`: success (OBSERVED).
+
+After his question *"whats next then"* (18:06:51Z) and overwatch's answer that release 4
+waited on his word, Jason, whole message (18:09:25Z): *"approve open link for
+my click"*. Overwatch dispatched `deploy-production` run 37045558260 for main
+`1b00360e` with the staging digest and opened it in the in-app browser
+without clicking. Jason, in part (18:12:43Z): *"i made the click"*. Run
+37045558260: success (OBSERVED). Overwatch reported production revision
+0000162.
+
+### 3. Release 5
+
+Jason, whole message (23:47:59Z): *"Give link if I need to click anything "*;
+then (23:50:15Z): *"Sign in page is good you check the other two"*; then
+(23:58:41Z): *"Agree do we have stuff to deploy"* (the "Agree" is recorded in
+OD-2026-10-02-019). Overwatch listed what release 5 carried (no migrations)
+and said: "If you'd rather ship tonight without the Label Agreement fix, say
+so: everything else is on staging now and checked." Jason, mid-turn
+(00:02:46Z): *"Yes migrate anddeploy"*.
+
+Overwatch merged #1100 (records), deployed staging (run 37080375345) and
+dispatched `deploy-production` run 37080965153 for main `70696794`; no
+migration was needed, so none was run. It stated before his click that the
+Label Agreement page and the untried parent password path ship as they are.
+Jason, mid-turn (00:17:47Z): *"It's green "*. Run 37080965153: success
+(OBSERVED). Overwatch reported production revision
+`app-ppbf-production--0000163`, image `sha256:b8e41c49…9adc`.
+
+### 4. Lane close-outs; the visual lane is not archived by overwatch
+
+His instructions to close lanes whose scope is met, whole messages in
+overwatch's thread: *"check in on lanes, scope check if scope has been met
+archive"* (00:07:34Z); mid-turn, *"im back at terminal, check in with the
+lanes/chips check fro drift and scop if scope is met archive id like to see if
+we can close all these out before deploy to production"* (02:12:36Z); *"Yes
+on the 3 prs,  my goal right now is to get the remaining plans closed out and
+through to production except visual where we will send what ever is avaible
+from it when we ship the othe lanes work"* (15:12:35Z; the three were #1080,
+#1076 and #1048); *"Lane check, close out and archive"* (15:59:34Z).
+
+Then, whole message (16:01:17Z): *"Ok visuals does not get archived by
+you"*. **Overwatch never archives the visual lane, now or when its PRs
+merge.** Closing it is Jason's. Other lanes are archived by overwatch once
+their scope is met and their PR is merged.
+
+### 5. Overwatch lands UI work; it does not direct UI design and flow
+
+In the visual lane's thread, whole message (17:51:29Z): *"ok update overwatch
+what we are doing, same rules apply for new thread where overwatch gets what
+the thread builds into the app not direct the  uI design and flow"*. (Also
+quoted in OD-2026-10-02-004.)
+
+**UI and visual design, flow and wording are Jason's and the UI or visual
+lane's.** Overwatch checks scope (files against the allowlist), CI and
+review, and lands the work in the app; it does not direct the design.
+
+### 6. A stand-in reviewer is fine
+
+Overwatch put (23:03:28Z): "*Official:* Stand in for ChatGPT on #1102
+tonight? A (recommended): no; wait for the reset, then merge, deploy staging,
+and you check. B: tonight Grok reviews #1102 in your Chrome window, I merge on
+a clean answer and deploy staging, and ChatGPT reviews afterward." In the
+set-a-password lane's thread, whole message (23:27:26Z): *"Stand in is
+fine"*.
+
+**B.** Grok reviewed #1102 as a stand-in; overwatch merged it on that review
+and deployed staging.
+
+### 7. ChatGPT does not hold anything up
+
+Jason, whole message (23:42:23Z), not in answer to a question: *"Don't let
+chat gpt hold anything up, everything is reviewed and approved"*.
+
+**Merges no longer wait for ChatGPT's review.** Overwatch merges a lane PR on
+the lane's own reviewers, its scope check (files against the allowlist),
+green CI and no live review threads. On these words overwatch merged #1096,
+#1097, #1099, #1101 and #1103 the same night, and #1100 before release 5.
+ChatGPT remains the architect (OD-2026-09-28-001); this changes only what a
+merge waits for.
+
+---
 
 ## OD-2026-10-02-001 — Real marks on real equipment are allowed in a plate; invented or garbled lettering is not
 
