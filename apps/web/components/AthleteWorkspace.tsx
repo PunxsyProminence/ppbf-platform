@@ -310,6 +310,8 @@ interface StoredSession {
   notes: string;
   completed: boolean;
   createdAt: string;
+  /** Last write's stamp; on a completed session that is the check-out. '' when absent. */
+  updatedAt: string;
 }
 
 type StoredSessionLoadState = 'loading' | 'loaded' | 'unavailable';
@@ -413,6 +415,7 @@ function normalizeStoredSession(row: unknown): StoredSession | null {
     notes: typeof record.notes === 'string' ? record.notes : '',
     completed: record.completed_flag === true,
     createdAt,
+    updatedAt: typeof record.updated_at === 'string' ? record.updated_at : '',
   };
 }
 
@@ -2047,6 +2050,26 @@ export default function AthleteWorkspace() {
      false after a check-out. */
   const gymToday = gymDayIso(new Date());
   const checkedOutToday = storedSessions.some((session) => session.completed && gymDayIso(session.createdAt) === gymToday);
+  /* When the latest of today's check-outs happened. Check-out writes
+     updated_at and nothing on the athlete side writes a completed session
+     again, so that stamp is the check-out time. */
+  const checkedOutStamps = storedSessions
+    .filter((session) => session.completed && gymDayIso(session.createdAt) === gymToday)
+    .map((session) => Date.parse(session.updatedAt))
+    .filter((ms) => Number.isFinite(ms));
+  const checkedOutAt = checkedOutStamps.length > 0
+    ? formatGymStamp(new Date(Math.max(...checkedOutStamps)).toISOString())
+    : null;
+  /* The rail's line. Until the session read has landed nothing here is known,
+     so it says nothing: "Not checked in yet" over a failed read would tell an
+     athlete who did check in that they did not. */
+  const railCheckInLine = checkInTime
+    ? `Checked in ${checkInTime}`
+    : storedSessionLoad !== 'loaded'
+      ? null
+      : checkedOutToday
+        ? (checkedOutAt ? `Checked out ${checkedOutAt}` : 'Checked out today')
+        : 'Not checked in yet';
 
   const goToPainReport = () => {
     const picker = document.getElementById('pain-location-select');
@@ -2201,9 +2224,9 @@ export default function AthleteWorkspace() {
                   engagement direction forbids outright. So Today OPENS on
                   check-in until it is done, and says so plainly -- nothing
                   more. */}
-              {activeGroup === 'today' && (
+              {activeGroup === 'today' && railCheckInLine && (
                 <p className="t-label ml-[var(--s2)] text-[color:var(--bone-400)]">
-                  {checkInTime ? `Checked in ${checkInTime}` : 'Not checked in yet'}
+                  {railCheckInLine}
                 </p>
               )}
             </div>
