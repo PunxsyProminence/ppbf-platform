@@ -91,6 +91,7 @@ describe('GET /api/pilot/progression/gap-justification', () => {
 
   test('an athlete with only manual gaps gets an empty slice and no rollup fetch', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockQuery.mockResolvedValueOnce([
       { gap_id: 'gap-1', detected_from: 'coach_observation' },
     ]);
@@ -107,6 +108,7 @@ describe('GET /api/pilot/progression/gap-justification', () => {
 
   test('an athlete reading their own confirmed gaps gets only the fields that justify them', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockQuery.mockResolvedValueOnce([
       { gap_id: 'gap-manual', detected_from: 'coach_observation' },
       { gap_id: 'gap-readiness', detected_from: 'deterministic_rule:readiness_falling' },
@@ -182,6 +184,7 @@ describe('GET /api/pilot/progression/gap-justification', () => {
 
   test('status filter reaches the underlying query', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockQuery.mockResolvedValueOnce([]);
     const res = await GET(getRequest('athlete_id=ath-1&status=identified'));
     expect(res.status).toBe(200);

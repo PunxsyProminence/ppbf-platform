@@ -164,6 +164,7 @@ describe('GET /api/pilot/video/[videoId]', () => {
   test('athlete can access their own video', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
     mockQueryOne.mockResolvedValueOnce(videoRow());
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     const res = await call();
     expect(res.status).toBe(200);
   });
@@ -255,6 +256,7 @@ describe('GET /api/pilot/video/[videoId]', () => {
     // browser or by an intermediary outlives the access check above.
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
     mockQueryOne.mockResolvedValueOnce(videoRow());
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     const res = await call();
     expect(res.status).toBe(200);
     expect((await res.json()).stream_url).toBe('https://blob.example/sas');
@@ -411,6 +413,7 @@ describe('GET /api/pilot/video/[videoId] guardian consent scope', () => {
     // guardian just said no.
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
     mockQueryOne.mockResolvedValueOnce(videoRow());
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'withdrawn', false)]));
 
     const res = await call();
@@ -521,10 +524,11 @@ describe('GET /api/pilot/video/[videoId] guardian consent scope', () => {
   });
 
   test('the athlete themself is subject to the same scope refusal', async () => {
-    // The athlete branch of assertActorCanAccessAthlete is pure -- no queryOne
-    // call -- so only the video row is queued here.
+    // The athlete branch of assertActorCanAccessAthlete reads the live athlete
+    // row, so the video row and then that row are queued here.
     mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
     mockQueryOne.mockResolvedValueOnce(videoRow());
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' }); // live athlete row (assertActorCanAccessAthlete)
     mockCheckConsent.mockResolvedValueOnce(consentResult([guardian('par-1', 'signed', false)]));
 
     const res = await call();
