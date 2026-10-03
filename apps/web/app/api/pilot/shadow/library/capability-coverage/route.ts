@@ -16,11 +16,9 @@ export const runtime = 'nodejs';
 // a capability requires; recompute grades every rule against what SHADOW search
 // can actually serve (this organization's shelf plus the shared platform
 // baseline), opens a research requirement wherever the answer is no, and closes
-// that requirement again once the answer is yes. One exception to "opens": a
-// capability whose ticket a person resolved by hand gets no new one. The unique
-// index allows one ticket per capability, so the create lands on that resolved
-// row, and reopenCoverageResolvedGapRequirement reopens only tickets the check
-// closed itself.
+// that requirement again once the answer is yes. A ticket a person resolved by
+// hand stays resolved until the capability has been covered since; a gap that
+// comes back after that reopens it (syncCapabilityGapRequirement).
 //
 // POST carries two operations because the seed script calls it both ways:
 // {action:'recompute'} regrades, anything else upserts a rule.

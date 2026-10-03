@@ -160,17 +160,15 @@ describe('seed:shadow:library capability coverage', () => {
     expect(recomputeRun.stdout).toContain('"coverage_state": "covered"');
   });
 
-  // The help used to promise a gap ticket for every uncovered or partial rule
-  // "unless one is already open". A ticket a person resolved by hand is never
-  // reopened (reopenCoverageResolvedGapRequirement reopens only the check's own
-  // closures), and the unique index lets the create land on that resolved row,
-  // so no ticket opens for that capability. The help says so.
-  it('--help tells the operator a ticket resolved by hand stays resolved', () => {
+  // The help states when a ticket a person resolved by hand comes back: not
+  // while the gap is the one they resolved, but once the capability has been
+  // covered since (syncCapabilityGapRequirement; OD-2026-09-29-002 item 4).
+  it('--help tells the operator when a ticket resolved by hand comes back', () => {
     expect(helpRun.requests).toHaveLength(0);
     const help = helpRun.stdout.replace(/\s+/g, ' ');
     expect(help).toContain(
-      "unless one is already open, or a person resolved that capability's ticket by hand; "
-        + 'that ticket stays resolved and no new one opens',
+      'A ticket a person resolved by hand stays resolved until the capability has been covered since; '
+        + 'a gap that comes back after that reopens it.',
     );
   });
 });

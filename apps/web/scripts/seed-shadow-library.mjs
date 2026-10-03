@@ -50,9 +50,10 @@ Options:
                 signed-in organization against what SHADOW search can serve
                 now -- the organization's own shelf plus the shared
                 __platform__ baseline. Opens a research-gap ticket for each
-                rule that is uncovered or partial (unless one is already
-                open, or a person resolved that capability's ticket by hand;
-                that ticket stays resolved and no new one opens), and closes
+                rule that is uncovered or partial, or updates the one already
+                open to the gap as it stands now. A ticket a person resolved
+                by hand stays resolved until the capability has been covered
+                since; a gap that comes back after that reopens it. Closes
                 the open gap ticket of each rule that is covered. Run it after
                 the seeded sources are approved and indexed at /evidence.
 
@@ -359,9 +360,10 @@ export async function seedCapabilityCoverageRules() {
 // Grades every coverage rule in the signed-in organization against what search
 // can serve right now (the organization's shelf plus the shared __platform__
 // baseline), opens a research-gap ticket for each rule that comes out
-// uncovered or partial (unless one is already open, or a person resolved that
-// capability's ticket by hand -- that ticket stays resolved and no new one
-// opens), and closes the open gap ticket of each rule that comes out covered.
+// uncovered or partial, or updates the one already open (a ticket a person
+// resolved by hand stays resolved until the capability has been covered since,
+// and a gap that comes back after that reopens it), and closes the open gap
+// ticket of each rule that comes out covered.
 // Meant for after review, not straight after a seed.
 export async function recomputeCapabilityCoverage() {
   console.log('Recompute capability coverage');

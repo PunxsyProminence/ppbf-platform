@@ -996,23 +996,53 @@ describe('the coverage check closes, and reopens, its own gap tickets', () => {
     }
   });
 
-  test('a ticket a person resolved by hand is never reopened automatically', async () => {
+  async function resolveByHand(ticketId: string, note: string) {
+    const resolved = await resolveShadowResearchRequirement({
+      organizationId: ORG_ID,
+      researchRequirementId: Number(ticketId),
+      resolvedByAccountId: ADMIN_ID,
+      resolvedByRole: 'organization_admin',
+      metadata: { note },
+      expectedSubjectAthleteId: null,
+    });
+    expect(resolved).toBe(true);
+  }
+
+  async function gapEventCount(client: Client, capabilityKey: string) {
+    const { rows } = await client.query<{ n: string }>(
+      `select count(*) as n from pilot.shadow_events
+       where organization_id = $1
+         and event_name = 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED'
+         and entity_id = $2`,
+      [ORG_ID, capabilityKey],
+    );
+    return Number(rows[0].n);
+  }
+
+  async function retract(client: Client, sourceId: string) {
+    await client.query(
+      `update pilot.shadow_library_sources
+         set retrieval_suppressed = true,
+             suppression_reason = 'Retracted by the publisher (test fixture).',
+             suppressed_at = now(),
+             suppressed_by_account_id = $2
+       where organization_id = $1 and source_id = $3`,
+      [ORG_ID, ADMIN_ID, sourceId],
+    );
+  }
+
+  // A person's resolution of a gap that is still the same gap stands: the
+  // check does not overrule them on the next recompute, and records no new
+  // gap event for it.
+  test('a ticket a person resolved by hand stays resolved while the capability has not been covered since', async () => {
     const client = await freshDatabase('coverage_manual_resolution_stands');
     activeClient = client;
     try {
       await seedRule(client, 'cap-waived', { minimumSourceCount: 1 });
       await recompute();
       const [opened] = await gapTickets(client, 'cap-waived');
-
-      const resolved = await resolveShadowResearchRequirement({
-        organizationId: ORG_ID,
-        researchRequirementId: Number(opened.research_requirement_id),
-        resolvedByAccountId: ADMIN_ID,
-        resolvedByRole: 'organization_admin',
-        metadata: { note: 'Not pursuing this capability.' },
-        expectedSubjectAthleteId: null,
-      });
-      expect(resolved).toBe(true);
+      await resolveByHand(opened.research_requirement_id, 'Not pursuing this capability.');
+      const eventsBefore = await gapEventCount(client, 'cap-waived');
 
       // Still uncovered: a person's decision is not overridden.
       await recompute();
@@ -1020,6 +1050,112 @@ describe('the coverage check closes, and reopens, its own gap tickets', () => {
       expect(tickets).toHaveLength(1);
       expect(tickets[0].status).toBe('resolved');
       expect(tickets[0].metadata.note).toBe('Not pursuing this capability.');
+      expect(tickets[0].metadata).not.toHaveProperty('covered_after_resolution_at');
+      expect(await gapEventCount(client, 'cap-waived')).toBe(eventsBefore);
+    } finally {
+      await client.end();
+    }
+  });
+
+  // OD-2026-09-29-002 item 4, D1 = A (overwatch 2026-10-03): once the
+  // capability has been covered since the hand resolve, a gap that returns is
+  // a new gap and reopens that ticket.
+  test('a hand-resolved ticket reopens when the capability was covered since and the gap comes back', async () => {
+    const client = await freshDatabase('coverage_manual_resolution_recurs');
+    activeClient = client;
+    try {
+      await seedRule(client, 'cap-recurs', { minimumSourceCount: 1 });
+      await recompute();
+      const [opened] = await gapTickets(client, 'cap-recurs');
+      await resolveByHand(opened.research_requirement_id, 'Source on order.');
+
+      // Covered while resolved: the person's keys stay, the stamp is added.
+      await seedSource(client, 'src-recurs');
+      await recompute();
+      const [covered] = await gapTickets(client, 'cap-recurs');
+      expect(covered.status).toBe('resolved');
+      expect(covered.metadata).toEqual(expect.objectContaining({
+        note: 'Source on order.',
+        resolved_by_account_id: ADMIN_ID,
+        covered_after_resolution_at: expect.any(String),
+      }));
+      expect(covered.metadata).not.toHaveProperty('resolution');
+
+      await retract(client, 'src-recurs');
+      const eventsBefore = await gapEventCount(client, 'cap-recurs');
+      await recompute();
+
+      const tickets = await gapTickets(client, 'cap-recurs');
+      expect(tickets).toHaveLength(1);
+      expect(tickets[0].research_requirement_id).toBe(opened.research_requirement_id);
+      expect(tickets[0].status).toBe('open');
+      expect(tickets[0].resolved_at).toBeNull();
+      expect(tickets[0].metadata).not.toHaveProperty('resolved_by_account_id');
+      expect(tickets[0].metadata).not.toHaveProperty('resolved_by_role');
+      expect(tickets[0].metadata).not.toHaveProperty('covered_after_resolution_at');
+      expect(tickets[0].metadata.reopened_after_resolution_at).toEqual(expect.any(String));
+      expect(tickets[0].metadata.coverage_state).toBe('uncovered');
+      expect(await gapEventCount(client, 'cap-recurs')).toBe(eventsBefore + 1);
+
+      // Resolved by hand again with no coverage in between: it stands. The
+      // stamp from the earlier coverage does not carry over.
+      await resolveByHand(opened.research_requirement_id, 'Dropping it after all.');
+      await recompute();
+      expect((await gapTickets(client, 'cap-recurs'))[0].status).toBe('resolved');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an open ticket whose gap changes from uncovered to partial is refreshed, not left saying uncovered', async () => {
+    const client = await freshDatabase('coverage_refreshes_open_gap');
+    activeClient = client;
+    try {
+      await seedRule(client, 'cap-filling', { minimumSourceCount: 3 });
+      await recompute();
+      const [uncovered] = await gapTickets(client, 'cap-filling');
+      expect(uncovered.metadata.coverage_state).toBe('uncovered');
+
+      await seedSource(client, 'src-filling-1');
+      await recompute();
+      const [partial] = await gapTickets(client, 'cap-filling');
+      expect(partial.research_requirement_id).toBe(uncovered.research_requirement_id);
+      expect(partial.status).toBe('open');
+      expect(partial.metadata).toEqual(expect.objectContaining({ coverage_state: 'partial', matched_sources: 1 }));
+      expect(partial.knowledge_gap).toContain('has only 1 qualifying sources and requires 3');
+      expect(partial.knowledge_gap).not.toContain('No qualifying SHADOW Library sources');
+      const { rows } = await client.query<{ source_status: string }>(
+        `select source_status from pilot.shadow_research_requirements where research_requirement_id = $1`,
+        [partial.research_requirement_id],
+      );
+      expect(rows[0].source_status).toBe('weak');
+
+      // Still partial, one more source: the count it quotes moves with it.
+      await seedSource(client, 'src-filling-2');
+      await recompute();
+      const [stillPartial] = await gapTickets(client, 'cap-filling');
+      expect(stillPartial.metadata.matched_sources).toBe(2);
+      expect(stillPartial.knowledge_gap).toContain('has only 2 qualifying sources');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('the gap event is recorded when a ticket opens or changes, not on every recompute of the same gap', async () => {
+    const client = await freshDatabase('coverage_gap_event_once');
+    activeClient = client;
+    try {
+      await seedRule(client, 'cap-steady', { minimumSourceCount: 2 });
+      await recompute();
+      expect(await gapEventCount(client, 'cap-steady')).toBe(1);
+
+      await recompute();
+      await recompute();
+      expect(await gapEventCount(client, 'cap-steady')).toBe(1);
+
+      await seedSource(client, 'src-steady');
+      await recompute();
+      expect(await gapEventCount(client, 'cap-steady')).toBe(2);
     } finally {
       await client.end();
     }
