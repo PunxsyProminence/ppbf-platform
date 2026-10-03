@@ -1,21 +1,23 @@
 -- Calibration body points (pilot.calibration_body_moments,
--- pilot.calibration_body_points) -- where a coach marked each of the 24 body
--- points at the three moments of a punch or a defence, under
--- boxing-ontology-0.2 only (OD-2026-10-02-008 section 2; OD-2026-10-02-011
--- sections 2, 3a, 3b).
+-- pilot.calibration_body_points) -- where a coach marked each body point (24
+-- under boxing-ontology-0.2, 25 under 0.3) at the three moments of a punch or
+-- a defence (OD-2026-10-02-008 section 2; OD-2026-10-02-011 sections 2, 3a,
+-- 3b; solar_plexus in 0.3, Jason 2026-10-03).
 --
 -- STACKED ON the calibration annotations migration. It needs
 -- pilot.calibration_annotation_sets and pilot.calibration_annotation_events.
 --
 -- EVENT -> MOMENT -> POINT. A moment is one of the three marked times of one
--- event (start, middle, end), on the person whose action the event is. A point is one of the 24 on that
--- moment, either placed on the picture or marked not visible. Not a JSON blob
+-- event (start, middle, end), on the person whose action the event is. A point is one of its
+-- version's points on that moment, either placed on the picture or marked not visible. Not a JSON blob
 -- and not a list column, so every rule below is a constraint the database can
 -- hold, not a shape the application promises to keep.
 --
 -- WHAT IS HERE, and the rule each piece holds:
 --   * A 0.1 set cannot hold a moment, and so cannot hold a point. Old studies
 --     finish on old labels; never mixed (OD-2026-10-02-008 4A).
+--   * A set holds only its own version's points: a 0.2 set refuses
+--     solar_plexus, which only 0.3 has.
 --   * A moment sits exactly on its event's start, end or contact time, or for
 --     a middle moment with no contact, inside the event. The event's bounds are
 --     carried and foreign-keyed back, the containment pattern of the
@@ -170,7 +172,7 @@ create table if not exists pilot.calibration_body_moments (
 );
 
 -- ---------------------------------------------------------------------------
--- One of the 24 points on one moment.
+-- One of its version's points on one moment.
 -- ---------------------------------------------------------------------------
 create table if not exists pilot.calibration_body_points (
   organization_id text not null
@@ -197,8 +199,10 @@ create table if not exists pilot.calibration_body_points (
   constraint pilot_calibration_body_points_one_per_moment
     unique (organization_id, body_moment_id, point_code),
 
+  -- Every point any version knows (BODY_POINTS); which of them a set may hold
+  -- is its version's list, held by the points guard below.
   constraint pilot_calibration_body_points_code_vocab
-    check (point_code in ('nose', 'chin', 'neck', 'mid_hip', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_glove', 'left_hip', 'left_knee', 'left_ankle', 'left_heel', 'left_big_toe', 'left_small_toe', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_glove', 'right_hip', 'right_knee', 'right_ankle', 'right_heel', 'right_big_toe', 'right_small_toe')),
+    check (point_code in ('nose', 'chin', 'neck', 'mid_hip', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_glove', 'left_hip', 'left_knee', 'left_ankle', 'left_heel', 'left_big_toe', 'left_small_toe', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_glove', 'right_hip', 'right_knee', 'right_ankle', 'right_heel', 'right_big_toe', 'right_small_toe', 'solar_plexus')),
   constraint pilot_calibration_body_points_state_vocab
     check (state in ('placed', 'not_visible')),
 
@@ -217,6 +221,27 @@ create table if not exists pilot.calibration_body_points (
     references pilot.calibration_body_moments(organization_id, annotation_set_id, body_moment_id)
     on delete cascade
 );
+
+-- A database that already holds the 0.2 vocabulary (this migration run before
+-- 0.3 existed) is widened to 0.3's. Widening refuses no existing row.
+do $$
+begin
+  if to_regclass('pilot.calibration_body_points') is not null
+    and not exists (
+      select 1 from pg_constraint
+      where conrelid = to_regclass('pilot.calibration_body_points')
+        and conname = 'pilot_calibration_body_points_code_vocab'
+        and pg_get_constraintdef(oid) like '%''solar_plexus''%'
+    )
+  then
+    alter table pilot.calibration_body_points
+      drop constraint if exists pilot_calibration_body_points_code_vocab;
+    alter table pilot.calibration_body_points
+      add constraint pilot_calibration_body_points_code_vocab
+      check (point_code in ('nose', 'chin', 'neck', 'mid_hip', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_glove', 'left_hip', 'left_knee', 'left_ankle', 'left_heel', 'left_big_toe', 'left_small_toe', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_glove', 'right_hip', 'right_knee', 'right_ankle', 'right_heel', 'right_big_toe', 'right_small_toe', 'solar_plexus'));
+  end if;
+end
+$$;
 
 create index if not exists idx_calibration_body_points_set
   on pilot.calibration_body_points(organization_id, annotation_set_id);
@@ -297,7 +322,7 @@ begin
   end if;
 
   if parent_version is null
-     or parent_version not in ('boxing-ontology-0.2')
+     or parent_version not in ('boxing-ontology-0.2', 'boxing-ontology-0.3')
   then
     raise exception 'CALIBRATION_BODY_POINTS_NOT_IN_THIS_VERSION'
       using errcode = 'check_violation';
@@ -336,18 +361,22 @@ create trigger pilot_calibration_body_moments_guard
   for each row
   execute function pilot.calibration_body_moments_guard();
 
--- Points: freeze and fixed identity, with the moments' organization-deletion
--- and FOR SHARE reasoning.
+-- Points: freeze, fixed identity, and the version's own points, with the
+-- moments' organization-deletion and FOR SHARE reasoning.
 --
--- No version gate of its own: a point's set is its moment's set (composite
--- foreign key), the moment's set passed the gate, and the set's version cannot
--- change while it holds moments (next guard). A gate here could never fire.
+-- A point's set is its moment's set (composite foreign key), the moment's set
+-- passed the version gate, and the set's version cannot change while it holds
+-- moments (next guard). So the only version question left here is which
+-- points that version has: each list below is BODY_POINTS_BY_VERSION in
+-- ontology.ts, asserted by calibrationBodyPoints.pg.test.ts. The point code is
+-- fixed identity, so checking it on every insert and update is enough.
 create or replace function pilot.calibration_body_points_guard()
 returns trigger
 language plpgsql
 as $pilot_calibration_body_points_guard$
 declare
   parent_status text;
+  parent_version text;
 begin
   if tg_op = 'UPDATE'
      and (new.organization_id is distinct from old.organization_id
@@ -371,7 +400,7 @@ begin
      where organization_id = old.organization_id
        and annotation_set_id = old.annotation_set_id;
   else
-    select status into parent_status
+    select status, ontology_version into parent_status, parent_version
       from pilot.calibration_annotation_sets
      where organization_id = new.organization_id
        and annotation_set_id = new.annotation_set_id
@@ -386,6 +415,16 @@ begin
   if tg_op = 'DELETE' then
     return old;
   end if;
+
+  if (parent_version = 'boxing-ontology-0.2'
+        and new.point_code not in ('nose', 'chin', 'neck', 'mid_hip', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_glove', 'left_hip', 'left_knee', 'left_ankle', 'left_heel', 'left_big_toe', 'left_small_toe', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_glove', 'right_hip', 'right_knee', 'right_ankle', 'right_heel', 'right_big_toe', 'right_small_toe'))
+     or (parent_version = 'boxing-ontology-0.3'
+        and new.point_code not in ('nose', 'chin', 'neck', 'mid_hip', 'left_shoulder', 'left_elbow', 'left_wrist', 'left_glove', 'left_hip', 'left_knee', 'left_ankle', 'left_heel', 'left_big_toe', 'left_small_toe', 'right_shoulder', 'right_elbow', 'right_wrist', 'right_glove', 'right_hip', 'right_knee', 'right_ankle', 'right_heel', 'right_big_toe', 'right_small_toe', 'solar_plexus'))
+  then
+    raise exception 'CALIBRATION_BODY_POINT_NOT_IN_THIS_VERSION'
+      using errcode = 'check_violation';
+  end if;
+
   return new;
 end;
 $pilot_calibration_body_points_guard$;
@@ -434,7 +473,8 @@ create trigger pilot_calibration_events_body_moment_guard
 
 -- Sets: a set holding body points cannot change vocabulary. The sets freeze
 -- already holds this after submission; this holds it while in progress, when
--- relabelling a 0.2 set as 0.1 would leave a 0.1 set holding body points.
+-- relabelling a 0.2 set as 0.1 would leave a 0.1 set holding body points, and
+-- relabelling a 0.3 set as 0.2 a 0.2 set holding solar_plexus.
 create or replace function pilot.calibration_annotation_sets_body_moment_guard()
 returns trigger
 language plpgsql

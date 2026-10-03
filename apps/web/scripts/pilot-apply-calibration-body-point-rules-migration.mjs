@@ -24,7 +24,9 @@ function sslConfig() {
 // CHECK rather than echoing its source (issue #488). The three triggers hold
 // what the constraints cannot (the stance labels' freeze and 0.2 gate, the
 // 0.2 event rules, completeness at submission); a disabled one counts as
-// missing.
+// missing. FUNCTIONS_0_3 catches a database this migration reached before
+// boxing-ontology-0.3 existed: every object is there by name, and each of
+// these still admits 0.2 only.
 const CONSTRAINTS = [
   ['pilot.calibration_event_stance_labels', 'pilot_calibration_event_stance_labels_org_fk'],
   ['pilot.calibration_event_stance_labels', 'pilot_calibration_event_stance_labels_pkey'],
@@ -37,6 +39,11 @@ const TRIGGERS = [
   ['pilot.calibration_annotation_sets', 'pilot_calibration_sets_body_point_rules'],
 ];
 const INDEXES = ['idx_calibration_event_stance_labels_set'];
+const FUNCTIONS_0_3 = [
+  'pilot.calibration_event_stance_labels_guard()',
+  'pilot.calibration_annotation_events_body_point_rules()',
+  'pilot.calibration_annotation_sets_body_point_rules()',
+];
 
 const quote = (value) => `'${value}'`;
 const READINESS_QUERY = `select ${[
@@ -48,6 +55,9 @@ const READINESS_QUERY = `select ${[
         and not tgisinternal and tgenabled <> 'D')`),
   ...INDEXES.map((name) => `exists (select 1 from pg_indexes
       where schemaname = 'pilot' and indexname = ${quote(name)})`),
+  ...FUNCTIONS_0_3.map((signature) => `exists (select 1 from pg_proc
+      where oid = to_regprocedure(${quote(signature)})
+        and prosrc like '%''boxing-ontology-0.3''%')`),
 ].map((clause, index) => `${clause} as ready_${index}`).join(', ')}`;
 
 export async function applyMigrationTransaction(client, sql) {
